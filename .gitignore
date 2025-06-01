@@ -21,6 +21,7 @@ CMakeFiles
 
 # Precompiled Headers
 *.gch
+hasdrf
 *.pch
 
 # Compiled Dynamic libraries
