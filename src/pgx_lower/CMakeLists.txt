@@ -12,6 +12,10 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-add_subdirectory(quaternion)
-add_subdirectory(pgx_lower)
+add_postgresql_mixed_extension(
+  pgx_lower
+  VERSION 1.0
+  C_SOURCES src/executor_c.c
+  CPP_SOURCES src/executor.cpp
+  SCRIPTS pgx_lower--1.0.sql
+  REGRESS basic)

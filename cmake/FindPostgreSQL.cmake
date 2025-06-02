@@ -292,3 +292,173 @@ if(PG_REGRESS)
     test_verbose COMMAND ${CMAKE_CTEST_COMMAND} --force-new-ctest-process
                          --verbose --output-on-failure)
 endif()
+
+# Function to add a PostgreSQL extension with mixed C and C++ files
+function(add_postgresql_mixed_extension NAME)
+  set(_optional)
+  set(_single VERSION ENCODING)
+  set(_multi C_SOURCES CPP_SOURCES SCRIPTS SCRIPT_TEMPLATES REQUIRES REGRESS)
+  cmake_parse_arguments(_ext "${_optional}" "${_single}" "${_multi}" ${ARGN})
+
+  if(NOT _ext_VERSION)
+    message(FATAL_ERROR "Extension version not set")
+  endif()
+
+  # Here we are assuming that there is at least one source file, which is
+  # strictly speaking not necessary for an extension. If we do not have source
+  # files, we need to create a custom target and attach properties to that. We
+  # expect the user to be able to add target properties after creating the
+  # extension.
+  add_library(${NAME} MODULE ${_ext_C_SOURCES} ${_ext_CPP_SOURCES})
+
+  target_link_libraries(${NAME} PRIVATE
+          MLIRIR
+          MLIRParser
+          MLIRSupport
+          MLIRTransforms
+          LLVMCore
+          LLVMSupport
+          ${PostgreSQL_LIBRARIES}
+          /usr/lib/postgresql/17/lib/libpgcommon_shlib.a
+          /usr/lib/postgresql/17/lib/libpgport_shlib.a
+  )
+
+  set(_link_flags "${PostgreSQL_SHARED_LINK_OPTIONS}")
+  foreach(_dir ${PostgreSQL_SERVER_LIBRARY_DIRS})
+    set(_link_flags "${_link_flags} -L${_dir}")
+  endforeach()
+
+  # Collect and build script files to install
+  set(_script_files ${_ext_SCRIPTS})
+  foreach(_template ${_ext_SCRIPT_TEMPLATES})
+    string(REGEX REPLACE "\.in$" "" _script ${_template})
+    configure_file(${_template} ${_script} @ONLY)
+    list(APPEND _script_files ${CMAKE_CURRENT_BINARY_DIR}/${_script})
+    message(
+            STATUS "Building script file ${_script} from template file ${_template}")
+  endforeach()
+
+  if(APPLE)
+    set(_link_flags "${_link_flags} -bundle_loader ${PG_BINARY}")
+  endif()
+
+  set_target_properties(
+          ${NAME}
+          PROPERTIES PREFIX ""
+          LINK_FLAGS "${_link_flags}"
+          POSITION_INDEPENDENT_CODE ON
+          BUILD_WITH_INSTALL_RPATH TRUE
+          INSTALL_RPATH "${ARROW_LIB_PATH}")
+
+  target_include_directories(
+          ${NAME}
+          PRIVATE ${PostgreSQL_SERVER_INCLUDE_DIRS}
+          PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+  # Generate control file at build time (which is when GENERATE evaluate the
+  # contents). We do not know the target file name until then.
+  set(_control_file "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.control")
+  file(
+          GENERATE
+          OUTPUT ${_control_file}
+          CONTENT
+          "# This file is generated content from add_postgresql_extension.
+# No point in modifying it, it will be overwritten anyway.
+
+# Default version, always set
+default_version = '${_ext_VERSION}'
+
+# Module pathname generated from target shared library name. Use
+# MODULE_PATHNAME in script file.
+module_pathname = '$libdir/$<TARGET_FILE_NAME:${NAME}>'
+
+# Comment for extension. Set using COMMENT option. Can be set in
+# script file as well.
+$<$<NOT:$<BOOL:${_ext_COMMENT}>>:#>comment = '${_ext_COMMENT}'
+
+# Encoding for script file. Set using ENCODING option.
+$<$<NOT:$<BOOL:${_ext_ENCODING}>>:#>encoding = '${_ext_ENCODING}'
+
+# Required extensions. Set using REQUIRES option (multi-valued).
+$<$<NOT:$<BOOL:${_ext_REQUIRES}>>:#>requires = '$<JOIN:${_ext_REQUIRES},$<COMMA>>'
+")
+
+  # Get installation paths from pg_config
+  pg_config(_pg_pkglibdir --pkglibdir)
+  pg_config(_pg_sharedir --sharedir)
+
+  # Set target properties for installation
+  set_target_properties(
+          ${NAME}
+          PROPERTIES
+          PREFIX ""
+          LIBRARY_OUTPUT_DIRECTORY "${_pg_pkglibdir}"  # Install .so here
+  )
+
+  # Install extension files
+  install(
+          TARGETS ${NAME}
+          LIBRARY DESTINATION "${_pg_pkglibdir}"
+  )
+
+  install(
+          FILES
+          "${_control_file}"
+          ${_script_files}
+          DESTINATION "${_pg_sharedir}/extension"
+  )
+
+  message(STATUS "[PSQL] Installing extension files:")
+  message(STATUS "  Library to: ${_pg_pkglibdir}")
+  message(STATUS "  Control/SQL to: ${_pg_sharedir}/extension")
+
+  if(_ext_REGRESS)
+    foreach(_test ${_ext_REGRESS})
+      set(_sql_file "${CMAKE_CURRENT_SOURCE_DIR}/sql/${_test}.sql")
+      set(_out_file "${CMAKE_CURRENT_SOURCE_DIR}/expected/${_test}.out")
+      if(NOT EXISTS "${_sql_file}")
+        message(FATAL_ERROR "Test file '${_sql_file}' does not exist!")
+      endif()
+      if(NOT EXISTS "${_out_file}")
+        file(WRITE "${_out_file}" )
+        message(STATUS "Created empty file ${_out_file}")
+      endif()
+    endforeach()
+
+    if(PG_REGRESS)
+      # Get the correct paths from pg_config
+      pg_config(_pg_bindir --bindir)
+      pg_config(_pg_pkglibdir --pkglibdir)
+
+      add_test(
+              NAME ${NAME}
+              COMMAND
+              ${PG_REGRESS}
+              --temp-instance=${CMAKE_BINARY_DIR}/tmp_check
+              --bindir=${_pg_bindir}
+              --dlpath=${_pg_pkglibdir}
+              --inputdir=${CMAKE_CURRENT_SOURCE_DIR}
+              --outputdir=${CMAKE_CURRENT_BINARY_DIR}
+              --load-extension=${NAME}
+              ${_ext_REGRESS})
+
+      message(STATUS "[PSQL Test] Using paths from pg_config:")
+      message(STATUS "  bindir: ${_pg_bindir}")
+      message(STATUS "  dlpath: ${_pg_pkglibdir}")
+    endif()
+
+    add_custom_target(
+            ${NAME}_update_results
+            COMMAND
+            ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_BINARY_DIR}/results/*.out
+            ${CMAKE_CURRENT_SOURCE_DIR}/expected)
+  endif()
+endfunction()
+
+if(PG_REGRESS)
+  # We add a custom target to get output when there is a failure.
+  add_custom_target(
+          test_multi COMMAND ${CMAKE_CTEST_COMMAND} --force-new-ctest-process
+          --verbose --output-on-failure)
+endif()

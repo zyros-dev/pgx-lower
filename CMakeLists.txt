@@ -12,17 +12,18 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-cmake_minimum_required(VERSION 3.10)
-project(extension)
+cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
+project(pgx_lower LANGUAGES CXX C)
+set(CMAKE_CXX_STANDARD 20)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 find_package(PostgreSQL REQUIRED)
 
-set(CMAKE_CXX_STANDARD 14)
-
-include_directories(${PostgreSQL_INCLUDE_DIRS}
-                    ${PostgreSQL_SERVER_INCLUDE_DIRS})
+include_directories(
+    ${PostgreSQL_INCLUDE_DIRS}
+    ${PostgreSQL_SERVER_INCLUDE_DIRS}
+)
 
 enable_testing()
 add_subdirectory(src)
