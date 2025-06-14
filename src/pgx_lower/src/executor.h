@@ -1,17 +1,11 @@
 #ifndef EXECUTOR_H
 #define EXECUTOR_H
 
-#include "postgres.h"
-#include "executor/execdesc.h"
-#include "executor/executor.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Declare C-linkage functions here if needed
-// Example:
-// bool try_cpp_executor(QueryDesc* queryDesc);
+struct QueryDesc;
 
 #ifdef __cplusplus
 }
@@ -19,16 +13,13 @@ extern "C" {
 
 #ifdef __cplusplus
 
-struct MyCppPlan
-{
+struct MyCppPlan {};
+
+class MyCppExecutor {
+   public:
+    static bool execute(const QueryDesc* plan);
 };
 
-class MyCppExecutor
-{
-public:
-  static bool execute(const QueryDesc* plan);
-};
+#endif  // __cplusplus
 
-#endif // __cplusplus
-
-#endif //EXECUTOR_H
+#endif  // EXECUTOR_H

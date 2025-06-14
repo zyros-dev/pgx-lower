@@ -1,15 +1,15 @@
 #ifndef EXECUTOR_C_H
 #define EXECUTOR_C_H
 
-#include "postgres.h"
-#include "executor/executor.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#include "fmgr.h"
+#include "postgres.h"
 
-  bool try_cpp_executor(QueryDesc* queryDesc);
+Datum try_cpp_executor(PG_FUNCTION_ARGS);
+Datum log_cpp_notice(PG_FUNCTION_ARGS);
 
 #ifdef __cplusplus
 }
