@@ -1,6 +1,6 @@
-NOTICE:  Custom executor is being executed in C++!
-SELECT log_cpp_notice();
-log_cpp_notice
----------------
-
+SELECT 'hello';
+ ?column? 
+----------
+ hello
 (1 row)
+

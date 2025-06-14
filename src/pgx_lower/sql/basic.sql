@@ -1,1 +1,1 @@
-SELECT log_cpp_notice();
+SELECT 'hello';

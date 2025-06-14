@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-#include "fmgr.h"
 #include "postgres.h"
+#include "fmgr.h"
 
 Datum try_cpp_executor(PG_FUNCTION_ARGS);
 Datum log_cpp_notice(PG_FUNCTION_ARGS);

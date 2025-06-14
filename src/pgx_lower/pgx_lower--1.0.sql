@@ -18,13 +18,3 @@ DO $$ BEGIN
     RAISE NOTICE 'MLIR JIT Engine extension installed successfully.';
 END $$;
 
--- Create the extension functions
-CREATE OR REPLACE FUNCTION try_cpp_executor(queryDesc internal)
-RETURNS boolean
-AS 'MODULE_PATHNAME', 'try_cpp_executor'
-LANGUAGE C STRICT;
-
-CREATE OR REPLACE FUNCTION log_cpp_notice()
-RETURNS void
-AS 'MODULE_PATHNAME', 'log_cpp_notice'
-LANGUAGE C STRICT;
