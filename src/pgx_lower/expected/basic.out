@@ -1,4 +1,7 @@
+LOAD 'pgx_lower.so';
+NOTICE:  Installing custom executor hook...
 SELECT 'hello';
+NOTICE:  Custom executor is being executed in C!
  ?column? 
 ----------
  hello

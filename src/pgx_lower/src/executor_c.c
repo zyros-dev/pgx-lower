@@ -9,8 +9,8 @@ PG_MODULE_MAGIC;
 static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL;
 
 static bool try_cpp_executor_internal(QueryDesc *queryDesc) {
-    // Placeholder for C++ call
-    return false;
+    elog(NOTICE, "Calling C++ executor from C...");
+    return try_cpp_executor(queryDesc);
 }
 
 static void log_cpp_notice_internal(void) {
@@ -19,10 +19,9 @@ static void log_cpp_notice_internal(void) {
 
 static void custom_executor(QueryDesc *queryDesc, ScanDirection direction,
                             uint64 count, bool execute_once) {
-    elog(NOTICE, "Custom executor is being executed in C!");
+    elog(NOTICE, "Custom executor is being executed in C! Ahah!");
 
-    if (try_cpp_executor_internal(queryDesc))
-        return;
+    try_cpp_executor_internal(queryDesc);
 
     if (prev_ExecutorRun_hook)
         prev_ExecutorRun_hook(queryDesc, direction, count, execute_once);

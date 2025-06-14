@@ -5,7 +5,9 @@
 extern "C" {
 #endif
 
-struct QueryDesc;
+#include "postgres.h"
+#include "nodes/execnodes.h"
+#include <executor/execdesc.h>
 
 #ifdef __cplusplus
 }

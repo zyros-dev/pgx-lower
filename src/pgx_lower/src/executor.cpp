@@ -1,5 +1,6 @@
 #include "executor.h"
 
+
 #include "executor/executor.h"
 #include "executor_c.h"
 #include "nodes/execnodes.h"
@@ -12,7 +13,8 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
         return false;
     }
 
-    elog(NOTICE, "Hello from C++!");
+    elog(NOTICE, "Inside C++ executor! Plan type: %d", plan->operation);
+    elog(NOTICE, "Query text: %s", plan->sourceText ? plan->sourceText : "NULL");
 
     // TODO: Implement actual query execution logic here
     // For now just return false to indicate not handled
