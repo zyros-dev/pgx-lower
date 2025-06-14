@@ -5,8 +5,6 @@
 
 extern "C" {
 
-PG_MODULE_MAGIC;
-
 bool try_cpp_executor_direct(QueryDesc* queryDesc) {
     return MyCppExecutor::execute(queryDesc);
 }

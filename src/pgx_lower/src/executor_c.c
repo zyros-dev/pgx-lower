@@ -14,10 +14,6 @@ static bool try_cpp_executor_internal(QueryDesc *queryDesc) {
     return try_cpp_executor_direct(queryDesc);
 }
 
-static void log_cpp_notice_internal(void) {
-    elog(NOTICE, "Custom executor is being executed in C++!");
-}
-
 static void custom_executor(QueryDesc *queryDesc, ScanDirection direction,
                             uint64 count, bool execute_once) {
     elog(NOTICE, "Custom executor is being executed in C! Ahah!");
@@ -39,15 +35,4 @@ void _PG_init(void) {
 void _PG_fini(void) {
     elog(NOTICE, "Uninstalling custom executor hook...");
     ExecutorRun_hook = NULL;
-}
-
-Datum log_cpp_notice(PG_FUNCTION_ARGS) {
-    log_cpp_notice_internal();
-    PG_RETURN_VOID();
-}
-
-Datum try_cpp_executor(PG_FUNCTION_ARGS) {
-    QueryDesc *queryDesc = (QueryDesc *)PG_GETARG_POINTER(0);
-    bool result = try_cpp_executor_internal(queryDesc);
-    PG_RETURN_BOOL(result);
 }

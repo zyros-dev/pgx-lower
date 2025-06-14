@@ -1,7 +1,10 @@
 LOAD 'pgx_lower.so';
 NOTICE:  Installing custom executor hook...
 SELECT 'hello';
-NOTICE:  Custom executor is being executed in C!
+NOTICE:  Custom executor is being executed in C! Ahah!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Inside C++ executor! Plan type: 1
+NOTICE:  Query text: SELECT 'hello';
  ?column? 
 ----------
  hello
