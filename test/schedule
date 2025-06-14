@@ -1,0 +1,2 @@
+# Basic test schedule for pgx_lower
+test: basic 
