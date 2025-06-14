@@ -1,5 +1,5 @@
 #include "executor_c.h"
-#include "executor.h"
+#include "my_executor.h"
 #include "postgres.h"
 #include "fmgr.h"
 
@@ -7,12 +7,16 @@ extern "C" {
 
 PG_MODULE_MAGIC;
 
+bool try_cpp_executor_direct(QueryDesc* queryDesc) {
+    return MyCppExecutor::execute(queryDesc);
+}
+
 PG_FUNCTION_INFO_V1(try_cpp_executor);
 Datum
 try_cpp_executor(PG_FUNCTION_ARGS)
 {
     QueryDesc* queryDesc = (QueryDesc*)PG_GETARG_POINTER(0);
-    bool result = MyCppExecutor::execute(queryDesc);
+    bool result = try_cpp_executor_direct(queryDesc);
     PG_RETURN_BOOL(result);
 }
 

@@ -1,5 +1,6 @@
 #include "executor_c.h"
 
+#include "executor/execdesc.h"
 #include "executor/executor.h"
 #include "fmgr.h"
 #include "postgres.h"
@@ -10,7 +11,7 @@ static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL;
 
 static bool try_cpp_executor_internal(QueryDesc *queryDesc) {
     elog(NOTICE, "Calling C++ executor from C...");
-    return try_cpp_executor(queryDesc);
+    return try_cpp_executor_direct(queryDesc);
 }
 
 static void log_cpp_notice_internal(void) {

@@ -1,10 +1,7 @@
-#include "executor.h"
-
+#include "my_executor.h"
 
 #include "executor/executor.h"
 #include "executor_c.h"
-#include "nodes/execnodes.h"
-#include "postgres.h"
 #include "utils/elog.h"
 
 bool MyCppExecutor::execute(const QueryDesc* plan) {
