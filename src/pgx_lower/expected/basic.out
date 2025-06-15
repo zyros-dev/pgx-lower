@@ -11,3 +11,21 @@ NOTICE:  Query text: SELECT 'hello';
  hello
 (1 row)
 
+CREATE TABLE test(id SERIAL);
+INSERT INTO test(id) VALUES (1);
+NOTICE:  Custom executor is being executed in C! Ahah!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Successfully created MLIR context!
+NOTICE:  Inside C++ executor! Plan type: 3
+NOTICE:  Query text: INSERT INTO test(id) VALUES (1);
+SELECT * FROM test;
+NOTICE:  Custom executor is being executed in C! Ahah!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Successfully created MLIR context!
+NOTICE:  Inside C++ executor! Plan type: 1
+NOTICE:  Query text: SELECT * FROM test;
+ id 
+----
+  1
+(1 row)
+

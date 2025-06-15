@@ -22,6 +22,8 @@ find_package(PostgreSQL REQUIRED)
 find_package(LLVM REQUIRED)
 find_package(MLIR REQUIRED)
 
+include(PostgreSQLExtension)
+
 include_directories(
     ${PostgreSQL_INCLUDE_DIRS}
     ${PostgreSQL_SERVER_INCLUDE_DIRS}
