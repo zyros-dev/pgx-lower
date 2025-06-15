@@ -2,10 +2,15 @@
 #include "my_executor.h"
 #include "postgres.h"
 #include "fmgr.h"
+#include "mlir/IR/MLIRContext.h"
 
 extern "C" {
 
 bool try_cpp_executor_direct(QueryDesc* queryDesc) {
+    // Test MLIR linking by creating a context
+    mlir::MLIRContext context;
+    elog(NOTICE, "Successfully created MLIR context!");
+
     return MyCppExecutor::execute(queryDesc);
 }
 
@@ -26,4 +31,4 @@ log_cpp_notice(PG_FUNCTION_ARGS)
     PG_RETURN_VOID();
 }
 
-} // extern "C" 
+} // extern "C"

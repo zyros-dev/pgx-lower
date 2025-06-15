@@ -3,6 +3,7 @@ NOTICE:  Installing custom executor hook...
 SELECT 'hello';
 NOTICE:  Custom executor is being executed in C! Ahah!
 NOTICE:  Calling C++ executor from C...
+NOTICE:  Successfully created MLIR context!
 NOTICE:  Inside C++ executor! Plan type: 1
 NOTICE:  Query text: SELECT 'hello';
  ?column? 
