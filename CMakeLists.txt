@@ -18,6 +18,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
+include(PostgreSQLConfig)
 find_package(PostgreSQL REQUIRED)
 find_package(LLVM REQUIRED)
 find_package(MLIR REQUIRED)

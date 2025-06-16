@@ -14,6 +14,12 @@ extern "C" {
 #include "utils/rel.h"
 }
 
+// Undefine PostgreSQL macros that conflict with LLVM
+#undef gettext
+#undef dgettext
+#undef ngettext
+#undef dngettext
+
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
@@ -119,7 +125,11 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
             
             // Print the MLIR program
             elog(NOTICE, "Generated MLIR program:");
-            module.print(llvm::errs());
+            std::string mlirStr;
+            llvm::raw_string_ostream os(mlirStr);
+            module.print(os);
+            os.flush();
+            elog(NOTICE, "MLIR: %s", mlirStr.c_str());
 
             // Lower to LLVM dialect
             mlir::PassManager pm(&context);
@@ -130,6 +140,7 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
                 elog(ERROR, "Failed to lower MLIR module to LLVM dialect");
                 return false;
             }
+            elog(NOTICE, "Lowered MLIR to LLVM dialect!");
 
             // JIT execute
             llvm::InitializeNativeTarget();
@@ -144,10 +155,12 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
                 elog(ERROR, "Failed to create MLIR ExecutionEngine");
                 return false;
             }
+            elog(NOTICE, "Created MLIR ExecutionEngine!");
             std::unique_ptr<mlir::ExecutionEngine> engine = std::move(*maybeEngine);
 
             int64_t result = 0;
             llvm::Error err = engine->invoke("main", &result);
+            elog(NOTICE, "Invoked MLIR JIT-compiled function!");
             if (err) {
                 std::string errMsg;
                 llvm::raw_string_ostream os(errMsg);
