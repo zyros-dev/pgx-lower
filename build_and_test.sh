@@ -3,7 +3,7 @@ set -e
 
 # Configuration
 BUILD_DIR="build"
-rm -rfd $BUILD_DIR
+sudo rm -rfd $BUILD_DIR
 
 # Build the project with CMake
 cmake -S . -B $BUILD_DIR -G Ninja
