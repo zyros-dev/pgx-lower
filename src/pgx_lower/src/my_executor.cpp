@@ -29,7 +29,7 @@ extern "C" {
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 
@@ -38,7 +38,7 @@ void registerConversionPipeline() {
         "convert-to-llvm",
         "Convert MLIR to LLVM dialect",
         [](mlir::OpPassManager &pm) {
-            pm.addPass(mlir::createFuncToLLVMConversionPass());
+            pm.addPass(mlir::createConvertFuncToLLVMPass());
             pm.addPass(mlir::createArithToLLVMConversionPass());
             pm.addPass(mlir::createConvertSCFToCFPass());
         });
@@ -124,7 +124,7 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
             // Lower to LLVM dialect
             mlir::PassManager pm(&context);
             pm.addPass(mlir::createCanonicalizerPass());
-            pm.addNestedPass<mlir::func::FuncOp>(mlir::createFuncToLLVMConversionPass());
+            pm.addNestedPass<mlir::func::FuncOp>(mlir::createConvertFuncToLLVMPass());
             pm.addNestedPass<mlir::func::FuncOp>(mlir::createArithToLLVMConversionPass());
             if (mlir::failed(pm.run(module))) {
                 elog(ERROR, "Failed to lower MLIR module to LLVM dialect");
