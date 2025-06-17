@@ -18,6 +18,10 @@ set(CMAKE_CXX_STANDARD 20)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
+set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+set(CMAKE_C_FLAGS_DEBUG "-g -O0")
+
 include(PostgreSQLConfig)
 find_package(PostgreSQL REQUIRED)
 find_package(LLVM REQUIRED)
