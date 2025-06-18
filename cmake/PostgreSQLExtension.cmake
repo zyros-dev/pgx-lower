@@ -47,6 +47,7 @@ function(add_postgresql_mixed_extension NAME)
         MLIRTransforms
     )
     set_target_properties(${NAME} PROPERTIES LINK_FLAGS "${_link_flags} -Wl,--no-as-needed")
+    set_target_properties(${NAME} PROPERTIES INSTALL_RPATH "/usr/lib/llvm-20/lib")
 
     # Set link flags for shared library
     set(_link_flags "${PostgreSQL_SHARED_LINK_OPTIONS}")
@@ -118,4 +119,27 @@ module_pathname = '$libdir/$<TARGET_FILE_NAME:${NAME}>'
                     ${_ext_REGRESS}
         )
     endif()
+endfunction()
+
+function(add_mlir_unit_test NAME)
+    add_executable(${NAME} ${ARGN})
+    target_link_libraries(${NAME} PRIVATE
+        MLIRArithDialect
+        MLIRFuncDialect
+        MLIRLLVMDialect
+        MLIRFuncToLLVM
+        MLIRMathToLLVM
+        MLIRSCFToControlFlow
+        MLIRTransforms
+        MLIR
+        LLVM
+    )
+    target_include_directories(${NAME} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PostgreSQL_SERVER_INCLUDE_DIRS}
+    )
+    set_target_properties(${NAME} PROPERTIES
+        INSTALL_RPATH "/usr/lib/llvm-20/lib"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
 endfunction() 

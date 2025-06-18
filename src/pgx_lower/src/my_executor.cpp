@@ -38,6 +38,8 @@ extern "C" {
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
+#include "llvm/Config/llvm-config.h"
+
 
 void registerConversionPipeline() {
     mlir::PassPipelineRegistration<>(
@@ -51,6 +53,7 @@ void registerConversionPipeline() {
 }
 
 bool MyCppExecutor::execute(const QueryDesc* plan) {
+    elog(NOTICE, "LLVM version: %d.%d.%d", LLVM_VERSION_MAJOR, LLVM_VERSION_MINOR, LLVM_VERSION_PATCH);
     if (!plan) {
         elog(ERROR, "QueryDesc is null");
         return false;
@@ -82,6 +85,7 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
 
     // Create MLIR context and builder
     mlir::MLIRContext context;
+    elog(NOTICE, "MLIRContext symbol address: %p", (void*)&context);
     // Register required dialects
     context.getOrLoadDialect<mlir::arith::ArithDialect>();
     context.getOrLoadDialect<mlir::func::FuncDialect>();

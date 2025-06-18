@@ -3,15 +3,42 @@
 #include "postgres.h"
 #include "fmgr.h"
 #include "mlir/IR/MLIRContext.h"
+#include <execinfo.h>
+#include <exception>
+#include <sstream>
 
 extern "C" {
 
-bool try_cpp_executor_direct(QueryDesc* queryDesc) {
-    // Test MLIR linking by creating a context
-    mlir::MLIRContext context;
-    elog(NOTICE, "Successfully created MLIR context!");
+static void log_cpp_backtrace() {
+    void *array[32];
+    size_t size = backtrace(array, 32);
+    char **strings = backtrace_symbols(array, size);
+    if (strings) {
+        std::ostringstream oss;
+        oss << "C++ backtrace:" << std::endl;
+        for (size_t i = 0; i < size; ++i) {
+            oss << strings[i] << std::endl;
+        }
+        elog(LOG, "%s", oss.str().c_str());
+        free(strings);
+    }
+}
 
-    return MyCppExecutor::execute(queryDesc);
+bool try_cpp_executor_direct(QueryDesc* queryDesc) {
+    try {
+        // Test MLIR linking by creating a context
+        mlir::MLIRContext context;
+        elog(NOTICE, "Successfully created MLIR context!");
+        return MyCppExecutor::execute(queryDesc);
+    } catch (const std::exception& ex) {
+        elog(ERROR, "C++ exception: %s", ex.what());
+        log_cpp_backtrace();
+        return false;
+    } catch (...) {
+        elog(ERROR, "Unknown C++ exception occurred!");
+        log_cpp_backtrace();
+        return false;
+    }
 }
 
 PG_FUNCTION_INFO_V1(try_cpp_executor);
