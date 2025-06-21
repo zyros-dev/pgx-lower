@@ -1,6 +1,8 @@
 #include "mlir_runner.h"
 #include "mlir_logger.h"
 
+#include <fstream>
+
 // Prevent libintl.h conflicts with PostgreSQL macros
 // This is a bit strange to me - so LLVM drags in some macros from libintl.h
 // and those conflict with things inside of libintl.h. So this should resolve
@@ -134,10 +136,133 @@ auto run_mlir_core(int64_t intValue, MLIRLogger& logger) -> bool {
     return true;
 }
 
+static ExternalFunction* g_external_func = nullptr;
+
+extern "C" int64_t call_external_function() {
+    if (g_external_func && *g_external_func) {
+        return (*g_external_func)();
+    }
+    return -1;
+}
+
+bool run_mlir_with_external_func(int64_t intValue, const ExternalFunction& externalFunc, MLIRLogger& logger) {
+    g_external_func = const_cast<ExternalFunction*>(&externalFunc);
+    
+    mlir::MLIRContext context;
+    
+    std::ostringstream oss;
+    oss << "MLIRContext symbol address: " << (void *)&context;
+    logger.debug(oss.str());
+    
+    context.getOrLoadDialect<mlir::arith::ArithDialect>();
+    context.getOrLoadDialect<mlir::func::FuncDialect>();
+    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+
+    registerConversionPipeline();
+
+    std::unique_ptr<mlir::ExecutionEngine> engine;
+    mlir::OpBuilder builder(&context);
+    mlir::ModuleOp module = mlir::ModuleOp::create(builder.getUnknownLoc());
+    mlir::Location loc = builder.getUnknownLoc();
+
+    auto externalFuncType = builder.getFunctionType({}, {builder.getI64Type()});
+    auto externalFuncDecl = mlir::func::FuncOp::create(loc, "call_external_function", externalFuncType);
+    externalFuncDecl.setPrivate();
+    module.push_back(externalFuncDecl);
+
+    auto mainFuncType = builder.getFunctionType({}, {builder.getI64Type()});
+    auto mainFunc = mlir::func::FuncOp::create(loc, "main", mainFuncType);
+    mainFunc.setPublic();
+    mlir::Block *entryBlock = mainFunc.addEntryBlock();
+    builder.setInsertionPointToStart(entryBlock);
+    
+    auto callOp = builder.create<mlir::func::CallOp>(loc, externalFuncDecl, mlir::ValueRange{});
+    
+    auto constOp = builder.create<mlir::arith::ConstantOp>(loc, builder.getI64IntegerAttr(intValue));
+    auto addOp = builder.create<mlir::arith::AddIOp>(loc, callOp.getResult(0), constOp.getResult());
+    
+    builder.create<mlir::func::ReturnOp>(loc, addOp.getResult());
+    module.push_back(mainFunc);
+
+    if (mlir::failed(mlir::verify(module))) {
+        logger.error("MLIR module verification failed");
+        return false;
+    }
+
+    logger.notice("Generated MLIR program with external function call:");
+    std::string mlirStr;
+    llvm::raw_string_ostream os(mlirStr);
+    module.OpState::print(os);
+    os.flush();
+    logger.notice("MLIR: " + mlirStr);
+
+    mlir::PassManager pm(&context);
+    pm.addNestedPass<mlir::func::FuncOp>(mlir::createArithToLLVMConversionPass());
+    pm.addPass(mlir::createConvertFuncToLLVMPass());
+    pm.addPass(mlir::createCanonicalizerPass());
+    
+    if (mlir::failed(pm.run(module))) {
+        logger.error("Failed to lower MLIR module to LLVM dialect");
+        return false;
+    }
+    logger.notice("Lowered MLIR to LLVM dialect!");
+
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    mlir::registerLLVMDialectTranslation(context);
+    mlir::registerBuiltinDialectTranslation(context);
+
+    auto optPipeline = mlir::makeOptimizingTransformer(0, 0, nullptr);
+    mlir::ExecutionEngineOptions engineOptions;
+    engineOptions.transformer = optPipeline;
+    engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
+    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
+    if (!maybeEngine) {
+        logger.error("Failed to create MLIR ExecutionEngine");
+        return false;
+    }
+    logger.notice("Created MLIR ExecutionEngine!");
+    engine = std::move(*maybeEngine);
+
+    engine->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
+        llvm::orc::SymbolMap symbolMap;
+        symbolMap[interner("call_external_function")] = 
+            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&call_external_function)),
+                                       llvm::JITSymbolFlags::Exported);
+        return symbolMap;
+    });
+
+    auto expectedFPtr = engine->lookup("main");
+    if (!expectedFPtr) {
+        std::string errMsg;
+        llvm::raw_string_ostream errStream(errMsg);
+        errStream << expectedFPtr.takeError();
+        logger.error("Failed to lookup function: " + errMsg);
+        return false;
+    }
+    
+    auto fptr = reinterpret_cast<int64_t(*)()>(*expectedFPtr);
+    int64_t result = fptr();
+    logger.notice("Invoked MLIR JIT-compiled function with external call!");
+    
+    oss.str("");
+    oss << "MLIR JIT returned: " << result;
+    logger.notice(oss.str());
+
+    g_external_func = nullptr;
+
+    return true;
+}
+
 #ifndef POSTGRESQL_EXTENSION
 bool run_mlir_test(int64_t intValue) {
     ConsoleLogger logger;
     return run_mlir_core(intValue, logger);
+}
+
+bool run_external_func_test(const ExternalFunction& externalFunc) {
+    ConsoleLogger logger;
+    return run_mlir_with_external_func(10, externalFunc, logger);
 }
 #endif
 
