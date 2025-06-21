@@ -1,4 +1,6 @@
 #include "my_executor.h"
+#include "mlir_runner.h"
+#include "mlir_logger.h"
 
 #include "executor/executor.h"
 
@@ -52,91 +54,8 @@ void registerConversionPipeline() {
 }
 
 auto run_mlir(int64_t intValue) -> void {
-    bool value1 = false;
-    // Create MLIR context and builder
-    mlir::MLIRContext context;
-    elog(NOTICE, "MLIRContext symbol address: %p", (void *)&context);
-    // Register required dialects
-    context.getOrLoadDialect<mlir::arith::ArithDialect>();
-    context.getOrLoadDialect<mlir::func::FuncDialect>();
-    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
-
-    // Register the conversion pipeline
-    registerConversionPipeline();
-
-    std::unique_ptr<mlir::ExecutionEngine> engine;
-    mlir::OpBuilder builder(&context);
-    mlir::ModuleOp module = mlir::ModuleOp::create(builder.getUnknownLoc());
-    // Create a simple MLIR program that prints this number
-    mlir::Location loc = builder.getUnknownLoc();
-
-    // Create a function that returns i64
-    auto funcType = builder.getFunctionType({}, {builder.getI64Type()});
-    auto func = mlir::func::FuncOp::create(loc, "main", funcType);
-    func.setPrivate();
-    mlir::Block *entryBlock = func.addEntryBlock();
-    builder.setInsertionPointToStart(entryBlock);
-    auto constOp = builder.create<mlir::arith::ConstantOp>(
-        loc, builder.getI64IntegerAttr(intValue));
-    // Return the constant value
-    builder.create<mlir::func::ReturnOp>(loc, constOp.getResult());
-    module.push_back(func);
-
-    // Verify the module
-    if (mlir::failed(mlir::verify(module))) {
-        elog(ERROR, "MLIR module verification failed");
-        return;
-    }
-
-    // Print the MLIR program
-    elog(NOTICE, "Generated MLIR program:");
-    std::string mlirStr;
-    llvm::raw_string_ostream os(mlirStr);
-    module.OpState::print(os);
-    os.flush();
-    elog(NOTICE, "MLIR: %s", mlirStr.c_str());
-
-    // Lower to LLVM dialect
-    mlir::PassManager pm(&context);
-    pm.addPass(mlir::createCanonicalizerPass());
-    pm.addPass(mlir::createConvertFuncToLLVMPass());
-    pm.addNestedPass<mlir::func::FuncOp>(
-        mlir::createArithToLLVMConversionPass());
-    if (mlir::failed(pm.run(module))) {
-        elog(ERROR, "Failed to lower MLIR module to LLVM dialect");
-        return;
-    }
-    elog(NOTICE, "Lowered MLIR to LLVM dialect!");
-
-    // JIT execute
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-    mlir::registerLLVMDialectTranslation(context);
-
-    auto optPipeline = mlir::makeOptimizingTransformer(0, 0, nullptr);
-    mlir::ExecutionEngineOptions engineOptions;
-    engineOptions.transformer = optPipeline;
-    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-    if (!maybeEngine) {
-        elog(ERROR, "Failed to create MLIR ExecutionEngine");
-        return;
-    }
-    elog(NOTICE, "Created MLIR ExecutionEngine!");
-    engine = std::move(*maybeEngine);
-
-    int64_t result = 0;
-    llvm::Error err = engine->invoke("main", &result);
-    elog(NOTICE, "Invoked MLIR JIT-compiled function!");
-    if (err) {
-        std::string errMsg;
-        llvm::raw_string_ostream os(errMsg);
-        os << err;
-        elog(ERROR, "Failed to invoke MLIR JIT-compiled function: %s",
-             errMsg.c_str());
-        llvm::consumeError(std::move(err));
-        return;
-    }
-    elog(NOTICE, "MLIR JIT returned: %ld", result);
+    PostgreSQLLogger logger;
+    mlir_runner::run_mlir_core(intValue, logger);
 }
 
 bool MyCppExecutor::execute(const QueryDesc *plan) {

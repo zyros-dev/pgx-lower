@@ -70,13 +70,14 @@ function(add_postgresql_mixed_extension NAME)
             BUILD_WITH_INSTALL_RPATH TRUE
     )
 
-    # Set include directories
     target_include_directories(
         ${NAME}
         PRIVATE 
             ${PostgreSQL_SERVER_INCLUDE_DIRS}
             ${CMAKE_CURRENT_SOURCE_DIR}
     )
+    
+    target_compile_definitions(${NAME} PRIVATE POSTGRESQL_EXTENSION)
 
     # Generate control file
     set(_control_file "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.control")

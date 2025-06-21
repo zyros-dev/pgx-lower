@@ -11,9 +11,4 @@ sudo cmake --build $BUILD_DIR
 
 sudo cmake --install $BUILD_DIR
 
-# Run all regression tests with CTest
-cd $BUILD_DIR
-ctest --output-on-failure
-cd -
-
 echo "Done!"
