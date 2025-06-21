@@ -11,6 +11,11 @@ using ExternalFunction = std::function<int64_t()>;
 
 bool run_mlir_core(int64_t intValue, MLIRLogger& logger);
 bool run_mlir_with_external_func(int64_t intValue, const ExternalFunction& externalFunc, MLIRLogger& logger);
+bool run_mlir_with_multi_tuple_scan(const ExternalFunction& externalFunc, MLIRLogger& logger);
+
+// New: MLIR-native data processing
+bool run_mlir_with_direct_data_access(void* dataPtr, size_t dataSize, MLIRLogger& logger);
+bool run_mlir_streaming_processor(const char* filePath, MLIRLogger& logger);
 
 #ifndef POSTGRESQL_EXTENSION
 bool run_mlir_test(int64_t intValue);

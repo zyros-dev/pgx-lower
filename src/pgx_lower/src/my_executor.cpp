@@ -103,7 +103,8 @@ auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc) -> void
         return get_next_tuple();
     };
     
-    mlir_runner::run_mlir_with_external_func(0, tupleReader, logger);
+    // Use multi-tuple scan to process all tuples and sum their values
+    mlir_runner::run_mlir_with_multi_tuple_scan(tupleReader, logger);
     
     g_scan_context = nullptr;
 }

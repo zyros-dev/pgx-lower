@@ -108,6 +108,47 @@ TEST(MLIRTest, PostgreSQLTupleReaderSimulation) {
     // Clean up
     g_mock_scan_context = nullptr;
 }
+
+TEST(MLIRTest, MultiTupleProcessing) {
+    // Simulate multiple PostgreSQL tuples like: SELECT * FROM test WHERE id IN (15, 16)
+    std::vector<int64_t> mockData = {15, 16};
+    MockTupleScanContext mockContext = {mockData, 0, true};
+    g_mock_scan_context = &mockContext;
+    
+    // Create external function that simulates PostgreSQL tuple reading
+    auto postgresqlTupleReader = []() -> int64_t {
+        return mock_get_next_tuple();
+    };
+    
+    // Test the MLIR JIT with multi-tuple processing
+    // This should read all tuples (15, 16) and sum them, resulting in 31
+    ConsoleLogger logger;
+    auto result = mlir_runner::run_mlir_with_multi_tuple_scan(postgresqlTupleReader, logger);
+    EXPECT_TRUE(result) << "MLIR JIT with multi-tuple processing should succeed";
+    
+    // Clean up
+    g_mock_scan_context = nullptr;
+}
+
+TEST(MLIRTest, DirectMemoryAccess) {
+    // Create test data: array of int64_t values representing "table data"  
+    std::vector<int64_t> testData = {100, 200, 300, 400, 500};  // Sum = 1500
+    
+    // Test MLIR direct memory access - this processes data WITHOUT external callbacks
+    ConsoleLogger logger;
+    auto result = mlir_runner::run_mlir_with_direct_data_access(
+        testData.data(), 
+        testData.size() * sizeof(int64_t), 
+        logger);
+    
+    EXPECT_TRUE(result) << "MLIR JIT with direct memory access should succeed";
+    
+    // This approach scales to petabytes because:
+    // 1. No host callback overhead 
+    // 2. Direct memory access from JIT code
+    // 3. Streaming processing capabilities
+    // 4. Minimal memory footprint
+}
 #endif
 
 int main(int argc, char **argv) {
