@@ -1,6 +1,6 @@
 # pgx_lower Makefile
 
-.PHONY: help build clean test install debug-start debug-stop all
+.PHONY: help build clean test install psql-start debug-stop all format-check format-fix
 
 BUILD_DIR = build
 CMAKE_GENERATOR = Ninja
@@ -14,8 +14,10 @@ help:
 	@echo "  clean        - Clean build directory"
 	@echo "  test         - Build, install, and run tests"
 	@echo "  install      - Build and install the extension"
-	@echo "  debug-start  - Start PostgreSQL for debugging"
+	@echo "  psql-start   - Start PostgreSQL for debugging"
 	@echo "  debug-stop   - Stop debugging processes"
+	@echo "  format-check - Check clang-format errors in source code"
+	@echo "  format-fix   - Fix clang-format errors in source code"
 	@echo "  all          - Build the project (default)"
 
 build:
@@ -62,4 +64,20 @@ rebuild:
 unit-test: build
 	@echo "Running unit tests..."
 	cd $(BUILD_DIR) && ctest --output-on-failure -R mlir_unit_test && cd -
-	@echo "Unit tests completed!" 
+	@echo "Unit tests completed!"
+
+format-check:
+	@echo "Checking clang-format errors in source code..."
+	@echo "Files with formatting issues:"
+	@find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | xargs clang-format --dry-run --Werror 2>/dev/null || \
+		find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | while read file; do \
+			if ! clang-format --dry-run --Werror "$$file" >/dev/null 2>&1; then \
+				echo "  $$file"; \
+			fi; \
+		done
+	@echo "Format check completed!"
+
+format-fix:
+	@echo "Fixing clang-format errors in source code..."
+	@find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | xargs clang-format -i
+	@echo "Format fix completed!"
