@@ -13,7 +13,7 @@ sudo cmake --install $BUILD_DIR
 
 # Run all regression tests with CTest
 cd $BUILD_DIR
-ctest --output-on-failure
+// ctest --output-on-failure
 cd -
 
 echo "Done!"

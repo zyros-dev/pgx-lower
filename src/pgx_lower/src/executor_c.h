@@ -1,6 +1,9 @@
 #ifndef EXECUTOR_C_H
 #define EXECUTOR_C_H
 
+// Prevent libintl.h conflicts with PostgreSQL macros
+#define ENABLE_NLS 0
+
 #ifdef __cplusplus
 extern "C" {
 #endif

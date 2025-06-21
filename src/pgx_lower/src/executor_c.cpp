@@ -1,11 +1,25 @@
-#include "executor_c.h"
-#include "my_executor.h"
-#include "postgres.h"
-#include "fmgr.h"
-#include "mlir/IR/MLIRContext.h"
+// Include system and MLIR headers first to avoid libintl.h conflicts
 #include <execinfo.h>
 #include <exception>
 #include <sstream>
+#include "mlir/IR/MLIRContext.h"
+
+// Prevent gettext macro conflicts
+#ifdef gettext
+#undef gettext
+#endif
+#ifdef dgettext  
+#undef dgettext
+#endif
+#ifdef ngettext
+#undef ngettext
+#endif
+#ifdef dngettext
+#undef dngettext
+#endif
+
+#include "executor_c.h"
+#include "my_executor.h"
 
 extern "C" {
 
