@@ -10,14 +10,14 @@ namespace mlir_runner {
 using ExternalFunction = std::function<int64_t()>;
 
 // PostgreSQL Integration - Main entry point called by my_executor.cpp
-bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger);
+auto run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) -> bool;
 
 // Core MLIR compilation and execution engine
-bool run_mlir_core(int64_t intValue, MLIRLogger& logger);
+auto run_mlir_core(int64_t intValue, MLIRLogger& logger) -> bool;
 
 // Unit Test Interface - Only available when building as standalone library
 #ifndef POSTGRESQL_EXTENSION
-bool run_mlir_test(int64_t intValue);
+auto run_mlir_test(int64_t intValue) -> bool;
 #endif
 
 } // namespace mlir_runner

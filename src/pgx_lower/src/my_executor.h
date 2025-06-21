@@ -31,7 +31,7 @@ auto run_mlir(int64_t intValue) -> void;
 
 class MyCppExecutor {
    public:
-    static bool execute(const QueryDesc* plan);
+    bool execute(const QueryDesc* plan);
 };
 
 #endif // __cplusplus

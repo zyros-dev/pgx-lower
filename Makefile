@@ -1,6 +1,6 @@
 # pgx_lower Makefile
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands
 
 # Build directories for different test types
 BUILD_DIR = build
@@ -84,16 +84,23 @@ utest: build-utest
 	@echo "Unit tests completed!"
 
 fcheck:
-	@echo "Checking clang-format errors in source code..."
-	@find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | while read file; do \
-		if ! clang-format --dry-run --Werror "$$file" >/dev/null 2>&1; then \
-			echo "  $$file"; \
-			clang-format --dry-run --Werror "$$file" || true; \
-		fi; \
-	done
-	@echo "Format check completed!"
+	@echo "Checking clang-format and clang-tidy errors in source code..."
+	@echo "=== Format Check ==="
+	@find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | xargs clang-format --dry-run --Werror || true
+	@echo "=== Tidy Check (Parallel) ==="
+	run-clang-tidy -j 8 -header-filter='.*' || true
+	@echo "Format and tidy check completed!"
 
 ffix:
-	@echo "Fixing clang-format errors in source code..."
+	@echo "Fixing clang-format and clang-tidy errors in source code..."
+	@echo "=== Format Fix ==="
 	@find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | xargs clang-format -i
-	@echo "Format fix completed!"
+	@echo "=== Tidy Fix (Parallel) ==="
+	run-clang-tidy -j 8 -fix -fix-errors -header-filter='.*' || true
+	@echo "Format and tidy fix completed!"
+
+compile_commands:
+	@echo "Generating compile_commands.json..."
+	cmake -S . -B $(BUILD_DIR) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+	@ln -sf $(BUILD_DIR)/compile_commands.json compile_commands.json
+	@echo "compile_commands.json generated and symlinked to project root."

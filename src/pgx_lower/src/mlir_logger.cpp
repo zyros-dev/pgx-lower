@@ -13,7 +13,7 @@ void ConsoleLogger::debug(const std::string& message) {
     std::cout << "[DEBUG] " << message << std::endl;
 }
 
-// Only compile when PostgreSQL is available
+// Only compile when PostgresSQL is available
 #ifdef HAVE_POSTGRESQL
 extern "C" {
 #include "postgres.h"

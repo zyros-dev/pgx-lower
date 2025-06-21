@@ -30,3 +30,4 @@ CompileFlags:
     - "-D__USE_ISOC11"
     - "-D__USE_ISOC99"
     - "-D__USE_ISOC95"
+  CompilationDatabase: ./compile_commands.json

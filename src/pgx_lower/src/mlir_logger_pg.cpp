@@ -2,7 +2,7 @@
 
 // Prevent libintl.h conflicts with PostgreSQL macros
 // This is a bit strange to me - so LLVM drags in some macros from libintl.h
-// and those conflict with things inside of libintl.h. So this should resolve
+// and those conflict with things inside libintl.h. So this should resolve
 // those problems?
 #define ENABLE_NLS 0
 

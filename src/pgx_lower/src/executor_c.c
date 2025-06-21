@@ -10,7 +10,7 @@
 
 PG_MODULE_MAGIC;
 
-static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL;
+static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL; // NOLINT(*-avoid-non-const-global-variables)
 
 static bool try_cpp_executor_internal(QueryDesc *queryDesc) {
     elog(NOTICE, "Calling C++ executor from C...");
@@ -18,14 +18,16 @@ static bool try_cpp_executor_internal(QueryDesc *queryDesc) {
 }
 
 static void custom_executor(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once) {
-    elog(NOTICE, "Custom executor is being executed in C! Ahah!");
+    elog(NOTICE, "Custom executor is being executed in C!");
 
     try_cpp_executor_internal(queryDesc);
 
-    if (prev_ExecutorRun_hook)
+    if (prev_ExecutorRun_hook) {
         prev_ExecutorRun_hook(queryDesc, direction, count, execute_once);
-    else
+    }
+    else {
         standard_ExecutorRun(queryDesc, direction, count, execute_once);
+    }
 }
 
 static void segfault_handler(int sig) {

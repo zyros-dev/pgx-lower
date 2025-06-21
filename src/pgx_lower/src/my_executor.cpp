@@ -53,10 +53,10 @@ void registerConversionPipeline() {
 
 // Global context for tuple scanning - used by external function
 struct TupleScanContext {
-    TableScanDesc scanDesc;
-    TupleDesc tupdesc;
-    bool hasMore;
-    int64_t currentValue;
+    TableScanDesc scanDesc{};
+    TupleDesc tupdesc{};
+    bool hasMore{};
+    int64_t currentValue{};
 };
 
 static TupleScanContext* g_scan_context = nullptr;
@@ -99,7 +99,7 @@ extern "C" void* open_postgres_table(const char* tableName) {
             return nullptr;
         }
 
-        PostgreSQLTableHandle* handle = new PostgreSQLTableHandle();
+        auto* handle = new PostgreSQLTableHandle();
         handle->scanDesc = g_scan_context->scanDesc;
         handle->tupdesc = g_scan_context->tupdesc;
         handle->rel = nullptr;
@@ -116,7 +116,7 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         return -1;
     }
 
-    PostgreSQLTableHandle* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+    auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
     if (!handle->isOpen || !handle->scanDesc) {
         return -1;
     }
@@ -141,7 +141,7 @@ extern "C" void close_postgres_table(void* tableHandle) {
         return;
     }
 
-    PostgreSQLTableHandle* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+    auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
     handle->isOpen = false;
     delete handle;
 }

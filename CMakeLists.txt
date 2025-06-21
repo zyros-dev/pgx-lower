@@ -22,6 +22,8 @@ set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 set(CMAKE_C_FLAGS_DEBUG "-g -O0")
 
+# Note: MLIR headers may produce C++20 ambiguity warnings, but they're not critical
+
 include(PostgreSQLConfig)
 find_package(PostgreSQL REQUIRED)
 find_package(LLVM REQUIRED)

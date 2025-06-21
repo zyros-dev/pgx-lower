@@ -7,4 +7,5 @@ CREATE TABLE test(id SERIAL);
 INSERT INTO test(id)
 SELECT generate_series(1, 5000);
 
+SELECT SUM(id) FROM test;
 SELECT * FROM test;

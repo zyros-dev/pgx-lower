@@ -13,7 +13,7 @@ extern "C" {
 #include "fmgr.h"
 
 // Direct C++ function call
-bool try_cpp_executor_direct(QueryDesc* queryDesc);
+bool try_cpp_executor_direct(const QueryDesc* queryDesc);
 
 // PostgreSQL function interface
 Datum try_cpp_executor(PG_FUNCTION_ARGS);

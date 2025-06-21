@@ -25,9 +25,8 @@ extern "C" {
 
 static void log_cpp_backtrace() {
     void* array[32];
-    size_t size = backtrace(array, 32);
-    char** strings = backtrace_symbols(array, size);
-    if (strings) {
+    const size_t size = backtrace(array, 32);
+    if (char** strings = backtrace_symbols(array, size)) {
         std::ostringstream oss;
         oss << "C++ backtrace:" << std::endl;
         for (size_t i = 0; i < size; ++i) {
@@ -38,12 +37,15 @@ static void log_cpp_backtrace() {
     }
 }
 
-bool try_cpp_executor_direct(QueryDesc* queryDesc) {
+bool try_cpp_executor_direct(const QueryDesc* queryDesc) {
     try {
         // Test MLIR linking by creating a context
         mlir::MLIRContext context;
         elog(NOTICE, "Successfully created MLIR context!");
-        return MyCppExecutor::execute(queryDesc);
+        
+        // Create an instance of MyCppExecutor and call execute
+        MyCppExecutor executor;
+        return executor.execute(queryDesc);
     } catch (const std::exception& ex) {
         elog(ERROR, "C++ exception: %s", ex.what());
         log_cpp_backtrace();
@@ -57,8 +59,8 @@ bool try_cpp_executor_direct(QueryDesc* queryDesc) {
 
 PG_FUNCTION_INFO_V1(try_cpp_executor);
 Datum try_cpp_executor(PG_FUNCTION_ARGS) {
-    QueryDesc* queryDesc = (QueryDesc*)PG_GETARG_POINTER(0);
-    bool result = try_cpp_executor_direct(queryDesc);
+    const auto queryDesc = reinterpret_cast<QueryDesc*>(PG_GETARG_POINTER(0));
+    const bool result = try_cpp_executor_direct(queryDesc);
     PG_RETURN_BOOL(result);
 }
 
