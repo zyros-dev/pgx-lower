@@ -29,6 +29,10 @@ extern "C" {
 
 struct MyCppPlan {};
 
+struct TupleScanContext;
+struct PostgreSQLTuplePassthrough;
+struct TupleStreamer;
+
 auto run_mlir(int64_t intValue) -> void;
 bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const QueryDesc* queryDesc);
 

@@ -74,6 +74,10 @@ extern "C" void close_postgres_table(void* tableHandle) {
     // Nothing to do for mock implementation
 }
 
+extern "C" bool add_tuple_to_result(int64_t value) {
+    return true;
+}
+
 
 TEST(MLIRTest, PostgreSQLTableScanInMLIR) {
     std::vector<int64_t> mockData = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};

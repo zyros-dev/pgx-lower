@@ -1,5 +1,6 @@
 #include "mlir_runner.h"
 #include "mlir_logger.h"
+#include "mlir_c_interface.h"
 
 #include <fstream>
 
@@ -46,11 +47,6 @@ void registerConversionPipeline() {
         pm.addPass(mlir::createConvertSCFToCFPass());
     });
 }
-
-extern "C" void* open_postgres_table(const char* tableName);
-extern "C" int64_t read_next_tuple_from_table(void* tableHandle);
-extern "C" void close_postgres_table(void* tableHandle);
-extern "C" bool add_tuple_to_result(int64_t value);
 
 bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     mlir::MLIRContext context;
