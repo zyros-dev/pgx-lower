@@ -18,6 +18,8 @@ extern "C" {
 #include "postgres.h"
 #include "nodes/execnodes.h"
 #include <executor/execdesc.h>
+#include "access/relscan.h"
+#include "catalog/pg_type.h"
 
 #ifdef __cplusplus
 }
@@ -28,6 +30,7 @@ extern "C" {
 struct MyCppPlan {};
 
 auto run_mlir(int64_t intValue) -> void;
+bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const QueryDesc* queryDesc);
 
 class MyCppExecutor {
    public:

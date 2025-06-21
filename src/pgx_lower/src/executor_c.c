@@ -20,13 +20,18 @@ static bool try_cpp_executor_internal(QueryDesc *queryDesc) {
 static void custom_executor(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once) {
     elog(NOTICE, "Custom executor is being executed in C!");
 
-    try_cpp_executor_internal(queryDesc);
-
-    if (prev_ExecutorRun_hook) {
-        prev_ExecutorRun_hook(queryDesc, direction, count, execute_once);
-    }
-    else {
-        standard_ExecutorRun(queryDesc, direction, count, execute_once);
+    bool mlir_handled = try_cpp_executor_internal(queryDesc);
+    
+    if (!mlir_handled) {
+        elog(NOTICE, "MLIR couldn't handle query, falling back to standard executor");
+        if (prev_ExecutorRun_hook) {
+            prev_ExecutorRun_hook(queryDesc, direction, count, execute_once);
+        }
+        else {
+            standard_ExecutorRun(queryDesc, direction, count, execute_once);
+        }
+    } else {
+        elog(NOTICE, "MLIR successfully handled the query");
     }
 }
 

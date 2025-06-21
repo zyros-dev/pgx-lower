@@ -50,6 +50,7 @@ void registerConversionPipeline() {
 extern "C" void* open_postgres_table(const char* tableName);
 extern "C" int64_t read_next_tuple_from_table(void* tableHandle);
 extern "C" void close_postgres_table(void* tableHandle);
+extern "C" bool add_tuple_to_result(int64_t value);
 
 bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     mlir::MLIRContext context;
@@ -89,6 +90,11 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     closeTableFunc.setPrivate();
     module.push_back(closeTableFunc);
 
+    auto addTupleType = builder.getFunctionType({builder.getI64Type()}, {builder.getI1Type()});
+    auto addTupleFunc = mlir::func::FuncOp::create(loc, "add_tuple_to_result", addTupleType);
+    addTupleFunc.setPrivate();
+    module.push_back(addTupleFunc);
+
     auto mainFuncType = builder.getFunctionType({}, {builder.getI64Type()});
     auto mainFunc = mlir::func::FuncOp::create(loc, "main", mainFuncType);
     mainFunc.setPublic();
@@ -107,7 +113,6 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     // Use proper scf.while loop to read entire table until end-of-table marker (-2)
     auto oneConst = builder.create<mlir::arith::ConstantOp>(loc, builder.getBoolAttr(true));
     
-    // Initial values for the while loop: (continue_flag, current_sum)
     llvm::SmallVector<mlir::Value> initialArgs;
     initialArgs.push_back(oneConst);
     initialArgs.push_back(zeroConst);
@@ -127,28 +132,23 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     // Always continue if the flag is true (we'll update this in the after region)
     builder.create<mlir::scf::ConditionOp>(loc, continueFlag, beforeRegion.front().getArguments());
     
-    // After region: read tuple and update sum and continue flag
     auto& afterRegion = whileOp.getAfter();
     builder.createBlock(&afterRegion, afterRegion.end(), argTypes,
                        {builder.getUnknownLoc(), builder.getUnknownLoc()});
     builder.setInsertionPointToStart(&afterRegion.front());
     
-    mlir::Value loopSum = afterRegion.front().getArgument(1);
+    mlir::Value tupleCount = afterRegion.front().getArgument(1);
     
-    // Read next tuple
     auto readCall = builder.create<mlir::func::CallOp>(loc, readTupleFunc, mlir::ValueRange{tableHandle});
     mlir::Value tupleValue = readCall.getResult(0);
     
-    // Check if end of table
-    auto isEndOfTable = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, 
+    auto isEndOfTable = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq,
                                                            tupleValue, negTwoConst);
     
-    // If not end of table, add to sum and continue; otherwise keep current sum and stop
-    auto ifOp = builder.create<mlir::scf::IfOp>(loc, 
+    auto ifOp = builder.create<mlir::scf::IfOp>(loc,
                                                llvm::ArrayRef<mlir::Type>{builder.getI1Type(), builder.getI64Type()},
                                                isEndOfTable, true);
     
-    // If end of table: stop loop, return current sum
     auto& thenRegion = ifOp.getThenRegion();
     if (thenRegion.empty()) {
         builder.createBlock(&thenRegion);
@@ -157,20 +157,24 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     auto falseConst = builder.create<mlir::arith::ConstantOp>(loc, builder.getBoolAttr(false));
     llvm::SmallVector<mlir::Value> thenYieldValues;
     thenYieldValues.push_back(falseConst);
-    thenYieldValues.push_back(loopSum);
+    thenYieldValues.push_back(tupleCount);
     builder.create<mlir::scf::YieldOp>(loc, thenYieldValues);
     
-    // If not end of table: continue loop, add tuple to sum
     auto& elseRegion = ifOp.getElseRegion();
     if (elseRegion.empty()) {
         builder.createBlock(&elseRegion);
     }
     builder.setInsertionPointToStart(&elseRegion.front());
     auto trueConst = builder.create<mlir::arith::ConstantOp>(loc, builder.getBoolAttr(true));
-    auto newSum = builder.create<mlir::arith::AddIOp>(loc, loopSum, tupleValue);
+    
+    auto addTupleCall = builder.create<mlir::func::CallOp>(loc, addTupleFunc, mlir::ValueRange{tupleValue});
+    
+    auto oneIntConst = builder.create<mlir::arith::ConstantOp>(loc, builder.getI64IntegerAttr(1));
+    auto newCount = builder.create<mlir::arith::AddIOp>(loc, tupleCount, oneIntConst);
+    
     llvm::SmallVector<mlir::Value> elseYieldValues;
     elseYieldValues.push_back(trueConst);
-    elseYieldValues.push_back(newSum.getResult());
+    elseYieldValues.push_back(newCount.getResult());
     builder.create<mlir::scf::YieldOp>(loc, elseYieldValues);
     
     // Yield the results back to the while condition
@@ -180,12 +184,11 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     // Continue after the while loop
     builder.setInsertionPointAfter(whileOp);
 
-    // Extract the final sum from the while loop results (second result)
-    mlir::Value finalSum = whileOp.getResult(1);
+    mlir::Value finalCount = whileOp.getResult(1);
 
     builder.create<mlir::func::CallOp>(loc, closeTableFunc, mlir::ValueRange{tableHandle});
 
-    builder.create<mlir::func::ReturnOp>(loc, finalSum);
+    builder.create<mlir::func::ReturnOp>(loc, finalCount);
 
     module.push_back(mainFunc);
 
@@ -247,6 +250,9 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
             llvm::JITSymbolFlags::Exported);
         symbolMap[interner("close_postgres_table")] = llvm::orc::ExecutorSymbolDef(
             llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&close_postgres_table)),
+            llvm::JITSymbolFlags::Exported);
+        symbolMap[interner("add_tuple_to_result")] = llvm::orc::ExecutorSymbolDef(
+            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&add_tuple_to_result)),
             llvm::JITSymbolFlags::Exported);
         return symbolMap;
     });

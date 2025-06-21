@@ -47,9 +47,11 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-add_mlir_unit_test(mlir_unit_test 
-    test/mlir_unit_test.cpp
-    src/pgx_lower/src/mlir_runner.cpp
-    src/pgx_lower/src/mlir_logger.cpp
-)
-target_link_libraries(mlir_unit_test PRIVATE gtest gtest_main)
+if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
+    add_mlir_unit_test(mlir_unit_test 
+        test/mlir_unit_test.cpp
+        src/pgx_lower/src/mlir_runner.cpp
+        src/pgx_lower/src/mlir_logger.cpp
+    )
+    target_link_libraries(mlir_unit_test PRIVATE gtest gtest_main)
+endif()

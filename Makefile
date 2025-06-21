@@ -19,7 +19,7 @@ build:
 
 build-ptest:
 	@echo "Building project for PostgreSQL tests..."
-	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
+	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DBUILD_ONLY_EXTENSION=ON
 	cmake --build $(BUILD_DIR_PTEST)
 	@echo "PostgreSQL test build completed!"
 

@@ -11,6 +11,7 @@ extern "C" {
 #include "catalog/pg_type.h"
 #include "executor/tuptable.h"
 #include "postgres.h"
+#include "tcop/dest.h"
 #include "utils/elog.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -59,7 +60,43 @@ struct TupleScanContext {
     int64_t currentValue{};
 };
 
+// Structure to stream tuples directly to PostgreSQL without buffering
+struct TupleStreamer {
+    DestReceiver* dest;
+    TupleTableSlot* slot;
+    bool isActive;
+    
+    TupleStreamer() : dest(nullptr), slot(nullptr), isActive(false) {}
+    
+    void initialize(DestReceiver* destReceiver, TupleTableSlot* tupleSlot) {
+        dest = destReceiver;
+        slot = tupleSlot;
+        isActive = true;
+    }
+    
+    bool streamTuple(int64_t value) {
+        if (!isActive || !dest || !slot) {
+            return false;
+        }
+        
+        ExecClearTuple(slot);
+        slot->tts_values[0] = Int64GetDatum(value);
+        slot->tts_isnull[0] = false;
+        slot->tts_nvalid = 1;
+        ExecStoreVirtualTuple(slot);
+        
+        return dest->receiveSlot(slot, dest);
+    }
+    
+    void shutdown() {
+        isActive = false;
+        dest = nullptr;
+        slot = nullptr;
+    }
+};
+
 static TupleScanContext* g_scan_context = nullptr;
+static TupleStreamer g_tuple_streamer;
 
 extern "C" int64_t get_next_tuple() {
     if (!g_scan_context) {
@@ -146,15 +183,34 @@ extern "C" void close_postgres_table(void* tableHandle) {
     delete handle;
 }
 
-auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc) -> void {
+extern "C" bool add_tuple_to_result(int64_t value) {
+    return g_tuple_streamer.streamTuple(value);
+}
+
+bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const QueryDesc* queryDesc) {
     PostgreSQLLogger logger;
+
+    DestReceiver* dest = queryDesc->dest;
+    TupleTableSlot* slot = MakeSingleTupleTableSlot(tupdesc, &TTSOpsHeapTuple);
+
+    dest->rStartup(dest, queryDesc->operation, tupdesc);
+
+    g_tuple_streamer.initialize(dest, slot);
 
     TupleScanContext scanContext = {scanDesc, tupdesc, true, 0};
     g_scan_context = &scanContext;
 
-    mlir_runner::run_mlir_postgres_table_scan("current_table", logger);
-
+    bool mlir_success = mlir_runner::run_mlir_postgres_table_scan("current_table", logger);
+    
+    // Cleanup
     g_scan_context = nullptr;
+    g_tuple_streamer.shutdown();
+
+    dest->rShutdown(dest);
+
+    ExecDropSingleTupleTableSlot(slot);
+    
+    return mlir_success;
 }
 
 bool MyCppExecutor::execute(const QueryDesc* plan) {
@@ -187,10 +243,10 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
     TableScanDesc scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
     TupleDesc tupdesc = RelationGetDescr(rel);
 
-    run_mlir_with_tuple_scan(scanDesc, tupdesc);
+    bool mlir_success = run_mlir_with_tuple_scan(scanDesc, tupdesc, plan);
 
     table_endscan(scanDesc);
     table_close(rel, AccessShareLock);
 
-    return true;
+    return mlir_success;
 }
