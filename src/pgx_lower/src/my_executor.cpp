@@ -46,7 +46,7 @@ extern "C" {
 void registerConversionPipeline() {
     mlir::PassPipelineRegistration<>(
         "convert-to-llvm", "Convert MLIR to LLVM dialect",
-        [](mlir::OpPassManager &pm) {
+        [](mlir::OpPassManager& pm) {
             pm.addPass(mlir::createConvertFuncToLLVMPass());
             pm.addPass(mlir::createArithToLLVMConversionPass());
             pm.addPass(mlir::createConvertSCFToCFPass());
@@ -67,24 +67,25 @@ extern "C" int64_t get_next_tuple() {
     if (!g_scan_context) {
         return -1;
     }
-    
-    HeapTuple tuple = heap_getnext(g_scan_context->scanDesc, ForwardScanDirection);
+
+    HeapTuple tuple =
+        heap_getnext(g_scan_context->scanDesc, ForwardScanDirection);
     if (tuple == NULL) {
         g_scan_context->hasMore = false;
         return -2;
     }
-    
+
     bool isNull;
     Datum value = heap_getattr(tuple, 1, g_scan_context->tupdesc, &isNull);
-    
+
     if (isNull) {
         return -3;
     }
-    
+
     int64_t intValue = DatumGetInt64(value);
     g_scan_context->currentValue = intValue;
     g_scan_context->hasMore = true;
-    
+
     return intValue;
 }
 
@@ -100,13 +101,13 @@ extern "C" void* open_postgres_table(const char* tableName) {
         if (!g_scan_context) {
             return nullptr;
         }
-        
+
         PostgreSQLTableHandle* handle = new PostgreSQLTableHandle();
         handle->scanDesc = g_scan_context->scanDesc;
         handle->tupdesc = g_scan_context->tupdesc;
         handle->rel = nullptr;
         handle->isOpen = true;
-        
+
         return handle;
     } catch (...) {
         return nullptr;
@@ -117,24 +118,25 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     if (!tableHandle) {
         return -1;
     }
-    
-    PostgreSQLTableHandle* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+
+    PostgreSQLTableHandle* handle =
+        static_cast<PostgreSQLTableHandle*>(tableHandle);
     if (!handle->isOpen || !handle->scanDesc) {
         return -1;
     }
-    
+
     HeapTuple tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
     if (tuple == NULL) {
         return -2;
     }
-    
+
     bool isNull;
     Datum value = heap_getattr(tuple, 1, handle->tupdesc, &isNull);
-    
+
     if (isNull) {
         return -3;
     }
-    
+
     return DatumGetInt64(value);
 }
 
@@ -142,24 +144,26 @@ extern "C" void close_postgres_table(void* tableHandle) {
     if (!tableHandle) {
         return;
     }
-    
-    PostgreSQLTableHandle* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+
+    PostgreSQLTableHandle* handle =
+        static_cast<PostgreSQLTableHandle*>(tableHandle);
     handle->isOpen = false;
     delete handle;
 }
 
-auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc) -> void {
+auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc)
+    -> void {
     PostgreSQLLogger logger;
-    
+
     TupleScanContext scanContext = {scanDesc, tupdesc, true, 0};
     g_scan_context = &scanContext;
-    
+
     mlir_runner::run_mlir_postgres_table_scan("current_table", logger);
-    
+
     g_scan_context = nullptr;
 }
 
-bool MyCppExecutor::execute(const QueryDesc *plan) {
+bool MyCppExecutor::execute(const QueryDesc* plan) {
     elog(NOTICE, "LLVM version: %d.%d.%d", LLVM_VERSION_MAJOR,
          LLVM_VERSION_MINOR, LLVM_VERSION_PATCH);
     if (!plan) {
@@ -176,8 +180,8 @@ bool MyCppExecutor::execute(const QueryDesc *plan) {
         return false;
     }
 
-    PlannedStmt *stmt = plan->plannedstmt;
-    Plan *rootPlan = stmt->planTree;
+    PlannedStmt* stmt = plan->plannedstmt;
+    Plan* rootPlan = stmt->planTree;
 
     if (rootPlan->type != T_SeqScan) {
         elog(NOTICE,
@@ -185,9 +189,9 @@ bool MyCppExecutor::execute(const QueryDesc *plan) {
         return false;
     }
 
-    SeqScan *scan = (SeqScan *)rootPlan;
-    RangeTblEntry *rte =
-        (RangeTblEntry *)list_nth(stmt->rtable, scan->scan.scanrelid - 1);
+    SeqScan* scan = (SeqScan*)rootPlan;
+    RangeTblEntry* rte =
+        (RangeTblEntry*)list_nth(stmt->rtable, scan->scan.scanrelid - 1);
     Relation rel = table_open(rte->relid, AccessShareLock);
 
     TableScanDesc scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);

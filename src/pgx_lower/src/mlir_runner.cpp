@@ -57,7 +57,8 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     mlir::MLIRContext context;
 
     std::ostringstream oss;
-    oss << "Scanning PostgreSQL table '" << tableName << "' directly in MLIR JIT";
+    oss << "Scanning PostgreSQL table '" << tableName
+        << "' directly in MLIR JIT";
     logger.debug(oss.str());
 
     context.getOrLoadDialect<mlir::arith::ArithDialect>();
@@ -77,17 +78,21 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     auto stringPtrType = builder.getI64Type();
 
     auto openTableType = builder.getFunctionType({stringPtrType}, {ptrType});
-    auto openTableFunc = mlir::func::FuncOp::create(loc, "open_postgres_table", openTableType);
+    auto openTableFunc =
+        mlir::func::FuncOp::create(loc, "open_postgres_table", openTableType);
     openTableFunc.setPrivate();
     module.push_back(openTableFunc);
 
-    auto readTupleType = builder.getFunctionType({ptrType}, {builder.getI64Type()});
-    auto readTupleFunc = mlir::func::FuncOp::create(loc, "read_next_tuple_from_table", readTupleType);
+    auto readTupleType =
+        builder.getFunctionType({ptrType}, {builder.getI64Type()});
+    auto readTupleFunc = mlir::func::FuncOp::create(
+        loc, "read_next_tuple_from_table", readTupleType);
     readTupleFunc.setPrivate();
     module.push_back(readTupleFunc);
 
     auto closeTableType = builder.getFunctionType({ptrType}, {});
-    auto closeTableFunc = mlir::func::FuncOp::create(loc, "close_postgres_table", closeTableType);
+    auto closeTableFunc =
+        mlir::func::FuncOp::create(loc, "close_postgres_table", closeTableType);
     closeTableFunc.setPrivate();
     module.push_back(closeTableFunc);
 
@@ -100,7 +105,7 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     auto zeroConst = builder.create<mlir::arith::ConstantOp>(
         loc, builder.getI64IntegerAttr(0));
     auto negTwoConst = builder.create<mlir::arith::ConstantOp>(
-        loc, builder.getI64IntegerAttr(-2)); // End of table marker
+        loc, builder.getI64IntegerAttr(-2));  // End of table marker
     auto tableNamePtr = builder.create<mlir::arith::ConstantOp>(
         loc, builder.getI64IntegerAttr(reinterpret_cast<int64_t>(tableName)));
 
@@ -110,19 +115,19 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
 
     // Use unrolled scf.if pattern like working tests - supports large tables
     mlir::Value currentSum = zeroConst;
-    
+
     // Generate 100 iterations to handle large tables
     for (int i = 0; i < 100; ++i) {
         auto readCall = builder.create<mlir::func::CallOp>(
             loc, readTupleFunc, mlir::ValueRange{tableHandle});
         mlir::Value tupleValue = readCall.getResult(0);
-        
+
         auto isEndOfTable = builder.create<mlir::arith::CmpIOp>(
             loc, mlir::arith::CmpIPredicate::eq, tupleValue, negTwoConst);
-        
-        auto ifOp = builder.create<mlir::scf::IfOp>(
-            loc, builder.getI64Type(), isEndOfTable, true);
-        
+
+        auto ifOp = builder.create<mlir::scf::IfOp>(loc, builder.getI64Type(),
+                                                    isEndOfTable, true);
+
         // If end of table, yield current sum
         auto& thenRegion = ifOp.getThenRegion();
         if (thenRegion.empty()) {
@@ -130,30 +135,33 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
         }
         builder.setInsertionPointToStart(&thenRegion.front());
         builder.create<mlir::scf::YieldOp>(loc, currentSum);
-        
+
         // Otherwise, add tuple value to sum
         auto& elseRegion = ifOp.getElseRegion();
         if (elseRegion.empty()) {
             builder.createBlock(&elseRegion);
         }
         builder.setInsertionPointToStart(&elseRegion.front());
-        auto newSum = builder.create<mlir::arith::AddIOp>(loc, currentSum, tupleValue);
+        auto newSum =
+            builder.create<mlir::arith::AddIOp>(loc, currentSum, tupleValue);
         builder.create<mlir::scf::YieldOp>(loc, newSum.getResult());
-        
+
         builder.setInsertionPointAfter(ifOp);
         currentSum = ifOp.getResult(0);
     }
-    
+
     mlir::Value finalSum = currentSum;
 
-    builder.create<mlir::func::CallOp>(loc, closeTableFunc, mlir::ValueRange{tableHandle});
+    builder.create<mlir::func::CallOp>(loc, closeTableFunc,
+                                       mlir::ValueRange{tableHandle});
 
     builder.create<mlir::func::ReturnOp>(loc, finalSum);
 
     module.push_back(mainFunc);
 
     if (mlir::failed(mlir::verify(module))) {
-        logger.error("MLIR module verification failed for PostgreSQL table scan");
+        logger.error(
+            "MLIR module verification failed for PostgreSQL table scan");
         return false;
     }
 
@@ -181,11 +189,11 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
 
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
-    
+
     mlir::DialectRegistry registry;
     mlir::registerAllToLLVMIRTranslations(registry);
     context.appendDialectRegistry(registry);
-    
+
     mlir::registerLLVMDialectTranslation(context);
     mlir::registerBuiltinDialectTranslation(context);
 
@@ -240,6 +248,5 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
 
     return true;
 }
-
 
 }  // namespace mlir_runner

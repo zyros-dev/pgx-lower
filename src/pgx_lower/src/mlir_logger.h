@@ -4,7 +4,7 @@
 #include <string>
 
 class MLIRLogger {
-public:
+   public:
     virtual ~MLIRLogger() = default;
     virtual void notice(const std::string& message) = 0;
     virtual void error(const std::string& message) = 0;
@@ -12,17 +12,17 @@ public:
 };
 
 class ConsoleLogger : public MLIRLogger {
-public:
+   public:
     void notice(const std::string& message) override;
     void error(const std::string& message) override;
     void debug(const std::string& message) override;
 };
 
 class PostgreSQLLogger : public MLIRLogger {
-public:
+   public:
     void notice(const std::string& message) override;
     void error(const std::string& message) override;
     void debug(const std::string& message) override;
 };
 
-#endif // MLIR_LOGGER_H
+#endif  // MLIR_LOGGER_H

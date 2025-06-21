@@ -18,7 +18,7 @@
 #include <postgres.h>
 
 typedef struct Quaternion {
-  double a, b, c, d;
+    double a, b, c, d;
 } Quaternion;
 
 #endif  // SAMPLES_QUARTERNION_H_
