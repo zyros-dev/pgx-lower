@@ -104,41 +104,84 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     auto openCall = builder.create<mlir::func::CallOp>(loc, openTableFunc, mlir::ValueRange{tableNamePtr});
     mlir::Value tableHandle = openCall.getResult(0);
 
-    // Use unrolled scf.if pattern like working tests - supports large tables
-    mlir::Value currentSum = zeroConst;
-
-    // Generate 100 iterations to handle large tables
-    for (int i = 0; i < 100; ++i) {
-        auto readCall = builder.create<mlir::func::CallOp>(loc, readTupleFunc, mlir::ValueRange{tableHandle});
-        mlir::Value tupleValue = readCall.getResult(0);
-
-        auto isEndOfTable =
-            builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, tupleValue, negTwoConst);
-
-        auto ifOp = builder.create<mlir::scf::IfOp>(loc, builder.getI64Type(), isEndOfTable, true);
-
-        // If end of table, yield current sum
-        auto& thenRegion = ifOp.getThenRegion();
-        if (thenRegion.empty()) {
-            builder.createBlock(&thenRegion);
-        }
-        builder.setInsertionPointToStart(&thenRegion.front());
-        builder.create<mlir::scf::YieldOp>(loc, currentSum);
-
-        // Otherwise, add tuple value to sum
-        auto& elseRegion = ifOp.getElseRegion();
-        if (elseRegion.empty()) {
-            builder.createBlock(&elseRegion);
-        }
-        builder.setInsertionPointToStart(&elseRegion.front());
-        auto newSum = builder.create<mlir::arith::AddIOp>(loc, currentSum, tupleValue);
-        builder.create<mlir::scf::YieldOp>(loc, newSum.getResult());
-
-        builder.setInsertionPointAfter(ifOp);
-        currentSum = ifOp.getResult(0);
+    // Use proper scf.while loop to read entire table until end-of-table marker (-2)
+    auto oneConst = builder.create<mlir::arith::ConstantOp>(loc, builder.getBoolAttr(true));
+    
+    // Initial values for the while loop: (continue_flag, current_sum)
+    llvm::SmallVector<mlir::Value> initialArgs;
+    initialArgs.push_back(oneConst);
+    initialArgs.push_back(zeroConst);
+    llvm::SmallVector<mlir::Type> argTypes = {builder.getI1Type(), builder.getI64Type()};
+    
+    auto whileOp = builder.create<mlir::scf::WhileOp>(loc, argTypes, initialArgs);
+    
+    // Before region: check if we should continue reading
+    auto& beforeRegion = whileOp.getBefore();
+    builder.createBlock(&beforeRegion, beforeRegion.end(), argTypes, 
+                       {builder.getUnknownLoc(), builder.getUnknownLoc()});
+    builder.setInsertionPointToStart(&beforeRegion.front());
+    
+    mlir::Value continueFlag = beforeRegion.front().getArgument(0);
+    mlir::Value currentSum = beforeRegion.front().getArgument(1);
+    
+    // Always continue if the flag is true (we'll update this in the after region)
+    builder.create<mlir::scf::ConditionOp>(loc, continueFlag, beforeRegion.front().getArguments());
+    
+    // After region: read tuple and update sum and continue flag
+    auto& afterRegion = whileOp.getAfter();
+    builder.createBlock(&afterRegion, afterRegion.end(), argTypes,
+                       {builder.getUnknownLoc(), builder.getUnknownLoc()});
+    builder.setInsertionPointToStart(&afterRegion.front());
+    
+    mlir::Value loopSum = afterRegion.front().getArgument(1);
+    
+    // Read next tuple
+    auto readCall = builder.create<mlir::func::CallOp>(loc, readTupleFunc, mlir::ValueRange{tableHandle});
+    mlir::Value tupleValue = readCall.getResult(0);
+    
+    // Check if end of table
+    auto isEndOfTable = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, 
+                                                           tupleValue, negTwoConst);
+    
+    // If not end of table, add to sum and continue; otherwise keep current sum and stop
+    auto ifOp = builder.create<mlir::scf::IfOp>(loc, 
+                                               llvm::ArrayRef<mlir::Type>{builder.getI1Type(), builder.getI64Type()},
+                                               isEndOfTable, true);
+    
+    // If end of table: stop loop, return current sum
+    auto& thenRegion = ifOp.getThenRegion();
+    if (thenRegion.empty()) {
+        builder.createBlock(&thenRegion);
     }
+    builder.setInsertionPointToStart(&thenRegion.front());
+    auto falseConst = builder.create<mlir::arith::ConstantOp>(loc, builder.getBoolAttr(false));
+    llvm::SmallVector<mlir::Value> thenYieldValues;
+    thenYieldValues.push_back(falseConst);
+    thenYieldValues.push_back(loopSum);
+    builder.create<mlir::scf::YieldOp>(loc, thenYieldValues);
+    
+    // If not end of table: continue loop, add tuple to sum
+    auto& elseRegion = ifOp.getElseRegion();
+    if (elseRegion.empty()) {
+        builder.createBlock(&elseRegion);
+    }
+    builder.setInsertionPointToStart(&elseRegion.front());
+    auto trueConst = builder.create<mlir::arith::ConstantOp>(loc, builder.getBoolAttr(true));
+    auto newSum = builder.create<mlir::arith::AddIOp>(loc, loopSum, tupleValue);
+    llvm::SmallVector<mlir::Value> elseYieldValues;
+    elseYieldValues.push_back(trueConst);
+    elseYieldValues.push_back(newSum.getResult());
+    builder.create<mlir::scf::YieldOp>(loc, elseYieldValues);
+    
+    // Yield the results back to the while condition
+    builder.setInsertionPointAfter(ifOp);
+    builder.create<mlir::scf::YieldOp>(loc, ifOp.getResults());
+    
+    // Continue after the while loop
+    builder.setInsertionPointAfter(whileOp);
 
-    mlir::Value finalSum = currentSum;
+    // Extract the final sum from the while loop results (second result)
+    mlir::Value finalSum = whileOp.getResult(1);
 
     builder.create<mlir::func::CallOp>(loc, closeTableFunc, mlir::ValueRange{tableHandle});
 
