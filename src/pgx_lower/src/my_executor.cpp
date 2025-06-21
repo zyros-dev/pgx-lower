@@ -60,30 +60,27 @@ struct TupleScanContext {
     int64_t currentValue{};
 };
 
-struct EnhancedTupleValues {
-    static constexpr size_t MAX_COLUMNS = 30;  // Increased for complex tables
+// Holds PostgreSQL tuple data with dual access patterns:
+// 1. MLIR gets simplified int64 values for computation/control flow
+// 2. Output preserves original PostgreSQL tuple with full type fidelity
+struct PostgreSQLTuplePassthrough {
+    HeapTuple originalTuple;          // Complete PostgreSQL tuple (ALL data preserved)
+    TupleDesc tupleDesc;              // Tuple metadata for PostgreSQL operations
     
-    HeapTuple originalTuple;
-    TupleDesc tupleDesc;
+    PostgreSQLTuplePassthrough() : originalTuple(nullptr), tupleDesc(nullptr) {}
     
-    int64_t mlirValues[MAX_COLUMNS];
-    bool isNull[MAX_COLUMNS];
-    Oid columnTypes[MAX_COLUMNS];
-    size_t numColumns;
-    
-    EnhancedTupleValues() : originalTuple(nullptr), tupleDesc(nullptr), numColumns(0) {
-        for (size_t i = 0; i < MAX_COLUMNS; i++) {
-            mlirValues[i] = 0;
-            isNull[i] = true;
-            columnTypes[i] = InvalidOid;
-        }
-    }
-    
-    ~EnhancedTupleValues() {
+    ~PostgreSQLTuplePassthrough() {
         if (originalTuple) {
             heap_freetuple(originalTuple);
             originalTuple = nullptr;
         }
+    }
+    
+    // Return a simple signal that we have a valid tuple
+    // MLIR only needs to know "continue iterating" vs "end of table"
+    // (All actual data passes through via originalTuple)
+    int64_t getIterationSignal() {
+        return originalTuple ? 1 : 0;
     }
 };
 
@@ -114,24 +111,23 @@ struct TupleStreamer {
         return dest->receiveSlot(slot, dest);
     }
     
-    bool streamOriginalTuple(const EnhancedTupleValues& enhancedValues) {
-        if (!isActive || !dest || !slot || !enhancedValues.originalTuple) {
+    // Stream the complete PostgreSQL tuple (all columns, all types preserved)
+    // This is what actually appears in query results
+    bool streamCompletePostgreSQLTuple(const PostgreSQLTuplePassthrough& passthrough) {
+        if (!isActive || !dest || !slot || !passthrough.originalTuple) {
             return false;
         }
         
         try {
-            ExecStoreHeapTuple(enhancedValues.originalTuple, slot, false);  // false = don't free tuple
+            // Store the original PostgreSQL tuple directly - NO data conversion
+            // Dates stay as dates, strings as strings, UUIDs as UUIDs, etc.
+            ExecStoreHeapTuple(passthrough.originalTuple, slot, false);  // false = don't free tuple
             
             return dest->receiveSlot(slot, dest);
         } catch (...) {
-            elog(WARNING, "Exception caught in streamOriginalTuple");
+            elog(WARNING, "Exception caught in streamCompletePostgreSQLTuple");
             return false;
         }
-    }
-    
-    bool streamTupleMultiple(const EnhancedTupleValues& enhancedValues) {
-        // Use the new method that preserves original data
-        return streamOriginalTuple(enhancedValues);
     }
     
     void shutdown() {
@@ -143,7 +139,7 @@ struct TupleStreamer {
 
 static TupleScanContext* g_scan_context = nullptr;
 static TupleStreamer g_tuple_streamer;
-static EnhancedTupleValues g_current_tuple;
+static PostgreSQLTuplePassthrough g_current_tuple_passthrough;
 
 extern "C" int64_t get_next_tuple() {
     if (!g_scan_context) {
@@ -195,6 +191,10 @@ extern "C" void* open_postgres_table(const char* tableName) {
     }
 }
 
+// MLIR Interface: Read next tuple for iteration control
+// Returns: 1 = "we have a tuple", -2 = "end of table"  
+// Side effect: Preserves COMPLETE PostgreSQL tuple for later streaming
+// Architecture: MLIR just iterates, PostgreSQL handles all data types
 extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     if (!tableHandle) {
         return -1;
@@ -210,62 +210,18 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         return -2;
     }
 
-    TupleDesc tupdesc = handle->tupdesc;
-    
-    if (g_current_tuple.originalTuple) {
-        heap_freetuple(g_current_tuple.originalTuple);
-        g_current_tuple.originalTuple = nullptr;
+    // Clean up previous tuple if it exists  
+    if (g_current_tuple_passthrough.originalTuple) {
+        heap_freetuple(g_current_tuple_passthrough.originalTuple);
+        g_current_tuple_passthrough.originalTuple = nullptr;
     }
     
-    g_current_tuple.originalTuple = heap_copytuple(tuple);
-    g_current_tuple.tupleDesc = tupdesc;
-    g_current_tuple.numColumns = tupdesc->natts;
+    // Preserve the COMPLETE tuple (all columns, all types) for output
+    g_current_tuple_passthrough.originalTuple = heap_copytuple(tuple);
+    g_current_tuple_passthrough.tupleDesc = handle->tupdesc;
     
-    size_t maxCols = std::min((size_t)tupdesc->natts, EnhancedTupleValues::MAX_COLUMNS);
-    
-    for (size_t i = 0; i < maxCols; i++) {
-        bool isNull;
-        Datum value = heap_getattr(tuple, i + 1, tupdesc, &isNull);  // PostgreSQL columns are 1-indexed
-        
-        g_current_tuple.isNull[i] = isNull;
-        g_current_tuple.columnTypes[i] = TupleDescAttr(tupdesc, i)->atttypid;
-        
-        if (!isNull) {
-            Oid columnType = TupleDescAttr(tupdesc, i)->atttypid;
-            switch (columnType) {
-                case BOOLOID:
-                    g_current_tuple.mlirValues[i] = DatumGetBool(value) ? 1 : 0;
-                    break;
-                case INT2OID:
-                    g_current_tuple.mlirValues[i] = DatumGetInt16(value);
-                    break;
-                case INT4OID:
-                    g_current_tuple.mlirValues[i] = DatumGetInt32(value);
-                    break;
-                case INT8OID:
-                    g_current_tuple.mlirValues[i] = DatumGetInt64(value);
-                    break;
-                case FLOAT4OID:
-                    g_current_tuple.mlirValues[i] = (int64_t)DatumGetFloat4(value);
-                    break;
-                case FLOAT8OID:
-                    g_current_tuple.mlirValues[i] = (int64_t)DatumGetFloat8(value);
-                    break;
-                default:
-                    g_current_tuple.mlirValues[i] = 0;
-                    elog(LOG, "Column %zu type %u not converted for MLIR processing (original data preserved)", i, columnType);
-                    break;
-            }
-        } else {
-            g_current_tuple.mlirValues[i] = 0;
-        }
-    }
-
-    if (g_current_tuple.numColumns > 0 && !g_current_tuple.isNull[0]) {
-        return g_current_tuple.mlirValues[0];
-    }
-    
-    return -3;
+    // Return simple signal: "we have a tuple" (MLIR only uses this for iteration control)
+    return g_current_tuple_passthrough.getIterationSignal();
 }
 
 extern "C" void close_postgres_table(void* tableHandle) {
@@ -278,8 +234,11 @@ extern "C" void close_postgres_table(void* tableHandle) {
     delete handle;
 }
 
+// MLIR Interface: Stream complete PostgreSQL tuple to output
+// The 'value' parameter is ignored - it's just MLIR's iteration signal
 extern "C" bool add_tuple_to_result(int64_t value) {
-    return g_tuple_streamer.streamOriginalTuple(g_current_tuple);
+    // Stream the complete PostgreSQL tuple (all data types preserved)
+    return g_tuple_streamer.streamCompletePostgreSQLTuple(g_current_tuple_passthrough);
 }
 
 bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const QueryDesc* queryDesc) {
@@ -301,9 +260,10 @@ bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const Q
     g_scan_context = nullptr;
     g_tuple_streamer.shutdown();
     
-    if (g_current_tuple.originalTuple) {
-        heap_freetuple(g_current_tuple.originalTuple);
-        g_current_tuple.originalTuple = nullptr;
+    // Clean up the current tuple
+    if (g_current_tuple_passthrough.originalTuple) {
+        heap_freetuple(g_current_tuple_passthrough.originalTuple);
+        g_current_tuple_passthrough.originalTuple = nullptr;
     }
 
     dest->rShutdown(dest);
