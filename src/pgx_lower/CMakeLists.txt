@@ -15,6 +15,12 @@ add_postgresql_mixed_extension(
         pgx_lower
         VERSION 1.0
         C_SOURCES src/executor_c.c
-        CPP_SOURCES src/my_executor.cpp src/executor_c.cpp src/mlir_runner.cpp src/mlir_logger_pg.cpp
+        CPP_SOURCES
+            src/my_executor.cpp src/executor_c.cpp
+            src/mlir_runner.cpp src/mlir_logger_pg.cpp
         SCRIPTS pgx_lower--1.0.sql
-        REGRESS basic)
+        REGRESS
+            1_one_tuple
+            2_two_tuples
+            3_lots_of_tuples
+)
