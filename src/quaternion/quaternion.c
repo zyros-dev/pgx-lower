@@ -34,55 +34,56 @@ PG_MODULE_MAGIC;
 PG_FUNCTION_INFO_V1(quaternion_in);
 
 Datum quaternion_in(PG_FUNCTION_ARGS) {
-  char *str = PG_GETARG_CSTRING(0);
-  double a, b, c, d;
-  Quaternion *result;
+    char *str = PG_GETARG_CSTRING(0);
+    double a, b, c, d;
+    Quaternion *result;
 
-  if (sscanf(str, " ( %lf , %lf , %lf , %lf )", &a, &b, &c, &d) != 4)
-    ereport(ERROR,
-            (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-             errmsg("invalid input syntax for quaternion: \"%s\"", str)));
+    if (sscanf(str, " ( %lf , %lf , %lf , %lf )", &a, &b, &c, &d) != 4)
+        ereport(ERROR,
+                (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                 errmsg("invalid input syntax for quaternion: \"%s\"", str)));
 
-  result = (Quaternion *)palloc(sizeof(Quaternion));
-  result->a = a;
-  result->b = b;
-  result->c = c;
-  result->d = d;
-  PG_RETURN_POINTER(result);
+    result = (Quaternion *)palloc(sizeof(Quaternion));
+    result->a = a;
+    result->b = b;
+    result->c = c;
+    result->d = d;
+    PG_RETURN_POINTER(result);
 }
 
 PG_FUNCTION_INFO_V1(quaternion_out);
 
 Datum quaternion_out(PG_FUNCTION_ARGS) {
-  Quaternion *quat = (Quaternion *)PG_GETARG_POINTER(0);
-  char *result = psprintf("(%g,%g,%g,%g)", quat->a, quat->b, quat->c, quat->d);
-  PG_RETURN_CSTRING(result);
+    Quaternion *quat = (Quaternion *)PG_GETARG_POINTER(0);
+    char *result =
+        psprintf("(%g,%g,%g,%g)", quat->a, quat->b, quat->c, quat->d);
+    PG_RETURN_CSTRING(result);
 }
 
 PG_FUNCTION_INFO_V1(quaternion_recv);
 
 Datum quaternion_recv(PG_FUNCTION_ARGS) {
-  StringInfo buf = (StringInfo)PG_GETARG_POINTER(0);
-  Quaternion *result;
+    StringInfo buf = (StringInfo)PG_GETARG_POINTER(0);
+    Quaternion *result;
 
-  result = (Quaternion *)palloc(sizeof(Quaternion));
-  result->a = pq_getmsgfloat8(buf);
-  result->b = pq_getmsgfloat8(buf);
-  result->c = pq_getmsgfloat8(buf);
-  result->d = pq_getmsgfloat8(buf);
-  PG_RETURN_POINTER(result);
+    result = (Quaternion *)palloc(sizeof(Quaternion));
+    result->a = pq_getmsgfloat8(buf);
+    result->b = pq_getmsgfloat8(buf);
+    result->c = pq_getmsgfloat8(buf);
+    result->d = pq_getmsgfloat8(buf);
+    PG_RETURN_POINTER(result);
 }
 
 PG_FUNCTION_INFO_V1(quaternion_send);
 
 Datum quaternion_send(PG_FUNCTION_ARGS) {
-  Quaternion *quat = (Quaternion *)PG_GETARG_POINTER(0);
-  StringInfoData buf;
+    Quaternion *quat = (Quaternion *)PG_GETARG_POINTER(0);
+    StringInfoData buf;
 
-  pq_begintypsend(&buf);
-  pq_sendfloat8(&buf, quat->a);
-  pq_sendfloat8(&buf, quat->b);
-  pq_sendfloat8(&buf, quat->c);
-  pq_sendfloat8(&buf, quat->d);
-  PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
+    pq_begintypsend(&buf);
+    pq_sendfloat8(&buf, quat->a);
+    pq_sendfloat8(&buf, quat->b);
+    pq_sendfloat8(&buf, quat->c);
+    pq_sendfloat8(&buf, quat->d);
+    PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
 }

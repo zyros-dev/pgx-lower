@@ -68,13 +68,12 @@ unit-test: build
 
 format-check:
 	@echo "Checking clang-format errors in source code..."
-	@echo "Files with formatting issues:"
-	@find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | xargs clang-format --dry-run --Werror 2>/dev/null || \
-		find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | while read file; do \
-			if ! clang-format --dry-run --Werror "$$file" >/dev/null 2>&1; then \
-				echo "  $$file"; \
-			fi; \
-		done
+	@find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | while read file; do \
+		if ! clang-format --dry-run --Werror "$$file" >/dev/null 2>&1; then \
+			echo "  $$file"; \
+			clang-format --dry-run --Werror "$$file" || true; \
+		fi; \
+	done
 	@echo "Format check completed!"
 
 format-fix:
