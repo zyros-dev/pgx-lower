@@ -39,9 +39,9 @@ Datum quaternion_in(PG_FUNCTION_ARGS) {
     Quaternion *result;
 
     if (sscanf(str, " ( %lf , %lf , %lf , %lf )", &a, &b, &c, &d) != 4)
-        ereport(ERROR,
-                (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-                 errmsg("invalid input syntax for quaternion: \"%s\"", str)));
+        ereport(
+            ERROR,
+            (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION), errmsg("invalid input syntax for quaternion: \"%s\"", str)));
 
     result = (Quaternion *)palloc(sizeof(Quaternion));
     result->a = a;
@@ -55,8 +55,7 @@ PG_FUNCTION_INFO_V1(quaternion_out);
 
 Datum quaternion_out(PG_FUNCTION_ARGS) {
     Quaternion *quat = (Quaternion *)PG_GETARG_POINTER(0);
-    char *result =
-        psprintf("(%g,%g,%g,%g)", quat->a, quat->b, quat->c, quat->d);
+    char *result = psprintf("(%g,%g,%g,%g)", quat->a, quat->b, quat->c, quat->d);
     PG_RETURN_CSTRING(result);
 }
 

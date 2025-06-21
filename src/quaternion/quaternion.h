@@ -21,4 +21,4 @@ typedef struct Quaternion {
     double a, b, c, d;
 } Quaternion;
 
-#endif  // SAMPLES_QUARTERNION_H_
+#endif // SAMPLES_QUARTERNION_H_

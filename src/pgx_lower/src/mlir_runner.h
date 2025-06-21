@@ -20,6 +20,6 @@ bool run_mlir_core(int64_t intValue, MLIRLogger& logger);
 bool run_mlir_test(int64_t intValue);
 #endif
 
-}  // namespace mlir_runner
+} // namespace mlir_runner
 
-#endif  // MLIR_RUNNER_H
+#endif // MLIR_RUNNER_H

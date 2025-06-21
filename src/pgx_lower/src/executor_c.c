@@ -17,8 +17,7 @@ static bool try_cpp_executor_internal(QueryDesc *queryDesc) {
     return try_cpp_executor_direct(queryDesc);
 }
 
-static void custom_executor(QueryDesc *queryDesc, ScanDirection direction,
-                            uint64 count, bool execute_once) {
+static void custom_executor(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once) {
     elog(NOTICE, "Custom executor is being executed in C! Ahah!");
 
     try_cpp_executor_internal(queryDesc);

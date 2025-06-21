@@ -34,6 +34,6 @@ class MyCppExecutor {
     static bool execute(const QueryDesc* plan);
 };
 
-#endif  // __cplusplus
+#endif // __cplusplus
 
-#endif  // EXECUTOR_H
+#endif // EXECUTOR_H

@@ -90,11 +90,10 @@ FixNamespaceComments: true
 IndentCaseBlocks: false
 IndentCaseLabels: false
 IndentGotoLabels: false
-IndentPPDirectives: AfterHash
+IndentPPDirectives: None
 IndentWrappedFunctionNames: false
 KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
-NamespaceIndentation: All
 PenaltyBreakAssignment: 10
 PenaltyBreakBeforeFirstCallParameter: 10
 PenaltyBreakComment: 10

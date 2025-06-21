@@ -1,8 +1,11 @@
 # pgx_lower Makefile
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest
 
+# Build directories for different test types
 BUILD_DIR = build
+BUILD_DIR_PTEST = build-ptest
+BUILD_DIR_UTEST = build-utest
 CMAKE_GENERATOR = Ninja
 CMAKE_BUILD_TYPE = Debug
 
@@ -14,24 +17,47 @@ build:
 	cmake --build $(BUILD_DIR)
 	@echo "Build completed!"
 
+build-ptest:
+	@echo "Building project for PostgreSQL tests..."
+	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
+	cmake --build $(BUILD_DIR_PTEST)
+	@echo "PostgreSQL test build completed!"
+
+build-utest:
+	@echo "Building project for unit tests..."
+	cmake -S . -B $(BUILD_DIR_UTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
+	cmake --build $(BUILD_DIR_UTEST)
+	@echo "Unit test build completed!"
+
 clean:
-	@echo "Cleaning build directory..."
-	rm -rf $(BUILD_DIR)
+	@echo "Cleaning all build directories..."
+	rm -rf $(BUILD_DIR) $(BUILD_DIR_PTEST) $(BUILD_DIR_UTEST)
 	@echo "Clean completed!"
 
+clean-ptest:
+	@echo "Cleaning PostgreSQL test build directory..."
+	rm -rf $(BUILD_DIR_PTEST)
+	@echo "PostgreSQL test clean completed!"
+
+clean-utest:
+	@echo "Cleaning unit test build directory..."
+	rm -rf $(BUILD_DIR_UTEST)
+	@echo "Unit test clean completed!"
 
 install: build
 	@echo "Installing..."
 	sudo cmake --install $(BUILD_DIR)
 	@echo "Install completed!"
 
-ptest: install
-	@echo "Building, installing, and testing..."
-	cmake -S . -B $(BUILD_DIR) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
-	sudo cmake --build $(BUILD_DIR)
-	sudo cmake --install $(BUILD_DIR)
-	cd $(BUILD_DIR) && ctest --output-on-failure && cd -
-	@echo "Tests completed!"
+install-ptest: build-ptest
+	@echo "Installing PostgreSQL test build..."
+	sudo cmake --install $(BUILD_DIR_PTEST)
+	@echo "PostgreSQL test install completed!"
+
+ptest: install-ptest
+	@echo "Running PostgreSQL tests..."
+	cd $(BUILD_DIR_PTEST) && ctest --output-on-failure && cd -
+	@echo "PostgreSQL tests completed!"
 
 psql-start:
 	@echo "Starting PostgreSQL for debugging..."
@@ -42,9 +68,19 @@ rebuild:
 	cmake --build $(BUILD_DIR)
 	@echo "Rebuild completed!"
 
-utest: build
+rebuild-ptest:
+	@echo "Rebuilding PostgreSQL test build..."
+	cmake --build $(BUILD_DIR_PTEST)
+	@echo "PostgreSQL test rebuild completed!"
+
+rebuild-utest:
+	@echo "Rebuilding unit test build..."
+	cmake --build $(BUILD_DIR_UTEST)
+	@echo "Unit test rebuild completed!"
+
+utest: build-utest
 	@echo "Running unit tests..."
-	cd $(BUILD_DIR) && ./mlir_unit_test && cd -
+	cd $(BUILD_DIR_UTEST) && ./mlir_unit_test && cd -
 	@echo "Unit tests completed!"
 
 fcheck:

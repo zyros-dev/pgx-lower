@@ -68,4 +68,4 @@ Datum log_cpp_notice(PG_FUNCTION_ARGS) {
     PG_RETURN_VOID();
 }
 
-}  // extern "C"
+} // extern "C"

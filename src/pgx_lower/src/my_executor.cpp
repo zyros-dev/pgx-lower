@@ -44,13 +44,11 @@ extern "C" {
 #include "mlir/Transforms/Passes.h"
 
 void registerConversionPipeline() {
-    mlir::PassPipelineRegistration<>(
-        "convert-to-llvm", "Convert MLIR to LLVM dialect",
-        [](mlir::OpPassManager& pm) {
-            pm.addPass(mlir::createConvertFuncToLLVMPass());
-            pm.addPass(mlir::createArithToLLVMConversionPass());
-            pm.addPass(mlir::createConvertSCFToCFPass());
-        });
+    mlir::PassPipelineRegistration<>("convert-to-llvm", "Convert MLIR to LLVM dialect", [](mlir::OpPassManager& pm) {
+        pm.addPass(mlir::createConvertFuncToLLVMPass());
+        pm.addPass(mlir::createArithToLLVMConversionPass());
+        pm.addPass(mlir::createConvertSCFToCFPass());
+    });
 }
 
 // Global context for tuple scanning - used by external function
@@ -68,8 +66,7 @@ extern "C" int64_t get_next_tuple() {
         return -1;
     }
 
-    HeapTuple tuple =
-        heap_getnext(g_scan_context->scanDesc, ForwardScanDirection);
+    HeapTuple tuple = heap_getnext(g_scan_context->scanDesc, ForwardScanDirection);
     if (tuple == NULL) {
         g_scan_context->hasMore = false;
         return -2;
@@ -119,8 +116,7 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         return -1;
     }
 
-    PostgreSQLTableHandle* handle =
-        static_cast<PostgreSQLTableHandle*>(tableHandle);
+    PostgreSQLTableHandle* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
     if (!handle->isOpen || !handle->scanDesc) {
         return -1;
     }
@@ -145,14 +141,12 @@ extern "C" void close_postgres_table(void* tableHandle) {
         return;
     }
 
-    PostgreSQLTableHandle* handle =
-        static_cast<PostgreSQLTableHandle*>(tableHandle);
+    PostgreSQLTableHandle* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
     handle->isOpen = false;
     delete handle;
 }
 
-auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc)
-    -> void {
+auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc) -> void {
     PostgreSQLLogger logger;
 
     TupleScanContext scanContext = {scanDesc, tupdesc, true, 0};
@@ -164,16 +158,14 @@ auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc)
 }
 
 bool MyCppExecutor::execute(const QueryDesc* plan) {
-    elog(NOTICE, "LLVM version: %d.%d.%d", LLVM_VERSION_MAJOR,
-         LLVM_VERSION_MINOR, LLVM_VERSION_PATCH);
+    elog(NOTICE, "LLVM version: %d.%d.%d", LLVM_VERSION_MAJOR, LLVM_VERSION_MINOR, LLVM_VERSION_PATCH);
     if (!plan) {
         elog(ERROR, "QueryDesc is null");
         return false;
     }
 
     elog(NOTICE, "Inside C++ executor! Plan type: %d", plan->operation);
-    elog(NOTICE, "Query text: %s",
-         plan->sourceText ? plan->sourceText : "NULL");
+    elog(NOTICE, "Query text: %s", plan->sourceText ? plan->sourceText : "NULL");
 
     if (plan->operation != CMD_SELECT) {
         elog(NOTICE, "Not a SELECT statement, skipping");
@@ -184,14 +176,12 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
     Plan* rootPlan = stmt->planTree;
 
     if (rootPlan->type != T_SeqScan) {
-        elog(NOTICE,
-             "Only simple table scans (SeqScan) are supported in raw mode.");
+        elog(NOTICE, "Only simple table scans (SeqScan) are supported in raw mode.");
         return false;
     }
 
     SeqScan* scan = (SeqScan*)rootPlan;
-    RangeTblEntry* rte =
-        (RangeTblEntry*)list_nth(stmt->rtable, scan->scan.scanrelid - 1);
+    RangeTblEntry* rte = (RangeTblEntry*)list_nth(stmt->rtable, scan->scan.scanrelid - 1);
     Relation rel = table_open(rte->relid, AccessShareLock);
 
     TableScanDesc scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);

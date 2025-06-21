@@ -25,4 +25,4 @@ class PostgreSQLLogger : public MLIRLogger {
     void debug(const std::string& message) override;
 };
 
-#endif  // MLIR_LOGGER_H
+#endif // MLIR_LOGGER_H
