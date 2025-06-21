@@ -105,7 +105,7 @@ auto run_mlir_core(int64_t intValue, MLIRLogger& logger) -> bool {
     auto optPipeline = mlir::makeOptimizingTransformer(0, 0, nullptr);
     mlir::ExecutionEngineOptions engineOptions;
     engineOptions.transformer = optPipeline;
-    engineOptions.jitCodeGenOptLevel = llvm::CodeGenOpt::None;
+    engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
     if (!maybeEngine) {
         logger.error("Failed to create MLIR ExecutionEngine");
@@ -117,8 +117,8 @@ auto run_mlir_core(int64_t intValue, MLIRLogger& logger) -> bool {
     auto expectedFPtr = engine->lookup("main");
     if (!expectedFPtr) {
         std::string errMsg;
-        llvm::raw_string_ostream os(errMsg);
-        os << expectedFPtr.takeError();
+        llvm::raw_string_ostream errStream(errMsg);
+        errStream << expectedFPtr.takeError();
         logger.error("Failed to lookup function: " + errMsg);
         return false;
     }
