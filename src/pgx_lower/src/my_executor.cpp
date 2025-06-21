@@ -53,9 +53,59 @@ void registerConversionPipeline() {
         });
 }
 
+// Global context for tuple scanning - used by external function
+struct TupleScanContext {
+    TableScanDesc scanDesc;
+    TupleDesc tupdesc;
+    bool hasMore;
+    int64_t currentValue;
+};
+
+static TupleScanContext* g_scan_context = nullptr;
+
+extern "C" int64_t get_next_tuple() {
+    if (!g_scan_context) {
+        return -1;
+    }
+    
+    HeapTuple tuple = heap_getnext(g_scan_context->scanDesc, ForwardScanDirection);
+    if (tuple == NULL) {
+        g_scan_context->hasMore = false;
+        return -2;
+    }
+    
+    bool isNull;
+    Datum value = heap_getattr(tuple, 1, g_scan_context->tupdesc, &isNull);
+    
+    if (isNull) {
+        return -3;
+    }
+    
+    int64_t intValue = DatumGetInt64(value);
+    g_scan_context->currentValue = intValue;
+    g_scan_context->hasMore = true;
+    
+    return intValue;
+}
+
 auto run_mlir(int64_t intValue) -> void {
     PostgreSQLLogger logger;
     mlir_runner::run_mlir_core(intValue, logger);
+}
+
+auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc) -> void {
+    PostgreSQLLogger logger;
+    
+    TupleScanContext scanContext = {scanDesc, tupdesc, true, 0};
+    g_scan_context = &scanContext;
+    
+    mlir_runner::ExternalFunction tupleReader = []() -> int64_t {
+        return get_next_tuple();
+    };
+    
+    mlir_runner::run_mlir_with_external_func(0, tupleReader, logger);
+    
+    g_scan_context = nullptr;
 }
 
 bool MyCppExecutor::execute(const QueryDesc *plan) {
@@ -91,20 +141,10 @@ bool MyCppExecutor::execute(const QueryDesc *plan) {
 
     TableScanDesc scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
     TupleDesc tupdesc = RelationGetDescr(rel);
-    HeapTuple tuple;
 
-    // Create a simple MLIR program that prints the first number from the query
-    if ((tuple = heap_getnext(scanDesc, ForwardScanDirection)) != NULL) {
-        bool isNull;
-        Datum value = heap_getattr(tuple, 1, tupdesc, &isNull);
-
-        if (!isNull) {
-            // Get the value as an integer
-            int64_t intValue = DatumGetInt64(value);
-
-            run_mlir(intValue);
-        }
-    }
+    // Use MLIR JIT with external function call to read tuples
+    // This demonstrates calling PostgreSQL's heap_getnext from within MLIR JIT
+    run_mlir_with_tuple_scan(scanDesc, tupdesc);
 
     table_endscan(scanDesc);
     table_close(rel, AccessShareLock);

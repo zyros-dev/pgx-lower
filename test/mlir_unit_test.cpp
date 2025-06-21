@@ -13,6 +13,7 @@
 #include <fstream>
 #include <cstdio>
 #include <unistd.h>
+#include <vector>
 
 TEST(MLIRTest, PassManagerSetup) {
     EXPECT_GT(LLVM_VERSION_MAJOR, 0);
@@ -60,6 +61,54 @@ TEST(MLIRTest, ExternalFunctionCall) {
     // Clean up temporary file
     std::remove(tempFilename.c_str());
 }
+
+// Mock PostgreSQL types for testing without requiring PostgreSQL runtime
+#ifndef POSTGRESQL_EXTENSION
+struct MockTupleScanContext {
+    std::vector<int64_t> values;
+    size_t currentIndex;
+    bool hasMore;
+};
+
+static MockTupleScanContext* g_mock_scan_context = nullptr;
+
+extern "C" int64_t mock_get_next_tuple() {
+    if (!g_mock_scan_context) {
+        return -1; // Error: no scan context
+    }
+    
+    if (g_mock_scan_context->currentIndex >= g_mock_scan_context->values.size()) {
+        g_mock_scan_context->hasMore = false;
+        return -2; // No more tuples
+    }
+    
+    int64_t value = g_mock_scan_context->values[g_mock_scan_context->currentIndex];
+    g_mock_scan_context->currentIndex++;
+    g_mock_scan_context->hasMore = true;
+    
+    return value;
+}
+
+TEST(MLIRTest, PostgreSQLTupleReaderSimulation) {
+    // Simulate PostgreSQL tuple data
+    std::vector<int64_t> mockData = {42, 100, 200};
+    MockTupleScanContext mockContext = {mockData, 0, true};
+    g_mock_scan_context = &mockContext;
+    
+    // Create external function that simulates PostgreSQL tuple reading
+    auto postgresqlTupleReader = []() -> int64_t {
+        return mock_get_next_tuple();
+    };
+    
+    // Test the MLIR JIT with PostgreSQL-like external function call
+    // This should read 42 from mock data and add 0, resulting in 42
+    auto result = mlir_runner::run_external_func_test(postgresqlTupleReader);
+    EXPECT_TRUE(result) << "MLIR JIT with PostgreSQL tuple reader simulation should succeed";
+    
+    // Clean up
+    g_mock_scan_context = nullptr;
+}
+#endif
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
