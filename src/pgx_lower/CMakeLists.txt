@@ -23,4 +23,7 @@ add_postgresql_mixed_extension(
             1_one_tuple
             2_two_tuples
             3_lots_of_tuples
+            4_two_columns_ints
+            5_two_columns_diff
+            6_every_type
 )
