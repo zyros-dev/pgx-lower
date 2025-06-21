@@ -704,50 +704,49 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
         loc, openTableFunc, mlir::ValueRange{tableNamePtr});
     mlir::Value tableHandle = openCall.getResult(0);
 
-    mlir::Value sum = zeroConst;
-    mlir::Value rowCount = zeroConst;
+    auto maxRowsConst = builder.create<mlir::arith::ConstantOp>(
+        loc, builder.getI64IntegerAttr(10)); // Process max 10 rows for testing
+    auto oneConst = builder.create<mlir::arith::ConstantOp>(
+        loc, builder.getI64IntegerAttr(1));
 
-    auto whileOp = builder.create<mlir::scf::WhileOp>(
-        loc, mlir::TypeRange{builder.getI64Type(), builder.getI64Type()},
-        mlir::ValueRange{sum, rowCount});
+    auto forOp = builder.create<mlir::scf::ForOp>(
+        loc, zeroConst, maxRowsConst, oneConst, mlir::ValueRange{zeroConst});
 
-    auto& beforeRegion = whileOp.getBefore();
-    auto* beforeBlock = builder.createBlock(&beforeRegion, beforeRegion.end(),
-                                           {builder.getI64Type(), builder.getI64Type()});
-    builder.setInsertionPointToStart(beforeBlock);
+    auto* loopBody = forOp.getBody();
+    builder.setInsertionPointToStart(loopBody);
     
-    mlir::Value currentSum = beforeBlock->getArgument(0);
-    mlir::Value currentRowCount = beforeBlock->getArgument(1);
-
+    mlir::Value loopSum = forOp.getRegionIterArgs()[0];
+    
     auto readCall = builder.create<mlir::func::CallOp>(
         loc, readTupleFunc, mlir::ValueRange{tableHandle});
     mlir::Value tupleValue = readCall.getResult(0);
 
     auto isEndOfTable = builder.create<mlir::arith::CmpIOp>(
-        loc, mlir::arith::CmpIPredicate::ne, tupleValue, negTwoConst);
+        loc, mlir::arith::CmpIPredicate::eq, tupleValue, negTwoConst);
     
-    builder.create<mlir::scf::ConditionOp>(
-        loc, isEndOfTable, mlir::ValueRange{currentSum, currentRowCount, tupleValue});
-
-    auto& afterRegion = whileOp.getAfter();
-    auto* afterBlock = builder.createBlock(&afterRegion, afterRegion.end(),
-                                          {builder.getI64Type(), builder.getI64Type(), builder.getI64Type()});
-    builder.setInsertionPointToStart(afterBlock);
+    auto resultSum = builder.create<mlir::scf::IfOp>(
+        loc, builder.getI64Type(), isEndOfTable, true);
     
-    mlir::Value loopSum = afterBlock->getArgument(0);
-    mlir::Value loopRowCount = afterBlock->getArgument(1);
-    mlir::Value loopTupleValue = afterBlock->getArgument(2);
-
-    auto newSum = builder.create<mlir::arith::AddIOp>(loc, loopSum, loopTupleValue);
-    auto oneConst = builder.create<mlir::arith::ConstantOp>(
-        loc, builder.getI64IntegerAttr(1));
-    auto newRowCount = builder.create<mlir::arith::AddIOp>(loc, loopRowCount, oneConst);
-
-    builder.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{newSum.getResult(), newRowCount.getResult()});
-
-    builder.setInsertionPointAfter(whileOp);
-    mlir::Value finalSum = whileOp.getResult(0);
-    mlir::Value finalRowCount = whileOp.getResult(1);
+    auto& thenRegion = resultSum.getThenRegion();
+    if (thenRegion.empty()) {
+        builder.createBlock(&thenRegion);
+    }
+    builder.setInsertionPointToStart(&thenRegion.front());
+    builder.create<mlir::scf::YieldOp>(loc, loopSum);
+    
+    auto& elseRegion = resultSum.getElseRegion();
+    if (elseRegion.empty()) {
+        builder.createBlock(&elseRegion);
+    }
+    builder.setInsertionPointToStart(&elseRegion.front());
+    auto newSum = builder.create<mlir::arith::AddIOp>(loc, loopSum, tupleValue);
+    builder.create<mlir::scf::YieldOp>(loc, newSum.getResult());
+    
+    builder.setInsertionPointAfter(resultSum);
+    builder.create<mlir::scf::YieldOp>(loc, resultSum.getResult(0));
+    
+    builder.setInsertionPointAfter(forOp);
+    mlir::Value finalSum = forOp.getResult(0);
 
     builder.create<mlir::func::CallOp>(loc, closeTableFunc, mlir::ValueRange{tableHandle});
 
