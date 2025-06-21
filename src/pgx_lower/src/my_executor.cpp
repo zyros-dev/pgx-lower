@@ -60,23 +60,33 @@ struct TupleScanContext {
     int64_t currentValue{};
 };
 
-struct TupleValues {
-    static constexpr size_t MAX_COLUMNS = 10;  // Reasonable limit
-    int64_t values[MAX_COLUMNS];
+struct EnhancedTupleValues {
+    static constexpr size_t MAX_COLUMNS = 30;  // Increased for complex tables
+    
+    HeapTuple originalTuple;
+    TupleDesc tupleDesc;
+    
+    int64_t mlirValues[MAX_COLUMNS];
     bool isNull[MAX_COLUMNS];
     Oid columnTypes[MAX_COLUMNS];
     size_t numColumns;
     
-    TupleValues() : numColumns(0) {
+    EnhancedTupleValues() : originalTuple(nullptr), tupleDesc(nullptr), numColumns(0) {
         for (size_t i = 0; i < MAX_COLUMNS; i++) {
-            values[i] = 0;
+            mlirValues[i] = 0;
             isNull[i] = true;
             columnTypes[i] = InvalidOid;
         }
     }
+    
+    ~EnhancedTupleValues() {
+        if (originalTuple) {
+            heap_freetuple(originalTuple);
+            originalTuple = nullptr;
+        }
+    }
 };
 
-// Structure to stream tuples directly to PostgreSQL without buffering
 struct TupleStreamer {
     DestReceiver* dest;
     TupleTableSlot* slot;
@@ -104,51 +114,24 @@ struct TupleStreamer {
         return dest->receiveSlot(slot, dest);
     }
     
-    bool streamTupleMultiple(const TupleValues& tupleValues) {
-        if (!isActive || !dest || !slot) {
+    bool streamOriginalTuple(const EnhancedTupleValues& enhancedValues) {
+        if (!isActive || !dest || !slot || !enhancedValues.originalTuple) {
             return false;
         }
         
-        ExecClearTuple(slot);
-        
-        // Set all column values, converting back to proper PostgreSQL types
-        for (size_t i = 0; i < tupleValues.numColumns && i < slot->tts_tupleDescriptor->natts; i++) {
-            slot->tts_isnull[i] = tupleValues.isNull[i];
+        try {
+            ExecStoreHeapTuple(enhancedValues.originalTuple, slot, false);  // false = don't free tuple
             
-            if (!tupleValues.isNull[i]) {
-                // Convert back based on PostgreSQL type
-                switch (tupleValues.columnTypes[i]) {
-                    case BOOLOID:
-                        slot->tts_values[i] = BoolGetDatum(tupleValues.values[i] != 0);
-                        break;
-                    case INT2OID:
-                        slot->tts_values[i] = Int16GetDatum((int16)tupleValues.values[i]);
-                        break;
-                    case INT4OID:
-                        slot->tts_values[i] = Int32GetDatum((int32)tupleValues.values[i]);
-                        break;
-                    case INT8OID:
-                        slot->tts_values[i] = Int64GetDatum(tupleValues.values[i]);
-                        break;
-                    case FLOAT4OID:
-                        slot->tts_values[i] = Float4GetDatum((float4)tupleValues.values[i]);
-                        break;
-                    case FLOAT8OID:
-                        slot->tts_values[i] = Float8GetDatum((float8)tupleValues.values[i]);
-                        break;
-                    default:
-                        // For unsupported types, return as int64 (fallback)
-                        slot->tts_values[i] = Int64GetDatum(tupleValues.values[i]);
-                        break;
-                }
-            } else {
-                slot->tts_values[i] = (Datum) 0;
-            }
+            return dest->receiveSlot(slot, dest);
+        } catch (...) {
+            elog(WARNING, "Exception caught in streamOriginalTuple");
+            return false;
         }
-        slot->tts_nvalid = tupleValues.numColumns;
-        ExecStoreVirtualTuple(slot);
-        
-        return dest->receiveSlot(slot, dest);
+    }
+    
+    bool streamTupleMultiple(const EnhancedTupleValues& enhancedValues) {
+        // Use the new method that preserves original data
+        return streamOriginalTuple(enhancedValues);
     }
     
     void shutdown() {
@@ -160,7 +143,7 @@ struct TupleStreamer {
 
 static TupleScanContext* g_scan_context = nullptr;
 static TupleStreamer g_tuple_streamer;
-static TupleValues g_current_tuple;
+static EnhancedTupleValues g_current_tuple;
 
 extern "C" int64_t get_next_tuple() {
     if (!g_scan_context) {
@@ -228,9 +211,17 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     }
 
     TupleDesc tupdesc = handle->tupdesc;
+    
+    if (g_current_tuple.originalTuple) {
+        heap_freetuple(g_current_tuple.originalTuple);
+        g_current_tuple.originalTuple = nullptr;
+    }
+    
+    g_current_tuple.originalTuple = heap_copytuple(tuple);
+    g_current_tuple.tupleDesc = tupdesc;
     g_current_tuple.numColumns = tupdesc->natts;
     
-    size_t maxCols = std::min((size_t)tupdesc->natts, TupleValues::MAX_COLUMNS);
+    size_t maxCols = std::min((size_t)tupdesc->natts, EnhancedTupleValues::MAX_COLUMNS);
     
     for (size_t i = 0; i < maxCols; i++) {
         bool isNull;
@@ -240,44 +231,38 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         g_current_tuple.columnTypes[i] = TupleDescAttr(tupdesc, i)->atttypid;
         
         if (!isNull) {
-            // Convert based on PostgreSQL type
             Oid columnType = TupleDescAttr(tupdesc, i)->atttypid;
             switch (columnType) {
                 case BOOLOID:
-                    g_current_tuple.values[i] = DatumGetBool(value) ? 1 : 0;
+                    g_current_tuple.mlirValues[i] = DatumGetBool(value) ? 1 : 0;
                     break;
                 case INT2OID:
-                    g_current_tuple.values[i] = DatumGetInt16(value);
+                    g_current_tuple.mlirValues[i] = DatumGetInt16(value);
                     break;
                 case INT4OID:
-                    g_current_tuple.values[i] = DatumGetInt32(value);
+                    g_current_tuple.mlirValues[i] = DatumGetInt32(value);
                     break;
                 case INT8OID:
-                    g_current_tuple.values[i] = DatumGetInt64(value);
+                    g_current_tuple.mlirValues[i] = DatumGetInt64(value);
                     break;
                 case FLOAT4OID:
-                    // Convert float to int64 representation (unsafe but for demo)
-                    g_current_tuple.values[i] = (int64_t)DatumGetFloat4(value);
+                    g_current_tuple.mlirValues[i] = (int64_t)DatumGetFloat4(value);
                     break;
                 case FLOAT8OID:
-                    // Convert double to int64 representation (unsafe but for demo)
-                    g_current_tuple.values[i] = (int64_t)DatumGetFloat8(value);
+                    g_current_tuple.mlirValues[i] = (int64_t)DatumGetFloat8(value);
                     break;
                 default:
-                    // For unsupported types, store as 0 and mark as supported type
-                    // This prevents crashes but obviously loses data
-                    g_current_tuple.values[i] = 0;
-                    // Convert unknown type to INT8 for consistent handling
-                    g_current_tuple.columnTypes[i] = INT8OID;
+                    g_current_tuple.mlirValues[i] = 0;
+                    elog(LOG, "Column %zu type %u not converted for MLIR processing (original data preserved)", i, columnType);
                     break;
             }
         } else {
-            g_current_tuple.values[i] = 0;
+            g_current_tuple.mlirValues[i] = 0;
         }
     }
 
     if (g_current_tuple.numColumns > 0 && !g_current_tuple.isNull[0]) {
-        return g_current_tuple.values[0];
+        return g_current_tuple.mlirValues[0];
     }
     
     return -3;
@@ -294,11 +279,7 @@ extern "C" void close_postgres_table(void* tableHandle) {
 }
 
 extern "C" bool add_tuple_to_result(int64_t value) {
-    if (g_current_tuple.numColumns > 1) {
-        return g_tuple_streamer.streamTupleMultiple(g_current_tuple);
-    } else {
-        return g_tuple_streamer.streamTuple(value);
-    }
+    return g_tuple_streamer.streamOriginalTuple(g_current_tuple);
 }
 
 bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const QueryDesc* queryDesc) {
@@ -319,6 +300,11 @@ bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const Q
     // Cleanup
     g_scan_context = nullptr;
     g_tuple_streamer.shutdown();
+    
+    if (g_current_tuple.originalTuple) {
+        heap_freetuple(g_current_tuple.originalTuple);
+        g_current_tuple.originalTuple = nullptr;
+    }
 
     dest->rShutdown(dest);
 

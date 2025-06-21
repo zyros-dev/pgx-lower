@@ -1,5 +1,3 @@
-LOAD
-'pgx_lower.so';
 
 DROP TABLE IF EXISTS test;
 
@@ -56,6 +54,11 @@ with time zone, CURRENT_TIMESTAMP + (i || ' hours'):: interval, CURRENT_TIMESTAM
     MACADDR '08:00:2b:01:02:03', B'10101010', B'11110000'
 FROM generate_series(1, 10) AS s(i);
 
+
+SELECT *
+FROM test;
+
+LOAD 'pgx_lower.so';
 
 SELECT *
 FROM test;
