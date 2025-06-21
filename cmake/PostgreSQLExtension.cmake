@@ -41,9 +41,13 @@ function(add_postgresql_mixed_extension NAME)
         MLIRArithDialect
         MLIRFuncDialect
         MLIRLLVMDialect
+        MLIRControlFlowDialect
+        MLIRSCFDialect
         MLIRFuncToLLVM
         MLIRMathToLLVM
         MLIRSCFToControlFlow
+        MLIRControlFlowToLLVM
+        MLIRArithToLLVM
         MLIRTransforms
     )
     set_target_properties(${NAME} PROPERTIES LINK_FLAGS "${_link_flags} -Wl,--no-as-needed")
@@ -128,9 +132,13 @@ function(add_mlir_unit_test NAME)
         MLIRArithDialect
         MLIRFuncDialect
         MLIRLLVMDialect
+        MLIRControlFlowDialect
+        MLIRSCFDialect
         MLIRFuncToLLVM
         MLIRMathToLLVM
         MLIRSCFToControlFlow
+        MLIRControlFlowToLLVM
+        MLIRArithToLLVM
         MLIRTransforms
         MLIR
         LLVM

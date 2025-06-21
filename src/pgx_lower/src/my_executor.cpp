@@ -88,6 +88,66 @@ extern "C" int64_t get_next_tuple() {
     return intValue;
 }
 
+struct PostgreSQLTableHandle {
+    Relation rel;
+    TableScanDesc scanDesc;
+    TupleDesc tupdesc;
+    bool isOpen;
+};
+
+extern "C" void* open_postgres_table(const char* tableName) {
+    try {
+        if (!g_scan_context) {
+            return nullptr;
+        }
+        
+        PostgreSQLTableHandle* handle = new PostgreSQLTableHandle();
+        handle->scanDesc = g_scan_context->scanDesc;
+        handle->tupdesc = g_scan_context->tupdesc;
+        handle->rel = nullptr;
+        handle->isOpen = true;
+        
+        return handle;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
+    if (!tableHandle) {
+        return -1;
+    }
+    
+    PostgreSQLTableHandle* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+    if (!handle->isOpen || !handle->scanDesc) {
+        return -1;
+    }
+    
+    HeapTuple tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
+    if (tuple == NULL) {
+        return -2;
+    }
+    
+    bool isNull;
+    Datum value = heap_getattr(tuple, 1, handle->tupdesc, &isNull);
+    
+    if (isNull) {
+        return -3;
+    }
+    
+    return DatumGetInt64(value);
+}
+
+extern "C" void close_postgres_table(void* tableHandle) {
+    if (!tableHandle) {
+        return;
+    }
+    
+    PostgreSQLTableHandle* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+    handle->isOpen = false;
+    delete handle;
+}
+
 auto run_mlir(int64_t intValue) -> void {
     PostgreSQLLogger logger;
     mlir_runner::run_mlir_core(intValue, logger);
@@ -99,12 +159,7 @@ auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc) -> void
     TupleScanContext scanContext = {scanDesc, tupdesc, true, 0};
     g_scan_context = &scanContext;
     
-    mlir_runner::ExternalFunction tupleReader = []() -> int64_t {
-        return get_next_tuple();
-    };
-    
-    // Use multi-tuple scan to process all tuples and sum their values
-    mlir_runner::run_mlir_with_multi_tuple_scan(tupleReader, logger);
+    mlir_runner::run_mlir_postgres_table_scan("current_table", logger);
     
     g_scan_context = nullptr;
 }
@@ -143,8 +198,6 @@ bool MyCppExecutor::execute(const QueryDesc *plan) {
     TableScanDesc scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
     TupleDesc tupdesc = RelationGetDescr(rel);
 
-    // Use MLIR JIT with external function call to read tuples
-    // This demonstrates calling PostgreSQL's heap_getnext from within MLIR JIT
     run_mlir_with_tuple_scan(scanDesc, tupdesc);
 
     table_endscan(scanDesc);
