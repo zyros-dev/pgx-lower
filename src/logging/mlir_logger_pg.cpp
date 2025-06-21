@@ -1,4 +1,4 @@
-#include "mlir_logger.h"
+#include "core/mlir_logger.h"
 
 // Prevent libintl.h conflicts with PostgreSQL macros
 // This is a bit strange to me - so LLVM drags in some macros from libintl.h

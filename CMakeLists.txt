@@ -31,13 +31,17 @@ find_package(MLIR REQUIRED)
 
 include(PostgreSQLExtension)
 
+# Include directories for the new structure
 include_directories(
+    ${CMAKE_SOURCE_DIR}/include
     ${PostgreSQL_INCLUDE_DIRS}
     ${PostgreSQL_SERVER_INCLUDE_DIRS}
 )
 
 enable_testing()
-add_subdirectory(src)
+
+# Add the main extension
+add_subdirectory(extension)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -49,9 +53,12 @@ FetchContent_MakeAvailable(googletest)
 
 if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     add_mlir_unit_test(mlir_unit_test 
-        test/mlir_unit_test.cpp
-        src/pgx_lower/src/mlir_runner.cpp
-        src/pgx_lower/src/mlir_logger.cpp
+        tests/unit/mlir_unit_test.cpp
+        src/core/mlir_runner.cpp
+        src/core/mlir_code_generator.cpp
+        src/core/query_analyzer.cpp
+        src/core/error_handling.cpp
+        src/logging/mlir_logger.cpp
     )
     target_link_libraries(mlir_unit_test PRIVATE gtest gtest_main)
 endif()

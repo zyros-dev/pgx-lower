@@ -12,6 +12,9 @@ using ExternalFunction = std::function<int64_t()>;
 // PostgreSQL Integration - Main entry point called by my_executor.cpp
 auto run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) -> bool;
 
+// PostgreSQL Integration - Modular MLIR generation version
+auto run_mlir_postgres_table_scan_modular(const char* tableName, MLIRLogger& logger) -> bool;
+
 // Core MLIR compilation and execution engine
 auto run_mlir_core(int64_t intValue, MLIRLogger& logger) -> bool;
 

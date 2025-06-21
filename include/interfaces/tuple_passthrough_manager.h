@@ -2,6 +2,11 @@
 
 #include <cstdint>
 
+// Forward declarations for PostgreSQL types
+struct TupleScanContext;
+struct PostgreSQLTuplePassthrough;
+struct TupleStreamer;
+
 // Core class that manages the tuple passthrough logic
 // Separates PostgreSQL-specific implementation from C interface
 class TuplePassthroughManager {

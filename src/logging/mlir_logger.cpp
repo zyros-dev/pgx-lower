@@ -1,4 +1,4 @@
-#include "mlir_logger.h"
+#include "core/mlir_logger.h"
 #include <iostream>
 
 void ConsoleLogger::notice(const std::string& message) {

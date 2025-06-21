@@ -2,7 +2,7 @@
 // This file provides pure C functions that MLIR can call
 // All PostgreSQL-specific logic is delegated to core classes
 
-#include "tuple_passthrough_manager.h"
+#include "interfaces/tuple_passthrough_manager.h"
 
 #ifdef POSTGRESQL_EXTENSION
 

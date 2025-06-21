@@ -18,8 +18,8 @@
 #undef dngettext
 #endif
 
-#include "executor_c.h"
-#include "my_executor.h"
+#include "postgres/executor_c.h"
+#include "postgres/my_executor.h"
 
 extern "C" {
 

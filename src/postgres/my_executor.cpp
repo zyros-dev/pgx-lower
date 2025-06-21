@@ -1,6 +1,8 @@
-#include "my_executor.h"
-#include "mlir_runner.h"
-#include "mlir_logger.h"
+#include "postgres/my_executor.h"
+#include "core/mlir_runner.h"
+#include "core/mlir_logger.h"
+#include "core/query_analyzer.h"
+#include "core/error_handling.h"
 
 #include "executor/executor.h"
 
@@ -274,9 +276,16 @@ bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const Q
 }
 
 bool MyCppExecutor::execute(const QueryDesc* plan) {
+    // Initialize PostgreSQL error handler if not already set
+    if (!pgx_lower::ErrorManager::getHandler()) {
+        pgx_lower::ErrorManager::setHandler(
+            std::make_unique<pgx_lower::PostgreSQLErrorHandler>());
+    }
+    
     elog(NOTICE, "LLVM version: %d.%d.%d", LLVM_VERSION_MAJOR, LLVM_VERSION_MINOR, LLVM_VERSION_PATCH);
     if (!plan) {
-        elog(ERROR, "QueryDesc is null");
+        auto error = pgx_lower::ErrorManager::postgresqlError("QueryDesc is null");
+        pgx_lower::ErrorManager::reportError(error);
         return false;
     }
 
@@ -288,11 +297,21 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
         return false;
     }
 
+    // Use query analyzer to determine MLIR compatibility
     PlannedStmt* stmt = plan->plannedstmt;
-    Plan* rootPlan = stmt->planTree;
+    auto capabilities = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
+    
+    elog(NOTICE, "Query analysis: %s", capabilities.getDescription());
+    
+    if (!capabilities.isMLIRCompatible()) {
+        elog(NOTICE, "Query requires features not yet supported by MLIR");
+        return false;
+    }
 
+    Plan* rootPlan = stmt->planTree;
     if (rootPlan->type != T_SeqScan) {
-        elog(NOTICE, "Only simple table scans (SeqScan) are supported in raw mode.");
+        // This should not happen if analyzer is correct, but add safety check
+        elog(NOTICE, "Query analyzer bug: marked as compatible but not a SeqScan");
         return false;
     }
 

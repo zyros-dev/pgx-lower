@@ -1,4 +1,4 @@
-#include "tuple_passthrough_manager.h"
+#include "interfaces/tuple_passthrough_manager.h"
 
 #ifdef POSTGRESQL_EXTENSION
 // Include PostgreSQL headers with proper macro definitions
@@ -16,7 +16,7 @@ extern "C" {
 #include "utils/snapmgr.h"
 }
 
-#include "my_executor.h"
+#include "postgres/my_executor.h"
 
 // Forward declarations for external state from my_executor.cpp
 extern TupleScanContext* g_scan_context;
