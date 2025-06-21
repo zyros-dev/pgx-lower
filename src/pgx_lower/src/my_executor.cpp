@@ -148,11 +148,6 @@ extern "C" void close_postgres_table(void* tableHandle) {
     delete handle;
 }
 
-auto run_mlir(int64_t intValue) -> void {
-    PostgreSQLLogger logger;
-    mlir_runner::run_mlir_core(intValue, logger);
-}
-
 auto run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc) -> void {
     PostgreSQLLogger logger;
     

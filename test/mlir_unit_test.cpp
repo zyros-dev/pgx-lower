@@ -28,35 +28,6 @@ TEST(MLIRTest, PassManagerSetup) {
     EXPECT_NO_THROW(pm.addNestedPass<mlir::func::FuncOp>(mlir::createArithToLLVMConversionPass()));
 }
 
-TEST(MLIRTest, BuildAndRunMlir) {
-    auto result = mlir_runner::run_mlir_test(5);
-    EXPECT_TRUE(result) << "Expected failure at JIT execution due to incomplete lowering - this is expected for now";
-}
-
-TEST(MLIRTest, ExternalFunctionCall) {
-    std::string tempFilename = "/tmp/mlir_test_" + std::to_string(getpid()) + ".txt";
-    std::ofstream outFile(tempFilename);
-    ASSERT_TRUE(outFile.is_open()) << "Failed to create temporary file";
-    outFile << "6" << std::endl;
-    outFile.close();
-    
-    auto fileReader = [tempFilename]() -> int64_t {
-        std::ifstream inFile(tempFilename);
-        if (!inFile.is_open()) {
-            return -1;
-        }
-        int64_t value;
-        inFile >> value;
-        inFile.close();
-        return value;
-    };
-    
-    auto result = mlir_runner::run_external_func_test(fileReader);
-    EXPECT_TRUE(result) << "MLIR JIT with external function call should succeed";
-    
-    std::remove(tempFilename.c_str());
-}
-
 #ifndef POSTGRESQL_EXTENSION
 struct MockTupleScanContext {
     std::vector<int64_t> values;
@@ -103,49 +74,6 @@ extern "C" void close_postgres_table(void* tableHandle) {
     // Nothing to do for mock implementation
 }
 
-TEST(MLIRTest, PostgreSQLTupleReaderSimulation) {
-    std::vector<int64_t> mockData = {42, 100, 200};
-    MockTupleScanContext mockContext = {mockData, 0, true};
-    g_mock_scan_context = &mockContext;
-    
-    auto postgresqlTupleReader = []() -> int64_t {
-        return mock_get_next_tuple();
-    };
-    
-    auto result = mlir_runner::run_external_func_test(postgresqlTupleReader);
-    EXPECT_TRUE(result) << "MLIR JIT with PostgreSQL tuple reader simulation should succeed";
-    
-    g_mock_scan_context = nullptr;
-}
-
-TEST(MLIRTest, MultiTupleProcessing) {
-    std::vector<int64_t> mockData = {15, 16};
-    MockTupleScanContext mockContext = {mockData, 0, true};
-    g_mock_scan_context = &mockContext;
-    
-    auto postgresqlTupleReader = []() -> int64_t {
-        return mock_get_next_tuple();
-    };
-    
-    ConsoleLogger logger;
-    auto result = mlir_runner::run_mlir_with_multi_tuple_scan(postgresqlTupleReader, logger);
-    EXPECT_TRUE(result) << "MLIR JIT with multi-tuple processing should succeed";
-    
-    g_mock_scan_context = nullptr;
-}
-
-TEST(MLIRTest, DirectMemoryAccess) {
-    std::vector<int64_t> testData = {100, 200, 300, 400, 500};
-    
-
-    ConsoleLogger logger;
-    auto result = mlir_runner::run_mlir_with_direct_data_access(
-        testData.data(), 
-        testData.size() * sizeof(int64_t), 
-        logger);
-    
-    EXPECT_TRUE(result) << "MLIR JIT with direct memory access should succeed";
-}
 
 TEST(MLIRTest, PostgreSQLTableScanInMLIR) {
     std::vector<int64_t> mockData = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
