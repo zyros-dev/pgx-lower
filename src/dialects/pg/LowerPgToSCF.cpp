@@ -106,9 +106,20 @@ public:
         
         FlatSymbolRefAttr getIntFieldFn = SymbolRefAttr::get(ctx, "get_int_field");
         
+        // Find the function entry block to hoist the alloca
+        auto funcOp = op->getParentOfType<func::FuncOp>();
+        if (!funcOp) return failure();
+        
+        auto& entryBlock = funcOp.front();
+        OpBuilder::InsertionGuard guard(rewriter);
+        rewriter.setInsertionPointToStart(&entryBlock);
+        
         Value nullFlagPtr = rewriter.create<LLVM::AllocaOp>(
             loc, ptrType, i1Type, rewriter.create<arith::ConstantOp>(
                 loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(1)));
+        
+        // Restore insertion point to the original operation
+        rewriter.setInsertionPoint(op);
         
         llvm::SmallVector<Value> operands = {tuple, fieldIndexVal, nullFlagPtr};
         Value intValue = rewriter.create<func::CallOp>(
@@ -145,9 +156,20 @@ public:
         
         FlatSymbolRefAttr getTextFieldFn = SymbolRefAttr::get(ctx, "get_text_field");
         
+        // Find the function entry block to hoist the alloca
+        auto funcOp = op->getParentOfType<func::FuncOp>();
+        if (!funcOp) return failure();
+        
+        auto& entryBlock = funcOp.front();
+        OpBuilder::InsertionGuard guard(rewriter);
+        rewriter.setInsertionPointToStart(&entryBlock);
+        
         Value nullFlagPtr = rewriter.create<LLVM::AllocaOp>(
             loc, ptrType, i1Type, rewriter.create<arith::ConstantOp>(
                 loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(1)));
+        
+        // Restore insertion point to the original operation
+        rewriter.setInsertionPoint(op);
         
         llvm::SmallVector<Value> operands = {tuple, fieldIndexVal, nullFlagPtr};
         Value textPtr = rewriter.create<func::CallOp>(
