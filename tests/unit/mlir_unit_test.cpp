@@ -152,29 +152,60 @@ TEST(MLIRTest, QueryAnalyzer) {
     EXPECT_FALSE(caps6.isMLIRCompatible());
 }
 
-// TODO: Fix segfault in PostgreSQL dialect generation test
-// TEST(MLIRTest, PostgreSQLDialectGeneration) {
-//     using namespace pgx_lower;
-//     
-//     // Test the new PostgreSQL dialect infrastructure
-//     mlir::MLIRContext context;
-//     
-//     // Register the pg dialect
-//     context.getOrLoadDialect<mlir::pg::PgDialect>();
-//     
-//     // Create a modular MLIR generator
-//     ModularMLIRGenerator generator(&context);
-//     
-//     // Generate MLIR with pg dialect (this should show the before/after transformation)
-//     auto func = generator.generateTableScanFunction("test_table");
-//     
-//     // Verify the function was created
-//     EXPECT_TRUE(func);
-//     EXPECT_EQ(func.getName(), "main");
-//     
-//     // The debug output should show the transformation in the console
-//     std::cout << "[TEST] PostgreSQL dialect transformation completed!" << std::endl;
-// }
+TEST(MLIRTest, PostgreSQLDialectBasic) {
+    using namespace pgx_lower;
+    
+    // Test basic pg dialect registration and type creation
+    mlir::MLIRContext context;
+    
+    // Register required dialects
+    context.getOrLoadDialect<mlir::func::FuncDialect>();
+    auto* dialect = context.getOrLoadDialect<mlir::pg::PgDialect>();
+    EXPECT_NE(dialect, nullptr);
+    
+    // Test basic type creation
+    auto textType = mlir::pg::TextType::get(&context);
+    EXPECT_TRUE(textType);
+    
+    auto tableHandleType = mlir::pg::TableHandleType::get(&context);
+    EXPECT_TRUE(tableHandleType);
+    
+    // Test operation creation
+    mlir::OpBuilder builder(&context);
+    auto module = mlir::ModuleOp::create(builder.getUnknownLoc());
+    builder.setInsertionPointToStart(module.getBody());
+    
+    // Create a simple function to test operation creation
+    auto funcType = builder.getFunctionType({}, {builder.getI64Type()});
+    auto func = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), "test_func", funcType);
+    auto* entryBlock = func.addEntryBlock();
+    builder.setInsertionPointToStart(entryBlock);
+    
+    // Test creating a pg.scan_table operation
+    mlir::OperationState state(builder.getUnknownLoc(), mlir::pg::ScanTableOp::getOperationName());
+    state.addAttribute("table_name", builder.getStringAttr("test_table"));
+    state.addTypes(tableHandleType);
+    
+    auto scanOp = builder.create(state);
+    EXPECT_TRUE(scanOp);
+    
+    std::cout << "[TEST] PostgreSQL dialect operation creation works!" << std::endl;
+}
+
+TEST(MLIRTest, PostgreSQLTypedFieldAccess) {
+    using namespace pgx_lower;
+    
+    // Test typed field access with pg dialect
+    ConsoleLogger logger;
+    
+    // This should generate MLIR with pg.scan_table, pg.read_tuple, pg.get_int_field, pg.get_text_field
+    // and then show the transformation via lowering pass
+    auto result = mlir_runner::run_mlir_postgres_typed_table_scan("test_table", logger);
+    
+    EXPECT_TRUE(result) << "MLIR PostgreSQL typed field access should succeed";
+    
+    std::cout << "[TEST] PostgreSQL typed field access completed!" << std::endl;
+}
 
 TEST(MLIRTest, ErrorHandling) {
     using namespace pgx_lower;

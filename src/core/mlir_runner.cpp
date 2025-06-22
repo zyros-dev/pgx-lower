@@ -3,6 +3,8 @@
 #include "core/mlir_code_generator.h"
 #include "core/error_handling.h"
 #include "interfaces/mlir_c_interface.h"
+#include "dialects/pg/PgDialect.h"
+#include "dialects/pg/LowerPgToSCF.h"
 
 #include <fstream>
 
@@ -395,6 +397,197 @@ bool run_mlir_postgres_table_scan_modular(const char* tableName, MLIRLogger& log
     oss << "PostgreSQL table scan completed with sum: " << result;
     logger.notice(oss.str());
 
+    return true;
+}
+
+bool run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logger) {
+    mlir::MLIRContext context;
+
+    std::ostringstream oss;
+    oss << "Scanning PostgreSQL table '" << tableName << "' with typed field access";
+    logger.debug(oss.str());
+
+    // Register all required dialects
+    context.getOrLoadDialect<mlir::arith::ArithDialect>();
+    context.getOrLoadDialect<mlir::func::FuncDialect>();
+    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+    context.getOrLoadDialect<mlir::scf::SCFDialect>();
+    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+    context.getOrLoadDialect<mlir::pg::PgDialect>();
+
+    registerConversionPipeline();
+
+    // Create MLIR module and function manually to test typed access
+    mlir::OpBuilder builder(&context);
+    auto module = mlir::ModuleOp::create(builder.getUnknownLoc());
+    builder.setInsertionPointToStart(module.getBody());
+    
+    auto location = builder.getUnknownLoc();
+    auto i64Type = builder.getI64Type();
+    auto i32Type = builder.getI32Type();
+    auto i1Type = builder.getI1Type();
+    
+    // Declare external runtime functions
+    auto funcType = mlir::FunctionType::get(&context, {i64Type}, {i64Type});
+    builder.create<mlir::func::FuncOp>(location, "open_postgres_table", funcType);
+    
+    funcType = mlir::FunctionType::get(&context, {i64Type}, {i64Type});
+    builder.create<mlir::func::FuncOp>(location, "read_next_tuple_from_table", funcType);
+    
+    funcType = mlir::FunctionType::get(&context, {i64Type}, mlir::TypeRange{});
+    builder.create<mlir::func::FuncOp>(location, "close_postgres_table", funcType);
+    
+    // Declare field access functions
+    funcType = mlir::FunctionType::get(&context, {i64Type, i32Type, builder.getType<mlir::LLVM::LLVMPointerType>()}, {i32Type});
+    builder.create<mlir::func::FuncOp>(location, "get_int_field", funcType);
+    
+    funcType = mlir::FunctionType::get(&context, {i64Type, i32Type, builder.getType<mlir::LLVM::LLVMPointerType>()}, {i64Type});
+    builder.create<mlir::func::FuncOp>(location, "get_text_field", funcType);
+    
+    funcType = mlir::FunctionType::get(&context, {i64Type}, {i1Type});
+    builder.create<mlir::func::FuncOp>(location, "add_tuple_to_result", funcType);
+    
+    // Create main function that demonstrates typed field access
+    auto mainFuncType = mlir::FunctionType::get(&context, {}, {i64Type});
+    auto mainFunc = builder.create<mlir::func::FuncOp>(location, "main", mainFuncType);
+    auto* entryBlock = mainFunc.addEntryBlock();
+    builder.setInsertionPointToStart(entryBlock);
+    
+    // Generate table open using pg dialect
+    auto tableHandleType = mlir::pg::TableHandleType::get(&context);
+    mlir::OperationState scanState(location, mlir::pg::ScanTableOp::getOperationName());
+    scanState.addAttribute("table_name", builder.getStringAttr(tableName));
+    scanState.addTypes(tableHandleType);
+    auto scanOp = builder.create(scanState);
+    auto tableHandle = scanOp->getResult(0);
+    
+    // Create iteration loop
+    auto zeroConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(0));
+    auto negTwoConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(-2));
+    auto trueConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
+    
+    llvm::SmallVector<mlir::Value> initialArgs = {trueConst, zeroConst};
+    llvm::SmallVector<mlir::Type> argTypes = {i1Type, i64Type};
+    
+    auto whileOp = builder.create<mlir::scf::WhileOp>(location, argTypes, initialArgs);
+    
+    // Before region: condition check
+    auto& beforeRegion = whileOp.getBefore();
+    builder.createBlock(&beforeRegion, beforeRegion.end(), argTypes, 
+                       {builder.getUnknownLoc(), builder.getUnknownLoc()});
+    builder.setInsertionPointToStart(&beforeRegion.front());
+    
+    mlir::Value continueFlag = beforeRegion.front().getArgument(0);
+    mlir::Value currentCount = beforeRegion.front().getArgument(1);
+    
+    builder.create<mlir::scf::ConditionOp>(location, continueFlag, beforeRegion.front().getArguments());
+    
+    // After region: read tuple and access fields
+    auto& afterRegion = whileOp.getAfter();
+    builder.createBlock(&afterRegion, afterRegion.end(), argTypes,
+                       {builder.getUnknownLoc(), builder.getUnknownLoc()});
+    builder.setInsertionPointToStart(&afterRegion.front());
+    
+    mlir::Value tupleCount = afterRegion.front().getArgument(1);
+    
+    // Read tuple using pg dialect
+    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context);
+    mlir::OperationState readState(location, mlir::pg::ReadTupleOp::getOperationName());
+    readState.addOperands(tableHandle);
+    readState.addTypes(tupleHandleType);
+    auto readOp = builder.create(readState);
+    auto tupleHandle = readOp->getResult(0);
+    
+    // Check for end of table (simplified - normally this would be handled in the lowering)
+    auto tupleAsInt = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(1)); // Mock: assume we have data
+    auto isEndOfTable = builder.create<mlir::arith::CmpIOp>(location, mlir::arith::CmpIPredicate::eq,
+                                                           tupleAsInt, negTwoConst);
+    
+    auto ifOp = builder.create<mlir::scf::IfOp>(location,
+                                               llvm::ArrayRef<mlir::Type>{i1Type, i64Type},
+                                               isEndOfTable, true);
+    
+    // Then branch: end of table
+    auto& thenRegion = ifOp.getThenRegion();
+    if (thenRegion.empty()) {
+        builder.createBlock(&thenRegion);
+    }
+    builder.setInsertionPointToStart(&thenRegion.front());
+    auto falseConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(false));
+    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{falseConst, tupleCount});
+    
+    // Else branch: process tuple with field access
+    auto& elseRegion = ifOp.getElseRegion();
+    if (elseRegion.empty()) {
+        builder.createBlock(&elseRegion);
+    }
+    builder.setInsertionPointToStart(&elseRegion.front());
+    auto trueContinue = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
+    
+    // NOW THE KEY PART: Access specific fields by index and type
+    // This demonstrates accessing an 'id' field (index 0) as integer
+    mlir::OperationState getIntState(location, mlir::pg::GetIntFieldOp::getOperationName());
+    getIntState.addOperands(tupleHandle);
+    getIntState.addAttribute("field_index", builder.getI32IntegerAttr(0));
+    getIntState.addTypes({i32Type, i1Type}); // value and null flag
+    auto getIntOp = builder.create(getIntState);
+    auto intValue = getIntOp->getResult(0);
+    auto intNullFlag = getIntOp->getResult(1);
+    
+    // Access a text field (index 1) 
+    mlir::OperationState getTextState(location, mlir::pg::GetTextFieldOp::getOperationName());
+    getTextState.addOperands(tupleHandle);
+    getTextState.addAttribute("field_index", builder.getI32IntegerAttr(1));
+    getTextState.addTypes({i64Type, i1Type}); // text pointer and null flag
+    auto getTextOp = builder.create(getTextState);
+    auto textPtr = getTextOp->getResult(0);
+    auto textNullFlag = getTextOp->getResult(1);
+    
+    // For now, just output the original tuple (this shows we have the field access infrastructure)
+    auto addTupleCall = builder.create<mlir::func::CallOp>(location, "add_tuple_to_result", 
+                                                          mlir::ValueRange{tupleAsInt});
+    
+    auto oneIntConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(1));
+    auto newCount = builder.create<mlir::arith::AddIOp>(location, tupleCount, oneIntConst);
+    
+    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{trueContinue, newCount.getResult()});
+    
+    // Continue after the while loop
+    builder.setInsertionPointAfter(ifOp);
+    builder.create<mlir::scf::YieldOp>(location, ifOp.getResults());
+    
+    builder.setInsertionPointAfter(whileOp);
+    
+    // Close table (simplified)
+    builder.create<mlir::func::CallOp>(location, "close_postgres_table", mlir::ValueRange{tableHandle});
+    
+    mlir::Value finalCount = whileOp.getResult(1);
+    builder.create<mlir::func::ReturnOp>(location, finalCount);
+    
+    // Print the MLIR with typed field access
+    logger.notice("Generated MLIR with PostgreSQL typed field access:");
+    std::string mlirStr;
+    llvm::raw_string_ostream os(mlirStr);
+    module.OpState::print(os);
+    os.flush();
+    logger.notice("MLIR with field access: " + mlirStr);
+    
+    // Apply pg-to-scf lowering pass to convert high-level operations to runtime calls
+    mlir::PassManager pm(&context);
+    pm.addNestedPass<mlir::func::FuncOp>(mlir::pg::createLowerPgToSCFPass());
+    
+    if (mlir::failed(pm.run(module))) {
+        logger.error("Failed to apply pg-to-scf lowering pass");
+        return false;
+    }
+    
+    logger.notice("Applied pg-to-scf lowering pass!");
+    std::string loweredStr;
+    llvm::raw_string_ostream loweredOs(loweredStr);
+    module.OpState::print(loweredOs);
+    loweredOs.flush();
+    logger.notice("Lowered MLIR: " + loweredStr);
+    
     return true;
 }
 

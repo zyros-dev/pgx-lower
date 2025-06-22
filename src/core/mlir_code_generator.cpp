@@ -41,16 +41,13 @@ void TableScanGenerator::generateTableClose(mlir::Value tableHandle) {
 
 mlir::Value TableScanGenerator::generateNextTupleRead(mlir::Value tableHandle) {
     auto location = builder_.getUnknownLoc();
-    auto i64Type = builder_.getI64Type();
     
-    auto readTupleFunc = builder_.create<mlir::func::CallOp>(
-        location,
-        i64Type,
-        "read_next_tuple_from_table",
-        mlir::ValueRange{tableHandle}
-    );
+    // Use high-level pg.read_tuple operation instead of direct function call
+    mlir::OperationState state(location, mlir::pg::ReadTupleOp::getOperationName());
+    mlir::pg::ReadTupleOp::build(builder_, state, tableHandle, {});
     
-    return readTupleFunc.getResult(0);
+    auto readOp = builder_.create(state);
+    return readOp->getResult(0);
 }
 
 // ===== ControlFlowGenerator =====
@@ -246,14 +243,15 @@ mlir::func::FuncOp ModularMLIRGenerator::generateTableScanFunction(const std::st
     mainFunc.print(beforeStream);
     beforeStream.flush();
     
+    // TODO: Temporarily disable pass manager to debug segfault
     // Apply lowering pass to convert pg dialect operations to low-level calls
-    mlir::PassManager passManager(context_);
-    passManager.addPass(mlir::pg::createLowerPgToSCFPass());
-    
-    if (mlir::failed(passManager.run(mainFunc))) {
-        // Log error but continue - this allows us to see the high-level IR before lowering
-        // In production, this would be a proper error
-    }
+    // mlir::PassManager passManager(context_);
+    // passManager.addNestedPass<mlir::func::FuncOp>(mlir::pg::createLowerPgToSCFPass());
+    // 
+    // if (moduleOp && mlir::failed(passManager.run(moduleOp))) {
+    //     // Log error but continue - this allows us to see the high-level IR before lowering
+    //     // In production, this would be a proper error
+    // }
     
     // Log MLIR after lowering to show transformation
     std::string afterLowering;
