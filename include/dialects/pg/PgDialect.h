@@ -33,9 +33,43 @@ public:
 //===----------------------------------------------------------------------===//
 
 namespace detail {
+// String type storages
 struct TextTypeStorage;
+struct CharTypeStorage;
+struct VarCharTypeStorage;
+
+// Numeric type storages  
+struct SmallIntTypeStorage;
+struct IntegerTypeStorage;
+struct BigIntTypeStorage;
 struct NumericTypeStorage;
+struct RealTypeStorage;
+struct DoubleTypeStorage;
+struct MoneyTypeStorage;
+
+// Date/time type storages
 struct DateTypeStorage;
+struct TimeTypeStorage;
+struct TimeTzTypeStorage;
+struct TimestampTypeStorage;
+struct TimestampTzTypeStorage;
+struct IntervalTypeStorage;
+
+// Boolean and binary type storages
+struct BooleanTypeStorage;
+struct ByteaTypeStorage;
+
+// Network type storages
+struct UuidTypeStorage;
+struct InetTypeStorage;
+struct CidrTypeStorage;
+struct MacAddrTypeStorage;
+
+// Bit type storages
+struct BitTypeStorage;
+struct VarBitTypeStorage;
+
+// System type storages
 struct PgTupleTypeStorage;
 struct TableHandleTypeStorage;
 struct TupleHandleTypeStorage;
@@ -72,6 +106,231 @@ public:
     static constexpr StringRef name = "pg.date";
     static DateType get(MLIRContext *context);
     static StringRef getMnemonic() { return "date"; }
+};
+
+//===----------------------------------------------------------------------===//
+// Integer Types
+//===----------------------------------------------------------------------===//
+
+class PgSmallIntType : public Type::TypeBase<PgSmallIntType, Type, detail::SmallIntTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.smallint";
+    static PgSmallIntType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "smallint"; }
+};
+
+class PgIntegerType : public Type::TypeBase<PgIntegerType, Type, detail::IntegerTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.integer";
+    static PgIntegerType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "integer"; }
+};
+
+class PgBigIntType : public Type::TypeBase<PgBigIntType, Type, detail::BigIntTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.bigint";
+    static PgBigIntType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "bigint"; }
+};
+
+//===----------------------------------------------------------------------===//
+// Decimal/Float Types
+//===----------------------------------------------------------------------===//
+
+class RealType : public Type::TypeBase<RealType, Type, detail::RealTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.real";
+    static RealType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "real"; }
+};
+
+class DoubleType : public Type::TypeBase<DoubleType, Type, detail::DoubleTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.double";
+    static DoubleType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "double"; }
+};
+
+class MoneyType : public Type::TypeBase<MoneyType, Type, detail::MoneyTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.money";
+    static MoneyType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "money"; }
+};
+
+//===----------------------------------------------------------------------===//
+// String Types
+//===----------------------------------------------------------------------===//
+
+class CharType : public Type::TypeBase<CharType, Type, detail::CharTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.char";
+    static CharType get(MLIRContext *context, unsigned length);
+    static StringRef getMnemonic() { return "char"; }
+    
+    unsigned getLength() const;
+};
+
+class VarCharType : public Type::TypeBase<VarCharType, Type, detail::VarCharTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.varchar";
+    static VarCharType get(MLIRContext *context, unsigned maxLength);
+    static StringRef getMnemonic() { return "varchar"; }
+    
+    unsigned getMaxLength() const;
+};
+
+//===----------------------------------------------------------------------===//
+// Boolean and Binary Types
+//===----------------------------------------------------------------------===//
+
+class BooleanType : public Type::TypeBase<BooleanType, Type, detail::BooleanTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.boolean";
+    static BooleanType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "boolean"; }
+};
+
+class ByteaType : public Type::TypeBase<ByteaType, Type, detail::ByteaTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.bytea";
+    static ByteaType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "bytea"; }
+};
+
+//===----------------------------------------------------------------------===//
+// Date/Time Types
+//===----------------------------------------------------------------------===//
+
+class TimeType : public Type::TypeBase<TimeType, Type, detail::TimeTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.time";
+    static TimeType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "time"; }
+};
+
+class TimeTzType : public Type::TypeBase<TimeTzType, Type, detail::TimeTzTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.timetz";
+    static TimeTzType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "timetz"; }
+};
+
+class TimestampType : public Type::TypeBase<TimestampType, Type, detail::TimestampTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.timestamp";
+    static TimestampType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "timestamp"; }
+};
+
+class TimestampTzType : public Type::TypeBase<TimestampTzType, Type, detail::TimestampTzTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.timestamptz";
+    static TimestampTzType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "timestamptz"; }
+};
+
+class IntervalType : public Type::TypeBase<IntervalType, Type, detail::IntervalTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.interval";
+    static IntervalType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "interval"; }
+};
+
+//===----------------------------------------------------------------------===//
+// Network Types
+//===----------------------------------------------------------------------===//
+
+class UuidType : public Type::TypeBase<UuidType, Type, detail::UuidTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.uuid";
+    static UuidType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "uuid"; }
+};
+
+class InetType : public Type::TypeBase<InetType, Type, detail::InetTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.inet";
+    static InetType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "inet"; }
+};
+
+class CidrType : public Type::TypeBase<CidrType, Type, detail::CidrTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.cidr";
+    static CidrType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "cidr"; }
+};
+
+class MacAddrType : public Type::TypeBase<MacAddrType, Type, detail::MacAddrTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.macaddr";
+    static MacAddrType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "macaddr"; }
+};
+
+//===----------------------------------------------------------------------===//
+// Bit Types
+//===----------------------------------------------------------------------===//
+
+class BitType : public Type::TypeBase<BitType, Type, detail::BitTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.bit";
+    static BitType get(MLIRContext *context, unsigned length);
+    static StringRef getMnemonic() { return "bit"; }
+    
+    unsigned getLength() const;
+};
+
+class VarBitType : public Type::TypeBase<VarBitType, Type, detail::VarBitTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.varbit";
+    static VarBitType get(MLIRContext *context, unsigned maxLength);
+    static StringRef getMnemonic() { return "varbit"; }
+    
+    unsigned getMaxLength() const;
 };
 
 /// PostgreSQL tuple type - represents a row
