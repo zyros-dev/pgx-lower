@@ -256,7 +256,8 @@ bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const Q
     TupleScanContext scanContext = {scanDesc, tupdesc, true, 0};
     g_scan_context = &scanContext;
 
-    bool mlir_success = mlir_runner::run_mlir_postgres_table_scan("current_table", logger);
+    // Use the new typed field access version to demonstrate dialect-based compilation
+    bool mlir_success = mlir_runner::run_mlir_postgres_typed_table_scan("current_table", logger);
     
     // Cleanup
     g_scan_context = nullptr;
