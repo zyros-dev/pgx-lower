@@ -6,15 +6,11 @@
 #define PG_TYPES
 
 include "mlir/IR/AttrTypeBase.td"
-include "dialects/pg/PgDialect.td"
+include "dialects/pg/PgBase.td"
 
 //===----------------------------------------------------------------------===//
 // PostgreSQL Type Definitions
 //===----------------------------------------------------------------------===//
-
-class Pg_Type<string name, string typeMnemonic> : TypeDef<Pg_Dialect, name> {
-    let mnemonic = typeMnemonic;
-}
 
 //===----------------------------------------------------------------------===//
 // Basic PostgreSQL Types
@@ -34,22 +30,6 @@ def Pg_NumericType : Pg_Type<"Numeric", "numeric"> {
         Represents a PostgreSQL NUMERIC value - arbitrary precision decimal.
         Maps to PostgreSQL's numeric/decimal types.
     }];
-    
-    let parameters = (ins 
-        "unsigned":$precision,
-        "unsigned":$scale
-    );
-    
-    let assemblyFormat = "`<` $precision `,` $scale `>`";
-    
-    let builders = [
-        TypeBuilder<(ins), [{
-            return $_get($_ctxt, 0, 0);
-        }]>,
-        TypeBuilder<(ins "unsigned":$precision, "unsigned":$scale), [{
-            return $_get($_ctxt, precision, scale);
-        }]>
-    ];
 }
 
 def Pg_DateType : Pg_Type<"Date", "date"> {
@@ -86,23 +66,6 @@ def Pg_TupleType : Pg_Type<"Tuple", "tuple"> {
         Represents a PostgreSQL tuple (row) containing multiple fields
         of potentially different types.
     }];
-    
-    let parameters = (ins ArrayRefParameter<"Type", "field types">:$fieldTypes);
-    
-    let assemblyFormat = "`<` $fieldTypes `>`";
-    
-    let builders = [
-        TypeBuilder<(ins "ArrayRef<Type>":$fieldTypes), [{
-            return $_get($_ctxt, fieldTypes);
-        }]>
-    ];
-    
-    let extraClassDeclaration = [{
-        unsigned getNumFields() const { return getFieldTypes().size(); }
-        Type getFieldType(unsigned index) const { 
-            return getFieldTypes()[index]; 
-        }
-    }];
 }
 
 def Pg_TableHandleType : Pg_Type<"TableHandle", "table_handle"> {
@@ -110,6 +73,14 @@ def Pg_TableHandleType : Pg_Type<"TableHandle", "table_handle"> {
     let description = [{
         Represents an active scan of a PostgreSQL table.
         This is an opaque handle used for tuple iteration.
+    }];
+}
+
+def Pg_TupleHandleType : Pg_Type<"TupleHandle", "tuple_handle"> {
+    let summary = "Handle to a PostgreSQL tuple";
+    let description = [{
+        Represents a PostgreSQL tuple (row) with access to its
+        fields and metadata. Supports type-safe field access operations.
     }];
 }
 

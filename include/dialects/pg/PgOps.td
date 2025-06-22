@@ -10,15 +10,12 @@ include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "dialects/pg/PgDialect.td"
+include "dialects/pg/PgBase.td"
 include "dialects/pg/PgTypes.td"
 
 //===----------------------------------------------------------------------===//
-// Base Operation Class
+// Base Operation Class (defined in PgBase.td)
 //===----------------------------------------------------------------------===//
-
-class Pg_Op<string mnemonic, list<Trait> traits = []> :
-    Op<Pg_Dialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
 // Table Operations

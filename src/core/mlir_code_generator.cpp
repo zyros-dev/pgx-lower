@@ -243,15 +243,15 @@ mlir::func::FuncOp ModularMLIRGenerator::generateTableScanFunction(const std::st
     mainFunc.print(beforeStream);
     beforeStream.flush();
     
-    // TODO: Temporarily disable pass manager to debug segfault
     // Apply lowering pass to convert pg dialect operations to low-level calls
-    // mlir::PassManager passManager(context_);
-    // passManager.addNestedPass<mlir::func::FuncOp>(mlir::pg::createLowerPgToSCFPass());
-    // 
-    // if (moduleOp && mlir::failed(passManager.run(moduleOp))) {
-    //     // Log error but continue - this allows us to see the high-level IR before lowering
-    //     // In production, this would be a proper error
-    // }
+    mlir::PassManager passManager(context_);
+    passManager.addNestedPass<mlir::func::FuncOp>(mlir::pg::createLowerPgToSCFPass());
+    
+    if (moduleOp && mlir::failed(passManager.run(moduleOp))) {
+        // Log error but continue - this allows us to see the high-level IR before lowering
+        // In production, this would be a proper error
+        std::cerr << "Warning: Lowering pass failed, but continuing for debugging\n";
+    }
     
     // Log MLIR after lowering to show transformation
     std::string afterLowering;

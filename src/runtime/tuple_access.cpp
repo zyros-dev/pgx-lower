@@ -1,5 +1,6 @@
 #include "runtime/tuple_access.h"
 #include "core/error_handling.h"
+#include <array>
 #include <cstring>
 #include <memory>
 
@@ -7,7 +8,10 @@
 extern "C" {
 #include "postgres.h"
 #include "access/htup_details.h"
+#include "access/heapam.h"
 #include "access/table.h"
+#include "access/tableam.h"
+#include "access/relscan.h"
 #include "catalog/pg_type.h"
 #include "executor/tuptable.h"
 #include "utils/builtins.h"
@@ -15,11 +19,20 @@ extern "C" {
 #include "utils/numeric.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
+#include "storage/lockdefs.h"
 }
 #endif
 
-namespace pgx_lower {
-namespace runtime {
+namespace pgx_lower::runtime {
+
+//===----------------------------------------------------------------------===//
+// Constants
+//===----------------------------------------------------------------------===//
+
+static constexpr int MAX_MOCK_FIELDS = 10;
+static constexpr int32_t MOCK_INT_VALUE = 42;
+static constexpr int32_t MOCK_BIGINT_VALUE = 100;
+static constexpr uint32_t INT4_TYPE_OID = 23;
 
 //===----------------------------------------------------------------------===//
 // Internal Handle Structures
@@ -29,7 +42,7 @@ namespace runtime {
 
 struct TableScanHandle {
     Relation relation;
-    void* scan_desc;  // Use void* for now to avoid missing include
+    TableScanDesc scan_desc;
     TupleDesc tuple_desc;
     bool is_open;
     
@@ -38,10 +51,10 @@ struct TableScanHandle {
     
     ~TableScanHandle() {
         if (is_open && scan_desc) {
-            // table_endscan((TableScanDesc)scan_desc);  // TODO: fix when includes are proper
+            table_endscan(scan_desc);
         }
         if (relation) {
-            // table_close(relation, AccessShareLock);  // TODO: fix when includes are proper
+            table_close(relation, AccessShareLock);
         }
     }
 };
@@ -70,8 +83,8 @@ struct TableScanHandle {
 
 struct TupleHandle {
     int mock_field_count = 2;
-    int64_t mock_values[10] = {42, 100, 0};
-    bool mock_nulls[10] = {false, false, true};
+    std::array<int64_t, MAX_MOCK_FIELDS> mock_values = {MOCK_INT_VALUE, MOCK_BIGINT_VALUE, 0};
+    std::array<bool, MAX_MOCK_FIELDS> mock_nulls = {false, false, true};
     
     TupleHandle() = default;
 };
@@ -92,12 +105,20 @@ TableScanHandle* openTableScan(const char* table_name) {
     try {
         auto handle = std::make_unique<TableScanHandle>();
         
-        // For now, we'll need the relation OID - this is a simplified implementation
-        // In a full implementation, we'd look up the table by name
-        // This is a placeholder that would need PostgreSQL plan integration
+        // TODO: Complete table lookup implementation
+        // This function needs integration with PostgreSQL's catalog system to:
+        // 1. Parse and validate the table name (handle schema qualification)
+        // 2. Look up the relation OID using RangeVarGetRelid()
+        // 3. Open the relation with appropriate locking
+        // 4. Create a proper table scan descriptor with current transaction snapshot
+        // 5. Handle permissions checking and error cases
+        //
+        // For now, this is a placeholder that signals the function is not complete.
+        // The actual table scanning is handled by the existing PostgreSQL executor
+        // integration in my_executor.cpp which has access to the current plan context.
         
         REPORT_ERROR_CTX(WARNING_LEVEL, POSTGRESQL, 
-                        "Table lookup by name not yet implemented", table_name);
+                        "Direct table lookup by name requires plan context integration", table_name);
         return nullptr;
         
     } catch (const std::exception& e) {
@@ -130,13 +151,18 @@ TupleHandle* readNextTuple(TableScanHandle* handle) {
         return nullptr;
     }
     
-    // HeapTuple tuple = heap_getnext((TableScanDesc)handle->scan_desc, ForwardScanDirection);  // TODO: fix includes
-    HeapTuple tuple = nullptr;  // Temporary
-    if (!tuple) {
+    TupleTableSlot* slot = table_slot_create(handle->relation, NULL);
+    
+    if (!table_scan_getnextslot(handle->scan_desc, ForwardScanDirection, slot)) {
+        ExecDropSingleTupleTableSlot(slot);
         return nullptr; // End of table
     }
     
-    return new TupleHandle(heap_copytuple(tuple), handle->tuple_desc, true);
+    // Convert slot to HeapTuple for compatibility
+    HeapTuple tuple = ExecCopySlotHeapTuple(slot);
+    ExecDropSingleTupleTableSlot(slot);
+    
+    return new TupleHandle(tuple, handle->tuple_desc, true);
 #else
     // Mock implementation - return a mock tuple
     static int call_count = 0;
@@ -178,7 +204,7 @@ int32_t getIntField(TupleHandle* tuple, int field_index, bool* is_null) {
     return DatumGetInt32(value);
 #else
     // Mock implementation
-    if (field_index >= 10) {
+    if (field_index >= MAX_MOCK_FIELDS) {
         *is_null = true;
         return 0;
     }
@@ -212,7 +238,7 @@ int64_t getBigIntField(TupleHandle* tuple, int field_index, bool* is_null) {
     return DatumGetInt64(value);
 #else
     // Mock implementation
-    if (field_index >= 10) {
+    if (field_index >= MAX_MOCK_FIELDS) {
         *is_null = true;
         return 0;
     }
@@ -357,7 +383,7 @@ uint32_t getFieldTypeOid(TupleHandle* tuple, int field_index) {
     return TupleDescAttr(tuple->tuple_desc, field_index)->atttypid;
 #else
     // Mock implementation - return INT4OID for simplicity
-    return 23; // INT4OID
+    return INT4_TYPE_OID;
 #endif
 }
 
@@ -428,9 +454,17 @@ bool outputTuple(TupleHandle* tuple) {
         return false;
     }
     
-    // This would need integration with the existing output mechanism
-    // For now, we'll report that output is not yet implemented
-    REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, "Tuple output not yet implemented in runtime");
+    // TODO: Integrate with PostgreSQL result output mechanism
+    // This function should:
+    // 1. Get the current DestReceiver from the execution context
+    // 2. Create a TupleTableSlot from the tuple handle
+    // 3. Call ExecutorSend() or similar to output the tuple
+    // 4. Handle proper slot lifecycle management
+    //
+    // The current executor integration in my_executor.cpp handles this
+    // at a higher level, so this runtime function may not be needed.
+    REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, 
+                "Direct tuple output requires execution context integration");
     return true; // Return true to avoid breaking compilation
 }
 
@@ -441,9 +475,19 @@ TupleHandle* createTuple(int field_count, uint32_t* field_types,
         return nullptr;
     }
     
-    // This would need full PostgreSQL tuple construction
-    // For now, return a mock tuple
+    // TODO: Implement full PostgreSQL tuple construction
+    // This function should:
+    // 1. Create a TupleDesc from the field_types array
+    // 2. Allocate a tuple with the correct size
+    // 3. Set field values and null flags properly
+    // 4. Handle type-specific value encoding (text, numeric, etc.)
+    // 5. Return a properly constructed TupleHandle
+    //
+    // This is complex as it requires deep PostgreSQL tuple format knowledge.
+    // For now, return a placeholder that signals incomplete implementation.
 #ifdef POSTGRESQL_EXTENSION
+    REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, 
+                "Tuple construction not yet fully implemented");
     return new TupleHandle(nullptr, nullptr, false);
 #else
     return new TupleHandle();
@@ -492,8 +536,7 @@ void freeAggregationState(void* state) {
     delete static_cast<SumAggregationState*>(state);
 }
 
-} // namespace runtime
-} // namespace pgx_lower
+} // namespace pgx_lower::runtime
 
 //===----------------------------------------------------------------------===//
 // C-style interface for MLIR JIT compatibility

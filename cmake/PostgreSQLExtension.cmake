@@ -147,6 +147,7 @@ function(add_mlir_unit_test NAME)
     )
     target_include_directories(${NAME} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_BINARY_DIR}/src/dialects
         ${PostgreSQL_SERVER_INCLUDE_DIRS}
     )
     set_target_properties(${NAME} PROPERTIES
