@@ -41,19 +41,18 @@ def Pg_ScanTableOp : Pg_Op<"scan_table", [Pure]> {
 def Pg_ReadTupleOp : Pg_Op<"read_tuple", []> {
     let summary = "Read next tuple from table scan";
     let description = [{
-        Reads the next tuple from a table scan. Returns the tuple and a boolean
-        indicating whether a valid tuple was read.
+        Reads the next tuple from a table scan. Returns the tuple handle.
         
         Example:
         ```mlir
-        %tuple, %valid = pg.read_tuple %table : !pg.table_handle -> (!pg.tuple<i32, !pg.text>, i1)
+        %tuple = pg.read_tuple %table : !pg.tuple_handle
         ```
     }];
     
     let arguments = (ins Pg_TableHandleType:$table_handle);
-    let results = (outs Pg_TupleType:$tuple, I1:$valid);
+    let results = (outs Pg_TupleHandleType:$tuple);
     
-    let assemblyFormat = "$table_handle attr-dict `:` type($table_handle) `->` `(` type($tuple) `,` type($valid) `)`";
+    let assemblyFormat = "$table_handle attr-dict `:` type($tuple)";
 }
 
 //===----------------------------------------------------------------------===//
@@ -68,14 +67,14 @@ def Pg_GetIntFieldOp : Pg_Op<"get_int_field", [Pure]> {
         
         Example:
         ```mlir
-        %value, %is_null = pg.get_int_field %tuple[0] : !pg.tuple<i32, !pg.text> -> (i32, i1)
+        %value, %is_null = pg.get_int_field %tuple, 0 : !pg.tuple_handle -> (i32, i1)
         ```
     }];
     
-    let arguments = (ins Pg_TupleType:$tuple, I32Attr:$field_index);
+    let arguments = (ins Pg_TupleHandleType:$tuple, I32Attr:$field_index);
     let results = (outs I32:$value, I1:$is_null);
     
-    let assemblyFormat = "$tuple `[` $field_index `]` attr-dict `:` type($tuple) `->` `(` type($value) `,` type($is_null) `)`";
+    let assemblyFormat = "$tuple `,` $field_index attr-dict `:` type($tuple) `->` `(` type($value) `,` type($is_null) `)`";
 }
 
 def Pg_GetTextFieldOp : Pg_Op<"get_text_field", [Pure]> {
@@ -85,14 +84,14 @@ def Pg_GetTextFieldOp : Pg_Op<"get_text_field", [Pure]> {
         
         Example:
         ```mlir
-        %text, %is_null = pg.get_text_field %tuple[1] : !pg.tuple<i32, !pg.text> -> (!pg.text, i1)
+        %text, %is_null = pg.get_text_field %tuple, 1 : !pg.tuple_handle -> (i64, i1)
         ```
     }];
     
-    let arguments = (ins Pg_TupleType:$tuple, I32Attr:$field_index);
-    let results = (outs Pg_TextType:$value, I1:$is_null);
+    let arguments = (ins Pg_TupleHandleType:$tuple, I32Attr:$field_index);
+    let results = (outs I64:$value, I1:$is_null);
     
-    let assemblyFormat = "$tuple `[` $field_index `]` attr-dict `:` type($tuple) `->` `(` type($value) `,` type($is_null) `)`";
+    let assemblyFormat = "$tuple `,` $field_index attr-dict `:` type($tuple) `->` `(` type($value) `,` type($is_null) `)`";
 }
 
 def Pg_GetNumericFieldOp : Pg_Op<"get_numeric_field", [Pure]> {

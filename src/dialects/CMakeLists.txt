@@ -17,25 +17,24 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
-# TableGen code generation - temporarily disabled to test manual dialect
-# TODO: Re-enable TableGen when integration issues are resolved
-# set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgOps.td)
-# mlir_tablegen(PgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-# mlir_tablegen(PgOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
-# add_public_tablegen_target(MLIRPgOpsIncGen)
+# TableGen code generation for PostgreSQL dialect
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgOps.td)
+mlir_tablegen(PgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(PgOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+add_public_tablegen_target(MLIRPgOpsIncGen)
 
-# set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgTypes.td)
-# mlir_tablegen(PgTypes.h.inc -gen-typedef-decls --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
-# mlir_tablegen(PgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
-# add_public_tablegen_target(MLIRPgTypesIncGen)
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgTypes.td)
+mlir_tablegen(PgTypes.h.inc -gen-typedef-decls --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(PgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
+add_public_tablegen_target(MLIRPgTypesIncGen)
 
 add_library(MLIRPgDialect STATIC
-    pg/PgDialect.cpp
+    pg/PgDialect_new.cpp
     pg/LowerPgToSCF.cpp
 )
 
-# Add dependency on generated files - disabled with TableGen
-# add_dependencies(MLIRPgDialect MLIRPgOpsIncGen MLIRPgTypesIncGen)
+# Add dependency on generated files
+add_dependencies(MLIRPgDialect MLIRPgOpsIncGen MLIRPgTypesIncGen)
 
 target_include_directories(MLIRPgDialect PUBLIC
     ${CMAKE_SOURCE_DIR}/include/dialects/pg

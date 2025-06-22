@@ -5,6 +5,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "dialects/pg/PgProperties.h"
 
 namespace mlir {
 namespace pg {
@@ -40,6 +41,7 @@ public:
 } // namespace mlir
 
 // Include auto-generated headers from TableGen
+#define GET_OP_CLASSES
 #include "PgOps.h.inc"
 #define GET_TYPEDEF_CLASSES
 #include "PgTypes.h.inc"
