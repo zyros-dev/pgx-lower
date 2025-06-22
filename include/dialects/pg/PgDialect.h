@@ -101,20 +101,48 @@ public:
 // PostgreSQL Operations
 //===----------------------------------------------------------------------===//
 
-/// Base class for all PostgreSQL operations
-class PgOp : public Op<PgOp> {
+// Operations will be defined directly inheriting from Op for simplicity
+
+/// Operation for scanning a PostgreSQL table
+class ScanTableOp : public Op<ScanTableOp> {
 public:
     using Op::Op;
     
-    static ArrayRef<StringRef> getAttributeNames() { return {}; }
+    static constexpr StringRef getOperationName() { return "pg.scan_table"; }
+    static StringRef getDialectNamespace() { return "pg"; }
     
-    static StringRef getDialectName() { return "pg"; }
+    static void build(OpBuilder &builder, OperationState &result, 
+                     StringRef tableName);
+    
+    static ParseResult parse(OpAsmParser &parser, OperationState &result);
+    void print(OpAsmPrinter &printer);
+    LogicalResult verify();
+    
+    // Required for MLIR operation framework
+    static bool classof(Operation *op) {
+        return op->getName().getStringRef() == getOperationName();
+    }
+    
+    static ArrayRef<StringRef> getAttributeNames() { 
+        static constexpr StringRef attrNames[] = {"table_name"};
+        return llvm::ArrayRef(attrNames);
+    }
+    
+    // Get the table name attribute
+    StringRef getTableName() { 
+        return (*this)->getAttrOfType<StringAttr>("table_name").getValue();
+    }
+    
+    // Get the result as a table handle
+    Value getResult() {
+        return (*this)->getResult(0);
+    }
 };
 
 } // namespace pg
 } // namespace mlir
 
-// TODO: Include auto-generated headers when TableGen is set up
+// TODO: Include auto-generated headers when TableGen is fixed
 // #include "dialects/pg/PgOps.h.inc"
 // #define GET_TYPEDEF_CLASSES
 // #include "dialects/pg/PgTypes.h.inc"

@@ -40,6 +40,9 @@ include_directories(
 
 enable_testing()
 
+# Add dialect library
+add_subdirectory(src/dialects)
+
 # Add the main extension
 add_subdirectory(extension)
 

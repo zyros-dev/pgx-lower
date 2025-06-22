@@ -17,32 +17,44 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgOps.td)
-mlir_tablegen(PgOps.h.inc -gen-op-decls)
-mlir_tablegen(PgOps.cpp.inc -gen-op-defs)
-add_public_tablegen_target(MLIRPgOpsIncGen)
+# TODO: Enable TableGen when fixed
+# set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgOps.td)
+# mlir_tablegen(PgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
+# mlir_tablegen(PgOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+# add_public_tablegen_target(MLIRPgOpsIncGen)
 
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgTypes.td)
-mlir_tablegen(PgTypes.h.inc -gen-typedef-decls --typedefs-dialect=pg)
-mlir_tablegen(PgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=pg)
-add_public_tablegen_target(MLIRPgTypesIncGen)
+# set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgTypes.td)
+# mlir_tablegen(PgTypes.h.inc -gen-typedef-decls --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
+# mlir_tablegen(PgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
+# add_public_tablegen_target(MLIRPgTypesIncGen)
 
-add_mlir_library(MLIRPgDialect
+add_library(MLIRPgDialect STATIC
     pg/PgDialect.cpp
-    
-    ADDITIONAL_HEADER_DIRS
+    pg/LowerPgToSCF.cpp
+)
+
+target_include_directories(MLIRPgDialect PUBLIC
     ${CMAKE_SOURCE_DIR}/include/dialects/pg
-    
-    DEPENDS
-    MLIRPgOpsIncGen
-    MLIRPgTypesIncGen
-    
-    LINK_LIBS PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${LLVM_INCLUDE_DIRS}
+    ${MLIR_INCLUDE_DIRS}
+)
+
+target_link_libraries(MLIRPgDialect PUBLIC
     MLIRIR
     MLIRParser
     MLIRSideEffectInterfaces
     MLIRInferTypeOpInterface
     MLIRFunctionInterfaces
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRFuncDialect
+    MLIRTransforms
+)
+
+# Ensure position independent code for shared library usage
+set_target_properties(MLIRPgDialect PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
 )
 
 add_library(PgxLowerRuntime
@@ -55,4 +67,9 @@ target_include_directories(PgxLowerRuntime PUBLIC
 
 target_link_libraries(PgxLowerRuntime
     ${PostgreSQL_LIBRARIES}
+)
+
+# Ensure position independent code for shared library usage
+set_target_properties(PgxLowerRuntime PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
 )

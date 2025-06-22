@@ -14,8 +14,6 @@ add_postgresql_mixed_extension(
             ../src/core/query_analyzer.cpp
             ../src/core/error_handling.cpp
             ../src/logging/mlir_logger_pg.cpp
-            ../src/dialects/pg/PgDialect.cpp
-            ../src/runtime/tuple_access.cpp
         SCRIPTS 
             sql/pgx_lower--1.0.sql
         REGRESS
@@ -25,6 +23,12 @@ add_postgresql_mixed_extension(
             4_two_columns_ints
             5_two_columns_diff
             6_every_type
+)
+
+# Link the PostgreSQL dialect and runtime libraries
+target_link_libraries(pgx_lower PRIVATE 
+    MLIRPgDialect
+    PgxLowerRuntime
 )
 
 # Set up test files in the expected locations for pg_regress

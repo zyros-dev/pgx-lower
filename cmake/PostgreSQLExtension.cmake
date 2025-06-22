@@ -38,6 +38,7 @@ function(add_postgresql_mixed_extension NAME)
         MLIR
     )
     target_link_libraries(${NAME} PRIVATE
+        MLIRPgDialect
         MLIRArithDialect
         MLIRFuncDialect
         MLIRLLVMDialect
@@ -129,6 +130,7 @@ endfunction()
 function(add_mlir_unit_test NAME)
     add_executable(${NAME} ${ARGN})
     target_link_libraries(${NAME} PRIVATE
+        MLIRPgDialect
         MLIRArithDialect
         MLIRFuncDialect
         MLIRLLVMDialect

@@ -12,8 +12,7 @@ using namespace mlir::pg;
 //===----------------------------------------------------------------------===//
 
 void PgDialect::initialize() {
-    // TODO: Add operations and types when TableGen is set up
-    // addOperations<...>();
+    addOperations<ScanTableOp>();
     addTypes<TextType, NumericType, DateType, PgTupleType, TableHandleType>();
 }
 
@@ -23,7 +22,7 @@ PgDialect::PgDialect(MLIRContext *context)
 }
 
 Type PgDialect::parseType(DialectAsmParser &parser) const {
-    // TODO: Implement manual type parser until TableGen is set up
+    // Manual type parser until TableGen is fixed
     StringRef keyword;
     if (parser.parseKeyword(&keyword))
         return Type();
@@ -39,7 +38,7 @@ Type PgDialect::parseType(DialectAsmParser &parser) const {
 }
 
 void PgDialect::printType(Type type, DialectAsmPrinter &printer) const {
-    // TODO: Implement manual type printer until TableGen is set up
+    // Manual type printer until TableGen is fixed
     if (auto textType = mlir::dyn_cast<TextType>(type)) {
         printer << "text";
         return;
@@ -197,7 +196,46 @@ TableHandleType TableHandleType::get(MLIRContext *context) {
     return Base::get(context, std::make_tuple());
 }
 
-// TODO: Include auto-generated definitions when TableGen is set up
+//===----------------------------------------------------------------------===//
+// Operation Implementations
+//===----------------------------------------------------------------------===//
+
+void ScanTableOp::build(OpBuilder &builder, OperationState &result, 
+                        StringRef tableName) {
+    result.addAttribute("table_name", builder.getStringAttr(tableName));
+    result.addTypes(TableHandleType::get(builder.getContext()));
+}
+
+ParseResult ScanTableOp::parse(OpAsmParser &parser, OperationState &result) {
+    StringAttr tableName;
+    Type resultType;
+    
+    if (parser.parseAttribute(tableName, "table_name", result.attributes) ||
+        parser.parseColonType(resultType))
+        return failure();
+    
+    result.addTypes(resultType);
+    return success();
+}
+
+void ScanTableOp::print(OpAsmPrinter &printer) {
+    printer << " ";
+    printer.printAttributeWithoutType((*this)->getAttr("table_name"));
+    printer << " : ";
+    printer.printType(getResult().getType());
+}
+
+LogicalResult ScanTableOp::verify() {
+    if (!(*this)->getAttr("table_name"))
+        return emitOpError("missing table_name attribute");
+    
+    if (!mlir::isa<TableHandleType>(getResult().getType()))
+        return emitOpError("result must be !pg.table_handle type");
+    
+    return success();
+}
+
+// TODO: Include auto-generated definitions when TableGen is fixed
 // #define GET_OP_CLASSES
 // #include "dialects/pg/PgOps.cpp.inc"
 

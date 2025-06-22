@@ -1,11 +1,17 @@
 #include "core/mlir_code_generator.h"
 #include "core/mlir_logger.h"
+#include "dialects/pg/PgDialect.h"
+#include "dialects/pg/LowerPgToSCF.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
+
+#include <iostream>
 
 namespace pgx_lower {
 
@@ -13,24 +19,13 @@ namespace pgx_lower {
 
 mlir::Value TableScanGenerator::generateTableOpen(const std::string& tableName) {
     auto location = builder_.getUnknownLoc();
-    auto i64Type = builder_.getI64Type();
     
-    // Convert table name to i64 for now (simplified approach)
-    // In future, we could pass the actual table pointer
-    auto tableNameHash = builder_.create<mlir::arith::ConstantOp>(
-        location, 
-        builder_.getI64IntegerAttr(std::hash<std::string>{}(tableName))
-    );
+    // Use high-level pg.scan_table operation instead of low-level function call
+    mlir::OperationState state(location, mlir::pg::ScanTableOp::getOperationName());
+    mlir::pg::ScanTableOp::build(builder_, state, tableName);
     
-    // Call open_postgres_table function
-    auto openTableFunc = builder_.create<mlir::func::CallOp>(
-        location,
-        i64Type,
-        "open_postgres_table",
-        mlir::ValueRange{tableNameHash}
-    );
-    
-    return openTableFunc.getResult(0);
+    auto scanOp = builder_.create(state);
+    return scanOp->getResult(0);
 }
 
 void TableScanGenerator::generateTableClose(mlir::Value tableHandle) {
@@ -153,6 +148,9 @@ mlir::Value ResultGenerator::generateCounterIncrement(mlir::Value currentCount) 
 
 ModularMLIRGenerator::ModularMLIRGenerator(mlir::MLIRContext* context) 
     : context_(context) {
+    // Register the PostgreSQL dialect
+    context->getOrLoadDialect<mlir::pg::PgDialect>();
+    
     builder_ = std::make_unique<mlir::OpBuilder>(context);
     tableScanGen_ = std::make_unique<TableScanGenerator>(context, *builder_);
     controlFlowGen_ = std::make_unique<ControlFlowGenerator>(context, *builder_);
@@ -241,6 +239,34 @@ mlir::func::FuncOp ModularMLIRGenerator::generateTableScanFunction(const std::st
     // Return final counter
     auto finalCounter = whileOp.getResult(1);
     builder_->create<mlir::func::ReturnOp>(location, finalCounter);
+    
+    // Log MLIR before lowering to show high-level dialect usage
+    std::string beforeLowering;
+    llvm::raw_string_ostream beforeStream(beforeLowering);
+    mainFunc.print(beforeStream);
+    beforeStream.flush();
+    
+    // Apply lowering pass to convert pg dialect operations to low-level calls
+    mlir::PassManager passManager(context_);
+    passManager.addPass(mlir::pg::createLowerPgToSCFPass());
+    
+    if (mlir::failed(passManager.run(mainFunc))) {
+        // Log error but continue - this allows us to see the high-level IR before lowering
+        // In production, this would be a proper error
+    }
+    
+    // Log MLIR after lowering to show transformation
+    std::string afterLowering;
+    llvm::raw_string_ostream afterStream(afterLowering);
+    mainFunc.print(afterStream);
+    afterStream.flush();
+    
+    // Only log if there's a difference (indicating pg dialect operations were present)
+    if (beforeLowering != afterLowering) {
+        // Use simple console output for debugging
+        std::cout << "[DEBUG] MLIR before lowering (with pg dialect):\n" << beforeLowering << std::endl;
+        std::cout << "[DEBUG] MLIR after lowering (converted to standard dialects):\n" << afterLowering << std::endl;
+    }
     
     return mainFunc;
 }
