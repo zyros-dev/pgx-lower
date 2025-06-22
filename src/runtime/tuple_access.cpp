@@ -494,3 +494,49 @@ void freeAggregationState(void* state) {
 
 } // namespace runtime
 } // namespace pgx_lower
+
+//===----------------------------------------------------------------------===//
+// C-style interface for MLIR JIT compatibility
+// Note: These conflict with unit test mock functions, so only compile for extension
+//===----------------------------------------------------------------------===//
+
+#ifdef POSTGRESQL_EXTENSION
+extern "C" {
+
+void* open_postgres_table(const char* table_name) {
+    return static_cast<void*>(pgx_lower::runtime::openTableScan(table_name));
+}
+
+void* read_next_tuple_from_table(void* table_handle) {
+    return static_cast<void*>(pgx_lower::runtime::readNextTuple(
+        static_cast<pgx_lower::runtime::TableScanHandle*>(table_handle)));
+}
+
+void close_postgres_table(void* table_handle) {
+    pgx_lower::runtime::closeTableScan(
+        static_cast<pgx_lower::runtime::TableScanHandle*>(table_handle));
+}
+
+bool add_tuple_to_result(void* tuple_handle) {
+    return pgx_lower::runtime::outputTuple(
+        static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle));
+}
+
+int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    return pgx_lower::runtime::getIntField(
+        static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle), 
+        field_index, is_null);
+}
+
+int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    int length = 0;
+    const char* text_ptr = pgx_lower::runtime::getTextField(
+        static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle), 
+        field_index, &length, is_null);
+    
+    // Return the pointer as an int64_t for MLIR compatibility
+    return reinterpret_cast<int64_t>(text_ptr);
+}
+
+}
+#endif // POSTGRESQL_EXTENSION

@@ -82,6 +82,19 @@ extern "C" bool add_tuple_to_result(int64_t value) {
     return true;
 }
 
+extern "C" int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    // Mock implementation for unit tests
+    *is_null = false;
+    return field_index * 42; // Return predictable values
+}
+
+extern "C" int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    // Mock implementation for unit tests
+    static const char* mock_text = "mock_text_field";
+    *is_null = false;
+    return reinterpret_cast<int64_t>(mock_text);
+}
+
 
 TEST(MLIRTest, PostgreSQLTableScanInMLIR) {
     std::vector<int64_t> mockData = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};

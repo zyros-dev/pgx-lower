@@ -3,6 +3,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
@@ -54,6 +55,107 @@ public:
     }
 };
 
+/// Lower pg.read_tuple to runtime function call
+class ReadTupleOpLowering : public OpRewritePattern<ReadTupleOp> {
+public:
+    explicit ReadTupleOpLowering(MLIRContext *context) 
+        : OpRewritePattern<ReadTupleOp>(context) {}
+    
+    LogicalResult matchAndRewrite(ReadTupleOp op, 
+                                PatternRewriter &rewriter) const override {
+        Location loc = op.getLoc();
+        MLIRContext *ctx = rewriter.getContext();
+        
+        Value tableHandle = op.getTableHandle();
+        
+        auto i64Type = rewriter.getI64Type();
+        FlatSymbolRefAttr readTupleFn = SymbolRefAttr::get(ctx, "read_next_tuple_from_table");
+        
+        Value tupleHandle = rewriter.create<func::CallOp>(
+            loc, i64Type, readTupleFn, ValueRange{tableHandle}).getResult(0);
+        
+        rewriter.replaceOp(op, tupleHandle);
+        
+        return success();
+    }
+};
+
+class GetIntFieldOpLowering : public OpRewritePattern<GetIntFieldOp> {
+public:
+    explicit GetIntFieldOpLowering(MLIRContext *context) 
+        : OpRewritePattern<GetIntFieldOp>(context) {}
+    
+    LogicalResult matchAndRewrite(GetIntFieldOp op, 
+                                PatternRewriter &rewriter) const override {
+        Location loc = op.getLoc();
+        MLIRContext *ctx = rewriter.getContext();
+        
+        Value tuple = op.getTuple();
+        unsigned fieldIndex = op.getFieldIndex();
+        
+        Value fieldIndexVal = rewriter.create<arith::ConstantOp>(
+            loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(fieldIndex));
+        
+        auto i32Type = rewriter.getI32Type();
+        auto i1Type = rewriter.getI1Type();
+        auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
+        
+        FlatSymbolRefAttr getIntFieldFn = SymbolRefAttr::get(ctx, "get_int_field");
+        
+        Value nullFlagPtr = rewriter.create<LLVM::AllocaOp>(
+            loc, ptrType, i1Type, rewriter.create<arith::ConstantOp>(
+                loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(1)));
+        
+        Value intValue = rewriter.create<func::CallOp>(
+            loc, i32Type, getIntFieldFn, 
+            ValueRange{tuple, fieldIndexVal, nullFlagPtr}).getResult(0);
+        
+        Value nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
+        
+        rewriter.replaceOp(op, ValueRange{intValue, nullFlag});
+        
+        return success();
+    }
+};
+
+class GetTextFieldOpLowering : public OpRewritePattern<GetTextFieldOp> {
+public:
+    explicit GetTextFieldOpLowering(MLIRContext *context) 
+        : OpRewritePattern<GetTextFieldOp>(context) {}
+    
+    LogicalResult matchAndRewrite(GetTextFieldOp op, 
+                                PatternRewriter &rewriter) const override {
+        Location loc = op.getLoc();
+        MLIRContext *ctx = rewriter.getContext();
+        
+        Value tuple = op.getTuple();
+        unsigned fieldIndex = op.getFieldIndex();
+        
+        Value fieldIndexVal = rewriter.create<arith::ConstantOp>(
+            loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(fieldIndex));
+        
+        auto i64Type = rewriter.getI64Type();
+        auto i1Type = rewriter.getI1Type();
+        auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
+        
+        FlatSymbolRefAttr getTextFieldFn = SymbolRefAttr::get(ctx, "get_text_field");
+        
+        Value nullFlagPtr = rewriter.create<LLVM::AllocaOp>(
+            loc, ptrType, i1Type, rewriter.create<arith::ConstantOp>(
+                loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(1)));
+        
+        Value textPtr = rewriter.create<func::CallOp>(
+            loc, i64Type, getTextFieldFn, 
+            ValueRange{tuple, fieldIndexVal, nullFlagPtr}).getResult(0);
+        
+        Value nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
+        
+        rewriter.replaceOp(op, ValueRange{textPtr, nullFlag});
+        
+        return success();
+    }
+};
+
 //===----------------------------------------------------------------------===//
 // Type Converter
 //===----------------------------------------------------------------------===//
@@ -64,6 +166,8 @@ public:
         // Convert pg types to standard MLIR types
         addConversion([](Type type) -> Type {
             if (mlir::isa<TableHandleType>(type))
+                return IntegerType::get(type.getContext(), 64);
+            if (mlir::isa<TupleHandleType>(type))
                 return IntegerType::get(type.getContext(), 64);
             if (mlir::isa<TextType>(type))
                 return IntegerType::get(type.getContext(), 64); // pointer to string
@@ -121,7 +225,7 @@ struct LowerPgToSCFPass : public PassWrapper<LowerPgToSCFPass, OperationPass<fun
 
 void mlir::pg::populatePgToSCFConversionPatterns(RewritePatternSet &patterns,
                                                 TypeConverter &typeConverter) {
-    patterns.add<ScanTableOpLowering>(patterns.getContext());
+    patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering>(patterns.getContext());
 }
 
 std::unique_ptr<OperationPass<func::FuncOp>> mlir::pg::createLowerPgToSCFPass() {

@@ -38,6 +38,7 @@ struct NumericTypeStorage;
 struct DateTypeStorage;
 struct PgTupleTypeStorage;
 struct TableHandleTypeStorage;
+struct TupleHandleTypeStorage;
 }
 
 /// PostgreSQL text type - variable length string
@@ -97,6 +98,16 @@ public:
     static StringRef getMnemonic() { return "table_handle"; }
 };
 
+/// Handle to a PostgreSQL tuple in memory
+class TupleHandleType : public Type::TypeBase<TupleHandleType, Type, detail::TupleHandleTypeStorage> {
+public:
+    using Base::Base;
+    
+    static constexpr StringRef name = "pg.tuple_handle";
+    static TupleHandleType get(MLIRContext *context);
+    static StringRef getMnemonic() { return "tuple_handle"; }
+};
+
 //===----------------------------------------------------------------------===//
 // PostgreSQL Operations
 //===----------------------------------------------------------------------===//
@@ -136,6 +147,133 @@ public:
     // Get the result as a table handle
     Value getResult() {
         return (*this)->getResult(0);
+    }
+};
+
+/// Operation for reading the next tuple from a table handle
+class ReadTupleOp : public Op<ReadTupleOp> {
+public:
+    using Op::Op;
+    
+    static constexpr StringRef getOperationName() { return "pg.read_tuple"; }
+    static StringRef getDialectNamespace() { return "pg"; }
+    
+    static void build(OpBuilder &builder, OperationState &result, 
+                     Value tableHandle, ArrayRef<Type> fieldTypes);
+    
+    static ParseResult parse(OpAsmParser &parser, OperationState &result);
+    void print(OpAsmPrinter &printer);
+    LogicalResult verify();
+    
+    // Required for MLIR operation framework
+    static bool classof(Operation *op) {
+        return op->getName().getStringRef() == getOperationName();
+    }
+    
+    static ArrayRef<StringRef> getAttributeNames() { 
+        return llvm::ArrayRef<StringRef>();
+    }
+    
+    // Get the table handle operand
+    Value getTableHandle() {
+        return (*this)->getOperand(0);
+    }
+    
+    // Get the result tuple
+    Value getResult() {
+        return (*this)->getResult(0);
+    }
+};
+
+/// Operation for getting an integer field from a tuple
+class GetIntFieldOp : public Op<GetIntFieldOp> {
+public:
+    using Op::Op;
+    
+    static constexpr StringRef getOperationName() { return "pg.get_int_field"; }
+    static StringRef getDialectNamespace() { return "pg"; }
+    
+    static void build(OpBuilder &builder, OperationState &result, 
+                     Value tuple, unsigned fieldIndex);
+    
+    static ParseResult parse(OpAsmParser &parser, OperationState &result);
+    void print(OpAsmPrinter &printer);
+    LogicalResult verify();
+    
+    // Required for MLIR operation framework
+    static bool classof(Operation *op) {
+        return op->getName().getStringRef() == getOperationName();
+    }
+    
+    static ArrayRef<StringRef> getAttributeNames() { 
+        static constexpr StringRef attrNames[] = {"field_index"};
+        return llvm::ArrayRef(attrNames);
+    }
+    
+    // Get the tuple operand
+    Value getTuple() {
+        return (*this)->getOperand(0);
+    }
+    
+    // Get the field index
+    unsigned getFieldIndex() {
+        return (*this)->getAttrOfType<IntegerAttr>("field_index").getValue().getZExtValue();
+    }
+    
+    // Get the result value (int32)
+    Value getResult() {
+        return (*this)->getResult(0);
+    }
+    
+    // Get the null flag result (i1)
+    Value getNullFlag() {
+        return (*this)->getResult(1);
+    }
+};
+
+/// Operation for getting a text field from a tuple  
+class GetTextFieldOp : public Op<GetTextFieldOp> {
+public:
+    using Op::Op;
+    
+    static constexpr StringRef getOperationName() { return "pg.get_text_field"; }
+    static StringRef getDialectNamespace() { return "pg"; }
+    
+    static void build(OpBuilder &builder, OperationState &result, 
+                     Value tuple, unsigned fieldIndex);
+    
+    static ParseResult parse(OpAsmParser &parser, OperationState &result);
+    void print(OpAsmPrinter &printer);
+    LogicalResult verify();
+    
+    // Required for MLIR operation framework
+    static bool classof(Operation *op) {
+        return op->getName().getStringRef() == getOperationName();
+    }
+    
+    static ArrayRef<StringRef> getAttributeNames() { 
+        static constexpr StringRef attrNames[] = {"field_index"};
+        return llvm::ArrayRef(attrNames);
+    }
+    
+    // Get the tuple operand
+    Value getTuple() {
+        return (*this)->getOperand(0);
+    }
+    
+    // Get the field index
+    unsigned getFieldIndex() {
+        return (*this)->getAttrOfType<IntegerAttr>("field_index").getValue().getZExtValue();
+    }
+    
+    // Get the result value (text as i64 pointer)
+    Value getResult() {
+        return (*this)->getResult(0);
+    }
+    
+    // Get the null flag result (i1)
+    Value getNullFlag() {
+        return (*this)->getResult(1);
     }
 };
 

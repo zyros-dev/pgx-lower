@@ -204,3 +204,21 @@ void freeAggregationState(void* state);
 
 } // namespace runtime
 } // namespace pgx_lower
+
+//===----------------------------------------------------------------------===//
+// C-style interface for MLIR JIT compatibility
+//===----------------------------------------------------------------------===//
+
+extern "C" {
+
+// Legacy function names for compatibility with existing MLIR code
+void* open_postgres_table(const char* table_name);
+void* read_next_tuple_from_table(void* table_handle);
+void close_postgres_table(void* table_handle);
+bool add_tuple_to_result(void* tuple_handle);
+
+// Field access functions with MLIR-compatible signatures
+int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
+int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null); // returns char* as i64
+
+}
