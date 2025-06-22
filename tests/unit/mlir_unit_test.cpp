@@ -58,23 +58,23 @@ extern "C" int64_t mock_get_next_tuple() {
     return value;
 }
 
-extern "C" void* open_postgres_table(const char* tableName) {
+extern "C" int64_t open_postgres_table(int64_t tableName) {
     if (!g_mock_scan_context) {
-        return nullptr;
+        return 0;
     }
-    return g_mock_scan_context;
+    return reinterpret_cast<int64_t>(g_mock_scan_context);
 }
 
-extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
+extern "C" int64_t read_next_tuple_from_table(int64_t tableHandle) {
     if (!tableHandle) {
         return -1;
     }
     
-    MockTupleScanContext* context = static_cast<MockTupleScanContext*>(tableHandle);
+    MockTupleScanContext* context = reinterpret_cast<MockTupleScanContext*>(tableHandle);
     return mock_get_next_tuple();
 }
 
-extern "C" void close_postgres_table(void* tableHandle) {
+extern "C" void close_postgres_table(int64_t tableHandle) {
     // Nothing to do for mock implementation
 }
 
@@ -82,13 +82,13 @@ extern "C" bool add_tuple_to_result(int64_t value) {
     return true;
 }
 
-extern "C" int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" int32_t get_int_field(int64_t tuple_handle, int32_t field_index, bool* is_null) {
     // Mock implementation for unit tests
     *is_null = false;
     return field_index * 42; // Return predictable values
 }
 
-extern "C" int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" int64_t get_text_field(int64_t tuple_handle, int32_t field_index, bool* is_null) {
     // Mock implementation for unit tests
     static const char* mock_text = "mock_text_field";
     *is_null = false;
@@ -195,6 +195,11 @@ TEST(MLIRTest, PostgreSQLDialectBasic) {
 TEST(MLIRTest, PostgreSQLTypedFieldAccess) {
     using namespace pgx_lower;
     
+    // Set up mock data for the test
+    std::vector<int64_t> mockData = {100, 200, 300};
+    MockTupleScanContext mockContext = {mockData, 0, true};
+    g_mock_scan_context = &mockContext;
+    
     // Test typed field access with pg dialect
     ConsoleLogger logger;
     
@@ -205,6 +210,9 @@ TEST(MLIRTest, PostgreSQLTypedFieldAccess) {
     EXPECT_TRUE(result) << "MLIR PostgreSQL typed field access should succeed";
     
     std::cout << "[TEST] PostgreSQL typed field access completed!" << std::endl;
+    
+    // Clean up
+    g_mock_scan_context = nullptr;
 }
 
 TEST(MLIRTest, ErrorHandling) {

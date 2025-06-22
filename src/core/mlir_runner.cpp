@@ -107,7 +107,8 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     auto tableNamePtr =
         builder.create<mlir::arith::ConstantOp>(loc, builder.getI64IntegerAttr(reinterpret_cast<int64_t>(tableName)));
 
-    auto openCall = builder.create<mlir::func::CallOp>(loc, openTableFunc, mlir::ValueRange{tableNamePtr});
+    llvm::SmallVector<mlir::Value> openOperands = {tableNamePtr};
+    auto openCall = builder.create<mlir::func::CallOp>(loc, openTableFunc, openOperands);
     mlir::Value tableHandle = openCall.getResult(0);
 
     // Use proper scf.while loop to read entire table until end-of-table marker (-2)
@@ -139,7 +140,8 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     
     mlir::Value tupleCount = afterRegion.front().getArgument(1);
     
-    auto readCall = builder.create<mlir::func::CallOp>(loc, readTupleFunc, mlir::ValueRange{tableHandle});
+    llvm::SmallVector<mlir::Value> readOperands = {tableHandle};
+    auto readCall = builder.create<mlir::func::CallOp>(loc, readTupleFunc, readOperands);
     mlir::Value tupleValue = readCall.getResult(0);
     
     auto isEndOfTable = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq,
@@ -167,7 +169,8 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     builder.setInsertionPointToStart(&elseRegion.front());
     auto trueConst = builder.create<mlir::arith::ConstantOp>(loc, builder.getBoolAttr(true));
     
-    auto addTupleCall = builder.create<mlir::func::CallOp>(loc, addTupleFunc, mlir::ValueRange{tupleValue});
+    llvm::SmallVector<mlir::Value> addOperands = {tupleValue};
+    auto addTupleCall = builder.create<mlir::func::CallOp>(loc, addTupleFunc, addOperands);
     
     auto oneIntConst = builder.create<mlir::arith::ConstantOp>(loc, builder.getI64IntegerAttr(1));
     auto newCount = builder.create<mlir::arith::AddIOp>(loc, tupleCount, oneIntConst);
@@ -186,7 +189,8 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
 
     mlir::Value finalCount = whileOp.getResult(1);
 
-    builder.create<mlir::func::CallOp>(loc, closeTableFunc, mlir::ValueRange{tableHandle});
+    llvm::SmallVector<mlir::Value> closeOperands = {tableHandle};
+    builder.create<mlir::func::CallOp>(loc, closeTableFunc, closeOperands);
 
     builder.create<mlir::func::ReturnOp>(loc, finalCount);
 
@@ -504,10 +508,16 @@ bool run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logge
     auto readOp = builder.create(readState);
     auto tupleHandle = readOp->getResult(0);
     
-    // Check for end of table (simplified - normally this would be handled in the lowering)
-    auto tupleAsInt = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(1)); // Mock: assume we have data
+    // The lowering pass will convert tupleHandle to an i64 value from read_next_tuple_from_table
+    // We need to compare that result with -2 to check for end of table
+    // For now, we'll create a simplified version that will be fixed by the lowering pass
+    
+    // Create an unrealized conversion cast to represent the tuple as i64 for comparison
+    // This will be cleaned up by the lowering pass
+    auto tupleAsI64 = builder.create<mlir::UnrealizedConversionCastOp>(
+        location, i64Type, tupleHandle).getResult(0);
     auto isEndOfTable = builder.create<mlir::arith::CmpIOp>(location, mlir::arith::CmpIPredicate::eq,
-                                                           tupleAsInt, negTwoConst);
+                                                           tupleAsI64, negTwoConst);
     
     auto ifOp = builder.create<mlir::scf::IfOp>(location,
                                                llvm::ArrayRef<mlir::Type>{i1Type, i64Type},
@@ -520,7 +530,8 @@ bool run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logge
     }
     builder.setInsertionPointToStart(&thenRegion.front());
     auto falseConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(false));
-    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{falseConst, tupleCount});
+    llvm::SmallVector<mlir::Value> thenYieldOperands = {falseConst, tupleCount};
+    builder.create<mlir::scf::YieldOp>(location, thenYieldOperands);
     
     // Else branch: process tuple with field access
     auto& elseRegion = ifOp.getElseRegion();
@@ -550,13 +561,15 @@ bool run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logge
     auto textNullFlag = getTextOp->getResult(1);
     
     // For now, just output the original tuple (this shows we have the field access infrastructure)
-    auto addTupleCall = builder.create<mlir::func::CallOp>(location, addTupleFunc, 
-                                                          mlir::ValueRange{tupleAsInt});
+    llvm::SmallVector<mlir::Value> addOperands = {tupleAsI64};
+    auto addTupleCall = builder.create<mlir::func::CallOp>(location, addTupleFunc, addOperands);
+    // Note: addTupleCall returns i1, not i64
     
     auto oneIntConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(1));
     auto newCount = builder.create<mlir::arith::AddIOp>(location, tupleCount, oneIntConst);
     
-    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{trueContinue, newCount.getResult()});
+    llvm::SmallVector<mlir::Value> elseYieldOperands = {trueContinue, newCount.getResult()};
+    builder.create<mlir::scf::YieldOp>(location, elseYieldOperands);
     
     // Continue after the while loop
     builder.setInsertionPointAfter(ifOp);
@@ -566,7 +579,8 @@ bool run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logge
     
     // Close table (simplified - cast table handle to i64)
     auto tableHandleAsInt = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(0)); // Mock for now
-    builder.create<mlir::func::CallOp>(location, "close_postgres_table", mlir::ValueRange{tableHandleAsInt});
+    llvm::SmallVector<mlir::Value> closeOperands = {tableHandleAsInt};
+    builder.create<mlir::func::CallOp>(location, closeFunc, closeOperands);
     
     mlir::Value finalCount = whileOp.getResult(1);
     builder.create<mlir::func::ReturnOp>(location, finalCount);

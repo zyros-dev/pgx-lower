@@ -9,6 +9,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 using namespace mlir;
@@ -46,10 +47,11 @@ public:
         FlatSymbolRefAttr openTableFn = SymbolRefAttr::get(ctx, "open_postgres_table");
         
         // Create the function call
+        llvm::SmallVector<Value> operands = {tableNameConst};
         Value tableHandle = rewriter.create<func::CallOp>(
-            loc, i64Type, openTableFn, ValueRange{tableNameConst}).getResult(0);
+            loc, i64Type, openTableFn, operands).getResult(0);
         
-        // Replace the operation with the table handle
+        // Replace the operation with the table handle (as i64)
         rewriter.replaceOp(op, tableHandle);
         
         return success();
@@ -72,8 +74,9 @@ public:
         auto i64Type = rewriter.getI64Type();
         FlatSymbolRefAttr readTupleFn = SymbolRefAttr::get(ctx, "read_next_tuple_from_table");
         
+        llvm::SmallVector<Value> operands = {tableHandle};
         Value tupleHandle = rewriter.create<func::CallOp>(
-            loc, i64Type, readTupleFn, ValueRange{tableHandle}).getResult(0);
+            loc, i64Type, readTupleFn, operands).getResult(0);
         
         rewriter.replaceOp(op, tupleHandle);
         
@@ -107,13 +110,14 @@ public:
             loc, ptrType, i1Type, rewriter.create<arith::ConstantOp>(
                 loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(1)));
         
+        llvm::SmallVector<Value> operands = {tuple, fieldIndexVal, nullFlagPtr};
         Value intValue = rewriter.create<func::CallOp>(
-            loc, i32Type, getIntFieldFn, 
-            ValueRange{tuple, fieldIndexVal, nullFlagPtr}).getResult(0);
+            loc, i32Type, getIntFieldFn, operands).getResult(0);
         
         Value nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
         
-        rewriter.replaceOp(op, ValueRange{intValue, nullFlag});
+        llvm::SmallVector<Value> results = {intValue, nullFlag};
+        rewriter.replaceOp(op, results);
         
         return success();
     }
@@ -145,15 +149,42 @@ public:
             loc, ptrType, i1Type, rewriter.create<arith::ConstantOp>(
                 loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(1)));
         
+        llvm::SmallVector<Value> operands = {tuple, fieldIndexVal, nullFlagPtr};
         Value textPtr = rewriter.create<func::CallOp>(
-            loc, i64Type, getTextFieldFn, 
-            ValueRange{tuple, fieldIndexVal, nullFlagPtr}).getResult(0);
+            loc, i64Type, getTextFieldFn, operands).getResult(0);
         
         Value nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
         
-        rewriter.replaceOp(op, ValueRange{textPtr, nullFlag});
+        llvm::SmallVector<Value> results = {textPtr, nullFlag};
+        rewriter.replaceOp(op, results);
         
         return success();
+    }
+};
+
+/// Clean up UnrealizedConversionCastOp from tuple handles to i64
+class UnrealizedConversionCastOpLowering : public OpRewritePattern<UnrealizedConversionCastOp> {
+public:
+    explicit UnrealizedConversionCastOpLowering(MLIRContext *context) 
+        : OpRewritePattern<UnrealizedConversionCastOp>(context) {}
+    
+    LogicalResult matchAndRewrite(UnrealizedConversionCastOp op, 
+                                PatternRewriter &rewriter) const override {
+        // If this is a cast from tuple handle to i64, just remove it since
+        // the lowering pass already converts tuple handles to i64 values
+        if (op.getInputs().size() == 1 && op.getResults().size() == 1) {
+            Value input = op.getInputs()[0];
+            Value result = op.getResults()[0];
+            
+            // If input is i64 and result is i64, this is a no-op
+            if (mlir::isa<IntegerType>(input.getType()) && 
+                mlir::isa<IntegerType>(result.getType())) {
+                rewriter.replaceOp(op, input);
+                return success();
+            }
+        }
+        
+        return failure();
     }
 };
 
@@ -214,20 +245,12 @@ struct LowerPgToSCFPass : public PassWrapper<LowerPgToSCFPass, OperationPass<fun
         auto func = getOperation();
         MLIRContext *ctx = &getContext();
         
-        // Set up type converter
-        PgTypeConverter typeConverter;
-        
-        // Set up conversion target
-        ConversionTarget target(*ctx);
-        target.addLegalDialect<arith::ArithDialect, scf::SCFDialect, func::FuncDialect, LLVM::LLVMDialect>();
-        target.addIllegalDialect<pg::PgDialect>();
-        
-        // Set up rewrite patterns
+        // Use simple rewrite patterns without type conversion
         RewritePatternSet patterns(ctx);
-        populatePgToSCFConversionPatterns(patterns, typeConverter);
+        patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering, UnrealizedConversionCastOpLowering>(ctx);
         
-        // Apply the conversion - use partial conversion to allow existing types
-        if (failed(applyPartialConversion(func, target, std::move(patterns)))) {
+        // Apply greedy pattern rewriting (no type conversion involved)
+        if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns)))) {
             signalPassFailure();
         }
     }
