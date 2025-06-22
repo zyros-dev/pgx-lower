@@ -1,0 +1,36 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS simple_test;
+CREATE TABLE simple_test
+(
+    id          INTEGER,
+    col_a       INTEGER,
+    col_b       INTEGER,
+    col_c       INTEGER
+);
+INSERT INTO simple_test VALUES 
+(1, 10, 20, 30),
+(2, 11, 21, 31),
+(3, 12, 22, 32);
+SELECT col_b, col_c FROM simple_test;
+ col_b | col_c 
+-------+-------
+    20 |    30
+    21 |    31
+    22 |    32
+(3 rows)
+
+SELECT col_a FROM simple_test;
+ col_a 
+-------
+    10
+    11
+    12
+(3 rows)
+
+SELECT col_c, col_a FROM simple_test;
+ col_c | col_a 
+-------+-------
+    30 |    10
+    31 |    11
+    32 |    12
+(3 rows)

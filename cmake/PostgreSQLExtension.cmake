@@ -119,7 +119,7 @@ module_pathname = '$libdir/$<TARGET_FILE_NAME:${NAME}>'
             COMMAND ${PG_REGRESS}
                     --bindir=${_pg_bindir}
                     --dlpath=${PostgreSQL_PACKAGE_LIBRARY_DIR}
-                    --inputdir=${CMAKE_CURRENT_SOURCE_DIR}
+                    --inputdir=${CMAKE_SOURCE_DIR}/tests
                     --outputdir=${CMAKE_CURRENT_BINARY_DIR}
                     --load-extension=${NAME}
                     ${_ext_REGRESS}

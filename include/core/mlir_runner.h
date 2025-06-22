@@ -4,6 +4,7 @@
 #include "mlir_logger.h"
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 namespace mlir_runner {
 
@@ -17,6 +18,9 @@ auto run_mlir_postgres_table_scan_modular(const char* tableName, MLIRLogger& log
 
 // PostgreSQL Integration - Typed field access with pg dialect
 auto run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logger) -> bool;
+
+// PostgreSQL Integration - Typed field access with specific columns
+auto run_mlir_postgres_typed_table_scan_with_columns(const char* tableName, const std::vector<int>& selectedColumns, MLIRLogger& logger) -> bool;
 
 // Core MLIR compilation and execution engine
 auto run_mlir_core(int64_t intValue, MLIRLogger& logger) -> bool;

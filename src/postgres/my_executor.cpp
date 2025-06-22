@@ -6,18 +6,23 @@
 
 #include "executor/executor.h"
 
+#include <vector>
+
 extern "C" {
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/table.h"
 #include "catalog/pg_type.h"
 #include "executor/tuptable.h"
+#include "nodes/plannodes.h"
+#include "nodes/primnodes.h"
 #include "postgres.h"
 #include "tcop/dest.h"
 #include "utils/elog.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
+#include "utils/builtins.h"
 }
 
 // Undefine PostgreSQL macros that conflict with LLVM
@@ -90,6 +95,7 @@ struct TupleStreamer {
     DestReceiver* dest;
     TupleTableSlot* slot;
     bool isActive;
+    std::vector<int> selectedColumns;  // Column indices to project from original tuple
     
     TupleStreamer() : dest(nullptr), slot(nullptr), isActive(false) {}
     
@@ -97,6 +103,10 @@ struct TupleStreamer {
         dest = destReceiver;
         slot = tupleSlot;
         isActive = true;
+    }
+    
+    void setSelectedColumns(const std::vector<int>& columns) {
+        selectedColumns = columns;
     }
     
     bool streamTuple(int64_t value) {
@@ -121,9 +131,38 @@ struct TupleStreamer {
         }
         
         try {
-            // Store the original PostgreSQL tuple directly - NO data conversion
-            // Dates stay as dates, strings as strings, UUIDs as UUIDs, etc.
-            ExecStoreHeapTuple(passthrough.originalTuple, slot, false);  // false = don't free tuple
+            // Clear the slot first
+            ExecClearTuple(slot);
+            
+            // The slot is configured for the result tuple descriptor (selected columns only)
+            // We need to extract only the projected columns from the original tuple
+            TupleDesc origTupleDesc = passthrough.tupleDesc;
+            TupleDesc resultTupleDesc = slot->tts_tupleDescriptor;
+            
+            // Project only the selected columns from original tuple to result slot
+            for (int i = 0; i < resultTupleDesc->natts; i++) {
+                bool isnull = false;
+                
+                if (i < selectedColumns.size()) {
+                    // Map from result column index to original column index
+                    int origColumnIndex = selectedColumns[i];
+                    if (origColumnIndex >= 0 && origColumnIndex < origTupleDesc->natts) {
+                        // PostgreSQL uses 1-based attribute indexing
+                        Datum value = heap_getattr(passthrough.originalTuple, origColumnIndex + 1, origTupleDesc, &isnull);
+                        slot->tts_values[i] = value;
+                        slot->tts_isnull[i] = isnull;
+                    } else {
+                        slot->tts_values[i] = (Datum) 0;
+                        slot->tts_isnull[i] = true;
+                    }
+                } else {
+                    slot->tts_values[i] = (Datum) 0;
+                    slot->tts_isnull[i] = true;
+                }
+            }
+            
+            slot->tts_nvalid = resultTupleDesc->natts;
+            ExecStoreVirtualTuple(slot);
             
             return dest->receiveSlot(slot, dest);
         } catch (...) {
@@ -326,17 +365,63 @@ bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const Q
     PostgreSQLLogger logger;
 
     DestReceiver* dest = queryDesc->dest;
-    TupleTableSlot* slot = MakeSingleTupleTableSlot(tupdesc, &TTSOpsHeapTuple);
+    
+    // Extract target list from the query plan to get selected columns and create result tuple descriptor
+    PlannedStmt* stmt = queryDesc->plannedstmt;
+    Plan* rootPlan = stmt->planTree;
+    
+    // Create a tuple descriptor for the result (selected columns only)
+    TupleDesc resultTupleDesc = CreateTemplateTupleDesc(list_length(rootPlan->targetlist));
+    
+    // Get the selected column indices from targetlist and build result tuple descriptor
+    std::vector<int> selectedColumns;
+    int resultAttrNum = 1;
+    ListCell* lc;
+    foreach(lc, rootPlan->targetlist) {
+        TargetEntry* tle = (TargetEntry*)lfirst(lc);
+        if (tle->resjunk) continue; // Skip junk columns
+        
+        if (IsA(tle->expr, Var)) {
+            Var* var = (Var*)tle->expr;
+            // Convert PostgreSQL 1-based to 0-based indexing
+            selectedColumns.push_back(var->varattno - 1);
+            
+            // Copy attribute info from source table to result descriptor
+            Form_pg_attribute sourceAttr = TupleDescAttr(tupdesc, var->varattno - 1);
+            Form_pg_attribute resultAttr = TupleDescAttr(resultTupleDesc, resultAttrNum - 1);
+            
+            resultAttr->atttypid = sourceAttr->atttypid;
+            resultAttr->atttypmod = sourceAttr->atttypmod;
+            resultAttr->attlen = sourceAttr->attlen;
+            resultAttr->attbyval = sourceAttr->attbyval;
+            resultAttr->attalign = sourceAttr->attalign;
+            resultAttr->attnotnull = sourceAttr->attnotnull;
+            
+            // Copy the name or use a generated name
+            if (tle->resname) {
+                strncpy(NameStr(resultAttr->attname), tle->resname, NAMEDATALEN-1);
+                NameStr(resultAttr->attname)[NAMEDATALEN-1] = '\0';
+            } else {
+                strncpy(NameStr(resultAttr->attname), NameStr(sourceAttr->attname), NAMEDATALEN-1);
+                NameStr(resultAttr->attname)[NAMEDATALEN-1] = '\0';
+            }
+            
+            resultAttrNum++;
+        }
+    }
+    
+    TupleTableSlot* slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
 
-    dest->rStartup(dest, queryDesc->operation, tupdesc);
+    dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
 
     g_tuple_streamer.initialize(dest, slot);
+    g_tuple_streamer.setSelectedColumns(selectedColumns);
 
     TupleScanContext scanContext = {scanDesc, tupdesc, true, 0};
     g_scan_context = &scanContext;
-
-    // Use the new typed field access version to demonstrate dialect-based compilation
-    bool mlir_success = mlir_runner::run_mlir_postgres_typed_table_scan("current_table", logger);
+    
+    // Use the new typed field access version with actual column information
+    bool mlir_success = mlir_runner::run_mlir_postgres_typed_table_scan_with_columns("current_table", selectedColumns, logger);
     
     // Cleanup
     g_scan_context = nullptr;
@@ -351,6 +436,7 @@ bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const Q
     dest->rShutdown(dest);
 
     ExecDropSingleTupleTableSlot(slot);
+    FreeTupleDesc(resultTupleDesc);
     
     return mlir_success;
 }

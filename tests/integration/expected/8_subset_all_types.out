@@ -1,0 +1,131 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS test_types;
+CREATE TABLE test_types
+(
+    id              SERIAL PRIMARY KEY,
+    small_int       SMALLINT,
+    integer_col     INTEGER,
+    big_int         BIGINT,
+    decimal_col     DECIMAL(10, 2),
+    numeric_col     NUMERIC(10, 2),
+    real_col        REAL,
+    double_col      DOUBLE PRECISION,
+    money_col       MONEY,
+    char_col        CHAR(10),
+    varchar_col     VARCHAR(255),
+    text_col        TEXT,
+    bytea_col       BYTEA,
+    boolean_col     BOOLEAN,
+    date_col        DATE,
+    time_col        TIME,
+    timetz_col      TIME WITH TIME ZONE,
+    timestamp_col   TIMESTAMP,
+    timestamptz_col TIMESTAMP WITH TIME ZONE,
+    interval_col    INTERVAL,
+    uuid_col        UUID,
+    inet_col        INET,
+    cidr_col        CIDR,
+    macaddr_col     MACADDR,
+    bit_col         BIT(8),
+    varbit_col      VARBIT(8)
+);
+INSERT INTO test_types (small_int, integer_col, big_int, decimal_col, numeric_col,
+                        real_col, double_col, money_col, char_col, varchar_col, text_col,
+                        bytea_col, boolean_col, date_col, time_col, timetz_col,
+                        timestamp_col, timestamptz_col, interval_col, uuid_col,
+                        inet_col, cidr_col, macaddr_col, bit_col, varbit_col)
+SELECT i::smallint, 
+       (1000 + i),
+       (1000000000000 + i),
+       (100.00 + i)::decimal(10,2), 
+       (200.00 + i)::numeric(10,2), 
+       (1.1 + i)::real, 
+       (2.2 + i)::double precision,
+       (100.00 + i)::money,
+       LPAD('ch' || i, 10, 'x'),
+       'varchar_' || i,
+       'text row ' || i,
+       decode('DEADBEEF', 'hex'),
+       i % 2 = 0,
+       CURRENT_DATE + i,
+       (TIME '12:00:00' + (i || ' minutes')::interval)::time,
+       (TIME '12:00:00' + (i || ' minutes')::interval)::time with time zone,
+       CURRENT_TIMESTAMP + (i || ' hours')::interval,
+       CURRENT_TIMESTAMP + (i || ' hours')::interval,
+       make_interval(days => i),
+       gen_random_uuid(),
+       ('192.168.1.' || i)::inet,
+       '192.168.0.0/16'::cidr,
+       MACADDR '08:00:2b:01:02:03',
+       B'10101010',
+       B'11110000'
+FROM generate_series(1, 5) AS s(i);
+SELECT big_int, integer_col, small_int FROM test_types;
+     big_int     | integer_col | small_int 
+-----------------+-------------+-----------
+ 1000000000001 |        1001 |         1
+ 1000000000002 |        1002 |         2
+ 1000000000003 |        1003 |         3
+ 1000000000004 |        1004 |         4
+ 1000000000005 |        1005 |         5
+(5 rows)
+
+SELECT text_col, varchar_col, char_col FROM test_types;
+ text_col  | varchar_col | char_col   
+-----------+-------------+------------
+ text row 1| varchar_1   | xxxxxch1  
+ text row 2| varchar_2   | xxxxxch2  
+ text row 3| varchar_3   | xxxxxch3  
+ text row 4| varchar_4   | xxxxxch4  
+ text row 5| varchar_5   | xxxxxch5  
+(5 rows)
+
+SELECT boolean_col, decimal_col, real_col FROM test_types;
+ boolean_col | decimal_col | real_col 
+-------------+-------------+----------
+ f           |      101.00 |      2.1
+ t           |      102.00 |      3.1
+ f           |      103.00 |      4.1
+ t           |      104.00 |      5.1
+ f           |      105.00 |      6.1
+(5 rows)
+
+SELECT date_col, time_col, timestamp_col FROM test_types;
+ date_col   | time_col | timestamp_col           
+------------+----------+-------------------------
+ 2025-06-23 | 12:01:00 | 2025-06-22 08:49:01.123
+ 2025-06-24 | 12:02:00 | 2025-06-22 09:49:01.123
+ 2025-06-25 | 12:03:00 | 2025-06-22 10:49:01.123
+ 2025-06-26 | 12:04:00 | 2025-06-22 11:49:01.123
+ 2025-06-27 | 12:05:00 | 2025-06-22 12:49:01.123
+(5 rows)
+
+SELECT boolean_col, text_col, integer_col, real_col FROM test_types;
+ boolean_col | text_col   | integer_col | real_col 
+-------------+------------+-------------+----------
+ f           | text row 1 |        1001 |      2.1
+ t           | text row 2 |        1002 |      3.1
+ f           | text row 3 |        1003 |      4.1
+ t           | text row 4 |        1004 |      5.1
+ f           | text row 5 |        1005 |      6.1
+(5 rows)
+
+SELECT varchar_col FROM test_types;
+ varchar_col 
+-------------
+ varchar_1
+ varchar_2
+ varchar_3
+ varchar_4
+ varchar_5
+(5 rows)
+
+SELECT id, varbit_col FROM test_types;
+ id | varbit_col 
+----+------------
+  1 | 11110000
+  2 | 11110000
+  3 | 11110000
+  4 | 11110000
+  5 | 11110000
+(5 rows)

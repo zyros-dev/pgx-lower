@@ -23,6 +23,8 @@ add_postgresql_mixed_extension(
             4_two_columns_ints
             5_two_columns_diff
             6_every_type
+            7_sub_select
+            8_subset_all_types
 )
 
 # Link the PostgreSQL dialect and runtime libraries
@@ -31,66 +33,3 @@ target_link_libraries(pgx_lower PRIVATE
     PgxLowerRuntime
 )
 
-# Set up test files in the expected locations for pg_regress
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/sql/1_one_tuple.sql
-    ${CMAKE_CURRENT_BINARY_DIR}/sql/1_one_tuple.sql
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/sql/2_two_tuples.sql
-    ${CMAKE_CURRENT_BINARY_DIR}/sql/2_two_tuples.sql
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/sql/3_lots_of_tuples.sql
-    ${CMAKE_CURRENT_BINARY_DIR}/sql/3_lots_of_tuples.sql
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/sql/4_two_columns_ints.sql
-    ${CMAKE_CURRENT_BINARY_DIR}/sql/4_two_columns_ints.sql
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/sql/5_two_columns_diff.sql
-    ${CMAKE_CURRENT_BINARY_DIR}/sql/5_two_columns_diff.sql
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/sql/6_every_type.sql
-    ${CMAKE_CURRENT_BINARY_DIR}/sql/6_every_type.sql
-    COPYONLY
-)
-
-# Copy expected output files
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/integration/expected/1_one_tuple.out
-    ${CMAKE_CURRENT_BINARY_DIR}/expected/1_one_tuple.out
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/integration/expected/2_two_tuples.out
-    ${CMAKE_CURRENT_BINARY_DIR}/expected/2_two_tuples.out
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/integration/expected/3_lots_of_tuples.out
-    ${CMAKE_CURRENT_BINARY_DIR}/expected/3_lots_of_tuples.out
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/integration/expected/4_two_columns_ints.out
-    ${CMAKE_CURRENT_BINARY_DIR}/expected/4_two_columns_ints.out
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/integration/expected/5_two_columns_diff.out
-    ${CMAKE_CURRENT_BINARY_DIR}/expected/5_two_columns_diff.out
-    COPYONLY
-)
-configure_file(
-    ${CMAKE_SOURCE_DIR}/tests/integration/expected/6_every_type.out
-    ${CMAKE_CURRENT_BINARY_DIR}/expected/6_every_type.out
-    COPYONLY
-)
