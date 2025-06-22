@@ -9,6 +9,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 
 using namespace mlir;
 using namespace mlir::pg;
@@ -179,6 +180,22 @@ public:
             // Return the type unchanged if it's not a pg type
             return type;
         });
+        
+        // Add materializations for type conversions
+        addSourceMaterialization([](OpBuilder &builder, Type resultType, ValueRange inputs, Location loc) -> Value {
+            if (inputs.size() != 1) return {};
+            return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs[0]).getResult(0);
+        });
+        
+        addTargetMaterialization([](OpBuilder &builder, Type resultType, ValueRange inputs, Location loc) -> Value {
+            if (inputs.size() != 1) return {};
+            return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs[0]).getResult(0);
+        });
+        
+        addArgumentMaterialization([](OpBuilder &builder, Type resultType, ValueRange inputs, Location loc) -> Value {
+            if (inputs.size() != 1) return {};
+            return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs[0]).getResult(0);
+        });
     }
 };
 
@@ -190,7 +207,7 @@ struct LowerPgToSCFPass : public PassWrapper<LowerPgToSCFPass, OperationPass<fun
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerPgToSCFPass)
     
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<arith::ArithDialect, scf::SCFDialect, func::FuncDialect>();
+        registry.insert<arith::ArithDialect, scf::SCFDialect, func::FuncDialect, LLVM::LLVMDialect>();
     }
     
     void runOnOperation() override {
@@ -202,15 +219,15 @@ struct LowerPgToSCFPass : public PassWrapper<LowerPgToSCFPass, OperationPass<fun
         
         // Set up conversion target
         ConversionTarget target(*ctx);
-        target.addLegalDialect<arith::ArithDialect, scf::SCFDialect, func::FuncDialect>();
+        target.addLegalDialect<arith::ArithDialect, scf::SCFDialect, func::FuncDialect, LLVM::LLVMDialect>();
         target.addIllegalDialect<pg::PgDialect>();
         
         // Set up rewrite patterns
         RewritePatternSet patterns(ctx);
         populatePgToSCFConversionPatterns(patterns, typeConverter);
         
-        // Apply the conversion
-        if (failed(applyFullConversion(func, target, std::move(patterns)))) {
+        // Apply the conversion - use partial conversion to allow existing types
+        if (failed(applyPartialConversion(func, target, std::move(patterns)))) {
             signalPassFailure();
         }
     }

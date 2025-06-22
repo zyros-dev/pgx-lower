@@ -550,7 +550,7 @@ bool run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logge
     auto textNullFlag = getTextOp->getResult(1);
     
     // For now, just output the original tuple (this shows we have the field access infrastructure)
-    auto addTupleCall = builder.create<mlir::func::CallOp>(location, "add_tuple_to_result", 
+    auto addTupleCall = builder.create<mlir::func::CallOp>(location, addTupleFunc, 
                                                           mlir::ValueRange{tupleAsInt});
     
     auto oneIntConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(1));
@@ -579,23 +579,106 @@ bool run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logge
     os.flush();
     logger.notice("MLIR with field access: " + mlirStr);
     
-    // For now, skip the lowering pass to demonstrate the high-level dialect operations
-    // TODO: Fix lowering pass issues in a future iteration
     // Apply pg-to-scf lowering pass to convert high-level operations to runtime calls
-    // mlir::PassManager pm(&context);
-    // pm.addNestedPass<mlir::func::FuncOp>(mlir::pg::createLowerPgToSCFPass());
-    // 
-    // if (mlir::failed(pm.run(module))) {
-    //     logger.error("Failed to apply pg-to-scf lowering pass");
-    //     return false;
-    // }
-    // 
-    // logger.notice("Applied pg-to-scf lowering pass!");
-    // std::string loweredStr;
-    // llvm::raw_string_ostream loweredOs(loweredStr);
-    // module.OpState::print(loweredOs);
-    // loweredOs.flush();
-    // logger.notice("Lowered MLIR: " + loweredStr);
+    mlir::PassManager pm(&context);
+    pm.addNestedPass<mlir::func::FuncOp>(mlir::pg::createLowerPgToSCFPass());
+    
+    if (mlir::failed(pm.run(module))) {
+        logger.error("Failed to apply pg-to-scf lowering pass");
+        return false;
+    }
+    
+    logger.notice("Applied pg-to-scf lowering pass!");
+    std::string loweredStr;
+    llvm::raw_string_ostream loweredOs(loweredStr);
+    module.OpState::print(loweredOs);
+    loweredOs.flush();
+    logger.notice("Lowered MLIR: " + loweredStr);
+    
+    // Continue with full lowering pipeline to execute
+    pm.clear();
+    pm.addPass(mlir::createConvertSCFToCFPass());
+    pm.addNestedPass<mlir::func::FuncOp>(mlir::createArithToLLVMConversionPass());
+    pm.addPass(mlir::createConvertFuncToLLVMPass());
+    pm.addPass(mlir::createConvertControlFlowToLLVMPass());
+    pm.addPass(mlir::createCanonicalizerPass());
+    pm.addPass(mlir::createCSEPass());
+
+    if (mlir::failed(pm.run(module))) {
+        auto error = pgx_lower::ErrorManager::compilationError(
+            "Failed to lower MLIR module to LLVM dialect",
+            "Pass manager execution failed");
+        pgx_lower::ErrorManager::reportError(error);
+        logger.error("Failed to lower MLIR module to LLVM dialect");
+        return false;
+    }
+    logger.notice("Lowered PostgreSQL typed field access MLIR to LLVM dialect!");
+
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+
+    mlir::DialectRegistry registry;
+    mlir::registerAllToLLVMIRTranslations(registry);
+    context.appendDialectRegistry(registry);
+
+    mlir::registerLLVMDialectTranslation(context);
+    mlir::registerBuiltinDialectTranslation(context);
+
+    auto optPipeline = mlir::makeOptimizingTransformer(0, 0, nullptr);
+    mlir::ExecutionEngineOptions engineOptions;
+    engineOptions.transformer = optPipeline;
+    engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
+    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
+    if (!maybeEngine) {
+        auto error = pgx_lower::ErrorManager::compilationError(
+            "Failed to create MLIR ExecutionEngine for typed field access",
+            "ExecutionEngine creation failed - check LLVM configuration");
+        pgx_lower::ErrorManager::reportError(error);
+        logger.error("Failed to create MLIR ExecutionEngine for typed field access");
+        return false;
+    }
+    logger.notice("Created MLIR ExecutionEngine for PostgreSQL typed field access!");
+    auto engine = std::move(*maybeEngine);
+
+    engine->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
+        llvm::orc::SymbolMap symbolMap;
+        symbolMap[interner("open_postgres_table")] =
+            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&open_postgres_table)),
+                                         llvm::JITSymbolFlags::Exported);
+        symbolMap[interner("read_next_tuple_from_table")] = llvm::orc::ExecutorSymbolDef(
+            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&read_next_tuple_from_table)),
+            llvm::JITSymbolFlags::Exported);
+        symbolMap[interner("close_postgres_table")] = llvm::orc::ExecutorSymbolDef(
+            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&close_postgres_table)),
+            llvm::JITSymbolFlags::Exported);
+        symbolMap[interner("add_tuple_to_result")] = llvm::orc::ExecutorSymbolDef(
+            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&add_tuple_to_result)),
+            llvm::JITSymbolFlags::Exported);
+        symbolMap[interner("get_int_field")] = llvm::orc::ExecutorSymbolDef(
+            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&get_int_field)),
+            llvm::JITSymbolFlags::Exported);
+        symbolMap[interner("get_text_field")] = llvm::orc::ExecutorSymbolDef(
+            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&get_text_field)),
+            llvm::JITSymbolFlags::Exported);
+        return symbolMap;
+    });
+
+    auto expectedFPtr = engine->lookup("main");
+    if (!expectedFPtr) {
+        std::string errMsg;
+        llvm::raw_string_ostream errStream(errMsg);
+        errStream << expectedFPtr.takeError();
+        logger.error("Failed to lookup function: " + errMsg);
+        return false;
+    }
+
+    auto fptr = reinterpret_cast<int64_t (*)()>(*expectedFPtr);
+    int64_t result = fptr();
+    logger.notice("Invoked MLIR JIT PostgreSQL typed field access!");
+
+    oss.str("");
+    oss << "PostgreSQL typed field access completed with result: " << result;
+    logger.notice(oss.str());
     
     logger.notice("Demonstrating high-level PostgreSQL dialect operations!");
     

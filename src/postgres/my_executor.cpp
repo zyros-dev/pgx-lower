@@ -243,6 +243,85 @@ extern "C" bool add_tuple_to_result(int64_t value) {
     return g_tuple_streamer.streamCompletePostgreSQLTuple(g_current_tuple_passthrough);
 }
 
+// Typed field access functions for PostgreSQL dialect
+extern "C" int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
+        *is_null = true;
+        return 0;
+    }
+    
+    // PostgreSQL uses 1-based attribute indexing
+    int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
+        *is_null = true;
+        return 0;
+    }
+    
+    bool isnull;
+    Datum value = heap_getattr(g_current_tuple_passthrough.originalTuple, 
+                              attr_num, 
+                              g_current_tuple_passthrough.tupleDesc, 
+                              &isnull);
+    
+    *is_null = isnull;
+    if (isnull) {
+        return 0;
+    }
+    
+    // Convert to int32 based on PostgreSQL type
+    Oid atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
+    switch (atttypid) {
+        case INT2OID:
+            return (int32_t)DatumGetInt16(value);
+        case INT4OID:
+            return DatumGetInt32(value);
+        case INT8OID:
+            return (int32_t)DatumGetInt64(value); // Truncate to int32
+        default:
+            *is_null = true;
+            return 0;
+    }
+}
+
+extern "C" int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
+        *is_null = true;
+        return 0;
+    }
+    
+    // PostgreSQL uses 1-based attribute indexing
+    int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
+        *is_null = true;
+        return 0;
+    }
+    
+    bool isnull;
+    Datum value = heap_getattr(g_current_tuple_passthrough.originalTuple, 
+                              attr_num, 
+                              g_current_tuple_passthrough.tupleDesc, 
+                              &isnull);
+    
+    *is_null = isnull;
+    if (isnull) {
+        return 0;
+    }
+    
+    // For text types, return pointer to the string data
+    Oid atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
+    switch (atttypid) {
+        case TEXTOID:
+        case VARCHAROID:
+        case CHAROID: {
+            text* textval = DatumGetTextP(value);
+            return reinterpret_cast<int64_t>(VARDATA(textval));
+        }
+        default:
+            *is_null = true;
+            return 0;
+    }
+}
+
 bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const QueryDesc* queryDesc) {
     PostgreSQLLogger logger;
 

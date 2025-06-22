@@ -23,4 +23,8 @@ void close_postgres_table(void* tableHandle);
 // Legacy interface for simple tuple access (kept for compatibility)
 int64_t get_next_tuple();
 
+// Typed field access functions for PostgreSQL dialect
+int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
+int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null);
+
 }
