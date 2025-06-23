@@ -45,34 +45,14 @@ def Pg_ReadTupleOp : Pg_Op<"read_tuple", []> {
         
         Example:
         ```mlir
-        %tuple = pg.read_tuple %table : !pg.tuple_handle
+        %tuple = pg.read_tuple %table {limit = 1} : !pg.tuple_handle
         ```
     }];
     
-    let arguments = (ins Pg_TableHandleType:$table_handle);
+    let arguments = (ins Pg_TableHandleType:$table_handle, DefaultValuedAttr<I32Attr, "1">:$limit);
     let results = (outs Pg_TupleHandleType:$tuple);
     
     let assemblyFormat = "$table_handle attr-dict `:` type($tuple)";
-    
-    // MLIR 20.x: Operations without attributes need complete Properties interface
-    let extraClassDeclaration = [{
-        const ::mlir::EmptyProperties &getProperties() const {
-            static const ::mlir::EmptyProperties emptyProps{};
-            return emptyProps;
-        }
-        
-        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
-            return llvm::hash_value(0);
-        }
-        
-        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
-            return {};
-        }
-        
-        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
-            return mlir::success();
-        }
-    }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -143,71 +123,33 @@ def Pg_WhereOp : Pg_Op<"where", [Pure]> {
         
         Example:
         ```mlir
-        %filtered = pg.where %tuple, %condition : !pg.tuple<i32, !pg.text>, i1 -> !pg.tuple<i32, !pg.text>
+        %filtered = pg.where %tuple, %condition {null_handling = "reject"} : !pg.tuple<i32, !pg.text>, i1 -> !pg.tuple<i32, !pg.text>
         ```
     }];
     
-    let arguments = (ins Pg_TupleType:$tuple, I1:$condition);
+    let arguments = (ins Pg_TupleType:$tuple, I1:$condition, DefaultValuedAttr<StrAttr, "\"reject\"">:$null_handling);
     let results = (outs Pg_TupleType:$result);
     
     let assemblyFormat = "$tuple `,` $condition attr-dict `:` type($tuple) `,` type($condition) `->` type($result)";
-    
-    // MLIR 20.x: Operations without attributes need complete Properties interface
-    let extraClassDeclaration = [{
-        const ::mlir::EmptyProperties &getProperties() const {
-            static const ::mlir::EmptyProperties emptyProps{};
-            return emptyProps;
-        }
-        
-        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
-            return llvm::hash_value(0);
-        }
-        
-        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
-            return {};
-        }
-        
-        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
-            return mlir::success();
-        }
-    }];
 }
 
 def Pg_IsNullOp : Pg_Op<"is_null", [Pure]> {
     let summary = "Check if a value is NULL";
     let description = [{
         Checks if a PostgreSQL value is NULL. Works with any PostgreSQL type.
+        Supports both IS NULL and IS NOT NULL checks.
         
         Example:
         ```mlir
-        %is_null = pg.is_null %text_value : !pg.text -> i1
+        %is_null = pg.is_null %text_value {invert = false} : !pg.text -> i1
+        %is_not_null = pg.is_null %text_value {invert = true} : !pg.text -> i1
         ```
     }];
     
-    let arguments = (ins AnyType:$value);
+    let arguments = (ins AnyType:$value, DefaultValuedAttr<BoolAttr, "false">:$invert);
     let results = (outs I1:$result);
     
     let assemblyFormat = "$value attr-dict `:` type($value) `->` type($result)";
-    
-    // MLIR 20.x: Operations without attributes need complete Properties interface
-    let extraClassDeclaration = [{
-        const ::mlir::EmptyProperties &getProperties() const {
-            static const ::mlir::EmptyProperties emptyProps{};
-            return emptyProps;
-        }
-        
-        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
-            return llvm::hash_value(0);
-        }
-        
-        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
-            return {};
-        }
-        
-        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
-            return mlir::success();
-        }
-    }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -256,75 +198,37 @@ def Pg_AggregateSumOp : Pg_Op<"aggregate_sum", []> {
     let summary = "Sum aggregation operation";
     let description = [{
         Performs sum aggregation over integer values, handling NULL values according
-        to PostgreSQL semantics.
+        to PostgreSQL semantics. Supports DISTINCT aggregation.
         
         Example:
         ```mlir
-        %sum = pg.aggregate_sum %input_values : !pg.table_handle -> i64
+        %sum = pg.aggregate_sum %input_values {distinct = false} : !pg.table_handle -> i64
+        %sum_distinct = pg.aggregate_sum %input_values {distinct = true} : !pg.table_handle -> i64
         ```
     }];
     
-    let arguments = (ins Pg_TableHandleType:$input);
+    let arguments = (ins Pg_TableHandleType:$input, DefaultValuedAttr<BoolAttr, "false">:$distinct);
     let results = (outs I64:$result);
     
     let assemblyFormat = "$input attr-dict `:` type($input) `->` type($result)";
-    
-    // MLIR 20.x: Operations without attributes need complete Properties interface
-    let extraClassDeclaration = [{
-        const ::mlir::EmptyProperties &getProperties() const {
-            static const ::mlir::EmptyProperties emptyProps{};
-            return emptyProps;
-        }
-        
-        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
-            return llvm::hash_value(0);
-        }
-        
-        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
-            return {};
-        }
-        
-        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
-            return mlir::success();
-        }
-    }];
 }
 
 def Pg_AggregateCountOp : Pg_Op<"aggregate_count", []> {
     let summary = "Count aggregation operation";
     let description = [{
-        Counts the number of non-NULL values.
+        Counts the number of non-NULL values. Supports DISTINCT counting.
         
         Example:
         ```mlir
-        %count = pg.aggregate_count %input_values : !pg.table_handle -> i64
+        %count = pg.aggregate_count %input_values {distinct = false} : !pg.table_handle -> i64
+        %count_distinct = pg.aggregate_count %input_values {distinct = true} : !pg.table_handle -> i64
         ```
     }];
     
-    let arguments = (ins Pg_TableHandleType:$input);
+    let arguments = (ins Pg_TableHandleType:$input, DefaultValuedAttr<BoolAttr, "false">:$distinct);
     let results = (outs I64:$result);
     
     let assemblyFormat = "$input attr-dict `:` type($input) `->` type($result)";
-    
-    // MLIR 20.x: Operations without attributes need complete Properties interface
-    let extraClassDeclaration = [{
-        const ::mlir::EmptyProperties &getProperties() const {
-            static const ::mlir::EmptyProperties emptyProps{};
-            return emptyProps;
-        }
-        
-        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
-            return llvm::hash_value(0);
-        }
-        
-        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
-            return {};
-        }
-        
-        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
-            return mlir::success();
-        }
-    }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -335,36 +239,24 @@ def Pg_YieldTupleOp : Pg_Op<"yield_tuple", []> {
     let summary = "Yield tuple to query result";
     let description = [{
         Yields a tuple to the query result set. This represents the final
-        output of a query.
+        output of a query. Supports ordering metadata for ORDER BY clauses.
         
         Example:
         ```mlir
-        pg.yield_tuple %tuple : !pg.tuple<i32, !pg.text>
+        pg.yield_tuple %tuple {ordering = "asc"} : !pg.tuple<i32, !pg.text>
+        pg.yield_tuple %tuple {ordering = "desc"} : !pg.tuple<i32, !pg.text>
         ```
     }];
     
-    let arguments = (ins Pg_TupleType:$tuple);
+    let arguments = (ins Pg_TupleType:$tuple, DefaultValuedAttr<StrAttr, "\"none\"">:$ordering);
     let results = (outs);
     
     let assemblyFormat = "$tuple attr-dict `:` type($tuple)";
     
-    // MLIR 20.x: Operations without attributes need complete Properties interface
+    // MLIR 20.x: Add missing getProperties() method for operations with Properties
     let extraClassDeclaration = [{
-        const ::mlir::EmptyProperties &getProperties() const {
-            static const ::mlir::EmptyProperties emptyProps{};
-            return emptyProps;
-        }
-        
-        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
-            return llvm::hash_value(0);
-        }
-        
-        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
-            return {};
-        }
-        
-        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
-            return mlir::success();
+        const Properties &getProperties() const {
+            return static_cast<const Properties &>(getOperation()->getPropertiesStorage());
         }
     }];
 }
