@@ -5,7 +5,16 @@
 #include "mlir/IR/Types.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
-#include "dialects/pg/PgProperties.h"
+
+// MLIR 20.x: Add missing operators for EmptyProperties
+namespace mlir {
+inline bool operator==(const EmptyProperties &, const EmptyProperties &) {
+    return true;
+}
+inline bool operator!=(const EmptyProperties &, const EmptyProperties &) {
+    return false;
+}
+} // namespace mlir
 
 namespace mlir {
 namespace pg {

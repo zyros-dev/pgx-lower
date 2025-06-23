@@ -53,6 +53,26 @@ def Pg_ReadTupleOp : Pg_Op<"read_tuple", []> {
     let results = (outs Pg_TupleHandleType:$tuple);
     
     let assemblyFormat = "$table_handle attr-dict `:` type($tuple)";
+    
+    // MLIR 20.x: Operations without attributes need complete Properties interface
+    let extraClassDeclaration = [{
+        const ::mlir::EmptyProperties &getProperties() const {
+            static const ::mlir::EmptyProperties emptyProps{};
+            return emptyProps;
+        }
+        
+        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
+            return llvm::hash_value(0);
+        }
+        
+        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
+            return {};
+        }
+        
+        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
+            return mlir::success();
+        }
+    }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -131,6 +151,26 @@ def Pg_WhereOp : Pg_Op<"where", [Pure]> {
     let results = (outs Pg_TupleType:$result);
     
     let assemblyFormat = "$tuple `,` $condition attr-dict `:` type($tuple) `,` type($condition) `->` type($result)";
+    
+    // MLIR 20.x: Operations without attributes need complete Properties interface
+    let extraClassDeclaration = [{
+        const ::mlir::EmptyProperties &getProperties() const {
+            static const ::mlir::EmptyProperties emptyProps{};
+            return emptyProps;
+        }
+        
+        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
+            return llvm::hash_value(0);
+        }
+        
+        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
+            return {};
+        }
+        
+        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
+            return mlir::success();
+        }
+    }];
 }
 
 def Pg_IsNullOp : Pg_Op<"is_null", [Pure]> {
@@ -148,6 +188,26 @@ def Pg_IsNullOp : Pg_Op<"is_null", [Pure]> {
     let results = (outs I1:$result);
     
     let assemblyFormat = "$value attr-dict `:` type($value) `->` type($result)";
+    
+    // MLIR 20.x: Operations without attributes need complete Properties interface
+    let extraClassDeclaration = [{
+        const ::mlir::EmptyProperties &getProperties() const {
+            static const ::mlir::EmptyProperties emptyProps{};
+            return emptyProps;
+        }
+        
+        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
+            return llvm::hash_value(0);
+        }
+        
+        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
+            return {};
+        }
+        
+        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
+            return mlir::success();
+        }
+    }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -208,6 +268,26 @@ def Pg_AggregateSumOp : Pg_Op<"aggregate_sum", []> {
     let results = (outs I64:$result);
     
     let assemblyFormat = "$input attr-dict `:` type($input) `->` type($result)";
+    
+    // MLIR 20.x: Operations without attributes need complete Properties interface
+    let extraClassDeclaration = [{
+        const ::mlir::EmptyProperties &getProperties() const {
+            static const ::mlir::EmptyProperties emptyProps{};
+            return emptyProps;
+        }
+        
+        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
+            return llvm::hash_value(0);
+        }
+        
+        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
+            return {};
+        }
+        
+        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
+            return mlir::success();
+        }
+    }];
 }
 
 def Pg_AggregateCountOp : Pg_Op<"aggregate_count", []> {
@@ -225,6 +305,26 @@ def Pg_AggregateCountOp : Pg_Op<"aggregate_count", []> {
     let results = (outs I64:$result);
     
     let assemblyFormat = "$input attr-dict `:` type($input) `->` type($result)";
+    
+    // MLIR 20.x: Operations without attributes need complete Properties interface
+    let extraClassDeclaration = [{
+        const ::mlir::EmptyProperties &getProperties() const {
+            static const ::mlir::EmptyProperties emptyProps{};
+            return emptyProps;
+        }
+        
+        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
+            return llvm::hash_value(0);
+        }
+        
+        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
+            return {};
+        }
+        
+        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
+            return mlir::success();
+        }
+    }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -247,6 +347,26 @@ def Pg_YieldTupleOp : Pg_Op<"yield_tuple", []> {
     let results = (outs);
     
     let assemblyFormat = "$tuple attr-dict `:` type($tuple)";
+    
+    // MLIR 20.x: Operations without attributes need complete Properties interface
+    let extraClassDeclaration = [{
+        const ::mlir::EmptyProperties &getProperties() const {
+            static const ::mlir::EmptyProperties emptyProps{};
+            return emptyProps;
+        }
+        
+        static llvm::hash_code computePropertiesHash(const ::mlir::EmptyProperties &) {
+            return llvm::hash_value(0);
+        }
+        
+        static mlir::Attribute getPropertiesAsAttr(mlir::MLIRContext *, const ::mlir::EmptyProperties &) {
+            return {};
+        }
+        
+        static mlir::LogicalResult setPropertiesFromAttr(::mlir::EmptyProperties &, mlir::Attribute, llvm::function_ref<mlir::InFlightDiagnostic()>) {
+            return mlir::success();
+        }
+    }];
 }
 
 #endif // PG_OPS
