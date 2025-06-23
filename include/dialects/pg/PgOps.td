@@ -252,13 +252,6 @@ def Pg_YieldTupleOp : Pg_Op<"yield_tuple", []> {
     let results = (outs);
     
     let assemblyFormat = "$tuple attr-dict `:` type($tuple)";
-    
-    // MLIR 20.x: Add missing getProperties() method for operations with Properties
-    let extraClassDeclaration = [{
-        const Properties &getProperties() const {
-            return static_cast<const Properties &>(getOperation()->getPropertiesStorage());
-        }
-    }];
 }
 
 #endif // PG_OPS

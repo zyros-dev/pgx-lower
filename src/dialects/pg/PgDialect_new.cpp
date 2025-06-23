@@ -4,6 +4,7 @@
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
 using namespace mlir::pg;
@@ -28,26 +29,6 @@ void PgDialect::initialize() {
 PgDialect::PgDialect(MLIRContext *context)
     : Dialect(getDialectNamespace(), context, TypeID::get<PgDialect>()) {
     initialize();
-}
-
-Type PgDialect::parseType(DialectAsmParser &parser) const {
-    // Use TableGen-generated type parser
-    StringRef mnemonic;
-    Type genType;
-    OptionalParseResult parseResult = generatedTypeParser(parser, &mnemonic, genType);
-    if (parseResult.has_value())
-        return genType;
-    
-    return Type();
-}
-
-void PgDialect::printType(Type type, DialectAsmPrinter &printer) const {
-    // Use TableGen-generated type printer
-    if (generatedTypePrinter(type, printer).succeeded())
-        return;
-    
-    // Fallback for unknown types
-    printer << "unknown_type";
 }
 
 // Include TableGen generated definitions
