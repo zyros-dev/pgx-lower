@@ -62,3 +62,5 @@ chroma_db
 *.py
 *.gguf
 *-log
+.mcp.json
+.cursor

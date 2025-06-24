@@ -106,8 +106,8 @@ compile_commands:
 	@ln -sf $(BUILD_DIR)/compile_commands.json compile_commands.json
 	@echo "compile_commands.json generated and symlinked to project root."
 
-start_embeddings:
-	$(PY) -m uvicorn search_server:app --host 127.0.0.1 --port 8000
+docs-server:
+	$(PY) search_server.py
 
 query_docs:
 	$(PY) search_embeddings_cli.py $(QUERY)
