@@ -119,5 +119,28 @@ query_docs:
 
 coverage:
 	@echo "Running unit tests with coverage..."
-	@./scripts/run_coverage.sh
+	@echo "Building with coverage enabled..."
+	cmake -S . -B build-coverage -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DENABLE_COVERAGE=ON
+	cmake --build build-coverage
+	@echo "Running unit tests..."
+	cd build-coverage && ./mlir_unit_test && cd -
+	@echo "Generating coverage report..."
+	@if find build-coverage -name "*.gcda" -o -name "*.gcno" | grep -q .; then \
+		echo "Using GCC coverage..."; \
+		lcov --capture --directory build-coverage --output-file coverage.info 2>/dev/null || true; \
+		lcov --remove coverage.info '*/build-coverage/*' '*/third_party/*' '*/usr/*' '*gtest*' '*gmock*' --output-file coverage_filtered.info 2>/dev/null || true; \
+		mkdir -p coverage_report; \
+		genhtml coverage_filtered.info --output-directory coverage_report 2>/dev/null || true; \
+		echo "Coverage report generated in coverage_report/"; \
+		echo "Open coverage_report/index.html in a browser to view the report"; \
+		lcov --summary coverage_filtered.info 2>/dev/null || echo "Coverage summary not available"; \
+		echo ""; \
+		echo "=== CORE COMPONENT COVERAGE ==="; \
+		cd build-coverage && gcov CMakeFiles/mlir_unit_test.dir/src/core/*.gcno 2>/dev/null | grep -E "File.*pgx-lower.*\.cpp|Lines executed" | grep -A1 "pgx-lower.*\.cpp" | sed 's|.*/||' && cd - >/dev/null; \
+		echo ""; \
+		echo "=== OVERALL COVERAGE ESTIMATE ==="; \
+		cd build-coverage && gcov CMakeFiles/mlir_unit_test.dir/src/core/*.gcno 2>/dev/null | grep "Lines executed" | grep -v "0.00%" | awk -F'[%: ]' '{sum += $$3; count++} END {if(count > 0) printf "Average coverage: %.1f%%\n", sum/count; else print "No coverage data"}' && cd - >/dev/null; \
+	else \
+		echo "No coverage data found!"; \
+	fi
 	@echo "Coverage analysis completed!"
