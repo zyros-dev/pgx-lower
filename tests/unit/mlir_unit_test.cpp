@@ -12,7 +12,6 @@
 #include <core/mlir_runner.h>
 #include <core/query_analyzer.h>
 #include <core/error_handling.h>
-#include <core/mlir_code_generator.h>
 #include <dialects/pg/PgDialect.h>
 #include <fstream>
 #include <cstdio>

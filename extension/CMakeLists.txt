@@ -10,7 +10,6 @@ add_postgresql_mixed_extension(
             ../src/postgres/my_executor.cpp 
             ../src/postgres/executor_c.cpp
             ../src/core/mlir_runner.cpp 
-            ../src/core/mlir_code_generator.cpp
             ../src/core/query_analyzer.cpp
             ../src/core/error_handling.cpp
             ../src/logging/mlir_logger_pg.cpp

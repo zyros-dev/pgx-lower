@@ -1,6 +1,5 @@
 #include "core/mlir_runner.h"
 #include "core/mlir_logger.h"
-#include "core/mlir_code_generator.h"
 #include "core/error_handling.h"
 #include "interfaces/mlir_c_interface.h"
 #include "dialects/pg/PgDialect.h"
@@ -289,120 +288,6 @@ bool run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) {
     return true;
 }
 
-bool run_mlir_postgres_table_scan_modular(const char* tableName, MLIRLogger& logger) {
-    mlir::MLIRContext context;
-
-    std::ostringstream oss;
-    oss << "Scanning PostgreSQL table '" << tableName << "' directly in MLIR JIT (modular)";
-    logger.debug(oss.str());
-
-    context.getOrLoadDialect<mlir::arith::ArithDialect>();
-    context.getOrLoadDialect<mlir::func::FuncDialect>();
-    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
-    context.getOrLoadDialect<mlir::scf::SCFDialect>();
-    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
-
-    registerConversionPipeline();
-
-    // Use modular MLIR generation
-    pgx_lower::ModularMLIRGenerator generator(&context);
-    
-    mlir::OpBuilder builder(&context);
-    mlir::ModuleOp module = mlir::ModuleOp::create(builder.getUnknownLoc());
-    builder.setInsertionPointToStart(module.getBody());
-    
-    // Generate table scan function using modular approach
-    auto mainFunc = generator.generateTableScanFunction(tableName);
-    module.push_back(mainFunc);
-
-    std::string mlirStr;
-    llvm::raw_string_ostream os(mlirStr);
-    logger.notice("Generated MLIR program for PostgreSQL table scan:");
-    module.OpState::print(os);
-    os.flush();
-    logger.notice("MLIR: " + mlirStr);
-
-    // Same execution pipeline as original
-    mlir::PassManager pm(&context);
-    pm.addPass(mlir::createConvertSCFToCFPass());
-    pm.addNestedPass<mlir::func::FuncOp>(mlir::createArithToLLVMConversionPass());
-    pm.addPass(mlir::createConvertFuncToLLVMPass());
-    pm.addPass(mlir::createConvertControlFlowToLLVMPass());
-    pm.addPass(mlir::createCanonicalizerPass());
-    pm.addPass(mlir::createCSEPass());
-
-    if (mlir::failed(pm.run(module))) {
-        auto error = pgx_lower::ErrorManager::compilationError(
-            "Failed to lower MLIR module to LLVM dialect",
-            "Pass manager execution failed");
-        pgx_lower::ErrorManager::reportError(error);
-        logger.error("Failed to lower MLIR module to LLVM dialect");
-        return false;
-    }
-    logger.notice("Lowered PostgreSQL table scan MLIR to LLVM dialect!");
-
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-
-    mlir::DialectRegistry registry;
-    mlir::registerAllToLLVMIRTranslations(registry);
-    context.appendDialectRegistry(registry);
-
-    mlir::registerLLVMDialectTranslation(context);
-    mlir::registerBuiltinDialectTranslation(context);
-
-    auto optPipeline = mlir::makeOptimizingTransformer(0, 0, nullptr);
-    mlir::ExecutionEngineOptions engineOptions;
-    engineOptions.transformer = optPipeline;
-    engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
-    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-    if (!maybeEngine) {
-        auto error = pgx_lower::ErrorManager::compilationError(
-            "Failed to create MLIR ExecutionEngine for table scan",
-            "ExecutionEngine creation failed - check LLVM configuration");
-        pgx_lower::ErrorManager::reportError(error);
-        logger.error("Failed to create MLIR ExecutionEngine for table scan");
-        return false;
-    }
-    logger.notice("Created MLIR ExecutionEngine for PostgreSQL table scan!");
-    auto engine = std::move(*maybeEngine);
-
-    engine->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
-        llvm::orc::SymbolMap symbolMap;
-        symbolMap[interner("open_postgres_table")] =
-            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&open_postgres_table)),
-                                         llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("read_next_tuple_from_table")] = llvm::orc::ExecutorSymbolDef(
-            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&read_next_tuple_from_table)),
-            llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("close_postgres_table")] = llvm::orc::ExecutorSymbolDef(
-            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&close_postgres_table)),
-            llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("add_tuple_to_result")] = llvm::orc::ExecutorSymbolDef(
-            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&add_tuple_to_result)),
-            llvm::JITSymbolFlags::Exported);
-        return symbolMap;
-    });
-
-    auto expectedFPtr = engine->lookup("main");
-    if (!expectedFPtr) {
-        std::string errMsg;
-        llvm::raw_string_ostream errStream(errMsg);
-        errStream << expectedFPtr.takeError();
-        logger.error("Failed to lookup function: " + errMsg);
-        return false;
-    }
-
-    auto fptr = reinterpret_cast<int64_t (*)()>(*expectedFPtr);
-    int64_t result = fptr();
-    logger.notice("Invoked MLIR JIT PostgreSQL table scanner!");
-
-    oss.str("");
-    oss << "PostgreSQL table scan completed with sum: " << result;
-    logger.notice(oss.str());
-
-    return true;
-}
 
 bool run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logger) {
     mlir::MLIRContext context;

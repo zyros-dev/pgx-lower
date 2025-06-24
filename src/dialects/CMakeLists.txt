@@ -29,7 +29,7 @@ mlir_tablegen(PgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=pg -I${MLIR_I
 add_public_tablegen_target(MLIRPgTypesIncGen)
 
 add_library(MLIRPgDialect STATIC
-    pg/PgDialect_new.cpp
+    pg/PgDialect.cpp
     pg/LowerPgToSCF.cpp
 )
 

@@ -1,4 +1,4 @@
-#include "dialects/pg/PgDialect_new.h"
+#include "dialects/pg/PgDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"

@@ -13,8 +13,6 @@ using ExternalFunction = std::function<int64_t()>;
 // PostgreSQL Integration - Main entry point called by my_executor.cpp
 auto run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) -> bool;
 
-// PostgreSQL Integration - Modular MLIR generation version
-auto run_mlir_postgres_table_scan_modular(const char* tableName, MLIRLogger& logger) -> bool;
 
 // PostgreSQL Integration - Typed field access with pg dialect
 auto run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logger) -> bool;

@@ -58,7 +58,6 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     add_mlir_unit_test(mlir_unit_test 
         tests/unit/mlir_unit_test.cpp
         src/core/mlir_runner.cpp
-        src/core/mlir_code_generator.cpp
         src/core/query_analyzer.cpp
         src/core/error_handling.cpp
         src/logging/mlir_logger.cpp
