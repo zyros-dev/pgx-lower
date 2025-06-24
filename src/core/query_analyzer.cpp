@@ -16,11 +16,11 @@ extern "C" {
 namespace pgx_lower {
 
 bool QueryCapabilities::isMLIRCompatible() const {
-    // Currently, MLIR only supports simple sequential scans
+    // Currently, MLIR supports simple sequential scans and column projection
     // No filters, aggregations, joins, sorts, or limits yet
     return requiresSeqScan && 
            !requiresFilter && 
-           !requiresProjection &&
+           // !requiresProjection &&  // Now supported: column projection works
            !requiresAggregation && 
            !requiresJoin && 
            !requiresSort && 
