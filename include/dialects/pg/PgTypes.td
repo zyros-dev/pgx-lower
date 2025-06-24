@@ -22,6 +22,11 @@ def Pg_TextType : Pg_Type<"Text", "text"> {
         Represents a PostgreSQL TEXT value - variable length string.
         Maps to PostgreSQL's text/varchar types.
     }];
+    let extraClassDeclaration = [{
+        static TextType get(::mlir::MLIRContext *context) {
+            return Base::get(context);
+        }
+    }];
 }
 
 def Pg_NumericType : Pg_Type<"Numeric", "numeric"> {
@@ -74,6 +79,11 @@ def Pg_TableHandleType : Pg_Type<"TableHandle", "table_handle"> {
         Represents an active scan of a PostgreSQL table.
         This is an opaque handle used for tuple iteration.
     }];
+    let extraClassDeclaration = [{
+        static TableHandleType get(::mlir::MLIRContext *context) {
+            return Base::get(context);
+        }
+    }];
 }
 
 def Pg_TupleHandleType : Pg_Type<"TupleHandle", "tuple_handle"> {
@@ -81,6 +91,11 @@ def Pg_TupleHandleType : Pg_Type<"TupleHandle", "tuple_handle"> {
     let description = [{
         Represents a PostgreSQL tuple (row) with access to its
         fields and metadata. Supports type-safe field access operations.
+    }];
+    let extraClassDeclaration = [{
+        static TupleHandleType get(::mlir::MLIRContext *context) {
+            return Base::get(context);
+        }
     }];
 }
 

@@ -8,6 +8,7 @@ BUILD_DIR_PTEST = build-ptest
 BUILD_DIR_UTEST = build-utest
 CMAKE_GENERATOR = Ninja
 CMAKE_BUILD_TYPE = Debug
+PY = /home/xzel/pyautogui-env/bin/python
 
 all: test
 
@@ -104,3 +105,9 @@ compile_commands:
 	cmake -S . -B $(BUILD_DIR) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 	@ln -sf $(BUILD_DIR)/compile_commands.json compile_commands.json
 	@echo "compile_commands.json generated and symlinked to project root."
+
+start_embeddings:
+	$(PY) -m uvicorn search_server:app --host 127.0.0.1 --port 8000
+
+query_docs:
+	$(PY) search_embeddings_cli.py $(QUERY)

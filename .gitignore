@@ -58,3 +58,7 @@ build*
 .idea*
 .idea
 llm_documentation
+chroma_db
+*.py
+*.gguf
+*-log

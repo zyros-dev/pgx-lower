@@ -38,7 +38,7 @@ def Pg_ScanTableOp : Pg_Op<"scan_table", [Pure]> {
     let assemblyFormat = "$table_name attr-dict `:` type($handle)";
 }
 
-def Pg_ReadTupleOp : Pg_Op<"read_tuple", []> {
+def Pg_ReadTupleOp : Pg_Op<"read_tuple", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "Read next tuple from table scan";
     let description = [{
         Reads the next tuple from a table scan. Returns the tuple handle.
@@ -52,7 +52,13 @@ def Pg_ReadTupleOp : Pg_Op<"read_tuple", []> {
     let arguments = (ins Pg_TableHandleType:$table_handle, DefaultValuedAttr<I32Attr, "1">:$limit);
     let results = (outs Pg_TupleHandleType:$tuple);
     
-    let assemblyFormat = "$table_handle attr-dict `:` type($tuple)";
+    let assemblyFormat = "$table_handle attr-dict `:` type($table_handle) `->` type($tuple)";
+    
+    let builders = [
+        OpBuilder<(ins "::mlir::Value":$table_handle, "::llvm::ArrayRef<::mlir::Type>":$resultTypes), [{
+            build(odsBuilder, odsState, resultTypes, table_handle, odsBuilder.getI32IntegerAttr(1));
+        }]>
+    ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -194,7 +200,7 @@ def Pg_CmpTextOp : Pg_Op<"cmp_text", [Pure]> {
 // Aggregation Operations
 //===----------------------------------------------------------------------===//
 
-def Pg_AggregateSumOp : Pg_Op<"aggregate_sum", []> {
+def Pg_AggregateSumOp : Pg_Op<"aggregate_sum", [Pure]> {
     let summary = "Sum aggregation operation";
     let description = [{
         Performs sum aggregation over integer values, handling NULL values according
@@ -213,7 +219,7 @@ def Pg_AggregateSumOp : Pg_Op<"aggregate_sum", []> {
     let assemblyFormat = "$input attr-dict `:` type($input) `->` type($result)";
 }
 
-def Pg_AggregateCountOp : Pg_Op<"aggregate_count", []> {
+def Pg_AggregateCountOp : Pg_Op<"aggregate_count", [Pure]> {
     let summary = "Count aggregation operation";
     let description = [{
         Counts the number of non-NULL values. Supports DISTINCT counting.
@@ -235,7 +241,7 @@ def Pg_AggregateCountOp : Pg_Op<"aggregate_count", []> {
 // Output Operations
 //===----------------------------------------------------------------------===//
 
-def Pg_YieldTupleOp : Pg_Op<"yield_tuple", []> {
+def Pg_YieldTupleOp : Pg_Op<"yield_tuple", [Pure]> {
     let summary = "Yield tuple to query result";
     let description = [{
         Yields a tuple to the query result set. This represents the final

@@ -31,6 +31,7 @@ PgDialect::PgDialect(MLIRContext *context)
     initialize();
 }
 
+
 // Include TableGen generated definitions
 #define GET_OP_CLASSES
 #include "PgOps.cpp.inc"
