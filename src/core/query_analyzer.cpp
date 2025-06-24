@@ -20,11 +20,11 @@ bool QueryCapabilities::isMLIRCompatible() const {
     // No filters, aggregations, joins, sorts, or limits yet
     return requiresSeqScan && 
            !requiresFilter && 
-           // !requiresProjection &&  // Now supported: column projection works
            !requiresAggregation && 
            !requiresJoin && 
            !requiresSort && 
            !requiresLimit;
+    // Note: projection is now supported, so requiresProjection is allowed
 }
 
 const char* QueryCapabilities::getDescription() const {
@@ -229,6 +229,20 @@ QueryCapabilities QueryAnalyzer::analyzeForTesting(const char* queryText) {
         caps.requiresSeqScan = true;
     }
     
+    // Check for projection (specific columns rather than *)
+    if (strstr(queryText, "SELECT") && !strstr(queryText, "SELECT *")) {
+        const char* selectPos = strstr(queryText, "SELECT");
+        const char* fromPos = strstr(queryText, "FROM");
+        if (selectPos && fromPos && fromPos > selectPos) {
+            // Check if there are specific column names between SELECT and FROM
+            const char* selectContent = selectPos + 6; // Skip "SELECT"
+            while (*selectContent == ' ') selectContent++; // Skip whitespace
+            if (selectContent < fromPos && *selectContent != '*') {
+                caps.requiresProjection = true;
+            }
+        }
+    }
+    
     if (strstr(queryText, "WHERE")) {
         caps.requiresFilter = true;
     }
@@ -248,6 +262,11 @@ QueryCapabilities QueryAnalyzer::analyzeForTesting(const char* queryText) {
     if (strstr(queryText, "COUNT") || strstr(queryText, "SUM") || 
         strstr(queryText, "AVG") || strstr(queryText, "GROUP BY")) {
         caps.requiresAggregation = true;
+    }
+    
+    // Check for nested queries (subqueries)
+    if (strstr(queryText, "(SELECT")) {
+        caps.requiresJoin = true; // Treat nested queries as requiring joins for now
     }
     
     return caps;
