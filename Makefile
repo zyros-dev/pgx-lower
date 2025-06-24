@@ -1,6 +1,6 @@
 # pgx_lower Makefile
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest utest-run fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands coverage
 
 # Build directories for different test types
 BUILD_DIR = build
@@ -84,6 +84,11 @@ utest: build-utest
 	cd $(BUILD_DIR_UTEST) && ./mlir_unit_test && cd -
 	@echo "Unit tests completed!"
 
+utest-run:
+	@echo "Running unit tests without rebuild..."
+	cd $(BUILD_DIR_UTEST) && ./mlir_unit_test && cd -
+	@echo "Unit tests completed!"
+
 fcheck:
 	@echo "Checking clang-format and clang-tidy errors in source code..."
 	@echo "=== Format Check ==="
@@ -111,3 +116,8 @@ docs-server:
 
 query_docs:
 	$(PY) search_embeddings_cli.py $(QUERY)
+
+coverage:
+	@echo "Running unit tests with coverage..."
+	@./scripts/run_coverage.sh
+	@echo "Coverage analysis completed!"

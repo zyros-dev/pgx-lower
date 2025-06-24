@@ -22,6 +22,14 @@ set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 set(CMAKE_C_FLAGS_DEBUG "-g -O0")
 
+# Coverage support
+option(ENABLE_COVERAGE "Enable code coverage" OFF)
+if(ENABLE_COVERAGE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate")
+endif()
+
 # Note: MLIR headers may produce C++20 ambiguity warnings, but they're not critical
 
 include(PostgreSQLConfig)
@@ -55,8 +63,17 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
+    # Collect all test source files
+    file(GLOB_RECURSE UNIT_TEST_SOURCES 
+        "tests/unit/core/*.cpp"
+        "tests/unit/dialects/*.cpp"
+        "tests/unit/runtime/*.cpp"
+    )
+    
     add_mlir_unit_test(mlir_unit_test 
-        tests/unit/mlir_unit_test.cpp
+        tests/unit/test_main.cpp
+        tests/unit/test_helpers.cpp
+        ${UNIT_TEST_SOURCES}
         src/core/mlir_runner.cpp
         src/core/query_analyzer.cpp
         src/core/error_handling.cpp
@@ -64,7 +81,10 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/runtime/tuple_access.cpp
     )
     target_link_libraries(mlir_unit_test PRIVATE 
-        gtest 
-        gtest_main
+        gtest
+        MLIRPgDialect
+    )
+    target_include_directories(mlir_unit_test PRIVATE 
+        tests/unit
     )
 endif()

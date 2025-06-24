@@ -53,6 +53,7 @@ fast_output.txt
 
 # Claude Code documentation
 CLAUDE.md
+CLAUDE.bak.md
 .claude
 build*
 .idea*
@@ -64,3 +65,4 @@ chroma_db
 *-log
 .mcp.json
 .cursor
+memory_bank
