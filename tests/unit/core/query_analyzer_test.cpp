@@ -12,13 +12,13 @@ TEST_F(QueryAnalyzerTest, BasicQueryAnalysis) {
     using namespace pgx_lower;
 
     // Test simple SELECT query
-    auto caps1 = QueryAnalyzer::analyzeForTesting("SELECT * FROM test");
+    const auto caps1 = QueryAnalyzer::analyzeForTesting("SELECT * FROM test");
     EXPECT_TRUE(caps1.requiresSeqScan);
     EXPECT_FALSE(caps1.requiresFilter);
     EXPECT_TRUE(caps1.isMLIRCompatible());
 
     // Test SELECT with WHERE
-    auto caps2 = QueryAnalyzer::analyzeForTesting("SELECT * FROM test WHERE id > 5");
+    const auto caps2 = QueryAnalyzer::analyzeForTesting("SELECT * FROM test WHERE id > 5");
     EXPECT_TRUE(caps2.requiresSeqScan);
     EXPECT_TRUE(caps2.requiresFilter);
     EXPECT_FALSE(caps2.isMLIRCompatible());

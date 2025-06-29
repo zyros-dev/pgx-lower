@@ -13,7 +13,7 @@ class PgDialectBasicTest : public ::testing::Test {
     }
 
     std::unique_ptr<mlir::MLIRContext> context;
-    mlir::pg::PgDialect* dialect;
+    mlir::pg::PgDialect* dialect = nullptr;
 };
 
 TEST_F(PgDialectBasicTest, DialectRegistration) {
@@ -24,33 +24,33 @@ TEST_F(PgDialectBasicTest, DialectRegistration) {
 
 TEST_F(PgDialectBasicTest, BasicTypeCreation) {
     // Test basic type creation
-    auto textType = mlir::pg::TextType::get(context.get());
-    auto tableHandleType = mlir::pg::TableHandleType::get(context.get());
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(context.get());
+    const auto textType = mlir::pg::TextType::get(context.get());
+    const auto tableHandleType = mlir::pg::TableHandleType::get(context.get());
+    const auto tupleHandleType = mlir::pg::TupleHandleType::get(context.get());
 
     EXPECT_TRUE(textType);
     EXPECT_TRUE(tableHandleType);
     EXPECT_TRUE(tupleHandleType);
 
     // Test type properties
-    EXPECT_TRUE(textType.isa<mlir::pg::TextType>());
-    EXPECT_TRUE(tableHandleType.isa<mlir::pg::TableHandleType>());
-    EXPECT_TRUE(tupleHandleType.isa<mlir::pg::TupleHandleType>());
+    EXPECT_TRUE(mlir::isa<mlir::pg::TextType>(textType));
+    EXPECT_TRUE(mlir::isa<mlir::pg::TableHandleType>(tableHandleType));
+    EXPECT_TRUE(mlir::isa<mlir::pg::TupleHandleType>(tupleHandleType));
 }
 
 TEST_F(PgDialectBasicTest, ParametricTypeCreation) {
     // Test parametric types
-    auto numericType = mlir::pg::NumericType::get(context.get(), 10, 2);
+    const auto numericType = mlir::pg::NumericType::get(context.get(), 10, 2);
     EXPECT_TRUE(numericType);
     EXPECT_EQ(numericType.getPrecision(), 10);
     EXPECT_EQ(numericType.getScale(), 2);
 
-    auto charType = mlir::pg::CharType::get(context.get(), 50);
+    const auto charType = mlir::pg::CharType::get(context.get(), 50);
     EXPECT_TRUE(charType);
     EXPECT_EQ(charType.getLength(), 50);
 
     // Test different numeric precisions
-    auto numericType2 = mlir::pg::NumericType::get(context.get(), 5, 1);
+    const auto numericType2 = mlir::pg::NumericType::get(context.get(), 5, 1);
     EXPECT_EQ(numericType2.getPrecision(), 5);
     EXPECT_EQ(numericType2.getScale(), 1);
 

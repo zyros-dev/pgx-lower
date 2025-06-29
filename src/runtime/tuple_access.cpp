@@ -139,7 +139,7 @@ TableScanHandle* openTableScan(const char* table_name) {
 #endif
 }
 
-void closeTableScan(TableScanHandle* handle) {
+void closeTableScan(const TableScanHandle* handle) {
     if (handle) {
         delete handle;
     }
@@ -216,7 +216,7 @@ int32_t getIntField(TupleHandle* tuple, int field_index, bool* is_null) {
     }
 
     *is_null = tuple->mock_nulls[field_index];
-    return (int32_t)tuple->mock_values[field_index];
+    return static_cast<int32_t>(tuple->mock_values[field_index]);
 #endif
 }
 
@@ -369,7 +369,7 @@ double getNumericField(TupleHandle* tuple, int field_index, bool* is_null) {
     }
 
     *is_null = tuple->mock_nulls[field_index];
-    return (double)tuple->mock_values[field_index];
+    return static_cast<double>(tuple->mock_values[field_index]);
 #endif
 }
 
@@ -467,7 +467,7 @@ bool compareText(const char* lhs, bool lhs_null, const char* rhs, bool rhs_null,
 // Output Operations
 //===----------------------------------------------------------------------===//
 
-bool outputTuple(TupleHandle* tuple) {
+bool outputTuple(const TupleHandle* tuple) {
     if (!tuple) {
         REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Cannot output null tuple");
         return false;
@@ -486,7 +486,7 @@ bool outputTuple(TupleHandle* tuple) {
     return true; // Return true to avoid breaking compilation
 }
 
-TupleHandle* createTuple(int field_count, uint32_t* field_types, int64_t* field_values, bool* null_flags) {
+TupleHandle* createTuple(int field_count, const uint32_t* field_types, const int64_t* field_values, const bool* null_flags) {
     if (field_count <= 0 || !field_types || !field_values || !null_flags) {
         REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Invalid parameters for createTuple");
         return nullptr;
@@ -510,7 +510,7 @@ TupleHandle* createTuple(int field_count, uint32_t* field_types, int64_t* field_
 #endif
 }
 
-void freeTuple(TupleHandle* tuple) {
+auto freeTuple(const TupleHandle* tuple) -> void {
     delete tuple;
 }
 

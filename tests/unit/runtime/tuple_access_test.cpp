@@ -14,8 +14,9 @@ class TupleAccessTest : public ::testing::Test {
 };
 
 TEST_F(TupleAccessTest, MockGetNextTuple) {
-    std::vector<int64_t> mockData = {1, 2, 3};
+    const std::vector<int64_t> mockData = {1, 2, 3};
     MockTupleScanContext mockContext = {mockData, 0, true};
+    // ReSharper disable once CppDFALocalValueEscapesFunction
     g_mock_scan_context = &mockContext;
 
     // Test getting tuples sequentially
@@ -28,8 +29,9 @@ TEST_F(TupleAccessTest, MockGetNextTuple) {
 }
 
 TEST_F(TupleAccessTest, MockTableOperations) {
-    std::vector<int64_t> mockData = {100, 200};
+    const std::vector<int64_t> mockData = {100, 200};
     MockTupleScanContext mockContext = {mockData, 0, true};
+    // ReSharper disable once CppDFALocalValueEscapesFunction
     g_mock_scan_context = &mockContext;
 
     // Test opening table
@@ -77,8 +79,9 @@ TEST_F(TupleAccessTest, EdgeCases) {
     EXPECT_EQ(read_next_tuple_from_table(0), -1);
 
     // Test empty data
-    std::vector<int64_t> emptyData = {};
+    constexpr std::vector<int64_t> emptyData = {};
     MockTupleScanContext emptyContext = {emptyData, 0, true};
+    // ReSharper disable once CppDFALocalValueEscapesFunction
     g_mock_scan_context = &emptyContext;
 
     EXPECT_EQ(mock_get_next_tuple(), -2);

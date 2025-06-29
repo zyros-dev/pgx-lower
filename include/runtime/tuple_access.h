@@ -37,7 +37,7 @@ auto openTableScan(const char* table_name) -> TableScanHandle*;
  * Close a table scan and free resources
  * @param handle Table scan handle to close
  */
-void closeTableScan(TableScanHandle* handle);
+void closeTableScan(const TableScanHandle* handle);
 
 /**
  * Read the next tuple from a table scan
@@ -124,7 +124,7 @@ auto getTupleFieldCount(TupleHandle* tuple) -> int;
  * @param tuple Tuple handle to output
  * @return true on success, false on failure
  */
-auto outputTuple(TupleHandle* tuple) -> bool;
+auto outputTuple(const TupleHandle* tuple) -> bool;
 
 /**
  * Create a new tuple with specified field values
@@ -134,13 +134,13 @@ auto outputTuple(TupleHandle* tuple) -> bool;
  * @param null_flags Array of null flags
  * @return New tuple handle, or nullptr on failure
  */
-auto createTuple(int field_count, uint32_t* field_types, int64_t* field_values, bool* null_flags) -> TupleHandle*;
+auto createTuple(int field_count, const uint32_t* field_types, const int64_t* field_values, const bool* null_flags) -> TupleHandle*;
 
 /**
  * Free a tuple handle
  * @param tuple Tuple handle to free
  */
-void freeTuple(TupleHandle* tuple);
+void freeTuple(const TupleHandle* tuple);
 
 //===----------------------------------------------------------------------===//
 // Comparison Operations

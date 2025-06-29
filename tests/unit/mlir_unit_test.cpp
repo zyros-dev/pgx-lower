@@ -69,7 +69,6 @@ extern "C" int64_t read_next_tuple_from_table(int64_t tableHandle) {
         return -1;
     }
 
-    MockTupleScanContext* context = reinterpret_cast<MockTupleScanContext*>(tableHandle);
     return mock_get_next_tuple();
 }
 
@@ -95,8 +94,8 @@ extern "C" int64_t get_text_field(int64_t tuple_handle, int32_t field_index, boo
 }
 
 TEST(MLIRTest, PostgreSQLTableScanInMLIR) {
-    std::vector<int64_t> mockData = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
-    MockTupleScanContext mockContext = {mockData, 0, true};
+    const auto mockData = std::vector<int64_t>{10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
+    auto mockContext = MockTupleScanContext{mockData, 0, true};
     g_mock_scan_context = &mockContext;
 
     ConsoleLogger logger;

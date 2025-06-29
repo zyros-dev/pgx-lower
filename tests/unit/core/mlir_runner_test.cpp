@@ -31,7 +31,7 @@ TEST_F(MLIRRunnerTest, PassManagerSetup) {
     context.getOrLoadDialect<mlir::func::FuncDialect>();
     context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 
-    mlir::PassManager pm(&context);
+    auto pm = mlir::PassManager(&context);
     EXPECT_NO_THROW(pm.addPass(mlir::createCanonicalizerPass()));
     EXPECT_NO_THROW(pm.addPass(mlir::createConvertFuncToLLVMPass()));
     EXPECT_NO_THROW(pm.addNestedPass<mlir::func::FuncOp>(mlir::createArithToLLVMConversionPass()));
