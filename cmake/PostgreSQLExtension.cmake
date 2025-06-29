@@ -64,6 +64,17 @@ function(add_postgresql_mixed_extension NAME)
         set(_link_flags "${_link_flags} -bundle_loader ${PG_BINARY}")
     endif()
 
+    # Exclude problematic PostgreSQL libraries that don't have -fPIC
+    set(FILTERED_PG_LIBRARIES "")
+    foreach(lib ${PostgreSQL_LIBRARIES})
+        if(NOT lib MATCHES "pgcommon|pgport")
+            list(APPEND FILTERED_PG_LIBRARIES ${lib})
+        endif()
+    endforeach()
+    
+    # Link only the safe PostgreSQL libraries
+    target_link_libraries(${NAME} PRIVATE ${FILTERED_PG_LIBRARIES})
+
     # Set target properties
     set_target_properties(
         ${NAME}

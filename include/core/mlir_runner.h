@@ -6,6 +6,11 @@
 #include <functional>
 #include <vector>
 
+// Forward declaration to avoid circular dependency
+namespace mlir_builder {
+    struct ColumnExpression;
+}
+
 namespace mlir_runner {
 
 using ExternalFunction = std::function<int64_t()>;
@@ -18,8 +23,14 @@ auto run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logge
 
 // PostgreSQL Integration - Typed field access with specific columns
 auto run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
-                                                     const std::vector<int>& selectedColumns,
+                                                     const std::vector<mlir_builder::ColumnExpression>& expressions,
                                                      MLIRLogger& logger) -> bool;
+
+// PostgreSQL Integration - Typed field access with WHERE clause support
+auto run_mlir_postgres_typed_table_scan_with_where(const char* tableName,
+                                                   const std::vector<mlir_builder::ColumnExpression>& expressions,
+                                                   const mlir_builder::ColumnExpression& whereClause,
+                                                   MLIRLogger& logger) -> bool;
 
 
 

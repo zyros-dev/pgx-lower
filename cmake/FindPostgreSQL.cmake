@@ -109,9 +109,16 @@ if(PostgreSQL_FOUND)
   set(PostgreSQL_LIBRARY_DIRS
       "${_pg_libdir}"
       CACHE PATH "library directory for PostgreSQL")
+  # Filter out problematic libraries without -fPIC
+  string(REPLACE "-lpgcommon" "" _pg_libs_filtered "${_pg_libs}")
+  string(REPLACE "-lpgport" "" _pg_libs_filtered "${_pg_libs_filtered}")
+  # Clean up any extra whitespace
+  string(REGEX REPLACE "[ ]+" " " _pg_libs_filtered "${_pg_libs_filtered}")
+  string(STRIP "${_pg_libs_filtered}" _pg_libs_filtered)
+  
   set(PostgreSQL_LIBRARIES
-      "${_pg_libs}"
-      CACHE PATH "Libraries for PostgreSQL")
+      "${_pg_libs_filtered}"
+      CACHE PATH "Libraries for PostgreSQL (filtered)")
   set(PostgreSQL_SHARED_LINK_OPTIONS
       "${_shared_link_options}"
       CACHE STRING "PostgreSQL linker options for shared libraries.")

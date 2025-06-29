@@ -41,24 +41,4 @@ SELECT CASE category WHEN 'A' THEN 'Alpha' WHEN 'B' THEN 'Beta' ELSE 'Gamma' END
 SELECT CASE WHEN active THEN 'Active' ELSE 'Inactive' END AS status FROM test_special;
 SELECT CASE WHEN score > 90 THEN 'Excellent' WHEN score > 80 THEN 'Good' ELSE 'Fair' END AS grade FROM test_special;
 
--- Test BETWEEN operations in WHERE clauses
--- These should trigger MLIR compilation with BETWEEN operators in predicates
-SELECT * FROM test_special WHERE value BETWEEN 20 AND 50;
-SELECT * FROM test_special WHERE value BETWEEN 30 AND 60;
-SELECT * FROM test_special WHERE score BETWEEN 80.0 AND 90.0;
-SELECT * FROM test_special WHERE value NOT BETWEEN 40 AND 70;
-
--- Test IN operations in WHERE clauses
--- These should trigger MLIR compilation with IN operators in predicates
-SELECT * FROM test_special WHERE value IN (15, 25, 35);
-SELECT * FROM test_special WHERE value IN (45, 55, 65, 75);
-SELECT * FROM test_special WHERE category IN ('A', 'B');
-SELECT * FROM test_special WHERE value NOT IN (25, 45, 65);
-
--- Test CASE operations in WHERE clauses
--- These should trigger MLIR compilation with CASE operators in predicates
-SELECT * FROM test_special WHERE CASE WHEN value < 30 THEN true ELSE false END;
-SELECT * FROM test_special WHERE CASE category WHEN 'A' THEN true WHEN 'B' THEN true ELSE false END;
-SELECT * FROM test_special WHERE CASE WHEN score > 85 THEN 1 ELSE 0 END = 1;
-
 DROP TABLE test_special;

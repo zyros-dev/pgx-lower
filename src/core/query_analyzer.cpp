@@ -18,10 +18,10 @@ namespace pgx_lower {
 // NOTE: I break C++ rules a bit in this file since it's interacting a lot with C-style things.
 
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
-    // Currently, MLIR supports simple sequential scans and column projection
-    // No filters, aggregations, joins, sorts, or limits yet
-    return requiresSeqScan && !requiresFilter && !requiresAggregation && !requiresJoin && !requiresSort && !requiresLimit;
-    // Note: projection is now supported, so requiresProjection is allowed
+    // Temporarily disable WHERE clause support to debug crashes
+    // Only allow simple sequential scans and column projection
+    return requiresSeqScan && !requiresAggregation && !requiresJoin && !requiresSort && !requiresLimit && !requiresFilter;
+    // Note: requiresFilter is temporarily disallowed to debug PostgreSQL integration crashes
 }
 
 auto QueryCapabilities::getDescription() const -> const char* {

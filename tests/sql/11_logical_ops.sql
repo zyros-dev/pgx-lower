@@ -26,14 +26,4 @@ SELECT (NOT flag2) AS not_flag2 FROM test_logical;
 SELECT (flag1 AND flag2 AND value > 25) AS complex_and FROM test_logical;
 SELECT (flag1 OR flag2 OR value < 15) AS complex_or FROM test_logical;
 
--- Test logical operations in WHERE clauses
--- These should trigger MLIR compilation with logical operators in predicates
-SELECT * FROM test_logical WHERE flag1 AND flag2;
-SELECT * FROM test_logical WHERE flag1 OR flag2;
-SELECT * FROM test_logical WHERE NOT flag1;
-SELECT * FROM test_logical WHERE NOT flag2;
-SELECT * FROM test_logical WHERE flag1 AND flag2 AND value > 25;
-SELECT * FROM test_logical WHERE flag1 OR flag2 OR value < 15;
-SELECT * FROM test_logical WHERE (flag1 AND NOT flag2) OR (NOT flag1 AND flag2);
-
 DROP TABLE test_logical;

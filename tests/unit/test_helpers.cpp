@@ -57,4 +57,21 @@ extern "C" auto get_text_field(int64_t /*tuple_handle*/, int32_t /*field_index*/
     *is_null = false;
     return reinterpret_cast<int64_t>(mock_text);
 }
+
+// Mock implementations for result storage functions
+extern "C" void store_int_result(int32_t /*columnIndex*/, int32_t /*value*/, bool /*isNull*/) {
+    // Mock implementation for unit tests - just return
+}
+
+extern "C" void store_bool_result(int32_t /*columnIndex*/, bool /*value*/, bool /*isNull*/) {
+    // Mock implementation for unit tests - just return
+}
+
+extern "C" void store_bigint_result(int32_t /*columnIndex*/, int64_t /*value*/, bool /*isNull*/) {
+    // Mock implementation for unit tests - just return
+}
+
+extern "C" void prepare_computed_results(int32_t /*numColumns*/) {
+    // Mock implementation for unit tests - just return
+}
 #endif

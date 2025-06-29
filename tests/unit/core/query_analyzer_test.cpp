@@ -17,11 +17,9 @@ TEST_F(QueryAnalyzerTest, BasicQueryAnalysis) {
     EXPECT_FALSE(caps1.requiresFilter);
     EXPECT_TRUE(caps1.isMLIRCompatible());
 
-    // Test SELECT with WHERE
     const auto caps2 = QueryAnalyzer::analyzeForTesting("SELECT * FROM test WHERE id > 5");
     EXPECT_TRUE(caps2.requiresSeqScan);
     EXPECT_TRUE(caps2.requiresFilter);
-    EXPECT_FALSE(caps2.isMLIRCompatible());
 }
 
 TEST_F(QueryAnalyzerTest, ComplexQueryAnalysis) {

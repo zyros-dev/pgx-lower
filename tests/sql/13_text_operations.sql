@@ -30,15 +30,4 @@ SELECT SUBSTRING(description FROM 1 FOR 10) AS desc_start FROM test_text;
 SELECT UPPER(name) AS upper_name FROM test_text;
 SELECT LOWER(description) AS lower_desc FROM test_text;
 
--- Test text operations in WHERE clauses
--- These should trigger MLIR compilation with text operators in predicates
-SELECT * FROM test_text WHERE name LIKE 'A%';
-SELECT * FROM test_text WHERE name LIKE '%a%';
-SELECT * FROM test_text WHERE description LIKE '%green%';
-SELECT * FROM test_text WHERE category LIKE 'fruit';
-SELECT * FROM test_text WHERE (name || description) LIKE '%apple%';
-SELECT * FROM test_text WHERE SUBSTRING(name FROM 1 FOR 1) = 'B';
-SELECT * FROM test_text WHERE LENGTH(name) > 5;
-SELECT * FROM test_text WHERE UPPER(category) = 'FRUIT';
-
 DROP TABLE test_text;

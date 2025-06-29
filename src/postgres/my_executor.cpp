@@ -1,6 +1,7 @@
 #include "postgres/my_executor.h"
 #include "core/mlir_runner.h"
 #include "core/mlir_logger.h"
+#include "core/mlir_builder.h"
 #include "core/query_analyzer.h"
 #include "core/error_handling.h"
 #include "core/logging.h"
@@ -84,6 +85,40 @@ struct PostgreSQLTuplePassthrough {
     int64_t getIterationSignal() const { return originalTuple ? 1 : 0; }
 };
 
+// Forward declare ComputedResultStorage for early usage
+struct ComputedResultStorage {
+    std::vector<Datum> computedValues;     // Computed expression results
+    std::vector<bool> computedNulls;       // Null flags for computed results
+    std::vector<Oid> computedTypes;        // PostgreSQL type OIDs for computed values
+    int numComputedColumns = 0;            // Number of computed columns in current query
+    
+    void clear() {
+        computedValues.clear();
+        computedNulls.clear();
+        computedTypes.clear();
+        numComputedColumns = 0;
+    }
+    
+    void resize(int numColumns) {
+        numComputedColumns = numColumns;
+        computedValues.resize(numColumns, 0);
+        computedNulls.resize(numColumns, true);
+        computedTypes.resize(numColumns, InvalidOid);
+    }
+    
+    void setResult(int columnIndex, Datum value, bool isNull, Oid typeOid) {
+        if (columnIndex >= 0 && columnIndex < numComputedColumns) {
+            computedValues[columnIndex] = value;
+            computedNulls[columnIndex] = isNull;
+            computedTypes[columnIndex] = typeOid;
+        }
+    }
+};
+
+// Global variables for tuple processing and computed result storage
+static TupleScanContext* g_scan_context = nullptr;
+static ComputedResultStorage g_computed_results;
+
 struct TupleStreamer {
     DestReceiver* dest;
     TupleTableSlot* slot;
@@ -133,21 +168,28 @@ struct TupleStreamer {
             const auto origTupleDesc = passthrough.tupleDesc;
             const auto resultTupleDesc = slot->tts_tupleDescriptor;
 
-            // Project only the selected columns from original tuple to result slot
+            // Project columns: mix of original columns and computed expression results
             for (int i = 0; i < resultTupleDesc->natts; i++) {
                 bool isnull = false;
 
                 if (i < selectedColumns.size()) {
-                    // Map from result column index to original column index
                     const int origColumnIndex = selectedColumns[i];
+                    
                     if (origColumnIndex >= 0 && origColumnIndex < origTupleDesc->natts) {
+                        // Regular column: copy from original tuple
                         // PostgreSQL uses 1-based attribute indexing
                         const auto value =
                             heap_getattr(passthrough.originalTuple, origColumnIndex + 1, origTupleDesc, &isnull);
                         slot->tts_values[i] = value;
                         slot->tts_isnull[i] = isnull;
                     }
+                    else if (origColumnIndex == -1 && i < g_computed_results.numComputedColumns) {
+                        // Computed expression: use stored result from MLIR execution
+                        slot->tts_values[i] = g_computed_results.computedValues[i];
+                        slot->tts_isnull[i] = g_computed_results.computedNulls[i];
+                    }
                     else {
+                        // Fallback: null value
                         slot->tts_values[i] = static_cast<Datum>(0);
                         slot->tts_isnull[i] = true;
                     }
@@ -175,7 +217,7 @@ struct TupleStreamer {
     }
 };
 
-static TupleScanContext* g_scan_context = nullptr;
+// Additional global variables for tuple processing
 static TupleStreamer g_tuple_streamer;
 static PostgreSQLTuplePassthrough g_current_tuple_passthrough;
 
@@ -347,6 +389,26 @@ extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index,
     }
 }
 
+// MLIR runtime functions for storing computed expression results
+extern "C" void store_int_result(int32_t columnIndex, int32_t value, bool isNull) {
+    Datum datum = Int32GetDatum(value);
+    g_computed_results.setResult(columnIndex, datum, isNull, INT4OID);
+}
+
+extern "C" void store_bool_result(int32_t columnIndex, bool value, bool isNull) {
+    Datum datum = BoolGetDatum(value);
+    g_computed_results.setResult(columnIndex, datum, isNull, BOOLOID);
+}
+
+extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull) {
+    Datum datum = Int64GetDatum(value);
+    g_computed_results.setResult(columnIndex, datum, isNull, INT8OID);
+}
+
+extern "C" void prepare_computed_results(int32_t numColumns) {
+    g_computed_results.resize(numColumns);
+}
+
 bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupleDesc, const QueryDesc* queryDesc) {
     auto logger = PostgreSQLLogger();
 
@@ -365,11 +427,23 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
             }
             if (IsA(expr, OpExpr)) {
                 OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
-                // Check if it's an arithmetic operator we can handle
+                // Check if it's an operator we can handle (arithmetic or comparison)
                 const char* opName = get_opname(opExpr->opno);
-                if (opName && (strcmp(opName, "+") == 0 || strcmp(opName, "-") == 0 || 
-                              strcmp(opName, "*") == 0 || strcmp(opName, "/") == 0 || 
-                              strcmp(opName, "%") == 0)) {
+                if (opName && (
+                    // Arithmetic operators
+                    strcmp(opName, "+") == 0 || strcmp(opName, "-") == 0 || 
+                    strcmp(opName, "*") == 0 || strcmp(opName, "/") == 0 || 
+                    strcmp(opName, "%") == 0 ||
+                    // Comparison operators  
+                    strcmp(opName, "=") == 0 || strcmp(opName, "!=") == 0 || strcmp(opName, "<>") == 0 ||
+                    strcmp(opName, "<") == 0 || strcmp(opName, "<=") == 0 || 
+                    strcmp(opName, ">") == 0 || strcmp(opName, ">=") == 0 ||
+                    // Logical operators
+                    strcmp(opName, "AND") == 0 || strcmp(opName, "OR") == 0 || strcmp(opName, "NOT") == 0 ||
+                    // NULL handling operators
+                    strcmp(opName, "IS NULL") == 0 || strcmp(opName, "IS NOT NULL") == 0 ||
+                    // Text operations
+                    strcmp(opName, "||") == 0 || strcmp(opName, "~~") == 0 || strcmp(opName, "substring") == 0)) {
                     // Check if all arguments are handleable
                     ListCell* lc;
                     foreach(lc, opExpr->args) {
@@ -384,6 +458,36 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
             if (IsA(expr, Const)) {
                 return true;  // Constants are handleable
             }
+            if (IsA(expr, NullTest)) {
+                return true;  // NULL tests are handleable
+            }
+            if (IsA(expr, Aggref)) {
+                Aggref* aggref = reinterpret_cast<Aggref*>(expr);
+                // Check if it's an aggregate function we can handle
+                const char* aggName = get_func_name(aggref->aggfnoid);
+                if (aggName && (strcmp(aggName, "sum") == 0 || strcmp(aggName, "avg") == 0 ||
+                               strcmp(aggName, "count") == 0 || strcmp(aggName, "min") == 0 ||
+                               strcmp(aggName, "max") == 0)) {
+                    return true;
+                }
+            }
+            if (IsA(expr, FuncExpr)) {
+                FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(expr);
+                // Check if it's a special function we can handle
+                const char* funcName = get_func_name(funcExpr->funcid);
+                if (funcName && (strcmp(funcName, "coalesce") == 0 || strcmp(funcName, "substring") == 0)) {
+                    return true;
+                }
+            }
+            if (IsA(expr, CoerceViaIO) || IsA(expr, RelabelType)) {
+                return true;  // Type casts are handleable
+            }
+            if (IsA(expr, BoolExpr)) {
+                return true;  // Logical expressions (AND, OR, NOT) are handleable
+            }
+            if (IsA(expr, CoalesceExpr)) {
+                return true;  // COALESCE expressions are handleable
+            }
             return false;  // Unknown expression type
         }
         
@@ -394,12 +498,71 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
             }
             if (IsA(expr, OpExpr)) {
                 OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
-                return opExpr->opresulttype;
+                
+                // Validate the operation result type
+                Oid resultType = opExpr->opresulttype;
+                if (resultType == InvalidOid || !OidIsValid(resultType)) {
+                    // Fallback: Infer type from operator
+                    const char* opName = get_opname(opExpr->opno);
+                    if (opName) {
+                        // For arithmetic operations, default to INT4
+                        if (strcmp(opName, "+") == 0 || strcmp(opName, "-") == 0 || 
+                            strcmp(opName, "*") == 0 || strcmp(opName, "/") == 0 || 
+                            strcmp(opName, "%") == 0) {
+                            elog(NOTICE, "MLIR: Using INT4 fallback for arithmetic operator %s", opName);
+                            return INT4OID;
+                        }
+                        // For comparison operations, return BOOL
+                        if (strcmp(opName, "=") == 0 || strcmp(opName, "!=") == 0 || strcmp(opName, "<>") == 0 ||
+                            strcmp(opName, "<") == 0 || strcmp(opName, "<=") == 0 || 
+                            strcmp(opName, ">") == 0 || strcmp(opName, ">=") == 0) {
+                            elog(NOTICE, "MLIR: Using BOOL fallback for comparison operator %s", opName);
+                            return BOOLOID;
+                        }
+                        // For logical operations, return BOOL
+                        if (strcmp(opName, "AND") == 0 || strcmp(opName, "OR") == 0 || strcmp(opName, "NOT") == 0) {
+                            elog(NOTICE, "MLIR: Using BOOL fallback for logical operator %s", opName);
+                            return BOOLOID;
+                        }
+                    }
+                    elog(WARNING, "MLIR: Invalid result type %u for OpExpr, falling back to InvalidOid", resultType);
+                    return InvalidOid;
+                }
+                return resultType;
             }
             if (IsA(expr, Const)) {
                 Const* constExpr = reinterpret_cast<Const*>(expr);
                 return constExpr->consttype;
             }
+            if (IsA(expr, NullTest)) {
+                return BOOLOID;  // NULL tests always return boolean
+            }
+            if (IsA(expr, Aggref)) {
+                Aggref* aggref = reinterpret_cast<Aggref*>(expr);
+                return aggref->aggtype;  // Return the aggregate result type
+            }
+            if (IsA(expr, FuncExpr)) {
+                FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(expr);
+                return funcExpr->funcresulttype;  // Return the function result type
+            }
+            if (IsA(expr, CoerceViaIO)) {
+                CoerceViaIO* coerce = reinterpret_cast<CoerceViaIO*>(expr);
+                return coerce->resulttype;  // Return the cast target type
+            }
+            if (IsA(expr, RelabelType)) {
+                RelabelType* relabel = reinterpret_cast<RelabelType*>(expr);
+                return relabel->resulttype;  // Return the relabel target type
+            }
+            if (IsA(expr, BoolExpr)) {
+                // Logical expressions (AND, OR, NOT) always return boolean
+                return BOOLOID;
+            }
+            if (IsA(expr, CoalesceExpr)) {
+                CoalesceExpr* coalesce = reinterpret_cast<CoalesceExpr*>(expr);
+                return coalesce->coalescetype;  // Return the coalesced type
+            }
+            // Enhanced fallback logic for unknown expression types
+            elog(WARNING, "MLIR: Unknown expression node type %d, falling back to InvalidOid", nodeTag(expr));
             return InvalidOid;
         }
         
@@ -407,7 +570,29 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
             if (IsA(expr, OpExpr)) {
                 OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
                 const char* opName = get_opname(opExpr->opno);
-                elog(NOTICE, "MLIR %s: Found arithmetic operator %s", context, opName ? opName : "unknown");
+                elog(NOTICE, "MLIR %s: Found operator %s (opno=%u, resulttype=%u)", 
+                     context, opName ? opName : "unknown", opExpr->opno, opExpr->opresulttype);
+            } else if (IsA(expr, NullTest)) {
+                NullTest* nullTest = reinterpret_cast<NullTest*>(expr);
+                const char* testType = (nullTest->nulltesttype == IS_NULL) ? "IS NULL" : "IS NOT NULL";
+                elog(NOTICE, "MLIR %s: Found NULL test %s", context, testType);
+            } else if (IsA(expr, Aggref)) {
+                Aggref* aggref = reinterpret_cast<Aggref*>(expr);
+                const char* aggName = get_func_name(aggref->aggfnoid);
+                elog(NOTICE, "MLIR %s: Found aggregate function %s", context, aggName ? aggName : "unknown");
+            } else if (IsA(expr, FuncExpr)) {
+                FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(expr);
+                const char* funcName = get_func_name(funcExpr->funcid);
+                elog(NOTICE, "MLIR %s: Found function %s", context, funcName ? funcName : "unknown");
+            } else if (IsA(expr, CoerceViaIO) || IsA(expr, RelabelType)) {
+                elog(NOTICE, "MLIR %s: Found type cast", context);
+            } else if (IsA(expr, BoolExpr)) {
+                BoolExpr* boolExpr = reinterpret_cast<BoolExpr*>(expr);
+                const char* boolType = (boolExpr->boolop == AND_EXPR) ? "AND" : 
+                                      (boolExpr->boolop == OR_EXPR) ? "OR" : "NOT";
+                elog(NOTICE, "MLIR %s: Found logical operator %s", context, boolType);
+            } else if (IsA(expr, CoalesceExpr)) {
+                elog(NOTICE, "MLIR %s: Found COALESCE expression", context);
             }
         }
     };
@@ -415,8 +600,8 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
     // Create a tuple descriptor for the result (selected columns only)
     const auto resultTupleDesc = CreateTemplateTupleDesc(list_length(rootPlan->targetlist));
 
-    // Get the selected column indices from targetlist and build result tuple descriptor
-    std::vector<int> selectedColumns;
+    // Get the selected column expressions from targetlist and build result tuple descriptor
+    std::vector<mlir_builder::ColumnExpression> columnExpressions;
     int resultAttrNum = 1;
     ListCell* lc;
     foreach (lc, rootPlan->targetlist) {
@@ -427,7 +612,7 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
         if (IsA(tle->expr, Var)) {
             const auto var = reinterpret_cast<Var*>(tle->expr);
             // Convert PostgreSQL 1-based to 0-based indexing
-            selectedColumns.push_back(var->varattno - 1);
+            columnExpressions.emplace_back(var->varattno - 1);
 
             // Copy attribute info from source table to result descriptor
             const auto sourceAttr = TupleDescAttr(tupleDesc, var->varattno - 1);
@@ -460,9 +645,126 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
             Oid resultType = MLIRExpressionHandler::getExpressionResultType(reinterpret_cast<Node*>(tle->expr));
             
             if (resultType != InvalidOid) {
-                // For arithmetic expressions, we don't map to a specific column index
-                // Instead, we mark it as a computed expression (use -1 as special marker)
-                selectedColumns.push_back(-1);
+                // Create ColumnExpression for operations
+                if (IsA(tle->expr, OpExpr)) {
+                    OpExpr* opExpr = reinterpret_cast<OpExpr*>(tle->expr);
+                    const char* opName = get_opname(opExpr->opno);
+                    
+                    // Extract operand column indices
+                    std::vector<int> operandColumns;
+                    ListCell* argCell;
+                    foreach(argCell, opExpr->args) {
+                        Node* arg = static_cast<Node*>(lfirst(argCell));
+                        if (IsA(arg, Var)) {
+                            Var* argVar = reinterpret_cast<Var*>(arg);
+                            operandColumns.push_back(argVar->varattno - 1); // Convert to 0-based
+                        }
+                    }
+                    
+                    // Create ColumnExpression for the operation
+                    columnExpressions.emplace_back(std::string(opName ? opName : "unknown"), operandColumns);
+                } else if (IsA(tle->expr, NullTest)) {
+                    NullTest* nullTest = reinterpret_cast<NullTest*>(tle->expr);
+                    const char* testType = (nullTest->nulltesttype == IS_NULL) ? "IS NULL" : "IS NOT NULL";
+                    
+                    // Extract the operand column index
+                    std::vector<int> operandColumns;
+                    if (IsA(nullTest->arg, Var)) {
+                        Var* argVar = reinterpret_cast<Var*>(nullTest->arg);
+                        operandColumns.push_back(argVar->varattno - 1); // Convert to 0-based
+                    }
+                    
+                    // Create ColumnExpression for the NULL test
+                    columnExpressions.emplace_back(std::string(testType), operandColumns);
+                } else if (IsA(tle->expr, Aggref)) {
+                    Aggref* aggref = reinterpret_cast<Aggref*>(tle->expr);
+                    const char* aggName = get_func_name(aggref->aggfnoid);
+                    
+                    // Extract the operand column indices from aggregate arguments
+                    std::vector<int> operandColumns;
+                    ListCell* argCell;
+                    foreach(argCell, aggref->args) {
+                        TargetEntry* argTe = static_cast<TargetEntry*>(lfirst(argCell));
+                        if (IsA(argTe->expr, Var)) {
+                            Var* argVar = reinterpret_cast<Var*>(argTe->expr);
+                            operandColumns.push_back(argVar->varattno - 1); // Convert to 0-based
+                        }
+                    }
+                    
+                    // Create ColumnExpression for the aggregate function
+                    columnExpressions.emplace_back(std::string(aggName ? aggName : "unknown"), operandColumns);
+                } else if (IsA(tle->expr, FuncExpr)) {
+                    FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
+                    const char* funcName = get_func_name(funcExpr->funcid);
+                    
+                    // Extract operand column indices from function arguments
+                    std::vector<int> operandColumns;
+                    ListCell* argCell;
+                    foreach(argCell, funcExpr->args) {
+                        Node* arg = static_cast<Node*>(lfirst(argCell));
+                        if (IsA(arg, Var)) {
+                            Var* argVar = reinterpret_cast<Var*>(arg);
+                            operandColumns.push_back(argVar->varattno - 1); // Convert to 0-based
+                        }
+                    }
+                    
+                    // Create ColumnExpression for the function
+                    columnExpressions.emplace_back(std::string(funcName ? funcName : "unknown"), operandColumns);
+                } else if (IsA(tle->expr, CoerceViaIO) || IsA(tle->expr, RelabelType)) {
+                    // Handle type casts - extract the underlying expression
+                    std::vector<int> operandColumns;
+                    Node* arg = nullptr;
+                    if (IsA(tle->expr, CoerceViaIO)) {
+                        arg = reinterpret_cast<Node*>(reinterpret_cast<CoerceViaIO*>(tle->expr)->arg);
+                    } else if (IsA(tle->expr, RelabelType)) {
+                        arg = reinterpret_cast<Node*>(reinterpret_cast<RelabelType*>(tle->expr)->arg);
+                    }
+                    
+                    if (arg && IsA(arg, Var)) {
+                        Var* argVar = reinterpret_cast<Var*>(arg);
+                        operandColumns.push_back(argVar->varattno - 1); // Convert to 0-based
+                    }
+                    
+                    // Create ColumnExpression for the type cast
+                    columnExpressions.emplace_back(std::string("cast"), operandColumns);
+                } else if (IsA(tle->expr, BoolExpr)) {
+                    BoolExpr* boolExpr = reinterpret_cast<BoolExpr*>(tle->expr);
+                    const char* boolType = (boolExpr->boolop == AND_EXPR) ? "AND" : 
+                                          (boolExpr->boolop == OR_EXPR) ? "OR" : "NOT";
+                    
+                    // Extract operand column indices from logical expression arguments
+                    std::vector<int> operandColumns;
+                    ListCell* argCell;
+                    foreach(argCell, boolExpr->args) {
+                        Node* arg = static_cast<Node*>(lfirst(argCell));
+                        if (IsA(arg, Var)) {
+                            Var* argVar = reinterpret_cast<Var*>(arg);
+                            operandColumns.push_back(argVar->varattno - 1); // Convert to 0-based
+                        }
+                    }
+                    
+                    // Create ColumnExpression for the logical operation
+                    columnExpressions.emplace_back(std::string(boolType), operandColumns);
+                } else if (IsA(tle->expr, CoalesceExpr)) {
+                    CoalesceExpr* coalesceExpr = reinterpret_cast<CoalesceExpr*>(tle->expr);
+                    
+                    // Extract operand column indices from COALESCE arguments
+                    std::vector<int> operandColumns;
+                    ListCell* argCell;
+                    foreach(argCell, coalesceExpr->args) {
+                        Node* arg = static_cast<Node*>(lfirst(argCell));
+                        if (IsA(arg, Var)) {
+                            Var* argVar = reinterpret_cast<Var*>(arg);
+                            operandColumns.push_back(argVar->varattno - 1); // Convert to 0-based
+                        }
+                    }
+                    
+                    // Create ColumnExpression for the COALESCE operation
+                    columnExpressions.emplace_back(std::string("COALESCE"), operandColumns);
+                } else {
+                    // Fallback for other expression types
+                    columnExpressions.emplace_back(-1);
+                }
                 
                 // Set up the result attribute for the computed expression
                 const auto resultAttr = TupleDescAttr(resultTupleDesc, resultAttrNum - 1);
@@ -496,19 +798,71 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
         }
     }
 
+    // Process WHERE clause (plan->qual) to build predicate expression
+    mlir_builder::ColumnExpression* whereClause = nullptr;
+    std::unique_ptr<mlir_builder::ColumnExpression> whereClauseStorage;
+    
+    if (rootPlan->qual) {
+        elog(DEBUG1, "MLIR: Processing WHERE clause predicate");
+        
+        // Handle WHERE clause expression (should be a boolean predicate)
+        ListCell* qualCell;
+        foreach(qualCell, rootPlan->qual) {
+            Node* qualExpr = static_cast<Node*>(lfirst(qualCell));
+            
+            if (MLIRExpressionHandler::canHandleExpression(qualExpr)) {
+                MLIRExpressionHandler::logExpressionInfo(qualExpr, "WHERE clause");
+                
+                if (IsA(qualExpr, OpExpr)) {
+                    OpExpr* opExpr = reinterpret_cast<OpExpr*>(qualExpr);
+                    const char* opName = get_opname(opExpr->opno);
+                    
+                    // Extract operand column indices
+                    std::vector<int> operandColumns;
+                    ListCell* argCell;
+                    foreach(argCell, opExpr->args) {
+                        Node* arg = static_cast<Node*>(lfirst(argCell));
+                        if (IsA(arg, Var)) {
+                            Var* argVar = reinterpret_cast<Var*>(arg);
+                            operandColumns.push_back(argVar->varattno - 1); // Convert to 0-based
+                        }
+                    }
+                    
+                    // Create ColumnExpression for the WHERE predicate
+                    whereClauseStorage = std::make_unique<mlir_builder::ColumnExpression>(
+                        std::string(opName ? opName : "unknown"), operandColumns);
+                    whereClause = whereClauseStorage.get();
+                    
+                    elog(DEBUG1, "MLIR: Created WHERE clause with operator %s", opName ? opName : "unknown");
+                    break; // For now, handle only the first WHERE condition
+                }
+            } else {
+                elog(WARNING, "MLIR: Unsupported WHERE clause expression, falling back to PostgreSQL executor");
+                // Return false to fall back to standard executor for unsupported WHERE clauses
+                FreeTupleDesc(resultTupleDesc);
+                return false;
+            }
+        }
+    }
+
     const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
 
     dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
 
     g_tuple_streamer.initialize(dest, slot);
+    // Convert ColumnExpressions to column indices for compatibility
+    std::vector<int> selectedColumns;
+    for (const auto& expr : columnExpressions) {
+        selectedColumns.push_back(expr.columnIndex);
+    }
     g_tuple_streamer.setSelectedColumns(selectedColumns);
 
     TupleScanContext scanContext = {scanDesc, tupleDesc, true, 0};
     g_scan_context = &scanContext;
 
-    // Use the new typed field access version with actual column information
+    // Use the new typed field access version with actual column information and optional WHERE clause
     const auto mlir_success =
-        mlir_runner::run_mlir_postgres_typed_table_scan_with_columns("current_table", selectedColumns, logger);
+        mlir_runner::run_mlir_postgres_typed_table_scan_with_columns("current_table", columnExpressions, logger);
 
     // Cleanup
     g_scan_context = nullptr;

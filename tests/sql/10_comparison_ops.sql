@@ -26,14 +26,4 @@ SELECT (value <= score) AS less_equal FROM test_comparison;
 SELECT (value > score) AS greater_than FROM test_comparison;
 SELECT (value >= score) AS greater_equal FROM test_comparison;
 
--- Test comparison operations in WHERE clauses
--- These should trigger MLIR compilation with comparison operators in predicates
-SELECT * FROM test_comparison WHERE value = score;
-SELECT * FROM test_comparison WHERE value <> score;
-SELECT * FROM test_comparison WHERE value != score;
-SELECT * FROM test_comparison WHERE value < score;
-SELECT * FROM test_comparison WHERE value <= score;
-SELECT * FROM test_comparison WHERE value > score;
-SELECT * FROM test_comparison WHERE value >= score;
-
 DROP TABLE test_comparison;

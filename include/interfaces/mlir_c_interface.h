@@ -26,4 +26,10 @@ auto get_next_tuple() -> int64_t;
 // Typed field access functions for PostgreSQL dialect
 auto get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int32_t;
 auto get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int64_t;
+
+// Result storage functions for expressions
+void store_int_result(int32_t columnIndex, int32_t value, bool isNull);
+void store_bool_result(int32_t columnIndex, bool value, bool isNull);
+void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
+void prepare_computed_results(int32_t numColumns);
 }

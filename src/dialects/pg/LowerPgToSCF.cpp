@@ -417,8 +417,27 @@ public:
         auto left = op.getLeft();
         auto right = op.getRight();
         
-        // Simple binary AND for boolean values
-        auto result = rewriter.create<arith::AndIOp>(loc, left, right);
+        // Convert integer operands to boolean if needed for PostgreSQL boolean logic
+        auto i1Type = rewriter.getI1Type();
+        
+        // Convert left operand to boolean (non-zero = true, zero = false)
+        Value leftBool = left;
+        if (left.getType() != i1Type) {
+            auto zeroConst = rewriter.create<arith::ConstantOp>(loc, left.getType(), 
+                                                               rewriter.getIntegerAttr(left.getType(), 0));
+            leftBool = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, left, zeroConst).getResult();
+        }
+        
+        // Convert right operand to boolean  
+        Value rightBool = right;
+        if (right.getType() != i1Type) {
+            auto zeroConst = rewriter.create<arith::ConstantOp>(loc, right.getType(),
+                                                               rewriter.getIntegerAttr(right.getType(), 0));
+            rightBool = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, right, zeroConst).getResult();
+        }
+        
+        // PostgreSQL AND logic: both must be true
+        auto result = rewriter.create<arith::AndIOp>(loc, leftBool, rightBool);
         rewriter.replaceOp(op, result);
         
         return success();
@@ -435,8 +454,27 @@ public:
         auto left = op.getLeft();
         auto right = op.getRight();
         
-        // Simple binary OR for boolean values
-        auto result = rewriter.create<arith::OrIOp>(loc, left, right);
+        // Convert integer operands to boolean if needed for PostgreSQL boolean logic
+        auto i1Type = rewriter.getI1Type();
+        
+        // Convert left operand to boolean (non-zero = true, zero = false)
+        Value leftBool = left;
+        if (left.getType() != i1Type) {
+            auto zeroConst = rewriter.create<arith::ConstantOp>(loc, left.getType(), 
+                                                               rewriter.getIntegerAttr(left.getType(), 0));
+            leftBool = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, left, zeroConst).getResult();
+        }
+        
+        // Convert right operand to boolean  
+        Value rightBool = right;
+        if (right.getType() != i1Type) {
+            auto zeroConst = rewriter.create<arith::ConstantOp>(loc, right.getType(),
+                                                               rewriter.getIntegerAttr(right.getType(), 0));
+            rightBool = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, right, zeroConst).getResult();
+        }
+        
+        // PostgreSQL OR logic: either must be true
+        auto result = rewriter.create<arith::OrIOp>(loc, leftBool, rightBool);
         rewriter.replaceOp(op, result);
         
         return success();

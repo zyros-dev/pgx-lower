@@ -129,6 +129,19 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
         symbolMap[interner("get_text_field")] =
             llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&get_text_field)),
                                          llvm::JITSymbolFlags::Exported);
+        // Register result storage functions for computed expressions
+        symbolMap[interner("store_int_result")] =
+            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&store_int_result)),
+                                         llvm::JITSymbolFlags::Exported);
+        symbolMap[interner("store_bool_result")] =
+            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&store_bool_result)),
+                                         llvm::JITSymbolFlags::Exported);
+        symbolMap[interner("store_bigint_result")] =
+            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&store_bigint_result)),
+                                         llvm::JITSymbolFlags::Exported);
+        symbolMap[interner("prepare_computed_results")] =
+            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&prepare_computed_results)),
+                                         llvm::JITSymbolFlags::Exported);
         return symbolMap;
     });
 
@@ -155,23 +168,32 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
 }
 
 bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
-                                                     const std::vector<int>& selectedColumns,
+                                                     const std::vector<mlir_builder::ColumnExpression>& expressions,
                                                      MLIRLogger& logger) {
     mlir::MLIRContext context;
 
     std::ostringstream oss;
-    oss << "Scanning PostgreSQL table '" << tableName << "' with column subset: ";
-    for (size_t i = 0; i < selectedColumns.size(); ++i) {
+    oss << "Scanning PostgreSQL table '" << tableName << "' with expressions: ";
+    for (size_t i = 0; i < expressions.size(); ++i) {
         if (i > 0) {
             oss << ", ";
         }
-        oss << selectedColumns[i];
+        if (expressions[i].columnIndex >= 0) {
+            oss << "col[" << expressions[i].columnIndex << "]";
+        } else {
+            oss << expressions[i].operatorName << "(";
+            for (size_t j = 0; j < expressions[i].operandColumns.size(); ++j) {
+                if (j > 0) oss << ",";
+                oss << "col[" << expressions[i].operandColumns[j] << "]";
+            }
+            oss << ")";
+        }
     }
     logger.debug(oss.str());
 
     // Use MLIRBuilder to generate the MLIR module
     auto builder = mlir_builder::createMLIRBuilder(context);
-    auto module = builder->buildTableScanModule(tableName, selectedColumns);
+    auto module = builder->buildTableScanModule(tableName, expressions);
 
     if (!module) {
         logger.error("Failed to build MLIR module");
@@ -185,6 +207,58 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     module->OpState::print(os);
     os.flush();
     logger.notice("MLIR with field access: " + mlirStr);
+
+    // Execute the MLIR module
+    return executeMLIRModule(*module, logger);
+}
+
+bool run_mlir_postgres_typed_table_scan_with_where(const char* tableName,
+                                                   const std::vector<mlir_builder::ColumnExpression>& expressions,
+                                                   const mlir_builder::ColumnExpression& whereClause,
+                                                   MLIRLogger& logger) {
+    mlir::MLIRContext context;
+
+    std::ostringstream oss;
+    oss << "Scanning PostgreSQL table '" << tableName << "' with WHERE clause: ";
+    oss << whereClause.operatorName << "(";
+    for (size_t j = 0; j < whereClause.operandColumns.size(); ++j) {
+        if (j > 0) oss << ",";
+        oss << "col[" << whereClause.operandColumns[j] << "]";
+    }
+    oss << ") and expressions: ";
+    for (size_t i = 0; i < expressions.size(); ++i) {
+        if (i > 0) {
+            oss << ", ";
+        }
+        if (expressions[i].columnIndex >= 0) {
+            oss << "col[" << expressions[i].columnIndex << "]";
+        } else {
+            oss << expressions[i].operatorName << "(";
+            for (size_t j = 0; j < expressions[i].operandColumns.size(); ++j) {
+                if (j > 0) oss << ",";
+                oss << "col[" << expressions[i].operandColumns[j] << "]";
+            }
+            oss << ")";
+        }
+    }
+    logger.debug(oss.str());
+
+    // Use MLIRBuilder to generate the MLIR module with WHERE clause support
+    auto builder = mlir_builder::createMLIRBuilder(context);
+    auto module = builder->buildTableScanModuleWithWhere(tableName, expressions, &whereClause);
+
+    if (!module) {
+        logger.error("Failed to build MLIR module with WHERE clause");
+        return false;
+    }
+
+    // Print the MLIR with WHERE clause predicate
+    logger.notice("Generated MLIR with PostgreSQL WHERE clause:");
+    auto mlirStr = std::string();
+    auto os = llvm::raw_string_ostream(mlirStr);
+    module->OpState::print(os);
+    os.flush();
+    logger.notice("MLIR with WHERE clause: " + mlirStr);
 
     // Execute the MLIR module
     return executeMLIRModule(*module, logger);
