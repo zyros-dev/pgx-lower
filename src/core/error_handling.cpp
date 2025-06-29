@@ -15,7 +15,7 @@ namespace pgx_lower {
 
 // ===== ErrorInfo =====
 
-const char* ErrorInfo::getSeverityString() const {
+auto ErrorInfo::getSeverityString() const -> const char* {
     switch (severity) {
     case ErrorSeverity::INFO_LEVEL: return "INFO";
     case ErrorSeverity::WARNING_LEVEL: return "WARNING";
@@ -25,7 +25,7 @@ const char* ErrorInfo::getSeverityString() const {
     }
 }
 
-const char* ErrorInfo::getCategoryString() const {
+auto ErrorInfo::getCategoryString() const -> const char* {
     switch (category) {
     case ErrorCategory::INITIALIZATION: return "INITIALIZATION";
     case ErrorCategory::QUERY_ANALYSIS: return "QUERY_ANALYSIS";
@@ -39,7 +39,7 @@ const char* ErrorInfo::getCategoryString() const {
     }
 }
 
-std::string ErrorInfo::getFormattedMessage() const {
+auto ErrorInfo::getFormattedMessage() const -> std::string {
     std::ostringstream oss;
     oss << "[" << getSeverityString() << "][" << getCategoryString() << "] " << message;
 
@@ -84,10 +84,10 @@ bool PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const {
 
 void PostgreSQLErrorHandler::handleError(const ErrorInfo& error) {
     // Fallback to console when not in PostgreSQL extension
-    std::cerr << "PostgreSQL: " << error.getFormattedMessage() << std::endl;
+    std::cerr << "PostgreSQL: " << error.getFormattedMessage() << '\n';
 }
 
-bool PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const {
+auto PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const -> bool {
     return error.severity == ErrorSeverity::FATAL_LEVEL;
 }
 
@@ -97,10 +97,10 @@ bool PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const {
 
 void ConsoleErrorHandler::handleError(const ErrorInfo& error) {
     std::ostream& stream = (error.severity >= ErrorSeverity::ERROR_LEVEL) ? std::cerr : std::cout;
-    stream << error.getFormattedMessage() << std::endl;
+    stream << error.getFormattedMessage() << '\n';
 }
 
-bool ConsoleErrorHandler::shouldAbortOnError(const ErrorInfo& error) const {
+auto ConsoleErrorHandler::shouldAbortOnError(const ErrorInfo& error) const -> bool {
     return error.severity == ErrorSeverity::FATAL_LEVEL;
 }
 
@@ -112,7 +112,7 @@ void ErrorManager::setHandler(std::unique_ptr<ErrorHandler> handler) {
     handler_ = std::move(handler);
 }
 
-ErrorHandler* ErrorManager::getHandler() {
+auto ErrorManager::getHandler() -> ErrorHandler* {
     if (!handler_) {
         // Default to console handler if none set
         handler_ = std::make_unique<ConsoleErrorHandler>();
@@ -122,7 +122,7 @@ ErrorHandler* ErrorManager::getHandler() {
 
 void ErrorManager::reportError(const ErrorInfo& error) {
     auto* handler = getHandler();
-    if (handler) {
+    if (handler != nullptr) {
         handler->handleError(error);
 
         if (handler->shouldAbortOnError(error)) {
@@ -131,18 +131,18 @@ void ErrorManager::reportError(const ErrorInfo& error) {
     }
 }
 
-ErrorInfo ErrorManager::makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message) {
-    return ErrorInfo(severity, category, message);
+auto ErrorManager::makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message) -> ErrorInfo {
+    return {severity, category, message};
 }
 
-ErrorInfo ErrorManager::makeError(ErrorSeverity severity,
+auto ErrorManager::makeError(ErrorSeverity severity,
                                   ErrorCategory category,
                                   const std::string& message,
-                                  const std::string& context) {
-    return ErrorInfo(severity, category, message, context);
+                                  const std::string& context) -> ErrorInfo {
+    return {severity, category, message, context};
 }
 
-ErrorInfo ErrorManager::queryAnalysisError(const std::string& message, const std::string& queryText) {
+auto ErrorManager::queryAnalysisError(const std::string& message, const std::string& queryText) -> ErrorInfo {
     auto error = ErrorInfo(ErrorSeverity::ERROR_LEVEL, ErrorCategory::QUERY_ANALYSIS, message);
     if (!queryText.empty()) {
         error.context = "Query: " + queryText;
@@ -151,28 +151,28 @@ ErrorInfo ErrorManager::queryAnalysisError(const std::string& message, const std
     return error;
 }
 
-ErrorInfo ErrorManager::mlirGenerationError(const std::string& message, const std::string& context) {
+auto ErrorManager::mlirGenerationError(const std::string& message, const std::string& context) -> ErrorInfo {
     auto error = ErrorInfo(ErrorSeverity::ERROR_LEVEL, ErrorCategory::MLIR_GENERATION, message);
     error.context = context;
     error.suggestion = "This may indicate a bug in MLIR code generation logic";
     return error;
 }
 
-ErrorInfo ErrorManager::compilationError(const std::string& message, const std::string& context) {
+auto ErrorManager::compilationError(const std::string& message, const std::string& context) -> ErrorInfo {
     auto error = ErrorInfo(ErrorSeverity::ERROR_LEVEL, ErrorCategory::COMPILATION, message);
     error.context = context;
     error.suggestion = "Check LLVM/MLIR version compatibility and compilation flags";
     return error;
 }
 
-ErrorInfo ErrorManager::executionError(const std::string& message, const std::string& context) {
+auto ErrorManager::executionError(const std::string& message, const std::string& context) -> ErrorInfo {
     auto error = ErrorInfo(ErrorSeverity::ERROR_LEVEL, ErrorCategory::EXECUTION, message);
     error.context = context;
     error.suggestion = "Check input data and runtime environment";
     return error;
 }
 
-ErrorInfo ErrorManager::postgresqlError(const std::string& message, const std::string& context) {
+auto ErrorManager::postgresqlError(const std::string& message, const std::string& context) -> ErrorInfo {
     auto error = ErrorInfo(ErrorSeverity::ERROR_LEVEL, ErrorCategory::POSTGRESQL, message);
     error.context = context;
     error.suggestion = "Check PostgreSQL version and configuration";

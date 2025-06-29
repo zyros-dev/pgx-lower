@@ -15,14 +15,14 @@ extern "C" {
 
 namespace pgx_lower {
 
-bool QueryCapabilities::isMLIRCompatible() const {
+auto QueryCapabilities::isMLIRCompatible() const -> bool {
     // Currently, MLIR supports simple sequential scans and column projection
     // No filters, aggregations, joins, sorts, or limits yet
     return requiresSeqScan && !requiresFilter && !requiresAggregation && !requiresJoin && !requiresSort && !requiresLimit;
     // Note: projection is now supported, so requiresProjection is allowed
 }
 
-const char* QueryCapabilities::getDescription() const {
+auto QueryCapabilities::getDescription() const -> const char* {
     if (isMLIRCompatible()) {
         return "Simple sequential scan - MLIR compatible";
     }
@@ -225,7 +225,7 @@ void QueryAnalyzer::analyzeProjection(const Plan* plan, QueryCapabilities& caps)
 
 #endif // POSTGRESQL_EXTENSION
 
-QueryCapabilities QueryAnalyzer::analyzeForTesting(const char* queryText) {
+auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilities {
     QueryCapabilities caps;
 
     if (!queryText) {

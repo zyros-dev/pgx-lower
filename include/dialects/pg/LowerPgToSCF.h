@@ -7,7 +7,7 @@
 namespace mlir { namespace pg {
 
 /// Create a pass to lower PostgreSQL dialect operations to SCF dialect
-std::unique_ptr<OperationPass<func::FuncOp>> createLowerPgToSCFPass();
+auto createLowerPgToSCFPass() -> std::unique_ptr<OperationPass<func::FuncOp>>;
 
 /// Conversion patterns for lowering pg dialect to scf/func
 void populatePgToSCFConversionPatterns(RewritePatternSet &patterns, TypeConverter &typeConverter);

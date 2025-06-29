@@ -17,7 +17,7 @@ class PgDialect : public Dialect {
    public:
     explicit PgDialect(MLIRContext *context);
 
-    static StringRef getDialectNamespace() { return "pg"; }
+    static auto getDialectNamespace() -> StringRef { return "pg"; }
 
     void initialize();
 

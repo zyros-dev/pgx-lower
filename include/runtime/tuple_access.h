@@ -11,7 +11,7 @@ extern "C" {
 }
 #endif
 
-namespace pgx_lower { namespace runtime {
+namespace pgx_lower::runtime {
 
 /**
  * Runtime wrapper functions for PostgreSQL tuple access.
@@ -31,7 +31,7 @@ struct TupleHandle;
  * @param table_name Name of the table to scan
  * @return Opaque handle to the table scan, or nullptr on failure
  */
-TableScanHandle* openTableScan(const char* table_name);
+auto openTableScan(const char* table_name) -> TableScanHandle*;
 
 /**
  * Close a table scan and free resources
@@ -44,7 +44,7 @@ void closeTableScan(TableScanHandle* handle);
  * @param handle Table scan handle
  * @return Tuple handle, or nullptr if no more tuples
  */
-TupleHandle* readNextTuple(TableScanHandle* handle);
+auto readNextTuple(TableScanHandle* handle) -> TupleHandle*;
 
 //===----------------------------------------------------------------------===//
 // Tuple Field Access
@@ -57,7 +57,7 @@ TupleHandle* readNextTuple(TableScanHandle* handle);
  * @param is_null Output parameter set to true if field is NULL
  * @return Field value (undefined if is_null is true)
  */
-int32_t getIntField(TupleHandle* tuple, int field_index, bool* is_null);
+auto getIntField(TupleHandle* tuple, int field_index, bool* is_null) -> int32_t;
 
 /**
  * Extract 64-bit integer field from tuple
@@ -66,7 +66,7 @@ int32_t getIntField(TupleHandle* tuple, int field_index, bool* is_null);
  * @param is_null Output parameter set to true if field is NULL
  * @return Field value (undefined if is_null is true)
  */
-int64_t getBigIntField(TupleHandle* tuple, int field_index, bool* is_null);
+auto getBigIntField(TupleHandle* tuple, int field_index, bool* is_null) -> int64_t;
 
 /**
  * Extract text field from tuple
@@ -76,7 +76,7 @@ int64_t getBigIntField(TupleHandle* tuple, int field_index, bool* is_null);
  * @param is_null Output parameter set to true if field is NULL
  * @return Pointer to text data (null-terminated, undefined if is_null is true)
  */
-const char* getTextField(TupleHandle* tuple, int field_index, int* length, bool* is_null);
+auto getTextField(TupleHandle* tuple, int field_index, int* length, bool* is_null) -> const char*;
 
 /**
  * Extract boolean field from tuple
@@ -85,7 +85,7 @@ const char* getTextField(TupleHandle* tuple, int field_index, int* length, bool*
  * @param is_null Output parameter set to true if field is NULL
  * @return Field value (undefined if is_null is true)
  */
-bool getBoolField(TupleHandle* tuple, int field_index, bool* is_null);
+auto getBoolField(TupleHandle* tuple, int field_index, bool* is_null) -> bool;
 
 /**
  * Extract numeric field as double
@@ -94,7 +94,7 @@ bool getBoolField(TupleHandle* tuple, int field_index, bool* is_null);
  * @param is_null Output parameter set to true if field is NULL
  * @return Field value as double (undefined if is_null is true)
  */
-double getNumericField(TupleHandle* tuple, int field_index, bool* is_null);
+auto getNumericField(TupleHandle* tuple, int field_index, bool* is_null) -> double;
 
 //===----------------------------------------------------------------------===//
 // Type Information
@@ -106,14 +106,14 @@ double getNumericField(TupleHandle* tuple, int field_index, bool* is_null);
  * @param field_index 0-based field index
  * @return PostgreSQL type OID
  */
-uint32_t getFieldTypeOid(TupleHandle* tuple, int field_index);
+auto getFieldTypeOid(TupleHandle* tuple, int field_index) -> uint32_t;
 
 /**
  * Get the number of fields in a tuple
  * @param tuple Tuple handle
  * @return Number of fields
  */
-int getTupleFieldCount(TupleHandle* tuple);
+auto getTupleFieldCount(TupleHandle* tuple) -> int;
 
 //===----------------------------------------------------------------------===//
 // Output Operations
@@ -124,7 +124,7 @@ int getTupleFieldCount(TupleHandle* tuple);
  * @param tuple Tuple handle to output
  * @return true on success, false on failure
  */
-bool outputTuple(TupleHandle* tuple);
+auto outputTuple(TupleHandle* tuple) -> bool;
 
 /**
  * Create a new tuple with specified field values
@@ -134,7 +134,7 @@ bool outputTuple(TupleHandle* tuple);
  * @param null_flags Array of null flags
  * @return New tuple handle, or nullptr on failure
  */
-TupleHandle* createTuple(int field_count, uint32_t* field_types, int64_t* field_values, bool* null_flags);
+auto createTuple(int field_count, uint32_t* field_types, int64_t* field_values, bool* null_flags) -> TupleHandle*;
 
 /**
  * Free a tuple handle
@@ -155,7 +155,7 @@ void freeTuple(TupleHandle* tuple);
  * @param op Comparison operator ("eq", "ne", "lt", "le", "gt", "ge")
  * @return Comparison result (false if either operand is NULL)
  */
-bool compareInt(int32_t lhs, bool lhs_null, int32_t rhs, bool rhs_null, const char* op);
+auto compareInt(int32_t lhs, bool lhs_null, int32_t rhs, bool rhs_null, const char* op) -> bool;
 
 /**
  * Compare two text values with NULL handling
@@ -166,7 +166,7 @@ bool compareInt(int32_t lhs, bool lhs_null, int32_t rhs, bool rhs_null, const ch
  * @param op Comparison operator ("eq", "ne", "lt", "le", "gt", "ge")
  * @return Comparison result (false if either operand is NULL)
  */
-bool compareText(const char* lhs, bool lhs_null, const char* rhs, bool rhs_null, const char* op);
+auto compareText(const char* lhs, bool lhs_null, const char* rhs, bool rhs_null, const char* op) -> bool;
 
 //===----------------------------------------------------------------------===//
 // Aggregation Support
@@ -176,7 +176,7 @@ bool compareText(const char* lhs, bool lhs_null, const char* rhs, bool rhs_null,
  * Initialize sum aggregation state
  * @return Opaque aggregation state handle
  */
-void* initSumAggregation();
+auto initSumAggregation() -> void*;
 
 /**
  * Add value to sum aggregation
@@ -192,7 +192,7 @@ void addToSum(void* state, int64_t value, bool is_null);
  * @param result_null Output parameter set to true if result is NULL
  * @return Final sum value
  */
-int64_t finalizeSumAggregation(void* state, bool* result_null);
+auto finalizeSumAggregation(void* state, bool* result_null) -> int64_t;
 
 /**
  * Free aggregation state
@@ -200,7 +200,7 @@ int64_t finalizeSumAggregation(void* state, bool* result_null);
  */
 void freeAggregationState(void* state);
 
-}} // namespace pgx_lower::runtime
+} // namespace pgx_lower::runtime
 
 //===----------------------------------------------------------------------===//
 // C-style interface for MLIR JIT compatibility
@@ -209,12 +209,12 @@ void freeAggregationState(void* state);
 extern "C" {
 
 // Legacy function names for compatibility with existing MLIR code
-void* open_postgres_table(const char* table_name);
-void* read_next_tuple_from_table(void* table_handle);
+auto open_postgres_table(const char* table_name) -> void*;
+auto read_next_tuple_from_table(void* table_handle) -> void*;
 void close_postgres_table(void* table_handle);
-bool add_tuple_to_result(void* tuple_handle);
+auto add_tuple_to_result(void* tuple_handle) -> bool;
 
 // Field access functions with MLIR-compatible signatures
-int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
-int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null); // returns char* as i64
+auto get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int32_t;
+auto get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int64_t; // returns char* as i64
 }

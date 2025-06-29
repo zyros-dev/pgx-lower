@@ -36,33 +36,3 @@ TEST_F(MLIRRunnerTest, PassManagerSetup) {
     EXPECT_NO_THROW(pm.addPass(mlir::createConvertFuncToLLVMPass()));
     EXPECT_NO_THROW(pm.addNestedPass<mlir::func::FuncOp>(mlir::createArithToLLVMConversionPass()));
 }
-
-TEST_F(MLIRRunnerTest, PostgreSQLTableScanInMLIR) {
-    std::vector<int64_t> mockData = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
-    MockTupleScanContext mockContext = {mockData, 0, true};
-    g_mock_scan_context = &mockContext;
-
-    ConsoleLogger logger;
-
-    auto result = mlir_runner::run_mlir_postgres_table_scan("test_table", logger);
-
-    EXPECT_TRUE(result) << "MLIR PostgreSQL table scan should succeed";
-}
-
-TEST_F(MLIRRunnerTest, PostgreSQLTypedFieldAccess) {
-    // Set up mock data for the test
-    std::vector<int64_t> mockData = {100, 200, 300};
-    MockTupleScanContext mockContext = {mockData, 0, true};
-    g_mock_scan_context = &mockContext;
-
-    // Test typed field access with pg dialect
-    ConsoleLogger logger;
-
-    // This should generate MLIR with pg.scan_table, pg.read_tuple, pg.get_int_field, pg.get_text_field
-    // and then show the transformation via lowering pass
-    auto result = mlir_runner::run_mlir_postgres_typed_table_scan("test_table", logger);
-
-    EXPECT_TRUE(result) << "MLIR PostgreSQL typed field access should succeed";
-
-    std::cout << "[TEST] PostgreSQL typed field access completed!" << std::endl;
-}

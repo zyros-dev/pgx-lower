@@ -1,65 +1,58 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <memory>
 #include <stdexcept>
+#include <utility>
 
 namespace pgx_lower {
 
-/**
- * Error severity levels for categorizing issues
- */
-enum class ErrorSeverity {
-    INFO_LEVEL, // Informational - operation succeeded with notes
-    WARNING_LEVEL, // Warning - operation succeeded but with concerns
-    ERROR_LEVEL, // Error - operation failed but system can continue
-    FATAL_LEVEL // Fatal - operation failed and system should stop
+enum class ErrorSeverity : std::uint8_t {
+    INFO_LEVEL,
+    WARNING_LEVEL,
+    ERROR_LEVEL,
+    FATAL_LEVEL
 };
 
-/**
- * Error categories to help with debugging and monitoring
- */
-enum class ErrorCategory {
-    INITIALIZATION, // Startup/initialization errors
-    QUERY_ANALYSIS, // Query parsing and analysis errors
-    MLIR_GENERATION, // MLIR code generation errors
-    COMPILATION, // LLVM/JIT compilation errors
-    EXECUTION, // Runtime execution errors
-    POSTGRESQL, // PostgreSQL integration errors
-    MEMORY, // Memory allocation/management errors
-    IO // Input/output errors
+enum class ErrorCategory : std::uint8_t {
+    INITIALIZATION,
+    QUERY_ANALYSIS,
+    MLIR_GENERATION,
+    COMPILATION,
+    EXECUTION,
+    POSTGRESQL,
+    MEMORY,
+    IO
 };
 
-/**
- * Structured error information
- */
 struct ErrorInfo {
     ErrorSeverity severity;
     ErrorCategory category;
     std::string message;
-    std::string context; // Additional context (function name, query text, etc.)
-    int errorCode = 0; // Numeric error code for programmatic handling
-    std::string suggestion; // Suggested fix or workaround
+    std::string context;
+    int errorCode = 0;
+    std::string suggestion;
 
-    ErrorInfo(ErrorSeverity sev, ErrorCategory cat, const std::string& msg)
+    ErrorInfo(const ErrorSeverity sev, const ErrorCategory cat, std::string  msg)
     : severity(sev)
     , category(cat)
-    , message(msg) {}
+    , message(std::move(msg)) {}
 
-    ErrorInfo(ErrorSeverity sev, ErrorCategory cat, const std::string& msg, const std::string& ctx)
+    ErrorInfo(const ErrorSeverity sev, const ErrorCategory cat, std::string msg, std::string  ctx)
     : severity(sev)
     , category(cat)
-    , message(msg)
-    , context(ctx) {}
+    , message(std::move(msg))
+    , context(std::move(ctx)) {}
 
     // Get human-readable severity string
-    const char* getSeverityString() const;
+    [[nodiscard]] auto getSeverityString() const -> const char*;
 
     // Get human-readable category string
-    const char* getCategoryString() const;
+    [[nodiscard]] auto getCategoryString() const -> const char*;
 
     // Get formatted error message
-    std::string getFormattedMessage() const;
+    [[nodiscard]] auto getFormattedMessage() const -> std::string;
 };
 
 /**
@@ -85,24 +78,24 @@ class Result {
     , error_(ErrorSeverity::INFO_LEVEL, ErrorCategory::EXECUTION, "") {}
 
     // Error constructor
-    explicit Result(const ErrorInfo& error)
+    explicit Result(ErrorInfo  error)
     : success_(false)
     , value_()
-    , error_(error) {}
+    , error_(std::move(error)) {}
 
     // Check if operation succeeded
-    bool isSuccess() const { return success_; }
-    bool isError() const { return !success_; }
+    [[nodiscard]] auto isSuccess() const -> bool { return success_; }
+    [[nodiscard]] auto isError() const -> bool { return !success_; }
 
     // Get value (only valid if isSuccess())
-    const T& getValue() const {
+    auto getValue() const -> const T& {
         if (!success_) {
             throw std::runtime_error("Attempted to get value from failed Result");
         }
         return value_;
     }
 
-    T& getValue() {
+    auto getValue() -> T& {
         if (!success_) {
             throw std::runtime_error("Attempted to get value from failed Result");
         }
@@ -110,7 +103,7 @@ class Result {
     }
 
     // Get error (only valid if isError())
-    const ErrorInfo& getError() const {
+    [[nodiscard]] auto getError() const -> const ErrorInfo& {
         if (success_) {
             throw std::runtime_error("Attempted to get error from successful Result");
         }
@@ -118,7 +111,7 @@ class Result {
     }
 
     // Convenience methods
-    T valueOr(const T& defaultValue) const { return success_ ? value_ : defaultValue; }
+    auto valueOr(const T& defaultValue) const -> T { return success_ ? value_ : defaultValue; }
 };
 
 /**
@@ -137,7 +130,7 @@ class ErrorHandler {
     virtual void handleError(const ErrorInfo& error) = 0;
 
     // Check if errors should be treated as fatal
-    virtual bool shouldAbortOnError(const ErrorInfo& error) const = 0;
+    [[nodiscard]] virtual auto shouldAbortOnError(const ErrorInfo& error) const -> bool = 0;
 };
 
 /**
@@ -146,7 +139,7 @@ class ErrorHandler {
 class PostgreSQLErrorHandler : public ErrorHandler {
    public:
     void handleError(const ErrorInfo& error) override;
-    bool shouldAbortOnError(const ErrorInfo& error) const override;
+    [[nodiscard]] auto shouldAbortOnError(const ErrorInfo& error) const -> bool override;
 };
 
 /**
@@ -155,7 +148,7 @@ class PostgreSQLErrorHandler : public ErrorHandler {
 class ConsoleErrorHandler : public ErrorHandler {
    public:
     void handleError(const ErrorInfo& error) override;
-    bool shouldAbortOnError(const ErrorInfo& error) const override;
+    [[nodiscard]] auto shouldAbortOnError(const ErrorInfo& error) const -> bool override;
 };
 
 /**
@@ -170,27 +163,27 @@ class ErrorManager {
     static void setHandler(std::unique_ptr<ErrorHandler> handler);
 
     // Get the current error handler
-    static ErrorHandler* getHandler();
+    static auto getHandler() -> ErrorHandler*;
 
     // Report an error through the current handler
     static void reportError(const ErrorInfo& error);
 
     // Convenience methods for creating errors
-    static ErrorInfo makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message);
+    static auto makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message) -> ErrorInfo;
 
-    static ErrorInfo
-    makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message, const std::string& context);
+    static auto
+    makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message, const std::string& context) -> ErrorInfo;
 
     // Create specific error types
-    static ErrorInfo queryAnalysisError(const std::string& message, const std::string& queryText = "");
+    static auto queryAnalysisError(const std::string& message, const std::string& queryText = "") -> ErrorInfo;
 
-    static ErrorInfo mlirGenerationError(const std::string& message, const std::string& context = "");
+    static auto mlirGenerationError(const std::string& message, const std::string& context = "") -> ErrorInfo;
 
-    static ErrorInfo compilationError(const std::string& message, const std::string& context = "");
+    static auto compilationError(const std::string& message, const std::string& context = "") -> ErrorInfo;
 
-    static ErrorInfo executionError(const std::string& message, const std::string& context = "");
+    static auto executionError(const std::string& message, const std::string& context = "") -> ErrorInfo;
 
-    static ErrorInfo postgresqlError(const std::string& message, const std::string& context = "");
+    static auto postgresqlError(const std::string& message, const std::string& context = "") -> ErrorInfo;
 };
 
 // Convenience macros for error creation

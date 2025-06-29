@@ -13,7 +13,7 @@ struct EmptyProperties {
 template<typename Derived>
 class OpWithPropertiesMixin {
    public:
-    EmptyProperties getProperties() const { return EmptyProperties{}; }
+    static EmptyProperties getProperties() { return EmptyProperties{}; }
 };
 
 }} // namespace mlir::pg

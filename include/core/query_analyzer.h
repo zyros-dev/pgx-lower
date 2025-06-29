@@ -23,10 +23,10 @@ struct QueryCapabilities {
     bool requiresLimit = false; // LIMIT clause
 
     // Check if MLIR can handle this combination
-    bool isMLIRCompatible() const;
+    [[nodiscard]] auto isMLIRCompatible() const -> bool;
 
     // Get human-readable description
-    const char* getDescription() const;
+    [[nodiscard]] auto getDescription() const -> const char*;
 };
 
 /**
@@ -41,7 +41,7 @@ class QueryAnalyzer {
 #endif
 
     // Mock analysis for unit tests
-    static QueryCapabilities analyzeForTesting(const char* queryText);
+    static auto analyzeForTesting(const char* queryText) -> QueryCapabilities;
 
    private:
 #ifdef POSTGRESQL_EXTENSION

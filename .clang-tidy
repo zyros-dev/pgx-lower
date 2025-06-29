@@ -1,5 +1,6 @@
 ---
-Checks: '-*,bugprone-*,clang-analyzer-*,performance-*,cert-*,cppcoreguidelines-*,google-*,hicpp-*,misc-*,modernize-*,mpi-*,openmp-*,portability-*,readability-*'
+Checks: '-*,bugprone-*,clang-analyzer-*,performance-*,cert-*,cppcoreguidelines-*,google-*,hicpp-*,misc-*,modernize-*,mpi-*,openmp-*,portability-*,readability-*,-cppcoreguidelines-non-private-member-variables-in-classes,-hicpp-non-private-member-variables-in-classes,-misc-non-private-member-variables-in-classes'
+
 
 WarningsAsErrors: 'modernize-use-auto,readability-function-size'
 
