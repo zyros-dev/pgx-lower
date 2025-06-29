@@ -285,7 +285,6 @@ public:
     }
 };
 
-/*
 /// Lower pg.sub to arith.subi/arith.subf with null handling  
 class PgSubOpLowering final : public OpRewritePattern<PgSubOp> {
 public:
@@ -519,7 +518,6 @@ public:
         return success();
     }
 };
-*/
 
 struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func::FuncOp>> {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerPgToSCFPass)
