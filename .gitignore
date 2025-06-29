@@ -66,3 +66,4 @@ chroma_db
 .mcp.json
 .cursor
 memory_bank
+__pycache__
