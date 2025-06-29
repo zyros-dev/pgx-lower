@@ -42,7 +42,7 @@ bool try_cpp_executor_direct(const QueryDesc* queryDesc) {
         // Test MLIR linking by creating a context
         mlir::MLIRContext context;
         elog(NOTICE, "Successfully created MLIR context!");
-        
+
         // Create an instance of MyCppExecutor and call execute
         MyCppExecutor executor;
         return executor.execute(queryDesc);

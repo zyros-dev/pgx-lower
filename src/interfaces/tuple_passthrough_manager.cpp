@@ -104,7 +104,7 @@ void TuplePassthroughManager::setStreamer(void* streamer) {
 }
 
 void TuplePassthroughManager::setScanContext(void* context) {
-    // Mock implementation - do nothing  
+    // Mock implementation - do nothing
 }
 
 void TuplePassthroughManager::setTuplePassthrough(void* passthrough) {

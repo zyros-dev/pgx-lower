@@ -18,19 +18,18 @@ void PgDialect::initialize() {
     addOperations<
 #define GET_OP_LIST
 #include "PgOps.cpp.inc"
-    >();
-    
+        >();
+
     addTypes<
 #define GET_TYPEDEF_LIST
 #include "PgTypes.cpp.inc"
-    >();
+        >();
 }
 
 PgDialect::PgDialect(MLIRContext *context)
-    : Dialect(getDialectNamespace(), context, TypeID::get<PgDialect>()) {
+: Dialect(getDialectNamespace(), context, TypeID::get<PgDialect>()) {
     initialize();
 }
-
 
 // Include TableGen generated definitions
 #define GET_OP_CLASSES

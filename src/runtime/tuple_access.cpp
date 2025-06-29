@@ -45,10 +45,13 @@ struct TableScanHandle {
     TableScanDesc scan_desc;
     TupleDesc tuple_desc;
     bool is_open;
-    
-    TableScanHandle() : relation(nullptr), scan_desc(nullptr), 
-                       tuple_desc(nullptr), is_open(false) {}
-    
+
+    TableScanHandle()
+    : relation(nullptr)
+    , scan_desc(nullptr)
+    , tuple_desc(nullptr)
+    , is_open(false) {}
+
     ~TableScanHandle() {
         if (is_open && scan_desc) {
             table_endscan(scan_desc);
@@ -63,10 +66,12 @@ struct TupleHandle {
     HeapTuple heap_tuple;
     TupleDesc tuple_desc;
     bool owns_tuple;
-    
-    TupleHandle(HeapTuple tuple, TupleDesc desc, bool owns = false) 
-        : heap_tuple(tuple), tuple_desc(desc), owns_tuple(owns) {}
-    
+
+    TupleHandle(HeapTuple tuple, TupleDesc desc, bool owns = false)
+    : heap_tuple(tuple)
+    , tuple_desc(desc)
+    , owns_tuple(owns) {}
+
     ~TupleHandle() {
         if (owns_tuple && heap_tuple) {
             heap_freetuple(heap_tuple);
@@ -85,7 +90,7 @@ struct TupleHandle {
     int mock_field_count = 2;
     std::array<int64_t, MAX_MOCK_FIELDS> mock_values = {MOCK_INT_VALUE, MOCK_BIGINT_VALUE, 0};
     std::array<bool, MAX_MOCK_FIELDS> mock_nulls = {false, false, true};
-    
+
     TupleHandle() = default;
 };
 
@@ -100,11 +105,11 @@ TableScanHandle* openTableScan(const char* table_name) {
         REPORT_ERROR_CTX(ERROR_LEVEL, POSTGRESQL, "Table name is null", "openTableScan");
         return nullptr;
     }
-    
+
 #ifdef POSTGRESQL_EXTENSION
     try {
         auto handle = std::make_unique<TableScanHandle>();
-        
+
         // TODO: Complete table lookup implementation
         // This function needs integration with PostgreSQL's catalog system to:
         // 1. Parse and validate the table name (handle schema qualification)
@@ -116,14 +121,15 @@ TableScanHandle* openTableScan(const char* table_name) {
         // For now, this is a placeholder that signals the function is not complete.
         // The actual table scanning is handled by the existing PostgreSQL executor
         // integration in my_executor.cpp which has access to the current plan context.
-        
-        REPORT_ERROR_CTX(WARNING_LEVEL, POSTGRESQL, 
-                        "Direct table lookup by name requires plan context integration", table_name);
+
+        REPORT_ERROR_CTX(WARNING_LEVEL,
+                         POSTGRESQL,
+                         "Direct table lookup by name requires plan context integration",
+                         table_name);
         return nullptr;
-        
+
     } catch (const std::exception& e) {
-        auto error = ErrorManager::postgresqlError(
-            "Exception in openTableScan: " + std::string(e.what()), table_name);
+        auto error = ErrorManager::postgresqlError("Exception in openTableScan: " + std::string(e.what()), table_name);
         ErrorManager::reportError(error);
         return nullptr;
     }
@@ -144,34 +150,34 @@ TupleHandle* readNextTuple(TableScanHandle* handle) {
         REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Table scan handle is null");
         return nullptr;
     }
-    
+
 #ifdef POSTGRESQL_EXTENSION
     if (!handle->is_open || !handle->scan_desc) {
         REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Table scan is not open");
         return nullptr;
     }
-    
+
     TupleTableSlot* slot = table_slot_create(handle->relation, NULL);
-    
+
     if (!table_scan_getnextslot(handle->scan_desc, ForwardScanDirection, slot)) {
         ExecDropSingleTupleTableSlot(slot);
         return nullptr; // End of table
     }
-    
+
     // Convert slot to HeapTuple for compatibility
     HeapTuple tuple = ExecCopySlotHeapTuple(slot);
     ExecDropSingleTupleTableSlot(slot);
-    
+
     return new TupleHandle(tuple, handle->tuple_desc, true);
 #else
     // Mock implementation - return a mock tuple
     static int call_count = 0;
     call_count++;
-    
+
     if (call_count > 3) {
         return nullptr; // End of mock data
     }
-    
+
     return new TupleHandle();
 #endif
 }
@@ -182,25 +188,25 @@ TupleHandle* readNextTuple(TableScanHandle* handle) {
 
 int32_t getIntField(TupleHandle* tuple, int field_index, bool* is_null) {
     if (!tuple || !is_null) {
-        if (is_null) *is_null = true;
+        if (is_null)
+            *is_null = true;
         return 0;
     }
-    
+
 #ifdef POSTGRESQL_EXTENSION
     if (!tuple->heap_tuple || !tuple->tuple_desc) {
         *is_null = true;
         return 0;
     }
-    
+
     bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, 
-                              tuple->tuple_desc, &isnull);
-    
+    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
+
     *is_null = isnull;
     if (isnull) {
         return 0;
     }
-    
+
     return DatumGetInt32(value);
 #else
     // Mock implementation
@@ -208,7 +214,7 @@ int32_t getIntField(TupleHandle* tuple, int field_index, bool* is_null) {
         *is_null = true;
         return 0;
     }
-    
+
     *is_null = tuple->mock_nulls[field_index];
     return (int32_t)tuple->mock_values[field_index];
 #endif
@@ -216,25 +222,25 @@ int32_t getIntField(TupleHandle* tuple, int field_index, bool* is_null) {
 
 int64_t getBigIntField(TupleHandle* tuple, int field_index, bool* is_null) {
     if (!tuple || !is_null) {
-        if (is_null) *is_null = true;
+        if (is_null)
+            *is_null = true;
         return 0;
     }
-    
+
 #ifdef POSTGRESQL_EXTENSION
     if (!tuple->heap_tuple || !tuple->tuple_desc) {
         *is_null = true;
         return 0;
     }
-    
+
     bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1,
-                              tuple->tuple_desc, &isnull);
-    
+    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
+
     *is_null = isnull;
     if (isnull) {
         return 0;
     }
-    
+
     return DatumGetInt64(value);
 #else
     // Mock implementation
@@ -242,7 +248,7 @@ int64_t getBigIntField(TupleHandle* tuple, int field_index, bool* is_null) {
         *is_null = true;
         return 0;
     }
-    
+
     *is_null = tuple->mock_nulls[field_index];
     return tuple->mock_values[field_index];
 #endif
@@ -250,47 +256,48 @@ int64_t getBigIntField(TupleHandle* tuple, int field_index, bool* is_null) {
 
 const char* getTextField(TupleHandle* tuple, int field_index, int* length, bool* is_null) {
     if (!tuple || !length || !is_null) {
-        if (is_null) *is_null = true;
-        if (length) *length = 0;
+        if (is_null)
+            *is_null = true;
+        if (length)
+            *length = 0;
         return nullptr;
     }
-    
+
 #ifdef POSTGRESQL_EXTENSION
     if (!tuple->heap_tuple || !tuple->tuple_desc) {
         *is_null = true;
         *length = 0;
         return nullptr;
     }
-    
+
     bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1,
-                              tuple->tuple_desc, &isnull);
-    
+    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
+
     *is_null = isnull;
     if (isnull) {
         *length = 0;
         return nullptr;
     }
-    
+
     text* txt = DatumGetTextP(value);
     *length = VARSIZE_ANY_EXHDR(txt);
     return VARDATA_ANY(txt);
 #else
     // Mock implementation
     static const char* mock_text = "mock_text_value";
-    
+
     if (field_index >= 10) {
         *is_null = true;
         *length = 0;
         return nullptr;
     }
-    
+
     *is_null = tuple->mock_nulls[field_index];
     if (*is_null) {
         *length = 0;
         return nullptr;
     }
-    
+
     *length = strlen(mock_text);
     return mock_text;
 #endif
@@ -298,25 +305,25 @@ const char* getTextField(TupleHandle* tuple, int field_index, int* length, bool*
 
 bool getBoolField(TupleHandle* tuple, int field_index, bool* is_null) {
     if (!tuple || !is_null) {
-        if (is_null) *is_null = true;
+        if (is_null)
+            *is_null = true;
         return false;
     }
-    
+
 #ifdef POSTGRESQL_EXTENSION
     if (!tuple->heap_tuple || !tuple->tuple_desc) {
         *is_null = true;
         return false;
     }
-    
+
     bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1,
-                              tuple->tuple_desc, &isnull);
-    
+    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
+
     *is_null = isnull;
     if (isnull) {
         return false;
     }
-    
+
     return DatumGetBool(value);
 #else
     // Mock implementation
@@ -324,7 +331,7 @@ bool getBoolField(TupleHandle* tuple, int field_index, bool* is_null) {
         *is_null = true;
         return false;
     }
-    
+
     *is_null = tuple->mock_nulls[field_index];
     return (tuple->mock_values[field_index] % 2) == 1;
 #endif
@@ -332,25 +339,25 @@ bool getBoolField(TupleHandle* tuple, int field_index, bool* is_null) {
 
 double getNumericField(TupleHandle* tuple, int field_index, bool* is_null) {
     if (!tuple || !is_null) {
-        if (is_null) *is_null = true;
+        if (is_null)
+            *is_null = true;
         return 0.0;
     }
-    
+
 #ifdef POSTGRESQL_EXTENSION
     if (!tuple->heap_tuple || !tuple->tuple_desc) {
         *is_null = true;
         return 0.0;
     }
-    
+
     bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1,
-                              tuple->tuple_desc, &isnull);
-    
+    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
+
     *is_null = isnull;
     if (isnull) {
         return 0.0;
     }
-    
+
     // Convert numeric to double - this is a simplification
     Datum float8_value = DirectFunctionCall1(numeric_float8, value);
     return DatumGetFloat8(float8_value);
@@ -360,7 +367,7 @@ double getNumericField(TupleHandle* tuple, int field_index, bool* is_null) {
         *is_null = true;
         return 0.0;
     }
-    
+
     *is_null = tuple->mock_nulls[field_index];
     return (double)tuple->mock_values[field_index];
 #endif
@@ -374,12 +381,12 @@ uint32_t getFieldTypeOid(TupleHandle* tuple, int field_index) {
     if (!tuple) {
         return 0;
     }
-    
+
 #ifdef POSTGRESQL_EXTENSION
     if (!tuple->tuple_desc || field_index >= tuple->tuple_desc->natts) {
         return 0;
     }
-    
+
     return TupleDescAttr(tuple->tuple_desc, field_index)->atttypid;
 #else
     // Mock implementation - return INT4OID for simplicity
@@ -391,12 +398,12 @@ int getTupleFieldCount(TupleHandle* tuple) {
     if (!tuple) {
         return 0;
     }
-    
+
 #ifdef POSTGRESQL_EXTENSION
     if (!tuple->tuple_desc) {
         return 0;
     }
-    
+
     return tuple->tuple_desc->natts;
 #else
     // Mock implementation
@@ -413,14 +420,20 @@ bool compareInt(int32_t lhs, bool lhs_null, int32_t rhs, bool rhs_null, const ch
     if (lhs_null || rhs_null) {
         return false;
     }
-    
-    if (strcmp(op, "eq") == 0) return lhs == rhs;
-    if (strcmp(op, "ne") == 0) return lhs != rhs;
-    if (strcmp(op, "lt") == 0) return lhs < rhs;
-    if (strcmp(op, "le") == 0) return lhs <= rhs;
-    if (strcmp(op, "gt") == 0) return lhs > rhs;
-    if (strcmp(op, "ge") == 0) return lhs >= rhs;
-    
+
+    if (strcmp(op, "eq") == 0)
+        return lhs == rhs;
+    if (strcmp(op, "ne") == 0)
+        return lhs != rhs;
+    if (strcmp(op, "lt") == 0)
+        return lhs < rhs;
+    if (strcmp(op, "le") == 0)
+        return lhs <= rhs;
+    if (strcmp(op, "gt") == 0)
+        return lhs > rhs;
+    if (strcmp(op, "ge") == 0)
+        return lhs >= rhs;
+
     REPORT_ERROR_CTX(ERROR_LEVEL, EXECUTION, "Unknown comparison operator", op);
     return false;
 }
@@ -430,16 +443,22 @@ bool compareText(const char* lhs, bool lhs_null, const char* rhs, bool rhs_null,
     if (lhs_null || rhs_null) {
         return false;
     }
-    
+
     int cmp_result = strcmp(lhs, rhs);
-    
-    if (strcmp(op, "eq") == 0) return cmp_result == 0;
-    if (strcmp(op, "ne") == 0) return cmp_result != 0;
-    if (strcmp(op, "lt") == 0) return cmp_result < 0;
-    if (strcmp(op, "le") == 0) return cmp_result <= 0;
-    if (strcmp(op, "gt") == 0) return cmp_result > 0;
-    if (strcmp(op, "ge") == 0) return cmp_result >= 0;
-    
+
+    if (strcmp(op, "eq") == 0)
+        return cmp_result == 0;
+    if (strcmp(op, "ne") == 0)
+        return cmp_result != 0;
+    if (strcmp(op, "lt") == 0)
+        return cmp_result < 0;
+    if (strcmp(op, "le") == 0)
+        return cmp_result <= 0;
+    if (strcmp(op, "gt") == 0)
+        return cmp_result > 0;
+    if (strcmp(op, "ge") == 0)
+        return cmp_result >= 0;
+
     REPORT_ERROR_CTX(ERROR_LEVEL, EXECUTION, "Unknown comparison operator", op);
     return false;
 }
@@ -453,7 +472,7 @@ bool outputTuple(TupleHandle* tuple) {
         REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Cannot output null tuple");
         return false;
     }
-    
+
     // TODO: Integrate with PostgreSQL result output mechanism
     // This function should:
     // 1. Get the current DestReceiver from the execution context
@@ -463,18 +482,16 @@ bool outputTuple(TupleHandle* tuple) {
     //
     // The current executor integration in my_executor.cpp handles this
     // at a higher level, so this runtime function may not be needed.
-    REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, 
-                "Direct tuple output requires execution context integration");
+    REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, "Direct tuple output requires execution context integration");
     return true; // Return true to avoid breaking compilation
 }
 
-TupleHandle* createTuple(int field_count, uint32_t* field_types, 
-                        int64_t* field_values, bool* null_flags) {
+TupleHandle* createTuple(int field_count, uint32_t* field_types, int64_t* field_values, bool* null_flags) {
     if (field_count <= 0 || !field_types || !field_values || !null_flags) {
         REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Invalid parameters for createTuple");
         return nullptr;
     }
-    
+
     // TODO: Implement full PostgreSQL tuple construction
     // This function should:
     // 1. Create a TupleDesc from the field_types array
@@ -486,8 +503,7 @@ TupleHandle* createTuple(int field_count, uint32_t* field_types,
     // This is complex as it requires deep PostgreSQL tuple format knowledge.
     // For now, return a placeholder that signals incomplete implementation.
 #ifdef POSTGRESQL_EXTENSION
-    REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, 
-                "Tuple construction not yet fully implemented");
+    REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, "Tuple construction not yet fully implemented");
     return new TupleHandle(nullptr, nullptr, false);
 #else
     return new TupleHandle();
@@ -515,7 +531,7 @@ void addToSum(void* state, int64_t value, bool is_null) {
     if (!state || is_null) {
         return; // NULL values are ignored in PostgreSQL SUM
     }
-    
+
     auto* sum_state = static_cast<SumAggregationState*>(state);
     sum_state->sum += value;
     sum_state->has_values = true;
@@ -523,10 +539,11 @@ void addToSum(void* state, int64_t value, bool is_null) {
 
 int64_t finalizeSumAggregation(void* state, bool* result_null) {
     if (!state || !result_null) {
-        if (result_null) *result_null = true;
+        if (result_null)
+            *result_null = true;
         return 0;
     }
-    
+
     auto* sum_state = static_cast<SumAggregationState*>(state);
     *result_null = !sum_state->has_values; // NULL if no non-NULL values
     return sum_state->sum;
@@ -551,35 +568,33 @@ void* open_postgres_table(const char* table_name) {
 }
 
 void* read_next_tuple_from_table(void* table_handle) {
-    return static_cast<void*>(pgx_lower::runtime::readNextTuple(
-        static_cast<pgx_lower::runtime::TableScanHandle*>(table_handle)));
+    return static_cast<void*>(
+        pgx_lower::runtime::readNextTuple(static_cast<pgx_lower::runtime::TableScanHandle*>(table_handle)));
 }
 
 void close_postgres_table(void* table_handle) {
-    pgx_lower::runtime::closeTableScan(
-        static_cast<pgx_lower::runtime::TableScanHandle*>(table_handle));
+    pgx_lower::runtime::closeTableScan(static_cast<pgx_lower::runtime::TableScanHandle*>(table_handle));
 }
 
 bool add_tuple_to_result(void* tuple_handle) {
-    return pgx_lower::runtime::outputTuple(
-        static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle));
+    return pgx_lower::runtime::outputTuple(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle));
 }
 
 int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
-    return pgx_lower::runtime::getIntField(
-        static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle), 
-        field_index, is_null);
+    return pgx_lower::runtime::getIntField(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle),
+                                           field_index,
+                                           is_null);
 }
 
 int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     int length = 0;
-    const char* text_ptr = pgx_lower::runtime::getTextField(
-        static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle), 
-        field_index, &length, is_null);
-    
+    const char* text_ptr = pgx_lower::runtime::getTextField(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle),
+                                                            field_index,
+                                                            &length,
+                                                            is_null);
+
     // Return the pointer as an int64_t for MLIR compatibility
     return reinterpret_cast<int64_t>(text_ptr);
 }
-
 }
 #endif // POSTGRESQL_EXTENSION
