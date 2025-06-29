@@ -67,3 +67,4 @@ chroma_db
 .cursor
 memory_bank
 __pycache__
+*CLAUDE*

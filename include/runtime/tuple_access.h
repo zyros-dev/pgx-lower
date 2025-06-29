@@ -11,8 +11,7 @@ extern "C" {
 }
 #endif
 
-namespace pgx_lower {
-namespace runtime {
+namespace pgx_lower { namespace runtime {
 
 /**
  * Runtime wrapper functions for PostgreSQL tuple access.
@@ -135,8 +134,7 @@ bool outputTuple(TupleHandle* tuple);
  * @param null_flags Array of null flags
  * @return New tuple handle, or nullptr on failure
  */
-TupleHandle* createTuple(int field_count, uint32_t* field_types, 
-                        int64_t* field_values, bool* null_flags);
+TupleHandle* createTuple(int field_count, uint32_t* field_types, int64_t* field_values, bool* null_flags);
 
 /**
  * Free a tuple handle
@@ -152,7 +150,7 @@ void freeTuple(TupleHandle* tuple);
  * Compare two integer values with NULL handling
  * @param lhs Left operand
  * @param lhs_null True if left operand is NULL
- * @param rhs Right operand  
+ * @param rhs Right operand
  * @param rhs_null True if right operand is NULL
  * @param op Comparison operator ("eq", "ne", "lt", "le", "gt", "ge")
  * @return Comparison result (false if either operand is NULL)
@@ -164,7 +162,7 @@ bool compareInt(int32_t lhs, bool lhs_null, int32_t rhs, bool rhs_null, const ch
  * @param lhs Left operand
  * @param lhs_null True if left operand is NULL
  * @param rhs Right operand
- * @param rhs_null True if right operand is NULL  
+ * @param rhs_null True if right operand is NULL
  * @param op Comparison operator ("eq", "ne", "lt", "le", "gt", "ge")
  * @return Comparison result (false if either operand is NULL)
  */
@@ -202,8 +200,7 @@ int64_t finalizeSumAggregation(void* state, bool* result_null);
  */
 void freeAggregationState(void* state);
 
-} // namespace runtime
-} // namespace pgx_lower
+}} // namespace pgx_lower::runtime
 
 //===----------------------------------------------------------------------===//
 // C-style interface for MLIR JIT compatibility
@@ -220,5 +217,4 @@ bool add_tuple_to_result(void* tuple_handle);
 // Field access functions with MLIR-compatible signatures
 int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
 int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null); // returns char* as i64
-
 }

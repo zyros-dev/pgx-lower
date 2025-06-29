@@ -7,19 +7,18 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Bytecode/BytecodeOpInterface.h"
 
-namespace mlir {
-namespace pg {
+namespace mlir { namespace pg {
 
 //===----------------------------------------------------------------------===//
 // PostgreSQL Dialect
 //===----------------------------------------------------------------------===//
 
 class PgDialect : public Dialect {
-public:
+   public:
     explicit PgDialect(MLIRContext *context);
 
     static StringRef getDialectNamespace() { return "pg"; }
-    
+
     void initialize();
 
     // TableGen will generate parseType and printType methods
@@ -35,8 +34,7 @@ public:
 // PostgreSQL Operations (auto-generated from TableGen)
 //===----------------------------------------------------------------------===//
 
-} // namespace pg
-} // namespace mlir
+}} // namespace mlir::pg
 
 // Include auto-generated type declarations first
 #define GET_TYPEDEF_CLASSES

@@ -13,12 +13,13 @@ using ExternalFunction = std::function<int64_t()>;
 // PostgreSQL Integration - Main entry point called by my_executor.cpp
 auto run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) -> bool;
 
-
 // PostgreSQL Integration - Typed field access with pg dialect
 auto run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logger) -> bool;
 
 // PostgreSQL Integration - Typed field access with specific columns
-auto run_mlir_postgres_typed_table_scan_with_columns(const char* tableName, const std::vector<int>& selectedColumns, MLIRLogger& logger) -> bool;
+auto run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
+                                                     const std::vector<int>& selectedColumns,
+                                                     MLIRLogger& logger) -> bool;
 
 // Core MLIR compilation and execution engine
 auto run_mlir_core(int64_t intValue, MLIRLogger& logger) -> bool;

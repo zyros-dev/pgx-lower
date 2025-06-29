@@ -2,7 +2,7 @@
 #include <core/error_handling.h>
 
 class ErrorHandlingTest : public ::testing::Test {
-protected:
+   protected:
     void SetUp() override {
         // Setup for each test
     }
@@ -10,14 +10,14 @@ protected:
 
 TEST_F(ErrorHandlingTest, ErrorCreationAndFormatting) {
     using namespace pgx_lower;
-    
+
     // Test error creation and formatting
     auto error = ErrorManager::queryAnalysisError("Test error message", "SELECT * FROM test");
     EXPECT_EQ(error.severity, ErrorSeverity::ERROR_LEVEL);
     EXPECT_EQ(error.category, ErrorCategory::QUERY_ANALYSIS);
     EXPECT_EQ(error.message, "Test error message");
     EXPECT_TRUE(error.context.find("SELECT * FROM test") != std::string::npos);
-    
+
     // Test formatted message
     std::string formatted = error.getFormattedMessage();
     EXPECT_TRUE(formatted.find("[ERROR]") != std::string::npos);
@@ -27,13 +27,13 @@ TEST_F(ErrorHandlingTest, ErrorCreationAndFormatting) {
 
 TEST_F(ErrorHandlingTest, ResultType) {
     using namespace pgx_lower;
-    
+
     // Test Result type for success
     Result<int> successResult(42);
     EXPECT_TRUE(successResult.isSuccess());
     EXPECT_FALSE(successResult.isError());
     EXPECT_EQ(successResult.getValue(), 42);
-    
+
     // Test Result type for error
     auto errorInfo = ErrorManager::makeError(ErrorSeverity::ERROR_LEVEL, ErrorCategory::EXECUTION, "Test failure");
     Result<int> errorResult(errorInfo);
@@ -44,15 +44,15 @@ TEST_F(ErrorHandlingTest, ResultType) {
 
 TEST_F(ErrorHandlingTest, ErrorHandler) {
     using namespace pgx_lower;
-    
+
     // Test console error handler
     ErrorManager::setHandler(std::make_unique<ConsoleErrorHandler>());
     auto handler = ErrorManager::getHandler();
     EXPECT_NE(handler, nullptr);
-    
+
     auto error = ErrorManager::queryAnalysisError("Test error", "SELECT * FROM test");
     EXPECT_FALSE(handler->shouldAbortOnError(error));
-    
+
     // Test fatal error should abort
     auto fatalError = ErrorManager::makeError(ErrorSeverity::FATAL_LEVEL, ErrorCategory::EXECUTION, "Fatal error");
     EXPECT_TRUE(handler->shouldAbortOnError(fatalError));

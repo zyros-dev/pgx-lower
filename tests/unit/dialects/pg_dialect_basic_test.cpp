@@ -5,13 +5,13 @@
 #include <dialects/pg/PgDialect.h>
 
 class PgDialectBasicTest : public ::testing::Test {
-protected:
+   protected:
     void SetUp() override {
         context = std::make_unique<mlir::MLIRContext>();
         context->getOrLoadDialect<mlir::func::FuncDialect>();
         dialect = context->getOrLoadDialect<mlir::pg::PgDialect>();
     }
-    
+
     std::unique_ptr<mlir::MLIRContext> context;
     mlir::pg::PgDialect* dialect;
 };
@@ -27,11 +27,11 @@ TEST_F(PgDialectBasicTest, BasicTypeCreation) {
     auto textType = mlir::pg::TextType::get(context.get());
     auto tableHandleType = mlir::pg::TableHandleType::get(context.get());
     auto tupleHandleType = mlir::pg::TupleHandleType::get(context.get());
-    
+
     EXPECT_TRUE(textType);
     EXPECT_TRUE(tableHandleType);
     EXPECT_TRUE(tupleHandleType);
-    
+
     // Test type properties
     EXPECT_TRUE(textType.isa<mlir::pg::TextType>());
     EXPECT_TRUE(tableHandleType.isa<mlir::pg::TableHandleType>());
@@ -44,16 +44,16 @@ TEST_F(PgDialectBasicTest, ParametricTypeCreation) {
     EXPECT_TRUE(numericType);
     EXPECT_EQ(numericType.getPrecision(), 10);
     EXPECT_EQ(numericType.getScale(), 2);
-    
+
     auto charType = mlir::pg::CharType::get(context.get(), 50);
     EXPECT_TRUE(charType);
     EXPECT_EQ(charType.getLength(), 50);
-    
+
     // Test different numeric precisions
     auto numericType2 = mlir::pg::NumericType::get(context.get(), 5, 1);
     EXPECT_EQ(numericType2.getPrecision(), 5);
     EXPECT_EQ(numericType2.getScale(), 1);
-    
+
     // Test different char lengths
     auto charType2 = mlir::pg::CharType::get(context.get(), 100);
     EXPECT_EQ(charType2.getLength(), 100);

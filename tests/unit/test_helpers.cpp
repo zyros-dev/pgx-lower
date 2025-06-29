@@ -3,54 +3,55 @@
 MockTupleScanContext* g_mock_scan_context = nullptr;
 
 #ifndef POSTGRESQL_EXTENSION
-extern "C" int64_t mock_get_next_tuple() {
+extern "C" auto mock_get_next_tuple() -> int64_t {
     if (!g_mock_scan_context) {
         return -1;
     }
-    
+
     if (g_mock_scan_context->currentIndex >= g_mock_scan_context->values.size()) {
         g_mock_scan_context->hasMore = false;
         return -2;
     }
-    
+
     int64_t value = g_mock_scan_context->values[g_mock_scan_context->currentIndex];
     g_mock_scan_context->currentIndex++;
     g_mock_scan_context->hasMore = true;
-    
+
     return value;
 }
 
-extern "C" int64_t open_postgres_table(int64_t tableName) {
+extern "C" auto open_postgres_table(int64_t /*tableName*/) -> int64_t {
     if (!g_mock_scan_context) {
         return 0;
     }
     return reinterpret_cast<int64_t>(g_mock_scan_context);
 }
 
-extern "C" int64_t read_next_tuple_from_table(int64_t tableHandle) {
+extern "C" auto read_next_tuple_from_table(int64_t tableHandle) -> int64_t {
     if (!tableHandle) {
         return -1;
     }
-    
-    MockTupleScanContext* context = reinterpret_cast<MockTupleScanContext*>(tableHandle);
+
+    auto* context = reinterpret_cast<MockTupleScanContext*>(tableHandle);
+    (void)context; // Suppress unused variable warning
     return mock_get_next_tuple();
 }
 
-extern "C" void close_postgres_table(int64_t tableHandle) {
+extern "C" auto close_postgres_table(int64_t /*tableHandle*/) -> void {
     // Nothing to do for mock implementation
 }
 
-extern "C" bool add_tuple_to_result(int64_t value) {
+extern "C" auto add_tuple_to_result(int64_t /*value*/) -> bool {
     return true;
 }
 
-extern "C" int32_t get_int_field(int64_t tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" auto get_int_field(int64_t /*tuple_handle*/, int32_t field_index, bool* is_null) -> int32_t {
     // Mock implementation for unit tests
     *is_null = false;
     return field_index * 42; // Return predictable values
 }
 
-extern "C" int64_t get_text_field(int64_t tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" auto get_text_field(int64_t /*tuple_handle*/, int32_t /*field_index*/, bool* is_null) -> int64_t {
     // Mock implementation for unit tests
     static const char* mock_text = "mock_text_field";
     *is_null = false;
