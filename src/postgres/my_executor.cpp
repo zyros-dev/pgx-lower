@@ -32,22 +32,14 @@ extern "C" {
 #undef dngettext
 
 #include "llvm/Config/llvm-config.h"
-#include "llvm/Support/TargetSelect.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
-#include "mlir/ExecutionEngine/OptUtils.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Verifier.h"
-#include "mlir/Pass/Pass.h"
+#include "mlir/Pass/Pass.h"z
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
@@ -62,7 +54,7 @@ void registerConversionPipeline() {
 // Global context for tuple scanning - used by external function
 struct TupleScanContext {
     TableScanDesc scanDesc{};
-    TupleDesc tupdesc{};
+    TupleDesc tupleDesc{};
     bool hasMore{};
     int64_t currentValue{};
 };
@@ -88,7 +80,7 @@ struct PostgreSQLTuplePassthrough {
     // Return a simple signal that we have a valid tuple
     // MLIR only needs to know "continue iterating" vs "end of table"
     // (All actual data passes through via originalTuple)
-    int64_t getIterationSignal() { return originalTuple ? 1 : 0; }
+    int64_t getIterationSignal() const { return originalTuple ? 1 : 0; }
 };
 
 struct TupleStreamer {
@@ -110,7 +102,7 @@ struct TupleStreamer {
 
     void setSelectedColumns(const std::vector<int>& columns) { selectedColumns = columns; }
 
-    bool streamTuple(int64_t value) {
+    auto streamTuple(const int64_t value) const -> bool {
         if (!isActive || !dest || !slot) {
             return false;
         }
@@ -126,7 +118,7 @@ struct TupleStreamer {
 
     // Stream the complete PostgreSQL tuple (all columns, all types preserved)
     // This is what actually appears in query results
-    bool streamCompletePostgreSQLTuple(const PostgreSQLTuplePassthrough& passthrough) {
+    auto streamCompletePostgreSQLTuple(const PostgreSQLTuplePassthrough& passthrough) const -> bool {
         if (!isActive || !dest || !slot || !passthrough.originalTuple) {
             return false;
         }
@@ -137,8 +129,8 @@ struct TupleStreamer {
 
             // The slot is configured for the result tuple descriptor (selected columns only)
             // We need to extract only the projected columns from the original tuple
-            TupleDesc origTupleDesc = passthrough.tupleDesc;
-            TupleDesc resultTupleDesc = slot->tts_tupleDescriptor;
+            const auto origTupleDesc = passthrough.tupleDesc;
+            const auto resultTupleDesc = slot->tts_tupleDescriptor;
 
             // Project only the selected columns from original tuple to result slot
             for (int i = 0; i < resultTupleDesc->natts; i++) {
@@ -146,21 +138,21 @@ struct TupleStreamer {
 
                 if (i < selectedColumns.size()) {
                     // Map from result column index to original column index
-                    int origColumnIndex = selectedColumns[i];
+                    const int origColumnIndex = selectedColumns[i];
                     if (origColumnIndex >= 0 && origColumnIndex < origTupleDesc->natts) {
                         // PostgreSQL uses 1-based attribute indexing
-                        Datum value =
+                        const auto value =
                             heap_getattr(passthrough.originalTuple, origColumnIndex + 1, origTupleDesc, &isnull);
                         slot->tts_values[i] = value;
                         slot->tts_isnull[i] = isnull;
                     }
                     else {
-                        slot->tts_values[i] = (Datum)0;
+                        slot->tts_values[i] = static_cast<Datum>(0);
                         slot->tts_isnull[i] = true;
                     }
                 }
                 else {
-                    slot->tts_values[i] = (Datum)0;
+                    slot->tts_values[i] = static_cast<Datum>(0);
                     slot->tts_isnull[i] = true;
                 }
             }
@@ -191,20 +183,20 @@ extern "C" int64_t get_next_tuple() {
         return -1;
     }
 
-    HeapTuple tuple = heap_getnext(g_scan_context->scanDesc, ForwardScanDirection);
-    if (tuple == NULL) {
+    const auto tuple = heap_getnext(g_scan_context->scanDesc, ForwardScanDirection);
+    if (tuple == nullptr) {
         g_scan_context->hasMore = false;
         return -2;
     }
 
     bool isNull;
-    Datum value = heap_getattr(tuple, 1, g_scan_context->tupdesc, &isNull);
+    const auto value = heap_getattr(tuple, 1, g_scan_context->tupleDesc, &isNull);
 
     if (isNull) {
         return -3;
     }
 
-    int64_t intValue = DatumGetInt64(value);
+    const int64_t intValue = DatumGetInt64(value);
     g_scan_context->currentValue = intValue;
     g_scan_context->hasMore = true;
 
@@ -214,7 +206,7 @@ extern "C" int64_t get_next_tuple() {
 struct PostgreSQLTableHandle {
     Relation rel;
     TableScanDesc scanDesc;
-    TupleDesc tupdesc;
+    TupleDesc tupleDesc;
     bool isOpen;
 };
 
@@ -226,7 +218,7 @@ extern "C" void* open_postgres_table(const char* tableName) {
 
         auto* handle = new PostgreSQLTableHandle();
         handle->scanDesc = g_scan_context->scanDesc;
-        handle->tupdesc = g_scan_context->tupdesc;
+        handle->tupleDesc = g_scan_context->tupleDesc;
         handle->rel = nullptr;
         handle->isOpen = true;
 
@@ -245,13 +237,13 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         return -1;
     }
 
-    auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+    const auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
     if (!handle->isOpen || !handle->scanDesc) {
         return -1;
     }
 
-    HeapTuple tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
-    if (tuple == NULL) {
+    const auto tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
+    if (tuple == nullptr) {
         return -2;
     }
 
@@ -263,7 +255,7 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
 
     // Preserve the COMPLETE tuple (all columns, all types) for output
     g_current_tuple_passthrough.originalTuple = heap_copytuple(tuple);
-    g_current_tuple_passthrough.tupleDesc = handle->tupdesc;
+    g_current_tuple_passthrough.tupleDesc = handle->tupleDesc;
 
     // Return simple signal: "we have a tuple" (MLIR only uses this for iteration control)
     return g_current_tuple_passthrough.getIterationSignal();
@@ -281,27 +273,27 @@ extern "C" void close_postgres_table(void* tableHandle) {
 
 // MLIR Interface: Stream complete PostgreSQL tuple to output
 // The 'value' parameter is ignored - it's just MLIR's iteration signal
-extern "C" bool add_tuple_to_result(int64_t value) {
+extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
     // Stream the complete PostgreSQL tuple (all data types preserved)
     return g_tuple_streamer.streamCompletePostgreSQLTuple(g_current_tuple_passthrough);
 }
 
 // Typed field access functions for PostgreSQL dialect
-extern "C" int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" int32_t get_int_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         *is_null = true;
         return 0;
     }
 
     // PostgreSQL uses 1-based attribute indexing
-    int attr_num = field_index + 1;
+    const int attr_num = field_index + 1;
     if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
         *is_null = true;
         return 0;
     }
 
     bool isnull;
-    Datum value =
+    const auto value =
         heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
 
     *is_null = isnull;
@@ -310,30 +302,30 @@ extern "C" int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* 
     }
 
     // Convert to int32 based on PostgreSQL type
-    Oid atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
+    const auto atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
     switch (atttypid) {
     case INT2OID: return (int32_t)DatumGetInt16(value);
     case INT4OID: return DatumGetInt32(value);
-    case INT8OID: return (int32_t)DatumGetInt64(value); // Truncate to int32
+    case INT8OID: return static_cast<int32_t>(DatumGetInt64(value)); // Truncate to int32
     default: *is_null = true; return 0;
     }
 }
 
-extern "C" int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         *is_null = true;
         return 0;
     }
 
     // PostgreSQL uses 1-based attribute indexing
-    int attr_num = field_index + 1;
+    const int attr_num = field_index + 1;
     if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
         *is_null = true;
         return 0;
     }
 
     bool isnull;
-    Datum value =
+    const auto value =
         heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
 
     *is_null = isnull;
@@ -342,47 +334,47 @@ extern "C" int64_t get_text_field(void* tuple_handle, int32_t field_index, bool*
     }
 
     // For text types, return pointer to the string data
-    Oid atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
+    const auto atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
     switch (atttypid) {
     case TEXTOID:
     case VARCHAROID:
     case CHAROID: {
-        text* textval = DatumGetTextP(value);
+        auto* textval = DatumGetTextP(value);
         return reinterpret_cast<int64_t>(VARDATA(textval));
     }
     default: *is_null = true; return 0;
     }
 }
 
-bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const QueryDesc* queryDesc) {
-    PostgreSQLLogger logger;
+bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupleDesc, const QueryDesc* queryDesc) {
+    auto logger = PostgreSQLLogger();
 
-    DestReceiver* dest = queryDesc->dest;
+    auto* dest = queryDesc->dest;
 
     // Extract target list from the query plan to get selected columns and create result tuple descriptor
-    PlannedStmt* stmt = queryDesc->plannedstmt;
-    Plan* rootPlan = stmt->planTree;
+    const auto* stmt = queryDesc->plannedstmt;
+    const auto* rootPlan = stmt->planTree;
 
     // Create a tuple descriptor for the result (selected columns only)
-    TupleDesc resultTupleDesc = CreateTemplateTupleDesc(list_length(rootPlan->targetlist));
+    const auto resultTupleDesc = CreateTemplateTupleDesc(list_length(rootPlan->targetlist));
 
     // Get the selected column indices from targetlist and build result tuple descriptor
     std::vector<int> selectedColumns;
     int resultAttrNum = 1;
     ListCell* lc;
     foreach (lc, rootPlan->targetlist) {
-        TargetEntry* tle = (TargetEntry*)lfirst(lc);
+        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
         if (tle->resjunk)
             continue; // Skip junk columns
 
         if (IsA(tle->expr, Var)) {
-            Var* var = (Var*)tle->expr;
+            const auto var = reinterpret_cast<Var*>(tle->expr);
             // Convert PostgreSQL 1-based to 0-based indexing
             selectedColumns.push_back(var->varattno - 1);
 
             // Copy attribute info from source table to result descriptor
-            Form_pg_attribute sourceAttr = TupleDescAttr(tupdesc, var->varattno - 1);
-            Form_pg_attribute resultAttr = TupleDescAttr(resultTupleDesc, resultAttrNum - 1);
+            const auto sourceAttr = TupleDescAttr(tupleDesc, var->varattno - 1);
+            const auto resultAttr = TupleDescAttr(resultTupleDesc, resultAttrNum - 1);
 
             resultAttr->atttypid = sourceAttr->atttypid;
             resultAttr->atttypmod = sourceAttr->atttypmod;
@@ -405,18 +397,18 @@ bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const Q
         }
     }
 
-    TupleTableSlot* slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
+    const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
 
     dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
 
     g_tuple_streamer.initialize(dest, slot);
     g_tuple_streamer.setSelectedColumns(selectedColumns);
 
-    TupleScanContext scanContext = {scanDesc, tupdesc, true, 0};
+    TupleScanContext scanContext = {scanDesc, tupleDesc, true, 0};
     g_scan_context = &scanContext;
 
     // Use the new typed field access version with actual column information
-    bool mlir_success =
+    const auto mlir_success =
         mlir_runner::run_mlir_postgres_typed_table_scan_with_columns("current_table", selectedColumns, logger);
 
     // Cleanup
@@ -437,7 +429,7 @@ bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupdesc, const Q
     return mlir_success;
 }
 
-bool MyCppExecutor::execute(const QueryDesc* plan) {
+auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     // Initialize PostgreSQL error handler if not already set
     if (!pgx_lower::ErrorManager::getHandler()) {
         pgx_lower::ErrorManager::setHandler(std::make_unique<pgx_lower::PostgreSQLErrorHandler>());
@@ -445,7 +437,7 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
 
     elog(NOTICE, "LLVM version: %d.%d.%d", LLVM_VERSION_MAJOR, LLVM_VERSION_MINOR, LLVM_VERSION_PATCH);
     if (!plan) {
-        auto error = pgx_lower::ErrorManager::postgresqlError("QueryDesc is null");
+        const auto error = pgx_lower::ErrorManager::postgresqlError("QueryDesc is null");
         pgx_lower::ErrorManager::reportError(error);
         return false;
     }
@@ -459,8 +451,8 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
     }
 
     // Use query analyzer to determine MLIR compatibility
-    PlannedStmt* stmt = plan->plannedstmt;
-    auto capabilities = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
+    const auto* stmt = plan->plannedstmt;
+    const auto capabilities = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
 
     elog(NOTICE, "Query analysis: %s", capabilities.getDescription());
 
@@ -469,21 +461,21 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
         return false;
     }
 
-    Plan* rootPlan = stmt->planTree;
+    const auto rootPlan = stmt->planTree;
     if (rootPlan->type != T_SeqScan) {
         // This should not happen if analyzer is correct, but add safety check
         elog(NOTICE, "Query analyzer bug: marked as compatible but not a SeqScan");
         return false;
     }
 
-    SeqScan* scan = (SeqScan*)rootPlan;
-    RangeTblEntry* rte = (RangeTblEntry*)list_nth(stmt->rtable, scan->scan.scanrelid - 1);
-    Relation rel = table_open(rte->relid, AccessShareLock);
-    TupleDesc tupdesc = RelationGetDescr(rel);
+    const auto scan = reinterpret_cast<SeqScan*>(rootPlan);
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
+    const auto rel = table_open(rte->relid, AccessShareLock);
+    const auto tupdesc = RelationGetDescr(rel);
 
     int unsupportedTypeCount = 0;
     for (int i = 0; i < tupdesc->natts; i++) {
-        Oid columnType = TupleDescAttr(tupdesc, i)->atttypid;
+        const auto columnType = TupleDescAttr(tupdesc, i)->atttypid;
         if (columnType != BOOLOID && columnType != INT2OID && columnType != INT4OID && columnType != INT8OID
             && columnType != FLOAT4OID && columnType != FLOAT8OID)
         {
@@ -507,9 +499,9 @@ bool MyCppExecutor::execute(const QueryDesc* plan) {
              tupdesc->natts);
     }
 
-    TableScanDesc scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
+    const auto scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, nullptr);
 
-    bool mlir_success = run_mlir_with_tuple_scan(scanDesc, tupdesc, plan);
+    const bool mlir_success = run_mlir_with_tuple_scan(scanDesc, tupdesc, plan);
 
     table_endscan(scanDesc);
     table_close(rel, AccessShareLock);

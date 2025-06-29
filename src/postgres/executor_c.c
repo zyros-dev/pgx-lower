@@ -12,15 +12,15 @@ PG_MODULE_MAGIC;
 
 static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL; // NOLINT(*-avoid-non-const-global-variables)
 
-static bool try_cpp_executor_internal(QueryDesc *queryDesc) {
+static bool try_cpp_executor_internal(const QueryDesc *queryDesc) {
     elog(NOTICE, "Calling C++ executor from C...");
     return try_cpp_executor_direct(queryDesc);
 }
 
-static void custom_executor(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once) {
+static void custom_executor(QueryDesc *queryDesc, const ScanDirection direction, const uint64 count, const bool execute_once) {
     elog(NOTICE, "Custom executor is being executed in C!");
 
-    bool mlir_handled = try_cpp_executor_internal(queryDesc);
+    const bool mlir_handled = try_cpp_executor_internal(queryDesc);
 
     if (!mlir_handled) {
         elog(NOTICE, "MLIR couldn't handle query, falling back to standard executor");
@@ -36,9 +36,9 @@ static void custom_executor(QueryDesc *queryDesc, ScanDirection direction, uint6
     }
 }
 
-static void segfault_handler(int sig) {
+static void segfault_handler(const int sig) {
     void *array[32];
-    size_t size = backtrace(array, 32);
+    const size_t size = backtrace(array, 32);
     char **strings = backtrace_symbols(array, size);
     elog(LOG, "Caught signal %d (SIGSEGV) in extension!", sig);
     if (strings) {
