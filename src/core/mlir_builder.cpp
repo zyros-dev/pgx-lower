@@ -200,19 +200,35 @@ auto MLIRBuilder::buildColumnAccess(mlir::Value tupleHandle, const std::vector<i
     auto i32Type = builder.getI32Type();
     auto i1Type = builder.getI1Type();
 
-    // Access each selected column by its actual index
+    // Access each selected column or evaluate expressions
     for (int columnIndex : selectedColumns) {
-        // Determine field type - for now, assume integer types for simplicity
-        mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
-        getFieldState.addOperands(tupleHandle);
-        getFieldState.addAttribute("field_index", builder.getI32IntegerAttr(columnIndex));
-        getFieldState.addTypes({i32Type, i1Type}); // value and null flag
-        auto getFieldOp = builder.create(getFieldState);
-        auto fieldValue = getFieldOp->getResult(0);
-        auto fieldNullFlag = getFieldOp->getResult(1);
-
-        // For now, we just access the fields to demonstrate correct indexing
-        // The actual tuple output still happens via add_tuple_to_result
+        if (columnIndex >= 0) {
+            // Regular column access
+            mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
+            getFieldState.addOperands(tupleHandle);
+            getFieldState.addAttribute("field_index", builder.getI32IntegerAttr(columnIndex));
+            getFieldState.addTypes({i32Type, i1Type}); // value and null flag
+            auto getFieldOp = builder.create(getFieldState);
+            auto fieldValue = getFieldOp->getResult(0);
+            auto fieldNullFlag = getFieldOp->getResult(1);
+            
+            // For now, we just access the fields to demonstrate correct indexing
+            // The actual tuple output still happens via add_tuple_to_result
+        } else if (columnIndex == -1) {
+            // Computed expression - for now, create a placeholder
+            // TODO: Generate actual MLIR for the arithmetic expression
+            // elog(NOTICE, "MLIR: Building expression evaluation code (placeholder)");
+            // Note: Can't use elog here since this is MLIR-only code
+            
+            // For demonstration, create a simple arithmetic operation
+            // This would be replaced with actual expression translation
+            auto leftField = builder.create<mlir::arith::ConstantOp>(location, builder.getI32IntegerAttr(10));
+            auto rightField = builder.create<mlir::arith::ConstantOp>(location, builder.getI32IntegerAttr(5));
+            auto addResult = builder.create<mlir::arith::AddIOp>(location, leftField, rightField);
+            
+            // elog(NOTICE, "MLIR: Generated placeholder arithmetic expression: 10 + 5");
+            // Note: Can't use elog here since this is MLIR-only code
+        }
     }
 }
 

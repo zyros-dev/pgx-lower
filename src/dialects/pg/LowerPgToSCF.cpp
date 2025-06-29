@@ -285,7 +285,6 @@ public:
     }
 };
 
-/*
 /// Lower pg.sub to arith.subi/arith.subf with null handling  
 class PgSubOpLowering final : public OpRewritePattern<PgSubOp> {
 public:
@@ -415,22 +414,13 @@ public:
 
     auto matchAndRewrite(PgAndOp op, PatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
-        auto operands = op.getOperands();
+        auto left = op.getLeft();
+        auto right = op.getRight();
         
-        if (operands.empty()) {
-            // AND with no operands is true
-            auto trueVal = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(true));
-            rewriter.replaceOp(op, trueVal);
-            return success();
-        }
-        
-        // For now, simple binary AND (expand to handle three-valued logic later)
-        Value result = operands[0];
-        for (size_t i = 1; i < operands.size(); ++i) {
-            result = rewriter.create<arith::AndIOp>(loc, result, operands[i]);
-        }
-        
+        // Simple binary AND for boolean values
+        auto result = rewriter.create<arith::AndIOp>(loc, left, right);
         rewriter.replaceOp(op, result);
+        
         return success();
     }
 };
@@ -442,22 +432,13 @@ public:
 
     auto matchAndRewrite(PgOrOp op, PatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
-        auto operands = op.getOperands();
+        auto left = op.getLeft();
+        auto right = op.getRight();
         
-        if (operands.empty()) {
-            // OR with no operands is false
-            auto falseVal = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(false));
-            rewriter.replaceOp(op, falseVal);
-            return success();
-        }
-        
-        // For now, simple binary OR (expand to handle three-valued logic later)
-        Value result = operands[0];
-        for (size_t i = 1; i < operands.size(); ++i) {
-            result = rewriter.create<arith::OrIOp>(loc, result, operands[i]);
-        }
-        
+        // Simple binary OR for boolean values
+        auto result = rewriter.create<arith::OrIOp>(loc, left, right);
         rewriter.replaceOp(op, result);
+        
         return success();
     }
 };
@@ -519,7 +500,6 @@ public:
         return success();
     }
 };
-*/
 
 struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func::FuncOp>> {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerPgToSCFPass)

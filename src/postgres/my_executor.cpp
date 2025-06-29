@@ -356,6 +356,62 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
     const auto* stmt = queryDesc->plannedstmt;
     const auto* rootPlan = stmt->planTree;
 
+    // MLIR Expression Handler for processing complex expressions in SELECT lists
+    class MLIRExpressionHandler {
+    public:
+        static bool canHandleExpression(Node* expr) {
+            if (IsA(expr, Var)) {
+                return true;  // Simple column reference
+            }
+            if (IsA(expr, OpExpr)) {
+                OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
+                // Check if it's an arithmetic operator we can handle
+                const char* opName = get_opname(opExpr->opno);
+                if (opName && (strcmp(opName, "+") == 0 || strcmp(opName, "-") == 0 || 
+                              strcmp(opName, "*") == 0 || strcmp(opName, "/") == 0 || 
+                              strcmp(opName, "%") == 0)) {
+                    // Check if all arguments are handleable
+                    ListCell* lc;
+                    foreach(lc, opExpr->args) {
+                        Node* arg = static_cast<Node*>(lfirst(lc));
+                        if (!canHandleExpression(arg)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+            }
+            if (IsA(expr, Const)) {
+                return true;  // Constants are handleable
+            }
+            return false;  // Unknown expression type
+        }
+        
+        static Oid getExpressionResultType(Node* expr) {
+            if (IsA(expr, Var)) {
+                Var* var = reinterpret_cast<Var*>(expr);
+                return var->vartype;
+            }
+            if (IsA(expr, OpExpr)) {
+                OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
+                return opExpr->opresulttype;
+            }
+            if (IsA(expr, Const)) {
+                Const* constExpr = reinterpret_cast<Const*>(expr);
+                return constExpr->consttype;
+            }
+            return InvalidOid;
+        }
+        
+        static void logExpressionInfo(Node* expr, const char* context) {
+            if (IsA(expr, OpExpr)) {
+                OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
+                const char* opName = get_opname(opExpr->opno);
+                elog(NOTICE, "MLIR %s: Found arithmetic operator %s", context, opName ? opName : "unknown");
+            }
+        }
+    };
+
     // Create a tuple descriptor for the result (selected columns only)
     const auto resultTupleDesc = CreateTemplateTupleDesc(list_length(rootPlan->targetlist));
 
@@ -395,6 +451,48 @@ bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupl
             }
 
             resultAttrNum++;
+        }
+        else if (MLIRExpressionHandler::canHandleExpression(reinterpret_cast<Node*>(tle->expr))) {
+            // Handle complex expressions like arithmetic operations
+            MLIRExpressionHandler::logExpressionInfo(reinterpret_cast<Node*>(tle->expr), "target list");
+            
+            // Get the result type for this expression
+            Oid resultType = MLIRExpressionHandler::getExpressionResultType(reinterpret_cast<Node*>(tle->expr));
+            
+            if (resultType != InvalidOid) {
+                // For arithmetic expressions, we don't map to a specific column index
+                // Instead, we mark it as a computed expression (use -1 as special marker)
+                selectedColumns.push_back(-1);
+                
+                // Set up the result attribute for the computed expression
+                const auto resultAttr = TupleDescAttr(resultTupleDesc, resultAttrNum - 1);
+                resultAttr->atttypid = resultType;
+                
+                // Set basic type properties for integer results (most arithmetic ops)
+                if (resultType == INT4OID) {
+                    resultAttr->attlen = sizeof(int32);
+                    resultAttr->attbyval = true;
+                    resultAttr->attalign = TYPALIGN_INT;
+                    resultAttr->atttypmod = -1;
+                    resultAttr->attnotnull = false;
+                }
+                
+                // Set the result name
+                if (tle->resname) {
+                    strncpy(NameStr(resultAttr->attname), tle->resname, NAMEDATALEN - 1);
+                    NameStr(resultAttr->attname)[NAMEDATALEN - 1] = '\0';
+                } else {
+                    snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "computed_%d", resultAttrNum);
+                }
+                
+                resultAttrNum++;
+            } else {
+                elog(WARNING, "MLIR: Could not determine result type for expression, skipping");
+            }
+        }
+        else {
+            // Log unsupported expressions for debugging
+            elog(NOTICE, "MLIR: Skipping unsupported expression type in target list");
         }
     }
 
