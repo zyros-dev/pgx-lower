@@ -10,7 +10,6 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 
 using namespace mlir; // NOLINT(*-build-using-namespace)
 using namespace mlir::pg; // NOLINT(*-build-using-namespace)
@@ -25,7 +24,7 @@ namespace {
 class ScanTableOpLowering final : public OpRewritePattern<ScanTableOp> {
    public:
     explicit ScanTableOpLowering(MLIRContext *context)
-    : OpRewritePattern<ScanTableOp>(context) {}
+    : OpRewritePattern(context) {}
 
     auto matchAndRewrite(ScanTableOp op, PatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
@@ -57,10 +56,10 @@ class ScanTableOpLowering final : public OpRewritePattern<ScanTableOp> {
 };
 
 /// Lower pg.read_tuple to runtime function call
-class ReadTupleOpLowering : public OpRewritePattern<ReadTupleOp> {
+class ReadTupleOpLowering final : public OpRewritePattern<ReadTupleOp> {
    public:
     explicit ReadTupleOpLowering(MLIRContext *context)
-    : OpRewritePattern<ReadTupleOp>(context) {}
+    : OpRewritePattern(context) {}
 
     auto matchAndRewrite(ReadTupleOp op, PatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
@@ -80,17 +79,17 @@ class ReadTupleOpLowering : public OpRewritePattern<ReadTupleOp> {
     }
 };
 
-class GetIntFieldOpLowering : public OpRewritePattern<GetIntFieldOp> {
+class GetIntFieldOpLowering final : public OpRewritePattern<GetIntFieldOp> {
    public:
     explicit GetIntFieldOpLowering(MLIRContext *context)
     : OpRewritePattern<GetIntFieldOp>(context) {}
 
     auto matchAndRewrite(GetIntFieldOp op, PatternRewriter &rewriter) const -> LogicalResult override {
-        auto loc = op.getLoc();
+        const auto loc = op.getLoc();
         auto *ctx = rewriter.getContext();
 
-        auto tuple = op.getTuple();
-        unsigned fieldIndex = op.getFieldIndex();
+        const auto tuple = op.getTuple();
+        const unsigned fieldIndex = op.getFieldIndex();
 
         auto fieldIndexVal =
             rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(fieldIndex));
@@ -131,17 +130,17 @@ class GetIntFieldOpLowering : public OpRewritePattern<GetIntFieldOp> {
     }
 };
 
-class GetTextFieldOpLowering : public OpRewritePattern<GetTextFieldOp> {
+class GetTextFieldOpLowering final : public OpRewritePattern<GetTextFieldOp> {
    public:
     explicit GetTextFieldOpLowering(MLIRContext *context)
     : OpRewritePattern<GetTextFieldOp>(context) {}
 
     LogicalResult matchAndRewrite(GetTextFieldOp op, PatternRewriter &rewriter) const override {
-        auto loc = op.getLoc();
+        const auto loc = op.getLoc();
         auto *ctx = rewriter.getContext();
 
-        auto tuple = op.getTuple();
-        unsigned fieldIndex = op.getFieldIndex();
+        const auto tuple = op.getTuple();
+        const unsigned fieldIndex = op.getFieldIndex();
 
         auto fieldIndexVal =
             rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(fieldIndex));
@@ -171,7 +170,7 @@ class GetTextFieldOpLowering : public OpRewritePattern<GetTextFieldOp> {
         rewriter.setInsertionPoint(op);
 
         auto operands = llvm::SmallVector<Value>{tuple, fieldIndexVal, nullFlagPtr};
-        auto textPtr = rewriter.create<func::CallOp>(loc, i64Type, getTextFieldFn, operands).getResult(0);
+        const auto textPtr = rewriter.create<func::CallOp>(loc, i64Type, getTextFieldFn, operands).getResult(0);
 
         auto nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
 
@@ -183,7 +182,7 @@ class GetTextFieldOpLowering : public OpRewritePattern<GetTextFieldOp> {
 };
 
 /// Clean up UnrealizedConversionCastOp from tuple handles to i64
-class UnrealizedConversionCastOpLowering : public OpRewritePattern<UnrealizedConversionCastOp> {
+class UnrealizedConversionCastOpLowering final : public OpRewritePattern<UnrealizedConversionCastOp> {
    public:
     explicit UnrealizedConversionCastOpLowering(MLIRContext *context)
     : OpRewritePattern<UnrealizedConversionCastOp>(context) {}
@@ -192,8 +191,8 @@ class UnrealizedConversionCastOpLowering : public OpRewritePattern<UnrealizedCon
         // If this is a cast from tuple handle to i64, just remove it since
         // the lowering pass already converts tuple handles to i64 values
         if (op.getInputs().size() == 1 && op.getResults().size() == 1) {
-            auto input = op.getInputs()[0];
-            auto result = op.getResults()[0];
+            const auto input = op.getInputs()[0];
+            const auto result = op.getResults()[0];
 
             // If input is i64 and result is i64, this is a no-op
             if (mlir::isa<IntegerType>(input.getType()) && mlir::isa<IntegerType>(result.getType())) {
@@ -210,42 +209,50 @@ class UnrealizedConversionCastOpLowering : public OpRewritePattern<UnrealizedCon
 // Type Converter
 //===----------------------------------------------------------------------===//
 
-class PgTypeConverter : public TypeConverter {
+class [[maybe_unused]] PgTypeConverter final : public TypeConverter {
    public:
     PgTypeConverter() {
         // Convert pg types to standard MLIR types
-        addConversion([](Type type) -> Type {
-            if (mlir::isa<TableHandleType>(type))
+        addConversion([](const Type type) -> Type {
+            if (mlir::isa<TableHandleType>(type)) {
                 return IntegerType::get(type.getContext(), 64);
-            if (mlir::isa<TupleHandleType>(type))
+            }
+            if (mlir::isa<TupleHandleType>(type)) {
                 return IntegerType::get(type.getContext(), 64);
-            if (mlir::isa<TextType>(type))
+            }
+            if (mlir::isa<TextType>(type)) {
                 return IntegerType::get(type.getContext(), 64); // pointer to string
-            if (mlir::isa<DateType>(type))
+            }
+            if (mlir::isa<DateType>(type)) {
                 return IntegerType::get(type.getContext(), 32);
-            if (mlir::isa<NumericType>(type))
+            }
+            if (mlir::isa<NumericType>(type)) {
                 return Float64Type::get(type.getContext());
+            }
 
             // Return the type unchanged if it's not a pg type
             return type;
         });
 
-        // Add materializations for type conversions
-        addSourceMaterialization([](OpBuilder &builder, Type resultType, ValueRange inputs, Location loc) -> Value {
-            if (inputs.size() != 1)
+        // Add materialization for type conversions
+        addSourceMaterialization([](OpBuilder &builder, Type resultType, const ValueRange inputs, const Location loc) -> Value {
+            if (inputs.size() != 1) {
                 return {};
+            }
             return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs[0]).getResult(0);
         });
 
-        addTargetMaterialization([](OpBuilder &builder, Type resultType, ValueRange inputs, Location loc) -> Value {
-            if (inputs.size() != 1)
+        addTargetMaterialization([](OpBuilder &builder, Type resultType, const ValueRange inputs, const Location loc) -> Value {
+            if (inputs.size() != 1) {
                 return {};
+            }
             return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs[0]).getResult(0);
         });
 
-        addArgumentMaterialization([](OpBuilder &builder, Type resultType, ValueRange inputs, Location loc) -> Value {
-            if (inputs.size() != 1)
+        addArgumentMaterialization([](OpBuilder &builder, Type resultType, const ValueRange inputs, const Location loc) -> Value {
+            if (inputs.size() != 1) {
                 return {};
+            }
             return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs[0]).getResult(0);
         });
     }
@@ -255,7 +262,7 @@ class PgTypeConverter : public TypeConverter {
 // Pass Implementation
 //===----------------------------------------------------------------------===//
 
-struct LowerPgToSCFPass : public PassWrapper<LowerPgToSCFPass, OperationPass<func::FuncOp>> {
+struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func::FuncOp>> {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerPgToSCFPass)
 
     void getDependentDialects(DialectRegistry &registry) const override {
@@ -263,7 +270,7 @@ struct LowerPgToSCFPass : public PassWrapper<LowerPgToSCFPass, OperationPass<fun
     }
 
     void runOnOperation() override {
-        auto func = getOperation();
+        const auto func = getOperation();
         auto *ctx = &getContext();
 
         // Use simple rewrite patterns without type conversion
@@ -272,24 +279,24 @@ struct LowerPgToSCFPass : public PassWrapper<LowerPgToSCFPass, OperationPass<fun
             ctx);
 
         // Apply greedy pattern rewriting (no type conversion involved)
-        if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns)))) {
+        if (failed(applyPatternsGreedily(func, std::move(patterns)))) {
             signalPassFailure();
         }
     }
 
-    auto getArgument() const -> StringRef override { return "lower-pg-to-scf"; }
-    auto getDescription() const -> StringRef override {
+    [[nodiscard]] auto getArgument() const -> StringRef override { return "lower-pg-to-scf"; }
+    [[nodiscard]] auto getDescription() const -> StringRef override {
         return "Lower PostgreSQL dialect operations to SCF and standard dialects";
     }
 };
 
 } // namespace
 
-void mlir::pg::populatePgToSCFConversionPatterns(RewritePatternSet &patterns, TypeConverter &typeConverter) {
+void pg::populatePgToSCFConversionPatterns(RewritePatternSet &patterns, TypeConverter &typeConverter) {
     patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering>(
         patterns.getContext());
 }
 
-std::unique_ptr<OperationPass<func::FuncOp>> mlir::pg::createLowerPgToSCFPass() {
+auto pg::createLowerPgToSCFPass() -> std::unique_ptr<OperationPass<func::FuncOp>> {
     return std::make_unique<LowerPgToSCFPass>();
 }
