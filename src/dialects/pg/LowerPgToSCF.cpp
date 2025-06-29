@@ -12,8 +12,8 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
-using namespace mlir;
-using namespace mlir::pg;
+using namespace mlir; // NOLINT(*-build-using-namespace)
+using namespace mlir::pg; // NOLINT(*-build-using-namespace)
 
 namespace {
 
@@ -22,32 +22,32 @@ namespace {
 //===----------------------------------------------------------------------===//
 
 /// Lower pg.scan_table to the current low-level implementation
-class ScanTableOpLowering : public OpRewritePattern<ScanTableOp> {
+class ScanTableOpLowering final : public OpRewritePattern<ScanTableOp> {
    public:
     explicit ScanTableOpLowering(MLIRContext *context)
     : OpRewritePattern<ScanTableOp>(context) {}
 
-    LogicalResult matchAndRewrite(ScanTableOp op, PatternRewriter &rewriter) const override {
-        Location loc = op.getLoc();
-        MLIRContext *ctx = rewriter.getContext();
+    auto matchAndRewrite(ScanTableOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto *ctx = rewriter.getContext();
 
-        // Get the table name
-        StringRef tableName = op.getTableName();
+        const auto tableName = op.getTableName();
 
         // Create a constant for the table name as an integer (simplified for now)
         // In the real implementation, this would be a proper table lookup
-        auto tableNameHash = static_cast<int64_t>(std::hash<std::string>{}(tableName.str()));
-        Value tableNameConst =
-            rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(tableNameHash));
+        const auto tableNameHash = static_cast<int64_t>(std::hash<std::string>{}(tableName.str()));
+        auto tableNameConst = rewriter.create<arith::ConstantOp>(
+            loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(tableNameHash)
+        );
 
         // Call the runtime function to open the table
         // This corresponds to the current @open_postgres_table call
         auto i64Type = rewriter.getI64Type();
-        FlatSymbolRefAttr openTableFn = SymbolRefAttr::get(ctx, "open_postgres_table");
+        auto openTableFn = SymbolRefAttr::get(ctx, "open_postgres_table");
 
         // Create the function call
-        llvm::SmallVector<Value> operands = {tableNameConst};
-        Value tableHandle = rewriter.create<func::CallOp>(loc, i64Type, openTableFn, operands).getResult(0);
+        auto operands = llvm::SmallVector<Value>{tableNameConst};
+        const auto tableHandle = rewriter.create<func::CallOp>(loc, i64Type, openTableFn, operands).getResult(0);
 
         // Replace the operation with the table handle (as i64)
         rewriter.replaceOp(op, tableHandle);
@@ -62,17 +62,17 @@ class ReadTupleOpLowering : public OpRewritePattern<ReadTupleOp> {
     explicit ReadTupleOpLowering(MLIRContext *context)
     : OpRewritePattern<ReadTupleOp>(context) {}
 
-    LogicalResult matchAndRewrite(ReadTupleOp op, PatternRewriter &rewriter) const override {
-        Location loc = op.getLoc();
-        MLIRContext *ctx = rewriter.getContext();
+    auto matchAndRewrite(ReadTupleOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto *ctx = rewriter.getContext();
 
-        Value tableHandle = op.getTableHandle();
+        const auto tableHandle = op.getTableHandle();
 
         auto i64Type = rewriter.getI64Type();
-        FlatSymbolRefAttr readTupleFn = SymbolRefAttr::get(ctx, "read_next_tuple_from_table");
+        auto readTupleFn = SymbolRefAttr::get(ctx, "read_next_tuple_from_table");
 
-        llvm::SmallVector<Value> operands = {tableHandle};
-        Value tupleHandle = rewriter.create<func::CallOp>(loc, i64Type, readTupleFn, operands).getResult(0);
+        auto operands = llvm::SmallVector<Value>{tableHandle};
+        const auto tupleHandle = rewriter.create<func::CallOp>(loc, i64Type, readTupleFn, operands).getResult(0);
 
         rewriter.replaceOp(op, tupleHandle);
 
@@ -85,21 +85,21 @@ class GetIntFieldOpLowering : public OpRewritePattern<GetIntFieldOp> {
     explicit GetIntFieldOpLowering(MLIRContext *context)
     : OpRewritePattern<GetIntFieldOp>(context) {}
 
-    LogicalResult matchAndRewrite(GetIntFieldOp op, PatternRewriter &rewriter) const override {
-        Location loc = op.getLoc();
-        MLIRContext *ctx = rewriter.getContext();
+    auto matchAndRewrite(GetIntFieldOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        auto loc = op.getLoc();
+        auto *ctx = rewriter.getContext();
 
-        Value tuple = op.getTuple();
+        auto tuple = op.getTuple();
         unsigned fieldIndex = op.getFieldIndex();
 
-        Value fieldIndexVal =
+        auto fieldIndexVal =
             rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(fieldIndex));
 
         auto i32Type = rewriter.getI32Type();
         auto i1Type = rewriter.getI1Type();
         auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
 
-        FlatSymbolRefAttr getIntFieldFn = SymbolRefAttr::get(ctx, "get_int_field");
+        auto getIntFieldFn = SymbolRefAttr::get(ctx, "get_int_field");
 
         // Find the function entry block to hoist the alloca
         auto funcOp = op->getParentOfType<func::FuncOp>();
@@ -107,10 +107,10 @@ class GetIntFieldOpLowering : public OpRewritePattern<GetIntFieldOp> {
             return failure();
 
         auto &entryBlock = funcOp.front();
-        OpBuilder::InsertionGuard guard(rewriter);
+        auto guard = OpBuilder::InsertionGuard(rewriter);
         rewriter.setInsertionPointToStart(&entryBlock);
 
-        Value nullFlagPtr = rewriter.create<LLVM::AllocaOp>(
+        auto nullFlagPtr = rewriter.create<LLVM::AllocaOp>(
             loc,
             ptrType,
             i1Type,
@@ -119,12 +119,12 @@ class GetIntFieldOpLowering : public OpRewritePattern<GetIntFieldOp> {
         // Restore insertion point to the original operation
         rewriter.setInsertionPoint(op);
 
-        llvm::SmallVector<Value> operands = {tuple, fieldIndexVal, nullFlagPtr};
-        Value intValue = rewriter.create<func::CallOp>(loc, i32Type, getIntFieldFn, operands).getResult(0);
+        auto operands = llvm::SmallVector<Value>{tuple, fieldIndexVal, nullFlagPtr};
+        const auto intValue = rewriter.create<func::CallOp>(loc, i32Type, getIntFieldFn, operands).getResult(0);
 
-        Value nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
+        auto nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
 
-        llvm::SmallVector<Value> results = {intValue, nullFlag};
+        auto results = llvm::SmallVector<Value>{intValue, nullFlag};
         rewriter.replaceOp(op, results);
 
         return success();
@@ -137,20 +137,20 @@ class GetTextFieldOpLowering : public OpRewritePattern<GetTextFieldOp> {
     : OpRewritePattern<GetTextFieldOp>(context) {}
 
     LogicalResult matchAndRewrite(GetTextFieldOp op, PatternRewriter &rewriter) const override {
-        Location loc = op.getLoc();
-        MLIRContext *ctx = rewriter.getContext();
+        auto loc = op.getLoc();
+        auto *ctx = rewriter.getContext();
 
-        Value tuple = op.getTuple();
+        auto tuple = op.getTuple();
         unsigned fieldIndex = op.getFieldIndex();
 
-        Value fieldIndexVal =
+        auto fieldIndexVal =
             rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(fieldIndex));
 
         auto i64Type = rewriter.getI64Type();
         auto i1Type = rewriter.getI1Type();
         auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
 
-        FlatSymbolRefAttr getTextFieldFn = SymbolRefAttr::get(ctx, "get_text_field");
+        auto getTextFieldFn = SymbolRefAttr::get(ctx, "get_text_field");
 
         // Find the function entry block to hoist the alloca
         auto funcOp = op->getParentOfType<func::FuncOp>();
@@ -158,10 +158,10 @@ class GetTextFieldOpLowering : public OpRewritePattern<GetTextFieldOp> {
             return failure();
 
         auto &entryBlock = funcOp.front();
-        OpBuilder::InsertionGuard guard(rewriter);
+        auto guard = OpBuilder::InsertionGuard(rewriter);
         rewriter.setInsertionPointToStart(&entryBlock);
 
-        Value nullFlagPtr = rewriter.create<LLVM::AllocaOp>(
+        auto nullFlagPtr = rewriter.create<LLVM::AllocaOp>(
             loc,
             ptrType,
             i1Type,
@@ -170,12 +170,12 @@ class GetTextFieldOpLowering : public OpRewritePattern<GetTextFieldOp> {
         // Restore insertion point to the original operation
         rewriter.setInsertionPoint(op);
 
-        llvm::SmallVector<Value> operands = {tuple, fieldIndexVal, nullFlagPtr};
-        Value textPtr = rewriter.create<func::CallOp>(loc, i64Type, getTextFieldFn, operands).getResult(0);
+        auto operands = llvm::SmallVector<Value>{tuple, fieldIndexVal, nullFlagPtr};
+        auto textPtr = rewriter.create<func::CallOp>(loc, i64Type, getTextFieldFn, operands).getResult(0);
 
-        Value nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
+        auto nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
 
-        llvm::SmallVector<Value> results = {textPtr, nullFlag};
+        auto results = llvm::SmallVector<Value>{textPtr, nullFlag};
         rewriter.replaceOp(op, results);
 
         return success();
@@ -192,8 +192,8 @@ class UnrealizedConversionCastOpLowering : public OpRewritePattern<UnrealizedCon
         // If this is a cast from tuple handle to i64, just remove it since
         // the lowering pass already converts tuple handles to i64 values
         if (op.getInputs().size() == 1 && op.getResults().size() == 1) {
-            Value input = op.getInputs()[0];
-            Value result = op.getResults()[0];
+            auto input = op.getInputs()[0];
+            auto result = op.getResults()[0];
 
             // If input is i64 and result is i64, this is a no-op
             if (mlir::isa<IntegerType>(input.getType()) && mlir::isa<IntegerType>(result.getType())) {
@@ -264,10 +264,10 @@ struct LowerPgToSCFPass : public PassWrapper<LowerPgToSCFPass, OperationPass<fun
 
     void runOnOperation() override {
         auto func = getOperation();
-        MLIRContext *ctx = &getContext();
+        auto *ctx = &getContext();
 
         // Use simple rewrite patterns without type conversion
-        RewritePatternSet patterns(ctx);
+        auto patterns = RewritePatternSet(ctx);
         patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering, UnrealizedConversionCastOpLowering>(
             ctx);
 
@@ -277,8 +277,8 @@ struct LowerPgToSCFPass : public PassWrapper<LowerPgToSCFPass, OperationPass<fun
         }
     }
 
-    StringRef getArgument() const override { return "lower-pg-to-scf"; }
-    StringRef getDescription() const override {
+    auto getArgument() const -> StringRef override { return "lower-pg-to-scf"; }
+    auto getDescription() const -> StringRef override {
         return "Lower PostgreSQL dialect operations to SCF and standard dialects";
     }
 };

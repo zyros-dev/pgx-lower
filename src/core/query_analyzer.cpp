@@ -15,6 +15,8 @@ extern "C" {
 
 namespace pgx_lower {
 
+// NOTE: I break C++ rules a bit in this file since it's interacting a lot with C-style things.
+
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
     // Currently, MLIR supports simple sequential scans and column projection
     // No filters, aggregations, joins, sorts, or limits yet
@@ -228,54 +230,55 @@ void QueryAnalyzer::analyzeProjection(const Plan* plan, QueryCapabilities& caps)
 auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilities {
     QueryCapabilities caps;
 
-    if (!queryText) {
+    if (queryText == nullptr) {
         return caps;
     }
 
     // Simple string-based analysis for unit tests
-    if (strstr(queryText, "SELECT") && strstr(queryText, "FROM")) {
+    if ((strstr(queryText, "SELECT") != nullptr) && (strstr(queryText, "FROM") != nullptr)) {
         caps.requiresSeqScan = true;
     }
 
     // Check for projection (specific columns rather than *)
-    if (strstr(queryText, "SELECT") && !strstr(queryText, "SELECT *")) {
+    if ((strstr(queryText, "SELECT") != nullptr) && (strstr(queryText, "SELECT *") == nullptr)) {
         const char* selectPos = strstr(queryText, "SELECT");
         const char* fromPos = strstr(queryText, "FROM");
-        if (selectPos && fromPos && fromPos > selectPos) {
+        if ((selectPos != nullptr) && (fromPos != nullptr) && fromPos > selectPos) {
             // Check if there are specific column names between SELECT and FROM
             const char* selectContent = selectPos + 6; // Skip "SELECT"
-            while (*selectContent == ' ')
+            while (*selectContent == ' ') {
                 selectContent++; // Skip whitespace
+            }
             if (selectContent < fromPos && *selectContent != '*') {
                 caps.requiresProjection = true;
             }
         }
     }
 
-    if (strstr(queryText, "WHERE")) {
+    if (strstr(queryText, "WHERE") != nullptr) {
         caps.requiresFilter = true;
     }
 
-    if (strstr(queryText, "JOIN")) {
+    if (strstr(queryText, "JOIN") != nullptr) {
         caps.requiresJoin = true;
     }
 
-    if (strstr(queryText, "ORDER BY")) {
+    if (strstr(queryText, "ORDER BY") != nullptr) {
         caps.requiresSort = true;
     }
 
-    if (strstr(queryText, "LIMIT")) {
+    if (strstr(queryText, "LIMIT") != nullptr) {
         caps.requiresLimit = true;
     }
 
-    if (strstr(queryText, "COUNT") || strstr(queryText, "SUM") || strstr(queryText, "AVG")
-        || strstr(queryText, "GROUP BY"))
+    if ((strstr(queryText, "COUNT") != nullptr) || (strstr(queryText, "SUM") != nullptr) || (strstr(queryText, "AVG") != nullptr)
+        || (strstr(queryText, "GROUP BY") != nullptr))
     {
         caps.requiresAggregation = true;
     }
 
     // Check for nested queries (subqueries)
-    if (strstr(queryText, "(SELECT")) {
+    if (strstr(queryText, "(SELECT") != nullptr) {
         caps.requiresJoin = true; // Treat nested queries as requiring joins for now
     }
 

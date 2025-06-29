@@ -41,17 +41,19 @@
 #include <sstream>
 #include <cstring>
 
-static auto registerConversionPipeline() -> void {
-    mlir::PassPipelineRegistration<>("convert-to-llvm", "Convert MLIR to LLVM dialect", [](mlir::OpPassManager& pm) {
-        pm.addPass(mlir::createConvertFuncToLLVMPass());
-        pm.addPass(mlir::createArithToLLVMConversionPass());
-        pm.addPass(mlir::createConvertSCFToCFPass());
+namespace {
+auto registerConversionPipeline() -> void {
+    mlir::PassPipelineRegistration<>("convert-to-llvm", "Convert MLIR to LLVM dialect", [](mlir::OpPassManager& opm) {
+        opm.addPass(mlir::createConvertFuncToLLVMPass());
+        opm.addPass(mlir::createArithToLLVMConversionPass());
+        opm.addPass(mlir::createConvertSCFToCFPass());
     });
 }
+} // namespace
 
 namespace mlir_runner {
 
-
+// TODO: This mlir runner seems suspicious to me - should we be doing it like this at all?
 bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
                                                      const std::vector<int>& selectedColumns,
                                                      MLIRLogger& logger) {
@@ -60,8 +62,9 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     std::ostringstream oss;
     oss << "Scanning PostgreSQL table '" << tableName << "' with column subset: ";
     for (size_t i = 0; i < selectedColumns.size(); ++i) {
-        if (i > 0)
+        if (i > 0) {
             oss << ", ";
+        }
         oss << selectedColumns[i];
     }
     logger.debug(oss.str());
@@ -125,7 +128,7 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     mlir::OperationState scanState(location, mlir::pg::ScanTableOp::getOperationName());
     scanState.addAttribute("table_name", builder.getStringAttr(tableName));
     scanState.addTypes(tableHandleType);
-    auto scanOp = builder.create(scanState);
+    auto *scanOp = builder.create(scanState);
     auto tableHandle = scanOp->getResult(0);
 
     // Create iteration loop
@@ -133,8 +136,8 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     auto negTwoConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(-2));
     auto trueConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
 
-    llvm::SmallVector<mlir::Value> initialArgs = {trueConst, zeroConst};
-    llvm::SmallVector<mlir::Type> argTypes = {i1Type, i64Type};
+    const auto initialArgs = llvm::SmallVector<mlir::Value>{trueConst, zeroConst};
+    const auto argTypes = llvm::SmallVector<mlir::Type>{i1Type, i64Type};
 
     auto whileOp = builder.create<mlir::scf::WhileOp>(location, argTypes, initialArgs);
 
@@ -143,8 +146,7 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     builder.createBlock(&beforeRegion, beforeRegion.end(), argTypes, {builder.getUnknownLoc(), builder.getUnknownLoc()});
     builder.setInsertionPointToStart(&beforeRegion.front());
 
-    mlir::Value continueFlag = beforeRegion.front().getArgument(0);
-    mlir::Value currentCount = beforeRegion.front().getArgument(1);
+    auto continueFlag = beforeRegion.front().getArgument(0);
 
     builder.create<mlir::scf::ConditionOp>(location, continueFlag, beforeRegion.front().getArguments());
 
@@ -153,14 +155,14 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     builder.createBlock(&afterRegion, afterRegion.end(), argTypes, {builder.getUnknownLoc(), builder.getUnknownLoc()});
     builder.setInsertionPointToStart(&afterRegion.front());
 
-    mlir::Value tupleCount = afterRegion.front().getArgument(1);
+    auto tupleCount = afterRegion.front().getArgument(1);
 
     // Read tuple using pg dialect
     auto tupleHandleType = mlir::pg::TupleHandleType::get(&context);
-    mlir::OperationState readState(location, mlir::pg::ReadTupleOp::getOperationName());
+    auto readState = mlir::OperationState(location, mlir::pg::ReadTupleOp::getOperationName());
     readState.addOperands(tableHandle);
     readState.addTypes(tupleHandleType);
-    auto readOp = builder.create(readState);
+    auto *readOp = builder.create(readState);
     auto tupleHandle = readOp->getResult(0);
 
     // Convert tuple to i64 for comparison
@@ -178,7 +180,7 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     }
     builder.setInsertionPointToStart(&thenRegion.front());
     auto falseConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(false));
-    llvm::SmallVector<mlir::Value> thenYieldOperands = {falseConst, tupleCount};
+    auto thenYieldOperands = llvm::SmallVector<mlir::Value>{falseConst, tupleCount};
     builder.create<mlir::scf::YieldOp>(location, thenYieldOperands);
 
     // Else branch: process tuple with field access for actual selected columns
@@ -206,13 +208,13 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     }
 
     // Output the tuple (this will be fixed later to output only selected columns)
-    llvm::SmallVector<mlir::Value> addOperands = {tupleAsI64};
+    auto addOperands = llvm::SmallVector<mlir::Value> {tupleAsI64};
     auto addTupleCall = builder.create<mlir::func::CallOp>(location, addTupleFunc, addOperands);
 
     auto oneIntConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(1));
     auto newCount = builder.create<mlir::arith::AddIOp>(location, tupleCount, oneIntConst);
 
-    llvm::SmallVector<mlir::Value> elseYieldOperands = {trueContinue, newCount.getResult()};
+    auto elseYieldOperands = llvm::SmallVector<mlir::Value>{trueContinue, newCount.getResult()};
     builder.create<mlir::scf::YieldOp>(location, elseYieldOperands);
 
     // Continue after the while loop
@@ -223,22 +225,22 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
 
     // Close table
     auto tableHandleAsInt = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(0));
-    llvm::SmallVector<mlir::Value> closeOperands = {tableHandleAsInt};
+    auto closeOperands = llvm::SmallVector<mlir::Value> {tableHandleAsInt};
     builder.create<mlir::func::CallOp>(location, closeFunc, closeOperands);
 
-    mlir::Value finalCount = whileOp.getResult(1);
+    auto finalCount = whileOp.getResult(1);
     builder.create<mlir::func::ReturnOp>(location, finalCount);
 
     // Print the MLIR with typed field access
     logger.notice("Generated MLIR with PostgreSQL typed field access:");
-    std::string mlirStr;
-    llvm::raw_string_ostream os(mlirStr);
+    auto mlirStr = std::string();
+    auto os = llvm::raw_string_ostream(mlirStr);
     module.OpState::print(os);
     os.flush();
     logger.notice("MLIR with field access: " + mlirStr);
 
     // Apply pg-to-scf lowering pass to convert high-level operations to runtime calls
-    mlir::PassManager pm(&context);
+    auto pm = mlir::PassManager(&context);
     pm.addNestedPass<mlir::func::FuncOp>(mlir::pg::createLowerPgToSCFPass());
 
     if (mlir::failed(pm.run(module))) {
@@ -247,8 +249,8 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     }
 
     logger.notice("Applied pg-to-scf lowering pass!");
-    std::string loweredStr;
-    llvm::raw_string_ostream loweredOs(loweredStr);
+    auto loweredStr = std::string();
+    auto loweredOs = llvm::raw_string_ostream(loweredStr);
     module.OpState::print(loweredOs);
     loweredOs.flush();
     logger.notice("Lowered MLIR: " + loweredStr);
@@ -282,7 +284,7 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     mlir::registerBuiltinDialectTranslation(context);
 
     auto optPipeline = mlir::makeOptimizingTransformer(0, 0, nullptr);
-    mlir::ExecutionEngineOptions engineOptions;
+    auto engineOptions = mlir::ExecutionEngineOptions();
     engineOptions.transformer = optPipeline;
     engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
@@ -299,7 +301,7 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     auto engine = std::move(*maybeEngine);
 
     engine->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
-        llvm::orc::SymbolMap symbolMap;
+        auto symbolMap = llvm::orc::SymbolMap();
         symbolMap[interner("open_postgres_table")] =
             llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&open_postgres_table)),
                                          llvm::JITSymbolFlags::Exported);
@@ -323,15 +325,15 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
 
     auto expectedFPtr = engine->lookup("main");
     if (!expectedFPtr) {
-        std::string errMsg;
-        llvm::raw_string_ostream errStream(errMsg);
+        auto errMsg = std::string();
+        auto errStream = llvm::raw_string_ostream(errMsg);
         errStream << expectedFPtr.takeError();
         logger.error("Failed to lookup function: " + errMsg);
         return false;
     }
 
     auto fptr = reinterpret_cast<int64_t (*)()>(*expectedFPtr);
-    int64_t result = fptr();
+    const int64_t result = fptr();
     logger.notice("Invoked MLIR JIT PostgreSQL typed field access!");
 
     oss.str("");
