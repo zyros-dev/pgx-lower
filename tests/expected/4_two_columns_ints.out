@@ -1,0 +1,210 @@
+LOAD 'pgx_lower.so';
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (
+    id SERIAL PRIMARY KEY,
+    col2 INTEGER
+);
+INSERT INTO test(col2)
+SELECT generate_series(1, 100);
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Not a SELECT statement, skipping
+NOTICE:  MLIR couldn't handle query, falling back to standard executor
+SELECT SUM(id) FROM test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  MLIR couldn't handle query, falling back to standard executor
+ sum  
+------
+ 5050
+(1 row)
+
+SELECT * FROM test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 100
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+ id  | col2 
+-----+------
+   1 |    1
+   2 |    2
+   3 |    3
+   4 |    4
+   5 |    5
+   6 |    6
+   7 |    7
+   8 |    8
+   9 |    9
+  10 |   10
+  11 |   11
+  12 |   12
+  13 |   13
+  14 |   14
+  15 |   15
+  16 |   16
+  17 |   17
+  18 |   18
+  19 |   19
+  20 |   20
+  21 |   21
+  22 |   22
+  23 |   23
+  24 |   24
+  25 |   25
+  26 |   26
+  27 |   27
+  28 |   28
+  29 |   29
+  30 |   30
+  31 |   31
+  32 |   32
+  33 |   33
+  34 |   34
+  35 |   35
+  36 |   36
+  37 |   37
+  38 |   38
+  39 |   39
+  40 |   40
+  41 |   41
+  42 |   42
+  43 |   43
+  44 |   44
+  45 |   45
+  46 |   46
+  47 |   47
+  48 |   48
+  49 |   49
+  50 |   50
+  51 |   51
+  52 |   52
+  53 |   53
+  54 |   54
+  55 |   55
+  56 |   56
+  57 |   57
+  58 |   58
+  59 |   59
+  60 |   60
+  61 |   61
+  62 |   62
+  63 |   63
+  64 |   64
+  65 |   65
+  66 |   66
+  67 |   67
+  68 |   68
+  69 |   69
+  70 |   70
+  71 |   71
+  72 |   72
+  73 |   73
+  74 |   74
+  75 |   75
+  76 |   76
+  77 |   77
+  78 |   78
+  79 |   79
+  80 |   80
+  81 |   81
+  82 |   82
+  83 |   83
+  84 |   84
+  85 |   85
+  86 |   86
+  87 |   87
+  88 |   88
+  89 |   89
+  90 |   90
+  91 |   91
+  92 |   92
+  93 |   93
+  94 |   94
+  95 |   95
+  96 |   96
+  97 |   97
+  98 |   98
+  99 |   99
+ 100 |  100
+(100 rows)
+

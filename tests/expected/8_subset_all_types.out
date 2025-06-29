@@ -1,36 +1,690 @@
 LOAD 'pgx_lower.so';
-DROP TABLE IF EXISTS simple_test;
-CREATE TABLE simple_test
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+DROP TABLE IF EXISTS all_types_test;
+NOTICE:  table "all_types_test" does not exist, skipping
+CREATE TABLE all_types_test
 (
-    id          INTEGER,
-    col_a       INTEGER,
-    col_b       INTEGER,
-    col_c       INTEGER
+    id              SERIAL PRIMARY KEY,
+    small_int       SMALLINT,
+    integer_col     INTEGER,
+    big_int         BIGINT,
+    decimal_col     DECIMAL(10, 2),
+    numeric_col     NUMERIC(10, 2),
+    real_col        REAL,
+    double_col      DOUBLE PRECISION,
+    money_col       MONEY,
+    char_col        CHAR(10),
+    varchar_col     VARCHAR(255),
+    text_col        TEXT,
+    bytea_col       BYTEA,
+    boolean_col     BOOLEAN,
+    date_col        DATE,
+    time_col        TIME,
+    timetz_col      TIME WITH TIME ZONE,
+    timestamp_col   TIMESTAMP,
+    timestamptz_col TIMESTAMP WITH TIME ZONE,
+    interval_col    INTERVAL,
+    uuid_col        UUID,
+    inet_col        INET,
+    cidr_col        CIDR,
+    macaddr_col     MACADDR,
+    bit_col         BIT(8),
+    varbit_col      VARBIT(8)
 );
-INSERT INTO simple_test VALUES 
-(1, 10, 20, 30),
-(2, 11, 21, 31),
-(3, 12, 22, 32);
-SELECT col_b, col_c FROM simple_test;
- col_b | col_c 
--------+-------
-    20 |    30
-    21 |    31
-    22 |    32
+INSERT INTO all_types_test (small_int, integer_col, big_int, decimal_col, numeric_col,
+                  real_col, double_col, money_col, char_col, varchar_col, text_col,
+                  bytea_col, boolean_col, date_col, time_col, timetz_col,
+                  timestamp_col, timestamptz_col, interval_col, uuid_col,
+                  inet_col, cidr_col, macaddr_col, bit_col, varbit_col)
+SELECT i::smallint, (1000 + i),
+       (1000000000000 + i),
+       (100.00 + i)::decimal(10,2), (200.00 + i)::numeric(10,2), (1.1 + i)::real, (2.2 + i)::double precision,
+    (100.00 + i)::money,
+    LPAD('ch' || i, 10, 'x'),
+    'varchar_' || i,
+    'text row ' || i,
+    decode('DEADBEEF', 'hex'),
+    i % 2 = 0,
+    CURRENT_DATE + i,
+    (TIME '12:00:00' + (i || ' minutes')::interval)::time,
+    (TIME '12:00:00' + (i || ' minutes')::interval)::time with time zone,
+    CURRENT_TIMESTAMP + (i || ' hours')::interval,
+    CURRENT_TIMESTAMP + (i || ' hours')::interval,
+    make_interval(days => i), gen_random_uuid(), ('192.168.1.' || i)::inet, '192.168.0.0/16'::cidr,
+    MACADDR '08:00:2b:01:02:03', B'10101010', B'11110000'
+FROM generate_series(1, 3) AS s(i);
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Not a SELECT statement, skipping
+NOTICE:  MLIR couldn't handle query, falling back to standard executor
+SELECT id, small_int, integer_col, big_int FROM all_types_test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 3
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+ id | small_int | integer_col |    big_int    
+----+-----------+-------------+---------------
+  1 |         1 |        1001 | 1000000000001
+  2 |         2 |        1002 | 1000000000002
+  3 |         3 |        1003 | 1000000000003
 (3 rows)
 
-SELECT col_a FROM simple_test;
- col_a 
--------
-    10
-    11
-    12
+SELECT char_col, varchar_col, text_col FROM all_types_test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 3
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+  char_col  | varchar_col |  text_col  
+------------+-------------+------------
+ xxxxxxxch1 | varchar_1   | text row 1
+ xxxxxxxch2 | varchar_2   | text row 2
+ xxxxxxxch3 | varchar_3   | text row 3
 (3 rows)
 
-SELECT col_c, col_a FROM simple_test;
- col_c | col_a 
--------+-------
-    30 |    10
-    31 |    11
-    32 |    12
+SELECT date_col, time_col, timestamp_col FROM all_types_test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 3
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+  date_col  | time_col |          timestamp_col          
+------------+----------+---------------------------------
+ 06-30-2025 | 12:01:00 | Sun Jun 29 02:03:47.947205 2025
+ 07-01-2025 | 12:02:00 | Sun Jun 29 03:03:47.947205 2025
+ 07-02-2025 | 12:03:00 | Sun Jun 29 04:03:47.947205 2025
 (3 rows)
+
+SELECT boolean_col, decimal_col, varchar_col FROM all_types_test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 3
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+ boolean_col | decimal_col | varchar_col 
+-------------+-------------+-------------
+ f           |      101.00 | varchar_1
+ t           |      102.00 | varchar_2
+ f           |      103.00 | varchar_3
+(3 rows)
+
+SELECT real_col FROM all_types_test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 3
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+ real_col 
+----------
+      2.1
+      3.1
+      4.1
+(3 rows)
+
+SELECT inet_col, bytea_col, bit_col FROM all_types_test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 3
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+  inet_col   | bytea_col  | bit_col  
+-------------+------------+----------
+ 192.168.1.1 | \xdeadbeef | 10101010
+ 192.168.1.2 | \xdeadbeef | 10101010
+ 192.168.1.3 | \xdeadbeef | 10101010
+(3 rows)
+
+SELECT varbit_col, uuid_col, boolean_col, id FROM all_types_test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 3
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+ varbit_col |               uuid_col               | boolean_col | id 
+------------+--------------------------------------+-------------+----
+ 11110000   | 03afbd91-947a-4e9c-beca-95c10915c5e7 | f           |  1
+ 11110000   | 3cdddf2c-6d40-419b-b303-536e6f120d93 | t           |  2
+ 11110000   | 7dcb5201-4bae-44ce-9091-721669b32e75 | f           |  3
+(3 rows)
+

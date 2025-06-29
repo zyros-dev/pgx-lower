@@ -1,0 +1,168 @@
+DROP TABLE IF EXISTS test;
+CREATE TABLE test
+(
+    id              SERIAL PRIMARY KEY,
+    small_int       SMALLINT,
+    integer_col     INTEGER,
+    big_int         BIGINT,
+    decimal_col     DECIMAL(10, 2),
+    numeric_col     NUMERIC(10, 2),
+    real_col        REAL,
+    double_col      DOUBLE PRECISION,
+    money_col       MONEY,
+    char_col        CHAR(10),
+    varchar_col     VARCHAR(255),
+    text_col        TEXT,
+    bytea_col       BYTEA,
+    boolean_col     BOOLEAN,
+    date_col        DATE,
+    time_col        TIME,
+    timetz_col      TIME WITH TIME ZONE,
+    timestamp_col   TIMESTAMP,
+    timestamptz_col TIMESTAMP WITH TIME ZONE,
+    interval_col INTERVAL,
+    uuid_col        UUID,
+    inet_col        INET,
+    cidr_col        CIDR,
+    macaddr_col     MACADDR,
+    bit_col         BIT(8),
+    varbit_col      VARBIT(8)
+);
+INSERT INTO test (small_int, integer_col, big_int, decimal_col, numeric_col,
+                  real_col, double_col, money_col, char_col, varchar_col, text_col,
+                  bytea_col, boolean_col, date_col, time_col, timetz_col,
+                  timestamp_col, timestamptz_col, interval_col, uuid_col,
+                  inet_col, cidr_col, macaddr_col, bit_col, varbit_col)
+SELECT i::smallint, (1000 + i),
+       (1000000000000 + i),
+       (100.00 + i)::decimal(10,2), (200.00 + i)::numeric(10,2), (1.1 + i)::real, (2.2 + i) ::double precision,
+    (100.00 + i)::money,
+    LPAD('ch' || i, 10, 'x'),
+    'varchar_' || i,
+    'text row ' || i,
+    decode('DEADBEEF', 'hex'),
+    i % 2 = 0,
+    CURRENT_DATE + i,
+    (TIME '12:00:00' + (i || ' minutes')::interval)::time,
+    (TIME '12:00:00' + (i || ' minutes')::interval)::time
+with time zone, CURRENT_TIMESTAMP + (i || ' hours'):: interval, CURRENT_TIMESTAMP + (i || ' hours'):: interval,
+    make_interval(days => i), gen_random_uuid(), ('192.168.1.' || i)::inet, '192.168.0.0/16'::cidr,
+    MACADDR '08:00:2b:01:02:03', B'10101010', B'11110000'
+FROM generate_series(1, 10) AS s(i);
+SELECT *
+FROM test;
+ id | small_int | integer_col |    big_int    | decimal_col | numeric_col | real_col | double_col | money_col |  char_col  | varchar_col |  text_col   | bytea_col  | boolean_col |  date_col  | time_col | timetz_col  |          timestamp_col          |           timestamptz_col           | interval_col |               uuid_col               |   inet_col   |    cidr_col    |    macaddr_col    | bit_col  | varbit_col 
+----+-----------+-------------+---------------+-------------+-------------+----------+------------+-----------+------------+-------------+-------------+------------+-------------+------------+----------+-------------+---------------------------------+-------------------------------------+--------------+--------------------------------------+--------------+----------------+-------------------+----------+------------
+  1 |         1 |        1001 | 1000000000001 |      101.00 |      201.00 |      2.1 |        3.2 |   $101.00 | xxxxxxxch1 | varchar_1   | text row 1  | \xdeadbeef | f           | 06-30-2025 | 12:01:00 | 12:01:00-07 | Sun Jun 29 02:03:47.771988 2025 | Sun Jun 29 02:03:47.771988 2025 PDT | @ 1 day      | e7425546-4840-4ae0-941c-f07c77b9c6eb | 192.168.1.1  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  2 |         2 |        1002 | 1000000000002 |      102.00 |      202.00 |      3.1 |        4.2 |   $102.00 | xxxxxxxch2 | varchar_2   | text row 2  | \xdeadbeef | t           | 07-01-2025 | 12:02:00 | 12:02:00-07 | Sun Jun 29 03:03:47.771988 2025 | Sun Jun 29 03:03:47.771988 2025 PDT | @ 2 days     | 475aa2d6-6141-4991-abc2-af7b5a59dc1b | 192.168.1.2  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  3 |         3 |        1003 | 1000000000003 |      103.00 |      203.00 |      4.1 |        5.2 |   $103.00 | xxxxxxxch3 | varchar_3   | text row 3  | \xdeadbeef | f           | 07-02-2025 | 12:03:00 | 12:03:00-07 | Sun Jun 29 04:03:47.771988 2025 | Sun Jun 29 04:03:47.771988 2025 PDT | @ 3 days     | 20073684-e854-4a87-900c-72224699937f | 192.168.1.3  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  4 |         4 |        1004 | 1000000000004 |      104.00 |      204.00 |      5.1 |        6.2 |   $104.00 | xxxxxxxch4 | varchar_4   | text row 4  | \xdeadbeef | t           | 07-03-2025 | 12:04:00 | 12:04:00-07 | Sun Jun 29 05:03:47.771988 2025 | Sun Jun 29 05:03:47.771988 2025 PDT | @ 4 days     | 1bbe43d4-37e7-4a0a-a20f-ead642654781 | 192.168.1.4  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  5 |         5 |        1005 | 1000000000005 |      105.00 |      205.00 |      6.1 |        7.2 |   $105.00 | xxxxxxxch5 | varchar_5   | text row 5  | \xdeadbeef | f           | 07-04-2025 | 12:05:00 | 12:05:00-07 | Sun Jun 29 06:03:47.771988 2025 | Sun Jun 29 06:03:47.771988 2025 PDT | @ 5 days     | bafebcef-9b87-40ab-8b46-481040325de0 | 192.168.1.5  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  6 |         6 |        1006 | 1000000000006 |      106.00 |      206.00 |      7.1 |        8.2 |   $106.00 | xxxxxxxch6 | varchar_6   | text row 6  | \xdeadbeef | t           | 07-05-2025 | 12:06:00 | 12:06:00-07 | Sun Jun 29 07:03:47.771988 2025 | Sun Jun 29 07:03:47.771988 2025 PDT | @ 6 days     | ba432816-008f-4d17-bddb-b9a79ea3d939 | 192.168.1.6  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  7 |         7 |        1007 | 1000000000007 |      107.00 |      207.00 |      8.1 |        9.2 |   $107.00 | xxxxxxxch7 | varchar_7   | text row 7  | \xdeadbeef | f           | 07-06-2025 | 12:07:00 | 12:07:00-07 | Sun Jun 29 08:03:47.771988 2025 | Sun Jun 29 08:03:47.771988 2025 PDT | @ 7 days     | 52908dc9-0944-4d3b-b654-3f7e11a7729a | 192.168.1.7  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  8 |         8 |        1008 | 1000000000008 |      108.00 |      208.00 |      9.1 |       10.2 |   $108.00 | xxxxxxxch8 | varchar_8   | text row 8  | \xdeadbeef | t           | 07-07-2025 | 12:08:00 | 12:08:00-07 | Sun Jun 29 09:03:47.771988 2025 | Sun Jun 29 09:03:47.771988 2025 PDT | @ 8 days     | 04a532b9-5fe3-435d-b1a2-e68b70445014 | 192.168.1.8  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  9 |         9 |        1009 | 1000000000009 |      109.00 |      209.00 |     10.1 |       11.2 |   $109.00 | xxxxxxxch9 | varchar_9   | text row 9  | \xdeadbeef | f           | 07-08-2025 | 12:09:00 | 12:09:00-07 | Sun Jun 29 10:03:47.771988 2025 | Sun Jun 29 10:03:47.771988 2025 PDT | @ 9 days     | 344d9fe0-a529-47ed-b00b-890efa2aea92 | 192.168.1.9  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+ 10 |        10 |        1010 | 1000000000010 |      110.00 |      210.00 |     11.1 |       12.2 |   $110.00 | xxxxxxch10 | varchar_10  | text row 10 | \xdeadbeef | t           | 07-09-2025 | 12:10:00 | 12:10:00-07 | Sun Jun 29 11:03:47.771988 2025 | Sun Jun 29 11:03:47.771988 2025 PDT | @ 10 days    | 86d91be8-91ef-44c7-bbba-864a685496fe | 192.168.1.10 | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+(10 rows)
+
+LOAD 'pgx_lower.so';
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+SELECT *
+FROM test;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 10
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+ id | small_int | integer_col |    big_int    | decimal_col | numeric_col | real_col | double_col | money_col |  char_col  | varchar_col |  text_col   | bytea_col  | boolean_col |  date_col  | time_col | timetz_col  |          timestamp_col          |           timestamptz_col           | interval_col |               uuid_col               |   inet_col   |    cidr_col    |    macaddr_col    | bit_col  | varbit_col 
+----+-----------+-------------+---------------+-------------+-------------+----------+------------+-----------+------------+-------------+-------------+------------+-------------+------------+----------+-------------+---------------------------------+-------------------------------------+--------------+--------------------------------------+--------------+----------------+-------------------+----------+------------
+  1 |         1 |        1001 | 1000000000001 |      101.00 |      201.00 |      2.1 |        3.2 |   $101.00 | xxxxxxxch1 | varchar_1   | text row 1  | \xdeadbeef | f           | 06-30-2025 | 12:01:00 | 12:01:00-07 | Sun Jun 29 02:03:47.771988 2025 | Sun Jun 29 02:03:47.771988 2025 PDT | @ 1 day      | e7425546-4840-4ae0-941c-f07c77b9c6eb | 192.168.1.1  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  2 |         2 |        1002 | 1000000000002 |      102.00 |      202.00 |      3.1 |        4.2 |   $102.00 | xxxxxxxch2 | varchar_2   | text row 2  | \xdeadbeef | t           | 07-01-2025 | 12:02:00 | 12:02:00-07 | Sun Jun 29 03:03:47.771988 2025 | Sun Jun 29 03:03:47.771988 2025 PDT | @ 2 days     | 475aa2d6-6141-4991-abc2-af7b5a59dc1b | 192.168.1.2  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  3 |         3 |        1003 | 1000000000003 |      103.00 |      203.00 |      4.1 |        5.2 |   $103.00 | xxxxxxxch3 | varchar_3   | text row 3  | \xdeadbeef | f           | 07-02-2025 | 12:03:00 | 12:03:00-07 | Sun Jun 29 04:03:47.771988 2025 | Sun Jun 29 04:03:47.771988 2025 PDT | @ 3 days     | 20073684-e854-4a87-900c-72224699937f | 192.168.1.3  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  4 |         4 |        1004 | 1000000000004 |      104.00 |      204.00 |      5.1 |        6.2 |   $104.00 | xxxxxxxch4 | varchar_4   | text row 4  | \xdeadbeef | t           | 07-03-2025 | 12:04:00 | 12:04:00-07 | Sun Jun 29 05:03:47.771988 2025 | Sun Jun 29 05:03:47.771988 2025 PDT | @ 4 days     | 1bbe43d4-37e7-4a0a-a20f-ead642654781 | 192.168.1.4  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  5 |         5 |        1005 | 1000000000005 |      105.00 |      205.00 |      6.1 |        7.2 |   $105.00 | xxxxxxxch5 | varchar_5   | text row 5  | \xdeadbeef | f           | 07-04-2025 | 12:05:00 | 12:05:00-07 | Sun Jun 29 06:03:47.771988 2025 | Sun Jun 29 06:03:47.771988 2025 PDT | @ 5 days     | bafebcef-9b87-40ab-8b46-481040325de0 | 192.168.1.5  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  6 |         6 |        1006 | 1000000000006 |      106.00 |      206.00 |      7.1 |        8.2 |   $106.00 | xxxxxxxch6 | varchar_6   | text row 6  | \xdeadbeef | t           | 07-05-2025 | 12:06:00 | 12:06:00-07 | Sun Jun 29 07:03:47.771988 2025 | Sun Jun 29 07:03:47.771988 2025 PDT | @ 6 days     | ba432816-008f-4d17-bddb-b9a79ea3d939 | 192.168.1.6  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  7 |         7 |        1007 | 1000000000007 |      107.00 |      207.00 |      8.1 |        9.2 |   $107.00 | xxxxxxxch7 | varchar_7   | text row 7  | \xdeadbeef | f           | 07-06-2025 | 12:07:00 | 12:07:00-07 | Sun Jun 29 08:03:47.771988 2025 | Sun Jun 29 08:03:47.771988 2025 PDT | @ 7 days     | 52908dc9-0944-4d3b-b654-3f7e11a7729a | 192.168.1.7  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  8 |         8 |        1008 | 1000000000008 |      108.00 |      208.00 |      9.1 |       10.2 |   $108.00 | xxxxxxxch8 | varchar_8   | text row 8  | \xdeadbeef | t           | 07-07-2025 | 12:08:00 | 12:08:00-07 | Sun Jun 29 09:03:47.771988 2025 | Sun Jun 29 09:03:47.771988 2025 PDT | @ 8 days     | 04a532b9-5fe3-435d-b1a2-e68b70445014 | 192.168.1.8  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+  9 |         9 |        1009 | 1000000000009 |      109.00 |      209.00 |     10.1 |       11.2 |   $109.00 | xxxxxxxch9 | varchar_9   | text row 9  | \xdeadbeef | f           | 07-08-2025 | 12:09:00 | 12:09:00-07 | Sun Jun 29 10:03:47.771988 2025 | Sun Jun 29 10:03:47.771988 2025 PDT | @ 9 days     | 344d9fe0-a529-47ed-b00b-890efa2aea92 | 192.168.1.9  | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+ 10 |        10 |        1010 | 1000000000010 |      110.00 |      210.00 |     11.1 |       12.2 |   $110.00 | xxxxxxch10 | varchar_10  | text row 10 | \xdeadbeef | t           | 07-09-2025 | 12:10:00 | 12:10:00-07 | Sun Jun 29 11:03:47.771988 2025 | Sun Jun 29 11:03:47.771988 2025 PDT | @ 10 days    | 86d91be8-91ef-44c7-bbba-864a685496fe | 192.168.1.10 | 192.168.0.0/16 | 08:00:2b:01:02:03 | 10101010 | 11110000
+(10 rows)
+

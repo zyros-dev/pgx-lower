@@ -16,14 +16,6 @@ INSERT INTO test_logical(flag1, flag2) VALUES
     (false, false);
 NOTICE:  Custom executor is being executed in C!
 NOTICE:  Calling C++ executor from C...
-NOTICE:  Successfully created MLIR context!
-NOTICE:  LLVM version: 20.1.2
-NOTICE:  Inside C++ executor! Plan type: 3
-NOTICE:  Query text: INSERT INTO test_logical(flag1, flag2) VALUES 
-    (true, false),
-    (false, true),
-    (true, true),
-    (false, false);
 NOTICE:  Not a SELECT statement, skipping
 NOTICE:  MLIR couldn't handle query, falling back to standard executor
 -- Test logical operations on table columns
@@ -31,11 +23,6 @@ NOTICE:  MLIR couldn't handle query, falling back to standard executor
 SELECT id, flag1, flag2 FROM test_logical;
 NOTICE:  Custom executor is being executed in C!
 NOTICE:  Calling C++ executor from C...
-NOTICE:  Successfully created MLIR context!
-NOTICE:  LLVM version: 20.1.2
-NOTICE:  Inside C++ executor! Plan type: 1
-NOTICE:  Query text: SELECT id, flag1, flag2 FROM test_logical;
-NOTICE:  Query analysis: Simple sequential scan - MLIR compatible
 NOTICE:  Generated MLIR with PostgreSQL typed field access:
 NOTICE:  MLIR with field access: module {
   func.func private @open_postgres_table(i64) -> i64

@@ -86,6 +86,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/core/mlir_builder.cpp
         src/core/query_analyzer.cpp
         src/core/error_handling.cpp
+        src/core/logging.cpp
         src/logging/mlir_logger.cpp
         src/runtime/tuple_access.cpp
     )

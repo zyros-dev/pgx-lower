@@ -16,14 +16,6 @@ INSERT INTO test_comparison(value, score) VALUES
     (25, 5);
 NOTICE:  Custom executor is being executed in C!
 NOTICE:  Calling C++ executor from C...
-NOTICE:  Successfully created MLIR context!
-NOTICE:  LLVM version: 20.1.2
-NOTICE:  Inside C++ executor! Plan type: 3
-NOTICE:  Query text: INSERT INTO test_comparison(value, score) VALUES 
-    (10, 15),
-    (20, 20),
-    (15, 10),
-    (25, 5);
 NOTICE:  Not a SELECT statement, skipping
 NOTICE:  MLIR couldn't handle query, falling back to standard executor
 -- Test comparison operations on table columns
@@ -31,11 +23,6 @@ NOTICE:  MLIR couldn't handle query, falling back to standard executor
 SELECT id, value, score FROM test_comparison;
 NOTICE:  Custom executor is being executed in C!
 NOTICE:  Calling C++ executor from C...
-NOTICE:  Successfully created MLIR context!
-NOTICE:  LLVM version: 20.1.2
-NOTICE:  Inside C++ executor! Plan type: 1
-NOTICE:  Query text: SELECT id, value, score FROM test_comparison;
-NOTICE:  Query analysis: Simple sequential scan - MLIR compatible
 NOTICE:  Generated MLIR with PostgreSQL typed field access:
 NOTICE:  MLIR with field access: module {
   func.func private @open_postgres_table(i64) -> i64

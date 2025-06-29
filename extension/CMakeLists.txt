@@ -13,6 +13,7 @@ add_postgresql_mixed_extension(
             ../src/core/mlir_builder.cpp 
             ../src/core/query_analyzer.cpp
             ../src/core/error_handling.cpp
+            ../src/core/logging.cpp
             ../src/logging/mlir_logger_pg.cpp
         SCRIPTS 
             sql/pgx_lower--1.0.sql
@@ -36,5 +37,10 @@ add_postgresql_mixed_extension(
 target_link_libraries(pgx_lower PRIVATE 
     MLIRPgDialect
     PgxLowerRuntime
+)
+
+# Add include directories for source files
+target_include_directories(pgx_lower PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
 )
 

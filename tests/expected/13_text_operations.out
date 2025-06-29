@@ -16,14 +16,6 @@ INSERT INTO test_text(name, description) VALUES
     ('Diana', 'UX Designer');
 NOTICE:  Custom executor is being executed in C!
 NOTICE:  Calling C++ executor from C...
-NOTICE:  Successfully created MLIR context!
-NOTICE:  LLVM version: 20.1.2
-NOTICE:  Inside C++ executor! Plan type: 3
-NOTICE:  Query text: INSERT INTO test_text(name, description) VALUES 
-    ('Alice', 'Software Engineer'),
-    ('Bob', 'Data Scientist'),
-    ('Charlie', 'Product Manager'),
-    ('Diana', 'UX Designer');
 NOTICE:  Not a SELECT statement, skipping
 NOTICE:  MLIR couldn't handle query, falling back to standard executor
 -- Test text operations on table columns
@@ -31,12 +23,6 @@ NOTICE:  MLIR couldn't handle query, falling back to standard executor
 SELECT id, name, description FROM test_text;
 NOTICE:  Custom executor is being executed in C!
 NOTICE:  Calling C++ executor from C...
-NOTICE:  Successfully created MLIR context!
-NOTICE:  LLVM version: 20.1.2
-NOTICE:  Inside C++ executor! Plan type: 1
-NOTICE:  Query text: SELECT id, name, description FROM test_text;
-NOTICE:  Query analysis: Simple sequential scan - MLIR compatible
-NOTICE:  Table has 2 unsupported column types out of 3 total - MLIR will attempt to handle with fallback values
 NOTICE:  Generated MLIR with PostgreSQL typed field access:
 NOTICE:  MLIR with field access: module {
   func.func private @open_postgres_table(i64) -> i64

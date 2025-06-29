@@ -3,6 +3,7 @@
 #include "core/mlir_logger.h"
 #include "core/query_analyzer.h"
 #include "core/error_handling.h"
+#include "core/logging.h"
 
 #include "executor/executor.h"
 
@@ -435,15 +436,16 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
         pgx_lower::ErrorManager::setHandler(std::make_unique<pgx_lower::PostgreSQLErrorHandler>());
     }
 
-    elog(NOTICE, "LLVM version: %d.%d.%d", LLVM_VERSION_MAJOR, LLVM_VERSION_MINOR, LLVM_VERSION_PATCH);
+    PGX_DEBUG("LLVM version: " + std::to_string(LLVM_VERSION_MAJOR) + "." + 
+              std::to_string(LLVM_VERSION_MINOR) + "." + std::to_string(LLVM_VERSION_PATCH));
     if (!plan) {
         const auto error = pgx_lower::ErrorManager::postgresqlError("QueryDesc is null");
         pgx_lower::ErrorManager::reportError(error);
         return false;
     }
 
-    elog(NOTICE, "Inside C++ executor! Plan type: %d", plan->operation);
-    elog(NOTICE, "Query text: %s", plan->sourceText ? plan->sourceText : "NULL");
+    PGX_DEBUG("Inside C++ executor! Plan type: " + std::to_string(plan->operation));
+    PGX_DEBUG("Query text: " + std::string(plan->sourceText ? plan->sourceText : "NULL"));
 
     if (plan->operation != CMD_SELECT) {
         elog(NOTICE, "Not a SELECT statement, skipping");
@@ -454,17 +456,17 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     const auto* stmt = plan->plannedstmt;
     const auto capabilities = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
 
-    elog(NOTICE, "Query analysis: %s", capabilities.getDescription());
+    PGX_DEBUG("Query analysis: " + std::string(capabilities.getDescription()));
 
     if (!capabilities.isMLIRCompatible()) {
-        elog(NOTICE, "Query requires features not yet supported by MLIR");
+        PGX_INFO("Query requires features not yet supported by MLIR");
         return false;
     }
 
     const auto rootPlan = stmt->planTree;
     if (rootPlan->type != T_SeqScan) {
         // This should not happen if analyzer is correct, but add safety check
-        elog(NOTICE, "Query analyzer bug: marked as compatible but not a SeqScan");
+        PGX_ERROR("Query analyzer bug: marked as compatible but not a SeqScan");
         return false;
     }
 
@@ -484,19 +486,16 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     }
 
     if (unsupportedTypeCount == tupdesc->natts) {
-        elog(NOTICE,
-             "All column types are unsupported (%d/%d), falling back to standard executor",
-             unsupportedTypeCount,
-             tupdesc->natts);
+        PGX_INFO("All column types are unsupported (" + std::to_string(unsupportedTypeCount) + 
+             "/" + std::to_string(tupdesc->natts) + "), falling back to standard executor");
         table_close(rel, AccessShareLock);
         return false;
     }
 
     if (unsupportedTypeCount > 0) {
-        elog(NOTICE,
-             "Table has %d unsupported column types out of %d total - MLIR will attempt to handle with fallback values",
-             unsupportedTypeCount,
-             tupdesc->natts);
+        PGX_DEBUG("Table has " + std::to_string(unsupportedTypeCount) + 
+             " unsupported column types out of " + std::to_string(tupdesc->natts) + 
+             " total - MLIR will attempt to handle with fallback values");
     }
 
     const auto scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, nullptr);

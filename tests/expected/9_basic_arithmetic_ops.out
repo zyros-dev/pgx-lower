@@ -15,13 +15,6 @@ INSERT INTO test_arithmetic(val1, val2) VALUES
     (15, 3);
 NOTICE:  Custom executor is being executed in C!
 NOTICE:  Calling C++ executor from C...
-NOTICE:  Successfully created MLIR context!
-NOTICE:  LLVM version: 20.1.2
-NOTICE:  Inside C++ executor! Plan type: 3
-NOTICE:  Query text: INSERT INTO test_arithmetic(val1, val2) VALUES 
-    (10, 5),
-    (20, 4),
-    (15, 3);
 NOTICE:  Not a SELECT statement, skipping
 NOTICE:  MLIR couldn't handle query, falling back to standard executor
 -- Test arithmetic operations on table columns
@@ -29,11 +22,6 @@ NOTICE:  MLIR couldn't handle query, falling back to standard executor
 SELECT id, val1, val2 FROM test_arithmetic;
 NOTICE:  Custom executor is being executed in C!
 NOTICE:  Calling C++ executor from C...
-NOTICE:  Successfully created MLIR context!
-NOTICE:  LLVM version: 20.1.2
-NOTICE:  Inside C++ executor! Plan type: 1
-NOTICE:  Query text: SELECT id, val1, val2 FROM test_arithmetic;
-NOTICE:  Query analysis: Simple sequential scan - MLIR compatible
 NOTICE:  Generated MLIR with PostgreSQL typed field access:
 NOTICE:  MLIR with field access: module {
   func.func private @open_postgres_table(i64) -> i64
