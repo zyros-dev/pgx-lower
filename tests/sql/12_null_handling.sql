@@ -1,4 +1,4 @@
--- Test NULL handling operators: PgIsNullOp, PgIsNotNullOp
+-- Test null handling operators: PgIsNullOp, PgIsNotNullOp, PgCoalesceOp
 LOAD 'pgx_lower';
 
 DROP TABLE IF EXISTS test_nulls;
@@ -6,17 +6,35 @@ DROP TABLE IF EXISTS test_nulls;
 CREATE TABLE test_nulls (
     id SERIAL PRIMARY KEY,
     nullable_value INTEGER,
-    required_value INTEGER NOT NULL
+    backup_value INTEGER,
+    third_value INTEGER
 );
 
-INSERT INTO test_nulls(nullable_value, required_value) VALUES 
-    (NULL, 1),
-    (42, 2),
-    (NULL, 3),
-    (99, 4);
+INSERT INTO test_nulls(nullable_value, backup_value, third_value) VALUES 
+    (NULL, 100, 200),
+    (10, 110, 210),
+    (NULL, 120, 220),
+    (30, NULL, 230),
+    (40, 140, NULL);
 
--- Test NULL handling operations on table columns
--- These should trigger MLIR compilation with NULL operators
-SELECT id, nullable_value, required_value FROM test_nulls;
+-- Test null handling operations in SELECT clauses
+-- These should trigger MLIR compilation with null handling operators
+SELECT (nullable_value IS NULL) AS is_null_check FROM test_nulls;
+SELECT (nullable_value IS NOT NULL) AS is_not_null_check FROM test_nulls;
+SELECT (backup_value IS NULL) AS backup_is_null FROM test_nulls;
+SELECT (backup_value IS NOT NULL) AS backup_is_not_null FROM test_nulls;
+SELECT COALESCE(nullable_value, backup_value) AS coalesced_value FROM test_nulls;
+SELECT COALESCE(nullable_value, backup_value, third_value) AS triple_coalesce FROM test_nulls;
+SELECT COALESCE(nullable_value, -1) AS coalesce_with_constant FROM test_nulls;
+
+-- Test null handling operations in WHERE clauses
+-- These should trigger MLIR compilation with null handling operators in predicates
+SELECT * FROM test_nulls WHERE nullable_value IS NULL;
+SELECT * FROM test_nulls WHERE nullable_value IS NOT NULL;
+SELECT * FROM test_nulls WHERE backup_value IS NULL;
+SELECT * FROM test_nulls WHERE backup_value IS NOT NULL;
+SELECT * FROM test_nulls WHERE COALESCE(nullable_value, 0) > 20;
+SELECT * FROM test_nulls WHERE COALESCE(nullable_value, backup_value) > 100;
+SELECT * FROM test_nulls WHERE COALESCE(nullable_value, backup_value, third_value) IS NOT NULL;
 
 DROP TABLE test_nulls;

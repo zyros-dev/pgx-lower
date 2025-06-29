@@ -1,4 +1,4 @@
--- Test comparison operators: PgCmpOp, PgNeOp, PgLtOp, PgLeOp, PgGtOp, PgGeOp
+-- Test comparison operators: PgCmpOp with all predicates (eq, ne, lt, le, gt, ge)
 LOAD 'pgx_lower';
 
 DROP TABLE IF EXISTS test_comparison;
@@ -13,10 +13,27 @@ INSERT INTO test_comparison(value, score) VALUES
     (10, 15),
     (20, 20),
     (15, 10),
-    (25, 5);
+    (25, 5),
+    (30, 30);
 
--- Test comparison operations on table columns
+-- Test comparison operations in SELECT clauses
 -- These should trigger MLIR compilation with comparison operators
-SELECT id, value, score FROM test_comparison;
+SELECT (value = score) AS is_equal FROM test_comparison;
+SELECT (value <> score) AS not_equal FROM test_comparison;
+SELECT (value != score) AS not_equal_alt FROM test_comparison;
+SELECT (value < score) AS less_than FROM test_comparison;
+SELECT (value <= score) AS less_equal FROM test_comparison;
+SELECT (value > score) AS greater_than FROM test_comparison;
+SELECT (value >= score) AS greater_equal FROM test_comparison;
+
+-- Test comparison operations in WHERE clauses
+-- These should trigger MLIR compilation with comparison operators in predicates
+SELECT * FROM test_comparison WHERE value = score;
+SELECT * FROM test_comparison WHERE value <> score;
+SELECT * FROM test_comparison WHERE value != score;
+SELECT * FROM test_comparison WHERE value < score;
+SELECT * FROM test_comparison WHERE value <= score;
+SELECT * FROM test_comparison WHERE value > score;
+SELECT * FROM test_comparison WHERE value >= score;
 
 DROP TABLE test_comparison;

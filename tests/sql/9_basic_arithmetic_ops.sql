@@ -1,4 +1,4 @@
--- Test basic arithmetic operators: PgAddOp, PgSubOp, PgMulOp
+-- Test basic arithmetic operators: PgAddOp, PgSubOp, PgMulOp, PgDivOp, PgModOp
 LOAD 'pgx_lower';
 
 DROP TABLE IF EXISTS test_arithmetic;
@@ -12,10 +12,24 @@ CREATE TABLE test_arithmetic (
 INSERT INTO test_arithmetic(val1, val2) VALUES 
     (10, 5),
     (20, 4),
-    (15, 3);
+    (15, 3),
+    (8, 2),
+    (25, 6);
 
--- Test arithmetic operations on table columns
--- These should trigger MLIR compilation with our new operators
-SELECT id, val1, val2 FROM test_arithmetic;
+-- Test arithmetic operations in SELECT clauses
+-- These should trigger MLIR compilation with arithmetic operators
+SELECT val1 + val2 AS addition FROM test_arithmetic;
+SELECT val1 - val2 AS subtraction FROM test_arithmetic;
+SELECT val1 * val2 AS multiplication FROM test_arithmetic;
+SELECT val1 / val2 AS division FROM test_arithmetic;
+SELECT val1 % val2 AS modulo FROM test_arithmetic;
+
+-- Test arithmetic operations in WHERE clauses
+-- These should trigger MLIR compilation with arithmetic operators in predicates
+SELECT * FROM test_arithmetic WHERE val1 + val2 > 20;
+SELECT * FROM test_arithmetic WHERE val1 - val2 < 10;
+SELECT * FROM test_arithmetic WHERE val1 * val2 > 30;
+SELECT * FROM test_arithmetic WHERE val1 / val2 >= 2;
+SELECT * FROM test_arithmetic WHERE val1 % val2 = 0;
 
 DROP TABLE test_arithmetic;

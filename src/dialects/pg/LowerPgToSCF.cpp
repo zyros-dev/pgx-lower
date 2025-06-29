@@ -535,9 +535,9 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
         // Use simple rewrite patterns without type conversion
         auto patterns = RewritePatternSet(ctx);
         patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering, UnrealizedConversionCastOpLowering,
-                     PgAddOpLowering /*, PgSubOpLowering, PgMulOpLowering, PgDivOpLowering, PgModOpLowering,
+                     PgAddOpLowering, PgSubOpLowering, PgMulOpLowering, PgDivOpLowering, PgModOpLowering,
                      PgCmpOpLowering, PgAndOpLowering, PgOrOpLowering, PgNotOpLowering, 
-                     PgIsNullOpLowering, PgIsNotNullOpLowering*/>(
+                     PgIsNullOpLowering, PgIsNotNullOpLowering>(
             ctx);
 
         // Apply greedy pattern rewriting (no type conversion involved)
@@ -556,9 +556,9 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
 
 void pg::populatePgToSCFConversionPatterns(RewritePatternSet &patterns, TypeConverter &typeConverter) {
     patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering,
-                 PgAddOpLowering /*, PgSubOpLowering, PgMulOpLowering, PgDivOpLowering, PgModOpLowering,
+                 PgAddOpLowering, PgSubOpLowering, PgMulOpLowering, PgDivOpLowering, PgModOpLowering,
                  PgCmpOpLowering, PgAndOpLowering, PgOrOpLowering, PgNotOpLowering,
-                 PgIsNullOpLowering, PgIsNotNullOpLowering*/>(
+                 PgIsNullOpLowering, PgIsNotNullOpLowering>(
         patterns.getContext());
 }
 
