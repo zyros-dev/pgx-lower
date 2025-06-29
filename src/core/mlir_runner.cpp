@@ -1,4 +1,5 @@
 #include "core/mlir_runner.h"
+#include "core/mlir_builder.h"
 #include "core/mlir_logger.h"
 #include "core/error_handling.h"
 #include "interfaces/mlir_c_interface.h"
@@ -41,203 +42,11 @@
 #include <sstream>
 #include <cstring>
 
-namespace {
-auto registerConversionPipeline() -> void {
-    mlir::PassPipelineRegistration<>("convert-to-llvm", "Convert MLIR to LLVM dialect", [](mlir::OpPassManager& opm) {
-        opm.addPass(mlir::createConvertFuncToLLVMPass());
-        opm.addPass(mlir::createArithToLLVMConversionPass());
-        opm.addPass(mlir::createConvertSCFToCFPass());
-    });
-}
-} // namespace
-
 namespace mlir_runner {
 
-// TODO: This mlir runner seems suspicious to me - should we be doing it like this at all?
-bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
-                                                     const std::vector<int>& selectedColumns,
-                                                     MLIRLogger& logger) {
-    mlir::MLIRContext context;
-
-    std::ostringstream oss;
-    oss << "Scanning PostgreSQL table '" << tableName << "' with column subset: ";
-    for (size_t i = 0; i < selectedColumns.size(); ++i) {
-        if (i > 0) {
-            oss << ", ";
-        }
-        oss << selectedColumns[i];
-    }
-    logger.debug(oss.str());
-
-    // Register all required dialects
-    context.getOrLoadDialect<mlir::arith::ArithDialect>();
-    context.getOrLoadDialect<mlir::func::FuncDialect>();
-    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
-    context.getOrLoadDialect<mlir::scf::SCFDialect>();
-    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
-    context.getOrLoadDialect<mlir::pg::PgDialect>();
-
-    registerConversionPipeline();
-
-    // Create MLIR module and function with actual column selection
-    mlir::OpBuilder builder(&context);
-    auto module = mlir::ModuleOp::create(builder.getUnknownLoc());
-    builder.setInsertionPointToStart(module.getBody());
-
-    auto location = builder.getUnknownLoc();
-    auto i64Type = builder.getI64Type();
-    auto i32Type = builder.getI32Type();
-    auto i1Type = builder.getI1Type();
-
-    // Declare external runtime functions as private
-    auto funcType = mlir::FunctionType::get(&context, {i64Type}, {i64Type});
-    auto openFunc = builder.create<mlir::func::FuncOp>(location, "open_postgres_table", funcType);
-    openFunc.setPrivate();
-
-    funcType = mlir::FunctionType::get(&context, {i64Type}, {i64Type});
-    auto readFunc = builder.create<mlir::func::FuncOp>(location, "read_next_tuple_from_table", funcType);
-    readFunc.setPrivate();
-
-    funcType = mlir::FunctionType::get(&context, {i64Type}, mlir::TypeRange{});
-    auto closeFunc = builder.create<mlir::func::FuncOp>(location, "close_postgres_table", funcType);
-    closeFunc.setPrivate();
-
-    // Declare field access functions as private
-    funcType =
-        mlir::FunctionType::get(&context, {i64Type, i32Type, builder.getType<mlir::LLVM::LLVMPointerType>()}, {i32Type});
-    auto getIntFunc = builder.create<mlir::func::FuncOp>(location, "get_int_field", funcType);
-    getIntFunc.setPrivate();
-
-    funcType =
-        mlir::FunctionType::get(&context, {i64Type, i32Type, builder.getType<mlir::LLVM::LLVMPointerType>()}, {i64Type});
-    auto getTextFunc = builder.create<mlir::func::FuncOp>(location, "get_text_field", funcType);
-    getTextFunc.setPrivate();
-
-    funcType = mlir::FunctionType::get(&context, {i64Type}, {i1Type});
-    auto addTupleFunc = builder.create<mlir::func::FuncOp>(location, "add_tuple_to_result", funcType);
-    addTupleFunc.setPrivate();
-
-    // Create main function that demonstrates typed field access with actual columns
-    auto mainFuncType = mlir::FunctionType::get(&context, {}, {i64Type});
-    auto mainFunc = builder.create<mlir::func::FuncOp>(location, "main", mainFuncType);
-    auto* entryBlock = mainFunc.addEntryBlock();
-    builder.setInsertionPointToStart(entryBlock);
-
-    // Generate table open using pg dialect
-    auto tableHandleType = mlir::pg::TableHandleType::get(&context);
-    mlir::OperationState scanState(location, mlir::pg::ScanTableOp::getOperationName());
-    scanState.addAttribute("table_name", builder.getStringAttr(tableName));
-    scanState.addTypes(tableHandleType);
-    auto *scanOp = builder.create(scanState);
-    auto tableHandle = scanOp->getResult(0);
-
-    // Create iteration loop
-    auto zeroConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(0));
-    auto negTwoConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(-2));
-    auto trueConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
-
-    const auto initialArgs = llvm::SmallVector<mlir::Value>{trueConst, zeroConst};
-    const auto argTypes = llvm::SmallVector<mlir::Type>{i1Type, i64Type};
-
-    auto whileOp = builder.create<mlir::scf::WhileOp>(location, argTypes, initialArgs);
-
-    // Before region: condition check
-    auto& beforeRegion = whileOp.getBefore();
-    builder.createBlock(&beforeRegion, beforeRegion.end(), argTypes, {builder.getUnknownLoc(), builder.getUnknownLoc()});
-    builder.setInsertionPointToStart(&beforeRegion.front());
-
-    auto continueFlag = beforeRegion.front().getArgument(0);
-
-    builder.create<mlir::scf::ConditionOp>(location, continueFlag, beforeRegion.front().getArguments());
-
-    // After region: read tuple and access fields
-    auto& afterRegion = whileOp.getAfter();
-    builder.createBlock(&afterRegion, afterRegion.end(), argTypes, {builder.getUnknownLoc(), builder.getUnknownLoc()});
-    builder.setInsertionPointToStart(&afterRegion.front());
-
-    auto tupleCount = afterRegion.front().getArgument(1);
-
-    // Read tuple using pg dialect
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context);
-    auto readState = mlir::OperationState(location, mlir::pg::ReadTupleOp::getOperationName());
-    readState.addOperands(tableHandle);
-    readState.addTypes(tupleHandleType);
-    auto *readOp = builder.create(readState);
-    auto tupleHandle = readOp->getResult(0);
-
-    // Convert tuple to i64 for comparison
-    auto tupleAsI64 = builder.create<mlir::UnrealizedConversionCastOp>(location, i64Type, tupleHandle).getResult(0);
-    auto isEndOfTable =
-        builder.create<mlir::arith::CmpIOp>(location, mlir::arith::CmpIPredicate::eq, tupleAsI64, negTwoConst);
-
-    auto ifOp =
-        builder.create<mlir::scf::IfOp>(location, llvm::ArrayRef<mlir::Type>{i1Type, i64Type}, isEndOfTable, true);
-
-    // Then branch: end of table
-    auto& thenRegion = ifOp.getThenRegion();
-    if (thenRegion.empty()) {
-        builder.createBlock(&thenRegion);
-    }
-    builder.setInsertionPointToStart(&thenRegion.front());
-    auto falseConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(false));
-    auto thenYieldOperands = llvm::SmallVector<mlir::Value>{falseConst, tupleCount};
-    builder.create<mlir::scf::YieldOp>(location, thenYieldOperands);
-
-    // Else branch: process tuple with field access for actual selected columns
-    auto& elseRegion = ifOp.getElseRegion();
-    if (elseRegion.empty()) {
-        builder.createBlock(&elseRegion);
-    }
-    builder.setInsertionPointToStart(&elseRegion.front());
-    auto trueContinue = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
-
-    // Access each selected column by its actual index
-    for (int columnIndex : selectedColumns) {
-        // Determine field type - for now, assume integer types for simplicity
-        // In a full implementation, this would use PostgreSQL column type information
-        mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
-        getFieldState.addOperands(tupleHandle);
-        getFieldState.addAttribute("field_index", builder.getI32IntegerAttr(columnIndex));
-        getFieldState.addTypes({i32Type, i1Type}); // value and null flag
-        auto getFieldOp = builder.create(getFieldState);
-        auto fieldValue = getFieldOp->getResult(0);
-        auto fieldNullFlag = getFieldOp->getResult(1);
-
-        // For now, we just access the fields to demonstrate correct indexing
-        // The actual tuple output still happens via add_tuple_to_result
-    }
-
-    // Output the tuple (this will be fixed later to output only selected columns)
-    auto addOperands = llvm::SmallVector<mlir::Value> {tupleAsI64};
-    auto addTupleCall = builder.create<mlir::func::CallOp>(location, addTupleFunc, addOperands);
-
-    auto oneIntConst = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(1));
-    auto newCount = builder.create<mlir::arith::AddIOp>(location, tupleCount, oneIntConst);
-
-    auto elseYieldOperands = llvm::SmallVector<mlir::Value>{trueContinue, newCount.getResult()};
-    builder.create<mlir::scf::YieldOp>(location, elseYieldOperands);
-
-    // Continue after the while loop
-    builder.setInsertionPointAfter(ifOp);
-    builder.create<mlir::scf::YieldOp>(location, ifOp.getResults());
-
-    builder.setInsertionPointAfter(whileOp);
-
-    // Close table
-    auto tableHandleAsInt = builder.create<mlir::arith::ConstantOp>(location, builder.getI64IntegerAttr(0));
-    auto closeOperands = llvm::SmallVector<mlir::Value> {tableHandleAsInt};
-    builder.create<mlir::func::CallOp>(location, closeFunc, closeOperands);
-
-    auto finalCount = whileOp.getResult(1);
-    builder.create<mlir::func::ReturnOp>(location, finalCount);
-
-    // Print the MLIR with typed field access
-    logger.notice("Generated MLIR with PostgreSQL typed field access:");
-    auto mlirStr = std::string();
-    auto os = llvm::raw_string_ostream(mlirStr);
-    module.OpState::print(os);
-    os.flush();
-    logger.notice("MLIR with field access: " + mlirStr);
+// MLIR Execution Engine - handles lowering and JIT execution
+bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
+    auto& context = *module.getContext();
 
     // Apply pg-to-scf lowering pass to convert high-level operations to runtime calls
     auto pm = mlir::PassManager(&context);
@@ -336,13 +145,49 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     const int64_t result = fptr();
     logger.notice("Invoked MLIR JIT PostgreSQL typed field access!");
 
-    oss.str("");
+    std::ostringstream oss;
     oss << "PostgreSQL typed field access completed with result: " << result;
     logger.notice(oss.str());
 
     logger.notice("MLIR successfully handled the query");
 
     return true;
+}
+
+bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
+                                                     const std::vector<int>& selectedColumns,
+                                                     MLIRLogger& logger) {
+    mlir::MLIRContext context;
+
+    std::ostringstream oss;
+    oss << "Scanning PostgreSQL table '" << tableName << "' with column subset: ";
+    for (size_t i = 0; i < selectedColumns.size(); ++i) {
+        if (i > 0) {
+            oss << ", ";
+        }
+        oss << selectedColumns[i];
+    }
+    logger.debug(oss.str());
+
+    // Use MLIRBuilder to generate the MLIR module
+    auto builder = mlir_builder::createMLIRBuilder(context);
+    auto module = builder->buildTableScanModule(tableName, selectedColumns);
+
+    if (!module) {
+        logger.error("Failed to build MLIR module");
+        return false;
+    }
+
+    // Print the MLIR with typed field access
+    logger.notice("Generated MLIR with PostgreSQL typed field access:");
+    auto mlirStr = std::string();
+    auto os = llvm::raw_string_ostream(mlirStr);
+    module->OpState::print(os);
+    os.flush();
+    logger.notice("MLIR with field access: " + mlirStr);
+
+    // Execute the MLIR module
+    return executeMLIRModule(*module, logger);
 }
 
 } // namespace mlir_runner

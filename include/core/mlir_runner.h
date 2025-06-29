@@ -21,6 +21,8 @@ auto run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
                                                      const std::vector<int>& selectedColumns,
                                                      MLIRLogger& logger) -> bool;
 
+
+
 // Core MLIR compilation and execution engine
 auto run_mlir_core(int64_t intValue, MLIRLogger& logger) -> bool;
 

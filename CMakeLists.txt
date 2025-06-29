@@ -83,6 +83,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/test_helpers.cpp
         ${UNIT_TEST_SOURCES}
         src/core/mlir_runner.cpp
+        src/core/mlir_builder.cpp
         src/core/query_analyzer.cpp
         src/core/error_handling.cpp
         src/logging/mlir_logger.cpp
