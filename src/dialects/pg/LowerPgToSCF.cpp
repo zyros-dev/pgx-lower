@@ -262,6 +262,263 @@ class [[maybe_unused]] PgTypeConverter final : public TypeConverter {
 // Pass Implementation
 //===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
+// Arithmetic Operator Lowering Patterns
+//===----------------------------------------------------------------------===//
+
+/// Lower pg.add to arith.addi/arith.addf with null handling
+class PgAddOpLowering final : public OpRewritePattern<PgAddOp> {
+public:
+    explicit PgAddOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgAddOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto left = op.getLeft();
+        auto right = op.getRight();
+        
+        // For now, assume non-nullable integer types for simplicity
+        // TODO: Add proper null handling for PostgreSQL semantics
+        auto result = rewriter.create<arith::AddIOp>(loc, left, right);
+        rewriter.replaceOp(op, result);
+        
+        return success();
+    }
+};
+
+/// Lower pg.sub to arith.subi/arith.subf with null handling  
+class PgSubOpLowering final : public OpRewritePattern<PgSubOp> {
+public:
+    explicit PgSubOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgSubOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto left = op.getLeft();
+        auto right = op.getRight();
+        
+        auto result = rewriter.create<arith::SubIOp>(loc, left, right);
+        rewriter.replaceOp(op, result);
+        
+        return success();
+    }
+};
+
+/// Lower pg.mul to arith.muli/arith.mulf with null handling
+class PgMulOpLowering final : public OpRewritePattern<PgMulOp> {
+public:
+    explicit PgMulOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgMulOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto left = op.getLeft();
+        auto right = op.getRight();
+        
+        auto result = rewriter.create<arith::MulIOp>(loc, left, right);
+        rewriter.replaceOp(op, result);
+        
+        return success();
+    }
+};
+
+/// Lower pg.div to arith.divsi/arith.divf with null handling
+class PgDivOpLowering final : public OpRewritePattern<PgDivOp> {
+public:
+    explicit PgDivOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgDivOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto left = op.getLeft();
+        auto right = op.getRight();
+        
+        auto result = rewriter.create<arith::DivSIOp>(loc, left, right);
+        rewriter.replaceOp(op, result);
+        
+        return success();
+    }
+};
+
+/// Lower pg.mod to arith.remsi with null handling
+class PgModOpLowering final : public OpRewritePattern<PgModOp> {
+public:
+    explicit PgModOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgModOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto left = op.getLeft();
+        auto right = op.getRight();
+        
+        auto result = rewriter.create<arith::RemSIOp>(loc, left, right);
+        rewriter.replaceOp(op, result);
+        
+        return success();
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// Comparison Operator Lowering Patterns
+//===----------------------------------------------------------------------===//
+
+/// Lower pg.compare to arith.cmpi/arith.cmpf with PostgreSQL semantics
+class PgCmpOpLowering final : public OpRewritePattern<PgCmpOp> {
+public:
+    explicit PgCmpOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgCmpOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto left = op.getLeft();
+        auto right = op.getRight();
+        auto predicate = op.getPredicate();
+        
+        // Map PostgreSQL comparison predicate to MLIR arith predicate
+        // 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge
+        arith::CmpIPredicate arithPredicate;
+        switch (predicate) {
+            case 0: // eq
+                arithPredicate = arith::CmpIPredicate::eq;
+                break;
+            case 1: // ne
+                arithPredicate = arith::CmpIPredicate::ne;
+                break;
+            case 2: // lt
+                arithPredicate = arith::CmpIPredicate::slt;
+                break;
+            case 3: // le
+                arithPredicate = arith::CmpIPredicate::sle;
+                break;
+            case 4: // gt
+                arithPredicate = arith::CmpIPredicate::sgt;
+                break;
+            case 5: // ge
+                arithPredicate = arith::CmpIPredicate::sge;
+                break;
+            default:
+                return failure();
+        }
+        
+        // For now, assume integer comparison
+        // TODO: Add type-specific comparison for float, text, etc.
+        auto result = rewriter.create<arith::CmpIOp>(loc, arithPredicate, left, right);
+        rewriter.replaceOp(op, result);
+        
+        return success();
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// Logical Operator Lowering Patterns  
+//===----------------------------------------------------------------------===//
+
+/// Lower pg.and to SCF control flow with three-valued logic
+class PgAndOpLowering final : public OpRewritePattern<PgAndOp> {
+public:
+    explicit PgAndOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgAndOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto operands = op.getOperands();
+        
+        if (operands.empty()) {
+            // AND with no operands is true
+            auto trueVal = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(true));
+            rewriter.replaceOp(op, trueVal);
+            return success();
+        }
+        
+        // For now, simple binary AND (expand to handle three-valued logic later)
+        Value result = operands[0];
+        for (size_t i = 1; i < operands.size(); ++i) {
+            result = rewriter.create<arith::AndIOp>(loc, result, operands[i]);
+        }
+        
+        rewriter.replaceOp(op, result);
+        return success();
+    }
+};
+
+/// Lower pg.or to SCF control flow with three-valued logic
+class PgOrOpLowering final : public OpRewritePattern<PgOrOp> {
+public:
+    explicit PgOrOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgOrOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto operands = op.getOperands();
+        
+        if (operands.empty()) {
+            // OR with no operands is false
+            auto falseVal = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(false));
+            rewriter.replaceOp(op, falseVal);
+            return success();
+        }
+        
+        // For now, simple binary OR (expand to handle three-valued logic later)
+        Value result = operands[0];
+        for (size_t i = 1; i < operands.size(); ++i) {
+            result = rewriter.create<arith::OrIOp>(loc, result, operands[i]);
+        }
+        
+        rewriter.replaceOp(op, result);
+        return success();
+    }
+};
+
+/// Lower pg.not to arith XOR with true (bitwise NOT)
+class PgNotOpLowering final : public OpRewritePattern<PgNotOp> {
+public:
+    explicit PgNotOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgNotOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto operand = op.getOperand();
+        
+        // NOT x = x XOR true
+        auto trueVal = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(true));
+        auto result = rewriter.create<arith::XOrIOp>(loc, operand, trueVal);
+        
+        rewriter.replaceOp(op, result);
+        return success();
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// Null Handling Operator Lowering Patterns
+//===----------------------------------------------------------------------===//
+
+/// Lower pg.is_null to runtime function call
+class PgIsNullOpLowering final : public OpRewritePattern<PgIsNullOp> {
+public:
+    explicit PgIsNullOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgIsNullOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto operand = op.getOperand();
+        
+        // For now, assume non-nullable types always return false
+        // TODO: Implement proper null checking for nullable PostgreSQL types
+        auto falseVal = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(false));
+        rewriter.replaceOp(op, falseVal);
+        
+        return success();
+    }
+};
+
+/// Lower pg.is_not_null to runtime function call  
+class PgIsNotNullOpLowering final : public OpRewritePattern<PgIsNotNullOp> {
+public:
+    explicit PgIsNotNullOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgIsNotNullOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto operand = op.getOperand();
+        
+        // For now, assume non-nullable types always return true
+        // TODO: Implement proper null checking for nullable PostgreSQL types
+        auto trueVal = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(true));
+        rewriter.replaceOp(op, trueVal);
+        
+        return success();
+    }
+};
+
 struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func::FuncOp>> {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerPgToSCFPass)
 
@@ -275,7 +532,10 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
 
         // Use simple rewrite patterns without type conversion
         auto patterns = RewritePatternSet(ctx);
-        patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering, UnrealizedConversionCastOpLowering>(
+        patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering, UnrealizedConversionCastOpLowering,
+                     PgAddOpLowering, PgSubOpLowering, PgMulOpLowering, PgDivOpLowering, PgModOpLowering,
+                     PgCmpOpLowering, PgAndOpLowering, PgOrOpLowering, PgNotOpLowering, 
+                     PgIsNullOpLowering, PgIsNotNullOpLowering>(
             ctx);
 
         // Apply greedy pattern rewriting (no type conversion involved)
@@ -293,7 +553,10 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
 } // namespace
 
 void pg::populatePgToSCFConversionPatterns(RewritePatternSet &patterns, TypeConverter &typeConverter) {
-    patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering>(
+    patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering,
+                 PgAddOpLowering, PgSubOpLowering, PgMulOpLowering, PgDivOpLowering, PgModOpLowering,
+                 PgCmpOpLowering, PgAndOpLowering, PgOrOpLowering, PgNotOpLowering,
+                 PgIsNullOpLowering, PgIsNotNullOpLowering>(
         patterns.getContext());
 }
 
