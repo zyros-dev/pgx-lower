@@ -1,0 +1,127 @@
+-- Test NULL handling operators: PgIsNullOp, PgIsNotNullOp
+LOAD 'pgx_lower';
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+DROP TABLE IF EXISTS test_nulls;
+NOTICE:  table "test_nulls" does not exist, skipping
+CREATE TABLE test_nulls (
+    id SERIAL PRIMARY KEY,
+    nullable_value INTEGER,
+    required_value INTEGER NOT NULL
+);
+INSERT INTO test_nulls(nullable_value, required_value) VALUES 
+    (NULL, 1),
+    (42, 2),
+    (NULL, 3),
+    (99, 4);
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Successfully created MLIR context!
+NOTICE:  LLVM version: 20.1.2
+NOTICE:  Inside C++ executor! Plan type: 3
+NOTICE:  Query text: INSERT INTO test_nulls(nullable_value, required_value) VALUES 
+    (NULL, 1),
+    (42, 2),
+    (NULL, 3),
+    (99, 4);
+NOTICE:  Not a SELECT statement, skipping
+NOTICE:  MLIR couldn't handle query, falling back to standard executor
+-- Test NULL handling operations on table columns
+-- These should trigger MLIR compilation with NULL operators
+SELECT id, nullable_value, required_value FROM test_nulls;
+NOTICE:  Custom executor is being executed in C!
+NOTICE:  Calling C++ executor from C...
+NOTICE:  Successfully created MLIR context!
+NOTICE:  LLVM version: 20.1.2
+NOTICE:  Inside C++ executor! Plan type: 1
+NOTICE:  Query text: SELECT id, nullable_value, required_value FROM test_nulls;
+NOTICE:  Query analysis: Simple sequential scan - MLIR compatible
+NOTICE:  Generated MLIR with PostgreSQL typed field access:
+NOTICE:  MLIR with field access: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %0 = pg.scan_table "current_table" : !pg.table_handle
+    %c0_i64 = arith.constant 0 : i64
+    %c-2_i64 = arith.constant -2 : i64
+    %true = arith.constant true
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = pg.read_tuple %0 : !pg.table_handle -> !pg.tuple_handle
+      %3 = builtin.unrealized_conversion_cast %2 : !pg.tuple_handle to i64
+      %4 = arith.cmpi eq, %3, %c-2_i64 : i64
+      %5:2 = scf.if %4 -> (i1, i64) {
+        %false = arith.constant false
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %true_1 = arith.constant true
+        %6 = func.call @add_tuple_to_result(%3) : (i64) -> i1
+        %c1_i64 = arith.constant 1 : i64
+        %7 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true_1, %7 : i1, i64
+      }
+      scf.yield %5#0, %5#1 : i1, i64
+    }
+    %c0_i64_0 = arith.constant 0 : i64
+    call @close_postgres_table(%c0_i64_0) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Applied pg-to-scf lowering pass!
+NOTICE:  Lowered MLIR: module {
+  func.func private @open_postgres_table(i64) -> i64
+  func.func private @read_next_tuple_from_table(i64) -> i64
+  func.func private @close_postgres_table(i64)
+  func.func private @get_int_field(i64, i32, !llvm.ptr) -> i32
+  func.func private @get_text_field(i64, i32, !llvm.ptr) -> i64
+  func.func private @add_tuple_to_result(i64) -> i1
+  func.func @main() -> i64 {
+    %c1_i64 = arith.constant 1 : i64
+    %false = arith.constant false
+    %true = arith.constant true
+    %c-2_i64 = arith.constant -2 : i64
+    %c0_i64 = arith.constant 0 : i64
+    %c-5956942909115520617_i64 = arith.constant -5956942909115520617 : i64
+    %0 = call @open_postgres_table(%c-5956942909115520617_i64) : (i64) -> i64
+    %1:2 = scf.while (%arg0 = %true, %arg1 = %c0_i64) : (i1, i64) -> (i1, i64) {
+      scf.condition(%arg0) %arg0, %arg1 : i1, i64
+    } do {
+    ^bb0(%arg0: i1, %arg1: i64):
+      %2 = func.call @read_next_tuple_from_table(%0) : (i64) -> i64
+      %3 = arith.cmpi eq, %2, %c-2_i64 : i64
+      %4:2 = scf.if %3 -> (i1, i64) {
+        scf.yield %false, %arg1 : i1, i64
+      } else {
+        %5 = func.call @add_tuple_to_result(%2) : (i64) -> i1
+        %6 = arith.addi %arg1, %c1_i64 : i64
+        scf.yield %true, %6 : i1, i64
+      }
+      scf.yield %4#0, %4#1 : i1, i64
+    }
+    call @close_postgres_table(%c0_i64) : (i64) -> ()
+    return %1#1 : i64
+  }
+}
+
+NOTICE:  Lowered PostgreSQL typed field access MLIR to LLVM dialect!
+NOTICE:  Created MLIR ExecutionEngine for PostgreSQL typed field access!
+NOTICE:  Invoked MLIR JIT PostgreSQL typed field access!
+NOTICE:  PostgreSQL typed field access completed with result: 4
+NOTICE:  MLIR successfully handled the query
+NOTICE:  MLIR successfully handled the query
+ id | nullable_value | required_value 
+----+----------------+----------------
+  1 |                |              1
+  2 |             42 |              2
+  3 |                |              3
+  4 |             99 |              4
+(4 rows)
+
+DROP TABLE test_nulls;

@@ -26,6 +26,10 @@ add_postgresql_mixed_extension(
             7_sub_select
             8_subset_all_types
             9_basic_arithmetic_ops
+            10_comparison_ops
+            11_logical_ops
+            12_null_handling
+            13_text_operations
 )
 
 # Link the PostgreSQL dialect and runtime libraries
