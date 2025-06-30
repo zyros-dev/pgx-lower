@@ -12,7 +12,7 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "dialects/pg/PgBase.td"
 include "dialects/pg/PgTypes.td"
-include "dialects/pg/PgOperators_minimal.td"
+include "dialects/pg/PgOperators.td"
 
 //===----------------------------------------------------------------------===//
 // Base Operation Class (defined in PgBase.td)
