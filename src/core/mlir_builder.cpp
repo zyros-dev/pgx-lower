@@ -500,16 +500,37 @@ auto MLIRBuilder::buildColumnAccess(mlir::OpBuilder& builder, mlir::ModuleOp& mo
                         auto trueConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
                         result = builder.create<mlir::arith::XOrIOp>(location, operandValues[0], trueConst);
                     // NULL handling operations (operate on values with null flags)
-                    } else if (expr.operatorName == "IS NULL" && operandValues.size() >= 1) {
+                    } else if (expr.operatorName == "IS NULL" && expr.operandColumns.size() >= 1) {
                         // For IS NULL, we need to check the null flag returned by GetIntFieldOp
-                        // The second result of GetIntFieldOp is the null flag (i1)
-                        // This is a placeholder - in real implementation, we'd access the null flag
-                        auto falseConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(false));
-                        result = falseConst; // TODO: Access actual null flag from field access
-                    } else if (expr.operatorName == "IS NOT NULL" && operandValues.size() >= 1) {
+                        int colIndex = expr.operandColumns[0];
+                        if (colIndex >= 0) {
+                            mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
+                            getFieldState.addOperands(tupleHandle);
+                            getFieldState.addAttribute("field_index", builder.getI32IntegerAttr(colIndex));
+                            getFieldState.addTypes({i32Type, i1Type});
+                            auto getFieldOp = builder.create(getFieldState);
+                            // Return the null flag (second result)
+                            result = getFieldOp->getResult(1);
+                        } else {
+                            auto falseConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(false));
+                            result = falseConst;
+                        }
+                    } else if (expr.operatorName == "IS NOT NULL" && expr.operandColumns.size() >= 1) {
                         // For IS NOT NULL, we negate the null flag
-                        auto trueConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
-                        result = trueConst; // TODO: Access and negate actual null flag from field access
+                        int colIndex = expr.operandColumns[0];
+                        if (colIndex >= 0) {
+                            mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
+                            getFieldState.addOperands(tupleHandle);
+                            getFieldState.addAttribute("field_index", builder.getI32IntegerAttr(colIndex));
+                            getFieldState.addTypes({i32Type, i1Type});
+                            auto getFieldOp = builder.create(getFieldState);
+                            // Return the negated null flag
+                            auto trueConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
+                            result = builder.create<mlir::arith::XOrIOp>(location, getFieldOp->getResult(1), trueConst);
+                        } else {
+                            auto trueConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
+                            result = trueConst;
+                        }
                     // Aggregate functions (require special handling for multi-row processing)
                     } else if (expr.operatorName == "sum" && operandValues.size() >= 1) {
                         // Placeholder: SUM requires accumulation across multiple rows
@@ -529,23 +550,124 @@ auto MLIRBuilder::buildColumnAccess(mlir::OpBuilder& builder, mlir::ModuleOp& mo
                         result = operandValues[0]; // TODO: Implement proper MAX comparison
                     // Text operations (operate on string values)
                     } else if (expr.operatorName == "||" && operandValues.size() >= 2) {
-                        // String concatenation - placeholder implementation
-                        // TODO: Implement proper string concatenation in MLIR
-                        result = operandValues[0]; // Placeholder: return first operand
+                        // String concatenation via runtime function call
+                        auto ptrType = builder.getType<mlir::LLVM::LLVMPointerType>();
+                        auto concatFuncType = mlir::FunctionType::get(
+                            builder.getContext(),
+                            {ptrType, ptrType}, // Two string inputs
+                            {ptrType}           // String output
+                        );
+                        auto concatFunc = builder.create<mlir::func::CallOp>(
+                            location, 
+                            "concatenate_strings", 
+                            concatFuncType.getResults(),
+                            mlir::ValueRange{operandValues[0], operandValues[1]}
+                        );
+                        result = concatFunc.getResult(0);
                     } else if (expr.operatorName == "~~" && operandValues.size() >= 2) {
-                        // LIKE pattern matching - placeholder implementation  
-                        // TODO: Implement proper LIKE pattern matching
-                        auto trueConst = builder.create<mlir::arith::ConstantOp>(location, builder.getBoolAttr(true));
-                        result = trueConst; // Placeholder: always return true
-                    } else if (expr.operatorName == "substring" && operandValues.size() >= 1) {
-                        // Substring extraction - placeholder implementation
-                        // TODO: Implement proper substring extraction
-                        result = operandValues[0]; // Placeholder: return original string
+                        // LIKE pattern matching via runtime function call
+                        auto ptrType = builder.getType<mlir::LLVM::LLVMPointerType>();
+                        auto likeFuncType = mlir::FunctionType::get(
+                            builder.getContext(),
+                            {ptrType, ptrType}, // String and pattern inputs
+                            {i1Type}            // Boolean output
+                        );
+                        auto likeFunc = builder.create<mlir::func::CallOp>(
+                            location,
+                            "string_like_match",
+                            likeFuncType.getResults(),
+                            mlir::ValueRange{operandValues[0], operandValues[1]}
+                        );
+                        result = likeFunc.getResult(0);
+                    } else if (expr.operatorName == "substring" && operandValues.size() >= 3) {
+                        // Substring extraction via runtime function call
+                        auto ptrType = builder.getType<mlir::LLVM::LLVMPointerType>();
+                        auto substringFuncType = mlir::FunctionType::get(
+                            builder.getContext(),
+                            {ptrType, i32Type, i32Type}, // String, start, length
+                            {ptrType}                     // String output
+                        );
+                        auto substringFunc = builder.create<mlir::func::CallOp>(
+                            location,
+                            "extract_substring",
+                            substringFuncType.getResults(), 
+                            mlir::ValueRange{operandValues[0], operandValues[1], operandValues[2]}
+                        );
+                        result = substringFunc.getResult(0);
+                    } else if (expr.operatorName == "upper" && operandValues.size() >= 1) {
+                        // String to uppercase via runtime function call
+                        auto ptrType = builder.getType<mlir::LLVM::LLVMPointerType>();
+                        auto upperFuncType = mlir::FunctionType::get(
+                            builder.getContext(),
+                            {ptrType}, // String input
+                            {ptrType}  // String output
+                        );
+                        auto upperFunc = builder.create<mlir::func::CallOp>(
+                            location,
+                            "string_to_upper",
+                            upperFuncType.getResults(),
+                            mlir::ValueRange{operandValues[0]}
+                        );
+                        result = upperFunc.getResult(0);
+                    } else if (expr.operatorName == "lower" && operandValues.size() >= 1) {
+                        // String to lowercase via runtime function call
+                        auto ptrType = builder.getType<mlir::LLVM::LLVMPointerType>();
+                        auto lowerFuncType = mlir::FunctionType::get(
+                            builder.getContext(),
+                            {ptrType}, // String input
+                            {ptrType}  // String output
+                        );
+                        auto lowerFunc = builder.create<mlir::func::CallOp>(
+                            location,
+                            "string_to_lower",
+                            lowerFuncType.getResults(),
+                            mlir::ValueRange{operandValues[0]}
+                        );
+                        result = lowerFunc.getResult(0);
                     // Special operators and functions
-                    } else if (expr.operatorName == "coalesce" && operandValues.size() >= 1) {
-                        // COALESCE returns first non-null value - placeholder implementation
-                        // TODO: Implement proper null checking and selection
-                        result = operandValues[0]; // Placeholder: return first operand
+                    } else if (expr.operatorName == "COALESCE" && expr.operandColumns.size() >= 1) {
+                        // COALESCE returns first non-null value using scf.if chains
+                        mlir::Value currentResult;
+                        bool firstOperand = true;
+                        
+                        for (int colIndex : expr.operandColumns) {
+                            if (colIndex >= 0) {
+                                // Get field value and null flag
+                                mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
+                                getFieldState.addOperands(tupleHandle);
+                                getFieldState.addAttribute("field_index", builder.getI32IntegerAttr(colIndex));
+                                getFieldState.addTypes({i32Type, i1Type});
+                                auto getFieldOp = builder.create(getFieldState);
+                                auto fieldValue = getFieldOp->getResult(0);
+                                auto fieldNullFlag = getFieldOp->getResult(1);
+                                
+                                if (firstOperand) {
+                                    // First operand becomes the current result
+                                    currentResult = fieldValue;
+                                    firstOperand = false;
+                                } else {
+                                    // Create scf.if to check if current result is null
+                                    // If null, use this field value; otherwise keep current result
+                                    auto ifOp = builder.create<mlir::scf::IfOp>(location, i32Type, fieldNullFlag, true);
+                                    
+                                    // Then region: current result is null, use this field
+                                    auto& thenRegion = ifOp.getThenRegion();
+                                    builder.createBlock(&thenRegion);
+                                    builder.setInsertionPointToStart(&thenRegion.front());
+                                    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{fieldValue});
+                                    
+                                    // Else region: current result is not null, keep it
+                                    auto& elseRegion = ifOp.getElseRegion();
+                                    builder.createBlock(&elseRegion);
+                                    builder.setInsertionPointToStart(&elseRegion.front());
+                                    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{currentResult});
+                                    
+                                    currentResult = ifOp.getResult(0);
+                                }
+                            }
+                        }
+                        
+                        result = currentResult ? currentResult : operandValues[0];
                     } else if (expr.operatorName == "cast" && operandValues.size() >= 1) {
                         // Type cast - placeholder implementation
                         // TODO: Implement proper type conversion in MLIR

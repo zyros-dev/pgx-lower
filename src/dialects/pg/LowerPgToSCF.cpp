@@ -436,9 +436,25 @@ public:
             rightBool = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, right, zeroConst).getResult();
         }
         
-        // PostgreSQL AND logic: both must be true
-        auto result = rewriter.create<arith::AndIOp>(loc, leftBool, rightBool);
-        rewriter.replaceOp(op, result);
+        // PostgreSQL AND logic: proper short-circuiting with scf.if
+        // if (leftBool) then rightBool else false
+        auto falseConst = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(false));
+        
+        auto ifOp = rewriter.create<scf::IfOp>(loc, i1Type, leftBool, true);
+        
+        // Then region: evaluate right operand
+        auto& thenRegion = ifOp.getThenRegion();
+        rewriter.createBlock(&thenRegion);
+        rewriter.setInsertionPointToStart(&thenRegion.front());
+        rewriter.create<scf::YieldOp>(loc, mlir::ValueRange{rightBool});
+        
+        // Else region: return false
+        auto& elseRegion = ifOp.getElseRegion();
+        rewriter.createBlock(&elseRegion);
+        rewriter.setInsertionPointToStart(&elseRegion.front());
+        rewriter.create<scf::YieldOp>(loc, mlir::ValueRange{falseConst});
+        
+        rewriter.replaceOp(op, ifOp.getResult(0));
         
         return success();
     }
@@ -473,9 +489,25 @@ public:
             rightBool = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, right, zeroConst).getResult();
         }
         
-        // PostgreSQL OR logic: either must be true
-        auto result = rewriter.create<arith::OrIOp>(loc, leftBool, rightBool);
-        rewriter.replaceOp(op, result);
+        // PostgreSQL OR logic: proper short-circuiting with scf.if
+        // if (leftBool) then true else rightBool
+        auto trueConst = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(true));
+        
+        auto ifOp = rewriter.create<scf::IfOp>(loc, i1Type, leftBool, true);
+        
+        // Then region: return true (short-circuit)
+        auto& thenRegion = ifOp.getThenRegion();
+        rewriter.createBlock(&thenRegion);
+        rewriter.setInsertionPointToStart(&thenRegion.front());
+        rewriter.create<scf::YieldOp>(loc, mlir::ValueRange{trueConst});
+        
+        // Else region: evaluate right operand
+        auto& elseRegion = ifOp.getElseRegion();
+        rewriter.createBlock(&elseRegion);
+        rewriter.setInsertionPointToStart(&elseRegion.front());
+        rewriter.create<scf::YieldOp>(loc, mlir::ValueRange{rightBool});
+        
+        rewriter.replaceOp(op, ifOp.getResult(0));
         
         return success();
     }
@@ -490,9 +522,18 @@ public:
         const auto loc = op.getLoc();
         auto operand = op.getOperand();
         
-        // NOT x = x XOR true
+        // Convert operand to boolean if needed
+        auto i1Type = rewriter.getI1Type();
+        Value boolOperand = operand;
+        if (operand.getType() != i1Type) {
+            auto zeroConst = rewriter.create<arith::ConstantOp>(loc, operand.getType(), 
+                                                               rewriter.getIntegerAttr(operand.getType(), 0));
+            boolOperand = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, operand, zeroConst);
+        }
+        
+        // NOT x = x XOR true (proper logical NOT for boolean values)
         auto trueVal = rewriter.create<arith::ConstantOp>(loc, rewriter.getBoolAttr(true));
-        auto result = rewriter.create<arith::XOrIOp>(loc, operand, trueVal);
+        auto result = rewriter.create<arith::XOrIOp>(loc, boolOperand, trueVal);
         
         rewriter.replaceOp(op, result);
         return success();
