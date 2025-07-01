@@ -391,13 +391,17 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
     mlir::Value tupleHandle;
     if (currentTupleHandle_) {
         logger_.debug("Using real tuple handle from current iteration context");
-        tupleHandle = *currentTupleHandle_;
+        
+        // Convert i64 tuple handle to !pg.tuple_handle type for operation compatibility
+        auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+        tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
+            location, tupleHandleType, mlir::ValueRange{*currentTupleHandle_}).getResult(0);
     } else {
         logger_.error("Field access attempted outside tuple iteration context - this is a bug!");
         return nullptr; // Don't generate invalid field access
     }
     
-    // Generate pg.get_int_field operation
+    // Generate pg.get_int_field operation with correct !pg.tuple_handle type
     mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
     getFieldState.addOperands(tupleHandle);
     getFieldState.addAttribute("field_index", builder_->getI32IntegerAttr(var->varattno - 1));
