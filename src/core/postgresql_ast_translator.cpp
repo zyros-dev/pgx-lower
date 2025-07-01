@@ -32,7 +32,7 @@ extern "C" {
 
 // Simple stub implementations for unit tests
 #ifndef POSTGRESQL_EXTENSION
-static const char* mlir_GET_OPNAME(Oid opno) {
+static const char* mlir_get_opname(Oid opno) {
     switch (opno) {
         case 551: return "+";
         case 552: return "-"; 
@@ -49,7 +49,7 @@ static const char* mlir_GET_OPNAME(Oid opno) {
     }
 }
 
-static const char* mlir_GET_FUNC_NAME(Oid funcid) {
+static const char* mlir_get_func_name(Oid funcid) {
     switch (funcid) {
         case 2100: return "sum";
         case 2101: return "avg";
