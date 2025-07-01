@@ -12,6 +12,7 @@ class Value;
 class OpBuilder;
 class Operation;
 class Type;
+class Location;
 }
 
 // PostgreSQL C headers - need extern "C" wrapping
@@ -68,12 +69,19 @@ public:
     auto translateSeqScan(SeqScan* seqScan) -> mlir::Operation*;
     auto translateProjection(List* targetList) -> mlir::Operation*;
     auto translateSelection(List* qual) -> mlir::Operation*;
+    
+    // Tuple iteration and result processing
+    auto generateTupleIterationLoop(mlir::OpBuilder& builder, mlir::Location location, 
+                                   SeqScan* seqScan, List* targetList) -> void;
+    auto processTargetListWithRealTuple(mlir::OpBuilder& builder, mlir::Location location,
+                                       mlir::Value tupleHandle, List* targetList) -> void;
 
 private:
     mlir::MLIRContext& context_;
     MLIRLogger& logger_;
     mlir::OpBuilder* builder_;  // Current builder context
     mlir::ModuleOp* currentModule_;  // Current module being built
+    mlir::Value* currentTupleHandle_;  // Current tuple handle for field access (nullptr if none)
     
     // Helper methods
     auto registerDialects() -> void;

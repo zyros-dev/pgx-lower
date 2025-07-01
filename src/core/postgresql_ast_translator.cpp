@@ -74,7 +74,8 @@ PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context, MLI
     : context_(context)
     , logger_(logger)
     , builder_(nullptr)
-    , currentModule_(nullptr) {
+    , currentModule_(nullptr)
+    , currentTupleHandle_(nullptr) {
     registerDialects();
 }
 
@@ -131,28 +132,8 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     
     SeqScan* seqScan = reinterpret_cast<SeqScan*>(rootPlan);
     
-    // Generate MLIR for the sequential scan
-    auto scanOp = translateSeqScan(seqScan);
-    if (!scanOp) {
-        logger_.error("Failed to translate SeqScan");
-        return nullptr;
-    }
-    
-    // Generate MLIR for the projection (target list)
-    if (rootPlan->targetlist) {
-        auto projectionOp = translateProjection(rootPlan->targetlist);
-        if (!projectionOp) {
-            logger_.notice("Failed to translate projection, using simple scan");
-        }
-    }
-    
-    // Generate MLIR for the selection (WHERE clause)
-    if (rootPlan->qual) {
-        auto selectionOp = translateSelection(rootPlan->qual);
-        if (!selectionOp) {
-            logger_.notice("Failed to translate selection, ignoring WHERE clause");
-        }
-    }
+    // Generate proper tuple iteration loop instead of broken field access
+    generateTupleIterationLoop(builder, location, seqScan, rootPlan->targetlist);
     
     // Add return statement to main function
     auto zeroConstant = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
@@ -399,13 +380,19 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
     auto i32Type = builder_->getI32Type();
     auto i1Type = builder_->getI1Type();
     
-    // Create a placeholder tuple handle - in a full implementation,
-    // this would come from the current scan context
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
-    auto nullTupleHandle = builder_->create<mlir::arith::ConstantOp>(
-        location, builder_->getI64IntegerAttr(0));
-    auto tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
-        location, tupleHandleType, mlir::ValueRange{nullTupleHandle}).getResult(0);
+    // Use real tuple handle if available, otherwise create placeholder
+    mlir::Value tupleHandle;
+    if (currentTupleHandle_) {
+        logger_.debug("Using real tuple handle from current iteration context");
+        tupleHandle = *currentTupleHandle_;
+    } else {
+        logger_.debug("No real tuple handle available, creating placeholder");
+        auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+        auto nullTupleHandle = builder_->create<mlir::arith::ConstantOp>(
+            location, builder_->getI64IntegerAttr(0));
+        tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
+            location, tupleHandleType, mlir::ValueRange{nullTupleHandle}).getResult(0);
+    }
     
     // Generate pg.get_int_field operation
     mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
@@ -718,6 +705,106 @@ auto PostgreSQLASTTranslator::isComparisonOperator(const char* opName) -> bool {
 auto PostgreSQLASTTranslator::isLogicalOperator(const char* opName) -> bool {
     return opName && (strcmp(opName, "AND") == 0 || strcmp(opName, "OR") == 0 || 
                       strcmp(opName, "NOT") == 0);
+}
+
+auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builder, mlir::Location location, 
+                                                        SeqScan* seqScan, List* targetList) -> void {
+    auto ptrType = mlir::LLVM::LLVMPointerType::get(&context_);
+    auto i64Type = builder.getI64Type();
+    auto i1Type = builder.getI1Type();
+    
+    // Generate pg.scan_table operation to open the table
+    auto scanOp = translateSeqScan(seqScan);
+    if (!scanOp) {
+        logger_.error("Failed to translate SeqScan");
+        return;
+    }
+    
+    // Call open_postgres_table to get table handle
+    auto openTableFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("open_postgres_table");
+    auto tableHandle = builder.create<mlir::func::CallOp>(
+        location, openTableFunc, mlir::ValueRange{}).getResult(0);
+    
+    // Create tuple iteration loop using SCF while
+    auto readTupleFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("read_next_tuple_from_table");
+    auto addResultFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("add_tuple_to_result");
+    
+    // Initial condition: try to read first tuple
+    auto initialTupleId = builder.create<mlir::func::CallOp>(
+        location, readTupleFunc, mlir::ValueRange{tableHandle}).getResult(0);
+    auto nullValue = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
+    auto initialCondition = builder.create<mlir::arith::CmpIOp>(
+        location, mlir::arith::CmpIPredicate::ne, initialTupleId, nullValue);
+    
+    // Create the while loop
+    auto whileOp = builder.create<mlir::scf::WhileOp>(
+        location, mlir::TypeRange{i64Type}, mlir::ValueRange{initialTupleId});
+    
+    // Before block: check if we have a valid tuple
+    auto* beforeBlock = &whileOp.getBefore().emplaceBlock();
+    auto beforeBuilder = mlir::OpBuilder::atBlockBegin(beforeBlock);
+    auto tupleArg = beforeBlock->addArgument(i64Type, location);
+    auto hasValidTuple = beforeBuilder.create<mlir::arith::CmpIOp>(
+        location, mlir::arith::CmpIPredicate::ne, tupleArg, nullValue);
+    beforeBuilder.create<mlir::scf::ConditionOp>(location, hasValidTuple, mlir::ValueRange{tupleArg});
+    
+    // After block: process the tuple and read next
+    auto* afterBlock = &whileOp.getAfter().emplaceBlock();
+    auto afterBuilder = mlir::OpBuilder::atBlockBegin(afterBlock);
+    auto currentTuple = afterBlock->addArgument(i64Type, location);
+    
+    // Process target list if provided
+    if (targetList) {
+        processTargetListWithRealTuple(afterBuilder, location, currentTuple, targetList);
+    }
+    
+    // Add tuple to result
+    afterBuilder.create<mlir::func::CallOp>(
+        location, addResultFunc, mlir::ValueRange{currentTuple});
+    
+    // Read next tuple
+    auto nextTuple = afterBuilder.create<mlir::func::CallOp>(
+        location, readTupleFunc, mlir::ValueRange{tableHandle}).getResult(0);
+    afterBuilder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTuple});
+    
+    // Close table after loop
+    auto closeTableFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("close_postgres_table");
+    builder.create<mlir::func::CallOp>(location, closeTableFunc, mlir::ValueRange{tableHandle});
+    
+    logger_.debug("Generated proper tuple iteration loop");
+}
+
+auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& builder, mlir::Location location,
+                                                           mlir::Value tupleHandle, List* targetList) -> void {
+    if (!targetList) {
+        return;
+    }
+    
+    logger_.debug("Processing target list with real tuple handle");
+    
+    // Store current tuple handle for translateVar to use
+    currentTupleHandle_ = &tupleHandle;
+    
+    // Process each target list entry
+    ListCell* lc;
+    foreach(lc, targetList) {
+        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (tle->resjunk) {
+            continue; // Skip junk columns
+        }
+        
+        // Translate the expression with real tuple handle
+        auto exprValue = translateExpression(tle->expr);
+        if (!exprValue) {
+            logger_.notice("Failed to translate target list expression");
+            continue;
+        }
+        
+        logger_.debug("Successfully translated target list expression with real tuple");
+    }
+    
+    // Clear current tuple handle
+    currentTupleHandle_ = nullptr;
 }
 
 auto PostgreSQLASTTranslator::isTextOperator(const char* opName) -> bool {
