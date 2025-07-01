@@ -306,32 +306,39 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
     
     auto location = builder_->getUnknownLoc();
     
-    // Generate MLIR operations based on operator type
+    // Generate high-level pg dialect operations for proper lowering
     if (isArithmeticOperator(opName)) {
         if (strcmp(opName, "+") == 0) {
-            return builder_->create<mlir::arith::AddIOp>(location, operands[0], operands[1]);
+            return builder_->create<mlir::pg::PgAddOp>(location, operands[0], operands[1]);
         } else if (strcmp(opName, "-") == 0) {
-            return builder_->create<mlir::arith::SubIOp>(location, operands[0], operands[1]);
+            return builder_->create<mlir::pg::PgSubOp>(location, operands[0], operands[1]);
         } else if (strcmp(opName, "*") == 0) {
-            return builder_->create<mlir::arith::MulIOp>(location, operands[0], operands[1]);
+            return builder_->create<mlir::pg::PgMulOp>(location, operands[0], operands[1]);
         } else if (strcmp(opName, "/") == 0) {
-            return builder_->create<mlir::arith::DivSIOp>(location, operands[0], operands[1]);
+            return builder_->create<mlir::pg::PgDivOp>(location, operands[0], operands[1]);
         } else if (strcmp(opName, "%") == 0) {
-            return builder_->create<mlir::arith::RemSIOp>(location, operands[0], operands[1]);
+            return builder_->create<mlir::pg::PgModOp>(location, operands[0], operands[1]);
         }
     } else if (isComparisonOperator(opName)) {
+        // Use pg.compare with predicate encoding: 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge
+        int64_t predicate = -1;
         if (strcmp(opName, "=") == 0) {
-            return builder_->create<mlir::arith::CmpIOp>(location, mlir::arith::CmpIPredicate::eq, operands[0], operands[1]);
+            predicate = 0; // eq
         } else if (strcmp(opName, "!=") == 0 || strcmp(opName, "<>") == 0) {
-            return builder_->create<mlir::arith::CmpIOp>(location, mlir::arith::CmpIPredicate::ne, operands[0], operands[1]);
+            predicate = 1; // ne
         } else if (strcmp(opName, "<") == 0) {
-            return builder_->create<mlir::arith::CmpIOp>(location, mlir::arith::CmpIPredicate::slt, operands[0], operands[1]);
+            predicate = 2; // lt
         } else if (strcmp(opName, "<=") == 0) {
-            return builder_->create<mlir::arith::CmpIOp>(location, mlir::arith::CmpIPredicate::sle, operands[0], operands[1]);
+            predicate = 3; // le
         } else if (strcmp(opName, ">") == 0) {
-            return builder_->create<mlir::arith::CmpIOp>(location, mlir::arith::CmpIPredicate::sgt, operands[0], operands[1]);
+            predicate = 4; // gt
         } else if (strcmp(opName, ">=") == 0) {
-            return builder_->create<mlir::arith::CmpIOp>(location, mlir::arith::CmpIPredicate::sge, operands[0], operands[1]);
+            predicate = 5; // ge
+        }
+        
+        if (predicate >= 0) {
+            auto predicateAttr = builder_->getI32IntegerAttr(predicate);
+            return builder_->create<mlir::pg::PgCmpOp>(location, predicateAttr, operands[0], operands[1]);
         }
     } else if (isTextOperator(opName)) {
         // Text operations require runtime function calls
@@ -386,12 +393,8 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
         logger_.debug("Using real tuple handle from current iteration context");
         tupleHandle = *currentTupleHandle_;
     } else {
-        logger_.debug("No real tuple handle available, creating placeholder");
-        auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
-        auto nullTupleHandle = builder_->create<mlir::arith::ConstantOp>(
-            location, builder_->getI64IntegerAttr(0));
-        tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
-            location, tupleHandleType, mlir::ValueRange{nullTupleHandle}).getResult(0);
+        logger_.error("Field access attempted outside tuple iteration context - this is a bug!");
+        return nullptr; // Don't generate invalid field access
     }
     
     // Generate pg.get_int_field operation
@@ -485,18 +488,17 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
     switch (boolExpr->boolop) {
         case AND_EXPR:
             if (operands.size() >= 2) {
-                return builder_->create<mlir::arith::AndIOp>(location, operands[0], operands[1]);
+                return builder_->create<mlir::pg::PgAndOp>(location, operands[0], operands[1]);
             }
             break;
         case OR_EXPR:
             if (operands.size() >= 2) {
-                return builder_->create<mlir::arith::OrIOp>(location, operands[0], operands[1]);
+                return builder_->create<mlir::pg::PgOrOp>(location, operands[0], operands[1]);
             }
             break;
         case NOT_EXPR:
             if (operands.size() >= 1) {
-                auto trueConst = builder_->create<mlir::arith::ConstantOp>(location, builder_->getBoolAttr(true));
-                return builder_->create<mlir::arith::XOrIOp>(location, operands[0], trueConst);
+                return builder_->create<mlir::pg::PgNotOp>(location, operands[0]);
             }
             break;
     }
@@ -519,13 +521,19 @@ auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> mlir::Val
         return nullptr;
     }
     
-    // For now, return a placeholder - full implementation would check the null flag
-    // from the GetIntFieldOp result
+    // Generate proper pg dialect NULL test operations
     auto location = builder_->getUnknownLoc();
-    bool isNull = (nullTest->nulltesttype == IS_NULL);
     
-    logger_.debug("Creating constant boolean for NULL test: " + std::string(isNull ? "true" : "false"));
-    return builder_->create<mlir::arith::ConstantOp>(location, builder_->getBoolAttr(isNull));
+    if (nullTest->nulltesttype == IS_NULL) {
+        logger_.debug("Creating pg.is_null operation");
+        return builder_->create<mlir::pg::PgIsNullOp>(location, argValue);
+    } else if (nullTest->nulltesttype == IS_NOT_NULL) {
+        logger_.debug("Creating pg.is_not_null operation");
+        return builder_->create<mlir::pg::PgIsNotNullOp>(location, argValue);
+    }
+    
+    logger_.error("Unknown NULL test type: " + std::to_string(nullTest->nulltesttype));
+    return nullptr;
 }
 
 auto PostgreSQLASTTranslator::translateAggref(Aggref* aggref) -> mlir::Value {
@@ -785,6 +793,10 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
     // Store current tuple handle for translateVar to use
     currentTupleHandle_ = &tupleHandle;
     
+    // Temporarily switch builder to use the afterBuilder for correct insertion point
+    auto* savedBuilder = builder_;
+    builder_ = &builder;
+    
     // Process each target list entry
     ListCell* lc;
     foreach(lc, targetList) {
@@ -803,7 +815,8 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
         logger_.debug("Successfully translated target list expression with real tuple");
     }
     
-    // Clear current tuple handle
+    // Restore original builder and clear current tuple handle
+    builder_ = savedBuilder;
     currentTupleHandle_ = nullptr;
 }
 
