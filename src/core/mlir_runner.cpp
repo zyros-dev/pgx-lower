@@ -2,6 +2,7 @@
 #include "core/mlir_builder.h"
 #include "core/mlir_logger.h"
 #include "core/error_handling.h"
+#include "core/postgresql_ast_translator.h"
 #include "interfaces/mlir_c_interface.h"
 #include "dialects/pg/PgDialect.h"
 #include "dialects/pg/LowerPgToSCF.h"
@@ -208,6 +209,39 @@ bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
     os.flush();
     logger.notice("MLIR with field access: " + mlirStr);
 
+    // Execute the MLIR module
+    return executeMLIRModule(*module, logger);
+}
+
+bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) {
+    if (!plannedStmt) {
+        logger.error("PlannedStmt is null");
+        return false;
+    }
+    
+    mlir::MLIRContext context;
+    
+    logger.debug("Using PostgreSQL AST translation for query processing");
+    
+    // Create the PostgreSQL AST translator
+    auto translator = postgresql_ast::createPostgreSQLASTTranslator(context, logger);
+    
+    // Translate the PostgreSQL AST to MLIR
+    auto module = translator->translateQuery(plannedStmt);
+    
+    if (!module) {
+        logger.error("Failed to translate PostgreSQL AST to MLIR");
+        return false;
+    }
+    
+    // Print the generated MLIR
+    logger.notice("Generated MLIR from PostgreSQL AST:");
+    auto mlirStr = std::string();
+    auto os = llvm::raw_string_ostream(mlirStr);
+    module->OpState::print(os);
+    os.flush();
+    logger.notice("AST-generated MLIR: " + mlirStr);
+    
     // Execute the MLIR module
     return executeMLIRModule(*module, logger);
 }

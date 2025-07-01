@@ -409,6 +409,65 @@ extern "C" void prepare_computed_results(int32_t numColumns) {
     g_computed_results.resize(numColumns);
 }
 
+bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc tupleDesc, const QueryDesc* queryDesc) {
+    auto logger = PostgreSQLLogger();
+    
+    auto* dest = queryDesc->dest;
+    
+    // Extract the planned statement for AST translation
+    const auto* stmt = queryDesc->plannedstmt;
+    if (!stmt) {
+        logger.error("PlannedStmt is null");
+        return false;
+    }
+    
+    logger.debug("Using PostgreSQL AST translation approach");
+    
+    // Setup global tuple scanning context (same as before)
+    TupleScanContext scanContext = {scanDesc, tupleDesc, true, 0};
+    g_scan_context = &scanContext;
+    
+    // Create result tuple descriptor - for now, use a simple approach
+    const auto resultTupleDesc = CreateTemplateTupleDesc(1);
+    const auto resultAttr = TupleDescAttr(resultTupleDesc, 0);
+    resultAttr->atttypid = INT8OID;
+    resultAttr->attlen = sizeof(int64);
+    resultAttr->attbyval = true;
+    resultAttr->attalign = TYPALIGN_DOUBLE;
+    resultAttr->atttypmod = -1;
+    resultAttr->attnotnull = false;
+    strncpy(NameStr(resultAttr->attname), "result", NAMEDATALEN - 1);
+    
+    const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
+    
+    dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
+    
+    g_tuple_streamer.initialize(dest, slot);
+    // For now, just select the first column
+    std::vector<int> selectedColumns = {0};
+    g_tuple_streamer.setSelectedColumns(selectedColumns);
+    
+    // Use the new AST-based MLIR translation
+    const auto mlir_success = mlir_runner::run_mlir_postgres_ast_translation(
+        const_cast<PlannedStmt*>(stmt), logger);
+    
+    // Cleanup (same as before)
+    g_scan_context = nullptr;
+    g_tuple_streamer.shutdown();
+    
+    if (g_current_tuple_passthrough.originalTuple) {
+        heap_freetuple(g_current_tuple_passthrough.originalTuple);
+        g_current_tuple_passthrough.originalTuple = nullptr;
+    }
+    
+    dest->rShutdown(dest);
+    
+    ExecDropSingleTupleTableSlot(slot);
+    FreeTupleDesc(resultTupleDesc);
+    
+    return mlir_success;
+}
+
 bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupleDesc, const QueryDesc* queryDesc) {
     auto logger = PostgreSQLLogger();
 
@@ -952,7 +1011,14 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
 
     const auto scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, nullptr);
 
-    const bool mlir_success = run_mlir_with_tuple_scan(scanDesc, tupdesc, plan);
+    // Try the new AST-based approach first
+    bool mlir_success = run_mlir_with_ast_translation(scanDesc, tupdesc, plan);
+    
+    // If AST translation fails, fall back to the old ColumnExpression approach
+    if (!mlir_success) {
+        PGX_DEBUG("AST translation failed, falling back to ColumnExpression approach");
+        mlir_success = run_mlir_with_tuple_scan(scanDesc, tupdesc, plan);
+    }
 
     table_endscan(scanDesc);
     table_close(rel, AccessShareLock);

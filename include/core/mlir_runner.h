@@ -6,9 +6,14 @@
 #include <functional>
 #include <vector>
 
-// Forward declaration to avoid circular dependency
+// Forward declarations
 namespace mlir_builder {
     struct ColumnExpression;
+}
+
+// PostgreSQL C headers - need extern "C" wrapping
+extern "C" {
+    struct PlannedStmt;
 }
 
 namespace mlir_runner {
@@ -31,6 +36,9 @@ auto run_mlir_postgres_typed_table_scan_with_where(const char* tableName,
                                                    const std::vector<mlir_builder::ColumnExpression>& expressions,
                                                    const mlir_builder::ColumnExpression& whereClause,
                                                    MLIRLogger& logger) -> bool;
+
+// PostgreSQL Integration - New AST-based translation (replaces ColumnExpression approach)
+auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) -> bool;
 
 
 
