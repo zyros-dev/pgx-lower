@@ -107,6 +107,15 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     // Create runtime function declarations
     createRuntimeFunctionDeclarations(*module);
     
+    // Create main function
+    auto location = builder.getUnknownLoc();
+    auto i64Type = builder.getI64Type();
+    auto mainFuncType = builder.getFunctionType({}, {i64Type});
+    
+    auto mainFunc = builder.create<mlir::func::FuncOp>(location, "main", mainFuncType);
+    auto& entryBlock = *mainFunc.addEntryBlock();
+    builder.setInsertionPointToStart(&entryBlock);
+    
     // Get the root plan node
     Plan* rootPlan = plannedStmt->planTree;
     if (!rootPlan) {
@@ -144,6 +153,10 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
             logger_.notice("Failed to translate selection, ignoring WHERE clause");
         }
     }
+    
+    // Add return statement to main function
+    auto zeroConstant = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
+    builder.create<mlir::func::ReturnOp>(location, zeroConstant.getResult());
     
     builder_ = nullptr;
     currentModule_ = nullptr;
