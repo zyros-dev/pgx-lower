@@ -46,9 +46,14 @@ class ScanTableOpLowering final : public OpRewritePattern<ScanTableOp> {
 
         // Create the function call
         auto operands = llvm::SmallVector<Value>{tableNameConst};
-        const auto tableHandle = rewriter.create<func::CallOp>(loc, i64Type, openTableFn, operands).getResult(0);
+        const auto i64TableHandle = rewriter.create<func::CallOp>(loc, i64Type, openTableFn, operands).getResult(0);
 
-        // Replace the operation with the table handle (as i64)
+        // Convert i64 result to !pg.table_handle type to match operation result type
+        auto tableHandleType = op.getHandle().getType();
+        auto tableHandle = rewriter.create<UnrealizedConversionCastOp>(
+            loc, tableHandleType, mlir::ValueRange{i64TableHandle}).getResult(0);
+
+        // Replace the operation with the properly typed table handle
         rewriter.replaceOp(op, tableHandle);
 
         return success();
@@ -71,7 +76,12 @@ class ReadTupleOpLowering final : public OpRewritePattern<ReadTupleOp> {
         auto readTupleFn = SymbolRefAttr::get(ctx, "read_next_tuple_from_table");
 
         auto operands = llvm::SmallVector<Value>{tableHandle};
-        const auto tupleHandle = rewriter.create<func::CallOp>(loc, i64Type, readTupleFn, operands).getResult(0);
+        const auto i64TupleHandle = rewriter.create<func::CallOp>(loc, i64Type, readTupleFn, operands).getResult(0);
+
+        // Convert i64 result to !pg.tuple_handle type to match operation result type
+        auto tupleHandleType = op.getTuple().getType();
+        auto tupleHandle = rewriter.create<UnrealizedConversionCastOp>(
+            loc, tupleHandleType, mlir::ValueRange{i64TupleHandle}).getResult(0);
 
         rewriter.replaceOp(op, tupleHandle);
 
@@ -591,14 +601,6 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
         const auto func = getOperation();
         auto *ctx = &getContext();
 
-        // Debug: Print function name and operations before lowering
-        llvm::errs() << "LowerPgToSCF: Processing function: " << func.getName() << "
-";
-        func.walk([&](mlir::Operation *op) {
-            llvm::errs() << "  Found operation: " << op->getName() << "
-";
-        });
-
         // Use simple rewrite patterns without type conversion
         auto patterns = RewritePatternSet(ctx);
         patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering, UnrealizedConversionCastOpLowering,
@@ -607,17 +609,9 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
                      PgIsNullOpLowering, PgIsNotNullOpLowering>(
             ctx);
 
-        llvm::errs() << "LowerPgToSCF: Starting pattern application
-";
-
         // Apply greedy pattern rewriting (no type conversion involved)
         if (failed(applyPatternsGreedily(func, std::move(patterns)))) {
-            llvm::errs() << "LowerPgToSCF: Pattern application failed
-";
             signalPassFailure();
-        } else {
-            llvm::errs() << "LowerPgToSCF: Pattern application succeeded
-";
         }
     }
 

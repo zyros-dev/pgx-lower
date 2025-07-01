@@ -725,25 +725,30 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
     auto i64Type = builder.getI64Type();
     auto i1Type = builder.getI1Type();
     
-    // Generate pg.scan_table operation to open the table
+    // Generate pg.scan_table operation and use its result
     auto scanOp = translateSeqScan(seqScan);
     if (!scanOp) {
         logger_.error("Failed to translate SeqScan");
         return;
     }
     
-    // Call open_postgres_table to get table handle
-    auto openTableFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("open_postgres_table");
-    auto tableHandle = builder.create<mlir::func::CallOp>(
-        location, openTableFunc, mlir::ValueRange{}).getResult(0);
+    // Use the pg.scan_table result as table handle (let lowering pass convert to runtime calls)
+    auto tableHandle = scanOp->getResult(0);
     
-    // Create tuple iteration loop using SCF while
-    auto readTupleFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("read_next_tuple_from_table");
+    // Get function declarations for manual calls (will be replaced by pg operations later)
     auto addResultFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("add_tuple_to_result");
     
-    // Initial condition: try to read first tuple
-    auto initialTupleId = builder.create<mlir::func::CallOp>(
-        location, readTupleFunc, mlir::ValueRange{tableHandle}).getResult(0);
+    // Create pg.read_tuple operation to get initial tuple
+    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+    mlir::OperationState readTupleState(location, mlir::pg::ReadTupleOp::getOperationName());
+    readTupleState.addOperands(tableHandle);
+    readTupleState.addTypes(tupleHandleType);
+    auto initialReadOp = builder.create(readTupleState);
+    auto initialTupleHandle = initialReadOp->getResult(0);
+    
+    // Convert tuple handle to i64 for loop iteration control
+    auto initialTupleId = builder.create<mlir::UnrealizedConversionCastOp>(
+        location, i64Type, mlir::ValueRange{initialTupleHandle}).getResult(0);
     auto nullValue = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
     auto initialCondition = builder.create<mlir::arith::CmpIOp>(
         location, mlir::arith::CmpIPredicate::ne, initialTupleId, nullValue);
@@ -770,18 +775,23 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
         processTargetListWithRealTuple(afterBuilder, location, currentTuple, targetList);
     }
     
-    // Add tuple to result
+    // Add tuple to result (keep this as runtime call for result accumulation)
     afterBuilder.create<mlir::func::CallOp>(
         location, addResultFunc, mlir::ValueRange{currentTuple});
     
-    // Read next tuple
-    auto nextTuple = afterBuilder.create<mlir::func::CallOp>(
-        location, readTupleFunc, mlir::ValueRange{tableHandle}).getResult(0);
+    // Read next tuple using pg.read_tuple operation
+    mlir::OperationState nextReadTupleState(location, mlir::pg::ReadTupleOp::getOperationName());
+    nextReadTupleState.addOperands(tableHandle);
+    nextReadTupleState.addTypes(tupleHandleType);
+    auto nextReadOp = afterBuilder.create(nextReadTupleState);
+    auto nextTupleHandle = nextReadOp->getResult(0);
+    
+    // Convert tuple handle to i64 for loop control
+    auto nextTuple = afterBuilder.create<mlir::UnrealizedConversionCastOp>(
+        location, i64Type, mlir::ValueRange{nextTupleHandle}).getResult(0);
     afterBuilder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTuple});
     
-    // Close table after loop
-    auto closeTableFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("close_postgres_table");
-    builder.create<mlir::func::CallOp>(location, closeTableFunc, mlir::ValueRange{tableHandle});
+    // Table cleanup will be handled by lowering pass - no manual close calls needed
     
     logger_.debug("Generated proper tuple iteration loop");
 }
