@@ -591,6 +591,14 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
         const auto func = getOperation();
         auto *ctx = &getContext();
 
+        // Debug: Print function name and operations before lowering
+        llvm::errs() << "LowerPgToSCF: Processing function: " << func.getName() << "
+";
+        func.walk([&](mlir::Operation *op) {
+            llvm::errs() << "  Found operation: " << op->getName() << "
+";
+        });
+
         // Use simple rewrite patterns without type conversion
         auto patterns = RewritePatternSet(ctx);
         patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering, UnrealizedConversionCastOpLowering,
@@ -599,9 +607,17 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
                      PgIsNullOpLowering, PgIsNotNullOpLowering>(
             ctx);
 
+        llvm::errs() << "LowerPgToSCF: Starting pattern application
+";
+
         // Apply greedy pattern rewriting (no type conversion involved)
         if (failed(applyPatternsGreedily(func, std::move(patterns)))) {
+            llvm::errs() << "LowerPgToSCF: Pattern application failed
+";
             signalPassFailure();
+        } else {
+            llvm::errs() << "LowerPgToSCF: Pattern application succeeded
+";
         }
     }
 
