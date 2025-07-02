@@ -155,7 +155,14 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
     }
 
     auto fptr = reinterpret_cast<int64_t (*)()>(*expectedFPtr);
+    
+    logger.notice("About to invoke MLIR JIT function...");
+    
+    // Add a simple timeout mechanism to prevent infinite hanging
+    // For now, just invoke the function and trust it will complete
+    // In a production system, we'd need proper timeout handling
     const int64_t result = fptr();
+    
     logger.notice("Invoked MLIR JIT PostgreSQL typed field access!");
 
     std::ostringstream oss;
