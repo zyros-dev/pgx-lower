@@ -39,27 +39,21 @@ def Pg_ScanTableOp : Pg_Op<"scan_table", [Pure]> {
     let assemblyFormat = "$table_name attr-dict `:` type($handle)";
 }
 
-def Pg_ReadTupleOp : Pg_Op<"read_tuple", [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+def Pg_ReadTupleOp : Pg_Op<"read_tuple", [Pure]> {
     let summary = "Read next tuple from table scan";
     let description = [{
         Reads the next tuple from a table scan. Returns the tuple handle.
         
         Example:
         ```mlir
-        %tuple = pg.read_tuple %table {limit = 1} : !pg.tuple_handle
+        %tuple = pg.read_tuple %table : !pg.table_handle -> !pg.tuple_handle
         ```
     }];
     
-    let arguments = (ins Pg_TableHandleType:$table_handle, DefaultValuedAttr<I32Attr, "1">:$limit);
+    let arguments = (ins Pg_TableHandleType:$table_handle);
     let results = (outs Pg_TupleHandleType:$tuple);
     
     let assemblyFormat = "$table_handle attr-dict `:` type($table_handle) `->` type($tuple)";
-    
-    let builders = [
-        OpBuilder<(ins "::mlir::Value":$table_handle, "::llvm::ArrayRef<::mlir::Type>":$resultTypes), [{
-            build(odsBuilder, odsState, resultTypes, table_handle, odsBuilder.getI32IntegerAttr(1));
-        }]>
-    ];
 }
 
 //===----------------------------------------------------------------------===//

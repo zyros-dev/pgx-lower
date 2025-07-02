@@ -753,10 +753,8 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
     
     // Create pg.read_tuple operation to get initial tuple
     auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
-    mlir::OperationState readTupleState(location, mlir::pg::ReadTupleOp::getOperationName());
-    readTupleState.addOperands(tableHandle);
-    readTupleState.addTypes(tupleHandleType);
-    auto initialReadOp = builder.create(readTupleState);
+    auto initialReadOp = builder.create<mlir::pg::ReadTupleOp>(
+        location, tupleHandleType, tableHandle);
     auto initialTupleHandle = initialReadOp->getResult(0);
     
     // Convert tuple handle to i64 for loop iteration control
@@ -793,10 +791,8 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
         location, addResultFunc, mlir::ValueRange{currentTuple});
     
     // Read next tuple using pg.read_tuple operation
-    mlir::OperationState nextReadTupleState(location, mlir::pg::ReadTupleOp::getOperationName());
-    nextReadTupleState.addOperands(tableHandle);
-    nextReadTupleState.addTypes(tupleHandleType);
-    auto nextReadOp = afterBuilder.create(nextReadTupleState);
+    auto nextReadOp = afterBuilder.create<mlir::pg::ReadTupleOp>(
+        location, tupleHandleType, tableHandle);
     auto nextTupleHandle = nextReadOp->getResult(0);
     
     // Convert tuple handle to i64 for loop control
