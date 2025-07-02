@@ -614,6 +614,19 @@ auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& 
     auto likeFunc = builder_->create<mlir::func::FuncOp>(location, "string_like_match", funcType);
     likeFunc.setPrivate();
     
+    // Computed result storage functions
+    funcType = mlir::FunctionType::get(&context_, {i32Type, i1Type, i1Type}, mlir::TypeRange{});
+    auto storeBoolFunc = builder_->create<mlir::func::FuncOp>(location, "store_bool_result", funcType);
+    storeBoolFunc.setPrivate();
+    
+    funcType = mlir::FunctionType::get(&context_, {i32Type, i32Type, i1Type}, mlir::TypeRange{});
+    auto storeIntFunc = builder_->create<mlir::func::FuncOp>(location, "store_int_result", funcType);
+    storeIntFunc.setPrivate();
+    
+    funcType = mlir::FunctionType::get(&context_, {i32Type, i64Type, i1Type}, mlir::TypeRange{});
+    auto storeBigintFunc = builder_->create<mlir::func::FuncOp>(location, "store_bigint_result", funcType);
+    storeBigintFunc.setPrivate();
+    
     logger_.debug("Created runtime function declarations");
 }
 
@@ -813,6 +826,7 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
     
     // Process each target list entry
     ListCell* lc;
+    int columnIndex = 0;
     foreach(lc, targetList) {
         auto* tle = static_cast<TargetEntry*>(lfirst(lc));
         if (tle->resjunk) {
@@ -826,7 +840,39 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
             continue;
         }
         
-        logger_.debug("Successfully translated target list expression with real tuple");
+        // Store the computed result using appropriate runtime function
+        auto i32Type = builder.getI32Type();
+        auto i1Type = builder.getI1Type();
+        auto columnIndexConst = builder.create<mlir::arith::ConstantIntOp>(location, columnIndex, i32Type);
+        
+        // Determine result type and call appropriate storage function
+        auto resultType = exprValue.getType();
+        if (resultType == i1Type) {
+            // Boolean result (from comparisons)
+            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
+            auto storeBoolFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_bool_result");
+            if (storeBoolFunc) {
+                builder.create<mlir::func::CallOp>(
+                    location, storeBoolFunc, 
+                    mlir::ValueRange{columnIndexConst, exprValue, isNullConst});
+                logger_.debug("Stored boolean result for SELECT expression");
+            }
+        } else if (resultType == i32Type) {
+            // Integer result
+            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
+            auto storeIntFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_int_result");
+            if (storeIntFunc) {
+                builder.create<mlir::func::CallOp>(
+                    location, storeIntFunc,
+                    mlir::ValueRange{columnIndexConst, exprValue, isNullConst});
+                logger_.debug("Stored integer result for SELECT expression");
+            }
+        } else {
+            logger_.notice("Unsupported result type for SELECT expression storage");
+        }
+        
+        columnIndex++;
+        logger_.debug("Successfully translated and stored target list expression with real tuple");
     }
     
     // Restore original builder and clear current tuple handle

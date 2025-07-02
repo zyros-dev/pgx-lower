@@ -443,8 +443,55 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
     dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
     
     g_tuple_streamer.initialize(dest, slot);
-    // For now, just select the first column
-    std::vector<int> selectedColumns = {0};
+    
+    // Clear any previous computed results
+    g_computed_results.clear();
+    
+    // Configure column selection based on query type
+    // For SELECT expressions (computed results), use -1 to indicate computed columns
+    // For SELECT * (table columns), use 0, 1, 2, etc.
+    std::vector<int> selectedColumns;
+    
+    // Analyze the planned statement to determine if we have computed expressions
+    if (stmt->rtable && list_length(stmt->rtable) > 0) {
+        auto* rte = static_cast<RangeTblEntry*>(linitial(stmt->rtable));
+        if (rte && stmt->planTree && stmt->planTree->targetlist) {
+            auto* targetList = stmt->planTree->targetlist;
+            
+            // Check if target list contains expressions (not just simple Vars)
+            bool hasComputedExpressions = false;
+            ListCell* lc;
+            foreach(lc, targetList) {
+                auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+                if (tle && !tle->resjunk && tle->expr) {
+                    // Check if this is a computed expression (not just a simple Var)
+                    if (nodeTag(tle->expr) != T_Var) {
+                        hasComputedExpressions = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (hasComputedExpressions) {
+                // Use computed results: -1 indicates to use g_computed_results
+                selectedColumns = {-1};
+                // Initialize computed results storage for 1 column
+                g_computed_results.resize(1);
+                logger.notice("Configured for computed expression results");
+            } else {
+                // Use original table columns (SELECT *)
+                selectedColumns = {0}; // First column
+                logger.notice("Configured for table column results");
+            }
+        } else {
+            // Fallback: assume first column
+            selectedColumns = {0};
+        }
+    } else {
+        // Fallback: assume first column  
+        selectedColumns = {0};
+    }
+    
     g_tuple_streamer.setSelectedColumns(selectedColumns);
     
     // Use the new AST-based MLIR translation

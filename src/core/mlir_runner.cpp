@@ -81,9 +81,11 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
         return false;
     }
     logger.notice("Lowered PostgreSQL typed field access MLIR to LLVM dialect!");
-
+    
+    logger.notice("About to initialize native target and create ExecutionEngine...");
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
+    logger.notice("Native target initialized successfully");
 
     mlir::DialectRegistry registry;
     mlir::registerAllToLLVMIRTranslations(registry);
@@ -92,16 +94,28 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
     mlir::registerLLVMDialectTranslation(context);
     mlir::registerBuiltinDialectTranslation(context);
 
+    // Verify the module before ExecutionEngine creation
+    if (failed(mlir::verify(module))) {
+        logger.error("MLIR module verification failed before ExecutionEngine creation");
+        module.dump();
+        return false;
+    }
+    logger.notice("MLIR module verification passed - proceeding to ExecutionEngine creation");
+
     auto optPipeline = mlir::makeOptimizingTransformer(0, 0, nullptr);
     auto engineOptions = mlir::ExecutionEngineOptions();
     engineOptions.transformer = optPipeline;
     engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
     if (!maybeEngine) {
+        auto errMsg = std::string();
+        auto errStream = llvm::raw_string_ostream(errMsg);
+        errStream << maybeEngine.takeError();
+        logger.error("ExecutionEngine creation error details: " + errMsg);
+        
         auto error = pgx_lower::ErrorManager::compilationError("Failed to create MLIR ExecutionEngine for typed field "
                                                                "access",
-                                                               "ExecutionEngine creation failed - check LLVM "
-                                                               "configuration");
+                                                               "ExecutionEngine creation failed: " + errMsg);
         pgx_lower::ErrorManager::reportError(error);
         logger.error("Failed to create MLIR ExecutionEngine for typed field access");
         return false;
