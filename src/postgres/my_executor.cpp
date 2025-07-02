@@ -276,20 +276,18 @@ extern "C" void* open_postgres_table(const char* tableName) {
 // Architecture: MLIR just iterates, PostgreSQL handles all data types
 extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     if (!tableHandle) {
-        elog(WARNING, "read_next_tuple_from_table: null tableHandle");
         return -1;
     }
 
     const auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
     if (!handle->isOpen || !handle->scanDesc) {
-        elog(WARNING, "read_next_tuple_from_table: invalid handle");
         return -1;
     }
 
     const auto tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
     if (tuple == nullptr) {
-        elog(WARNING, "read_next_tuple_from_table: end of table reached");
-        return 0; // Return 0 instead of -2 to match MLIR loop condition
+        // End of table reached - return 0 to terminate MLIR loop
+        return 0;
     }
 
     // Clean up previous tuple if it exists
@@ -302,11 +300,8 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     g_current_tuple_passthrough.originalTuple = heap_copytuple(tuple);
     g_current_tuple_passthrough.tupleDesc = handle->tupleDesc;
 
-    auto signal = g_current_tuple_passthrough.getIterationSignal();
-    elog(WARNING, "read_next_tuple_from_table: returning signal %ld for tuple", signal);
-    
-    // Return simple signal: "we have a tuple" (MLIR only uses this for iteration control)
-    return signal;
+    // Return signal: "we have a tuple" (MLIR only uses this for iteration control)
+    return g_current_tuple_passthrough.getIterationSignal();
 }
 
 extern "C" void close_postgres_table(void* tableHandle) {
