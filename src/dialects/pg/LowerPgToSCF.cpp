@@ -32,26 +32,23 @@ class ScanTableOpLowering final : public OpRewritePattern<ScanTableOp> {
 
         const auto tableName = op.getTableName();
 
-        // Create a constant for the table name as an integer (simplified for now)
-        // In the real implementation, this would be a proper table lookup
-        const auto tableNameHash = static_cast<int64_t>(std::hash<std::string>{}(tableName.str()));
-        auto tableNameConst = rewriter.create<arith::ConstantOp>(
+        // Create a constant for the table name as a pointer (to match runtime function signature)
+        auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
+        auto tableNameHash = static_cast<int64_t>(std::hash<std::string>{}(tableName.str()));
+        auto hashConst = rewriter.create<arith::ConstantOp>(
             loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(tableNameHash)
         );
+        auto tableNamePtr = rewriter.create<LLVM::IntToPtrOp>(loc, ptrType, hashConst);
 
-        // Call the runtime function to open the table
-        // This corresponds to the current @open_postgres_table call
-        auto i64Type = rewriter.getI64Type();
+        // Call the runtime function to open the table: (ptr) -> ptr
         auto openTableFn = SymbolRefAttr::get(ctx, "open_postgres_table");
+        auto operands = llvm::SmallVector<Value>{tableNamePtr};
+        const auto ptrTableHandle = rewriter.create<func::CallOp>(loc, ptrType, openTableFn, operands).getResult(0);
 
-        // Create the function call
-        auto operands = llvm::SmallVector<Value>{tableNameConst};
-        const auto i64TableHandle = rewriter.create<func::CallOp>(loc, i64Type, openTableFn, operands).getResult(0);
-
-        // Convert i64 result to !pg.table_handle type to match operation result type
+        // Convert ptr result to !pg.table_handle type to match operation result type
         auto tableHandleType = op.getHandle().getType();
         auto tableHandle = rewriter.create<UnrealizedConversionCastOp>(
-            loc, tableHandleType, mlir::ValueRange{i64TableHandle}).getResult(0);
+            loc, tableHandleType, mlir::ValueRange{ptrTableHandle}).getResult(0);
 
         // Replace the operation with the properly typed table handle
         rewriter.replaceOp(op, tableHandle);
@@ -72,10 +69,15 @@ class ReadTupleOpLowering final : public OpRewritePattern<ReadTupleOp> {
 
         const auto tableHandle = op.getTableHandle();
 
+        // Convert !pg.table_handle to ptr for runtime function call: (ptr) -> i64
+        auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
+        auto tablePtr = rewriter.create<UnrealizedConversionCastOp>(
+            loc, ptrType, mlir::ValueRange{tableHandle}).getResult(0);
+
         auto i64Type = rewriter.getI64Type();
         auto readTupleFn = SymbolRefAttr::get(ctx, "read_next_tuple_from_table");
 
-        auto operands = llvm::SmallVector<Value>{tableHandle};
+        auto operands = llvm::SmallVector<Value>{tablePtr};
         const auto i64TupleHandle = rewriter.create<func::CallOp>(loc, i64Type, readTupleFn, operands).getResult(0);
 
         // Convert i64 result to !pg.tuple_handle type to match operation result type
@@ -128,7 +130,11 @@ class GetIntFieldOpLowering final : public OpRewritePattern<GetIntFieldOp> {
         // Restore insertion point to the original operation
         rewriter.setInsertionPoint(op);
 
-        auto operands = llvm::SmallVector<Value>{tuple, fieldIndexVal, nullFlagPtr};
+        // Convert !pg.tuple_handle to ptr for runtime function call: (ptr, i32, ptr) -> i32
+        auto tuplePtr = rewriter.create<UnrealizedConversionCastOp>(
+            loc, ptrType, mlir::ValueRange{tuple}).getResult(0);
+
+        auto operands = llvm::SmallVector<Value>{tuplePtr, fieldIndexVal, nullFlagPtr};
         const auto intValue = rewriter.create<func::CallOp>(loc, i32Type, getIntFieldFn, operands).getResult(0);
 
         auto nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
