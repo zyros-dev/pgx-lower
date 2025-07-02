@@ -7,9 +7,6 @@
 #include <vector>
 
 // Forward declarations
-namespace mlir_builder {
-    struct ColumnExpression;
-}
 
 // PostgreSQL C headers - need extern "C" wrapping
 extern "C" {
@@ -26,16 +23,6 @@ auto run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) -> 
 // PostgreSQL Integration - Typed field access with pg dialect
 auto run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logger) -> bool;
 
-// PostgreSQL Integration - Typed field access with specific columns
-auto run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
-                                                     const std::vector<mlir_builder::ColumnExpression>& expressions,
-                                                     MLIRLogger& logger) -> bool;
-
-// PostgreSQL Integration - Typed field access with WHERE clause support
-auto run_mlir_postgres_typed_table_scan_with_where(const char* tableName,
-                                                   const std::vector<mlir_builder::ColumnExpression>& expressions,
-                                                   const mlir_builder::ColumnExpression& whereClause,
-                                                   MLIRLogger& logger) -> bool;
 
 // PostgreSQL Integration - New AST-based translation (replaces ColumnExpression approach)
 auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) -> bool;

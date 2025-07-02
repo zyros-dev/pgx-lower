@@ -1,5 +1,4 @@
 #include "core/mlir_runner.h"
-#include "core/mlir_builder.h"
 #include "core/mlir_logger.h"
 #include "core/error_handling.h"
 #include "core/postgresql_ast_translator.h"
@@ -168,50 +167,6 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
     return true;
 }
 
-bool run_mlir_postgres_typed_table_scan_with_columns(const char* tableName,
-                                                     const std::vector<mlir_builder::ColumnExpression>& expressions,
-                                                     MLIRLogger& logger) {
-    mlir::MLIRContext context;
-
-    std::ostringstream oss;
-    oss << "Scanning PostgreSQL table '" << tableName << "' with expressions: ";
-    for (size_t i = 0; i < expressions.size(); ++i) {
-        if (i > 0) {
-            oss << ", ";
-        }
-        if (expressions[i].columnIndex >= 0) {
-            oss << "col[" << expressions[i].columnIndex << "]";
-        } else {
-            oss << expressions[i].operatorName << "(";
-            for (size_t j = 0; j < expressions[i].operandColumns.size(); ++j) {
-                if (j > 0) oss << ",";
-                oss << "col[" << expressions[i].operandColumns[j] << "]";
-            }
-            oss << ")";
-        }
-    }
-    logger.debug(oss.str());
-
-    // Use MLIRBuilder to generate the MLIR module
-    auto builder = mlir_builder::createMLIRBuilder(context);
-    auto module = builder->buildTableScanModule(tableName, expressions);
-
-    if (!module) {
-        logger.error("Failed to build MLIR module");
-        return false;
-    }
-
-    // Print the MLIR with typed field access
-    logger.notice("Generated MLIR with PostgreSQL typed field access:");
-    auto mlirStr = std::string();
-    auto os = llvm::raw_string_ostream(mlirStr);
-    module->OpState::print(os);
-    os.flush();
-    logger.notice("MLIR with field access: " + mlirStr);
-
-    // Execute the MLIR module
-    return executeMLIRModule(*module, logger);
-}
 
 bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) {
     if (!plannedStmt) {
@@ -246,56 +201,5 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     return executeMLIRModule(*module, logger);
 }
 
-bool run_mlir_postgres_typed_table_scan_with_where(const char* tableName,
-                                                   const std::vector<mlir_builder::ColumnExpression>& expressions,
-                                                   const mlir_builder::ColumnExpression& whereClause,
-                                                   MLIRLogger& logger) {
-    mlir::MLIRContext context;
-
-    std::ostringstream oss;
-    oss << "Scanning PostgreSQL table '" << tableName << "' with WHERE clause: ";
-    oss << whereClause.operatorName << "(";
-    for (size_t j = 0; j < whereClause.operandColumns.size(); ++j) {
-        if (j > 0) oss << ",";
-        oss << "col[" << whereClause.operandColumns[j] << "]";
-    }
-    oss << ") and expressions: ";
-    for (size_t i = 0; i < expressions.size(); ++i) {
-        if (i > 0) {
-            oss << ", ";
-        }
-        if (expressions[i].columnIndex >= 0) {
-            oss << "col[" << expressions[i].columnIndex << "]";
-        } else {
-            oss << expressions[i].operatorName << "(";
-            for (size_t j = 0; j < expressions[i].operandColumns.size(); ++j) {
-                if (j > 0) oss << ",";
-                oss << "col[" << expressions[i].operandColumns[j] << "]";
-            }
-            oss << ")";
-        }
-    }
-    logger.debug(oss.str());
-
-    // Use MLIRBuilder to generate the MLIR module with WHERE clause support
-    auto builder = mlir_builder::createMLIRBuilder(context);
-    auto module = builder->buildTableScanModuleWithWhere(tableName, expressions, &whereClause);
-
-    if (!module) {
-        logger.error("Failed to build MLIR module with WHERE clause");
-        return false;
-    }
-
-    // Print the MLIR with WHERE clause predicate
-    logger.notice("Generated MLIR with PostgreSQL WHERE clause:");
-    auto mlirStr = std::string();
-    auto os = llvm::raw_string_ostream(mlirStr);
-    module->OpState::print(os);
-    os.flush();
-    logger.notice("MLIR with WHERE clause: " + mlirStr);
-
-    // Execute the MLIR module
-    return executeMLIRModule(*module, logger);
-}
 
 } // namespace mlir_runner
