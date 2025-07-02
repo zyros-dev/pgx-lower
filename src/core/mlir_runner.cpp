@@ -35,6 +35,10 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/LLVMIR/Dialect/All.h"
+#include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Support/LogicalResult.h"
+#include "dialects/pg/LowerPgToSCF.h"
+#include "mlir/Target/LLVMIR/Dialect/All.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
@@ -46,43 +50,7 @@
 namespace mlir_runner {
 
 // MLIR Execution Engine - handles lowering and JIT execution
-bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
-    auto& context = *module.getContext();
-
-    // Apply pg-to-scf lowering pass to convert high-level operations to runtime calls
-    auto pm = mlir::PassManager(&context);
-    pm.addNestedPass<mlir::func::FuncOp>(mlir::pg::createLowerPgToSCFPass());
-
-    if (mlir::failed(pm.run(module))) {
-        logger.error("Failed to apply pg-to-scf lowering pass");
-        return false;
-    }
-
-    logger.notice("Applied pg-to-scf lowering pass!");
-    auto loweredStr = std::string();
-    auto loweredOs = llvm::raw_string_ostream(loweredStr);
-    module.OpState::print(loweredOs);
-    loweredOs.flush();
-    logger.notice("Lowered MLIR: " + loweredStr);
-
-    // Continue with full lowering pipeline to execute
-    pm.clear();
-    pm.addPass(mlir::createConvertSCFToCFPass());
-    pm.addNestedPass<mlir::func::FuncOp>(mlir::createArithToLLVMConversionPass());
-    pm.addPass(mlir::createConvertFuncToLLVMPass());
-    pm.addPass(mlir::createConvertControlFlowToLLVMPass());
-    pm.addPass(mlir::createCanonicalizerPass());
-    pm.addPass(mlir::createCSEPass());
-
-    if (mlir::failed(pm.run(module))) {
-        auto error = pgx_lower::ErrorManager::compilationError("Failed to lower MLIR module to LLVM dialect",
-                                                               "Pass manager execution failed");
-        pgx_lower::ErrorManager::reportError(error);
-        logger.error("Failed to lower MLIR module to LLVM dialect");
-        return false;
-    }
-    logger.notice("Lowered PostgreSQL typed field access MLIR to LLVM dialect!");
-    
+bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("About to initialize native target and create ExecutionEngine...");
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -90,6 +58,7 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
 
     mlir::DialectRegistry registry;
     mlir::registerAllToLLVMIRTranslations(registry);
+    auto &context = *module.getContext();
     context.appendDialectRegistry(registry);
 
     mlir::registerLLVMDialectTranslation(context);
@@ -101,7 +70,51 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
         module.dump();
         return false;
     }
-    logger.notice("MLIR module verification passed - proceeding to ExecutionEngine creation");
+    logger.notice("MLIR module verification passed - proceeding to lowering");
+
+    // Apply lowering passes with detailed error reporting
+    auto pm = mlir::PassManager(&context);
+    pm.enableVerifier(true);
+    pm.addPass(mlir::pg::createLowerPgToSCFPass());
+    
+    logger.notice("Running pg-to-scf lowering pass...");
+    auto passResult = pm.run(module);
+    if (failed(passResult)) {
+        logger.error("pg-to-scf lowering pass failed");
+        logger.error("Dumping module state when lowering failed:");
+        module.dump();
+        return false;
+    }
+    logger.notice("Applied pg-to-scf lowering pass!");
+
+    // Check for remaining pg operations after lowering
+    bool hasPgOps = false;
+    module.walk([&](mlir::Operation* op) {
+        std::string opName = op->getName().getStringRef().str();
+        if (opName.substr(0, 3) == "pg.") {
+            logger.error("Remaining pg operation after lowering: " + opName);
+            hasPgOps = true;
+        }
+    });
+    
+    if (hasPgOps) {
+        logger.error("Lowering incomplete - some pg operations remain");
+        logger.notice("Dumping module after failed lowering:");
+        module.dump();
+        return false;
+    }
+
+    auto pm2 = mlir::PassManager(&context);
+    pm2.addPass(mlir::createConvertSCFToCFPass());
+    pm2.addPass(mlir::createArithToLLVMConversionPass());
+    pm2.addPass(mlir::createConvertFuncToLLVMPass());
+    pm2.addPass(mlir::createConvertControlFlowToLLVMPass());
+
+    if (failed(pm2.run(module))) {
+        logger.error("Remaining lowering passes failed");
+        return false;
+    }
+    logger.notice("Lowered PostgreSQL typed field access MLIR to LLVM dialect!");
 
     // Enhanced ExecutionEngine creation with detailed error diagnostics
     logger.notice("Creating ExecutionEngine with enhanced error reporting...");
@@ -154,67 +167,21 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
     logger.notice("Created MLIR ExecutionEngine for PostgreSQL typed field access!");
     auto engine = std::move(*maybeEngine);
 
-    engine->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
-        auto symbolMap = llvm::orc::SymbolMap();
-        symbolMap[interner("open_postgres_table")] =
-            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&open_postgres_table)),
-                                         llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("read_next_tuple_from_table")] = llvm::orc::ExecutorSymbolDef(
-            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&read_next_tuple_from_table)),
-            llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("close_postgres_table")] = llvm::orc::ExecutorSymbolDef(
-            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&close_postgres_table)),
-            llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("add_tuple_to_result")] =
-            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&add_tuple_to_result)),
-                                         llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("get_int_field")] =
-            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&get_int_field)),
-                                         llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("get_text_field")] =
-            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&get_text_field)),
-                                         llvm::JITSymbolFlags::Exported);
-        // Register result storage functions for computed expressions
-        symbolMap[interner("store_int_result")] =
-            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&store_int_result)),
-                                         llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("store_bool_result")] =
-            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&store_bool_result)),
-                                         llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("store_bigint_result")] =
-            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&store_bigint_result)),
-                                         llvm::JITSymbolFlags::Exported);
-        symbolMap[interner("prepare_computed_results")] =
-            llvm::orc::ExecutorSymbolDef(llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(&prepare_computed_results)),
-                                         llvm::JITSymbolFlags::Exported);
-        return symbolMap;
-    });
-
-    auto expectedFPtr = engine->lookup("main");
-    if (!expectedFPtr) {
-        auto errMsg = std::string();
-        auto errStream = llvm::raw_string_ostream(errMsg);
-        errStream << expectedFPtr.takeError();
-        logger.error("Failed to lookup function: " + errMsg);
+    // Lookup and invoke the main function
+    auto mainFunc = engine->lookupPacked("main");
+    if (!mainFunc) {
+        auto error = pgx_lower::ErrorManager::compilationError("Failed to lookup main function in MLIR ExecutionEngine",
+                                                               "Main function not found");
+        pgx_lower::ErrorManager::reportError(error);
+        logger.error("Failed to lookup main function in MLIR ExecutionEngine");
         return false;
     }
 
-    auto fptr = reinterpret_cast<int64_t (*)()>(*expectedFPtr);
-    
-    // Invoke the JIT function
-    
-    // Add a simple timeout mechanism to prevent infinite hanging
-    // For now, just invoke the function and trust it will complete
-    // In a production system, we'd need proper timeout handling
+    logger.notice("Looking up main function in MLIR ExecutionEngine...");
+    auto fptr = reinterpret_cast<int64_t (*)()>(mainFunc.get());
+
     const int64_t result = fptr();
-    
-    logger.notice("Invoked MLIR JIT PostgreSQL typed field access!");
-
-    std::ostringstream oss;
-    oss << "PostgreSQL typed field access completed with result: " << result;
-    logger.notice(oss.str());
-
-    logger.notice("MLIR successfully handled the query");
+    logger.notice("MLIR JIT function completed with result: " + std::to_string(result));
 
     return true;
 }

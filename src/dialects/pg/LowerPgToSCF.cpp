@@ -64,6 +64,9 @@ class ReadTupleOpLowering final : public OpRewritePattern<ReadTupleOp> {
     : OpRewritePattern(context) {}
 
     auto matchAndRewrite(ReadTupleOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        llvm::errs() << "DEBUG: ReadTupleOpLowering::matchAndRewrite called\n";
+        llvm::errs().flush();
+        
         const auto loc = op.getLoc();
         auto *ctx = rewriter.getContext();
 
@@ -604,8 +607,23 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
     }
 
     void runOnOperation() override {
-        const auto func = getOperation();
+        auto func = getOperation();
         auto *ctx = &getContext();
+
+        llvm::errs() << "DEBUG: LowerPgToSCFPass starting\n";
+        llvm::errs().flush();
+
+        // Count pg operations before lowering
+        int pgOpCount = 0;
+        func.walk([&](mlir::Operation* op) {
+            std::string opName = op->getName().getStringRef().str();
+            if (opName.substr(0, 3) == "pg.") {
+                llvm::errs() << "DEBUG: Found pg operation: " << opName << "\n";
+                pgOpCount++;
+            }
+        });
+        llvm::errs() << "DEBUG: Total pg operations before lowering: " << pgOpCount << "\n";
+        llvm::errs().flush();
 
         // Use simple rewrite patterns without type conversion
         auto patterns = RewritePatternSet(ctx);
@@ -615,9 +633,17 @@ struct LowerPgToSCFPass final : PassWrapper<LowerPgToSCFPass, OperationPass<func
                      PgIsNullOpLowering, PgIsNotNullOpLowering>(
             ctx);
 
+        llvm::errs() << "DEBUG: About to apply patterns greedily\n";
+        llvm::errs().flush();
+
         // Apply greedy pattern rewriting (no type conversion involved)
         if (failed(applyPatternsGreedily(func, std::move(patterns)))) {
+            llvm::errs() << "DEBUG: applyPatternsGreedily failed\n";
+            llvm::errs().flush();
             signalPassFailure();
+        } else {
+            llvm::errs() << "DEBUG: applyPatternsGreedily succeeded\n";
+            llvm::errs().flush();
         }
     }
 
