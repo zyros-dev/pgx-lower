@@ -7,6 +7,7 @@
 #include "dialects/pg/LowerPgToSCF.h"
 
 #include <fstream>
+#include "llvm/IR/Verifier.h"
 
 // Prevent libintl.h conflicts with PostgreSQL macros
 // This is a bit strange to me - so LLVM drags in some macros from libintl.h
@@ -102,10 +103,40 @@ bool executeMLIRModule(mlir::ModuleOp& module, MLIRLogger& logger) {
     }
     logger.notice("MLIR module verification passed - proceeding to ExecutionEngine creation");
 
+    // Enhanced ExecutionEngine creation with detailed error diagnostics
+    logger.notice("Creating ExecutionEngine with enhanced error reporting...");
+    
+    // Test LLVM IR translation manually first to catch translation errors
+    auto llvmContext = std::make_unique<llvm::LLVMContext>();
+    logger.notice("Attempting MLIR to LLVM IR translation...");
+    
+    auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
+    if (!llvmModule) {
+        logger.error("MLIR to LLVM IR translation failed - this is the root cause");
+        logger.error("Check for unsupported operations or type conversion issues in the MLIR module");
+        module.dump();
+        return false;
+    }
+    logger.notice("MLIR to LLVM IR translation successful");
+    
+    // Verify the generated LLVM IR module
+    std::string verifyErrors;
+    llvm::raw_string_ostream verifyStream(verifyErrors);
+    if (llvm::verifyModule(*llvmModule, &verifyStream)) {
+        verifyStream.flush();
+        logger.error("LLVM IR module verification failed:");
+        logger.error("Verification errors: " + verifyErrors);
+        llvmModule->print(llvm::errs(), nullptr);
+        return false;
+    }
+    logger.notice("LLVM IR module verification passed");
+
     auto optPipeline = mlir::makeOptimizingTransformer(0, 0, nullptr);
     auto engineOptions = mlir::ExecutionEngineOptions();
     engineOptions.transformer = optPipeline;
     engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
+    
+    logger.notice("Attempting ExecutionEngine creation...");
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
     if (!maybeEngine) {
         auto errMsg = std::string();
