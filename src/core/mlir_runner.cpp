@@ -78,6 +78,11 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     
     logger.notice("About to create LowerPgToSCFPass...");
     auto lowerPass = mlir::pg::createLowerPgToSCFPass();
+    logger.notice("AFTER createLowerPgToSCFPass() returned successfully");
+    if (!lowerPass) {
+        logger.error("createLowerPgToSCFPass() returned null!");
+        return false;
+    }
     logger.notice("LowerPgToSCFPass created, adding to PassManager...");
     
     // Add debug logging to see exactly what's happening
@@ -86,9 +91,11 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("Pass added to PassManager successfully");
     
     logger.notice("Running pg-to-scf lowering pass...");
+    logger.notice("About to call pm.run(module)...");
     auto passResult = pm.run(module);
+    logger.notice("pm.run(module) returned");
     if (failed(passResult)) {
-        logger.error("pg-to-scf lowering pass failed");
+        logger.error("pg-to-scf lowering pass failed - passResult indicates failure");
         logger.error("Dumping module state when lowering failed:");
         module.dump();
         return false;
