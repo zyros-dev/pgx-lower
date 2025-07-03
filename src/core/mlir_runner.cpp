@@ -29,6 +29,7 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
@@ -124,6 +125,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     pm2.addPass(mlir::createArithToLLVMConversionPass());
     pm2.addPass(mlir::createConvertFuncToLLVMPass());
     pm2.addPass(mlir::createConvertControlFlowToLLVMPass());
+    
+    // Add cleanup pass for UnrealizedConversionCast operations
+    pm2.addPass(mlir::createReconcileUnrealizedCastsPass());
 
     if (failed(pm2.run(module))) {
         logger.error("Remaining lowering passes failed");

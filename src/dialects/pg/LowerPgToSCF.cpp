@@ -10,6 +10,8 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 
 using namespace mlir; // NOLINT(*-build-using-namespace)
 using namespace mlir::pg; // NOLINT(*-build-using-namespace)
@@ -21,12 +23,12 @@ namespace {
 //===----------------------------------------------------------------------===//
 
 /// Lower pg.scan_table to the current low-level implementation
-class ScanTableOpLowering final : public OpRewritePattern<ScanTableOp> {
+class ScanTableOpLowering final : public OpConversionPattern<ScanTableOp> {
    public:
-    explicit ScanTableOpLowering(MLIRContext *context)
-    : OpRewritePattern(context) {}
+    explicit ScanTableOpLowering(LLVMTypeConverter &typeConverter)
+    : OpConversionPattern<ScanTableOp>(typeConverter, typeConverter.getContext()) {}
 
-    auto matchAndRewrite(ScanTableOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+    auto matchAndRewrite(ScanTableOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
         auto *ctx = rewriter.getContext();
 
@@ -45,50 +47,38 @@ class ScanTableOpLowering final : public OpRewritePattern<ScanTableOp> {
         auto operands = llvm::SmallVector<Value>{tableNamePtr};
         const auto ptrTableHandle = rewriter.create<func::CallOp>(loc, ptrType, openTableFn, operands).getResult(0);
 
-        // Convert ptr result to !pg.table_handle type to match operation result type
-        auto tableHandleType = op.getHandle().getType();
-        auto tableHandle = rewriter.create<UnrealizedConversionCastOp>(
-            loc, tableHandleType, mlir::ValueRange{ptrTableHandle}).getResult(0);
-
-        // Replace the operation with the properly typed table handle
-        rewriter.replaceOp(op, tableHandle);
+        // The result is already the correct type (ptr), no need for conversion cast
+        // The type converter will handle the type mapping automatically
+        rewriter.replaceOp(op, ptrTableHandle);
 
         return success();
     }
 };
 
 /// Lower pg.read_tuple to runtime function call
-class ReadTupleOpLowering final : public OpRewritePattern<ReadTupleOp> {
+class ReadTupleOpLowering final : public OpConversionPattern<ReadTupleOp> {
    public:
-    explicit ReadTupleOpLowering(MLIRContext *context)
-    : OpRewritePattern(context) {}
+    explicit ReadTupleOpLowering(LLVMTypeConverter &typeConverter)
+    : OpConversionPattern<ReadTupleOp>(typeConverter, typeConverter.getContext()) {}
 
-    auto matchAndRewrite(ReadTupleOp op, PatternRewriter &rewriter) const -> LogicalResult override {
-        llvm::errs() << "DEBUG: ReadTupleOpLowering::matchAndRewrite called\n";
-        llvm::errs().flush();
-        
+    auto matchAndRewrite(ReadTupleOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
         auto *ctx = rewriter.getContext();
 
-        const auto tableHandle = op.getTableHandle();
+        // Use the converted table handle (should be ptr now)
+        auto tableHandle = adaptor.getTableHandle();
 
-        // Convert !pg.table_handle to ptr for runtime function call: (ptr) -> i64
-        auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
-        auto tablePtr = rewriter.create<UnrealizedConversionCastOp>(
-            loc, ptrType, mlir::ValueRange{tableHandle}).getResult(0);
-
-        auto i64Type = rewriter.getI64Type();
+        // Call the runtime function: read_next_tuple_from_table(ptr) -> i64
         auto readTupleFn = SymbolRefAttr::get(ctx, "read_next_tuple_from_table");
+        auto operands = llvm::SmallVector<Value>{tableHandle};
+        const auto tupleI64 = rewriter.create<func::CallOp>(loc, rewriter.getI64Type(), readTupleFn, operands).getResult(0);
 
-        auto operands = llvm::SmallVector<Value>{tablePtr};
-        const auto i64TupleHandle = rewriter.create<func::CallOp>(loc, i64Type, readTupleFn, operands).getResult(0);
+        // The result is i64, but the type converter expects ptr for tuple handles
+        // Convert the i64 to ptr to match the expected LLVM representation
+        auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
+        auto tuplePtr = rewriter.create<LLVM::IntToPtrOp>(loc, ptrType, tupleI64);
 
-        // Convert i64 result to !pg.tuple_handle type to match operation result type
-        auto tupleHandleType = op.getTuple().getType();
-        auto tupleHandle = rewriter.create<UnrealizedConversionCastOp>(
-            loc, tupleHandleType, mlir::ValueRange{i64TupleHandle}).getResult(0);
-
-        rewriter.replaceOp(op, tupleHandle);
+        rewriter.replaceOp(op, tuplePtr);
 
         return success();
     }
@@ -635,6 +625,29 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
         auto module = getOperation();
         auto *ctx = &getContext();
 
+        // Set up the type converter for pg types to LLVM types
+        mlir::LLVMTypeConverter typeConverter(ctx);
+        auto ptrType = mlir::LLVM::LLVMPointerType::get(ctx);
+        
+        // Add type conversions for pg dialect types
+        typeConverter.addConversion([=](mlir::pg::TableHandleType) {
+            return ptrType; // !pg.table_handle -> !llvm.ptr
+        });
+        typeConverter.addConversion([=](mlir::pg::TupleHandleType) {
+            return ptrType; // !pg.tuple_handle -> !llvm.ptr  
+        });
+
+        // Set up conversion target
+        mlir::ConversionTarget target(*ctx);
+        target.addLegalDialect<mlir::LLVM::LLVMDialect>();
+        target.addLegalDialect<mlir::arith::ArithDialect>();
+        target.addLegalDialect<mlir::scf::SCFDialect>();
+        target.addLegalDialect<mlir::func::FuncDialect>();
+        target.addLegalDialect<mlir::cf::ControlFlowDialect>();
+        
+        // Mark pg dialect as illegal to force conversion
+        target.addIllegalDialect<mlir::pg::PgDialect>();
+
         // Walk through all functions in the module
         module.walk([&](func::FuncOp func) {
             // Count pg operations before lowering
@@ -650,11 +663,12 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
                 return; // No pg operations in this function
             }
 
-            // Use simple rewrite patterns - add more patterns gradually
-            auto patterns = RewritePatternSet(ctx);
-            patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering>(ctx);
+            // Set up conversion patterns using ConversionPattern instead of OpRewritePattern
+            mlir::RewritePatternSet patterns(ctx);
+            patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering>(typeConverter);
             
-            if (failed(applyPatternsGreedily(func, std::move(patterns)))) {
+            // Apply dialect conversion instead of greedy pattern application
+            if (failed(mlir::applyPartialConversion(func, target, std::move(patterns)))) {
                 signalPassFailure();
                 return;
             }

@@ -518,23 +518,57 @@ auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> mlir::Val
     
     logger_.debug("Translating NullTest with type: " + std::to_string(nullTest->nulltesttype));
     
-    // Translate the argument expression to get both value and null flag
-    auto argValue = translateExpression(reinterpret_cast<Expr*>(nullTest->arg));
-    if (!argValue) {
-        logger_.error("Failed to translate argument for NULL test");
+    // For NULL tests, we need to get the null indicator from field access operations
+    logger_.debug("About to translate null test argument expression...");
+    
+    // Check if the argument is a Var (column reference)
+    if (nullTest->arg && IsA(nullTest->arg, Var)) {
+        logger_.debug("NULL test on Var - need to get null indicator from field access");
+        
+        // Translate the Var to get the field access operation
+        auto var = reinterpret_cast<Var*>(nullTest->arg);
+        auto location = builder_->getUnknownLoc();
+        auto i32Type = builder_->getI32Type();
+        auto i1Type = builder_->getI1Type();
+        
+        // Use real tuple handle if available
+        mlir::Value tupleHandle;
+        if (currentTupleHandle_) {
+            logger_.debug("Using real tuple handle for null test");
+            auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+            tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
+                location, tupleHandleType, mlir::ValueRange{*currentTupleHandle_}).getResult(0);
+        } else {
+            logger_.error("NULL test attempted outside tuple iteration context");
+            return nullptr;
+        }
+        
+        // Generate pg.get_int_field operation
+        mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
+        getFieldState.addOperands(tupleHandle);
+        getFieldState.addAttribute("field_index", builder_->getI32IntegerAttr(var->varattno - 1));
+        getFieldState.addTypes({i32Type, i1Type});
+        
+        auto getFieldOp = builder_->create(getFieldState);
+        auto nullIndicator = getFieldOp->getResult(1); // Get the null indicator (second result)
+        
+        logger_.debug("Got null indicator from field access operation");
+        
+        // For IS NULL, return the null indicator directly
+        // For IS NOT NULL, negate the null indicator
+        if (nullTest->nulltesttype == IS_NULL) {
+            logger_.debug("Returning null indicator for IS NULL");
+            return nullIndicator;
+        } else if (nullTest->nulltesttype == IS_NOT_NULL) {
+            logger_.debug("Returning negated null indicator for IS NOT NULL");
+            return builder_->create<mlir::arith::XOrIOp>(location, nullIndicator, 
+                builder_->create<mlir::arith::ConstantOp>(location, builder_->getBoolAttr(true)));
+        }
+    } else {
+        logger_.error("NULL test on non-Var expressions not yet supported");
         return nullptr;
     }
-    
-    // Generate proper pg dialect NULL test operations
-    auto location = builder_->getUnknownLoc();
-    
-    if (nullTest->nulltesttype == IS_NULL) {
-        logger_.debug("Creating pg.is_null operation");
-        return builder_->create<mlir::pg::PgIsNullOp>(location, argValue);
-    } else if (nullTest->nulltesttype == IS_NOT_NULL) {
-        logger_.debug("Creating pg.is_not_null operation");
-        return builder_->create<mlir::pg::PgIsNotNullOp>(location, argValue);
-    }
+
     
     logger_.error("Unknown NULL test type: " + std::to_string(nullTest->nulltesttype));
     return nullptr;
