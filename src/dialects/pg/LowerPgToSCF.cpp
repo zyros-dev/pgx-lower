@@ -26,7 +26,7 @@ namespace {
 class ScanTableOpLowering final : public OpConversionPattern<ScanTableOp> {
    public:
     explicit ScanTableOpLowering(LLVMTypeConverter &typeConverter)
-    : OpConversionPattern<ScanTableOp>(typeConverter, typeConverter.getContext()) {}
+    : OpConversionPattern<ScanTableOp>(typeConverter, &typeConverter.getContext()) {}
 
     auto matchAndRewrite(ScanTableOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
@@ -59,7 +59,7 @@ class ScanTableOpLowering final : public OpConversionPattern<ScanTableOp> {
 class ReadTupleOpLowering final : public OpConversionPattern<ReadTupleOp> {
    public:
     explicit ReadTupleOpLowering(LLVMTypeConverter &typeConverter)
-    : OpConversionPattern<ReadTupleOp>(typeConverter, typeConverter.getContext()) {}
+    : OpConversionPattern<ReadTupleOp>(typeConverter, &typeConverter.getContext()) {}
 
     auto matchAndRewrite(ReadTupleOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
@@ -84,16 +84,17 @@ class ReadTupleOpLowering final : public OpConversionPattern<ReadTupleOp> {
     }
 };
 
-class GetIntFieldOpLowering final : public OpRewritePattern<GetIntFieldOp> {
+class GetIntFieldOpLowering final : public OpConversionPattern<GetIntFieldOp> {
    public:
-    explicit GetIntFieldOpLowering(MLIRContext *context)
-    : OpRewritePattern<GetIntFieldOp>(context) {}
+    explicit GetIntFieldOpLowering(LLVMTypeConverter &typeConverter)
+    : OpConversionPattern<GetIntFieldOp>(typeConverter, &typeConverter.getContext()) {}
 
-    auto matchAndRewrite(GetIntFieldOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+    auto matchAndRewrite(GetIntFieldOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
         auto *ctx = rewriter.getContext();
 
-        const auto tuple = op.getTuple();
+        // Use the converted tuple handle (should be ptr now)
+        const auto tuple = adaptor.getTuple();
         const unsigned fieldIndex = op.getFieldIndex();
 
         auto fieldIndexVal =
@@ -123,11 +124,8 @@ class GetIntFieldOpLowering final : public OpRewritePattern<GetIntFieldOp> {
         // Restore insertion point to the original operation
         rewriter.setInsertionPoint(op);
 
-        // Convert !pg.tuple_handle to ptr for runtime function call: (ptr, i32, ptr) -> i32
-        auto tuplePtr = rewriter.create<UnrealizedConversionCastOp>(
-            loc, ptrType, mlir::ValueRange{tuple}).getResult(0);
-
-        auto operands = llvm::SmallVector<Value>{tuplePtr, fieldIndexVal, nullFlagPtr};
+        // Call runtime function: get_int_field(ptr, i32, ptr) -> i32
+        auto operands = llvm::SmallVector<Value>{tuple, fieldIndexVal, nullFlagPtr};
         const auto intValue = rewriter.create<func::CallOp>(loc, i32Type, getIntFieldFn, operands).getResult(0);
 
         auto nullFlag = rewriter.create<LLVM::LoadOp>(loc, i1Type, nullFlagPtr);
@@ -695,11 +693,8 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
 } // namespace
 
 void pg::populatePgToSCFConversionPatterns(RewritePatternSet &patterns, TypeConverter &typeConverter) {
-    patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering,
-                 PgAddOpLowering, PgSubOpLowering, PgMulOpLowering, PgDivOpLowering, PgModOpLowering,
-                 PgCmpOpLowering, PgAndOpLowering, PgOrOpLowering, PgNotOpLowering,
-                 PgIsNullOpLowering, PgIsNotNullOpLowering>(
-        patterns.getContext());
+    auto &llvmTypeConverter = static_cast<LLVMTypeConverter&>(typeConverter);
+    patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering>(llvmTypeConverter);
 }
 
 auto pg::createLowerPgToSCFPass() -> std::unique_ptr<OperationPass<mlir::ModuleOp>> {

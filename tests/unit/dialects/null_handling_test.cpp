@@ -17,6 +17,7 @@
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Export.h>
+#include <mlir/Target/LLVMIR/Dialect/All.h>
 #include <llvm/IR/LLVMContext.h>
 
 class NullHandlingTest : public ::testing::Test {
@@ -289,13 +290,9 @@ TEST_F(NullHandlingTest, FullPipelineWithLLVMTranslation) {
     // pg.read_tuple operation  
     auto readOp = builder.create<mlir::pg::ReadTupleOp>(loc, tupleHandleType, scanOp.getResult());
     
-    // UnrealizedConversionCast that appears in regression tests
-    auto tupleAsI64 = builder.create<mlir::UnrealizedConversionCastOp>(
-        loc, i64Type, mlir::ValueRange{readOp.getResult()}).getResult(0);
-    
-    // Convert back to tuple handle (this pattern appears in the failing regression tests)
-    auto tupleHandle = builder.create<mlir::UnrealizedConversionCastOp>(
-        loc, tupleHandleType, mlir::ValueRange{tupleAsI64}).getResult(0);
+    // Use the tuple handle directly from the read operation
+    // The type converter will handle the conversion automatically
+    auto tupleHandle = readOp.getResult();
     
     // pg.get_int_field operation with null handling
     auto fieldIndex = builder.getI32IntegerAttr(1);
@@ -367,6 +364,13 @@ TEST_F(NullHandlingTest, FullPipelineWithLLVMTranslation) {
     }
     
     // Test MLIR to LLVM IR translation manually
+    // Register LLVM IR translation before attempting translation
+    mlir::DialectRegistry registry;
+    mlir::registerAllToLLVMIRTranslations(registry);
+    context_.appendDialectRegistry(registry);
+    mlir::registerLLVMDialectTranslation(context_);
+    mlir::registerBuiltinDialectTranslation(context_);
+    
     auto llvmContext = std::make_unique<llvm::LLVMContext>();
     auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
     
