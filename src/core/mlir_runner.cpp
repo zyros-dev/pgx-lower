@@ -75,7 +75,15 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // Apply lowering passes with detailed error reporting
     auto pm = mlir::PassManager(&context);
     pm.enableVerifier(true);
-    pm.addPass(mlir::pg::createLowerPgToSCFPass());
+    
+    logger.notice("About to create LowerPgToSCFPass...");
+    auto lowerPass = mlir::pg::createLowerPgToSCFPass();
+    logger.notice("LowerPgToSCFPass created, adding to PassManager...");
+    
+    // Add debug logging to see exactly what's happening
+    logger.notice("About to add pass to PassManager...");
+    pm.addPass(std::move(lowerPass));
+    logger.notice("Pass added to PassManager successfully");
     
     logger.notice("Running pg-to-scf lowering pass...");
     auto passResult = pm.run(module);
@@ -112,9 +120,19 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
 
     if (failed(pm2.run(module))) {
         logger.error("Remaining lowering passes failed");
+        logger.error("Dumping module after standard lowering failure:");
+        module.dump();
         return false;
     }
     logger.notice("Lowered PostgreSQL typed field access MLIR to LLVM dialect!");
+    
+    // Dump the MLIR after all lowering passes to see what's causing LLVM IR translation to fail
+    logger.notice("MLIR after all lowering passes:");
+    std::string mlirString;
+    llvm::raw_string_ostream stream(mlirString);
+    module.print(stream);
+    stream.flush();
+    logger.notice("Lowered MLIR: " + mlirString);
 
     // Enhanced ExecutionEngine creation with detailed error diagnostics
     logger.notice("Creating ExecutionEngine with enhanced error reporting...");
