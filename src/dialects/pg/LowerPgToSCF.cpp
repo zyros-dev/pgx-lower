@@ -668,6 +668,9 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
             mlir::RewritePatternSet patterns(ctx);
             patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, PgCmpOpLowering>(typeConverter);
             
+            // Add OpRewritePattern-based lowering for operations that don't need type conversion
+            patterns.add<PgAndOpLowering, PgOrOpLowering, PgNotOpLowering>(ctx);
+            
             // Apply dialect conversion instead of greedy pattern application
             if (failed(mlir::applyPartialConversion(func, target, std::move(patterns)))) {
                 signalPassFailure();

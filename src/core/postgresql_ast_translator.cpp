@@ -392,10 +392,8 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
     if (currentTupleHandle_) {
         logger_.debug("Using real tuple handle from current iteration context");
         
-        // Convert i64 tuple handle to !pg.tuple_handle type for operation compatibility
-        auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
-        tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
-            location, tupleHandleType, mlir::ValueRange{*currentTupleHandle_}).getResult(0);
+        // Current tuple handle is already a pointer - use it directly
+        tupleHandle = *currentTupleHandle_;
     } else {
         logger_.error("Field access attempted outside tuple iteration context - this is a bug!");
         return nullptr; // Don't generate invalid field access
@@ -489,20 +487,38 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
         operands.push_back(operandValue);
     }
     
+    // Convert operands to boolean if needed (PostgreSQL boolean columns are i32)
+    auto convertToBool = [&](mlir::Value operand) -> mlir::Value {
+        if (operand.getType().isa<mlir::IntegerType>() && 
+            operand.getType().cast<mlir::IntegerType>().getWidth() == 32) {
+            // Convert i32 to i1: non-zero = true, zero = false
+            auto zeroConst = builder_->create<mlir::arith::ConstantOp>(
+                location, operand.getType(), builder_->getIntegerAttr(operand.getType(), 0));
+            return builder_->create<mlir::arith::CmpIOp>(
+                location, mlir::arith::CmpIPredicate::ne, operand, zeroConst);
+        }
+        return operand; // Already boolean
+    };
+    
     switch (boolExpr->boolop) {
         case AND_EXPR:
             if (operands.size() >= 2) {
-                return builder_->create<mlir::pg::PgAndOp>(location, operands[0], operands[1]);
+                auto left = convertToBool(operands[0]);
+                auto right = convertToBool(operands[1]);
+                return builder_->create<mlir::pg::PgAndOp>(location, left, right);
             }
             break;
         case OR_EXPR:
             if (operands.size() >= 2) {
-                return builder_->create<mlir::pg::PgOrOp>(location, operands[0], operands[1]);
+                auto left = convertToBool(operands[0]);
+                auto right = convertToBool(operands[1]);
+                return builder_->create<mlir::pg::PgOrOp>(location, left, right);
             }
             break;
         case NOT_EXPR:
             if (operands.size() >= 1) {
-                return builder_->create<mlir::pg::PgNotOp>(location, operands[0]);
+                auto operand = convertToBool(operands[0]);
+                return builder_->create<mlir::pg::PgNotOp>(location, operand);
             }
             break;
     }
@@ -791,48 +807,55 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
         location, tupleHandleType, tableHandle);
     auto initialTupleHandle = initialReadOp->getResult(0);
     
-    // Convert tuple handle to i64 for loop iteration control
+    // Convert tuple handle to i64, then to ptr for consistent loop handling
     auto initialTupleId = builder.create<mlir::UnrealizedConversionCastOp>(
         location, i64Type, mlir::ValueRange{initialTupleHandle}).getResult(0);
+    auto initialTuplePtr = builder.create<mlir::LLVM::IntToPtrOp>(
+        location, ptrType, initialTupleId);
     auto nullValue = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
     auto initialCondition = builder.create<mlir::arith::CmpIOp>(
         location, mlir::arith::CmpIPredicate::ne, initialTupleId, nullValue);
     
-    // Create the while loop
+    // Create the while loop using pointer types to avoid conversion issues
     auto whileOp = builder.create<mlir::scf::WhileOp>(
-        location, mlir::TypeRange{i64Type}, mlir::ValueRange{initialTupleId});
+        location, mlir::TypeRange{ptrType}, mlir::ValueRange{initialTuplePtr});
     
     // Before block: check if we have a valid tuple
     auto* beforeBlock = &whileOp.getBefore().emplaceBlock();
     auto beforeBuilder = mlir::OpBuilder::atBlockBegin(beforeBlock);
-    auto tupleArg = beforeBlock->addArgument(i64Type, location);
+    auto tupleArg = beforeBlock->addArgument(ptrType, location);
+    // Convert pointer to int for null comparison
+    auto tupleInt = beforeBuilder.create<mlir::LLVM::PtrToIntOp>(location, i64Type, tupleArg);
     auto hasValidTuple = beforeBuilder.create<mlir::arith::CmpIOp>(
-        location, mlir::arith::CmpIPredicate::ne, tupleArg, nullValue);
+        location, mlir::arith::CmpIPredicate::ne, tupleInt, nullValue);
     beforeBuilder.create<mlir::scf::ConditionOp>(location, hasValidTuple, mlir::ValueRange{tupleArg});
     
     // After block: process the tuple and read next
     auto* afterBlock = &whileOp.getAfter().emplaceBlock();
     auto afterBuilder = mlir::OpBuilder::atBlockBegin(afterBlock);
-    auto currentTuple = afterBlock->addArgument(i64Type, location);
+    auto currentTuple = afterBlock->addArgument(ptrType, location);
     
     // Process target list if provided
     if (targetList) {
         processTargetListWithRealTuple(afterBuilder, location, currentTuple, targetList);
     }
     
-    // Add tuple to result (keep this as runtime call for result accumulation)
+    // Add tuple to result - convert pointer to i64 for runtime call
+    auto currentTupleInt = afterBuilder.create<mlir::LLVM::PtrToIntOp>(location, i64Type, currentTuple);
     afterBuilder.create<mlir::func::CallOp>(
-        location, addResultFunc, mlir::ValueRange{currentTuple});
+        location, addResultFunc, mlir::ValueRange{currentTupleInt});
     
     // Read next tuple using pg.read_tuple operation
     auto nextReadOp = afterBuilder.create<mlir::pg::ReadTupleOp>(
         location, tupleHandleType, tableHandle);
     auto nextTupleHandle = nextReadOp->getResult(0);
     
-    // Convert tuple handle to i64 for loop control
-    auto nextTuple = afterBuilder.create<mlir::UnrealizedConversionCastOp>(
+    // Convert tuple handle to i64, then to ptr for consistent loop handling
+    auto nextTupleId = afterBuilder.create<mlir::UnrealizedConversionCastOp>(
         location, i64Type, mlir::ValueRange{nextTupleHandle}).getResult(0);
-    afterBuilder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTuple});
+    auto nextTuplePtr = afterBuilder.create<mlir::LLVM::IntToPtrOp>(
+        location, ptrType, nextTupleId);
+    afterBuilder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTuplePtr});
     
     // Table cleanup will be handled by lowering pass - no manual close calls needed
     
