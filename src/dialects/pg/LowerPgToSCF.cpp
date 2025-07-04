@@ -388,14 +388,14 @@ public:
 //===----------------------------------------------------------------------===//
 
 /// Lower pg.compare to arith.cmpi/arith.cmpf with PostgreSQL semantics
-class PgCmpOpLowering final : public OpRewritePattern<PgCmpOp> {
+class PgCmpOpLowering final : public OpConversionPattern<PgCmpOp> {
 public:
-    explicit PgCmpOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+    explicit PgCmpOpLowering(LLVMTypeConverter &typeConverter) : OpConversionPattern<PgCmpOp>(typeConverter, &typeConverter.getContext()), typeConverter(typeConverter) {}
 
-    auto matchAndRewrite(PgCmpOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+    auto matchAndRewrite(PgCmpOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
-        auto left = op.getLeft();
-        auto right = op.getRight();
+        auto left = adaptor.getLeft();
+        auto right = adaptor.getRight();
         auto predicate = op.getPredicate();
         
         // Map PostgreSQL comparison predicate to MLIR arith predicate
@@ -431,6 +431,9 @@ public:
         
         return success();
     }
+
+private:
+    LLVMTypeConverter &typeConverter;
 };
 
 //===----------------------------------------------------------------------===//
@@ -663,7 +666,7 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
 
             // Set up conversion patterns using ConversionPattern instead of OpRewritePattern
             mlir::RewritePatternSet patterns(ctx);
-            patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering>(typeConverter);
+            patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, PgCmpOpLowering>(typeConverter);
             
             // Apply dialect conversion instead of greedy pattern application
             if (failed(mlir::applyPartialConversion(func, target, std::move(patterns)))) {
