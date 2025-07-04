@@ -121,12 +121,13 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     }
 
     auto pm2 = mlir::PassManager(&context);
+    // Follow LingoDB's proven pass order
     pm2.addPass(mlir::createConvertSCFToCFPass());
+    pm2.addPass(mlir::createConvertControlFlowToLLVMPass());
     pm2.addPass(mlir::createArithToLLVMConversionPass());
     pm2.addPass(mlir::createConvertFuncToLLVMPass());
-    pm2.addPass(mlir::createConvertControlFlowToLLVMPass());
     
-    // Add cleanup pass for UnrealizedConversionCast operations
+    // Reconcile unrealized casts AFTER all dialect-to-LLVM conversions (LingoDB pattern)
     pm2.addPass(mlir::createReconcileUnrealizedCastsPass());
 
     if (failed(pm2.run(module))) {
