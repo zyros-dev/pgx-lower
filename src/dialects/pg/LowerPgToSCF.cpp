@@ -210,6 +210,68 @@ class GetTextFieldOpLowering final : public OpRewritePattern<GetTextFieldOp> {
     }
 };
 
+/// Convert string constant placeholder integers to LLVM string globals
+class StringConstantLowering final : public OpRewritePattern<LLVM::IntToPtrOp> {
+   public:
+    explicit StringConstantLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    LogicalResult matchAndRewrite(LLVM::IntToPtrOp op, PatternRewriter &rewriter) const override {
+        // Check if this is a string constant placeholder
+        auto constantOp = op.getOperand().getDefiningOp<arith::ConstantOp>();
+        if (!constantOp) {
+            return failure(); // Not a constant
+        }
+        
+        // Check if this constant has the pg.string_value attribute
+        auto stringValueAttr = constantOp->getAttr("pg.string_value");
+        if (!stringValueAttr) {
+            return failure(); // Not a string constant placeholder
+        }
+        
+        auto stringAttr = mlir::dyn_cast<StringAttr>(stringValueAttr);
+        if (!stringAttr) {
+            return failure(); // Invalid string attribute
+        }
+        
+        std::string stringValue = stringAttr.getValue().str();
+        auto loc = op.getLoc();
+        
+        // Get unique ID for naming the global
+        auto intAttr = mlir::dyn_cast<IntegerAttr>(constantOp.getValue());
+        uint64_t placeholderId = intAttr ? intAttr.getValue().getZExtValue() : 0;
+        
+        // Create LLVM string global for this constant
+        auto module = op->getParentOfType<ModuleOp>();
+        if (!module) {
+            return failure();
+        }
+        
+        auto stringType = LLVM::LLVMArrayType::get(rewriter.getI8Type(), stringValue.length() + 1);
+        auto stringLiteral = rewriter.getStringAttr(stringValue + '\0');
+        auto globalName = "_string_const_" + std::to_string(placeholderId);
+        
+        // Check if global already exists
+        auto existingGlobal = module.lookupSymbol<LLVM::GlobalOp>(globalName);
+        if (!existingGlobal) {
+            // Create the global at module level
+            auto insertionGuard = OpBuilder::InsertionGuard(rewriter);
+            rewriter.setInsertionPointToStart(module.getBody());
+            
+            existingGlobal = rewriter.create<LLVM::GlobalOp>(
+                loc, stringType, /*isConstant=*/true, LLVM::Linkage::Internal,
+                globalName, stringLiteral
+            );
+        }
+        
+        // Replace IntToPtrOp with AddressOfOp to the global
+        auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+        auto addressOfOp = rewriter.create<LLVM::AddressOfOp>(loc, ptrType, existingGlobal.getName());
+        rewriter.replaceOp(op, addressOfOp);
+        
+        return success();
+    }
+};
+
 /// Clean up UnrealizedConversionCastOp from tuple handles to i64
 class UnrealizedConversionCastOpLowering final : public OpConversionPattern<UnrealizedConversionCastOp> {
    public:
@@ -675,6 +737,15 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
             
             // Add OpRewritePattern-based lowering for operations that don't need type conversion
             patterns.add<PgAndOpLowering, PgOrOpLowering, PgNotOpLowering>(ctx);
+            
+            // Add arithmetic operation lowering patterns
+            patterns.add<PgAddOpLowering, PgSubOpLowering, PgMulOpLowering, PgDivOpLowering, PgModOpLowering>(ctx);
+            
+            // Add text field access lowering pattern
+            patterns.add<GetTextFieldOpLowering>(ctx);
+            
+            // Add string constant lowering pattern
+            patterns.add<StringConstantLowering>(ctx);
             
             // Apply dialect conversion instead of greedy pattern application
             if (failed(mlir::applyPartialConversion(func, target, std::move(patterns)))) {

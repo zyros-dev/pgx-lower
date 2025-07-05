@@ -292,7 +292,7 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     logger.notice("Generated MLIR from PostgreSQL AST:");
     auto mlirStr = std::string();
     auto os = llvm::raw_string_ostream(mlirStr);
-    module->OpState::print(os);
+    module->print(os);
     os.flush();
     logger.notice("AST-generated MLIR: " + mlirStr);
     

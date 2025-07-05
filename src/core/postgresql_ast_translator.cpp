@@ -6,6 +6,7 @@ extern "C" {
 #include "nodes/plannodes.h"
 #include "nodes/parsenodes.h"
 #include "utils/lsyscache.h"
+#include "utils/builtins.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_type.h"
 }
@@ -282,7 +283,7 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
         return nullptr;
     }
     
-    logger_.debug("Translating OpExpr with operator: " + std::string(opName));
+    logger_.debug("Translating OpExpr with operator: " + std::string(opName) + " (opno: " + std::to_string(opExpr->opno) + ")");
     
     // Translate operand expressions
     std::vector<mlir::Value> operands;
@@ -341,36 +342,57 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
     } else if (isTextOperator(opName)) {
         // Text operations require runtime function calls
         auto ptrType = builder_->getType<mlir::LLVM::LLVMPointerType>();
+        
+        logger_.notice("✅ DETECTED TEXT OPERATOR: " + std::string(opName) + " with " + std::to_string(operands.size()) + " operands");
+        
+        // Convert operands to proper pointer types for string operations
+        std::vector<mlir::Value> ptrOperands;
+        for (size_t i = 0; i < operands.size(); ++i) {
+            auto operand = operands[i];
+            logger_.debug("Processing operand " + std::to_string(i));
+            
+            if (operand.getType().isa<mlir::IntegerType>()) {
+                // Convert integer (pointer as i64) to !llvm.ptr
+                logger_.debug("Converting integer operand to pointer");
+                auto convertedPtr = builder_->create<mlir::LLVM::IntToPtrOp>(location, ptrType, operand);
+                ptrOperands.push_back(convertedPtr);
+            } else {
+                // Already a pointer type
+                logger_.debug("Using operand as-is (already pointer type)");
+                ptrOperands.push_back(operand);
+            }
+        }
+        
+        logger_.debug("After conversion, have " + std::to_string(ptrOperands.size()) + " pointer operands");
+        
         if (strcmp(opName, "||") == 0) {
             // String concatenation
-            auto concatFuncType = mlir::FunctionType::get(
-                builder_->getContext(),
-                {ptrType, ptrType},
-                {ptrType}
-            );
-            auto concatFunc = builder_->create<mlir::func::CallOp>(
-                location, 
-                "concatenate_strings", 
-                mlir::ValueRange{operands[0], operands[1]}
-            );
-            return concatFunc.getResult(0);
+            logger_.debug("Creating concatenate_strings call with operands");
+            auto concatFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("concatenate_strings");
+            if (concatFunc) {
+                auto callOp = builder_->create<mlir::func::CallOp>(
+                    location, 
+                    concatFunc, 
+                    mlir::ValueRange{ptrOperands[0], ptrOperands[1]}
+                );
+                return callOp.getResult(0);
+            }
         } else if (strcmp(opName, "~~") == 0) {
             // LIKE pattern matching
-            auto likeFuncType = mlir::FunctionType::get(
-                builder_->getContext(),
-                {ptrType, ptrType},
-                {builder_->getI1Type()}
-            );
-            auto likeFunc = builder_->create<mlir::func::CallOp>(
-                location,
-                "string_like_match",
-                mlir::ValueRange{operands[0], operands[1]}
-            );
-            return likeFunc.getResult(0);
+            logger_.debug("Creating string_like_match call with operands");
+            auto likeFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("string_like_match");
+            if (likeFunc) {
+                auto callOp = builder_->create<mlir::func::CallOp>(
+                    location,
+                    likeFunc,
+                    mlir::ValueRange{ptrOperands[0], ptrOperands[1]}
+                );
+                return callOp.getResult(0);
+            }
         }
     }
     
-    logger_.notice("Unsupported operator: " + std::string(opName));
+    logger_.notice("❌ UNSUPPORTED OPERATOR: '" + std::string(opName) + "' (opno: " + std::to_string(opExpr->opno) + ") - not arithmetic, comparison, or text");
     return nullptr;
 }
 
@@ -379,10 +401,12 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
         return nullptr;
     }
     
-    logger_.debug("Translating Var with column index: " + std::to_string(var->varattno - 1));
+    logger_.debug("Translating Var with column index: " + std::to_string(var->varattno - 1) + 
+                 " and type OID: " + std::to_string(var->vartype));
     
     auto location = builder_->getUnknownLoc();
     auto i32Type = builder_->getI32Type();
+    auto i64Type = builder_->getI64Type();
     auto i1Type = builder_->getI1Type();
     
     // Use real tuple handle if available, otherwise create placeholder
@@ -399,11 +423,29 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
         return nullptr; // Don't generate invalid field access
     }
     
-    // Generate pg.get_int_field operation with correct !pg.tuple_handle type
+    // Generate the appropriate field access operation based on PostgreSQL type
     mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
     getFieldState.addOperands(tupleHandle);
     getFieldState.addAttribute("field_index", builder_->getI32IntegerAttr(var->varattno - 1));
-    getFieldState.addTypes({i32Type, i1Type});
+    
+    // Choose the correct field operation based on var->vartype
+    switch (var->vartype) {
+        case TEXTOID:
+        case VARCHAROID:
+        case CHAROID:
+            logger_.debug("Using pg.get_text_field for text type");
+            getFieldState.name = mlir::OperationName(mlir::pg::GetTextFieldOp::getOperationName(), &context_);
+            getFieldState.addTypes({i64Type, i1Type}); // text fields return i64 (pointer as int) + null indicator
+            break;
+        case BOOLOID:
+        case INT2OID:
+        case INT4OID:
+        default:
+            logger_.debug("Using pg.get_int_field for integer/boolean type");
+            getFieldState.name = mlir::OperationName(mlir::pg::GetIntFieldOp::getOperationName(), &context_);
+            getFieldState.addTypes({i32Type, i1Type}); // int fields return i32 + null indicator
+            break;
+    }
     
     auto getFieldOp = builder_->create(getFieldState);
     return getFieldOp->getResult(0); // Return the value (first result)
@@ -439,6 +481,37 @@ auto PostgreSQLASTTranslator::translateConst(Const* constNode) -> mlir::Value {
             bool value = DatumGetBool(constNode->constvalue);
             logger_.debug("Translating boolean constant: " + std::string(value ? "true" : "false"));
             return builder_->create<mlir::arith::ConstantOp>(location, builder_->getBoolAttr(value));
+        }
+        case TEXTOID:
+        case VARCHAROID: {
+            // Extract C string from PostgreSQL TEXT/VARCHAR Datum
+            // For unit tests, we'll use a placeholder since PostgreSQL functions aren't linked
+            std::string value;
+            #ifdef BUILDING_UNIT_TESTS
+            value = "test_string"; // Placeholder for unit tests
+            logger_.debug("Translating string constant (unit test placeholder): \"" + value + "\"");
+            #else
+            char* cstr = TextDatumGetCString(constNode->constvalue);
+            value = std::string(cstr);
+            pfree(cstr); // Free the palloc'd memory
+            logger_.debug("Translating string constant: \"" + value + "\"");
+            #endif
+            
+            // Create an integer constant with the string value stored as an attribute
+            // The lowering pass will convert this to an LLVM string global
+            auto uniqueId = reinterpret_cast<uint64_t>(constNode);
+            
+            logger_.debug("Creating string placeholder with ID: " + std::to_string(uniqueId) + " for value: \"" + value + "\"");
+            
+            auto i64Type = builder_->getI64Type();
+            auto constantOp = builder_->create<mlir::arith::ConstantOp>(
+                location, builder_->getI64IntegerAttr(uniqueId)
+            );
+            
+            // Store the actual string value as an attribute for the lowering pass to use
+            constantOp->setAttr("pg.string_value", builder_->getStringAttr(value));
+            
+            return constantOp;
         }
         default:
             logger_.notice("Unsupported constant type: " + std::to_string(constNode->consttype));

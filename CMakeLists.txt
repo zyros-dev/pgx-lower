@@ -97,4 +97,5 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     target_include_directories(mlir_unit_test PRIVATE 
         tests/unit
     )
+    target_compile_definitions(mlir_unit_test PRIVATE BUILDING_UNIT_TESTS)
 endif()
