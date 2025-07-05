@@ -108,10 +108,9 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     // Create runtime function declarations
     createRuntimeFunctionDeclarations(*module);
     
-    // Create main function
+    // Create main function (void return type like LingoDB pattern)
     auto location = builder.getUnknownLoc();
-    auto i64Type = builder.getI64Type();
-    auto mainFuncType = builder.getFunctionType({}, {i64Type});
+    auto mainFuncType = builder.getFunctionType({}, {});
     
     auto mainFunc = builder.create<mlir::func::FuncOp>(location, "main", mainFuncType);
     auto& entryBlock = *mainFunc.addEntryBlock();
