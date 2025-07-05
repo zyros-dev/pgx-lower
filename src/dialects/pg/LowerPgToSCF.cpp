@@ -34,13 +34,35 @@ class ScanTableOpLowering final : public OpConversionPattern<ScanTableOp> {
 
         const auto tableName = op.getTableName();
 
-        // Create a constant for the table name as a pointer (to match runtime function signature)
+        // Create a proper string constant for the table name (instead of hashing it!)
         auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
-        auto tableNameHash = static_cast<int64_t>(std::hash<std::string>{}(tableName.str()));
-        auto hashConst = rewriter.create<arith::ConstantOp>(
-            loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(tableNameHash)
+        auto tableNameStr = tableName.str();
+        
+        // Find the module to create the global string constant at module level
+        auto module = op->getParentOfType<mlir::ModuleOp>();
+        if (!module) {
+            return failure();
+        }
+        
+        // Create a global string constant in the module (at module scope, not function scope)
+        auto stringType = LLVM::LLVMArrayType::get(rewriter.getI8Type(), tableNameStr.length() + 1);
+        auto stringLiteral = rewriter.getStringAttr(tableNameStr + '\0');
+        auto globalName = "_table_name_" + std::to_string(reinterpret_cast<uintptr_t>(op.getOperation()));
+
+        // Insert the global at the module level (before the current function)
+        auto insertionGuard = OpBuilder::InsertionGuard(rewriter);
+        rewriter.setInsertionPointToStart(module.getBody());
+        
+        auto global = rewriter.create<LLVM::GlobalOp>(
+            loc, stringType, /*isConstant=*/true, LLVM::Linkage::Internal, 
+            globalName, stringLiteral
         );
-        auto tableNamePtr = rewriter.create<LLVM::IntToPtrOp>(loc, ptrType, hashConst);
+
+        // Restore insertion point to the current operation
+        rewriter.setInsertionPoint(op);
+
+        // Get pointer to the global string
+        auto tableNamePtr = rewriter.create<LLVM::AddressOfOp>(loc, ptrType, global.getName());
 
         // Call the runtime function to open the table: (ptr) -> ptr
         auto openTableFn = SymbolRefAttr::get(ctx, "open_postgres_table");
