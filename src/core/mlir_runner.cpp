@@ -238,7 +238,8 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     }
 
     logger.notice("Looking up main function in MLIR ExecutionEngine...");
-    auto fptr = reinterpret_cast<int64_t (*)()>(mainFunc.get());
+    // Use LingoDB pattern: void (*)() function signature
+    auto fptr = reinterpret_cast<void (*)()>(mainFunc.get());
 
     logger.notice("About to execute JIT function - this is where PostgreSQL may crash...");
     logger.notice("🚀 ALL COMPILATION STAGES WORKING! Only JIT execution remaining...");
@@ -247,11 +248,10 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("JIT function pointer address: " + std::to_string(reinterpret_cast<uint64_t>(fptr)));
     
     // Wrap JIT function execution in error handling to prevent server crash
-    int64_t result = 0;
     try {
         logger.notice("Calling JIT function now...");
-        result = fptr();
-        logger.notice("🎉 COMPLETE SUCCESS! MLIR JIT function executed and returned: " + std::to_string(result));
+        fptr();  // void function call (LingoDB pattern)
+        logger.notice("🎉 COMPLETE SUCCESS! MLIR JIT function executed successfully!");
         logger.notice("🏆 ALL STAGES WORKING: MLIR compilation + JIT execution!");
     } catch (const std::exception& e) {
         logger.error("JIT function execution failed with exception: " + std::string(e.what()));

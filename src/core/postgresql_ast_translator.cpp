@@ -134,9 +134,8 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     // Generate proper tuple iteration loop instead of broken field access
     generateTupleIterationLoop(builder, location, seqScan, rootPlan->targetlist);
     
-    // Add return statement to main function
-    auto zeroConstant = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
-    builder.create<mlir::func::ReturnOp>(location, zeroConstant.getResult());
+    // Add return statement to main function (void return - LingoDB pattern)
+    builder.create<mlir::func::ReturnOp>(location);
     
     builder_ = nullptr;
     currentModule_ = nullptr;
