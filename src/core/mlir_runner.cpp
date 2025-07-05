@@ -17,6 +17,8 @@
 
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/TargetSelect.h"
+
+// Runtime symbols will be registered from the interface functions
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
@@ -197,6 +199,34 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("Created MLIR ExecutionEngine for PostgreSQL typed field access!");
     auto engine = std::move(*maybeEngine);
 
+    // Register runtime function symbols with the ExecutionEngine
+    logger.notice("Registering runtime function symbols with ExecutionEngine...");
+    
+    // Register runtime symbols using the MLIR ExecutionEngine registerSymbols API
+    engine->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
+        llvm::orc::SymbolMap symbolMap;
+        
+        // Register interface functions that the JIT code will call
+        auto addSymbol = [&](const char* name, void* ptr) {
+            auto addr = llvm::orc::ExecutorAddr::fromPtr(ptr);
+            symbolMap[interner(name)] = llvm::orc::ExecutorSymbolDef(addr, llvm::JITSymbolFlags::Exported);
+        };
+        
+        addSymbol("open_postgres_table", reinterpret_cast<void*>(open_postgres_table));
+        addSymbol("read_next_tuple_from_table", reinterpret_cast<void*>(read_next_tuple_from_table));
+        addSymbol("close_postgres_table", reinterpret_cast<void*>(close_postgres_table));
+        addSymbol("add_tuple_to_result", reinterpret_cast<void*>(add_tuple_to_result));
+        addSymbol("get_int_field", reinterpret_cast<void*>(get_int_field));
+        addSymbol("get_text_field", reinterpret_cast<void*>(get_text_field));
+        addSymbol("store_bool_result", reinterpret_cast<void*>(store_bool_result));
+        addSymbol("store_int_result", reinterpret_cast<void*>(store_int_result));
+        addSymbol("store_bigint_result", reinterpret_cast<void*>(store_bigint_result));
+        
+        return symbolMap;
+    });
+    
+    logger.notice("Runtime function symbols registered successfully");
+
     // Lookup and invoke the main function
     auto mainFunc = engine->lookupPacked("main");
     if (!mainFunc) {
@@ -210,8 +240,28 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("Looking up main function in MLIR ExecutionEngine...");
     auto fptr = reinterpret_cast<int64_t (*)()>(mainFunc.get());
 
-    const int64_t result = fptr();
-    logger.notice("MLIR JIT function completed with result: " + std::to_string(result));
+    logger.notice("About to execute JIT function - this is where PostgreSQL may crash...");
+    logger.notice("🚀 ALL COMPILATION STAGES WORKING! Only JIT execution remaining...");
+    
+    // Add detailed logging for JIT execution debugging
+    logger.notice("JIT function pointer address: " + std::to_string(reinterpret_cast<uint64_t>(fptr)));
+    
+    // Wrap JIT function execution in error handling to prevent server crash
+    int64_t result = 0;
+    try {
+        logger.notice("Calling JIT function now...");
+        result = fptr();
+        logger.notice("🎉 COMPLETE SUCCESS! MLIR JIT function executed and returned: " + std::to_string(result));
+        logger.notice("🏆 ALL STAGES WORKING: MLIR compilation + JIT execution!");
+    } catch (const std::exception& e) {
+        logger.error("JIT function execution failed with exception: " + std::string(e.what()));
+        logger.error("This indicates a runtime function is causing a crash");
+        return false;
+    } catch (...) {
+        logger.error("JIT function execution failed with unknown exception");
+        logger.error("This likely indicates a segfault in a runtime function");
+        return false;
+    }
 
     return true;
 }

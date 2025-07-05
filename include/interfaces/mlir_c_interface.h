@@ -7,7 +7,7 @@
 extern "C" {
 
 // MLIR Interface: Read next tuple for iteration control
-// Returns: 1 = "we have a tuple", -2 = "end of table"
+// Returns: tuple pointer as int64_t if valid tuple, 0 if end of table
 // Side effect: Preserves COMPLETE PostgreSQL tuple for later streaming
 // Architecture: MLIR iterates, PostgreSQL handles all data types
 auto read_next_tuple_from_table(void* tableHandle) -> int64_t;
