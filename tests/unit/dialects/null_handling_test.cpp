@@ -19,6 +19,11 @@
 #include <mlir/Target/LLVMIR/Export.h>
 #include <mlir/Target/LLVMIR/Dialect/All.h>
 #include <llvm/IR/LLVMContext.h>
+#include <mlir/ExecutionEngine/ExecutionEngine.h>
+#include <mlir/ExecutionEngine/OptUtils.h>
+#include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
+#include <mlir/Support/LogicalResult.h>
+#include <llvm/Support/TargetSelect.h>
 
 class NullHandlingTest : public ::testing::Test {
 protected:
@@ -384,4 +389,106 @@ TEST_F(NullHandlingTest, FullPipelineWithLLVMTranslation) {
     
     // Verify final module is still valid
     EXPECT_TRUE(module.verify().succeeded());
+}
+
+TEST_F(NullHandlingTest, MinimalJitExecution) {
+    // Create the simplest possible MLIR function to test basic JIT execution
+    mlir::OpBuilder builder(&context_);
+    auto loc = builder.getUnknownLoc();
+    auto module = mlir::ModuleOp::create(loc);
+    builder.setInsertionPointToStart(module.getBody());
+    
+    // Create a function that just returns a constant (no runtime function calls)
+    auto funcType = builder.getFunctionType({}, {builder.getI64Type()});
+    auto func = builder.create<mlir::func::FuncOp>(loc, "main", funcType);
+    
+    auto& entryBlock = *func.addEntryBlock();
+    builder.setInsertionPointToStart(&entryBlock);
+    
+    // Just return constant 42
+    auto constantValue = builder.create<mlir::arith::ConstantOp>(
+        loc, 
+        builder.getI64Type(), 
+        builder.getI64IntegerAttr(42)
+    );
+    
+    builder.create<mlir::func::ReturnOp>(loc, constantValue.getResult());
+    
+    std::cout << "\n=== MINIMAL JIT TEST ===\n";
+    module.print(llvm::outs());
+    std::cout << "\n";
+    
+    // Test lowering to LLVM dialect
+    mlir::PassManager pm(&context_);
+    pm.addPass(mlir::createConvertFuncToLLVMPass());
+    pm.addPass(mlir::createArithToLLVMConversionPass());
+    
+    if (mlir::failed(pm.run(module))) {
+        std::cout << "❌ Standard lowering to LLVM failed\n";
+        EXPECT_TRUE(false) << "Standard lowering failed";
+        return;
+    }
+    
+    std::cout << "✅ Standard lowering to LLVM succeeded\n";
+    
+    // Test MLIR to LLVM IR translation
+    mlir::DialectRegistry registry;
+    mlir::registerAllToLLVMIRTranslations(registry);
+    context_.appendDialectRegistry(registry);
+    mlir::registerLLVMDialectTranslation(context_);
+    mlir::registerBuiltinDialectTranslation(context_);
+    
+    auto llvmContext = std::make_unique<llvm::LLVMContext>();
+    auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
+    
+    if (!llvmModule) {
+        std::cout << "❌ MLIR to LLVM IR translation failed\n";
+        EXPECT_TRUE(false) << "MLIR to LLVM IR translation failed";
+        return;
+    }
+    
+    std::cout << "✅ MLIR to LLVM IR translation succeeded\n";
+    
+    // Initialize LLVM native target for JIT execution
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+    
+    // Test JIT execution
+    auto maybeEngine = mlir::ExecutionEngine::create(module);
+    
+    if (!maybeEngine) {
+        std::cout << "❌ ExecutionEngine creation failed: " << llvm::toString(maybeEngine.takeError()) << "\n";
+        EXPECT_TRUE(false) << "ExecutionEngine creation failed";
+        return;
+    }
+    
+    auto engine = std::move(*maybeEngine);
+    std::cout << "✅ ExecutionEngine created successfully\n";
+    
+    // Lookup the main function
+    auto mainFunc = engine->lookupPacked("main");
+    if (!mainFunc) {
+        std::cout << "❌ Failed to lookup main function\n";
+        EXPECT_TRUE(false) << "Failed to lookup main function";
+        return;
+    }
+    
+    auto fptr = reinterpret_cast<int64_t (*)()>(mainFunc.get());
+    std::cout << "✅ Main function lookup succeeded\n";
+    
+    // Execute the JIT function
+    try {
+        std::cout << "🚀 Calling minimal JIT function...\n";
+        int64_t result = fptr();
+        std::cout << "🎉 JIT execution SUCCESS! Result: " << result << "\n";
+        EXPECT_EQ(result, 42) << "JIT function should return 42";
+        std::cout << "✅ BASIC JIT MECHANISM WORKS!\n";
+    } catch (const std::exception& e) {
+        std::cout << "❌ JIT execution failed with exception: " << e.what() << "\n";
+        EXPECT_TRUE(false) << "JIT execution failed with exception";
+    } catch (...) {
+        std::cout << "❌ JIT execution failed with unknown exception\n"; 
+        EXPECT_TRUE(false) << "JIT execution failed with unknown exception";
+    }
 }
