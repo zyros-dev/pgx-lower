@@ -9,6 +9,7 @@
 
 include "dialects/pg/PgBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 
 //===----------------------------------------------------------------------===//
 // Simple Test Operators - Building up gradually

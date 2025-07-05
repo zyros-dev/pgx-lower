@@ -189,19 +189,34 @@ class GetTextFieldOpLowering final : public OpRewritePattern<GetTextFieldOp> {
 };
 
 /// Clean up UnrealizedConversionCastOp from tuple handles to i64
-class UnrealizedConversionCastOpLowering final : public OpRewritePattern<UnrealizedConversionCastOp> {
+class UnrealizedConversionCastOpLowering final : public OpConversionPattern<UnrealizedConversionCastOp> {
    public:
-    explicit UnrealizedConversionCastOpLowering(MLIRContext *context)
-    : OpRewritePattern<UnrealizedConversionCastOp>(context) {}
+    explicit UnrealizedConversionCastOpLowering(LLVMTypeConverter &typeConverter)
+    : OpConversionPattern<UnrealizedConversionCastOp>(typeConverter, &typeConverter.getContext()) {}
 
-    LogicalResult matchAndRewrite(UnrealizedConversionCastOp op, PatternRewriter &rewriter) const override {
+    LogicalResult matchAndRewrite(UnrealizedConversionCastOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const override {
         // Handle all unrealized conversion casts that are blocking LLVM IR translation
-        if (op.getInputs().size() == 1 && op.getResults().size() == 1) {
-            const auto input = op.getInputs()[0];
+        auto inputs = adaptor.getInputs();
+        if (inputs.size() == 1 && op.getResults().size() == 1) {
+            const auto input = inputs[0];
             const auto inputType = input.getType();
             const auto resultType = op.getResults()[0].getType();
 
-            // Case 1: i64 -> !pg.tuple_handle: This should be an IntToPtr conversion
+            // Case 1: !llvm.ptr -> i64: Convert to llvm.ptrtoint
+            if (mlir::isa<LLVM::LLVMPointerType>(inputType) && mlir::isa<IntegerType>(resultType)) {
+                auto ptrToIntValue = rewriter.create<LLVM::PtrToIntOp>(op.getLoc(), resultType, input);
+                rewriter.replaceOp(op, ptrToIntValue);
+                return success();
+            }
+            
+            // Case 2: i64 -> !llvm.ptr: Convert to llvm.inttoptr  
+            if (mlir::isa<IntegerType>(inputType) && mlir::isa<LLVM::LLVMPointerType>(resultType)) {
+                auto intToPtrValue = rewriter.create<LLVM::IntToPtrOp>(op.getLoc(), resultType, input);
+                rewriter.replaceOp(op, intToPtrValue);
+                return success();
+            }
+            
+            // Case 3: i64 -> !pg.tuple_handle: This should be an IntToPtr conversion (for backwards compatibility)
             if (mlir::isa<IntegerType>(inputType) && mlir::isa<TupleHandleType>(resultType)) {
                 auto ptrType = rewriter.getType<LLVM::LLVMPointerType>();
                 auto ptrValue = rewriter.create<LLVM::IntToPtrOp>(op.getLoc(), ptrType, input);
@@ -209,25 +224,25 @@ class UnrealizedConversionCastOpLowering final : public OpRewritePattern<Unreali
                 return success();
             }
             
-            // Case 2: !pg.tuple_handle -> !llvm.ptr: Direct replacement (both are pointers)
+            // Case 4: !pg.tuple_handle -> !llvm.ptr: Direct replacement (both are pointers)
             if (mlir::isa<TupleHandleType>(inputType) && mlir::isa<LLVM::LLVMPointerType>(resultType)) {
                 rewriter.replaceOp(op, input);
                 return success();
             }
             
-            // Case 3: !pg.table_handle -> !llvm.ptr: Direct replacement (both are pointers)
+            // Case 5: !pg.table_handle -> !llvm.ptr: Direct replacement (both are pointers)
             if (mlir::isa<TableHandleType>(inputType) && mlir::isa<LLVM::LLVMPointerType>(resultType)) {
                 rewriter.replaceOp(op, input);
                 return success();
             }
             
-            // Case 4: i64 -> i64 or any other direct type match: Direct replacement
+            // Case 6: i64 -> i64 or any other direct type match: Direct replacement
             if (inputType == resultType) {
                 rewriter.replaceOp(op, input);
                 return success();
             }
             
-            // Case 5: Any other conversion: Direct replacement for simplicity
+            // Case 7: Any other conversion: Direct replacement for simplicity
             rewriter.replaceOp(op, input);
             return success();
         }
@@ -666,7 +681,7 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
 
             // Set up conversion patterns using ConversionPattern instead of OpRewritePattern
             mlir::RewritePatternSet patterns(ctx);
-            patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, PgCmpOpLowering>(typeConverter);
+            patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, PgCmpOpLowering, UnrealizedConversionCastOpLowering>(typeConverter);
             
             // Add OpRewritePattern-based lowering for operations that don't need type conversion
             patterns.add<PgAndOpLowering, PgOrOpLowering, PgNotOpLowering>(ctx);

@@ -392,8 +392,10 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
     if (currentTupleHandle_) {
         logger_.debug("Using real tuple handle from current iteration context");
         
-        // Current tuple handle is already a pointer - use it directly
-        tupleHandle = *currentTupleHandle_;
+        // Convert !llvm.ptr back to !pg.tuple_handle for pg operations
+        auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+        tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
+            location, tupleHandleType, mlir::ValueRange{*currentTupleHandle_}).getResult(0);
     } else {
         logger_.error("Field access attempted outside tuple iteration context - this is a bug!");
         return nullptr; // Don't generate invalid field access
