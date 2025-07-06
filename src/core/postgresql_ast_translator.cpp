@@ -1160,6 +1160,16 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
                     mlir::ValueRange{columnIndexConst, exprValue, isNullConst});
                 logger_.debug("Stored integer result for SELECT expression");
             }
+        } else if (resultType == builder.getI64Type()) {
+            // BigInt result (e.g., from aggregate functions like SUM)
+            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
+            auto storeBigintFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_bigint_result");
+            if (storeBigintFunc) {
+                builder.create<mlir::func::CallOp>(
+                    location, storeBigintFunc,
+                    mlir::ValueRange{columnIndexConst, exprValue, isNullConst});
+                logger_.debug("Stored bigint result for SELECT expression (likely aggregate)");
+            }
         } else {
             logger_.notice("Unsupported result type for SELECT expression storage");
         }
