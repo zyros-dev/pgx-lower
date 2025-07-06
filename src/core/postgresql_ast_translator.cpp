@@ -1033,9 +1033,37 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
         auto i1Type = builder.getI1Type();
         auto columnIndexConst = builder.create<mlir::arith::ConstantIntOp>(location, columnIndex, i32Type);
         
+        // Check if this is a text field expression by examining the source expression
+        bool isTextField = false;
+        if (tle->expr && nodeTag(tle->expr) == T_Var) {
+            auto* var = reinterpret_cast<Var*>(tle->expr);
+            switch (var->vartype) {
+                case TEXTOID:
+                case VARCHAROID: 
+                case CHAROID:
+                    isTextField = true;
+                    break;
+                default:
+                    break;
+            }
+        }
+        
         // Determine result type and call appropriate storage function
         auto resultType = exprValue.getType();
-        if (resultType == i1Type) {
+        if (isTextField && resultType == builder.getI64Type()) {
+            // Text field result (i64 pointer from pg.get_text_field)
+            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
+            auto storeTextFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_text_result");
+            if (storeTextFunc) {
+                // Convert i64 pointer to !llvm.ptr
+                auto ptrType = builder.getType<mlir::LLVM::LLVMPointerType>();
+                auto textPtr = builder.create<mlir::LLVM::IntToPtrOp>(location, ptrType, exprValue);
+                builder.create<mlir::func::CallOp>(
+                    location, storeTextFunc,
+                    mlir::ValueRange{columnIndexConst, textPtr, isNullConst});
+                logger_.debug("Stored text field result for SELECT expression");
+            }
+        } else if (resultType == i1Type) {
             // Boolean result (from comparisons)
             auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
             auto storeBoolFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_bool_result");
@@ -1054,19 +1082,6 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
                     location, storeIntFunc,
                     mlir::ValueRange{columnIndexConst, exprValue, isNullConst});
                 logger_.debug("Stored integer result for SELECT expression");
-            }
-        } else if (resultType == builder.getI64Type()) {
-            // Text result (represented as i64 pointer)
-            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
-            auto storeTextFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_text_result");
-            if (storeTextFunc) {
-                // Convert i64 pointer to !llvm.ptr
-                auto ptrType = builder.getType<mlir::LLVM::LLVMPointerType>();
-                auto textPtr = builder.create<mlir::LLVM::IntToPtrOp>(location, ptrType, exprValue);
-                builder.create<mlir::func::CallOp>(
-                    location, storeTextFunc,
-                    mlir::ValueRange{columnIndexConst, textPtr, isNullConst});
-                logger_.debug("Stored text result for SELECT expression");
             }
         } else {
             logger_.notice("Unsupported result type for SELECT expression storage");
