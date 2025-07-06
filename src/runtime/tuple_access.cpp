@@ -712,5 +712,13 @@ void store_bigint_result(int32_t column_index, int64_t value, bool is_null) {
     (void)is_null;
 }
 
+void store_text_result(int32_t column_index, const char* value, bool is_null) {
+    // TODO: Implement proper result storage for computed text expressions
+    // For now, this is a stub to allow JIT execution to proceed
+    (void)column_index;
+    (void)value;
+    (void)is_null;
+}
+
 }
 #endif // POSTGRESQL_EXTENSION

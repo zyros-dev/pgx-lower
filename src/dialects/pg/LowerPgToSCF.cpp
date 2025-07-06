@@ -159,16 +159,17 @@ class GetIntFieldOpLowering final : public OpConversionPattern<GetIntFieldOp> {
     }
 };
 
-class GetTextFieldOpLowering final : public OpRewritePattern<GetTextFieldOp> {
+class GetTextFieldOpLowering final : public OpConversionPattern<GetTextFieldOp> {
    public:
-    explicit GetTextFieldOpLowering(MLIRContext *context)
-    : OpRewritePattern<GetTextFieldOp>(context) {}
+    explicit GetTextFieldOpLowering(LLVMTypeConverter &typeConverter)
+    : OpConversionPattern<GetTextFieldOp>(typeConverter, &typeConverter.getContext()) {}
 
-    LogicalResult matchAndRewrite(GetTextFieldOp op, PatternRewriter &rewriter) const override {
+    auto matchAndRewrite(GetTextFieldOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const -> LogicalResult override {
         const auto loc = op.getLoc();
         auto *ctx = rewriter.getContext();
 
-        const auto tuple = op.getTuple();
+        // Use the converted tuple handle (should be ptr now)
+        const auto tuple = adaptor.getTuple();
         const unsigned fieldIndex = op.getFieldIndex();
 
         auto fieldIndexVal =
@@ -771,16 +772,13 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
 
             // Set up conversion patterns using ConversionPattern instead of OpRewritePattern
             mlir::RewritePatternSet patterns(ctx);
-            patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, PgCmpOpLowering, UnrealizedConversionCastOpLowering>(typeConverter);
+            patterns.add<ScanTableOpLowering, ReadTupleOpLowering, GetIntFieldOpLowering, GetTextFieldOpLowering, PgCmpOpLowering, UnrealizedConversionCastOpLowering>(typeConverter);
             
             // Add OpRewritePattern-based lowering for operations that don't need type conversion
             patterns.add<PgAndOpLowering, PgOrOpLowering, PgNotOpLowering>(ctx);
             
             // Add arithmetic operation lowering patterns
             patterns.add<PgAddOpLowering, PgSubOpLowering, PgMulOpLowering, PgDivOpLowering, PgModOpLowering>(ctx);
-            
-            // Add text field access lowering pattern
-            patterns.add<GetTextFieldOpLowering>(ctx);
             
             // Add string constant lowering pattern
             patterns.add<StringConstantLowering>(ctx);

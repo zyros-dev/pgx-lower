@@ -782,6 +782,10 @@ auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& 
     auto getIntFieldFunc = builder_->create<mlir::func::FuncOp>(location, "get_int_field", funcType);
     getIntFieldFunc.setPrivate();
     
+    funcType = mlir::FunctionType::get(&context_, {ptrType, i32Type, ptrType}, {i64Type});
+    auto getTextFieldFunc = builder_->create<mlir::func::FuncOp>(location, "get_text_field", funcType);
+    getTextFieldFunc.setPrivate();
+    
     // Text operation functions
     funcType = mlir::FunctionType::get(&context_, {ptrType, ptrType}, {ptrType});
     auto concatFunc = builder_->create<mlir::func::FuncOp>(location, "concatenate_strings", funcType);
@@ -803,6 +807,10 @@ auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& 
     funcType = mlir::FunctionType::get(&context_, {i32Type, i64Type, i1Type}, mlir::TypeRange{});
     auto storeBigintFunc = builder_->create<mlir::func::FuncOp>(location, "store_bigint_result", funcType);
     storeBigintFunc.setPrivate();
+    
+    funcType = mlir::FunctionType::get(&context_, {i32Type, ptrType, i1Type}, mlir::TypeRange{});
+    auto storeTextFunc = builder_->create<mlir::func::FuncOp>(location, "store_text_result", funcType);
+    storeTextFunc.setPrivate();
     
     logger_.debug("Created runtime function declarations");
 }
@@ -1046,6 +1054,19 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
                     location, storeIntFunc,
                     mlir::ValueRange{columnIndexConst, exprValue, isNullConst});
                 logger_.debug("Stored integer result for SELECT expression");
+            }
+        } else if (resultType == builder.getI64Type()) {
+            // Text result (represented as i64 pointer)
+            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
+            auto storeTextFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_text_result");
+            if (storeTextFunc) {
+                // Convert i64 pointer to !llvm.ptr
+                auto ptrType = builder.getType<mlir::LLVM::LLVMPointerType>();
+                auto textPtr = builder.create<mlir::LLVM::IntToPtrOp>(location, ptrType, exprValue);
+                builder.create<mlir::func::CallOp>(
+                    location, storeTextFunc,
+                    mlir::ValueRange{columnIndexConst, textPtr, isNullConst});
+                logger_.debug("Stored text result for SELECT expression");
             }
         } else {
             logger_.notice("Unsupported result type for SELECT expression storage");

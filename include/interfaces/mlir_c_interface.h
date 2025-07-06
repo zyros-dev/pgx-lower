@@ -31,5 +31,6 @@ auto get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) -> i
 void store_int_result(int32_t columnIndex, int32_t value, bool isNull);
 void store_bool_result(int32_t columnIndex, bool value, bool isNull);
 void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
+void store_text_result(int32_t columnIndex, const char* value, bool isNull);
 void prepare_computed_results(int32_t numColumns);
 }

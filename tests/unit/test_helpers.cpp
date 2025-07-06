@@ -71,6 +71,10 @@ extern "C" void store_bigint_result(int32_t /*columnIndex*/, int64_t /*value*/, 
     // Mock implementation for unit tests - just return
 }
 
+extern "C" void store_text_result(int32_t /*columnIndex*/, const char* /*value*/, bool /*isNull*/) {
+    // Mock implementation for unit tests - just return
+}
+
 extern "C" void prepare_computed_results(int32_t /*numColumns*/) {
     // Mock implementation for unit tests - just return
 }

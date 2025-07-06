@@ -405,6 +405,14 @@ extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isN
     g_computed_results.setResult(columnIndex, datum, isNull, INT8OID);
 }
 
+extern "C" void store_text_result(int32_t columnIndex, const char* value, bool isNull) {
+    Datum datum = 0;
+    if (!isNull && value != nullptr) {
+        datum = CStringGetTextDatum(value);
+    }
+    g_computed_results.setResult(columnIndex, datum, isNull, TEXTOID);
+}
+
 extern "C" void prepare_computed_results(int32_t numColumns) {
     g_computed_results.resize(numColumns);
 }

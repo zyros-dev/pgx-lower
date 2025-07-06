@@ -221,6 +221,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         addSymbol("store_bool_result", reinterpret_cast<void*>(store_bool_result));
         addSymbol("store_int_result", reinterpret_cast<void*>(store_int_result));
         addSymbol("store_bigint_result", reinterpret_cast<void*>(store_bigint_result));
+        addSymbol("store_text_result", reinterpret_cast<void*>(store_text_result));
         
         return symbolMap;
     });
