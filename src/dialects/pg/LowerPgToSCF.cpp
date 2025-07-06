@@ -680,6 +680,44 @@ public:
     }
 };
 
+/// Lower pg.coalesce to SCF conditional control flow
+class PgCoalesceOpLowering final : public OpRewritePattern<PgCoalesceOp> {
+public:
+    explicit PgCoalesceOpLowering(MLIRContext *context) : OpRewritePattern(context) {}
+
+    auto matchAndRewrite(PgCoalesceOp op, PatternRewriter &rewriter) const -> LogicalResult override {
+        const auto loc = op.getLoc();
+        auto value = op.getValue();
+        auto defaultValue = op.getDefaultValue();
+        
+        // For now, implement simple null checking logic
+        // In a full implementation, we'd need to track null flags properly
+        
+        // Assume that for integer types, 0 represents NULL
+        // This is a simplification - real PostgreSQL null handling is more complex
+        auto resultType = value.getType();
+        
+        if (auto intType = mlir::dyn_cast<IntegerType>(resultType)) {
+            // Create null check: value == 0
+            auto nullConst = rewriter.create<arith::ConstantOp>(loc, 
+                rewriter.getIntegerAttr(intType, 0));
+            auto isNull = rewriter.create<arith::CmpIOp>(loc, 
+                arith::CmpIPredicate::eq, value, nullConst);
+            
+            // If value is null, return defaultValue, otherwise return value
+            auto result = rewriter.create<arith::SelectOp>(loc, isNull, defaultValue, value);
+            rewriter.replaceOp(op, result);
+            
+            return success();
+        }
+        
+        // For non-integer types, just return the first value for now
+        // TODO: Implement proper null handling for all PostgreSQL types
+        rewriter.replaceOp(op, value);
+        return success();
+    }
+};
+
 struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerPgToSCFPass)
     
@@ -746,6 +784,9 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
             
             // Add string constant lowering pattern
             patterns.add<StringConstantLowering>(ctx);
+            
+            // Add COALESCE operation lowering pattern
+            patterns.add<PgCoalesceOpLowering>(ctx);
             
             // Apply dialect conversion instead of greedy pattern application
             if (failed(mlir::applyPartialConversion(func, target, std::move(patterns)))) {

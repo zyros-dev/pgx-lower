@@ -28,6 +28,7 @@ extern "C" {
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 
 
@@ -687,12 +688,65 @@ auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) 
         return nullptr;
     }
     
-    logger_.debug("Translating CoalesceExpr with " + std::to_string(list_length(coalesceExpr->args)) + " arguments");
+    auto numArgs = list_length(coalesceExpr->args);
+    logger_.debug("Translating CoalesceExpr with " + std::to_string(numArgs) + " arguments");
     
-    // For now, just log that we found a COALESCE - full implementation would
-    // generate scf.if operations to check for NULL values
-    logger_.notice("COALESCE expression translation not yet implemented");
-    return nullptr;
+    if (numArgs == 0) {
+        logger_.error("COALESCE expression must have at least one argument");
+        return nullptr;
+    }
+    
+    auto location = builder_->getUnknownLoc();
+    
+    // If only one argument, just return it directly
+    if (numArgs == 1) {
+        ListCell* arg = list_head(coalesceExpr->args);
+        return translateExpression(reinterpret_cast<Expr*>(lfirst(arg)));
+    }
+    
+    // For two arguments, use the existing pg.coalesce operation
+    if (numArgs == 2) {
+        ListCell* firstArg = list_head(coalesceExpr->args);
+        ListCell* secondArg = lnext(coalesceExpr->args, firstArg);
+        
+        auto firstValue = translateExpression(reinterpret_cast<Expr*>(lfirst(firstArg)));
+        auto secondValue = translateExpression(reinterpret_cast<Expr*>(lfirst(secondArg)));
+        
+        if (!firstValue || !secondValue) {
+            logger_.error("Failed to translate COALESCE arguments");
+            return nullptr;
+        }
+        
+        // Use the existing pg.coalesce operation
+        auto resultType = firstValue.getType();
+        return builder_->create<mlir::pg::PgCoalesceOp>(location, resultType, firstValue, secondValue);
+    }
+    
+    // For multiple arguments, create a nested chain of pg.coalesce operations
+    std::vector<mlir::Value> args;
+    ListCell* arg = list_head(coalesceExpr->args);
+    
+    while (arg != nullptr) {
+        auto argExpr = reinterpret_cast<Expr*>(lfirst(arg));
+        auto argValue = translateExpression(argExpr);
+        
+        if (!argValue) {
+            logger_.error("Failed to translate COALESCE argument");
+            return nullptr;
+        }
+        
+        args.push_back(argValue);
+        arg = lnext(coalesceExpr->args, arg);
+    }
+    
+    // Create a chain of binary coalesce operations
+    mlir::Value result = args[0];
+    for (size_t i = 1; i < args.size(); ++i) {
+        auto resultType = result.getType();
+        result = builder_->create<mlir::pg::PgCoalesceOp>(location, resultType, result, args[i]);
+    }
+    
+    return result;
 }
 
 auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& module) -> void {
