@@ -18,15 +18,16 @@ namespace pgx_lower {
 // NOTE: I break C++ rules a bit in this file since it's interacting a lot with C-style things.
 
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
+    // Support sequential scans, column projection, and aggregate functions
     // Temporarily disable WHERE clause support to debug crashes
-    // Only allow simple sequential scans and column projection
-    return requiresSeqScan && !requiresAggregation && !requiresJoin && !requiresSort && !requiresLimit && !requiresFilter;
+    return requiresSeqScan && !requiresJoin && !requiresSort && !requiresLimit && !requiresFilter;
     // Note: requiresFilter is temporarily disallowed to debug PostgreSQL integration crashes
+    // Note: requiresAggregation is now allowed since we implemented aggregate function support
 }
 
 auto QueryCapabilities::getDescription() const -> const char* {
     if (isMLIRCompatible()) {
-        return "Simple sequential scan - MLIR compatible";
+        return "Sequential scan with optional aggregation - MLIR compatible";
     }
 
     static thread_local char description[256];
@@ -163,7 +164,7 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
         break;
 
     case T_Agg:
-        elog(DEBUG1, "Aggregation operations not yet supported by MLIR");
+        elog(DEBUG1, "Aggregation operations detected - MLIR support available");
         caps.requiresAggregation = true;
         break;
 

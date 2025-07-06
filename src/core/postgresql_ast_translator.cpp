@@ -125,16 +125,29 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         return nullptr;
     }
     
-    // For now, we only handle sequential scans
-    if (rootPlan->type != T_SeqScan) {
-        logger_.notice("Only SeqScan plans are currently supported");
+    // Handle both sequential scans and aggregate queries with sequential scans
+    Plan* scanPlan = nullptr;
+    List* targetList = nullptr;
+    
+    if (rootPlan->type == T_SeqScan) {
+        // Simple sequential scan query
+        scanPlan = rootPlan;
+        targetList = rootPlan->targetlist;
+        logger_.debug("Translating simple SeqScan query");
+    } else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
+        // Aggregate query with sequential scan as source
+        scanPlan = rootPlan->lefttree;
+        targetList = rootPlan->targetlist;  // Use aggregate's target list for computed expressions
+        logger_.debug("Translating aggregate query with SeqScan source");
+    } else {
+        logger_.notice("Only SeqScan and Agg+SeqScan plans are currently supported");
         return nullptr;
     }
     
-    SeqScan* seqScan = reinterpret_cast<SeqScan*>(rootPlan);
+    SeqScan* seqScan = reinterpret_cast<SeqScan*>(scanPlan);
     
     // Generate proper tuple iteration loop instead of broken field access
-    generateTupleIterationLoop(builder, location, seqScan, rootPlan->targetlist);
+    generateTupleIterationLoop(builder, location, seqScan, targetList);
     
     // Add return statement to main function (void return - LingoDB pattern)
     builder.create<mlir::func::ReturnOp>(location);

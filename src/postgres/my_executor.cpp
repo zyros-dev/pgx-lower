@@ -563,13 +563,22 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     }
 
     const auto rootPlan = stmt->planTree;
-    if (rootPlan->type != T_SeqScan) {
+    Plan* scanPlan = nullptr;
+    
+    if (rootPlan->type == T_SeqScan) {
+        // Simple sequential scan query
+        scanPlan = rootPlan;
+    } else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
+        // Aggregate query with sequential scan as source
+        scanPlan = rootPlan->lefttree;
+        PGX_DEBUG("Detected aggregate query with SeqScan source");
+    } else {
         // This should not happen if analyzer is correct, but add safety check
-        PGX_ERROR("Query analyzer bug: marked as compatible but not a SeqScan");
+        PGX_ERROR("Query analyzer bug: marked as compatible but not a simple SeqScan or Agg+SeqScan");
         return false;
     }
 
-    const auto scan = reinterpret_cast<SeqScan*>(rootPlan);
+    const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
     const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
     const auto rel = table_open(rte->relid, AccessShareLock);
     const auto tupdesc = RelationGetDescr(rel);
