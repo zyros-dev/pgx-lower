@@ -33,4 +33,7 @@ void store_bool_result(int32_t columnIndex, bool value, bool isNull);
 void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
 void store_text_result(int32_t columnIndex, const char* value, bool isNull);
 void prepare_computed_results(int32_t numColumns);
+
+// Aggregate functions
+int64_t sum_aggregate(void* table_handle);
 }

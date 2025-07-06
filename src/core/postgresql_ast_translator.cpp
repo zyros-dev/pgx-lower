@@ -677,9 +677,68 @@ auto PostgreSQLASTTranslator::translateAggref(Aggref* aggref) -> mlir::Value {
     
     logger_.debug("Translating Aggref with function: " + std::string(aggName));
     
-    // For now, just log that we found an aggregate - full implementation would
-    // handle specific aggregates like SUM, COUNT, AVG, etc.
-    logger_.notice("Aggregate function translation not yet implemented: " + std::string(aggName));
+    auto location = builder_->getUnknownLoc();
+    std::string aggNameStr(aggName);
+    
+    // Handle specific aggregate functions
+    if (aggNameStr == "sum") {
+        logger_.debug("Implementing SUM aggregate function");
+        
+        // Get the argument to sum (e.g., 'id' in sum(id))
+        if (!aggref->args || list_length(aggref->args) != 1) {
+            logger_.error("SUM aggregate requires exactly one argument");
+            return nullptr;
+        }
+        
+        auto* firstArg = static_cast<TargetEntry*>(linitial(aggref->args));
+        if (!firstArg || !firstArg->expr) {
+            logger_.error("Invalid SUM aggregate argument");
+            return nullptr;
+        }
+        
+        // Translate the argument expression (this will be the field to sum)
+        auto argValue = translateExpression(firstArg->expr);
+        if (!argValue) {
+            logger_.error("Failed to translate SUM aggregate argument");
+            return nullptr;
+        }
+        
+        // Create a call to runtime sum_aggregate function
+        // The runtime function will handle the actual aggregation logic
+        auto i64Type = builder_->getI64Type();
+        auto ptrType = builder_->getType<mlir::LLVM::LLVMPointerType>();
+        
+        // Check if current tuple handle is available for aggregation context
+        if (!currentTupleHandle_) {
+            logger_.error("SUM aggregate requires tuple iteration context");
+            return nullptr;
+        }
+        
+        // For now, create a placeholder result - full implementation would need
+        // to accumulate over all tuples. This is a simplified approach.
+        auto sumFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("sum_aggregate");
+        if (sumFunc) {
+            // Call sum_aggregate function with table handle and field info
+            auto tableHandlePtr = builder_->create<mlir::LLVM::IntToPtrOp>(location, ptrType, 
+                builder_->create<mlir::arith::ConstantOp>(location, builder_->getI64Type(), 
+                    builder_->getI64IntegerAttr(0))); // placeholder table handle
+            
+            auto sumFuncRef = mlir::SymbolRefAttr::get(&context_, "sum_aggregate");
+            auto result = builder_->create<mlir::func::CallOp>(location, i64Type, sumFuncRef, 
+                mlir::ValueRange{tableHandlePtr}).getResult(0);
+            
+            logger_.debug("Created SUM aggregate function call");
+            return result;
+        } else {
+            logger_.notice("sum_aggregate runtime function not available - using fallback");
+            // Return a placeholder value for now
+            return builder_->create<mlir::arith::ConstantOp>(location, builder_->getI64Type(), 
+                builder_->getI64IntegerAttr(0));
+        }
+    }
+    
+    // Handle other aggregate functions (count, avg, etc.)
+    logger_.notice("Aggregate function not yet implemented: " + aggNameStr);
     return nullptr;
 }
 
@@ -811,6 +870,11 @@ auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& 
     funcType = mlir::FunctionType::get(&context_, {i32Type, ptrType, i1Type}, mlir::TypeRange{});
     auto storeTextFunc = builder_->create<mlir::func::FuncOp>(location, "store_text_result", funcType);
     storeTextFunc.setPrivate();
+    
+    // Aggregate functions
+    funcType = mlir::FunctionType::get(&context_, {ptrType}, {i64Type});
+    auto sumAggregateFunc = builder_->create<mlir::func::FuncOp>(location, "sum_aggregate", funcType);
+    sumAggregateFunc.setPrivate();
     
     logger_.debug("Created runtime function declarations");
 }
