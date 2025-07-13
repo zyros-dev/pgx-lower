@@ -33,10 +33,10 @@ add_postgresql_mixed_extension(
             13_text_operations
 )
 
-# Link the PostgreSQL dialect and runtime libraries
+# Link the PostgreSQL dialect library
+# Note: PgxLowerRuntime removed to avoid symbol conflicts with my_executor.cpp
 target_link_libraries(pgx_lower PRIVATE 
     MLIRPgDialect
-    PgxLowerRuntime
 )
 
 # Add include directories for source files

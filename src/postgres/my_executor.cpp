@@ -488,8 +488,17 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
                 logger.notice("Configured for computed expression results");
             } else {
                 // Use original table columns (SELECT *)
-                selectedColumns = {0}; // First column
-                logger.notice("Configured for table column results");
+                // Automatically detect all columns from the table
+                if (scanContext.tupleDesc) {
+                    for (int i = 0; i < scanContext.tupleDesc->natts; i++) {
+                        selectedColumns.push_back(i);
+                    }
+                    logger.notice("Configured for table column results (" + std::to_string(selectedColumns.size()) + " columns)");
+                } else {
+                    // Fallback: assume first column
+                    selectedColumns = {0};
+                    logger.notice("Configured for table column results (fallback: 1 column)");
+                }
             }
         } else {
             // Fallback: assume first column
