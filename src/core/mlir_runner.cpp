@@ -268,6 +268,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
 }
 
 
+#ifndef BUILDING_UNIT_TESTS
 bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) {
     if (!plannedStmt) {
         logger.error("PlannedStmt is null");
@@ -300,6 +301,13 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     // Execute the MLIR module
     return executeMLIRModule(*module, logger);
 }
+#else
+// Unit test stub implementation
+bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) {
+    logger.notice("PostgreSQL AST translation not available in unit tests");
+    return false;
+}
+#endif
 
 
 } // namespace mlir_runner

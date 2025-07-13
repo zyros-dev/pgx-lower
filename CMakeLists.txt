@@ -83,7 +83,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/test_helpers.cpp
         ${UNIT_TEST_SOURCES}
         src/core/mlir_runner.cpp
-        src/core/postgresql_ast_translator.cpp
+        # src/core/postgresql_ast_translator.cpp  # Excluded from unit tests - requires PostgreSQL linkage
         src/core/query_analyzer.cpp
         src/core/error_handling.cpp
         src/core/logging.cpp
