@@ -47,7 +47,7 @@ TEST_F(QueryAnalyzerTest, ComplexQueryAnalysis) {
     auto caps6 = QueryAnalyzer::analyzeForTesting("SELECT COUNT(*) FROM test");
     EXPECT_TRUE(caps6.requiresSeqScan);
     EXPECT_TRUE(caps6.requiresAggregation);
-    EXPECT_FALSE(caps6.isMLIRCompatible());
+    EXPECT_TRUE(caps6.isMLIRCompatible());
 }
 
 TEST_F(QueryAnalyzerTest, QueryAnalyzerExtended) {

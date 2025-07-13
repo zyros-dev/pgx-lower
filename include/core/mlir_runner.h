@@ -10,32 +10,15 @@
 
 // PostgreSQL C headers - need extern "C" wrapping
 extern "C" {
-    struct PlannedStmt;
+struct PlannedStmt;
 }
 
 namespace mlir_runner {
 
 using ExternalFunction = std::function<int64_t()>;
 
-// PostgreSQL Integration - Main entry point called by my_executor.cpp
-auto run_mlir_postgres_table_scan(const char* tableName, MLIRLogger& logger) -> bool;
-
-// PostgreSQL Integration - Typed field access with pg dialect
-auto run_mlir_postgres_typed_table_scan(const char* tableName, MLIRLogger& logger) -> bool;
-
-
 // PostgreSQL Integration - New AST-based translation (replaces ColumnExpression approach)
 auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) -> bool;
-
-
-
-// Core MLIR compilation and execution engine
-auto run_mlir_core(int64_t intValue, MLIRLogger& logger) -> bool;
-
-// Unit Test Interface - Only available when building as standalone library
-#ifndef POSTGRESQL_EXTENSION
-auto run_mlir_test(int64_t intValue) -> bool;
-#endif
 
 } // namespace mlir_runner
 
