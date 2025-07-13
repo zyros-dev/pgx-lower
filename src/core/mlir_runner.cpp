@@ -109,16 +109,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("Applied pg-to-scf lowering pass!");
 
     // Check for remaining pg operations after lowering
-    bool hasPgOps = false;
+    bool hasPgDataAccess = false;
     module.walk([&](mlir::Operation* op) {
         std::string opName = op->getName().getStringRef().str();
         if (opName.substr(0, 3) == "pg.") {
             logger.error("Remaining pg operation after lowering: " + opName);
-            hasPgOps = true;
+            hasPgDataAccess = true;
         }
     });
     
-    if (hasPgOps) {
+    if (hasPgDataAccess) {
         logger.error("Lowering incomplete - some pg operations remain");
         logger.notice("Dumping module after failed lowering:");
         module.dump();

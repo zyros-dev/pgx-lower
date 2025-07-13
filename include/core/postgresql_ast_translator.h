@@ -35,16 +35,6 @@ typedef unsigned int Oid;
 }
 
 namespace postgresql_ast {
-
-/**
- * PostgreSQL AST to MLIR Translator
- * 
- * Converts PostgreSQL internal AST nodes (Expr*, SelectStmt*, etc.) to MLIR operations
- * using proper depth-first traversal and AST node type dispatch.
- * 
- * This replaces the string-based ColumnExpression approach with proper compiler-style
- * AST translation following LingoDB patterns but leveraging PostgreSQL's optimization.
- */
 class PostgreSQLASTTranslator {
 public:
     explicit PostgreSQLASTTranslator(mlir::MLIRContext& context, MLIRLogger& logger);
@@ -52,6 +42,7 @@ public:
 
     // Main translation entry points
     auto translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<mlir::ModuleOp>;
+private:
     auto translateSelectStmt(SelectStmt* selectStmt) -> mlir::Operation*;
     
     // Expression translation (recursive descent)
@@ -78,14 +69,12 @@ public:
     auto processTargetListWithRealTuple(mlir::OpBuilder& builder, mlir::Location location,
                                        mlir::Value tupleHandle, List* targetList) -> void;
 
-private:
     mlir::MLIRContext& context_;
     MLIRLogger& logger_;
     mlir::OpBuilder* builder_;  // Current builder context
     mlir::ModuleOp* currentModule_;  // Current module being built
     mlir::Value* currentTupleHandle_;  // Current tuple handle for field access (nullptr if none)
     
-    // Helper methods
     auto registerDialects() -> void;
     auto createRuntimeFunctionDeclarations(mlir::ModuleOp& module) -> void;
     auto getMLIRTypeForPostgreSQLType(Oid typeOid) -> mlir::Type;

@@ -42,4 +42,4 @@ class PgDialect : public Dialect {
 
 // Include auto-generated operation declarations
 #define GET_OP_CLASSES
-#include "PgOps.h.inc"
+#include "PgDataAccess.h.inc"

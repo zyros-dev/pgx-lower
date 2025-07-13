@@ -17,7 +17,7 @@ void PgDialect::initialize() {
     // TableGen generated operation and type registration
     addOperations<
 #define GET_OP_LIST
-#include "PgOps.cpp.inc"
+#include "PgDataAccess.cpp.inc"
         >();
 
     addTypes<
@@ -33,7 +33,7 @@ PgDialect::PgDialect(MLIRContext *context)
 
 // Include TableGen generated definitions
 #define GET_OP_CLASSES
-#include "PgOps.cpp.inc"
+#include "PgDataAccess.cpp.inc"
 
 #define GET_TYPEDEF_CLASSES
 #include "PgTypes.cpp.inc"

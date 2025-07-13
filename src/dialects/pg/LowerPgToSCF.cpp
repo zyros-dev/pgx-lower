@@ -758,15 +758,15 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
         // Walk through all functions in the module
         module.walk([&](func::FuncOp func) {
             // Count pg operations before lowering
-            bool hasPgOps = false;
+            bool hasPgDataAccess = false;
             func.walk([&](mlir::Operation* op) {
                 std::string opName = op->getName().getStringRef().str();
                 if (opName.substr(0, 3) == "pg.") {
-                    hasPgOps = true;
+                    hasPgDataAccess = true;
                 }
             });
 
-            if (!hasPgOps) {
+            if (!hasPgDataAccess) {
                 return; // No pg operations in this function
             }
 

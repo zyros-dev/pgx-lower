@@ -18,10 +18,10 @@ separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
 # TableGen code generation for PostgreSQL dialect
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgOps.td)
-mlir_tablegen(PgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(PgOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
-add_public_tablegen_target(MLIRPgOpsIncGen)
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgDataAccess.td)
+mlir_tablegen(PgDataAccess.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(PgDataAccess.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+add_public_tablegen_target(MLIRPgDataAccessIncGen)
 
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgTypes.td)
 mlir_tablegen(PgTypes.h.inc -gen-typedef-decls --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
@@ -34,7 +34,7 @@ add_library(MLIRPgDialect STATIC
 )
 
 # Add dependency on generated files
-add_dependencies(MLIRPgDialect MLIRPgOpsIncGen MLIRPgTypesIncGen)
+add_dependencies(MLIRPgDialect MLIRPgDataAccessIncGen MLIRPgTypesIncGen)
 
 target_include_directories(MLIRPgDialect PUBLIC
     ${CMAKE_SOURCE_DIR}/include/dialects/pg
