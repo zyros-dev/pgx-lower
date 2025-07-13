@@ -562,200 +562,47 @@ void freeAggregationState(void* state) {
 } // namespace pgx_lower::runtime
 
 //===----------------------------------------------------------------------===//
-// C-style interface for MLIR JIT compatibility
-// Note: These conflict with unit test mock functions, so only compile for extension
+// C-style interface for MLIR JIT compatibility 
 //===----------------------------------------------------------------------===//
 
+// get_numeric_field needs to be available for both unit tests and extension
+extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) {
 #ifdef POSTGRESQL_EXTENSION
-extern "C" {
-
-void* open_postgres_table(const char* table_name) {
-    #ifdef POSTGRESQL_EXTENSION
-    elog(NOTICE, "🔧 open_postgres_table called with table_name='%s'", table_name ? table_name : "NULL");
-    #endif
-    
-    // For now, return a dummy non-null pointer since table scanning is not yet implemented
-    // This prevents null pointer crashes while we work on the full implementation
-    #ifdef POSTGRESQL_EXTENSION
-    static pgx_lower::runtime::TableScanHandle dummy_handle;
-    dummy_handle.is_open = false; // Mark as not actually open
-    elog(NOTICE, "🎭 open_postgres_table: returning dummy handle=%p (table scanning not implemented)", &dummy_handle);
-    return static_cast<void*>(&dummy_handle);
-    #else
-    return static_cast<void*>(pgx_lower::runtime::openTableScan(table_name));
-    #endif
-}
-
-int64_t read_next_tuple_from_table(void* table_handle) {
-    #ifdef POSTGRESQL_EXTENSION
-    elog(NOTICE, "🔍 read_next_tuple_from_table called with handle=%p", table_handle);
-    #endif
-    
-    auto tuple = pgx_lower::runtime::readNextTuple(static_cast<pgx_lower::runtime::TableScanHandle*>(table_handle));
-    if (tuple) {
-        #ifdef POSTGRESQL_EXTENSION
-        elog(NOTICE, "✅ read_next_tuple_from_table: returning real tuple=%p", tuple);
-        #endif
-        // Return tuple pointer as int64_t for MLIR compatibility
-        return reinterpret_cast<int64_t>(tuple);
-    } else {
-        // CRITICAL WORKAROUND: MLIR scf.while loop always executes first iteration
-        // even when condition is false. Instead of returning 0 (null pointer) which crashes,
-        // return a dummy tuple on first call, then 0 on second call to exit loop.
-        #ifdef POSTGRESQL_EXTENSION
-        static int call_count = 0;
-        call_count++;
-        
-        elog(NOTICE, "🔄 read_next_tuple_from_table: no tuple, call_count=%d", call_count);
-        
-        if (call_count == 1) {
-            // First call: return dummy tuple to survive mandatory first iteration
-            static pgx_lower::runtime::TupleHandle dummy_tuple(nullptr, nullptr, false);
-            elog(NOTICE, "🎭 read_next_tuple_from_table: returning dummy tuple=%p", &dummy_tuple);
-            return reinterpret_cast<int64_t>(&dummy_tuple);
-        } else {
-            // Second call: return 0 to exit loop
-            call_count = 0; // Reset for next query
-            elog(NOTICE, "🛑 read_next_tuple_from_table: returning 0 to exit loop");
-            return 0;
-        }
-        #else
-        // For unit tests, return 0 is fine since mock implementation handles it
-        return 0;
-        #endif
-    }
-}
-
-void close_postgres_table(void* table_handle) {
-    pgx_lower::runtime::closeTableScan(static_cast<pgx_lower::runtime::TableScanHandle*>(table_handle));
-}
-
-bool add_tuple_to_result(int64_t value) {
-    // The value parameter is the tuple pointer as int64_t (as documented in interface)
-    if (value == 0) {
-        // Null tuple - end of table
-        return false;
-    }
-    auto tuple_handle = reinterpret_cast<pgx_lower::runtime::TupleHandle*>(value);
-    return pgx_lower::runtime::outputTuple(tuple_handle);
-}
-
-int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
-    #ifdef POSTGRESQL_EXTENSION
-    // Add debug logging for crash analysis  
-    elog(NOTICE, "🔍 get_int_field called with handle=%p field_index=%d", tuple_handle, field_index);
-    #endif
-    
-    // Safety check: handle null pointers
-    if (tuple_handle == nullptr) {
-        #ifdef POSTGRESQL_EXTENSION
-        elog(NOTICE, "🚨 get_int_field: null handle detected, returning null");
-        #endif
-        if (is_null) *is_null = true;
-        return 0;
-    }
-    
-    #ifdef POSTGRESQL_EXTENSION
-    elog(NOTICE, "✅ get_int_field: calling getIntField...");
-    #endif
-    
-    auto result = pgx_lower::runtime::getIntField(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle),
-                                                  field_index,
-                                                  is_null);
-    
-    #ifdef POSTGRESQL_EXTENSION
-    elog(NOTICE, "✅ get_int_field completed, result=%d is_null=%s", result, is_null ? (*is_null ? "true" : "false") : "null");
-    #endif
-    
-    return result;
-}
-
-int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) {
-    // Safety check: handle null pointers  
-    if (tuple_handle == nullptr) {
-        if (is_null) *is_null = true;
-        return 0;
-    }
-    
-    int length = 0;
-    const char* text_ptr = pgx_lower::runtime::getTextField(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle),
-                                                            field_index,
-                                                            &length,
-                                                            is_null);
-
-    // Return the pointer as an int64_t for MLIR compatibility
-    return reinterpret_cast<int64_t>(text_ptr);
-}
-
-double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) {
-    #ifdef POSTGRESQL_EXTENSION
     elog(NOTICE, "get_numeric_field called with handle=%p field_index=%d", tuple_handle, field_index);
-    #endif
     
     // Safety check: handle null pointers
     if (tuple_handle == nullptr) {
-        #ifdef POSTGRESQL_EXTENSION
         elog(NOTICE, "get_numeric_field: null handle detected, returning null");
-        #endif
         if (is_null) *is_null = true;
         return 0.0;
     }
     
-    #ifdef POSTGRESQL_EXTENSION
     elog(NOTICE, "get_numeric_field: calling getNumericField...");
-    #endif
     
     auto result = pgx_lower::runtime::getNumericField(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle),
                                                       field_index,
                                                       is_null);
     
-    #ifdef POSTGRESQL_EXTENSION
     elog(NOTICE, "get_numeric_field completed, result=%f is_null=%s", result, is_null ? (*is_null ? "true" : "false") : "null");
-    #endif
     
     return result;
+#else
+    // Unit test mock implementation
+    if (tuple_handle == nullptr) {
+        if (is_null) *is_null = true;
+        return 0.0;
+    }
+    
+    // Mock implementation - return simple test values
+    if (field_index >= 10) {
+        if (is_null) *is_null = true;
+        return 0.0;
+    }
+    
+    if (is_null) *is_null = false;
+    return static_cast<double>(field_index + 100.5); // Mock numeric value
+#endif
 }
 
-// Result storage functions for computed expressions
-void store_bool_result(int32_t column_index, bool value, bool is_null) {
-    // TODO: Implement proper result storage for computed boolean expressions
-    // For now, this is a stub to allow JIT execution to proceed
-    (void)column_index;
-    (void)value;
-    (void)is_null;
-}
-
-void store_int_result(int32_t column_index, int32_t value, bool is_null) {
-    // TODO: Implement proper result storage for computed integer expressions
-    // For now, this is a stub to allow JIT execution to proceed
-    (void)column_index;
-    (void)value;
-    (void)is_null;
-}
-
-void store_bigint_result(int32_t column_index, int64_t value, bool is_null) {
-    // TODO: Implement proper result storage for computed bigint expressions
-    // For now, this is a stub to allow JIT execution to proceed
-    (void)column_index;
-    (void)value;
-    (void)is_null;
-}
-
-void store_text_result(int32_t column_index, const char* value, bool is_null) {
-    // TODO: Implement proper result storage for computed text expressions
-    // For now, this is a stub to allow JIT execution to proceed
-    (void)column_index;
-    (void)value;
-    (void)is_null;
-}
-
-}
-
-extern "C" int64_t sum_aggregate(void* table_handle) {
-    // TODO: Implement proper aggregate sum computation
-    // For now, return a placeholder value to allow JIT execution to proceed
-    // Real implementation would iterate through table and sum the specified field
-    (void)table_handle;
-    return 5050; // Sum of 1 to 100 as placeholder
-}
-#endif // POSTGRESQL_EXTENSION
+// Note: All other C interface functions are implemented in my_executor.cpp
+// Only get_numeric_field is kept here to support both unit tests and extension builds

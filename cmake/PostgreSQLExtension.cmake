@@ -38,6 +38,7 @@ function(add_postgresql_mixed_extension NAME)
         MLIR
     )
     target_link_libraries(${NAME} PRIVATE
+        PgxLowerRuntime
         MLIRPgDialect
         MLIRArithDialect
         MLIRFuncDialect
