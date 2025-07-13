@@ -69,6 +69,8 @@ target_include_directories(PgxLowerRuntime PUBLIC
     ${CMAKE_SOURCE_DIR}/include
 )
 
+target_compile_definitions(PgxLowerRuntime PRIVATE POSTGRESQL_EXTENSION)
+
 target_link_libraries(PgxLowerRuntime
     ${PostgreSQL_LIBRARIES}
 )

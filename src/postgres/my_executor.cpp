@@ -253,19 +253,31 @@ struct PostgreSQLTableHandle {
 };
 
 extern "C" void* open_postgres_table(const char* tableName) {
+    elog(NOTICE, "open_postgres_table called with tableName: %s", tableName ? tableName : "NULL");
+    
     try {
         if (!g_scan_context) {
+            elog(NOTICE, "open_postgres_table: g_scan_context is null");
             return nullptr;
         }
 
+        elog(NOTICE, "open_postgres_table: Creating PostgreSQLTableHandle...");
         auto* handle = new PostgreSQLTableHandle();
+        // Use the existing scan descriptor from the global context
         handle->scanDesc = g_scan_context->scanDesc;
         handle->tupleDesc = g_scan_context->tupleDesc;
         handle->rel = nullptr;
         handle->isOpen = true;
 
+        elog(NOTICE, "open_postgres_table: Calling heap_rescan...");
+        // IMPORTANT: Reset scan to beginning to ensure we read all tuples
+        // PostgreSQL 17.5 heap_rescan signature: heap_rescan(scan, key, set_params, allow_strat, allow_sync, allow_pagemode)
+        heap_rescan(handle->scanDesc, nullptr, false, false, false, false);
+        
+        elog(NOTICE, "open_postgres_table: Successfully created handle, returning %p", handle);
         return handle;
     } catch (...) {
+        elog(NOTICE, "open_postgres_table: Exception caught, returning null");
         return nullptr;
     }
 }
@@ -276,19 +288,25 @@ extern "C" void* open_postgres_table(const char* tableName) {
 // Architecture: MLIR just iterates, PostgreSQL handles all data types
 extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     if (!tableHandle) {
+        elog(NOTICE, "read_next_tuple_from_table: tableHandle is null");
         return -1;
     }
 
     const auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
     if (!handle->isOpen || !handle->scanDesc) {
+        elog(NOTICE, "read_next_tuple_from_table: handle not open or scanDesc is null");
         return -1;
     }
 
+    elog(NOTICE, "read_next_tuple_from_table: Calling heap_getnext...");
     const auto tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
     if (tuple == nullptr) {
+        elog(NOTICE, "read_next_tuple_from_table: heap_getnext returned null - end of table");
         // End of table reached - return 0 to terminate MLIR loop
         return 0;
     }
+
+    elog(NOTICE, "read_next_tuple_from_table: Found tuple, processing...");
 
     // Clean up previous tuple if it exists
     if (g_current_tuple_passthrough.originalTuple) {
@@ -299,6 +317,8 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     // Preserve the COMPLETE tuple (all columns, all types) for output
     g_current_tuple_passthrough.originalTuple = heap_copytuple(tuple);
     g_current_tuple_passthrough.tupleDesc = handle->tupleDesc;
+
+    elog(NOTICE, "read_next_tuple_from_table: Tuple processed successfully");
 
     // Return signal: "we have a tuple" (MLIR only uses this for iteration control)
     return g_current_tuple_passthrough.getIterationSignal();
@@ -347,6 +367,7 @@ extern "C" int32_t get_int_field(void* tuple_handle, const int32_t field_index, 
     // Convert to int32 based on PostgreSQL type
     const auto atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
     switch (atttypid) {
+    case BOOLOID: return DatumGetBool(value) ? 1 : 0; // Convert bool to int32
     case INT2OID: return (int32_t)DatumGetInt16(value);
     case INT4OID: return DatumGetInt32(value);
     case INT8OID: return static_cast<int32_t>(DatumGetInt64(value)); // Truncate to int32

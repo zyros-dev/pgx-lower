@@ -146,8 +146,14 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     
     SeqScan* seqScan = reinterpret_cast<SeqScan*>(scanPlan);
     
-    // Generate proper tuple iteration loop instead of broken field access
-    generateTupleIterationLoop(builder, location, seqScan, targetList);
+    // Generate different MLIR based on query type
+    if (rootPlan->type == T_Agg) {
+        // Aggregate query - generate accumulation loop that returns single result
+        generateAggregateLoop(builder, location, seqScan, targetList);
+    } else {
+        // Regular query - generate per-tuple iteration that returns multiple results  
+        generateTupleIterationLoop(builder, location, seqScan, targetList);
+    }
     
     // Add return statement to main function (void return - LingoDB pattern)
     builder.create<mlir::func::ReturnOp>(location);
@@ -727,27 +733,25 @@ auto PostgreSQLASTTranslator::translateAggref(Aggref* aggref) -> mlir::Value {
             return nullptr;
         }
         
-        // For now, create a placeholder result - full implementation would need
-        // to accumulate over all tuples. This is a simplified approach.
-        auto sumFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("sum_aggregate");
-        if (sumFunc) {
-            // Call sum_aggregate function with table handle and field info
-            auto tableHandlePtr = builder_->create<mlir::LLVM::IntToPtrOp>(location, ptrType, 
-                builder_->create<mlir::arith::ConstantOp>(location, builder_->getI64Type(), 
-                    builder_->getI64IntegerAttr(0))); // placeholder table handle
-            
-            auto sumFuncRef = mlir::SymbolRefAttr::get(&context_, "sum_aggregate");
-            auto result = builder_->create<mlir::func::CallOp>(location, i64Type, sumFuncRef, 
-                mlir::ValueRange{tableHandlePtr}).getResult(0);
-            
-            logger_.debug("Created SUM aggregate function call");
-            return result;
+        // For proper aggregation, we need to accumulate the field value across all tuples
+        // Instead of calling sum_aggregate for each tuple, add the current field value to an accumulator
+        
+        // Convert the argument value (field) to i64 for accumulation
+        mlir::Value fieldValue;
+        if (argValue.getType().isInteger(32)) {
+            // Extend i32 to i64 for accumulation
+            fieldValue = builder_->create<mlir::arith::ExtSIOp>(location, i64Type, argValue);
+        } else if (argValue.getType().isInteger(64)) {
+            fieldValue = argValue;
         } else {
-            logger_.notice("sum_aggregate runtime function not available - using fallback");
-            // Return a placeholder value for now
-            return builder_->create<mlir::arith::ConstantOp>(location, builder_->getI64Type(), 
-                builder_->getI64IntegerAttr(0));
+            logger_.error("SUM aggregate field must be integer type");
+            return nullptr;
         }
+        
+        // The actual accumulation happens in the generated loop
+        // For now, return the field value - the loop structure will accumulate it
+        logger_.debug("Created SUM aggregate field access for accumulation");
+        return fieldValue;
     }
     
     // Handle other aggregate functions (count, avg, etc.)
@@ -857,6 +861,11 @@ auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& 
     funcType = mlir::FunctionType::get(&context_, {ptrType, i32Type, ptrType}, {i64Type});
     auto getTextFieldFunc = builder_->create<mlir::func::FuncOp>(location, "get_text_field", funcType);
     getTextFieldFunc.setPrivate();
+    
+    auto f64Type = builder_->getF64Type();
+    funcType = mlir::FunctionType::get(&context_, {ptrType, i32Type, ptrType}, {f64Type});
+    auto getNumericFieldFunc = builder_->create<mlir::func::FuncOp>(location, "get_numeric_field", funcType);
+    getNumericFieldFunc.setPrivate();
     
     // Text operation functions
     funcType = mlir::FunctionType::get(&context_, {ptrType, ptrType}, {ptrType});
@@ -1185,6 +1194,200 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
 
 auto PostgreSQLASTTranslator::isTextOperator(const char* opName) -> bool {
     return opName && (strcmp(opName, "||") == 0 || strcmp(opName, "~~") == 0);
+}
+
+auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, mlir::Location location,
+                                                    SeqScan* seqScan, List* targetList) -> void {
+    auto ptrType = mlir::LLVM::LLVMPointerType::get(&context_);
+    auto i64Type = builder.getI64Type();
+    auto i32Type = builder.getI32Type();
+    auto i1Type = builder.getI1Type();
+    
+    logger_.debug("Generating aggregate accumulation loop for " + std::to_string(list_length(targetList)) + " aggregates");
+    
+    // Generate pg.scan_table operation
+    auto scanOp = translateSeqScan(seqScan);
+    if (!scanOp) {
+        logger_.error("Failed to translate SeqScan for aggregate");
+        return;
+    }
+    auto tableHandle = scanOp->getResult(0);
+    
+    // Initialize accumulator variables for each aggregate in target list
+    // For now, support one aggregate - can be extended later
+    mlir::Value accumulator = nullptr;
+    int32_t aggregateFieldIndex = -1;
+    uint32_t aggregateFieldType = 0;
+    std::string aggregateType;
+    
+    // Analyze target list to find aggregate function
+    ListCell* lc;
+    int columnIndex = 0;
+    
+    foreach(lc, targetList) {
+        TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (!tle || !tle->expr) continue;
+        
+        if (IsA(tle->expr, Aggref)) {
+            Aggref* aggref = reinterpret_cast<Aggref*>(tle->expr);
+            
+            // Get aggregate function name
+            const char* aggName = GET_FUNC_NAME(aggref->aggfnoid);
+            if (!aggName) {
+                logger_.error("Failed to get aggregate function name");
+                continue;
+            }
+            
+            aggregateType = std::string(aggName);
+            logger_.debug("Found aggregate function: " + aggregateType);
+            
+            // Initialize accumulator based on aggregate type
+            if (aggregateType == "sum") {
+                accumulator = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
+                
+                // Get the field index and type from the aggregate argument
+                if (aggref->args && list_length(aggref->args) == 1) {
+                    TargetEntry* argEntry = static_cast<TargetEntry*>(linitial(aggref->args));
+                    if (argEntry && argEntry->expr && IsA(argEntry->expr, Var)) {
+                        Var* var = reinterpret_cast<Var*>(argEntry->expr);
+                        aggregateFieldIndex = var->varattno - 1; // Convert to 0-based index
+                        aggregateFieldType = var->vartype; // Get PostgreSQL type OID
+                        logger_.debug("SUM aggregate on field index: " + std::to_string(aggregateFieldIndex) + 
+                                    " type OID: " + std::to_string(aggregateFieldType));
+                    }
+                }
+            } else if (aggregateType == "count") {
+                accumulator = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
+                aggregateFieldIndex = -1; // COUNT(*) doesn't need field access
+                logger_.debug("COUNT aggregate initialized");
+            } else {
+                logger_.error("Unsupported aggregate function: " + aggregateType);
+                continue;
+            }
+            
+            break; // For now, handle only the first aggregate
+        }
+        columnIndex++;
+    }
+    
+    if (!accumulator) {
+        logger_.error("No supported aggregate function found in target list");
+        return;
+    }
+    
+    // Generate accumulation loop using scf.while
+    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+    
+    // Read first tuple to start the loop
+    auto initialReadOp = builder.create<mlir::pg::ReadTupleOp>(location, tupleHandleType, tableHandle);
+    auto initialTupleHandle = initialReadOp->getResult(0);
+    auto initialTuplePtr = builder.create<mlir::UnrealizedConversionCastOp>(
+        location, i64Type, mlir::ValueRange{initialTupleHandle});
+    
+    // Create the accumulation loop using scf.while
+    auto whileOp = builder.create<mlir::scf::WhileOp>(
+        location, mlir::TypeRange{i64Type, i64Type}, 
+        mlir::ValueRange{initialTuplePtr.getResult(0), accumulator});
+    
+    // Before region: check if we have a valid tuple
+    auto* beforeBlock = builder.createBlock(&whileOp.getBefore(), whileOp.getBefore().end(), 
+                                           mlir::TypeRange{i64Type, i64Type}, {location, location});
+    builder.setInsertionPointToStart(beforeBlock);
+    
+    auto tuplePtr = beforeBlock->getArgument(0);
+    auto currentAcc = beforeBlock->getArgument(1);
+    
+    // Check if tuple pointer is non-null
+    auto zeroConstant = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
+    auto hasMoreTuples = builder.create<mlir::arith::CmpIOp>(
+        location, mlir::arith::CmpIPredicate::ne, tuplePtr, zeroConstant);
+    
+    builder.create<mlir::scf::ConditionOp>(location, hasMoreTuples, 
+                                          mlir::ValueRange{tuplePtr, currentAcc});
+    
+    // After region: process tuple and accumulate
+    auto* afterBlock = builder.createBlock(&whileOp.getAfter(), whileOp.getAfter().end(),
+                                          mlir::TypeRange{i64Type, i64Type}, {location, location});
+    builder.setInsertionPointToStart(afterBlock);
+    
+    auto currentTuplePtr = afterBlock->getArgument(0);
+    auto accValue = afterBlock->getArgument(1);
+    
+    // Convert tuple pointer back to tuple handle for field access
+    auto currentTupleHandle = builder.create<mlir::UnrealizedConversionCastOp>(
+        location, tupleHandleType, mlir::ValueRange{currentTuplePtr});
+    
+    // Perform accumulation based on aggregate type
+    mlir::Value newAccValue = accValue;
+    
+    if (aggregateType == "sum" && aggregateFieldIndex >= 0) {
+        // Get field value and add to accumulator
+        auto isNullPtr = builder.create<mlir::LLVM::AllocaOp>(location, ptrType, i1Type, 
+                                                              builder.create<mlir::arith::ConstantIntOp>(location, 1, i32Type));
+        
+        auto fieldIndexConst = builder.create<mlir::arith::ConstantIntOp>(location, aggregateFieldIndex, i32Type);
+        
+        // Choose field accessor based on PostgreSQL type OID
+        mlir::Value fieldValue64;
+        if (aggregateFieldType == 1700) { // NUMERICOID - DECIMAL/NUMERIC type
+            auto fieldValueFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("get_numeric_field");
+            if (fieldValueFunc) {
+                auto fieldValue = builder.create<mlir::func::CallOp>(
+                    location, fieldValueFunc, mlir::ValueRange{currentTupleHandle.getResult(0), fieldIndexConst, isNullPtr});
+                
+                // Convert double to i64 for accumulator (multiply by 100 to preserve 2 decimal places)
+                auto scaleConstant = builder.create<mlir::arith::ConstantFloatOp>(location, 
+                    llvm::APFloat(100.0), builder.getF64Type());
+                auto scaledValue = builder.create<mlir::arith::MulFOp>(location, fieldValue.getResult(0), scaleConstant);
+                fieldValue64 = builder.create<mlir::arith::FPToSIOp>(location, i64Type, scaledValue);
+                
+                logger_.debug("Generated SUM accumulation for NUMERIC: acc = acc + field[" + std::to_string(aggregateFieldIndex) + "]");
+            }
+        } else { // Integer types (INT4OID=23, INT8OID=20, etc.)
+            auto fieldValueFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("get_int_field");
+            if (fieldValueFunc) {
+                auto fieldValue = builder.create<mlir::func::CallOp>(
+                    location, fieldValueFunc, mlir::ValueRange{currentTupleHandle.getResult(0), fieldIndexConst, isNullPtr});
+                
+                // Convert i32 field to i64 and add to accumulator
+                fieldValue64 = builder.create<mlir::arith::ExtSIOp>(location, i64Type, fieldValue.getResult(0));
+                
+                logger_.debug("Generated SUM accumulation for INTEGER: acc = acc + field[" + std::to_string(aggregateFieldIndex) + "]");
+            }
+        }
+        
+        if (fieldValue64) {
+            newAccValue = builder.create<mlir::arith::AddIOp>(location, accValue, fieldValue64);
+        }
+    } else if (aggregateType == "count") {
+        // Increment counter for each tuple
+        auto oneConstant = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
+        newAccValue = builder.create<mlir::arith::AddIOp>(location, accValue, oneConstant);
+        logger_.debug("Generated COUNT accumulation: acc = acc + 1");
+    }
+    
+    // Read next tuple
+    auto nextReadOp = builder.create<mlir::pg::ReadTupleOp>(location, tupleHandleType, tableHandle);
+    auto nextTupleHandle = nextReadOp->getResult(0);
+    auto nextTuplePtr = builder.create<mlir::UnrealizedConversionCastOp>(
+        location, i64Type, mlir::ValueRange{nextTupleHandle});
+    
+    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTuplePtr.getResult(0), newAccValue});
+    
+    // After the loop, output the final result as a single tuple
+    builder.setInsertionPointAfter(whileOp);
+    auto finalResult = whileOp.getResult(1); // The accumulated value
+    
+    // Create and output result tuple using add_tuple_to_result
+    auto addResultFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("add_tuple_to_result");
+    if (addResultFunc) {
+        // For aggregate results, we output the final accumulated value as a tuple
+        builder.create<mlir::func::CallOp>(location, addResultFunc, mlir::ValueRange{finalResult});
+        
+        logger_.debug("Output final " + aggregateType + " result as tuple");
+    }
+    
+    logger_.debug("Generated complete aggregate accumulation loop");
 }
 
 auto createPostgreSQLASTTranslator(mlir::MLIRContext& context, MLIRLogger& logger) 

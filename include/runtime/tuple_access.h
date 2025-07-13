@@ -208,13 +208,14 @@ void freeAggregationState(void* state);
 
 extern "C" {
 
-// Legacy function names for compatibility with existing MLIR code
-auto open_postgres_table(const char* table_name) -> void*;
-auto read_next_tuple_from_table(void* table_handle) -> void*;
-void close_postgres_table(void* table_handle);
-auto add_tuple_to_result(void* tuple_handle) -> bool;
+// Legacy function names for compatibility with existing MLIR code (commented out due to extern C conflicts)
+// auto open_postgres_table(const char* table_name) -> void*;
+// auto read_next_tuple_from_table(void* table_handle) -> void*;
+// void close_postgres_table(void* table_handle);
+// auto add_tuple_to_result(void* tuple_handle) -> bool;
 
 // Field access functions with MLIR-compatible signatures
 auto get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int32_t;
 auto get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int64_t; // returns char* as i64
+auto get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) -> double; // returns DECIMAL/NUMERIC as double
 }

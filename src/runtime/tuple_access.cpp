@@ -687,6 +687,35 @@ int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     return reinterpret_cast<int64_t>(text_ptr);
 }
 
+double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    #ifdef POSTGRESQL_EXTENSION
+    elog(NOTICE, "get_numeric_field called with handle=%p field_index=%d", tuple_handle, field_index);
+    #endif
+    
+    // Safety check: handle null pointers
+    if (tuple_handle == nullptr) {
+        #ifdef POSTGRESQL_EXTENSION
+        elog(NOTICE, "get_numeric_field: null handle detected, returning null");
+        #endif
+        if (is_null) *is_null = true;
+        return 0.0;
+    }
+    
+    #ifdef POSTGRESQL_EXTENSION
+    elog(NOTICE, "get_numeric_field: calling getNumericField...");
+    #endif
+    
+    auto result = pgx_lower::runtime::getNumericField(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle),
+                                                      field_index,
+                                                      is_null);
+    
+    #ifdef POSTGRESQL_EXTENSION
+    elog(NOTICE, "get_numeric_field completed, result=%f is_null=%s", result, is_null ? (*is_null ? "true" : "false") : "null");
+    #endif
+    
+    return result;
+}
+
 // Result storage functions for computed expressions
 void store_bool_result(int32_t column_index, bool value, bool is_null) {
     // TODO: Implement proper result storage for computed boolean expressions
@@ -720,13 +749,13 @@ void store_text_result(int32_t column_index, const char* value, bool is_null) {
     (void)is_null;
 }
 
-int64_t sum_aggregate(void* table_handle) {
+}
+
+extern "C" int64_t sum_aggregate(void* table_handle) {
     // TODO: Implement proper aggregate sum computation
     // For now, return a placeholder value to allow JIT execution to proceed
     // Real implementation would iterate through table and sum the specified field
     (void)table_handle;
     return 5050; // Sum of 1 to 100 as placeholder
-}
-
 }
 #endif // POSTGRESQL_EXTENSION

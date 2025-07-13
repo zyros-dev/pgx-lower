@@ -50,6 +50,9 @@
 #include <sstream>
 #include <cstring>
 
+// Include runtime functions after all LLVM/MLIR headers to avoid macro conflicts
+#include "runtime/tuple_access.h"
+
 namespace mlir_runner {
 
 // MLIR Execution Engine - handles lowering and JIT execution
@@ -218,10 +221,12 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         addSymbol("add_tuple_to_result", reinterpret_cast<void*>(add_tuple_to_result));
         addSymbol("get_int_field", reinterpret_cast<void*>(get_int_field));
         addSymbol("get_text_field", reinterpret_cast<void*>(get_text_field));
+        addSymbol("get_numeric_field", reinterpret_cast<void*>(get_numeric_field));
         addSymbol("store_bool_result", reinterpret_cast<void*>(store_bool_result));
         addSymbol("store_int_result", reinterpret_cast<void*>(store_int_result));
         addSymbol("store_bigint_result", reinterpret_cast<void*>(store_bigint_result));
         addSymbol("store_text_result", reinterpret_cast<void*>(store_text_result));
+        // sum_aggregate removed - now implemented as pure MLIR operations
         
         return symbolMap;
     });

@@ -73,6 +73,8 @@ public:
     // Tuple iteration and result processing
     auto generateTupleIterationLoop(mlir::OpBuilder& builder, mlir::Location location, 
                                    SeqScan* seqScan, List* targetList) -> void;
+    auto generateAggregateLoop(mlir::OpBuilder& builder, mlir::Location location,
+                              SeqScan* seqScan, List* targetList) -> void;
     auto processTargetListWithRealTuple(mlir::OpBuilder& builder, mlir::Location location,
                                        mlir::Value tupleHandle, List* targetList) -> void;
 

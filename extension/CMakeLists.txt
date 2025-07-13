@@ -31,6 +31,8 @@ add_postgresql_mixed_extension(
             11_logical_ops
             12_null_handling
             13_text_operations
+            14_aggregate_functions
+            15_special_operators
 )
 
 # Link the PostgreSQL dialect library
