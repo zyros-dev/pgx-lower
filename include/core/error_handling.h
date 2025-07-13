@@ -45,13 +45,10 @@ struct ErrorInfo {
     , message(std::move(msg))
     , context(std::move(ctx)) {}
 
-    // Get human-readable severity string
     [[nodiscard]] auto getSeverityString() const -> const char*;
 
-    // Get human-readable category string
     [[nodiscard]] auto getCategoryString() const -> const char*;
 
-    // Get formatted error message
     [[nodiscard]] auto getFormattedMessage() const -> std::string;
 };
 
@@ -66,7 +63,6 @@ class Result {
     ErrorInfo error_;
 
    public:
-    // Success constructor
     explicit Result(T&& value)
     : success_(true)
     , value_(std::move(value))
@@ -77,13 +73,11 @@ class Result {
     , value_(value)
     , error_(ErrorSeverity::INFO_LEVEL, ErrorCategory::EXECUTION, "") {}
 
-    // Error constructor
-    explicit Result(ErrorInfo  error)
+    explicit Result(ErrorInfo error)
     : success_(false)
     , value_()
     , error_(std::move(error)) {}
 
-    // Check if operation succeeded
     [[nodiscard]] auto isSuccess() const -> bool { return success_; }
     [[nodiscard]] auto isError() const -> bool { return !success_; }
 
@@ -114,14 +108,8 @@ class Result {
     auto valueOr(const T& defaultValue) const -> T { return success_ ? value_ : defaultValue; }
 };
 
-/**
- * Result type for operations that don't return a value
- */
 using VoidResult = Result<bool>;
 
-/**
- * Error handler interface for different environments
- */
 class ErrorHandler {
    public:
     virtual ~ErrorHandler() = default;
@@ -133,9 +121,6 @@ class ErrorHandler {
     [[nodiscard]] virtual auto shouldAbortOnError(const ErrorInfo& error) const -> bool = 0;
 };
 
-/**
- * PostgreSQL-specific error handler
- */
 class PostgreSQLErrorHandler : public ErrorHandler {
    public:
     void handleError(const ErrorInfo& error) override;
@@ -151,24 +136,17 @@ class ConsoleErrorHandler : public ErrorHandler {
     [[nodiscard]] auto shouldAbortOnError(const ErrorInfo& error) const -> bool override;
 };
 
-/**
- * Global error handling utilities
- */
 class ErrorManager {
    private:
     static std::unique_ptr<ErrorHandler> handler_;
 
    public:
-    // Set the global error handler
     static void setHandler(std::unique_ptr<ErrorHandler> handler);
 
-    // Get the current error handler
     static auto getHandler() -> ErrorHandler*;
 
-    // Report an error through the current handler
     static void reportError(const ErrorInfo& error);
 
-    // Convenience methods for creating errors
     static auto makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message) -> ErrorInfo;
 
     static auto

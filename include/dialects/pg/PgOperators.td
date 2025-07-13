@@ -92,7 +92,6 @@ def PgCmpOp : Pg_Op<"compare", [Pure]> {
   let assemblyFormat = "$predicate $left `,` $right attr-dict `:` type($left) `,` type($right)";
 }
 
-// Test logical operators - next level of complexity
 def PgAndOp : Pg_Op<"and", [Pure]> {
   let summary = "PostgreSQL logical AND operation";
   let description = [{
@@ -129,7 +128,6 @@ def PgNotOp : Pg_Op<"not", [Pure]> {
   let assemblyFormat = "$operand attr-dict `:` type($operand)";
 }
 
-// Test with custom PostgreSQL types - potential source of segfault
 def PgTextAddOp : Pg_Op<"text_add", [Pure]> {
   let summary = "PostgreSQL text addition operation";
   let description = [{
@@ -142,7 +140,6 @@ def PgTextAddOp : Pg_Op<"text_add", [Pure]> {
   let assemblyFormat = "$left `,` $right attr-dict `:` type($left)";
 }
 
-// Test variadic arguments - potential segfault source
 def PgConcatOp : Pg_Op<"concat", [Pure]> {
   let summary = "PostgreSQL concatenation with variadic arguments";
   let description = [{
@@ -155,7 +152,6 @@ def PgConcatOp : Pg_Op<"concat", [Pure]> {
   let assemblyFormat = "$inputs attr-dict `:` type($inputs)";
 }
 
-// Test type constraints - potential segfault source
 def PgGenericEqOp : Pg_Op<"generic_eq", [Pure]> {
   let summary = "PostgreSQL generic equality operation";
   let description = [{
@@ -168,7 +164,6 @@ def PgGenericEqOp : Pg_Op<"generic_eq", [Pure]> {
   let assemblyFormat = "$left `,` $right attr-dict `:` type($left) `,` type($right)";
 }
 
-// Test optional arguments - potential segfault source
 def PgCoalesceOp : Pg_Op<"coalesce", [Pure]> {
   let summary = "PostgreSQL coalesce operation";
   let description = [{
@@ -180,10 +175,6 @@ def PgCoalesceOp : Pg_Op<"coalesce", [Pure]> {
   
   let assemblyFormat = "$value (`,` $default_value^ `:` type($default_value))? attr-dict `:` type($value) `->` type($result)";
 }
-
-//===----------------------------------------------------------------------===//
-// Comprehensive TPC-H Operators - Using Proven Working Patterns
-//===----------------------------------------------------------------------===//
 
 // Numeric comparison operators using proven comparison pattern
 def PgNeOp : Pg_Op<"ne", [Pure]> {

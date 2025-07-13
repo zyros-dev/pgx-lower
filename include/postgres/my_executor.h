@@ -33,9 +33,6 @@ struct TupleScanContext;
 struct PostgreSQLTuplePassthrough;
 struct TupleStreamer;
 
-auto run_mlir(int64_t intValue) -> void;
-bool run_mlir_with_tuple_scan(TableScanDesc scanDesc, TupleDesc tupleDesc, const QueryDesc* queryDesc);
-
 class MyCppExecutor {
    public:
     static bool execute(const QueryDesc* plan);

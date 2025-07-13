@@ -553,12 +553,6 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
     return mlir_success;
 }
 
-// DEPRECATED: This function is replaced by run_mlir_with_ast_translation
-// Keeping as stub to avoid compilation errors
-bool run_mlir_with_tuple_scan(const TableScanDesc scanDesc, const TupleDesc tupleDesc, const QueryDesc* queryDesc) {
-    elog(WARNING, "DEPRECATED: run_mlir_with_tuple_scan called - should use AST translation instead");
-    return false; // Always return false to force use of new path
-}
 auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     // Initialize PostgreSQL error handler if not already set
     if (!pgx_lower::ErrorManager::getHandler()) {

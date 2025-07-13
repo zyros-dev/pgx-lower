@@ -10,9 +10,6 @@ extern "C" {
 
 namespace pgx_lower {
 
-/**
- * Describes what MLIR operations a query requires
- */
 struct QueryCapabilities {
     bool requiresSeqScan = false; // Sequential table scan
     bool requiresFilter = false; // WHERE clause filtering
@@ -29,9 +26,6 @@ struct QueryCapabilities {
     [[nodiscard]] auto getDescription() const -> const char*;
 };
 
-/**
- * Analyzes PostgreSQL query plans to determine MLIR compatibility
- */
 class QueryAnalyzer {
    public:
 // Analyze a PostgreSQL plan node

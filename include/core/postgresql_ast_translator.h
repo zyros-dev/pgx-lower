@@ -43,8 +43,6 @@ public:
     // Main translation entry points
     auto translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<mlir::ModuleOp>;
 private:
-    auto translateSelectStmt(SelectStmt* selectStmt) -> mlir::Operation*;
-    
     // Expression translation (recursive descent)
     auto translateExpression(Expr* expr) -> mlir::Value;
     auto translateOpExpr(OpExpr* opExpr) -> mlir::Value;

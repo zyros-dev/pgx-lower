@@ -1,6 +1,5 @@
 #pragma once
 
-// MLIR 20.x properties compatibility
 namespace mlir { namespace pg {
 
 // Empty properties struct for operations that don't need properties

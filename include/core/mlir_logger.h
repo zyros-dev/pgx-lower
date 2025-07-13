@@ -11,14 +11,14 @@ class MLIRLogger {
     virtual void debug(const std::string& message) = 0;
 };
 
-class ConsoleLogger : public MLIRLogger {
+class ConsoleLogger final : public MLIRLogger {
    public:
     void notice(const std::string& message) override;
     void error(const std::string& message) override;
     void debug(const std::string& message) override;
 };
 
-class PostgreSQLLogger : public MLIRLogger {
+class PostgreSQLLogger final : public MLIRLogger {
    public:
     void notice(const std::string& message) override;
     void error(const std::string& message) override;
