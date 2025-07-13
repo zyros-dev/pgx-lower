@@ -21,5 +21,3 @@ FROM generate_series(1, 100) AS gs;
 SELECT col3, col5 FROM test;
 
 SELECT col4 FROM test;
-
-SELECT sum(id) FROM test;
