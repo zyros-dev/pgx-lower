@@ -1,4 +1,4 @@
-#include "logging.h"
+#include "../../include/core/logging.h"
 #include <cstring>
 
 namespace pgx {

@@ -3,7 +3,7 @@
 #include <exception>
 #include <sstream>
 #include "mlir/IR/MLIRContext.h"
-#include "core/logging.h"
+#include "../../include/core/logging.h"
 
 // Prevent gettext macro conflicts
 #ifdef gettext

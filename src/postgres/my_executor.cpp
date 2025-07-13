@@ -3,7 +3,7 @@
 #include "core/mlir_logger.h"
 #include "core/query_analyzer.h"
 #include "core/error_handling.h"
-#include "core/logging.h"
+#include "../../include/core/logging.h"
 
 #include "executor/executor.h"
 
