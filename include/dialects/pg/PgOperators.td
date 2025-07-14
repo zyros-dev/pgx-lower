@@ -17,10 +17,7 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 
 def PgAddOp : Pg_Op<"add", [Pure]> {
   let summary = "PostgreSQL addition operation";
-  let description = [{
-    Simple addition test operation.
-  }];
-  
+
   let arguments = (ins I32:$left, I32:$right);
   let results = (outs I32:$result);
   
@@ -29,10 +26,7 @@ def PgAddOp : Pg_Op<"add", [Pure]> {
 
 def PgSubOp : Pg_Op<"sub", [Pure]> {
   let summary = "PostgreSQL subtraction operation";
-  let description = [{
-    Simple subtraction test operation.
-  }];
-  
+
   let arguments = (ins I32:$left, I32:$right);
   let results = (outs I32:$result);
   
@@ -41,10 +35,7 @@ def PgSubOp : Pg_Op<"sub", [Pure]> {
 
 def PgMulOp : Pg_Op<"mul", [Pure]> {
   let summary = "PostgreSQL multiplication operation";
-  let description = [{
-    Simple multiplication test operation.
-  }];
-  
+
   let arguments = (ins I32:$left, I32:$right);
   let results = (outs I32:$result);
   
@@ -53,10 +44,7 @@ def PgMulOp : Pg_Op<"mul", [Pure]> {
 
 def PgDivOp : Pg_Op<"div", [Pure]> {
   let summary = "PostgreSQL division operation";
-  let description = [{
-    Simple division test operation.
-  }];
-  
+
   let arguments = (ins I32:$left, I32:$right);
   let results = (outs I32:$result);
   
@@ -65,10 +53,7 @@ def PgDivOp : Pg_Op<"div", [Pure]> {
 
 def PgModOp : Pg_Op<"mod", [Pure]> {
   let summary = "PostgreSQL modulo operation";
-  let description = [{
-    Simple modulo test operation.
-  }];
-  
+
   let arguments = (ins I32:$left, I32:$right);
   let results = (outs I32:$result);
   
@@ -78,10 +63,7 @@ def PgModOp : Pg_Op<"mod", [Pure]> {
 // Test comparison operators with integer predicate attribute
 def PgCmpOp : Pg_Op<"compare", [Pure]> {
   let summary = "PostgreSQL comparison operation";
-  let description = [{
-    Simple comparison test operation with integer predicate.
-  }];
-  
+
   let arguments = (ins 
     I32Attr:$predicate,
     I32:$left, 
@@ -94,10 +76,7 @@ def PgCmpOp : Pg_Op<"compare", [Pure]> {
 
 def PgAndOp : Pg_Op<"and", [Pure]> {
   let summary = "PostgreSQL logical AND operation";
-  let description = [{
-    Simple logical AND test operation.
-  }];
-  
+
   let arguments = (ins I1:$left, I1:$right);
   let results = (outs I1:$result);
   
@@ -106,10 +85,7 @@ def PgAndOp : Pg_Op<"and", [Pure]> {
 
 def PgOrOp : Pg_Op<"or", [Pure]> {
   let summary = "PostgreSQL logical OR operation";
-  let description = [{
-    Simple logical OR test operation.
-  }];
-  
+
   let arguments = (ins I1:$left, I1:$right);
   let results = (outs I1:$result);
   
@@ -118,10 +94,7 @@ def PgOrOp : Pg_Op<"or", [Pure]> {
 
 def PgNotOp : Pg_Op<"not", [Pure]> {
   let summary = "PostgreSQL logical NOT operation";
-  let description = [{
-    Simple logical NOT test operation.
-  }];
-  
+
   let arguments = (ins I1:$operand);
   let results = (outs I1:$result);
   
@@ -130,10 +103,7 @@ def PgNotOp : Pg_Op<"not", [Pure]> {
 
 def PgTextAddOp : Pg_Op<"text_add", [Pure]> {
   let summary = "PostgreSQL text addition operation";
-  let description = [{
-    Test operation using custom PostgreSQL text type.
-  }];
-  
+
   let arguments = (ins Pg_TextType:$left, Pg_TextType:$right);
   let results = (outs Pg_TextType:$result);
   
@@ -142,10 +112,7 @@ def PgTextAddOp : Pg_Op<"text_add", [Pure]> {
 
 def PgConcatOp : Pg_Op<"concat", [Pure]> {
   let summary = "PostgreSQL concatenation with variadic arguments";
-  let description = [{
-    Test operation using variadic arguments.
-  }];
-  
+
   let arguments = (ins Variadic<Pg_TextType>:$inputs);
   let results = (outs Pg_TextType:$result);
   
@@ -154,10 +121,7 @@ def PgConcatOp : Pg_Op<"concat", [Pure]> {
 
 def PgGenericEqOp : Pg_Op<"generic_eq", [Pure]> {
   let summary = "PostgreSQL generic equality operation";
-  let description = [{
-    Test operation using type constraints and generic types.
-  }];
-  
+
   let arguments = (ins AnyType:$left, AnyType:$right);
   let results = (outs I1:$result);
   
@@ -166,10 +130,7 @@ def PgGenericEqOp : Pg_Op<"generic_eq", [Pure]> {
 
 def PgCoalesceOp : Pg_Op<"coalesce", [Pure]> {
   let summary = "PostgreSQL coalesce operation";
-  let description = [{
-    Test operation using optional arguments.
-  }];
-  
+
   let arguments = (ins AnyType:$value, Optional<AnyType>:$default_value);
   let results = (outs AnyType:$result);
   
