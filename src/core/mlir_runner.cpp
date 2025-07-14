@@ -111,7 +111,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // Check for remaining pg operations after lowering
     bool hasPgDataAccess = false;
     module.walk([&](mlir::Operation* op) {
-        std::string opName = op->getName().getStringRef().str();
+        const std::string opName = op->getName().getStringRef().str();
         if (opName.substr(0, 3) == "pg.") {
             logger.error("Remaining pg operation after lowering: " + opName);
             hasPgDataAccess = true;
@@ -211,7 +211,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         
         // Register interface functions that the JIT code will call
         auto addSymbol = [&](const char* name, void* ptr) {
-            auto addr = llvm::orc::ExecutorAddr::fromPtr(ptr);
+            const auto addr = llvm::orc::ExecutorAddr::fromPtr(ptr);
             symbolMap[interner(name)] = llvm::orc::ExecutorSymbolDef(addr, llvm::JITSymbolFlags::Exported);
         };
         
@@ -285,10 +285,10 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     logger.debug("Using PostgreSQL AST translation for query processing");
     
     // Create the PostgreSQL AST translator
-    auto translator = postgresql_ast::createPostgreSQLASTTranslator(context, logger);
+    const auto translator = postgresql_ast::createPostgreSQLASTTranslator(context, logger);
     
     // Translate the PostgreSQL AST to MLIR
-    auto module = translator->translateQuery(plannedStmt);
+    const auto module = translator->translateQuery(plannedStmt);
     
     if (!module) {
         logger.error("Failed to translate PostgreSQL AST to MLIR");

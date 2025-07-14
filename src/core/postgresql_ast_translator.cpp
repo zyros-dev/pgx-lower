@@ -134,17 +134,19 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         scanPlan = rootPlan;
         targetList = rootPlan->targetlist;
         logger_.debug("Translating simple SeqScan query");
-    } else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
+    }
+    else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
         // Aggregate query with sequential scan as source
         scanPlan = rootPlan->lefttree;
-        targetList = rootPlan->targetlist;  // Use aggregate's target list for computed expressions
+        targetList = rootPlan->targetlist; // Use aggregate's target list for computed expressions
         logger_.debug("Translating aggregate query with SeqScan source");
-    } else {
+    }
+    else {
         logger_.notice("Only SeqScan and Agg+SeqScan plans are currently supported");
         return nullptr;
     }
-    
-    SeqScan* seqScan = reinterpret_cast<SeqScan*>(scanPlan);
+
+    const auto seqScan = reinterpret_cast<SeqScan*>(scanPlan);
     
     // Generate different MLIR based on query type
     if (rootPlan->type == T_Agg) {
@@ -200,13 +202,13 @@ auto PostgreSQLASTTranslator::translateProjection(List* targetList) -> mlir::Ope
     
     ListCell* lc;
     foreach(lc, targetList) {
-        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
         if (tle->resjunk) {
             continue; // Skip junk columns
         }
         
         // Translate the expression
-        auto exprValue = translateExpression(tle->expr);
+        const auto exprValue = translateExpression(tle->expr);
         if (!exprValue) {
             logger_.notice("Failed to translate target list expression");
             continue;
@@ -279,10 +281,11 @@ auto PostgreSQLASTTranslator::translateExpression(Expr* expr) -> mlir::Value {
         case T_RelabelType:
             // For type coercions, translate the underlying expression
             if (nodeTag(expr) == T_CoerceViaIO) {
-                CoerceViaIO* coerce = reinterpret_cast<CoerceViaIO*>(expr);
+                const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
                 return translateExpression(reinterpret_cast<Expr*>(coerce->arg));
-            } else {
-                RelabelType* relabel = reinterpret_cast<RelabelType*>(expr);
+            }
+            else {
+                const auto* relabel = reinterpret_cast<RelabelType*>(expr);
                 return translateExpression(reinterpret_cast<Expr*>(relabel->arg));
             }
             

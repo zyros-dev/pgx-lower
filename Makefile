@@ -107,7 +107,7 @@ ffix:
 
 compile_commands:
 	@echo "Generating compile_commands.json..."
-	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 	@ln -sf $(BUILD_DIR_PTEST)/compile_commands.json compile_commands.json
 	@echo "compile_commands.json generated and symlinked to project root."
 

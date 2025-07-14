@@ -220,31 +220,6 @@ struct TupleStreamer {
 static TupleStreamer g_tuple_streamer;
 static PostgreSQLTuplePassthrough g_current_tuple_passthrough;
 
-extern "C" int64_t get_next_tuple() {
-    if (!g_scan_context) {
-        return -1;
-    }
-
-    const auto tuple = heap_getnext(g_scan_context->scanDesc, ForwardScanDirection);
-    if (tuple == nullptr) {
-        g_scan_context->hasMore = false;
-        return -2;
-    }
-
-    bool isNull;
-    const auto value = heap_getattr(tuple, 1, g_scan_context->tupleDesc, &isNull);
-
-    if (isNull) {
-        return -3;
-    }
-
-    const int64_t intValue = DatumGetInt64(value);
-    g_scan_context->currentValue = intValue;
-    g_scan_context->hasMore = true;
-
-    return intValue;
-}
-
 struct PostgreSQLTableHandle {
     Relation rel;
     TableScanDesc scanDesc;
