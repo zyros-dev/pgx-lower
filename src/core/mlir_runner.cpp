@@ -247,8 +247,8 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     auto fptr = reinterpret_cast<void (*)()>(mainFunc.get());
 
     logger.notice("About to execute JIT function - this is where PostgreSQL may crash...");
-    logger.notice("🚀 ALL COMPILATION STAGES WORKING! Only JIT execution remaining...");
-    
+    logger.notice("all compilation stages working! only jit execution remaining...");
+
     // Add detailed logging for JIT execution debugging
     logger.notice("JIT function pointer address: " + std::to_string(reinterpret_cast<uint64_t>(fptr)));
     

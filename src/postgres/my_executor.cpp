@@ -235,12 +235,6 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     PGX_DEBUG("Inside C++ executor! Plan type: " + std::to_string(plan->operation));
     PGX_DEBUG("Query text: " + std::string(plan->sourceText ? plan->sourceText : "NULL"));
 
-    if (plan->operation != CMD_SELECT) {
-        elog(NOTICE, "Not a SELECT statement, skipping");
-        return false;
-    }
-
-    // Use query analyzer to determine MLIR compatibility
     const auto* stmt = plan->plannedstmt;
     const auto capabilities = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
 
@@ -269,32 +263,13 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
         return false;
     }
 
+    // QueryAnalyzer has already validated compatibility - proceed to execution
     const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
     const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
+    
+    // Open table for actual execution (not for validation)
     const auto rel = table_open(rte->relid, AccessShareLock);
     const auto tupdesc = RelationGetDescr(rel);
-
-    int unsupportedTypeCount = 0;
-    for (int i = 0; i < tupdesc->natts; i++) {
-        const auto columnType = TupleDescAttr(tupdesc, i)->atttypid;
-        if (columnType != BOOLOID && columnType != INT2OID && columnType != INT4OID && columnType != INT8OID
-            && columnType != FLOAT4OID && columnType != FLOAT8OID)
-        {
-            unsupportedTypeCount++;
-        }
-    }
-
-    if (unsupportedTypeCount == tupdesc->natts) {
-        PGX_INFO("All column types are unsupported (" + std::to_string(unsupportedTypeCount) + "/"
-                 + std::to_string(tupdesc->natts) + "), falling back to standard executor");
-        table_close(rel, AccessShareLock);
-        return false;
-    }
-
-    if (unsupportedTypeCount > 0) {
-        PGX_DEBUG("Table has " + std::to_string(unsupportedTypeCount) + " unsupported column types out of "
-                  + std::to_string(tupdesc->natts) + " total - MLIR will attempt to handle with fallback values");
-    }
 
     const auto scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, nullptr);
 

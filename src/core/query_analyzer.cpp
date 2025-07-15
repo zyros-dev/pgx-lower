@@ -1,5 +1,5 @@
 #include "core/query_analyzer.h"
-#include "core/mlir_logger.h"
+#include "core/mlir_logger.h" 
 #include "core/error_handling.h"
 
 #ifdef POSTGRESQL_EXTENSION
@@ -7,22 +7,30 @@ extern "C" {
 #include "postgres.h"
 #include "nodes/plannodes.h"
 #include "nodes/execnodes.h"
+#include "nodes/primnodes.h"
+#include "nodes/nodeFuncs.h"
 #include "utils/lsyscache.h"
 }
 #endif
 
 #include <cstring>
+#include <vector>
 
 namespace pgx_lower {
 
 // NOTE: I break C++ rules a bit in this file since it's interacting a lot with C-style things.
 
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
-    // Support sequential scans, column projection, and aggregate functions
-    // Temporarily disable WHERE clause support to debug crashes
-    return requiresSeqScan && !requiresJoin && !requiresSort && !requiresLimit && !requiresFilter;
-    // Note: requiresFilter is temporarily disallowed to debug PostgreSQL integration crashes
-    // Note: requiresAggregation is now allowed since we implemented aggregate function support
+    // All conditions must be met for MLIR compatibility
+    return isSelectStatement &&           // Only SELECT statements
+           hasCompatibleTypes &&          // All types must be MLIR-supported
+           requiresSeqScan &&              // Must have sequential scan
+           !requiresJoin &&                // No joins yet
+           !requiresSort &&                // No sorting yet  
+           !requiresLimit &&               // No limits yet
+           !requiresFilter;                // No WHERE clauses yet (temporary)
+    // Note: requiresAggregation is allowed (SUM, COUNT, etc.)
+    // Note: requiresFilter temporarily disabled for debugging
 }
 
 auto QueryCapabilities::getDescription() const -> const char* {
@@ -111,20 +119,36 @@ auto QueryCapabilities::getDescription() const -> const char* {
 #ifdef POSTGRESQL_EXTENSION
 
 QueryCapabilities QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) {
+    QueryCapabilities caps;
+    
     if (!stmt || !stmt->planTree) {
         auto error = ErrorManager::queryAnalysisError("No plan tree to analyze");
         ErrorManager::reportError(error);
-        return {};
+        return caps;
     }
 
     elog(DEBUG1, "Analyzing PostgreSQL plan for MLIR compatibility");
 
     try {
-        return analyzeNode(stmt->planTree);
+        // 1. Check command type first (CMD_SELECT only)
+        caps.isSelectStatement = checkCommandType(stmt);
+        if (!caps.isSelectStatement) {
+            elog(DEBUG1, "Not a SELECT statement, MLIR not compatible");
+            return caps;
+        }
+
+        // 2. Analyze plan structure and requirements  
+        caps = analyzeNode(stmt->planTree);
+        caps.isSelectStatement = true; // Preserve the SELECT check
+        
+        // 3. Analyze column types from plan metadata (no table access)
+        analyzeTypes(stmt->planTree, caps);
+        
+        return caps;
     } catch (const std::exception& e) {
         auto error = ErrorManager::queryAnalysisError("Exception during plan analysis: " + std::string(e.what()));
         ErrorManager::reportError(error);
-        return {};
+        return caps;
     }
 }
 
@@ -224,6 +248,103 @@ void QueryAnalyzer::analyzeProjection(const Plan* plan, QueryCapabilities& caps)
         // since our current MLIR implementation handles basic projections
         elog(DEBUG1, "Target list found - basic projection handling available");
     }
+}
+
+void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
+    if (!plan || !plan->targetlist) {
+        caps.hasCompatibleTypes = false;
+        return;
+    }
+
+    std::vector<Oid> columnTypes;
+    ListCell* lc;
+    
+    // Extract types from plan's target list (no table access needed)
+    foreach(lc, plan->targetlist) {
+        TargetEntry* tle = (TargetEntry*)lfirst(lc);
+        if (tle && !tle->resjunk && tle->expr) {
+            Oid columnType = exprType((Node*)tle->expr);
+            columnTypes.push_back(columnType);
+        }
+    }
+
+    if (columnTypes.empty()) {
+        elog(DEBUG1, "No columns found in target list");
+        caps.hasCompatibleTypes = false;
+        return;
+    }
+
+    // Analyze type compatibility using built-in system
+    auto [supportedCount, unsupportedCount] = analyzeTypeCompatibility(columnTypes);
+    
+    elog(DEBUG1, "Type analysis: %d supported, %d unsupported out of %zu total columns", 
+         supportedCount, unsupportedCount, columnTypes.size());
+
+    // For now, require ALL types to be supported
+    // In the future, we could allow partial support with fallbacks
+    caps.hasCompatibleTypes = (unsupportedCount == 0);
+    
+    if (!caps.hasCompatibleTypes) {
+        elog(DEBUG1, "Some column types not supported by MLIR runtime");
+    }
+}
+
+bool QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) {
+    if (!stmt) {
+        return false;
+    }
+    
+    bool isSelect = (stmt->commandType == CMD_SELECT);
+    if (!isSelect) {
+        elog(DEBUG1, "Command type %d is not SELECT, MLIR only supports SELECT statements", 
+             stmt->commandType);
+    }
+    
+    return isSelect;
+}
+
+bool QueryAnalyzer::isTypeSupportedByMLIR(Oid postgresType) {
+    // PostgreSQL types that MLIR runtime can handle
+    // Based on working test cases and available runtime functions
+    switch (postgresType) {
+        // Integer types (handled by get_int_field)
+        case BOOLOID:
+        case INT2OID:
+        case INT4OID:
+        case INT8OID:
+            return true;
+            
+        case TEXTOID:
+        case VARCHAROID:
+        case CHAROID:
+            return true;
+            
+        // Numeric types (handled by get_numeric_field)
+        case NUMERICOID:
+            return true;
+            
+        // TODO Future floating point support
+        // case FLOAT4OID:
+        // case FLOAT8OID:
+
+        default:
+            return false;
+    }
+}
+
+std::pair<int, int> QueryAnalyzer::analyzeTypeCompatibility(const std::vector<Oid>& types) {
+    int supportedCount = 0;
+    int unsupportedCount = 0;
+    
+    for (Oid type : types) {
+        if (isTypeSupportedByMLIR(type)) {
+            supportedCount++;
+        } else {
+            unsupportedCount++;
+        }
+    }
+    
+    return {supportedCount, unsupportedCount};
 }
 
 #endif // POSTGRESQL_EXTENSION

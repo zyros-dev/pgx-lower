@@ -1,12 +1,16 @@
 #pragma once
+#include <utility>
+#include <vector>
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
 #include "postgres.h"
 #include "nodes/plannodes.h"
 #include "nodes/execnodes.h"
+#include "nodes/primnodes.h"
 }
 #endif
+
 
 namespace pgx_lower {
 
@@ -44,6 +48,10 @@ class QueryAnalyzer {
     static void analyzeSeqScan(const SeqScan* seqScan, QueryCapabilities& caps);
     static void analyzeFilter(const Plan* plan, QueryCapabilities& caps);
     static void analyzeProjection(const Plan* plan, QueryCapabilities& caps);
+    static void analyzeTypes(const Plan* plan, QueryCapabilities& caps);
+    static bool checkCommandType(const PlannedStmt* stmt);
+    static bool isTypeSupportedByMLIR(Oid postgresType);
+    static std::pair<int, int> analyzeTypeCompatibility(const std::vector<Oid>& types);
 #endif
 };
 
