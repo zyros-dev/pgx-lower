@@ -22,6 +22,7 @@ extern "C" {
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "storage/lockdefs.h"
+#include "utils/elog.h"
 }
 #endif
 
@@ -109,6 +110,7 @@ struct PostgreSQLTableHandle {
 };
 
 extern "C" void* open_postgres_table(const char* tableName) {
+#ifdef POSTGRESQL_EXTENSION
     elog(NOTICE, "open_postgres_table called with tableName: %s", tableName ? tableName : "NULL");
 
     try {
@@ -127,8 +129,7 @@ extern "C" void* open_postgres_table(const char* tableName) {
 
         elog(NOTICE, "open_postgres_table: Calling heap_rescan...");
         // IMPORTANT: Reset scan to beginning to ensure we read all tuples
-        // PostgreSQL 17.5 heap_rescan signature: heap_rescan(scan, key, set_params, allow_strat, allow_sync,
-        // allow_pagemode)
+        // PostgreSQL 17.5 heap_rescan signature: heap_rescan(scan, key, set_params, allow_strat, allow_sync, allow_pagemode)
         heap_rescan(handle->scanDesc, nullptr, false, false, false, false);
 
         elog(NOTICE, "open_postgres_table: Successfully created handle, returning %p", handle);
@@ -137,6 +138,9 @@ extern "C" void* open_postgres_table(const char* tableName) {
         elog(NOTICE, "open_postgres_table: Exception caught, returning null");
         return nullptr;
     }
+#else
+    return nullptr;
+#endif
 }
 
 // MLIR Interface: Read next tuple for iteration control
@@ -144,6 +148,7 @@ extern "C" void* open_postgres_table(const char* tableName) {
 // Side effect: Preserves COMPLETE PostgreSQL tuple for later streaming
 // Architecture: MLIR just iterates, PostgreSQL handles all data types
 extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
+#ifdef POSTGRESQL_EXTENSION
     if (!tableHandle) {
         elog(NOTICE, "read_next_tuple_from_table: tableHandle is null");
         return -1;
@@ -179,6 +184,9 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
 
     // Return signal: "we have a tuple" (MLIR only uses this for iteration control)
     return g_current_tuple_passthrough.getIterationSignal();
+#else
+    return 0;
+#endif
 }
 
 extern "C" void close_postgres_table(void* tableHandle) {
@@ -286,7 +294,7 @@ extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isN
 extern "C" void store_text_result(int32_t columnIndex, const char* value, bool isNull) {
     Datum datum = 0;
     if (!isNull && value != nullptr) {
-        datum = CStringGetTextDatum(value);
+        datum = CStringGetDatum(value);
     }
     g_computed_results.setResult(columnIndex, datum, isNull, TEXTOID);
 }
