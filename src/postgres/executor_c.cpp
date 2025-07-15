@@ -40,10 +40,6 @@ static void log_cpp_backtrace() {
 
 bool try_cpp_executor_direct(const QueryDesc* queryDesc) {
     try {
-        // Test MLIR linking by creating a context
-        mlir::MLIRContext context;
-        PGX_INFO("Successfully created MLIR context!");
-
         // Create an instance of MyCppExecutor and call execute
         MyCppExecutor executor;
         return executor.execute(queryDesc);

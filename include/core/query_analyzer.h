@@ -18,6 +18,8 @@ struct QueryCapabilities {
     bool requiresJoin = false; // Table joins
     bool requiresSort = false; // ORDER BY
     bool requiresLimit = false; // LIMIT clause
+    bool isSelectStatement = false; // Only SELECT statements supported
+    bool hasCompatibleTypes = false; // All column types are MLIR-compatible
 
     // Check if MLIR can handle this combination
     [[nodiscard]] auto isMLIRCompatible() const -> bool;
