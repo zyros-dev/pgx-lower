@@ -89,10 +89,12 @@ struct PostgreSQLTuplePassthrough {
     , tupleDesc(nullptr) {}
 
     ~PostgreSQLTuplePassthrough() {
+#ifdef POSTGRESQL_EXTENSION
         if (originalTuple) {
             heap_freetuple(originalTuple);
             originalTuple = nullptr;
         }
+#endif
     }
 
     // Return a simple signal that we have a valid tuple
@@ -101,7 +103,7 @@ struct PostgreSQLTuplePassthrough {
     int64_t getIterationSignal() const { return originalTuple ? 1 : 0; }
 };
 
-static ComputedResultStorage g_computed_results;
+extern ComputedResultStorage g_computed_results;
 
 struct TupleStreamer {
     DestReceiver* dest;
@@ -202,9 +204,9 @@ struct TupleStreamer {
 };
 
 // Global variables for tuple processing and computed result storage
-static TupleScanContext* g_scan_context = nullptr;
-static TupleStreamer g_tuple_streamer;
-static PostgreSQLTuplePassthrough g_current_tuple_passthrough;
+extern TupleScanContext* g_scan_context;
+extern TupleStreamer g_tuple_streamer;
+extern PostgreSQLTuplePassthrough g_current_tuple_passthrough;
 
 extern "C" {
 // MLIR Interface: Read next tuple for iteration control

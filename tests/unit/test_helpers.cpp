@@ -58,6 +58,12 @@ extern "C" auto get_text_field(int64_t /*tuple_handle*/, int32_t /*field_index*/
     return reinterpret_cast<int64_t>(mock_text);
 }
 
+extern "C" auto get_numeric_field(void* /*tuple_handle*/, int32_t field_index, bool* is_null) -> double {
+    // Mock implementation for unit tests
+    *is_null = false;
+    return static_cast<double>(field_index * 3.14); // Return predictable values
+}
+
 // Mock implementations for result storage functions
 extern "C" void store_int_result(int32_t /*columnIndex*/, int32_t /*value*/, bool /*isNull*/) {
     // Mock implementation for unit tests - just return

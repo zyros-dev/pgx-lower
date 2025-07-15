@@ -26,6 +26,12 @@ extern "C" {
 }
 #endif
 
+// Define the global variables that were declared extern in the header
+TupleScanContext* g_scan_context = nullptr;
+ComputedResultStorage g_computed_results;
+TupleStreamer g_tuple_streamer;
+PostgreSQLTuplePassthrough g_current_tuple_passthrough;
+
 namespace pgx_lower::runtime {
 
 static constexpr int MAX_MOCK_FIELDS = 10;
@@ -109,8 +115,8 @@ struct PostgreSQLTableHandle {
     bool isOpen;
 };
 
-extern "C" void* open_postgres_table(const char* tableName) {
 #ifdef POSTGRESQL_EXTENSION
+extern "C" void* open_postgres_table(const char* tableName) {
     elog(NOTICE, "open_postgres_table called with tableName: %s", tableName ? tableName : "NULL");
 
     try {
@@ -138,10 +144,8 @@ extern "C" void* open_postgres_table(const char* tableName) {
         elog(NOTICE, "open_postgres_table: Exception caught, returning null");
         return nullptr;
     }
-#else
-    return nullptr;
-#endif
 }
+#endif
 
 // MLIR Interface: Read next tuple for iteration control
 // Returns: 1 = "we have a tuple", -2 = "end of table"
@@ -160,15 +164,12 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         return -1;
     }
 
-    elog(NOTICE, "read_next_tuple_from_table: Calling heap_getnext...");
     const auto tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
     if (tuple == nullptr) {
         elog(NOTICE, "read_next_tuple_from_table: heap_getnext returned null - end of table");
         // End of table reached - return 0 to terminate MLIR loop
         return 0;
     }
-
-    elog(NOTICE, "read_next_tuple_from_table: Found tuple, processing...");
 
     // Clean up previous tuple if it exists
     if (g_current_tuple_passthrough.originalTuple) {
@@ -180,8 +181,6 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     g_current_tuple_passthrough.originalTuple = heap_copytuple(tuple);
     g_current_tuple_passthrough.tupleDesc = handle->tupleDesc;
 
-    elog(NOTICE, "read_next_tuple_from_table: Tuple processed successfully");
-
     // Return signal: "we have a tuple" (MLIR only uses this for iteration control)
     return g_current_tuple_passthrough.getIterationSignal();
 #else
@@ -190,6 +189,7 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
 }
 
 extern "C" void close_postgres_table(void* tableHandle) {
+#ifdef POSTGRESQL_EXTENSION
     if (!tableHandle) {
         return;
     }
@@ -197,15 +197,21 @@ extern "C" void close_postgres_table(void* tableHandle) {
     auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
     handle->isOpen = false;
     delete handle;
+#endif
 }
 
 // MLIR Interface: Stream complete PostgreSQL tuple to output
 // The 'value' parameter is ignored - it's just MLIR's iteration signal
 extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
+#ifdef POSTGRESQL_EXTENSION
     // Stream the complete PostgreSQL tuple (all data types preserved)
     return g_tuple_streamer.streamCompletePostgreSQLTuple(g_current_tuple_passthrough);
+#else
+    return true;
+#endif
 }
 
+#ifdef POSTGRESQL_EXTENSION
 // Typed field access functions for PostgreSQL dialect
 extern "C" int32_t get_int_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
@@ -274,7 +280,20 @@ extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index,
     default: *is_null = true; return 0;
     }
 }
+#else
+// Mock implementations for unit tests  
+extern "C" int32_t get_int_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
+    *is_null = false;
+    return 42;
+}
 
+extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
+    *is_null = false;
+    return 0;
+}
+#endif
+
+#ifdef POSTGRESQL_EXTENSION
 // MLIR runtime functions for storing computed expression results
 extern "C" void store_int_result(int32_t columnIndex, int32_t value, bool isNull) {
     Datum datum = Int32GetDatum(value);
@@ -302,6 +321,7 @@ extern "C" void store_text_result(int32_t columnIndex, const char* value, bool i
 extern "C" void prepare_computed_results(int32_t numColumns) {
     g_computed_results.resize(numColumns);
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // C-style interface for MLIR JIT compatibility
