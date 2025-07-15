@@ -25,42 +25,12 @@ extern "C" {
 
 namespace pgx_lower::runtime {
 
-//===----------------------------------------------------------------------===//
-// Constants
-//===----------------------------------------------------------------------===//
-
 static constexpr int MAX_MOCK_FIELDS = 10;
 static constexpr int32_t MOCK_INT_VALUE = 42;
 static constexpr int32_t MOCK_BIGINT_VALUE = 100;
 static constexpr uint32_t INT4_TYPE_OID = 23;
 
-//===----------------------------------------------------------------------===//
-// Internal Handle Structures
-//===----------------------------------------------------------------------===//
-
 #ifdef POSTGRESQL_EXTENSION
-
-struct TableScanHandle {
-    Relation relation;
-    TableScanDesc scan_desc;
-    TupleDesc tuple_desc;
-    bool is_open;
-
-    TableScanHandle()
-    : relation(nullptr)
-    , scan_desc(nullptr)
-    , tuple_desc(nullptr)
-    , is_open(false) {}
-
-    ~TableScanHandle() {
-        if (is_open && scan_desc) {
-            table_endscan(scan_desc);
-        }
-        if (relation) {
-            table_close(relation, AccessShareLock);
-        }
-    }
-};
 
 struct TupleHandle {
     HeapTuple heap_tuple;
@@ -82,10 +52,6 @@ struct TupleHandle {
 #else
 
 // Mock implementations for unit tests
-struct TableScanHandle {
-    bool is_open = false;
-};
-
 struct TupleHandle {
     int mock_field_count = 2;
     std::array<int64_t, MAX_MOCK_FIELDS> mock_values = {MOCK_INT_VALUE, MOCK_BIGINT_VALUE, 0};
@@ -95,253 +61,6 @@ struct TupleHandle {
 };
 
 #endif
-
-//===----------------------------------------------------------------------===//
-// Table Operations
-//===----------------------------------------------------------------------===//
-
-TableScanHandle* openTableScan(const char* table_name) {
-    if (!table_name) {
-        REPORT_ERROR_CTX(ERROR_LEVEL, POSTGRESQL, "Table name is null", "openTableScan");
-        return nullptr;
-    }
-
-#ifdef POSTGRESQL_EXTENSION
-    try {
-        auto handle = std::make_unique<TableScanHandle>();
-
-        // TODO: Complete table lookup implementation
-        // This function needs integration with PostgreSQL's catalog system to:
-        // 1. Parse and validate the table name (handle schema qualification)
-        // 2. Look up the relation OID using RangeVarGetRelid()
-        // 3. Open the relation with appropriate locking
-        // 4. Create a proper table scan descriptor with current transaction snapshot
-        // 5. Handle permissions checking and error cases
-        //
-        // For now, this is a placeholder that signals the function is not complete.
-        // The actual table scanning is handled by the existing PostgreSQL executor
-        // integration in my_executor.cpp which has access to the current plan context.
-
-        REPORT_ERROR_CTX(WARNING_LEVEL,
-                         POSTGRESQL,
-                         "Direct table lookup by name requires plan context integration",
-                         table_name);
-        return nullptr;
-
-    } catch (const std::exception& e) {
-        auto error = ErrorManager::postgresqlError("Exception in openTableScan: " + std::string(e.what()), table_name);
-        ErrorManager::reportError(error);
-        return nullptr;
-    }
-#else
-    // Mock implementation for unit tests
-    return new TableScanHandle();
-#endif
-}
-
-void closeTableScan(const TableScanHandle* handle) {
-    if (handle) {
-        delete handle;
-    }
-}
-
-TupleHandle* readNextTuple(TableScanHandle* handle) {
-    if (!handle) {
-        REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Table scan handle is null");
-        return nullptr;
-    }
-
-#ifdef POSTGRESQL_EXTENSION
-    // If this is the dummy handle (not actually open), return nullptr for now
-    if (!handle->is_open) {
-        REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, "Table scan is not open (dummy handle)");
-        return nullptr;
-    }
-    
-    if (!handle->scan_desc) {
-        REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Table scan descriptor is null");
-        return nullptr;
-    }
-
-    TupleTableSlot* slot = table_slot_create(handle->relation, NULL);
-
-    if (!table_scan_getnextslot(handle->scan_desc, ForwardScanDirection, slot)) {
-        ExecDropSingleTupleTableSlot(slot);
-        return nullptr; // End of table
-    }
-
-    // Convert slot to HeapTuple for compatibility
-    HeapTuple tuple = ExecCopySlotHeapTuple(slot);
-    ExecDropSingleTupleTableSlot(slot);
-
-    return new TupleHandle(tuple, handle->tuple_desc, true);
-#else
-    // Mock implementation - return a mock tuple
-    static int call_count = 0;
-    call_count++;
-
-    if (call_count > 3) {
-        return nullptr; // End of mock data
-    }
-
-    return new TupleHandle();
-#endif
-}
-
-//===----------------------------------------------------------------------===//
-// Tuple Field Access
-//===----------------------------------------------------------------------===//
-
-int32_t getIntField(TupleHandle* tuple, int field_index, bool* is_null) {
-    if (!tuple || !is_null) {
-        if (is_null)
-            *is_null = true;
-        return 0;
-    }
-
-#ifdef POSTGRESQL_EXTENSION
-    if (!tuple->heap_tuple || !tuple->tuple_desc) {
-        *is_null = true;
-        return 0;
-    }
-
-    bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
-
-    *is_null = isnull;
-    if (isnull) {
-        return 0;
-    }
-
-    return DatumGetInt32(value);
-#else
-    // Mock implementation
-    if (field_index >= MAX_MOCK_FIELDS) {
-        *is_null = true;
-        return 0;
-    }
-
-    *is_null = tuple->mock_nulls[field_index];
-    return static_cast<int32_t>(tuple->mock_values[field_index]);
-#endif
-}
-
-int64_t getBigIntField(TupleHandle* tuple, int field_index, bool* is_null) {
-    if (!tuple || !is_null) {
-        if (is_null)
-            *is_null = true;
-        return 0;
-    }
-
-#ifdef POSTGRESQL_EXTENSION
-    if (!tuple->heap_tuple || !tuple->tuple_desc) {
-        *is_null = true;
-        return 0;
-    }
-
-    bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
-
-    *is_null = isnull;
-    if (isnull) {
-        return 0;
-    }
-
-    return DatumGetInt64(value);
-#else
-    // Mock implementation
-    if (field_index >= MAX_MOCK_FIELDS) {
-        *is_null = true;
-        return 0;
-    }
-
-    *is_null = tuple->mock_nulls[field_index];
-    return tuple->mock_values[field_index];
-#endif
-}
-
-const char* getTextField(TupleHandle* tuple, int field_index, int* length, bool* is_null) {
-    if (!tuple || !length || !is_null) {
-        if (is_null)
-            *is_null = true;
-        if (length)
-            *length = 0;
-        return nullptr;
-    }
-
-#ifdef POSTGRESQL_EXTENSION
-    if (!tuple->heap_tuple || !tuple->tuple_desc) {
-        *is_null = true;
-        *length = 0;
-        return nullptr;
-    }
-
-    bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
-
-    *is_null = isnull;
-    if (isnull) {
-        *length = 0;
-        return nullptr;
-    }
-
-    text* txt = DatumGetTextP(value);
-    *length = VARSIZE_ANY_EXHDR(txt);
-    return VARDATA_ANY(txt);
-#else
-    // Mock implementation
-    static const char* mock_text = "mock_text_value";
-
-    if (field_index >= 10) {
-        *is_null = true;
-        *length = 0;
-        return nullptr;
-    }
-
-    *is_null = tuple->mock_nulls[field_index];
-    if (*is_null) {
-        *length = 0;
-        return nullptr;
-    }
-
-    *length = strlen(mock_text);
-    return mock_text;
-#endif
-}
-
-bool getBoolField(TupleHandle* tuple, int field_index, bool* is_null) {
-    if (!tuple || !is_null) {
-        if (is_null)
-            *is_null = true;
-        return false;
-    }
-
-#ifdef POSTGRESQL_EXTENSION
-    if (!tuple->heap_tuple || !tuple->tuple_desc) {
-        *is_null = true;
-        return false;
-    }
-
-    bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
-
-    *is_null = isnull;
-    if (isnull) {
-        return false;
-    }
-
-    return DatumGetBool(value);
-#else
-    // Mock implementation
-    if (field_index >= 10) {
-        *is_null = true;
-        return false;
-    }
-
-    *is_null = tuple->mock_nulls[field_index];
-    return (tuple->mock_values[field_index] % 2) == 1;
-#endif
-}
 
 double getNumericField(TupleHandle* tuple, int field_index, bool* is_null) {
     if (!tuple || !is_null) {
@@ -378,229 +97,39 @@ double getNumericField(TupleHandle* tuple, int field_index, bool* is_null) {
     return static_cast<double>(tuple->mock_values[field_index]);
 #endif
 }
-
-//===----------------------------------------------------------------------===//
-// Type Information
-//===----------------------------------------------------------------------===//
-
-uint32_t getFieldTypeOid(TupleHandle* tuple, int field_index) {
-    if (!tuple) {
-        return 0;
-    }
-
-#ifdef POSTGRESQL_EXTENSION
-    if (!tuple->tuple_desc || field_index >= tuple->tuple_desc->natts) {
-        return 0;
-    }
-
-    return TupleDescAttr(tuple->tuple_desc, field_index)->atttypid;
-#else
-    // Mock implementation - return INT4OID for simplicity
-    return INT4_TYPE_OID;
-#endif
-}
-
-int getTupleFieldCount(TupleHandle* tuple) {
-    if (!tuple) {
-        return 0;
-    }
-
-#ifdef POSTGRESQL_EXTENSION
-    if (!tuple->tuple_desc) {
-        return 0;
-    }
-
-    return tuple->tuple_desc->natts;
-#else
-    // Mock implementation
-    return tuple->mock_field_count;
-#endif
-}
-
-//===----------------------------------------------------------------------===//
-// Comparison Operations
-//===----------------------------------------------------------------------===//
-
-bool compareInt(int32_t lhs, bool lhs_null, int32_t rhs, bool rhs_null, const char* op) {
-    // PostgreSQL NULL semantics: any comparison with NULL returns false
-    if (lhs_null || rhs_null) {
-        return false;
-    }
-
-    if (strcmp(op, "eq") == 0)
-        return lhs == rhs;
-    if (strcmp(op, "ne") == 0)
-        return lhs != rhs;
-    if (strcmp(op, "lt") == 0)
-        return lhs < rhs;
-    if (strcmp(op, "le") == 0)
-        return lhs <= rhs;
-    if (strcmp(op, "gt") == 0)
-        return lhs > rhs;
-    if (strcmp(op, "ge") == 0)
-        return lhs >= rhs;
-
-    REPORT_ERROR_CTX(ERROR_LEVEL, EXECUTION, "Unknown comparison operator", op);
-    return false;
-}
-
-bool compareText(const char* lhs, bool lhs_null, const char* rhs, bool rhs_null, const char* op) {
-    // PostgreSQL NULL semantics: any comparison with NULL returns false
-    if (lhs_null || rhs_null) {
-        return false;
-    }
-
-    int cmp_result = strcmp(lhs, rhs);
-
-    if (strcmp(op, "eq") == 0)
-        return cmp_result == 0;
-    if (strcmp(op, "ne") == 0)
-        return cmp_result != 0;
-    if (strcmp(op, "lt") == 0)
-        return cmp_result < 0;
-    if (strcmp(op, "le") == 0)
-        return cmp_result <= 0;
-    if (strcmp(op, "gt") == 0)
-        return cmp_result > 0;
-    if (strcmp(op, "ge") == 0)
-        return cmp_result >= 0;
-
-    REPORT_ERROR_CTX(ERROR_LEVEL, EXECUTION, "Unknown comparison operator", op);
-    return false;
-}
-
-//===----------------------------------------------------------------------===//
-// Output Operations
-//===----------------------------------------------------------------------===//
-
-bool outputTuple(const TupleHandle* tuple) {
-    if (!tuple) {
-        REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Cannot output null tuple");
-        return false;
-    }
-
-    // TODO: Integrate with PostgreSQL result output mechanism
-    // This function should:
-    // 1. Get the current DestReceiver from the execution context
-    // 2. Create a TupleTableSlot from the tuple handle
-    // 3. Call ExecutorSend() or similar to output the tuple
-    // 4. Handle proper slot lifecycle management
-    //
-    // The current executor integration in my_executor.cpp handles this
-    // at a higher level, so this runtime function may not be needed.
-    REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, "Direct tuple output requires execution context integration");
-    return true; // Return true to avoid breaking compilation
-}
-
-TupleHandle* createTuple(int field_count, const uint32_t* field_types, const int64_t* field_values, const bool* null_flags) {
-    if (field_count <= 0 || !field_types || !field_values || !null_flags) {
-        REPORT_ERROR(ERROR_LEVEL, POSTGRESQL, "Invalid parameters for createTuple");
-        return nullptr;
-    }
-
-    // TODO: Implement full PostgreSQL tuple construction
-    // This function should:
-    // 1. Create a TupleDesc from the field_types array
-    // 2. Allocate a tuple with the correct size
-    // 3. Set field values and null flags properly
-    // 4. Handle type-specific value encoding (text, numeric, etc.)
-    // 5. Return a properly constructed TupleHandle
-    //
-    // This is complex as it requires deep PostgreSQL tuple format knowledge.
-    // For now, return a placeholder that signals incomplete implementation.
-#ifdef POSTGRESQL_EXTENSION
-    REPORT_ERROR(WARNING_LEVEL, POSTGRESQL, "Tuple construction not yet fully implemented");
-    return new TupleHandle(nullptr, nullptr, false);
-#else
-    return new TupleHandle();
-#endif
-}
-
-auto freeTuple(const TupleHandle* tuple) -> void {
-    delete tuple;
-}
-
-//===----------------------------------------------------------------------===//
-// Aggregation Support
-//===----------------------------------------------------------------------===//
-
-struct SumAggregationState {
-    int64_t sum = 0;
-    bool has_values = false;
-};
-
-void* initSumAggregation() {
-    return new SumAggregationState();
-}
-
-void addToSum(void* state, int64_t value, bool is_null) {
-    if (!state || is_null) {
-        return; // NULL values are ignored in PostgreSQL SUM
-    }
-
-    auto* sum_state = static_cast<SumAggregationState*>(state);
-    sum_state->sum += value;
-    sum_state->has_values = true;
-}
-
-int64_t finalizeSumAggregation(void* state, bool* result_null) {
-    if (!state || !result_null) {
-        if (result_null)
-            *result_null = true;
-        return 0;
-    }
-
-    auto* sum_state = static_cast<SumAggregationState*>(state);
-    *result_null = !sum_state->has_values; // NULL if no non-NULL values
-    return sum_state->sum;
-}
-
-void freeAggregationState(void* state) {
-    delete static_cast<SumAggregationState*>(state);
-}
-
 } // namespace pgx_lower::runtime
 
 //===----------------------------------------------------------------------===//
-// C-style interface for MLIR JIT compatibility 
+// C-style interface for MLIR JIT compatibility
 //===----------------------------------------------------------------------===//
 
 // get_numeric_field needs to be available for both unit tests and extension
 extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) {
 #ifdef POSTGRESQL_EXTENSION
     elog(NOTICE, "get_numeric_field called with handle=%p field_index=%d", tuple_handle, field_index);
-    
+
     // Safety check: handle null pointers
     if (tuple_handle == nullptr) {
         elog(NOTICE, "get_numeric_field: null handle detected, returning null");
-        if (is_null) *is_null = true;
+        if (is_null)
+            *is_null = true;
         return 0.0;
     }
-    
+
     elog(NOTICE, "get_numeric_field: calling getNumericField...");
-    
-    auto result = pgx_lower::runtime::getNumericField(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle),
-                                                      field_index,
-                                                      is_null);
-    
-    elog(NOTICE, "get_numeric_field completed, result=%f is_null=%s", result, is_null ? (*is_null ? "true" : "false") : "null");
-    
+
+    const auto result = pgx_lower::runtime::getNumericField(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle),
+                                                            field_index,
+                                                            is_null);
+
+    elog(NOTICE,
+         "get_numeric_field completed, result=%f is_null=%s",
+         result,
+         is_null ? (*is_null ? "true" : "false") : "null");
+
     return result;
 #else
-    // Unit test mock implementation
-    if (tuple_handle == nullptr) {
-        if (is_null) *is_null = true;
-        return 0.0;
-    }
-    
-    // Mock implementation - return simple test values
-    if (field_index >= 10) {
-        if (is_null) *is_null = true;
-        return 0.0;
-    }
-    
-    if (is_null) *is_null = false;
-    return static_cast<double>(field_index + 100.5); // Mock numeric value
+    return 0.0;
 #endif
 }
 
