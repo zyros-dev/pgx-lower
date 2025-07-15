@@ -71,26 +71,6 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
     TupleScanContext scanContext = {scanDesc, tupleDesc, true, 0};
     g_scan_context = &scanContext;
 
-    // Create result tuple descriptor - for now, use a simple approach
-    const auto resultTupleDesc = CreateTemplateTupleDesc(1);
-    const auto resultAttr = TupleDescAttr(resultTupleDesc, 0);
-    resultAttr->atttypid = INT8OID;
-    resultAttr->attlen = sizeof(int64);
-    resultAttr->attbyval = true;
-    resultAttr->attalign = TYPALIGN_DOUBLE;
-    resultAttr->atttypmod = -1;
-    resultAttr->attnotnull = false;
-    strncpy(NameStr(resultAttr->attname), "result", NAMEDATALEN - 1);
-
-    const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
-
-    dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
-
-    g_tuple_streamer.initialize(dest, slot);
-
-    // Clear any previous computed results
-    g_computed_results.clear();
-
     // Configure column selection based on query type
     // For SELECT expressions (computed results), use -1 to indicate computed columns
     // For SELECT * (table columns), use 0, 1, 2, etc.
@@ -150,7 +130,49 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
         selectedColumns = {0};
     }
 
+    // Create result tuple descriptor based on selected columns count
+    const int numResultColumns = selectedColumns.size();
+    const auto resultTupleDesc = CreateTemplateTupleDesc(numResultColumns);
+    
+    // Configure each column in the result tuple descriptor
+    for (int i = 0; i < numResultColumns; i++) {
+        const auto resultAttr = TupleDescAttr(resultTupleDesc, i);
+        resultAttr->atttypid = INT4OID;  // Default to INT4 for now
+        resultAttr->attlen = sizeof(int32);
+        resultAttr->attbyval = true;
+        resultAttr->attalign = TYPALIGN_INT;
+        resultAttr->atttypmod = -1;
+        resultAttr->attnotnull = false;
+        
+        if (selectedColumns[i] == -1) {
+            // Computed result column
+            strncpy(NameStr(resultAttr->attname), "result", NAMEDATALEN - 1);
+        } else {
+            // Table column - copy type and name from original table
+            if (scanContext.tupleDesc && selectedColumns[i] < scanContext.tupleDesc->natts) {
+                const auto origAttr = TupleDescAttr(scanContext.tupleDesc, selectedColumns[i]);
+                resultAttr->atttypid = origAttr->atttypid;
+                resultAttr->attlen = origAttr->attlen;
+                resultAttr->attbyval = origAttr->attbyval;
+                resultAttr->attalign = origAttr->attalign;
+                resultAttr->atttypmod = origAttr->atttypmod;
+                resultAttr->attnotnull = origAttr->attnotnull;
+                strncpy(NameStr(resultAttr->attname), NameStr(origAttr->attname), NAMEDATALEN - 1);
+            } else {
+                // Fallback naming
+                snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
+            }
+        }
+    }
+    
+    const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
+    dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
+    
+    g_tuple_streamer.initialize(dest, slot);
     g_tuple_streamer.setSelectedColumns(selectedColumns);
+    
+    // Clear any previous computed results
+    g_computed_results.clear();
 
     // Use the new AST-based MLIR translation
     const auto mlir_success = mlir_runner::run_mlir_postgres_ast_translation(const_cast<PlannedStmt*>(stmt), logger);
