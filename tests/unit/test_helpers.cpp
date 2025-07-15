@@ -2,7 +2,6 @@
 
 MockTupleScanContext* g_mock_scan_context = nullptr;
 
-#ifndef POSTGRESQL_EXTENSION
 extern "C" auto mock_get_next_tuple() -> int64_t {
     if (!g_mock_scan_context) {
         return -1;
@@ -84,4 +83,3 @@ extern "C" void store_text_result(int32_t /*columnIndex*/, const char* /*value*/
 extern "C" void prepare_computed_results(int32_t /*numColumns*/) {
     // Mock implementation for unit tests - just return
 }
-#endif

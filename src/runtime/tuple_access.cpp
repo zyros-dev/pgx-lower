@@ -34,13 +34,6 @@ PostgreSQLTuplePassthrough g_current_tuple_passthrough;
 
 namespace pgx_lower::runtime {
 
-static constexpr int MAX_MOCK_FIELDS = 10;
-static constexpr int32_t MOCK_INT_VALUE = 42;
-static constexpr int32_t MOCK_BIGINT_VALUE = 100;
-static constexpr uint32_t INT4_TYPE_OID = 23;
-
-#ifdef POSTGRESQL_EXTENSION
-
 struct TupleHandle {
     HeapTuple heap_tuple;
     TupleDesc tuple_desc;
@@ -58,19 +51,6 @@ struct TupleHandle {
     }
 };
 
-#else
-
-// Mock implementations for unit tests
-struct TupleHandle {
-    int mock_field_count = 2;
-    std::array<int64_t, MAX_MOCK_FIELDS> mock_values = {MOCK_INT_VALUE, MOCK_BIGINT_VALUE, 0};
-    std::array<bool, MAX_MOCK_FIELDS> mock_nulls = {false, false, true};
-
-    TupleHandle() = default;
-};
-
-#endif
-
 double getNumericField(TupleHandle* tuple, int field_index, bool* is_null) {
     if (!tuple || !is_null) {
         if (is_null)
@@ -78,7 +58,6 @@ double getNumericField(TupleHandle* tuple, int field_index, bool* is_null) {
         return 0.0;
     }
 
-#ifdef POSTGRESQL_EXTENSION
     if (!tuple->heap_tuple || !tuple->tuple_desc) {
         *is_null = true;
         return 0.0;
@@ -95,16 +74,6 @@ double getNumericField(TupleHandle* tuple, int field_index, bool* is_null) {
     // Convert numeric to double - this is a simplification
     Datum float8_value = DirectFunctionCall1(numeric_float8, value);
     return DatumGetFloat8(float8_value);
-#else
-    // Mock implementation
-    if (field_index >= 10) {
-        *is_null = true;
-        return 0.0;
-    }
-
-    *is_null = tuple->mock_nulls[field_index];
-    return static_cast<double>(tuple->mock_values[field_index]);
-#endif
 }
 } // namespace pgx_lower::runtime
 
@@ -115,7 +84,6 @@ struct PostgreSQLTableHandle {
     bool isOpen;
 };
 
-#ifdef POSTGRESQL_EXTENSION
 extern "C" void* open_postgres_table(const char* tableName) {
     elog(NOTICE, "open_postgres_table called with tableName: %s", tableName ? tableName : "NULL");
 
@@ -145,14 +113,12 @@ extern "C" void* open_postgres_table(const char* tableName) {
         return nullptr;
     }
 }
-#endif
 
 // MLIR Interface: Read next tuple for iteration control
 // Returns: 1 = "we have a tuple", -2 = "end of table"
 // Side effect: Preserves COMPLETE PostgreSQL tuple for later streaming
 // Architecture: MLIR just iterates, PostgreSQL handles all data types
 extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
-#ifdef POSTGRESQL_EXTENSION
     if (!tableHandle) {
         elog(NOTICE, "read_next_tuple_from_table: tableHandle is null");
         return -1;
@@ -183,13 +149,9 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
 
     // Return signal: "we have a tuple" (MLIR only uses this for iteration control)
     return g_current_tuple_passthrough.getIterationSignal();
-#else
-    return 0;
-#endif
 }
 
 extern "C" void close_postgres_table(void* tableHandle) {
-#ifdef POSTGRESQL_EXTENSION
     if (!tableHandle) {
         return;
     }
@@ -197,21 +159,15 @@ extern "C" void close_postgres_table(void* tableHandle) {
     auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
     handle->isOpen = false;
     delete handle;
-#endif
 }
 
 // MLIR Interface: Stream complete PostgreSQL tuple to output
 // The 'value' parameter is ignored - it's just MLIR's iteration signal
 extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
-#ifdef POSTGRESQL_EXTENSION
     // Stream the complete PostgreSQL tuple (all data types preserved)
     return g_tuple_streamer.streamCompletePostgreSQLTuple(g_current_tuple_passthrough);
-#else
-    return true;
-#endif
 }
 
-#ifdef POSTGRESQL_EXTENSION
 // Typed field access functions for PostgreSQL dialect
 extern "C" int32_t get_int_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
@@ -280,20 +236,7 @@ extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index,
     default: *is_null = true; return 0;
     }
 }
-#else
-// Mock implementations for unit tests  
-extern "C" int32_t get_int_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
-    *is_null = false;
-    return 42;
-}
 
-extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
-    *is_null = false;
-    return 0;
-}
-#endif
-
-#ifdef POSTGRESQL_EXTENSION
 // MLIR runtime functions for storing computed expression results
 extern "C" void store_int_result(int32_t columnIndex, int32_t value, bool isNull) {
     Datum datum = Int32GetDatum(value);
@@ -321,7 +264,6 @@ extern "C" void store_text_result(int32_t columnIndex, const char* value, bool i
 extern "C" void prepare_computed_results(int32_t numColumns) {
     g_computed_results.resize(numColumns);
 }
-#endif
 
 //===----------------------------------------------------------------------===//
 // C-style interface for MLIR JIT compatibility
@@ -329,7 +271,6 @@ extern "C" void prepare_computed_results(int32_t numColumns) {
 
 // get_numeric_field needs to be available for both unit tests and extension
 extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) {
-#ifdef POSTGRESQL_EXTENSION
     elog(NOTICE, "get_numeric_field called with handle=%p field_index=%d", tuple_handle, field_index);
 
     // Safety check: handle null pointers
@@ -352,9 +293,6 @@ extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, boo
          is_null ? (*is_null ? "true" : "false") : "null");
 
     return result;
-#else
-    return 0.0;
-#endif
 }
 
 // Note: All other C interface functions are implemented in my_executor.cpp
