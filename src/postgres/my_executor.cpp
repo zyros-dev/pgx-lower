@@ -104,19 +104,33 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
                 logger.notice("Configured for computed expression results");
             }
             else {
-                // Use original table columns (SELECT *)
-                // Automatically detect all columns from the table
-                if (scanContext.tupleDesc) {
-                    for (int i = 0; i < scanContext.tupleDesc->natts; i++) {
-                        selectedColumns.push_back(i);
+                // Use original table columns - analyze which specific columns are selected
+                ListCell* lc;
+                foreach (lc, targetList) {
+                    auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+                    if (tle && !tle->resjunk && tle->expr && nodeTag(tle->expr) == T_Var) {
+                        auto* var = reinterpret_cast<Var*>(tle->expr);
+                        // Var->varattno is 1-based, convert to 0-based
+                        int columnIndex = var->varattno - 1;
+                        if (columnIndex >= 0 && columnIndex < scanContext.tupleDesc->natts) {
+                            selectedColumns.push_back(columnIndex);
+                        }
                     }
-                    logger.notice("Configured for table column results (" + std::to_string(selectedColumns.size())
-                                  + " columns)");
                 }
-                else {
-                    // Fallback: assume first column
-                    selectedColumns = {0};
-                    logger.notice("Configured for table column results (fallback: 1 column)");
+                
+                if (selectedColumns.empty()) {
+                    // Fallback: if we couldn't determine columns, use all columns
+                    if (scanContext.tupleDesc) {
+                        for (int i = 0; i < scanContext.tupleDesc->natts; i++) {
+                            selectedColumns.push_back(i);
+                        }
+                        logger.notice("Configured for table column results (all " + std::to_string(selectedColumns.size()) + " columns)");
+                    } else {
+                        selectedColumns = {0};
+                        logger.notice("Configured for table column results (fallback: 1 column)");
+                    }
+                } else {
+                    logger.notice("Configured for table column results (" + std::to_string(selectedColumns.size()) + " selected columns)");
                 }
             }
         }
@@ -151,13 +165,23 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
             // Table column - copy type and name from original table
             if (scanContext.tupleDesc && selectedColumns[i] < scanContext.tupleDesc->natts) {
                 const auto origAttr = TupleDescAttr(scanContext.tupleDesc, selectedColumns[i]);
+                
+                // Copy all relevant attributes from original column
                 resultAttr->atttypid = origAttr->atttypid;
                 resultAttr->attlen = origAttr->attlen;
                 resultAttr->attbyval = origAttr->attbyval;
                 resultAttr->attalign = origAttr->attalign;
                 resultAttr->atttypmod = origAttr->atttypmod;
                 resultAttr->attnotnull = origAttr->attnotnull;
+                resultAttr->attcacheoff = origAttr->attcacheoff;
+                resultAttr->attcollation = origAttr->attcollation;
+                
+                // Copy name
                 strncpy(NameStr(resultAttr->attname), NameStr(origAttr->attname), NAMEDATALEN - 1);
+                NameStr(resultAttr->attname)[NAMEDATALEN - 1] = '\0'; // Ensure null termination
+                
+                logger.debug("Copied column " + std::to_string(i) + ": " + NameStr(origAttr->attname) 
+                           + " (typeid=" + std::to_string(origAttr->atttypid) + ")");
             } else {
                 // Fallback naming
                 snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);

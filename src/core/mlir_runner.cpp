@@ -2,7 +2,6 @@
 #include "core/mlir_logger.h"
 #include "core/error_handling.h"
 #include "core/postgresql_ast_translator.h"
-#include "interfaces/mlir_c_interface.h"
 #include "dialects/pg/PgDialect.h"
 #include "dialects/pg/LowerPgToSCF.h"
 
