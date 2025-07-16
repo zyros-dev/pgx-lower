@@ -356,9 +356,10 @@ auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilitie
         return caps;
     }
 
-    // Simple string-based analysis for unit tests
     if ((strstr(queryText, "SELECT") != nullptr) && (strstr(queryText, "FROM") != nullptr)) {
+        caps.isSelectStatement = true;
         caps.requiresSeqScan = true;
+        caps.hasCompatibleTypes = true;
     }
 
     // Check for projection (specific columns rather than *)
