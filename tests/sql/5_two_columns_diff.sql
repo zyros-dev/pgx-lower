@@ -11,6 +11,4 @@ INSERT INTO test(col2)
 SELECT CASE WHEN gs % 2 = 0 THEN TRUE ELSE FALSE END
 FROM generate_series(1, 100) AS gs;
 
-SELECT SUM(id) FROM test;
-
 SELECT * FROM test;

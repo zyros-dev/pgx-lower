@@ -10,6 +10,4 @@ CREATE TABLE test (
 INSERT INTO test(col2)
 SELECT generate_series(1, 100);
 
-SELECT SUM(id) FROM test;
-
 SELECT * FROM test;
