@@ -312,20 +312,39 @@ bool QueryAnalyzer::isTypeSupportedByMLIR(Oid postgresType) {
         case INT2OID:
         case INT4OID:
         case INT8OID:
+        case NUMERICOID:
+        case FLOAT4OID:
+        case FLOAT8OID:
             return true;
             
         case TEXTOID:
         case VARCHAROID:
         case CHAROID:
             return true;
-            
-        // Numeric types (handled by get_numeric_field)
-        case NUMERICOID:
+
+        case MONEYOID:
+        case DATEOID:
+        case TIMEOID:
+        case TIMETZOID:
+        case TIMESTAMPOID:
+        case TIMESTAMPTZOID:
+        case INTERVALOID:
+        case UUIDOID:
+        case INETOID:
+        case CIDROID:
+        case MACADDROID:
+        case BITOID:
+        case VARBITOID:
+        case BYTEAOID:
+        case NAMEOID:
+        case OIDOID:
+        case JSONOID:
+        case JSONBOID:
+        case XMLOID:
+        case BPCHAROID:
+        case MACADDR8OID:
+        case PG_LSNOID:
             return true;
-            
-        // TODO Future floating point support
-        // case FLOAT4OID:
-        // case FLOAT8OID:
 
         default:
             return false;

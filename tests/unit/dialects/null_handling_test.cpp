@@ -476,7 +476,7 @@ TEST_F(NullHandlingTest, MinimalJitExecution) {
     try {
         std::cout << "🚀 Calling minimal JIT function...\n";
         fptr();  // void function call (LingoDB pattern)
-        std::cout << "🎉 JIT execution SUCCESS! Void function executed without crash!\n";
+        std::cout << "JIT execution SUCCESS! Void function executed without crash!\n";
         std::cout << "✅ BASIC JIT MECHANISM WORKS!\n";
     } catch (const std::exception& e) {
         std::cout << "❌ JIT execution failed with exception: " << e.what() << "\n";

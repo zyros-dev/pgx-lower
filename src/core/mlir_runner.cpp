@@ -256,8 +256,8 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     try {
         logger.notice("Calling JIT function now...");
         fptr();  // void function call (LingoDB pattern)
-        logger.notice("🎉 COMPLETE SUCCESS! MLIR JIT function executed successfully!");
-        logger.notice("🏆 ALL STAGES WORKING: MLIR compilation + JIT execution!");
+        logger.notice("complete success! mlir jit function executed successfully!");
+        logger.notice("all stages working: mlir compilation + jit execution!");
     } catch (const std::exception& e) {
         logger.error("JIT function execution failed with exception: " + std::string(e.what()));
         logger.error("This indicates a runtime function is causing a crash");
