@@ -102,7 +102,30 @@ extern "C" void* open_postgres_table(const char* tableName) {
         handle->isOpen = true;
 
         elog(NOTICE, "open_postgres_table: Calling heap_rescan...");
-        // IMPORTANT: Reset scan to beginning to ensure we read all tuples
+        elog(NOTICE, "open_postgres_table: scanDesc=%p, tupleDesc=%p", handle->scanDesc, handle->tupleDesc);
+        if (handle->tupleDesc) {
+            elog(NOTICE, "open_postgres_table: tupleDesc->natts=%d", handle->tupleDesc->natts);
+        }
+        if (handle->scanDesc && handle->scanDesc->rs_rd) {
+            elog(NOTICE, "open_postgres_table: scanning relation OID=%u, name=%s", 
+                 RelationGetRelid(handle->scanDesc->rs_rd), 
+                 RelationGetRelationName(handle->scanDesc->rs_rd));
+        }
+        
+        // IMPORTANT: Reset scan to beginning to ensure we read all tuples  
+        // The issue might be snapshot visibility - ensure we see recent INSERT operations
+        // Force command counter increment to ensure we see recent changes in the same transaction
+        CommandCounterIncrement();
+        
+        // Get a fresh snapshot to see all committed changes
+        Snapshot currentSnapshot = GetActiveSnapshot();
+        if (currentSnapshot) {
+            elog(NOTICE, "open_postgres_table: Updating scan with fresh snapshot xmin=%u, xmax=%u", 
+                 currentSnapshot->xmin, currentSnapshot->xmax);
+            // Update the scan's snapshot to see recent changes
+            handle->scanDesc->rs_snapshot = currentSnapshot;
+        }
+        
         // PostgreSQL 17.5 heap_rescan signature: heap_rescan(scan, key, set_params, allow_strat, allow_sync, allow_pagemode)
         heap_rescan(handle->scanDesc, nullptr, false, false, false, false);
 
@@ -164,6 +187,25 @@ extern "C" void close_postgres_table(void* tableHandle) {
 // MLIR Interface: Stream complete PostgreSQL tuple to output
 // The 'value' parameter is ignored - it's just MLIR's iteration signal
 extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
+    elog(NOTICE, "add_tuple_to_result: called with value=%ld", value);
+    elog(NOTICE, "add_tuple_to_result: g_computed_results.numComputedColumns=%d", g_computed_results.numComputedColumns);
+    elog(NOTICE, "add_tuple_to_result: originalTuple=%p", g_current_tuple_passthrough.originalTuple);
+    
+    // For aggregate queries, we may not have an original tuple but do have computed results
+    // Check if we have computed results to stream
+    if (!g_current_tuple_passthrough.originalTuple && g_computed_results.numComputedColumns > 0) {
+        elog(NOTICE, "add_tuple_to_result: Using computed results path");
+        // Create a synthetic passthrough for computed results only
+        PostgreSQLTuplePassthrough syntheticPassthrough;
+        syntheticPassthrough.originalTuple = nullptr;  // No original tuple for aggregates
+        syntheticPassthrough.tupleDesc = nullptr;      // Will be handled by TupleStreamer logic
+        
+        bool result = g_tuple_streamer.streamCompletePostgreSQLTuple(syntheticPassthrough);
+        elog(NOTICE, "add_tuple_to_result: streamCompletePostgreSQLTuple returned %s", result ? "true" : "false");
+        return result;
+    }
+    
+    elog(NOTICE, "add_tuple_to_result: Using original tuple path");
     // Stream the complete PostgreSQL tuple (all data types preserved)
     return g_tuple_streamer.streamCompletePostgreSQLTuple(g_current_tuple_passthrough);
 }
@@ -249,8 +291,12 @@ extern "C" void store_bool_result(int32_t columnIndex, bool value, bool isNull) 
 }
 
 extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull) {
+    elog(NOTICE, "store_bigint_result: columnIndex=%d, value=%ld, isNull=%s", 
+         columnIndex, value, isNull ? "true" : "false");
     Datum datum = Int64GetDatum(value);
     g_computed_results.setResult(columnIndex, datum, isNull, INT8OID);
+    elog(NOTICE, "store_bigint_result: stored in g_computed_results.numComputedColumns=%d", 
+         g_computed_results.numComputedColumns);
 }
 
 extern "C" void store_text_result(int32_t columnIndex, const char* value, bool isNull) {
@@ -271,28 +317,44 @@ extern "C" void prepare_computed_results(int32_t numColumns) {
 
 // get_numeric_field needs to be available for both unit tests and extension
 extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) {
-    elog(NOTICE, "get_numeric_field called with handle=%p field_index=%d", tuple_handle, field_index);
-
-    // Safety check: handle null pointers
-    if (tuple_handle == nullptr) {
-        elog(NOTICE, "get_numeric_field: null handle detected, returning null");
-        if (is_null)
-            *is_null = true;
+    // Use global state like get_int_field (ignore tuple_handle parameter)
+    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
+        *is_null = true;
         return 0.0;
     }
 
-    elog(NOTICE, "get_numeric_field: calling getNumericField...");
+    // PostgreSQL uses 1-based attribute indexing
+    const int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
+        *is_null = true;
+        return 0.0;
+    }
 
-    const auto result = pgx_lower::runtime::getNumericField(static_cast<pgx_lower::runtime::TupleHandle*>(tuple_handle),
-                                                            field_index,
-                                                            is_null);
+    bool isnull;
+    const auto value =
+        heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
 
-    elog(NOTICE,
-         "get_numeric_field completed, result=%f is_null=%s",
-         result,
-         is_null ? (*is_null ? "true" : "false") : "null");
+    *is_null = isnull;
+    if (isnull) {
+        return 0.0;
+    }
 
-    return result;
+    // Handle different numeric types based on PostgreSQL type OID
+    const auto atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
+    switch (atttypid) {
+    case NUMERICOID: { // 1700 - DECIMAL/NUMERIC type
+        // Convert NUMERIC to double
+        Datum float8_value = DirectFunctionCall1(numeric_float8, value);
+        return DatumGetFloat8(float8_value);
+    }
+    case FLOAT4OID: // 700 - REAL/FLOAT4 type
+        return (double)DatumGetFloat4(value);
+    case FLOAT8OID: // 701 - DOUBLE PRECISION/FLOAT8 type
+        return DatumGetFloat8(value);
+    default:
+        *is_null = true;
+        return 0.0;
+    }
 }
 
 // Note: All other C interface functions are implemented in my_executor.cpp

@@ -29,7 +29,7 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
            !requiresSort &&                // No sorting yet  
            !requiresLimit &&               // No limits yet
            !requiresFilter;                // No WHERE clauses yet (temporary)
-    // Note: requiresAggregation is allowed (SUM, COUNT, etc.)
+    // Note: requiresAggregation is allowed and supported (SUM, COUNT, etc.)
     // Note: requiresFilter temporarily disabled for debugging
 }
 

@@ -64,6 +64,9 @@ private:
                                    SeqScan* seqScan, List* targetList) -> void;
     auto generateAggregateLoop(mlir::OpBuilder& builder, mlir::Location location,
                               SeqScan* seqScan, List* targetList) -> void;
+    auto getFieldValue64(mlir::OpBuilder& builder, mlir::Location location,
+                         int32_t aggregateFieldIndex, uint32_t aggregateFieldType,
+                         mlir::Type ptrType, mlir::Type i32Type) -> mlir::Value;
     auto processTargetListWithRealTuple(mlir::OpBuilder& builder, mlir::Location location,
                                        mlir::Value tupleHandle, List* targetList) -> void;
 

@@ -62,10 +62,12 @@ struct ComputedResultStorage {
     }
 
     void resize(int numColumns) {
+        elog(NOTICE, "ComputedResultStorage::resize called with numColumns=%d", numColumns);
         numComputedColumns = numColumns;
         computedValues.resize(numColumns, 0);
         computedNulls.resize(numColumns, true);
         computedTypes.resize(numColumns, InvalidOid);
+        elog(NOTICE, "ComputedResultStorage::resize completed, numComputedColumns=%d", numComputedColumns);
     }
 
     void setResult(int columnIndex, Datum value, bool isNull, Oid typeOid) {
@@ -141,7 +143,21 @@ struct TupleStreamer {
     // Stream the complete PostgreSQL tuple (all columns, all types preserved)
     // This is what actually appears in query results
     auto streamCompletePostgreSQLTuple(const PostgreSQLTuplePassthrough& passthrough) const -> bool {
-        if (!isActive || !dest || !slot || !passthrough.originalTuple) {
+        if (!isActive || !dest || !slot) {
+            return false;
+        }
+        
+        // Check if we have computed-only results (aggregates) or regular tuple results
+        bool hasComputedResults = false;
+        for (int col : selectedColumns) {
+            if (col == -1) {
+                hasComputedResults = true;
+                break;
+            }
+        }
+        
+        // For computed-only results, we don't need an original tuple
+        if (!hasComputedResults && !passthrough.originalTuple) {
             return false;
         }
 

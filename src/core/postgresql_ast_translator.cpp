@@ -1199,6 +1199,64 @@ auto PostgreSQLASTTranslator::isTextOperator(const char* opName) -> bool {
     return opName && (strcmp(opName, "||") == 0 || strcmp(opName, "~~") == 0);
 }
 
+auto PostgreSQLASTTranslator::getFieldValue64(mlir::OpBuilder& builder, mlir::Location location,
+                                             int32_t aggregateFieldIndex, uint32_t aggregateFieldType,
+                                             mlir::Type ptrType, mlir::Type i32Type) -> mlir::Value {
+    auto i64Type = builder.getI64Type();
+    auto i1Type = builder.getI1Type();
+    
+    // Get field value and convert to i64
+    auto isNullPtr = builder.create<mlir::LLVM::AllocaOp>(location, ptrType, i1Type, 
+                                                          builder.create<mlir::arith::ConstantIntOp>(location, 1, i32Type));
+    
+    auto fieldIndexConst = builder.create<mlir::arith::ConstantIntOp>(location, aggregateFieldIndex, i32Type);
+    
+    // Field access functions use global state, so pass nullptr as tuple handle
+    auto nullPtr = builder.create<mlir::LLVM::ZeroOp>(location, ptrType);
+
+    // Choose field accessor based on PostgreSQL type OID
+    mlir::Value fieldValue64;
+    if (aggregateFieldType == 1700) { // NUMERICOID - DECIMAL/NUMERIC type
+        auto fieldValueFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("get_numeric_field");
+        if (fieldValueFunc) {
+            auto fieldValue = builder.create<mlir::func::CallOp>(
+                location, fieldValueFunc, 
+                llvm::ArrayRef<mlir::Value>{nullPtr, fieldIndexConst, isNullPtr});
+            
+            // Convert double to i64 for accumulator (multiply by 100 to preserve 2 decimal places)
+            auto scaleConstant = builder.create<mlir::arith::ConstantFloatOp>(location, 
+                llvm::APFloat(100.0), builder.getF64Type());
+            auto scaledValue = builder.create<mlir::arith::MulFOp>(location, fieldValue.getResult(0), scaleConstant);
+            fieldValue64 = builder.create<mlir::arith::FPToSIOp>(location, i64Type, scaledValue);
+        }
+    } else if (aggregateFieldType == 700 || aggregateFieldType == 701) { // FLOAT4OID=700 (REAL), FLOAT8OID=701 (DOUBLE PRECISION)
+        auto fieldValueFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("get_numeric_field");
+        if (fieldValueFunc) {
+            auto fieldValue = builder.create<mlir::func::CallOp>(
+                location, fieldValueFunc, 
+                llvm::ArrayRef<mlir::Value>{nullPtr, fieldIndexConst, isNullPtr});
+            
+            // Convert double to i64 for accumulator (multiply by 100 to preserve 2 decimal places)
+            auto scaleConstant = builder.create<mlir::arith::ConstantFloatOp>(location, 
+                llvm::APFloat(100.0), builder.getF64Type());
+            auto scaledValue = builder.create<mlir::arith::MulFOp>(location, fieldValue.getResult(0), scaleConstant);
+            fieldValue64 = builder.create<mlir::arith::FPToSIOp>(location, i64Type, scaledValue);
+        }
+    } else { // Integer types (INT4OID=23, INT8OID=20, etc.)
+        auto fieldValueFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("get_int_field");
+        if (fieldValueFunc) {
+            auto fieldValue = builder.create<mlir::func::CallOp>(
+                location, fieldValueFunc, 
+                llvm::ArrayRef<mlir::Value>{nullPtr, fieldIndexConst, isNullPtr});
+            
+            // Convert i32 field to i64
+            fieldValue64 = builder.create<mlir::arith::ExtSIOp>(location, i64Type, fieldValue.getResult(0));
+        }
+    }
+    
+    return fieldValue64;
+}
+
 auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, mlir::Location location,
                                                     SeqScan* seqScan, List* targetList) -> void {
     auto ptrType = mlir::LLVM::LLVMPointerType::get(&context_);
@@ -1219,6 +1277,7 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     // Initialize accumulator variables for each aggregate in target list
     // For now, support one aggregate - can be extended later
     mlir::Value accumulator = nullptr;
+    mlir::Value countAccumulator = nullptr; // For AVG which needs both sum and count
     int32_t aggregateFieldIndex = -1;
     uint32_t aggregateFieldType = 0;
     std::string aggregateType;
@@ -1263,6 +1322,52 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
                 accumulator = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
                 aggregateFieldIndex = -1; // COUNT(*) doesn't need field access
                 logger_.debug("COUNT aggregate initialized");
+            } else if (aggregateType == "avg") {
+                // AVG needs to track both sum and count, we'll use two accumulators
+                accumulator = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type); // sum
+                countAccumulator = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type); // count
+                
+                // Get the field index and type from the aggregate argument
+                if (aggref->args && list_length(aggref->args) == 1) {
+                    TargetEntry* argEntry = static_cast<TargetEntry*>(linitial(aggref->args));
+                    if (argEntry && argEntry->expr && IsA(argEntry->expr, Var)) {
+                        Var* var = reinterpret_cast<Var*>(argEntry->expr);
+                        aggregateFieldIndex = var->varattno - 1; // Convert to 0-based index
+                        aggregateFieldType = var->vartype; // Get PostgreSQL type OID
+                        logger_.debug("AVG aggregate on field index: " + std::to_string(aggregateFieldIndex) + 
+                                    " type OID: " + std::to_string(aggregateFieldType));
+                    }
+                }
+            } else if (aggregateType == "min") {
+                // MIN starts with a very large value
+                accumulator = builder.create<mlir::arith::ConstantIntOp>(location, INT64_MAX, i64Type);
+                
+                // Get the field index and type from the aggregate argument
+                if (aggref->args && list_length(aggref->args) == 1) {
+                    TargetEntry* argEntry = static_cast<TargetEntry*>(linitial(aggref->args));
+                    if (argEntry && argEntry->expr && IsA(argEntry->expr, Var)) {
+                        Var* var = reinterpret_cast<Var*>(argEntry->expr);
+                        aggregateFieldIndex = var->varattno - 1; // Convert to 0-based index
+                        aggregateFieldType = var->vartype; // Get PostgreSQL type OID
+                        logger_.debug("MIN aggregate on field index: " + std::to_string(aggregateFieldIndex) + 
+                                    " type OID: " + std::to_string(aggregateFieldType));
+                    }
+                }
+            } else if (aggregateType == "max") {
+                // MAX starts with a very small value
+                accumulator = builder.create<mlir::arith::ConstantIntOp>(location, INT64_MIN, i64Type);
+                
+                // Get the field index and type from the aggregate argument
+                if (aggref->args && list_length(aggref->args) == 1) {
+                    TargetEntry* argEntry = static_cast<TargetEntry*>(linitial(aggref->args));
+                    if (argEntry && argEntry->expr && IsA(argEntry->expr, Var)) {
+                        Var* var = reinterpret_cast<Var*>(argEntry->expr);
+                        aggregateFieldIndex = var->varattno - 1; // Convert to 0-based index
+                        aggregateFieldType = var->vartype; // Get PostgreSQL type OID
+                        logger_.debug("MAX aggregate on field index: " + std::to_string(aggregateFieldIndex) + 
+                                    " type OID: " + std::to_string(aggregateFieldType));
+                    }
+                }
             } else {
                 logger_.error("Unsupported aggregate function: " + aggregateType);
                 continue;
@@ -1288,17 +1393,20 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
         location, i64Type, mlir::ValueRange{initialTupleHandle});
     
     // Create the accumulation loop using scf.while
+    // For AVG, we need to track both sum and count
+    mlir::Value secondAccumulator = countAccumulator ? countAccumulator : accumulator;
     auto whileOp = builder.create<mlir::scf::WhileOp>(
-        location, mlir::TypeRange{i64Type, i64Type}, 
-        mlir::ValueRange{initialTuplePtr.getResult(0), accumulator});
+        location, mlir::TypeRange{i64Type, i64Type, i64Type}, 
+        mlir::ValueRange{initialTuplePtr.getResult(0), accumulator, secondAccumulator});
     
     // Before region: check if we have a valid tuple
     auto* beforeBlock = builder.createBlock(&whileOp.getBefore(), whileOp.getBefore().end(), 
-                                           mlir::TypeRange{i64Type, i64Type}, {location, location});
+                                           mlir::TypeRange{i64Type, i64Type, i64Type}, {location, location, location});
     builder.setInsertionPointToStart(beforeBlock);
     
     auto tuplePtr = beforeBlock->getArgument(0);
     auto currentAcc = beforeBlock->getArgument(1);
+    auto currentSecondAcc = beforeBlock->getArgument(2);
     
     // Check if tuple pointer is non-null
     auto zeroConstant = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
@@ -1306,15 +1414,16 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
         location, mlir::arith::CmpIPredicate::ne, tuplePtr, zeroConstant);
     
     builder.create<mlir::scf::ConditionOp>(location, hasMoreTuples, 
-                                          mlir::ValueRange{tuplePtr, currentAcc});
+                                          mlir::ValueRange{tuplePtr, currentAcc, currentSecondAcc});
     
     // After region: process tuple and accumulate
     auto* afterBlock = builder.createBlock(&whileOp.getAfter(), whileOp.getAfter().end(),
-                                          mlir::TypeRange{i64Type, i64Type}, {location, location});
+                                          mlir::TypeRange{i64Type, i64Type, i64Type}, {location, location, location});
     builder.setInsertionPointToStart(afterBlock);
     
     auto currentTuplePtr = afterBlock->getArgument(0);
     auto accValue = afterBlock->getArgument(1);
+    auto secondAccValue = afterBlock->getArgument(2);
     
     // Convert tuple pointer back to tuple handle for field access
     auto currentTupleHandle = builder.create<mlir::UnrealizedConversionCastOp>(
@@ -1322,51 +1431,47 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     
     // Perform accumulation based on aggregate type
     mlir::Value newAccValue = accValue;
+    mlir::Value newSecondAccValue = secondAccValue;
     
     if (aggregateType == "sum" && aggregateFieldIndex >= 0) {
         // Get field value and add to accumulator
-        auto isNullPtr = builder.create<mlir::LLVM::AllocaOp>(location, ptrType, i1Type, 
-                                                              builder.create<mlir::arith::ConstantIntOp>(location, 1, i32Type));
-        
-        auto fieldIndexConst = builder.create<mlir::arith::ConstantIntOp>(location, aggregateFieldIndex, i32Type);
-        
-        // Choose field accessor based on PostgreSQL type OID
-        mlir::Value fieldValue64;
-        if (aggregateFieldType == 1700) { // NUMERICOID - DECIMAL/NUMERIC type
-            auto fieldValueFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("get_numeric_field");
-            if (fieldValueFunc) {
-                auto fieldValue = builder.create<mlir::func::CallOp>(
-                    location, fieldValueFunc, mlir::ValueRange{currentTupleHandle.getResult(0), fieldIndexConst, isNullPtr});
-                
-                // Convert double to i64 for accumulator (multiply by 100 to preserve 2 decimal places)
-                auto scaleConstant = builder.create<mlir::arith::ConstantFloatOp>(location, 
-                    llvm::APFloat(100.0), builder.getF64Type());
-                auto scaledValue = builder.create<mlir::arith::MulFOp>(location, fieldValue.getResult(0), scaleConstant);
-                fieldValue64 = builder.create<mlir::arith::FPToSIOp>(location, i64Type, scaledValue);
-                
-                logger_.debug("Generated SUM accumulation for NUMERIC: acc = acc + field[" + std::to_string(aggregateFieldIndex) + "]");
-            }
-        } else { // Integer types (INT4OID=23, INT8OID=20, etc.)
-            auto fieldValueFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("get_int_field");
-            if (fieldValueFunc) {
-                auto fieldValue = builder.create<mlir::func::CallOp>(
-                    location, fieldValueFunc, mlir::ValueRange{currentTupleHandle.getResult(0), fieldIndexConst, isNullPtr});
-                
-                // Convert i32 field to i64 and add to accumulator
-                fieldValue64 = builder.create<mlir::arith::ExtSIOp>(location, i64Type, fieldValue.getResult(0));
-                
-                logger_.debug("Generated SUM accumulation for INTEGER: acc = acc + field[" + std::to_string(aggregateFieldIndex) + "]");
-            }
-        }
-        
+        auto fieldValue64 = getFieldValue64(builder, location, aggregateFieldIndex, aggregateFieldType, ptrType, i32Type);
         if (fieldValue64) {
             newAccValue = builder.create<mlir::arith::AddIOp>(location, accValue, fieldValue64);
         }
+        logger_.debug("Generated SUM accumulation: acc = acc + field[" + std::to_string(aggregateFieldIndex) + "]");
     } else if (aggregateType == "count") {
         // Increment counter for each tuple
         auto oneConstant = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
         newAccValue = builder.create<mlir::arith::AddIOp>(location, accValue, oneConstant);
         logger_.debug("Generated COUNT accumulation: acc = acc + 1");
+    } else if (aggregateType == "avg" && aggregateFieldIndex >= 0) {
+        // AVG needs to accumulate both sum and count
+        auto fieldValue64 = getFieldValue64(builder, location, aggregateFieldIndex, aggregateFieldType, ptrType, i32Type);
+        if (fieldValue64) {
+            newAccValue = builder.create<mlir::arith::AddIOp>(location, accValue, fieldValue64); // sum
+            auto oneConstant = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
+            newSecondAccValue = builder.create<mlir::arith::AddIOp>(location, secondAccValue, oneConstant); // count
+        }
+        logger_.debug("Generated AVG accumulation: sum = sum + field, count = count + 1");
+    } else if (aggregateType == "min" && aggregateFieldIndex >= 0) {
+        // MIN: take minimum of current and field value
+        auto fieldValue64 = getFieldValue64(builder, location, aggregateFieldIndex, aggregateFieldType, ptrType, i32Type);
+        if (fieldValue64) {
+            auto cmpResult = builder.create<mlir::arith::CmpIOp>(
+                location, mlir::arith::CmpIPredicate::slt, fieldValue64, accValue);
+            newAccValue = builder.create<mlir::arith::SelectOp>(location, cmpResult, fieldValue64, accValue);
+        }
+        logger_.debug("Generated MIN accumulation: acc = min(acc, field)");
+    } else if (aggregateType == "max" && aggregateFieldIndex >= 0) {
+        // MAX: take maximum of current and field value
+        auto fieldValue64 = getFieldValue64(builder, location, aggregateFieldIndex, aggregateFieldType, ptrType, i32Type);
+        if (fieldValue64) {
+            auto cmpResult = builder.create<mlir::arith::CmpIOp>(
+                location, mlir::arith::CmpIPredicate::sgt, fieldValue64, accValue);
+            newAccValue = builder.create<mlir::arith::SelectOp>(location, cmpResult, fieldValue64, accValue);
+        }
+        logger_.debug("Generated MAX accumulation: acc = max(acc, field)");
     }
     
     // Read next tuple
@@ -1375,19 +1480,50 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     auto nextTuplePtr = builder.create<mlir::UnrealizedConversionCastOp>(
         location, i64Type, mlir::ValueRange{nextTupleHandle});
     
-    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTuplePtr.getResult(0), newAccValue});
+    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTuplePtr.getResult(0), newAccValue, newSecondAccValue});
     
     // After the loop, output the final result as a single tuple
     builder.setInsertionPointAfter(whileOp);
     auto finalResult = whileOp.getResult(1); // The accumulated value
+    auto finalSecondResult = whileOp.getResult(2); // Second accumulator (for AVG count)
     
-    // Create and output result tuple using add_tuple_to_result
+    // For AVG, compute sum/count
+    if (aggregateType == "avg") {
+        // Avoid division by zero
+        auto zeroConstant = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
+        auto isNonZero = builder.create<mlir::arith::CmpIOp>(
+            location, mlir::arith::CmpIPredicate::ne, finalSecondResult, zeroConstant);
+        
+        // Compute average: sum / count
+        auto avgResult = builder.create<mlir::arith::DivSIOp>(location, finalResult, finalSecondResult);
+        
+        // Use select to avoid division by zero (return 0 if count is 0)
+        finalResult = builder.create<mlir::arith::SelectOp>(location, isNonZero, avgResult, zeroConstant);
+        logger_.debug("Computed AVG = sum / count");
+    }
+    
+    // Store the aggregate result using store_bigint_result
+    auto storeBigintFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_bigint_result");
+    if (storeBigintFunc) {
+        // Store aggregate result in column 0
+        auto columnIndexConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i32Type);
+        auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
+        
+        builder.create<mlir::func::CallOp>(
+            location, storeBigintFunc,
+            mlir::ValueRange{columnIndexConst, finalResult, isNullConst});
+        
+        logger_.debug("Stored " + aggregateType + " aggregate result in column 0");
+    }
+    
+    // Add a single result tuple (with the aggregate value stored)
     auto addResultFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("add_tuple_to_result");
     if (addResultFunc) {
-        // For aggregate results, we output the final accumulated value as a tuple
-        builder.create<mlir::func::CallOp>(location, addResultFunc, mlir::ValueRange{finalResult});
+        // Create a dummy tuple handle to indicate one result row
+        auto dummyTupleHandle = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
+        builder.create<mlir::func::CallOp>(location, addResultFunc, mlir::ValueRange{dummyTupleHandle});
         
-        logger_.debug("Output final " + aggregateType + " result as tuple");
+        logger_.debug("Added single result tuple for " + aggregateType + " aggregate");
     }
     
     logger_.debug("Generated complete aggregate accumulation loop");

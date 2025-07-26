@@ -195,8 +195,8 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
     g_tuple_streamer.initialize(dest, slot);
     g_tuple_streamer.setSelectedColumns(selectedColumns);
     
-    // Clear any previous computed results
-    g_computed_results.clear();
+    // Clear any previous computed results before setup
+    // Note: This will be overridden by resize() for computed expressions
 
     // Use the new AST-based MLIR translation
     const auto mlir_success = mlir_runner::run_mlir_postgres_ast_translation(const_cast<PlannedStmt*>(stmt), logger);
