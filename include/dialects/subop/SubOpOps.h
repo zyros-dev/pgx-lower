@@ -3,10 +3,24 @@
 
 // #include "lingodb/compiler/Dialect/Arrow/IR/ArrowTypes.h" // Removed Arrow dependency
 // #include "dialects/db/DBTypes.h" // TODO: Fix circular dependency
+
+// Include enums first
+#include "SubOpOpsEnums.h.inc"
+
+// Include attributes that may use enums
+#define GET_ATTRDEF_CLASSES
+#include "SubOpOpsAttributes.h.inc"
+
+// Include interfaces after attributes
 #include "SubOpInterfaces.h"
-// #include "lingodb/compiler/Dialect/SubOperator/SubOperatorOpsAttributes.h" // TODO: Port if needed
-// #include "SubOpOpsEnums.h.inc" // TODO: Generate if needed
+
+// Include type interfaces
+#include "SubOpTypeInterfaces.h.inc"
+
+// Include types
+#define GET_TYPEDEF_CLASSES
 #include "SubOpTypes.h.inc"
+
 #include "dialects/tuplestream/Column.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 // #include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsAttributes.h" // TODO: Port if needed

@@ -41,12 +41,18 @@ mlir_tablegen(SubOpOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOUR
 mlir_tablegen(SubOpOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
 mlir_tablegen(SubOpTypes.h.inc -gen-typedef-decls --typedefs-dialect=subop -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
 mlir_tablegen(SubOpTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=subop -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpOpsAttributes.h.inc -gen-attrdef-decls --attrdefs-dialect=subop -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpOpsAttributes.cpp.inc -gen-attrdef-defs --attrdefs-dialect=subop -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpOpsEnums.h.inc -gen-enum-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpOpsEnums.cpp.inc -gen-enum-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
 add_public_tablegen_target(MLIRSubOpIncGen)
 
 # Generate interfaces separately from the interfaces file
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/subop/SubOpInterfaces.td)
 mlir_tablegen(SubOpOpsInterfaces.h.inc -gen-op-interface-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
 mlir_tablegen(SubOpOpsInterfaces.cpp.inc -gen-op-interface-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpTypeInterfaces.h.inc -gen-type-interface-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpTypeInterfaces.cpp.inc -gen-type-interface-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
 add_public_tablegen_target(MLIRSubOpInterfacesIncGen)
 
 # Database dialect TableGen
@@ -97,12 +103,12 @@ add_library(MLIRPgDialect STATIC
 
 add_library(MLIRSubOpDialect STATIC
     subop/SubOpDialect.cpp
-    # subop/LowerSubOpToDB.cpp  # Temporarily disabled to get basic compilation working
+    subop/LowerSubOpToDB.cpp
 )
 
 add_library(MLIRDBDialect STATIC
     db/DBDialect.cpp
-    # db/LowerDBToLLVM.cpp  # Temporarily disabled to get basic compilation working
+    db/LowerDBToLLVM.cpp
 )
 
 add_library(MLIRTupleStreamDialect STATIC

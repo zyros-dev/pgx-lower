@@ -26,3 +26,11 @@ void TupleStreamDialect::initialize() {
 }
 
 #include "TupleStreamDialect.cpp.inc"
+
+// Type definitions
+#define GET_TYPEDEF_CLASSES
+#include "TupleStreamTypes.cpp.inc"
+
+// Attribute definitions
+#define GET_ATTRDEF_CLASSES
+#include "TupleStreamAttrs.cpp.inc"

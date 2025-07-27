@@ -14,17 +14,18 @@ namespace mlir {
 class ModuleOp;
 class RewritePatternSet;
 class TypeConverter;
+template <typename OpT> class OperationPass;
+} // namespace mlir
 
-namespace subop {
+namespace pgx_lower { namespace compiler { namespace dialect { namespace subop {
 
 /// Populate patterns for lowering SubOperator dialect to Database dialect
-void populateSubOpToDBConversionPatterns(RewritePatternSet &patterns, 
-                                        TypeConverter &typeConverter);
+void populateSubOpToDBConversionPatterns(::mlir::RewritePatternSet &patterns, 
+                                        ::mlir::TypeConverter &typeConverter);
 
 /// Create a pass for lowering SubOperator dialect to Database dialect
-std::unique_ptr<OperationPass<ModuleOp>> createLowerSubOpToDBPass();
+std::unique_ptr<::mlir::OperationPass<::mlir::ModuleOp>> createLowerSubOpToDBPass();
 
-} // namespace subop
-} // namespace mlir
+}}}} // namespace pgx_lower::compiler::dialect::subop
 
 #endif // LOWER_SUBOP_TO_DB_H

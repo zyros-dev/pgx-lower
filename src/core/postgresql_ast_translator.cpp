@@ -97,7 +97,7 @@ auto PostgreSQLASTTranslator::registerDialects() -> void {
     context_.getOrLoadDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>();
     context_.getOrLoadDialect<pgx_lower::compiler::dialect::subop::SubOperatorDialect>();
     context_.getOrLoadDialect<pgx_lower::compiler::dialect::db::DBDialect>();
-    context_.getOrLoadDialect<mlir::dsa::DSADialect>();
+    context_.getOrLoadDialect<pgx_lower::compiler::dialect::dsa::DSADialect>();
     
     // Standard MLIR dialects
     context_.getOrLoadDialect<mlir::arith::ArithDialect>();

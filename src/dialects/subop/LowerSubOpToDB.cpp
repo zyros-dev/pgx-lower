@@ -6,6 +6,7 @@
 
 #include "dialects/subop/LowerSubOpToDB.h"
 #include "dialects/subop/SubOpDialect.h"
+#include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -60,8 +61,7 @@ public:
 /// Convert subop.scan to SCF loop with DB operations
 class ScanOpLowering : public OpConversionPattern<ScanOp> {
 public:
-    ScanOpLowering(TypeConverter &typeConverter, MLIRContext *context)
-        : OpConversionPattern<ScanOp>(typeConverter, context) {}
+    using OpConversionPattern<ScanOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(ScanOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
@@ -69,7 +69,7 @@ public:
         // For now, we'll create a placeholder
         // In a real implementation, this would create an SCF while loop
         rewriter.replaceOpWithNewOp<UnrealizedConversionCastOp>(
-            op, op.getType(), adaptor.getTable());
+            op, op.getType(), adaptor.getState());
         return success();
     }
 };
@@ -77,8 +77,7 @@ public:
 /// Convert subop.filter to conditional DB operations
 class FilterOpLowering : public OpConversionPattern<FilterOp> {
 public:
-    FilterOpLowering(TypeConverter &typeConverter, MLIRContext *context)
-        : OpConversionPattern<FilterOp>(typeConverter, context) {}
+    using OpConversionPattern<FilterOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(FilterOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
@@ -89,7 +88,7 @@ public:
         
         // For now, create a simple pass-through
         // Real implementation would create SCF if/then with DB is_null checks
-        rewriter.replaceOp(op, adaptor.getInput());
+        rewriter.replaceOp(op, adaptor.getStream());
         return success();
     }
 };
@@ -97,8 +96,7 @@ public:
 /// Convert subop.map to DB operations
 class MapOpLowering : public OpConversionPattern<MapOp> {
 public:
-    MapOpLowering(TypeConverter &typeConverter, MLIRContext *context)
-        : OpConversionPattern<MapOp>(typeConverter, context) {}
+    using OpConversionPattern<MapOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(MapOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
@@ -108,7 +106,7 @@ public:
         // The mapper region would use DB arithmetic/logical operations
         
         // For now, create a pass-through
-        rewriter.replaceOp(op, adaptor.getInput());
+        rewriter.replaceOp(op, adaptor.getStream());
         return success();
     }
 };
@@ -116,8 +114,7 @@ public:
 /// Convert subop.generate to SCF loop with DB operations
 class GenerateOpLowering : public OpConversionPattern<GenerateOp> {
 public:
-    GenerateOpLowering(TypeConverter &typeConverter, MLIRContext *context)
-        : OpConversionPattern<GenerateOp>(typeConverter, context) {}
+    using OpConversionPattern<GenerateOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(GenerateOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
@@ -130,15 +127,14 @@ public:
 /// Convert subop.materialize to memory operations
 class MaterializeOpLowering : public OpConversionPattern<MaterializeOp> {
 public:
-    MaterializeOpLowering(TypeConverter &typeConverter, MLIRContext *context)
-        : OpConversionPattern<MaterializeOp>(typeConverter, context) {}
+    using OpConversionPattern<MaterializeOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(MaterializeOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
         // Materialize would allocate memory and store tuples
         // For now, pass through
         rewriter.replaceOpWithNewOp<UnrealizedConversionCastOp>(
-            op, op.getType(), adaptor.getStream());
+            op, adaptor.getState().getType(), adaptor.getStream());
         return success();
     }
 };
@@ -153,7 +149,8 @@ struct LowerSubOpToDBPass : public OperationPass<ModuleOp> {
     LowerSubOpToDBPass() : OperationPass(TypeID::get<LowerSubOpToDBPass>()) {}
     
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<db::DBDialect, arith::ArithDialect, scf::SCFDialect,
+        registry.insert<pgx_lower::compiler::dialect::db::DBDialect, 
+                       arith::ArithDialect, scf::SCFDialect,
                        func::FuncDialect, LLVM::LLVMDialect>();
     }
     
@@ -172,11 +169,11 @@ struct LowerSubOpToDBPass : public OperationPass<ModuleOp> {
         // Set up conversion target
         ConversionTarget target(*ctx);
         // Mark SubOp dialect as ILLEGAL - it must be lowered!
-        target.addIllegalDialect<subop::SubOpDialect>();
+        target.addIllegalDialect<pgx_lower::compiler::dialect::subop::SubOperatorDialect>();
         // Mark target dialects as legal
-        target.addLegalDialect<db::DBDialect, arith::ArithDialect, 
-                              scf::SCFDialect, func::FuncDialect,
-                              LLVM::LLVMDialect>();
+        target.addLegalDialect<pgx_lower::compiler::dialect::db::DBDialect, 
+                              arith::ArithDialect, scf::SCFDialect, 
+                              func::FuncDialect, LLVM::LLVMDialect>();
         // Allow unrealized conversion casts for progressive lowering
         target.addLegalOp<UnrealizedConversionCastOp>();
         // Standard operations that don't need conversion
@@ -224,7 +221,7 @@ struct LowerSubOpToDBPass : public OperationPass<ModuleOp> {
 // Public Interface
 //===----------------------------------------------------------------------===//
 
-void subop::populateSubOpToDBConversionPatterns(RewritePatternSet &patterns,
+void pgx_lower::compiler::dialect::subop::populateSubOpToDBConversionPatterns(RewritePatternSet &patterns,
                                                TypeConverter &typeConverter) {
     auto *ctx = patterns.getContext();
     patterns.add<ScanOpLowering>(typeConverter, ctx);
@@ -234,6 +231,6 @@ void subop::populateSubOpToDBConversionPatterns(RewritePatternSet &patterns,
     patterns.add<MaterializeOpLowering>(typeConverter, ctx);
 }
 
-std::unique_ptr<OperationPass<ModuleOp>> subop::createLowerSubOpToDBPass() {
+std::unique_ptr<OperationPass<ModuleOp>> pgx_lower::compiler::dialect::subop::createLowerSubOpToDBPass() {
     return std::make_unique<LowerSubOpToDBPass>();
 }

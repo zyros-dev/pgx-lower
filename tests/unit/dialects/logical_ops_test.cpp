@@ -6,14 +6,14 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Pass/PassManager.h>
 #include <dialects/pg/PgDialect.h>
-#include <dialects/pg/LowerPgToSCF.h>
+#include <dialects/pg/LowerPgToSubOp.h>
 
 class LogicalOpsTest : public ::testing::Test {
 protected:
     void SetUp() override {
         context_.getOrLoadDialect<mlir::arith::ArithDialect>();
         context_.getOrLoadDialect<mlir::func::FuncDialect>();
-        context_.getOrLoadDialect<mlir::pg::PgDialect>();
+        context_.getOrLoadDialect<pgx_lower::compiler::dialect::pg::PgDialect>();
     }
 
     mlir::MLIRContext context_;
@@ -37,7 +37,7 @@ TEST_F(LogicalOpsTest, PgAndOpLowering) {
     auto falseVal = builder.create<mlir::arith::ConstantOp>(loc, builder.getBoolAttr(false));
     
     // Create pg.and operation
-    auto andOp = builder.create<mlir::pg::PgAndOp>(loc, builder.getI1Type(), trueVal, falseVal);
+    auto andOp = builder.create<pgx_lower::compiler::dialect::pg::PgAndOp>(loc, builder.getI1Type(), trueVal, falseVal);
     
     // Return the result
     builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange{andOp.getResult()});
@@ -50,7 +50,7 @@ TEST_F(LogicalOpsTest, PgAndOpLowering) {
     
     // Apply pg-to-scf lowering pass
     mlir::PassManager pm(&context_);
-    pm.addPass(mlir::pg::createLowerPgToSCFPass());
+    pm.addPass(pgx_lower::compiler::dialect::pg::createLowerPgToSubOpPass());
     
     auto result = pm.run(module);
     

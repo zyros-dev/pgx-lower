@@ -6,6 +6,7 @@
 
 #include "dialects/db/LowerDBToLLVM.h"
 #include "dialects/db/DBDialect.h"
+#include "dialects/db/DBOps.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -40,7 +41,7 @@ public:
 // Operation Lowering Patterns
 //===----------------------------------------------------------------------===//
 
-class ConstantOpLowering : public OpConversionPattern<ConstantOp> {
+class ConstantOpLowering : public OpConversionPattern<pgx_lower::compiler::dialect::db::ConstantOp> {
 public:
     using OpConversionPattern::OpConversionPattern;
     
@@ -63,7 +64,7 @@ public:
     }
 };
 
-class AsNullableOpLowering : public OpConversionPattern<AsNullableOp> {
+class AsNullableOpLowering : public OpConversionPattern<pgx_lower::compiler::dialect::db::AsNullableOp> {
 public:
     using OpConversionPattern::OpConversionPattern;
     
@@ -87,7 +88,7 @@ public:
     }
 };
 
-class NullOpLowering : public OpConversionPattern<NullOp> {
+class NullOpLowering : public OpConversionPattern<pgx_lower::compiler::dialect::db::NullOp> {
 public:
     using OpConversionPattern::OpConversionPattern;
     
@@ -165,13 +166,14 @@ struct LowerDBToLLVMPass : public OperationPass<ModuleOp> {
         });
         
         RewritePatternSet patterns(&context);
+        // TODO: Implement proper lowering patterns
         patterns.add<ConstantOpLowering>(typeConverter, &context);
         patterns.add<AsNullableOpLowering>(typeConverter, &context);
         patterns.add<NullOpLowering>(typeConverter, &context);
-        patterns.add<BinaryOpLowering<AddOp>>(typeConverter, &context);
-        patterns.add<BinaryOpLowering<SubOp>>(typeConverter, &context);
-        patterns.add<BinaryOpLowering<MulOp>>(typeConverter, &context);
-        patterns.add<BinaryOpLowering<DivOp>>(typeConverter, &context);
+        patterns.add<BinaryOpLowering<pgx_lower::compiler::dialect::db::AddOp>>(typeConverter, &context);
+        patterns.add<BinaryOpLowering<pgx_lower::compiler::dialect::db::SubOp>>(typeConverter, &context);
+        patterns.add<BinaryOpLowering<pgx_lower::compiler::dialect::db::MulOp>>(typeConverter, &context);
+        patterns.add<BinaryOpLowering<pgx_lower::compiler::dialect::db::DivOp>>(typeConverter, &context);
         
         if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
             signalPassFailure();
@@ -198,12 +200,10 @@ struct LowerDBToLLVMPass : public OperationPass<ModuleOp> {
 
 } // namespace
 
-namespace mlir {
-namespace db {
+namespace pgx_lower { namespace compiler { namespace dialect { namespace db {
 
-std::unique_ptr<OperationPass<ModuleOp>> createLowerDBToLLVMPass() {
+std::unique_ptr<::mlir::OperationPass<::mlir::ModuleOp>> createLowerDBToLLVMPass() {
     return std::make_unique<LowerDBToLLVMPass>();
 }
 
-} // namespace db
-} // namespace mlir
+}}}} // namespace pgx_lower::compiler::dialect::db

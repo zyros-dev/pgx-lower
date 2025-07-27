@@ -7,7 +7,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Pass/PassManager.h>
 #include <dialects/pg/PgDialect.h>
-#include <dialects/pg/LowerPgToSCF.h>
+#include <dialects/pg/LowerPgToSubOp.h>
 #include <core/mlir_runner.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h>
@@ -31,7 +31,7 @@ protected:
         context_.getOrLoadDialect<mlir::arith::ArithDialect>();
         context_.getOrLoadDialect<mlir::func::FuncDialect>();
         context_.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
-        context_.getOrLoadDialect<mlir::pg::PgDialect>();
+        context_.getOrLoadDialect<pgx_lower::compiler::dialect::pg::PgDialect>();
     }
 
     mlir::MLIRContext context_;
@@ -52,15 +52,15 @@ TEST_F(NullHandlingTest, CreateGetIntFieldOperation) {
     builder.setInsertionPointToStart(&entryBlock);
     
     // Create a mock tuple handle
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+    auto tupleHandleType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_);
     auto mockTuple = builder.create<mlir::arith::ConstantOp>(loc, 
         builder.getIntegerAttr(builder.getI64Type(), 12345));
     auto tupleHandle = builder.create<mlir::UnrealizedConversionCastOp>(
-        loc, tupleHandleType, mlir::ValueRange{mockTuple}).getResult(0);
+        loc, tupleHandleType, mlir::ValueRange(mockTuple)).getResult(0);
     
     // Create pg.get_int_field operation
     auto fieldIndex = builder.getI32IntegerAttr(1);
-    auto getFieldOp = builder.create<mlir::pg::GetIntFieldOp>(
+    auto getFieldOp = builder.create<pgx_lower::compiler::dialect::pg::GetIntFieldOp>(
         loc, 
         mlir::TypeRange{builder.getI32Type(), builder.getI1Type()},
         tupleHandle, 
@@ -70,7 +70,7 @@ TEST_F(NullHandlingTest, CreateGetIntFieldOperation) {
     auto nullIndicator = getFieldOp.getResult(1);
     
     // Return the null indicator
-    builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange{nullIndicator});
+    builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange(nullIndicator));
     
     // Verify the module is valid
     EXPECT_TRUE(module.verify().succeeded());
@@ -96,15 +96,15 @@ TEST_F(NullHandlingTest, NullIndicatorDirectUsage) {
     builder.setInsertionPointToStart(&entryBlock);
     
     // Create a mock tuple handle
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+    auto tupleHandleType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_);
     auto mockTuple = builder.create<mlir::arith::ConstantOp>(loc, 
         builder.getIntegerAttr(builder.getI64Type(), 12345));
     auto tupleHandle = builder.create<mlir::UnrealizedConversionCastOp>(
-        loc, tupleHandleType, mlir::ValueRange{mockTuple}).getResult(0);
+        loc, tupleHandleType, mlir::ValueRange(mockTuple)).getResult(0);
     
     // Simulate the null test pattern: get field and use null indicator directly
     auto fieldIndex = builder.getI32IntegerAttr(1);
-    auto getFieldOp = builder.create<mlir::pg::GetIntFieldOp>(
+    auto getFieldOp = builder.create<pgx_lower::compiler::dialect::pg::GetIntFieldOp>(
         loc, 
         mlir::TypeRange{builder.getI32Type(), builder.getI1Type()},
         tupleHandle, 
@@ -112,7 +112,7 @@ TEST_F(NullHandlingTest, NullIndicatorDirectUsage) {
     
     // For IS NULL: return the null indicator directly
     auto nullIndicator = getFieldOp.getResult(1);
-    builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange{nullIndicator});
+    builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange(nullIndicator));
     
     // Verify the module is valid
     EXPECT_TRUE(module.verify().succeeded());
@@ -143,22 +143,22 @@ TEST_F(NullHandlingTest, LowerPgToSCFPass) {
     builder.setInsertionPointToStart(&entryBlock);
     
     // Create a mock tuple handle
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+    auto tupleHandleType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_);
     auto mockTuple = builder.create<mlir::arith::ConstantOp>(loc, 
         builder.getIntegerAttr(builder.getI64Type(), 12345));
     auto tupleHandle = builder.create<mlir::UnrealizedConversionCastOp>(
-        loc, tupleHandleType, mlir::ValueRange{mockTuple}).getResult(0);
+        loc, tupleHandleType, mlir::ValueRange(mockTuple)).getResult(0);
     
     // Create pg.get_int_field operation
     auto fieldIndex = builder.getI32IntegerAttr(1);
-    auto getFieldOp = builder.create<mlir::pg::GetIntFieldOp>(
+    auto getFieldOp = builder.create<pgx_lower::compiler::dialect::pg::GetIntFieldOp>(
         loc, 
         mlir::TypeRange{builder.getI32Type(), builder.getI1Type()},
         tupleHandle, 
         fieldIndex);
     
     auto nullIndicator = getFieldOp.getResult(1);
-    builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange{nullIndicator});
+    builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange(nullIndicator));
     
     // Verify before lowering
     EXPECT_TRUE(module.verify().succeeded());
@@ -168,7 +168,7 @@ TEST_F(NullHandlingTest, LowerPgToSCFPass) {
     
     // Apply pg-to-scf lowering pass
     mlir::PassManager pm(&context_);
-    pm.addPass(mlir::pg::createLowerPgToSCFPass());
+    pm.addPass(pgx_lower::compiler::dialect::pg::createLowerPgToSubOpPass());
     
     auto result = pm.run(module);
     EXPECT_TRUE(result.succeeded()) << "pg-to-scf lowering pass failed";
@@ -203,23 +203,23 @@ TEST_F(NullHandlingTest, LoweringWithUnrealizedConversionCasts) {
     builder.setInsertionPointToStart(&entryBlock);
     
     // Create the exact pattern from our null handling implementation
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+    auto tupleHandleType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_);
     auto mockTuple = builder.create<mlir::arith::ConstantOp>(loc, 
         builder.getIntegerAttr(builder.getI64Type(), 12345));
     
     // This is the UnrealizedConversionCast that might be causing issues
     auto tupleHandle = builder.create<mlir::UnrealizedConversionCastOp>(
-        loc, tupleHandleType, mlir::ValueRange{mockTuple}).getResult(0);
+        loc, tupleHandleType, mlir::ValueRange(mockTuple)).getResult(0);
     
     auto fieldIndex = builder.getI32IntegerAttr(1);
-    auto getFieldOp = builder.create<mlir::pg::GetIntFieldOp>(
+    auto getFieldOp = builder.create<pgx_lower::compiler::dialect::pg::GetIntFieldOp>(
         loc, 
         mlir::TypeRange{builder.getI32Type(), builder.getI1Type()},
         tupleHandle, 
         fieldIndex);
     
     auto nullIndicator = getFieldOp.getResult(1);
-    builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange{nullIndicator});
+    builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange(nullIndicator));
     
     // Verify before lowering
     EXPECT_TRUE(module.verify().succeeded());
@@ -229,7 +229,7 @@ TEST_F(NullHandlingTest, LoweringWithUnrealizedConversionCasts) {
     
     // Apply pg-to-scf lowering pass
     mlir::PassManager pm(&context_);
-    pm.addPass(mlir::pg::createLowerPgToSCFPass());
+    pm.addPass(pgx_lower::compiler::dialect::pg::createLowerPgToSubOpPass());
     
     auto result = pm.run(module);
     
@@ -286,14 +286,14 @@ TEST_F(NullHandlingTest, FullPipelineWithLLVMTranslation) {
     builder.setInsertionPointToStart(&entryBlock);
     
     // Create the exact pattern from failing regression tests
-    auto tableHandleType = mlir::pg::TableHandleType::get(&context_);
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+    auto tableHandleType = pgx_lower::compiler::dialect::pg::TableHandleType::get(&context_);
+    auto tupleHandleType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_);
     
     // pg.scan_table operation
-    auto scanOp = builder.create<mlir::pg::ScanTableOp>(loc, tableHandleType, "current_table");
+    auto scanOp = builder.create<pgx_lower::compiler::dialect::pg::ScanTableOp>(loc, tableHandleType, "current_table");
     
     // pg.read_tuple operation  
-    auto readOp = builder.create<mlir::pg::ReadTupleOp>(loc, tupleHandleType, scanOp.getResult());
+    auto readOp = builder.create<pgx_lower::compiler::dialect::pg::ReadTupleOp>(loc, tupleHandleType, scanOp.getResult());
     
     // Use the tuple handle directly from the read operation
     // The type converter will handle the conversion automatically
@@ -301,7 +301,7 @@ TEST_F(NullHandlingTest, FullPipelineWithLLVMTranslation) {
     
     // pg.get_int_field operation with null handling
     auto fieldIndex = builder.getI32IntegerAttr(1);
-    auto getFieldOp = builder.create<mlir::pg::GetIntFieldOp>(
+    auto getFieldOp = builder.create<pgx_lower::compiler::dialect::pg::GetIntFieldOp>(
         loc, 
         mlir::TypeRange{i32Type, i1Type},
         tupleHandle, 
@@ -328,7 +328,7 @@ TEST_F(NullHandlingTest, FullPipelineWithLLVMTranslation) {
     
     // Apply pg-to-scf lowering pass
     mlir::PassManager pm1(&context_);
-    pm1.addPass(mlir::pg::createLowerPgToSCFPass());
+    pm1.addPass(pgx_lower::compiler::dialect::pg::createLowerPgToSubOpPass());
     
     auto pgResult = pm1.run(module);
     EXPECT_TRUE(pgResult.succeeded()) << "pg-to-scf lowering pass failed";

@@ -23,6 +23,9 @@
 
 // Our implementations in a clear namespace
 namespace pgx_lower::compiler::dialect::subop {
+
+// Forward declaration of attribute types
+class StateMembersAttr;
 // PGX_LOWER STUB IMPLEMENTATION - TODO: Adapt for PostgreSQL tuple-oriented approach
 // This is a minimal stub to get compilation working. LingoDB uses this for column-oriented
 // data remapping, but PostgreSQL is tuple-oriented.

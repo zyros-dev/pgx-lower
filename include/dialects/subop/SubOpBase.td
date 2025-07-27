@@ -9,20 +9,28 @@
 #define SUBOP_BASE
 
 include "mlir/IR/OpBase.td"
+include "mlir/IR/AttrTypeBase.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 
 //===----------------------------------------------------------------------===//
 // SubOperator dialect definition.
 //===----------------------------------------------------------------------===//
 
-def SubOp_Dialect : Dialect {
+def SubOperator_Dialect : Dialect {
     let name = "subop";
     let summary = "A dialect around sub-operators that manipulate a tuplestream, but state is managed explicitly";
     let cppNamespace = "::pgx_lower::compiler::dialect::subop";
     let useDefaultTypePrinterParser = 1;
     let useDefaultAttributePrinterParser = 1;
+    let extraClassDeclaration = [{
+        void registerTypes();
+        void registerAttrs();
+    }];
 }
 
 // Base class for SubOperator operations
-class SubOp_Op<string mnemonic, list<Trait> traits = []> : Op<SubOp_Dialect, mnemonic, traits>;
+class SubOp_Op<string mnemonic, list<Trait> traits = []> : Op<SubOperator_Dialect, mnemonic, traits>;
+
+// Type definitions and interfaces are in SubOpOps.td and SubOpInterfaces.td
 
 #endif // SUBOP_BASE

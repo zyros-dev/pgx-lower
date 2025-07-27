@@ -214,7 +214,7 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
         ConversionTarget target(*ctx);
         
         // Mark PG dialect as ILLEGAL - it must be lowered!
-        target.addIllegalDialect<pg::PgDialect>();
+        target.addIllegalDialect<pgx_lower::compiler::dialect::pg::PgDialect>();
         
         // Mark target dialects as legal
         // target.addLegalDialect<subop::SubOpDialect, arith::ArithDialect, 
@@ -276,12 +276,12 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
 // Public Interface
 //===----------------------------------------------------------------------===//
 
-void pg::populatePgToSubOpConversionPatterns(RewritePatternSet &patterns,
+void pgx_lower::compiler::dialect::pg::populatePgToSubOpConversionPatterns(RewritePatternSet &patterns,
                                             TypeConverter &typeConverter) {
     patterns.add<ScanTableToSubOpLowering, ReadTupleToSubOpLowering,
                 GetIntFieldToSubOpLowering>(typeConverter, patterns.getContext());
 }
 
-std::unique_ptr<OperationPass<ModuleOp>> pg::createLowerPgToSubOpPass() {
+std::unique_ptr<OperationPass<ModuleOp>> pgx_lower::compiler::dialect::pg::createLowerPgToSubOpPass() {
     return std::make_unique<LowerPgToSubOpPass>();
 }

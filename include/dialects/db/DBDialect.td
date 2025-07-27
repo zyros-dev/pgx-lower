@@ -30,6 +30,9 @@ def DB_Dialect : Dialect {
     let cppNamespace = "::pgx_lower::compiler::dialect::db";
     let useDefaultTypePrinterParser = 1;
     let useDefaultAttributePrinterParser = 1;
+    let extraClassDeclaration = [{
+        void registerTypes();
+    }];
 }
 
 //===----------------------------------------------------------------------===//
