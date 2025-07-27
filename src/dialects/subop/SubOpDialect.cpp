@@ -188,10 +188,12 @@ void SubOperatorDialect::registerAttrs() {
 // Custom assembly format implementations for operations
 namespace pgx_lower::compiler::dialect::subop {
 
+using pgx_lower::compiler::dialect::tuples::TupleStreamType;
+
 // GenerateOp
 void GenerateOp::print(OpAsmPrinter &p) {
    p << " [" << getGeneratedColumns() << "] ";
-   p << "(" << getRegion() << ")";
+   p.printRegion(getRegion());
    p.printOptionalAttrDict((*this)->getAttrs(), {"generated_columns"});
 }
 
@@ -211,19 +213,21 @@ ParseResult GenerateOp::parse(OpAsmParser &parser, OperationState &result) {
 
 // InsertOp
 void InsertOp::print(OpAsmPrinter &p) {
-   p << " " << getStream() << " into " << getState();
-   p << " (" << getInsertRegion() << ")";
-   p.printOptionalAttrDict((*this)->getAttrs());
+   p << " " << getStream() << " into " << getState() << " " << getMapping();
+   p.printRegion(getEqFn());
+   p.printOptionalAttrDict((*this)->getAttrs(), {"mapping"});
 }
 
 ParseResult InsertOp::parse(OpAsmParser &parser, OperationState &result) {
    OpAsmParser::UnresolvedOperand stream, state;
-   Region *region = result.addRegion();
+   DictionaryAttr mapping;
+   Region *eqFn = result.addRegion();
    
    if (parser.parseOperand(stream) ||
        parser.parseKeyword("into") ||
        parser.parseOperand(state) ||
-       parser.parseRegion(*region))
+       parser.parseAttribute(mapping, "mapping", result.attributes) ||
+       parser.parseRegion(*eqFn))
       return failure();
       
    // Resolve operands with proper types
@@ -242,9 +246,9 @@ ParseResult InsertOp::parse(OpAsmParser &parser, OperationState &result) {
 // LoopOp  
 void LoopOp::print(OpAsmPrinter &p) {
    p << " init(";
-   p.printOperands(getInitValues());
+   p.printOperands(getArgs());
    p << ") ";
-   p << "(" << getRegion() << ")";
+   p.printRegion(getBodyRegion());
    p.printOptionalAttrDict((*this)->getAttrs());
 }
 
@@ -271,16 +275,18 @@ ParseResult LoopOp::parse(OpAsmParser &parser, OperationState &result) {
 
 // NestedMapOp
 void NestedMapOp::print(OpAsmPrinter &p) {
-   p << " " << getStream();
-   p << " (" << getNested() << ")";
-   p.printOptionalAttrDict((*this)->getAttrs());
+   p << " " << getStream() << " " << getParameters();
+   p.printRegion(getRegion());
+   p.printOptionalAttrDict((*this)->getAttrs(), {"parameters"});
 }
 
 ParseResult NestedMapOp::parse(OpAsmParser &parser, OperationState &result) {
    OpAsmParser::UnresolvedOperand stream;
+   ArrayAttr parameters;
    Region *region = result.addRegion();
    
    if (parser.parseOperand(stream) ||
+       parser.parseAttribute(parameters, "parameters", result.attributes) ||
        parser.parseRegion(*region))
       return failure();
       
@@ -294,28 +300,29 @@ ParseResult NestedMapOp::parse(OpAsmParser &parser, OperationState &result) {
 
 // ReduceOp
 void ReduceOp::print(OpAsmPrinter &p) {
-   p << " " << getStream();
-   p << " combine: (" << getCombineFn() << ")";
-   p << " eq: (" << getEqFn() << ")";
-   p.printOptionalAttrDict((*this)->getAttrs());
+   p << " " << getStream() << " " << getRef() << " " << getColumns() << " " << getMembers();
+   p << " ";
+   p.printRegion(getRegion());
+   p << " combine: ";
+   p.printRegion(getCombine());
+   p.printOptionalAttrDict((*this)->getAttrs(), {"ref", "columns", "members"});
 }
 
 ParseResult ReduceOp::parse(OpAsmParser &parser, OperationState &result) {
    OpAsmParser::UnresolvedOperand stream;
+   pgx_lower::compiler::dialect::tuples::ColumnRefAttr ref;
+   ArrayAttr columns, members;
+   Region *region = result.addRegion();
    Region *combineFn = result.addRegion();
-   Region *eqFn = result.addRegion();
    
    if (parser.parseOperand(stream) ||
+       parser.parseAttribute(ref, "ref", result.attributes) ||
+       parser.parseAttribute(columns, "columns", result.attributes) ||
+       parser.parseAttribute(members, "members", result.attributes) ||
+       parser.parseRegion(*region) ||
        parser.parseKeyword("combine") ||
        parser.parseColon() ||
-       parser.parseLParen() ||
-       parser.parseRegion(*combineFn) ||
-       parser.parseRParen() ||
-       parser.parseKeyword("eq") ||
-       parser.parseColon() ||
-       parser.parseLParen() ||
-       parser.parseRegion(*eqFn) ||
-       parser.parseRParen())
+       parser.parseRegion(*combineFn))
       return failure();
       
    Type streamType = TupleStreamType::get(parser.getContext());
@@ -327,30 +334,32 @@ ParseResult ReduceOp::parse(OpAsmParser &parser, OperationState &result) {
 
 // LookupOp
 void LookupOp::print(OpAsmPrinter &p) {
-   p << " " << getStream() << " in " << getState();
-   p << " eq: (" << getEqFn() << ")";
-   p << " fold: (" << getFoldFn() << ")";
-   p.printOptionalAttrDict((*this)->getAttrs());
+   p << " " << getStream() << " in " << getState() << " " << getKeys() << " " << getRef();
+   p << " eq: ";
+   p.printRegion(getEqFn());
+   p << " init: ";
+   p.printRegion(getInitFn());
+   p.printOptionalAttrDict((*this)->getAttrs(), {"keys", "ref"});
 }
 
 ParseResult LookupOp::parse(OpAsmParser &parser, OperationState &result) {
    OpAsmParser::UnresolvedOperand stream, state;
+   ArrayAttr keys;
+   pgx_lower::compiler::dialect::tuples::ColumnDefAttr ref;
    Region *eqFn = result.addRegion();
-   Region *foldFn = result.addRegion();
+   Region *initFn = result.addRegion();
    
    if (parser.parseOperand(stream) ||
        parser.parseKeyword("in") ||
        parser.parseOperand(state) ||
+       parser.parseAttribute(keys, "keys", result.attributes) ||
+       parser.parseAttribute(ref, "ref", result.attributes) ||
        parser.parseKeyword("eq") ||
        parser.parseColon() ||
-       parser.parseLParen() ||
        parser.parseRegion(*eqFn) ||
-       parser.parseRParen() ||
-       parser.parseKeyword("fold") ||
+       parser.parseKeyword("init") ||
        parser.parseColon() ||
-       parser.parseLParen() ||
-       parser.parseRegion(*foldFn) ||
-       parser.parseRParen())
+       parser.parseRegion(*initFn))
       return failure();
       
    Type streamType = TupleStreamType::get(parser.getContext());
@@ -369,30 +378,32 @@ ParseResult LookupOp::parse(OpAsmParser &parser, OperationState &result) {
 
 // LookupOrInsertOp
 void LookupOrInsertOp::print(OpAsmPrinter &p) {
-   p << " " << getStream() << " into " << getState();
-   p << " eq: (" << getEqFn() << ")";
-   p << " init: (" << getInitFn() << ")";
-   p.printOptionalAttrDict((*this)->getAttrs());
+   p << " " << getStream() << " into " << getState() << " " << getKeys() << " " << getRef();
+   p << " eq: ";
+   p.printRegion(getEqFn());
+   p << " init: ";
+   p.printRegion(getInitFn());
+   p.printOptionalAttrDict((*this)->getAttrs(), {"keys", "ref"});
 }
 
 ParseResult LookupOrInsertOp::parse(OpAsmParser &parser, OperationState &result) {
    OpAsmParser::UnresolvedOperand stream, state;
+   ArrayAttr keys;
+   pgx_lower::compiler::dialect::tuples::ColumnDefAttr ref;
    Region *eqFn = result.addRegion();
    Region *initFn = result.addRegion();
    
    if (parser.parseOperand(stream) ||
        parser.parseKeyword("into") ||
        parser.parseOperand(state) ||
+       parser.parseAttribute(keys, "keys", result.attributes) ||
+       parser.parseAttribute(ref, "ref", result.attributes) ||
        parser.parseKeyword("eq") ||
        parser.parseColon() ||
-       parser.parseLParen() ||
        parser.parseRegion(*eqFn) ||
-       parser.parseRParen() ||
        parser.parseKeyword("init") ||
        parser.parseColon() ||
-       parser.parseLParen() ||
-       parser.parseRegion(*initFn) ||
-       parser.parseRParen())
+       parser.parseRegion(*initFn))
       return failure();
       
    Type streamType = TupleStreamType::get(parser.getContext());
@@ -411,64 +422,73 @@ ParseResult LookupOrInsertOp::parse(OpAsmParser &parser, OperationState &result)
 
 // CreateSortedViewOp
 void CreateSortedViewOp::print(OpAsmPrinter &p) {
-   p << " " << getState();
-   p << " (" << getCompareFn() << ")";
-   p.printOptionalAttrDict((*this)->getAttrs());
+   p << " " << getToSort() << " " << getSortBy();
+   p.printRegion(getRegion());
+   p.printOptionalAttrDict((*this)->getAttrs(), {"sortBy"});
 }
 
 ParseResult CreateSortedViewOp::parse(OpAsmParser &parser, OperationState &result) {
-   OpAsmParser::UnresolvedOperand state;
-   Region *compareFn = result.addRegion();
+   OpAsmParser::UnresolvedOperand toSort;
+   ArrayAttr sortBy;
+   Region *region = result.addRegion();
    
-   if (parser.parseOperand(state) ||
-       parser.parseRegion(*compareFn))
+   if (parser.parseOperand(toSort) ||
+       parser.parseAttribute(sortBy, "sortBy", result.attributes) ||
+       parser.parseRegion(*region))
       return failure();
       
-   Type stateType = parser.getBuilder().getType<SimpleStateType>(
+   // Resolve toSort operand as Buffer type
+   Type bufferType = parser.getBuilder().getType<BufferType>(
        StateMembersAttr::get(parser.getContext(), 
                             ArrayAttr::get(parser.getContext(), {}),
                             ArrayAttr::get(parser.getContext(), {})));
    
-   if (parser.resolveOperand(state, stateType, result.operands))
+   if (parser.resolveOperand(toSort, bufferType, result.operands))
       return failure();
       
-   Type sortedViewType = parser.getBuilder().getType<SortedViewType>(stateType);
+   // Create SortedViewType with the buffer's state
+   auto bufferState = mlir::cast<BufferType>(bufferType);
+   Type sortedViewType = parser.getBuilder().getType<SortedViewType>(bufferState);
    result.addTypes(sortedViewType);
    return success();
 }
 
 // CreateSegmentTreeView
 void CreateSegmentTreeView::print(OpAsmPrinter &p) {
-   p << " " << getState();
-   p << " key: (" << getKeyFn() << ")";
-   p << " value: (" << getValueFn() << ")";
-   p.printOptionalAttrDict((*this)->getAttrs());
+   p << " " << getSource() << " " << getRelevantMembers();
+   p << " initial: ";
+   p.printRegion(getInitialFn());
+   p << " combine: ";
+   p.printRegion(getCombineFn());
+   p.printOptionalAttrDict((*this)->getAttrs(), {"relevant_members"});
 }
 
 ParseResult CreateSegmentTreeView::parse(OpAsmParser &parser, OperationState &result) {
-   OpAsmParser::UnresolvedOperand state;
-   Region *keyFn = result.addRegion();
-   Region *valueFn = result.addRegion();
+   OpAsmParser::UnresolvedOperand source;
+   ArrayAttr relevantMembers;
+   Region *initialFn = result.addRegion();
+   Region *combineFn = result.addRegion();
    
-   if (parser.parseOperand(state) ||
-       parser.parseKeyword("key") ||
+   if (parser.parseOperand(source) ||
+       parser.parseAttribute(relevantMembers, "relevant_members", result.attributes) ||
+       parser.parseKeyword("initial") ||
        parser.parseColon() ||
-       parser.parseLParen() ||
-       parser.parseRegion(*keyFn) ||
-       parser.parseRParen() ||
-       parser.parseKeyword("value") ||
+       parser.parseRegion(*initialFn) ||
+       parser.parseKeyword("combine") ||
        parser.parseColon() ||
-       parser.parseLParen() ||
-       parser.parseRegion(*valueFn) ||
-       parser.parseRParen())
+       parser.parseRegion(*combineFn))
       return failure();
       
-   Type stateType = parser.getBuilder().getType<SimpleStateType>(
-       StateMembersAttr::get(parser.getContext(), 
-                            ArrayAttr::get(parser.getContext(), {}),
-                            ArrayAttr::get(parser.getContext(), {})));
+   // Resolve source as ContinuousView type
+   // For now, use a SimpleStateType as the base state
+   auto stateMembers = StateMembersAttr::get(parser.getContext(), 
+                                            ArrayAttr::get(parser.getContext(), {}),
+                                            ArrayAttr::get(parser.getContext(), {}));
+   Type baseStateType = parser.getBuilder().getType<SimpleStateType>(stateMembers);
+   Type continuousViewType = parser.getBuilder().getType<ContinuousViewType>(
+       mlir::cast<State>(baseStateType));
    
-   if (parser.resolveOperand(state, stateType, result.operands))
+   if (parser.resolveOperand(source, continuousViewType, result.operands))
       return failure();
    
    // Create SegmentTreeViewType with dummy key/value members
@@ -485,25 +505,24 @@ ParseResult CreateSegmentTreeView::parse(OpAsmParser &parser, OperationState &re
 
 // CreateHeapOp
 void CreateHeapOp::print(OpAsmPrinter &p) {
-   p << " " << getMaxElements();
-   p << " (" << getCompareFn() << ")";
-   p.printOptionalAttrDict((*this)->getAttrs(), {"max_elements"});
+   p << " " << getSortBy();
+   p.printRegion(getRegion());
+   p.printOptionalAttrDict((*this)->getAttrs(), {"sortBy"});
 }
 
 ParseResult CreateHeapOp::parse(OpAsmParser &parser, OperationState &result) {
-   IntegerAttr maxElements;
-   Region *compareFn = result.addRegion();
+   ArrayAttr sortBy;
+   Region *region = result.addRegion();
    
-   if (parser.parseAttribute(maxElements, "max_elements", result.attributes) ||
-       parser.parseRegion(*compareFn))
+   if (parser.parseAttribute(sortBy, "sortBy", result.attributes) ||
+       parser.parseRegion(*region))
       return failure();
    
    // Create HeapType with dummy members
    auto members = StateMembersAttr::get(parser.getContext(), 
                                        ArrayAttr::get(parser.getContext(), {}),
                                        ArrayAttr::get(parser.getContext(), {}));
-   Type heapType = parser.getBuilder().getType<HeapType>(members, 
-       maxElements.getValue().getZExtValue());
+   Type heapType = parser.getBuilder().getType<HeapType>(members, 0);
    result.addTypes(heapType);
    return success();
 }

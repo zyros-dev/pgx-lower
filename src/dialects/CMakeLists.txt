@@ -66,7 +66,7 @@ mlir_tablegen(DBTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=db -I${MLIR_I
 add_public_tablegen_target(MLIRDBIncGen)
 
 # TupleStream dialect TableGen
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/subop/TupleStreamBase.td)
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/tuplestream/TupleStreamBase.td)
 mlir_tablegen(TupleStreamDialect.h.inc -gen-dialect-decls -dialect=tuples -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(TupleStreamDialect.cpp.inc -gen-dialect-defs -dialect=tuples -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(TupleStreamTypes.h.inc -gen-typedef-decls --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})

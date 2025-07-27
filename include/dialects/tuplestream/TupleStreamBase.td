@@ -20,12 +20,9 @@ def TupleStream_Dialect : Dialect {
     let cppNamespace = "::pgx_lower::compiler::dialect::tuples";
 
     let extraClassDeclaration = [{
-        private:
-            ColumnManager columnManager;
-        public:
-            ColumnManager& getColumnManager(){
-                return columnManager;
-            }
+        void registerTypes();
+        void registerAttrs();
+        // TODO: Add ColumnManager when needed for PostgreSQL-specific tuple handling
     }];
     let useDefaultTypePrinterParser=1;
     let useDefaultAttributePrinterParser=1;
@@ -55,19 +52,20 @@ class TupleStream_Attr<string name> : AttrDef<TupleStream_Dialect, name>;
 
 def ColumnDefAttr : TupleStream_Attr<"ColumnDef"> {
     let mnemonic = "columndef";
-    let parameters = (ins "mlir::SymbolRefAttr":$name,"std::shared_ptr<Column>":$columnPtr,"mlir::Attribute":$fromExisting);
+    let parameters = (ins "mlir::SymbolRefAttr":$name,"mlir::Type":$columnType,"mlir::Attribute":$fromExisting);
+    let hasCustomAssemblyFormat = 1;
     let extraClassDeclaration = [{
-        Column &getColumn() const { return *getColumnPtr();  }
+        // Simplified for compilation - TODO: enhance for PostgreSQL tuple handling
     }];
-    let hasCustomAssemblyFormat=1;
 }
+
 def ColumnRefAttr : TupleStream_Attr<"ColumnRef"> {
     let mnemonic = "columnref";
-    let parameters = (ins "mlir::SymbolRefAttr":$name,"std::shared_ptr<Column>":$columnPtr);
+    let parameters = (ins "mlir::SymbolRefAttr":$name,"mlir::Type":$columnType);
+    let hasCustomAssemblyFormat = 1;
     let extraClassDeclaration = [{
-        Column &getColumn() const { return *getColumnPtr();  }
+        // Simplified for compilation - TODO: enhance for PostgreSQL tuple handling
     }];
-        let hasCustomAssemblyFormat=1;
 }
 
 
