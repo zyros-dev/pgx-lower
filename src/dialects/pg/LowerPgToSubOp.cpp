@@ -43,7 +43,9 @@ public:
                 columnTypes.push_back(IntegerType::get(ctx, 32));
                 columnTypes.push_back(IntegerType::get(ctx, 64)); // text as pointer
                 auto tupleType = TupleType::get(ctx, columnTypes);
-                return TableType::get(ctx, tupleType);
+                // TODO: Create proper StateMembersAttr for PostgreSQL tables
+                // For now, just return the original type to get compilation working
+                return type;
             }
             // Keep other types unchanged
             return type;

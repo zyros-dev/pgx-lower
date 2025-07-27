@@ -17,15 +17,16 @@ include "mlir/IR/SymbolInterfaces.td"
 def TupleStream_Dialect : Dialect {
     let name = "tuples";
     let summary = "A general dialect that adds a tuple strem type";
-    let cppNamespace = "::lingodb::compiler::dialect::tuples";
+    let cppNamespace = "::mlir::tuples";
 
     let extraClassDeclaration = [{
-        private:
-            ColumnManager columnManager;
-        public:
-            ColumnManager& getColumnManager(){
-                return columnManager;
-            }
+        // TODO: Port ColumnManager from LingoDB when needed
+        // private:
+        //     ColumnManager columnManager;
+        // public:
+        //     ColumnManager& getColumnManager(){
+        //         return columnManager;
+        //     }
     }];
     let useDefaultTypePrinterParser=1;
     let useDefaultAttributePrinterParser=1;

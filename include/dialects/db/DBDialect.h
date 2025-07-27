@@ -1,10 +1,10 @@
-#ifndef LINGODB_COMPILER_DIALECT_DB_IR_DBDIALECT_H
-#define LINGODB_COMPILER_DIALECT_DB_IR_DBDIALECT_H
+#ifndef DB_DIALECT_H
+#define DB_DIALECT_H
 
 #include "mlir/IR/Dialect.h"
-namespace lingodb::compiler::dialect::db {
-class RuntimeFunctionRegistry;
-} // end namespace lingodb::compiler::dialect::db
-#include "lingodb/compiler/Dialect/DB/IR/DBOpsDialect.h.inc"
+namespace db {
+// class RuntimeFunctionRegistry; // TODO: Port if needed
+} // end namespace db
+#include "DBDialect.h.inc"
 
-#endif //LINGODB_COMPILER_DIALECT_DB_IR_DBDIALECT_H
+#endif //DB_DIALECT_H

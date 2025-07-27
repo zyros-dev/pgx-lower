@@ -19,16 +19,16 @@ include "SubOpInterfaces.td"
 def SubOperator_Dialect : Dialect {
     let name = "subop";
     let summary = "A dialect around sub-operators that manipulate a tuplestream, but state is managed explicitly";
-    let cppNamespace = "::lingodb::compiler::dialect::subop";
+    let cppNamespace = "::mlir::subop";
         let extraClassDeclaration = [{
             private:
             void registerTypes();
             void registerAttrs();
-            MemberManager memberManager;
+            // MemberManager memberManager; // TODO: Port if needed
             public:
-            MemberManager& getMemberManager(){
-                return memberManager;
-            }
+            // MemberManager& getMemberManager(){ // TODO: Port if needed
+            //     return memberManager;
+            // }
         }];
     let useDefaultTypePrinterParser=1;
     let useDefaultAttributePrinterParser=1;

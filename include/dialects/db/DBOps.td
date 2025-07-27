@@ -24,7 +24,7 @@ def DB_Dialect : Dialect {
     }];
 
     let name = "db";
-    let cppNamespace = "::lingodb::compiler::dialect::db";
+    let cppNamespace = "::mlir::db";
     let extraClassDeclaration = [{
         private:
         void registerTypes();

@@ -1,9 +1,7 @@
-#include "lingodb/compiler/Dialect/SubOperator/SubOperatorDialect.h"
+#include "dialects/subop/SubOpDialect.h"
 
-#include "lingodb/compiler/Dialect/Arrow/IR/ArrowDialect.h"
-#include "lingodb/compiler/Dialect/DB/IR/DBDialect.h"
-#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/compiler/Dialect/SubOperator/SubOperatorOps.h"
+#include "dialects/db/DBDialect.h"
+#include "dialects/subop/SubOpOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -13,7 +11,7 @@
 
 #include "llvm/ADT/TypeSwitch.h"
 
-using namespace lingodb::compiler::dialect;
+using namespace mlir;
 
 struct SubOperatorInlinerInterface : public mlir::DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
@@ -31,10 +29,10 @@ struct SubOpFoldInterface : public mlir::DialectFoldInterface {
       return true;
    }
 };
-void subop::SubOperatorDialect::initialize() {
+void subop::SubOpDialect::initialize() {
    addOperations<
 #define GET_OP_LIST
-#include "lingodb/compiler/Dialect/SubOperator/SubOperatorOps.cpp.inc"
+#include "SubOpOps.cpp.inc"
 
       >();
    registerTypes();
@@ -42,10 +40,9 @@ void subop::SubOperatorDialect::initialize() {
    addInterfaces<SubOperatorInlinerInterface>();
    addInterfaces<SubOpFoldInterface>();
    getContext()->loadDialect<db::DBDialect>();
-   getContext()->loadDialect<arrow::ArrowDialect>();
    getContext()->loadDialect<mlir::arith::ArithDialect>();
    getContext()->loadDialect<mlir::index::IndexDialect>();
    getContext()->loadDialect<tuples::TupleStreamDialect>();
 }
 
-#include "lingodb/compiler/Dialect/SubOperator/SubOperatorOpsDialect.cpp.inc"
+#include "SubOpDialect.cpp.inc"

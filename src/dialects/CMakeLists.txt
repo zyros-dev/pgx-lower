@@ -35,12 +35,12 @@ add_public_tablegen_target(MLIRPgTypesIncGen)
 
 # SubOperator dialect TableGen - Fixed compatibility issues
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/subop/SubOpOps.td)
-mlir_tablegen(SubOpDialect.h.inc -gen-dialect-decls -dialect=subop -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(SubOpDialect.cpp.inc -gen-dialect-defs -dialect=subop -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(SubOpOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(SubOpOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(SubOpTypes.h.inc -gen-typedef-decls --typedefs-dialect=subop -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(SubOpTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=subop -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(SubOpDialect.h.inc -gen-dialect-decls -dialect=subop -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpDialect.cpp.inc -gen-dialect-defs -dialect=subop -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpTypes.h.inc -gen-typedef-decls --typedefs-dialect=subop -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=subop -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
 add_public_tablegen_target(MLIRSubOpIncGen)
 
 # Database dialect TableGen
@@ -52,6 +52,14 @@ mlir_tablegen(DBOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(DBTypes.h.inc -gen-typedef-decls --typedefs-dialect=db -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(DBTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=db -I${MLIR_INCLUDE_DIRS})
 add_public_tablegen_target(MLIRDBIncGen)
+
+# TupleStream dialect TableGen
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/subop/TupleStreamBase.td)
+mlir_tablegen(TupleStreamDialect.h.inc -gen-dialect-decls -dialect=tuples -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(TupleStreamDialect.cpp.inc -gen-dialect-defs -dialect=tuples -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(TupleStreamTypes.h.inc -gen-typedef-decls --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(TupleStreamTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
+add_public_tablegen_target(MLIRTupleStreamIncGen)
 
 # DSA dialect TableGen
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/dsa/DSADialect.td)
@@ -82,6 +90,10 @@ add_library(MLIRDBDialect STATIC
     db/LowerDBToLLVM.cpp
 )
 
+add_library(MLIRTupleStreamDialect STATIC
+    tuplestream/TupleStreamDialect.cpp
+)
+
 add_library(MLIRDSADialect STATIC
     dsa/DSADialect.cpp
 )
@@ -90,8 +102,9 @@ add_library(MLIRDSADialect STATIC
 
 # Add dependency on generated files
 add_dependencies(MLIRPgDialect MLIRPgDataAccessIncGen MLIRPgTypesIncGen MLIRPgPolymorphicIncGen)
-add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen)
+add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen MLIRTupleStreamIncGen)
 add_dependencies(MLIRDBDialect MLIRDBIncGen)
+add_dependencies(MLIRTupleStreamDialect MLIRTupleStreamIncGen)
 add_dependencies(MLIRDSADialect MLIRDSAIncGen)
 # RelAlgDialect DISABLED
 
@@ -139,6 +152,7 @@ target_link_libraries(MLIRSubOpDialect PUBLIC
     MLIRCallInterfaces
     MLIRFunctionInterfaces
     MLIRDBDialect
+    MLIRTupleStreamDialect
     MLIRSCFDialect
 )
 
@@ -166,6 +180,26 @@ target_link_libraries(MLIRDBDialect PUBLIC
 )
 
 set_target_properties(MLIRDBDialect PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
+
+# Configure TupleStream dialect library
+target_include_directories(MLIRTupleStreamDialect PUBLIC
+    ${CMAKE_SOURCE_DIR}/include/dialects/tuplestream
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/src/dialects
+    ${LLVM_INCLUDE_DIRS}
+    ${MLIR_INCLUDE_DIRS}
+)
+
+target_link_libraries(MLIRTupleStreamDialect PUBLIC
+    MLIRIR
+    MLIRParser
+    MLIRSideEffectInterfaces
+)
+
+set_target_properties(MLIRTupleStreamDialect PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
