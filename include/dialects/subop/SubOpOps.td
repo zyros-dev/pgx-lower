@@ -1,5 +1,5 @@
-#ifndef LINGODB_DIALECT_SubOperator_IR_OPS
-#define LINGODB_DIALECT_SubOperator_IR_OPS
+#ifndef SUBOP_OPS
+#define SUBOP_OPS
 
 include "mlir/IR/OpBase.td"
 include "mlir/IR/EnumAttr.td"
@@ -79,7 +79,7 @@ def SimpleState : SubOperator_Type<"SimpleState", "simple_state",[State,LookupAb
     let assemblyFormat = "`<` custom<StateMembers>($members) `>`";
         let extraClassDeclaration = [{
             StateMembersAttr getKeyMembers(){
-            return lingodb::compiler::dialect::subop::StateMembersAttr::get(getContext(), mlir::ArrayAttr::get(getContext(), {}), mlir::ArrayAttr::get(getContext(), {}));
+            return mlir::subop::StateMembersAttr::get(getContext(), mlir::ArrayAttr::get(getContext(), {}), mlir::ArrayAttr::get(getContext(), {}));
             }
             StateMembersAttr getValueMembers();
         }];
@@ -392,7 +392,7 @@ def LockOp : SubOperator_Op<"lock", [SubOperator,DeclareOpInterfaceMethods<State
   let extraClassDeclaration = [{
     std::vector<std::string> getWrittenMembers();
     std::vector<std::string> getReadMembers();
-    mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+    mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
   }];
   let regions = (region SizedRegion<1>:$nested);
   let assemblyFormat = [{ $stream `lock` `(` $ref `)` $nested attr-dict }];
@@ -411,7 +411,7 @@ def ScanOp : SubOperator_Op<"scan", [Pure,SubOperator,DeclareOpInterfaceMethods<
     let assemblyFormat = [{  $state `:` type($state) custom<StateColumnMapping>($mapping) attr-dict }];
     let extraClassDeclaration = [{
         std::vector<std::string> getReadMembers();
-            mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+            mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
 
     }];
 }
@@ -424,7 +424,7 @@ def ScanListOp : SubOperator_Op<"scan_list", [Pure,SubOperator,ReferenceProducer
     let assemblyFormat = [{  $list `:` type($list) custom<CustDef>($elem) attr-dict }];
     let extraClassDeclaration = [{
         dialect::tuples::ColumnDefAttr getProducedReference(){ return getElem(); }
-        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
 
     }];
 }
@@ -437,7 +437,7 @@ def ScanRefsOp : SubOperator_Op<"scan_refs", [Pure,SubOperator,ReferenceProducer
     let assemblyFormat = [{  $state `:` type($state) custom<CustDef>($ref) attr-dict }];
     let extraClassDeclaration = [{
         dialect::tuples::ColumnDefAttr getProducedReference(){ return getRef(); }
-        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
     }];
 }
 def GenerateOp : SubOperator_Op<"generate",[Pure,SubOperator]> {
@@ -447,7 +447,7 @@ def GenerateOp : SubOperator_Op<"generate",[Pure,SubOperator]> {
     let regions = (region SizedRegion<1>:$region);
     let hasCustomAssemblyFormat = 1;
     let extraClassDeclaration = [{
-        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
     }];
 }
 
@@ -477,7 +477,7 @@ def MapOp : SubOperator_Op<"map", [Pure,SubOperator,DeclareOpInterfaceMethods<Co
     let regions = (region SizedRegion<1>:$fn);
     let assemblyFormat = [{  $stream `computes` `:` custom<CustDefArr>($computed_cols) `input` `:` custom<CustRefArr>($input_cols) custom<CustRegion>($fn) attr-dict-with-keyword }];
         let extraClassDeclaration = [{
-            mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+            mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
         }];
 }
 
@@ -486,7 +486,7 @@ def FilterSemantic_NoneTrue      : I64EnumAttrCase<"none_true", 1>;
 
 def FilterSemantic : I64EnumAttr<"FilterSemantic", "",
         [FilterSemantic_AllTrue,FilterSemantic_NoneTrue]> {
-    let cppNamespace = "::lingodb::compiler::dialect::subop";
+    let cppNamespace = "::mlir::subop";
 }
 
 def FilterOp : SubOperator_Op<"filter", [Pure,SubOperator,DeclareOpInterfaceMethods<ColumnFoldable>]> {
@@ -495,7 +495,7 @@ def FilterOp : SubOperator_Op<"filter", [Pure,SubOperator,DeclareOpInterfaceMeth
     let results = (outs TupleStream : $res);
     let assemblyFormat = [{  $stream $filterSemantic custom<CustRefArr>($conditions)  attr-dict }];
         let extraClassDeclaration = [{
-            mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+            mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
         }];
 }
 
@@ -506,7 +506,7 @@ def RenamingOp : SubOperator_Op<"rename", [Pure,SubOperator]> {
     let results = (outs TupleStream:$result);
     let assemblyFormat = [{ $stream `renamed` `:` custom<CustDefArr>($columns) attr-dict-with-keyword }];
 	let extraClassDeclaration = [{
-		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
 	}];
 }
 
@@ -536,7 +536,7 @@ def NestedMapOp : SubOperator_Op<"nested_map",[DeclareOpInterfaceMethods<SubOper
         std::vector<std::string> getWrittenMembers();
         std::vector<std::string> getReadMembers();
         mlir::Block* getBody(){ return &getRegion().front();}
-       	mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+       	mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
     }];
 }
 
@@ -646,7 +646,7 @@ def MaterializeOp : SubOperator_Op<"materialize",[SubOperator,DeclareOpInterface
     let assemblyFormat = [{  $stream custom<ColumnStateMapping>($mapping) `,` $state `:` type($state)  attr-dict }];
     let extraClassDeclaration = [{
         std::vector<std::string> getWrittenMembers();
-		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
     }];
 }
 
@@ -659,7 +659,7 @@ def LookupOrInsertOp : SubOperator_Op<"lookup_or_insert",[SubOperator,ReferenceP
       let extraClassDeclaration = [{
           std::vector<std::string> getWrittenMembers();
           dialect::tuples::ColumnDefAttr getProducedReference(){ return getRef(); }
-          mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+          mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
       }];
 }
 def InsertOp : SubOperator_Op<"insert",[SubOperator,DeclareOpInterfaceMethods<StateUsingSubOperator>,DeclareOpInterfaceMethods<ColumnFoldable>]> {
@@ -669,7 +669,7 @@ def InsertOp : SubOperator_Op<"insert",[SubOperator,DeclareOpInterfaceMethods<St
       let hasCustomAssemblyFormat = 1;
       let extraClassDeclaration = [{
           std::vector<std::string> getWrittenMembers();
-          mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+          mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
       }];
 }
 
@@ -686,7 +686,7 @@ def LookupOp : SubOperator_Op<"lookup",[SubOperator,DeclareOpInterfaceMethods<St
     let extraClassDeclaration = [{
           std::vector<std::string> getReadMembers();
           dialect::tuples::ColumnDefAttr getProducedReference(){ return getRef(); }
-          mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+          mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
       }];
 }
 def GetBeginReferenceOp : SubOperator_Op<"get_begin_ref",[SubOperator]> {
@@ -695,7 +695,7 @@ def GetBeginReferenceOp : SubOperator_Op<"get_begin_ref",[SubOperator]> {
 
     let assemblyFormat = [{  $stream $state `:` type($state) custom<CustDef>($ref)   attr-dict }];
 	let extraClassDeclaration = [{
-		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
 	}];
 }
 def GetEndReferenceOp : SubOperator_Op<"get_end_ref",[SubOperator]> {
@@ -703,7 +703,7 @@ def GetEndReferenceOp : SubOperator_Op<"get_end_ref",[SubOperator]> {
     let results = (outs TupleStream: $res);
     let assemblyFormat = [{  $stream $state `:` type($state) custom<CustDef>($ref)   attr-dict }];
 	let extraClassDeclaration = [{
-		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
 	}];
 }
 def EntriesBetweenOp : SubOperator_Op<"entries_between",[SubOperator]> {
@@ -711,7 +711,7 @@ def EntriesBetweenOp : SubOperator_Op<"entries_between",[SubOperator]> {
     let results = (outs TupleStream: $res);
     let assemblyFormat = [{  $stream custom<CustRef>($left_ref) custom<CustRef>($right_ref)  custom<CustDef>($between) attr-dict }];
 	let extraClassDeclaration = [{
-		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
 	}];
 }
 def OffsetReferenceBy : SubOperator_Op<"offset_ref_by",[SubOperator]> {
@@ -719,7 +719,7 @@ def OffsetReferenceBy : SubOperator_Op<"offset_ref_by",[SubOperator]> {
     let results = (outs TupleStream: $res);
     let assemblyFormat = [{  $stream custom<CustRef>($ref) custom<CustRef>($idx) custom<CustDef>($newRef) attr-dict }];
 	let extraClassDeclaration = [{
-		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
 	}];
 }
 def UnwrapOptionalRefOp : SubOperator_Op<"unwrap_optional_ref",[SubOperator,DeclareOpInterfaceMethods<StateUsingSubOperator>]> {
@@ -727,7 +727,7 @@ def UnwrapOptionalRefOp : SubOperator_Op<"unwrap_optional_ref",[SubOperator,Decl
     let results = (outs TupleStream: $res);
     let assemblyFormat = [{  $stream custom<CustRef>($optional_ref) custom<CustDef>($ref) attr-dict }];
 	let extraClassDeclaration = [{
-		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+		mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
 	}];
 }
 
@@ -746,7 +746,7 @@ def GatherOp : SubOperator_Op<"gather",[SubOperator,DeclareOpInterfaceMethods<St
     let assemblyFormat = [{  $stream custom<CustRef>($ref) custom<StateColumnMapping>($mapping)  attr-dict }];
     let extraClassDeclaration = [{
         std::vector<std::string> getReadMembers();
-        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
     }];
 }
 def ScatterOp : SubOperator_Op<"scatter",[SubOperator,DeclareOpInterfaceMethods<StateUsingSubOperator>]> {
@@ -756,7 +756,7 @@ def ScatterOp : SubOperator_Op<"scatter",[SubOperator,DeclareOpInterfaceMethods<
     let assemblyFormat = [{  $stream custom<CustRef>($ref) custom<ColumnStateMapping>($mapping)  attr-dict }];
     let extraClassDeclaration = [{
         std::vector<std::string> getWrittenMembers();
-        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+        mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
     }];
 }
 
@@ -777,7 +777,7 @@ def ReduceOp : SubOperator_Op<"reduce",[SubOperator,DeclareOpInterfaceMethods<St
         let extraClassDeclaration = [{
             std::vector<std::string> getWrittenMembers();
             std::vector<std::string> getReadMembers();
-            mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, lingodb::compiler::dialect::subop::ColumnMapping& columnMapping);
+            mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
         }];
 }
 
@@ -888,4 +888,4 @@ def NestedExecutionGroupReturnOp : SubOperator_Op<"nested_execution_group_return
    let assemblyFormat = [{ ($inputs^ `:` type($inputs))? attr-dict-with-keyword }];
 }
 
-#endif // LINGODB_DIALECT_SubOperator_IR_OPS
+#endif // SUBOP_OPS

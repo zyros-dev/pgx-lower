@@ -24,6 +24,7 @@ extern "C" {
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/dsa/DSADialect.h"
+#include "dialects/util/UtilDialect.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -35,6 +36,7 @@ extern "C" {
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 
 
 
@@ -105,10 +107,13 @@ auto PostgreSQLASTTranslator::registerDialects() -> void {
     context_.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
     context_.getOrLoadDialect<mlir::memref::MemRefDialect>();
     
+    // Additional MLIR dialects needed by LingoDB
+    context_.getOrLoadDialect<mlir::util::UtilDialect>();
+    context_.getOrLoadDialect<mlir::index::IndexDialect>();
+    
     // TODO: Add these when needed:
     // context_.getOrLoadDialect<mlir::BuiltinDialect>(); 
     // context_.getOrLoadDialect<mlir::DLTIDialect>();
-    // context_.getOrLoadDialect<util::UtilDialect>();  // LingoDB's utility dialect
 }
 
 auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<mlir::ModuleOp> {

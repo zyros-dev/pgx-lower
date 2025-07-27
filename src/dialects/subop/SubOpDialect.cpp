@@ -12,6 +12,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
+using namespace mlir::subop;
 
 struct SubOperatorInlinerInterface : public mlir::DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
@@ -29,7 +30,7 @@ struct SubOpFoldInterface : public mlir::DialectFoldInterface {
       return true;
    }
 };
-void subop::SubOpDialect::initialize() {
+void SubOperatorDialect::initialize() {
    addOperations<
 #define GET_OP_LIST
 #include "SubOpOps.cpp.inc"
@@ -39,10 +40,21 @@ void subop::SubOpDialect::initialize() {
    registerAttrs();
    addInterfaces<SubOperatorInlinerInterface>();
    addInterfaces<SubOpFoldInterface>();
-   getContext()->loadDialect<db::DBDialect>();
+   getContext()->loadDialect<mlir::db::DBDialect>();
    getContext()->loadDialect<mlir::arith::ArithDialect>();
    getContext()->loadDialect<mlir::index::IndexDialect>();
-   getContext()->loadDialect<tuples::TupleStreamDialect>();
+   getContext()->loadDialect<mlir::tuples::TupleStreamDialect>();
+}
+
+void SubOperatorDialect::registerTypes() {
+   addTypes<
+#define GET_TYPEDEF_LIST
+#include "SubOpTypes.cpp.inc"
+   >();
+}
+
+void SubOperatorDialect::registerAttrs() {
+   // TODO: Add attributes when needed
 }
 
 #include "SubOpDialect.cpp.inc"

@@ -94,6 +94,9 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRSubOpDialect
         MLIRDBDialect
         MLIRDSADialect
+        MLIRTupleStreamDialect
+        MLIRRelAlgDialect
+        MLIRUtilDialect
     )
     target_include_directories(mlir_unit_test PRIVATE 
         tests/unit

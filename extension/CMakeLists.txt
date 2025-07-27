@@ -42,6 +42,9 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRSubOpDialect
     MLIRDBDialect
     MLIRDSADialect
+    MLIRTupleStreamDialect
+    MLIRRelAlgDialect
+    MLIRUtilDialect
 )
 
 # Add include directories for source files

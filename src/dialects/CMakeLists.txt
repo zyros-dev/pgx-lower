@@ -117,6 +117,10 @@ add_library(MLIRRelAlgDialect STATIC
     relalg/RelAlgDialect.cpp
 )
 
+add_library(MLIRUtilDialect STATIC
+    util/UtilDialect.cpp
+)
+
 # Configure RelAlg dialect library
 target_include_directories(MLIRRelAlgDialect PUBLIC
     ${CMAKE_SOURCE_DIR}/include/dialects/relalg
@@ -147,6 +151,7 @@ add_dependencies(MLIRDBDialect MLIRDBIncGen)
 add_dependencies(MLIRTupleStreamDialect MLIRTupleStreamIncGen)
 add_dependencies(MLIRDSADialect MLIRDSAIncGen)
 add_dependencies(MLIRRelAlgDialect MLIRRelAlgIncGen)
+add_dependencies(MLIRUtilDialect MLIRUtilIncGen)
 
 target_include_directories(MLIRPgDialect PUBLIC
     ${CMAKE_SOURCE_DIR}/include/dialects/pg
@@ -264,7 +269,36 @@ set_target_properties(MLIRDSADialect PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
-# RelAlg dialect configuration DISABLED
+# Configure Util dialect library
+target_include_directories(MLIRUtilDialect PUBLIC
+    ${CMAKE_SOURCE_DIR}/include/dialects/util
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/src/dialects
+    ${LLVM_INCLUDE_DIRS}
+    ${MLIR_INCLUDE_DIRS}
+)
+
+target_link_libraries(MLIRUtilDialect PUBLIC
+    MLIRIR
+    MLIRParser
+    MLIRSideEffectInterfaces
+    MLIRLLVMDialect
+)
+
+set_target_properties(MLIRUtilDialect PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
+
+# Util dialect TableGen
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilBase.td)
+mlir_tablegen(UtilDialect.h.inc -gen-dialect-decls -dialect=util -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(UtilDialect.cpp.inc -gen-dialect-defs -dialect=util -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(UtilOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(UtilOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(UtilTypes.h.inc -gen-typedef-decls --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(UtilTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS})
+add_public_tablegen_target(MLIRUtilIncGen)
 
 add_library(PgxLowerRuntime
     ../runtime/tuple_access.cpp
