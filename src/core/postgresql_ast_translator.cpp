@@ -18,7 +18,8 @@ extern "C" {
 #undef dngettext
 
 #include "core/postgresql_ast_translator.h"
-#include "dialects/pg/PgDialect.h"
+#include "dialects/relalg/RelAlgDialect.h"
+#include "dialects/pg/PgDialect.h"  // Still needed temporarily for existing code
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/db/DBDialect.h"
@@ -33,6 +34,7 @@ extern "C" {
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 
 
 
@@ -86,15 +88,27 @@ PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context, MLI
 }
 
 auto PostgreSQLASTTranslator::registerDialects() -> void {
-    context_.getOrLoadDialect<mlir::pg::PgDialect>();
+    // Pure LingoDB architecture - start with RelAlg
+    context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+    
+    // LingoDB dialect hierarchy  
     context_.getOrLoadDialect<mlir::tuples::TupleStreamDialect>();
     context_.getOrLoadDialect<mlir::subop::SubOperatorDialect>();
     context_.getOrLoadDialect<mlir::db::DBDialect>();
     context_.getOrLoadDialect<mlir::dsa::DSADialect>();
+    
+    // Standard MLIR dialects
     context_.getOrLoadDialect<mlir::arith::ArithDialect>();
     context_.getOrLoadDialect<mlir::scf::SCFDialect>();
     context_.getOrLoadDialect<mlir::func::FuncDialect>();
     context_.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+    context_.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+    context_.getOrLoadDialect<mlir::memref::MemRefDialect>();
+    
+    // TODO: Add these when needed:
+    // context_.getOrLoadDialect<mlir::BuiltinDialect>(); 
+    // context_.getOrLoadDialect<mlir::DLTIDialect>();
+    // context_.getOrLoadDialect<util::UtilDialect>();  // LingoDB's utility dialect
 }
 
 auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<mlir::ModuleOp> {

@@ -79,8 +79,15 @@ mlir_tablegen(DSATypes.h.inc -gen-typedef-decls --typedefs-dialect=dsa -I${MLIR_
 mlir_tablegen(DSATypes.cpp.inc -gen-typedef-defs --typedefs-dialect=dsa -I${MLIR_INCLUDE_DIRS})
 add_public_tablegen_target(MLIRDSAIncGen)
 
-# RelAlg dialect TableGen - DISABLED for now due to MLIR version compatibility
-# We use PG dialect with RelAlg-style operations instead
+# RelAlg dialect TableGen - Enable for pure LingoDB architecture
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgBase.td)
+mlir_tablegen(RelAlgDialect.h.inc -gen-dialect-decls -dialect=relalg -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgDialect.cpp.inc -gen-dialect-defs -dialect=relalg -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgTypes.h.inc -gen-typedef-decls --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS})
+add_public_tablegen_target(MLIRRelAlgIncGen)
 
 add_library(MLIRPgDialect STATIC
     pg/PgDialect.cpp
@@ -106,7 +113,32 @@ add_library(MLIRDSADialect STATIC
     dsa/DSADialect.cpp
 )
 
-# MLIRRelAlgDialect DISABLED - using PG dialect with RelAlg-style operations instead
+add_library(MLIRRelAlgDialect STATIC
+    relalg/RelAlgDialect.cpp
+)
+
+# Configure RelAlg dialect library
+target_include_directories(MLIRRelAlgDialect PUBLIC
+    ${CMAKE_SOURCE_DIR}/include/dialects/relalg
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}/src/dialects
+    ${LLVM_INCLUDE_DIRS}
+    ${MLIR_INCLUDE_DIRS}
+)
+
+target_link_libraries(MLIRRelAlgDialect PUBLIC
+    MLIRIR
+    MLIRParser
+    MLIRSideEffectInterfaces
+    MLIRDBDialect
+    MLIRTupleStreamDialect
+    MLIRArithDialect
+)
+
+set_target_properties(MLIRRelAlgDialect PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
 
 # Add dependency on generated files
 add_dependencies(MLIRPgDialect MLIRPgDataAccessIncGen MLIRPgTypesIncGen MLIRPgPolymorphicIncGen)
@@ -114,7 +146,7 @@ add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen MLIRSubOpInterfacesIncGen MLIR
 add_dependencies(MLIRDBDialect MLIRDBIncGen)
 add_dependencies(MLIRTupleStreamDialect MLIRTupleStreamIncGen)
 add_dependencies(MLIRDSADialect MLIRDSAIncGen)
-# RelAlgDialect DISABLED
+add_dependencies(MLIRRelAlgDialect MLIRRelAlgIncGen)
 
 target_include_directories(MLIRPgDialect PUBLIC
     ${CMAKE_SOURCE_DIR}/include/dialects/pg
