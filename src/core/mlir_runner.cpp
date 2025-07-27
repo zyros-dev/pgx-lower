@@ -3,7 +3,6 @@
 #include "core/error_handling.h"
 #include "core/postgresql_ast_translator.h"
 #include "dialects/pg/PgDialect.h"
-#include "dialects/pg/LowerPgToSCF.h"
 #include "dialects/pg/LowerPgToSubOp.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/LowerSubOpToDB.h"
@@ -45,7 +44,6 @@
 #include "mlir/Target/LLVMIR/Dialect/All.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Support/LogicalResult.h"
-#include "dialects/pg/LowerPgToSCF.h"
 #include "mlir/Target/LLVMIR/Dialect/All.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
@@ -82,89 +80,66 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         return false;
     }
     logger.notice("MLIR module verification passed - proceeding to lowering");
-
-    // Apply lowering passes with detailed error reporting
-    auto pm = mlir::PassManager(&context);
-    pm.enableVerifier(true);
     
     logger.notice("Using LingoDB-style lowering pipeline: PG → SubOp → DB → DSA → LLVM");
     
-    // Enable the new LingoDB-style lowering pipeline
-    bool enableNewPipeline = true;
+    // Run each pass individually to see intermediate results
     
-    if (enableNewPipeline) {
-        // Run each pass individually to see intermediate results
-        
-        // PG → SubOp lowering
-        logger.notice("=== Running PG → SubOp lowering pass ===");
-        auto pgToSubOpPM = mlir::PassManager(&context);
-        pgToSubOpPM.addPass(mlir::pg::createLowerPgToSubOpPass());
-        if (failed(pgToSubOpPM.run(module))) {
-            logger.error("PG → SubOp lowering failed");
-            return false;
-        }
-        logger.notice("Module after PG → SubOp:");
-        std::string afterPgStr;
-        llvm::raw_string_ostream afterPgOs(afterPgStr);
-        module.print(afterPgOs);
-        afterPgOs.flush();
-        logger.notice(afterPgStr);
-        
-        // SubOp → DB lowering
-        logger.notice("=== Running SubOp → DB lowering pass ===");
-        auto subOpToDbPM = mlir::PassManager(&context);
-        subOpToDbPM.addPass(mlir::subop::createLowerSubOpToDBPass());
-        if (failed(subOpToDbPM.run(module))) {
-            logger.error("SubOp → DB lowering failed");
-            return false;
-        }
-        logger.notice("Module after SubOp → DB:");
-        std::string afterSubOpStr;
-        llvm::raw_string_ostream afterSubOpOs(afterSubOpStr);
-        module.print(afterSubOpOs);
-        afterSubOpOs.flush();
-        logger.notice(afterSubOpStr);
-        
-        // DB → LLVM lowering (skipping DSA for now)
-        logger.notice("=== Running DB → LLVM lowering pass ===");
-        auto dbToLlvmPM = mlir::PassManager(&context);
-        dbToLlvmPM.addPass(mlir::db::createLowerDBToLLVMPass());
-        if (failed(dbToLlvmPM.run(module))) {
-            logger.error("DB → LLVM lowering failed");
-            return false;
-        }
-        logger.notice("Module after DB → LLVM:");
-        std::string afterDbStr;
-        llvm::raw_string_ostream afterDbOs(afterDbStr);
-        module.print(afterDbOs);
-        afterDbOs.flush();
-        logger.notice(afterDbStr);
-        
-        // Reconcile unrealized casts after dialect conversions
-        logger.notice("=== Running reconcile unrealized casts pass ===");
-        auto reconcilePM = mlir::PassManager(&context);
-        reconcilePM.addPass(mlir::createReconcileUnrealizedCastsPass());
-        if (failed(reconcilePM.run(module))) {
-            logger.error("Reconcile unrealized casts failed");
-            return false;
-        }
-        
-        logger.notice("LingoDB-style lowering pipeline completed!");
-    } else {
-        // Use direct lowering to handle pg operations
-        logger.notice("Using direct PG to SCF lowering...");
-        pm.addPass(mlir::pg::createLowerPgToSCFPass());
-        
-        logger.notice("Running lowering passes...");
-        auto passResult = pm.run(module);
-        if (failed(passResult)) {
-            logger.error("Lowering pipeline failed");
-            logger.error("Dumping module state when lowering failed:");
-            module.dump();
-            return false;
-        }
-        logger.notice("Applied lowering passes!");
+    // PG → SubOp lowering
+    logger.notice("=== Running PG → SubOp lowering pass ===");
+    auto pgToSubOpPM = mlir::PassManager(&context);
+    pgToSubOpPM.addPass(mlir::pg::createLowerPgToSubOpPass());
+    if (failed(pgToSubOpPM.run(module))) {
+        logger.error("PG → SubOp lowering failed");
+        return false;
     }
+    logger.notice("Module after PG → SubOp:");
+    std::string afterPgStr;
+    llvm::raw_string_ostream afterPgOs(afterPgStr);
+    module.print(afterPgOs);
+    afterPgOs.flush();
+    logger.notice(afterPgStr);
+    
+    // SubOp → DB lowering
+    logger.notice("=== Running SubOp → DB lowering pass ===");
+    auto subOpToDbPM = mlir::PassManager(&context);
+    subOpToDbPM.addPass(mlir::subop::createLowerSubOpToDBPass());
+    if (failed(subOpToDbPM.run(module))) {
+        logger.error("SubOp → DB lowering failed");
+        return false;
+    }
+    logger.notice("Module after SubOp → DB:");
+    std::string afterSubOpStr;
+    llvm::raw_string_ostream afterSubOpOs(afterSubOpStr);
+    module.print(afterSubOpOs);
+    afterSubOpOs.flush();
+    logger.notice(afterSubOpStr);
+    
+    // DB → LLVM lowering (skipping DSA for now)
+    logger.notice("=== Running DB → LLVM lowering pass ===");
+    auto dbToLlvmPM = mlir::PassManager(&context);
+    dbToLlvmPM.addPass(mlir::db::createLowerDBToLLVMPass());
+    if (failed(dbToLlvmPM.run(module))) {
+        logger.error("DB → LLVM lowering failed");
+        return false;
+    }
+    logger.notice("Module after DB → LLVM:");
+    std::string afterDbStr;
+    llvm::raw_string_ostream afterDbOs(afterDbStr);
+    module.print(afterDbOs);
+    afterDbOs.flush();
+    logger.notice(afterDbStr);
+    
+    // Reconcile unrealized casts after dialect conversions
+    logger.notice("=== Running reconcile unrealized casts pass ===");
+    auto reconcilePM = mlir::PassManager(&context);
+    reconcilePM.addPass(mlir::createReconcileUnrealizedCastsPass());
+    if (failed(reconcilePM.run(module))) {
+        logger.error("Reconcile unrealized casts failed");
+        return false;
+    }
+    
+    logger.notice("LingoDB-style lowering pipeline completed!");
 
     // Check for remaining dialect operations after lowering
     bool hasUnloweredOps = false;
@@ -180,20 +155,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     });
     
     if (hasUnloweredOps) {
-        logger.notice("Some dialect operations remain - additional lowering passes may be needed");
-        // Don't fail for now, as we're still implementing the full pipeline
-    }
-
-    // For now, also register the direct lowering to ensure all pg ops are handled
-    // This is temporary until all the new lowering passes are complete
-    if (hasUnloweredOps) {
-        logger.notice("Running direct PG to SCF lowering to handle remaining operations...");
-        auto directLoweringPM = mlir::PassManager(&context);
-        directLoweringPM.addPass(mlir::pg::createLowerPgToSCFPass());
-        if (failed(directLoweringPM.run(module))) {
-            logger.error("Direct PG to SCF lowering failed");
-            return false;
-        }
+        logger.error("ERROR: Dialect operations remain after lowering pipeline!");
+        logger.error("This means the LingoDB-style lowering is incomplete.");
+        // Let it fail - no fallbacks!
     }
     
     auto pm2 = mlir::PassManager(&context);

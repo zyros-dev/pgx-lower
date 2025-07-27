@@ -206,9 +206,8 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
         // Set up conversion target
         ConversionTarget target(*ctx);
         
-        // For now, keep PG dialect legal to allow progressive lowering
-        // We'll implement the actual lowering patterns incrementally
-        target.addLegalDialect<pg::PgDialect>();
+        // Mark PG dialect as ILLEGAL - it must be lowered!
+        target.addIllegalDialect<pg::PgDialect>();
         
         // Mark target dialects as legal
         target.addLegalDialect<subop::SubOpDialect, arith::ArithDialect, 

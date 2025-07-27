@@ -10,6 +10,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
@@ -147,7 +148,8 @@ struct LowerSubOpToDBPass : public OperationPass<ModuleOp> {
     LowerSubOpToDBPass() : OperationPass(TypeID::get<LowerSubOpToDBPass>()) {}
     
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<db::DBDialect, arith::ArithDialect, scf::SCFDialect>();
+        registry.insert<db::DBDialect, arith::ArithDialect, scf::SCFDialect,
+                       func::FuncDialect, LLVM::LLVMDialect>();
     }
     
     void runOnOperation() override {
@@ -164,11 +166,16 @@ struct LowerSubOpToDBPass : public OperationPass<ModuleOp> {
         
         // Set up conversion target
         ConversionTarget target(*ctx);
-        // For now, mark SubOp dialect as legal since we're not actually lowering it
-        target.addLegalDialect<subop::SubOpDialect>();
-        target.markUnknownOpDynamicallyLegal([](Operation *op) {
-            return true;
-        });
+        // Mark SubOp dialect as ILLEGAL - it must be lowered!
+        target.addIllegalDialect<subop::SubOpDialect>();
+        // Mark target dialects as legal
+        target.addLegalDialect<db::DBDialect, arith::ArithDialect, 
+                              scf::SCFDialect, func::FuncDialect,
+                              LLVM::LLVMDialect>();
+        // Allow unrealized conversion casts for progressive lowering
+        target.addLegalOp<UnrealizedConversionCastOp>();
+        // Standard operations that don't need conversion
+        target.addLegalOp<ModuleOp>();
         
         // Set up conversion patterns
         RewritePatternSet patterns(ctx);
