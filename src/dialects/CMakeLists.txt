@@ -65,7 +65,6 @@ add_public_tablegen_target(MLIRDSAIncGen)
 
 add_library(MLIRPgDialect STATIC
     pg/PgDialect.cpp
-    pg/LowerPgToSCF.cpp
     pg/LowerPgToSubOp.cpp
     pg/PgPolymorphicOps.cpp
 )
