@@ -4,6 +4,7 @@
 // #include "lingodb/compiler/Dialect/SubOperator/Transforms/StateUsageTransformer.h" // TODO: Port
 // #include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsAttributes.h" // TODO: Port
 #include "dialects/tuplestream/Column.h"
+#include "dialects/tuplestream/TupleStreamDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
@@ -34,7 +35,8 @@ public:
 };
 
 } // end namespace mlir::subop
-// #define GET_OP_CLASSES
-// #include "SubOpOpsInterfaces.h.inc" // TODO: Generate this file if needed
+
+#define GET_OP_CLASSES
+#include "SubOpOpsInterfaces.h.inc"
 
 #endif //SUBOP_INTERFACES_H

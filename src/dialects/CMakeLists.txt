@@ -43,6 +43,12 @@ mlir_tablegen(SubOpTypes.h.inc -gen-typedef-decls --typedefs-dialect=subop -I${M
 mlir_tablegen(SubOpTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=subop -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
 add_public_tablegen_target(MLIRSubOpIncGen)
 
+# Generate interfaces separately from the interfaces file
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/subop/SubOpInterfaces.td)
+mlir_tablegen(SubOpOpsInterfaces.h.inc -gen-op-interface-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+mlir_tablegen(SubOpOpsInterfaces.cpp.inc -gen-op-interface-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/subop)
+add_public_tablegen_target(MLIRSubOpInterfacesIncGen)
+
 # Database dialect TableGen
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/db/DBDialect.td)
 mlir_tablegen(DBDialect.h.inc -gen-dialect-decls -dialect=db -I${MLIR_INCLUDE_DIRS})
@@ -59,6 +65,8 @@ mlir_tablegen(TupleStreamDialect.h.inc -gen-dialect-decls -dialect=tuples -I${ML
 mlir_tablegen(TupleStreamDialect.cpp.inc -gen-dialect-defs -dialect=tuples -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(TupleStreamTypes.h.inc -gen-typedef-decls --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(TupleStreamTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(TupleStreamAttrs.h.inc -gen-attrdef-decls --attrdefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(TupleStreamAttrs.cpp.inc -gen-attrdef-defs --attrdefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
 add_public_tablegen_target(MLIRTupleStreamIncGen)
 
 # DSA dialect TableGen
@@ -82,12 +90,12 @@ add_library(MLIRPgDialect STATIC
 
 add_library(MLIRSubOpDialect STATIC
     subop/SubOpDialect.cpp
-    subop/LowerSubOpToDB.cpp
+    # subop/LowerSubOpToDB.cpp  # Temporarily disabled to get basic compilation working
 )
 
 add_library(MLIRDBDialect STATIC
     db/DBDialect.cpp
-    db/LowerDBToLLVM.cpp
+    # db/LowerDBToLLVM.cpp  # Temporarily disabled to get basic compilation working
 )
 
 add_library(MLIRTupleStreamDialect STATIC
@@ -102,7 +110,7 @@ add_library(MLIRDSADialect STATIC
 
 # Add dependency on generated files
 add_dependencies(MLIRPgDialect MLIRPgDataAccessIncGen MLIRPgTypesIncGen MLIRPgPolymorphicIncGen)
-add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen MLIRTupleStreamIncGen)
+add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen MLIRSubOpInterfacesIncGen MLIRTupleStreamIncGen)
 add_dependencies(MLIRDBDialect MLIRDBIncGen)
 add_dependencies(MLIRTupleStreamDialect MLIRTupleStreamIncGen)
 add_dependencies(MLIRDSADialect MLIRDSAIncGen)

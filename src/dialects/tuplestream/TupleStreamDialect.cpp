@@ -18,7 +18,11 @@ void TupleStreamDialect::initialize() {
 #include "TupleStreamTypes.h.inc"
    >();
    
-   // TODO: Add attributes when needed
+   // Add attributes from TableGen
+   addAttributes<
+#define GET_ATTRDEF_LIST
+#include "TupleStreamAttrs.h.inc"
+   >();
 }
 
 #include "TupleStreamDialect.cpp.inc"

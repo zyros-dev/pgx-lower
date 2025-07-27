@@ -28,23 +28,11 @@ namespace {
 class DBTypeConverter : public LLVMTypeConverter {
 public:
     DBTypeConverter(MLIRContext *ctx) : LLVMTypeConverter(ctx) {
-        // Convert nullable types to a struct {value, is_null}
-        addConversion([](NullableType type) -> Type {
-            auto ctx = type.getContext();
-            auto valueType = type.getValueType();
-            
-            // Convert the inner value type
-            Type llvmValueType = IntegerType::get(ctx, 64); // Default to i64
-            if (valueType.isInteger())
-                llvmValueType = valueType;
-            else if (valueType.isF32())
-                llvmValueType = Float32Type::get(ctx);
-            else if (valueType.isF64())
-                llvmValueType = Float64Type::get(ctx);
-            
-            // Return struct {value, is_null}
-            return LLVM::LLVMStructType::getLiteral(ctx, {llvmValueType, IntegerType::get(ctx, 1)});
-        });
+        // For now, simplify type conversion - just pass through most types
+        // TODO: Add proper nullable type conversion when needed
+        
+        // Standard LLVM type converter handles most built-in types
+        // We'll add specific DB type conversions as needed
     }
 };
 

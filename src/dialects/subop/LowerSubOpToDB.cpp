@@ -36,11 +36,11 @@ public:
             return type;
         });
         
-        // Convert tuple stream elements to nullable types when appropriate
-        addConversion([](TupleStreamType streamType) -> Type {
-            // Stream operations are lowered to loops, not a direct type conversion
-            return streamType;
-        });
+        // TODO: Convert tuple stream elements when types are properly defined
+        // addConversion([](mlir::tuples::TupleStreamType streamType) -> Type {
+        //     // Stream operations are lowered to loops, not a direct type conversion
+        //     return streamType;
+        // });
         
         // Add target materialization
         addTargetMaterialization([](OpBuilder &builder, Type resultType, 
@@ -60,7 +60,8 @@ public:
 /// Convert subop.scan to SCF loop with DB operations
 class ScanOpLowering : public OpConversionPattern<ScanOp> {
 public:
-    using OpConversionPattern<ScanOp>::OpConversionPattern;
+    ScanOpLowering(TypeConverter &typeConverter, MLIRContext *context)
+        : OpConversionPattern<ScanOp>(typeConverter, context) {}
     
     LogicalResult matchAndRewrite(ScanOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
@@ -76,7 +77,8 @@ public:
 /// Convert subop.filter to conditional DB operations
 class FilterOpLowering : public OpConversionPattern<FilterOp> {
 public:
-    using OpConversionPattern<FilterOp>::OpConversionPattern;
+    FilterOpLowering(TypeConverter &typeConverter, MLIRContext *context)
+        : OpConversionPattern<FilterOp>(typeConverter, context) {}
     
     LogicalResult matchAndRewrite(FilterOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
@@ -95,7 +97,8 @@ public:
 /// Convert subop.map to DB operations
 class MapOpLowering : public OpConversionPattern<MapOp> {
 public:
-    using OpConversionPattern<MapOp>::OpConversionPattern;
+    MapOpLowering(TypeConverter &typeConverter, MLIRContext *context)
+        : OpConversionPattern<MapOp>(typeConverter, context) {}
     
     LogicalResult matchAndRewrite(MapOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
@@ -113,7 +116,8 @@ public:
 /// Convert subop.generate to SCF loop with DB operations
 class GenerateOpLowering : public OpConversionPattern<GenerateOp> {
 public:
-    using OpConversionPattern<GenerateOp>::OpConversionPattern;
+    GenerateOpLowering(TypeConverter &typeConverter, MLIRContext *context)
+        : OpConversionPattern<GenerateOp>(typeConverter, context) {}
     
     LogicalResult matchAndRewrite(GenerateOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
@@ -126,7 +130,8 @@ public:
 /// Convert subop.materialize to memory operations
 class MaterializeOpLowering : public OpConversionPattern<MaterializeOp> {
 public:
-    using OpConversionPattern<MaterializeOp>::OpConversionPattern;
+    MaterializeOpLowering(TypeConverter &typeConverter, MLIRContext *context)
+        : OpConversionPattern<MaterializeOp>(typeConverter, context) {}
     
     LogicalResult matchAndRewrite(MaterializeOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
@@ -179,8 +184,11 @@ struct LowerSubOpToDBPass : public OperationPass<ModuleOp> {
         
         // Set up conversion patterns
         RewritePatternSet patterns(ctx);
-        patterns.add<ScanOpLowering, FilterOpLowering, MapOpLowering,
-                    GenerateOpLowering, MaterializeOpLowering>(typeConverter, ctx);
+        patterns.add<ScanOpLowering>(typeConverter, ctx);
+        patterns.add<FilterOpLowering>(typeConverter, ctx);
+        patterns.add<MapOpLowering>(typeConverter, ctx);
+        patterns.add<GenerateOpLowering>(typeConverter, ctx);
+        patterns.add<MaterializeOpLowering>(typeConverter, ctx);
         
         // Apply conversion
         if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
@@ -218,9 +226,12 @@ struct LowerSubOpToDBPass : public OperationPass<ModuleOp> {
 
 void subop::populateSubOpToDBConversionPatterns(RewritePatternSet &patterns,
                                                TypeConverter &typeConverter) {
-    patterns.add<ScanOpLowering, FilterOpLowering, MapOpLowering,
-                GenerateOpLowering, MaterializeOpLowering>(
-                    typeConverter, patterns.getContext());
+    auto *ctx = patterns.getContext();
+    patterns.add<ScanOpLowering>(typeConverter, ctx);
+    patterns.add<FilterOpLowering>(typeConverter, ctx);
+    patterns.add<MapOpLowering>(typeConverter, ctx);
+    patterns.add<GenerateOpLowering>(typeConverter, ctx);
+    patterns.add<MaterializeOpLowering>(typeConverter, ctx);
 }
 
 std::unique_ptr<OperationPass<ModuleOp>> subop::createLowerSubOpToDBPass() {
