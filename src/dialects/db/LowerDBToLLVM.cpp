@@ -154,6 +154,12 @@ struct LowerDBToLLVMPass : public OperationPass<ModuleOp> {
         auto module = getOperation();
         auto &context = getContext();
         
+        // Log the module before lowering
+        llvm::errs() << "=== DB → LLVM Lowering Pass Started ===\n";
+        llvm::errs() << "Module before DB → LLVM lowering:\n";
+        module.print(llvm::errs());
+        llvm::errs() << "\n";
+        
         DBTypeConverter typeConverter(&context);
         ConversionTarget target(context);
         
@@ -182,6 +188,11 @@ struct LowerDBToLLVMPass : public OperationPass<ModuleOp> {
         if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
             signalPassFailure();
         }
+        
+        // Log the module after lowering
+        llvm::errs() << "Module after DB → LLVM lowering:\n";
+        module.print(llvm::errs());
+        llvm::errs() << "\n=== DB → LLVM Lowering Pass Completed ===\n\n";
     }
     
     StringRef getName() const override { return "LowerDBToLLVMPass"; }

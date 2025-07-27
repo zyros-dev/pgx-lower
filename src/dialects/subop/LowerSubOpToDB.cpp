@@ -154,6 +154,12 @@ struct LowerSubOpToDBPass : public OperationPass<ModuleOp> {
         auto module = getOperation();
         auto *ctx = &getContext();
         
+        // Log the module before lowering
+        llvm::errs() << "=== SubOp → DB Lowering Pass Started ===\n";
+        llvm::errs() << "Module before SubOp → DB lowering:\n";
+        module.print(llvm::errs());
+        llvm::errs() << "\n";
+        
         SubOpToDBTypeConverter typeConverter;
         
         // Set up conversion target
@@ -173,6 +179,11 @@ struct LowerSubOpToDBPass : public OperationPass<ModuleOp> {
         if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
             signalPassFailure();
         }
+        
+        // Log the module after lowering
+        llvm::errs() << "Module after SubOp → DB lowering:\n";
+        module.print(llvm::errs());
+        llvm::errs() << "\n=== SubOp → DB Lowering Pass Completed ===\n\n";
     }
     
     StringRef getName() const override { 

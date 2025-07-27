@@ -731,6 +731,12 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
     void runOnOperation() override {
         auto module = getOperation();
         auto *ctx = &getContext();
+        
+        // Log the module before lowering
+        llvm::errs() << "=== Direct PG → SCF Lowering Pass Started ===\n";
+        llvm::errs() << "Module before direct PG → SCF lowering:\n";
+        module.print(llvm::errs());
+        llvm::errs() << "\n";
 
         // Set up the type converter for pg types to LLVM types
         mlir::LLVMTypeConverter typeConverter(ctx);
@@ -792,6 +798,11 @@ struct LowerPgToSCFPass final : OperationPass<mlir::ModuleOp> {
                 return;
             }
         });
+        
+        // Log the module after lowering
+        llvm::errs() << "Module after direct PG → SCF lowering:\n";
+        module.print(llvm::errs());
+        llvm::errs() << "\n=== Direct PG → SCF Lowering Pass Completed ===\n\n";
     }
 
     [[nodiscard]] auto getName() const -> StringRef override { 

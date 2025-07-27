@@ -93,36 +93,78 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     bool enableNewPipeline = true;
     
     if (enableNewPipeline) {
+        // Run each pass individually to see intermediate results
+        
         // PG → SubOp lowering
-        logger.notice("Creating PG to SubOp lowering pass...");
-        pm.addPass(mlir::pg::createLowerPgToSubOpPass());
+        logger.notice("=== Running PG → SubOp lowering pass ===");
+        auto pgToSubOpPM = mlir::PassManager(&context);
+        pgToSubOpPM.addPass(mlir::pg::createLowerPgToSubOpPass());
+        if (failed(pgToSubOpPM.run(module))) {
+            logger.error("PG → SubOp lowering failed");
+            return false;
+        }
+        logger.notice("Module after PG → SubOp:");
+        std::string afterPgStr;
+        llvm::raw_string_ostream afterPgOs(afterPgStr);
+        module.print(afterPgOs);
+        afterPgOs.flush();
+        logger.notice(afterPgStr);
         
         // SubOp → DB lowering
-        logger.notice("Creating SubOp to DB lowering pass...");
-        pm.addPass(mlir::subop::createLowerSubOpToDBPass());
+        logger.notice("=== Running SubOp → DB lowering pass ===");
+        auto subOpToDbPM = mlir::PassManager(&context);
+        subOpToDbPM.addPass(mlir::subop::createLowerSubOpToDBPass());
+        if (failed(subOpToDbPM.run(module))) {
+            logger.error("SubOp → DB lowering failed");
+            return false;
+        }
+        logger.notice("Module after SubOp → DB:");
+        std::string afterSubOpStr;
+        llvm::raw_string_ostream afterSubOpOs(afterSubOpStr);
+        module.print(afterSubOpOs);
+        afterSubOpOs.flush();
+        logger.notice(afterSubOpStr);
         
         // DB → LLVM lowering (skipping DSA for now)
-        logger.notice("Creating DB to LLVM lowering pass...");
-        pm.addPass(mlir::db::createLowerDBToLLVMPass());
+        logger.notice("=== Running DB → LLVM lowering pass ===");
+        auto dbToLlvmPM = mlir::PassManager(&context);
+        dbToLlvmPM.addPass(mlir::db::createLowerDBToLLVMPass());
+        if (failed(dbToLlvmPM.run(module))) {
+            logger.error("DB → LLVM lowering failed");
+            return false;
+        }
+        logger.notice("Module after DB → LLVM:");
+        std::string afterDbStr;
+        llvm::raw_string_ostream afterDbOs(afterDbStr);
+        module.print(afterDbOs);
+        afterDbOs.flush();
+        logger.notice(afterDbStr);
         
         // Reconcile unrealized casts after dialect conversions
-        logger.notice("Adding reconcile unrealized casts pass...");
-        pm.addPass(mlir::createReconcileUnrealizedCastsPass());
+        logger.notice("=== Running reconcile unrealized casts pass ===");
+        auto reconcilePM = mlir::PassManager(&context);
+        reconcilePM.addPass(mlir::createReconcileUnrealizedCastsPass());
+        if (failed(reconcilePM.run(module))) {
+            logger.error("Reconcile unrealized casts failed");
+            return false;
+        }
+        
+        logger.notice("LingoDB-style lowering pipeline completed!");
     } else {
         // Use direct lowering to handle pg operations
         logger.notice("Using direct PG to SCF lowering...");
         pm.addPass(mlir::pg::createLowerPgToSCFPass());
+        
+        logger.notice("Running lowering passes...");
+        auto passResult = pm.run(module);
+        if (failed(passResult)) {
+            logger.error("Lowering pipeline failed");
+            logger.error("Dumping module state when lowering failed:");
+            module.dump();
+            return false;
+        }
+        logger.notice("Applied lowering passes!");
     }
-    
-    logger.notice("Running lowering passes...");
-    auto passResult = pm.run(module);
-    if (failed(passResult)) {
-        logger.error("Lowering pipeline failed");
-        logger.error("Dumping module state when lowering failed:");
-        module.dump();
-        return false;
-    }
-    logger.notice("Applied LingoDB-style lowering passes!");
 
     // Check for remaining dialect operations after lowering
     bool hasUnloweredOps = false;

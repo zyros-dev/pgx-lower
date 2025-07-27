@@ -153,6 +153,12 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
         auto module = getOperation();
         auto *ctx = &getContext();
         
+        // Log the module before lowering
+        llvm::errs() << "=== PG → SubOp Lowering Pass Started ===\n";
+        llvm::errs() << "Module before PG → SubOp lowering:\n";
+        module.print(llvm::errs());
+        llvm::errs() << "\n";
+        
         PgToSubOpTypeConverter typeConverter;
         
         // Set up conversion target
@@ -181,6 +187,11 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
         if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
             signalPassFailure();
         }
+        
+        // Log the module after lowering
+        llvm::errs() << "Module after PG → SubOp lowering:\n";
+        module.print(llvm::errs());
+        llvm::errs() << "\n=== PG → SubOp Lowering Pass Completed ===\n\n";
     }
     
     StringRef getName() const override { 
