@@ -51,9 +51,6 @@ fast_output.txt
 
 .cursorignore
 
-# Claude Code documentation
-CLAUDE.md
-CLAUDE.bak.md
 .claude
 build*
 .idea*
@@ -67,7 +64,6 @@ chroma_db
 .cursor
 memory_bank
 __pycache__
-*CLAUDE*
 Testing
 .vscode
 .serena

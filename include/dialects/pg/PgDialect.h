@@ -43,3 +43,7 @@ class PgDialect : public Dialect {
 // Include auto-generated operation declarations
 #define GET_OP_CLASSES
 #include "PgDataAccess.h.inc"
+
+// Include polymorphic operations
+#define GET_OP_CLASSES
+#include "PgPolymorphic.h.inc"

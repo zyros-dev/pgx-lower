@@ -4,6 +4,11 @@
 #include "core/postgresql_ast_translator.h"
 #include "dialects/pg/PgDialect.h"
 #include "dialects/pg/LowerPgToSCF.h"
+#include "dialects/pg/LowerPgToSubOp.h"
+#include "dialects/subop/SubOpDialect.h"
+#include "dialects/subop/LowerSubOpToDB.h"
+#include "dialects/db/DBDialect.h"
+#include "dialects/dsa/DSADialect.h"
 
 #include <fstream>
 #include "llvm/IR/Verifier.h"
@@ -81,21 +86,42 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     auto pm = mlir::PassManager(&context);
     pm.enableVerifier(true);
     
-    logger.notice("About to create LowerPgToSCFPass...");
-    auto lowerPass = mlir::pg::createLowerPgToSCFPass();
-    logger.notice("AFTER createLowerPgToSCFPass() returned successfully");
-    if (!lowerPass) {
-        logger.error("createLowerPgToSCFPass() returned null!");
-        return false;
+    // Check if we should use the new LingoDB-style lowering pipeline
+    bool useLingoPipeline = false; // Can be made configurable later
+    
+    if (useLingoPipeline) {
+        logger.notice("Using LingoDB-style lowering pipeline: PG → SubOp → DB → DSA → LLVM");
+        
+        // PG → SubOp lowering
+        logger.notice("Creating PG to SubOp lowering pass...");
+        pm.addPass(mlir::pg::createLowerPgToSubOpPass());
+        
+        // SubOp → DB lowering
+        logger.notice("Creating SubOp to DB lowering pass...");
+        pm.addPass(mlir::subop::createLowerSubOpToDBPass());
+        
+        // DB → DSA lowering would go here when implemented
+        // pm.addPass(mlir::db::createLowerDBToDSAPass());
+        
+        // DSA → LLVM lowering would go here when implemented
+        // pm.addPass(mlir::dsa::createLowerDSAToLLVMPass());
+    } else {
+        logger.notice("Using direct PG to SCF lowering pass...");
+        auto lowerPass = mlir::pg::createLowerPgToSCFPass();
+        logger.notice("AFTER createLowerPgToSCFPass() returned successfully");
+        if (!lowerPass) {
+            logger.error("createLowerPgToSCFPass() returned null!");
+            return false;
+        }
+        logger.notice("LowerPgToSCFPass created, adding to PassManager...");
+        
+        // Add debug logging to see exactly what's happening
+        logger.notice("About to add pass to PassManager...");
+        pm.addPass(std::move(lowerPass));
+        logger.notice("Pass added to PassManager successfully");
     }
-    logger.notice("LowerPgToSCFPass created, adding to PassManager...");
     
-    // Add debug logging to see exactly what's happening
-    logger.notice("About to add pass to PassManager...");
-    pm.addPass(std::move(lowerPass));
-    logger.notice("Pass added to PassManager successfully");
-    
-    logger.notice("Running pg-to-scf lowering pass...");
+    logger.notice("Running lowering passes...");
     logger.notice("About to call pm.run(module)...");
     auto passResult = pm.run(module);
     logger.notice("pm.run(module) returned");

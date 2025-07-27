@@ -91,6 +91,9 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     target_link_libraries(mlir_unit_test PRIVATE 
         gtest
         MLIRPgDialect
+        MLIRSubOpDialect
+        MLIRDBDialect
+        MLIRDSADialect
     )
     target_include_directories(mlir_unit_test PRIVATE 
         tests/unit

@@ -19,6 +19,9 @@ extern "C" {
 
 #include "core/postgresql_ast_translator.h"
 #include "dialects/pg/PgDialect.h"
+#include "dialects/subop/SubOpDialect.h"
+#include "dialects/db/DBDialect.h"
+#include "dialects/dsa/DSADialect.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -83,6 +86,9 @@ PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context, MLI
 
 auto PostgreSQLASTTranslator::registerDialects() -> void {
     context_.getOrLoadDialect<mlir::pg::PgDialect>();
+    context_.getOrLoadDialect<mlir::subop::SubOpDialect>();
+    context_.getOrLoadDialect<mlir::db::DBDialect>();
+    context_.getOrLoadDialect<mlir::dsa::DSADialect>();
     context_.getOrLoadDialect<mlir::arith::ArithDialect>();
     context_.getOrLoadDialect<mlir::scf::SCFDialect>();
     context_.getOrLoadDialect<mlir::func::FuncDialect>();

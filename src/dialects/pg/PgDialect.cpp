@@ -19,6 +19,11 @@ void PgDialect::initialize() {
 #define GET_OP_LIST
 #include "PgDataAccess.cpp.inc"
         >();
+    
+    addOperations<
+#define GET_OP_LIST
+#include "PgPolymorphic.cpp.inc"
+        >();
 
     addTypes<
 #define GET_TYPEDEF_LIST
@@ -34,6 +39,9 @@ PgDialect::PgDialect(MLIRContext *context)
 // Include TableGen generated definitions
 #define GET_OP_CLASSES
 #include "PgDataAccess.cpp.inc"
+
+#define GET_OP_CLASSES
+#include "PgPolymorphic.cpp.inc"
 
 #define GET_TYPEDEF_CLASSES
 #include "PgTypes.cpp.inc"
