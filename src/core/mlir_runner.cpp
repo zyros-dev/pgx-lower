@@ -186,7 +186,15 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
 
     // For now, also register the direct lowering to ensure all pg ops are handled
     // This is temporary until all the new lowering passes are complete
-    pm.addPass(mlir::pg::createLowerPgToSCFPass());
+    if (hasUnloweredOps) {
+        logger.notice("Running direct PG to SCF lowering to handle remaining operations...");
+        auto directLoweringPM = mlir::PassManager(&context);
+        directLoweringPM.addPass(mlir::pg::createLowerPgToSCFPass());
+        if (failed(directLoweringPM.run(module))) {
+            logger.error("Direct PG to SCF lowering failed");
+            return false;
+        }
+    }
     
     auto pm2 = mlir::PassManager(&context);
     // Follow LingoDB's proven pass order
