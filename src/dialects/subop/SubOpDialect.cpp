@@ -170,21 +170,9 @@ void SubOperatorDialect::registerAttrs() {
 #define GET_ATTRDEF_CLASSES
 #include "SubOpOpsAttributes.cpp.inc"
 
-// Include operation definitions
-#define GET_OP_CLASSES
-#include "SubOpOps.cpp.inc"
-
-// Include enum definitions
-#define GET_ENUM_CLASSES  
-#include "SubOpOpsEnums.cpp.inc"
-
 // Type interface implementations
 #define GET_TYPE_INTERFACE_METHODS
 #include "SubOpTypeInterfaces.cpp.inc"
-
-// Operation interface implementations
-#define GET_OP_INTERFACE_METHODS
-#include "SubOpOpsInterfaces.cpp.inc"
 
 // Custom assembly format implementations for operations
 namespace pgx_lower::compiler::dialect::subop {
@@ -526,110 +514,6 @@ ParseResult CreateHeapOp::parse(OpAsmParser &parser, OperationState &result) {
    Type heapType = parser.getBuilder().getType<HeapType>(members, 0);
    result.addTypes(heapType);
    return success();
-}
-
-// Interface method implementations for operations
-std::vector<std::string> SimpleStateGetScalar::getReadMembers() {
-    // Return the member being accessed
-    return {getMember().str()};
-}
-
-mlir::Operation* UnwrapOptionalRefOp::cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, pgx_lower::compiler::dialect::subop::ColumnMapping& columnMapping) {
-    // Basic clone implementation - map operands and create new operation
-    auto mappedStream = mapping.lookup(getStream());
-    if (!mappedStream) mappedStream = getStream();
-    
-    return builder.create<UnwrapOptionalRefOp>(getLoc(), mappedStream, getOptionalRef(), getRef());
-}
-
-void UnwrapOptionalRefOp::updateStateType(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, mlir::Value state, mlir::Type newType) {
-    // Minimal implementation - just update if needed
-    // TODO: Implement proper state type transformation
-}
-
-void UnwrapOptionalRefOp::replaceColumns(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, pgx_lower::compiler::dialect::tuples::Column* from, pgx_lower::compiler::dialect::tuples::Column* to) {
-    // Minimal implementation - just replace column references if needed  
-    // TODO: Implement proper column replacement
-}
-
-// Let the default interface implementations handle most operations.
-// We only need to implement methods for operations that declare custom interface methods.
-
-// ScatterOp interface implementations (based on linker errors)
-void ScatterOp::updateStateType(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, mlir::Value state, mlir::Type newType) {
-    // Stub implementation
-}
-
-void ScatterOp::replaceColumns(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, pgx_lower::compiler::dialect::tuples::Column* from, pgx_lower::compiler::dialect::tuples::Column* to) {
-    // Stub implementation
-}
-
-// SetTrackedCountOp interface implementations (based on linker errors)
-std::vector<std::string> SetTrackedCountOp::getReadMembers() {
-    return {};  // Stub implementation
-}
-
-void SetTrackedCountOp::updateStateType(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, mlir::Value state, mlir::Type newType) {
-    // Stub implementation
-}
-
-void SetTrackedCountOp::replaceColumns(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, pgx_lower::compiler::dialect::tuples::Column* from, pgx_lower::compiler::dialect::tuples::Column* to) {
-    // Stub implementation
-}
-
-// ScatterOp missing interface implementations (from linker errors)
-std::vector<std::string> ScatterOp::getWrittenMembers() {
-    return {};  // Stub implementation
-}
-
-mlir::Operation* ScatterOp::cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, pgx_lower::compiler::dialect::subop::ColumnMapping& columnMapping) {
-    return builder.clone(*getOperation(), mapping);
-}
-
-// ScanRefsOp interface implementations (from linker errors)
-// Note: ScanRefsOp uses default trait implementations for most interface methods
-mlir::Operation* ScanRefsOp::cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, pgx_lower::compiler::dialect::subop::ColumnMapping& columnMapping) {
-    return builder.clone(*getOperation(), mapping);
-}
-
-void ScanRefsOp::updateStateType(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, mlir::Value state, mlir::Type newType) {
-    // Stub implementation
-}
-
-void ScanRefsOp::replaceColumns(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, pgx_lower::compiler::dialect::tuples::Column* from, pgx_lower::compiler::dialect::tuples::Column* to) {
-    // Stub implementation
-}
-
-// Additional operations requiring interface implementations (systematic approach)
-
-// ScanListOp
-mlir::Operation* ScanListOp::cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, pgx_lower::compiler::dialect::subop::ColumnMapping& columnMapping) {
-    return builder.clone(*getOperation(), mapping);
-}
-
-void ScanListOp::updateStateType(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, mlir::Value state, mlir::Type newType) {
-    // Stub implementation
-}
-
-void ScanListOp::replaceColumns(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, pgx_lower::compiler::dialect::tuples::Column* from, pgx_lower::compiler::dialect::tuples::Column* to) {
-    // Stub implementation
-}
-
-// ScanOp
-std::vector<std::string> ScanOp::getReadMembers() {
-    return {};  // Stub implementation
-}
-
-mlir::Operation* ScanOp::cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, pgx_lower::compiler::dialect::subop::ColumnMapping& columnMapping) {
-    return builder.clone(*getOperation(), mapping);
-}
-
-void ScanOp::updateStateType(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, mlir::Value state, mlir::Type newType) {
-    // Stub implementation
-}
-
-void ScanOp::replaceColumns(pgx_lower::compiler::dialect::subop::SubOpStateUsageTransformer& transformer, pgx_lower::compiler::dialect::tuples::Column* from, pgx_lower::compiler::dialect::tuples::Column* to) {
-    // Stub implementation
 }
 
 } // namespace pgx_lower::compiler::dialect::subop

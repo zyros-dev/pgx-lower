@@ -1,6 +1,17 @@
 #ifndef SUBOP_OPS_H
 #define SUBOP_OPS_H
 
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Dialect.h"
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/Types.h"
+#include "llvm/ADT/StringRef.h"
+
+#include <cstdint>
+#include <optional>
+#include <string>
+
 // #include "lingodb/compiler/Dialect/Arrow/IR/ArrowTypes.h" // Removed Arrow dependency
 // #include "dialects/db/DBTypes.h" // TODO: Fix circular dependency
 

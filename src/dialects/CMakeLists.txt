@@ -103,6 +103,8 @@ add_library(MLIRPgDialect STATIC
 
 add_library(MLIRSubOpDialect STATIC
     subop/SubOpDialect.cpp
+    subop/SubOpInterfaces.cpp
+    subop/SubOperatorOps.cpp
     subop/LowerSubOpToDB.cpp
 )
 
