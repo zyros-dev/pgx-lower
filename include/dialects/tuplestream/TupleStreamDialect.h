@@ -1,14 +1,15 @@
-#ifndef LINGODB_COMPILER_DIALECT_RELALG_IR_RELALGDIALECT_H
-#define LINGODB_COMPILER_DIALECT_RELALG_IR_RELALGDIALECT_H
+#ifndef LINGODB_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMDIALECT_H
+#define LINGODB_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMDIALECT_H
 #include <memory>
+
 namespace llvm {
 class hash_code; // NOLINT (readability-identifier-naming)
 template <typename T>
 llvm::hash_code hash_value(std::shared_ptr<T> arg); // NOLINT (readability-identifier-naming)
 } // end namespace llvm
+#include "lingodb/compiler/Dialect/TupleStream/ColumnManager.h"
+#include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsDialect.h.inc"
 #include "mlir/IR/Dialect.h"
-
-#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgOpsDialect.h.inc"
 
 #ifndef MLIR_HASHCODE_SHARED_PTR
 #define MLIR_HASHCODE_SHARED_PTR
@@ -19,4 +20,4 @@ llvm::hash_code hash_value(std::shared_ptr<T> arg) { // NOLINT (readability-iden
 }
 } // end namespace llvm
 #endif // MLIR_HASHCODE_SHARED_PTR
-#endif //LINGODB_COMPILER_DIALECT_RELALG_IR_RELALGDIALECT_H
+#endif //LINGODB_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMDIALECT_H

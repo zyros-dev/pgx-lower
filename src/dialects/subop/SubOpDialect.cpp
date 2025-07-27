@@ -1,57 +1,51 @@
-//===- SubOpDialect.cpp - SubOperator dialect implementation ----*- C++ -*-===//
-//
-// SubOperator dialect implementation
-//
-//===----------------------------------------------------------------------===//
+#include "lingodb/compiler/Dialect/SubOperator/SubOperatorDialect.h"
 
-#include "dialects/subop/SubOpDialect.h"
-#include "mlir/IR/Builders.h"
+#include "lingodb/compiler/Dialect/Arrow/IR/ArrowDialect.h"
+#include "lingodb/compiler/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/compiler/Dialect/SubOperator/SubOperatorOps.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/IR/DialectImplementation.h"
-#include "mlir/IR/OpImplementation.h"
-#include "mlir/IR/TypeUtilities.h"
+#include "mlir/Transforms/FoldUtils.h"
+#include "mlir/Transforms/InliningUtils.h"
+
 #include "llvm/ADT/TypeSwitch.h"
 
-using namespace mlir;
-using namespace mlir::subop;
+using namespace lingodb::compiler::dialect;
 
-#include "SubOpDialect.cpp.inc"
+struct SubOperatorInlinerInterface : public mlir::DialectInlinerInterface {
+   using DialectInlinerInterface::DialectInlinerInterface;
+   bool isLegalToInline(mlir::Operation*, mlir::Region*, bool, mlir::IRMapping&) const final override {
+      return true;
+   }
+   virtual bool isLegalToInline(mlir::Region* dest, mlir::Region* src, bool wouldBeCloned, mlir::IRMapping& valueMapping) const override {
+      return true;
+   }
+};
+struct SubOpFoldInterface : public mlir::DialectFoldInterface {
+   using DialectFoldInterface::DialectFoldInterface;
 
-//===----------------------------------------------------------------------===//
-// SubOperator dialect initialization
-//===----------------------------------------------------------------------===//
-
-void SubOpDialect::initialize() {
-    addOperations<
+   bool shouldMaterializeInto(mlir::Region* region) const final {
+      return true;
+   }
+};
+void subop::SubOperatorDialect::initialize() {
+   addOperations<
 #define GET_OP_LIST
-#include "SubOpOps.cpp.inc"
-    >();
-    
-    addTypes<
-#define GET_TYPEDEF_LIST
-#include "SubOpTypes.cpp.inc"
-    >();
+#include "lingodb/compiler/Dialect/SubOperator/SubOperatorOps.cpp.inc"
+
+      >();
+   registerTypes();
+   registerAttrs();
+   addInterfaces<SubOperatorInlinerInterface>();
+   addInterfaces<SubOpFoldInterface>();
+   getContext()->loadDialect<db::DBDialect>();
+   getContext()->loadDialect<arrow::ArrowDialect>();
+   getContext()->loadDialect<mlir::arith::ArithDialect>();
+   getContext()->loadDialect<mlir::index::IndexDialect>();
+   getContext()->loadDialect<tuples::TupleStreamDialect>();
 }
 
-// Default implementations for attribute parsing/printing
-Attribute SubOpDialect::parseAttribute(DialectAsmParser &parser, Type type) const {
-    parser.emitError(parser.getNameLoc(), "unknown SubOp attribute");
-    return Attribute();
-}
-
-void SubOpDialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
-    llvm_unreachable("unknown SubOp attribute");
-}
-
-//===----------------------------------------------------------------------===//
-// Type definitions
-//===----------------------------------------------------------------------===//
-
-#define GET_TYPEDEF_CLASSES
-#include "SubOpTypes.cpp.inc"
-
-//===----------------------------------------------------------------------===//
-// Operation definitions
-//===----------------------------------------------------------------------===//
-
-#define GET_OP_CLASSES
-#include "SubOpOps.cpp.inc"
+#include "lingodb/compiler/Dialect/SubOperator/SubOperatorOpsDialect.cpp.inc"

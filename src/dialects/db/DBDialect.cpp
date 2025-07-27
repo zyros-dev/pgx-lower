@@ -1,183 +1,46 @@
-//===- DBDialect.cpp - Database dialect implementation -----------*- C++ -*-===//
-//
-// Database dialect implementation
-//
-//===----------------------------------------------------------------------===//
+#include "lingodb/compiler/Dialect/DB/IR/DBDialect.h"
 
-#include "dialects/db/DBDialect.h"
-#include "mlir/IR/Builders.h"
+#include "lingodb/compiler/Dialect/DB/IR/DBOps.h"
+#include "lingodb/compiler/Dialect/DB/IR/RuntimeFunctions.h"
+#include "lingodb/compiler/mlir-support/tostring.h"
+
 #include "mlir/IR/DialectImplementation.h"
-#include "mlir/IR/OpImplementation.h"
-#include "mlir/IR/TypeUtilities.h"
-#include "llvm/ADT/TypeSwitch.h"
-
+#include "mlir/Transforms/InliningUtils.h"
 using namespace mlir;
-using namespace mlir::db;
-
-#include "DBDialect.cpp.inc"
-
-//===----------------------------------------------------------------------===//
-// Database dialect initialization
-//===----------------------------------------------------------------------===//
-
-void DBDialect::initialize() {
-    addOperations<
+struct DBInlinerInterface : public DialectInlinerInterface {
+   using DialectInlinerInterface::DialectInlinerInterface;
+   bool isLegalToInline(Operation*, Region*, bool, IRMapping&) const final override {
+      return true;
+   }
+   virtual bool isLegalToInline(Region* dest, Region* src, bool wouldBeCloned, IRMapping& valueMapping) const override {
+      return true;
+   }
+};
+void lingodb::compiler::dialect::db::DBDialect::initialize() {
+   addOperations<
 #define GET_OP_LIST
-#include "DBOps.cpp.inc"
-    >();
-    
-    addTypes<
-#define GET_TYPEDEF_LIST
-#include "DBTypes.cpp.inc"
-    >();
+#include "lingodb/compiler/Dialect/DB/IR/DBOps.cpp.inc"
+
+      >();
+   addInterfaces<DBInlinerInterface>();
+   registerTypes();
+   runtimeFunctionRegistry = db::RuntimeFunctionRegistry::getBuiltinRegistry(getContext());
 }
 
-// Default implementations for attribute parsing/printing
-Attribute DBDialect::parseAttribute(DialectAsmParser &parser, Type type) const {
-    parser.emitError(parser.getNameLoc(), "unknown DB attribute");
-    return Attribute();
+::mlir::Operation* lingodb::compiler::dialect::db::DBDialect::materializeConstant(::mlir::OpBuilder& builder, ::mlir::Attribute value, ::mlir::Type type, ::mlir::Location loc) {
+   if (auto decimalType = mlir::dyn_cast_or_null<db::DecimalType>(type)) {
+      if (auto intAttr = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value)) {
+         return builder.create<db::ConstantOp>(loc, type, builder.getStringAttr(support::decimalToString(intAttr.getValue().getLoBits(64).getLimitedValue(), intAttr.getValue().getHiBits(64).getLimitedValue(), decimalType.getS())));
+      }
+   }
+   if (auto dateType = mlir::dyn_cast_or_null<db::DateType>(type)) {
+      if (auto intAttr = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value)) {
+         return builder.create<db::ConstantOp>(loc, type, builder.getStringAttr(support::dateToString(intAttr.getInt())));
+      }
+   }
+   if (mlir::isa<db::StringType, mlir::IntegerType, mlir::FloatType>(type)) {
+      return builder.create<db::ConstantOp>(loc, type, value);
+   }
+   return nullptr;
 }
-
-void DBDialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
-    llvm_unreachable("unknown DB attribute");
-}
-
-//===----------------------------------------------------------------------===//
-// Type definitions
-//===----------------------------------------------------------------------===//
-
-#define GET_TYPEDEF_CLASSES
-#include "DBTypes.cpp.inc"
-
-//===----------------------------------------------------------------------===//
-// Binary operation type inference
-//===----------------------------------------------------------------------===//
-
-static Type wrapNullableType(MLIRContext *context, Type baseType, bool isNullable) {
-    if (isNullable && !isa<NullableType>(baseType)) {
-        return NullableType::get(context, baseType);
-    }
-    return baseType;
-}
-
-static LogicalResult inferBinaryOpType(
-    MLIRContext *context,
-    ValueRange operands,
-    SmallVectorImpl<Type> &inferredReturnTypes) {
-    
-    if (operands.size() != 2) {
-        return failure();
-    }
-    
-    Type leftType = operands[0].getType();
-    Type rightType = operands[1].getType();
-    
-    // Check if either operand is nullable
-    bool isNullable = isa<NullableType>(leftType) || isa<NullableType>(rightType);
-    
-    // Extract base types
-    if (auto nullableLeft = dyn_cast<NullableType>(leftType)) {
-        leftType = nullableLeft.getValueType();
-    }
-    if (auto nullableRight = dyn_cast<NullableType>(rightType)) {
-        rightType = nullableRight.getValueType();
-    }
-    
-    // For now, assume both operands have the same base type
-    // In a full implementation, we'd handle type promotion
-    Type resultBaseType = leftType;
-    
-    // Wrap in nullable if needed
-    Type resultType = wrapNullableType(context, resultBaseType, isNullable);
-    inferredReturnTypes.push_back(resultType);
-    
-    return success();
-}
-
-//===----------------------------------------------------------------------===//
-// Operation definitions
-//===----------------------------------------------------------------------===//
-
-// Binary operation type inference implementations
-LogicalResult AddOp::inferReturnTypes(
-    MLIRContext *context,
-    std::optional<Location> location,
-    ValueRange operands,
-    DictionaryAttr attributes,
-    OpaqueProperties properties,
-    RegionRange regions,
-    SmallVectorImpl<Type> &inferredReturnTypes) {
-    return inferBinaryOpType(context, operands, inferredReturnTypes);
-}
-
-LogicalResult SubOp::inferReturnTypes(
-    MLIRContext *context,
-    std::optional<Location> location,
-    ValueRange operands,
-    DictionaryAttr attributes,
-    OpaqueProperties properties,
-    RegionRange regions,
-    SmallVectorImpl<Type> &inferredReturnTypes) {
-    return inferBinaryOpType(context, operands, inferredReturnTypes);
-}
-
-LogicalResult MulOp::inferReturnTypes(
-    MLIRContext *context,
-    std::optional<Location> location,
-    ValueRange operands,
-    DictionaryAttr attributes,
-    OpaqueProperties properties,
-    RegionRange regions,
-    SmallVectorImpl<Type> &inferredReturnTypes) {
-    return inferBinaryOpType(context, operands, inferredReturnTypes);
-}
-
-LogicalResult DivOp::inferReturnTypes(
-    MLIRContext *context,
-    std::optional<Location> location,
-    ValueRange operands,
-    DictionaryAttr attributes,
-    OpaqueProperties properties,
-    RegionRange regions,
-    SmallVectorImpl<Type> &inferredReturnTypes) {
-    return inferBinaryOpType(context, operands, inferredReturnTypes);
-}
-
-LogicalResult ModOp::inferReturnTypes(
-    MLIRContext *context,
-    std::optional<Location> location,
-    ValueRange operands,
-    DictionaryAttr attributes,
-    OpaqueProperties properties,
-    RegionRange regions,
-    SmallVectorImpl<Type> &inferredReturnTypes) {
-    return inferBinaryOpType(context, operands, inferredReturnTypes);
-}
-
-// Constant folding
-OpFoldResult ConstantOp::fold(FoldAdaptor adaptor) {
-    return getValue();
-}
-
-// Custom assembly format for ConstantOp
-ParseResult ConstantOp::parse(OpAsmParser &parser, OperationState &result) {
-    Attribute valueAttr;
-    Type type;
-    
-    if (parser.parseAttribute(valueAttr, "value", result.attributes) ||
-        parser.parseColonType(type))
-        return failure();
-    
-    result.addTypes(type);
-    return success();
-}
-
-void ConstantOp::print(OpAsmPrinter &p) {
-    p << " ";
-    p.printAttribute(getValue());
-    p << " : ";
-    p.printType(getType());
-}
-
-#define GET_OP_CLASSES
-#include "DBOps.cpp.inc"
+#include "lingodb/compiler/Dialect/DB/IR/DBOpsDialect.cpp.inc"

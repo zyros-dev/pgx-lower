@@ -190,7 +190,9 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
     LowerPgToSubOpPass() : OperationPass(TypeID::get<LowerPgToSubOpPass>()) {}
     
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<subop::SubOpDialect, arith::ArithDialect, func::FuncDialect,
+        // registry.insert<subop::SubOpDialect, arith::ArithDialect, func::FuncDialect,
+        //                scf::SCFDialect, LLVM::LLVMDialect>();
+        registry.insert<arith::ArithDialect, func::FuncDialect,
                        scf::SCFDialect, LLVM::LLVMDialect>();
     }
     
@@ -213,8 +215,9 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
         target.addIllegalDialect<pg::PgDialect>();
         
         // Mark target dialects as legal
-        target.addLegalDialect<subop::SubOpDialect, arith::ArithDialect, 
-                              func::FuncDialect>();
+        // target.addLegalDialect<subop::SubOpDialect, arith::ArithDialect, 
+        //                       func::FuncDialect>();
+        target.addLegalDialect<arith::ArithDialect, func::FuncDialect>();
         // Also mark LLVM and SCF as legal since they might be present
         target.addLegalDialect<scf::SCFDialect, LLVM::LLVMDialect>();
         

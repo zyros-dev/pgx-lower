@@ -33,8 +33,8 @@ mlir_tablegen(PgTypes.h.inc -gen-typedef-decls --typedefs-dialect=pg -I${MLIR_IN
 mlir_tablegen(PgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
 add_public_tablegen_target(MLIRPgTypesIncGen)
 
-# SubOperator dialect TableGen
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/subop/SubOpDialect.td)
+# SubOperator dialect TableGen - Fixed compatibility issues
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/subop/SubOpOps.td)
 mlir_tablegen(SubOpDialect.h.inc -gen-dialect-decls -dialect=subop -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(SubOpDialect.cpp.inc -gen-dialect-defs -dialect=subop -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(SubOpOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
