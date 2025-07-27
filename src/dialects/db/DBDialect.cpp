@@ -32,6 +32,16 @@ void DBDialect::initialize() {
     >();
 }
 
+// Default implementations for attribute parsing/printing
+Attribute DBDialect::parseAttribute(DialectAsmParser &parser, Type type) const {
+    parser.emitError(parser.getNameLoc(), "unknown DB attribute");
+    return Attribute();
+}
+
+void DBDialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
+    llvm_unreachable("unknown DB attribute");
+}
+
 //===----------------------------------------------------------------------===//
 // Type definitions
 //===----------------------------------------------------------------------===//
@@ -89,8 +99,9 @@ static LogicalResult inferBinaryOpType(
 //===----------------------------------------------------------------------===//
 
 // Binary operation type inference implementations
-LogicalResult AddOp::inferReturnType(
+LogicalResult AddOp::inferReturnTypes(
     MLIRContext *context,
+    std::optional<Location> location,
     ValueRange operands,
     DictionaryAttr attributes,
     OpaqueProperties properties,
@@ -99,8 +110,9 @@ LogicalResult AddOp::inferReturnType(
     return inferBinaryOpType(context, operands, inferredReturnTypes);
 }
 
-LogicalResult SubOp::inferReturnType(
+LogicalResult SubOp::inferReturnTypes(
     MLIRContext *context,
+    std::optional<Location> location,
     ValueRange operands,
     DictionaryAttr attributes,
     OpaqueProperties properties,
@@ -109,8 +121,9 @@ LogicalResult SubOp::inferReturnType(
     return inferBinaryOpType(context, operands, inferredReturnTypes);
 }
 
-LogicalResult MulOp::inferReturnType(
+LogicalResult MulOp::inferReturnTypes(
     MLIRContext *context,
+    std::optional<Location> location,
     ValueRange operands,
     DictionaryAttr attributes,
     OpaqueProperties properties,
@@ -119,8 +132,9 @@ LogicalResult MulOp::inferReturnType(
     return inferBinaryOpType(context, operands, inferredReturnTypes);
 }
 
-LogicalResult DivOp::inferReturnType(
+LogicalResult DivOp::inferReturnTypes(
     MLIRContext *context,
+    std::optional<Location> location,
     ValueRange operands,
     DictionaryAttr attributes,
     OpaqueProperties properties,
@@ -129,8 +143,9 @@ LogicalResult DivOp::inferReturnType(
     return inferBinaryOpType(context, operands, inferredReturnTypes);
 }
 
-LogicalResult ModOp::inferReturnType(
+LogicalResult ModOp::inferReturnTypes(
     MLIRContext *context,
+    std::optional<Location> location,
     ValueRange operands,
     DictionaryAttr attributes,
     OpaqueProperties properties,

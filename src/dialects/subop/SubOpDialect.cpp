@@ -32,6 +32,16 @@ void SubOpDialect::initialize() {
     >();
 }
 
+// Default implementations for attribute parsing/printing
+Attribute SubOpDialect::parseAttribute(DialectAsmParser &parser, Type type) const {
+    parser.emitError(parser.getNameLoc(), "unknown SubOp attribute");
+    return Attribute();
+}
+
+void SubOpDialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
+    llvm_unreachable("unknown SubOp attribute");
+}
+
 //===----------------------------------------------------------------------===//
 // Type definitions
 //===----------------------------------------------------------------------===//

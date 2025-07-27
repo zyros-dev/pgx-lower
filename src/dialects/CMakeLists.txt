@@ -77,6 +77,7 @@ add_library(MLIRSubOpDialect STATIC
 
 add_library(MLIRDBDialect STATIC
     db/DBDialect.cpp
+    db/LowerDBToLLVM.cpp
 )
 
 add_library(MLIRDSADialect STATIC
@@ -155,6 +156,8 @@ target_link_libraries(MLIRDBDialect PUBLIC
     MLIRParser
     MLIRSideEffectInterfaces
     MLIRInferTypeOpInterface
+    MLIRLLVMDialect
+    MLIRLLVMCommonConversion
 )
 
 set_target_properties(MLIRDBDialect PROPERTIES

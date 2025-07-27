@@ -13,6 +13,7 @@ include "mlir/IR/BuiltinTypes.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // Database dialect definition
@@ -124,8 +125,9 @@ class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
     }];
     
     let extraClassDeclaration = [{
-        static mlir::LogicalResult inferReturnType(
+        static mlir::LogicalResult inferReturnTypes(
             mlir::MLIRContext *context,
+            std::optional<mlir::Location> location,
             mlir::ValueRange operands,
             mlir::DictionaryAttr attributes,
             mlir::OpaqueProperties properties,
@@ -151,9 +153,6 @@ def DB_ConstantOp : DB_Op<"constant", [Pure, ConstantLike]> {
     let builders = [
         OpBuilder<(ins "mlir::Attribute":$value, "mlir::Type":$type), [{
             build($_builder, $_state, type, value);
-        }]>,
-        OpBuilder<(ins "mlir::Attribute":$value), [{
-            build($_builder, $_state, value.getType(), value);
         }]>
     ];
     

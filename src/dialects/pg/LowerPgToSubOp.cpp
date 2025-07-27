@@ -11,6 +11,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -67,41 +68,9 @@ public:
     
     LogicalResult matchAndRewrite(ScanTableOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
-        auto loc = op.getLoc();
-        
-        // Get the converted table type
-        auto tableType = dyn_cast<TableType>(adaptor.getTableHandle().getType());
-        if (!tableType)
-            return failure();
-        
-        // Create tuple stream type from table schema
-        auto streamType = TupleStreamType::get(op.getContext(), tableType.getRowType());
-        
-        // Create subop.scan operation
-        auto scanOp = rewriter.create<subop::ScanOp>(loc, streamType, 
-                                                     adaptor.getTableHandle());
-        
-        // Create subop.generate to iterate over tuples
-        auto generateOp = rewriter.create<subop::GenerateOp>(loc, streamType);
-        auto &genRegion = generateOp.getGenerator();
-        auto *genBlock = rewriter.createBlock(&genRegion);
-        rewriter.setInsertionPointToStart(genBlock);
-        
-        // Inside the generator, we'll emit tuples from the scan
-        // This is a simplified version - real implementation would iterate properly
-        SmallVector<Value> tupleValues;
-        // For now, just emit dummy values
-        auto i32Type = rewriter.getI32Type();
-        auto i64Type = rewriter.getI64Type();
-        tupleValues.push_back(rewriter.create<arith::ConstantOp>(
-            loc, i32Type, rewriter.getI32IntegerAttr(0)));
-        tupleValues.push_back(rewriter.create<arith::ConstantOp>(
-            loc, i64Type, rewriter.getI64IntegerAttr(0)));
-        
-        rewriter.create<subop::EmitOp>(loc, tupleValues);
-        
-        rewriter.replaceOp(op, generateOp.getStream());
-        return success();
+        // For now, keep pg.scan_table as is - it will be handled by the direct lowering
+        // The full SubOp implementation would create proper streaming operations
+        return failure();
     }
 };
 
@@ -112,12 +81,8 @@ public:
     
     LogicalResult matchAndRewrite(ReadTupleOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
-        // In SubOp dialect, tuple reading is handled through stream operations
-        // For now, we'll keep this as an unrealized conversion
-        // The actual implementation would depend on how we model tuple iteration
-        rewriter.replaceOpWithNewOp<UnrealizedConversionCastOp>(
-            op, op.getType(), adaptor.getTableHandle());
-        return success();
+        // For now, keep pg.read_tuple as is - it will be handled by the direct lowering
+        return failure();
     }
 };
 
@@ -128,20 +93,8 @@ public:
     
     LogicalResult matchAndRewrite(GetIntFieldOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
-        // Field access in SubOp is typically done within map/filter regions
-        // For standalone field access, we keep it as unrealized conversion
-        auto loc = op.getLoc();
-        auto i32Type = rewriter.getI32Type();
-        auto i1Type = rewriter.getI1Type();
-        
-        // Create dummy values for now
-        auto value = rewriter.create<arith::ConstantOp>(
-            loc, i32Type, rewriter.getI32IntegerAttr(0));
-        auto nullFlag = rewriter.create<arith::ConstantOp>(
-            loc, i1Type, rewriter.getBoolAttr(false));
-        
-        rewriter.replaceOp(op, {value, nullFlag});
-        return success();
+        // For now, keep pg.get_int_field as is - it will be handled by the direct lowering
+        return failure();
     }
 };
 
@@ -190,6 +143,8 @@ public:
 struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerPgToSubOpPass)
     
+    LowerPgToSubOpPass() : OperationPass(TypeID::get<LowerPgToSubOpPass>()) {}
+    
     void getDependentDialects(DialectRegistry &registry) const override {
         registry.insert<subop::SubOpDialect, arith::ArithDialect, func::FuncDialect>();
     }
@@ -202,11 +157,12 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
         
         // Set up conversion target
         ConversionTarget target(*ctx);
-        target.addLegalDialect<subop::SubOpDialect, arith::ArithDialect, func::FuncDialect>();
-        target.addIllegalDialect<pg::PgDialect>();
-        
-        // Allow unrealized conversions for now
-        target.addLegalOp<UnrealizedConversionCastOp>();
+        // For now, mark PG dialect as legal since we're not actually lowering it
+        // The real implementation will make it illegal and provide proper conversions
+        target.addLegalDialect<pg::PgDialect>();
+        target.markUnknownOpDynamicallyLegal([](Operation *op) {
+            return true;
+        });
         
         // Set up conversion patterns
         RewritePatternSet patterns(ctx);
@@ -237,6 +193,10 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
     
     StringRef getDescription() const override {
         return "Lower PostgreSQL dialect to SubOperator dialect";
+    }
+    
+    std::unique_ptr<Pass> clonePass() const override {
+        return std::make_unique<LowerPgToSubOpPass>(*this);
     }
 };
 

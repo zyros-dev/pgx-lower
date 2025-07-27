@@ -1,0 +1,210 @@
+//===----------------------------------------------------------------------===//
+//
+// Lowering pass from DB dialect to LLVM dialect
+//
+//===----------------------------------------------------------------------===//
+
+#include "dialects/db/LowerDBToLLVM.h"
+#include "dialects/db/DBDialect.h"
+#include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/DialectConversion.h"
+
+using namespace mlir;
+using namespace mlir::db;
+
+namespace {
+
+//===----------------------------------------------------------------------===//
+// Type Conversion
+//===----------------------------------------------------------------------===//
+
+class DBTypeConverter : public LLVMTypeConverter {
+public:
+    DBTypeConverter(MLIRContext *ctx) : LLVMTypeConverter(ctx) {
+        // Convert nullable types to a struct {value, is_null}
+        addConversion([](NullableType type) -> Type {
+            auto ctx = type.getContext();
+            auto valueType = type.getValueType();
+            
+            // Convert the inner value type
+            Type llvmValueType = IntegerType::get(ctx, 64); // Default to i64
+            if (valueType.isInteger())
+                llvmValueType = valueType;
+            else if (valueType.isF32())
+                llvmValueType = Float32Type::get(ctx);
+            else if (valueType.isF64())
+                llvmValueType = Float64Type::get(ctx);
+            
+            // Return struct {value, is_null}
+            return LLVM::LLVMStructType::getLiteral(ctx, {llvmValueType, IntegerType::get(ctx, 1)});
+        });
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// Operation Lowering Patterns
+//===----------------------------------------------------------------------===//
+
+class ConstantOpLowering : public OpConversionPattern<ConstantOp> {
+public:
+    using OpConversionPattern::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(ConstantOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override {
+        auto loc = op.getLoc();
+        auto attr = op.getValue();
+        
+        Value constant;
+        if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
+            constant = rewriter.create<LLVM::ConstantOp>(loc, op.getType(), intAttr);
+        } else if (auto floatAttr = dyn_cast<FloatAttr>(attr)) {
+            constant = rewriter.create<LLVM::ConstantOp>(loc, op.getType(), floatAttr);
+        } else {
+            return failure();
+        }
+        
+        rewriter.replaceOp(op, constant);
+        return success();
+    }
+};
+
+class AsNullableOpLowering : public OpConversionPattern<AsNullableOp> {
+public:
+    using OpConversionPattern::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(AsNullableOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override {
+        auto loc = op.getLoc();
+        auto structType = getTypeConverter()->convertType(op.getType());
+        
+        // Create struct {value, is_null=false}
+        auto undef = rewriter.create<LLVM::UndefOp>(loc, structType);
+        auto withValue = rewriter.create<LLVM::InsertValueOp>(
+            loc, structType, undef, adaptor.getValue(), ArrayRef<int64_t>{0});
+        auto falseVal = rewriter.create<LLVM::ConstantOp>(
+            loc, IntegerType::get(op.getContext(), 1), 
+            rewriter.getBoolAttr(false));
+        auto result = rewriter.create<LLVM::InsertValueOp>(
+            loc, structType, withValue, falseVal, ArrayRef<int64_t>{1});
+        
+        rewriter.replaceOp(op, result);
+        return success();
+    }
+};
+
+class NullOpLowering : public OpConversionPattern<NullOp> {
+public:
+    using OpConversionPattern::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(NullOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override {
+        auto loc = op.getLoc();
+        auto structType = getTypeConverter()->convertType(op.getType());
+        
+        // Create struct {value=undef, is_null=true}
+        auto undef = rewriter.create<LLVM::UndefOp>(loc, structType);
+        auto trueVal = rewriter.create<LLVM::ConstantOp>(
+            loc, IntegerType::get(op.getContext(), 1), 
+            rewriter.getBoolAttr(true));
+        auto result = rewriter.create<LLVM::InsertValueOp>(
+            loc, structType, undef, trueVal, ArrayRef<int64_t>{1});
+        
+        rewriter.replaceOp(op, result);
+        return success();
+    }
+};
+
+template<typename BinaryOp>
+class BinaryOpLowering : public OpConversionPattern<BinaryOp> {
+public:
+    using OpConversionPattern<BinaryOp>::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(BinaryOp op, typename BinaryOp::Adaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override {
+        auto loc = op.getLoc();
+        
+        // For now, just pass through the left operand value
+        // Full NULL handling would check both operands for NULL
+        rewriter.replaceOp(op, adaptor.getLeft());
+        return success();
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// Pass Implementation
+//===----------------------------------------------------------------------===//
+
+struct LowerDBToLLVMPass : public OperationPass<ModuleOp> {
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerDBToLLVMPass)
+    
+    LowerDBToLLVMPass() : OperationPass(TypeID::get<LowerDBToLLVMPass>()) {}
+    
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<LLVM::LLVMDialect, arith::ArithDialect, scf::SCFDialect>();
+    }
+    
+    void runOnOperation() override {
+        auto module = getOperation();
+        auto &context = getContext();
+        
+        DBTypeConverter typeConverter(&context);
+        ConversionTarget target(context);
+        
+        // DB dialect is illegal (but we're not generating any DB ops yet)
+        target.addIllegalDialect<DBDialect>();
+        
+        // Everything else is legal
+        target.addLegalDialect<LLVM::LLVMDialect, arith::ArithDialect, 
+                              func::FuncDialect, scf::SCFDialect>();
+        target.addLegalOp<ModuleOp, UnrealizedConversionCastOp>();
+        
+        // PG dialect remains legal since we're not lowering it yet
+        target.markUnknownOpDynamicallyLegal([](Operation *op) {
+            return true;
+        });
+        
+        RewritePatternSet patterns(&context);
+        patterns.add<ConstantOpLowering>(typeConverter, &context);
+        patterns.add<AsNullableOpLowering>(typeConverter, &context);
+        patterns.add<NullOpLowering>(typeConverter, &context);
+        patterns.add<BinaryOpLowering<AddOp>>(typeConverter, &context);
+        patterns.add<BinaryOpLowering<SubOp>>(typeConverter, &context);
+        patterns.add<BinaryOpLowering<MulOp>>(typeConverter, &context);
+        patterns.add<BinaryOpLowering<DivOp>>(typeConverter, &context);
+        
+        if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+            signalPassFailure();
+        }
+    }
+    
+    StringRef getName() const override { return "LowerDBToLLVMPass"; }
+    
+    StringRef getArgument() const override { return "lower-db-to-llvm"; }
+    
+    StringRef getDescription() const override {
+        return "Lower Database dialect to LLVM dialect";
+    }
+    
+    std::unique_ptr<Pass> clonePass() const override {
+        return std::make_unique<LowerDBToLLVMPass>(*this);
+    }
+};
+
+} // namespace
+
+namespace mlir {
+namespace db {
+
+std::unique_ptr<OperationPass<ModuleOp>> createLowerDBToLLVMPass() {
+    return std::make_unique<LowerDBToLLVMPass>();
+}
+
+} // namespace db
+} // namespace mlir

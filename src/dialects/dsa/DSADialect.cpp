@@ -32,6 +32,16 @@ void DSADialect::initialize() {
     >();
 }
 
+// Default implementations for attribute parsing/printing
+Attribute DSADialect::parseAttribute(DialectAsmParser &parser, Type type) const {
+    parser.emitError(parser.getNameLoc(), "unknown DSA attribute");
+    return Attribute();
+}
+
+void DSADialect::printAttribute(Attribute attr, DialectAsmPrinter &os) const {
+    llvm_unreachable("unknown DSA attribute");
+}
+
 //===----------------------------------------------------------------------===//
 // Type definitions
 //===----------------------------------------------------------------------===//
