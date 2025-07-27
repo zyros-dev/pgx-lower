@@ -434,50 +434,31 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
                  " and type OID: " + std::to_string(var->vartype));
     
     auto location = builder_->getUnknownLoc();
-    auto i32Type = builder_->getI32Type();
-    auto i64Type = builder_->getI64Type();
-    auto i1Type = builder_->getI1Type();
     
-    // Use real tuple handle if available, otherwise create placeholder
+    // Use real tuple handle if available
     mlir::Value tupleHandle;
     if (currentTupleHandle_) {
         logger_.debug("Using real tuple handle from current iteration context");
-        
-        // Convert !llvm.ptr back to !pg.tuple_handle for pg operations
-        auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
-        tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
-            location, tupleHandleType, mlir::ValueRange{*currentTupleHandle_}).getResult(0);
+        tupleHandle = *currentTupleHandle_;
     } else {
         logger_.error("Field access attempted outside tuple iteration context - this is a bug!");
         return nullptr; // Don't generate invalid field access
     }
     
-    // Generate the appropriate field access operation based on PostgreSQL type
-    mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
-    getFieldState.addOperands(tupleHandle);
-    getFieldState.addAttribute("field_index", builder_->getI32IntegerAttr(var->varattno - 1));
+    // Use the polymorphic pg.get_field operation
+    auto getFieldOp = builder_->create<mlir::pg::GetFieldOp>(
+        location,
+        tupleHandle,
+        builder_->getI32IntegerAttr(var->varattno - 1),    // field_index
+        builder_->getI32IntegerAttr(var->vartype)           // field_type_oid
+    );
     
-    // Choose the correct field operation based on var->vartype
-    switch (var->vartype) {
-        case TEXTOID:
-        case VARCHAROID:
-        case CHAROID:
-            logger_.debug("Using pg.get_text_field for text type");
-            getFieldState.name = mlir::OperationName(mlir::pg::GetTextFieldOp::getOperationName(), &context_);
-            getFieldState.addTypes({i64Type, i1Type}); // text fields return i64 (pointer as int) + null indicator
-            break;
-        case BOOLOID:
-        case INT2OID:
-        case INT4OID:
-        default:
-            logger_.debug("Using pg.get_int_field for integer/boolean type");
-            getFieldState.name = mlir::OperationName(mlir::pg::GetIntFieldOp::getOperationName(), &context_);
-            getFieldState.addTypes({i32Type, i1Type}); // int fields return i32 + null indicator
-            break;
-    }
+    logger_.debug("Generated pg.get_field operation for field " + std::to_string(var->varattno - 1) + 
+                 " with type OID " + std::to_string(var->vartype));
     
-    auto getFieldOp = builder_->create(getFieldState);
-    return getFieldOp->getResult(0); // Return the value (first result)
+    // For now, return just the value (first result)
+    // The second result is the null indicator which should be handled properly later
+    return getFieldOp.getValue();
 }
 
 auto PostgreSQLASTTranslator::translateConst(Const* constNode) -> mlir::Value {
@@ -845,69 +826,17 @@ auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& 
     auto i1Type = builder_->getI1Type();
     auto ptrType = builder_->getType<mlir::LLVM::LLVMPointerType>();
     
-    // Runtime function declarations for PostgreSQL integration
-    auto funcType = mlir::FunctionType::get(&context_, {ptrType}, {ptrType});
-    auto openFunc = builder_->create<mlir::func::FuncOp>(location, "open_postgres_table", funcType);
-    openFunc.setPrivate();
+    // Runtime function declarations will be added by lowering passes as needed
+    // For now, we only declare functions that we can't avoid using yet
     
-    funcType = mlir::FunctionType::get(&context_, {ptrType}, {i64Type});
-    auto readFunc = builder_->create<mlir::func::FuncOp>(location, "read_next_tuple_from_table", funcType);
-    readFunc.setPrivate();
-    
-    funcType = mlir::FunctionType::get(&context_, {ptrType}, mlir::TypeRange{});
-    auto closeFunc = builder_->create<mlir::func::FuncOp>(location, "close_postgres_table", funcType);
-    closeFunc.setPrivate();
-    
-    funcType = mlir::FunctionType::get(&context_, {i64Type}, {i1Type});
+    // TODO: Remove these once aggregate handling is pure PG dialect
+    auto funcType = mlir::FunctionType::get(&context_, {i64Type}, {i1Type});
     auto addTupleFunc = builder_->create<mlir::func::FuncOp>(location, "add_tuple_to_result", funcType);
     addTupleFunc.setPrivate();
     
-    // Field access functions
-    funcType = mlir::FunctionType::get(&context_, {ptrType, i32Type, ptrType}, {i32Type});
-    auto getIntFieldFunc = builder_->create<mlir::func::FuncOp>(location, "get_int_field", funcType);
-    getIntFieldFunc.setPrivate();
+    // More runtime functions will be added by lowering passes as needed
     
-    funcType = mlir::FunctionType::get(&context_, {ptrType, i32Type, ptrType}, {i64Type});
-    auto getTextFieldFunc = builder_->create<mlir::func::FuncOp>(location, "get_text_field", funcType);
-    getTextFieldFunc.setPrivate();
-    
-    auto f64Type = builder_->getF64Type();
-    funcType = mlir::FunctionType::get(&context_, {ptrType, i32Type, ptrType}, {f64Type});
-    auto getNumericFieldFunc = builder_->create<mlir::func::FuncOp>(location, "get_numeric_field", funcType);
-    getNumericFieldFunc.setPrivate();
-    
-    // Text operation functions
-    funcType = mlir::FunctionType::get(&context_, {ptrType, ptrType}, {ptrType});
-    auto concatFunc = builder_->create<mlir::func::FuncOp>(location, "concatenate_strings", funcType);
-    concatFunc.setPrivate();
-    
-    funcType = mlir::FunctionType::get(&context_, {ptrType, ptrType}, {i1Type});
-    auto likeFunc = builder_->create<mlir::func::FuncOp>(location, "string_like_match", funcType);
-    likeFunc.setPrivate();
-    
-    // Computed result storage functions
-    funcType = mlir::FunctionType::get(&context_, {i32Type, i1Type, i1Type}, mlir::TypeRange{});
-    auto storeBoolFunc = builder_->create<mlir::func::FuncOp>(location, "store_bool_result", funcType);
-    storeBoolFunc.setPrivate();
-    
-    funcType = mlir::FunctionType::get(&context_, {i32Type, i32Type, i1Type}, mlir::TypeRange{});
-    auto storeIntFunc = builder_->create<mlir::func::FuncOp>(location, "store_int_result", funcType);
-    storeIntFunc.setPrivate();
-    
-    funcType = mlir::FunctionType::get(&context_, {i32Type, i64Type, i1Type}, mlir::TypeRange{});
-    auto storeBigintFunc = builder_->create<mlir::func::FuncOp>(location, "store_bigint_result", funcType);
-    storeBigintFunc.setPrivate();
-    
-    funcType = mlir::FunctionType::get(&context_, {i32Type, ptrType, i1Type}, mlir::TypeRange{});
-    auto storeTextFunc = builder_->create<mlir::func::FuncOp>(location, "store_text_result", funcType);
-    storeTextFunc.setPrivate();
-    
-    // Aggregate functions
-    funcType = mlir::FunctionType::get(&context_, {ptrType}, {i64Type});
-    auto sumAggregateFunc = builder_->create<mlir::func::FuncOp>(location, "sum_aggregate", funcType);
-    sumAggregateFunc.setPrivate();
-    
-    logger_.debug("Created runtime function declarations");
+    logger_.debug("Created minimal runtime function declarations");
 }
 
 auto PostgreSQLASTTranslator::getMLIRTypeForPostgreSQLType(Oid typeOid) -> mlir::Type {
@@ -1014,82 +943,77 @@ auto PostgreSQLASTTranslator::isLogicalOperator(const char* opName) -> bool {
 
 auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builder, mlir::Location location, 
                                                         SeqScan* seqScan, List* targetList) -> void {
-    auto ptrType = mlir::LLVM::LLVMPointerType::get(&context_);
-    auto i64Type = builder.getI64Type();
+    logger_.debug("Generating RelAlg-style tuple iteration using PG dialect");
+    
+    // Phase 1.1: Generate RelAlg-style pg.basetable operation instead of pg.scan_table
+    auto tupleStreamType = mlir::pg::TupleHandleType::get(&context_); // Will be changed to actual stream type later
     auto i1Type = builder.getI1Type();
     
-    // Generate pg.scan_table operation and use its result
-    auto scanOp = translateSeqScan(seqScan);
-    if (!scanOp) {
-        logger_.error("Failed to translate SeqScan");
-        return;
-    }
+    // Create table identifier attribute from SeqScan  
+    // Use a placeholder table identifier for now - actual implementation would extract from relation
+    std::string tableOid = "placeholder_table";
+    auto tableIdentifierAttr = builder.getStringAttr(tableOid);
     
-    // Use the pg.scan_table result as table handle (let lowering pass convert to runtime calls)
-    auto tableHandle = scanOp->getResult(0);
+    // Generate pg.basetable operation (RelAlg-style base table access)
+    // This replaces the direct pg.scan_table with a RelAlg-equivalent operation
+    mlir::OperationState baseTableState(location, "pg.basetable");
+    baseTableState.addAttribute("table_identifier", tableIdentifierAttr);
+    baseTableState.addTypes(tupleStreamType);
+    auto baseTableOp = builder.create(baseTableState);
+    auto tupleStream = baseTableOp->getResult(0);
     
-    // Get function declarations for manual calls (will be replaced by pg operations later)
-    auto addResultFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("add_tuple_to_result");
+    logger_.debug("Generated pg.basetable with table identifier: " + tableOid);
     
-    // Create pg.read_tuple operation to get initial tuple
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+    // Generate stream iteration pattern (RelAlg-style tuple streaming)
+    // Create initial tuple read from the stream
     auto initialReadOp = builder.create<mlir::pg::ReadTupleOp>(
-        location, tupleHandleType, tableHandle);
+        location, tupleStreamType, tupleStream);
     auto initialTupleHandle = initialReadOp->getResult(0);
     
-    // Convert tuple handle to i64, then to ptr for consistent loop handling
-    auto initialTupleId = builder.create<mlir::UnrealizedConversionCastOp>(
-        location, i64Type, mlir::ValueRange{initialTupleHandle}).getResult(0);
-    auto initialTuplePtr = builder.create<mlir::LLVM::IntToPtrOp>(
-        location, ptrType, initialTupleId);
-    auto nullValue = builder.create<mlir::arith::ConstantIntOp>(location, 0, i64Type);
-    auto initialCondition = builder.create<mlir::arith::CmpIOp>(
-        location, mlir::arith::CmpIPredicate::ne, initialTupleId, nullValue);
+    // Create validity check for tuple (will be lowered to proper stream end detection)
+    auto initialValidCast = builder.create<mlir::UnrealizedConversionCastOp>(
+        location, i1Type, mlir::ValueRange{initialTupleHandle});
+    auto initialValid = initialValidCast.getResult(0);
     
-    // Create the while loop using pointer types to avoid conversion issues
+    // Create tuple stream processing loop (RelAlg-style stream consumption)
     auto whileOp = builder.create<mlir::scf::WhileOp>(
-        location, mlir::TypeRange{ptrType}, mlir::ValueRange{initialTuplePtr});
+        location, mlir::TypeRange{tupleStreamType}, mlir::ValueRange{initialTupleHandle});
     
-    // Before block: check if we have a valid tuple
+    // Before block: check stream has more tuples
     auto* beforeBlock = &whileOp.getBefore().emplaceBlock();
     auto beforeBuilder = mlir::OpBuilder::atBlockBegin(beforeBlock);
-    auto tupleArg = beforeBlock->addArgument(ptrType, location);
-    // Convert pointer to int for null comparison
-    auto tupleInt = beforeBuilder.create<mlir::LLVM::PtrToIntOp>(location, i64Type, tupleArg);
-    auto hasValidTuple = beforeBuilder.create<mlir::arith::CmpIOp>(
-        location, mlir::arith::CmpIPredicate::ne, tupleInt, nullValue);
+    auto tupleArg = beforeBlock->addArgument(tupleStreamType, location);
+    
+    // Stream validity check (will be lowered to proper stream end detection)
+    auto validCast = beforeBuilder.create<mlir::UnrealizedConversionCastOp>(
+        location, i1Type, mlir::ValueRange{tupleArg});
+    auto hasValidTuple = validCast.getResult(0);
     beforeBuilder.create<mlir::scf::ConditionOp>(location, hasValidTuple, mlir::ValueRange{tupleArg});
     
-    // After block: process the tuple and read next
+    // After block: process current tuple and advance stream
     auto* afterBlock = &whileOp.getAfter().emplaceBlock();
     auto afterBuilder = mlir::OpBuilder::atBlockBegin(afterBlock);
-    auto currentTuple = afterBlock->addArgument(ptrType, location);
+    auto currentTuple = afterBlock->addArgument(tupleStreamType, location);
     
-    // Process target list if provided
+    // Process target list with RelAlg-style field access
     if (targetList) {
         processTargetListWithRealTuple(afterBuilder, location, currentTuple, targetList);
     }
     
-    // Add tuple to result - convert pointer to i64 for runtime call
-    auto currentTupleInt = afterBuilder.create<mlir::LLVM::PtrToIntOp>(location, i64Type, currentTuple);
-    afterBuilder.create<mlir::func::CallOp>(
-        location, addResultFunc, mlir::ValueRange{currentTupleInt});
+    // Materialize current tuple to results (RelAlg-style materialization)
+    // This replaces direct result handling with RelAlg materialization pattern
+    mlir::OperationState materializeState(location, "pg.materialize_tuple");
+    materializeState.addOperands(currentTuple);
+    afterBuilder.create(materializeState);
     
-    // Read next tuple using pg.read_tuple operation
+    // Advance to next tuple in stream
     auto nextReadOp = afterBuilder.create<mlir::pg::ReadTupleOp>(
-        location, tupleHandleType, tableHandle);
+        location, tupleStreamType, tupleStream);
     auto nextTupleHandle = nextReadOp->getResult(0);
     
-    // Convert tuple handle to i64, then to ptr for consistent loop handling
-    auto nextTupleId = afterBuilder.create<mlir::UnrealizedConversionCastOp>(
-        location, i64Type, mlir::ValueRange{nextTupleHandle}).getResult(0);
-    auto nextTuplePtr = afterBuilder.create<mlir::LLVM::IntToPtrOp>(
-        location, ptrType, nextTupleId);
-    afterBuilder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTuplePtr});
+    afterBuilder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTupleHandle});
     
-    // Table cleanup will be handled by lowering pass - no manual close calls needed
-    
-    logger_.debug("Generated proper tuple iteration loop");
+    logger_.debug("Generated RelAlg-style tuple stream processing with pg.basetable → stream → materialize pattern");
 }
 
 auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& builder, mlir::Location location,
@@ -1123,77 +1047,13 @@ auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& bu
             continue;
         }
         
-        // Store the computed result using appropriate runtime function
-        auto i32Type = builder.getI32Type();
-        auto i1Type = builder.getI1Type();
-        auto columnIndexConst = builder.create<mlir::arith::ConstantIntOp>(location, columnIndex, i32Type);
-        
-        // Check if this is a text field expression by examining the source expression
-        bool isTextField = false;
-        if (tle->expr && nodeTag(tle->expr) == T_Var) {
-            auto* var = reinterpret_cast<Var*>(tle->expr);
-            switch (var->vartype) {
-                case TEXTOID:
-                case VARCHAROID: 
-                case CHAROID:
-                    isTextField = true;
-                    break;
-                default:
-                    break;
-            }
-        }
-        
-        // Determine result type and call appropriate storage function
-        auto resultType = exprValue.getType();
-        if (isTextField && resultType == builder.getI64Type()) {
-            // Text field result (i64 pointer from pg.get_text_field)
-            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
-            auto storeTextFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_text_result");
-            if (storeTextFunc) {
-                // Convert i64 pointer to !llvm.ptr
-                auto ptrType = builder.getType<mlir::LLVM::LLVMPointerType>();
-                auto textPtr = builder.create<mlir::LLVM::IntToPtrOp>(location, ptrType, exprValue);
-                builder.create<mlir::func::CallOp>(
-                    location, storeTextFunc,
-                    mlir::ValueRange{columnIndexConst, textPtr, isNullConst});
-                logger_.debug("Stored text field result for SELECT expression");
-            }
-        } else if (resultType == i1Type) {
-            // Boolean result (from comparisons)
-            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
-            auto storeBoolFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_bool_result");
-            if (storeBoolFunc) {
-                builder.create<mlir::func::CallOp>(
-                    location, storeBoolFunc, 
-                    mlir::ValueRange{columnIndexConst, exprValue, isNullConst});
-                logger_.debug("Stored boolean result for SELECT expression");
-            }
-        } else if (resultType == i32Type) {
-            // Integer result
-            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
-            auto storeIntFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_int_result");
-            if (storeIntFunc) {
-                builder.create<mlir::func::CallOp>(
-                    location, storeIntFunc,
-                    mlir::ValueRange{columnIndexConst, exprValue, isNullConst});
-                logger_.debug("Stored integer result for SELECT expression");
-            }
-        } else if (resultType == builder.getI64Type()) {
-            // BigInt result (e.g., from aggregate functions like SUM)
-            auto isNullConst = builder.create<mlir::arith::ConstantIntOp>(location, 0, i1Type); // false = not null
-            auto storeBigintFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_bigint_result");
-            if (storeBigintFunc) {
-                builder.create<mlir::func::CallOp>(
-                    location, storeBigintFunc,
-                    mlir::ValueRange{columnIndexConst, exprValue, isNullConst});
-                logger_.debug("Stored bigint result for SELECT expression (likely aggregate)");
-            }
-        } else {
-            logger_.notice("Unsupported result type for SELECT expression storage");
-        }
+        // For now, just create an unrealized cast as a placeholder
+        // The lowering passes will handle storing results properly
+        builder.create<mlir::UnrealizedConversionCastOp>(
+            location, mlir::TypeRange{}, mlir::ValueRange{exprValue});
         
         columnIndex++;
-        logger_.debug("Successfully translated and stored target list expression with real tuple");
+        logger_.debug("Processed target list expression " + std::to_string(columnIndex));
     }
     
     // Restore original builder and clear current tuple handle

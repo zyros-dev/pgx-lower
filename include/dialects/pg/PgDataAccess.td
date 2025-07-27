@@ -31,6 +31,26 @@ def Pg_ScanTableOp : Pg_Op<"scan_table", [Pure]> {
     let assemblyFormat = "$table_name attr-dict `:` type($handle)";
 }
 
+// RelAlg-style base table operation
+def Pg_BaseTableOp : Pg_Op<"basetable", [Pure]> {
+    let summary = "Base table operation - RelAlg-style table access";
+
+    let arguments = (ins StrAttr:$table_identifier);
+    let results = (outs Pg_TupleHandleType:$stream);
+    
+    let assemblyFormat = "`{` `table_identifier` `=` $table_identifier `}` attr-dict `:` type($stream)";
+}
+
+// RelAlg-style materialization operation
+def Pg_MaterializeTupleOp : Pg_Op<"materialize_tuple", []> {
+    let summary = "Materialize tuple to query results - RelAlg-style";
+
+    let arguments = (ins Pg_TupleHandleType:$tuple);
+    let results = (outs);
+    
+    let assemblyFormat = "$tuple attr-dict `:` type($tuple)";
+}
+
 def Pg_ReadTupleOp : Pg_Op<"read_tuple", [Pure]> {
     let summary = "Read next tuple from table scan";
 

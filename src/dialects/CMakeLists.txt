@@ -63,6 +63,9 @@ mlir_tablegen(DSATypes.h.inc -gen-typedef-decls --typedefs-dialect=dsa -I${MLIR_
 mlir_tablegen(DSATypes.cpp.inc -gen-typedef-defs --typedefs-dialect=dsa -I${MLIR_INCLUDE_DIRS})
 add_public_tablegen_target(MLIRDSAIncGen)
 
+# RelAlg dialect TableGen - DISABLED for now due to MLIR version compatibility
+# We use PG dialect with RelAlg-style operations instead
+
 add_library(MLIRPgDialect STATIC
     pg/PgDialect.cpp
     pg/LowerPgToSubOp.cpp
@@ -83,11 +86,14 @@ add_library(MLIRDSADialect STATIC
     dsa/DSADialect.cpp
 )
 
+# MLIRRelAlgDialect DISABLED - using PG dialect with RelAlg-style operations instead
+
 # Add dependency on generated files
 add_dependencies(MLIRPgDialect MLIRPgDataAccessIncGen MLIRPgTypesIncGen MLIRPgPolymorphicIncGen)
 add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen)
 add_dependencies(MLIRDBDialect MLIRDBIncGen)
 add_dependencies(MLIRDSADialect MLIRDSAIncGen)
+# RelAlgDialect DISABLED
 
 target_include_directories(MLIRPgDialect PUBLIC
     ${CMAKE_SOURCE_DIR}/include/dialects/pg
@@ -183,6 +189,8 @@ target_link_libraries(MLIRDSADialect PUBLIC
 set_target_properties(MLIRDSADialect PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
+
+# RelAlg dialect configuration DISABLED
 
 add_library(PgxLowerRuntime
     ../runtime/tuple_access.cpp

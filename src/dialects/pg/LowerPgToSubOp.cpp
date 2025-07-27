@@ -17,6 +17,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 
 using namespace mlir;
 using namespace mlir::pg;
@@ -63,7 +64,7 @@ public:
 // Conversion Patterns
 //===----------------------------------------------------------------------===//
 
-/// Convert pg.scan_table to subop.scan
+/// Convert pg.scan_table to subop.generate pattern
 class ScanTableToSubOpLowering : public OpConversionPattern<ScanTableOp> {
 public:
     using OpConversionPattern<ScanTableOp>::OpConversionPattern;
@@ -73,30 +74,11 @@ public:
         auto loc = op.getLoc();
         auto ctx = op.getContext();
         
-        // Create a SubOp table type that matches our PostgreSQL table
-        // For now, we'll create a simple table with one int column (matching the test)
-        auto i32Type = IntegerType::get(ctx, 32);
-        
-        // Create tuple type for the table rows
-        auto tupleType = TupleType::get(ctx, {i32Type});
-        
-        // Create table type
-        auto tableType = subop::TableType::get(ctx, tupleType);
-        
-        // Create tuple stream type for the scan output
-        auto streamType = subop::TupleStreamType::get(ctx, tupleType);
-        
-        // Convert table name to a table reference
-        // In a real implementation, this would look up the table in a catalog
-        auto tableRef = rewriter.create<UnrealizedConversionCastOp>(
-            loc, tableType, ValueRange{}).getResult(0);
-        
-        // Create SubOp scan operation
-        auto scanOp = rewriter.create<subop::ScanOp>(loc, streamType, tableRef);
-        
-        // Replace with unrealized cast for now to maintain compatibility
+        // For now, create a placeholder that will be properly handled later
+        // The actual generate pattern needs to be created at a higher level
+        // where we have access to the full loop structure
         rewriter.replaceOpWithNewOp<UnrealizedConversionCastOp>(
-            op, op.getType(), scanOp.getStream());
+            op, op.getType(), ValueRange{});
         
         return success();
     }
@@ -124,6 +106,27 @@ public:
     using OpConversionPattern<GetIntFieldOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(GetIntFieldOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override {
+        // For now, replace with unrealized cast to pass through
+        // This will be properly handled when we implement the full SubOp model
+        SmallVector<Type> resultTypes = {op.getValue().getType(), op.getIsNull().getType()};
+        SmallVector<Value> results;
+        for (auto type : resultTypes) {
+            auto cast = rewriter.create<UnrealizedConversionCastOp>(
+                op.getLoc(), type, adaptor.getTuple());
+            results.push_back(cast.getResult(0));
+        }
+        rewriter.replaceOp(op, results);
+        return success();
+    }
+};
+
+/// Convert pg.get_field (polymorphic) to operations within subop regions
+class GetFieldToSubOpLowering : public OpConversionPattern<GetFieldOp> {
+public:
+    using OpConversionPattern<GetFieldOp>::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(GetFieldOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
         // For now, replace with unrealized cast to pass through
         // This will be properly handled when we implement the full SubOp model
@@ -224,7 +227,7 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
         // Set up conversion patterns
         RewritePatternSet patterns(ctx);
         patterns.add<ScanTableToSubOpLowering, ReadTupleToSubOpLowering, 
-                    GetIntFieldToSubOpLowering>(typeConverter, ctx);
+                    GetIntFieldToSubOpLowering, GetFieldToSubOpLowering>(typeConverter, ctx);
         
         // Add arithmetic lowering patterns
         patterns.add<PgArithToSubOpLowering<PgAddOp, arith::AddIOp>,
