@@ -89,8 +89,12 @@ add_public_tablegen_target(MLIRDSAIncGen)
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgBase.td)
 mlir_tablegen(RelAlgDialect.h.inc -gen-dialect-decls -dialect=relalg -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(RelAlgDialect.cpp.inc -gen-dialect-defs -dialect=relalg -I${MLIR_INCLUDE_DIRS})
+
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgOps.td)
 mlir_tablegen(RelAlgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(RelAlgOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgTypes.td)
 mlir_tablegen(RelAlgTypes.h.inc -gen-typedef-decls --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(RelAlgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS})
 add_public_tablegen_target(MLIRRelAlgIncGen)

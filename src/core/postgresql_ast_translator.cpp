@@ -19,19 +19,22 @@ extern "C" {
 
 #include "core/postgresql_ast_translator.h"
 #include "dialects/relalg/RelAlgDialect.h"
+#include "dialects/relalg/RelAlgOps.h"
 #include "dialects/pg/PgDialect.h"  // Still needed temporarily for existing code
 #include "dialects/tuplestream/TupleStreamDialect.h"
+#include "dialects/tuplestream/TupleStreamTypes.h"
 #include "dialects/subop/SubOpDialect.h"
+#include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/dsa/DSADialect.h"
 #include "dialects/util/UtilDialect.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"  // For scf::YieldOp
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -964,76 +967,69 @@ auto PostgreSQLASTTranslator::isLogicalOperator(const char* opName) -> bool {
 
 auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builder, mlir::Location location, 
                                                         SeqScan* seqScan, List* targetList) -> void {
-    logger_.debug("Generating RelAlg-style tuple iteration using PG dialect");
+    logger_.debug("Generating RelAlg-style tuple iteration using RelAlg dialect");
     
-    // Phase 1.1: Generate RelAlg-style pg.basetable operation instead of pg.scan_table
-    auto tupleStreamType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_); // Will be changed to actual stream type later
-    auto i1Type = builder.getI1Type();
+    // Phase 1: Generate RelAlg dialect operations
+    auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
     
     // Create table identifier attribute from SeqScan  
     // Use a placeholder table identifier for now - actual implementation would extract from relation
-    std::string tableOid = "placeholder_table";
+    std::string tableOid = "table_" + std::to_string(seqScan->scanrelid);
     auto tableIdentifierAttr = builder.getStringAttr(tableOid);
     
-    // Generate pg.scan_table operation
-    // TODO: Eventually replace with RelAlg-style operations
-    auto tableHandleType = pgx_lower::compiler::dialect::pg::TableHandleType::get(&context_);
-    auto tableOp = builder.create<pgx_lower::compiler::dialect::pg::GetTableHandleOp>(location, tableHandleType, tableOid);
-    auto scanOp = builder.create<pgx_lower::compiler::dialect::pg::ScanTableOp>(location, tupleStreamType, tableOp);
-    auto tupleStream = scanOp.getResult();
+    // Create column definitions for the base table
+    // For now, create a simple column set - actual implementation would derive from catalog
+    auto columnDict = builder.getDictionaryAttr({});
     
-    logger_.debug("Generated pg.basetable with table identifier: " + tableOid);
+    // Generate relalg.basetable operation
+    auto baseTableOp = builder.create<pgx_lower::compiler::dialect::relalg::BaseTableOp>(
+        location, tupleStreamType, tableIdentifierAttr, columnDict);
+    auto tupleStream = baseTableOp.getResult();
     
-    // Generate stream iteration pattern (RelAlg-style tuple streaming)
-    // Create initial tuple read from the stream
-    auto initialReadOp = builder.create<pgx_lower::compiler::dialect::pg::ReadTupleOp>(
-        location, tupleStreamType, tupleStream);
-    auto initialTupleHandle = initialReadOp->getResult(0);
+    logger_.debug("Generated relalg.basetable with table identifier: " + tableOid);
     
-    // Create validity check for tuple (will be lowered to proper stream end detection)
-    auto initialValidCast = builder.create<mlir::UnrealizedConversionCastOp>(
-        location, i1Type, mlir::ValueRange{initialTupleHandle});
-    auto initialValid = initialValidCast.getResult(0);
+    // If there's a WHERE clause or computed columns, we'll need selection/map operations
+    // For now, just process the target list to output values
     
-    // Create tuple stream processing loop (RelAlg-style stream consumption)
-    auto whileOp = builder.create<mlir::scf::WhileOp>(
-        location, mlir::TypeRange{tupleStreamType}, mlir::ValueRange{initialTupleHandle});
+    // The RelAlg lowering passes will handle the actual iteration
+    // For now, we'll create a simple query operation to wrap the stream
+    auto queryOp = builder.create<pgx_lower::compiler::dialect::relalg::QueryOp>(
+        location, mlir::TypeRange{}, mlir::ValueRange{});
     
-    // Before block: check stream has more tuples
-    auto* beforeBlock = &whileOp.getBefore().emplaceBlock();
-    auto beforeBuilder = mlir::OpBuilder::atBlockBegin(beforeBlock);
-    auto tupleArg = beforeBlock->addArgument(tupleStreamType, location);
+    auto* queryBlock = &queryOp.getQueryOps().emplaceBlock();
+    auto queryBuilder = mlir::OpBuilder::atBlockBegin(queryBlock);
     
-    // Stream validity check (will be lowered to proper stream end detection)
-    auto validCast = beforeBuilder.create<mlir::UnrealizedConversionCastOp>(
-        location, i1Type, mlir::ValueRange{tupleArg});
-    auto hasValidTuple = validCast.getResult(0);
-    beforeBuilder.create<mlir::scf::ConditionOp>(location, hasValidTuple, mlir::ValueRange{tupleArg});
-    
-    // After block: process current tuple and advance stream
-    auto* afterBlock = &whileOp.getAfter().emplaceBlock();
-    auto afterBuilder = mlir::OpBuilder::atBlockBegin(afterBlock);
-    auto currentTuple = afterBlock->addArgument(tupleStreamType, location);
-    
-    // Process target list with RelAlg-style field access
-    if (targetList) {
-        processTargetListWithRealTuple(afterBuilder, location, currentTuple, targetList);
+    // Process target list expressions using RelAlg map operations if needed
+    if (targetList && list_length(targetList) > 0) {
+        // For simple column references, we can use the base table directly
+        // For computed expressions, we need a map operation
+        logger_.debug("Processing target list with " + std::to_string(list_length(targetList)) + " expressions");
+        
+        // TODO: Analyze target list to see if we need map operations
+        // For now, assume simple column references that don't need mapping
     }
     
-    // Materialize current tuple to results (RelAlg-style materialization)
-    // This replaces direct result handling with RelAlg materialization pattern
-    mlir::OperationState materializeState(location, "pg.materialize_tuple");
-    materializeState.addOperands(currentTuple);
-    afterBuilder.create(materializeState);
+    // Create a materialize operation to store results
+    // This will be lowered to actual result handling by SubOp lowering
+    // For now, create a simple LocalTable type with empty members
+    auto emptyNames = builder.getArrayAttr({});
+    auto emptyTypes = builder.getArrayAttr({});
+    auto emptyColumns = builder.getArrayAttr({});
+    auto stateMembersAttr = pgx_lower::compiler::dialect::subop::StateMembersAttr::get(
+        &context_, emptyNames, emptyTypes);
+    auto resultTableType = pgx_lower::compiler::dialect::subop::LocalTableType::get(
+        &context_, stateMembersAttr, emptyColumns);
     
-    // Advance to next tuple in stream
-    auto nextReadOp = afterBuilder.create<pgx_lower::compiler::dialect::pg::ReadTupleOp>(
-        location, tupleStreamType, tupleStream);
-    auto nextTupleHandle = nextReadOp->getResult(0);
+    auto emptyRefs = builder.getArrayAttr({});
     
-    afterBuilder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTupleHandle});
+    auto materializeOp = queryBuilder.create<pgx_lower::compiler::dialect::relalg::MaterializeOp>(
+        location, resultTableType, tupleStream, emptyRefs, emptyColumns);
     
-    logger_.debug("Generated RelAlg-style tuple stream processing with pg.basetable → stream → materialize pattern");
+    // Return from query
+    queryBuilder.create<pgx_lower::compiler::dialect::relalg::QueryReturnOp>(
+        location, mlir::ValueRange{materializeOp.getResult()});
+    
+    logger_.debug("Generated RelAlg query with basetable → materialize pattern");
 }
 
 auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& builder, mlir::Location location,
