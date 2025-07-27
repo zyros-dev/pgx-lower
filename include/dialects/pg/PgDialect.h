@@ -7,13 +7,15 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Bytecode/BytecodeOpInterface.h"
 
-namespace mlir { namespace pg {
+namespace pgx_lower { namespace compiler { namespace dialect { namespace pg {
+
+using namespace mlir;
 
 //===----------------------------------------------------------------------===//
 // PostgreSQL Dialect
 //===----------------------------------------------------------------------===//
 
-class PgDialect : public Dialect {
+class PgDialect : public ::mlir::Dialect {
    public:
     explicit PgDialect(MLIRContext *context);
 
@@ -34,7 +36,7 @@ class PgDialect : public Dialect {
 // PostgreSQL Operations (auto-generated from TableGen)
 //===----------------------------------------------------------------------===//
 
-}} // namespace mlir::pg
+}}}} // namespace pgx_lower::compiler::dialect::pg
 
 // Include auto-generated type declarations first
 #define GET_TYPEDEF_CLASSES

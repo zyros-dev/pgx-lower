@@ -1,9 +1,12 @@
 #include "dialects/util/UtilDialect.h"
+#include "dialects/util/UtilTypes.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace mlir::util;
+using namespace pgx_lower::compiler::dialect::util;
 
 struct UtilInlinerInterface : public mlir::DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
@@ -13,6 +16,12 @@ struct UtilInlinerInterface : public mlir::DialectInlinerInterface {
 };
 
 void UtilDialect::initialize() {
+   // Add types
+   addTypes<
+#define GET_TYPEDEF_LIST
+#include "UtilTypes.cpp.inc"
+   >();
+   
    // Add operations if we define any
    // addOperations<
    // #define GET_OP_LIST
@@ -20,19 +29,19 @@ void UtilDialect::initialize() {
    //    >();
    
    addInterfaces<UtilInlinerInterface>();
-   registerTypes();
 }
 
 void UtilDialect::registerTypes() {
-    addTypes<
-#define GET_TYPEDEF_LIST
-#include "UtilTypes.cpp.inc"
-    >();
+    // Handled in initialize()
 }
+
+// Include TableGen generated definitions
+#include "UtilDialect.cpp.inc"
+
+#define GET_TYPEDEF_CLASSES
+#include "UtilTypes.cpp.inc"
 
 // Type method implementations
-mlir::Type mlir::util::BufferType::getElementType() {
+mlir::Type pgx_lower::compiler::dialect::util::BufferType::getElementType() {
     return getT();
 }
-
-#include "UtilDialect.cpp.inc"

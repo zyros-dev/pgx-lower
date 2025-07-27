@@ -1,5 +1,15 @@
 #ifndef SUBOP_INTERFACES_H
 #define SUBOP_INTERFACES_H
+
+// IMPORTANT: This file contains STUB IMPLEMENTATIONS to get pgx-lower compiling.
+// These are minimal placeholders for LingoDB's column-oriented data structures.
+// 
+// PostgreSQL is tuple-oriented, not column-oriented like LingoDB/PyArrow.
+// These stubs need to be properly implemented to handle PostgreSQL's row-based
+// data model when we actually implement the lowering passes.
+//
+// The cloneSubOp() methods referenced in SubOpOps.td are expected to exist
+// but are not implemented yet - they're just declarations in the generated code.
 // #include "lingodb/compiler/Dialect/SubOperator/SubOperatorOpsAttributes.h" // TODO: Port
 // #include "lingodb/compiler/Dialect/SubOperator/Transforms/StateUsageTransformer.h" // TODO: Port
 // #include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsAttributes.h" // TODO: Port
@@ -11,10 +21,14 @@
 #include <string>
 #include <vector>
 
-namespace mlir::subop {
-// TODO: Adapt for PostgreSQL tuple-oriented approach (vs LingoDB column-oriented)
+// Our implementations in a clear namespace
+namespace pgx_lower::compiler::dialect::subop {
+// PGX_LOWER STUB IMPLEMENTATION - TODO: Adapt for PostgreSQL tuple-oriented approach
+// This is a minimal stub to get compilation working. LingoDB uses this for column-oriented
+// data remapping, but PostgreSQL is tuple-oriented.
 class ColumnMapping {
-   std::unordered_map<mlir::tuples::Column*, mlir::tuples::Column*> mapping;
+   std::unordered_map<pgx_lower::compiler::dialect::tuples::Column*, 
+                      pgx_lower::compiler::dialect::tuples::Column*> mapping;
 
    public:
    // TODO: Implement tuple-oriented remapping for PostgreSQL
@@ -24,19 +38,21 @@ class ColumnMapping {
       return attr;
    }
    // TODO: Implement array/dictionary remapping and cloning for PostgreSQL
-   void mapRaw(mlir::tuples::Column* from, mlir::tuples::Column* to) {
+   void mapRaw(pgx_lower::compiler::dialect::tuples::Column* from, 
+               pgx_lower::compiler::dialect::tuples::Column* to) {
       mapping[from] = to;
    }
 };
-// Minimal stub - TODO: Implement for PostgreSQL state management  
+// PGX_LOWER STUB IMPLEMENTATION - TODO: Implement for PostgreSQL state management  
+// This is a minimal stub to get compilation working.
 class SubOpStateUsageTransformer {
 public:
    // Stub implementation
 };
 
-} // end namespace mlir::subop
+} // end namespace pgx_lower::compiler::dialect::subop
 
-#define GET_OP_CLASSES
+// Include generated interface definitions
 #include "SubOpOpsInterfaces.h.inc"
 
 #endif //SUBOP_INTERFACES_H

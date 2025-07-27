@@ -7,13 +7,13 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace mlir::pg;
+using namespace pgx_lower::compiler::dialect::pg;
 
 //===----------------------------------------------------------------------===//
 // PostgreSQL Dialect
 //===----------------------------------------------------------------------===//
 
-void PgDialect::initialize() {
+void pgx_lower::compiler::dialect::pg::PgDialect::initialize() {
     // TableGen generated operation and type registration
     addOperations<
 #define GET_OP_LIST
@@ -31,7 +31,7 @@ void PgDialect::initialize() {
         >();
 }
 
-PgDialect::PgDialect(MLIRContext *context)
+pgx_lower::compiler::dialect::pg::PgDialect::PgDialect(MLIRContext *context)
 : Dialect(getDialectNamespace(), context, TypeID::get<PgDialect>()) {
     initialize();
 }

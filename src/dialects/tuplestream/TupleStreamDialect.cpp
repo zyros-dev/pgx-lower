@@ -4,7 +4,7 @@
 #include "mlir/Transforms/InliningUtils.h"
 
 using namespace mlir;
-using namespace mlir::tuples;
+using namespace pgx_lower::compiler::dialect::tuples;
 
 void TupleStreamDialect::initialize() {
    // addOperations<

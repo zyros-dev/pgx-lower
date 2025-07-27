@@ -6,7 +6,7 @@
 #include "mlir/IR/DialectImplementation.h"
 
 using namespace mlir;
-using namespace mlir::relalg;
+using namespace pgx_lower::compiler::dialect::relalg;
 
 void RelAlgDialect::initialize() {
     // Add types from TableGen
@@ -22,9 +22,9 @@ void RelAlgDialect::initialize() {
     >();
     
     // Load dependent dialects
-    getContext()->loadDialect<mlir::db::DBDialect>();
+    getContext()->loadDialect<pgx_lower::compiler::dialect::db::DBDialect>();
     getContext()->loadDialect<mlir::arith::ArithDialect>();
-    getContext()->loadDialect<mlir::tuples::TupleStreamDialect>();
+    getContext()->loadDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>();
 }
 
 #include "RelAlgDialect.cpp.inc"

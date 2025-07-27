@@ -15,7 +15,7 @@ def Pg_Dialect : Dialect {
     let name = "pg";
     let summary = "PostgreSQL query compilation dialect";
 
-    let cppNamespace = "::mlir::pg";
+    let cppNamespace = "::pgx_lower::compiler::dialect::pg";
     let useDefaultTypePrinterParser = 1;
 }
 

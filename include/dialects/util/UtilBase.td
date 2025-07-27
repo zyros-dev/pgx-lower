@@ -9,7 +9,7 @@ include "mlir/Interfaces/LoopLikeInterface.td"
 
 def Util_Dialect : Dialect {
 let name = "util";
-let cppNamespace = "::mlir::util";
+let cppNamespace = "::pgx_lower::compiler::dialect::util";
 let extraClassDeclaration = [{
 private:
 void registerTypes();
@@ -42,7 +42,7 @@ def RefType : Util_Type<"Ref","ref"> {
         }]>,
     ];
     let builderCall = "$_builder.getType<" # dialect.cppNamespace # "::" # cppClassName # ">()";
-    let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = "`<` $elementType `>`";
 }
 
 

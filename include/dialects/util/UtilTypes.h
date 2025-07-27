@@ -1,11 +1,15 @@
-#ifndef LINGODB_COMPILER_DIALECT_UTIL_UTILTYPES_H
-#define LINGODB_COMPILER_DIALECT_UTIL_UTILTYPES_H
+#ifndef UTIL_TYPES_H
+#define UTIL_TYPES_H
 
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
+#include "dialects/util/UtilDialect.h"
 
-#include "lingodb/compiler/Dialect/util/UtilOpsTypeInterfaces.h.inc"
+// TODO: Add type interfaces if needed
+// #include "UtilOpsTypeInterfaces.h.inc"
+
 #define GET_TYPEDEF_CLASSES
-#include "lingodb/compiler/Dialect/util/UtilOpsTypes.h.inc"
+#include "UtilTypes.h.inc"
+#undef GET_TYPEDEF_CLASSES
 
-#endif //LINGODB_COMPILER_DIALECT_UTIL_UTILTYPES_H
+#endif //UTIL_TYPES_H

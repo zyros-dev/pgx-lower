@@ -16,7 +16,7 @@ struct DBInlinerInterface : public DialectInlinerInterface {
       return true;
    }
 };
-void mlir::db::DBDialect::initialize() {
+void pgx_lower::compiler::dialect::db::DBDialect::initialize() {
    addOperations<
 #define GET_OP_LIST
 #include "DBOps.cpp.inc"

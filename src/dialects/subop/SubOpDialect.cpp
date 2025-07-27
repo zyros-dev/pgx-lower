@@ -12,7 +12,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace mlir::subop;
+using namespace pgx_lower::compiler::dialect::subop;
 
 struct SubOperatorInlinerInterface : public mlir::DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;

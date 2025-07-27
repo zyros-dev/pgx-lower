@@ -17,7 +17,7 @@ include "mlir/IR/SymbolInterfaces.td"
 def TupleStream_Dialect : Dialect {
     let name = "tuples";
     let summary = "A general dialect that adds a tuple strem type";
-    let cppNamespace = "::mlir::tuples";
+    let cppNamespace = "::pgx_lower::compiler::dialect::tuples";
 
     let extraClassDeclaration = [{
         // TODO: Port ColumnManager from LingoDB when needed

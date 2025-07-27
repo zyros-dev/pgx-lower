@@ -1,7 +1,7 @@
-#ifndef LINGODB_COMPILER_DIALECT_UTIL_UTILOPS_H
-#define LINGODB_COMPILER_DIALECT_UTIL_UTILOPS_H
+#ifndef UTIL_OPS_H
+#define UTIL_OPS_H
 
-#include "lingodb/compiler/Dialect/util/UtilTypes.h"
+#include "dialects/util/UtilTypes.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
@@ -10,6 +10,6 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 #define GET_OP_CLASSES
-#include "lingodb/compiler/Dialect/util/UtilOps.h.inc"
+#include "UtilOps.h.inc"
 
-#endif //LINGODB_COMPILER_DIALECT_UTIL_UTILOPS_H
+#endif //UTIL_OPS_H

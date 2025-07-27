@@ -7,7 +7,7 @@
 #include "mlir/IR/TypeUtilities.h"
 
 using namespace mlir;
-using namespace mlir::pg;
+using namespace pgx_lower::compiler::dialect::pg;
 
 //===----------------------------------------------------------------------===//
 // GetFieldOp

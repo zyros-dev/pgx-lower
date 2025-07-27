@@ -88,7 +88,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // PG → SubOp lowering
     logger.notice("=== Running PG → SubOp lowering pass ===");
     auto pgToSubOpPM = mlir::PassManager(&context);
-    pgToSubOpPM.addPass(mlir::pg::createLowerPgToSubOpPass());
+    pgToSubOpPM.addPass(pgx_lower::compiler::dialect::pg::createLowerPgToSubOpPass());
     if (failed(pgToSubOpPM.run(module))) {
         logger.error("PG → SubOp lowering failed");
         return false;
@@ -103,7 +103,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // SubOp → DB lowering
     logger.notice("=== Running SubOp → DB lowering pass ===");
     auto subOpToDbPM = mlir::PassManager(&context);
-    subOpToDbPM.addPass(mlir::subop::createLowerSubOpToDBPass());
+    subOpToDbPM.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpToDBPass());
     if (failed(subOpToDbPM.run(module))) {
         logger.error("SubOp → DB lowering failed");
         return false;
@@ -118,7 +118,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // DB → LLVM lowering (skipping DSA for now)
     logger.notice("=== Running DB → LLVM lowering pass ===");
     auto dbToLlvmPM = mlir::PassManager(&context);
-    dbToLlvmPM.addPass(mlir::db::createLowerDBToLLVMPass());
+    dbToLlvmPM.addPass(pgx_lower::compiler::dialect::db::createLowerDBToLLVMPass());
     if (failed(dbToLlvmPM.run(module))) {
         logger.error("DB → LLVM lowering failed");
         return false;

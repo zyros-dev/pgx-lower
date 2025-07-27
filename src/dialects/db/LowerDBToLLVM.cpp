@@ -17,7 +17,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 using namespace mlir;
-using namespace mlir::db;
+using namespace pgx_lower::compiler::dialect::db;
 
 namespace {
 

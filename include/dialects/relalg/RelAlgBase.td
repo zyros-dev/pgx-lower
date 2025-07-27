@@ -14,7 +14,7 @@ include "mlir/IR/OpBase.td"
 def RelAlg_Dialect : Dialect {
     let name = "relalg";
     let summary = "A dialect for relational algebra (simplified from LingoDB)";
-    let cppNamespace = "::mlir::relalg";
+    let cppNamespace = "::pgx_lower::compiler::dialect::relalg";
     let useDefaultAttributePrinterParser = 1;
 }
 

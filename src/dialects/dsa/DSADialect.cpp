@@ -12,7 +12,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace mlir::dsa;
+using namespace pgx_lower::compiler::dialect::dsa;
 
 #include "DSADialect.cpp.inc"
 

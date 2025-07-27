@@ -20,8 +20,8 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 
 using namespace mlir;
-using namespace mlir::pg;
-using namespace mlir::subop;
+using namespace pgx_lower::compiler::dialect::pg;
+using namespace pgx_lower::compiler::dialect::subop;
 
 namespace {
 

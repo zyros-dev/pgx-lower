@@ -26,7 +26,7 @@ def DSA_Dialect : Dialect {
         data structures in a database query execution context. This is a
         simplified version of LingoDB's DSA dialect tailored for pgx-lower.
     }];
-    let cppNamespace = "::mlir::dsa";
+    let cppNamespace = "::pgx_lower::compiler::dialect::dsa";
     let useDefaultTypePrinterParser = 1;
     let useDefaultAttributePrinterParser = 1;
 }

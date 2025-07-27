@@ -9,7 +9,7 @@
 #include "mlir/IR/OpImplementation.h"
 
 using namespace mlir;
-using namespace mlir::relalg;
+using namespace pgx_lower::compiler::dialect::relalg;
 
 //===----------------------------------------------------------------------===//
 // RelAlg Dialect

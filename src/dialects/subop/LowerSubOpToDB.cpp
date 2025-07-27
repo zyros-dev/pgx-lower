@@ -18,8 +18,8 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 using namespace mlir;
-using namespace mlir::subop;
-using namespace mlir::db;
+using namespace pgx_lower::compiler::dialect::subop;
+using namespace pgx_lower::compiler::dialect::db;
 
 namespace {
 

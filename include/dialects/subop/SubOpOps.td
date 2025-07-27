@@ -436,7 +436,7 @@ def ScanRefsOp : SubOperator_Op<"scan_refs", [Pure,SubOperator,ReferenceProducer
     let results = (outs TupleStream : $res);
     let assemblyFormat = [{  $state `:` type($state) custom<CustDef>($ref) attr-dict }];
     let extraClassDeclaration = [{
-        dialect::tuples::ColumnDefAttr getProducedReference(){ return getRef(); }
+        pgx_lower::compiler::dialect::tuples::ColumnDefAttr getProducedReference(){ return getRef(); }
         mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
     }];
 }
@@ -658,7 +658,7 @@ def LookupOrInsertOp : SubOperator_Op<"lookup_or_insert",[SubOperator,ReferenceP
       let hasCustomAssemblyFormat = 1;
       let extraClassDeclaration = [{
           std::vector<std::string> getWrittenMembers();
-          dialect::tuples::ColumnDefAttr getProducedReference(){ return getRef(); }
+          pgx_lower::compiler::dialect::tuples::ColumnDefAttr getProducedReference(){ return getRef(); }
           mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
       }];
 }
@@ -685,7 +685,7 @@ def LookupOp : SubOperator_Op<"lookup",[SubOperator,DeclareOpInterfaceMethods<St
     let hasCustomAssemblyFormat = 1;
     let extraClassDeclaration = [{
           std::vector<std::string> getReadMembers();
-          dialect::tuples::ColumnDefAttr getProducedReference(){ return getRef(); }
+          pgx_lower::compiler::dialect::tuples::ColumnDefAttr getProducedReference(){ return getRef(); }
           mlir::Operation* cloneSubOp(mlir::OpBuilder& builder, mlir::IRMapping& mapping, mlir::subop::ColumnMapping& columnMapping);
       }];
 }

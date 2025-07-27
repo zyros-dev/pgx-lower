@@ -27,7 +27,7 @@ def DB_Dialect : Dialect {
         proper NULL handling following SQL semantics. This is a simplified
         version of LingoDB's DB dialect tailored for pgx-lower.
     }];
-    let cppNamespace = "::mlir::db";
+    let cppNamespace = "::pgx_lower::compiler::dialect::db";
     let useDefaultTypePrinterParser = 1;
     let useDefaultAttributePrinterParser = 1;
 }

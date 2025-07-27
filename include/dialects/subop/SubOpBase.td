@@ -17,7 +17,7 @@ include "mlir/IR/OpBase.td"
 def SubOp_Dialect : Dialect {
     let name = "subop";
     let summary = "A dialect around sub-operators that manipulate a tuplestream, but state is managed explicitly";
-    let cppNamespace = "::mlir::subop";
+    let cppNamespace = "::pgx_lower::compiler::dialect::subop";
     let useDefaultTypePrinterParser = 1;
     let useDefaultAttributePrinterParser = 1;
 }

@@ -4,8 +4,8 @@
 #include "mlir/IR/Types.h"
 #include <string>
 
-namespace mlir::tuples {
-// TODO: This is adapted from LingoDB's column-oriented design
+namespace pgx_lower::compiler::dialect::tuples {
+// PGX_LOWER IMPLEMENTATION: This is adapted from LingoDB's column-oriented design
 // Need to rethink for PostgreSQL's tuple-oriented approach
 
 /// Column represents metadata for a column in a tuple stream
@@ -21,6 +21,6 @@ struct Column {
     // TODO: Add proper column management for PostgreSQL's tuple-oriented approach
 };
 
-} // namespace mlir::tuples
+} // namespace pgx_lower::compiler::dialect::tuples
 
 #endif //TUPLESTREAM_COLUMN_H

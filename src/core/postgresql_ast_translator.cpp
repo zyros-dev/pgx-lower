@@ -91,12 +91,12 @@ PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context, MLI
 
 auto PostgreSQLASTTranslator::registerDialects() -> void {
     // Pure LingoDB architecture - start with RelAlg
-    context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+    context_.getOrLoadDialect<pgx_lower::compiler::dialect::relalg::RelAlgDialect>();
     
     // LingoDB dialect hierarchy  
-    context_.getOrLoadDialect<mlir::tuples::TupleStreamDialect>();
-    context_.getOrLoadDialect<mlir::subop::SubOperatorDialect>();
-    context_.getOrLoadDialect<mlir::db::DBDialect>();
+    context_.getOrLoadDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>();
+    context_.getOrLoadDialect<pgx_lower::compiler::dialect::subop::SubOperatorDialect>();
+    context_.getOrLoadDialect<pgx_lower::compiler::dialect::db::DBDialect>();
     context_.getOrLoadDialect<mlir::dsa::DSADialect>();
     
     // Standard MLIR dialects
@@ -108,7 +108,7 @@ auto PostgreSQLASTTranslator::registerDialects() -> void {
     context_.getOrLoadDialect<mlir::memref::MemRefDialect>();
     
     // Additional MLIR dialects needed by LingoDB
-    context_.getOrLoadDialect<mlir::util::UtilDialect>();
+    context_.getOrLoadDialect<pgx_lower::compiler::dialect::util::UtilDialect>();
     context_.getOrLoadDialect<mlir::index::IndexDialect>();
     
     // TODO: Add these when needed:
@@ -204,10 +204,10 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operat
     
     // For now, use a placeholder table name - in a full implementation,
     // we would extract the table name from the scan relation
-    auto tableHandleType = mlir::pg::TableHandleType::get(&context_);
+    auto tableHandleType = pgx_lower::compiler::dialect::pg::TableHandleType::get(&context_);
     
     // Create pg.scan_table operation
-    mlir::OperationState scanState(location, mlir::pg::ScanTableOp::getOperationName());
+    mlir::OperationState scanState(location, pgx_lower::compiler::dialect::pg::ScanTableOp::getOperationName());
     scanState.addAttribute("table_name", builder_->getStringAttr("current_table"));
     scanState.addTypes(tableHandleType);
     
@@ -358,15 +358,15 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
     // Generate high-level pg dialect operations for proper lowering
     if (isArithmeticOperator(opName)) {
         if (strcmp(opName, "+") == 0) {
-            return builder_->create<mlir::pg::PgAddOp>(location, operands[0], operands[1]);
+            return builder_->create<pgx_lower::compiler::dialect::pg::PgAddOp>(location, operands[0], operands[1]);
         } else if (strcmp(opName, "-") == 0) {
-            return builder_->create<mlir::pg::PgSubOp>(location, operands[0], operands[1]);
+            return builder_->create<pgx_lower::compiler::dialect::pg::PgSubOp>(location, operands[0], operands[1]);
         } else if (strcmp(opName, "*") == 0) {
-            return builder_->create<mlir::pg::PgMulOp>(location, operands[0], operands[1]);
+            return builder_->create<pgx_lower::compiler::dialect::pg::PgMulOp>(location, operands[0], operands[1]);
         } else if (strcmp(opName, "/") == 0) {
-            return builder_->create<mlir::pg::PgDivOp>(location, operands[0], operands[1]);
+            return builder_->create<pgx_lower::compiler::dialect::pg::PgDivOp>(location, operands[0], operands[1]);
         } else if (strcmp(opName, "%") == 0) {
-            return builder_->create<mlir::pg::PgModOp>(location, operands[0], operands[1]);
+            return builder_->create<pgx_lower::compiler::dialect::pg::PgModOp>(location, operands[0], operands[1]);
         }
     } else if (isComparisonOperator(opName)) {
         // Use pg.compare with predicate encoding: 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge
@@ -387,7 +387,7 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
         
         if (predicate >= 0) {
             auto predicateAttr = builder_->getI32IntegerAttr(predicate);
-            return builder_->create<mlir::pg::PgCmpOp>(location, predicateAttr, operands[0], operands[1]);
+            return builder_->create<pgx_lower::compiler::dialect::pg::PgCmpOp>(location, predicateAttr, operands[0], operands[1]);
         }
     } else if (isTextOperator(opName)) {
         // Text operations require runtime function calls
@@ -467,7 +467,7 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
     }
     
     // Use the polymorphic pg.get_field operation
-    auto getFieldOp = builder_->create<mlir::pg::GetFieldOp>(
+    auto getFieldOp = builder_->create<pgx_lower::compiler::dialect::pg::GetFieldOp>(
         location,
         tupleHandle,
         builder_->getI32IntegerAttr(var->varattno - 1),    // field_index
@@ -609,20 +609,20 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                return builder_->create<mlir::pg::PgAndOp>(location, left, right);
+                return builder_->create<pgx_lower::compiler::dialect::pg::PgAndOp>(location, left, right);
             }
             break;
         case OR_EXPR:
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                return builder_->create<mlir::pg::PgOrOp>(location, left, right);
+                return builder_->create<pgx_lower::compiler::dialect::pg::PgOrOp>(location, left, right);
             }
             break;
         case NOT_EXPR:
             if (operands.size() >= 1) {
                 auto operand = convertToBool(operands[0]);
-                return builder_->create<mlir::pg::PgNotOp>(location, operand);
+                return builder_->create<pgx_lower::compiler::dialect::pg::PgNotOp>(location, operand);
             }
             break;
     }
@@ -655,7 +655,7 @@ auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> mlir::Val
         mlir::Value tupleHandle;
         if (currentTupleHandle_) {
             logger_.debug("Using real tuple handle for null test");
-            auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+            auto tupleHandleType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_);
             tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
                 location, tupleHandleType, mlir::ValueRange{*currentTupleHandle_}).getResult(0);
         } else {
@@ -664,7 +664,7 @@ auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> mlir::Val
         }
         
         // Generate pg.get_int_field operation
-        mlir::OperationState getFieldState(location, mlir::pg::GetIntFieldOp::getOperationName());
+        mlir::OperationState getFieldState(location, pgx_lower::compiler::dialect::pg::GetIntFieldOp::getOperationName());
         getFieldState.addOperands(tupleHandle);
         getFieldState.addAttribute("field_index", builder_->getI32IntegerAttr(var->varattno - 1));
         getFieldState.addTypes({i32Type, i1Type});
@@ -806,7 +806,7 @@ auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) 
         
         // Use the existing pg.coalesce operation
         auto resultType = firstValue.getType();
-        return builder_->create<mlir::pg::PgCoalesceOp>(location, resultType, firstValue, secondValue);
+        return builder_->create<pgx_lower::compiler::dialect::pg::PgCoalesceOp>(location, resultType, firstValue, secondValue);
     }
     
     // For multiple arguments, create a nested chain of pg.coalesce operations
@@ -830,7 +830,7 @@ auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) 
     mlir::Value result = args[0];
     for (size_t i = 1; i < args.size(); ++i) {
         auto resultType = result.getType();
-        result = builder_->create<mlir::pg::PgCoalesceOp>(location, resultType, result, args[i]);
+        result = builder_->create<pgx_lower::compiler::dialect::pg::PgCoalesceOp>(location, resultType, result, args[i]);
     }
     
     return result;
@@ -967,7 +967,7 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
     logger_.debug("Generating RelAlg-style tuple iteration using PG dialect");
     
     // Phase 1.1: Generate RelAlg-style pg.basetable operation instead of pg.scan_table
-    auto tupleStreamType = mlir::pg::TupleHandleType::get(&context_); // Will be changed to actual stream type later
+    auto tupleStreamType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_); // Will be changed to actual stream type later
     auto i1Type = builder.getI1Type();
     
     // Create table identifier attribute from SeqScan  
@@ -987,7 +987,7 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
     
     // Generate stream iteration pattern (RelAlg-style tuple streaming)
     // Create initial tuple read from the stream
-    auto initialReadOp = builder.create<mlir::pg::ReadTupleOp>(
+    auto initialReadOp = builder.create<pgx_lower::compiler::dialect::pg::ReadTupleOp>(
         location, tupleStreamType, tupleStream);
     auto initialTupleHandle = initialReadOp->getResult(0);
     
@@ -1028,7 +1028,7 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
     afterBuilder.create(materializeState);
     
     // Advance to next tuple in stream
-    auto nextReadOp = afterBuilder.create<mlir::pg::ReadTupleOp>(
+    auto nextReadOp = afterBuilder.create<pgx_lower::compiler::dialect::pg::ReadTupleOp>(
         location, tupleStreamType, tupleStream);
     auto nextTupleHandle = nextReadOp->getResult(0);
     
@@ -1271,10 +1271,10 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     }
     
     // Generate accumulation loop using scf.while
-    auto tupleHandleType = mlir::pg::TupleHandleType::get(&context_);
+    auto tupleHandleType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_);
     
     // Read first tuple to start the loop
-    auto initialReadOp = builder.create<mlir::pg::ReadTupleOp>(location, tupleHandleType, tableHandle);
+    auto initialReadOp = builder.create<pgx_lower::compiler::dialect::pg::ReadTupleOp>(location, tupleHandleType, tableHandle);
     auto initialTupleHandle = initialReadOp->getResult(0);
     auto initialTuplePtr = builder.create<mlir::UnrealizedConversionCastOp>(
         location, i64Type, mlir::ValueRange{initialTupleHandle});
@@ -1362,7 +1362,7 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     }
     
     // Read next tuple
-    auto nextReadOp = builder.create<mlir::pg::ReadTupleOp>(location, tupleHandleType, tableHandle);
+    auto nextReadOp = builder.create<pgx_lower::compiler::dialect::pg::ReadTupleOp>(location, tupleHandleType, tableHandle);
     auto nextTupleHandle = nextReadOp->getResult(0);
     auto nextTuplePtr = builder.create<mlir::UnrealizedConversionCastOp>(
         location, i64Type, mlir::ValueRange{nextTupleHandle});
