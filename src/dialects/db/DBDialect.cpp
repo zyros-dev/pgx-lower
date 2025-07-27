@@ -158,3 +158,14 @@ mlir::ParseResult pgx_lower::compiler::dialect::db::ConstantOp::parse(mlir::OpAs
 mlir::OpFoldResult pgx_lower::compiler::dialect::db::ConstantOp::fold(FoldAdaptor) {
     return getValue();
 }
+
+// Dialect attribute parsing/printing (required by MLIR)
+mlir::Attribute pgx_lower::compiler::dialect::db::DBDialect::parseAttribute(mlir::DialectAsmParser &parser, mlir::Type type) const {
+    // For now, no custom attributes - return null to indicate not handled
+    return nullptr;
+}
+
+void pgx_lower::compiler::dialect::db::DBDialect::printAttribute(mlir::Attribute attr, mlir::DialectAsmPrinter &printer) const {
+    // For now, no custom attributes - this should not be called
+    llvm_unreachable("No custom attributes defined for DB dialect yet");
+}
