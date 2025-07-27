@@ -27,4 +27,17 @@ void RelAlgDialect::initialize() {
     getContext()->loadDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>();
 }
 
+// Parse attribute implementation
+mlir::Attribute RelAlgDialect::parseAttribute(mlir::DialectAsmParser &parser, mlir::Type type) const {
+    // For now, we don't have any custom attributes to parse
+    parser.emitError(parser.getCurrentLocation(), "RelAlg dialect has no custom attributes");
+    return {};
+}
+
+// Print attribute implementation  
+void RelAlgDialect::printAttribute(mlir::Attribute attr, mlir::DialectAsmPrinter &os) const {
+    // For now, we don't have any custom attributes to print
+    llvm_unreachable("RelAlg dialect has no custom attributes");
+}
+
 #include "RelAlgDialect.cpp.inc"

@@ -975,13 +975,12 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
     std::string tableOid = "placeholder_table";
     auto tableIdentifierAttr = builder.getStringAttr(tableOid);
     
-    // Generate pg.basetable operation (RelAlg-style base table access)
-    // This replaces the direct pg.scan_table with a RelAlg-equivalent operation
-    mlir::OperationState baseTableState(location, "pg.basetable");
-    baseTableState.addAttribute("table_identifier", tableIdentifierAttr);
-    baseTableState.addTypes(tupleStreamType);
-    auto baseTableOp = builder.create(baseTableState);
-    auto tupleStream = baseTableOp->getResult(0);
+    // Generate pg.scan_table operation
+    // TODO: Eventually replace with RelAlg-style operations
+    auto tableHandleType = pgx_lower::compiler::dialect::pg::TableHandleType::get(&context_);
+    auto tableOp = builder.create<pgx_lower::compiler::dialect::pg::GetTableHandleOp>(location, tableHandleType, tableOid);
+    auto scanOp = builder.create<pgx_lower::compiler::dialect::pg::ScanTableOp>(location, tupleStreamType, tableOp);
+    auto tupleStream = scanOp.getResult();
     
     logger_.debug("Generated pg.basetable with table identifier: " + tableOid);
     
