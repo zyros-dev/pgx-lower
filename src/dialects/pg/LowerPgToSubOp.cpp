@@ -6,7 +6,7 @@
 
 #include "dialects/pg/LowerPgToSubOp.h"
 #include "dialects/pg/PgDialect.h"
-#include "dialects/pg/PgPolymorphicOps.h"
+#include "PgPolymorphic.h.inc"
 #include "dialects/subop/SubOpDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"

@@ -5,17 +5,12 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect::relalg;
 
 void RelAlgDialect::initialize() {
-    // Add types from TableGen
-    addTypes<
-#define GET_TYPEDEF_LIST
-#include "RelAlgTypes.h.inc"
-    >();
-    
     // Add operations from TableGen
     addOperations<
 #define GET_OP_LIST

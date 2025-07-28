@@ -4,6 +4,7 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "dialects/tuplestream/Column.h"
+#include "dialects/tuplestream/TupleStreamDialect.h"
 #include <set>
 #include <functional>
 

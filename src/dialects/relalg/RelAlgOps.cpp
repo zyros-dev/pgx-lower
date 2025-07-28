@@ -5,7 +5,6 @@
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/tuplestream/TupleStreamOps.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
-
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include <llvm/ADT/TypeSwitch.h>
@@ -361,6 +360,6 @@ void relalg::NestedOp::print(::mlir::OpAsmPrinter& p) {
    p.printRegion(getNestedFn(), false, true);
 }
 #define GET_OP_CLASSES
-#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"
+#include "RelAlgOps.cpp.inc"
 #define GET_TYPEDEF_CLASSES
-#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgOpsTypes.cpp.inc"
+#include "RelAlgOpsTypes.cpp.inc"

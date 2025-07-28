@@ -134,6 +134,7 @@ add_library(MLIRDSADialect STATIC
 add_library(MLIRRelAlgDialect STATIC
     relalg/RelAlgDialect.cpp
     relalg/RelAlgOpsSimple.cpp
+    relalg/LowerRelAlgToSubOp.cpp
 )
 
 add_library(MLIRUtilDialect STATIC
