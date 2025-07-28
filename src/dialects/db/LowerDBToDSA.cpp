@@ -1,16 +1,16 @@
-#include "lingodb/compiler/Conversion/DBToStd/DBToStd.h"
-#include "lingodb/compiler/Conversion/UtilToLLVM/Passes.h"
-#include "lingodb/compiler/Dialect/Arrow/IR/ArrowDialect.h"
-#include "lingodb/compiler/Dialect/Arrow/IR/ArrowOps.h"
-#include "lingodb/compiler/Dialect/DB/IR/DBDialect.h"
-#include "lingodb/compiler/Dialect/DB/IR/DBOps.h"
-#include "lingodb/compiler/Dialect/DB/IR/RuntimeFunctions.h"
-#include "lingodb/compiler/Dialect/DB/Passes.h"
-#include "lingodb/compiler/Dialect/util/FunctionHelper.h"
-#include "lingodb/compiler/Dialect/util/UtilDialect.h"
-#include "lingodb/compiler/Dialect/util/UtilOps.h"
-#include "lingodb/compiler/mlir-support/parsing.h"
-#include "lingodb/compiler/runtime/StringRuntime.h"
+#include "dialects/Conversion/DBToStd/DBToStd.h"
+#include "dialects/Conversion/UtilToLLVM/Passes.h"
+#include "dialects/Dialect/Arrow/IR/ArrowDialect.h"
+#include "dialects/Dialect/Arrow/IR/ArrowOps.h"
+#include "dialects/Dialect/DB/IR/DBDialect.h"
+#include "dialects/Dialect/DB/IR/DBOps.h"
+#include "dialects/Dialect/DB/IR/RuntimeFunctions.h"
+#include "dialects/Dialect/DB/Passes.h"
+#include "dialects/Dialect/util/FunctionHelper.h"
+#include "dialects/Dialect/util/UtilDialect.h"
+#include "dialects/Dialect/util/UtilOps.h"
+#include "dialects/mlir-support/parsing.h"
+#include "dialects/runtime/StringRuntime.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -32,7 +32,7 @@
 using namespace mlir;
 
 namespace {
-using namespace lingodb::compiler::dialect;
+using namespace pgx_lower::compiler::dialect;
 struct DBToStdLoweringPass
    : public PassWrapper<DBToStdLoweringPass, OperationPass<ModuleOp>> {
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(DBToStdLoweringPass)
@@ -88,29 +88,29 @@ class LoadArrowOpLowering : public OpConversionPattern<db::LoadArrowOp> {
       auto offset = adaptor.getOffset();
       //todo: add logic for other types (temporarily: also for some basic types, but especially high-level types defined by DB dialect)
       if (baseType.isInteger(1)) {
-         loaded = rewriter.create<lingodb::compiler::dialect::arrow::LoadBoolOp>(loc, baseType, array, offset);
+         loaded = rewriter.create<pgx_lower::compiler::dialect::arrow::LoadBoolOp>(loc, baseType, array, offset);
       } else if (baseType.isInteger() || baseType.isF32() || baseType.isF64()) {
-         loaded = rewriter.create<lingodb::compiler::dialect::arrow::LoadFixedSizedOp>(loc, baseType, array, offset);
+         loaded = rewriter.create<pgx_lower::compiler::dialect::arrow::LoadFixedSizedOp>(loc, baseType, array, offset);
       } else if (auto decimalType = mlir::dyn_cast_or_null<db::DecimalType>(baseType)) {
-         loaded = rewriter.create<lingodb::compiler::dialect::arrow::LoadFixedSizedOp>(loc, IntegerType::get(rewriter.getContext(), 128), array, offset);
+         loaded = rewriter.create<pgx_lower::compiler::dialect::arrow::LoadFixedSizedOp>(loc, IntegerType::get(rewriter.getContext(), 128), array, offset);
          if (convertedBaseType.getIntOrFloatBitWidth() != 128) {
             loaded = rewriter.create<arith::TruncIOp>(loc, convertedBaseType, loaded);
          }
       } else if (auto dateType = mlir::dyn_cast_or_null<db::DateType>(baseType)) {
          size_t multiplier;
          if (dateType.getUnit() == db::DateUnitAttr::day) {
-            loaded = rewriter.create<lingodb::compiler::dialect::arrow::LoadFixedSizedOp>(loc, rewriter.getI32Type(), array, offset);
+            loaded = rewriter.create<pgx_lower::compiler::dialect::arrow::LoadFixedSizedOp>(loc, rewriter.getI32Type(), array, offset);
             loaded = rewriter.create<arith::ExtSIOp>(loc, rewriter.getI64Type(), loaded);
             multiplier = 86400000000000;
 
          } else {
-            loaded = rewriter.create<lingodb::compiler::dialect::arrow::LoadFixedSizedOp>(loc, rewriter.getI64Type(), array, offset);
+            loaded = rewriter.create<pgx_lower::compiler::dialect::arrow::LoadFixedSizedOp>(loc, rewriter.getI64Type(), array, offset);
             multiplier = 1000000;
          }
          mlir::Value multiplierConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, multiplier, 64);
          loaded = rewriter.create<mlir::arith::MulIOp>(loc, loaded, multiplierConst);
       } else if (auto timestampType = mlir::dyn_cast_or_null<db::TimestampType>(baseType)) {
-         loaded = rewriter.create<lingodb::compiler::dialect::arrow::LoadFixedSizedOp>(loc, rewriter.getI64Type(), array, offset);
+         loaded = rewriter.create<pgx_lower::compiler::dialect::arrow::LoadFixedSizedOp>(loc, rewriter.getI64Type(), array, offset);
          size_t multiplier = 1;
          if (timestampType.getUnit() == db::TimeUnitAttr::second) {
             multiplier = 1000000000;
@@ -122,13 +122,13 @@ class LoadArrowOpLowering : public OpConversionPattern<db::LoadArrowOp> {
          mlir::Value multiplierConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, multiplier, 64);
          loaded = rewriter.create<mlir::arith::MulIOp>(loc, loaded, multiplierConst);
       } else if (mlir::isa<db::StringType>(baseType)) {
-         auto loadVarBinary = rewriter.create<lingodb::compiler::dialect::arrow::LoadVariableSizeBinaryOp>(loc, array, offset);
+         auto loadVarBinary = rewriter.create<pgx_lower::compiler::dialect::arrow::LoadVariableSizeBinaryOp>(loc, array, offset);
          loaded = rewriter.create<util::CreateVarLen>(loc, util::VarLen32Type::get(rewriter.getContext()), loadVarBinary.getPtr(), loadVarBinary.getLength());
       } else if (auto charType = mlir::dyn_cast_or_null<db::CharType>(baseType)) {
          if (charType.getLen() <= 1) {
-            loaded = rewriter.create<lingodb::compiler::dialect::arrow::LoadFixedSizedOp>(loc, rewriter.getI32Type(), array, offset);
+            loaded = rewriter.create<pgx_lower::compiler::dialect::arrow::LoadFixedSizedOp>(loc, rewriter.getI32Type(), array, offset);
          } else {
-            auto loadVarBinary = rewriter.create<lingodb::compiler::dialect::arrow::LoadVariableSizeBinaryOp>(loc, array, offset);
+            auto loadVarBinary = rewriter.create<pgx_lower::compiler::dialect::arrow::LoadVariableSizeBinaryOp>(loc, array, offset);
             loaded = rewriter.create<util::CreateVarLen>(loc, util::VarLen32Type::get(rewriter.getContext()), loadVarBinary.getPtr(), loadVarBinary.getLength());
          }
       } else {
@@ -136,7 +136,7 @@ class LoadArrowOpLowering : public OpConversionPattern<db::LoadArrowOp> {
       }
 
       if (nullableType) {
-         auto isValid = rewriter.create<lingodb::compiler::dialect::arrow::IsValidOp>(loc, array, offset);
+         auto isValid = rewriter.create<pgx_lower::compiler::dialect::arrow::IsValidOp>(loc, array, offset);
          mlir::Value isNull = rewriter.create<db::NotOp>(loc, isValid);
          rewriter.replaceOpWithNewOp<util::PackOp>(loadArrowOp, mlir::ValueRange{isNull, loaded});
       } else {
@@ -165,16 +165,16 @@ class AppendArrowLowering : public OpConversionPattern<db::AppendArrowOp> {
       }
       //todo: also support more base types here
       if (baseType.isIndex()) {
-         rewriter.create<lingodb::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid); //todo: necessary?
+         rewriter.create<pgx_lower::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid); //todo: necessary?
       } else if (baseType.isInteger(1)) {
-         rewriter.create<lingodb::compiler::dialect::arrow::AppendBoolOp>(loc, builder, value, valid);
+         rewriter.create<pgx_lower::compiler::dialect::arrow::AppendBoolOp>(loc, builder, value, valid);
       } else if (baseType.isInteger() || baseType.isF32() || baseType.isF64()) {
-         rewriter.create<lingodb::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
+         rewriter.create<pgx_lower::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
       } else if (auto decimalType = mlir::dyn_cast_or_null<db::DecimalType>(baseType)) {
          if (convertedBaseType.getIntOrFloatBitWidth() != 128) {
             value = rewriter.create<arith::ExtSIOp>(loc, IntegerType::get(rewriter.getContext(), 128), value);
          }
-         rewriter.create<lingodb::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
+         rewriter.create<pgx_lower::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
       } else if (auto dateType = mlir::dyn_cast_or_null<db::DateType>(baseType)) {
          size_t multiplier = dateType.getUnit() == db::DateUnitAttr::day ? 86400000000000 : 1000000;
          mlir::Value multiplierConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, multiplier, 64);
@@ -182,7 +182,7 @@ class AppendArrowLowering : public OpConversionPattern<db::AppendArrowOp> {
          if (dateType.getUnit() == db::DateUnitAttr::day) {
             value = rewriter.create<arith::TruncIOp>(loc, rewriter.getI32Type(), value);
          }
-         rewriter.create<lingodb::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
+         rewriter.create<pgx_lower::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
       } else if (auto timestampType = mlir::dyn_cast_or_null<db::TimestampType>(baseType)) {
          size_t multiplier = 1;
          if (timestampType.getUnit() == db::TimeUnitAttr::second) {
@@ -194,14 +194,14 @@ class AppendArrowLowering : public OpConversionPattern<db::AppendArrowOp> {
          }
          mlir::Value multiplierConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, multiplier, 64);
          value = rewriter.create<mlir::arith::DivSIOp>(loc, value, multiplierConst);
-         rewriter.create<lingodb::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
+         rewriter.create<pgx_lower::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
       } else if (mlir::isa<db::StringType>(baseType)) {
-         rewriter.create<lingodb::compiler::dialect::arrow::AppendVariableSizeBinaryOp>(loc, builder, value, valid);
+         rewriter.create<pgx_lower::compiler::dialect::arrow::AppendVariableSizeBinaryOp>(loc, builder, value, valid);
       } else if (auto charType = mlir::dyn_cast_or_null<db::CharType>(baseType)) {
          if (charType.getLen() <= 1) {
-            rewriter.create<lingodb::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
+            rewriter.create<pgx_lower::compiler::dialect::arrow::AppendFixedSizedOp>(loc, builder, value, valid);
          } else {
-            rewriter.create<lingodb::compiler::dialect::arrow::AppendVariableSizeBinaryOp>(loc, builder, value, valid);
+            rewriter.create<pgx_lower::compiler::dialect::arrow::AppendVariableSizeBinaryOp>(loc, builder, value, valid);
          }
       } else {
          return failure();
@@ -1094,7 +1094,7 @@ void DBToStdLoweringPass::runOnOperation() {
    });
    auto opIsWithoutDBTypes = [&](Operation* op) { return !hasDBType(typeConverter, op->getOperandTypes()) && !hasDBType(typeConverter, op->getResultTypes()); };
    target.addDynamicallyLegalDialect<scf::SCFDialect>(opIsWithoutDBTypes);
-   target.addDynamicallyLegalDialect<lingodb::compiler::dialect::arrow::ArrowDialect>(opIsWithoutDBTypes);
+   target.addDynamicallyLegalDialect<pgx_lower::compiler::dialect::arrow::ArrowDialect>(opIsWithoutDBTypes);
    target.addDynamicallyLegalDialect<arith::ArithDialect>(opIsWithoutDBTypes);
 
    target.addLegalDialect<cf::ControlFlowDialect>();

@@ -1,31 +1,16 @@
-//===- LowerSubOpToDB.h - SubOperator to DB lowering -------------*- C++ -*-===//
-//
-// Lowering pass from SubOperator dialect to Database dialect
-//
-//===----------------------------------------------------------------------===//
-
-#ifndef LOWER_SUBOP_TO_DB_H
-#define LOWER_SUBOP_TO_DB_H
-
+#ifndef PGX_LOWER_COMPILER_CONVERSION_SUBOPTOCONTROLFLOW_SUBOPTOCONTROLFLOWPASS_H
+#define PGX_LOWER_COMPILER_CONVERSION_SUBOPTOCONTROLFLOW_SUBOPTOCONTROLFLOWPASS_H
 #include "mlir/Pass/Pass.h"
 #include <memory>
 
-namespace mlir {
-class ModuleOp;
-class RewritePatternSet;
-class TypeConverter;
-template <typename OpT> class OperationPass;
-} // namespace mlir
+#include "Transforms/Passes.h"
 
-namespace pgx_lower { namespace compiler { namespace dialect { namespace subop {
-
-/// Populate patterns for lowering SubOperator dialect to Database dialect
-void populateSubOpToDBConversionPatterns(::mlir::RewritePatternSet &patterns, 
-                                        ::mlir::TypeConverter &typeConverter);
-
-/// Create a pass for lowering SubOperator dialect to Database dialect
-std::unique_ptr<::mlir::OperationPass<::mlir::ModuleOp>> createLowerSubOpToDBPass();
-
-}}}} // namespace pgx_lower::compiler::dialect::subop
-
-#endif // LOWER_SUBOP_TO_DB_H
+namespace pgx_lower::compiler::dialect {
+namespace subop {
+void setCompressionEnabled(bool compressionEnabled);
+std::unique_ptr<mlir::Pass> createLowerSubOpPass();
+void registerSubOpToControlFlowConversionPasses();
+void createLowerSubOpPipeline(mlir::OpPassManager& pm);
+} // end namespace subop
+} // end namespace pgx_lower::compiler::dialect
+#endif //PGX_LOWER_COMPILER_CONVERSION_SUBOPTOCONTROLFLOW_SUBOPTOCONTROLFLOWPASS_H

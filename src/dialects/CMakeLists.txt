@@ -104,6 +104,22 @@ add_library(MLIRSubOpDialect STATIC
     subop/SubOpDialect.cpp
     subop/SubOpInterfaces.cpp
     subop/SubOperatorOps.cpp
+    subop/LowerSubOpToDB.cpp
+    # SubOp transform passes
+    subop/Transforms/Passes.cpp
+    subop/Transforms/FoldColumnsPass.cpp
+    subop/Transforms/EnforceOrder.cpp
+    subop/Transforms/NormalizeSubOpPass.cpp
+    subop/Transforms/SpecializeSubOpPass.cpp
+    subop/Transforms/PullGatherUpPass.cpp
+    subop/Transforms/ReuseLocalPass.cpp
+    subop/Transforms/GlobalOpt.cpp
+    subop/Transforms/ParallelizePass.cpp
+    subop/Transforms/SpecializeParallelPass.cpp
+    subop/Transforms/SplitIntoExecutionSteps.cpp
+    subop/Transforms/InlineNestedMapPass.cpp
+    subop/Transforms/FinalizePass.cpp
+    subop/Transforms/PrepareForLowering.cpp
 )
 
 add_library(MLIRDBDialect STATIC

@@ -49,6 +49,11 @@ def TupleStream_Tuple : TupleStream_Type<"Tuple", "tuple"> {
     let summary = "tuple type";
 }
 
+// Alias for compatibility with generated code
+def TupleType : TupleStream_Type<"TupleType", "tupletype"> {
+    let summary = "tuple type alias";
+}
+
 //===----------------------------------------------------------------------===//
 // Attributes
 //===----------------------------------------------------------------------===//

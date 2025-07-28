@@ -1,7 +1,7 @@
-#include "lingodb/compiler/Conversion/UtilToLLVM/Passes.h"
-#include "lingodb/compiler/Dialect/util/UtilDialect.h"
-#include "lingodb/compiler/Dialect/util/UtilOps.h"
-#include "lingodb/compiler/Dialect/util/UtilTypes.h"
+#include "dialects/Conversion/UtilToLLVM/Passes.h"
+#include "dialects/Dialect/util/UtilDialect.h"
+#include "dialects/Dialect/util/UtilOps.h"
+#include "dialects/Dialect/util/UtilTypes.h"
 
 #include "mlir/Analysis/DataLayoutAnalysis.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
@@ -19,7 +19,7 @@
 using namespace mlir;
 
 namespace {
-using namespace lingodb::compiler::dialect;
+using namespace pgx_lower::compiler::dialect;
 static mlir::LLVM::LLVMStructType convertTuple(TupleType tupleType, const TypeConverter& typeConverter) {
    std::vector<Type> types;
    for (auto t : tupleType.getTypes()) {

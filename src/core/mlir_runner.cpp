@@ -8,8 +8,9 @@
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/LowerSubOpToDB.h"
 #include "dialects/db/DBDialect.h"
-#include "dialects/db/LowerDBToLLVM.h"
+#include "dialects/db/LowerDBToDSA.h"
 #include "dialects/dsa/DSADialect.h"
+#include "dialects/util/LowerDSAToLLVM.h"
 
 #include <fstream>
 #include "llvm/IR/Verifier.h"
@@ -104,7 +105,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // SubOp → DB lowering
     logger.notice("=== Running SubOp → DB lowering pass ===");
     auto subOpToDbPM = mlir::PassManager(&context);
-    subOpToDbPM.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpToDBPass());
+    subOpToDbPM.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
     if (failed(subOpToDbPM.run(module))) {
         logger.error("SubOp → DB lowering failed");
         return false;
@@ -116,20 +117,35 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     afterSubOpOs.flush();
     logger.notice(afterSubOpStr);
     
-    // DB → LLVM lowering (skipping DSA for now)
-    logger.notice("=== Running DB → LLVM lowering pass ===");
-    auto dbToLlvmPM = mlir::PassManager(&context);
-    dbToLlvmPM.addPass(pgx_lower::compiler::dialect::db::createLowerDBToLLVMPass());
-    if (failed(dbToLlvmPM.run(module))) {
-        logger.error("DB → LLVM lowering failed");
+    // DB → DSA lowering
+    logger.notice("=== Running DB → DSA lowering pass ===");
+    auto dbToDsaPM = mlir::PassManager(&context);
+    dbToDsaPM.addPass(pgx_lower::compiler::dialect::db::createLowerToStdPass());
+    if (failed(dbToDsaPM.run(module))) {
+        logger.error("DB → DSA lowering failed");
         return false;
     }
-    logger.notice("Module after DB → LLVM:");
+    logger.notice("Module after DB → DSA:");
     std::string afterDbStr;
     llvm::raw_string_ostream afterDbOs(afterDbStr);
     module.print(afterDbOs);
     afterDbOs.flush();
     logger.notice(afterDbStr);
+    
+    // DSA → LLVM lowering
+    logger.notice("=== Running DSA → LLVM lowering pass ===");
+    auto dsaToLlvmPM = mlir::PassManager(&context);
+    dsaToLlvmPM.addPass(pgx_lower::compiler::dialect::util::createUtilToLLVMPass());
+    if (failed(dsaToLlvmPM.run(module))) {
+        logger.error("DSA → LLVM lowering failed");
+        return false;
+    }
+    logger.notice("Module after DSA → LLVM:");
+    std::string afterDsaStr;
+    llvm::raw_string_ostream afterDsaOs(afterDsaStr);
+    module.print(afterDsaOs);
+    afterDsaOs.flush();
+    logger.notice(afterDsaStr);
     
     // Reconcile unrealized casts after dialect conversions
     logger.notice("=== Running reconcile unrealized casts pass ===");
