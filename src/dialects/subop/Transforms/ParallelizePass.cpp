@@ -1,7 +1,7 @@
 #include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/Support/Debug.h"
 
-#include "dialects/subop/SubOperatorInterfaces.h"
+#include "dialects/subop/SubOpInterfaces.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/subop/Transforms/ColumnCreationAnalysis.h"
 #include "dialects/subop/Transforms/ColumnUsageAnalysis.h"

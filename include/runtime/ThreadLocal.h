@@ -1,6 +1,6 @@
-#ifndef LINGODB_RUNTIME_THREADLOCAL_H
-#define LINGODB_RUNTIME_THREADLOCAL_H
-#include "lingodb/scheduler/Scheduler.h"
+#ifndef PGX_LOWER_RUNTIME_THREADLOCAL_H
+#define PGX_LOWER_RUNTIME_THREADLOCAL_H
+#include "scheduler/Scheduler.h"
 
 #include <span>
 namespace pgx_lower::compiler::runtime {
@@ -9,8 +9,8 @@ class ThreadLocal {
    uint8_t* (*initFn)(uint8_t*);
    uint8_t* arg;
    ThreadLocal(uint8_t* (*initFn)(uint8_t*), uint8_t* arg) : initFn(initFn), arg(arg) {
-      values = new uint8_t*[lingodb::scheduler::getNumWorkers()];
-      for (size_t i = 0; i < lingodb::scheduler::getNumWorkers(); i++) {
+      values = new uint8_t*[pgx_lower::compiler::scheduler::getNumWorkers()];
+      for (size_t i = 0; i < pgx_lower::compiler::scheduler::getNumWorkers(); i++) {
          values[i] = nullptr;
       }
    }
@@ -20,13 +20,13 @@ class ThreadLocal {
    static ThreadLocal* create(uint8_t* (*initFn)(uint8_t*), uint8_t*);
    template <class T>
    std::span<T*> getThreadLocalValues() {
-      for (size_t i = 0; i < lingodb::scheduler::getNumWorkers(); i++) {
+      for (size_t i = 0; i < pgx_lower::compiler::scheduler::getNumWorkers(); i++) {
          if (values[i]) break;
-         if (i == lingodb::scheduler::getNumWorkers() - 1) {
+         if (i == pgx_lower::compiler::scheduler::getNumWorkers() - 1) {
             values[i] = initFn(arg);
          }
       }
-      return std::span<T*>(reinterpret_cast<T**>(values), lingodb::scheduler::getNumWorkers());
+      return std::span<T*>(reinterpret_cast<T**>(values), pgx_lower::compiler::scheduler::getNumWorkers());
    }
    uint8_t* merge(void (*mergeFn)(uint8_t*, uint8_t*));
    ~ThreadLocal() {
@@ -35,4 +35,4 @@ class ThreadLocal {
 };
 } // end namespace pgx_lower::compiler::runtime
 
-#endif //LINGODB_RUNTIME_THREADLOCAL_H
+#endif //PGX_LOWER_RUNTIME_THREADLOCAL_H

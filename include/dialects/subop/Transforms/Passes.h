@@ -1,5 +1,5 @@
-#ifndef PGX_LOWER_COMPILER_DIALECT_SUBOPERATOR_TRANSFORMS_PASSES_H
-#define PGX_LOWER_COMPILER_DIALECT_SUBOPERATOR_TRANSFORMS_PASSES_H
+#ifndef LINGODB_COMPILER_DIALECT_SUBOPERATOR_TRANSFORMS_PASSES_H
+#define LINGODB_COMPILER_DIALECT_SUBOPERATOR_TRANSFORMS_PASSES_H
 #include "mlir/Pass/Pass.h"
 #include <memory>
 namespace pgx_lower::compiler::dialect {
@@ -21,4 +21,4 @@ void registerSubOpTransformations();
 } // end namespace subop
 } // end namespace pgx_lower::compiler::dialect
 
-#endif //PGX_LOWER_COMPILER_DIALECT_SUBOPERATOR_TRANSFORMS_PASSES_H
+#endif //LINGODB_COMPILER_DIALECT_SUBOPERATOR_TRANSFORMS_PASSES_H

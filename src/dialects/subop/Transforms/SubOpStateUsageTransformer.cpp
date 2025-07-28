@@ -1,4 +1,4 @@
-#include "dialects/subop/SubOperatorInterfaces.h"
+#include "dialects/subop/SubOpInterfaces.h"
 #include "dialects/subop/Transforms/StateUsageTransformer.h"
 #include "mlir/IR/Builders.h"
 using namespace pgx_lower::compiler::dialect;

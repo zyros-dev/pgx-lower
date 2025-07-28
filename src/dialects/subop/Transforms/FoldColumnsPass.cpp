@@ -1,5 +1,5 @@
 #include "dialects/db/DBOps.h"
-#include "dialects/subop/SubOperatorInterfaces.h"
+#include "dialects/subop/SubOpInterfaces.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/subop/Transforms/Passes.h"
 #include "dialects/tuplestream/TupleStreamOps.h"
