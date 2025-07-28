@@ -1,7 +1,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
-#include "dialects/Dialect/DB/IR/DBDialect.h"
-#include "dialects/Dialect/DB/IR/DBOps.h"
+#include "dialects/db/DBDialect.h"
+#include "dialects/db/DBOps.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/subop/Transforms/ColumnUsageAnalysis.h"

@@ -1,4 +1,4 @@
-#include "dialects/Dialect/DB/IR/DBOps.h"
+#include "dialects/db/DBOps.h"
 #include "dialects/subop/SubOperatorInterfaces.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/subop/Transforms/Passes.h"

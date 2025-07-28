@@ -1,12 +1,18 @@
-#ifndef PGX_LOWER_RUNTIME_ENTRYLOCK_H
-#define PGX_LOWER_RUNTIME_ENTRYLOCK_H
+#ifndef LINGODB_RUNTIME_ENTRYLOCK_H
+#define LINGODB_RUNTIME_ENTRYLOCK_H
+#include <atomic>
 
 namespace pgx_lower::compiler::runtime {
 class EntryLock {
-public:
-    EntryLock() = default;
-    virtual ~EntryLock() = default;
-};
-} // end namespace pgx_lower::compiler::runtime
+   std::atomic_flag m{};
 
-#endif //PGX_LOWER_RUNTIME_ENTRYLOCK_H
+   public:
+   static void lock(EntryLock* lock);
+   static void unlock(EntryLock* lock);
+   static void initialize(EntryLock* lock);
+};
+static_assert(sizeof(EntryLock) <= 8, "SpinLock is too big");
+
+} // namespace pgx_lower::compiler::runtime
+
+#endif //LINGODB_RUNTIME_ENTRYLOCK_H
