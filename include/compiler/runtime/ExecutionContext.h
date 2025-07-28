@@ -10,7 +10,7 @@ namespace pgx_lower::compiler::runtime {
 
 // Manual wrapper for ExecutionContext that provides MLIR-compatible interface
 // This replaces what runtime-header-tool would generate
-struct ExecutionContext {
+struct ExecutionContextWrapper {
     // Wrapper that returns a callable for MLIR code generation
     static auto setResult(mlir::OpBuilder& builder, mlir::Location loc) {
         return [&builder, loc](std::initializer_list<mlir::Value> args) {

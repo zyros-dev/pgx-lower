@@ -7,7 +7,7 @@
 
 #include "ConcurrentMap.h"
 #include "Session.h"
-#include "scheduler/Scheduler.h"
+#include "runtime/Scheduler.h"
 namespace pgx_lower::compiler::runtime {
 class Database;
 //some state required for query processing;

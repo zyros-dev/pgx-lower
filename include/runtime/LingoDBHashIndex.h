@@ -1,13 +1,14 @@
-#ifndef LINGODB_RUNTIME_LINGODBHASHINDEX_H
-#define LINGODB_RUNTIME_LINGODBHASHINDEX_H
-#include "runtime/ArrowView.h"
-#include "runtime/Buffer.h"
+#ifndef PGX_LOWER_RUNTIME_LINGODBHASHINDEX_H
+#define PGX_LOWER_RUNTIME_LINGODBHASHINDEX_H
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <unordered_map>
+#include <vector>
 #include "runtime/storage/Index.h"
-#include "utility/Serialization.h"
-#include <arrow/type_fwd.h>
-namespace lingodb::catalog {
-class LingoDBTableCatalogEntry;
-} // namespace lingodb::catalog
+#include "runtime/Buffer.h"
+#include "catalog/LingoDBTableCatalogEntry.h"
+#include "utility/Serializer.h"
 namespace pgx_lower::compiler::runtime {
 //todo: HashIndex maps hash to logical row id
 //todo: we persist (hash, logical row id), we can even cluster by hash and store the required hashtable size
@@ -28,7 +29,7 @@ class LingoDBHashIndex : public Index {
    std::string filename;
    std::string dbDir;
    bool persist;
-   catalog::LingoDBTableCatalogEntry* table = nullptr;
+   pgx_lower::compiler::catalog::LingoDBTableCatalogEntry* table = nullptr;
    LingoDBTable* tableStorage;
    std::vector<std::string> indexedColumns;
    bool loaded = false;
@@ -42,7 +43,7 @@ class LingoDBHashIndex : public Index {
       this->dbDir = dbDir;
    };
    LingoDBHashIndex(std::string filename, std::vector<std::string> indexedColumns) : buffer(16, sizeof(Entry)), filename(filename), indexedColumns(indexedColumns) {}
-   void setTable(catalog::LingoDBTableCatalogEntry* table);
+   void setTable(pgx_lower::compiler::catalog::LingoDBTableCatalogEntry* table);
    void flush();
    void ensureLoaded() override;
    void appendRows(size_t startRowId, std::shared_ptr<arrow::RecordBatch> table) override;
@@ -54,7 +55,7 @@ class LingoDBHashIndex : public Index {
       }
    }
    void serialize(lingodb::utility::Serializer& serializer) const;
-   static std::unique_ptr<LingoDBHashIndex> deserialize(lingodb::utility::Deserializer& deserializer);
+   static std::unique_ptr<LingoDBHashIndex> deserialize(lingodb::utility::Serializer& deserializer);
    friend class HashIndexAccess;
    friend class HashIndexIteration;
    ~LingoDBHashIndex();
@@ -86,4 +87,4 @@ class HashIndexIteration {
 };
 
 } //end namespace pgx_lower::compiler::runtime
-#endif //LINGODB_RUNTIME_LINGODBHASHINDEX_H
+#endif //PGX_LOWER_RUNTIME_LINGODBHASHINDEX_H

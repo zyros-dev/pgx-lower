@@ -3,6 +3,7 @@
 
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "dialects/util/FunctionHelper.h"
 
 #include "UtilDialect.h.inc"
 

@@ -1,18 +1,18 @@
-#include "lingodb/compiler/Dialect/util/FunctionHelper.h"
+#include "dialects/util/FunctionHelper.h"
 
-#include "lingodb/compiler/Dialect/util/UtilDialect.h"
-#include "lingodb/compiler/Dialect/util/UtilOps.h"
-#include "lingodb/compiler/Dialect/util/UtilTypes.h"
+#include "dialects/util/UtilDialect.h"
+#include "dialects/util/UtilOps.h"
+#include "dialects/util/UtilTypes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 namespace {
-std::unordered_map<std::string, lingodb::compiler::dialect::util::FunctionSpec>& getFunctions() {
-   static std::unordered_map<std::string, lingodb::compiler::dialect::util::FunctionSpec> functions;
+std::unordered_map<std::string, pgx_lower::compiler::dialect::util::FunctionSpec>& getFunctions() {
+   static std::unordered_map<std::string, pgx_lower::compiler::dialect::util::FunctionSpec> functions;
 
    return functions;
 }
 } // end namespace
-mlir::Value lingodb::compiler::dialect::util::FunctionHelper::convertValue(mlir::OpBuilder& builder, mlir::Value v, mlir::Type t, mlir::Location loc) {
+mlir::Value pgx_lower::compiler::dialect::util::FunctionHelper::convertValue(mlir::OpBuilder& builder, mlir::Value v, mlir::Type t, mlir::Location loc) {
    if (v.getType() == t) return v;
    mlir::Type currentType = v.getType();
    if (currentType.isIndex() || t.isIndex()) {
@@ -35,7 +35,7 @@ mlir::Value lingodb::compiler::dialect::util::FunctionHelper::convertValue(mlir:
    }
    return v; //todo
 }
-mlir::func::CallOp lingodb::compiler::dialect::util::FunctionHelper::call(mlir::OpBuilder& builder, mlir::Location loc, const FunctionSpec& function, mlir::ValueRange values) {
+mlir::func::CallOp pgx_lower::compiler::dialect::util::FunctionHelper::call(mlir::OpBuilder& builder, mlir::Location loc, const FunctionSpec& function, mlir::ValueRange values) {
    auto fnHelper = builder.getContext()->getLoadedDialect<UtilDialect>()->getFunctionHelper();
    mlir::func::FuncOp funcOp = fnHelper.parentModule.lookupSymbol<mlir::func::FuncOp>(function.getMangledName());
    if (!funcOp) {
@@ -63,20 +63,20 @@ mlir::func::CallOp lingodb::compiler::dialect::util::FunctionHelper::call(mlir::
    auto funcCall = builder.create<mlir::func::CallOp>(loc, funcOp, convertedValues);
    return funcCall;
 }
-void lingodb::compiler::dialect::util::FunctionHelper::setParentModule(const mlir::ModuleOp& parentModule) {
+void pgx_lower::compiler::dialect::util::FunctionHelper::setParentModule(const mlir::ModuleOp& parentModule) {
    FunctionHelper::parentModule = parentModule;
 }
 
-std::function<mlir::ResultRange(mlir::ValueRange)> lingodb::compiler::dialect::util::FunctionSpec::operator()(mlir::OpBuilder& builder, mlir::Location loc) const {
-   std::function<mlir::ResultRange(mlir::ValueRange)> fn = [&builder, loc, this](mlir::ValueRange range) -> mlir::ResultRange { return lingodb::compiler::dialect::util::FunctionHelper::call(builder, loc, *this, range).getResults(); };
+std::function<mlir::ResultRange(mlir::ValueRange)> pgx_lower::compiler::dialect::util::FunctionSpec::operator()(mlir::OpBuilder& builder, mlir::Location loc) const {
+   std::function<mlir::ResultRange(mlir::ValueRange)> fn = [&builder, loc, this](mlir::ValueRange range) -> mlir::ResultRange { return pgx_lower::compiler::dialect::util::FunctionHelper::call(builder, loc, *this, range).getResults(); };
    return fn;
 }
 
-lingodb::compiler::dialect::util::FunctionSpec::FunctionSpec(const std::string& name, const std::string& mangledName, const std::function<std::vector<mlir::Type>(mlir::MLIRContext*)>& parameterTypes, const std::function<std::vector<mlir::Type>(mlir::MLIRContext*)>& resultTypes, void* (*getPointer)()) : name(name), mangledName(mangledName), parameterTypes(parameterTypes), resultTypes(resultTypes), getPointer(getPointer) {
+pgx_lower::compiler::dialect::util::FunctionSpec::FunctionSpec(const std::string& name, const std::string& mangledName, const std::function<std::vector<mlir::Type>(mlir::MLIRContext*)>& parameterTypes, const std::function<std::vector<mlir::Type>(mlir::MLIRContext*)>& resultTypes, void* (*getPointer)()) : name(name), mangledName(mangledName), parameterTypes(parameterTypes), resultTypes(resultTypes), getPointer(getPointer) {
    getFunctions().insert({mangledName, *this});
 }
 
-void lingodb::compiler::dialect::util::FunctionHelper::visitAllFunctions(const std::function<void(std::string, void*)>& fn) {
+void pgx_lower::compiler::dialect::util::FunctionHelper::visitAllFunctions(const std::function<void(std::string, void*)>& fn) {
    for (auto f : getFunctions()) {
       fn(f.first, f.second.getPointer());
    }

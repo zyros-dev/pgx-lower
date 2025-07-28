@@ -12,6 +12,8 @@
 #include "runtime/DataSourceIteration.h"
 #include "runtime/EntryLock.h"
 #include "compiler/runtime/ExecutionContext.h"
+#include "compiler/runtime/EntryLock.h"
+#include "compiler/runtime/ThreadLocal.h"
 #include "runtime/GrowingBuffer.h"
 #include "runtime/HashMultiMap.h"
 #include "runtime/Hashtable.h"
@@ -579,7 +581,7 @@ class SubOpRewriter {
          auto memberRef = create<util::TupleElementPtrOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), input.getType()), contextPtr, offset++);
          mlir::Value value = create<util::LoadOp>(builder.getUnknownLoc(), memberRef);
          if (mlir::cast<mlir::BoolAttr>(isThreadLocal).getValue()) {
-            value = rt::ThreadLocal::getLocal(builder, builder.getUnknownLoc())({value})[0];
+            value = rt::ThreadLocalWrapper::getLocal(builder, builder.getUnknownLoc())({value})[0];
             value = create<util::GenericMemrefCastOp>(builder.getUnknownLoc(), typeConverter->convertType(arg.getType()), value);
          }
          map(arg, value);
@@ -1045,7 +1047,7 @@ class CreateThreadLocalLowering : public SubOpConversionPattern<subop::CreateThr
          rewriter.create<util::StoreOp>(loc, valPtrOrig, arg, rewriter.create<mlir::arith::ConstantIndexOp>(loc, i));
       }
       Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
-      rewriter.replaceOp(createThreadLocal, rt::ThreadLocal::create(rewriter, loc)({functionPointer, arg}));
+      rewriter.replaceOp(createThreadLocal, rt::ThreadLocalWrapper::create(rewriter, loc)({functionPointer, arg}));
       return mlir::success();
    }
 };
@@ -1210,7 +1212,7 @@ class MergeThreadLocalResultTable : public SubOpConversionPattern<subop::MergeOp
 
       Value combineFnPtr = rewriter.create<mlir::func::ConstantOp>(loc, combineFn.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(combineFn.getSymName())));
 
-      mlir::Value merged = rt::ThreadLocal::merge(rewriter, mergeOp->getLoc())(mlir::ValueRange{adaptor.getThreadLocal(), combineFnPtr})[0];
+      mlir::Value merged = rt::ThreadLocalWrapper::merge(rewriter, mergeOp->getLoc())(mlir::ValueRange{adaptor.getThreadLocal(), combineFnPtr})[0];
       merged = rewriter.create<util::GenericMemrefCastOp>(mergeOp->getLoc(), typeConverter->convertType(mergeOp.getType()), merged);
       rewriter.replaceOp(mergeOp, merged);
       return mlir::success();
@@ -3070,7 +3072,7 @@ class LookupPreAggrHtFragment : public SubOpTupleStreamConsumerConversionPattern
             keyStorageHelper.storeOrderedValues(keyRef, lookupKey, rewriter, loc);
             valStorageHelper.storeOrderedValues(valRef, initialVals, rewriter, loc);
             if (fragmentType.hasLock()) {
-               rt::EntryLock::initialize(rewriter, loc)({valStorageHelper.getLockPointer(valRef, rewriter, loc)});
+               rt::EntryLockWrapper::initialize(rewriter, loc)({valStorageHelper.getLockPointer(valRef, rewriter, loc)});
             }
             b.create<scf::YieldOp>(loc, ValueRange{entryRefCasted});
          });
@@ -4097,7 +4099,7 @@ class LockLowering : public SubOpTupleStreamConsumerConversionPattern<subop::Loc
       auto storageHelper = EntryStorageHelper(lockOp, hashMapType.getValueMembers(), hashMapType.hasLock(), typeConverter);
       auto ref = mapping.resolve(lockOp, lockOp.getRef());
       auto lockPtr = storageHelper.getLockPointer(ref, rewriter, lockOp->getLoc());
-      rt::EntryLock::lock(rewriter, lockOp->getLoc())({lockPtr});
+      rt::EntryLockWrapper::lock(rewriter, lockOp->getLoc())({lockPtr});
       auto inflight = rewriter.createInFlight(mapping);
       rewriter.inlineBlock<tuples::ReturnOpAdaptor>(&lockOp.getNested().front(), inflight.getRes(), [&](tuples::ReturnOpAdaptor adaptor) {
          if (!adaptor.getResults().empty()) {
@@ -4107,7 +4109,7 @@ class LockLowering : public SubOpTupleStreamConsumerConversionPattern<subop::Loc
             rewriter.eraseOp(lockOp);
          }
       });
-      rt::EntryLock::unlock(rewriter, lockOp->getLoc())({lockPtr});
+      rt::EntryLockWrapper::unlock(rewriter, lockOp->getLoc())({lockPtr});
       return success();
    }
 };
@@ -4228,7 +4230,7 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
          rewriter.map(arg, input);
       } else {
          mlir::OpBuilder b(executionGroup);
-         mlir::Value threadLocal = rt::ThreadLocal::getLocal(b, b.getUnknownLoc())({mapping.lookup(param)})[0];
+         mlir::Value threadLocal = rt::ThreadLocalWrapper::getLocal(b, b.getUnknownLoc())({mapping.lookup(param)})[0];
          threadLocal = b.create<util::GenericMemrefCastOp>(threadLocal.getLoc(), typeConverter.convertType(arg.getType()), threadLocal);
          rewriter.map(arg, threadLocal);
       }
@@ -4414,7 +4416,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    getOperation()->walk([&](subop::SetResultOp setResultOp) {
       mlir::OpBuilder builder(setResultOp);
       mlir::Value idVal = builder.create<mlir::arith::ConstantIntOp>(setResultOp.getLoc(), setResultOp.getResultId(), mlir::IntegerType::get(builder.getContext(), 32));
-      pgx_lower::compiler::runtime::ExecutionContext::setResult(builder, setResultOp->getLoc())({idVal, setResultOp.getState()});
+      rt::ExecutionContextWrapper::setResult(builder, setResultOp->getLoc())({idVal, setResultOp.getState()});
 
       toRemove.push_back(setResultOp);
    });

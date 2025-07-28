@@ -144,6 +144,9 @@ add_library(MLIRRelAlgDialect STATIC
 
 add_library(MLIRUtilDialect STATIC
     util/UtilDialect.cpp
+    util/FunctionHelper.cpp
+    util/UtilOps.cpp
+    util/UtilTypes.cpp
 )
 
 # Configure RelAlg dialect library
@@ -284,6 +287,8 @@ target_link_libraries(MLIRUtilDialect PUBLIC
     MLIRParser
     MLIRSideEffectInterfaces
     MLIRLLVMDialect
+    MLIRArithDialect
+    MLIRFuncDialect
 )
 
 set_target_properties(MLIRUtilDialect PROPERTIES

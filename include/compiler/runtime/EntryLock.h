@@ -7,10 +7,25 @@
 
 namespace pgx_lower::compiler::runtime {
 
-struct EntryLock {
+struct EntryLockWrapper {
+    static auto initialize(mlir::OpBuilder& builder, mlir::Location loc) {
+        return [&builder, loc](mlir::ValueRange args) {
+            // TODO: Generate MLIR calls to runtime initialize
+            return mlir::ValueRange{};
+        };
+    }
+    
+    static auto lock(mlir::OpBuilder& builder, mlir::Location loc) {
+        return [&builder, loc](mlir::ValueRange args) {
+            // TODO: Generate MLIR calls to runtime lock
+            return mlir::ValueRange{};
+        };
+    }
+    
     static auto unlock(mlir::OpBuilder& builder, mlir::Location loc) {
-        return [&builder, loc](std::initializer_list<mlir::Value> args) {
+        return [&builder, loc](mlir::ValueRange args) {
             // TODO: Generate MLIR calls to runtime unlock
+            return mlir::ValueRange{};
         };
     }
 };

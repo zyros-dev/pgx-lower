@@ -2,7 +2,7 @@
 #define LINGODB_COMPILER_DIALECT_UTIL_FUNCTIONHELPER_H
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
-namespace lingodb::compiler::dialect::util {
+namespace pgx_lower::compiler::dialect::util {
 template <class T>
 static void* getPtr(T x) {
    return *reinterpret_cast<void**>(&x);
@@ -45,6 +45,6 @@ class FunctionHelper {
    static mlir::func::CallOp call(mlir::OpBuilder& builder, mlir::Location loc, const FunctionSpec& function, mlir::ValueRange values);
    static mlir::Value convertValue(mlir::OpBuilder& builder, mlir::Value v, mlir::Type t, mlir::Location loc);
 };
-} // namespace lingodb::compiler::dialect::util
+} // namespace pgx_lower::compiler::dialect::util
 
 #endif //LINGODB_COMPILER_DIALECT_UTIL_FUNCTIONHELPER_H

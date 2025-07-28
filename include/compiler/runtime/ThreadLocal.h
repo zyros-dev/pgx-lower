@@ -8,12 +8,15 @@
 
 namespace pgx_lower::compiler::runtime {
 
-struct ThreadLocal {
+struct ThreadLocalWrapper {
     static auto getLocal(mlir::OpBuilder& builder, mlir::Location loc) {
-        return [&builder, loc](std::initializer_list<mlir::Value> args) -> std::vector<mlir::Value> {
+        return [&builder, loc](mlir::ValueRange args) -> mlir::SmallVector<mlir::Value> {
             // TODO: Generate MLIR calls to runtime getLocal
             // For now, return the input value
-            return std::vector<mlir::Value>(args);
+            if (!args.empty()) {
+                return {args[0]};
+            }
+            return {};
         };
     }
 };

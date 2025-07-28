@@ -3046,22 +3046,26 @@ void RelalgToSubOpLoweringPass::runOnOperation() {
 // Public Interface
 //===----------------------------------------------------------------------===//
 
+namespace pgx_lower::compiler::dialect::relalg {
+
 std::unique_ptr<mlir::Pass>
-pgx_lower::compiler::dialect::relalg::createLowerToSubOpPass() {
+createLowerToSubOpPass() {
    return std::make_unique<RelalgToSubOpLoweringPass>();
 }
 
-void pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPipeline(mlir::OpPassManager& pm) {
+void createLowerRelAlgToSubOpPipeline(mlir::OpPassManager& pm) {
    pm.addPass(createLowerToSubOpPass());
 }
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> 
-pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPass() {
+createLowerRelAlgToSubOpPass() {
    // Create a new instance directly as OperationPass<ModuleOp>
    return std::make_unique<RelalgToSubOpLoweringPass>();
 }
 
-void pgx_lower::compiler::dialect::relalg::populateRelAlgToSubOpConversionPatterns(
+void populateRelAlgToSubOpConversionPatterns(
     mlir::RewritePatternSet &patterns, mlir::TypeConverter &typeConverter) {
     // TODO: Add pattern population if needed
 }
+
+} // namespace pgx_lower::compiler::dialect::relalg
