@@ -34,9 +34,10 @@ def TupleStream_ReturnOp : TupleStream_Op<"return", [Pure,ReturnLike,Terminator]
 def GetColumnOp : TupleStream_Op<"getcol", [Pure]> {
     let summary = "get column operation";
 
-    let arguments = (ins ColumnRefAttr:$attr,TupleStream_Tuple:$tuple);
+    let arguments = (ins TupleStream_Tuple:$tuple);
     let results = (outs AnyType : $res);
-    let assemblyFormat = [{  $tuple custom<CustRef>($attr) `:` type($res) attr-dict }];
+    // Simplified - TODO: Add column reference handling
+    let assemblyFormat = [{  $tuple `:` type($res) attr-dict }];
 }
 
 def GetParamVal: TupleStream_Op<"get_param_val", [Pure]> {

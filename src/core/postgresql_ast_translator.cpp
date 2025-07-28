@@ -20,7 +20,6 @@ extern "C" {
 #include "core/postgresql_ast_translator.h"
 #include "dialects/relalg/RelAlgDialect.h"
 #include "dialects/relalg/RelAlgOps.h"
-#include "dialects/pg/PgDialect.h"  // Still needed temporarily for existing code
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "dialects/tuplestream/TupleStreamTypes.h"
 #include "dialects/subop/SubOpDialect.h"
@@ -148,44 +147,24 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     auto& entryBlock = *mainFunc.addEntryBlock();
     builder.setInsertionPointToStart(&entryBlock);
     
-    // Get the root plan node
-    Plan* rootPlan = plannedStmt->planTree;
-    if (!rootPlan) {
-        logger_.error("Root plan is null");
-        return nullptr;
-    }
+    // TODO: Proper PostgreSQL AST translation
+    logger_.notice("Creating dummy RelAlg query to test the pipeline");
     
-    // Handle both sequential scans and aggregate queries with sequential scans
-    Plan* scanPlan = nullptr;
-    List* targetList = nullptr;
+    // Create a simple RelAlg query: just a base table scan
+    auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
     
-    if (rootPlan->type == T_SeqScan) {
-        // Simple sequential scan query
-        scanPlan = rootPlan;
-        targetList = rootPlan->targetlist;
-        logger_.debug("Translating simple SeqScan query");
-    }
-    else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
-        // Aggregate query with sequential scan as source
-        scanPlan = rootPlan->lefttree;
-        targetList = rootPlan->targetlist; // Use aggregate's target list for computed expressions
-        logger_.debug("Translating aggregate query with SeqScan source");
-    }
-    else {
-        logger_.notice("Only SeqScan and Agg+SeqScan plans are currently supported");
-        return nullptr;
-    }
-
-    const auto seqScan = reinterpret_cast<SeqScan*>(scanPlan);
+    // Create relalg.basetable operation
+    auto tableId = builder.getStringAttr("test_table");
+    auto columns = builder.getDictionaryAttr({}); // Empty columns for now
     
-    // Generate different MLIR based on query type
-    if (rootPlan->type == T_Agg) {
-        // Aggregate query - generate accumulation loop that returns single result
-        generateAggregateLoop(builder, location, seqScan, targetList);
-    } else {
-        // Regular query - generate per-tuple iteration that returns multiple results  
-        generateTupleIterationLoop(builder, location, seqScan, targetList);
-    }
+    auto baseTableOp = builder.create<pgx_lower::compiler::dialect::relalg::BaseTableOp>(
+        location, tupleStreamType, tableId, columns);
+    
+    // For now, just materialize the result to trigger the lowering passes
+    auto materializeOp = builder.create<mlir::func::CallOp>(
+        location, "add_tuple_to_result", mlir::TypeRange{}, mlir::ValueRange{});
+    
+    logger_.notice("Created dummy RelAlg query - BaseTableOp will be lowered through the pipeline");
     
     // Add return statement to main function (void return - LingoDB pattern)
     builder.create<mlir::func::ReturnOp>(location);
@@ -201,23 +180,23 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operat
         return nullptr;
     }
     
-    logger_.debug("Translating SeqScan to pg.scan_table operation");
+    logger_.debug("Translating SeqScan to relalg.basetable operation");
     
     auto location = builder_->getUnknownLoc();
     
     // For now, use a placeholder table name - in a full implementation,
     // we would extract the table name from the scan relation
-    auto tableHandleType = pgx_lower::compiler::dialect::pg::TableHandleType::get(&context_);
+    auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
     
-    // Create pg.scan_table operation
-    mlir::OperationState scanState(location, pgx_lower::compiler::dialect::pg::ScanTableOp::getOperationName());
-    scanState.addAttribute("table_name", builder_->getStringAttr("current_table"));
-    scanState.addTypes(tableHandleType);
+    // Create relalg.basetable operation
+    auto tableId = builder_->getStringAttr("current_table");
+    auto columns = builder_->getDictionaryAttr({}); // Empty columns for now
     
-    auto scanOp = builder_->create(scanState);
+    auto baseTableOp = builder_->create<pgx_lower::compiler::dialect::relalg::BaseTableOp>(
+        location, tupleStreamType, tableId, columns);
     
-    logger_.debug("Generated pg.scan_table operation");
-    return scanOp;
+    logger_.debug("Generated relalg.basetable operation");
+    return baseTableOp;
 }
 
 auto PostgreSQLASTTranslator::translateProjection(List* targetList) -> mlir::Operation* {
@@ -361,15 +340,21 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
     // Generate high-level pg dialect operations for proper lowering
     if (isArithmeticOperator(opName)) {
         if (strcmp(opName, "+") == 0) {
-            return builder_->create<pgx_lower::compiler::dialect::pg::PgAddOp>(location, operands[0], operands[1]);
+            // TODO: Generate RelAlg MapOp with arithmetic expression
+            logger_.notice("Arithmetic operations not yet implemented in RelAlg translation");
+            return operands[0]; // Return first operand as placeholder
         } else if (strcmp(opName, "-") == 0) {
-            return builder_->create<pgx_lower::compiler::dialect::pg::PgSubOp>(location, operands[0], operands[1]);
+            logger_.notice("Arithmetic operations not yet implemented in RelAlg translation");
+            return operands[0]; // Return first operand as placeholder
         } else if (strcmp(opName, "*") == 0) {
-            return builder_->create<pgx_lower::compiler::dialect::pg::PgMulOp>(location, operands[0], operands[1]);
+            logger_.notice("Arithmetic operations not yet implemented in RelAlg translation");
+            return operands[0]; // Return first operand as placeholder
         } else if (strcmp(opName, "/") == 0) {
-            return builder_->create<pgx_lower::compiler::dialect::pg::PgDivOp>(location, operands[0], operands[1]);
+            logger_.notice("Arithmetic operations not yet implemented in RelAlg translation");
+            return operands[0]; // Return first operand as placeholder
         } else if (strcmp(opName, "%") == 0) {
-            return builder_->create<pgx_lower::compiler::dialect::pg::PgModOp>(location, operands[0], operands[1]);
+            logger_.notice("Arithmetic operations not yet implemented in RelAlg translation");
+            return operands[0]; // Return first operand as placeholder
         }
     } else if (isComparisonOperator(opName)) {
         // Use pg.compare with predicate encoding: 0=eq, 1=ne, 2=lt, 3=le, 4=gt, 5=ge
@@ -390,7 +375,10 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
         
         if (predicate >= 0) {
             auto predicateAttr = builder_->getI32IntegerAttr(predicate);
-            return builder_->create<pgx_lower::compiler::dialect::pg::PgCmpOp>(location, predicateAttr, operands[0], operands[1]);
+            // TODO: Generate RelAlg MapOp with comparison expression
+            logger_.notice("Comparison operations not yet implemented in RelAlg translation");
+            auto i1Type = builder_->getI1Type();
+            return builder_->create<mlir::arith::ConstantOp>(location, i1Type, builder_->getBoolAttr(true));
         }
     } else if (isTextOperator(opName)) {
         // Text operations require runtime function calls
@@ -404,7 +392,7 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
             auto operand = operands[i];
             logger_.debug("Processing operand " + std::to_string(i));
             
-            if (operand.getType().isa<mlir::IntegerType>()) {
+            if (mlir::isa<mlir::IntegerType>(operand.getType())) {
                 // Convert integer (pointer as i64) to !llvm.ptr
                 logger_.debug("Converting integer operand to pointer");
                 auto convertedPtr = builder_->create<mlir::LLVM::IntToPtrOp>(location, ptrType, operand);
@@ -469,20 +457,26 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
         return nullptr; // Don't generate invalid field access
     }
     
-    // Use the polymorphic pg.get_field operation
-    auto getFieldOp = builder_->create<pgx_lower::compiler::dialect::pg::GetFieldOp>(
-        location,
-        tupleHandle,
-        builder_->getI32IntegerAttr(var->varattno - 1),    // field_index
-        builder_->getI32IntegerAttr(var->vartype)           // field_type_oid
-    );
+    // TODO: Replace with RelAlg GetScalarOp once we have proper column references
+    logger_.notice("Field access not yet implemented in RelAlg translation");
     
-    logger_.debug("Generated pg.get_field operation for field " + std::to_string(var->varattno - 1) + 
-                 " with type OID " + std::to_string(var->vartype));
+    // Map PostgreSQL type OID to MLIR type
+    auto elementType = getMLIRTypeForPostgreSQLType(var->vartype);
+    if (!elementType) {
+        logger_.error("Unsupported PostgreSQL type OID: " + std::to_string(var->vartype));
+        return nullptr;
+    }
     
-    // For now, return just the value (first result)
-    // The second result is the null indicator which should be handled properly later
-    return getFieldOp.getValue();
+    // For now, return a dummy value of the expected type
+    if (elementType.isIntOrIndex()) {
+        return builder_->create<mlir::arith::ConstantOp>(location, 
+            elementType, 
+            builder_->getIntegerAttr(elementType, 0));
+    } else {
+        // For non-integer types, we'll need proper handling
+        logger_.error("Non-integer field access not yet supported in RelAlg translation");
+        return nullptr;
+    }
 }
 
 auto PostgreSQLASTTranslator::translateConst(Const* constNode) -> mlir::Value {
@@ -596,8 +590,8 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
     
     // Convert operands to boolean if needed (PostgreSQL boolean columns are i32)
     auto convertToBool = [&](mlir::Value operand) -> mlir::Value {
-        if (operand.getType().isa<mlir::IntegerType>() && 
-            operand.getType().cast<mlir::IntegerType>().getWidth() == 32) {
+        if (mlir::isa<mlir::IntegerType>(operand.getType()) && 
+            mlir::cast<mlir::IntegerType>(operand.getType()).getWidth() == 32) {
             // Convert i32 to i1: non-zero = true, zero = false
             auto zeroConst = builder_->create<mlir::arith::ConstantOp>(
                 location, operand.getType(), builder_->getIntegerAttr(operand.getType(), 0));
@@ -612,20 +606,26 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                return builder_->create<pgx_lower::compiler::dialect::pg::PgAndOp>(location, left, right);
+                // TODO: Generate RelAlg MapOp with logical expression
+                logger_.notice("Logical operations not yet implemented in RelAlg translation");
+                return left; // Return first operand as placeholder
             }
             break;
         case OR_EXPR:
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                return builder_->create<pgx_lower::compiler::dialect::pg::PgOrOp>(location, left, right);
+                // TODO: Generate RelAlg MapOp with logical expression
+                logger_.notice("Logical operations not yet implemented in RelAlg translation");
+                return left; // Return first operand as placeholder
             }
             break;
         case NOT_EXPR:
             if (operands.size() >= 1) {
                 auto operand = convertToBool(operands[0]);
-                return builder_->create<pgx_lower::compiler::dialect::pg::PgNotOp>(location, operand);
+                // TODO: Generate RelAlg MapOp with logical expression
+                logger_.notice("Logical operations not yet implemented in RelAlg translation");
+                return operand; // Return operand as placeholder
             }
             break;
     }
@@ -651,41 +651,17 @@ auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> mlir::Val
         // Translate the Var to get the field access operation
         auto var = reinterpret_cast<Var*>(nullTest->arg);
         auto location = builder_->getUnknownLoc();
-        auto i32Type = builder_->getI32Type();
         auto i1Type = builder_->getI1Type();
         
-        // Use real tuple handle if available
-        mlir::Value tupleHandle;
-        if (currentTupleHandle_) {
-            logger_.debug("Using real tuple handle for null test");
-            auto tupleHandleType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_);
-            tupleHandle = builder_->create<mlir::UnrealizedConversionCastOp>(
-                location, tupleHandleType, mlir::ValueRange{*currentTupleHandle_}).getResult(0);
-        } else {
-            logger_.error("NULL test attempted outside tuple iteration context");
-            return nullptr;
-        }
+        // TODO: Implement null test with RelAlg operations
+        logger_.notice("NULL test not yet implemented in RelAlg translation");
         
-        // Generate pg.get_int_field operation
-        mlir::OperationState getFieldState(location, pgx_lower::compiler::dialect::pg::GetIntFieldOp::getOperationName());
-        getFieldState.addOperands(tupleHandle);
-        getFieldState.addAttribute("field_index", builder_->getI32IntegerAttr(var->varattno - 1));
-        getFieldState.addTypes({i32Type, i1Type});
-        
-        auto getFieldOp = builder_->create(getFieldState);
-        auto nullIndicator = getFieldOp->getResult(1); // Get the null indicator (second result)
-        
-        logger_.debug("Got null indicator from field access operation");
-        
-        // For IS NULL, return the null indicator directly
-        // For IS NOT NULL, negate the null indicator
+        // For now, return a dummy boolean value
+        // IS NULL: false, IS NOT NULL: true
         if (nullTest->nulltesttype == IS_NULL) {
-            logger_.debug("Returning null indicator for IS NULL");
-            return nullIndicator;
+            return builder_->create<mlir::arith::ConstantOp>(location, i1Type, builder_->getBoolAttr(false));
         } else if (nullTest->nulltesttype == IS_NOT_NULL) {
-            logger_.debug("Returning negated null indicator for IS NOT NULL");
-            return builder_->create<mlir::arith::XOrIOp>(location, nullIndicator, 
-                builder_->create<mlir::arith::ConstantOp>(location, builder_->getBoolAttr(true)));
+            return builder_->create<mlir::arith::ConstantOp>(location, i1Type, builder_->getBoolAttr(true));
         }
     } else {
         logger_.error("NULL test on non-Var expressions not yet supported");
@@ -807,9 +783,9 @@ auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) 
             return nullptr;
         }
         
-        // Use the existing pg.coalesce operation
-        auto resultType = firstValue.getType();
-        return builder_->create<pgx_lower::compiler::dialect::pg::PgCoalesceOp>(location, resultType, firstValue, secondValue);
+        // TODO: Implement COALESCE with RelAlg operations
+        logger_.notice("COALESCE (2-arg) not yet implemented in RelAlg translation");
+        return firstValue; // Return first value as placeholder
     }
     
     // For multiple arguments, create a nested chain of pg.coalesce operations
@@ -829,14 +805,11 @@ auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) 
         arg = lnext(coalesceExpr->args, arg);
     }
     
-    // Create a chain of binary coalesce operations
-    mlir::Value result = args[0];
-    for (size_t i = 1; i < args.size(); ++i) {
-        auto resultType = result.getType();
-        result = builder_->create<pgx_lower::compiler::dialect::pg::PgCoalesceOp>(location, resultType, result, args[i]);
-    }
+    // TODO: Implement COALESCE with RelAlg operations
+    logger_.notice("COALESCE not yet implemented in RelAlg translation");
     
-    return result;
+    // For now, just return the first argument
+    return args.empty() ? nullptr : args[0];
 }
 
 auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& module) -> void {
@@ -1265,21 +1238,25 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
         return;
     }
     
-    // Generate accumulation loop using scf.while
-    auto tupleHandleType = pgx_lower::compiler::dialect::pg::TupleHandleType::get(&context_);
+    // TODO: Generate accumulation loop using RelAlg operations
+    logger_.notice("Aggregate loop generation not yet implemented in RelAlg translation");
     
-    // Read first tuple to start the loop
-    auto initialReadOp = builder.create<pgx_lower::compiler::dialect::pg::ReadTupleOp>(location, tupleHandleType, tableHandle);
-    auto initialTupleHandle = initialReadOp->getResult(0);
-    auto initialTuplePtr = builder.create<mlir::UnrealizedConversionCastOp>(
-        location, i64Type, mlir::ValueRange{initialTupleHandle});
+    // For now, just store dummy values
+    if (aggregateFieldType == INT4OID || aggregateFieldType == INT8OID) {
+        builder.create<mlir::func::CallOp>(location, "store_bigint_result",
+                                          mlir::TypeRange{}, mlir::ValueRange{accumulator});
+    }
     
+    return; // Early return until RelAlg aggregate implementation is ready
+    
+    /*
+    // TODO: The code below needs to be reimplemented using RelAlg operations
     // Create the accumulation loop using scf.while
     // For AVG, we need to track both sum and count
     mlir::Value secondAccumulator = countAccumulator ? countAccumulator : accumulator;
     auto whileOp = builder.create<mlir::scf::WhileOp>(
         location, mlir::TypeRange{i64Type, i64Type, i64Type}, 
-        mlir::ValueRange{initialTuplePtr.getResult(0), accumulator, secondAccumulator});
+        mlir::ValueRange(std::vector<mlir::Value>{initialTuplePtr.getResult(0), accumulator, secondAccumulator}));
     
     // Before region: check if we have a valid tuple
     auto* beforeBlock = builder.createBlock(&whileOp.getBefore(), whileOp.getBefore().end(), 
@@ -1296,7 +1273,7 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
         location, mlir::arith::CmpIPredicate::ne, tuplePtr, zeroConstant);
     
     builder.create<mlir::scf::ConditionOp>(location, hasMoreTuples, 
-                                          mlir::ValueRange{tuplePtr, currentAcc, currentSecondAcc});
+                                          mlir::ValueRange(std::vector<mlir::Value>{tuplePtr, currentAcc, currentSecondAcc}));
     
     // After region: process tuple and accumulate
     auto* afterBlock = builder.createBlock(&whileOp.getAfter(), whileOp.getAfter().end(),
@@ -1309,7 +1286,7 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     
     // Convert tuple pointer back to tuple handle for field access
     auto currentTupleHandle = builder.create<mlir::UnrealizedConversionCastOp>(
-        location, tupleHandleType, mlir::ValueRange{currentTuplePtr});
+        location, tupleHandleType, mlir::ValueRange(std::vector<mlir::Value>{currentTuplePtr}));
     
     // Perform accumulation based on aggregate type
     mlir::Value newAccValue = accValue;
@@ -1360,9 +1337,9 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     auto nextReadOp = builder.create<pgx_lower::compiler::dialect::pg::ReadTupleOp>(location, tupleHandleType, tableHandle);
     auto nextTupleHandle = nextReadOp->getResult(0);
     auto nextTuplePtr = builder.create<mlir::UnrealizedConversionCastOp>(
-        location, i64Type, mlir::ValueRange{nextTupleHandle});
+        location, i64Type, mlir::ValueRange(std::vector<mlir::Value>{nextTupleHandle}));
     
-    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange{nextTuplePtr.getResult(0), newAccValue, newSecondAccValue});
+    builder.create<mlir::scf::YieldOp>(location, mlir::ValueRange(std::vector<mlir::Value>{nextTuplePtr.getResult(0), newAccValue, newSecondAccValue}));
     
     // After the loop, output the final result as a single tuple
     builder.setInsertionPointAfter(whileOp);
@@ -1393,7 +1370,7 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
         
         builder.create<mlir::func::CallOp>(
             location, storeBigintFunc,
-            mlir::ValueRange{columnIndexConst, finalResult, isNullConst});
+            mlir::ValueRange(std::vector<mlir::Value>{columnIndexConst, finalResult, isNullConst}));
         
         logger_.debug("Stored " + aggregateType + " aggregate result in column 0");
     }
@@ -1403,12 +1380,13 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     if (addResultFunc) {
         // Create a dummy tuple handle to indicate one result row
         auto dummyTupleHandle = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
-        builder.create<mlir::func::CallOp>(location, addResultFunc, mlir::ValueRange{dummyTupleHandle});
+        builder.create<mlir::func::CallOp>(location, addResultFunc, mlir::ValueRange(std::vector<mlir::Value>{dummyTupleHandle}));
         
         logger_.debug("Added single result tuple for " + aggregateType + " aggregate");
     }
     
     logger_.debug("Generated complete aggregate accumulation loop");
+    */
 }
 
 auto createPostgreSQLASTTranslator(mlir::MLIRContext& context, MLIRLogger& logger) 

@@ -3,9 +3,11 @@
 
 #include "mlir/IR/Dialect.h"
 #include "Column.h"
+#include "ColumnManager.h"
 
-// Forward declare ColumnManager for now - TODO: Port from LingoDB if needed
-class ColumnManager;
+namespace pgx_lower::compiler::dialect::tuples {
+class TupleStreamDialect;
+} // namespace pgx_lower::compiler::dialect::tuples
 
 #include "TupleStreamDialect.h.inc"
 
@@ -15,5 +17,6 @@ class ColumnManager;
 
 #define GET_ATTRDEF_CLASSES
 #include "TupleStreamAttrs.h.inc"
+
 
 #endif // TUPLESTREAM_DIALECT_H

@@ -1,9 +1,9 @@
-#ifndef LINGODB_DIALECT_UTIL_INTERFACES
-#define LINGODB_DIALECT_UTIL_INTERFACES
+#ifndef PGX_LOWER_UTIL_INTERFACES
+#define PGX_LOWER_UTIL_INTERFACES
 include "mlir/IR/OpBase.td"
 
 def CollectionType : TypeInterface<"CollectionType"> {
-  let cppNamespace = "::lingodb::compiler::dialect::util";
+  let cppNamespace = "::pgx_lower::compiler::dialect::util";
   let methods = [
      InterfaceMethod<
        /*description=*/"",
@@ -12,4 +12,4 @@ def CollectionType : TypeInterface<"CollectionType"> {
       ];
 }
 
-#endif// LINGODB_DIALECT_UTIL_INTERFACES
+#endif// PGX_LOWER_UTIL_INTERFACES

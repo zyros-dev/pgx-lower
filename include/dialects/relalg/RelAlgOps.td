@@ -10,15 +10,22 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "dialects/tuplestream/TupleStreamBase.td"
 
-include "RelAlgBase.td"
 include "RelAlgInterfaces.td"
 
-def SubOp_ResultTable : Type<CPred<"mlir::isa<pgx_lower::compiler::dialect::subop::LocalTableType>($_self)">,"result table type">;
-// TODO: Enable when util::CollectionType is properly implemented
-// def DSA_Collection : Type<CPred<"mlir::isa<::pgx_lower::compiler::dialect::util::CollectionType>($_self)">,"DB collection type">;
+def SubOp_ResultTable : Type<CPred<"mlir::isa<::pgx_lower::compiler::dialect::subop::LocalTableType>($_self)">,"result table type">;
+def DSA_Collection : Type<CPred<"mlir::isa<::pgx_lower::compiler::dialect::util::CollectionType>($_self)">,"DB collection type">;
 
 
-// RelAlg dialect definition is in RelAlgBase.td
+//===----------------------------------------------------------------------===//
+// RelAlg dialect definition.
+//===----------------------------------------------------------------------===//
+
+def RelAlg_Dialect : Dialect {
+    let name = "relalg";
+    let summary = "A dialect for relational algebra";
+    let cppNamespace = "::pgx_lower::compiler::dialect::relalg";
+    let useDefaultAttributePrinterParser=1;
+}
 
 
 
@@ -50,7 +57,7 @@ def RelAlg_SortSpec_ASC  : I64EnumAttrCase<"asc", 1>;
 
 def RelAlg_SortSpec : I64EnumAttr<"SortSpec", "sort order",
         [RelAlg_SortSpec_DESC,RelAlg_SortSpec_ASC]> {
-    let cppNamespace = "pgx_lower::compiler::dialect::relalg";
+    let cppNamespace = "::pgx_lower::compiler::dialect::relalg";
 }
 
 def RelAlg_GroupJoinBehavior_Inner  : I64EnumAttrCase<"inner", 0>;
@@ -58,7 +65,7 @@ def RelAlg_GroupJoinBehavior_Outer  : I64EnumAttrCase<"outer", 1>;
 
 def RelAlg_GroupJoinBehavior: I64EnumAttr<"GroupJoinBehavior", "groupjoin behavior",
         [RelAlg_GroupJoinBehavior_Inner,RelAlg_GroupJoinBehavior_Outer]> {
-    let cppNamespace = "pgx_lower::compiler::dialect::relalg";
+    let cppNamespace = "::pgx_lower::compiler::dialect::relalg";
 }
 
 def RelAlg_Func_Sum   : I64EnumAttrCase<"sum", 0>;
@@ -74,7 +81,7 @@ def RelAlg_Func_VarSamp : I64EnumAttrCase<"var_samp", 7>;
 def RelAlg_AggrFunc : I64EnumAttr<"AggrFunc", "aggregation function",
         [RelAlg_Func_Sum, RelAlg_Func_Min, RelAlg_Func_Max,
          RelAlg_Func_Avg, RelAlg_Func_Count, RelAlg_Func_Any,RelAlg_Func_StdDevSamp,RelAlg_Func_VarSamp]> {
-    let cppNamespace = "pgx_lower::compiler::dialect::relalg";
+    let cppNamespace = "::pgx_lower::compiler::dialect::relalg";
 }
 
 def RelAlg_SetSemantic_Distinct : I64EnumAttrCase<"distinct", 0>;
@@ -82,10 +89,17 @@ def RelAlg_SetSemantic_All      : I64EnumAttrCase<"all", 1>;
 
 def RelAlg_SetSemantic : I64EnumAttr<"SetSemantic", "",
         [RelAlg_SetSemantic_Distinct,RelAlg_SetSemantic_All]> {
-    let cppNamespace = "pgx_lower::compiler::dialect::relalg";
+    let cppNamespace = "::pgx_lower::compiler::dialect::relalg";
 }
 
-// Base RelAlg operation definition is in RelAlgBase.td
+//===----------------------------------------------------------------------===//
+// Base RelAlg operation definition.
+//===----------------------------------------------------------------------===//
+
+class RelAlg_Op<string mnemonic, list<Trait> traits = []> : Op<RelAlg_Dialect, mnemonic, traits> {
+  let hasCustomAssemblyFormat = 1;
+
+}
 
 //===----------------------------------------------------------------------===//
 // Operations that "create" relations
@@ -443,9 +457,10 @@ def NestedOp : RelAlg_Op<"nested", [Pure,Operator]> {
 def AggrFuncOp : RelAlg_Op<"aggrfn", [Pure]> {
     let summary = "aggregation operation";
 
-    let arguments = (ins RelAlg_AggrFunc:$fn,TupleStream:$rel,ColumnRefAttr:$attr);
+    let arguments = (ins RelAlg_AggrFunc:$fn,TupleStream:$rel);
     let results = (outs AnyType:$result);
-    let assemblyFormat = [{  $fn custom<CustRef>($attr) $rel `:` type($result) attr-dict }];
+    // Simplified - TODO: Add column reference handling
+    let assemblyFormat = [{  $fn $rel `:` type($result) attr-dict }];
 }
 
 def CountRowsOp : RelAlg_Op<"count", [Pure]> {
@@ -491,14 +506,13 @@ def GetScalarOp : RelAlg_Op<"getscalar", [Pure]> {
     let assemblyFormat = [{  custom<CustRef>($attr) $rel `:` type($res) attr-dict }];
 }
 
-// TODO: Enable when util::CollectionType is properly implemented
-// def GetListOp : RelAlg_Op<"getlist", [Pure]> {
-//     let summary = "get multiple columns";
-//
-//     let arguments = (ins TupleStream:$rel,ArrayAttr:$cols);
-//     let results = (outs DSA_Collection:$res);
-//     let assemblyFormat = [{ $rel custom<CustRefArr>($cols) `:` type($res) attr-dict }];
-// }
+def GetListOp : RelAlg_Op<"getlist", [Pure]> {
+    let summary = "get multiple columns";
+
+    let arguments = (ins TupleStream:$rel,ArrayAttr:$cols);
+    let results = (outs DSA_Collection:$res);
+    let assemblyFormat = [{ $rel custom<CustRefArr>($cols) `:` type($res) attr-dict }];
+}
 
 def InOp : RelAlg_Op<"in", [Pure]> {
     let summary = "in operation";

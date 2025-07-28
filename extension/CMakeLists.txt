@@ -35,10 +35,10 @@ add_postgresql_mixed_extension(
             15_special_operators
 )
 
-# Link the PostgreSQL dialect library
+# Link the MLIR dialect libraries
 # Note: PgxLowerRuntime removed to avoid symbol conflicts with my_executor.cpp
+# Note: MLIRPgDialect removed as we deleted the PG dialect
 target_link_libraries(pgx_lower PRIVATE 
-    MLIRPgDialect
     MLIRSubOpDialect
     MLIRDBDialect
     MLIRDSADialect

@@ -5,6 +5,9 @@
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+// Include interface definitions
+#include "UtilOpsTypeInterfaces.cpp.inc"
+
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect::util;
 

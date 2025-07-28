@@ -1,22 +1,11 @@
 #include "dialects/tuplestream/Column.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
+#include "dialects/tuplestream/ColumnManager.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/TypeSwitch.h"
-
-// Simple column manager implementation
-class ColumnManager {
-public:
-    ColumnManager() = default;
-    
-    pgx_lower::compiler::dialect::tuples::ColumnRefAttr createRef(mlir::SymbolRefAttr name) {
-        // Create a simple column reference
-        auto type = mlir::IntegerType::get(name.getContext(), 32); // Default to i32 for now
-        return pgx_lower::compiler::dialect::tuples::ColumnRefAttr::get(name.getContext(), name, type);
-    }
-};
 #include "llvm/ADT/Hashing.h"
 
 #include <tuple>
@@ -54,7 +43,9 @@ void TupleStreamDialect::initialize() {
    //    // Add operations when needed
    // >();
    
-   // TODO: Load ColumnManager if needed
+   // Initialize the column manager
+   columnManager.setContext(getContext());
+   
    registerTypes();
    registerAttrs();
 }
@@ -83,7 +74,4 @@ void TupleStreamDialect::registerAttrs() {
 #define GET_ATTRDEF_CLASSES
 #include "TupleStreamAttrs.cpp.inc"
 
-ColumnManager& TupleStreamDialect::getColumnManager() {
-    static ColumnManager manager;
-    return manager;
-}
+// getColumnManager is defined inline in the TableGen-generated header

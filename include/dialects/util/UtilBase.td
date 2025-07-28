@@ -5,7 +5,7 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
-// include "lingodb/compiler/Dialect/util/UtilInterfaces.td" // TODO: Add interfaces if needed
+include "dialects/util/UtilInterfaces.td"
 
 def Util_Dialect : Dialect {
 let name = "util";
@@ -21,7 +21,7 @@ void registerTypes();
 class Util_Type<string name, string typeMnemonic, list<Trait> traits = []> : TypeDef<Util_Dialect, name,traits> {
     let mnemonic = typeMnemonic;
 }
-def BufferType : Util_Type<"Buffer","buffer"> {
+def BufferType : Util_Type<"Buffer","buffer",[CollectionType]> {
     let summary = "buffer";
     let parameters = (ins "mlir::Type":$t);
     let assemblyFormat = "`<` $t `>`";

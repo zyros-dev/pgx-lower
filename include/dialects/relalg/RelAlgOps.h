@@ -12,11 +12,17 @@
 // Include the base dialect
 #include "RelAlgDialect.h"
 #include "RelAlgInterfaces.h"
+#include "Catalog.h"
 #include "dialects/tuplestream/TupleStreamTypes.h"
 #include "dialects/subop/SubOpOps.h"
+#include "dialects/util/UtilTypes.h"
 
 // Include generated enum definitions
 #include "RelAlgEnums.h.inc"
+
+// Include generated attributes
+#define GET_ATTRDEF_CLASSES
+#include "RelAlgAttrs.h.inc"
 
 // Forward declarations
 namespace pgx_lower::compiler::dialect::relalg {

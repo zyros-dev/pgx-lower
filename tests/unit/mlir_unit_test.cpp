@@ -12,7 +12,7 @@
 #include <core/mlir_runner.h>
 #include <core/query_analyzer.h>
 #include <core/error_handling.h>
-#include <dialects/pg/PgDialect.h>
+// PG dialect removed - using RelAlg instead
 #include <fstream>
 #include <cstdio>
 #include <unistd.h>

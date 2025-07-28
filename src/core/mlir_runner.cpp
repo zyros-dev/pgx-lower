@@ -2,8 +2,9 @@
 #include "core/mlir_logger.h"
 #include "core/error_handling.h"
 #include "core/postgresql_ast_translator.h"
-#include "dialects/pg/PgDialect.h"
-#include "dialects/pg/LowerPgToSubOp.h"
+// PG dialect removed - using RelAlg instead
+#include "dialects/relalg/RelAlgDialect.h"
+#include "dialects/relalg/LowerRelAlgToSubOp.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/LowerSubOpToDB.h"
 #include "dialects/db/DBDialect.h"
@@ -81,19 +82,19 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     }
     logger.notice("MLIR module verification passed - proceeding to lowering");
     
-    logger.notice("Using LingoDB-style lowering pipeline: PG → SubOp → DB → DSA → LLVM");
+    logger.notice("Using LingoDB-style lowering pipeline: RelAlg → SubOp → DB → DSA → LLVM");
     
     // Run each pass individually to see intermediate results
     
-    // PG → SubOp lowering
-    logger.notice("=== Running PG → SubOp lowering pass ===");
-    auto pgToSubOpPM = mlir::PassManager(&context);
-    pgToSubOpPM.addPass(pgx_lower::compiler::dialect::pg::createLowerPgToSubOpPass());
-    if (failed(pgToSubOpPM.run(module))) {
-        logger.error("PG → SubOp lowering failed");
+    // RelAlg → SubOp lowering
+    logger.notice("=== Running RelAlg → SubOp lowering pass ===");
+    auto relalgToSubOpPM = mlir::PassManager(&context);
+    relalgToSubOpPM.addPass(pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPass());
+    if (failed(relalgToSubOpPM.run(module))) {
+        logger.error("RelAlg → SubOp lowering failed");
         return false;
     }
-    logger.notice("Module after PG → SubOp:");
+    logger.notice("Module after RelAlg → SubOp:");
     std::string afterPgStr;
     llvm::raw_string_ostream afterPgOs(afterPgStr);
     module.print(afterPgOs);

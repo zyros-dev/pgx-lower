@@ -17,21 +17,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
-# TableGen code generation for PostgreSQL dialect
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgDataAccess.td)
-mlir_tablegen(PgDataAccess.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(PgDataAccess.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
-add_public_tablegen_target(MLIRPgDataAccessIncGen)
-
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgPolymorphic.td)
-mlir_tablegen(PgPolymorphic.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(PgPolymorphic.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
-add_public_tablegen_target(MLIRPgPolymorphicIncGen)
-
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/pg/PgTypes.td)
-mlir_tablegen(PgTypes.h.inc -gen-typedef-decls --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(PgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=pg -I${MLIR_INCLUDE_DIRS})
-add_public_tablegen_target(MLIRPgTypesIncGen)
+# PG dialect removed - using RelAlg instead
 
 # SubOperator dialect TableGen - Fixed compatibility issues
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/subop/SubOpOps.td)
@@ -104,17 +90,15 @@ mlir_tablegen(RelAlgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOU
 mlir_tablegen(RelAlgOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
 mlir_tablegen(RelAlgEnums.h.inc -gen-enum-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
 mlir_tablegen(RelAlgEnums.cpp.inc -gen-enum-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(RelAlgAttrs.h.inc -gen-attrdef-decls --attrdefs-dialect=relalg -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(RelAlgAttrs.cpp.inc -gen-attrdef-defs --attrdefs-dialect=relalg -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
 
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgTypes.td)
 mlir_tablegen(RelAlgTypes.h.inc -gen-typedef-decls --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(RelAlgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS})
 add_public_tablegen_target(MLIRRelAlgIncGen)
 
-add_library(MLIRPgDialect STATIC
-    pg/PgDialect.cpp
-    pg/LowerPgToSubOp.cpp
-    pg/PgPolymorphicOps.cpp
-)
+# PG dialect library removed - using RelAlg instead
 
 add_library(MLIRSubOpDialect STATIC
     subop/SubOpDialect.cpp
@@ -130,6 +114,7 @@ add_library(MLIRDBDialect STATIC
 
 add_library(MLIRTupleStreamDialect STATIC
     tuplestream/TupleStreamDialect.cpp
+    tuplestream/ColumnManager.cpp
 )
 
 add_library(MLIRDSADialect STATIC
@@ -138,7 +123,7 @@ add_library(MLIRDSADialect STATIC
 
 add_library(MLIRRelAlgDialect STATIC
     relalg/RelAlgDialect.cpp
-    relalg/RelAlgOpsSimple.cpp
+    relalg/RelAlgOps.cpp
     relalg/LowerRelAlgToSubOp.cpp
 )
 
@@ -170,7 +155,7 @@ set_target_properties(MLIRRelAlgDialect PROPERTIES
 )
 
 # Add dependency on generated files
-add_dependencies(MLIRPgDialect MLIRPgDataAccessIncGen MLIRPgTypesIncGen MLIRPgPolymorphicIncGen)
+# PG dialect dependencies removed
 add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen MLIRSubOpInterfacesIncGen MLIRTupleStreamIncGen)
 add_dependencies(MLIRDBDialect MLIRDBIncGen)
 add_dependencies(MLIRTupleStreamDialect MLIRTupleStreamIncGen)
@@ -178,32 +163,7 @@ add_dependencies(MLIRDSADialect MLIRDSAIncGen)
 add_dependencies(MLIRRelAlgDialect MLIRRelAlgIncGen)
 add_dependencies(MLIRUtilDialect MLIRUtilIncGen)
 
-target_include_directories(MLIRPgDialect PUBLIC
-    ${CMAKE_SOURCE_DIR}/include/dialects/pg
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_BINARY_DIR}/src/dialects
-    ${LLVM_INCLUDE_DIRS}
-    ${MLIR_INCLUDE_DIRS}
-)
-
-target_link_libraries(MLIRPgDialect PUBLIC
-    MLIRIR
-    MLIRParser
-    MLIRSideEffectInterfaces
-    MLIRInferTypeOpInterface
-    MLIRFunctionInterfaces
-    MLIRArithDialect
-    MLIRSCFDialect
-    MLIRFuncDialect
-    MLIRTransforms
-    MLIRSubOpDialect
-)
-
-# Ensure position independent code for shared library usage
-set_target_properties(MLIRPgDialect PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-)
+# PG dialect configuration removed
 
 # Configure SubOperator dialect library
 target_include_directories(MLIRSubOpDialect PUBLIC
@@ -323,6 +283,9 @@ mlir_tablegen(UtilOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(UtilOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(UtilTypes.h.inc -gen-typedef-decls --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(UtilTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS})
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilInterfaces.td)
+mlir_tablegen(UtilOpsTypeInterfaces.h.inc -gen-type-interface-decls -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(UtilOpsTypeInterfaces.cpp.inc -gen-type-interface-defs -I${MLIR_INCLUDE_DIRS})
 add_public_tablegen_target(MLIRUtilIncGen)
 
 add_library(PgxLowerRuntime

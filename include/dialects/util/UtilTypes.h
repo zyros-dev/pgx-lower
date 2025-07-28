@@ -5,8 +5,8 @@
 #include "mlir/IR/OpDefinition.h"
 #include "dialects/util/UtilDialect.h"
 
-// TODO: Add type interfaces if needed
-// #include "UtilOpsTypeInterfaces.h.inc"
+// Include type interface declarations
+#include "UtilOpsTypeInterfaces.h.inc"
 
 #define GET_TYPEDEF_CLASSES
 #include "UtilTypes.h.inc"

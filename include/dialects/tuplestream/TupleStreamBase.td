@@ -20,9 +20,14 @@ def TupleStream_Dialect : Dialect {
     let cppNamespace = "::pgx_lower::compiler::dialect::tuples";
 
     let extraClassDeclaration = [{
-        void registerTypes();
-        void registerAttrs();
-        ColumnManager& getColumnManager();
+        private:
+            ColumnManager columnManager;
+        public:
+            void registerTypes();
+            void registerAttrs();
+            ColumnManager& getColumnManager(){
+                return columnManager;
+            }
     }];
     let useDefaultTypePrinterParser=1;
     let useDefaultAttributePrinterParser=1;
