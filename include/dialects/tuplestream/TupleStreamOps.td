@@ -34,10 +34,11 @@ def TupleStream_ReturnOp : TupleStream_Op<"return", [Pure,ReturnLike,Terminator]
 def GetColumnOp : TupleStream_Op<"getcol", [Pure]> {
     let summary = "get column operation";
 
-    let arguments = (ins TupleStream_Tuple:$tuple);
+    // TODO: Change back to TupleStream_Tuple once type generation is fixed
+    let arguments = (ins AnyType:$tuple);
     let results = (outs AnyType : $res);
     // Simplified - TODO: Add column reference handling
-    let assemblyFormat = [{  $tuple `:` type($res) attr-dict }];
+    let assemblyFormat = [{  $tuple `:` type($tuple) `->` type($res) attr-dict }];
 }
 
 def GetParamVal: TupleStream_Op<"get_param_val", [Pure]> {

@@ -6,7 +6,7 @@
 #include "mlir/IR/OpDefinition.h"
 
 // Forward declarations for TupleStream dialect types
-namespace mlir::tuples {
+namespace pgx_lower::compiler::dialect::tuples {
 // TODO: These should be generated from TableGen, but for now use forward declarations
 class TupleStreamType;
 class TupleType;

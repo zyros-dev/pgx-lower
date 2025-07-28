@@ -6,7 +6,7 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
-include "UtilBase.td"
+include "dialects/util/UtilBase.td"
 
 
 class Util_Op<string mnemonic, list<Trait> traits = []> :

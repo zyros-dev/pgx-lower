@@ -2990,7 +2990,7 @@ void RelalgToSubOpLoweringPass::runOnOperation() {
    target.addIllegalDialect<relalg::RelAlgDialect>();
    target.addLegalDialect<subop::SubOperatorDialect>();
    target.addLegalDialect<db::DBDialect>();
-   target.addLegalDialect<lingodb::compiler::dialect::arrow::ArrowDialect>();
+   // ArrowDialect removed - we use PostgreSQL runtime instead
 
    target.addLegalDialect<tuples::TupleStreamDialect>();
    target.addLegalDialect<func::FuncDialect>();
@@ -3052,12 +3052,13 @@ pgx_lower::compiler::dialect::relalg::createLowerToSubOpPass() {
 }
 
 void pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPipeline(mlir::OpPassManager& pm) {
-   pm.addPass(pgx_lower::compiler::dialect::relalg::createLowerToSubOpPass());
+   pm.addPass(createLowerToSubOpPass());
 }
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> 
 pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPass() {
-   return std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>>(createLowerToSubOpPass().release());
+   // Create a new instance directly as OperationPass<ModuleOp>
+   return std::make_unique<RelalgToSubOpLoweringPass>();
 }
 
 void pgx_lower::compiler::dialect::relalg::populateRelAlgToSubOpConversionPatterns(

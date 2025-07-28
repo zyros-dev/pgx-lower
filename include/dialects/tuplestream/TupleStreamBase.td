@@ -45,9 +45,13 @@ def TupleStream : TupleStream_Type<"TupleStream", "tuplestream"> {
     let summary = "tuple stream type";
 }
 
+// Note: TableGen generates class name as <name>Type, so "TupleType" becomes "TupleTypeType"
+// We need to name this just "Tuple" to get "TupleType" in generated code
 def TupleStream_Tuple : TupleStream_Type<"Tuple", "tuple"> {
     let summary = "tuple type";
 }
+// Create alias for TupleType to match generated code expectations
+def TupleType : TypeAlias<TupleStream_Tuple>;
 
 
 //===----------------------------------------------------------------------===//

@@ -1,6 +1,7 @@
 #include "dialects/util/UtilDialect.h"
 #include "dialects/util/UtilTypes.h"
 #include "dialects/util/UtilOps.h"
+// Include FunctionHelper before generated code
 #include "dialects/util/FunctionHelper.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -44,11 +45,13 @@ void UtilDialect::registerTypes() {
 // Include TableGen generated definitions
 #include "UtilDialect.cpp.inc"
 
-// Constructor to initialize FunctionHelper
+// getFunctionHelper implementation
 namespace pgx_lower::compiler::dialect::util {
-UtilDialect::UtilDialect(mlir::MLIRContext* context) 
-    : UtilDialectBase(context) {
-    functionHelper = std::make_shared<FunctionHelper>();
+FunctionHelper& UtilDialect::getFunctionHelper() {
+    if (!functionHelper) {
+        functionHelper = std::make_shared<FunctionHelper>();
+    }
+    return *functionHelper;
 }
 }
 
