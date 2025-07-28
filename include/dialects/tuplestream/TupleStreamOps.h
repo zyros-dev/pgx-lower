@@ -1,9 +1,9 @@
-#ifndef LINGODB_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMOPS_H
-#define LINGODB_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMOPS_H
+#ifndef PGX_LOWER_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMOPS_H
+#define PGX_LOWER_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMOPS_H
 
-#include "lingodb/compiler/Dialect/TupleStream/Column.h"
-#include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsAttributes.h"
-#include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsTypes.h"
+#include "dialects/tuplestream/Column.h"
+#include "TupleStreamAttrs.h.inc"
+#include "TupleStreamTypes.h.inc"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"
@@ -13,6 +13,6 @@
 #include "mlir/IR/Builders.h"
 
 #define GET_OP_CLASSES
-#include "lingodb/compiler/Dialect/TupleStream/TupleStreamOps.h.inc"
+#include "TupleStreamOps.h.inc"
 
-#endif //LINGODB_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMOPS_H
+#endif //PGX_LOWER_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMOPS_H

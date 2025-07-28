@@ -361,5 +361,4 @@ void relalg::NestedOp::print(::mlir::OpAsmPrinter& p) {
 }
 #define GET_OP_CLASSES
 #include "RelAlgOps.cpp.inc"
-#define GET_TYPEDEF_CLASSES
-#include "RelAlgOpsTypes.cpp.inc"
+// RelAlg reuses TupleStreamType, no custom types

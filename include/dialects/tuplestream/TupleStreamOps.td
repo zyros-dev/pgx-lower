@@ -1,5 +1,5 @@
-#ifndef LINGODB_DIALECT_TupleStream_IR_OPS
-#define LINGODB_DIALECT_TupleStream_IR_OPS
+#ifndef PGX_LOWER_DIALECT_TupleStream_IR_OPS
+#define PGX_LOWER_DIALECT_TupleStream_IR_OPS
 
 include "mlir/IR/OpBase.td"
 include "mlir/IR/EnumAttr.td"
@@ -8,7 +8,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
-include "lingodb/compiler/Dialect/TupleStream/TupleStreamBase.td"
+include "dialects/tuplestream/TupleStreamBase.td"
 
 
 class TupleStream_Op<string mnemonic, list<Trait> traits = []> : Op<TupleStream_Dialect, mnemonic, traits> {
@@ -45,4 +45,4 @@ def GetParamVal: TupleStream_Op<"get_param_val", [Pure]> {
     let results = (outs AnyType: $res);
     let assemblyFormat = [{  $param `:` type($param) `->` type($res) attr-dict }];
 }
-#endif // LINGODB_DIALECT_TupleStream_IR_OPS
+#endif // PGX_LOWER_DIALECT_TupleStream_IR_OPS

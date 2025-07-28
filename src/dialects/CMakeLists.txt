@@ -73,6 +73,11 @@ mlir_tablegen(TupleStreamTypes.h.inc -gen-typedef-decls --typedefs-dialect=tuple
 mlir_tablegen(TupleStreamTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(TupleStreamAttrs.h.inc -gen-attrdef-decls --attrdefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(TupleStreamAttrs.cpp.inc -gen-attrdef-defs --attrdefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
+
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/tuplestream/TupleStreamOps.td)
+mlir_tablegen(TupleStreamOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(TupleStreamOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+
 add_public_tablegen_target(MLIRTupleStreamIncGen)
 
 # DSA dialect TableGen
