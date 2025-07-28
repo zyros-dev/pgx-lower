@@ -1,52 +1,62 @@
 //
 // Created by michael on 3/17/25.
+// Adapted for pgx-lower - removed Arrow dependencies
 //
 
-#ifndef LINGODB_CATALOG_METADATA_H
-#define LINGODB_CATALOG_METADATA_H
-#include <arrow/type_fwd.h>
+#ifndef PGX_LOWER_CATALOG_METADATA_H
+#define PGX_LOWER_CATALOG_METADATA_H
 
 #include <optional>
-namespace lingodb::utility {
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace pgx_lower::utility {
 class Serializer;
 class Deserializer;
-} //end namespace lingodb::utility
-namespace lingodb::catalog {
-class Sample {
-   std::shared_ptr<arrow::RecordBatch> sampleData;
+} //end namespace pgx_lower::utility
 
-   public:
-   Sample(std::shared_ptr<arrow::RecordBatch> sampleData) : sampleData(sampleData) {}
-   Sample(std::shared_ptr<arrow::Schema> sampleData);
-   std::shared_ptr<arrow::RecordBatch> getSampleData() const { return sampleData; }
-   void serialize(utility::Serializer& serializer) const;
-   static Sample deserialize(utility::Deserializer& deserializer);
-   operator bool() {
-      return !!sampleData;
+namespace pgx_lower::catalog {
+
+// Stub implementation for catalog metadata without Arrow dependencies
+class Sample {
+public:
+   Sample() = default;
+   Sample(const std::string& data) : sampleData(data) {}
+   
+   // Stub methods for compatibility
+   void serialize(pgx_lower::utility::Serializer& serializer) const {}
+   void deserialize(pgx_lower::utility::Deserializer& deserializer) {}
+   
+private:
+   std::string sampleData;
+};
+
+class TableMetaData {
+public:
+   TableMetaData() = default;
+   TableMetaData(const std::string& name) : tableName(name) {}
+   
+   // Stub methods for compatibility
+   const std::string& getName() const { return tableName; }
+   void serialize(pgx_lower::utility::Serializer& serializer) const {}
+   void deserialize(pgx_lower::utility::Deserializer& deserializer) {}
+   
+private:
+   std::string tableName;
+};
+
+class TableMetaDataProvider {
+public:
+   TableMetaDataProvider() = default;
+   virtual ~TableMetaDataProvider() = default;
+   
+   // Stub methods for compatibility
+   virtual std::shared_ptr<TableMetaData> getTableMetaData(const std::string& name) {
+      return std::make_shared<TableMetaData>(name);
    }
 };
-class ColumnStatistics {
-   std::optional<size_t> numDistinctValues;
 
-   public:
-   ColumnStatistics() = default;
-   ColumnStatistics(std::optional<size_t> numDistinctValues) : numDistinctValues(numDistinctValues) {}
-   std::optional<size_t> getNumDistinctValues() { return numDistinctValues; }
-   void serialize(utility::Serializer& serializer) const;
-   static ColumnStatistics deserialize(utility::Deserializer& deserializer);
-};
-class TableMetaDataProvider {
-   public:
-   virtual const Sample& getSample() const = 0;
-   virtual std::vector<std::string> getColumnNames() const = 0;
-   virtual const ColumnStatistics& getColumnStatistics(std::string_view column) const = 0;
-   virtual size_t getNumRows() const = 0;
-   virtual std::vector<std::string> getPrimaryKey() const = 0;
-   virtual std::vector<std::pair<std::string, std::vector<std::string>>> getIndices() const = 0;
-   void serialize(utility::Serializer& serializer) const;
-   static std::shared_ptr<TableMetaDataProvider> deserialize(utility::Deserializer& deserializer);
-   virtual ~TableMetaDataProvider() = default;
-};
-} //end namespace lingodb::catalog
+} // namespace pgx_lower::catalog
 
-#endif //LINGODB_CATALOG_METADATA_H
+#endif //PGX_LOWER_CATALOG_METADATA_H

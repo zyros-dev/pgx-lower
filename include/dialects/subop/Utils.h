@@ -1,9 +1,9 @@
 #ifndef LINGODB_COMPILER_DIALECT_SUBOPERATOR_UTILS_H
 #define LINGODB_COMPILER_DIALECT_SUBOPERATOR_UTILS_H
-#include "lingodb/compiler/Dialect/TupleStream/TupleStreamOps.h"
+#include "dialects/tuplestream/TupleStreamOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include <unordered_map>
-namespace lingodb::compiler::dialect::subop {
+namespace pgx_lower::compiler::dialect::subop {
 class MapCreationHelper {
    std::unordered_map<dialect::tuples::Column*, size_t> columnToIndex;
    std::vector<mlir::Attribute> colRefs;
@@ -38,6 +38,6 @@ class MapCreationHelper {
       return mapBlock;
    }
 };
-} //end namespace lingodb::compiler::dialect::subop
+} //end namespace pgx_lower::compiler::dialect::subop
 
 #endif //LINGODB_COMPILER_DIALECT_SUBOPERATOR_UTILS_H
