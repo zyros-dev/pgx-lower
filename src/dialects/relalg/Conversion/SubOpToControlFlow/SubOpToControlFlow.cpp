@@ -12,8 +12,8 @@
 #include "lingodb/compiler/Dialect/util/FunctionHelper.h"
 #include "lingodb/compiler/Dialect/util/UtilDialect.h"
 #include "lingodb/compiler/Dialect/util/UtilOps.h"
-#include "lingodb/compiler/runtime/ArrowColumn.h"
-#include "lingodb/compiler/runtime/ArrowTable.h"
+#include "runtime/PostgreSQLRuntime.h"
+// ArrowTable included via PostgreSQLRuntime.h
 #include "lingodb/compiler/runtime/Buffer.h"
 #include "lingodb/compiler/runtime/DataSourceIteration.h"
 #include "lingodb/compiler/runtime/EntryLock.h"

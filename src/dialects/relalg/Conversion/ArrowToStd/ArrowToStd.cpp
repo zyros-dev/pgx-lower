@@ -25,7 +25,7 @@
 
 #include "lingodb/compiler/runtime/ExecutionContext.h"
 
-#include <lingodb/compiler/runtime/ArrowColumn.h>
+#include "runtime/PostgreSQLRuntime.h"
 using namespace mlir;
 namespace arrow = lingodb::compiler::dialect::arrow;
 namespace util = lingodb::compiler::dialect::util;

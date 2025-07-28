@@ -1,5 +1,7 @@
 #include "dialects/util/UtilDialect.h"
 #include "dialects/util/UtilTypes.h"
+#include "dialects/util/UtilOps.h"
+#include "dialects/util/FunctionHelper.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
@@ -25,13 +27,14 @@ void UtilDialect::initialize() {
 #include "UtilTypes.cpp.inc"
    >();
    
-   // Add operations if we define any
-   // addOperations<
-   // #define GET_OP_LIST
-   // #include "UtilOps.cpp.inc"
-   //    >();
+   // Add operations
+   addOperations<
+   #define GET_OP_LIST
+   #include "UtilOps.cpp.inc"
+      >();
    
    addInterfaces<UtilInlinerInterface>();
+   // Initialize FunctionHelper after TableGen includes are processed
 }
 
 void UtilDialect::registerTypes() {
@@ -40,6 +43,14 @@ void UtilDialect::registerTypes() {
 
 // Include TableGen generated definitions
 #include "UtilDialect.cpp.inc"
+
+// Constructor to initialize FunctionHelper
+namespace pgx_lower::compiler::dialect::util {
+UtilDialect::UtilDialect(mlir::MLIRContext* context) 
+    : UtilDialectBase(context) {
+    functionHelper = std::make_shared<FunctionHelper>();
+}
+}
 
 #define GET_TYPEDEF_CLASSES
 #include "UtilTypes.cpp.inc"

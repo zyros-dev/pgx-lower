@@ -56,6 +56,19 @@ include_directories(
 
 enable_testing()
 
+# Create build_includes target for runtime header generation
+add_custom_target(build_includes)
+set(runtime_funcs_ptr_libs "")
+
+# Add tools for runtime header generation
+add_subdirectory(tools/build-tools)
+
+# Skip runtime header generation for now - we'll use manual wrappers
+# TODO: Fix runtime-header-tool to work with system clang libraries
+
+# Create empty runtime_funcs_ptr library for now
+add_library(runtime_funcs_ptr INTERFACE)
+
 # Add dialect library
 add_subdirectory(src/dialects)
 

@@ -64,8 +64,8 @@ class ExecutionContext {
 
    public:
    ExecutionContext(Session& session) : session(session) {
-      allocators.resize(lingodb::scheduler::getNumWorkers());
-      stringArenas.resize(lingodb::scheduler::getNumWorkers());
+      allocators.resize(pgx_lower::scheduler::getNumWorkers());
+      stringArenas.resize(pgx_lower::scheduler::getNumWorkers());
    }
    Session& getSession() {
       return session;
@@ -90,7 +90,7 @@ class ExecutionContext {
    }
 
    uint8_t* allocString(size_t bytes) {
-      return stringArenas[lingodb::scheduler::currentWorkerId()].alloc(bytes);
+      return stringArenas[pgx_lower::scheduler::currentWorkerId()].alloc(bytes);
    }
    static void setResult(uint32_t id, uint8_t* ptr);
    static uint8_t* allocStateRaw(size_t size);
@@ -100,7 +100,7 @@ class ExecutionContext {
       states.insert(s.ptr, s);
    }
    State& getAllocator(size_t group) {
-      return allocators[lingodb::scheduler::currentWorkerId()][group];
+      return allocators[pgx_lower::scheduler::currentWorkerId()][group];
    }
    ~ExecutionContext();
 };

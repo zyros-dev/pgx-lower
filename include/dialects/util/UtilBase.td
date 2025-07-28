@@ -13,6 +13,11 @@ let cppNamespace = "::pgx_lower::compiler::dialect::util";
 let extraClassDeclaration = [{
 private:
 void registerTypes();
+std::shared_ptr<FunctionHelper> functionHelper;
+public:
+FunctionHelper& getFunctionHelper(){
+    return *functionHelper;
+}
 }];
     let useDefaultTypePrinterParser=1;
 }

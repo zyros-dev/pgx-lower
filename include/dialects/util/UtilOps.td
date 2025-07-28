@@ -153,9 +153,9 @@ let results=(outs AnyType:$val);
 let assemblyFormat = "$ref `[` $idx `]` `:`type($ref) `->` type($val) attr-dict";
 let builders = [
         OpBuilder<(ins "mlir::Value":$ref, "mlir::Value":$idx), [{
-    build($_builder, $_state, ref.getType().cast<lingodb::compiler::dialect::util::RefType>().getElementType(), ref, idx);
+    build($_builder, $_state, ref.getType().cast<pgx_lower::compiler::dialect::util::RefType>().getElementType(), ref, idx);
 }]>,OpBuilder<(ins "mlir::Value":$ref), [{
-        build($_builder, $_state, ref.getType().cast<lingodb::compiler::dialect::util::RefType>().getElementType(), ref, mlir::Value());
+        build($_builder, $_state, ref.getType().cast<pgx_lower::compiler::dialect::util::RefType>().getElementType(), ref, mlir::Value());
     }]>
 ];
 }
@@ -187,7 +187,7 @@ let builders = [
     for(auto val:vals){
         types.push_back(val.getType());
         }
-    build($_builder, $_state, mlir::TupleType::get($_builder.getContext(),types), vals);
+    build($_builder, $_state, TupleType::get($_builder.getContext(),types), vals);
 }]>];
 }
 def UnPackOp : Util_Op<"unpack",[Pure]> {
@@ -200,7 +200,7 @@ let hasCanonicalizeMethod = 1;
   let hasFolder = 1;
 let builders = [
         OpBuilder<(ins "mlir::Value":$tuple), [{
-    build($_builder, $_state, tuple.getType().cast<mlir::TupleType>().getTypes(), tuple);
+    build($_builder, $_state, tuple.getType().cast<TupleType>().getTypes(), tuple);
 }]>
 ];
 }
