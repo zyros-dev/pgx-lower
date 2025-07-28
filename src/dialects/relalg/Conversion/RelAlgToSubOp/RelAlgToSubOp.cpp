@@ -1,16 +1,18 @@
-#include "dialects/relalg/Conversion/RelAlgToSubOp/RelAlgToSubOpPass.h"
-#include "dialects/relalg/Conversion/RelAlgToSubOp/OrderedAttributes.h"
-#include "dialects/relalg/RelAlgDialect.h"
-#include "dialects/relalg/RelAlgOps.h"
-#include "dialects/subop/SubOpDialect.h"
-#include "dialects/subop/SubOpOps.h"
-#include "dialects/subop/Utils.h"
-#include "dialects/tuplestream/TupleStreamDialect.h"
-#include "dialects/db/DBDialect.h"
-#include "dialects/db/DBOps.h"
-#include "dialects/util/UtilDialect.h"
-#include "dialects/util/UtilOps.h"
-#include "dialects/util/FunctionHelper.h"
+#include "lingodb/compiler/Conversion/RelAlgToSubOp/RelAlgToSubOpPass.h"
+
+#include "lingodb/compiler/Conversion/RelAlgToSubOp/OrderedAttributes.h"
+#include "lingodb/compiler/Dialect/Arrow/IR/ArrowDialect.h"
+#include "lingodb/compiler/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/compiler/Dialect/DB/IR/DBOps.h"
+#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/compiler/Dialect/SubOperator/SubOperatorDialect.h"
+#include "lingodb/compiler/Dialect/SubOperator/SubOperatorOps.h"
+#include "lingodb/compiler/Dialect/SubOperator/Utils.h"
+#include "lingodb/compiler/Dialect/TupleStream/TupleStreamOps.h"
+#include "lingodb/compiler/Dialect/util/FunctionHelper.h"
+#include "lingodb/compiler/Dialect/util/UtilDialect.h"
+#include "lingodb/compiler/Dialect/util/UtilOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Async/IR/Async.h"
@@ -34,7 +36,7 @@
 using namespace mlir;
 
 namespace {
-using namespace pgx_lower::compiler::dialect;
+using namespace lingodb::compiler::dialect;
 struct RelalgToSubOpLoweringPass
    : public PassWrapper<RelalgToSubOpLoweringPass, OperationPass<ModuleOp>> {
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(RelalgToSubOpLoweringPass)
@@ -3041,26 +3043,19 @@ void RelalgToSubOpLoweringPass::runOnOperation() {
       signalPassFailure();
 }
 } //namespace
-
-//===----------------------------------------------------------------------===//
-// Public Interface
-//===----------------------------------------------------------------------===//
-
 std::unique_ptr<mlir::Pass>
-pgx_lower::compiler::dialect::relalg::createLowerToSubOpPass() {
+relalg::createLowerToSubOpPass() {
    return std::make_unique<RelalgToSubOpLoweringPass>();
 }
-
-void pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPipeline(mlir::OpPassManager& pm) {
-   pm.addPass(pgx_lower::compiler::dialect::relalg::createLowerToSubOpPass());
+void relalg::createLowerRelAlgToSubOpPipeline(mlir::OpPassManager& pm) {
+   pm.addPass(relalg::createLowerToSubOpPass());
 }
-
-std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> 
-pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPass() {
-   return std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>>(createLowerToSubOpPass().release());
-}
-
-void pgx_lower::compiler::dialect::relalg::populateRelAlgToSubOpConversionPatterns(
-    mlir::RewritePatternSet &patterns, mlir::TypeConverter &typeConverter) {
-    // TODO: Add pattern population if needed
+void relalg::registerRelAlgToSubOpConversionPasses() {
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return relalg::createLowerToSubOpPass();
+   });
+   mlir::PassPipelineRegistration<EmptyPipelineOptions>(
+      "lower-relalg-to-subop",
+      "",
+      relalg::createLowerRelAlgToSubOpPipeline);
 }

@@ -454,14 +454,15 @@ def NestedOp : RelAlg_Op<"nested", [Pure,Operator]> {
 // Utility
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-def AggrFuncOp : RelAlg_Op<"aggrfn", [Pure]> {
-    let summary = "aggregation operation";
-
-    let arguments = (ins RelAlg_AggrFunc:$fn,TupleStream:$rel);
-    let results = (outs AnyType:$result);
-    // Simplified - TODO: Add column reference handling
-    let assemblyFormat = [{  $fn $rel `:` type($result) attr-dict }];
-}
+// TODO: Fix AggrFuncOp TableGen generation issues
+// def AggrFuncOp : RelAlg_Op<"aggrfn", [Pure]> {
+//     let summary = "aggregation operation";
+//
+//     let arguments = (ins RelAlg_AggrFunc:$fn,TupleStream:$rel);
+//     let results = (outs AnyType:$result);
+//     // Simplified - TODO: Add column reference handling
+//     let assemblyFormat = [{  $fn $rel `:` type($result) attr-dict }];
+// }
 
 def CountRowsOp : RelAlg_Op<"count", [Pure]> {
     let summary = "count rows";

@@ -104,7 +104,6 @@ add_library(MLIRSubOpDialect STATIC
     subop/SubOpDialect.cpp
     subop/SubOpInterfaces.cpp
     subop/SubOperatorOps.cpp
-    subop/LowerSubOpToDB.cpp
 )
 
 add_library(MLIRDBDialect STATIC
