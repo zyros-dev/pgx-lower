@@ -187,7 +187,7 @@ let builders = [
     for(auto val:vals){
         types.push_back(val.getType());
         }
-    build($_builder, $_state, TupleType::get($_builder.getContext(),types), vals);
+    build($_builder, $_state, mlir::TupleType::get($_builder.getContext(),types), vals);
 }]>];
 }
 def UnPackOp : Util_Op<"unpack",[Pure]> {
@@ -200,7 +200,7 @@ let hasCanonicalizeMethod = 1;
   let hasFolder = 1;
 let builders = [
         OpBuilder<(ins "mlir::Value":$tuple), [{
-    build($_builder, $_state, tuple.getType().cast<TupleType>().getTypes(), tuple);
+    build($_builder, $_state, tuple.getType().cast<mlir::TupleType>().getTypes(), tuple);
 }]>
 ];
 }

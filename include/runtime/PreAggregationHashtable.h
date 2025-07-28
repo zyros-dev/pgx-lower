@@ -1,7 +1,7 @@
 #ifndef LINGODB_RUNTIME_PREAGGREGATIONHASHTABLE_H
 #define LINGODB_RUNTIME_PREAGGREGATIONHASHTABLE_H
-#include "lingodb/runtime/Buffer.h"
-#include "lingodb/runtime/ThreadLocal.h"
+#include "runtime/Buffer.h"
+#include "runtime/ThreadLocal.h"
 #include <cstddef>
 #include <cstdint>
 namespace pgx_lower::compiler::runtime {

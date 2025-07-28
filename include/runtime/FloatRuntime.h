@@ -1,6 +1,6 @@
 #ifndef LINGODB_RUNTIME_FLOATRUNTIME_H
 #define LINGODB_RUNTIME_FLOATRUNTIME_H
-#include "lingodb/runtime/helpers.h"
+#include "runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 struct FloatRuntime {
    static double sqrt(double);

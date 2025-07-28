@@ -1,6 +1,6 @@
 #ifndef LINGODB_RUNTIME_INTEGERRUNTIME_H
 #define LINGODB_RUNTIME_INTEGERRUNTIME_H
-#include "lingodb/runtime/helpers.h"
+#include "runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 struct IntegerRuntime {
    static int64_t round64(int64_t value, int64_t roundByScale);

@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_EXECUTIONCONTEXT_H
-#define LINGODB_RUNTIME_EXECUTIONCONTEXT_H
+#ifndef PGX_LOWER_RUNTIME_EXECUTIONCONTEXT_H
+#define PGX_LOWER_RUNTIME_EXECUTIONCONTEXT_H
 #include <functional>
 #include <memory>
 #include <optional>
@@ -7,7 +7,7 @@
 
 #include "ConcurrentMap.h"
 #include "Session.h"
-#include <lingodb/scheduler/Scheduler.h>
+#include "scheduler/Scheduler.h"
 namespace pgx_lower::compiler::runtime {
 class Database;
 //some state required for query processing;

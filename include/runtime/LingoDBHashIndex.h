@@ -1,9 +1,9 @@
 #ifndef LINGODB_RUNTIME_LINGODBHASHINDEX_H
 #define LINGODB_RUNTIME_LINGODBHASHINDEX_H
-#include "lingodb/runtime/ArrowView.h"
-#include "lingodb/runtime/Buffer.h"
-#include "lingodb/runtime/storage/Index.h"
-#include "lingodb/utility/Serialization.h"
+#include "runtime/ArrowView.h"
+#include "runtime/Buffer.h"
+#include "runtime/storage/Index.h"
+#include "utility/Serialization.h"
 #include <arrow/type_fwd.h>
 namespace lingodb::catalog {
 class LingoDBTableCatalogEntry;

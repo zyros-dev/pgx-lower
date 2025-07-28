@@ -2,7 +2,7 @@
 #define SUBOP_DIALECT_H
 #include <memory>
 
-// #include "lingodb/compiler/Dialect/SubOperator/MemberManager.h" // TODO: Port if needed
+#include "dialects/subop/MemberManager.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"

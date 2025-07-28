@@ -1,6 +1,6 @@
 #ifndef LINGODB_RUNTIME_DATERUNTIME_H
 #define LINGODB_RUNTIME_DATERUNTIME_H
-#include "lingodb/runtime/helpers.h"
+#include "runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 struct DateRuntime {
    static int64_t extractHour(int64_t date);

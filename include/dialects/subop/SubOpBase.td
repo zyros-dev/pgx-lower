@@ -23,8 +23,14 @@ def SubOperator_Dialect : Dialect {
     let useDefaultTypePrinterParser = 1;
     let useDefaultAttributePrinterParser = 1;
     let extraClassDeclaration = [{
+        private:
         void registerTypes();
         void registerAttrs();
+        MemberManager memberManager;
+        public:
+        MemberManager& getMemberManager(){
+            return memberManager;
+        }
     }];
 }
 

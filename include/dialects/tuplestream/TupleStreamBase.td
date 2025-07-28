@@ -49,10 +49,6 @@ def TupleStream_Tuple : TupleStream_Type<"Tuple", "tuple"> {
     let summary = "tuple type";
 }
 
-// Alias for compatibility with generated code
-def TupleType : TupleStream_Type<"TupleType", "tupletype"> {
-    let summary = "tuple type alias";
-}
 
 //===----------------------------------------------------------------------===//
 // Attributes
@@ -62,19 +58,19 @@ class TupleStream_Attr<string name> : AttrDef<TupleStream_Dialect, name>;
 
 def ColumnDefAttr : TupleStream_Attr<"ColumnDef"> {
     let mnemonic = "columndef";
-    let parameters = (ins "mlir::SymbolRefAttr":$name,"mlir::Type":$columnType,"mlir::Attribute":$fromExisting);
+    let parameters = (ins "mlir::SymbolRefAttr":$name,"std::shared_ptr<Column>":$columnPtr,"mlir::Attribute":$fromExisting);
     let hasCustomAssemblyFormat = 1;
     let extraClassDeclaration = [{
-        // Simplified for compilation - TODO: enhance for PostgreSQL tuple handling
+        Column &getColumn() const { return *getColumnPtr();  }
     }];
 }
 
 def ColumnRefAttr : TupleStream_Attr<"ColumnRef"> {
     let mnemonic = "columnref";
-    let parameters = (ins "mlir::SymbolRefAttr":$name,"mlir::Type":$columnType);
+    let parameters = (ins "mlir::SymbolRefAttr":$name,"std::shared_ptr<Column>":$columnPtr);
     let hasCustomAssemblyFormat = 1;
     let extraClassDeclaration = [{
-        // Simplified for compilation - TODO: enhance for PostgreSQL tuple handling
+        Column &getColumn() const { return *getColumnPtr();  }
     }];
 }
 

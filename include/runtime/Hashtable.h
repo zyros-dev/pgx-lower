@@ -1,8 +1,8 @@
 #ifndef LINGODB_RUNTIME_HASHTABLE_H
 #define LINGODB_RUNTIME_HASHTABLE_H
 #include "ThreadLocal.h"
-#include "lingodb/runtime/Buffer.h"
-#include "lingodb/runtime/helpers.h"
+#include "runtime/Buffer.h"
+#include "runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 class Hashtable {
    struct Entry {

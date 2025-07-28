@@ -1,6 +1,6 @@
 #ifndef LINGODB_RUNTIME_STRINGRUNTIME_H
 #define LINGODB_RUNTIME_STRINGRUNTIME_H
-#include "lingodb/runtime/helpers.h"
+#include "runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 struct StringRuntime {
    static bool compareEq(VarLen32 l, VarLen32 r);

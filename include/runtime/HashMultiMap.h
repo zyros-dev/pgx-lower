@@ -1,7 +1,7 @@
 #ifndef LINGODB_RUNTIME_HASHMULTIMAP_H
 #define LINGODB_RUNTIME_HASHMULTIMAP_H
-#include "lingodb/runtime/Buffer.h"
-#include "lingodb/runtime/helpers.h"
+#include "runtime/Buffer.h"
+#include "runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 class HashMultiMap {
    struct Value {

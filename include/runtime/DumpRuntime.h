@@ -1,6 +1,6 @@
 #ifndef LINGODB_RUNTIME_DUMPRUNTIME_H
 #define LINGODB_RUNTIME_DUMPRUNTIME_H
-#include "lingodb/runtime/helpers.h"
+#include "runtime/helpers.h"
 #include <cstdint>
 namespace pgx_lower::compiler::runtime {
 struct DumpRuntime {
