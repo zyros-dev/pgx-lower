@@ -22,7 +22,7 @@ def TupleStream_Dialect : Dialect {
     let extraClassDeclaration = [{
         void registerTypes();
         void registerAttrs();
-        // TODO: Add ColumnManager when needed for PostgreSQL-specific tuple handling
+        ColumnManager& getColumnManager();
     }];
     let useDefaultTypePrinterParser=1;
     let useDefaultAttributePrinterParser=1;

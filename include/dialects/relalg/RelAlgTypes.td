@@ -26,7 +26,7 @@ def RelAlg_TupleStreamType : RelAlg_Type<"TupleStream", "tuplestream"> {
 }
 
 // Convenience type predicate for use in operation definitions
-def TupleStream : Type<CPred<"mlir::isa<::mlir::relalg::TupleStreamType>($_self)">, 
+def TupleStream : Type<CPred<"mlir::isa<pgx_lower::compiler::dialect::relalg::TupleStreamType>($_self)">, 
                       "tuple stream type">;
 
 #endif // RELALG_TYPES

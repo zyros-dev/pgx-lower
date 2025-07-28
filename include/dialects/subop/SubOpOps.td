@@ -62,7 +62,7 @@ def SimpleState : SubOperator_Type<"SimpleState", "simple_state",[State,LookupAb
     let assemblyFormat = "`<` custom<StateMembers>($members) `>`";
         let extraClassDeclaration = [{
             StateMembersAttr getKeyMembers(){
-            return pgx_lower::compiler::dialect::subop::StateMembersAttr::get(getContext(), mlir::ArrayAttr::get(getContext(), {}), mlir::ArrayAttr::get(getContext(), {}));
+            return StateMembersAttr::get(getContext(), mlir::ArrayAttr::get(getContext(), {}), mlir::ArrayAttr::get(getContext(), {}));
             }
             StateMembersAttr getValueMembers();
         }];

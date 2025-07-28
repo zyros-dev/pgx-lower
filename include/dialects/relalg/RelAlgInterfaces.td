@@ -2,7 +2,7 @@
 #define Interfaces
 include "mlir/IR/OpBase.td"
 def Relalg_CmpOpInterface : OpInterface<"CmpOpInterface"> {
-  let cppNamespace = "::lingodb::compiler::dialect::relalg";
+  let cppNamespace = "pgx_lower::compiler::dialect::relalg";
 
   let methods = [
     InterfaceMethod<
@@ -45,33 +45,33 @@ def Operator : OpInterface<"Operator"> {
 let methods = [
 InterfaceMethod<
         "get all columns that are used directly by this operator",
-        "lingodb::compiler::dialect::relalg::ColumnSet", "getUsedColumns",(ins ),"", /*defaultImplementation=*/[{
-    return lingodb::compiler::dialect::relalg::detail::getUsedColumns(this->getOperation());
+        "pgx_lower::compiler::dialect::relalg::ColumnSet", "getUsedColumns",(ins ),"", /*defaultImplementation=*/[{
+    return pgx_lower::compiler::dialect::relalg::detail::getUsedColumns(this->getOperation());
 }]
 >,
 InterfaceMethod<
         "get all columns that are available after this operator",
-        "lingodb::compiler::dialect::relalg::ColumnSet", "getAvailableColumns",(ins ),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::detail::getAvailableColumns(this->getOperation());
+        "pgx_lower::compiler::dialect::relalg::ColumnSet", "getAvailableColumns",(ins ),"", /*defaultImplementation=*/[{
+return pgx_lower::compiler::dialect::relalg::detail::getAvailableColumns(this->getOperation());
 }]
 >,
 InterfaceMethod<
         "get all columns that are available after this operator",
-        "bool", "canColumnReach",(ins "Operator":$source, "Operator":$target,"const lingodb::compiler::dialect::tuples::Column*":$column),"", /*defaultImplementation=*/[{
-        return lingodb::compiler::dialect::relalg::detail::canColumnReach(this->getOperation(),source,target,column);
+        "bool", "canColumnReach",(ins "Operator":$source, "Operator":$target,"const pgx_lower::compiler::dialect::tuples::Column*":$column),"", /*defaultImplementation=*/[{
+        return pgx_lower::compiler::dialect::relalg::detail::canColumnReach(this->getOperation(),source,target,column);
 }]
 >,
 InterfaceMethod<
         "get all functional dependencies that hold after this operator",
-        "lingodb::compiler::dialect::relalg::FunctionalDependencies", "getFDs",(ins ),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::detail::getFDs(this->getOperation());
+        "pgx_lower::compiler::dialect::relalg::FunctionalDependencies", "getFDs",(ins ),"", /*defaultImplementation=*/[{
+return pgx_lower::compiler::dialect::relalg::detail::getFDs(this->getOperation());
 }]
 >,
 
 InterfaceMethod<
         "",
         "void", "moveSubTreeBefore",(ins "Operator":$before),"", /*defaultImplementation=*/[{
-lingodb::compiler::dialect::relalg::detail::moveSubTreeBefore(this->getOperation(),before);
+pgx_lower::compiler::dialect::relalg::detail::moveSubTreeBefore(this->getOperation(),before);
 }]
 >,
 InterfaceMethod<
@@ -81,7 +81,7 @@ InterfaceMethod<
     auto op=this->getOperation();
     for (auto operand : op->getOperands()) {
         mlir::Type t=operand.getType();
-        bool isreltype=mlir::isa<lingodb::compiler::dialect::tuples::TupleStreamType>(t);
+        bool isreltype=mlir::isa<pgx_lower::compiler::dialect::relalg::TupleStreamType>(t);
         auto childOp=operand.getDefiningOp();
         if (isreltype&&childOp) {
             auto childOperator=mlir::dyn_cast_or_null<Operator>(childOp);
@@ -114,7 +114,7 @@ InterfaceMethod<
     size_t j=0;
     for (auto operand : op->getOperands()) {
         mlir::Type t=operand.getType();
-        bool isreltype=mlir::isa<lingodb::compiler::dialect::tuples::TupleStreamType>(t);
+        bool isreltype=mlir::isa<pgx_lower::compiler::dialect::relalg::TupleStreamType>(t);
         auto childOp=operand.getDefiningOp();
         if (isreltype&&childOp) {
             op->setOperand(i,children[j].asRelation());
@@ -132,14 +132,14 @@ return this->getOperation()->getResult(0);
 >,
 InterfaceMethod<
         "get all 'free' columns",
-        "lingodb::compiler::dialect::relalg::ColumnSet", "getFreeColumns",(ins ),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::detail::getFreeColumns(this->getOperation());
+        "pgx_lower::compiler::dialect::relalg::ColumnSet", "getFreeColumns",(ins ),"", /*defaultImplementation=*/[{
+return pgx_lower::compiler::dialect::relalg::detail::getFreeColumns(this->getOperation());
 }]
 >,
 InterfaceMethod<
         "get all columns that are created by this operator",
-        "lingodb::compiler::dialect::relalg::ColumnSet", "getCreatedColumns",(ins ),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::ColumnSet();
+        "pgx_lower::compiler::dialect::relalg::ColumnSet", "getCreatedColumns",(ins ),"", /*defaultImplementation=*/[{
+return pgx_lower::compiler::dialect::relalg::ColumnSet();
 }]
 >
 ];
@@ -155,19 +155,22 @@ return this->getOperation()->getOperand(0).getDefiningOp();
 InterfaceMethod<
         "assoc",
         "bool", "isAssoc",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::detail::assoc.contains(lingodb::compiler::dialect::relalg::detail::getBinaryOperatorType(this->getOperation()), lingodb::compiler::dialect::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+// Simplified for initial compilation
+return false;
 }]
 >,
 InterfaceMethod<
 "assoc",
 "bool", "isLAsscom",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::detail::lAsscom.contains(lingodb::compiler::dialect::relalg::detail::getBinaryOperatorType(this->getOperation()), lingodb::compiler::dialect::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+// Simplified for initial compilation
+return false;
 }]
 >,
 InterfaceMethod<
 "assoc",
 "bool", "isRAsscom",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::detail::rAsscom.contains(lingodb::compiler::dialect::relalg::detail::getBinaryOperatorType(this->getOperation()), lingodb::compiler::dialect::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+// Simplified for initial compilation
+return false;
 }]
 >,
 InterfaceMethod<
@@ -189,19 +192,22 @@ return this->getOperation()->getOperand(0).getDefiningOp();
 InterfaceMethod<
 "assoc",
 "bool", "reorderable",(ins "UnaryOperator":$binop),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::detail::reorderable.contains(lingodb::compiler::dialect::relalg::detail::getUnaryOperatorType(this->getOperation()), lingodb::compiler::dialect::relalg::detail::getUnaryOperatorType(binop.getOperation()));
+// Simplified for initial compilation
+return false;
 }]
 >,
 InterfaceMethod<
 "assoc",
 "bool", "lPushable",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::detail::lPushable.contains(lingodb::compiler::dialect::relalg::detail::getUnaryOperatorType(this->getOperation()), lingodb::compiler::dialect::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+// Simplified for initial compilation
+return false;
 }]
 >,
 InterfaceMethod<
 "assoc",
 "bool", "rPushable",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return lingodb::compiler::dialect::relalg::detail::rPushable.contains(lingodb::compiler::dialect::relalg::detail::getUnaryOperatorType(this->getOperation()), lingodb::compiler::dialect::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+// Simplified for initial compilation
+return false;
 }]
 >
 ];
@@ -248,7 +254,7 @@ InterfaceMethod<
         "",
         "void", "addPredicate",(ins "std::function<mlir::Value(mlir::Value, mlir::OpBuilder& builder)>":$producer),""
         , /*op=*/[{
-lingodb::compiler::dialect::relalg::detail::addPredicate(this->getOperation(),producer);
+pgx_lower::compiler::dialect::relalg::detail::addPredicate(this->getOperation(),producer);
 }]>,
 InterfaceMethod<
         "",
@@ -261,15 +267,15 @@ InterfaceMethod<
         "",
         "void", "initPredicate",(ins ),""
         , /*op=*/[{
-lingodb::compiler::dialect::relalg::detail::initPredicate(this->getOperation());
+pgx_lower::compiler::dialect::relalg::detail::initPredicate(this->getOperation());
 }]
 >];
 }
 
 def ColumnFoldable : OpInterface<"ColumnFoldable"> {
 let methods = [
-InterfaceMethod<"","mlir::LogicalResult", "foldColumns",(ins "lingodb::compiler::dialect::relalg::ColumnFoldInfo&":$columnInfo),"",[{return mlir::failure();}]>,
-InterfaceMethod<"","mlir::LogicalResult", "eliminateDeadColumns",(ins "lingodb::compiler::dialect::relalg::ColumnSet&":$usedColumns,"mlir::Value&":$newStream),"",[{return mlir::failure();}]>
+InterfaceMethod<"","mlir::LogicalResult", "foldColumns",(ins "pgx_lower::compiler::dialect::relalg::ColumnFoldInfo&":$columnInfo),"",[{return mlir::failure();}]>,
+InterfaceMethod<"","mlir::LogicalResult", "eliminateDeadColumns",(ins "pgx_lower::compiler::dialect::relalg::ColumnSet&":$usedColumns,"mlir::Value&":$newStream),"",[{return mlir::failure();}]>
 ];
 }
 

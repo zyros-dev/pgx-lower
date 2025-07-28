@@ -14,7 +14,7 @@ include "mlir/IR/OpBase.td"
 def RelAlg_Dialect : Dialect {
     let name = "relalg";
     let summary = "A dialect for relational algebra (simplified from LingoDB)";
-    let cppNamespace = "::pgx_lower::compiler::dialect::relalg";
+    let cppNamespace = "pgx_lower::compiler::dialect::relalg";
     let useDefaultAttributePrinterParser = 1;
 }
 
@@ -23,6 +23,8 @@ def RelAlg_Dialect : Dialect {
 //===----------------------------------------------------------------------===//
 
 class RelAlg_Op<string mnemonic, list<Trait> traits = []> : 
-    Op<RelAlg_Dialect, mnemonic, traits>;
+    Op<RelAlg_Dialect, mnemonic, traits> {
+  let hasCustomAssemblyFormat = 1;
+}
 
 #endif // RELALG_BASE

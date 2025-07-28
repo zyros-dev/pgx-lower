@@ -8,24 +8,17 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
-include "lingodb/compiler/Dialect/TupleStream/TupleStreamBase.td"
+include "dialects/tuplestream/TupleStreamBase.td"
 
+include "RelAlgBase.td"
 include "RelAlgInterfaces.td"
 
-def SubOp_ResultTable : Type<CPred<"mlir::isa<::lingodb::compiler::dialect::subop::LocalTableType>($_self)">,"result table type">;
-def DSA_Collection : Type<CPred<"mlir::isa<::lingodb::compiler::dialect::util::CollectionType>($_self)">,"DB collection type">;
+def SubOp_ResultTable : Type<CPred<"mlir::isa<pgx_lower::compiler::dialect::subop::LocalTableType>($_self)">,"result table type">;
+// TODO: Enable when util::CollectionType is properly implemented
+// def DSA_Collection : Type<CPred<"mlir::isa<::pgx_lower::compiler::dialect::util::CollectionType>($_self)">,"DB collection type">;
 
 
-//===----------------------------------------------------------------------===//
-// RelAlg dialect definition.
-//===----------------------------------------------------------------------===//
-
-def RelAlg_Dialect : Dialect {
-    let name = "relalg";
-    let summary = "A dialect for relational algebra";
-    let cppNamespace = "::lingodb::compiler::dialect::relalg";
-    let useDefaultAttributePrinterParser=1;
-}
+// RelAlg dialect definition is in RelAlgBase.td
 
 
 
@@ -43,7 +36,7 @@ def TableMetaDataAttr : RelAlg_Attr<"TableMetaData"> {
 
 def SortSpecificationAttr : RelAlg_Attr<"SortSpecification"> {
     let mnemonic = "sortspec";
-    let parameters = (ins "lingodb::compiler::dialect::tuples::ColumnRefAttr":$attr,"SortSpec":$sortSpec);
+    let parameters = (ins "pgx_lower::compiler::dialect::tuples::ColumnRefAttr":$attr,"SortSpec":$sortSpec);
         let hasCustomAssemblyFormat=1;
 
 }
@@ -57,7 +50,7 @@ def RelAlg_SortSpec_ASC  : I64EnumAttrCase<"asc", 1>;
 
 def RelAlg_SortSpec : I64EnumAttr<"SortSpec", "sort order",
         [RelAlg_SortSpec_DESC,RelAlg_SortSpec_ASC]> {
-    let cppNamespace = "::lingodb::compiler::dialect::relalg";
+    let cppNamespace = "pgx_lower::compiler::dialect::relalg";
 }
 
 def RelAlg_GroupJoinBehavior_Inner  : I64EnumAttrCase<"inner", 0>;
@@ -65,7 +58,7 @@ def RelAlg_GroupJoinBehavior_Outer  : I64EnumAttrCase<"outer", 1>;
 
 def RelAlg_GroupJoinBehavior: I64EnumAttr<"GroupJoinBehavior", "groupjoin behavior",
         [RelAlg_GroupJoinBehavior_Inner,RelAlg_GroupJoinBehavior_Outer]> {
-    let cppNamespace = "::lingodb::compiler::dialect::relalg";
+    let cppNamespace = "pgx_lower::compiler::dialect::relalg";
 }
 
 def RelAlg_Func_Sum   : I64EnumAttrCase<"sum", 0>;
@@ -81,7 +74,7 @@ def RelAlg_Func_VarSamp : I64EnumAttrCase<"var_samp", 7>;
 def RelAlg_AggrFunc : I64EnumAttr<"AggrFunc", "aggregation function",
         [RelAlg_Func_Sum, RelAlg_Func_Min, RelAlg_Func_Max,
          RelAlg_Func_Avg, RelAlg_Func_Count, RelAlg_Func_Any,RelAlg_Func_StdDevSamp,RelAlg_Func_VarSamp]> {
-    let cppNamespace = "::lingodb::compiler::dialect::relalg";
+    let cppNamespace = "pgx_lower::compiler::dialect::relalg";
 }
 
 def RelAlg_SetSemantic_Distinct : I64EnumAttrCase<"distinct", 0>;
@@ -89,17 +82,10 @@ def RelAlg_SetSemantic_All      : I64EnumAttrCase<"all", 1>;
 
 def RelAlg_SetSemantic : I64EnumAttr<"SetSemantic", "",
         [RelAlg_SetSemantic_Distinct,RelAlg_SetSemantic_All]> {
-    let cppNamespace = "::lingodb::compiler::dialect::relalg";
+    let cppNamespace = "pgx_lower::compiler::dialect::relalg";
 }
 
-//===----------------------------------------------------------------------===//
-// Base RelAlg operation definition.
-//===----------------------------------------------------------------------===//
-
-class RelAlg_Op<string mnemonic, list<Trait> traits = []> : Op<RelAlg_Dialect, mnemonic, traits> {
-  let hasCustomAssemblyFormat = 1;
-
-}
+// Base RelAlg operation definition is in RelAlgBase.td
 
 //===----------------------------------------------------------------------===//
 // Operations that "create" relations
@@ -125,7 +111,7 @@ def BaseTableOp : RelAlg_Op<"basetable",[Pure,Operator]> {
 
     let extraClassDeclaration = [{
         ColumnSet getCreatedColumns();
-        lingodb::compiler::dialect::relalg::FunctionalDependencies getFDs();
+        pgx_lower::compiler::dialect::relalg::FunctionalDependencies getFDs();
     }];
 }
 
@@ -148,7 +134,7 @@ def SelectionOp : RelAlg_Op<"selection",
     let assemblyFormat = [{ $rel custom<CustRegion>($predicate) attr-dict-with-keyword }];
     let extraClassDeclaration = [{
         mlir::LogicalResult foldColumns(dialect::relalg::ColumnFoldInfo& columnInfo);
-        lingodb::compiler::dialect::relalg::FunctionalDependencies getFDs();
+        pgx_lower::compiler::dialect::relalg::FunctionalDependencies getFDs();
     }];
 }
 
@@ -216,7 +202,7 @@ def RenamingOp : RelAlg_Op<"renaming",
         ColumnSet getCreatedColumns();
         ColumnSet getUsedColumns();
         ColumnSet getAvailableColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 }
 
@@ -232,8 +218,8 @@ def AggregationOp : RelAlg_Op<"aggregation", [Pure,Operator,UnaryOperator]> {
         ColumnSet getUsedColumns();
         ColumnSet getAvailableColumns();
         ColumnSet getCreatedColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
-        lingodb::compiler::dialect::relalg::FunctionalDependencies getFDs();
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
+        pgx_lower::compiler::dialect::relalg::FunctionalDependencies getFDs();
     }];
 }
 
@@ -248,7 +234,7 @@ def GroupJoinOp : RelAlg_Op<"groupjoin", [Pure,Operator,BinaryOperator]> {
         ColumnSet getUsedColumns();
         ColumnSet getAvailableColumns();
         ColumnSet getCreatedColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 }
 def WindowOp : RelAlg_Op<"window", [Pure,Operator,UnaryOperator]> {
@@ -290,7 +276,7 @@ def InnerJoinOp : RelAlg_JoinOp<"join"> {
     let summary = "inner join operation";
     let extraClassDeclaration = [{
         mlir::LogicalResult foldColumns(dialect::relalg::ColumnFoldInfo& columnInfo);
-        lingodb::compiler::dialect::relalg::FunctionalDependencies getFDs();
+        pgx_lower::compiler::dialect::relalg::FunctionalDependencies getFDs();
     }];
 }
 
@@ -299,8 +285,8 @@ def SemiJoinOp : RelAlg_JoinOp<"semijoin"> {
     let extraClassDeclaration = [{
         ColumnSet getAvailableColumns();
         mlir::LogicalResult foldColumns(dialect::relalg::ColumnFoldInfo& columnInfo);
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
-        lingodb::compiler::dialect::relalg::FunctionalDependencies getFDs();
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
+        pgx_lower::compiler::dialect::relalg::FunctionalDependencies getFDs();
     }];
 }
 
@@ -310,8 +296,8 @@ def AntiSemiJoinOp : RelAlg_JoinOp<"antisemijoin"> {
     let extraClassDeclaration = [{
         ColumnSet getAvailableColumns();
         mlir::LogicalResult foldColumns(dialect::relalg::ColumnFoldInfo& columnInfo);
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
-        lingodb::compiler::dialect::relalg::FunctionalDependencies getFDs();
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
+        pgx_lower::compiler::dialect::relalg::FunctionalDependencies getFDs();
     }];
 }
 
@@ -325,7 +311,7 @@ def OuterJoinOp : RelAlg_JoinOp<"outerjoin"> {
         ColumnSet getCreatedColumns();
         ColumnSet getUsedColumns();
         ColumnSet getAvailableColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 
 }
@@ -339,7 +325,7 @@ def FullOuterJoinOp : RelAlg_JoinOp<"fullouterjoin"> {
         ColumnSet getCreatedColumns();
         ColumnSet getUsedColumns();
         ColumnSet getAvailableColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 }
 
@@ -353,7 +339,7 @@ def SingleJoinOp : RelAlg_JoinOp<"singlejoin"> {
         ColumnSet getCreatedColumns();
         ColumnSet getUsedColumns();
         ColumnSet getAvailableColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 }
 
@@ -367,7 +353,7 @@ def CollectionJoinOp : RelAlg_JoinOp<"collectionjoin"> {
         ColumnSet getCreatedColumns();
         ColumnSet getUsedColumns();
         ColumnSet getAvailableColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 }
 
@@ -380,7 +366,7 @@ def MarkJoinOp : RelAlg_JoinOp<"markjoin"> {
     let extraClassDeclaration = [{
         ColumnSet getAvailableColumns();
         ColumnSet getCreatedColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 }
 
@@ -395,7 +381,7 @@ def ProjectionOp : RelAlg_Op<"projection",[Pure,Operator,UnaryOperator]> {
     let extraClassDeclaration = [{
         ColumnSet getAvailableColumns();
         ColumnSet getUsedColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 }
 
@@ -408,15 +394,15 @@ class RelAlg_BinarySetOp<string mnemonic> : RelAlg_Op<mnemonic,
         ColumnSet getCreatedColumns();
         ColumnSet getUsedColumns();
         ColumnSet getAvailableColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
     let extraClassDefinition =[{
-        ColumnSet $cppClass::getCreatedColumns(){ return lingodb::compiler::dialect::relalg::detail::getSetOpCreatedColumns(this->getOperation()); }
-        ColumnSet $cppClass::getUsedColumns(){ return lingodb::compiler::dialect::relalg::detail::getSetOpUsedColumns(this->getOperation()); }
-        ColumnSet $cppClass::getAvailableColumns(){ return lingodb::compiler::dialect::relalg::detail::getSetOpCreatedColumns(this->getOperation()); }
-        bool $cppClass::canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col){
+        ColumnSet $cppClass::getCreatedColumns(){ return pgx_lower::compiler::dialect::relalg::detail::getSetOpCreatedColumns(this->getOperation()); }
+        ColumnSet $cppClass::getUsedColumns(){ return pgx_lower::compiler::dialect::relalg::detail::getSetOpUsedColumns(this->getOperation()); }
+        ColumnSet $cppClass::getAvailableColumns(){ return pgx_lower::compiler::dialect::relalg::detail::getSetOpCreatedColumns(this->getOperation()); }
+        bool $cppClass::canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col){
             if(!source){
-                return lingodb::compiler::dialect::relalg::detail::canColumnReach(this->getOperation(),source,target,col);
+                return pgx_lower::compiler::dialect::relalg::detail::canColumnReach(this->getOperation(),source,target,col);
             }
             return false;
         };
@@ -445,7 +431,7 @@ def NestedOp : RelAlg_Op<"nested", [Pure,Operator]> {
         ColumnSet getCreatedColumns();
         ColumnSet getUsedColumns();
         ColumnSet getAvailableColumns();
-        bool canColumnReach(Operator source, Operator target, const lingodb::compiler::dialect::tuples::Column* col);
+        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 }
 
@@ -505,13 +491,14 @@ def GetScalarOp : RelAlg_Op<"getscalar", [Pure]> {
     let assemblyFormat = [{  custom<CustRef>($attr) $rel `:` type($res) attr-dict }];
 }
 
-def GetListOp : RelAlg_Op<"getlist", [Pure]> {
-    let summary = "get multiple columns";
-
-    let arguments = (ins TupleStream:$rel,ArrayAttr:$cols);
-    let results = (outs DSA_Collection:$res);
-    let assemblyFormat = [{ $rel custom<CustRefArr>($cols) `:` type($res) attr-dict }];
-}
+// TODO: Enable when util::CollectionType is properly implemented
+// def GetListOp : RelAlg_Op<"getlist", [Pure]> {
+//     let summary = "get multiple columns";
+//
+//     let arguments = (ins TupleStream:$rel,ArrayAttr:$cols);
+//     let results = (outs DSA_Collection:$res);
+//     let assemblyFormat = [{ $rel custom<CustRefArr>($cols) `:` type($res) attr-dict }];
+// }
 
 def InOp : RelAlg_Op<"in", [Pure]> {
     let summary = "in operation";

@@ -974,7 +974,7 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
     
     // Create table identifier attribute from SeqScan  
     // Use a placeholder table identifier for now - actual implementation would extract from relation
-    std::string tableOid = "table_" + std::to_string(seqScan->scanrelid);
+    std::string tableOid = "table_" + std::to_string(seqScan->scan.scanrelid);
     auto tableIdentifierAttr = builder.getStringAttr(tableOid);
     
     // Create column definitions for the base table

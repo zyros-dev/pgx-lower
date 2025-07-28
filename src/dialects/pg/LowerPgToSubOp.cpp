@@ -6,6 +6,7 @@
 
 #include "dialects/pg/LowerPgToSubOp.h"
 #include "dialects/pg/PgDialect.h"
+#include "dialects/pg/PgPolymorphicOps.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -153,6 +154,7 @@ public:
     LogicalResult matchAndRewrite(PgOp op, PatternRewriter &rewriter) const override {
         // These operations are typically used within subop.map or subop.filter regions
         // For now, lower them to standard arithmetic
+        llvm::errs() << "Lowering " << op.getOperationName() << " to arith operation\n";
         rewriter.replaceOpWithNewOp<ArithOp>(op, op.getLeft(), op.getRight());
         return success();
     }
@@ -192,15 +194,21 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
     LowerPgToSubOpPass() : OperationPass(TypeID::get<LowerPgToSubOpPass>()) {}
     
     void getDependentDialects(DialectRegistry &registry) const override {
-        // registry.insert<subop::SubOpDialect, arith::ArithDialect, func::FuncDialect,
-        //                scf::SCFDialect, LLVM::LLVMDialect>();
-        registry.insert<arith::ArithDialect, func::FuncDialect,
+        registry.insert<pgx_lower::compiler::dialect::subop::SubOperatorDialect, 
+                       arith::ArithDialect, func::FuncDialect,
                        scf::SCFDialect, LLVM::LLVMDialect>();
     }
     
     void runOnOperation() override {
         auto module = getOperation();
         auto *ctx = &getContext();
+        
+        // Ensure required dialects are loaded
+        ctx->getOrLoadDialect<arith::ArithDialect>();
+        ctx->getOrLoadDialect<func::FuncDialect>();
+        ctx->getOrLoadDialect<scf::SCFDialect>();
+        ctx->getOrLoadDialect<LLVM::LLVMDialect>();
+        ctx->getOrLoadDialect<pgx_lower::compiler::dialect::subop::SubOperatorDialect>();
         
         // Log the module before lowering
         llvm::errs() << "=== PG → SubOp Lowering Pass Started ===\n";
@@ -217,9 +225,8 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
         target.addIllegalDialect<pgx_lower::compiler::dialect::pg::PgDialect>();
         
         // Mark target dialects as legal
-        // target.addLegalDialect<subop::SubOpDialect, arith::ArithDialect, 
-        //                       func::FuncDialect>();
-        target.addLegalDialect<arith::ArithDialect, func::FuncDialect>();
+        target.addLegalDialect<pgx_lower::compiler::dialect::subop::SubOperatorDialect, 
+                              arith::ArithDialect, func::FuncDialect>();
         // Also mark LLVM and SCF as legal since they might be present
         target.addLegalDialect<scf::SCFDialect, LLVM::LLVMDialect>();
         
@@ -240,6 +247,9 @@ struct LowerPgToSubOpPass : public OperationPass<ModuleOp> {
                     PgArithToSubOpLowering<PgMulOp, arith::MulIOp>,
                     PgArithToSubOpLowering<PgDivOp, arith::DivSIOp>,
                     PgArithToSubOpLowering<PgModOp, arith::RemSIOp>,
+                    // Add logical operations
+                    PgArithToSubOpLowering<PgAndOp, arith::AndIOp>,
+                    PgArithToSubOpLowering<PgOrOp, arith::OrIOp>,
                     PgCmpToSubOpLowering>(ctx);
         
         // Apply conversion

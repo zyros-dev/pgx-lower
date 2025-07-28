@@ -90,9 +90,15 @@ set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgBa
 mlir_tablegen(RelAlgDialect.h.inc -gen-dialect-decls -dialect=relalg -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(RelAlgDialect.cpp.inc -gen-dialect-defs -dialect=relalg -I${MLIR_INCLUDE_DIRS})
 
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgInterfaces.td)
+mlir_tablegen(RelAlgInterfaces.h.inc -gen-op-interface-decls -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgInterfaces.cpp.inc -gen-op-interface-defs -I${MLIR_INCLUDE_DIRS})
+
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgOps.td)
-mlir_tablegen(RelAlgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(RelAlgOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(RelAlgOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(RelAlgEnums.h.inc -gen-enum-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(RelAlgEnums.cpp.inc -gen-enum-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
 
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgTypes.td)
 mlir_tablegen(RelAlgTypes.h.inc -gen-typedef-decls --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS})
@@ -127,6 +133,7 @@ add_library(MLIRDSADialect STATIC
 
 add_library(MLIRRelAlgDialect STATIC
     relalg/RelAlgDialect.cpp
+    relalg/RelAlgOpsSimple.cpp
 )
 
 add_library(MLIRUtilDialect STATIC

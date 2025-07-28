@@ -1,11 +1,11 @@
-#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
+#include "dialects/relalg/RelAlgOps.h"
+#include "dialects/relalg/RelAlgInterfaces.h"
+#include "dialects/relalg/RelAlgDialect.h"
+#include "dialects/db/DBOps.h"
+#include "dialects/subop/SubOpOps.h"
+#include "dialects/tuplestream/TupleStreamOps.h"
+#include "dialects/tuplestream/TupleStreamDialect.h"
 
-#include "lingodb/compiler/Dialect/DB/IR/DBOps.h"
-#include "lingodb/compiler/Dialect/SubOperator/SubOperatorOps.h"
-#include "lingodb/compiler/Dialect/TupleStream/TupleStreamOps.h"
-
-#include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include <llvm/ADT/TypeSwitch.h>
@@ -15,7 +15,7 @@
 using namespace mlir;
 
 namespace {
-using namespace lingodb::compiler::dialect;
+using namespace pgx_lower::compiler::dialect;
 
 tuples::ColumnManager& getColumnManager(::mlir::OpAsmParser& parser) {
    return parser.getBuilder().getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();

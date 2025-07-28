@@ -209,20 +209,8 @@ def PgMaxOp : Pg_Op<"max", [Pure]> {
   let assemblyFormat = "$inputs attr-dict `:` type($inputs) `->` type($result)";
 }
 
-// NULL handling using Optional pattern
-def PgIsNullOp : Pg_Op<"is_null", [Pure]> {
-  let summary = "PostgreSQL IS NULL operation";
-  let arguments = (ins AnyType:$operand);
-  let results = (outs I1:$result);
-  let assemblyFormat = "$operand attr-dict `:` type($operand)";
-}
-
-def PgIsNotNullOp : Pg_Op<"is_not_null", [Pure]> {
-  let summary = "PostgreSQL IS NOT NULL operation";
-  let arguments = (ins AnyType:$operand);
-  let results = (outs I1:$result);
-  let assemblyFormat = "$operand attr-dict `:` type($operand)";
-}
+// NULL handling - IsNullOp is defined in PgDataAccess.td as Pg_IsNullOp
+// IsNotNullOp is defined in PgDataAccess.td as Pg_IsNotNullOp
 
 // String operations using PostgreSQL types
 def PgLikeOp : Pg_Op<"like", [Pure]> {

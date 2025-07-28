@@ -1,4 +1,5 @@
 #include "dialects/relalg/RelAlgDialect.h"
+#include "dialects/relalg/RelAlgOps.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 
@@ -40,4 +41,8 @@ void RelAlgDialect::printAttribute(mlir::Attribute attr, mlir::DialectAsmPrinter
     llvm_unreachable("RelAlg dialect has no custom attributes");
 }
 
+// Include generated dialect implementation
 #include "RelAlgDialect.cpp.inc"
+
+// Include generated enum definitions
+#include "RelAlgEnums.cpp.inc"
