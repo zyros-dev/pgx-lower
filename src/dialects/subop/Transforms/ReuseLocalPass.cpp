@@ -3,6 +3,7 @@
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/subop/Transforms/Passes.h"
 #include "dialects/subop/Transforms/ColumnUsageAnalysis.h"
+#include "dialects/subop/Transforms/StateUsageTransformer.h"
 #include "dialects/tuplestream/TupleStreamOps.h"
 
 #include "mlir/IR/BuiltinOps.h"
@@ -143,8 +144,9 @@ class AvoidArrayMaterialization : public mlir::RewritePattern {
       tuples::ColumnRefAttr replaceWith;
       tuples::ColumnRefAttr replaceIdxWith;
       for (auto user : otherUsers) {
-         // TODO Phase 5: Fix when getColumn() returns proper Column pointer
-         auto* colPtr = user.getRef().getColumn();
+         // TODO Phase 4: Fix Column type - getColumn() returns reference, not pointer
+         auto& colRef = user.getRef().getColumn();
+         auto* colPtr = &colRef;
          if (!colPtr) continue;
          auto colUsers = analysis.findOperationsUsing(colPtr);
          for (auto* colUser : colUsers) {
@@ -163,7 +165,7 @@ class AvoidArrayMaterialization : public mlir::RewritePattern {
                      }
                      if (auto offsetBy = mlir::dyn_cast_or_null<subop::OffsetReferenceBy>(colUser)) {
                         bool idxMatches = false;
-                        for (auto* otherScanRefsUser : analysis.findOperationsUsing(&otherScanRefsOp.getRef().getColumn())) {
+                        for (auto* otherScanRefsUser : analysis.findOperationsUsing(const_cast<tuples::Column*>(&otherScanRefsOp.getRef().getColumn()))) {
                            if (auto entriesBetweenOp = mlir::dyn_cast_or_null<subop::EntriesBetweenOp>(otherScanRefsUser)) {
                               if (&offsetBy.getIdx().getColumn() == &entriesBetweenOp.getBetween().getColumn()) {
                                  idxMatches = true;
@@ -199,8 +201,9 @@ class AvoidArrayMaterialization : public mlir::RewritePattern {
             }
          }
       }
-      // TODO Phase 5: Fix when getColumn() returns proper Column pointer
-      auto* scanRefColPtr = scanRefsOp.getRef().getColumn();
+      // TODO Phase 4: Fix Column type - getColumn() returns reference, not pointer
+      auto& scanRefColRef = scanRefsOp.getRef().getColumn();
+      auto* scanRefColPtr = &scanRefColRef;
       if (!scanRefColPtr) {
          return mlir::failure();
       }

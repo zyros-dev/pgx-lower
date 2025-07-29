@@ -60,7 +60,7 @@ mlir::func::CallOp pgx_lower::compiler::dialect::util::FunctionHelper::call(mlir
       convertedValues.push_back(converted);
       assert(converted.getType() == funcOp.getFunctionType().getInput(i));
    }
-   auto funcCall = builder.create<mlir::func::CallOp>(loc, funcOp, convertedValues);
+   auto funcCall = builder.create<mlir::func::CallOp>(loc, funcOp.getSymName(), funcOp.getResultTypes(), convertedValues);
    return funcCall;
 }
 void pgx_lower::compiler::dialect::util::FunctionHelper::setParentModule(const mlir::ModuleOp& parentModule) {

@@ -29,10 +29,10 @@ class PullGatherUpPass : public mlir::PassWrapper<PullGatherUpPass, mlir::Operat
          mlir::Block* safeBlock = gatherOp->getBlock();
          while (currentChild) {
             if (auto refProducer = mlir::dyn_cast_or_null<subop::ReferenceProducer>(currentChild)) {
-               // TODO Phase 5: Implement proper column comparison when ColumnManager is integrated
-               auto* refCol = refProducer.getProducedReference().getColumn();
-               auto* gathCol = gatherOp.getRef().getColumn();
-               if (refCol && gathCol && refCol == gathCol) {
+               // TODO Phase 4: Fix Column comparison - getColumn() returns reference, not pointer
+               auto& refCol = refProducer.getProducedReference().getColumn();
+               auto& gathCol = gatherOp.getRef().getColumn();
+               if (&refCol == &gathCol) {
                   mlir::Block* minimalSafeBlock = nullptr;
                   for (auto operand : currentChild->getOperands()) {
                      if (!mlir::isa<tuples::TupleStreamType>(operand.getType())) {
@@ -75,8 +75,9 @@ class PullGatherUpPass : public mlir::PassWrapper<PullGatherUpPass, mlir::Operat
             std::vector<mlir::NamedAttribute> usedByCurrent;
             std::vector<mlir::NamedAttribute> notUsedByCurrent;
             for (auto x : remaining) {
-               // TODO Phase 5: Fix column comparison when ColumnManager is integrated
-               auto* colPtr = mlir::cast<tuples::ColumnDefAttr>(x.getValue()).getColumn();
+               // TODO Phase 4: Fix column comparison - getColumn() returns reference, not pointer
+               auto& colRef = mlir::cast<tuples::ColumnDefAttr>(x.getValue()).getColumn();
+               auto* colPtr = &colRef;
                if (colPtr && usedColumns.find(const_cast<tuples::Column*>(colPtr)) != usedColumns.end()) {
                   usedByCurrent.push_back(x);
                } else {

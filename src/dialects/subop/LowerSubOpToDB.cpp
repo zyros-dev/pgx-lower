@@ -1190,11 +1190,9 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
          });
          rewriter.create<mlir::func::ReturnOp>(loc);
       });
-      Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
       Value parallelConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, scanOp->hasAttr("parallel"), rewriter.getI1Type());
-      // TODO Phase 5: Implement DataSourceIteration::iterate (CRITICAL for table scanning)
-      // For now, just call the function directly
-      rewriter.create<mlir::func::CallOp>(scanOp->getLoc(), functionPointer, mlir::ValueRange{iterator, parallelConst, ptr});
+      // TODO Phase 4: Fix CallOp - call function by name, not by value  
+      rewriter.create<mlir::func::CallOp>(scanOp->getLoc(), funcOp.getSymName(), funcOp.getResultTypes(), mlir::ValueRange{iterator, parallelConst, ptr});
       return success();
    }
 };
@@ -1471,10 +1469,9 @@ void implementBufferIterationRuntime(bool parallel, mlir::Value bufferIterator, 
       });
       rewriter.create<mlir::func::ReturnOp>(loc);
    });
-   Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
    Value parallelConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, parallel, rewriter.getI1Type());
-   // TODO Phase 5: Implement BufferIterator::iterate wrapper
-   rewriter.create<mlir::func::CallOp>(loc, functionPointer, mlir::ValueRange{bufferIterator, parallelConst, ptr});
+   // TODO Phase 4: Fix CallOp - call function by name, not by value
+   rewriter.create<mlir::func::CallOp>(loc, funcOp.getSymName(), funcOp.getResultTypes(), mlir::ValueRange{bufferIterator, parallelConst, ptr});
 }
 void implementBufferIteration(bool parallel, mlir::Value bufferIterator, mlir::Type entryType, mlir::Location loc, SubOpRewriter& rewriter, mlir::TypeConverter& typeConverter, mlir::Operation* op, std::function<void(SubOpRewriter& rewriter, mlir::Value)> fn) {
    implementBufferIterationRuntime(parallel, bufferIterator, entryType, loc, rewriter, typeConverter, op, fn);
@@ -2057,10 +2054,9 @@ class ScanRefsContinuousViewLowering : public SubOpConversionPattern<subop::Scan
          });
          rewriter.create<mlir::func::ReturnOp>(loc);
       });
-      Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
       Value parallelConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, scanOp->hasAttr("parallel"), rewriter.getI1Type());
-      // TODO Phase 5: Implement Buffer::iterate wrapper
-      rewriter.create<mlir::func::CallOp>(loc, functionPointer, mlir::ValueRange{parallelConst, adaptor.getState(), typeSize});
+      // TODO Phase 4: Fix CallOp - call function by name, not by value
+      rewriter.create<mlir::func::CallOp>(loc, funcOp.getSymName(), funcOp.getResultTypes(), mlir::ValueRange{parallelConst, adaptor.getState(), typeSize});
       return mlir::success();
 
       return success();

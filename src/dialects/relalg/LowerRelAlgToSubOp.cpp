@@ -2867,9 +2867,9 @@ class GroupJoinLowering : public OpConversionPattern<relalg::GroupJoinOp> {
          auto leftAttr = mlir::cast<tuples::ColumnRefAttr>(std::get<0>(z));
          // TODO Phase 5: Fix column pointer check when Column class is properly implemented
          // if (!storedColumns.contains(&leftAttr.getColumn())) {
-            renameLeftDefs.push_back(tuples::ColumnDefAttr::get(getContext(), leftAttr.getName(), leftAttr.getColumnType(), rewriter.getArrayAttr(rightAttr)));
+            renameLeftDefs.push_back(tuples::ColumnDefAttr::get(getContext(), leftAttr.getName(), leftAttr.getColumnPtr(), rewriter.getArrayAttr(rightAttr)));
          // }
-         renameRightDefs.push_back(tuples::ColumnDefAttr::get(getContext(), rightAttr.getName(), rightAttr.getColumnType(), rewriter.getArrayAttr(leftAttr)));
+         renameRightDefs.push_back(tuples::ColumnDefAttr::get(getContext(), rightAttr.getName(), rightAttr.getColumnPtr(), rewriter.getArrayAttr(leftAttr)));
       }
       if (!additionalColsDefMapping.empty()) {
          unwrap = rewriter.create<subop::GatherOp>(loc, unwrap, unwrappedAggrRef, rewriter.getDictionaryAttr(additionalColsDefMapping));
