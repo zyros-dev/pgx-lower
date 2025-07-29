@@ -3085,11 +3085,14 @@ createLowerToSubOpPass() {
    return std::make_unique<RelalgToSubOpLoweringPass>();
 }
 
+std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>>
+createLowerRelAlgToSubOpPass() {
+   return std::make_unique<RelalgToSubOpLoweringPass>();
+}
+
 void createLowerRelAlgToSubOpPipeline(mlir::OpPassManager& pm) {
    pm.addPass(createLowerToSubOpPass());
 }
-
-// Removed duplicate function - using createLowerToSubOpPass() instead
 
 void populateRelAlgToSubOpConversionPatterns(
     mlir::RewritePatternSet &patterns, mlir::TypeConverter &typeConverter) {

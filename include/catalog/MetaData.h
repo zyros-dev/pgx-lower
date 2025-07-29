@@ -6,6 +6,7 @@
 #ifndef PGX_LOWER_CATALOG_METADATA_H
 #define PGX_LOWER_CATALOG_METADATA_H
 
+#include "llvm/ADT/Hashing.h"
 #include <optional>
 #include <memory>
 #include <string>

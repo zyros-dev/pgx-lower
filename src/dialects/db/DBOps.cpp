@@ -14,10 +14,10 @@
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;
 
-bool db::CmpOp::isEqualityPred(bool nullsAreEqual) { return getPredicate() == db::DBCmpPredicate::eq || (nullsAreEqual ? (getPredicate() == DBCmpPredicate::isa) : false); }
-bool db::CmpOp::isUnequalityPred() { return getPredicate() == db::DBCmpPredicate::neq; }
-bool db::CmpOp::isLessPred(bool eq) { return getPredicate() == (eq ? db::DBCmpPredicate::lte : db::DBCmpPredicate::lt); }
-bool db::CmpOp::isGreaterPred(bool eq) { return getPredicate() == (eq ? db::DBCmpPredicate::gte : db::DBCmpPredicate::gt); }
+bool pgx_lower::compiler::dialect::db::CmpOp::isEqualityPred(bool nullsAreEqual) { return getPredicate() == db::DBCmpPredicate::eq || (nullsAreEqual ? (getPredicate() == DBCmpPredicate::isa) : false); }
+bool pgx_lower::compiler::dialect::db::CmpOp::isUnequalityPred() { return getPredicate() == db::DBCmpPredicate::neq; }
+bool pgx_lower::compiler::dialect::db::CmpOp::isLessPred(bool eq) { return getPredicate() == (eq ? db::DBCmpPredicate::lte : db::DBCmpPredicate::lt); }
+bool pgx_lower::compiler::dialect::db::CmpOp::isGreaterPred(bool eq) { return getPredicate() == (eq ? db::DBCmpPredicate::gte : db::DBCmpPredicate::gt); }
 mlir::Type getBaseType(mlir::Type t) {
    if (auto nullableT = mlir::dyn_cast_or_null<db::NullableType>(t)) {
       return nullableT.getType();
@@ -153,46 +153,15 @@ mlir::Type getAdaptedDecimalTypeAfterMulDiv(mlir::MLIRContext* context, int prec
    }
    return db::DecimalType::get(context, std::min(precision, 38), std::min(scale, 38 - beforeComma));
 }
-} // namespace
-/* PostgreSQL: Comment out fold method that uses Arrow conversion
-OpFoldResult db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
-   auto type = getType();
-   auto [arrowType, param1, param2] = convertTypeToArrow(type);
-   std::variant<int64_t, double, std::string> parseArg;
-   if (auto integerAttr = mlir::dyn_cast_or_null<IntegerAttr>(getValue())) {
-      parseArg = integerAttr.getInt();
-   } else if (auto floatAttr = mlir::dyn_cast_or_null<FloatAttr>(getValue())) {
-      parseArg = floatAttr.getValueAsDouble();
-   } else if (auto stringAttr = mlir::dyn_cast_or_null<StringAttr>(getValue())) {
-      parseArg = stringAttr.str();
-   } else {
-      return {};
-   }
-   auto parseResult = support::parse(parseArg, arrowType, param1, param2);
-   if (auto decimalType = mlir::dyn_cast_or_null<db::DecimalType>(type)) {
-      auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());
-      std::vector<uint64_t> parts = {low, high};
-      return IntegerAttr::get(mlir::IntegerType::get(getContext(), 128), mlir::APInt(128, parts));
-   } else if (auto integerType = mlir::dyn_cast_or_null<mlir::IntegerType>(type)) {
-      return IntegerAttr::get(integerType, std::get<int64_t>(parseResult));
-   } else if (mlir::isa<mlir::FloatType>(type)) {
-      return FloatAttr::get(type, std::get<double>(parseResult));
-   } else if (mlir::isa<db::StringType>(type)) {
-      std::string str = std::get<std::string>(parseResult);
-      return mlir::StringAttr::get(getContext(), str);
-   } else if (mlir::isa<db::CharType>(type)) {
-      std::string str = std::get<std::string>(parseResult);
-      return mlir::StringAttr::get(getContext(), str);
-   } else if (mlir::isa<db::IntervalType, db::DateType, db::TimestampType>(type)) {
-      return mlir::IntegerAttr::get(mlir::IntegerType::get(getContext(), 64), std::get<int64_t>(parseResult));
-   } else {
-      type.dump();
-   }
-   return {};
-}
-*/
+} // end anonymous namespace
 
-::mlir::OpFoldResult db::AddOp::fold(db::AddOp::FoldAdaptor adaptor) {
+// PostgreSQL: Simple ConstantOp fold implementation without Arrow conversion
+mlir::OpFoldResult pgx_lower::compiler::dialect::db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
+   // For constants, just return the value attribute as-is since it's already properly typed
+   return getValue();
+}
+
+mlir::OpFoldResult pgx_lower::compiler::dialect::db::AddOp::fold(db::AddOp::FoldAdaptor adaptor) {
    auto left = mlir::dyn_cast_or_null<mlir::IntegerAttr>(adaptor.getLeft());
    auto right = mlir::dyn_cast_or_null<mlir::IntegerAttr>(adaptor.getRight());
    if (left && right && left.getType() == right.getType()) {
@@ -200,7 +169,7 @@ OpFoldResult db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
    }
    return {};
 }
-::mlir::OpFoldResult db::SubOp::fold(db::SubOp::FoldAdaptor adaptor) {
+mlir::OpFoldResult pgx_lower::compiler::dialect::db::SubOp::fold(db::SubOp::FoldAdaptor adaptor) {
    auto left = mlir::dyn_cast_or_null<mlir::IntegerAttr>(adaptor.getLeft());
    auto right = mlir::dyn_cast_or_null<mlir::IntegerAttr>(adaptor.getRight());
    if (left && right && left.getType() == right.getType()) {
@@ -209,95 +178,59 @@ OpFoldResult db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
    return {};
 }
 
-/* PostgreSQL: Comment out fold methods that use Arrow support
-::mlir::OpFoldResult db::CastOp::fold(db::CastOp::FoldAdaptor adaptor) {
+// PostgreSQL: Simple CastOp fold implementation without Arrow support
+mlir::OpFoldResult pgx_lower::compiler::dialect::db::CastOp::fold(db::CastOp::FoldAdaptor adaptor) {
    auto scalarSourceType = getVal().getType();
    auto scalarTargetType = getType();
+   
+   // Skip string casts and nullable types for now
    if (mlir::isa<db::StringType>(scalarSourceType) || mlir::isa<db::StringType>(scalarTargetType)) return {};
    if (mlir::isa<db::NullableType>(scalarSourceType)) return {};
+   
+   // If types are the same, no cast needed
    if (scalarSourceType == scalarTargetType) {
       return adaptor.getVal();
    }
-   if (!adaptor.getVal()) return {};
-   if (getIntegerWidth(scalarSourceType, false)) {
-      auto intVal = mlir::cast<mlir::IntegerAttr>(adaptor.getVal()).getInt();
-      if (mlir::isa<FloatType>(scalarTargetType)) {
-         return mlir::FloatAttr::get(scalarTargetType, (double) intVal);
-      } else if (auto decimalTargetType = mlir::dyn_cast_or_null<db::DecimalType>(scalarTargetType)) {
-         auto [low, high] = support::getDecimalScaleMultiplier(decimalTargetType.getS());
-         std::vector<uint64_t> parts = {low, high};
-         return IntegerAttr::get(IntegerType::get(getContext(), 128), APInt(128, intVal) * APInt(128, parts));
-      } else if (getIntegerWidth(scalarTargetType, false)) {
-         return {};
-      }
-   } else if (auto floatType = mlir::dyn_cast_or_null<FloatType>(scalarSourceType)) {
-      if (getIntegerWidth(scalarTargetType, false)) {
-         return mlir::IntegerAttr::get(scalarTargetType, mlir::cast<mlir::FloatAttr>(adaptor.getVal()).getValueAsDouble());
-      } else if (auto decimalTargetType = mlir::dyn_cast_or_null<db::DecimalType>(scalarTargetType)) {
-         return {};
-      }
-   } else if (auto decimalSourceType = mlir::dyn_cast_or_null<db::DecimalType>(scalarSourceType)) {
-      if (auto decimalTargetType = mlir::dyn_cast_or_null<db::DecimalType>(scalarTargetType)) {
-         auto sourceScale = decimalSourceType.getS();
-         auto targetScale = decimalTargetType.getS();
-         if (sourceScale == targetScale) {
-            return adaptor.getVal();
-         }
-         return {};
-      } else if (mlir::isa<FloatType>(scalarTargetType)) {
-         return {};
-      } else if (getIntegerWidth(scalarTargetType, false)) {
-         return {};
-      }
-   }
+   
+   // TODO Phase 5: Implement proper type conversions without Arrow support
+   // For now, skip folding complex casts to avoid Arrow dependencies
    return {};
 }
-*/
 
-/* PostgreSQL: Comment out methods that use RuntimeFunctionRegistry
-::mlir::LogicalResult db::RuntimeCall::fold(db::RuntimeCall::FoldAdaptor adaptor, ::llvm::SmallVectorImpl<::mlir::OpFoldResult>& results) {
-   auto reg = getContext()->getLoadedDialect<db::DBDialect>()->getRuntimeFunctionRegistry();
-   auto* fn = reg->lookup(getFn().str());
-   if (!fn) { return failure(); }
-   if (!fn->foldFn) return failure();
-   auto foldFn = fn->foldFn.value();
-   return foldFn(getOperandTypes(), adaptor.getOperands(), results);
+// PostgreSQL: Simple RuntimeCall fold implementation without registry
+mlir::LogicalResult pgx_lower::compiler::dialect::db::RuntimeCall::fold(db::RuntimeCall::FoldAdaptor adaptor, llvm::SmallVectorImpl<mlir::OpFoldResult>& results) {
+   // TODO Phase 5: Implement proper runtime function folding
+   // For now, skip folding runtime calls to avoid registry dependencies
+   return failure();
 }
-*/
-/* PostgreSQL: Comment out RuntimeCall methods that use registry
-::mlir::LogicalResult db::RuntimeCall::verify() {
-   db::RuntimeCall& runtimeCall = *this;
-   auto reg = runtimeCall.getContext()->getLoadedDialect<db::DBDialect>()->getRuntimeFunctionRegistry();
-   if (!reg->verify(runtimeCall.getFn().str(), runtimeCall.getArgs().getTypes(), runtimeCall.getNumResults() == 1 ? runtimeCall.getResultTypes()[0] : mlir::Type())) {
-      runtimeCall->emitError("could not find matching runtime function");
-      return failure();
-   }
+// PostgreSQL: Simple RuntimeCall verify implementation without registry
+mlir::LogicalResult pgx_lower::compiler::dialect::db::RuntimeCall::verify() {
+   // TODO Phase 5: Implement proper runtime function verification
+   // For now, just accept all runtime calls
    return success();
 }
-bool db::RuntimeCall::supportsInvalidValues() {
-   auto reg = getContext()->getLoadedDialect<db::DBDialect>()->getRuntimeFunctionRegistry();
-   if (auto* fn = reg->lookup(this->getFn().str())) {
-      return fn->nullHandleType == RuntimeFunction::HandlesInvalidVaues;
-   }
-   return false;
-}
-bool db::RuntimeCall::needsNullWrap() {
-   auto reg = getContext()->getLoadedDialect<db::DBDialect>()->getRuntimeFunctionRegistry();
-   if (auto* fn = reg->lookup(this->getFn().str())) {
-      return fn->nullHandleType != RuntimeFunction::HandlesNulls;
-   }
-   return false;
-}
-*/
 
-bool db::CmpOp::supportsInvalidValues() {
+// PostgreSQL: Simple RuntimeCall method implementations without registry
+bool pgx_lower::compiler::dialect::db::RuntimeCall::supportsInvalidValues() {
+   // TODO Phase 5: Implement proper runtime function analysis
+   // For now, assume most runtime calls don't support invalid values
+   return false;
+}
+
+bool pgx_lower::compiler::dialect::db::RuntimeCall::needsNullWrap() {
+   // TODO Phase 5: Implement proper null handling analysis
+   // For now, assume most runtime calls need null wrapping
+   return true;
+}
+
+bool pgx_lower::compiler::dialect::db::CmpOp::supportsInvalidValues() {
    auto type = getBaseType(getLeft().getType());
    if (mlir::isa<db::StringType>(type)) {
       return false;
    }
    return true;
 }
-bool db::CastOp::supportsInvalidValues() {
+bool pgx_lower::compiler::dialect::db::CastOp::supportsInvalidValues() {
    if (mlir::isa<db::StringType>(getBaseType(getResult().getType())) || mlir::isa<db::StringType>(getBaseType(getVal().getType()))) {
       return false;
    }
@@ -358,7 +291,7 @@ LogicalResult db::OrOp::canonicalize(db::OrOp orOp, mlir::PatternRewriter& rewri
    }
    return failure();
 }
-OpFoldResult db::IsNullOp::fold(FoldAdaptor adaptor) {
+OpFoldResult pgx_lower::compiler::dialect::db::IsNullOp::fold(FoldAdaptor adaptor) {
    auto nullableVal = getVal();
    if (!mlir::isa<db::NullableType>(nullableVal.getType())) {
       return mlir::BoolAttr::get(getContext(), false);
@@ -371,7 +304,7 @@ OpFoldResult db::IsNullOp::fold(FoldAdaptor adaptor) {
    }
    return {};
 }
-OpFoldResult db::NullableGetVal::fold(FoldAdaptor adaptor) {
+OpFoldResult pgx_lower::compiler::dialect::db::NullableGetVal::fold(FoldAdaptor adaptor) {
    auto nullableVal = getVal();
    if (auto asNullableOp = mlir::dyn_cast_or_null<db::AsNullableOp>(nullableVal.getDefiningOp())) {
       return asNullableOp.getVal();

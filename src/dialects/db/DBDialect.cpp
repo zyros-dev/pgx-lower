@@ -38,15 +38,27 @@ void pgx_lower::compiler::dialect::db::DBDialect::initialize() {
 //    }
 //    return nullptr;
 // }
+// PostgreSQL: Simple attribute parsing implementation
+mlir::Attribute pgx_lower::compiler::dialect::db::DBDialect::parseAttribute(mlir::DialectAsmParser& parser, mlir::Type type) const {
+   // TODO Phase 5: Implement proper attribute parsing for DB dialect
+   // For now, defer to default parsing
+   return nullptr;
+}
+
+// PostgreSQL: Simple attribute printing implementation  
+void pgx_lower::compiler::dialect::db::DBDialect::printAttribute(mlir::Attribute attr, mlir::DialectAsmPrinter& printer) const {
+   // TODO Phase 5: Implement proper attribute printing for DB dialect
+   // For now, use default printing
+   printer << "db_attr";
+}
+
 #include "DBDialect.cpp.inc"
 
 // Type definitions
 #define GET_TYPEDEF_CLASSES
 #include "DBTypes.cpp.inc"
 
-// Operation definitions
-#define GET_OP_CLASSES
-#include "DBOps.cpp.inc"
+// Operation definitions are in DBOps.cpp
 
 // Register types
 void pgx_lower::compiler::dialect::db::DBDialect::registerTypes() {

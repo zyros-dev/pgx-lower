@@ -147,6 +147,11 @@ add_library(MLIRSubOpDialect STATIC
     subop/Transforms/InlineNestedMapPass.cpp
     subop/Transforms/FinalizePass.cpp
     subop/Transforms/PrepareForLowering.cpp
+    # Analysis classes
+    subop/Transforms/ColumnCreationAnalysis.cpp
+    subop/Transforms/ColumnUsageAnalysis.cpp
+    subop/Transforms/SubOpStateUsageTransformer.cpp
+    subop/Transforms/SubOpDependencyAnalysis.cpp
 )
 
 add_library(MLIRDBDialect STATIC
@@ -158,6 +163,7 @@ add_library(MLIRDBDialect STATIC
 add_library(MLIRTupleStreamDialect STATIC
     tuplestream/TupleStreamDialect.cpp
     tuplestream/ColumnManager.cpp
+    tuplestream/TupleStreamOps.cpp
 )
 
 add_library(MLIRDSADialect STATIC

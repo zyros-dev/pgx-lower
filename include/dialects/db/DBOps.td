@@ -194,7 +194,7 @@ def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethod
                 MLIRContext* context, std::optional<Location> location,
                 ValueRange operands, DictionaryAttr attributes, OpaqueProperties opaqueProperties,
                 RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
-            inferredReturnTypes.assign({operands[0].getType().cast<pgx_lower::compiler::dialect::db::NullableType>().getType()});
+            inferredReturnTypes.assign({mlir::cast<pgx_lower::compiler::dialect::db::NullableType>(operands[0].getType()).getType()});
             return success();
         }
     }];

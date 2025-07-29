@@ -1,13 +1,7 @@
-#ifndef PGX_LOWER_CATALOG_H
-#define PGX_LOWER_CATALOG_H
+#ifndef PGX_LOWER_RELALG_CATALOG_H
+#define PGX_LOWER_RELALG_CATALOG_H
 
-namespace catalog {
-// Stub for TableMetaDataProvider - TODO Phase 5: implement for PostgreSQL
-class TableMetaDataProvider {
-public:
-    TableMetaDataProvider() = default;
-    virtual ~TableMetaDataProvider() = default;
-};
-} // namespace catalog
+// Forward to the main catalog definitions
+#include "catalog/MetaData.h"
 
-#endif // PGX_LOWER_CATALOG_H
+#endif // PGX_LOWER_RELALG_CATALOG_H

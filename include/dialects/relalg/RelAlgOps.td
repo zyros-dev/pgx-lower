@@ -35,11 +35,12 @@ def RelAlg_Dialect : Dialect {
 
 class RelAlg_Attr<string name> : AttrDef<RelAlg_Dialect, name>;
 
-def TableMetaDataAttr : RelAlg_Attr<"TableMetaData"> {
-    let mnemonic = "table_metadata";
-    let parameters = (ins "std::shared_ptr<catalog::TableMetaDataProvider>":$meta);
-    let hasCustomAssemblyFormat = 1;
-}
+// TODO Phase 5: Re-enable when we implement catalog support
+// def TableMetaDataAttr : RelAlg_Attr<"TableMetaData"> {
+//     let mnemonic = "table_metadata";
+//     let parameters = (ins "std::shared_ptr<catalog::TableMetaDataProvider>":$meta);
+//     let hasCustomAssemblyFormat = 1;
+// }
 
 def SortSpecificationAttr : RelAlg_Attr<"SortSpecification"> {
     let mnemonic = "sortspec";

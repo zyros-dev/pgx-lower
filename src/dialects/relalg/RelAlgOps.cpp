@@ -416,5 +416,346 @@ void pgx_lower::compiler::dialect::relalg::detail::inlineOpIntoBlock(mlir::Opera
 #define GET_OP_CLASSES
 #include "RelAlgOps.cpp.inc"
 
+// Include interface implementations
+#include "RelAlgInterfaces.cpp.inc"
+
 // MapOp::verify() is already defined in the included .cpp.inc file above
 // RelAlg reuses TupleStreamType, no custom types
+
+namespace pgx_lower::compiler::dialect::relalg {
+namespace detail {
+
+// Helper functions for set operations
+ColumnSet getSetOpCreatedColumns(::mlir::Operation* op) {
+    ColumnSet result;
+    
+    // Set operations (Union, Intersect, Except) create columns based on their mapping attribute
+    if (auto mapping = op->getAttrOfType<::mlir::ArrayAttr>("mapping")) {
+        for (auto attr : mapping) {
+            if (auto colDef = mlir::dyn_cast<::pgx_lower::compiler::dialect::tuples::ColumnDefAttr>(attr)) {
+                result.insert(&colDef.getColumn());
+            }
+        }
+    }
+    
+    return result;
+}
+
+ColumnSet getSetOpUsedColumns(::mlir::Operation* op) {
+    ColumnSet result;
+    
+    // Set operations use columns from their operands
+    for (auto operand : op->getOperands()) {
+        if (auto defOp = operand.getDefiningOp()) {
+            if (auto relOp = mlir::dyn_cast<Operator>(defOp)) {
+                auto used = relOp.getUsedColumns();
+                result.insert(used);
+            }
+        }
+    }
+    
+    return result;
+}
+
+bool canColumnReach(::mlir::Operation* op, ::mlir::Operation* source, ::mlir::Operation* target, const void* column) {
+    // Check if a column can reach from source to target through this operation
+    auto* col = static_cast<const ::pgx_lower::compiler::dialect::tuples::Column*>(column);
+    
+    // Check if the column is created by this operation
+    auto created = getSetOpCreatedColumns(op);
+    if (created.contains(col)) {
+        return true;
+    }
+    
+    // Check if column can reach through children
+    if (source) {
+        if (auto relOp = mlir::dyn_cast<Operator>(source)) {
+            // Cast target to Operator interface if it's not null
+            Operator targetOp = target ? mlir::cast<Operator>(target) : Operator();
+            if (relOp.canColumnReach(relOp, targetOp, col)) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Helper functions that are referenced but not implemented yet
+ColumnSet getUsedColumns(::mlir::Operation* op) {
+    ColumnSet result;
+    
+    // Get used columns based on the operation type
+    // Most operations use columns referenced in their attributes
+    if (auto cols = op->getAttrOfType<::mlir::ArrayAttr>("used_cols")) {
+        result = ColumnSet::fromArrayAttr(cols);
+    }
+    
+    // For operations with predicates, add columns used in the predicate
+    if (op->getNumRegions() > 0) {
+        op->walk([&](mlir::Operation* innerOp) {
+            if (auto getRef = mlir::dyn_cast<tuples::GetColumnOp>(innerOp)) {
+                result.insert(&getRef.getAttr().getColumn());
+            }
+        });
+    }
+    
+    return result;
+}
+
+ColumnSet getAvailableColumns(::mlir::Operation* op) {
+    ColumnSet result;
+    
+    // Available columns are usually specified in the "available_cols" attribute
+    if (auto cols = op->getAttrOfType<::mlir::ArrayAttr>("available_cols")) {
+        result = ColumnSet::fromArrayAttr(cols);
+    } else {
+        // For operations that create columns, get from columns or mapping
+        if (auto cols = op->getAttrOfType<::mlir::DictionaryAttr>("columns")) {
+            for (auto col : cols) {
+                if (auto colDef = mlir::dyn_cast<tuples::ColumnDefAttr>(col.getValue())) {
+                    result.insert(&colDef.getColumn());
+                }
+            }
+        } else if (auto mapping = op->getAttrOfType<::mlir::ArrayAttr>("mapping")) {
+            for (auto attr : mapping) {
+                if (auto colDef = mlir::dyn_cast<tuples::ColumnDefAttr>(attr)) {
+                    result.insert(&colDef.getColumn());
+                }
+            }
+        }
+    }
+    
+    return result;
+}
+
+ColumnSet getCreatedColumns(::mlir::Operation* op) {
+    ColumnSet result;
+    
+    // Created columns come from computed_cols, columns, or mapping attributes
+    if (auto cols = op->getAttrOfType<::mlir::ArrayAttr>("computed_cols")) {
+        result = ColumnSet::fromArrayAttr(cols);
+    } else if (auto cols = op->getAttrOfType<::mlir::DictionaryAttr>("columns")) {
+        for (auto col : cols) {
+            if (auto colDef = mlir::dyn_cast<tuples::ColumnDefAttr>(col.getValue())) {
+                result.insert(&colDef.getColumn());
+            }
+        }
+    } else if (auto mapping = op->getAttrOfType<::mlir::ArrayAttr>("mapping")) {
+        for (auto attr : mapping) {
+            if (auto colDef = mlir::dyn_cast<tuples::ColumnDefAttr>(attr)) {
+                result.insert(&colDef.getColumn());
+            }
+        }
+    }
+    
+    return result;
+}
+
+FunctionalDependencies getFDs(::mlir::Operation* op) {
+    // Basic implementation
+    return FunctionalDependencies();
+}
+
+void moveSubTreeBefore(::mlir::Operation* op, ::mlir::Operation* before) {
+    // Move the operation and all its uses before the target
+    op->moveBefore(before);
+}
+
+ColumnSet getFreeColumns(::mlir::Operation* op) {
+    ColumnSet result;
+    // Free columns are those that are available but not used
+    auto available = getAvailableColumns(op);
+    auto used = getUsedColumns(op);
+    for (auto* col : available) {
+        if (!used.contains(col)) {
+            result.insert(col);
+        }
+    }
+    return result;
+}
+
+std::pair<mlir::Type, mlir::Type> getBinaryOperatorType(mlir::Operation* op) {
+    // For binary operators, return the types of the two operands
+    if (op->getNumOperands() >= 2) {
+        return {op->getOperand(0).getType(), op->getOperand(1).getType()};
+    }
+    return {mlir::Type(), mlir::Type()};
+}
+
+mlir::Type getUnaryOperatorType(mlir::Operation* op) {
+    // For unary operators, return the type of the single operand
+    if (op->getNumOperands() >= 1) {
+        return op->getOperand(0).getType();
+    }
+    return mlir::Type();
+}
+
+// Global sets for operator properties - empty for now
+std::set<std::pair<std::pair<mlir::Type, mlir::Type>, std::pair<mlir::Type, mlir::Type>>> assoc;
+std::set<std::pair<std::pair<mlir::Type, mlir::Type>, std::pair<mlir::Type, mlir::Type>>> lAsscom;
+std::set<std::pair<std::pair<mlir::Type, mlir::Type>, std::pair<mlir::Type, mlir::Type>>> rAsscom;
+std::set<std::pair<mlir::Type, mlir::Type>> reorderable;
+std::set<std::pair<mlir::Type, mlir::Type>> lPushable;
+std::set<std::pair<mlir::Type, mlir::Type>> rPushable;
+
+// PredicateOperator interface helper functions
+mlir::Region& getPredicateRegion(mlir::Operation* op) {
+    // First region is typically the predicate region
+    if (op->getNumRegions() > 0) {
+        return op->getRegion(0);
+    }
+    llvm_unreachable("Operation has no predicate region");
+}
+
+mlir::Block& getPredicateBlock(mlir::Operation* op) {
+    auto& region = getPredicateRegion(op);
+    if (region.empty()) {
+        region.emplaceBlock();
+    }
+    return region.front();
+}
+
+void addPredicate(mlir::Operation* op, std::function<mlir::Value(mlir::Value, mlir::OpBuilder&)> producer) {
+    // Add predicate to the predicate block
+    auto& block = getPredicateBlock(op);
+    mlir::OpBuilder builder(op->getContext());
+    
+    // If block has no arguments, add one for the tuple
+    if (block.getNumArguments() == 0) {
+        auto tupleType = tuples::TupleStreamType::get(op->getContext());
+        block.addArgument(tupleType, op->getLoc());
+    }
+    
+    builder.setInsertionPointToEnd(&block);
+    auto tuple = block.getArgument(0);
+    auto result = producer(tuple, builder);
+    
+    // Ensure block has a terminator
+    if (block.empty() || !block.back().hasTrait<mlir::OpTrait::IsTerminator>()) {
+        builder.create<tuples::ReturnOp>(op->getLoc(), result);
+    }
+}
+
+mlir::BlockArgument getPredicateArgument(mlir::Operation* op) {
+    auto& block = getPredicateBlock(op);
+    if (block.getNumArguments() == 0) {
+        auto tupleType = tuples::TupleStreamType::get(op->getContext());
+        return block.addArgument(tupleType, op->getLoc());
+    }
+    return block.getArgument(0);
+}
+
+void initPredicate(mlir::Operation* op) {
+    // Initialize the predicate region with an empty block
+    auto& region = getPredicateRegion(op);
+    if (region.empty()) {
+        region.emplaceBlock();
+        auto& block = region.front();
+        auto tupleType = tuples::TupleStreamType::get(op->getContext());
+        block.addArgument(tupleType, op->getLoc());
+    }
+}
+
+// UnaryOperator helper functions
+mlir::Operation* unaryOperatorChild(mlir::Operation* op) {
+    if (op->getNumOperands() > 0) {
+        return op->getOperand(0).getDefiningOp();
+    }
+    return nullptr;
+}
+
+bool reorderable(mlir::Operation* op, mlir::Operation* otherOp) {
+    // Check if two unary operators can be reordered
+    if (!op || !otherOp) return false;
+    auto opType = getUnaryOperatorType(op);
+    auto otherType = getUnaryOperatorType(otherOp);
+    return detail::reorderable.count({opType, otherType}) > 0;
+}
+
+bool lPushable(mlir::Operation* unaryOp, mlir::Operation* binaryOp) {
+    // Check if unary operator can be pushed to left child of binary operator
+    if (!unaryOp || !binaryOp) return false;
+    auto unaryType = getUnaryOperatorType(unaryOp);
+    auto binaryType = getBinaryOperatorType(binaryOp).first;
+    return detail::lPushable.count({unaryType, binaryType}) > 0;
+}
+
+bool rPushable(mlir::Operation* unaryOp, mlir::Operation* binaryOp) {
+    // Check if unary operator can be pushed to right child of binary operator
+    if (!unaryOp || !binaryOp) return false;
+    auto unaryType = getUnaryOperatorType(unaryOp);
+    auto binaryType = getBinaryOperatorType(binaryOp).second;
+    return detail::rPushable.count({unaryType, binaryType}) > 0;
+}
+
+// BinaryOperator helper functions
+mlir::Operation* leftChild(mlir::Operation* op) {
+    if (op->getNumOperands() > 0) {
+        return op->getOperand(0).getDefiningOp();
+    }
+    return nullptr;
+}
+
+mlir::Operation* rightChild(mlir::Operation* op) {
+    if (op->getNumOperands() > 1) {
+        return op->getOperand(1).getDefiningOp();
+    }
+    return nullptr;
+}
+
+bool isAssoc(mlir::Operation* op1, mlir::Operation* op2) {
+    // Check if two binary operators are associative
+    if (!op1 || !op2) return false;
+    auto type1 = getBinaryOperatorType(op1);
+    auto type2 = getBinaryOperatorType(op2);
+    return detail::assoc.count({type1, type2}) > 0;
+}
+
+bool isLAsscom(mlir::Operation* op1, mlir::Operation* op2) {
+    // Check if two binary operators are left-associative commutative
+    if (!op1 || !op2) return false;
+    auto type1 = getBinaryOperatorType(op1);
+    auto type2 = getBinaryOperatorType(op2);
+    return detail::lAsscom.count({type1, type2}) > 0;
+}
+
+bool isRAsscom(mlir::Operation* op1, mlir::Operation* op2) {
+    // Check if two binary operators are right-associative commutative
+    if (!op1 || !op2) return false;
+    auto type1 = getBinaryOperatorType(op1);
+    auto type2 = getBinaryOperatorType(op2);
+    return detail::rAsscom.count({type1, type2}) > 0;
+}
+
+// TupleLamdaOperator helper functions
+mlir::Region& getLambdaRegion(mlir::Operation* op) {
+    // Lambda region is typically the first region
+    if (op->getNumRegions() > 0) {
+        return op->getRegion(0);
+    }
+    llvm_unreachable("Operation has no lambda region");
+}
+
+mlir::Block& getLambdaBlock(mlir::Operation* op) {
+    auto& region = getLambdaRegion(op);
+    if (region.empty()) {
+        region.emplaceBlock();
+    }
+    return region.front();
+}
+
+mlir::BlockArgument getLambdaArgument(mlir::Operation* op) {
+    auto& block = getLambdaBlock(op);
+    if (block.getNumArguments() == 0) {
+        auto tupleType = tuples::TupleStreamType::get(op->getContext());
+        return block.addArgument(tupleType, op->getLoc());
+    }
+    return block.getArgument(0);
+}
+
+} // namespace detail
+
+// SortSpecificationAttr implementation is generated by TableGen
+
+} // namespace pgx_lower::compiler::dialect::relalg
