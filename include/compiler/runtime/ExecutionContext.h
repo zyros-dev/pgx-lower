@@ -14,7 +14,7 @@ struct ExecutionContextWrapper {
     // Wrapper that returns a callable for MLIR code generation
     static auto setResult(mlir::OpBuilder& builder, mlir::Location loc) {
         return [&builder, loc](std::initializer_list<mlir::Value> args) {
-            // TODO: Generate actual MLIR calls to runtime setResult
+            // TODO Phase 5: Generate actual MLIR calls to runtime setResult
             // For now, this is a stub to get compilation working
         };
     }

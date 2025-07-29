@@ -13,7 +13,7 @@
 #include <string>
 
 // #include "lingodb/compiler/Dialect/Arrow/IR/ArrowTypes.h" // Removed Arrow dependency
-// #include "dialects/db/DBTypes.h" // TODO: Fix circular dependency
+// #include "dialects/db/DBTypes.h" // TODO Phase 5: Fix circular dependency
 
 // Include enums first
 #include "SubOpOpsEnums.h.inc"
@@ -34,7 +34,7 @@
 
 #include "dialects/tuplestream/Column.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
-// #include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsAttributes.h" // TODO: Port if needed
+// #include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsAttributes.h" // TODO Phase 5: Port if needed
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"

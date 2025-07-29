@@ -10,9 +10,9 @@
 //
 // The cloneSubOp() methods referenced in SubOpOps.td are expected to exist
 // but are not implemented yet - they're just declarations in the generated code.
-// #include "lingodb/compiler/Dialect/SubOperator/SubOperatorOpsAttributes.h" // TODO: Port
-// #include "lingodb/compiler/Dialect/SubOperator/Transforms/StateUsageTransformer.h" // TODO: Port
-// #include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsAttributes.h" // TODO: Port
+// #include "lingodb/compiler/Dialect/SubOperator/SubOperatorOpsAttributes.h" // TODO Phase 5: Port
+// #include "lingodb/compiler/Dialect/SubOperator/Transforms/StateUsageTransformer.h" // TODO Phase 5: Port
+// #include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsAttributes.h" // TODO Phase 5: Port
 #include "dialects/tuplestream/Column.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "mlir/IR/Builders.h"
@@ -26,7 +26,7 @@ namespace pgx_lower::compiler::dialect::subop {
 
 // Forward declaration of attribute types
 class StateMembersAttr;
-// PGX_LOWER STUB IMPLEMENTATION - TODO: Adapt for PostgreSQL tuple-oriented approach
+// PGX_LOWER STUB IMPLEMENTATION - TODO Phase 5: Adapt for PostgreSQL tuple-oriented approach
 // This is a minimal stub to get compilation working. LingoDB uses this for column-oriented
 // data remapping, but PostgreSQL is tuple-oriented.
 class ColumnMapping {
@@ -34,19 +34,19 @@ class ColumnMapping {
                       pgx_lower::compiler::dialect::tuples::Column*> mapping;
 
    public:
-   // TODO: Implement tuple-oriented remapping for PostgreSQL
+   // TODO Phase 5: Implement tuple-oriented remapping for PostgreSQL
    // Stub implementations for now
    mlir::Attribute remap(mlir::Attribute attr) {
-      // TODO: Implement proper remapping
+      // TODO Phase 5: Implement proper remapping
       return attr;
    }
-   // TODO: Implement array/dictionary remapping and cloning for PostgreSQL
+   // TODO Phase 5: Implement array/dictionary remapping and cloning for PostgreSQL
    void mapRaw(pgx_lower::compiler::dialect::tuples::Column* from, 
                pgx_lower::compiler::dialect::tuples::Column* to) {
       mapping[from] = to;
    }
 };
-// PGX_LOWER STUB IMPLEMENTATION - TODO: Implement for PostgreSQL state management  
+// PGX_LOWER STUB IMPLEMENTATION - TODO Phase 5: Implement for PostgreSQL state management  
 // This is a minimal stub to get compilation working.
 class SubOpStateUsageTransformer {
 public:

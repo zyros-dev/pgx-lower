@@ -7,11 +7,11 @@
 
 // Forward declarations for TupleStream dialect types
 namespace pgx_lower::compiler::dialect::tuples {
-// TODO: These should be generated from TableGen, but for now use forward declarations
+// TODO Phase 5: These should be generated from TableGen, but for now use forward declarations
 class TupleStreamType;
 class TupleType;
 
-// TODO: Generate from TupleStreamBase.td when TableGen setup is complete
+// TODO Phase 5: Generate from TupleStreamBase.td when TableGen setup is complete
 // For now, provide minimal interface to get compilation working
 }
 

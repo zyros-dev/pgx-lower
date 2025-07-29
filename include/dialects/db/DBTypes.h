@@ -1,7 +1,7 @@
 #ifndef DB_TYPES_H
 #define DB_TYPES_H
 
-// #include "lingodb/compiler/Dialect/DB/IR/DBOpsEnums.h" // TODO: Port if needed
+// #include "lingodb/compiler/Dialect/DB/IR/DBOpsEnums.h" // TODO Phase 5: Port if needed
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"

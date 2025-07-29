@@ -2865,7 +2865,7 @@ class GroupJoinLowering : public OpConversionPattern<relalg::GroupJoinOp> {
       for (auto z : llvm::zip(groupJoinOp.getLeftCols(), groupJoinOp.getRightCols())) {
          auto rightAttr = mlir::cast<tuples::ColumnRefAttr>(std::get<1>(z));
          auto leftAttr = mlir::cast<tuples::ColumnRefAttr>(std::get<0>(z));
-         // TODO: Fix column pointer check when Column class is properly implemented
+         // TODO Phase 5: Fix column pointer check when Column class is properly implemented
          // if (!storedColumns.contains(&leftAttr.getColumn())) {
             renameLeftDefs.push_back(tuples::ColumnDefAttr::get(getContext(), leftAttr.getName(), leftAttr.getColumnType(), rewriter.getArrayAttr(rightAttr)));
          // }
@@ -3090,7 +3090,7 @@ void createLowerRelAlgToSubOpPipeline(mlir::OpPassManager& pm) {
 
 void populateRelAlgToSubOpConversionPatterns(
     mlir::RewritePatternSet &patterns, mlir::TypeConverter &typeConverter) {
-    // TODO: Add pattern population if needed
+    // TODO Phase 5: Add pattern population if needed
 }
 
 } // namespace pgx_lower::compiler::dialect::relalg

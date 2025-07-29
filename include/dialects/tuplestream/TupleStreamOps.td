@@ -34,7 +34,7 @@ def TupleStream_ReturnOp : TupleStream_Op<"return", [Pure,ReturnLike,Terminator]
 def GetColumnOp : TupleStream_Op<"getcol", [Pure]> {
     let summary = "get column operation";
 
-    // TODO: Change back to TupleStream_Tuple once type generation is fixed
+    // TODO Phase 5: Change back to TupleStream_Tuple once type generation is fixed
     let arguments = (ins AnyType:$tuple, ColumnRefAttr:$attr);
     let results = (outs AnyType : $res);
     let assemblyFormat = [{  $tuple `[` $attr `]` `:` type($tuple) `->` type($res) attr-dict }];

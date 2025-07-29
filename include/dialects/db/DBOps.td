@@ -7,9 +7,10 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
-include "lingodb/compiler/Dialect/DB/IR/DBInterfaces.td"
-include "lingodb/compiler/Dialect/RelAlg/IR/RelAlgInterfaces.td"
-include "lingodb/compiler/Dialect/Arrow/IR/ArrowBase.td"
+include "dialects/db/DBInterfaces.td"
+include "dialects/relalg/RelAlgInterfaces.td"
+// Arrow not used in PostgreSQL integration
+// include "lingodb/compiler/Dialect/Arrow/IR/ArrowBase.td"
 
 //===----------------------------------------------------------------------===//
 // DB dialect definition.
@@ -24,14 +25,14 @@ def DB_Dialect : Dialect {
     }];
 
     let name = "db";
-    let cppNamespace = "::mlir::db";
+    let cppNamespace = "::pgx_lower::compiler::dialect::db";
     let extraClassDeclaration = [{
         private:
         void registerTypes();
-        std::shared_ptr<lingodb::compiler::dialect::db::RuntimeFunctionRegistry> runtimeFunctionRegistry;
+        std::shared_ptr<pgx_lower::compiler::dialect::db::RuntimeFunctionRegistry> runtimeFunctionRegistry;
 
         public:
-            std::shared_ptr<lingodb::compiler::dialect::db::RuntimeFunctionRegistry> getRuntimeFunctionRegistry(){
+            std::shared_ptr<pgx_lower::compiler::dialect::db::RuntimeFunctionRegistry> getRuntimeFunctionRegistry(){
                 return runtimeFunctionRegistry;
             }
     }];
@@ -78,7 +79,7 @@ def DB_DateUnit_DAY  : I64EnumAttrCase<"day", 0>;
 def DB_DateUnit_MS : I64EnumAttrCase<"millisecond", 1>;
 def DB_DateUnitAttr : I64EnumAttr<"DateUnitAttr", "",
         [DB_DateUnit_DAY,DB_DateUnit_MS]> {
-    let cppNamespace = "::lingodb::compiler::dialect::db";
+    let cppNamespace = "::pgx_lower::compiler::dialect::db";
 }
 def DB_DateType : DB_Type<"Date","date"> {
     let summary = "date";
@@ -90,7 +91,7 @@ def DB_IntervalUnit_MONTH  : I64EnumAttrCase<"months", 0>;
 def DB_IntervalUnit_DAYTIME : I64EnumAttrCase<"daytime", 1>;
 def DB_IntervalUnitAttr : I64EnumAttr<"IntervalUnitAttr", "",
         [DB_IntervalUnit_MONTH,DB_IntervalUnit_DAYTIME]> {
-    let cppNamespace = "::lingodb::compiler::dialect::db";
+    let cppNamespace = "::pgx_lower::compiler::dialect::db";
 }
 def DB_IntervalType : DB_Type<"Interval","interval"> {
     let summary = "interval";
@@ -104,7 +105,7 @@ def DB_TimeUnit_MUS : I64EnumAttrCase<"microsecond", 2>;
 def DB_TimeUnit_NS : I64EnumAttrCase<"nanosecond", 3>;
 def DB_TimeUnitAttr : I64EnumAttr<"TimeUnitAttr", "",
         [DB_TimeUnit_S,DB_TimeUnit_MS,DB_TimeUnit_MUS,DB_TimeUnit_NS]> {
-    let cppNamespace = "::lingodb::compiler::dialect::db";
+    let cppNamespace = "::pgx_lower::compiler::dialect::db";
 }
 def DB_TimestampType : DB_Type<"Timestamp","timestamp"> {
     let summary = "timestamp";
@@ -193,7 +194,7 @@ def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethod
                 MLIRContext* context, std::optional<Location> location,
                 ValueRange operands, DictionaryAttr attributes, OpaqueProperties opaqueProperties,
                 RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
-            inferredReturnTypes.assign({operands[0].getType().cast<lingodb::compiler::dialect::db::NullableType>().getType()});
+            inferredReturnTypes.assign({operands[0].getType().cast<pgx_lower::compiler::dialect::db::NullableType>().getType()});
             return success();
         }
     }];
@@ -304,7 +305,7 @@ def DB_CMP_P_ISA  : I64EnumAttrCase<"isa", 6>;
 
 def DB_CmpPredicateAttr : I64EnumAttr<"DBCmpPredicate", "",
         [DB_CMP_P_EQ, DB_CMP_P_NEQ, DB_CMP_P_LT, DB_CMP_P_LTE, DB_CMP_P_GT,DB_CMP_P_GTE,DB_CMP_P_ISA]> {
-    let cppNamespace = "::lingodb::compiler::dialect::db";
+    let cppNamespace = "::pgx_lower::compiler::dialect::db";
 }
 
 def DB_CmpOp : DB_LogicalOp<"compare",
@@ -315,7 +316,7 @@ def DB_CmpOp : DB_LogicalOp<"compare",
     let assemblyFormat = "$predicate $left `:` type($left) `,` $right `:` type($right) attr-dict";
     
     let builders = [
-        OpBuilder<(ins "::lingodb::compiler::dialect::db::DBCmpPredicate":$predicate, "mlir::Value":$left, "mlir::Value":$right), [{
+        OpBuilder<(ins "::pgx_lower::compiler::dialect::db::DBCmpPredicate":$predicate, "mlir::Value":$left, "mlir::Value":$right), [{
             // Infer result type
             mlir::Type i1 = $_builder.getI1Type();
             mlir::Type resultType = i1;
@@ -334,7 +335,7 @@ def DB_CmpOp : DB_LogicalOp<"compare",
                 mlir::Type i1 = IntegerType::get(context, 1);
                   CmpOpAdaptor adaptor(operands, attributes, properties, regions);
 
-                if(adaptor.getPredicate()==lingodb::compiler::dialect::db::DBCmpPredicate::isa){
+                if(adaptor.getPredicate()==pgx_lower::compiler::dialect::db::DBCmpPredicate::isa){
                    inferredReturnTypes.assign({i1});
                    return success();
                 }
@@ -416,18 +417,19 @@ def CastOp : DB_Op<"cast",[DB_NeedsNullWrap,DB_MaySupportInvalidValues,Pure]> {
     let assemblyFormat = "$val `:` type($val) `->` type($res) attr-dict";
     let hasFolder = 1;
 }
-def LoadArrowOp : DB_Op<"arrow.load"> {
-    let summary = "loads value from arrow array";
-
-    let arguments = (ins Arrow_Array:$array, Index: $offset);
-    let results = (outs NullableDBType:$res);
-    let assemblyFormat = "$array `,` $offset `->` type($res) attr-dict";
-}
-
-def AppendArrowOp : DB_Op<"arrow.append"> {
-    let summary = "append value to arrow array ";
-    let arguments = (ins Arrow_ArrayBuilder:$builder, NullableDBType:$value); //todo: add valid flag, or is nullable type enough?
-    let assemblyFormat = "$builder `,` $value `->` type($value) attr-dict";
-}
+// PostgreSQL: Arrow operations commented out since we don't use Arrow
+// def LoadArrowOp : DB_Op<"arrow.load"> {
+//     let summary = "loads value from arrow array";
+// 
+//     let arguments = (ins Arrow_Array:$array, Index: $offset);
+//     let results = (outs NullableDBType:$res);
+//     let assemblyFormat = "$array `,` $offset `->` type($res) attr-dict";
+// }
+// 
+// def AppendArrowOp : DB_Op<"arrow.append"> {
+//     let summary = "append value to arrow array ";
+//     let arguments = (ins Arrow_ArrayBuilder:$builder, NullableDBType:$value); //todo: add valid flag, or is nullable type enough?
+//     let assemblyFormat = "$builder `,` $value `->` type($value) attr-dict";
+// }
 
 #endif// OPS

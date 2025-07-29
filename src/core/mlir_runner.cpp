@@ -84,6 +84,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("MLIR module verification passed - proceeding to lowering");
     
     logger.notice("Using LingoDB-style lowering pipeline: RelAlg → SubOp → DB → DSA → LLVM");
+    logger.notice("(PostgreSQL integration happens in the lowering passes)");
     
     // Run each pass individually to see intermediate results
     

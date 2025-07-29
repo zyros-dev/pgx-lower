@@ -1,13 +1,14 @@
 #include "dialects/db/DBDialect.h"
 
 #include "dialects/db/DBOps.h"
-// #include "lingodb/compiler/Dialect/DB/IR/RuntimeFunctions.h" // TODO: Port if needed
-// #include "lingodb/compiler/mlir-support/tostring.h" // TODO: Port if needed
+// #include "lingodb/compiler/Dialect/DB/IR/RuntimeFunctions.h" // TODO Phase 5: Port if needed
+// #include "lingodb/compiler/mlir-support/tostring.h" // TODO Phase 5: Port if needed
 
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/TypeSwitch.h"
 using namespace mlir;
+using namespace pgx_lower::compiler::dialect;
 struct DBInlinerInterface : public DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
    bool isLegalToInline(Operation*, Region*, bool, IRMapping&) const final override {
@@ -25,12 +26,12 @@ void pgx_lower::compiler::dialect::db::DBDialect::initialize() {
       >();
    addInterfaces<DBInlinerInterface>();
    registerTypes();
-   // runtimeFunctionRegistry = db::RuntimeFunctionRegistry::getBuiltinRegistry(getContext()); // TODO: Port if needed
+   // runtimeFunctionRegistry = db::RuntimeFunctionRegistry::getBuiltinRegistry(getContext()); // TODO Phase 5: Port if needed
 }
 
-// TODO: Implement materializeConstant when needed
+// TODO Phase 5: Implement materializeConstant when needed
 // ::mlir::Operation* mlir::db::DBDialect::materializeConstant(::mlir::OpBuilder& builder, ::mlir::Attribute value, ::mlir::Type type, ::mlir::Location loc) {
-//    // TODO: Port decimal/date string conversion functions if needed
+//    // TODO Phase 9: Port decimal/date string conversion functions if needed
 //    if (mlir::isa<mlir::IntegerType, mlir::FloatType>(type)) {
 //       return builder.create<mlir::db::ConstantOp>(loc, type, value);
 //    }
@@ -52,120 +53,4 @@ void pgx_lower::compiler::dialect::db::DBDialect::registerTypes() {
 #define GET_TYPEDEF_LIST
 #include "DBTypes.cpp.inc"
     >();
-}
-
-// Binary operation type inference
-static mlir::LogicalResult inferReturnTypes(
-    mlir::MLIRContext *context,
-    std::optional<mlir::Location> location,
-    mlir::ValueRange operands,
-    mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties,
-    mlir::RegionRange regions,
-    llvm::SmallVectorImpl<mlir::Type> &inferredReturnTypes) {
-    
-    // For now, use the type of the left operand
-    if (operands.size() == 2) {
-        inferredReturnTypes.push_back(operands[0].getType());
-        return mlir::success();
-    }
-    return mlir::failure();
-}
-
-// Implement type inference for binary operations
-mlir::LogicalResult pgx_lower::compiler::dialect::db::AddOp::inferReturnTypes(
-    mlir::MLIRContext *context,
-    std::optional<mlir::Location> location,
-    mlir::ValueRange operands,
-    mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties,
-    mlir::RegionRange regions,
-    llvm::SmallVectorImpl<mlir::Type> &inferredReturnTypes) {
-    return inferReturnTypes(
-        context, location, operands, attributes, properties, regions, inferredReturnTypes);
-}
-
-mlir::LogicalResult pgx_lower::compiler::dialect::db::SubOp::inferReturnTypes(
-    mlir::MLIRContext *context,
-    std::optional<mlir::Location> location,
-    mlir::ValueRange operands,
-    mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties,
-    mlir::RegionRange regions,
-    llvm::SmallVectorImpl<mlir::Type> &inferredReturnTypes) {
-    return inferReturnTypes(
-        context, location, operands, attributes, properties, regions, inferredReturnTypes);
-}
-
-mlir::LogicalResult pgx_lower::compiler::dialect::db::MulOp::inferReturnTypes(
-    mlir::MLIRContext *context,
-    std::optional<mlir::Location> location,
-    mlir::ValueRange operands,
-    mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties,
-    mlir::RegionRange regions,
-    llvm::SmallVectorImpl<mlir::Type> &inferredReturnTypes) {
-    return inferReturnTypes(
-        context, location, operands, attributes, properties, regions, inferredReturnTypes);
-}
-
-mlir::LogicalResult pgx_lower::compiler::dialect::db::DivOp::inferReturnTypes(
-    mlir::MLIRContext *context,
-    std::optional<mlir::Location> location,
-    mlir::ValueRange operands,
-    mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties,
-    mlir::RegionRange regions,
-    llvm::SmallVectorImpl<mlir::Type> &inferredReturnTypes) {
-    return inferReturnTypes(
-        context, location, operands, attributes, properties, regions, inferredReturnTypes);
-}
-
-mlir::LogicalResult pgx_lower::compiler::dialect::db::ModOp::inferReturnTypes(
-    mlir::MLIRContext *context,
-    std::optional<mlir::Location> location,
-    mlir::ValueRange operands,
-    mlir::DictionaryAttr attributes,
-    mlir::OpaqueProperties properties,
-    mlir::RegionRange regions,
-    llvm::SmallVectorImpl<mlir::Type> &inferredReturnTypes) {
-    return inferReturnTypes(
-        context, location, operands, attributes, properties, regions, inferredReturnTypes);
-}
-
-// ConstantOp custom assembly format
-void pgx_lower::compiler::dialect::db::ConstantOp::print(mlir::OpAsmPrinter &p) {
-    p << " ";
-    p.printAttribute(getValue());
-    p.printOptionalAttrDict((*this)->getAttrs(), {"value"});
-    p << " : " << getType();
-}
-
-mlir::ParseResult pgx_lower::compiler::dialect::db::ConstantOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
-    mlir::Attribute valueAttr;
-    mlir::Type type;
-    
-    if (parser.parseAttribute(valueAttr, "value", result.attributes) ||
-        parser.parseOptionalAttrDict(result.attributes) ||
-        parser.parseColonType(type))
-        return mlir::failure();
-    
-    result.addTypes(type);
-    return mlir::success();
-}
-
-// ConstantOp fold implementation
-mlir::OpFoldResult pgx_lower::compiler::dialect::db::ConstantOp::fold(FoldAdaptor) {
-    return getValue();
-}
-
-// Dialect attribute parsing/printing (required by MLIR)
-mlir::Attribute pgx_lower::compiler::dialect::db::DBDialect::parseAttribute(mlir::DialectAsmParser &parser, mlir::Type type) const {
-    // For now, no custom attributes - return null to indicate not handled
-    return nullptr;
-}
-
-void pgx_lower::compiler::dialect::db::DBDialect::printAttribute(mlir::Attribute attr, mlir::DialectAsmPrinter &printer) const {
-    // For now, no custom attributes - this should not be called
-    llvm_unreachable("No custom attributes defined for DB dialect yet");
 }

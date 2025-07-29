@@ -167,7 +167,7 @@ ParseResult parseCustDef(OpAsmParser& parser, ::pgx_lower::compiler::dialect::tu
    }
    attr = getColumnManager(parser).createDef(attrSymbolAttr, fromExisting);
    auto propType = mlir::dyn_cast<TypeAttr>(dictAttr.get("type")).getValue();
-   // TODO: Set column type properly - for now using getColumnType() 
+   // TODO Phase 5: Set column type properly - for now using getColumnType() 
    // attr.getColumn().type = propType;
    return success();
 }
@@ -175,7 +175,7 @@ void printCustDef(OpAsmPrinter& p, mlir::Operation* op, ::pgx_lower::compiler::d
    p << attr.getName();
    std::vector<mlir::NamedAttribute> relAttrDefProps;
    MLIRContext* context = attr.getContext();
-   // TODO: Get column info properly
+   // TODO Phase 5: Get column info properly
    mlir::Type columnType = attr.getColumnType();
    relAttrDefProps.push_back({mlir::StringAttr::get(context, "type"), mlir::TypeAttr::get(columnType)});
    p << "(" << mlir::DictionaryAttr::get(context, relAttrDefProps) << ")";

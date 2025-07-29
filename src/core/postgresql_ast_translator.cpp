@@ -113,7 +113,7 @@ auto PostgreSQLASTTranslator::registerDialects() -> void {
     context_.getOrLoadDialect<pgx_lower::compiler::dialect::util::UtilDialect>();
     context_.getOrLoadDialect<mlir::index::IndexDialect>();
     
-    // TODO: Add these when needed:
+    // TODO Phase 5: Add these when needed:
     // context_.getOrLoadDialect<mlir::BuiltinDialect>(); 
     // context_.getOrLoadDialect<mlir::DLTIDialect>();
 }
@@ -147,7 +147,7 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     auto& entryBlock = *mainFunc.addEntryBlock();
     builder.setInsertionPointToStart(&entryBlock);
     
-    // TODO: Proper PostgreSQL AST translation
+    // TODO Phase 5: Proper PostgreSQL AST translation
     logger_.notice("Creating dummy RelAlg query to test the pipeline");
     
     // Create a simple RelAlg query: just a base table scan
@@ -340,7 +340,7 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
     // Generate high-level pg dialect operations for proper lowering
     if (isArithmeticOperator(opName)) {
         if (strcmp(opName, "+") == 0) {
-            // TODO: Generate RelAlg MapOp with arithmetic expression
+            // TODO Phase 6: Generate RelAlg MapOp with arithmetic expression
             logger_.notice("Arithmetic operations not yet implemented in RelAlg translation");
             return operands[0]; // Return first operand as placeholder
         } else if (strcmp(opName, "-") == 0) {
@@ -375,7 +375,7 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> mlir::Value {
         
         if (predicate >= 0) {
             auto predicateAttr = builder_->getI32IntegerAttr(predicate);
-            // TODO: Generate RelAlg MapOp with comparison expression
+            // TODO Phase 7: Generate RelAlg MapOp with comparison expression
             logger_.notice("Comparison operations not yet implemented in RelAlg translation");
             auto i1Type = builder_->getI1Type();
             return builder_->create<mlir::arith::ConstantOp>(location, i1Type, builder_->getBoolAttr(true));
@@ -457,7 +457,7 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> mlir::Value {
         return nullptr; // Don't generate invalid field access
     }
     
-    // TODO: Replace with RelAlg GetScalarOp once we have proper column references
+    // TODO Phase 5: Replace with RelAlg GetScalarOp once we have proper column references
     logger_.notice("Field access not yet implemented in RelAlg translation");
     
     // Map PostgreSQL type OID to MLIR type
@@ -606,7 +606,7 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                // TODO: Generate RelAlg MapOp with logical expression
+                // TODO Phase 8: Generate RelAlg MapOp with logical expression
                 logger_.notice("Logical operations not yet implemented in RelAlg translation");
                 return left; // Return first operand as placeholder
             }
@@ -615,7 +615,7 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                // TODO: Generate RelAlg MapOp with logical expression
+                // TODO Phase 8: Generate RelAlg MapOp with logical expression
                 logger_.notice("Logical operations not yet implemented in RelAlg translation");
                 return left; // Return first operand as placeholder
             }
@@ -623,7 +623,7 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
         case NOT_EXPR:
             if (operands.size() >= 1) {
                 auto operand = convertToBool(operands[0]);
-                // TODO: Generate RelAlg MapOp with logical expression
+                // TODO Phase 8: Generate RelAlg MapOp with logical expression
                 logger_.notice("Logical operations not yet implemented in RelAlg translation");
                 return operand; // Return operand as placeholder
             }
@@ -653,7 +653,7 @@ auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> mlir::Val
         auto location = builder_->getUnknownLoc();
         auto i1Type = builder_->getI1Type();
         
-        // TODO: Implement null test with RelAlg operations
+        // TODO Phase 9: Implement null test with RelAlg operations
         logger_.notice("NULL test not yet implemented in RelAlg translation");
         
         // For now, return a dummy boolean value
@@ -783,7 +783,7 @@ auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) 
             return nullptr;
         }
         
-        // TODO: Implement COALESCE with RelAlg operations
+        // TODO Phase 9: Implement COALESCE with RelAlg operations
         logger_.notice("COALESCE (2-arg) not yet implemented in RelAlg translation");
         return firstValue; // Return first value as placeholder
     }
@@ -826,7 +826,7 @@ auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& 
     // Runtime function declarations will be added by lowering passes as needed
     // For now, we only declare functions that we can't avoid using yet
     
-    // TODO: Remove these once aggregate handling is pure PG dialect
+    // TODO Phase 11: Remove these once aggregate handling is pure RelAlg dialect
     auto funcType = mlir::FunctionType::get(&context_, {i64Type}, {i1Type});
     auto addTupleFunc = builder_->create<mlir::func::FuncOp>(location, "add_tuple_to_result", funcType);
     addTupleFunc.setPrivate();
@@ -978,7 +978,7 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
         // For computed expressions, we need a map operation
         logger_.debug("Processing target list with " + std::to_string(list_length(targetList)) + " expressions");
         
-        // TODO: Analyze target list to see if we need map operations
+        // TODO Phase 5: Analyze target list to see if we need map operations
         // For now, assume simple column references that don't need mapping
     }
     
@@ -1238,7 +1238,7 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
         return;
     }
     
-    // TODO: Generate accumulation loop using RelAlg operations
+    // TODO Phase 11: Generate accumulation loop using RelAlg operations
     logger_.notice("Aggregate loop generation not yet implemented in RelAlg translation");
     
     // For now, just store dummy values
@@ -1250,7 +1250,7 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     return; // Early return until RelAlg aggregate implementation is ready
     
     /*
-    // TODO: The code below needs to be reimplemented using RelAlg operations
+    // TODO Phase 11: The code below needs to be reimplemented using RelAlg operations
     // Create the accumulation loop using scf.while
     // For AVG, we need to track both sum and count
     mlir::Value secondAccumulator = countAccumulator ? countAccumulator : accumulator;

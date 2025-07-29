@@ -45,10 +45,22 @@ add_public_tablegen_target(MLIRSubOpInterfacesIncGen)
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/db/DBDialect.td)
 mlir_tablegen(DBDialect.h.inc -gen-dialect-decls -dialect=db -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(DBDialect.cpp.inc -gen-dialect-defs -dialect=db -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DBOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DBOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+
+# DB Operations require DBOps.td as target
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/db/DBOps.td)
+mlir_tablegen(DBOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/db -I${CMAKE_SOURCE_DIR}/include/dialects/tuplestream -I${CMAKE_SOURCE_DIR}/include/dialects/relalg)
+mlir_tablegen(DBOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/db -I${CMAKE_SOURCE_DIR}/include/dialects/tuplestream -I${CMAKE_SOURCE_DIR}/include/dialects/relalg)
+mlir_tablegen(DBOpsEnums.h.inc -gen-enum-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/db)
+mlir_tablegen(DBOpsEnums.cpp.inc -gen-enum-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/db)
+
+# DB Types are defined in DBOps.td
 mlir_tablegen(DBTypes.h.inc -gen-typedef-decls --typedefs-dialect=db -I${MLIR_INCLUDE_DIRS})
 mlir_tablegen(DBTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=db -I${MLIR_INCLUDE_DIRS})
+
+# DB Interfaces
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/db/DBInterfaces.td)
+mlir_tablegen(DBOpsInterfaces.h.inc -gen-op-interface-decls -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(DBOpsInterfaces.cpp.inc -gen-op-interface-defs -I${MLIR_INCLUDE_DIRS})
 add_public_tablegen_target(MLIRDBIncGen)
 
 # TupleStream dialect TableGen
@@ -312,6 +324,7 @@ add_public_tablegen_target(MLIRUtilIncGen)
 
 add_library(PgxLowerRuntime
     ../runtime/tuple_access.cpp
+    ../runtime/PostgreSQLDataSource.cpp
 )
 
 target_include_directories(PgxLowerRuntime PUBLIC

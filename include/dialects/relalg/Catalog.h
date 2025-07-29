@@ -2,7 +2,7 @@
 #define PGX_LOWER_CATALOG_H
 
 namespace catalog {
-// Stub for TableMetaDataProvider - TODO: implement for PostgreSQL
+// Stub for TableMetaDataProvider - TODO Phase 5: implement for PostgreSQL
 class TableMetaDataProvider {
 public:
     TableMetaDataProvider() = default;

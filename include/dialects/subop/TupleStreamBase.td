@@ -20,7 +20,7 @@ def TupleStream_Dialect : Dialect {
     let cppNamespace = "::pgx_lower::compiler::dialect::tuples";
 
     let extraClassDeclaration = [{
-        // TODO: Port ColumnManager from LingoDB when needed
+        // TODO Phase 5: Port ColumnManager from LingoDB when needed
         // private:
         //     ColumnManager columnManager;
         // public:

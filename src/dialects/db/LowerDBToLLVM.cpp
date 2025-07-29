@@ -30,7 +30,7 @@ class DBTypeConverter : public LLVMTypeConverter {
 public:
     DBTypeConverter(MLIRContext *ctx) : LLVMTypeConverter(ctx) {
         // For now, simplify type conversion - just pass through most types
-        // TODO: Add proper nullable type conversion when needed
+        // TODO Phase 9: Add proper nullable type conversion when needed
         
         // Standard LLVM type converter handles most built-in types
         // We'll add specific DB type conversions as needed
@@ -166,7 +166,7 @@ struct LowerDBToLLVMPass : public OperationPass<ModuleOp> {
         });
         
         RewritePatternSet patterns(&context);
-        // TODO: Implement proper lowering patterns
+        // TODO Phase 5: Implement proper lowering patterns
         patterns.add<ConstantOpLowering>(typeConverter, &context);
         patterns.add<AsNullableOpLowering>(typeConverter, &context);
         patterns.add<NullOpLowering>(typeConverter, &context);

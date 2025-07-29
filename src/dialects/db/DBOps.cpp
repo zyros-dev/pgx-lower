@@ -1,17 +1,17 @@
-#include "lingodb/compiler/Dialect/DB/IR/DBOps.h"
-#include "lingodb/compiler/Dialect/DB/IR/DBDialect.h"
-#include "lingodb/compiler/Dialect/DB/IR/RuntimeFunctions.h"
+#include "dialects/db/DBOps.h"
+#include "dialects/db/DBDialect.h"
+// #include "lingodb/compiler/Dialect/DB/IR/RuntimeFunctions.h" // TODO Phase 5: Port if needed
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
 #include <unordered_set>
 
-#include "lingodb/compiler/mlir-support/parsing.h"
+// #include "lingodb/compiler/mlir-support/parsing.h" // TODO Phase 5: Port if needed
 
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/Support/Debug.h>
 #include <queue>
 using namespace mlir;
-using namespace lingodb::compiler::dialect;
+using namespace pgx_lower::compiler::dialect;
 
 bool db::CmpOp::isEqualityPred(bool nullsAreEqual) { return getPredicate() == db::DBCmpPredicate::eq || (nullsAreEqual ? (getPredicate() == DBCmpPredicate::isa) : false); }
 bool db::CmpOp::isUnequalityPred() { return getPredicate() == db::DBCmpPredicate::neq; }
@@ -42,6 +42,7 @@ int getIntegerWidth(mlir::Type type, bool isUnSigned) {
 }
 namespace {
 
+/* PostgreSQL: Comment out Arrow-specific conversion
 std::tuple<::arrow::Type::type, uint32_t, uint32_t> convertTypeToArrow(mlir::Type type) {
    ::arrow::Type::type typeConstant = ::arrow::Type::type::NA;
    uint32_t param1 = 0, param2 = 0;
@@ -95,6 +96,7 @@ std::tuple<::arrow::Type::type, uint32_t, uint32_t> convertTypeToArrow(mlir::Typ
    assert(typeConstant != ::arrow::Type::type::NA);
    return {typeConstant, param1, param2};
 }
+*/
 mlir::Type getAdaptedDecimalTypeAfterMulDiv(mlir::MLIRContext* context, int precision, int scale) {
    int beforeComma = precision - scale;
    if (beforeComma > 32 && scale > 6) {
@@ -106,6 +108,7 @@ mlir::Type getAdaptedDecimalTypeAfterMulDiv(mlir::MLIRContext* context, int prec
    return db::DecimalType::get(context, std::min(precision, 38), std::min(scale, 38 - beforeComma));
 }
 } // namespace
+/* PostgreSQL: Comment out fold method that uses Arrow conversion
 OpFoldResult db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
    auto type = getType();
    auto [arrowType, param1, param2] = convertTypeToArrow(type);
@@ -141,6 +144,7 @@ OpFoldResult db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
    }
    return {};
 }
+*/
 
 ::mlir::OpFoldResult db::AddOp::fold(db::AddOp::FoldAdaptor adaptor) {
    auto left = mlir::dyn_cast_or_null<mlir::IntegerAttr>(adaptor.getLeft());
@@ -159,6 +163,7 @@ OpFoldResult db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
    return {};
 }
 
+/* PostgreSQL: Comment out fold methods that use Arrow support
 ::mlir::OpFoldResult db::CastOp::fold(db::CastOp::FoldAdaptor adaptor) {
    auto scalarSourceType = getVal().getType();
    auto scalarTargetType = getType();
@@ -201,7 +206,9 @@ OpFoldResult db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
    }
    return {};
 }
+*/
 
+/* PostgreSQL: Comment out methods that use RuntimeFunctionRegistry
 ::mlir::LogicalResult db::RuntimeCall::fold(db::RuntimeCall::FoldAdaptor adaptor, ::llvm::SmallVectorImpl<::mlir::OpFoldResult>& results) {
    auto reg = getContext()->getLoadedDialect<db::DBDialect>()->getRuntimeFunctionRegistry();
    auto* fn = reg->lookup(getFn().str());
@@ -210,6 +217,7 @@ OpFoldResult db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
    auto foldFn = fn->foldFn.value();
    return foldFn(getOperandTypes(), adaptor.getOperands(), results);
 }
+*/
 namespace {
 LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
    Type baseTypeLeft = getBaseType(operands[0].getType());
@@ -221,7 +229,7 @@ LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> loca
       auto hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
       auto maxs = std::max(a.getS(), b.getS());
       // Addition is super-type of both, with larger precision for carry.
-      // TODO: actually add carry precision (+1).
+      // TODO Phase 6: actually add carry precision (+1) for arithmetic operations.
       baseType = db::DecimalType::get(a.getContext(), hidig + maxs, maxs);
    }
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
@@ -267,6 +275,7 @@ LogicalResult inferRemReturnType(MLIRContext* context, std::optional<Location> l
    return success();
 }
 } // namespace
+/* PostgreSQL: Comment out RuntimeCall methods that use registry
 ::mlir::LogicalResult db::RuntimeCall::verify() {
    db::RuntimeCall& runtimeCall = *this;
    auto reg = runtimeCall.getContext()->getLoadedDialect<db::DBDialect>()->getRuntimeFunctionRegistry();
@@ -290,6 +299,7 @@ bool db::RuntimeCall::needsNullWrap() {
    }
    return false;
 }
+*/
 
 bool db::CmpOp::supportsInvalidValues() {
    auto type = getBaseType(getLeft().getType());
@@ -458,5 +468,6 @@ LogicalResult db::AndOp::canonicalize(db::AndOp andOp, mlir::PatternRewriter& re
    return failure();
 }
 #define GET_OP_CLASSES
-#include "lingodb/compiler/Dialect/DB/IR/DBOps.cpp.inc"
-#include "lingodb/compiler/Dialect/DB/IR/DBOpsInterfaces.cpp.inc"
+#include "DBOps.cpp.inc"
+#include "DBOpsInterfaces.cpp.inc"
+#include "DBOpsEnums.cpp.inc"
