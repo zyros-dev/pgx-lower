@@ -988,8 +988,11 @@ class MaterializeTableLowering : public SubOpTupleStreamConsumerConversionPatter
          auto memberName = mlir::cast<mlir::StringAttr>(stateType.getMembers().getNames()[i]).str();
          auto attribute = mlir::cast<tuples::ColumnRefAttr>(materializeOp.getMapping().get(memberName));
          auto val = mapping.resolve(materializeOp, attribute);
-         auto asArrayBuilder = rewriter.create<arrow::BuilderFromPtr>(materializeOp->getLoc(), columnBuilders.getResult(i));
-         rewriter.create<db::AppendArrowOp>(materializeOp->getLoc(), asArrayBuilder, val);
+         // TODO Phase 5: Replace Arrow builder with PostgreSQL tuple builder
+         // auto asArrayBuilder = rewriter.create<arrow::BuilderFromPtr>(materializeOp->getLoc(), columnBuilders.getResult(i));
+         auto asArrayBuilder = columnBuilders.getResult(i); // Temporary stub
+         // TODO Phase 5: Replace db::AppendArrowOp with PostgreSQL tuple append
+         // rewriter.create<db::AppendArrowOp>(materializeOp->getLoc(), asArrayBuilder, val);
       }
       rewriter.eraseOp(materializeOp);
       return mlir::success();
@@ -1153,7 +1156,7 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       ModuleOp parentModule = scanOp->getParentOfType<ModuleOp>();
       mlir::func::FuncOp funcOp;
       static size_t funcIds;
-      auto ptrType = util::RefType::get(getContext(), IntegerType::get(getContext(), 8));
+      // ptrType already declared above
       rewriter.atStartOf(parentModule.getBody(), [&](SubOpRewriter& rewriter) {
          funcOp = rewriter.create<mlir::func::FuncOp>(parentModule.getLoc(), "scan_func" + std::to_string(funcIds++), mlir::FunctionType::get(getContext(), TypeRange{ptrType, ptrType}, TypeRange()));
       });
@@ -1168,7 +1171,9 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
          mlir::Value lenRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 0);
          mlir::Value offsetRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 1);
          //mlir::Value selVecRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(i16T)), recordBatchPointer, 2);
-         mlir::Value ptrRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(arrow::ArrayType::get(ctxt))), recordBatchPointer, 3);
+         // TODO Phase 5: Replace Arrow type with PostgreSQL tuple pointer type
+         auto postgresqlTupleType = mlir::IntegerType::get(ctxt, 8); // Temporary stub 
+         mlir::Value ptrRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(postgresqlTupleType)), recordBatchPointer, 3);
          mlir::Value ptrToColumns = rewriter.create<util::LoadOp>(loc, ptrRef);
          std::vector<mlir::Value> arrays;
          for (size_t i = 0; i < accessedColumnTypes.size(); i++) {
@@ -2355,7 +2360,9 @@ class ScanExternalHashIndexListLowering : public SubOpConversionPattern<subop::S
          // rt::HashIndexIteration::consumeRecordBatch(rewriter, loc)({list, recordBatchPointer});
          mlir::Value lenRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 0);
          mlir::Value offsetRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 1);
-         mlir::Value ptrRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(arrow::ArrayType::get(ctxt))), recordBatchPointer, 3);
+         // TODO Phase 5: Replace Arrow type with PostgreSQL tuple pointer type
+         auto postgresqlTupleType = mlir::IntegerType::get(ctxt, 8); // Temporary stub 
+         mlir::Value ptrRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(postgresqlTupleType)), recordBatchPointer, 3);
          mlir::Value ptrToColumns = rewriter.create<util::LoadOp>(loc, ptrRef);
          std::vector<mlir::Value> arrays;
          for (size_t i = 0; i < externalHashIndexType.getMembers().getTypes().size(); i++) {

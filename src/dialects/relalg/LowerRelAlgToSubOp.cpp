@@ -30,6 +30,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 #include <iostream>
+#include <unordered_set>
 
 using namespace mlir;
 
@@ -1229,7 +1230,8 @@ static std::pair<mlir::Value, mlir::Value> translateNLJWithMarker(mlir::Value le
       referenceDefAttr.getColumn().type = subop::EntryRefType::get(rewriter.getContext(), vectorType);
       mlir::Value scan = rewriter.create<subop::ScanRefsOp>(loc, vector, referenceDefAttr);
 
-      mlir::Value gathered = rewriter.create<subop::GatherOp>(loc, scan, colManager.createRef(referenceDefAttr.getName()), helper.createStateColumnMapping({}, {flagMember}));
+      std::unordered_set<std::string> excludedMembers = {flagMember};
+      mlir::Value gathered = rewriter.create<subop::GatherOp>(loc, scan, colManager.createRef(referenceDefAttr.getName()), helper.createStateColumnMapping({}, excludedMembers));
       mlir::Value combined = rewriter.create<subop::CombineTupleOp>(loc, gathered, tuple);
       auto res = fn(combined, tuple, rewriter, colManager.createRef(referenceDefAttr.getName()), flagMember);
       if (res) {
@@ -1270,7 +1272,8 @@ static std::pair<mlir::Value, mlir::Value> translateHJWithMarker(mlir::Value lef
       mlir::OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(b);
       mlir::Value scan = rewriter.create<subop::ScanListOp>(loc, list, entryDef);
-      mlir::Value gathered = rewriter.create<subop::GatherOp>(loc, scan, entryRef, keyHelper.createStateColumnMapping(valueHelper.createStateColumnMapping({}, {flagMember}).getValue()));
+      std::unordered_set<std::string> excludedMembers = {flagMember};
+      mlir::Value gathered = rewriter.create<subop::GatherOp>(loc, scan, entryRef, keyHelper.createStateColumnMapping(valueHelper.createStateColumnMapping({}, excludedMembers).getValue()));
       mlir::Value combined = rewriter.create<subop::CombineTupleOp>(loc, gathered, tuple);
       auto res = fn(combined, tuple, rewriter, entryRef, flagMember);
       if (res) {
