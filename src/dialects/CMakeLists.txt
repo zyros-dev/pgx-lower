@@ -43,8 +43,8 @@ add_public_tablegen_target(MLIRSubOpInterfacesIncGen)
 
 # Database dialect TableGen
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/db/DBDialect.td)
-mlir_tablegen(DBDialect.h.inc -gen-dialect-decls -dialect=db -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DBDialect.cpp.inc -gen-dialect-defs -dialect=db -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(DBDialect.h.inc -gen-dialect-decls -dialect=db -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(DBDialect.cpp.inc -gen-dialect-defs -dialect=db -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 
 # DB Operations require DBOps.td as target
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/db/DBOps.td)
@@ -54,48 +54,48 @@ mlir_tablegen(DBOpsEnums.h.inc -gen-enum-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_
 mlir_tablegen(DBOpsEnums.cpp.inc -gen-enum-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/db)
 
 # DB Types are defined in DBOps.td
-mlir_tablegen(DBTypes.h.inc -gen-typedef-decls --typedefs-dialect=db -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DBTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=db -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(DBTypes.h.inc -gen-typedef-decls --typedefs-dialect=db -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(DBTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=db -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 
 # DB Interfaces
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/db/DBInterfaces.td)
-mlir_tablegen(DBOpsInterfaces.h.inc -gen-op-interface-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DBOpsInterfaces.cpp.inc -gen-op-interface-defs -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(DBOpsInterfaces.h.inc -gen-op-interface-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(DBOpsInterfaces.cpp.inc -gen-op-interface-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 add_public_tablegen_target(MLIRDBIncGen)
 
 # TupleStream dialect TableGen
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/tuplestream/TupleStreamBase.td)
-mlir_tablegen(TupleStreamDialect.h.inc -gen-dialect-decls -dialect=tuples -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(TupleStreamDialect.cpp.inc -gen-dialect-defs -dialect=tuples -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(TupleStreamTypes.h.inc -gen-typedef-decls --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(TupleStreamTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(TupleStreamAttrs.h.inc -gen-attrdef-decls --attrdefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(TupleStreamAttrs.cpp.inc -gen-attrdef-defs --attrdefs-dialect=tuples -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(TupleStreamDialect.h.inc -gen-dialect-decls -dialect=tuples -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(TupleStreamDialect.cpp.inc -gen-dialect-defs -dialect=tuples -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(TupleStreamTypes.h.inc -gen-typedef-decls --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(TupleStreamTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=tuples -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(TupleStreamAttrs.h.inc -gen-attrdef-decls --attrdefs-dialect=tuples -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(TupleStreamAttrs.cpp.inc -gen-attrdef-defs --attrdefs-dialect=tuples -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/tuplestream/TupleStreamOps.td)
-mlir_tablegen(TupleStreamOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(TupleStreamOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(TupleStreamOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(TupleStreamOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 
 add_public_tablegen_target(MLIRTupleStreamIncGen)
 
 # DSA dialect TableGen
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/dsa/DSADialect.td)
-mlir_tablegen(DSADialect.h.inc -gen-dialect-decls -dialect=dsa -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DSADialect.cpp.inc -gen-dialect-defs -dialect=dsa -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DSAOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DSAOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DSATypes.h.inc -gen-typedef-decls --typedefs-dialect=dsa -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(DSATypes.cpp.inc -gen-typedef-defs --typedefs-dialect=dsa -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(DSADialect.h.inc -gen-dialect-decls -dialect=dsa -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(DSADialect.cpp.inc -gen-dialect-defs -dialect=dsa -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(DSAOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(DSAOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(DSATypes.h.inc -gen-typedef-decls --typedefs-dialect=dsa -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(DSATypes.cpp.inc -gen-typedef-defs --typedefs-dialect=dsa -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 add_public_tablegen_target(MLIRDSAIncGen)
 
 # RelAlg dialect TableGen - Enable for pure LingoDB architecture
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgBase.td)
-mlir_tablegen(RelAlgDialect.h.inc -gen-dialect-decls -dialect=relalg -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(RelAlgDialect.cpp.inc -gen-dialect-defs -dialect=relalg -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgDialect.h.inc -gen-dialect-decls -dialect=relalg -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(RelAlgDialect.cpp.inc -gen-dialect-defs -dialect=relalg -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgInterfaces.td)
-mlir_tablegen(RelAlgInterfaces.h.inc -gen-op-interface-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(RelAlgInterfaces.cpp.inc -gen-op-interface-defs -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgInterfaces.h.inc -gen-op-interface-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(RelAlgInterfaces.cpp.inc -gen-op-interface-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgOps.td)
 mlir_tablegen(RelAlgOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
@@ -106,8 +106,8 @@ mlir_tablegen(RelAlgAttrs.h.inc -gen-attrdef-decls --attrdefs-dialect=relalg -I$
 mlir_tablegen(RelAlgAttrs.cpp.inc -gen-attrdef-defs --attrdefs-dialect=relalg -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include/dialects/relalg -I${CMAKE_SOURCE_DIR}/include)
 
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgTypes.td)
-mlir_tablegen(RelAlgTypes.h.inc -gen-typedef-decls --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(RelAlgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(RelAlgTypes.h.inc -gen-typedef-decls --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(RelAlgTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=relalg -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 add_public_tablegen_target(MLIRRelAlgIncGen)
 
 # PG dialect library removed - using RelAlg instead
@@ -309,17 +309,17 @@ set_target_properties(MLIRUtilDialect PROPERTIES
 
 # Util dialect TableGen
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilBase.td)
-mlir_tablegen(UtilDialect.h.inc -gen-dialect-decls -dialect=util -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(UtilDialect.cpp.inc -gen-dialect-defs -dialect=util -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(UtilTypes.h.inc -gen-typedef-decls --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(UtilTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(UtilDialect.h.inc -gen-dialect-decls -dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilDialect.cpp.inc -gen-dialect-defs -dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilTypes.h.inc -gen-typedef-decls --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 # Generate ops from UtilOps.td
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilOps.td)
-mlir_tablegen(UtilOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(UtilOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(UtilOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilInterfaces.td)
-mlir_tablegen(UtilOpsTypeInterfaces.h.inc -gen-type-interface-decls -I${MLIR_INCLUDE_DIRS})
-mlir_tablegen(UtilOpsTypeInterfaces.cpp.inc -gen-type-interface-defs -I${MLIR_INCLUDE_DIRS})
+mlir_tablegen(UtilOpsTypeInterfaces.h.inc -gen-type-interface-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilOpsTypeInterfaces.cpp.inc -gen-type-interface-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 add_public_tablegen_target(MLIRUtilIncGen)
 
 add_library(PgxLowerRuntime

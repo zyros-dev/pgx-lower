@@ -16,12 +16,12 @@ class MapCreationHelper {
    }
    mlir::Value access(dialect::tuples::ColumnRefAttr columnRefAttr, mlir::Location loc) {
       // TODO Phase 5: Fix when proper Column management is implemented
-      auto* keyColumn = columnRefAttr.getColumn();
-      if (columnToIndex.contains(keyColumn)) {
-         return mapBlock->getArgument(columnToIndex[keyColumn]);
+      auto& keyColumn = columnRefAttr.getColumn();
+      if (columnToIndex.contains(&keyColumn)) {
+         return mapBlock->getArgument(columnToIndex[&keyColumn]);
       } else {
-         auto arg = mapBlock->addArgument(keyColumn->type, loc);
-         columnToIndex[keyColumn] = columnToIndex.size();
+         auto arg = mapBlock->addArgument(keyColumn.type, loc);
+         columnToIndex[&keyColumn] = columnToIndex.size();
          colRefs.push_back(columnRefAttr);
          return arg;
       }

@@ -2469,12 +2469,17 @@ class FilterLowering : public SubOpTupleStreamConsumerConversionPattern<subop::F
          // Check if any operand is nullable
          bool isNullable = false;
          for (auto val : providedVals) {
-            if (auto nullableType = val.getType().dyn_cast<db::NullableType>()) {
+            if (auto nullableType = mlir::dyn_cast<db::NullableType>(val.getType())) {
                isNullable = true;
                break;
             }
          }
-         auto resultType = isNullable ? db::NullableType::get(rewriter.getContext(), boolType) : boolType;
+         mlir::Type resultType;
+         if (isNullable) {
+            resultType = db::NullableType::get(rewriter.getContext(), boolType);
+         } else {
+            resultType = boolType;
+         }
          cond = rewriter.create<db::AndOp>(filterOp.getLoc(), resultType, providedVals);
       }
       if (!cond.getType().isInteger(1)) {
@@ -2538,6 +2543,7 @@ class MaterializeVectorLowering : public SubOpTupleStreamConsumerConversionPatte
       if (!bufferType) return failure();
       EntryStorageHelper storageHelper(materializeOp, bufferType.getMembers(), bufferType.hasLock(), typeConverter);
       // TODO Phase 5: Implement GrowingBuffer::insert wrapper
+      auto elementType = storageHelper.getStorageType();
       mlir::Value ref = rewriter.create<util::AllocaOp>(materializeOp->getLoc(), util::RefType::get(rewriter.getContext(), elementType), mlir::Value());
       storageHelper.storeFromColumns(materializeOp.getMapping(), mapping, ref, rewriter, materializeOp->getLoc());
       rewriter.eraseOp(materializeOp);
