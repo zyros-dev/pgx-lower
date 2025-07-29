@@ -17,9 +17,9 @@ using namespace pgx_lower::compiler::dialect::tuples;
 mlir::Attribute pgx_lower::compiler::dialect::tuples::ColumnDefAttr::parse(mlir::AsmParser &parser, mlir::Type type) {
    // For now, create dummy values - this is the minimal implementation needed
    auto name = SymbolRefAttr::get(parser.getContext(), "dummy");
-   auto columnType = parser.getBuilder().getI32Type(); // Simple type for now
+   auto columnPtr = std::make_shared<Column>(); // Simple shared_ptr for now
    auto fromExisting = UnitAttr::get(parser.getContext());
-   return ColumnDefAttr::get(parser.getContext(), name, columnType, fromExisting);
+   return ColumnDefAttr::get(parser.getContext(), name, columnPtr, fromExisting);
 }
 
 void pgx_lower::compiler::dialect::tuples::ColumnDefAttr::print(mlir::AsmPrinter &printer) const {
@@ -30,8 +30,8 @@ void pgx_lower::compiler::dialect::tuples::ColumnDefAttr::print(mlir::AsmPrinter
 mlir::Attribute pgx_lower::compiler::dialect::tuples::ColumnRefAttr::parse(mlir::AsmParser &parser, mlir::Type type) {
    // For now, create dummy values - this is the minimal implementation needed
    auto name = SymbolRefAttr::get(parser.getContext(), "dummy");
-   auto columnType = parser.getBuilder().getI32Type(); // Simple type for now
-   return ColumnRefAttr::get(parser.getContext(), name, columnType);
+   auto columnPtr = std::make_shared<Column>(); // Simple shared_ptr for now
+   return ColumnRefAttr::get(parser.getContext(), name, columnPtr);
 }
 
 void pgx_lower::compiler::dialect::tuples::ColumnRefAttr::print(mlir::AsmPrinter &printer) const {
@@ -75,3 +75,5 @@ void TupleStreamDialect::registerAttrs() {
 #include "TupleStreamAttrs.cpp.inc"
 
 // getColumnManager is defined inline in the TableGen-generated header
+
+// getColumn() methods are now inline in TableGen definition

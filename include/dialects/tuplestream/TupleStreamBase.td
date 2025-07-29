@@ -62,31 +62,19 @@ class TupleStream_Attr<string name> : AttrDef<TupleStream_Dialect, name>;
 
 def ColumnDefAttr : TupleStream_Attr<"ColumnDef"> {
     let mnemonic = "columndef";
-    let parameters = (ins "::mlir::SymbolRefAttr":$name,"::mlir::Type":$columnType,"::mlir::Attribute":$fromExisting);
+    let parameters = (ins "::mlir::SymbolRefAttr":$name,"std::shared_ptr<::pgx_lower::compiler::dialect::tuples::Column>":$columnPtr,"::mlir::Attribute":$fromExisting);
     let hasCustomAssemblyFormat = 1;
     let extraClassDeclaration = [{
-        // Stub getColumn() to satisfy interface
-        struct Column { ::mlir::Type type; };
-        Column &getColumn() const { 
-            static Column c; 
-            c.type = getColumnType(); 
-            return c; 
-        }
+        ::pgx_lower::compiler::dialect::tuples::Column &getColumn() const { return *getColumnPtr(); }
     }];
 }
 
 def ColumnRefAttr : TupleStream_Attr<"ColumnRef"> {
     let mnemonic = "columnref";
-    let parameters = (ins "::mlir::SymbolRefAttr":$name,"::mlir::Type":$columnType);
+    let parameters = (ins "::mlir::SymbolRefAttr":$name,"std::shared_ptr<::pgx_lower::compiler::dialect::tuples::Column>":$columnPtr);
     let hasCustomAssemblyFormat = 1;
     let extraClassDeclaration = [{
-        // Stub getColumn() to satisfy interface
-        struct Column { ::mlir::Type type; };
-        Column &getColumn() const { 
-            static Column c; 
-            c.type = getColumnType(); 
-            return c; 
-        }
+        ::pgx_lower::compiler::dialect::tuples::Column &getColumn() const { return *getColumnPtr(); }
     }];
 }
 

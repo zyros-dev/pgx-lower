@@ -315,20 +315,22 @@ def DB_CmpOp : DB_LogicalOp<"compare",
     let arguments = (ins DB_CmpPredicateAttr:$predicate, NullableDBType:$left, NullableDBType:$right);
     let assemblyFormat = "$predicate $left `:` type($left) `,` $right `:` type($right) attr-dict";
     
-    let builders = [
-        OpBuilder<(ins "::pgx_lower::compiler::dialect::db::DBCmpPredicate":$predicate, "mlir::Value":$left, "mlir::Value":$right), [{
-            // Infer result type
-            mlir::Type i1 = $_builder.getI1Type();
-            mlir::Type resultType = i1;
-            if (predicate != DBCmpPredicate::isa) {
-                // Check if any operand is nullable
-                if (mlir::isa<NullableType>(left.getType()) || mlir::isa<NullableType>(right.getType())) {
-                    resultType = NullableType::get($_builder.getContext(), i1);
-                }
-            }
-            build($_builder, $_state, resultType, predicate, left, right);
-        }]>
-    ];
+    // Custom builder commented out to avoid duplicate with default builder
+    // The default builder handles the same signature
+    // let builders = [
+    //     OpBuilder<(ins "::pgx_lower::compiler::dialect::db::DBCmpPredicate":$predicate, "mlir::Value":$left, "mlir::Value":$right), [{
+    //         // Infer result type
+    //         mlir::Type i1 = $_builder.getI1Type();
+    //         mlir::Type resultType = i1;
+    //         if (predicate != DBCmpPredicate::isa) {
+    //             // Check if any operand is nullable
+    //             if (mlir::isa<NullableType>(left.getType()) || mlir::isa<NullableType>(right.getType())) {
+    //                 resultType = NullableType::get($_builder.getContext(), i1);
+    //             }
+    //         }
+    //         build($_builder, $_state, resultType, predicate, left, right);
+    //     }]>
+    // ];
         let extraClassDefinition = [{
             LogicalResult $cppClass::inferReturnTypes(MLIRContext* context, std::optional<Location>, ValueRange operands,
                     DictionaryAttr attributes,OpaqueProperties properties, RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
@@ -402,11 +404,12 @@ def NotOp : DB_Op<"not", [Pure,SameOperandsAndResultType,DB_NeedsNullWrap,DB_Sup
     let results = (outs AnyBool : $res);
     let assemblyFormat = "$val `:` type($val) attr-dict";
     
-    let builders = [
-        OpBuilder<(ins "mlir::Value":$val), [{
-            build($_builder, $_state, val.getType(), val);
-        }]>
-    ];
+    // Custom builder commented out to avoid duplicate with default builder
+    // let builders = [
+    //     OpBuilder<(ins "mlir::Value":$val), [{
+    //         build($_builder, $_state, val.getType(), val);
+    //     }]>
+    // ];
 }
 
 def CastOp : DB_Op<"cast",[DB_NeedsNullWrap,DB_MaySupportInvalidValues,Pure]> {

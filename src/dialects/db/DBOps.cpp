@@ -3,6 +3,7 @@
 // #include "lingodb/compiler/Dialect/DB/IR/RuntimeFunctions.h" // TODO Phase 5: Port if needed
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <unordered_set>
 
 // #include "lingodb/compiler/mlir-support/parsing.h" // TODO Phase 5: Port if needed
@@ -28,6 +29,33 @@ Type wrapNullableType(MLIRContext* context, Type type, ValueRange values) {
       return db::NullableType::get(type);
    }
    return type;
+}
+
+// Helper functions for type inference - these need to be in global scope for TableGen
+LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> location,
+                             ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+   // Basic implementation - just use the first operand's type
+   if (operands.empty()) return failure();
+   inferredReturnTypes.push_back(wrapNullableType(context, getBaseType(operands[0].getType()), operands));
+   return success();
+}
+
+LogicalResult inferMulReturnType(MLIRContext* context, std::optional<Location> location,
+                                  ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+   // TODO Phase 6: Implement proper multiplication type inference
+   return inferReturnType(context, location, operands, inferredReturnTypes);
+}
+
+LogicalResult inferDivReturnType(MLIRContext* context, std::optional<Location> location,
+                                  ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+   // TODO Phase 6: Implement proper division type inference (float result)
+   return inferReturnType(context, location, operands, inferredReturnTypes);
+}
+
+LogicalResult inferRemReturnType(MLIRContext* context, std::optional<Location> location,
+                                  ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+   // TODO Phase 6: Implement proper remainder type inference
+   return inferReturnType(context, location, operands, inferredReturnTypes);
 }
 bool isIntegerType(mlir::Type type, unsigned int width) {
    auto asStdInt = mlir::dyn_cast_or_null<mlir::IntegerType>(type);

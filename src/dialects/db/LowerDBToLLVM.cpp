@@ -76,7 +76,7 @@ public:
         // Create struct {value, is_null=false}
         auto undef = rewriter.create<LLVM::UndefOp>(loc, structType);
         auto withValue = rewriter.create<LLVM::InsertValueOp>(
-            loc, structType, undef, adaptor.getValue(), ArrayRef<int64_t>{0});
+            loc, structType, undef, adaptor.getVal(), ArrayRef<int64_t>{0});
         auto falseVal = rewriter.create<LLVM::ConstantOp>(
             loc, IntegerType::get(op.getContext(), 1), 
             rewriter.getBoolAttr(false));

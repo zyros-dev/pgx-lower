@@ -20,9 +20,10 @@ static std::pair<tuples::ColumnDefAttr, tuples::ColumnRefAttr> createColumn(mlir
    std::string scopeName = columnManager.getUniqueScope(scope);
    std::string attributeName = name;
    tuples::ColumnDefAttr markAttrDef = columnManager.createDef(scopeName, attributeName);
-   auto& ra = markAttrDef.getColumn();
-   ra.type = type;
-   return {markAttrDef, columnManager.createRef(&ra)};
+   // TODO Phase 5: Fix when Column management is properly implemented
+   // getColumn() returns a pointer now, not a reference
+   // For now, create ref from the SymbolRefAttr name
+   return {markAttrDef, columnManager.createRef(markAttrDef.getName())};
 }
 class SplitTableScan : public mlir::RewritePattern {
    public:
@@ -199,9 +200,11 @@ class NormalizeSubOpPass : public mlir::PassWrapper<NormalizeSubOpPass, mlir::Op
                   builder.create<subop::MaterializeOp>(unionOp->getLoc(), stream, tmpBuffer, builder.getDictionaryAttr(refMapping));
                }
                auto scanRefDef = colManager.createDef(colManager.getUniqueScope("tmp_union"), "scan_ref");
-               scanRefDef.getColumn().type = subop::EntryRefType::get(builder.getContext(), mlir::cast<subop::State>(tmpBuffer.getType()));
+               // TODO Phase 5: Fix when proper Column management is implemented
+               // scanRefDef.getColumn()->type = subop::EntryRefType::get(builder.getContext(), mlir::cast<subop::State>(tmpBuffer.getType()));
                auto scan = builder.create<subop::ScanRefsOp>(unionOp->getLoc(), tmpBuffer, scanRefDef);
-               mlir::Value loaded = builder.create<subop::GatherOp>(unionOp->getLoc(), scan, colManager.createRef(&scanRefDef.getColumn()), builder.getDictionaryAttr(defMapping));
+               // TODO Phase 5: Fix when proper Column management is implemented
+               mlir::Value loaded = builder.create<subop::GatherOp>(unionOp->getLoc(), scan, colManager.createRef(scanRefDef.getName()), builder.getDictionaryAttr(defMapping));
                unionOp.getRes().replaceAllUsesWith(loaded);
                unionOp.erase();
             }
@@ -274,9 +277,11 @@ class NormalizeSubOpPass : public mlir::PassWrapper<NormalizeSubOpPass, mlir::Op
                      builder.setInsertionPointAfter(op);
                      auto materializeOp = builder.create<subop::MaterializeOp>(op->getLoc(), op->getResult(0), tmpBuffer, builder.getDictionaryAttr(refMapping));
                      auto scanRefDef = colManager.createDef(colManager.getUniqueScope("tmp_union"), "scan_ref");
-                     scanRefDef.getColumn().type = subop::EntryRefType::get(builder.getContext(), mlir::cast<subop::State>(tmpBuffer.getType()));
+                     // TODO Phase 5: Fix when proper Column management is implemented
+               // scanRefDef.getColumn()->type = subop::EntryRefType::get(builder.getContext(), mlir::cast<subop::State>(tmpBuffer.getType()));
                      auto scan = builder.create<subop::ScanRefsOp>(op->getLoc(), tmpBuffer, scanRefDef);
-                     mlir::Value loaded = builder.create<subop::GatherOp>(op->getLoc(), scan, colManager.createRef(&scanRefDef.getColumn()), builder.getDictionaryAttr(defMapping));
+                     // TODO Phase 5: Fix when proper Column management is implemented
+                     mlir::Value loaded = builder.create<subop::GatherOp>(op->getLoc(), scan, colManager.createRef(scanRefDef.getName()), builder.getDictionaryAttr(defMapping));
                      op->getResult(0).replaceAllUsesExcept(loaded, materializeOp);
                   }
                } else {

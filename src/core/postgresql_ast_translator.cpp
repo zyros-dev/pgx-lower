@@ -805,7 +805,7 @@ auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) 
         arg = lnext(coalesceExpr->args, arg);
     }
     
-    // TODO: Implement COALESCE with RelAlg operations
+    // TODO Phase 9: Implement COALESCE with RelAlg operations
     logger_.notice("COALESCE not yet implemented in RelAlg translation");
     
     // For now, just return the first argument

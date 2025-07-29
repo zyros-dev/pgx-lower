@@ -25,9 +25,11 @@ class PushRenamingUp : public mlir::RewritePattern {
       if (auto columnFoldable = mlir::dyn_cast_or_null<subop::ColumnFoldable>(user)) {
          subop::ColumnMapping columnFoldInfo;
          for (auto c : renamingOp.getColumns()) {
-            auto* newColumn = &mlir::cast<tuples::ColumnDefAttr>(c).getColumn();
-            auto* prevColumn = &mlir::cast<tuples::ColumnRefAttr>(mlir::cast<mlir::ArrayAttr>(mlir::cast<tuples::ColumnDefAttr>(c).getFromExisting())[0]).getColumn();
-            columnFoldInfo.mapRaw(newColumn, prevColumn);
+            // TODO Phase 5: Fix when proper Column management is implemented
+            auto* newColumn = mlir::cast<tuples::ColumnDefAttr>(c).getColumn();
+            auto refAttr = mlir::cast<tuples::ColumnRefAttr>(mlir::cast<mlir::ArrayAttr>(mlir::cast<tuples::ColumnDefAttr>(c).getFromExisting())[0]);
+            auto* prevColumn = refAttr.getColumn();
+            columnFoldInfo.mapRaw(const_cast<tuples::Column*>(newColumn), const_cast<tuples::Column*>(prevColumn));
          }
          if (columnFoldable.foldColumns(columnFoldInfo).succeeded()) {
             rewriter.replaceOp(op, renamingOp.getStream());

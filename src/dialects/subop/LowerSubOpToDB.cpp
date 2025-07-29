@@ -24,6 +24,8 @@
 #include "runtime/SegmentTreeView.h"
 #include "runtime/SimpleState.h"
 #include "runtime/ThreadLocal.h"
+
+// Runtime wrapper includes (removed - already have RuntimeStubs.h)
 #include "runtime/Tracing.h"
 #include "runtime/RuntimeStubs.h" // PostgreSQL integration stubs
 #include "runtime/PostgreSQLDataSource.h" // PostgreSQL DataSource implementation
@@ -106,7 +108,7 @@ class ColumnMapping {
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
          auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
          auto val = inFlightOp.getValues()[i];
-         mapping[col.getName().getValue().str()] = val;
+         mapping[col.getName().getLeafReference().str()] = val;
       }
    }
    ColumnMapping(subop::InFlightTupleOp inFlightOp) {
@@ -114,7 +116,7 @@ class ColumnMapping {
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
          auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
          auto val = inFlightOp.getValues()[i];
-         mapping[col.getName().getValue().str()] = val;
+         mapping[col.getName().getLeafReference().str()] = val;
       }
    }
    void merge(subop::InFlightOp inFlightOp) {
@@ -122,7 +124,7 @@ class ColumnMapping {
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
          auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
          auto val = inFlightOp.getValues()[i];
-         mapping[col.getName().getValue().str()] = val;
+         mapping[col.getName().getLeafReference().str()] = val;
       }
    }
    void merge(subop::InFlightTupleOp inFlightOp) {
@@ -130,11 +132,11 @@ class ColumnMapping {
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
          auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
          auto val = inFlightOp.getValues()[i];
-         mapping[col.getName().getValue().str()] = val;
+         mapping[col.getName().getLeafReference().str()] = val;
       }
    }
    mlir::Value resolve(mlir::Operation* op, tuples::ColumnRefAttr ref) {
-      if (!mapping.contains(ref.getName().getValue().str())) {
+      if (!mapping.contains(ref.getName().getLeafReference().str())) {
          std::string wrongReference;
          llvm::raw_string_ostream wrongReferenceStream(wrongReference);
          ((mlir::Attribute) ref).print(wrongReferenceStream);
@@ -142,7 +144,7 @@ class ColumnMapping {
          op->emitOpError("Could not resolve column reference," + wrongReference);
          assert(false);
       }
-      mlir::Value r = mapping.at(ref.getName().getValue().str());
+      mlir::Value r = mapping.at(ref.getName().getLeafReference().str());
       assert(r);
       return r;
    }
@@ -158,7 +160,8 @@ class ColumnMapping {
       std::vector<mlir::Attribute> columns;
 
       for (auto m : mapping) {
-         columns.push_back(builder.getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager().createDef(m.first));
+         auto nameAttr = mlir::SymbolRefAttr::get(builder.getContext(), m.first);
+         columns.push_back(builder.getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager().createDef(nameAttr));
          values.push_back(m.second);
       }
       return builder.create<subop::InFlightOp>(builder.getUnknownLoc(), values, builder.getArrayAttr(columns));
@@ -168,13 +171,14 @@ class ColumnMapping {
       std::vector<mlir::Attribute> columns;
 
       for (auto m : mapping) {
-         columns.push_back(builder.getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager().createDef(m.first));
+         auto nameAttr = mlir::SymbolRefAttr::get(builder.getContext(), m.first);
+         columns.push_back(builder.getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager().createDef(nameAttr));
          values.push_back(m.second);
       }
       return builder.create<subop::InFlightTupleOp>(builder.getUnknownLoc(), values, builder.getArrayAttr(columns));
    }
    void define(tuples::ColumnDefAttr columnDefAttr, mlir::Value v) {
-      mapping[columnDefAttr.getName().getValue().str()] = v;
+      mapping[columnDefAttr.getName().getLeafReference().str()] = v;
    }
    void define(mlir::ArrayAttr columns, mlir::ValueRange values) {
       for (auto i = 0ul; i < columns.size(); i++) {
@@ -1142,7 +1146,10 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
 
       auto* ctxt = rewriter.getContext();
       auto i16T = mlir::IntegerType::get(rewriter.getContext(), 16);
-      auto recordBatchInfoRepr = mlir::TupleType::get(ctxt, {rewriter.getIndexType(), rewriter.getIndexType(), util::RefType::get(i16T), util::RefType::get(arrow::ArrayType::get(ctxt))});
+      // TODO Phase 5: Replace arrow::ArrayType with PostgreSQL tuple type (NO ARROW)
+      auto ptrType = util::RefType::get(ctxt, mlir::IntegerType::get(ctxt, 8));
+      mlir::SmallVector<mlir::Type> tupleTypes = {rewriter.getIndexType(), rewriter.getIndexType(), util::RefType::get(i16T), ptrType};
+      auto recordBatchInfoRepr = mlir::TupleType::get(ctxt, tupleTypes);
       ModuleOp parentModule = scanOp->getParentOfType<ModuleOp>();
       mlir::func::FuncOp funcOp;
       static size_t funcIds;
@@ -1339,8 +1346,8 @@ class GetExternalTableLowering : public SubOpConversionPattern<subop::GetExterna
       // TODO Phase 5: Implement DataSource::get wrapper (CRITICAL for table access)
       // For now, create a runtime call directly
       auto funcOp = rewriter.create<mlir::func::FuncOp>(op->getLoc(), "DataSource_get",
-         rewriter.getFunctionType({description.getType()}, {typeConverter->convertType(op.getType())}));
-      funcOp->setAttr("llvm.emit_c_interface", rewriter.getUnitAttr());
+         mlir::FunctionType::get(op->getContext(), {description.getType()}, {typeConverter->convertType(op.getType())}));
+      funcOp->setAttr("llvm.emit_c_interface", mlir::UnitAttr::get(op->getContext()));
       rewriter.replaceOpWithNewOp<mlir::func::CallOp>(op, funcOp, mlir::ValueRange{description});
       return mlir::success();
    }
@@ -1503,7 +1510,7 @@ class CreateHashMapLowering : public SubOpConversionPattern<subop::GenericCreate
       Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(createOp->getLoc(), 4);
       // TODO Phase 5: Implement Hashtable::create wrapper (CRITICAL for joins/aggregates)
       auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value());
-      rewriter.replaceOp(createOp, ptr);
+      rewriter.replaceOp(createOp, ValueRange{ptr});
       return mlir::success();
    }
 };
@@ -1519,7 +1526,7 @@ class CreateHashMultiMapLowering : public SubOpConversionPattern<subop::GenericC
       Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(createOp->getLoc(), 4);
       // TODO Phase 11: Implement HashMultiMap::create wrapper (for complex joins)
       auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value());
-      rewriter.replaceOp(createOp, ptr);
+      rewriter.replaceOp(createOp, ValueRange{ptr});
       return mlir::success();
    }
 };
@@ -1669,7 +1676,7 @@ class CreateHeapLowering : public SubOpConversionPattern<subop::CreateHeapOp> {
       Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
       // TODO Phase 12: Implement Heap::create wrapper (top-K queries)
       auto heap = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(heapOp.getType()), mlir::Value());
-      rewriter.replaceOp(heapOp, heap);
+      rewriter.replaceOp(heapOp, ValueRange{heap});
       return mlir::success();
    }
 };
@@ -2316,7 +2323,10 @@ class ScanExternalHashIndexListLowering : public SubOpConversionPattern<subop::S
       auto tupleType = mlir::TupleType::get(ctxt, unpackTypes(externalHashIndexType.getMembers().getTypes()));
       mlir::TypeRange typeRange{tupleType.getTypes()};
       auto i16T = mlir::IntegerType::get(rewriter.getContext(), 16);
-      auto recordBatchInfoRepr = mlir::TupleType::get(ctxt, {rewriter.getIndexType(), rewriter.getIndexType(), util::RefType::get(i16T), util::RefType::get(arrow::ArrayType::get(ctxt))});
+      // TODO Phase 5: Replace arrow::ArrayType with PostgreSQL tuple type (NO ARROW)
+      auto ptrType = util::RefType::get(ctxt, mlir::IntegerType::get(ctxt, 8));
+      mlir::SmallVector<mlir::Type> tupleTypes = {rewriter.getIndexType(), rewriter.getIndexType(), util::RefType::get(i16T), ptrType};
+      auto recordBatchInfoRepr = mlir::TupleType::get(ctxt, tupleTypes);
       auto convertedListType = typeConverter->convertType(listType);
 
       // Create while loop to extract all chained values from hash table

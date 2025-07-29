@@ -46,12 +46,10 @@ class ColumnMapping {
       mapping[from] = to;
    }
 };
-// PGX_LOWER STUB IMPLEMENTATION - TODO Phase 5: Implement for PostgreSQL state management  
-// This is a minimal stub to get compilation working.
-class SubOpStateUsageTransformer {
-public:
-   // Stub implementation
-};
+// PGX_LOWER - SubOpStateUsageTransformer is defined in StateUsageTransformer.h
+// But generated code expects it here, so we forward declare
+class ColumnUsageAnalysis;
+class SubOpStateUsageTransformer;
 
 } // end namespace pgx_lower::compiler::dialect::subop
 
