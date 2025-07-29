@@ -6,6 +6,7 @@
 
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "llvm/ADT/TypeSwitch.h"
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;

@@ -9,18 +9,14 @@ namespace pgx_lower::compiler::dialect::tuples {
 ColumnDefAttr ColumnManager::createDef(mlir::SymbolRefAttr name, mlir::Attribute fromExisting) {
     assert(name.getNestedReferences().size() == 1);
     auto column = get(name.getRootReference().getValue(), name.getLeafReference().getValue());
-    // Use a default type for now - TODO Phase 5: properly track column types
-    mlir::Type columnType = mlir::IntegerType::get(context, 32);
-    return ColumnDefAttr::get(context, name, columnType, fromExisting);
+    return ColumnDefAttr::get(context, name, column, fromExisting);
 }
 
 ColumnDefAttr ColumnManager::createDef(llvm::StringRef scope, llvm::StringRef name, mlir::Attribute fromExisting) {
     auto column = get(scope, name);
     std::vector<mlir::FlatSymbolRefAttr> nested;
     nested.push_back(mlir::FlatSymbolRefAttr::get(context, name));
-    // Use a default type for now - TODO Phase 5: properly track column types
-    mlir::Type columnType = mlir::IntegerType::get(context, 32);
-    return ColumnDefAttr::get(context, mlir::SymbolRefAttr::get(context, scope, nested), columnType, fromExisting);
+    return ColumnDefAttr::get(context, mlir::SymbolRefAttr::get(context, scope, nested), column, fromExisting);
 }
 
 ColumnDefAttr ColumnManager::createDef(const Column* attr, mlir::Attribute fromExisting) {
@@ -31,9 +27,7 @@ ColumnDefAttr ColumnManager::createDef(const Column* attr, mlir::Attribute fromE
 ColumnRefAttr ColumnManager::createRef(mlir::SymbolRefAttr name) {
     assert(name.getNestedReferences().size() == 1);
     auto column = get(name.getRootReference().getValue(), name.getLeafReference().getValue());
-    // Use a default type for now - TODO Phase 5: properly track column types
-    mlir::Type columnType = mlir::IntegerType::get(context, 32);
-    return ColumnRefAttr::get(context, name, columnType);
+    return ColumnRefAttr::get(context, name, column);
 }
 
 ColumnRefAttr ColumnManager::createRef(const Column* attr) {
@@ -45,9 +39,7 @@ ColumnRefAttr ColumnManager::createRef(llvm::StringRef scope, llvm::StringRef na
     auto column = get(scope, name);
     std::vector<mlir::FlatSymbolRefAttr> nested;
     nested.push_back(mlir::FlatSymbolRefAttr::get(context, name));
-    // Use a default type for now - TODO Phase 5: properly track column types
-    mlir::Type columnType = mlir::IntegerType::get(context, 32);
-    return ColumnRefAttr::get(context, mlir::SymbolRefAttr::get(context, scope, nested), columnType);
+    return ColumnRefAttr::get(context, mlir::SymbolRefAttr::get(context, scope, nested), column);
 }
 
 } // namespace pgx_lower::compiler::dialect::tuples

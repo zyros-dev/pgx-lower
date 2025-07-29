@@ -1,5 +1,5 @@
-#include "dialects/tuplestream/Column.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
+#include "dialects/tuplestream/Column.h"
 #include "dialects/tuplestream/ColumnManager.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"

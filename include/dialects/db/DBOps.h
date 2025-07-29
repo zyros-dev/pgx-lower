@@ -21,4 +21,14 @@ mlir::Type getBaseType(mlir::Type t);
 mlir::Type wrapNullableType(mlir::MLIRContext* context, mlir::Type type, mlir::ValueRange values);
 bool isIntegerType(mlir::Type, unsigned int width);
 int getIntegerWidth(mlir::Type, bool isUnSigned);
+
+// Type inference functions needed by TableGen
+mlir::LogicalResult inferReturnType(mlir::MLIRContext* context, std::optional<mlir::Location> location,
+                                   mlir::ValueRange operands, llvm::SmallVectorImpl<mlir::Type>& inferredReturnTypes);
+mlir::LogicalResult inferMulReturnType(mlir::MLIRContext* context, std::optional<mlir::Location> location,
+                                      mlir::ValueRange operands, llvm::SmallVectorImpl<mlir::Type>& inferredReturnTypes);
+mlir::LogicalResult inferDivReturnType(mlir::MLIRContext* context, std::optional<mlir::Location> location,
+                                      mlir::ValueRange operands, llvm::SmallVectorImpl<mlir::Type>& inferredReturnTypes);
+mlir::LogicalResult inferRemReturnType(mlir::MLIRContext* context, std::optional<mlir::Location> location,
+                                      mlir::ValueRange operands, llvm::SmallVectorImpl<mlir::Type>& inferredReturnTypes);
 #endif //DB_OPS_H
