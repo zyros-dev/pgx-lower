@@ -3,15 +3,7 @@
 #include <cstring>
 #include <sstream>
 
-extern "C" {
-// External PostgreSQL runtime functions
-void* open_postgres_table(const char* tableName);
-void* read_next_tuple_from_table(void* tableHandle);
-void close_postgres_table(void* tableHandle);
-int32_t get_int_field(void* tuple, int32_t fieldIndex, bool* isNull);
-const char* get_text_field(void* tuple, int32_t fieldIndex, bool* isNull);
-double get_numeric_field(void* tuple, int32_t fieldIndex, bool* isNull);
-}
+// Note: Function signatures now defined in tuple_access.h
 
 namespace pgx_lower::compiler::runtime {
 
@@ -50,7 +42,7 @@ PostgreSQLDataSource::~PostgreSQLDataSource() {
 
 DataSource* PostgreSQLDataSource::createFromDescription(runtime::VarLen32 description) {
     // Convert VarLen32 to string
-    std::string descStr(description.ptr, description.len);
+    std::string descStr(description.data(), description.getLen());
     
     // Return PostgreSQL-specific data source
     return new PostgreSQLDataSource(descStr);

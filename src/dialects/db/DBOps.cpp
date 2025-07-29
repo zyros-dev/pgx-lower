@@ -57,6 +57,24 @@ LogicalResult inferRemReturnType(MLIRContext* context, std::optional<Location> l
    // TODO Phase 6: Implement proper remainder type inference
    return inferReturnType(context, location, operands, inferredReturnTypes);
 }
+
+LogicalResult inferArithmeticReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+   Type baseTypeLeft = getBaseType(operands[0].getType());
+   Type baseTypeRight = getBaseType(operands[1].getType());
+   Type baseType = baseTypeLeft;
+   if (mlir::isa<db::DecimalType>(baseTypeLeft)) {
+      auto a = mlir::cast<db::DecimalType>(baseTypeLeft);
+      auto b = mlir::cast<db::DecimalType>(baseTypeRight);
+      auto hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
+      auto maxs = std::max(a.getS(), b.getS());
+      // Addition is super-type of both, with larger precision for carry.
+      // TODO Phase 6: actually add carry precision (+1) for arithmetic operations.
+      baseType = db::DecimalType::get(a.getContext(), hidig + maxs, maxs);
+   }
+   inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
+   return success();
+}
+
 bool isIntegerType(mlir::Type type, unsigned int width) {
    auto asStdInt = mlir::dyn_cast_or_null<mlir::IntegerType>(type);
    return asStdInt && asStdInt.getWidth() == width;
@@ -246,63 +264,6 @@ OpFoldResult db::ConstantOp::fold(db::ConstantOp::FoldAdaptor adaptor) {
    return foldFn(getOperandTypes(), adaptor.getOperands(), results);
 }
 */
-namespace {
-LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
-   Type baseTypeLeft = getBaseType(operands[0].getType());
-   Type baseTypeRight = getBaseType(operands[1].getType());
-   Type baseType = baseTypeLeft;
-   if (mlir::isa<db::DecimalType>(baseTypeLeft)) {
-      auto a = mlir::cast<db::DecimalType>(baseTypeLeft);
-      auto b = mlir::cast<db::DecimalType>(baseTypeRight);
-      auto hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
-      auto maxs = std::max(a.getS(), b.getS());
-      // Addition is super-type of both, with larger precision for carry.
-      // TODO Phase 6: actually add carry precision (+1) for arithmetic operations.
-      baseType = db::DecimalType::get(a.getContext(), hidig + maxs, maxs);
-   }
-   inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
-   return success();
-}
-LogicalResult inferMulReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
-   Type baseTypeLeft = getBaseType(operands[0].getType());
-   Type baseTypeRight = getBaseType(operands[1].getType());
-   Type baseType = baseTypeLeft;
-   if (mlir::isa<db::DecimalType>(baseTypeLeft)) {
-      auto a = mlir::cast<db::DecimalType>(baseTypeLeft);
-      auto b = mlir::cast<db::DecimalType>(baseTypeRight);
-      auto sump = a.getP() + b.getP();
-      auto sums = a.getS() + b.getS();
-      baseType = getAdaptedDecimalTypeAfterMulDiv(context, sump, sums);
-   }
-   inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
-   return success();
-}
-LogicalResult inferDivReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
-   Type baseTypeLeft = getBaseType(operands[0].getType());
-   Type baseTypeRight = getBaseType(operands[1].getType());
-   Type baseType = baseTypeLeft;
-   if (mlir::isa<db::DecimalType>(baseTypeLeft)) {
-      auto a = mlir::dyn_cast<db::DecimalType>(baseTypeLeft);
-      auto b = mlir::dyn_cast<db::DecimalType>(baseTypeRight);
-      baseType = getAdaptedDecimalTypeAfterMulDiv(context, a.getP() - a.getS() + b.getS() + std::max(6, a.getS() + b.getP()), std::max(6, a.getS() + b.getP()));
-   }
-   inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
-   return success();
-}
-
-LogicalResult inferRemReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
-   Type baseTypeLeft = getBaseType(operands[0].getType());
-   Type baseTypeRight = getBaseType(operands[1].getType());
-   Type baseType = baseTypeLeft;
-   if (mlir::isa<db::DecimalType>(baseTypeLeft)) {
-      auto a = mlir::dyn_cast<db::DecimalType>(baseTypeLeft);
-      auto b = mlir::dyn_cast<db::DecimalType>(baseTypeRight);
-      baseType = db::DecimalType::get(a.getContext(), std::min(a.getP() - a.getS(), b.getP() - b.getS()) + std::max(a.getS(), b.getS()), std::max(a.getS(), b.getS()));
-   }
-   inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
-   return success();
-}
-} // namespace
 /* PostgreSQL: Comment out RuntimeCall methods that use registry
 ::mlir::LogicalResult db::RuntimeCall::verify() {
    db::RuntimeCall& runtimeCall = *this;
@@ -374,7 +335,7 @@ LogicalResult db::OrOp::canonicalize(db::OrOp orOp, mlir::PatternRewriter& rewri
          }
          if (keep.size() != andOp.getVals().size()) {
             if (keep.size()) {
-               newOrOperands.push_back(rewriter.create<db::AndOp>(andOp->getLoc(), keep));
+               newOrOperands.push_back(rewriter.create<db::AndOp>(andOp->getLoc(), mlir::ValueRange(keep), llvm::ArrayRef<mlir::NamedAttribute>{}));
             }
          } else {
             newOrOperands.push_back(andOp);
@@ -390,7 +351,7 @@ LogicalResult db::OrOp::canonicalize(db::OrOp orOp, mlir::PatternRewriter& rewri
          Value newOrOp = rewriter.create<db::OrOp>(orOp->getLoc(), newOrOperands);
          extractedAsVec.push_back(newOrOp);
       }
-      rewriter.replaceOpWithNewOp<db::AndOp>(orOp, extractedAsVec);
+      rewriter.replaceOpWithNewOp<db::AndOp>(orOp, mlir::ValueRange(extractedAsVec), llvm::ArrayRef<mlir::NamedAttribute>{});
       return success();
    } else if (newOrOperands.size() == 1) {
       rewriter.replaceOp(orOp, newOrOperands[0]);
@@ -490,7 +451,8 @@ LogicalResult db::AndOp::canonicalize(db::AndOp andOp, mlir::PatternRewriter& re
       return success();
    }
    if (rawValues.size() != andOp.getVals().size()) {
-      rewriter.replaceOpWithNewOp<db::AndOp>(andOp, std::vector<mlir::Value>(rawValues.begin(), rawValues.end()));
+      std::vector<mlir::Value> valuesVec(rawValues.begin(), rawValues.end());
+      rewriter.replaceOpWithNewOp<db::AndOp>(andOp, mlir::ValueRange(valuesVec), llvm::ArrayRef<mlir::NamedAttribute>{});
       return success();
    }
    return failure();

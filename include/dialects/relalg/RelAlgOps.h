@@ -17,12 +17,11 @@
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/util/UtilTypes.h"
 
-// Include generated enum definitions
-#include "RelAlgEnums.h.inc"
+// Include generated enum definitions - imported from RelAlgOpsEnums.h
+#include "RelAlgOpsEnums.h"
 
-// Include generated attributes
-#define GET_ATTRDEF_CLASSES
-#include "RelAlgAttrs.h.inc"
+// Include generated attributes - imported from RelAlgOpsAttributes.h
+#include "RelAlgOpsAttributes.h"
 
 // Forward declarations
 namespace pgx_lower::compiler::dialect::relalg {

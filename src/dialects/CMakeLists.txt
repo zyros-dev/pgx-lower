@@ -88,6 +88,21 @@ mlir_tablegen(DSATypes.h.inc -gen-typedef-decls --typedefs-dialect=dsa -I${MLIR_
 mlir_tablegen(DSATypes.cpp.inc -gen-typedef-defs --typedefs-dialect=dsa -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
 add_public_tablegen_target(MLIRDSAIncGen)
 
+# Util dialect TableGen - MUST BE BEFORE SubOp since SubOp depends on Util
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilBase.td)
+mlir_tablegen(UtilDialect.h.inc -gen-dialect-decls -dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilDialect.cpp.inc -gen-dialect-defs -dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilTypes.h.inc -gen-typedef-decls --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+# Generate ops from UtilOps.td
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilOps.td)
+mlir_tablegen(UtilOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilInterfaces.td)
+mlir_tablegen(UtilOpsTypeInterfaces.h.inc -gen-type-interface-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+mlir_tablegen(UtilOpsTypeInterfaces.cpp.inc -gen-type-interface-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
+add_public_tablegen_target(MLIRUtilIncGen)
+
 # RelAlg dialect TableGen - Enable for pure LingoDB architecture
 set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/relalg/RelAlgBase.td)
 mlir_tablegen(RelAlgDialect.h.inc -gen-dialect-decls -dialect=relalg -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
@@ -136,6 +151,7 @@ add_library(MLIRSubOpDialect STATIC
 
 add_library(MLIRDBDialect STATIC
     db/DBDialect.cpp
+    db/DBOps.cpp
     db/LowerDBToLLVM.cpp
 )
 
@@ -186,7 +202,7 @@ set_target_properties(MLIRRelAlgDialect PROPERTIES
 
 # Add dependency on generated files
 # PG dialect dependencies removed
-add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen MLIRSubOpInterfacesIncGen MLIRTupleStreamIncGen)
+add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen MLIRSubOpInterfacesIncGen MLIRTupleStreamIncGen MLIRUtilIncGen)
 add_dependencies(MLIRDBDialect MLIRDBIncGen)
 add_dependencies(MLIRTupleStreamDialect MLIRTupleStreamIncGen)
 add_dependencies(MLIRDSADialect MLIRDSAIncGen)
@@ -307,20 +323,6 @@ set_target_properties(MLIRUtilDialect PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
-# Util dialect TableGen
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilBase.td)
-mlir_tablegen(UtilDialect.h.inc -gen-dialect-decls -dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
-mlir_tablegen(UtilDialect.cpp.inc -gen-dialect-defs -dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
-mlir_tablegen(UtilTypes.h.inc -gen-typedef-decls --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
-mlir_tablegen(UtilTypes.cpp.inc -gen-typedef-defs --typedefs-dialect=util -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
-# Generate ops from UtilOps.td
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilOps.td)
-mlir_tablegen(UtilOps.h.inc -gen-op-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
-mlir_tablegen(UtilOps.cpp.inc -gen-op-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
-set(LLVM_TARGET_DEFINITIONS ${CMAKE_SOURCE_DIR}/include/dialects/util/UtilInterfaces.td)
-mlir_tablegen(UtilOpsTypeInterfaces.h.inc -gen-type-interface-decls -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
-mlir_tablegen(UtilOpsTypeInterfaces.cpp.inc -gen-type-interface-defs -I${MLIR_INCLUDE_DIRS} -I${CMAKE_SOURCE_DIR}/include)
-add_public_tablegen_target(MLIRUtilIncGen)
 
 add_library(PgxLowerRuntime
     ../runtime/tuple_access.cpp

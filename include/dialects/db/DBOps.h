@@ -25,6 +25,8 @@ int getIntegerWidth(mlir::Type, bool isUnSigned);
 // Type inference functions needed by TableGen
 mlir::LogicalResult inferReturnType(mlir::MLIRContext* context, std::optional<mlir::Location> location,
                                    mlir::ValueRange operands, llvm::SmallVectorImpl<mlir::Type>& inferredReturnTypes);
+mlir::LogicalResult inferArithmeticReturnType(mlir::MLIRContext* context, std::optional<mlir::Location> location,
+                                            mlir::ValueRange operands, llvm::SmallVectorImpl<mlir::Type>& inferredReturnTypes);
 mlir::LogicalResult inferMulReturnType(mlir::MLIRContext* context, std::optional<mlir::Location> location,
                                       mlir::ValueRange operands, llvm::SmallVectorImpl<mlir::Type>& inferredReturnTypes);
 mlir::LogicalResult inferDivReturnType(mlir::MLIRContext* context, std::optional<mlir::Location> location,

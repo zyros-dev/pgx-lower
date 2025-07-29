@@ -230,7 +230,7 @@ class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
         MLIRContext* context, std::optional<Location> location, ValueRange operands,
         DictionaryAttr attributes,OpaqueProperties opaqueProperties, RegionRange regions,
         SmallVectorImpl<Type>& inferredReturnTypes) {
-            return inferReturnType(context,location,operands,inferredReturnTypes);
+            return inferArithmeticReturnType(context,location,operands,inferredReturnTypes);
         }
     }];
     let assemblyFormat = "$left `:` type($left) `,` $right `:` type($right) attr-dict";

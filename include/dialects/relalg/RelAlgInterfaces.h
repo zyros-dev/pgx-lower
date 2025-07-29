@@ -9,27 +9,8 @@
 #include <functional>
 
 // Forward declarations and definitions
+#include "ColumnSet.h"
 namespace pgx_lower::compiler::dialect::relalg {
-
-// ColumnSet represents a set of columns used in relational operations
-class ColumnSet {
-private:
-    std::set<std::shared_ptr<tuples::Column>> columns_;
-    
-public:
-    ColumnSet() = default;
-    
-    void insert(std::shared_ptr<tuples::Column> col) {
-        columns_.insert(col);
-    }
-    
-    bool contains(std::shared_ptr<tuples::Column> col) const {
-        return columns_.find(col) != columns_.end();
-    }
-    
-    size_t size() const { return columns_.size(); }
-    bool empty() const { return columns_.empty(); }
-};
 
 // FunctionalDependencies tracks dependencies between columns
 class FunctionalDependencies {
@@ -70,6 +51,9 @@ extern std::set<std::pair<mlir::Type, mlir::Type>> rPushable;
 void addPredicate(mlir::Operation* op, mlir::Value pred);
 void addPredicate(mlir::Operation* op, std::function<mlir::Value(mlir::Value, mlir::OpBuilder& builder)> producer);
 void initPredicate(mlir::Operation* op);
+
+// Operation inlining helper
+void inlineOpIntoBlock(mlir::Operation* vop, mlir::Operation* includeChildren, mlir::Block* newBlock, mlir::IRMapping& mapping, mlir::Operation* first = nullptr);
 } // namespace detail
 } // namespace pgx_lower::compiler::dialect::relalg
 

@@ -1,6 +1,7 @@
 #ifndef PGX_LOWER_COMPILER_CONVERSION_RELALGTOSUBOP_RELALGTOSUBOPPASS_H
 #define PGX_LOWER_COMPILER_CONVERSION_RELALGTOSUBOP_RELALGTOSUBOPPASS_H
 #include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/DialectConversion.h"
 #include <memory>
 
 namespace pgx_lower::compiler::dialect::relalg {

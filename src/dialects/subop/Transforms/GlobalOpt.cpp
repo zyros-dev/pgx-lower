@@ -3,6 +3,7 @@
 #include "dialects/subop/Transforms/ColumnUsageAnalysis.h"
 #include "dialects/subop/Transforms/Passes.h"
 #include "dialects/subop/Transforms/SubOpDependencyAnalysis.h"
+#include "dialects/subop/Transforms/StateUsageTransformer.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "dialects/tuplestream/TupleStreamOps.h"
 #include "mlir/IR/BuiltinOps.h"

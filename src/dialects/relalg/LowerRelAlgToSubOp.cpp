@@ -1031,7 +1031,7 @@ mlir::Block* createEqFn(mlir::ConversionPatternRewriter& rewriter, mlir::ArrayAt
             break;
          }
       }
-      mlir::Type resultType = hasNullable ? db::NullableType::get(rewriter.getContext(), boolType) : boolType;
+      mlir::Type resultType = hasNullable ? mlir::Type(db::NullableType::get(rewriter.getContext(), boolType)) : mlir::Type(boolType);
       anded = rewriter.create<db::AndOp>(loc, resultType, mlir::ValueRange(cmps));
    }
    if (mlir::isa<db::NullableType>(anded.getType())) {
@@ -1060,9 +1060,9 @@ std::pair<mlir::Block*, mlir::ArrayAttr> createVerifyEqFnForTuple(mlir::Conversi
          // CmpOp needs explicit result type until custom builder is generated
          auto predicate = useIsa ? db::DBCmpPredicate::isa : db::DBCmpPredicate::eq;
          auto i1Type = rewriter.getI1Type();
-         mlir::Type cmpResultType = useIsa ? i1Type : 
+         mlir::Type cmpResultType = useIsa ? mlir::Type(i1Type) : 
             (mlir::isa<db::NullableType>(l.getType()) || mlir::isa<db::NullableType>(r.getType())) ?
-            db::NullableType::get(rewriter.getContext(), i1Type) : i1Type;
+            mlir::Type(db::NullableType::get(rewriter.getContext(), i1Type)) : mlir::Type(i1Type);
          mlir::Value compared = rewriter.create<db::CmpOp>(loc, cmpResultType, predicate, l, r);
          cmps.push_back(compared);
       }
@@ -1075,7 +1075,7 @@ std::pair<mlir::Block*, mlir::ArrayAttr> createVerifyEqFnForTuple(mlir::Conversi
             break;
          }
       }
-      mlir::Type resultType = hasNullable ? db::NullableType::get(rewriter.getContext(), boolType) : boolType;
+      mlir::Type resultType = hasNullable ? mlir::Type(db::NullableType::get(rewriter.getContext(), boolType)) : mlir::Type(boolType);
       mlir::Value anded = rewriter.create<db::AndOp>(loc, resultType, mlir::ValueRange(cmps));
       if (mlir::isa<db::NullableType>(anded.getType())) {
          anded = rewriter.create<db::DeriveTruth>(loc, anded);

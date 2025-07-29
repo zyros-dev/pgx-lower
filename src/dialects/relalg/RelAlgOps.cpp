@@ -7,6 +7,8 @@
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/Transforms/DialectConversion.h"
 #include <llvm/ADT/TypeSwitch.h>
 #include <iostream>
 #include <queue>
@@ -176,7 +178,7 @@ void printCustDef(OpAsmPrinter& p, mlir::Operation* op, ::pgx_lower::compiler::d
    std::vector<mlir::NamedAttribute> relAttrDefProps;
    MLIRContext* context = attr.getContext();
    // TODO Phase 5: Get column info properly
-   mlir::Type columnType = attr.getColumnType();
+   mlir::Type columnType = attr.getColumn().type;
    relAttrDefProps.push_back({mlir::StringAttr::get(context, "type"), mlir::TypeAttr::get(columnType)});
    p << "(" << mlir::DictionaryAttr::get(context, relAttrDefProps) << ")";
    Attribute fromExisting = attr.getFromExisting();
@@ -309,7 +311,7 @@ void pgx_lower::compiler::dialect::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    for (auto z : llvm::zip(returnOp.getResults(), getComputedCols())) {
       if (auto colDef = mlir::dyn_cast_or_null<tuples::ColumnDefAttr>(std::get<1>(z))) {
          auto expected = std::get<0>(z).getType();
-         if (colDef.getColumnType() != expected) {
+         if (colDef.getColumn().type != expected) {
             emitError("type mismatch between returned value and column definition");
             return mlir::failure();
          }
@@ -362,10 +364,57 @@ void pgx_lower::compiler::dialect::relalg::NestedOp::print(::mlir::OpAsmPrinter&
    p.printRegion(getNestedFn(), false, true);
 }
 
-namespace pgx_lower::compiler::dialect::relalg {
+// Implementation of helper functions for RelAlg operations
+namespace {
+void addRequirements(mlir::Operation* op, mlir::Operation* includeChildren, mlir::Block* excludeChildren, llvm::SmallVector<mlir::Operation*, 8>& extracted, llvm::SmallPtrSet<mlir::Operation*, 8>& alreadyPresent, mlir::IRMapping& mapping) {
+   if (!op)
+      return;
+   if (alreadyPresent.contains(op))
+      return;
+   if (!includeChildren->isAncestor(op))
+      return;
+   for (auto operand : op->getOperands()) {
+      if (!mapping.contains(operand)) {
+         addRequirements(operand.getDefiningOp(), includeChildren, excludeChildren, extracted, alreadyPresent, mapping);
+      }
+   }
+   op->walk([&](mlir::Operation* op2) {
+      for (auto operand : op2->getOperands()) {
+         if (!mapping.contains(operand)) {
+            auto* definingOp = operand.getDefiningOp();
+            if (definingOp && !op->isAncestor(definingOp)) {
+               addRequirements(definingOp, includeChildren, excludeChildren, extracted, alreadyPresent, mapping);
+            }
+         }
+      }
+   });
+   alreadyPresent.insert(op);
+   if (!excludeChildren->findAncestorOpInBlock(*op)) {
+      extracted.push_back(op);
+   }
+}
+} // anonymous namespace
+
+void pgx_lower::compiler::dialect::relalg::detail::inlineOpIntoBlock(mlir::Operation* vop, mlir::Operation* includeChildren, mlir::Block* newBlock, mlir::IRMapping& mapping, mlir::Operation* first) {
+   llvm::SmallVector<mlir::Operation*, 8> extracted;
+   llvm::SmallPtrSet<mlir::Operation*, 8> alreadyPresent;
+   addRequirements(vop, includeChildren, newBlock, extracted, alreadyPresent, mapping);
+   mlir::OpBuilder builder(vop->getContext());
+   builder.setInsertionPointToStart(newBlock);
+   first = first ? first : (newBlock->empty() ? nullptr : &newBlock->front());
+   for (auto* op : extracted) {
+      auto* cloneOp = builder.clone(*op, mapping);
+      if (first) {
+         cloneOp->moveBefore(first);
+      } else {
+         cloneOp->moveBefore(newBlock, newBlock->begin());
+         first = cloneOp;
+      }
+   }
+}
+
 #define GET_OP_CLASSES
 #include "RelAlgOps.cpp.inc"
-} // namespace pgx_lower::compiler::dialect::relalg
 
 // MapOp::verify() is already defined in the included .cpp.inc file above
 // RelAlg reuses TupleStreamType, no custom types
