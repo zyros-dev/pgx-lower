@@ -2,9 +2,7 @@
 #include "dialects/tuplestream/TupleStreamOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 
-// Include generated attribute definitions
-#define GET_ATTRDEF_CLASSES
-#include "TupleStreamAttrs.h.inc"
+// Attributes are already included via ColumnManager.h
 
 namespace pgx_lower::compiler::dialect::tuples {
 

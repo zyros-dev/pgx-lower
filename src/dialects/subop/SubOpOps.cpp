@@ -1,8 +1,8 @@
-#include "lingodb/compiler/Dialect/SubOperator/SubOperatorOps.h"
-#include "lingodb/compiler/Dialect/TupleStream/ColumnManager.h"
-#include "lingodb/compiler/Dialect/TupleStream/TupleStreamDialect.h"
-#include "lingodb/compiler/Dialect/TupleStream/TupleStreamOps.h"
-#include "lingodb/compiler/Dialect/TupleStream/TupleStreamOpsAttributes.h"
+#include "dialects/subop/SubOpOps.h"
+#include "dialects/tuplestream/ColumnManager.h"
+#include "dialects/tuplestream/TupleStreamDialect.h"
+#include "dialects/tuplestream/TupleStreamOps.h"
+// TupleStreamOpsAttributes included via ColumnManager
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/OpImplementation.h"
@@ -13,7 +13,7 @@
 #include <queue>
 
 using namespace mlir;
-using namespace lingodb::compiler::dialect;
+using namespace pgx_lower::compiler::dialect;
 namespace {
 tuples::ColumnManager& getColumnManager(::mlir::OpAsmParser& parser) {
    return parser.getBuilder().getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();

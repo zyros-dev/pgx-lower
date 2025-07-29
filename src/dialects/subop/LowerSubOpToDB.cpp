@@ -7,13 +7,12 @@
 #include "dialects/util/UtilDialect.h"
 #include "dialects/util/UtilOps.h"
 #include "dialects/util/FunctionHelper.h"
-#include "runtime/ArrowTable.h"
+// ArrowTable not needed in pgx-lower
 #include "runtime/Buffer.h"
 #include "runtime/DataSourceIteration.h"
 #include "runtime/EntryLock.h"
-#include "compiler/runtime/ExecutionContext.h"
-#include "compiler/runtime/EntryLock.h"
-#include "compiler/runtime/ThreadLocal.h"
+#include "runtime/ExecutionContext.h"
+// EntryLock and ThreadLocal already included from runtime/
 #include "runtime/GrowingBuffer.h"
 #include "runtime/HashMultiMap.h"
 #include "runtime/Hashtable.h"
@@ -64,7 +63,7 @@ struct SubOpToControlFlowLoweringPass
 
    SubOpToControlFlowLoweringPass() {}
    void getDependentDialects(DialectRegistry& registry) const override {
-      registry.insert<LLVM::LLVMDialect, db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect, arrow::ArrowDialect, subop::SubOperatorDialect>();
+      registry.insert<LLVM::LLVMDialect, db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect, subop::SubOperatorDialect>();
    }
    void runOnOperation() final;
 };
@@ -94,7 +93,7 @@ static std::vector<Type> unpackTypes(mlir::ArrayAttr arr) {
    return res;
 };
 class ColumnMapping {
-   std::unordered_map<const tuples::Column*, mlir::Value> mapping;
+   std::unordered_map<std::string, mlir::Value> mapping;
 
    public:
    ColumnMapping() : mapping() {}
@@ -102,37 +101,37 @@ class ColumnMapping {
       assert(!!inFlightOp);
       assert(inFlightOp.getColumns().size() == inFlightOp.getValues().size());
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
-         const auto* col = &mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]).getColumn();
+         auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
          auto val = inFlightOp.getValues()[i];
-         mapping.insert(std::make_pair(col, val));
+         mapping[col.getName().getValue().str()] = val;
       }
    }
    ColumnMapping(subop::InFlightTupleOp inFlightOp) {
       assert(inFlightOp.getColumns().size() == inFlightOp.getValues().size());
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
-         const auto* col = &mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]).getColumn();
+         auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
          auto val = inFlightOp.getValues()[i];
-         mapping.insert(std::make_pair(col, val));
+         mapping[col.getName().getValue().str()] = val;
       }
    }
    void merge(subop::InFlightOp inFlightOp) {
       assert(inFlightOp.getColumns().size() == inFlightOp.getValues().size());
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
-         const auto* col = &mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]).getColumn();
+         auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
          auto val = inFlightOp.getValues()[i];
-         mapping.insert(std::make_pair(col, val));
+         mapping[col.getName().getValue().str()] = val;
       }
    }
    void merge(subop::InFlightTupleOp inFlightOp) {
       assert(inFlightOp.getColumns().size() == inFlightOp.getValues().size());
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
-         const auto* col = &mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]).getColumn();
+         auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
          auto val = inFlightOp.getValues()[i];
-         mapping.insert(std::make_pair(col, val));
+         mapping[col.getName().getValue().str()] = val;
       }
    }
    mlir::Value resolve(mlir::Operation* op, tuples::ColumnRefAttr ref) {
-      if (!mapping.contains(&ref.getColumn())) {
+      if (!mapping.contains(ref.getName().getValue().str())) {
          std::string wrongReference;
          llvm::raw_string_ostream wrongReferenceStream(wrongReference);
          ((mlir::Attribute) ref).print(wrongReferenceStream);
@@ -140,7 +139,7 @@ class ColumnMapping {
          op->emitOpError("Could not resolve column reference," + wrongReference);
          assert(false);
       }
-      mlir::Value r = mapping.at(&ref.getColumn());
+      mlir::Value r = mapping.at(ref.getName().getValue().str());
       assert(r);
       return r;
    }
@@ -172,7 +171,7 @@ class ColumnMapping {
       return builder.create<subop::InFlightTupleOp>(builder.getUnknownLoc(), values, builder.getArrayAttr(columns));
    }
    void define(tuples::ColumnDefAttr columnDefAttr, mlir::Value v) {
-      mapping.insert(std::make_pair(&columnDefAttr.getColumn(), v));
+      mapping[columnDefAttr.getName().getValue().str()] = v;
    }
    void define(mlir::ArrayAttr columns, mlir::ValueRange values) {
       for (auto i = 0ul; i < columns.size(); i++) {
@@ -392,7 +391,9 @@ class EntryStorageHelper {
             assert(nullBitSet);
             mlir::Value shiftedNullBit = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1ull << memberInfo.nullBitOffset, esh.nullBitsetType);
             mlir::Value isNull = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, rewriter.create<mlir::arith::AndIOp>(loc, *nullBitSet, shiftedNullBit), shiftedNullBit);
-            value = rewriter.create<db::AsNullableOp>(loc, db::NullableType::get(rewriter.getContext(), memberInfo.stored), value, isNull);
+            // Create AsNullableOp with both value and null flag
+            auto nullableType = db::NullableType::get(rewriter.getContext(), memberInfo.stored);
+            value = rewriter.create<db::AsNullableOp>(loc, nullableType, value, mlir::ValueRange{isNull});
             nullBitCache.emplace(name, isNull);
          }
          return value;
@@ -2388,13 +2389,24 @@ class FilterLowering : public SubOpTupleStreamConsumerConversionPattern<subop::F
       if (providedVals.size() == 1) {
          cond = providedVals[0];
       } else {
-         cond = rewriter.create<db::AndOp>(filterOp.getLoc(), providedVals);
+         // DB ops need explicit result type
+         auto boolType = rewriter.getI1Type();
+         // Check if any operand is nullable
+         bool isNullable = false;
+         for (auto val : providedVals) {
+            if (auto nullableType = val.getType().dyn_cast<db::NullableType>()) {
+               isNullable = true;
+               break;
+            }
+         }
+         auto resultType = isNullable ? db::NullableType::get(rewriter.getContext(), boolType) : boolType;
+         cond = rewriter.create<db::AndOp>(filterOp.getLoc(), resultType, providedVals);
       }
       if (!cond.getType().isInteger(1)) {
          cond = rewriter.create<db::DeriveTruth>(filterOp.getLoc(), cond);
       }
       if (filterOp.getFilterSemantic() == subop::FilterSemantic::none_true) {
-         cond = rewriter.create<db::NotOp>(filterOp->getLoc(), cond);
+         cond = rewriter.create<db::NotOp>(filterOp->getLoc(), cond.getType(), cond);
       }
       auto ifOp = rewriter.create<mlir::scf::IfOp>(filterOp->getLoc(), mlir::TypeRange{}, cond);
       ifOp.ensureTerminator(ifOp.getThenRegion(), rewriter, filterOp->getLoc());

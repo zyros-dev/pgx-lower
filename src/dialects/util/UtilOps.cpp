@@ -1,13 +1,12 @@
-#include "lingodb/compiler/Dialect/util/UtilOps.h"
-
-#include "lingodb/compiler/Dialect/util/UtilDialect.h"
+#include "dialects/util/UtilOps.h"
+#include "dialects/util/UtilDialect.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
 
 using namespace mlir;
-using namespace lingodb::compiler::dialect;
+using namespace pgx_lower::compiler::dialect;
 
 ::mlir::LogicalResult util::UnPackOp::verify() {
    util::UnPackOp& unPackOp = *this;
@@ -184,4 +183,4 @@ void util::LoadOp::getEffects(::mlir::SmallVectorImpl<::mlir::SideEffects::Effec
    return mlir::success();
 }
 #define GET_OP_CLASSES
-#include "lingodb/compiler/Dialect/util/UtilOps.cpp.inc"
+#include "UtilOps.cpp.inc"

@@ -11,12 +11,14 @@ class TupleStreamDialect;
 
 #include "TupleStreamDialect.h.inc"
 
-// Include types and attributes from TableGen
+// Include types from TableGen with guard
+#ifndef TUPLESTREAM_TYPES_INCLUDED
+#define TUPLESTREAM_TYPES_INCLUDED
 #define GET_TYPEDEF_CLASSES  
 #include "TupleStreamTypes.h.inc"
+#endif
 
-#define GET_ATTRDEF_CLASSES
-#include "TupleStreamAttrs.h.inc"
+// Attributes are already included via ColumnManager.h
 
 
 #endif // TUPLESTREAM_DIALECT_H

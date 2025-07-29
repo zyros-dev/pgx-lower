@@ -313,6 +313,21 @@ def DB_CmpOp : DB_LogicalOp<"compare",
 
     let arguments = (ins DB_CmpPredicateAttr:$predicate, NullableDBType:$left, NullableDBType:$right);
     let assemblyFormat = "$predicate $left `:` type($left) `,` $right `:` type($right) attr-dict";
+    
+    let builders = [
+        OpBuilder<(ins "::lingodb::compiler::dialect::db::DBCmpPredicate":$predicate, "mlir::Value":$left, "mlir::Value":$right), [{
+            // Infer result type
+            mlir::Type i1 = $_builder.getI1Type();
+            mlir::Type resultType = i1;
+            if (predicate != DBCmpPredicate::isa) {
+                // Check if any operand is nullable
+                if (mlir::isa<NullableType>(left.getType()) || mlir::isa<NullableType>(right.getType())) {
+                    resultType = NullableType::get($_builder.getContext(), i1);
+                }
+            }
+            build($_builder, $_state, resultType, predicate, left, right);
+        }]>
+    ];
         let extraClassDefinition = [{
             LogicalResult $cppClass::inferReturnTypes(MLIRContext* context, std::optional<Location>, ValueRange operands,
                     DictionaryAttr attributes,OpaqueProperties properties, RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
@@ -355,6 +370,20 @@ def AndOp : DB_LogicalOp<"and"> {
     let arguments = (ins Variadic<AnyBool>: $vals);
     let hasCanonicalizeMethod = 1;
     let assemblyFormat = "$vals `:` type($vals) attr-dict";
+    
+    let builders = [
+        OpBuilder<(ins "mlir::ValueRange":$vals), [{
+            // Infer result type from operands
+            mlir::Type resultType = $_builder.getI1Type();
+            for (auto val : vals) {
+                if (mlir::isa<NullableType>(val.getType())) {
+                    resultType = NullableType::get($_builder.getContext(), $_builder.getI1Type());
+                    break;
+                }
+            }
+            build($_builder, $_state, resultType, vals);
+        }]>
+    ];
 }
 
 def OrOp : DB_LogicalOp<"or"> {
@@ -371,6 +400,12 @@ def NotOp : DB_Op<"not", [Pure,SameOperandsAndResultType,DB_NeedsNullWrap,DB_Sup
     let arguments = (ins AnyBool: $val);
     let results = (outs AnyBool : $res);
     let assemblyFormat = "$val `:` type($val) attr-dict";
+    
+    let builders = [
+        OpBuilder<(ins "mlir::Value":$val), [{
+            build($_builder, $_state, val.getType(), val);
+        }]>
+    ];
 }
 
 def CastOp : DB_Op<"cast",[DB_NeedsNullWrap,DB_MaySupportInvalidValues,Pure]> {

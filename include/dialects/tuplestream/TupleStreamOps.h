@@ -2,8 +2,20 @@
 #define PGX_LOWER_COMPILER_DIALECT_TUPLESTREAM_TUPLESTREAMOPS_H
 
 #include "dialects/tuplestream/Column.h"
-#include "TupleStreamAttrs.h.inc"
+
+// Include generated definitions outside namespace with guard
+#ifndef TUPLESTREAM_TYPES_INCLUDED
+#define TUPLESTREAM_TYPES_INCLUDED
+#define GET_TYPEDEF_CLASSES
 #include "TupleStreamTypes.h.inc"
+#endif
+
+// Include attributes with guard to prevent duplicates
+#ifndef TUPLESTREAM_ATTRS_INCLUDED
+#define TUPLESTREAM_ATTRS_INCLUDED
+#define GET_ATTRDEF_CLASSES
+#include "TupleStreamAttrs.h.inc"
+#endif
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"

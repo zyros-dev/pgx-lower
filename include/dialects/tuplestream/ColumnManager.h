@@ -7,11 +7,16 @@
 #include <memory>
 #include <unordered_map>
 
+// Include attribute definitions before namespace to get proper definitions
+#ifndef TUPLESTREAM_ATTRS_INCLUDED
+#define TUPLESTREAM_ATTRS_INCLUDED
+#define GET_ATTRDEF_CLASSES
+#include "TupleStreamAttrs.h.inc"
+#endif
+
 namespace pgx_lower::compiler::dialect::tuples {
 
-// Forward declarations
-class ColumnDefAttr;
-class ColumnRefAttr;
+// No need for forward declarations now
 
 class ColumnManager {
 public:

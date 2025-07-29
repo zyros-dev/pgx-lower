@@ -8,9 +8,6 @@ std::unique_ptr<mlir::Pass> createLowerToSubOpPass();
 void registerRelAlgToSubOpConversionPasses();
 void createLowerRelAlgToSubOpPipeline(mlir::OpPassManager& pm);
 
-// Additional pass creator that returns OperationPass<ModuleOp>
-std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createLowerRelAlgToSubOpPass();
-
 // Pattern population
 void populateRelAlgToSubOpConversionPatterns(mlir::RewritePatternSet &patterns, mlir::TypeConverter &typeConverter);
 
