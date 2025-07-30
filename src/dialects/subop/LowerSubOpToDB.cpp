@@ -191,10 +191,21 @@ class ColumnMapping {
          ((mlir::Attribute) ref).print(wrongReferenceStream);
 
          op->emitOpError("Could not resolve column reference," + wrongReference);
-         assert(false);
+         llvm::errs() << "=== CRASH DEBUG: Column resolution failed ===\n";
+         llvm::errs() << "  Looking for: " << ref.getName().getLeafReference().str() << "\n";
+         llvm::errs() << "  Available mappings:\n";
+         for (const auto& [key, value] : mapping) {
+            llvm::errs() << "    " << key << " -> " << value << "\n";
+         }
+         llvm::errs().flush();
+         // TODO: This should not happen in a valid IR
+         return mlir::Value();
       }
       mlir::Value r = mapping.at(ref.getName().getLeafReference().str());
-      assert(r);
+      if (!r) {
+         llvm::errs() << "=== CRASH DEBUG: Mapped value is null for " << ref.getName().getLeafReference().str() << " ===\n";
+         llvm::errs().flush();
+      }
       return r;
    }
    std::vector<mlir::Value> resolve(mlir::Operation* op, mlir::ArrayAttr arr) {

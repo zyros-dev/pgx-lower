@@ -37,6 +37,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/Builders.h"
@@ -153,7 +154,14 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         // Use LingoDB's createLowerSubOpPipeline for all SubOp passes
         logger.notice("Using createLowerSubOpPipeline for complete SubOp lowering");
         
+        // LingoDB calls setCompressionEnabled before running the pipeline
+        pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
+        logger.notice("Set compression enabled to false");
+        
         auto pm_subop = mlir::PassManager(&context);
+        
+        // Enable MLIR pass timing to see which pass crashes
+        pm_subop.enableTiming();
         
         // This runs all the SubOp passes in the correct order:
         // GlobalOptPass, FoldColumnsPass, ReuseLocalPass, SpecializeSubOpPass,
@@ -366,6 +374,20 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     }
     
     mlir::MLIRContext context;
+    
+    // Load all required dialects into the context
+    context.getOrLoadDialect<pgx_lower::compiler::dialect::relalg::RelAlgDialect>();
+    context.getOrLoadDialect<pgx_lower::compiler::dialect::subop::SubOperatorDialect>();
+    context.getOrLoadDialect<pgx_lower::compiler::dialect::db::DBDialect>();
+    context.getOrLoadDialect<pgx_lower::compiler::dialect::dsa::DSADialect>();
+    context.getOrLoadDialect<pgx_lower::compiler::dialect::util::UtilDialect>();
+    context.getOrLoadDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>();
+    context.getOrLoadDialect<mlir::func::FuncDialect>();
+    context.getOrLoadDialect<mlir::scf::SCFDialect>();
+    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+    context.getOrLoadDialect<mlir::arith::ArithDialect>();
+    context.getOrLoadDialect<mlir::memref::MemRefDialect>();
+    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
     
     logger.debug("Using PostgreSQL AST translation for query processing");
     
