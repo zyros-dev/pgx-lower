@@ -211,28 +211,44 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("Complete LingoDB SubOp pipeline finished successfully!");
         
         logger.notice("Module after complete SubOp transformation:");
-        module.dump();
+        
+        // Count DB dialect operations that need lowering
+        int dbOpCount = 0;
+        module.walk([&](mlir::Operation* op) {
+            if (op->getName().getDialectNamespace() == "db") {
+                dbOpCount++;
+            }
+        });
+        logger.notice("Found " + std::to_string(dbOpCount) + " DB dialect operations that need lowering");
     }
     
     // Continue with remaining passes in pm
     logger.notice("Adding remaining passes to main pipeline...");
+    
+    logger.notice("Adding CanonicalizerPass...");
     pm.addPass(mlir::createCanonicalizerPass());
+    
+    logger.notice("Adding CSEPass...");
     pm.addPass(mlir::createCSEPass());
+    
+    logger.notice("Adding DB->Std lowering pass...");
     pm.addPass(pgx_lower::compiler::dialect::db::createLowerToStdPass());
     
+    logger.notice("Running main pipeline with DB->Std lowering...");
     try {
         if (failed(pm.run(module))) {
             logger.error("LingoDB lowering pipeline failed!");
-            module.dump();
+            logger.error("Failed during DB->Std lowering or subsequent passes");
+            // module.dump(); // Disabled to avoid crash
             return false;
         }
     } catch (const std::exception& e) {
         logger.error("Exception during LingoDB lowering pipeline: " + std::string(e.what()));
-        module.dump();
+        // module.dump();
         return false;
     } catch (...) {
         logger.error("Unknown exception during LingoDB lowering pipeline");
-        module.dump();
+        // module.dump();
         return false;
     }
     
