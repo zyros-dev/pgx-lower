@@ -380,6 +380,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         addSymbol("store_bigint_result", reinterpret_cast<void*>(store_bigint_result));
         addSymbol("store_text_result", reinterpret_cast<void*>(store_text_result));
         addSymbol("prepare_computed_results", reinterpret_cast<void*>(prepare_computed_results));
+        addSymbol("DataSource_get", reinterpret_cast<void*>(DataSource_get));
         // sum_aggregate removed - now implemented as pure MLIR operations
         
         return symbolMap;

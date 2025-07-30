@@ -1,4 +1,5 @@
 #include "runtime/tuple_access.h"
+#include "runtime/PostgreSQLDataSource.h"
 #include "core/error_handling.h"
 #include <array>
 #include <cstring>
@@ -383,3 +384,18 @@ extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, boo
 
 // Note: All other C interface functions are implemented in my_executor.cpp
 // Only get_numeric_field is kept here to support both unit tests and extension builds
+
+// Critical runtime function for LowerSubOpToDB.cpp GetExternalOp lowering
+extern "C" void* DataSource_get(pgx_lower::compiler::runtime::VarLen32 description) {
+    try {
+        // Call the PostgreSQL DataSource factory
+        auto* dataSource = pgx_lower::compiler::runtime::DataSource::get(description);
+        return static_cast<void*>(dataSource);
+    } catch (const std::exception& e) {
+        elog(ERROR, "DataSource_get failed: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        elog(ERROR, "DataSource_get failed: unknown exception");
+        return nullptr;
+    }
+}

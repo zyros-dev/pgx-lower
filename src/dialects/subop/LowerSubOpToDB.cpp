@@ -4861,15 +4861,12 @@ void subop::createLowerSubOpPipeline(mlir::OpPassManager& pm) {
    llvm::errs() << "Adding ParallelizePass\n"; llvm::errs().flush();
    pm.addPass(subop::createParallelizePass());
    
-   // Skip intermediate passes that might be causing issues
-   // Try to go directly to the crucial SubOp -> DB conversion passes
+   // Test PrepareLoweringPass by itself first
    llvm::errs() << "Adding PrepareLoweringPass\n"; llvm::errs().flush();
    pm.addPass(subop::createPrepareLoweringPass());
-   llvm::errs() << "Adding LowerSubOpPass (SubOp -> DB conversion)\n"; llvm::errs().flush();
-   pm.addPass(subop::createLowerSubOpPass());
    
-   // Test - stop here to see if we get DB operations now
-   llvm::errs() << "Stopping after LowerSubOpPass for debugging\n"; llvm::errs().flush();
+   // Test - stop here to see if PrepareLoweringPass works alone
+   llvm::errs() << "Stopping after PrepareLoweringPass for debugging\n"; llvm::errs().flush();
    return;
    
    pm.addPass(subop::createPullGatherUpPass());
