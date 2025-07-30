@@ -103,8 +103,14 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     afterPgOs.flush();
     logger.notice(afterPgStr);
     
-    // Skip SubOp pipeline - direct PostgreSQL table access implemented in RelAlg → SubOp
-    logger.notice("=== Skipping SubOp pipeline - using direct PostgreSQL implementation ===");
+    // SubOp → DB lowering
+    logger.notice("=== Running SubOp → DB lowering pass ===");
+    auto subOpToDbPM = mlir::PassManager(&context);
+    subOpToDbPM.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
+    if (failed(subOpToDbPM.run(module))) {
+        logger.error("SubOp → DB lowering failed");
+        return false;
+    }
     logger.notice("Module after SubOp → DB:");
     std::string afterSubOpStr;
     llvm::raw_string_ostream afterSubOpOs(afterSubOpStr);

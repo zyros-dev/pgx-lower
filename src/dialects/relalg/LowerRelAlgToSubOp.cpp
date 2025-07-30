@@ -100,43 +100,20 @@ class BaseTableLowering : public OpConversionPattern<relalg::BaseTableOp> {
       }
       scanDescription += "} }";
       auto tableRefType = subop::TableType::get(rewriter.getContext(), subop::StateMembersAttr::get(rewriter.getContext(), rewriter.getArrayAttr(colNames), rewriter.getArrayAttr(colTypes)));
-      // TEMPORARY FIX: Skip SubOp operations and directly generate PostgreSQL table access
-      // This bypasses the complex LingoDB pipeline and directly implements table scanning
       
-      // Create a loop that reads all tuples from the PostgreSQL table
+      // Create a minimal SubOp implementation for testing
+      // This creates a GetExternalOp that will be handled in later lowering passes
       auto loc = baseTableOp->getLoc();
-      auto* context = rewriter.getContext();
       
-      // Get the parent module to declare runtime functions
-      auto parentModule = baseTableOp->getParentOfType<mlir::ModuleOp>();
+      // Create the GetExternalOp with the table description (following LingoDB pattern)
+      mlir::Value tableRef = rewriter.create<subop::GetExternalOp>(
+         loc, 
+         tableRefType,
+         rewriter.getStringAttr(scanDescription)
+      );
       
-      // Declare PostgreSQL runtime functions if not already declared
-      auto getOrCreateFunc = [&](const std::string& name, mlir::FunctionType funcType) -> mlir::func::FuncOp {
-         if (auto existing = parentModule.lookupSymbol<mlir::func::FuncOp>(name)) {
-            return existing;
-         }
-         mlir::OpBuilder::InsertionGuard guard(rewriter);
-         rewriter.setInsertionPointToStart(parentModule.getBody());
-         auto func = rewriter.create<mlir::func::FuncOp>(loc, name, funcType);
-         func->setAttr("llvm.emit_c_interface", mlir::UnitAttr::get(context));
-         return func;
-      };
-      
-      // Function types for PostgreSQL runtime
-      auto i64Type = rewriter.getI64Type();
-      
-      // For now, use the simplest approach that we know works
-      // Declare the add_tuple_to_result function
-      auto addTupleFunc = getOrCreateFunc("add_tuple_to_result", 
-         mlir::FunctionType::get(context, {i64Type}, {}));
-      
-      // For the test case, we know the table has one row with id=1
-      // Generate code that reads that value
-      mlir::Value actualValue = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, i64Type);
-      rewriter.create<mlir::func::CallOp>(loc, addTupleFunc, mlir::ValueRange{actualValue});
-      
-      // Remove the BaseTableOp
-      rewriter.eraseOp(baseTableOp);
+      // Replace the BaseTableOp with a ScanOp that reads from the external table
+      rewriter.replaceOpWithNewOp<subop::ScanOp>(baseTableOp, tableRef, rewriter.getDictionaryAttr(mapping));
       return success();
    }
 };
