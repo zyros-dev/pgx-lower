@@ -29,6 +29,7 @@ struct NullTest;
 struct Aggref;
 struct CoalesceExpr;
 struct SeqScan;
+struct Plan;
 struct List;
 struct Node;
 typedef unsigned int Oid;
@@ -55,6 +56,7 @@ private:
     auto translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> mlir::Value;
     
     // Plan node translation
+    auto translatePlanNode(Plan* plan) -> mlir::Operation*;
     auto translateSeqScan(SeqScan* seqScan) -> mlir::Operation*;
     auto translateProjection(List* targetList) -> mlir::Operation*;
     auto translateSelection(List* qual) -> mlir::Operation*;

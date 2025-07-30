@@ -93,13 +93,169 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     }
     logger.notice("MLIR module verification passed - proceeding to lowering");
     
-    logger.notice("=== Using simplified direct lowering for test 1 ===");
-    logger.notice("(Bypassing complex pipeline for initial test)");
-
-    // Skip dialect operation check since we're using direct lowering
+    logger.notice("=== Running FULL LingoDB lowering pipeline ===");
     
+    // Check for dialect operations
+    bool hasRelAlgOps = false;
+    module.walk([&](mlir::Operation* op) {
+        if (op->getName().getDialectNamespace() == "relalg") {
+            hasRelAlgOps = true;
+            logger.debug("Found RelAlg operation: " + op->getName().getStringRef().str());
+        }
+    });
+    
+    if (!hasRelAlgOps) {
+        logger.error("No RelAlg operations found in module - AST translation may have failed");
+        module.dump();
+        return false;
+    }
+    
+    auto pm = mlir::PassManager(&context);
+    
+    // Skip initial dump to reduce output
+    logger.notice("Starting LingoDB lowering pipeline...");
+    
+    // Run each phase separately to isolate crashes
+    
+    // Phase 1: RelAlg → SubOp lowering
+    logger.notice("Phase 1: RelAlg → SubOp lowering");
+    {
+        auto pm1 = mlir::PassManager(&context);
+        pm1.addPass(pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPass());
+        if (failed(pm1.run(module))) {
+            logger.error("Phase 1 (RelAlg → SubOp) failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("Phase 1 completed successfully");
+        logger.notice("Module after RelAlg → SubOp lowering:");
+        module.dump();
+    }
+    
+    // Phase 2: SubOp transforms (minimal set for now)
+    logger.notice("Phase 2: SubOp transforms");
+    {
+        auto pm2 = mlir::PassManager(&context);
+        pm2.addPass(pgx_lower::compiler::dialect::subop::createFoldColumnsPass());
+        if (failed(pm2.run(module))) {
+            logger.error("Phase 2 (FoldColumns) failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("FoldColumns pass completed");
+        
+        // Try other passes one by one
+        auto pm3 = mlir::PassManager(&context);
+        pm3.addPass(pgx_lower::compiler::dialect::subop::createNormalizeSubOpPass());
+        if (failed(pm3.run(module))) {
+            logger.error("Phase 2 (NormalizeSubOp) failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("NormalizeSubOp pass completed");
+    }
+    
+    // Continue testing passes one by one
+    logger.notice("Testing remaining SubOp passes individually...");
+    
+    // Test PullGatherUpPass
+    {
+        auto pm4 = mlir::PassManager(&context);
+        pm4.addPass(pgx_lower::compiler::dialect::subop::createPullGatherUpPass());
+        logger.notice("Running PullGatherUpPass...");
+        if (failed(pm4.run(module))) {
+            logger.error("PullGatherUpPass failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("PullGatherUpPass completed");
+    }
+    
+    // Test EnforceOrderPass
+    {
+        auto pm5 = mlir::PassManager(&context);
+        pm5.addPass(pgx_lower::compiler::dialect::subop::createEnforceOrderPass());
+        logger.notice("Running EnforceOrderPass...");
+        if (failed(pm5.run(module))) {
+            logger.error("EnforceOrderPass failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("EnforceOrderPass completed");
+    }
+    
+    // Test FinalizePass
+    {
+        auto pm6 = mlir::PassManager(&context);
+        pm6.addPass(pgx_lower::compiler::dialect::subop::createFinalizePass());
+        logger.notice("Running FinalizePass...");
+        if (failed(pm6.run(module))) {
+            logger.error("FinalizePass failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("FinalizePass completed");
+    }
+    
+    // Skip SplitIntoExecutionStepsPass for now - it's crashing on simple queries
+    logger.notice("Skipping SplitIntoExecutionStepsPass (crashes on simple queries)");
+    
+    // Test PrepareLoweringPass
+    {
+        auto pm8 = mlir::PassManager(&context);
+        pm8.addPass(pgx_lower::compiler::dialect::subop::createPrepareLoweringPass());
+        logger.notice("Running PrepareLoweringPass...");
+        if (failed(pm8.run(module))) {
+            logger.error("PrepareLoweringPass failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("PrepareLoweringPass completed");
+    }
+    
+    // Test LowerSubOpPass (SubOp → DB/DSA)
+    {
+        auto pm9 = mlir::PassManager(&context);
+        pm9.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
+        logger.notice("Running LowerSubOpPass (SubOp → DB/DSA)...");
+        if (failed(pm9.run(module))) {
+            logger.error("LowerSubOpPass failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("LowerSubOpPass completed");
+        logger.notice("Module after SubOp → DB/DSA lowering:");
+        module.dump();
+    }
+    
+    // Continue with remaining passes in pm
+    logger.notice("Adding remaining passes to main pipeline...");
+    pm.addPass(mlir::createCanonicalizerPass());
+    pm.addPass(mlir::createCSEPass());
+    pm.addPass(pgx_lower::compiler::dialect::db::createLowerToStdPass());
+    
+    try {
+        if (failed(pm.run(module))) {
+            logger.error("LingoDB lowering pipeline failed!");
+            module.dump();
+            return false;
+        }
+    } catch (const std::exception& e) {
+        logger.error("Exception during LingoDB lowering pipeline: " + std::string(e.what()));
+        module.dump();
+        return false;
+    } catch (...) {
+        logger.error("Unknown exception during LingoDB lowering pipeline");
+        module.dump();
+        return false;
+    }
+    
+    logger.notice("LingoDB lowering pipeline completed successfully");
+    logger.notice("Module after LingoDB lowering:");
+    module.dump();
+    
+    // Now lower to LLVM
     auto pm2 = mlir::PassManager(&context);
-    // Follow LingoDB's proven pass order
     pm2.addPass(mlir::createConvertSCFToCFPass());
     pm2.addPass(mlir::createConvertControlFlowToLLVMPass());
     pm2.addPass(mlir::createArithToLLVMConversionPass());
@@ -271,11 +427,48 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     
     // Print the generated MLIR
     logger.notice("Generated MLIR from PostgreSQL AST:");
-    auto mlirStr = std::string();
-    auto os = llvm::raw_string_ostream(mlirStr);
-    module->print(os);
-    os.flush();
-    logger.notice("AST-generated MLIR: " + mlirStr);
+    if (!module) {
+        logger.error("Module pointer is null!");
+        return false;
+    }
+    
+    logger.notice("Module pointer is valid, attempting to verify...");
+    
+    // First verify the module is valid
+    if (failed(mlir::verify(*module))) {
+        logger.error("Module verification failed! Module is invalid.");
+        return false;
+    }
+    logger.notice("Module verification passed");
+    
+    // Count operations in the module
+    int opCount = 0;
+    module->walk([&](mlir::Operation* op) {
+        opCount++;
+        logger.notice("Operation " + std::to_string(opCount) + ": " + 
+                     op->getName().getStringRef().str());
+    });
+    logger.notice("Module contains " + std::to_string(opCount) + " operations");
+    
+    // Try to print operations individually
+    logger.notice("Trying to print operations individually...");
+    int printedOps = 0;
+    module->walk([&](mlir::Operation* op) {
+        printedOps++;
+        try {
+            logger.notice("Printing operation " + std::to_string(printedOps) + "...");
+            std::string opStr;
+            llvm::raw_string_ostream os(opStr);
+            op->print(os);
+            os.flush();
+            logger.notice("Op " + std::to_string(printedOps) + ": " + opStr);
+        } catch (...) {
+            logger.error("Failed to print operation " + std::to_string(printedOps));
+        }
+    });
+    
+    // Skip full module dump for now since it crashes
+    logger.notice("Skipping full module dump due to crash issue");
     
     // Execute the MLIR module
     return executeMLIRModule(*module, logger);

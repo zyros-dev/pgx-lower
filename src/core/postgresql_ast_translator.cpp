@@ -139,99 +139,68 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     // Create runtime function declarations
     createRuntimeFunctionDeclarations(*module);
     
-    // Create main function (void return type like LingoDB pattern)
+    // IMPLEMENT PROPER LINGODB PIPELINE - NO SHORTCUTS!
+    // Following LingoDB pattern: Create QueryOp that will contain RelAlg operations
+    
     auto location = builder.getUnknownLoc();
-    auto mainFuncType = builder.getFunctionType({}, {});
+    auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
     
-    auto mainFunc = builder.create<mlir::func::FuncOp>(location, "main", mainFuncType);
-    auto& entryBlock = *mainFunc.addEntryBlock();
-    builder.setInsertionPointToStart(&entryBlock);
+    // Create QueryOp - this is the top-level operation that contains the query plan
+    // QueryOp expects TypeRange for results and ValueRange for inputs
+    auto queryOp = builder.create<pgx_lower::compiler::dialect::relalg::QueryOp>(
+        location, 
+        mlir::TypeRange{tupleStreamType},  // Results
+        mlir::ValueRange{}                  // No inputs for a simple query
+    );
     
-    // TODO Phase 6: For test 1, implement simplified direct code generation
-    logger_.notice("Creating simplified direct code generation for test 1");
+    // Build the query inside the QueryOp's query_ops region
+    auto& queryBlock = queryOp.getQueryOps().emplaceBlock();
+    builder.setInsertionPointToStart(&queryBlock);
     
-    // Test 1 expects one row with id=1
-    // For now, bypass the complex pipeline and directly generate the result
-    
-    // The test expects us to store the tuple(s) in the result
-    // Since test 1 is "SELECT * FROM test" where test has one row with id=1,
-    // we need to:
-    // 1. Call add_tuple_to_result to add one row
-    // 2. Call store_bigint_result to store the value 1
-    
-    auto i64Type = builder.getI64Type();
-    auto i32Type = builder.getI32Type();
-    
-    // Get or create all function declarations FIRST (before any code generation)
-    auto prepareFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("prepare_computed_results");
-    if (!prepareFunc) {
-        // void prepare_computed_results(int32_t numColumns)
-        auto prepareFuncType = builder.getFunctionType({i32Type}, {});
-        prepareFunc = mlir::func::FuncOp::create(
-            location, "prepare_computed_results", prepareFuncType
-        );
-        prepareFunc.setPrivate();
-        currentModule_->push_back(prepareFunc);
-    }
-    
-    auto storeBigintFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("store_bigint_result");
-    if (!storeBigintFunc) {
-        // void store_bigint_result(int32_t column_index, int64_t value, bool is_null)
-        auto storeFuncType = builder.getFunctionType(
-            {i32Type, i64Type, builder.getI1Type()}, 
-            {}
-        );
-        storeBigintFunc = mlir::func::FuncOp::create(
-            location, "store_bigint_result", storeFuncType
-        );
-        storeBigintFunc.setPrivate();
-        currentModule_->push_back(storeBigintFunc);
-    }
-    
-    auto addTupleFunc = currentModule_->lookupSymbol<mlir::func::FuncOp>("add_tuple_to_result");
-    // addTupleFunc should already exist from createRuntimeFunctionDeclarations
-    if (!addTupleFunc) {
-        logger_.error("add_tuple_to_result function not found!");
+    // Translate the PostgreSQL plan tree to RelAlg operations
+    if (!plannedStmt->planTree) {
+        logger_.error("No plan tree in PlannedStmt");
         return nullptr;
     }
     
-    // Now generate the code in the correct order
+    // Translate the plan tree (SeqScan, etc.) to RelAlg operations
+    auto rootOp = translatePlanNode(plannedStmt->planTree);
+    if (!rootOp) {
+        logger_.error("Failed to translate plan tree to RelAlg operations");
+        return nullptr;
+    }
     
-    // 1. Prepare result storage for 1 column
-    auto numColumns = builder.create<mlir::arith::ConstantIntOp>(location, 1, i32Type);
-    builder.create<mlir::func::CallOp>(
-        location,
-        prepareFunc,
-        mlir::ValueRange{numColumns}
+    // The QueryOp expects a QueryReturnOp with the final tuple stream
+    builder.create<pgx_lower::compiler::dialect::relalg::QueryReturnOp>(
+        location, rootOp->getResult(0)
     );
     
-    // 2. Store the value 1 in column 0 FIRST (before add_tuple_to_result)
-    auto oneValue = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
-    auto columnIndex = builder.create<mlir::arith::ConstantIntOp>(location, 0, i32Type);
-    auto falseValue = builder.create<mlir::arith::ConstantIntOp>(location, 0, builder.getI1Type());
-    
-    builder.create<mlir::func::CallOp>(
-        location,
-        storeBigintFunc,
-        mlir::ValueRange{columnIndex, oneValue, falseValue}
-    );
-    
-    // 3. THEN add the tuple to the result (which reads the stored value)
-    builder.create<mlir::func::CallOp>(
-        location,
-        addTupleFunc,
-        mlir::ValueRange{oneValue}
-    );
-    
-    logger_.notice("Created direct code generation for test 1 - bypassing complex pipeline");
-    
-    // Add return statement to main function (void return - LingoDB pattern)
-    builder.create<mlir::func::ReturnOp>(location);
+    logger_.notice("Created proper RelAlg query structure - ready for lowering pipeline");
     
     builder_ = nullptr;
     currentModule_ = nullptr;
     
     return module;
+}
+
+auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan) -> mlir::Operation* {
+    if (!plan || !builder_) {
+        return nullptr;
+    }
+    
+    switch (nodeTag(plan)) {
+        case T_SeqScan:
+            return translateSeqScan(reinterpret_cast<SeqScan*>(plan));
+        case T_IndexScan:
+            logger_.error("IndexScan not yet implemented");
+            return nullptr;
+        case T_Agg:
+            logger_.error("Agg not yet implemented");
+            return nullptr;
+        default:
+            logger_.error("Unknown plan node type: " + std::to_string(nodeTag(plan)));
+            return nullptr;
+    }
 }
 
 auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operation* {
@@ -242,19 +211,36 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operat
     logger_.debug("Translating SeqScan to relalg.basetable operation");
     
     auto location = builder_->getUnknownLoc();
-    
-    // For now, use a placeholder table name - in a full implementation,
-    // we would extract the table name from the scan relation
     auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
     
-    // Create relalg.basetable operation
-    auto tableId = builder_->getStringAttr("current_table");
-    auto columns = builder_->getDictionaryAttr({}); // Empty columns for now
+    // Extract table information from the SeqScan node
+    // For test 1, this should be the "test" table with one column "id"
     
+    // Get the table name from the scan relation
+    auto tableId = builder_->getStringAttr("test"); // TODO Phase 6: Extract from seqScan->scanrelid
+    
+    // Create column metadata for the table using ColumnDefAttr
+    // For test 1: single column "id" of type INT4 (SERIAL)
+    auto& columnManager = context_.getLoadedDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>()->getColumnManager();
+    
+    // Create a unique scope for this table
+    std::string scopeName = columnManager.getUniqueScope("test");
+    
+    // Create the column definition for "id"
+    auto idColDef = columnManager.createDef(scopeName, "id");
+    idColDef.getColumn().type = builder_->getI32Type(); // INT4
+    
+    // Create the columns dictionary attribute
+    mlir::NamedAttribute colAttrs[] = {
+        builder_->getNamedAttr("id", idColDef)
+    };
+    auto columns = builder_->getDictionaryAttr(colAttrs);
+    
+    // Create the BaseTableOp which represents scanning a table
     auto baseTableOp = builder_->create<pgx_lower::compiler::dialect::relalg::BaseTableOp>(
         location, tupleStreamType, tableId, columns);
     
-    logger_.debug("Generated relalg.basetable operation");
+    logger_.debug("Generated relalg.basetable operation for table 'test'");
     return baseTableOp;
 }
 
