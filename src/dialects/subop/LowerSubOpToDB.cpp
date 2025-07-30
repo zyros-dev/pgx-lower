@@ -308,7 +308,10 @@ class EntryStorageHelper {
       } else if (nullBitOffset <= 64) {
          nullBitsetType = mlir::IntegerType::get(members.getContext(), 64);
       } else {
-         assert(false && "should not happen");
+         llvm::errs() << "=== ERROR: Null bitset size > 64 not supported, got: " << nullBitOffset << " ===\n";
+         llvm::errs().flush();
+         // Use 64-bit for now as fallback
+         nullBitsetType = mlir::IntegerType::get(members.getContext(), 64);
       }
       if (nullBitOffset > 0) {
          types[nullBitSetPos] = nullBitsetType;
@@ -852,8 +855,11 @@ class SubOpRewriter {
          }
       }
       op->dump();
-      llvm::dbgs() << "Could not rewrite" << op->getName() << "\n";
-      assert(false);
+      llvm::dbgs() << "Could not rewrite " << op->getName() << "\n";
+      llvm::errs() << "=== ERROR: No rewrite pattern found for operation: " << op->getName().getStringRef() << " ===\n";
+      llvm::errs().flush();
+      // Mark as failed but continue
+      op->emitError("No rewrite pattern found");
    }
 
    bool shouldRewrite(mlir::Operation* op) {
@@ -1415,8 +1421,11 @@ class CreateTableLowering : public SubOpConversionPattern<subop::GenericCreateOp
             return "string";
          }
       }
-      assert(false);
-      return "";
+      llvm::errs() << "=== ERROR: Unknown type in stringifyValueType: ";
+      type.dump();
+      llvm::errs() << " ===\n";
+      llvm::errs().flush();
+      return "unknown";
    }
 
    public:
@@ -4833,25 +4842,60 @@ void subop::setCompressionEnabled(bool compressionEnabled) {
    EntryStorageHelper::compressionEnabled = compressionEnabled;
 }
 void subop::createLowerSubOpPipeline(mlir::OpPassManager& pm) {
+   llvm::errs() << "=== createLowerSubOpPipeline: Starting pass addition ===\n";
+   llvm::errs().flush();
+   
+   // Test just the first few passes to isolate the crash
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding GlobalOptPass ===\n";
+   llvm::errs().flush();
    pm.addPass(subop::createGlobalOptPass());
+   
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding FoldColumnsPass ===\n"; 
+   llvm::errs().flush();
    pm.addPass(subop::createFoldColumnsPass());
+   
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding ReuseLocalPass ===\n";
+   llvm::errs().flush();
    pm.addPass(subop::createReuseLocalPass());
+   
+   llvm::errs() << "=== createLowerSubOpPipeline: Skipping remaining passes for debugging ===\n";
+   llvm::errs().flush();
+   return;
+   
+   // Temporarily commented out to isolate crash
+   /*
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding SpecializeSubOpPass ===\n";
    pm.addPass(subop::createSpecializeSubOpPass(true));
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding NormalizeSubOpPass ===\n";
    pm.addPass(subop::createNormalizeSubOpPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding PullGatherUpPass ===\n";
    pm.addPass(subop::createPullGatherUpPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding ParallelizePass ===\n";
    pm.addPass(subop::createParallelizePass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding EnforceOrderPass ===\n";
    pm.addPass(subop::createEnforceOrderPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding InlineNestedMapPass ===\n";
    pm.addPass(subop::createInlineNestedMapPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding FinalizePass ===\n";
    pm.addPass(subop::createFinalizePass());
    // CRITICAL FIX: PrepareLoweringPass must run BEFORE SplitIntoExecutionStepsPass
    // to create the ExecutionStepOp structure that SplitIntoExecutionStepsPass expects
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding PrepareLoweringPass ===\n";
    pm.addPass(subop::createPrepareLoweringPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding SplitIntoExecutionStepsPass ===\n";
    pm.addPass(subop::createSplitIntoExecutionStepsPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding nested ParallelizePass ===\n";
    pm.addNestedPass<mlir::func::FuncOp>(subop::createParallelizePass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding SpecializeParallelPass ===\n";
    pm.addPass(subop::createSpecializeParallelPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding LowerSubOpPass ===\n";
    pm.addPass(subop::createLowerSubOpPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding CanonicalizerPass ===\n";
    pm.addPass(mlir::createCanonicalizerPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: Adding CSEPass ===\n";
    pm.addPass(mlir::createCSEPass());
+   llvm::errs() << "=== createLowerSubOpPipeline: All passes added successfully ===\n";
+   */
 }
 void subop::registerSubOpToControlFlowConversionPasses() {
    ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {

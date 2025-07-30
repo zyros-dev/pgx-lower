@@ -58,6 +58,7 @@
 
 #include <sstream>
 #include <cstring>
+#include <signal.h>
 
 // Include runtime functions after all LLVM/MLIR headers to avoid macro conflicts
 #include "runtime/tuple_access.h"
@@ -169,8 +170,30 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         // PrepareLoweringPass, LowerSubOpPass, CanonicalizerPass, CSEPass
         pgx_lower::compiler::dialect::subop::createLowerSubOpPipeline(pm_subop);
         
+        // Flush stdout/stderr before running passes to ensure we see debug output
+        llvm::errs().flush();
+        logger.notice("About to run createLowerSubOpPipeline PassManager...");
+        
+        // Add signal handler to catch segfault
+        struct sigaction sa;
+        sa.sa_handler = [](int sig) {
+            llvm::errs() << "=== CAUGHT SIGNAL " << sig << " IN PASSMANAGER RUN ===\n";
+            llvm::errs().flush();
+        };
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sigaction(SIGSEGV, &sa, nullptr);
+        
+        logger.notice("Signal handler installed, calling pm_subop.run()...");
+        llvm::errs() << "=== BEFORE pm_subop.run() ===\n";
+        llvm::errs().flush();
+        
         try {
-            if (failed(pm_subop.run(module))) {
+            auto result = pm_subop.run(module);
+            llvm::errs() << "=== AFTER pm_subop.run() ===\n";
+            llvm::errs().flush();
+            
+            if (failed(result)) {
                 logger.error("createLowerSubOpPipeline failed!");
                 module.dump();
                 return false;
