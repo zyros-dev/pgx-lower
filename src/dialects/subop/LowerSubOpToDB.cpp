@@ -4440,8 +4440,19 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
 
 void SubOpToControlFlowLoweringPass::runOnOperation() {
    auto module = getOperation();
-   getContext().getLoadedDialect<util::UtilDialect>()->getFunctionHelper().setParentModule(module);
+   llvm::errs() << "DEBUG: SubOp → DB pass starting\n";
+   llvm::errs() << "DEBUG: Getting context...\n";
    auto* ctxt = &getContext();
+   llvm::errs() << "DEBUG: Getting UtilDialect...\n";
+   auto* utilDialect = getContext().getLoadedDialect<util::UtilDialect>();
+   if (!utilDialect) {
+      llvm::errs() << "ERROR: UtilDialect not loaded!\n";
+      signalPassFailure();
+      return;
+   }
+   llvm::errs() << "DEBUG: Setting parent module...\n";
+   utilDialect->getFunctionHelper().setParentModule(module);
+   llvm::errs() << "DEBUG: Parent module set\n";
 
    TypeConverter typeConverter;
    typeConverter.addConversion([](mlir::Type t) { return t; });
@@ -4553,6 +4564,14 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    //rewriter.rewrite(module.getBody());
    std::vector<mlir::Operation*> toRemove;
    module->walk([&](subop::ExecutionGroupOp executionGroup) { // walk over "queries"
+      llvm::errs() << "DEBUG: Found ExecutionGroupOp\n";
+      llvm::errs() << "DEBUG: ExecutionGroup region has " << executionGroup.getRegion().getBlocks().size() << " blocks\n";
+      if (!executionGroup.getRegion().empty() && !executionGroup.getRegion().front().empty()) {
+         llvm::errs() << "DEBUG: First block has " << executionGroup.getRegion().front().getOperations().size() << " operations\n";
+         for (auto& op : executionGroup.getRegion().front().getOperations()) {
+            llvm::errs() << "DEBUG: Operation in ExecutionGroup: " << op.getName().getStringRef() << "\n";
+         }
+      }
       mlir::IRMapping mapping;
       //todo: handle arguments of executionGroup
       for (auto& op : executionGroup.getRegion().front().getOperations()) {
