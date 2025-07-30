@@ -3,6 +3,8 @@
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/DBOps.h"
+#include "dialects/dsa/DSADialect.h"
+// DSAOps.h doesn't exist yet - need to generate from TableGen
 #include "dialects/tuplestream/TupleStreamOps.h"
 #include "dialects/util/UtilDialect.h"
 #include "dialects/util/UtilOps.h"
@@ -46,6 +48,7 @@
 #include "mlir/Transforms/Passes.h"
 
 #include <stack>
+#include <iostream>
 using namespace mlir;
 
 #ifdef NDEBUG
@@ -61,6 +64,7 @@ namespace {
 using namespace pgx_lower::compiler::dialect;
 namespace rt = pgx_lower::compiler::runtime;
 namespace db = pgx_lower::compiler::dialect::db;
+namespace dsa = pgx_lower::compiler::dialect::dsa;
 struct SubOpToControlFlowLoweringPass
    : public mlir::PassWrapper<SubOpToControlFlowLoweringPass, OperationPass<mlir::ModuleOp>> {
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(SubOpToControlFlowLoweringPass)
@@ -98,6 +102,10 @@ struct SubOpToControlFlowLoweringPass
          
          registry.insert<subop::SubOperatorDialect>();
          llvm::errs() << "=== DEBUG: SubOperator dialect registered ===\n";
+         
+         // CRITICAL: Add DSA dialect that LingoDB has but we were missing!
+         registry.insert<dsa::DSADialect>();
+         llvm::errs() << "=== DEBUG: DSA dialect registered ===\n";
          
          llvm::errs() << "=== DEBUG: getDependentDialects completed successfully ===\n";
          llvm::errs().flush();
@@ -4527,10 +4535,6 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    llvm::errs() << "=== DEBUG: SubOpToControlFlowLoweringPass::runOnOperation() called ===\n";
    llvm::errs().flush();
    
-   // TEMPORARY: Just do a minimal pass that doesn't crash
-   // TODO Phase 6: Implement full SubOp → DB lowering
-   return;
-   
    try {
    auto module = getOperation();
    llvm::errs() << "=== DEBUG: getOperation() returned successfully ===\n";
@@ -4786,18 +4790,31 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
 std::unique_ptr<mlir::Pass> subop::createLowerSubOpPass() {
    llvm::errs() << "=== DEBUG: createLowerSubOpPass called ===\n";
    llvm::errs().flush();
+   std::cerr << "=== CERR DEBUG: createLowerSubOpPass called ===\n" << std::flush;
+   fprintf(stderr, "=== FPRINTF DEBUG: createLowerSubOpPass called ===\n");
+   fflush(stderr);
+   
    try {
+      llvm::errs() << "=== DEBUG: About to create SubOpToControlFlowLoweringPass ===\n";
+      llvm::errs().flush();
+      std::cerr << "=== CERR DEBUG: About to create SubOpToControlFlowLoweringPass ===\n" << std::flush;
+      
       auto pass = std::make_unique<SubOpToControlFlowLoweringPass>();
+      
       llvm::errs() << "=== DEBUG: SubOpToControlFlowLoweringPass created successfully ===\n";
       llvm::errs().flush();
+      std::cerr << "=== CERR DEBUG: SubOpToControlFlowLoweringPass created successfully ===\n" << std::flush;
+      
       return pass;
    } catch (const std::exception& e) {
       llvm::errs() << "=== ERROR: Exception creating SubOpToControlFlowLoweringPass: " << e.what() << " ===\n";
       llvm::errs().flush();
+      std::cerr << "=== CERR ERROR: Exception creating SubOpToControlFlowLoweringPass: " << e.what() << " ===\n" << std::flush;
       throw;
    } catch (...) {
       llvm::errs() << "=== ERROR: Unknown exception creating SubOpToControlFlowLoweringPass ===\n";
       llvm::errs().flush();
+      std::cerr << "=== CERR ERROR: Unknown exception creating SubOpToControlFlowLoweringPass ===\n" << std::flush;
       throw;
    }
 }

@@ -41,6 +41,14 @@ class PrepareLoweringPass : public mlir::PassWrapper<PrepareLoweringPass, mlir::
             for (auto operand : op.getOperands()) {
                if (mlir::isa<tuples::TupleStreamType>(operand.getType())) {
                   if (auto* producer = operand.getDefiningOp()) {
+                     if (beforeInStream) {
+                        llvm::errs() << "=== ERROR: Operation has multiple TupleStreamType operands ===\n";
+                        llvm::errs() << "  Operation: " << op.getName().getStringRef() << "\n";
+                        llvm::errs() << "  First producer: " << beforeInStream->getName().getStringRef() << "\n";
+                        llvm::errs() << "  Second producer: " << producer->getName().getStringRef() << "\n";
+                        op.dump();
+                        llvm::errs() << "  This violates the expected SubOp structure\n";
+                     }
                      assert(!beforeInStream);
                      beforeInStream = producer; // we expect only one tuple-stream per op in *containsNestedSubOps.getBody()
                   }
@@ -278,6 +286,19 @@ class PrepareLoweringPass : public mlir::PassWrapper<PrepareLoweringPass, mlir::
    }
    void runOnOperation() override {
       llvm::errs() << "=== PrepareLoweringPass::runOnOperation() STARTED ===\n";
+      llvm::errs().flush();
+      
+      // Debug the module structure
+      getOperation()->walk([&](subop::ExecutionGroupOp execGroup) {
+         llvm::errs() << "=== Found ExecutionGroupOp in PrepareLoweringPass ===\n";
+         execGroup.walk([&](subop::ExecutionStepOp execStep) {
+            llvm::errs() << "  Found ExecutionStepOp\n";
+            for (mlir::Operation& op : execStep.getSubOps().front()) {
+               llvm::errs() << "    Op: " << op.getName().getStringRef() << "\n";
+            }
+         });
+      });
+      
       subop::ColumnUsageAnalysis usedColumns(getOperation());
       subop::ColumnCreationAnalysis createdColumns(getOperation());
       std::vector<mlir::Operation*> opsToErase;
