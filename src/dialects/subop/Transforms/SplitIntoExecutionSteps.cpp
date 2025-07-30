@@ -14,14 +14,21 @@ using namespace pgx_lower::compiler::dialect;
 class SplitIntoExecutionSteps : public mlir::PassWrapper<SplitIntoExecutionSteps, mlir::OperationPass<mlir::ModuleOp>> {
    public:
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(SplitIntoExecutionSteps)
+   
+   SplitIntoExecutionSteps() {
+      llvm::errs() << "=== SplitIntoExecutionSteps CONSTRUCTOR called ===\n";
+   }
+   
    virtual llvm::StringRef getArgument() const override { return "subop-split-into-steps"; }
 
    void runOnOperation() override {
       llvm::errs() << "=== SplitIntoExecutionSteps::runOnOperation() STARTED ===\n";
-      // Step 1: split into different streams
-      getOperation()->walk([&](subop::ExecutionGroupOp executionGroup) {
-         llvm::errs() << "=== Found ExecutionGroupOp, processing... ===\n";
-         llvm::errs() << "ExecutionGroupOp has " << executionGroup.getSubOps().getBlocks().size() << " blocks\n";
+      
+      try {
+         // Step 1: split into different streams
+         getOperation()->walk([&](subop::ExecutionGroupOp executionGroup) {
+            llvm::errs() << "=== Found ExecutionGroupOp, processing... ===\n";
+            llvm::errs() << "ExecutionGroupOp has " << executionGroup.getSubOps().getBlocks().size() << " blocks\n";
          
          if (executionGroup.getSubOps().empty()) {
             llvm::errs() << "ERROR: ExecutionGroupOp has empty SubOps region!\n";
@@ -255,6 +262,13 @@ class SplitIntoExecutionSteps : public mlir::PassWrapper<SplitIntoExecutionSteps
          }
          returnOp->setOperands(returnValues);
       });
+      } catch (const std::exception& e) {
+         llvm::errs() << "=== EXCEPTION in SplitIntoExecutionSteps: " << e.what() << " ===\n";
+         throw;
+      } catch (...) {
+         llvm::errs() << "=== UNKNOWN EXCEPTION in SplitIntoExecutionSteps ===\n";
+         throw;
+      }
    }
 };
 } // end anonymous namespace
