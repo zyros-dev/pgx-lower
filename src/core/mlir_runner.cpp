@@ -168,6 +168,14 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             return false;
         }
         logger.notice("NormalizeSubOp pass completed");
+        
+        // Dump IR after NormalizeSubOpPass to debug SplitIntoExecutionStepsPass crash
+        logger.notice("=== IR after NormalizeSubOpPass ===");
+        std::string irAfterNormalize;
+        llvm::raw_string_ostream normalizeStreaml(irAfterNormalize);
+        module.print(normalizeStreaml);
+        normalizeStreaml.flush();
+        logger.notice("IR: " + irAfterNormalize);
     }
     
     // Continue testing passes one by one
@@ -263,13 +271,22 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("SplitIntoExecutionStepsPass completed successfully!");
     }
     
-    // Test PrepareLoweringPass
+    // Test PrepareLoweringPass (this is where the crash actually occurs)
     {
         auto pm8 = mlir::PassManager(&context);
         pm8.addPass(pgx_lower::compiler::dialect::subop::createPrepareLoweringPass());
         logger.notice("Running PrepareLoweringPass...");
+        
+        // Dump IR before PrepareLoweringPass to identify problematic operation
+        logger.notice("=== IR before PrepareLoweringPass ===");
+        std::string irBeforePrepare;
+        llvm::raw_string_ostream prepareStream(irBeforePrepare);
+        module.print(prepareStream);
+        prepareStream.flush();
+        logger.notice("IR: " + irBeforePrepare);
+        
         if (failed(pm8.run(module))) {
-            logger.error("PrepareLoweringPass failed!");
+            logger.error("PrepareLoweringPass failed - this is where assert(!beforeInStream) crashes!");
             module.dump();
             return false;
         }
