@@ -1,7 +1,7 @@
-#include "dialects/Conversion/UtilToLLVM/Passes.h"
-#include "dialects/Dialect/util/UtilDialect.h"
-#include "dialects/Dialect/util/UtilOps.h"
-#include "dialects/Dialect/util/UtilTypes.h"
+#include "dialects/util/LowerDSAToLLVM.h"
+#include "dialects/util/UtilDialect.h"
+#include "dialects/util/UtilOps.h"
+#include "dialects/util/UtilTypes.h"
 
 #include "mlir/Analysis/DataLayoutAnalysis.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
@@ -558,6 +558,9 @@ class UnTagPtrLowering : public OpConversionPattern<util::UnTagPtr> {
 
 } // end anonymous namespace
 
+// Add namespace wrapper
+namespace pgx_lower::compiler::dialect {
+
 void util::populateUtilToLLVMConversionPatterns(LLVMTypeConverter& typeConverter, RewritePatternSet& patterns) {
    typeConverter.addConversion([&](mlir::TupleType tupleType) {
       return convertTuple(tupleType, typeConverter);
@@ -741,3 +744,5 @@ struct UtilToLLVMLoweringPass
 std::unique_ptr<mlir::Pass> util::createUtilToLLVMPass() {
    return std::make_unique<UtilToLLVMLoweringPass>();
 }
+
+} // namespace pgx_lower::compiler::dialect

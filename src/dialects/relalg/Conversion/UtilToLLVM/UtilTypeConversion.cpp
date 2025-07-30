@@ -1,5 +1,5 @@
-#include "lingodb/compiler/Conversion/UtilToLLVM/Passes.h"
-#include "lingodb/compiler/Dialect/util/UtilOps.h"
+#include "dialects/util/LowerDSAToLLVM.h"
+#include "dialects/util/UtilOps.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Pass/Pass.h"
@@ -7,7 +7,7 @@
 
 using namespace mlir;
 namespace {
-using namespace lingodb::compiler::dialect;
+using namespace pgx_lower::compiler::dialect;
 template <class Op>
 class SimpleTypeConversionPattern : public ConversionPattern {
    public:
@@ -48,6 +48,7 @@ struct UtilToLLVMLoweringPass
 };
 } // end anonymous namespace
 
+namespace pgx_lower::compiler::dialect {
 void util::populateUtilTypeConversionPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns) {
    patterns.add<SimpleTypeConversionPattern<GetTupleOp>>(typeConverter, patterns.getContext());
    patterns.add<SimpleTypeConversionPattern<UndefOp>>(typeConverter, patterns.getContext());
@@ -85,3 +86,4 @@ void util::populateUtilTypeConversionPatterns(TypeConverter& typeConverter, Rewr
       return varType;
    });
 }
+} // namespace pgx_lower::compiler::dialect

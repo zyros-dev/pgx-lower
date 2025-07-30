@@ -55,29 +55,10 @@ def DB_NullableType : DB_Type<"Nullable", "nullable"> {
     let assemblyFormat = "`<` $valueType `>`";
 }
 
-// Date type
-def DB_DateType : DB_Type<"Date", "date"> {
-    let summary = "SQL DATE type";
-    let description = [{
-        Represents a SQL DATE value (year, month, day).
-    }];
-}
-
-// Timestamp type
-def DB_TimestampType : DB_Type<"Timestamp", "timestamp"> {
-    let summary = "SQL TIMESTAMP type";
-    let description = [{
-        Represents a SQL TIMESTAMP value with microsecond precision.
-    }];
-}
-
-// Interval type
-def DB_IntervalType : DB_Type<"Interval", "interval"> {
-    let summary = "SQL INTERVAL type";
-    let description = [{
-        Represents a SQL INTERVAL value.
-    }];
-}
+// Forward declarations for types defined in DBOps.td
+def DB_DateType : DB_Type<"Date", "date">;
+def DB_TimestampType : DB_Type<"Timestamp", "timestamp">;
+def DB_IntervalType : DB_Type<"Interval", "interval">;
 
 // Decimal type with precision and scale
 def DB_DecimalType : DB_Type<"Decimal", "decimal"> {

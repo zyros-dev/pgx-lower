@@ -6,9 +6,8 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 // #include "lingodb/compiler/Dialect/Arrow/IR/ArrowTypes.h" // Removed Arrow dependency
-#include "DBOpsEnums.h.inc"
+#include "DBTypes.h" // DBTypes.h already includes DBOpsEnums.h.inc
 #include "DBOpsInterfaces.h.inc"
-#include "DBTypes.h"
 #include "dialects/relalg/RelAlgInterfaces.h" // For CmpOpInterface
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"

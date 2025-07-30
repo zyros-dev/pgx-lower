@@ -1,16 +1,17 @@
-#include "dialects/Conversion/DBToStd/DBToStd.h"
-#include "dialects/Conversion/UtilToLLVM/Passes.h"
-#include "dialects/Dialect/Arrow/IR/ArrowDialect.h"
-#include "dialects/Dialect/Arrow/IR/ArrowOps.h"
-#include "dialects/Dialect/DB/IR/DBDialect.h"
-#include "dialects/Dialect/DB/IR/DBOps.h"
-#include "dialects/Dialect/DB/IR/RuntimeFunctions.h"
-#include "dialects/Dialect/DB/Passes.h"
-#include "dialects/Dialect/util/FunctionHelper.h"
-#include "dialects/Dialect/util/UtilDialect.h"
-#include "dialects/Dialect/util/UtilOps.h"
-#include "dialects/mlir-support/parsing.h"
-#include "dialects/runtime/StringRuntime.h"
+#include "dialects/db/LowerDBToDSA.h"
+#include "dialects/util/LowerDSAToLLVM.h"
+// Arrow dialect doesn't exist in pgx-lower
+// #include "dialects/arrow/ArrowDialect.h"
+// #include "dialects/arrow/ArrowOps.h"
+#include "dialects/db/DBDialect.h"
+#include "dialects/db/DBOps.h"
+// #include "dialects/db/RuntimeFunctions.h"
+// #include "dialects/db/Passes.h"
+#include "dialects/util/FunctionHelper.h"
+#include "dialects/util/UtilDialect.h"
+#include "dialects/util/UtilOps.h"
+// #include "dialects/mlir-support/parsing.h"
+// #include "dialects/runtime/StringRuntime.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -29,21 +30,12 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/Passes.h"
 
+#include <variant>
+
 using namespace mlir;
 
 namespace {
 using namespace pgx_lower::compiler::dialect;
-struct DBToStdLoweringPass
-   : public PassWrapper<DBToStdLoweringPass, OperationPass<ModuleOp>> {
-   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(DBToStdLoweringPass)
-   virtual llvm::StringRef getArgument() const override { return "to-arrow-std"; }
-
-   DBToStdLoweringPass() {}
-   void getDependentDialects(DialectRegistry& registry) const override {
-      registry.insert<db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect>();
-   }
-   void runOnOperation() final;
-};
 static TupleType convertTuple(TupleType tupleType, TypeConverter& typeConverter) {
    std::vector<Type> types;
    for (auto t : tupleType.getTypes()) {
@@ -75,6 +67,8 @@ class SimpleTypeConversionPattern : public ConversionPattern {
       return success();
    }
 };
+// Arrow operations don't exist in pgx-lower
+#if 0
 class LoadArrowOpLowering : public OpConversionPattern<db::LoadArrowOp> {
    public:
    using OpConversionPattern<db::LoadArrowOp>::OpConversionPattern;
@@ -210,12 +204,16 @@ class AppendArrowLowering : public OpConversionPattern<db::AppendArrowOp> {
       return success();
    }
 };
+#endif // 0 - Arrow operations don't exist in pgx-lower
 
+// TODO: Implement StringRuntime for pgx-lower
+#if 0
 class StringCastOpLowering : public OpConversionPattern<db::CastOp> {
    public:
    using OpConversionPattern<db::CastOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(db::CastOp castOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      using namespace lingodb::compiler::runtime;
+      // TODO: Replace with pgx-lower runtime functions
+      // using namespace lingodb::compiler::runtime;
       auto loc = castOp->getLoc();
       auto scalarSourceType = castOp.getVal().getType();
       auto scalarTargetType = castOp.getType();
@@ -284,6 +282,7 @@ class StringCastOpLowering : public OpConversionPattern<db::CastOp> {
       }
    }
 };
+#endif // 0 - StringRuntime not implemented
 
 class CharCmpOpLowering : public OpConversionPattern<db::CmpOp> {
    public:
@@ -309,6 +308,8 @@ class CharCmpOpLowering : public OpConversionPattern<db::CmpOp> {
       return success();
    }
 };
+// TODO: Implement StringRuntime for pgx-lower
+#if 0
 class StringCmpOpLowering : public OpConversionPattern<db::CmpOp> {
    public:
    using OpConversionPattern<db::CmpOp>::OpConversionPattern;
@@ -320,7 +321,8 @@ class StringCmpOpLowering : public OpConversionPattern<db::CmpOp> {
       return true;
    }
    LogicalResult matchAndRewrite(db::CmpOp cmpOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      using namespace lingodb::compiler::runtime;
+      // TODO: Replace with pgx-lower runtime functions
+      // using namespace lingodb::compiler::runtime;
       auto type = cmpOp.getLeft().getType();
       if (!mlir::isa<db::StringType>(type)) {
          return failure();
@@ -362,7 +364,10 @@ class StringCmpOpLowering : public OpConversionPattern<db::CmpOp> {
       return success();
    }
 };
+#endif // 0 - StringRuntime not implemented
 
+// TODO: Implement RuntimeFunctionRegistry for pgx-lower
+#if 0
 class RuntimeCallLowering : public OpConversionPattern<db::RuntimeCall> {
    public:
    using OpConversionPattern<db::RuntimeCall>::OpConversionPattern;
@@ -390,6 +395,7 @@ class RuntimeCallLowering : public OpConversionPattern<db::RuntimeCall> {
       return success();
    }
 };
+#endif // 0 - RuntimeFunctionRegistry not implemented
 
 class NotOpLowering : public OpConversionPattern<db::NotOp> {
    public:
@@ -521,6 +527,9 @@ class BinOpLowering : public OpConversionPattern<OpClass> {
       return failure();
    }
 };
+
+// TODO: Implement decimal operations for pgx-lower
+#if 0
 mlir::Value getDecimalScaleMultiplierConstant(mlir::OpBuilder& builder, int32_t s, mlir::Type stdType, mlir::Location loc) {
    auto [low, high] = lingodb::compiler::support::getDecimalScaleMultiplier(s);
    std::vector<uint64_t> parts = {low, high};
@@ -598,6 +607,8 @@ class DecimalBinOpLowering : public OpConversionPattern<DBOp> {
       return failure();
    }
 };
+#endif // 0 - decimal operations not implemented
+
 class IsNullOpLowering : public OpConversionPattern<db::IsNullOp> {
    public:
    using OpConversionPattern<db::IsNullOp>::OpConversionPattern;
@@ -647,6 +658,8 @@ class NullOpLowering : public OpConversionPattern<db::NullOp> {
    }
 };
 
+// TODO: Implement lingodb support functions for pgx-lower
+#if 0
 class ConstantLowering : public OpConversionPattern<db::ConstantOp> {
    static std::tuple<::arrow::Type::type, uint32_t, uint32_t> convertTypeToArrow(mlir::Type type) {
       ::arrow::Type::type typeConstant = ::arrow::Type::type::NA;
@@ -746,6 +759,8 @@ class ConstantLowering : public OpConversionPattern<db::ConstantOp> {
       return failure();
    }
 };
+#endif // 0 - lingodb support functions not implemented
+
 class CmpOpLowering : public OpConversionPattern<db::CmpOp> {
    public:
    using OpConversionPattern<db::CmpOp>::OpConversionPattern;
@@ -822,6 +837,8 @@ class CastNoneOpLowering : public OpConversionPattern<db::CastOp> {
       return mlir::success();
    }
 };
+// TODO: Implement lingodb support functions for pgx-lower
+#if 0
 class CastOpLowering : public OpConversionPattern<db::CastOp> {
    public:
    using OpConversionPattern<db::CastOp>::OpConversionPattern;
@@ -908,13 +925,16 @@ class CastOpLowering : public OpConversionPattern<db::CastOp> {
       return failure();
    }
 };
+#endif // 0 - lingodb support functions not implemented
+
 class BetweenLowering : public OpConversionPattern<db::BetweenOp> {
    public:
    using OpConversionPattern<db::BetweenOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(db::BetweenOp betweenOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto isGteLower = rewriter.create<db::CmpOp>(betweenOp->getLoc(), betweenOp.getLowerInclusive() ? db::DBCmpPredicate::gte : db::DBCmpPredicate::gt, betweenOp.getVal(), betweenOp.getLower());
       auto isLteUpper = rewriter.create<db::CmpOp>(betweenOp->getLoc(), betweenOp.getUpperInclusive() ? db::DBCmpPredicate::lte : db::DBCmpPredicate::lt, betweenOp.getVal(), betweenOp.getUpper());
-      auto isInRange = rewriter.create<db::AndOp>(betweenOp->getLoc(), ValueRange({isGteLower, isLteUpper}));
+      // Use the build method that takes ValueRange and empty attributes
+      auto isInRange = rewriter.create<db::AndOp>(betweenOp->getLoc(), ValueRange({isGteLower, isLteUpper}), ArrayRef<NamedAttribute>{});
       rewriter.replaceOp(betweenOp, isInRange.getRes());
       return success();
    }
@@ -1037,174 +1057,198 @@ class HashLowering : public ConversionPattern {
       return success();
    }
 };
-} // end anonymous namespace
-void DBToStdLoweringPass::runOnOperation() {
-   auto module = getOperation();
-   getContext().getLoadedDialect<util::UtilDialect>()->getFunctionHelper().setParentModule(module);
 
-   // Define Conversion Target
-   ConversionTarget target(getContext());
-   target.addLegalDialect<gpu::GPUDialect>();
-   target.addLegalDialect<async::AsyncDialect>();
-   target.addLegalOp<ModuleOp>();
-   target.addLegalOp<UnrealizedConversionCastOp>();
+struct DBToStdLoweringPass
+   : public PassWrapper<DBToStdLoweringPass, OperationPass<ModuleOp>> {
+   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(DBToStdLoweringPass)
+   virtual llvm::StringRef getArgument() const override { return "to-db-std"; }
 
-   target.addLegalDialect<func::FuncDialect>();
-   target.addLegalDialect<memref::MemRefDialect>();
-   TypeConverter typeConverter;
-   auto* ctxt = &getContext();
-   typeConverter.addConversion([&](mlir::Type type) { return type; });
-   typeConverter.addConversion([&](::db::DateType t) {
-      return mlir::IntegerType::get(ctxt, 64);
-   });
-   typeConverter.addConversion([&](::db::DecimalType t) {
-      if (t.getP() < 19) {
+   DBToStdLoweringPass() {}
+   void getDependentDialects(DialectRegistry& registry) const override {
+      registry.insert<db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect>();
+   }
+   void runOnOperation() final {
+      auto module = getOperation();
+      getContext().getLoadedDialect<util::UtilDialect>()->getFunctionHelper().setParentModule(module);
+
+      // Define Conversion Target
+      ConversionTarget target(getContext());
+      target.addLegalDialect<gpu::GPUDialect>();
+      target.addLegalDialect<async::AsyncDialect>();
+      target.addLegalOp<ModuleOp>();
+      target.addLegalOp<UnrealizedConversionCastOp>();
+
+      target.addLegalDialect<func::FuncDialect>();
+      target.addLegalDialect<memref::MemRefDialect>();
+      TypeConverter typeConverter;
+      auto* ctxt = &getContext();
+      typeConverter.addConversion([&](mlir::Type type) { return type; });
+      typeConverter.addConversion([&](::db::DateType t) {
          return mlir::IntegerType::get(ctxt, 64);
+      });
+      typeConverter.addConversion([&](::db::DecimalType t) {
+         if (t.getP() < 19) {
+            return mlir::IntegerType::get(ctxt, 64);
 
-      } else {
-         return mlir::IntegerType::get(ctxt, 128);
-      }
-   });
-   typeConverter.addConversion([&](::db::CharType t) {
-      if (t.getLen() > 1) return static_cast<Type>(util::VarLen32Type::get(ctxt));
-      // https://github.com/lingo-db/lingo-db/issues/107
-      // represent char<1> with an i32 (max character length in UTF-8 is 4 bytes) and longer char types with !util.varlen32 like strings.
-      return static_cast<Type>(mlir::IntegerType::get(ctxt, 32));
-   });
-   typeConverter.addConversion([&](::db::StringType t) {
-      return util::VarLen32Type::get(ctxt);
-   });
-   typeConverter.addConversion([&](::db::TimestampType t) {
-      return mlir::IntegerType::get(ctxt, 64);
-   });
-   typeConverter.addConversion([&](::db::IntervalType t) {
-      if (t.getUnit() == db::IntervalUnitAttr::daytime) {
+         } else {
+            return mlir::IntegerType::get(ctxt, 128);
+         }
+      });
+      typeConverter.addConversion([&](::db::CharType t) {
+         if (t.getLen() > 1) return static_cast<Type>(util::VarLen32Type::get(ctxt));
+         // https://github.com/lingo-db/lingo-db/issues/107
+         // represent char<1> with an i32 (max character length in UTF-8 is 4 bytes) and longer char types with !util.varlen32 like strings.
+         return static_cast<Type>(mlir::IntegerType::get(ctxt, 32));
+      });
+      typeConverter.addConversion([&](::db::StringType t) {
+         return util::VarLen32Type::get(ctxt);
+      });
+      typeConverter.addConversion([&](::db::TimestampType t) {
          return mlir::IntegerType::get(ctxt, 64);
-      } else {
-         return mlir::IntegerType::get(ctxt, 32);
-      }
-   });
-
-   typeConverter.addConversion([&](db::NullableType type) {
-      mlir::Type payloadType = typeConverter.convertType(type.getType());
-      if (mlir::isa<mlir::NoneType>(payloadType)) {
-         payloadType = IntegerType::get(ctxt, 1);
-      }
-      return (Type) TupleType::get(ctxt, {IntegerType::get(ctxt, 1), payloadType});
-   });
-   auto opIsWithoutDBTypes = [&](Operation* op) { return !hasDBType(typeConverter, op->getOperandTypes()) && !hasDBType(typeConverter, op->getResultTypes()); };
-   target.addDynamicallyLegalDialect<scf::SCFDialect>(opIsWithoutDBTypes);
-   target.addDynamicallyLegalDialect<pgx_lower::compiler::dialect::arrow::ArrowDialect>(opIsWithoutDBTypes);
-   target.addDynamicallyLegalDialect<arith::ArithDialect>(opIsWithoutDBTypes);
-
-   target.addLegalDialect<cf::ControlFlowDialect>();
-
-   target.addDynamicallyLegalDialect<util::UtilDialect>(opIsWithoutDBTypes);
-   target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      auto isLegal = !hasDBType(typeConverter, op.getFunctionType().getInputs()) &&
-         !hasDBType(typeConverter, op.getFunctionType().getResults());
-      return isLegal;
-   });
-   target.addDynamicallyLegalOp<mlir::func::ConstantOp>([&](mlir::func::ConstantOp op) {
-      if (auto functionType = mlir::dyn_cast_or_null<mlir::FunctionType>(op.getType())) {
-         auto isLegal = !hasDBType(typeConverter, functionType.getInputs()) &&
-            !hasDBType(typeConverter, functionType.getResults());
-         return isLegal;
-      } else {
-         return true;
-      }
-   });
-   target.addDynamicallyLegalOp<mlir::func::CallOp, mlir::func::CallIndirectOp, mlir::func::ReturnOp>(opIsWithoutDBTypes);
-
-   target.addDynamicallyLegalOp<util::SizeOfOp>(
-      [&typeConverter](util::SizeOfOp op) {
-         auto isLegal = !hasDBType(typeConverter, op.getType());
-         return isLegal;
+      });
+      typeConverter.addConversion([&](::db::IntervalType t) {
+         if (t.getUnit() == db::IntervalUnitAttr::daytime) {
+            return mlir::IntegerType::get(ctxt, 64);
+         } else {
+            return mlir::IntegerType::get(ctxt, 32);
+         }
       });
 
-   typeConverter.addConversion([&](mlir::TupleType tupleType) {
-      return convertTuple(tupleType, typeConverter);
-   });
+      typeConverter.addConversion([&](db::NullableType type) {
+         mlir::Type payloadType = typeConverter.convertType(type.getType());
+         if (mlir::isa<mlir::NoneType>(payloadType)) {
+            payloadType = IntegerType::get(ctxt, 1);
+         }
+         return (Type) TupleType::get(ctxt, {IntegerType::get(ctxt, 1), payloadType});
+      });
+      auto opIsWithoutDBTypes = [&](Operation* op) { return !hasDBType(typeConverter, op->getOperandTypes()) && !hasDBType(typeConverter, op->getResultTypes()); };
+      target.addDynamicallyLegalDialect<scf::SCFDialect>(opIsWithoutDBTypes);
+      // Arrow dialect doesn't exist in pgx-lower
+      // target.addDynamicallyLegalDialect<pgx_lower::compiler::dialect::arrow::ArrowDialect>(opIsWithoutDBTypes);
+      target.addDynamicallyLegalDialect<arith::ArithDialect>(opIsWithoutDBTypes);
 
-   RewritePatternSet patterns(&getContext());
+      target.addLegalDialect<cf::ControlFlowDialect>();
 
-   mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, typeConverter);
-   mlir::populateCallOpTypeConversionPattern(patterns, typeConverter);
-   mlir::populateReturnOpTypeConversionPattern(patterns, typeConverter);
-   util::populateUtilTypeConversionPatterns(typeConverter, patterns);
-   mlir::scf::populateSCFStructuralTypeConversions(typeConverter, patterns);
-   patterns.insert<SimpleTypeConversionPattern<mlir::func::ConstantOp>>(typeConverter, &getContext());
-   patterns.insert<SimpleTypeConversionPattern<mlir::func::CallIndirectOp>>(typeConverter, &getContext());
-   patterns.insert<SimpleTypeConversionPattern<mlir::arith::SelectOp>>(typeConverter, &getContext());
-   patterns.insert<LoadArrowOpLowering>(typeConverter, &getContext());
-   patterns.insert<AppendArrowLowering>(typeConverter, &getContext());
-   patterns.insert<StringCmpOpLowering>(typeConverter, ctxt);
-   patterns.insert<CharCmpOpLowering>(typeConverter, ctxt);
-   patterns.insert<StringCastOpLowering>(typeConverter, ctxt);
-   patterns.insert<RuntimeCallLowering>(typeConverter, ctxt);
-   patterns.insert<CmpOpLowering>(typeConverter, ctxt);
-   patterns.insert<BetweenLowering>(typeConverter, ctxt);
-   patterns.insert<OneOfLowering>(typeConverter, ctxt);
-   patterns.insert<SortCompareLowering>(typeConverter, ctxt);
+      target.addDynamicallyLegalDialect<util::UtilDialect>(opIsWithoutDBTypes);
+      target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+         auto isLegal = !hasDBType(typeConverter, op.getFunctionType().getInputs()) &&
+            !hasDBType(typeConverter, op.getFunctionType().getResults());
+         return isLegal;
+      });
+      target.addDynamicallyLegalOp<mlir::func::ConstantOp>([&](mlir::func::ConstantOp op) {
+         if (auto functionType = mlir::dyn_cast_or_null<mlir::FunctionType>(op.getType())) {
+            auto isLegal = !hasDBType(typeConverter, functionType.getInputs()) &&
+               !hasDBType(typeConverter, functionType.getResults());
+            return isLegal;
+         } else {
+            return true;
+         }
+      });
+      target.addDynamicallyLegalOp<mlir::func::CallOp, mlir::func::CallIndirectOp, mlir::func::ReturnOp>(opIsWithoutDBTypes);
 
-   patterns.insert<NotOpLowering>(typeConverter, ctxt);
+      target.addDynamicallyLegalOp<util::SizeOfOp>(
+         [&typeConverter](util::SizeOfOp op) {
+            auto isLegal = !hasDBType(typeConverter, op.getType());
+            return isLegal;
+         });
 
-   patterns.insert<AndOpLowering>(typeConverter, ctxt);
-   patterns.insert<OrOpLowering>(typeConverter, ctxt);
-   patterns.insert<BinOpLowering<db::AddOp, mlir::IntegerType, arith::AddIOp>>(typeConverter, ctxt);
-   patterns.insert<BinOpLowering<db::SubOp, mlir::IntegerType, arith::SubIOp>>(typeConverter, ctxt);
-   patterns.insert<BinOpLowering<db::MulOp, mlir::IntegerType, arith::MulIOp>>(typeConverter, ctxt);
-   patterns.insert<BinOpLowering<db::DivOp, mlir::IntegerType, arith::DivSIOp>>(typeConverter, ctxt);
-   patterns.insert<BinOpLowering<db::ModOp, mlir::IntegerType, arith::RemSIOp>>(typeConverter, ctxt);
+      typeConverter.addConversion([&](mlir::TupleType tupleType) {
+         return convertTuple(tupleType, typeConverter);
+      });
 
-   patterns.insert<BinOpLowering<db::AddOp, mlir::FloatType, arith::AddFOp>>(typeConverter, ctxt);
-   patterns.insert<BinOpLowering<db::SubOp, mlir::FloatType, arith::SubFOp>>(typeConverter, ctxt);
-   patterns.insert<BinOpLowering<db::MulOp, mlir::FloatType, arith::MulFOp>>(typeConverter, ctxt);
-   patterns.insert<BinOpLowering<db::DivOp, mlir::FloatType, arith::DivFOp>>(typeConverter, ctxt);
-   patterns.insert<BinOpLowering<db::ModOp, mlir::FloatType, arith::RemFOp>>(typeConverter, ctxt);
+      RewritePatternSet patterns(&getContext());
 
-   patterns.insert<DecimalBinOpLowering<db::AddOp, arith::AddIOp>>(typeConverter, ctxt);
-   patterns.insert<DecimalBinOpLowering<db::SubOp, arith::SubIOp>>(typeConverter, ctxt);
-   patterns.insert<DecimalMulOpLowering>(typeConverter, ctxt);
-   patterns.insert<DecimalOpScaledLowering<db::DivOp, arith::DivSIOp>>(typeConverter, ctxt);
-   patterns.insert<DecimalOpScaledLowering<db::ModOp, arith::RemSIOp>>(typeConverter, ctxt);
+      mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, typeConverter);
+      mlir::populateCallOpTypeConversionPattern(patterns, typeConverter);
+      mlir::populateReturnOpTypeConversionPattern(patterns, typeConverter);
+      util::populateUtilTypeConversionPatterns(typeConverter, patterns);
+      mlir::scf::populateSCFStructuralTypeConversions(typeConverter, patterns);
+      patterns.insert<SimpleTypeConversionPattern<mlir::func::ConstantOp>>(typeConverter, &getContext());
+      patterns.insert<SimpleTypeConversionPattern<mlir::func::CallIndirectOp>>(typeConverter, &getContext());
+      patterns.insert<SimpleTypeConversionPattern<mlir::arith::SelectOp>>(typeConverter, &getContext());
+      // Arrow operations don't exist in pgx-lower - TODO: replace with PostgreSQL operations
+      // patterns.insert<LoadArrowOpLowering>(typeConverter, &getContext());
+      // patterns.insert<AppendArrowLowering>(typeConverter, &getContext());
+      // TODO: Fix lingodb runtime dependencies
+      // patterns.insert<StringCmpOpLowering>(typeConverter, ctxt);
+      // patterns.insert<CharCmpOpLowering>(typeConverter, ctxt);
+      // patterns.insert<StringCastOpLowering>(typeConverter, ctxt);
+      // patterns.insert<RuntimeCallLowering>(typeConverter, ctxt);
+      patterns.insert<CmpOpLowering>(typeConverter, ctxt);
+      patterns.insert<BetweenLowering>(typeConverter, ctxt);
+      patterns.insert<OneOfLowering>(typeConverter, ctxt);
+      patterns.insert<SortCompareLowering>(typeConverter, ctxt);
 
-   patterns.insert<NullOpLowering>(typeConverter, ctxt);
-   patterns.insert<IsNullOpLowering>(typeConverter, ctxt);
-   patterns.insert<AsNullableOpLowering>(typeConverter, ctxt);
-   patterns.insert<NullableGetValOpLowering>(typeConverter, ctxt);
+      patterns.insert<NotOpLowering>(typeConverter, ctxt);
 
-   patterns.insert<ConstantLowering>(typeConverter, ctxt);
-   patterns.insert<CastOpLowering>(typeConverter, ctxt);
-   patterns.insert<CastNoneOpLowering>(typeConverter, ctxt);
+      patterns.insert<AndOpLowering>(typeConverter, ctxt);
+      patterns.insert<OrOpLowering>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::AddOp, mlir::IntegerType, arith::AddIOp>>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::SubOp, mlir::IntegerType, arith::SubIOp>>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::MulOp, mlir::IntegerType, arith::MulIOp>>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::DivOp, mlir::IntegerType, arith::DivSIOp>>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::ModOp, mlir::IntegerType, arith::RemSIOp>>(typeConverter, ctxt);
 
-   patterns.insert<HashLowering>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::AddOp, mlir::FloatType, arith::AddFOp>>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::SubOp, mlir::FloatType, arith::SubFOp>>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::MulOp, mlir::FloatType, arith::MulFOp>>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::DivOp, mlir::FloatType, arith::DivFOp>>(typeConverter, ctxt);
+      patterns.insert<BinOpLowering<db::ModOp, mlir::FloatType, arith::RemFOp>>(typeConverter, ctxt);
 
-   if (failed(applyFullConversion(module, target, std::move(patterns))))
-      signalPassFailure();
-}
+      // TODO: Fix lingodb dependencies in decimal operations
+      // patterns.insert<DecimalBinOpLowering<db::AddOp, arith::AddIOp>>(typeConverter, ctxt);
+      // patterns.insert<DecimalBinOpLowering<db::SubOp, arith::SubIOp>>(typeConverter, ctxt);
+      // patterns.insert<DecimalMulOpLowering>(typeConverter, ctxt);
+      // patterns.insert<DecimalOpScaledLowering<db::DivOp, arith::DivSIOp>>(typeConverter, ctxt);
+      // patterns.insert<DecimalOpScaledLowering<db::ModOp, arith::RemSIOp>>(typeConverter, ctxt);
+
+      patterns.insert<NullOpLowering>(typeConverter, ctxt);
+      patterns.insert<IsNullOpLowering>(typeConverter, ctxt);
+      patterns.insert<AsNullableOpLowering>(typeConverter, ctxt);
+      patterns.insert<NullableGetValOpLowering>(typeConverter, ctxt);
+
+      // TODO: Fix lingodb dependencies
+      // patterns.insert<ConstantLowering>(typeConverter, ctxt);
+      // patterns.insert<CastOpLowering>(typeConverter, ctxt);
+      patterns.insert<CastNoneOpLowering>(typeConverter, ctxt);
+
+      patterns.insert<HashLowering>(typeConverter, ctxt);
+
+      if (failed(applyFullConversion(module, target, std::move(patterns))))
+         signalPassFailure();
+   }
+};
+
+} // end anonymous namespace
+
+namespace pgx_lower::compiler::dialect {
 
 std::unique_ptr<mlir::Pass>
 db::createLowerToStdPass() {
    return std::make_unique<DBToStdLoweringPass>();
 }
 void db::createLowerDBPipeline(mlir::OpPassManager& pm) {
-   pm.addPass(createEliminateNullsPass());
-   pm.addPass(createOptimizeRuntimeFunctionsPass());
+   // TODO: Implement these passes for pgx-lower
+   // pm.addPass(createEliminateNullsPass());
+   // pm.addPass(createOptimizeRuntimeFunctionsPass());
    pm.addPass(createLowerToStdPass());
 }
 void db::registerDBConversionPasses() {
-   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-      return createOptimizeRuntimeFunctionsPass();
-   });
-   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-      return createEliminateNullsPass();
-   });
+   // TODO: Implement these passes for pgx-lower
+   // ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+   //    return createOptimizeRuntimeFunctionsPass();
+   // });
+   // ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+   //    return createEliminateNullsPass();
+   // });
    ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
       return createLowerToStdPass();
    });
-   mlir::PassPipelineRegistration<EmptyPipelineOptions>(
-      "lower-db",
-      "",
-      createLowerDBPipeline);
+   // TODO: Fix EmptyPipelineOptions
+   // mlir::PassPipelineRegistration<EmptyPipelineOptions>(
+   //    "lower-db",
+   //    "",
+   //    createLowerDBPipeline);
 }
+
+} // namespace pgx_lower::compiler::dialect

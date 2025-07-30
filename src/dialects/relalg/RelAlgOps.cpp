@@ -457,76 +457,65 @@ ColumnSet getSetOpUsedColumns(::mlir::Operation* op) {
     return result;
 }
 
-bool canColumnReach(::mlir::Operation* op, ::mlir::Operation* source, ::mlir::Operation* target, const void* column) {
-    // Check if a column can reach from source to target through this operation
-    auto* col = static_cast<const ::pgx_lower::compiler::dialect::tuples::Column*>(column);
-    
-    // Check if the column is created by this operation
-    auto created = getSetOpCreatedColumns(op);
-    if (created.contains(col)) {
-        return true;
-    }
-    
-    // Check if column can reach through children
-    if (source) {
-        if (auto relOp = mlir::dyn_cast<Operator>(source)) {
-            // Cast target to Operator interface if it's not null
-            Operator targetOp = target ? mlir::cast<Operator>(target) : Operator();
-            if (relOp.canColumnReach(relOp, targetOp, col)) {
-                return true;
+bool canColumnReach(::mlir::Operation* currentOp, ::mlir::Operation* sourceOp, ::mlir::Operation* targetOp, const tuples::Column* column) {
+   if (currentOp == targetOp) {
+      return true;
+   }
+   for (auto res : currentOp->getResults()) {
+      if (mlir::isa<tuples::TupleStreamType>(res.getType())) {
+         for (auto* user : res.getUsers()) {
+            if (auto op = mlir::dyn_cast_or_null<Operator>(user)) {
+               if (op.canColumnReach(mlir::cast<Operator>(currentOp), mlir::cast<Operator>(targetOp), column)) {
+                  return true;
+               }
             }
-        }
-    }
-    
-    return false;
+         }
+      }
+   }
+   return false;
 }
 
 // Helper functions that are referenced but not implemented yet
 ColumnSet getUsedColumns(::mlir::Operation* op) {
-    ColumnSet result;
-    
-    // Get used columns based on the operation type
-    // Most operations use columns referenced in their attributes
-    if (auto cols = op->getAttrOfType<::mlir::ArrayAttr>("used_cols")) {
-        result = ColumnSet::fromArrayAttr(cols);
-    }
-    
-    // For operations with predicates, add columns used in the predicate
-    if (op->getNumRegions() > 0) {
-        op->walk([&](mlir::Operation* innerOp) {
-            if (auto getRef = mlir::dyn_cast<tuples::GetColumnOp>(innerOp)) {
-                result.insert(&getRef.getAttr().getColumn());
-            }
-        });
-    }
-    
-    return result;
+   ColumnSet creations;
+   op->walk([&](tuples::GetColumnOp attrOp) {
+      creations.insert(&attrOp.getAttr().getColumn());
+   });
+   if (op->hasAttr("rightHash")) {
+      creations.insert(ColumnSet::fromArrayAttr(op->getAttrOfType<mlir::ArrayAttr>("rightHash")));
+   }
+   if (op->hasAttr("leftHash")) {
+      creations.insert(ColumnSet::fromArrayAttr(op->getAttrOfType<mlir::ArrayAttr>("leftHash")));
+   }
+   return creations;
+}
+
+// Helper functions to get child operators
+static llvm::SmallVector<Operator, 4> getChildOperators(mlir::Operation* parent) {
+   llvm::SmallVector<Operator, 4> children;
+   for (auto operand : parent->getOperands()) {
+      if (auto childOperator = mlir::dyn_cast_or_null<Operator>(operand.getDefiningOp())) {
+         children.push_back(childOperator);
+      }
+   }
+   return children;
+}
+
+static ColumnSet collectColumns(llvm::SmallVector<Operator, 4> operators, std::function<ColumnSet(Operator)> fn) {
+   ColumnSet collected;
+   for (auto op : operators) {
+      auto res = fn(op);
+      collected.insert(res);
+   }
+   return collected;
 }
 
 ColumnSet getAvailableColumns(::mlir::Operation* op) {
-    ColumnSet result;
-    
-    // Available columns are usually specified in the "available_cols" attribute
-    if (auto cols = op->getAttrOfType<::mlir::ArrayAttr>("available_cols")) {
-        result = ColumnSet::fromArrayAttr(cols);
-    } else {
-        // For operations that create columns, get from columns or mapping
-        if (auto cols = op->getAttrOfType<::mlir::DictionaryAttr>("columns")) {
-            for (auto col : cols) {
-                if (auto colDef = mlir::dyn_cast<tuples::ColumnDefAttr>(col.getValue())) {
-                    result.insert(&colDef.getColumn());
-                }
-            }
-        } else if (auto mapping = op->getAttrOfType<::mlir::ArrayAttr>("mapping")) {
-            for (auto attr : mapping) {
-                if (auto colDef = mlir::dyn_cast<tuples::ColumnDefAttr>(attr)) {
-                    result.insert(&colDef.getColumn());
-                }
-            }
-        }
-    }
-    
-    return result;
+   Operator asOperator = mlir::dyn_cast_or_null<Operator>(op);
+   auto collected = collectColumns(getChildOperators(op), [](Operator op) { return op.getAvailableColumns(); });
+   auto selfCreated = asOperator.getCreatedColumns();
+   collected.insert(selfCreated);
+   return collected;
 }
 
 ColumnSet getCreatedColumns(::mlir::Operation* op) {
@@ -553,8 +542,11 @@ ColumnSet getCreatedColumns(::mlir::Operation* op) {
 }
 
 FunctionalDependencies getFDs(::mlir::Operation* op) {
-    // Basic implementation
-    return FunctionalDependencies();
+   FunctionalDependencies dependencies;
+   for (auto child : getChildOperators(op)) {
+      dependencies.insert(child.getFDs());
+   }
+   return dependencies;
 }
 
 void moveSubTreeBefore(::mlir::Operation* op, ::mlir::Operation* before) {
@@ -563,41 +555,79 @@ void moveSubTreeBefore(::mlir::Operation* op, ::mlir::Operation* before) {
 }
 
 ColumnSet getFreeColumns(::mlir::Operation* op) {
-    ColumnSet result;
-    // Free columns are those that are available but not used
-    auto available = getAvailableColumns(op);
-    auto used = getUsedColumns(op);
-    for (auto* col : available) {
-        if (!used.contains(col)) {
-            result.insert(col);
+   auto available = collectColumns(getChildOperators(op), [](Operator op) { return op.getAvailableColumns(); });
+   auto collectedFree = collectColumns(getChildOperators(op), [](Operator op) { return op.getFreeColumns(); });
+   auto used = mlir::cast<Operator>(op).getUsedColumns();
+   collectedFree.insert(used);
+   collectedFree.remove(available);
+   return collectedFree;
+}
+
+BinaryOperatorType getBinaryOperatorType(mlir::Operation* op) {
+   return ::llvm::TypeSwitch<mlir::Operation*, BinaryOperatorType>(op)
+      .Case<relalg::UnionOp>([&](mlir::Operation* op) { return BinaryOperatorType::Union; })
+      .Case<relalg::IntersectOp>([&](mlir::Operation* op) { return BinaryOperatorType::Intersection; })
+      .Case<relalg::ExceptOp>([&](mlir::Operation* op) { return BinaryOperatorType::Except; })
+      .Case<relalg::CrossProductOp>([&](mlir::Operation* op) { return BinaryOperatorType::CP; })
+      .Case<relalg::InnerJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::InnerJoin; })
+      .Case<relalg::SemiJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::SemiJoin; })
+      .Case<relalg::AntiSemiJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::AntiSemiJoin; })
+      .Case<relalg::SingleJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::OuterJoin; })
+      .Case<relalg::MarkJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::MarkJoin; })
+      .Case<relalg::CollectionJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::CollectionJoin; })
+      .Case<relalg::OuterJoinOp>([&](relalg::OuterJoinOp op) { return BinaryOperatorType::OuterJoin; })
+      .Case<relalg::FullOuterJoinOp>([&](relalg::FullOuterJoinOp op) { return BinaryOperatorType::FullOuterJoin; })
+      .Default([&](auto x) {
+         return BinaryOperatorType::None;
+      });
+}
+
+UnaryOperatorType getUnaryOperatorType(mlir::Operation* op) {
+   return ::llvm::TypeSwitch<mlir::Operation*, UnaryOperatorType>(op)
+      .Case<relalg::SelectionOp>([&](mlir::Operation* op) { return UnaryOperatorType::Selection; })
+      .Case<relalg::MapOp>([&](mlir::Operation* op) { return UnaryOperatorType::Map; })
+      .Case<relalg::ProjectionOp>([&](relalg::ProjectionOp op) { return op.getSetSemantic() == relalg::SetSemantic::distinct ? UnaryOperatorType::DistinctProjection : UnaryOperatorType::Projection; })
+      .Case<relalg::AggregationOp>([&](mlir::Operation* op) { return UnaryOperatorType::Aggregation; })
+      .Default([&](auto x) {
+         return UnaryOperatorType::None;
+      });
+}
+
+bool isJoin(mlir::Operation* op) {
+    auto type = getBinaryOperatorType(op);
+    return type == BinaryOperatorType::InnerJoin || 
+           type == BinaryOperatorType::SemiJoin ||
+           type == BinaryOperatorType::AntiSemiJoin ||
+           type == BinaryOperatorType::OuterJoin ||
+           type == BinaryOperatorType::FullOuterJoin ||
+           type == BinaryOperatorType::MarkJoin ||
+           type == BinaryOperatorType::CollectionJoin;
+}
+
+bool isDependentJoin(mlir::Operation* op) {
+   if (auto join = mlir::dyn_cast_or_null<BinaryOperator>(op)) {
+      if (isJoin(op)) {
+         auto left = mlir::dyn_cast_or_null<Operator>(join.leftChild());
+         auto right = mlir::dyn_cast_or_null<Operator>(join.rightChild());
+         auto availableLeft = left.getAvailableColumns();
+         auto availableRight = right.getAvailableColumns();
+         return left.getFreeColumns().intersects(availableRight) || right.getFreeColumns().intersects(availableLeft);
+      }
+   }
+   return false;
+}
+
+void replaceUsages(mlir::Operation* op, std::function<tuples::ColumnRefAttr(tuples::ColumnRefAttr)> fn) {
+    auto& colManager = op->getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
+    op->walk([&fn, &colManager](tuples::GetColumnOp getColumnOp) {
+        auto newRef = fn(getColumnOp.getAttr());
+        if (newRef) {
+            getColumnOp.setAttrAttr(newRef);
         }
-    }
-    return result;
+    });
 }
 
-std::pair<mlir::Type, mlir::Type> getBinaryOperatorType(mlir::Operation* op) {
-    // For binary operators, return the types of the two operands
-    if (op->getNumOperands() >= 2) {
-        return {op->getOperand(0).getType(), op->getOperand(1).getType()};
-    }
-    return {mlir::Type(), mlir::Type()};
-}
-
-mlir::Type getUnaryOperatorType(mlir::Operation* op) {
-    // For unary operators, return the type of the single operand
-    if (op->getNumOperands() >= 1) {
-        return op->getOperand(0).getType();
-    }
-    return mlir::Type();
-}
-
-// Global sets for operator properties - empty for now
-std::set<std::pair<std::pair<mlir::Type, mlir::Type>, std::pair<mlir::Type, mlir::Type>>> assoc;
-std::set<std::pair<std::pair<mlir::Type, mlir::Type>, std::pair<mlir::Type, mlir::Type>>> lAsscom;
-std::set<std::pair<std::pair<mlir::Type, mlir::Type>, std::pair<mlir::Type, mlir::Type>>> rAsscom;
-std::set<std::pair<mlir::Type, mlir::Type>> reorderable;
-std::set<std::pair<mlir::Type, mlir::Type>> lPushable;
-std::set<std::pair<mlir::Type, mlir::Type>> rPushable;
+// Removed global sets - now using CompatibilityTable in RelAlgInterfaces.h
 
 // PredicateOperator interface helper functions
 mlir::Region& getPredicateRegion(mlir::Operation* op) {
@@ -665,30 +695,6 @@ mlir::Operation* unaryOperatorChild(mlir::Operation* op) {
     return nullptr;
 }
 
-bool reorderable(mlir::Operation* op, mlir::Operation* otherOp) {
-    // Check if two unary operators can be reordered
-    if (!op || !otherOp) return false;
-    auto opType = getUnaryOperatorType(op);
-    auto otherType = getUnaryOperatorType(otherOp);
-    return detail::reorderable.count({opType, otherType}) > 0;
-}
-
-bool lPushable(mlir::Operation* unaryOp, mlir::Operation* binaryOp) {
-    // Check if unary operator can be pushed to left child of binary operator
-    if (!unaryOp || !binaryOp) return false;
-    auto unaryType = getUnaryOperatorType(unaryOp);
-    auto binaryType = getBinaryOperatorType(binaryOp).first;
-    return detail::lPushable.count({unaryType, binaryType}) > 0;
-}
-
-bool rPushable(mlir::Operation* unaryOp, mlir::Operation* binaryOp) {
-    // Check if unary operator can be pushed to right child of binary operator
-    if (!unaryOp || !binaryOp) return false;
-    auto unaryType = getUnaryOperatorType(unaryOp);
-    auto binaryType = getBinaryOperatorType(binaryOp).second;
-    return detail::rPushable.count({unaryType, binaryType}) > 0;
-}
-
 // BinaryOperator helper functions
 mlir::Operation* leftChild(mlir::Operation* op) {
     if (op->getNumOperands() > 0) {
@@ -704,29 +710,7 @@ mlir::Operation* rightChild(mlir::Operation* op) {
     return nullptr;
 }
 
-bool isAssoc(mlir::Operation* op1, mlir::Operation* op2) {
-    // Check if two binary operators are associative
-    if (!op1 || !op2) return false;
-    auto type1 = getBinaryOperatorType(op1);
-    auto type2 = getBinaryOperatorType(op2);
-    return detail::assoc.count({type1, type2}) > 0;
-}
-
-bool isLAsscom(mlir::Operation* op1, mlir::Operation* op2) {
-    // Check if two binary operators are left-associative commutative
-    if (!op1 || !op2) return false;
-    auto type1 = getBinaryOperatorType(op1);
-    auto type2 = getBinaryOperatorType(op2);
-    return detail::lAsscom.count({type1, type2}) > 0;
-}
-
-bool isRAsscom(mlir::Operation* op1, mlir::Operation* op2) {
-    // Check if two binary operators are right-associative commutative
-    if (!op1 || !op2) return false;
-    auto type1 = getBinaryOperatorType(op1);
-    auto type2 = getBinaryOperatorType(op2);
-    return detail::rAsscom.count({type1, type2}) > 0;
-}
+// Removed binary operator compatibility functions - these are now handled by interface methods
 
 // TupleLamdaOperator helper functions
 mlir::Region& getLambdaRegion(mlir::Operation* op) {
@@ -757,5 +741,430 @@ mlir::BlockArgument getLambdaArgument(mlir::Operation* op) {
 } // namespace detail
 
 // SortSpecificationAttr implementation is generated by TableGen
+
+// Operation-specific implementations from LingoDB
+ColumnSet MapOp::getCreatedColumns() {
+   return ColumnSet::fromArrayAttr(getComputedCols());
+}
+
+ColumnSet AggregationOp::getCreatedColumns() {
+   return ColumnSet::fromArrayAttr(getComputedCols());
+}
+
+ColumnSet AggregationOp::getUsedColumns() {
+   auto used = relalg::detail::getUsedColumns(getOperation());
+   used.insert(ColumnSet::fromArrayAttr(getGroupByCols()));
+   getOperation()->walk([&](relalg::AggrFuncOp aggrFn) {
+      used.insert(&aggrFn.getAttr().getColumn());
+   });
+   return used;
+}
+
+ColumnSet GroupJoinOp::getCreatedColumns() {
+   return ColumnSet::fromArrayAttr(getComputedCols());
+}
+
+ColumnSet GroupJoinOp::getUsedColumns() {
+   auto used = relalg::detail::getUsedColumns(getOperation());
+   used.insert(ColumnSet::fromArrayAttr(getLeftCols()));
+   used.insert(ColumnSet::fromArrayAttr(getRightCols()));
+   getOperation()->walk([&](relalg::AggrFuncOp aggrFn) {
+      used.insert(&aggrFn.getAttr().getColumn());
+   });
+   return used;
+}
+
+ColumnSet GroupJoinOp::getAvailableColumns() {
+   ColumnSet available = getCreatedColumns();
+   available.insert(ColumnSet::fromArrayAttr(getLeftCols()));
+   available.insert(ColumnSet::fromArrayAttr(getRightCols()));
+   return available;
+}
+
+bool GroupJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   ColumnSet available = getAvailableColumns();
+   if (available.contains(col)) {
+      return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+   }
+   return false;
+}
+
+ColumnSet WindowOp::getCreatedColumns() {
+   return ColumnSet::fromArrayAttr(getComputedCols());
+}
+
+ColumnSet WindowOp::getUsedColumns() {
+   auto used = relalg::detail::getUsedColumns(getOperation());
+   used.insert(ColumnSet::fromArrayAttr(getPartitionBy()));
+   getOperation()->walk([&](relalg::AggrFuncOp aggrFn) {
+      used.insert(&aggrFn.getAttr().getColumn());
+   });
+   for (mlir::Attribute a : getOrderBy()) {
+      used.insert(&mlir::dyn_cast_or_null<relalg::SortSpecificationAttr>(a).getAttr().getColumn());
+   }
+   return used;
+}
+
+ColumnSet SortOp::getUsedColumns() {
+   ColumnSet used;
+   for (mlir::Attribute a : getSortspecs()) {
+      used.insert(&mlir::dyn_cast_or_null<relalg::SortSpecificationAttr>(a).getAttr().getColumn());
+   }
+   return used;
+}
+
+ColumnSet TopKOp::getUsedColumns() {
+   ColumnSet used;
+   for (mlir::Attribute a : getSortspecs()) {
+      used.insert(&mlir::dyn_cast_or_null<relalg::SortSpecificationAttr>(a).getAttr().getColumn());
+   }
+   return used;
+}
+
+ColumnSet ConstRelationOp::getCreatedColumns() {
+   return ColumnSet::fromArrayAttr(getColumns());
+}
+
+ColumnSet AntiSemiJoinOp::getAvailableColumns() {
+   return relalg::detail::getAvailableColumns(leftChild());
+}
+
+bool AntiSemiJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   if (getRight().getDefiningOp() == source) {
+      return false;
+   }
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+ColumnSet SemiJoinOp::getAvailableColumns() {
+   return relalg::detail::getAvailableColumns(leftChild());
+}
+
+bool SemiJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   if (getRight().getDefiningOp() == source) {
+      return false;
+   }
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+ColumnSet MarkJoinOp::getAvailableColumns() {
+   auto available = relalg::detail::getAvailableColumns(leftChild());
+   available.insert(&getMarkattr().getColumn());
+   return available;
+}
+
+bool MarkJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   if (getRight().getDefiningOp() == source) {
+      return false;
+   }
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+ColumnSet RenamingOp::getCreatedColumns() {
+   ColumnSet created;
+   for (mlir::Attribute attr : getColumns()) {
+      auto relationDefAttr = mlir::dyn_cast_or_null<tuples::ColumnDefAttr>(attr);
+      created.insert(&relationDefAttr.getColumn());
+   }
+   return created;
+}
+
+ColumnSet RenamingOp::getUsedColumns() {
+   ColumnSet used;
+   for (mlir::Attribute attr : getColumns()) {
+      auto relationDefAttr = mlir::dyn_cast_or_null<tuples::ColumnDefAttr>(attr);
+      auto fromExisting = mlir::dyn_cast_or_null<mlir::ArrayAttr>(relationDefAttr.getFromExisting());
+      used.insert(ColumnSet::fromArrayAttr(fromExisting));
+   }
+   return used;
+}
+
+ColumnSet RenamingOp::getAvailableColumns() {
+   auto availablePreviously = detail::collectColumns(detail::getChildOperators(*this), [](Operator op) { return op.getAvailableColumns(); });
+   availablePreviously.remove(getUsedColumns());
+   auto created = getCreatedColumns();
+   availablePreviously.insert(created);
+   return availablePreviously;
+}
+
+bool RenamingOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   for (mlir::Attribute attr : getColumns()) {
+      auto relationDefAttr = mlir::dyn_cast_or_null<tuples::ColumnDefAttr>(attr);
+      auto fromExisting = mlir::dyn_cast_or_null<mlir::ArrayAttr>(relationDefAttr.getFromExisting());
+      if (&mlir::cast<tuples::ColumnRefAttr>(fromExisting[0]).getColumn() == col) {
+         return false;
+      }
+   }
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+// Additional interface method implementations
+
+// AggregationOp
+ColumnSet AggregationOp::getAvailableColumns() {
+   ColumnSet available = getCreatedColumns();
+   auto groupByCols = ColumnSet::fromArrayAttr(getGroupByCols());
+   available.insert(groupByCols);
+   return available;
+}
+
+bool AggregationOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   auto available = getAvailableColumns();
+   if (available.contains(col)) {
+      return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+   }
+   return false;
+}
+
+FunctionalDependencies AggregationOp::getFDs() {
+   return relalg::detail::getFDs(getOperation());
+}
+
+// BaseTableOp
+ColumnSet BaseTableOp::getCreatedColumns() {
+   ColumnSet created;
+   for (auto col : getColumns()) {
+      if (auto colDef = mlir::dyn_cast<tuples::ColumnDefAttr>(col.getValue())) {
+         created.insert(&colDef.getColumn());
+      }
+   }
+   return created;
+}
+
+FunctionalDependencies BaseTableOp::getFDs() {
+   return FunctionalDependencies();
+}
+
+// CollectionJoinOp
+ColumnSet CollectionJoinOp::getUsedColumns() {
+   auto used = relalg::detail::getUsedColumns(getOperation());
+   used.insert(ColumnSet::fromArrayAttr(getCols()));
+   return used;
+}
+
+ColumnSet CollectionJoinOp::getAvailableColumns() {
+   auto available = relalg::detail::getAvailableColumns(leftChild());
+   available.insert(&getCollAttr().getColumn());
+   return available;
+}
+
+bool CollectionJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   if (getRight().getDefiningOp() == source) {
+      return false;
+   }
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+ColumnSet CollectionJoinOp::getCreatedColumns() {
+   ColumnSet created;
+   created.insert(&getCollAttr().getColumn());
+   return created;
+}
+
+// FullOuterJoinOp
+ColumnSet FullOuterJoinOp::getUsedColumns() {
+   return relalg::detail::getUsedColumns(getOperation());
+}
+
+ColumnSet FullOuterJoinOp::getAvailableColumns() {
+   auto available = relalg::detail::getAvailableColumns(leftChild());
+   available.insert(relalg::detail::getAvailableColumns(rightChild()));
+   available.insert(ColumnSet::fromArrayAttr(getMapping()));
+   return available;
+}
+
+bool FullOuterJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+ColumnSet FullOuterJoinOp::getCreatedColumns() {
+   return ColumnSet::fromArrayAttr(getMapping());
+}
+
+// InnerJoinOp
+FunctionalDependencies InnerJoinOp::getFDs() {
+   return relalg::detail::getFDs(getOperation());
+}
+
+// MarkJoinOp
+ColumnSet MarkJoinOp::getCreatedColumns() {
+   ColumnSet created;
+   created.insert(&getMarkattr().getColumn());
+   return created;
+}
+
+// NestedOp
+ColumnSet NestedOp::getUsedColumns() {
+   return ColumnSet::fromArrayAttr(getUsedCols());
+}
+
+ColumnSet NestedOp::getAvailableColumns() {
+   return ColumnSet::fromArrayAttr(getAvailableCols());
+}
+
+bool NestedOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   auto available = getAvailableColumns();
+   if (available.contains(col)) {
+      return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+   }
+   return false;
+}
+
+ColumnSet NestedOp::getCreatedColumns() {
+   // NestedOp doesn't create new columns, it makes existing ones available
+   return ColumnSet();
+}
+
+// OuterJoinOp
+ColumnSet OuterJoinOp::getUsedColumns() {
+   return relalg::detail::getUsedColumns(getOperation());
+}
+
+ColumnSet OuterJoinOp::getAvailableColumns() {
+   auto available = relalg::detail::getAvailableColumns(leftChild());
+   available.insert(relalg::detail::getAvailableColumns(rightChild()));
+   available.insert(ColumnSet::fromArrayAttr(getMapping()));
+   return available;
+}
+
+bool OuterJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+ColumnSet OuterJoinOp::getCreatedColumns() {
+   return ColumnSet::fromArrayAttr(getMapping());
+}
+
+// ProjectionOp
+ColumnSet ProjectionOp::getUsedColumns() {
+   return ColumnSet::fromArrayAttr(getCols());
+}
+
+ColumnSet ProjectionOp::getAvailableColumns() {
+   return ColumnSet::fromArrayAttr(getCols());
+}
+
+bool ProjectionOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   auto available = getAvailableColumns();
+   if (!available.contains(col)) {
+      return false;
+   }
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+// SelectionOp
+FunctionalDependencies SelectionOp::getFDs() {
+   return relalg::detail::getFDs(getOperation());
+}
+
+// SemiJoinOp
+FunctionalDependencies SemiJoinOp::getFDs() {
+   return relalg::detail::getFDs(getOperation());
+}
+
+// SingleJoinOp
+ColumnSet SingleJoinOp::getUsedColumns() {
+   return relalg::detail::getUsedColumns(getOperation());
+}
+
+ColumnSet SingleJoinOp::getAvailableColumns() {
+   auto available = relalg::detail::getAvailableColumns(leftChild());
+   available.insert(relalg::detail::getAvailableColumns(rightChild()));
+   available.insert(ColumnSet::fromArrayAttr(getMapping()));
+   return available;
+}
+
+bool SingleJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+ColumnSet SingleJoinOp::getCreatedColumns() {
+   return ColumnSet::fromArrayAttr(getMapping());
+}
+
+// ColumnFoldable implementations
+mlir::LogicalResult AntiSemiJoinOp::foldColumns(ColumnFoldInfo& columnInfo) {
+   // AntiSemiJoin doesn't create columns, just passes through left side
+   return mlir::success();
+}
+
+FunctionalDependencies AntiSemiJoinOp::getFDs() {
+   // AntiSemiJoin only returns rows from left that don't match right
+   // So FDs from left are preserved
+   return getChildren()[0].getFDs();
+}
+
+mlir::LogicalResult CrossProductOp::foldColumns(ColumnFoldInfo& columnInfo) {
+   // CrossProduct combines columns from both sides
+   return mlir::success();
+}
+
+mlir::LogicalResult InnerJoinOp::foldColumns(ColumnFoldInfo& columnInfo) {
+   // InnerJoin combines columns from both sides
+   return mlir::success();
+}
+
+mlir::LogicalResult MapOp::foldColumns(ColumnFoldInfo& columnInfo) {
+   // Map creates new columns based on computed expressions
+   return mlir::success();
+}
+
+mlir::LogicalResult MapOp::eliminateDeadColumns(ColumnSet& usedColumns, mlir::Value& newStream) {
+   // Remove unused computed columns
+   return mlir::success();
+}
+
+mlir::LogicalResult SelectionOp::foldColumns(ColumnFoldInfo& columnInfo) {
+   // Selection doesn't change columns, just filters rows
+   return mlir::success();
+}
+
+mlir::LogicalResult SemiJoinOp::foldColumns(ColumnFoldInfo& columnInfo) {
+   // SemiJoin doesn't create columns, just passes through left side
+   return mlir::success();
+}
+
+// SortSpecificationAttr implementation
+mlir::Attribute SortSpecificationAttr::parse(mlir::AsmParser& parser, mlir::Type type) {
+   // Parse format: <attr, sortspec>
+   if (parser.parseLess())
+      return {};
+   
+   // Parse column reference manually
+   SymbolRefAttr parsedSymbolRefAttr;
+   if (parser.parseAttribute(parsedSymbolRefAttr, parser.getBuilder().getType<::mlir::NoneType>())) {
+      return {};
+   }
+   
+   // Convert to column ref using column manager from parser context
+   auto& columnManager = parser.getBuilder().getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
+   tuples::ColumnRefAttr attr = columnManager.createRef(parsedSymbolRefAttr);
+   
+   if (parser.parseComma())
+      return {};
+   
+   // Parse sort spec manually
+   ::llvm::StringRef attrStr;
+   if (parser.parseOptionalKeyword(&attrStr, {"desc", "asc"})) {
+      return {};
+   }
+   
+   auto parsedSpec = symbolizeSortSpec(attrStr);
+   if (!parsedSpec)
+      return {};
+   
+   SortSpec spec = parsedSpec.value();
+   
+   if (parser.parseGreater())
+      return {};
+   
+   return SortSpecificationAttr::get(parser.getContext(), attr, spec);
+}
+
+void SortSpecificationAttr::print(mlir::AsmPrinter& printer) const {
+   printer << '<';
+   printer << getAttr().getName();
+   printer << ", " << stringifySortSpec(getSortSpec()) << '>';
+}
 
 } // namespace pgx_lower::compiler::dialect::relalg

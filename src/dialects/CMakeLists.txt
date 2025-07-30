@@ -157,6 +157,8 @@ add_library(MLIRSubOpDialect STATIC
 add_library(MLIRDBDialect STATIC
     db/DBDialect.cpp
     db/DBOps.cpp
+    db/DBTypes.cpp
+    db/LowerDBToDSA.cpp
     db/LowerDBToLLVM.cpp
 )
 
@@ -181,6 +183,8 @@ add_library(MLIRUtilDialect STATIC
     util/FunctionHelper.cpp
     util/UtilOps.cpp
     util/UtilTypes.cpp
+    util/LowerDSAToLLVM.cpp
+    relalg/Conversion/UtilToLLVM/UtilTypeConversion.cpp
 )
 
 # Configure RelAlg dialect library
