@@ -112,8 +112,17 @@ class BaseTableLowering : public OpConversionPattern<relalg::BaseTableOp> {
          rewriter.getStringAttr(scanDescription)
       );
       
-      // Replace the BaseTableOp with a ScanOp that reads from the external table
-      rewriter.replaceOpWithNewOp<subop::ScanOp>(baseTableOp, tableRef, rewriter.getDictionaryAttr(mapping));
+      // Create a ScanOp that reads from the external table
+      // Note: We need to create the ScanOp that produces a TupleStream, not replaces the BaseTableOp directly
+      auto scanOp = rewriter.create<subop::ScanOp>(
+         loc, 
+         tuples::TupleStreamType::get(rewriter.getContext()),
+         tableRef, 
+         rewriter.getDictionaryAttr(mapping)
+      );
+      
+      // Replace the BaseTableOp with the ScanOp's result
+      rewriter.replaceOp(baseTableOp, scanOp.getResult());
       return success();
    }
 };

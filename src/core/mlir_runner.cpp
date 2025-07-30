@@ -128,8 +128,23 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             return false;
         }
         logger.notice("Phase 1 completed successfully");
-        logger.notice("Module after RelAlg → SubOp lowering:");
-        module.dump();
+        
+        // Check what's inside ExecutionGroupOp
+        module.walk([&](pgx_lower::compiler::dialect::subop::ExecutionGroupOp execGroup) {
+            logger.notice("Found ExecutionGroupOp");
+            logger.notice("Number of regions: " + std::to_string(execGroup->getNumRegions()));
+            if (execGroup.getSubOps().empty()) {
+                logger.error("ExecutionGroupOp has empty subOps region!");
+            } else {
+                logger.notice("ExecutionGroupOp has " + std::to_string(execGroup.getSubOps().getBlocks().size()) + " blocks");
+                for (auto& block : execGroup.getSubOps()) {
+                    logger.notice("Block has " + std::to_string(block.getOperations().size()) + " operations");
+                    for (auto& op : block) {
+                        logger.notice("  Operation: " + op.getName().getStringRef().str());
+                    }
+                }
+            }
+        });
     }
     
     // Phase 2: SubOp transforms (minimal set for now)
@@ -197,8 +212,56 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("FinalizePass completed");
     }
     
-    // Skip SplitIntoExecutionStepsPass for now - it's crashing on simple queries
-    logger.notice("Skipping SplitIntoExecutionStepsPass (crashes on simple queries)");
+    // Try SplitIntoExecutionStepsPass with debug info
+    logger.notice("Testing SplitIntoExecutionStepsPass with debugging...");
+    
+    // First check if we have ExecutionGroupOp
+    bool hasExecutionGroup = false;
+    module.walk([&](pgx_lower::compiler::dialect::subop::ExecutionGroupOp execGroup) {
+        hasExecutionGroup = true;
+        logger.notice("Before SplitIntoExecutionStepsPass - ExecutionGroupOp found");
+        logger.notice("SubOps region has " + std::to_string(execGroup.getSubOps().getBlocks().size()) + " blocks");
+        if (!execGroup.getSubOps().empty()) {
+            logger.notice("First block has " + std::to_string(execGroup.getSubOps().front().getOperations().size()) + " operations");
+            
+            // Debug each operation's operands
+            int opNum = 0;
+            for (auto& op : execGroup.getSubOps().front()) {
+                opNum++;
+                logger.notice("Op " + std::to_string(opNum) + ": " + op.getName().getStringRef().str());
+                
+                int tupleStreamOperands = 0;
+                for (auto operand : op.getOperands()) {
+                    if (mlir::isa<pgx_lower::compiler::dialect::tuples::TupleStreamType>(operand.getType())) {
+                        tupleStreamOperands++;
+                        logger.notice("  Has TupleStreamType operand #" + std::to_string(tupleStreamOperands));
+                        if (auto* producer = operand.getDefiningOp()) {
+                            logger.notice("    Producer: " + producer->getName().getStringRef().str());
+                        } else {
+                            logger.notice("    No producer (block argument?)");
+                        }
+                    }
+                }
+                logger.notice("  Total TupleStreamType operands: " + std::to_string(tupleStreamOperands));
+                if (tupleStreamOperands > 1) {
+                    logger.error("  *** This operation has multiple TupleStreamType operands - will cause assertion failure!");
+                }
+            }
+        }
+    });
+    
+    if (!hasExecutionGroup) {
+        logger.error("No ExecutionGroupOp found - can't run SplitIntoExecutionStepsPass");
+    } else {
+        auto pm_split = mlir::PassManager(&context);
+        pm_split.addPass(pgx_lower::compiler::dialect::subop::createSplitIntoExecutionStepsPass());
+        logger.notice("Running SplitIntoExecutionStepsPass...");
+        if (failed(pm_split.run(module))) {
+            logger.error("SplitIntoExecutionStepsPass failed!");
+            return false;
+        }
+        logger.notice("SplitIntoExecutionStepsPass completed successfully!");
+    }
     
     // Test PrepareLoweringPass
     {
