@@ -1207,6 +1207,39 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       return success();
    }
 };
+
+// Simple ScanOp lowering for table types (without column references)
+class ScanOpLowering : public SubOpConversionPattern<subop::ScanOp> {
+   public:
+   using SubOpConversionPattern<subop::ScanOp>::SubOpConversionPattern;
+
+   LogicalResult matchAndRewrite(subop::ScanOp scanOp, OpAdaptor adaptor, SubOpRewriter& rewriter) const override {
+      // DEBUG: Add logging to see if pattern is invoked
+      llvm::errs() << "DEBUG: ScanOpLowering pattern invoked\n";
+      llvm::errs() << "DEBUG: Scan state type: " << scanOp.getState().getType() << "\n";
+      llvm::errs() << "DEBUG: Is TableType? " << mlir::isa<subop::TableType>(scanOp.getState().getType()) << "\n";
+      
+      if (!mlir::isa<subop::TableType>(scanOp.getState().getType())) {
+         llvm::errs() << "DEBUG: ScanOpLowering pattern failed type check\n";
+         return failure();
+      }
+      
+      // For simple table scanning without column references, we can just create a basic iteration
+      // This is a simplified version that doesn't handle column references like ScanRefsTableLowering
+      auto loc = scanOp->getLoc();
+      auto* context = rewriter.getContext();
+      
+      // Create a simple iterator for PostgreSQL table scanning
+      mlir::Value iterator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value());
+      
+      // For now, create a basic tuple stream result
+      ColumnMapping mapping;
+      rewriter.replaceTupleStream(scanOp, mapping);
+      
+      return success();
+   }
+};
+
 class MergeThreadLocalResultTable : public SubOpConversionPattern<subop::MergeOp> {
    public:
    using SubOpConversionPattern<subop::MergeOp>::SubOpConversionPattern;
@@ -1344,7 +1377,15 @@ class GetExternalTableLowering : public SubOpConversionPattern<subop::GetExterna
    using SubOpConversionPattern<subop::GetExternalOp>::SubOpConversionPattern;
 
    LogicalResult matchAndRewrite(subop::GetExternalOp op, OpAdaptor adaptor, SubOpRewriter& rewriter) const override {
-      if (!mlir::isa<subop::TableType>(op.getType())) return failure();
+      // DEBUG: Add logging to see if pattern is invoked
+      llvm::errs() << "DEBUG: GetExternalTableLowering pattern invoked\n";
+      llvm::errs() << "DEBUG: Operation type: " << op.getType() << "\n";
+      llvm::errs() << "DEBUG: Is TableType? " << mlir::isa<subop::TableType>(op.getType()) << "\n";
+      
+      if (!mlir::isa<subop::TableType>(op.getType())) {
+         llvm::errs() << "DEBUG: GetExternalTableLowering pattern failed type check\n";
+         return failure();
+      }
       
       // Create description for DataSource
       mlir::Value description = rewriter.create<util::CreateConstVarLen>(op->getLoc(), 
@@ -4277,6 +4318,7 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
    rewriter.insertPattern<LookupSimpleStateLowering>(typeConverter, ctxt);
    //Table
    rewriter.insertPattern<ScanRefsTableLowering>(typeConverter, ctxt);
+   rewriter.insertPattern<ScanOpLowering>(typeConverter, ctxt);
    //rewriter.insertPattern<ScanRefsLocalTableLowering>(typeConverter, ctxt);
    rewriter.insertPattern<TableRefGatherOpLowering>(typeConverter, ctxt);
    //Buffer

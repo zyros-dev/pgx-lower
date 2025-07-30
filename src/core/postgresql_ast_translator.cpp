@@ -155,14 +155,17 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     
     // Create relalg.basetable operation
     auto tableId = builder.getStringAttr("test_table");
-    auto columns = builder.getDictionaryAttr({}); // Empty columns for now
+    auto columns = builder.getDictionaryAttr({}); // Empty columns for now - TODO: Add proper column definitions
     
     auto baseTableOp = builder.create<pgx_lower::compiler::dialect::relalg::BaseTableOp>(
         location, tupleStreamType, tableId, columns);
     
     // For now, just materialize the result to trigger the lowering passes
+    // The add_tuple_to_result function expects an i64 tuple handle
+    auto i64Type = builder.getI64Type();
+    auto dummyTupleHandle = builder.create<mlir::arith::ConstantIntOp>(location, 1, i64Type);
     auto materializeOp = builder.create<mlir::func::CallOp>(
-        location, "add_tuple_to_result", mlir::TypeRange{}, mlir::ValueRange{});
+        location, "add_tuple_to_result", mlir::TypeRange{}, mlir::ValueRange{dummyTupleHandle});
     
     logger_.notice("Created dummy RelAlg query - BaseTableOp will be lowered through the pipeline");
     
@@ -827,7 +830,7 @@ auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& 
     // For now, we only declare functions that we can't avoid using yet
     
     // TODO Phase 11: Remove these once aggregate handling is pure RelAlg dialect
-    auto funcType = mlir::FunctionType::get(&context_, {i64Type}, {i1Type});
+    auto funcType = mlir::FunctionType::get(&context_, {i64Type}, {});
     auto addTupleFunc = builder_->create<mlir::func::FuncOp>(location, "add_tuple_to_result", funcType);
     addTupleFunc.setPrivate();
     

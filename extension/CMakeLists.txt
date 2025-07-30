@@ -39,12 +39,14 @@ add_postgresql_mixed_extension(
 # Note: PgxLowerRuntime removed to avoid symbol conflicts with my_executor.cpp
 # Note: MLIRPgDialect removed as we deleted the PG dialect
 target_link_libraries(pgx_lower PRIVATE 
+    -Wl,--no-as-needed
     MLIRSubOpDialect
     MLIRDBDialect
     MLIRDSADialect
     MLIRTupleStreamDialect
     MLIRRelAlgDialect
     MLIRUtilDialect
+    -Wl,--as-needed
 )
 
 # Add include directories for source files
