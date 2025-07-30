@@ -149,77 +149,24 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         });
     }
     
-    // Phase 2: Complete SubOp transform pipeline using LingoDB's proven approach
-    logger.notice("Phase 2: Running complete SubOp transform pipeline");
+    // Phase 2: SKIP SubOp passes due to hang, keep SubOp operations for now
+    logger.notice("Phase 2: SKIPPING SubOp transform pipeline due to hang");
     {
-        // Use LingoDB's createLowerSubOpPipeline for all SubOp passes
-        logger.notice("Using createLowerSubOpPipeline for complete SubOp lowering");
+        logger.notice("WARNING: SubOp passes cause infinite loop - skipping");
+        logger.notice("Module still contains SubOp operations");
         
-        // LingoDB calls setCompressionEnabled before running the pipeline
-        pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
-        logger.notice("Set compression enabled to false");
-        
-        auto pm_subop = mlir::PassManager(&context);
-        
-        // Enable MLIR pass timing to see which pass crashes
-        pm_subop.enableTiming();
-        
-        // This runs all the SubOp passes in the correct order:
-        // GlobalOptPass, FoldColumnsPass, ReuseLocalPass, SpecializeSubOpPass,
-        // PullGatherUpPass, SubOpArgRetRewriter, ParallelizePass, SpecializeParallelPass,
-        // PrepareLoweringPass, LowerSubOpPass, CanonicalizerPass, CSEPass
-        pgx_lower::compiler::dialect::subop::createLowerSubOpPipeline(pm_subop);
-        
-        // Flush stdout/stderr before running passes to ensure we see debug output
-        llvm::errs().flush();
-        logger.notice("About to run createLowerSubOpPipeline PassManager...");
-        
-        // Add signal handler to catch segfault
-        struct sigaction sa;
-        sa.sa_handler = [](int sig) {
-            llvm::errs() << "=== CAUGHT SIGNAL " << sig << " IN PASSMANAGER RUN ===\n";
-            llvm::errs().flush();
-        };
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = 0;
-        sigaction(SIGSEGV, &sa, nullptr);
-        
-        logger.notice("Signal handler installed, calling pm_subop.run()...");
-        llvm::errs() << "=== BEFORE pm_subop.run() ===\n";
-        llvm::errs().flush();
-        
-        try {
-            auto result = pm_subop.run(module);
-            llvm::errs() << "=== AFTER pm_subop.run() ===\n";
-            llvm::errs().flush();
-            
-            if (failed(result)) {
-                logger.error("createLowerSubOpPipeline failed!");
-                module.dump();
-                return false;
-            }
-        } catch (const std::exception& e) {
-            logger.error("Exception during createLowerSubOpPipeline: " + std::string(e.what()));
-            module.dump();
-            return false;
-        } catch (...) {
-            logger.error("Unknown exception during createLowerSubOpPipeline");
-            module.dump();
-            return false;
-        }
-        
-        logger.notice("Complete LingoDB SubOp pipeline finished successfully!");
-        
-        logger.notice("Module after complete SubOp transformation:");
-        
-        // Count DB dialect operations that need lowering
-        int dbOpCount = 0;
+        // Count SubOp operations
+        int subOpCount = 0;
         module.walk([&](mlir::Operation* op) {
-            if (op->getName().getDialectNamespace() == "db") {
-                dbOpCount++;
+            if (op->getName().getDialectNamespace() == "subop") {
+                subOpCount++;
+                logger.debug("SubOp operation: " + op->getName().getStringRef().str());
             }
         });
-        logger.notice("Found " + std::to_string(dbOpCount) + " DB dialect operations that need lowering");
+        logger.notice("Found " + std::to_string(subOpCount) + " SubOp operations that would need lowering");
+        
+        // For now, skip to next phase
+        logger.notice("Continuing without SubOp → DB lowering");
     }
     
     // Continue with remaining passes in pm

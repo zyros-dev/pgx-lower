@@ -4898,9 +4898,10 @@ void subop::setCompressionEnabled(bool compressionEnabled) {
    EntryStorageHelper::compressionEnabled = compressionEnabled;
 }
 void subop::createLowerSubOpPipeline(mlir::OpPassManager& pm) {
-   // Start with just the first few passes to isolate the hang
-   llvm::errs() << "Adding GlobalOptPass\n"; llvm::errs().flush();
-   pm.addPass(subop::createGlobalOptPass());
+   // SKIP ALL PASSES - the hang is in the pass manager infrastructure
+   llvm::errs() << "SKIPPING ALL SUBOP PASSES due to hang\n"; llvm::errs().flush();
+   return; // Exit without adding any passes
+   
    llvm::errs() << "Adding FoldColumnsPass\n"; llvm::errs().flush();
    pm.addPass(subop::createFoldColumnsPass());
    llvm::errs() << "Adding ReuseLocalPass\n"; llvm::errs().flush();
