@@ -21,9 +21,20 @@ class SplitIntoExecutionSteps : public mlir::PassWrapper<SplitIntoExecutionSteps
       // Step 1: split into different streams
       getOperation()->walk([&](subop::ExecutionGroupOp executionGroup) {
          llvm::errs() << "=== Found ExecutionGroupOp, processing... ===\n";
+         llvm::errs() << "ExecutionGroupOp has " << executionGroup.getSubOps().getBlocks().size() << " blocks\n";
+         
+         if (executionGroup.getSubOps().empty()) {
+            llvm::errs() << "ERROR: ExecutionGroupOp has empty SubOps region!\n";
+            return;
+         }
+         
+         auto& firstBlock = executionGroup.getSubOps().front();
+         llvm::errs() << "First block has " << firstBlock.getOperations().size() << " operations\n";
+         
          std::unordered_map<mlir::Operation*, std::vector<mlir::Operation*>> steps;
          std::unordered_map<mlir::Operation*, mlir::Operation*> opToStep;
-         for (mlir::Operation& op : executionGroup.getSubOps().front()) {
+         
+         for (mlir::Operation& op : firstBlock) {
             if (mlir::isa<subop::ExecutionGroupReturnOp>(op)) {
                continue;
             }

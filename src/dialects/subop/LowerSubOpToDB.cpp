@@ -4440,7 +4440,27 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
 
 void SubOpToControlFlowLoweringPass::runOnOperation() {
    auto module = getOperation();
-   llvm::errs() << "DEBUG: SubOp → DB pass starting\n";
+   llvm::errs() << "=== DEBUG: SubOp → DB pass starting ===\n";
+   
+   // Check if we have ExecutionStepOp operations
+   bool hasExecutionSteps = false;
+   module.walk([&](subop::ExecutionStepOp step) {
+      hasExecutionSteps = true;
+      llvm::errs() << "Found ExecutionStepOp: " << step << "\n";
+   });
+   
+   if (!hasExecutionSteps) {
+      llvm::errs() << "WARNING: No ExecutionStepOp found! This might cause issues.\n";
+      module.walk([&](subop::ExecutionGroupOp group) {
+         llvm::errs() << "Found ExecutionGroupOp instead\n";
+         int opCount = 0;
+         for (auto& op : group.getSubOps().front()) {
+            opCount++;
+            llvm::errs() << "  Op " << opCount << ": " << op.getName() << "\n";
+         }
+      });
+   }
+   
    llvm::errs() << "DEBUG: Getting context...\n";
    auto* ctxt = &getContext();
    llvm::errs() << "DEBUG: Getting UtilDialect...\n";
