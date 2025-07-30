@@ -7,7 +7,7 @@
 #include "dialects/relalg/LowerRelAlgToSubOp.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
-#include "dialects/subop/LowerSubOpToDB.h"
+#include "dialects/subop/SubOpToControlFlow.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/LowerDBToDSA.h"
 #include "dialects/dsa/DSADialect.h"

@@ -9,6 +9,7 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "dialects/db/DBInterfaces.td"
 include "dialects/relalg/RelAlgInterfaces.td"
+include "dialects/util/UtilBase.td"
 // Arrow not used in PostgreSQL integration
 // include "lingodb/compiler/Dialect/Arrow/IR/ArrowBase.td"
 
@@ -420,19 +421,19 @@ def CastOp : DB_Op<"cast",[DB_NeedsNullWrap,DB_MaySupportInvalidValues,Pure]> {
     let assemblyFormat = "$val `:` type($val) `->` type($res) attr-dict";
     let hasFolder = 1;
 }
-// PostgreSQL: Arrow operations commented out since we don't use Arrow
-// def LoadArrowOp : DB_Op<"arrow.load"> {
-//     let summary = "loads value from arrow array";
-// 
-//     let arguments = (ins Arrow_Array:$array, Index: $offset);
-//     let results = (outs NullableDBType:$res);
-//     let assemblyFormat = "$array `,` $offset `->` type($res) attr-dict";
-// }
-// 
-// def AppendArrowOp : DB_Op<"arrow.append"> {
-//     let summary = "append value to arrow array ";
-//     let arguments = (ins Arrow_ArrayBuilder:$builder, NullableDBType:$value); //todo: add valid flag, or is nullable type enough?
-//     let assemblyFormat = "$builder `,` $value `->` type($value) attr-dict";
-// }
+// PostgreSQL: Arrow operations - will be replaced with PostgreSQL runtime calls
+def LoadArrowOp : DB_Op<"arrow.load"> {
+    let summary = "loads value from arrow array";
+
+    let arguments = (ins AnyTypeOf<[RefType, I64]>:$array, Index: $offset);
+    let results = (outs NullableDBType:$res);
+    let assemblyFormat = "$array `:` type($array) `,` $offset `->` type($res) attr-dict";
+}
+
+def AppendArrowOp : DB_Op<"arrow.append"> {
+    let summary = "append value to arrow array ";
+    let arguments = (ins AnyTypeOf<[RefType, I64]>:$builder, NullableDBType:$value); //todo: add valid flag, or is nullable type enough?
+    let assemblyFormat = "$builder `:` type($builder) `,` $value `:` type($value) attr-dict";
+}
 
 #endif// OPS

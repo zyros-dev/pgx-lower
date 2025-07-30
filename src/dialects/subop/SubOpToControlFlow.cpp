@@ -3,6 +3,7 @@
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/DBOps.h"
 #include "dialects/dsa/DSADialect.h"
+#include "dialects/arrow/ArrowStubs.h"  // Temporary stubs for Arrow operations
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/subop/Transforms/Passes.h"
@@ -27,6 +28,7 @@
 #include "runtime/SimpleState.h"
 #include "runtime/ThreadLocal.h"
 #include "runtime/Tracing.h"
+#include "runtime/RuntimeStubs.h"  // Runtime function stubs
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
@@ -58,6 +60,8 @@ using namespace mlir;
 namespace {
 using namespace pgx_lower::compiler::dialect;
 namespace rt = pgx_lower::compiler::runtime;
+// Use ThreadLocalStub for MLIR codegen to avoid conflict with ThreadLocal class
+using ThreadLocal = pgx_lower::compiler::runtime::ThreadLocalStub;
 struct SubOpToControlFlowLoweringPass
    : public mlir::PassWrapper<SubOpToControlFlowLoweringPass, OperationPass<mlir::ModuleOp>> {
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(SubOpToControlFlowLoweringPass)
