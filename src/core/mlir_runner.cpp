@@ -217,6 +217,14 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         }
         logger.notice("ParallelizePass completed");
         
+        // Check operations after ParallelizePass
+        logger.notice("=== DEBUG: After ParallelizePass ===");
+        int gatherCount = 0;
+        module.walk([&](pgx_lower::compiler::dialect::subop::GatherOp gatherOp) {
+            gatherCount++;
+        });
+        logger.notice("GatherOp count after ParallelizePass: " + std::to_string(gatherCount));
+        
         auto pm9 = mlir::PassManager(&context);
         logger.notice("Step 8: EnforceOrderPass");
         pm9.addPass(pgx_lower::compiler::dialect::subop::createEnforceOrderPass());
@@ -225,6 +233,14 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             return false;
         }
         logger.notice("EnforceOrderPass completed");
+        
+        // Check operations after EnforceOrderPass
+        logger.notice("=== DEBUG: After EnforceOrderPass ===");
+        gatherCount = 0;
+        module.walk([&](pgx_lower::compiler::dialect::subop::GatherOp gatherOp) {
+            gatherCount++;
+        });
+        logger.notice("GatherOp count after EnforceOrderPass: " + std::to_string(gatherCount));
         
         auto pm10 = mlir::PassManager(&context);
         logger.notice("Step 9: InlineNestedMapPass");
@@ -235,6 +251,14 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         }
         logger.notice("InlineNestedMapPass completed");
         
+        // Check operations after InlineNestedMapPass
+        logger.notice("=== DEBUG: After InlineNestedMapPass ===");
+        gatherCount = 0;
+        module.walk([&](pgx_lower::compiler::dialect::subop::GatherOp gatherOp) {
+            gatherCount++;
+        });
+        logger.notice("GatherOp count after InlineNestedMapPass: " + std::to_string(gatherCount));
+        
         auto pm11 = mlir::PassManager(&context);
         logger.notice("Step 10: FinalizePass");
         pm11.addPass(pgx_lower::compiler::dialect::subop::createFinalizePass());
@@ -244,8 +268,81 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         }
         logger.notice("FinalizePass completed");
         
+        // Check operations after FinalizePass
+        logger.notice("=== DEBUG: After FinalizePass ===");
+        gatherCount = 0;
+        module.walk([&](pgx_lower::compiler::dialect::subop::GatherOp gatherOp) {
+            gatherCount++;
+        });
+        logger.notice("GatherOp count after FinalizePass: " + std::to_string(gatherCount));
+        
+        // Debug the operations after FinalizePass to see what happened to GatherOp
+        logger.notice("=== DEBUG: Operations after FinalizePass ===");
+        module.walk([&](pgx_lower::compiler::dialect::subop::ExecutionGroupOp executionGroup) {
+            logger.notice("ExecutionGroupOp after FinalizePass:");
+            int opNum = 0;
+            for (mlir::Operation& op : executionGroup.getSubOps().front()) {
+                opNum++;
+                logger.notice("  Op " + std::to_string(opNum) + ": " + op.getName().getStringRef().str());
+                
+                // Show operands
+                int operandNum = 0;
+                for (auto operand : op.getOperands()) {
+                    operandNum++;
+                    std::string typeStr;
+                    llvm::raw_string_ostream typeStream(typeStr);
+                    operand.getType().print(typeStream);
+                    typeStream.flush();
+                    logger.notice("    Operand " + std::to_string(operandNum) + ": " + typeStr);
+                    if (auto* producer = operand.getDefiningOp()) {
+                        logger.notice("      Producer: " + producer->getName().getStringRef().str());
+                    }
+                }
+                
+                // Show results  
+                int resultNum = 0;
+                for (auto result : op.getResults()) {
+                    resultNum++;
+                    std::string typeStr;
+                    llvm::raw_string_ostream typeStream(typeStr);
+                    result.getType().print(typeStream);
+                    typeStream.flush();
+                    logger.notice("    Result " + std::to_string(resultNum) + ": " + typeStr);
+                }
+            }
+        });
+        
+        // Debug the operations before SplitIntoExecutionStepsPass
+        logger.notice("Step 11: SplitIntoExecutionStepsPass - Debug operands first");
+        module.walk([&](pgx_lower::compiler::dialect::subop::ExecutionGroupOp executionGroup) {
+            logger.notice("Found ExecutionGroupOp for debugging");
+            int opNum = 0;
+            for (mlir::Operation& op : executionGroup.getSubOps().front()) {
+                opNum++;
+                logger.notice("Debug Op " + std::to_string(opNum) + ": " + op.getName().getStringRef().str());
+                
+                int tupleStreamCount = 0;
+                for (auto operand : op.getOperands()) {
+                    if (mlir::isa<pgx_lower::compiler::dialect::tuples::TupleStreamType>(operand.getType())) {
+                        tupleStreamCount++;
+                        logger.notice("  TupleStreamType operand #" + std::to_string(tupleStreamCount));
+                        if (auto* producer = operand.getDefiningOp()) {
+                            logger.notice("    Producer: " + producer->getName().getStringRef().str());
+                        }
+                    }
+                }
+                logger.notice("  Total TupleStreamType operands: " + std::to_string(tupleStreamCount));
+                
+                if (tupleStreamCount > 1) {
+                    logger.error("*** FOUND THE PROBLEM: Operation " + op.getName().getStringRef().str() + 
+                                " has " + std::to_string(tupleStreamCount) + " TupleStreamType operands!");
+                    logger.error("This will cause assert(!beforeInStream) to fail in SplitIntoExecutionStepsPass");
+                }
+            }
+        });
+        
         auto pm12 = mlir::PassManager(&context);
-        logger.notice("Step 11: SplitIntoExecutionStepsPass");
+        logger.notice("Step 11: SplitIntoExecutionStepsPass (re-enabled)");
         pm12.addPass(pgx_lower::compiler::dialect::subop::createSplitIntoExecutionStepsPass());
         if (failed(pm12.run(module))) {
             logger.error("SplitIntoExecutionStepsPass failed!");
@@ -255,20 +352,73 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         
         logger.notice("All SubOp transform passes completed!");
         
-        // Continue with lowering passes
-        auto pm13 = mlir::PassManager(&context);
-        pm13.addNestedPass<mlir::func::FuncOp>(pgx_lower::compiler::dialect::subop::createParallelizePass());
-        pm13.addPass(pgx_lower::compiler::dialect::subop::createSpecializeParallelPass());
-        pm13.addPass(pgx_lower::compiler::dialect::subop::createPrepareLoweringPass());
-        pm13.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
-        pm13.addPass(mlir::createCanonicalizerPass());
-        pm13.addPass(mlir::createCSEPass());
+        // Continue with lowering passes - run individually to isolate crash
+        logger.notice("=== FINAL LOWERING PASSES ===");
         
-        logger.notice("Running final lowering passes...");
+        auto pm13 = mlir::PassManager(&context);
+        logger.notice("Step 12: Nested ParallelizePass");
+        pm13.addNestedPass<mlir::func::FuncOp>(pgx_lower::compiler::dialect::subop::createParallelizePass());
         if (failed(pm13.run(module))) {
-            logger.error("Final lowering passes failed!");
+            logger.error("Nested ParallelizePass failed!");
             return false;
         }
+        logger.notice("Nested ParallelizePass completed");
+        
+        auto pm14 = mlir::PassManager(&context);
+        logger.notice("Step 13: SpecializeParallelPass");
+        pm14.addPass(pgx_lower::compiler::dialect::subop::createSpecializeParallelPass());
+        if (failed(pm14.run(module))) {
+            logger.error("SpecializeParallelPass failed!");
+            return false;
+        }
+        logger.notice("SpecializeParallelPass completed");
+        
+        auto pm15 = mlir::PassManager(&context);
+        logger.notice("Step 14: PrepareLoweringPass");
+        pm15.addPass(pgx_lower::compiler::dialect::subop::createPrepareLoweringPass());
+        if (failed(pm15.run(module))) {
+            logger.error("PrepareLoweringPass failed!");
+            return false;
+        }
+        logger.notice("PrepareLoweringPass completed");
+        
+        // Debug operations before LowerSubOpPass
+        logger.notice("=== DEBUG: Operations before LowerSubOpPass ===");
+        module.walk([&](pgx_lower::compiler::dialect::subop::ExecutionGroupOp executionGroup) {
+            logger.notice("ExecutionGroupOp before LowerSubOpPass:");
+            int opNum = 0;
+            for (mlir::Operation& op : executionGroup.getSubOps().front()) {
+                opNum++;
+                logger.notice("  Op " + std::to_string(opNum) + ": " + op.getName().getStringRef().str());
+            }
+        });
+        
+        auto pm16 = mlir::PassManager(&context);
+        logger.notice("Step 15: LowerSubOpPass (SubOp → DB/DSA)");
+        pm16.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
+        if (failed(pm16.run(module))) {
+            logger.error("LowerSubOpPass failed!");
+            return false;
+        }
+        logger.notice("LowerSubOpPass completed");
+        
+        auto pm17 = mlir::PassManager(&context);
+        logger.notice("Step 16: CanonicalizerPass");
+        pm17.addPass(mlir::createCanonicalizerPass());
+        if (failed(pm17.run(module))) {
+            logger.error("CanonicalizerPass failed!");
+            return false;
+        }
+        logger.notice("CanonicalizerPass completed");
+        
+        auto pm18 = mlir::PassManager(&context);
+        logger.notice("Step 17: CSEPass");
+        pm18.addPass(mlir::createCSEPass());
+        if (failed(pm18.run(module))) {
+            logger.error("CSEPass failed!");
+            return false;
+        }
+        logger.notice("CSEPass completed");
         logger.notice("Complete LingoDB SubOp pipeline finished successfully!");
         
         logger.notice("Module after complete SubOp transformation:");

@@ -17,8 +17,10 @@ class SplitIntoExecutionSteps : public mlir::PassWrapper<SplitIntoExecutionSteps
    virtual llvm::StringRef getArgument() const override { return "subop-split-into-steps"; }
 
    void runOnOperation() override {
+      llvm::errs() << "=== SplitIntoExecutionSteps::runOnOperation() STARTED ===\n";
       // Step 1: split into different streams
       getOperation()->walk([&](subop::ExecutionGroupOp executionGroup) {
+         llvm::errs() << "=== Found ExecutionGroupOp, processing... ===\n";
          std::unordered_map<mlir::Operation*, std::vector<mlir::Operation*>> steps;
          std::unordered_map<mlir::Operation*, mlir::Operation*> opToStep;
          for (mlir::Operation& op : executionGroup.getSubOps().front()) {
@@ -29,6 +31,29 @@ class SplitIntoExecutionSteps : public mlir::PassWrapper<SplitIntoExecutionSteps
             for (auto operand : op.getOperands()) {
                if (mlir::isa<tuples::TupleStreamType>(operand.getType())) {
                   if (auto* producer = operand.getDefiningOp()) {
+                     if (beforeInStream) {
+                        // Print detailed debug info before assertion failure
+                        llvm::errs() << "=== ASSERTION FAILURE DEBUG ===\n";
+                        llvm::errs() << "Operation causing assertion failure: " << op << "\n";
+                        llvm::errs() << "Operation name: " << op.getName() << "\n";
+                        llvm::errs() << "First TupleStreamType producer: " << *beforeInStream << "\n";
+                        llvm::errs() << "Second TupleStreamType producer: " << *producer << "\n";
+                        llvm::errs() << "This operation has multiple TupleStreamType operands!\n";
+                        llvm::errs() << "Full operand list:\n";
+                        int operandNum = 0;
+                        for (auto debugOperand : op.getOperands()) {
+                           operandNum++;
+                           llvm::errs() << "  Operand " << operandNum << ": ";
+                           debugOperand.getType().print(llvm::errs());
+                           llvm::errs() << "\n";
+                           if (mlir::isa<tuples::TupleStreamType>(debugOperand.getType())) {
+                              if (auto* debugProducer = debugOperand.getDefiningOp()) {
+                                 llvm::errs() << "    TupleStreamType producer: " << *debugProducer << "\n";
+                              }
+                           }
+                        }
+                        llvm::errs() << "=== END DEBUG ===\n";
+                     }
                      assert(!beforeInStream);
                      beforeInStream = producer;
                   }
