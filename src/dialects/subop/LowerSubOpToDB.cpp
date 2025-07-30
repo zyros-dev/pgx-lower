@@ -1142,9 +1142,30 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       }
       memberMapping += "]";
       mlir::Value memberMappingValue = rewriter.create<util::CreateConstVarLen>(scanOp->getLoc(), util::VarLen32Type::get(rewriter.getContext()), memberMapping);
-      // TODO Phase 5: Implement proper runtime wrappers
-      // For now, create a placeholder iterator
-      mlir::Value iterator = rewriter.create<util::AllocaOp>(scanOp->getLoc(), util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+      // Call DataSource::iterate to iterate over PostgreSQL tuples
+      // The PostgreSQL data source was created by GetExternalTableLowering
+      auto loc = scanOp->getLoc();
+      auto* context = rewriter.getContext();
+      
+      // Get or create the DataSource::iterate runtime function declaration
+      ModuleOp parentModule = scanOp->getParentOfType<ModuleOp>();
+      mlir::func::FuncOp iterateFuncOp;
+      auto iterateFuncName = "DataSource_iterate";
+      
+      if (!(iterateFuncOp = parentModule.lookupSymbol<mlir::func::FuncOp>(iterateFuncName))) {
+         rewriter.atStartOf(parentModule.getBody(), [&](SubOpRewriter& rewriter) {
+            auto i8PtrType = util::RefType::get(context, rewriter.getI8Type());
+            auto boolType = rewriter.getI1Type();
+            iterateFuncOp = rewriter.create<mlir::func::FuncOp>(loc, iterateFuncName,
+               mlir::FunctionType::get(context, 
+                  {i8PtrType, boolType, memberMappingValue.getType(), i8PtrType}, {}));
+            iterateFuncOp->setAttr("llvm.emit_c_interface", mlir::UnitAttr::get(context));
+         });
+      }
+      
+      // Create the iteration context
+      mlir::Value parallelFlag = rewriter.create<mlir::arith::ConstantIntOp>(loc, 0, 1); // false = sequential
+      mlir::Value contextPtr = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value());
       ColumnMapping mapping;
 
       auto* ctxt = rewriter.getContext();
@@ -1346,12 +1367,26 @@ class GetExternalTableLowering : public SubOpConversionPattern<subop::GetExterna
       
       // Use DataSource::get which will call our PostgreSQLDataSource
       // The PostgreSQLDataSource.h header defines DataSource::get to use PostgreSQL
-      // TODO Phase 5: Implement DataSource::get wrapper (CRITICAL for table access)
-      // For now, create a runtime call directly
-      auto funcOp = rewriter.create<mlir::func::FuncOp>(op->getLoc(), "DataSource_get",
-         mlir::FunctionType::get(op->getContext(), {description.getType()}, {typeConverter->convertType(op.getType())}));
-      funcOp->setAttr("llvm.emit_c_interface", mlir::UnitAttr::get(op->getContext()));
-      rewriter.replaceOpWithNewOp<mlir::func::CallOp>(op, funcOp, mlir::ValueRange{description});
+      auto loc = op->getLoc();
+      auto* context = rewriter.getContext();
+      
+      // Get or create the DataSource::get runtime function declaration
+      ModuleOp parentModule = op->getParentOfType<ModuleOp>();
+      mlir::func::FuncOp funcOp;
+      auto funcName = "DataSource_get";
+      
+      if (!(funcOp = parentModule.lookupSymbol<mlir::func::FuncOp>(funcName))) {
+         rewriter.atStartOf(parentModule.getBody(), [&](SubOpRewriter& rewriter) {
+            auto i8PtrType = util::RefType::get(context, rewriter.getI8Type());
+            funcOp = rewriter.create<mlir::func::FuncOp>(loc, funcName,
+               mlir::FunctionType::get(context, {description.getType()}, {i8PtrType}));
+            funcOp->setAttr("llvm.emit_c_interface", mlir::UnitAttr::get(context));
+         });
+      }
+      
+      // Call DataSource::get to create PostgreSQL data source
+      mlir::Value dataSource = rewriter.create<mlir::func::CallOp>(loc, funcOp, mlir::ValueRange{description}).getResult(0);
+      rewriter.replaceOp(op, dataSource);
       return mlir::success();
    }
 };
