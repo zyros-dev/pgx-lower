@@ -9,6 +9,7 @@
 #include "DBTypes.h" // DBTypes.h already includes DBOpsEnums.h.inc
 #include "DBOpsInterfaces.h.inc"
 #include "dialects/relalg/RelAlgInterfaces.h" // For CmpOpInterface
+#include "dialects/util/UtilTypes.h" // For RefType
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"

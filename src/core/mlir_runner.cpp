@@ -165,26 +165,19 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("Phase 2 completed successfully");
     }
     
-    // Phase 3: SubOp → DB lowering - TEMPORARILY BYPASSED DUE TO CRASH
-    logger.notice("Phase 3: SubOp → DB lowering - TEMPORARILY BYPASSED");
-    logger.error("BYPASSING SubOp→DB lowering due to immediate crash - debugging needed");
-    
-    // Try to see what we have after Phase 2
-    logger.notice("Checking module after Phase 2...");
-    module.walk([&](mlir::Operation* op) {
-        std::string opStr;
-        llvm::raw_string_ostream os(opStr);
-        op->print(os);
-        os.flush();
-        // Limit output to avoid crashes
-        if (opStr.size() > 200) {
-            opStr = opStr.substr(0, 200) + "...";
+    // Phase 3: SubOp → DB lowering (now with working stub)
+    logger.notice("Phase 3: SubOp → DB lowering (SubOpToControlFlow stub)");
+    {
+        auto pm3 = mlir::PassManager(&context);
+        pm3.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpToControlFlowPass());
+        
+        if (failed(pm3.run(module))) {
+            logger.error("Phase 3 (SubOp → ControlFlow stub) failed!");
+            module.dump();
+            return false;
         }
-        logger.notice("Op: " + opStr);
-    });
-    
-    logger.error("Cannot proceed without SubOp→DB lowering - returning false");
-    return false;
+        logger.notice("Phase 3 completed successfully with stub implementation");
+    }
     
     // Now lower to LLVM
     auto pm2 = mlir::PassManager(&context);

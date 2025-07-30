@@ -75,7 +75,7 @@ struct ThreadLocalStub {
     }
 };
 
-namespace ExecutionContext {
+struct ExecutionContextStub {
     struct AllocStateRawCallable {
         mlir::OpBuilder& builder;
         mlir::Location loc;
@@ -85,15 +85,36 @@ namespace ExecutionContext {
         std::vector<mlir::Value> operator()(std::initializer_list<mlir::Value> args) {
             // For now, return a dummy pointer
             auto ptrType = mlir::LLVM::LLVMPointerType::get(builder.getContext());
-            auto nullPtr = builder.create<mlir::LLVM::NullOp>(loc, ptrType);
+            auto nullPtr = builder.create<mlir::LLVM::ZeroOp>(loc, ptrType);
             return {nullPtr};
         }
     };
     
-    inline AllocStateRawCallable allocStateRaw(mlir::OpBuilder& builder, mlir::Location loc) {
+    static AllocStateRawCallable allocStateRaw(mlir::OpBuilder& builder, mlir::Location loc) {
         return AllocStateRawCallable(builder, loc);
     }
-}
+};
+
+// More runtime stubs for missing functions
+struct DataSourceIterationStub {
+    struct InitCallable {
+        mlir::OpBuilder& builder;
+        mlir::Location loc;
+        
+        InitCallable(mlir::OpBuilder& b, mlir::Location l) : builder(b), loc(l) {}
+        
+        std::vector<mlir::Value> operator()(std::initializer_list<mlir::Value> args) {
+            // Return dummy pointer for DataSourceIteration
+            auto ptrType = mlir::LLVM::LLVMPointerType::get(builder.getContext());
+            auto nullPtr = builder.create<mlir::LLVM::ZeroOp>(loc, ptrType);
+            return {nullPtr};
+        }
+    };
+    
+    static InitCallable init(mlir::OpBuilder& builder, mlir::Location loc) {
+        return InitCallable(builder, loc);
+    }
+};
 
 } // namespace pgx_lower::compiler::runtime
 

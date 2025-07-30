@@ -20,13 +20,32 @@ public:
     }
 };
 
-// Stub BuilderFromPtr operation
-struct BuilderFromPtr {
-    static mlir::Value create(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value ptr) {
-        // This will be replaced with PostgreSQL-specific code
-        // For now, just return the pointer as-is
-        return ptr;
+// Stub BuilderFromPtr operation - create a simple MLIR operation
+class BuilderFromPtr : public mlir::Op<BuilderFromPtr, mlir::OpTrait::ZeroRegions, mlir::OpTrait::OneResult, mlir::OpTrait::OneOperand, mlir::OpTrait::ZeroSuccessors> {
+public:
+    using Op::Op;
+    
+    static llvm::StringRef getOperationName() { return "arrow.builder_from_ptr"; }
+    
+    static mlir::ParseResult parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+        // Simple parse - just parse the operand
+        mlir::OpAsmParser::UnresolvedOperand operand;
+        mlir::Type operandType, resultType;
+        if (parser.parseOperand(operand) ||
+            parser.parseColonType(operandType) ||
+            parser.parseArrowTypeAndOperands(resultType, {operand}) ||
+            parser.resolveOperands({operand}, {operandType}, parser.getNameLoc(), result.operands) ||
+            parser.addTypeToList(resultType, result.types))
+            return mlir::failure();
+        return mlir::success();
     }
+    
+    void print(mlir::OpAsmPrinter &p) {
+        p << " " << getOperand() << " : " << getOperand().getType() << " -> " << getResult().getType();
+    }
+    
+    mlir::Value getOperand() { return this->getOperands()[0]; }
+    mlir::Value getResult() { return this->getResults()[0]; }
 };
 
 } // namespace pgx_lower::compiler::dialect::arrow
