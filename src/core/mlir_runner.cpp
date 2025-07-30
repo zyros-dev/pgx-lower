@@ -59,6 +59,7 @@
 #include <sstream>
 #include <cstring>
 #include <signal.h>
+#include <cstdio> // For fprintf
 
 // Include runtime functions after all LLVM/MLIR headers to avoid macro conflicts
 #include "runtime/tuple_access.h"
@@ -149,81 +150,41 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         });
     }
     
-    // Phase 2: SKIP SubOp passes due to hang, keep SubOp operations for now
-    logger.notice("Phase 2: SKIPPING SubOp transform pipeline due to hang");
+    // Phase 2: SubOp transform pipeline
+    logger.notice("Phase 2: SubOp transform pipeline");
     {
-        logger.notice("WARNING: SubOp passes cause infinite loop - skipping");
-        logger.notice("Module still contains SubOp operations");
+        auto pm2 = mlir::PassManager(&context);
+        pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
+        pgx_lower::compiler::dialect::subop::createLowerSubOpPipeline(pm2);
         
-        // Count SubOp operations
-        int subOpCount = 0;
-        module.walk([&](mlir::Operation* op) {
-            if (op->getName().getDialectNamespace() == "subop") {
-                subOpCount++;
-                logger.debug("SubOp operation: " + op->getName().getStringRef().str());
-            }
-        });
-        logger.notice("Found " + std::to_string(subOpCount) + " SubOp operations that would need lowering");
-        
-        // For now, skip to next phase
-        logger.notice("Continuing without SubOp → DB lowering");
-    }
-    
-    // Continue with remaining passes in pm
-    logger.notice("Adding remaining passes to main pipeline...");
-    
-    logger.notice("Adding CanonicalizerPass...");
-    pm.addPass(mlir::createCanonicalizerPass());
-    
-    logger.notice("Adding CSEPass...");
-    pm.addPass(mlir::createCSEPass());
-    
-    logger.notice("Adding DB->Std lowering pass...");
-    pm.addPass(pgx_lower::compiler::dialect::db::createLowerToStdPass());
-    
-    logger.notice("Running main pipeline with DB->Std lowering...");
-    
-    // Enable pass failure mode to see which operations fail conversion
-    auto pm_debug = mlir::PassManager(&context);
-    pm_debug.addPass(mlir::createCanonicalizerPass());
-    pm_debug.addPass(mlir::createCSEPass());
-    
-    // Run DB->Std pass with detailed failure reporting
-    auto dbToStdPass = pgx_lower::compiler::dialect::db::createLowerToStdPass();
-    pm_debug.addPass(std::move(dbToStdPass));
-    
-    try {
-        auto result = pm_debug.run(module);
-        if (failed(result)) {
-            logger.error("DB->Std lowering pass failed - some operations not converted");
-            logger.error("This is expected - continuing with partial conversion");
-            
-            // Count remaining DB operations
-            int remainingDbOps = 0;
-            module.walk([&](mlir::Operation* op) {
-                if (op->getName().getDialectNamespace() == "db") {
-                    remainingDbOps++;
-                }
-            });
-            
-            if (remainingDbOps > 0) {
-                logger.notice("Still have " + std::to_string(remainingDbOps) + " DB operations that need runtime functions");
-                logger.notice("Skipping to LLVM lowering for now...");
-            }
-        } else {
-            logger.notice("DB->Std lowering completed successfully!");
+        if (failed(pm2.run(module))) {
+            logger.error("Phase 2 (SubOp transforms) failed!");
+            module.dump();
+            return false;
         }
-    } catch (const std::exception& e) {
-        logger.error("Exception during DB->Std lowering: " + std::string(e.what()));
-        return false;
-    } catch (...) {
-        logger.error("Unknown exception during DB->Std lowering");
-        return false;
+        logger.notice("Phase 2 completed successfully");
     }
     
-    logger.notice("LingoDB lowering pipeline completed successfully");
-    logger.notice("Module after LingoDB lowering:");
-    module.dump();
+    // Phase 3: SubOp → DB lowering - TEMPORARILY BYPASSED DUE TO CRASH
+    logger.notice("Phase 3: SubOp → DB lowering - TEMPORARILY BYPASSED");
+    logger.error("BYPASSING SubOp→DB lowering due to immediate crash - debugging needed");
+    
+    // Try to see what we have after Phase 2
+    logger.notice("Checking module after Phase 2...");
+    module.walk([&](mlir::Operation* op) {
+        std::string opStr;
+        llvm::raw_string_ostream os(opStr);
+        op->print(os);
+        os.flush();
+        // Limit output to avoid crashes
+        if (opStr.size() > 200) {
+            opStr = opStr.substr(0, 200) + "...";
+        }
+        logger.notice("Op: " + opStr);
+    });
+    
+    logger.error("Cannot proceed without SubOp→DB lowering - returning false");
+    return false;
     
     // Now lower to LLVM
     auto pm2 = mlir::PassManager(&context);

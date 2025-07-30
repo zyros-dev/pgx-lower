@@ -1,20 +1,20 @@
-#include "dialects/subop/LowerSubOpToDB.h"
-#include "dialects/subop/SubOpDialect.h"
-#include "dialects/subop/SubOpOps.h"
+#include "dialects/subop/SubOpToControlFlow.h"
+
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/DBOps.h"
 #include "dialects/dsa/DSADialect.h"
-// DSAOps.h doesn't exist yet - need to generate from TableGen
+#include "dialects/subop/SubOpDialect.h"
+#include "dialects/subop/SubOpOps.h"
+#include "dialects/subop/Transforms/Passes.h"
 #include "dialects/tuplestream/TupleStreamOps.h"
+#include "dialects/util/FunctionHelper.h"
 #include "dialects/util/UtilDialect.h"
 #include "dialects/util/UtilOps.h"
-#include "dialects/util/FunctionHelper.h"
-// ArrowTable not needed in pgx-lower
+// Arrow runtime replaced with PostgreSQL runtime
 #include "runtime/Buffer.h"
 #include "runtime/DataSourceIteration.h"
 #include "runtime/EntryLock.h"
 #include "runtime/ExecutionContext.h"
-// EntryLock and ThreadLocal already included from runtime/
 #include "runtime/GrowingBuffer.h"
 #include "runtime/HashMultiMap.h"
 #include "runtime/Hashtable.h"
@@ -26,11 +26,7 @@
 #include "runtime/SegmentTreeView.h"
 #include "runtime/SimpleState.h"
 #include "runtime/ThreadLocal.h"
-
-// Runtime wrapper includes (removed - already have RuntimeStubs.h)
 #include "runtime/Tracing.h"
-#include "runtime/RuntimeStubs.h" // PostgreSQL integration stubs
-#include "runtime/PostgreSQLDataSource.h" // PostgreSQL DataSource implementation
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
@@ -48,7 +44,6 @@
 #include "mlir/Transforms/Passes.h"
 
 #include <stack>
-#include <iostream>
 using namespace mlir;
 
 #ifdef NDEBUG
@@ -63,61 +58,14 @@ using namespace mlir;
 namespace {
 using namespace pgx_lower::compiler::dialect;
 namespace rt = pgx_lower::compiler::runtime;
-namespace db = pgx_lower::compiler::dialect::db;
-namespace dsa = pgx_lower::compiler::dialect::dsa;
 struct SubOpToControlFlowLoweringPass
    : public mlir::PassWrapper<SubOpToControlFlowLoweringPass, OperationPass<mlir::ModuleOp>> {
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(SubOpToControlFlowLoweringPass)
    virtual llvm::StringRef getArgument() const override { return "lower-subop-to-cf"; }
 
-   SubOpToControlFlowLoweringPass() {
-      llvm::errs() << "=== DEBUG: SubOpToControlFlowLoweringPass CONSTRUCTOR called ===\n";
-   }
+   SubOpToControlFlowLoweringPass() {}
    void getDependentDialects(DialectRegistry& registry) const override {
-      llvm::errs() << "=== DEBUG: getDependentDialects called ===\n";
-      llvm::errs().flush();
-      try {
-         // Try registering dialects one by one to see which one causes the crash
-         registry.insert<LLVM::LLVMDialect>();
-         llvm::errs() << "=== DEBUG: LLVM dialect registered ===\n";
-         
-         // Re-enable DB dialect
-         registry.insert<db::DBDialect>();
-         llvm::errs() << "=== DEBUG: DB dialect registered ===\n";
-         
-         registry.insert<scf::SCFDialect>();
-         llvm::errs() << "=== DEBUG: SCF dialect registered ===\n";
-         
-         registry.insert<mlir::cf::ControlFlowDialect>();
-         llvm::errs() << "=== DEBUG: ControlFlow dialect registered ===\n";
-         
-         registry.insert<util::UtilDialect>();
-         llvm::errs() << "=== DEBUG: Util dialect registered ===\n";
-         
-         registry.insert<memref::MemRefDialect>();
-         llvm::errs() << "=== DEBUG: MemRef dialect registered ===\n";
-         
-         registry.insert<arith::ArithDialect>();
-         llvm::errs() << "=== DEBUG: Arith dialect registered ===\n";
-         
-         registry.insert<subop::SubOperatorDialect>();
-         llvm::errs() << "=== DEBUG: SubOperator dialect registered ===\n";
-         
-         // CRITICAL: Add DSA dialect that LingoDB has but we were missing!
-         registry.insert<dsa::DSADialect>();
-         llvm::errs() << "=== DEBUG: DSA dialect registered ===\n";
-         
-         llvm::errs() << "=== DEBUG: getDependentDialects completed successfully ===\n";
-         llvm::errs().flush();
-      } catch (const std::exception& e) {
-         llvm::errs() << "=== ERROR: Exception in getDependentDialects: " << e.what() << " ===\n";
-         llvm::errs().flush();
-         throw;
-      } catch (...) {
-         llvm::errs() << "=== ERROR: Unknown exception in getDependentDialects ===\n";
-         llvm::errs().flush();
-         throw;
-      }
+      registry.insert<LLVM::LLVMDialect, db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect, dsa::DSADialect, subop::SubOperatorDialect>();
    }
    void runOnOperation() final;
 };
@@ -147,7 +95,7 @@ static std::vector<Type> unpackTypes(mlir::ArrayAttr arr) {
    return res;
 };
 class ColumnMapping {
-   std::unordered_map<std::string, mlir::Value> mapping;
+   std::unordered_map<const tuples::Column*, mlir::Value> mapping;
 
    public:
    ColumnMapping() : mapping() {}
@@ -155,57 +103,46 @@ class ColumnMapping {
       assert(!!inFlightOp);
       assert(inFlightOp.getColumns().size() == inFlightOp.getValues().size());
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
-         auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
+         const auto* col = &mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]).getColumn();
          auto val = inFlightOp.getValues()[i];
-         mapping[col.getName().getLeafReference().str()] = val;
+         mapping.insert(std::make_pair(col, val));
       }
    }
    ColumnMapping(subop::InFlightTupleOp inFlightOp) {
       assert(inFlightOp.getColumns().size() == inFlightOp.getValues().size());
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
-         auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
+         const auto* col = &mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]).getColumn();
          auto val = inFlightOp.getValues()[i];
-         mapping[col.getName().getLeafReference().str()] = val;
+         mapping.insert(std::make_pair(col, val));
       }
    }
    void merge(subop::InFlightOp inFlightOp) {
       assert(inFlightOp.getColumns().size() == inFlightOp.getValues().size());
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
-         auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
+         const auto* col = &mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]).getColumn();
          auto val = inFlightOp.getValues()[i];
-         mapping[col.getName().getLeafReference().str()] = val;
+         mapping.insert(std::make_pair(col, val));
       }
    }
    void merge(subop::InFlightTupleOp inFlightOp) {
       assert(inFlightOp.getColumns().size() == inFlightOp.getValues().size());
       for (auto i = 0ul; i < inFlightOp.getColumns().size(); i++) {
-         auto col = mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]);
+         const auto* col = &mlir::cast<tuples::ColumnDefAttr>(inFlightOp.getColumns()[i]).getColumn();
          auto val = inFlightOp.getValues()[i];
-         mapping[col.getName().getLeafReference().str()] = val;
+         mapping.insert(std::make_pair(col, val));
       }
    }
    mlir::Value resolve(mlir::Operation* op, tuples::ColumnRefAttr ref) {
-      if (!mapping.contains(ref.getName().getLeafReference().str())) {
+      if (!mapping.contains(&ref.getColumn())) {
          std::string wrongReference;
          llvm::raw_string_ostream wrongReferenceStream(wrongReference);
          ((mlir::Attribute) ref).print(wrongReferenceStream);
 
          op->emitOpError("Could not resolve column reference," + wrongReference);
-         llvm::errs() << "=== CRASH DEBUG: Column resolution failed ===\n";
-         llvm::errs() << "  Looking for: " << ref.getName().getLeafReference().str() << "\n";
-         llvm::errs() << "  Available mappings:\n";
-         for (const auto& [key, value] : mapping) {
-            llvm::errs() << "    " << key << " -> " << value << "\n";
-         }
-         llvm::errs().flush();
-         // TODO: This should not happen in a valid IR
-         return mlir::Value();
+         assert(false);
       }
-      mlir::Value r = mapping.at(ref.getName().getLeafReference().str());
-      if (!r) {
-         llvm::errs() << "=== CRASH DEBUG: Mapped value is null for " << ref.getName().getLeafReference().str() << " ===\n";
-         llvm::errs().flush();
-      }
+      mlir::Value r = mapping.at(&ref.getColumn());
+      assert(r);
       return r;
    }
    std::vector<mlir::Value> resolve(mlir::Operation* op, mlir::ArrayAttr arr) {
@@ -220,8 +157,7 @@ class ColumnMapping {
       std::vector<mlir::Attribute> columns;
 
       for (auto m : mapping) {
-         auto nameAttr = mlir::SymbolRefAttr::get(builder.getContext(), m.first);
-         columns.push_back(builder.getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager().createDef(nameAttr));
+         columns.push_back(builder.getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager().createDef(m.first));
          values.push_back(m.second);
       }
       return builder.create<subop::InFlightOp>(builder.getUnknownLoc(), values, builder.getArrayAttr(columns));
@@ -231,14 +167,13 @@ class ColumnMapping {
       std::vector<mlir::Attribute> columns;
 
       for (auto m : mapping) {
-         auto nameAttr = mlir::SymbolRefAttr::get(builder.getContext(), m.first);
-         columns.push_back(builder.getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager().createDef(nameAttr));
+         columns.push_back(builder.getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager().createDef(m.first));
          values.push_back(m.second);
       }
       return builder.create<subop::InFlightTupleOp>(builder.getUnknownLoc(), values, builder.getArrayAttr(columns));
    }
    void define(tuples::ColumnDefAttr columnDefAttr, mlir::Value v) {
-      mapping[columnDefAttr.getName().getLeafReference().str()] = v;
+      mapping.insert(std::make_pair(&columnDefAttr.getColumn(), v));
    }
    void define(mlir::ArrayAttr columns, mlir::ValueRange values) {
       for (auto i = 0ul; i < columns.size(); i++) {
@@ -308,10 +243,7 @@ class EntryStorageHelper {
       } else if (nullBitOffset <= 64) {
          nullBitsetType = mlir::IntegerType::get(members.getContext(), 64);
       } else {
-         llvm::errs() << "=== ERROR: Null bitset size > 64 not supported, got: " << nullBitOffset << " ===\n";
-         llvm::errs().flush();
-         // Use 64-bit for now as fallback
-         nullBitsetType = mlir::IntegerType::get(members.getContext(), 64);
+         assert(false && "should not happen");
       }
       if (nullBitOffset > 0) {
          types[nullBitSetPos] = nullBitsetType;
@@ -403,10 +335,10 @@ class EntryStorageHelper {
             }
             // now, actually store the value (not just whether it's null)
             auto memberRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getContext(), memberInfo.stored), ref, memberInfo.offset);
-            rewriter.create<util::StoreOp>(loc, value, memberRef, mlir::Value{});
+            rewriter.create<util::StoreOp>(loc, value, memberRef, mlir::Value());
          }
          if (esh.nullBitsetType) {
-            rewriter.create<util::StoreOp>(loc, *nullBitSet, *nullBitSetRef, mlir::Value{});
+            rewriter.create<util::StoreOp>(loc, *nullBitSet, *nullBitSetRef, mlir::Value());
          }
       }
 
@@ -461,11 +393,7 @@ class EntryStorageHelper {
             assert(nullBitSet);
             mlir::Value shiftedNullBit = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1ull << memberInfo.nullBitOffset, esh.nullBitsetType);
             mlir::Value isNull = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, rewriter.create<mlir::arith::AndIOp>(loc, *nullBitSet, shiftedNullBit), shiftedNullBit);
-            // Create AsNullableOp with both value and null flag
-            auto nullableType = db::NullableType::get(rewriter.getContext(), memberInfo.stored);
-            // AsNullableOp only takes the value, not isNull separately
-            // The nullable type already encodes nullability
-            value = rewriter.create<db::AsNullableOp>(loc, nullableType, value);
+            value = rewriter.create<db::AsNullableOp>(loc, db::NullableType::get(rewriter.getContext(), memberInfo.stored), value, isNull);
             nullBitCache.emplace(name, isNull);
          }
          return value;
@@ -607,12 +535,12 @@ class SubOpRewriter {
          types.push_back(input.getType());
       }
       auto tupleType = mlir::TupleType::get(getContext(), types);
-      mlir::Value contextPtr = create<util::AllocaOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), tupleType), mlir::Value{});
+      mlir::Value contextPtr = create<util::AllocaOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), tupleType), mlir::Value());
       size_t offset = 0;
       for (auto [param, arg, isThreadLocal] : llvm::zip(executionStep.getInputs(), executionStep.getSubOps().front().getArguments(), executionStep.getIsThreadLocal())) {
          mlir::Value input = outerMapping.lookup(param);
          auto memberRef = create<util::TupleElementPtrOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), input.getType()), contextPtr, offset++);
-         create<util::StoreOp>(builder.getUnknownLoc(), input, memberRef, mlir::Value{});
+         create<util::StoreOp>(builder.getUnknownLoc(), input, memberRef, mlir::Value());
       }
       contextPtr = create<util::GenericMemrefCastOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), getI8Type()), contextPtr);
       return contextPtr;
@@ -654,9 +582,7 @@ class SubOpRewriter {
          auto memberRef = create<util::TupleElementPtrOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), input.getType()), contextPtr, offset++);
          mlir::Value value = create<util::LoadOp>(builder.getUnknownLoc(), memberRef);
          if (mlir::cast<mlir::BoolAttr>(isThreadLocal).getValue()) {
-            // TODO Phase 5: Implement ThreadLocalWrapper::getLocal for PostgreSQL (or stub for single-threaded)
-            // For now, just use the value directly
-            // value = rt::ThreadLocalWrapper::getLocal(builder, builder.getUnknownLoc())({value})[0];
+            value = rt::ThreadLocal::getLocal(builder, builder.getUnknownLoc())({value})[0];
             value = create<util::GenericMemrefCastOp>(builder.getUnknownLoc(), typeConverter->convertType(arg.getType()), value);
          }
          map(arg, value);
@@ -855,11 +781,8 @@ class SubOpRewriter {
          }
       }
       op->dump();
-      llvm::dbgs() << "Could not rewrite " << op->getName() << "\n";
-      llvm::errs() << "=== ERROR: No rewrite pattern found for operation: " << op->getName().getStringRef() << " ===\n";
-      llvm::errs().flush();
-      // Mark as failed but continue
-      op->emitError("No rewrite pattern found");
+      llvm::dbgs() << "Could not rewrite" << op->getName() << "\n";
+      assert(false);
    }
 
    bool shouldRewrite(mlir::Operation* op) {
@@ -1031,9 +954,7 @@ class TableRefGatherOpLowering : public SubOpTupleStreamConsumerConversionPatter
             auto colArray = unPackedColumns[i];
             auto type = columnDefAttr.getColumn().type;
             //todo: use MLIR interfaces to get the "right" operation for loading a certain type from an arrow array?
-            // PostgreSQL: Replace Arrow load with field access
-            // For now, create a null value as placeholder
-            mlir::Value loaded = rewriter.create<db::NullOp>(gatherOp->getLoc(), type);
+            mlir::Value loaded = rewriter.create<db::LoadArrowOp>(gatherOp->getLoc(), type, colArray, currRow);
             mapping.define(columnDefAttr, loaded);
          }
       }
@@ -1054,11 +975,8 @@ class MaterializeTableLowering : public SubOpTupleStreamConsumerConversionPatter
          auto memberName = mlir::cast<mlir::StringAttr>(stateType.getMembers().getNames()[i]).str();
          auto attribute = mlir::cast<tuples::ColumnRefAttr>(materializeOp.getMapping().get(memberName));
          auto val = mapping.resolve(materializeOp, attribute);
-         // TODO Phase 5: Replace Arrow builder with PostgreSQL tuple builder
-         // auto asArrayBuilder = rewriter.create<arrow::BuilderFromPtr>(materializeOp->getLoc(), columnBuilders.getResult(i));
-         auto asArrayBuilder = columnBuilders.getResult(i); // Temporary stub
-         // TODO Phase 5: Replace db::AppendArrowOp with PostgreSQL tuple append
-         // rewriter.create<db::AppendArrowOp>(materializeOp->getLoc(), asArrayBuilder, val);
+         auto asArrayBuilder = rewriter.create<arrow::BuilderFromPtr>(materializeOp->getLoc(), columnBuilders.getResult(i));
+         rewriter.create<db::AppendArrowOp>(materializeOp->getLoc(), asArrayBuilder, val);
       }
       rewriter.eraseOp(materializeOp);
       return mlir::success();
@@ -1120,22 +1038,17 @@ class CreateThreadLocalLowering : public SubOpConversionPattern<subop::CreateThr
       auto numPtrs = rewriter.create<mlir::arith::ConstantIndexOp>(loc, toStore.size());
       auto bytes = rewriter.create<mlir::arith::MulIOp>(loc, ptrSize, numPtrs);
 
-      // Simple PostgreSQL-compatible memory allocation
-      // Allocate memory for the tuple state
-      Value arg = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), i8PtrType), bytes);
+      Value arg = rt::ExecutionContext::allocStateRaw(rewriter, loc)({bytes})[0];
       arg = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(rewriter.getContext(), i8PtrType), arg);
       for (size_t i = 0; i < toStore.size(); i++) {
          Value storeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), toStore[i].getType());
-         // TODO Phase 5: Create proper runtime function wrappers
-         Value valPtrOrig = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), storeSize);
+         Value valPtrOrig = rt::ExecutionContext::allocStateRaw(rewriter, loc)({storeSize})[0];
          Value valPtr = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(toStore[i].getType()), valPtr);
-         rewriter.create<util::StoreOp>(loc, toStore[i], valPtr, mlir::Value{});
+         rewriter.create<util::StoreOp>(loc, toStore[i], valPtr, mlir::Value());
          rewriter.create<util::StoreOp>(loc, valPtrOrig, arg, rewriter.create<mlir::arith::ConstantIndexOp>(loc, i));
       }
       Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
-      // TODO Phase 5: Implement ThreadLocalWrapper::create (or stub for single-threaded)
-      // For now, just return the arg
-      rewriter.replaceOp(createThreadLocal, arg);
+      rewriter.replaceOp(createThreadLocal, rt::ThreadLocal::create(rewriter, loc)({functionPointer, arg}));
       return mlir::success();
    }
 };
@@ -1191,15 +1104,7 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
    using SubOpConversionPattern<subop::ScanRefsOp>::SubOpConversionPattern;
 
    LogicalResult matchAndRewrite(subop::ScanRefsOp scanOp, OpAdaptor adaptor, SubOpRewriter& rewriter) const override {
-      llvm::errs() << "DEBUG: ScanRefsTableLowering pattern invoked\n";
-      llvm::errs() << "DEBUG: State type: " << scanOp.getState().getType() << "\n";
-      
-      if (!mlir::isa<subop::TableType>(scanOp.getState().getType())) {
-         llvm::errs() << "DEBUG: ScanRefsTableLowering - not a TableType, returning failure\n";
-         return failure();
-      }
-      
-      try {
+      if (!mlir::isa<subop::TableType>(scanOp.getState().getType())) return failure();
       auto loc = scanOp->getLoc();
       auto refType = mlir::cast<subop::TableEntryRefType>(scanOp.getRef().getColumn().type);
       std::string memberMapping = "[";
@@ -1216,27 +1121,16 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       }
       memberMapping += "]";
       mlir::Value memberMappingValue = rewriter.create<util::CreateConstVarLen>(scanOp->getLoc(), util::VarLen32Type::get(rewriter.getContext()), memberMapping);
-      // Call DataSource::iterate to iterate over PostgreSQL tuples
-      // The PostgreSQL data source was created by GetExternalTableLowering
-      auto* context = rewriter.getContext();
-      
-      // Get or create the DataSource::iterate runtime function declaration
-      // (parentModule will be declared below)
-      // PostgreSQL iteration will be handled by calling DataSource::iterate
-      // For now, create a placeholder iterator for the function call
-      mlir::Value iterator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value{});
+      mlir::Value iterator = rt::DataSourceIteration::init(rewriter, scanOp->getLoc())({adaptor.getState(), memberMappingValue})[0];
       ColumnMapping mapping;
 
       auto* ctxt = rewriter.getContext();
       auto i16T = mlir::IntegerType::get(rewriter.getContext(), 16);
-      // TODO Phase 5: Replace arrow::ArrayType with PostgreSQL tuple type (NO ARROW)
-      auto ptrType = util::RefType::get(ctxt, mlir::IntegerType::get(ctxt, 8));
-      mlir::SmallVector<mlir::Type> tupleTypes = {rewriter.getIndexType(), rewriter.getIndexType(), util::RefType::get(i16T), ptrType};
-      auto recordBatchInfoRepr = mlir::TupleType::get(ctxt, tupleTypes);
+      auto recordBatchInfoRepr = mlir::TupleType::get(ctxt, {rewriter.getIndexType(), rewriter.getIndexType(), util::RefType::get(i16T), util::RefType::get(arrow::ArrayType::get(ctxt))});
       ModuleOp parentModule = scanOp->getParentOfType<ModuleOp>();
       mlir::func::FuncOp funcOp;
       static size_t funcIds;
-      // ptrType already declared above
+      auto ptrType = util::RefType::get(getContext(), IntegerType::get(getContext(), 8));
       rewriter.atStartOf(parentModule.getBody(), [&](SubOpRewriter& rewriter) {
          funcOp = rewriter.create<mlir::func::FuncOp>(parentModule.getLoc(), "scan_func" + std::to_string(funcIds++), mlir::FunctionType::get(getContext(), TypeRange{ptrType, ptrType}, TypeRange()));
       });
@@ -1251,9 +1145,7 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
          mlir::Value lenRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 0);
          mlir::Value offsetRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 1);
          //mlir::Value selVecRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(i16T)), recordBatchPointer, 2);
-         // TODO Phase 5: Replace Arrow type with PostgreSQL tuple pointer type
-         auto postgresqlTupleType = mlir::IntegerType::get(ctxt, 8); // Temporary stub 
-         mlir::Value ptrRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(postgresqlTupleType)), recordBatchPointer, 3);
+         mlir::Value ptrRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(arrow::ArrayType::get(ctxt))), recordBatchPointer, 3);
          mlir::Value ptrToColumns = rewriter.create<util::LoadOp>(loc, ptrRef);
          std::vector<mlir::Value> arrays;
          for (size_t i = 0; i < accessedColumnTypes.size(); i++) {
@@ -1275,52 +1167,12 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
          });
          rewriter.create<mlir::func::ReturnOp>(loc);
       });
+      Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
       Value parallelConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, scanOp->hasAttr("parallel"), rewriter.getI1Type());
-      // TODO Phase 4: Fix CallOp - call function by name, not by value  
-      rewriter.create<mlir::func::CallOp>(scanOp->getLoc(), funcOp.getSymName(), funcOp.getResultTypes(), mlir::ValueRange{iterator, parallelConst, ptr});
-      return success();
-      } catch (const std::exception& e) {
-         llvm::errs() << "ERROR: Exception in ScanRefsTableLowering: " << e.what() << "\n";
-         throw;
-      } catch (...) {
-         llvm::errs() << "ERROR: Unknown exception in ScanRefsTableLowering\n";
-         throw;
-      }
-   }
-};
-
-// Simple ScanOp lowering for table types (without column references)
-class ScanOpLowering : public SubOpConversionPattern<subop::ScanOp> {
-   public:
-   using SubOpConversionPattern<subop::ScanOp>::SubOpConversionPattern;
-
-   LogicalResult matchAndRewrite(subop::ScanOp scanOp, OpAdaptor adaptor, SubOpRewriter& rewriter) const override {
-      // DEBUG: Add logging to see if pattern is invoked
-      llvm::errs() << "DEBUG: ScanOpLowering pattern invoked\n";
-      llvm::errs() << "DEBUG: Scan state type: " << scanOp.getState().getType() << "\n";
-      llvm::errs() << "DEBUG: Is TableType? " << mlir::isa<subop::TableType>(scanOp.getState().getType()) << "\n";
-      
-      if (!mlir::isa<subop::TableType>(scanOp.getState().getType())) {
-         llvm::errs() << "DEBUG: ScanOpLowering pattern failed type check\n";
-         return failure();
-      }
-      
-      // For simple table scanning without column references, we can just create a basic iteration
-      // This is a simplified version that doesn't handle column references like ScanRefsTableLowering
-      auto loc = scanOp->getLoc();
-      auto* context = rewriter.getContext();
-      
-      // Create a simple iterator for PostgreSQL table scanning
-      mlir::Value iterator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value{});
-      
-      // For now, create a basic tuple stream result
-      ColumnMapping mapping;
-      rewriter.replaceTupleStream(scanOp, mapping);
-      
+      rt::DataSourceIteration::iterate(rewriter, scanOp->getLoc())({iterator, parallelConst, functionPointer, ptr});
       return success();
    }
 };
-
 class MergeThreadLocalResultTable : public SubOpConversionPattern<subop::MergeOp> {
    public:
    using SubOpConversionPattern<subop::MergeOp>::SubOpConversionPattern;
@@ -1350,21 +1202,18 @@ class MergeThreadLocalResultTable : public SubOpConversionPattern<subop::MergeOp
             auto rightBuilders = rewriter.create<util::UnPackOp>(loc, rightLoaded);
             std::vector<mlir::Value> results;
             for (size_t i = 0; i < leftBuilders.getNumResults(); i++) {
-               // TODO Phase 5: Replace with PostgreSQL tuple merge (NO ARROW)
-               // rt::ArrowColumnBuilder::merge(rewriter, loc)({leftBuilders.getResults()[i], rightBuilders.getResults()[i]});
+               rt::ArrowColumnBuilder::merge(rewriter, loc)({leftBuilders.getResults()[i], rightBuilders.getResults()[i]});
                results.push_back(leftBuilders.getResults()[i]);
             }
             auto packed = rewriter.create<util::PackOp>(loc, results);
-            rewriter.create<util::StoreOp>(loc, packed, leftPtr, mlir::Value{});
+            rewriter.create<util::StoreOp>(loc, packed, leftPtr, mlir::Value());
             rewriter.create<mlir::func::ReturnOp>(loc);
          });
       }
 
       Value combineFnPtr = rewriter.create<mlir::func::ConstantOp>(loc, combineFn.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(combineFn.getSymName())));
 
-      // TODO Phase 5: Implement ThreadLocalWrapper::merge (or stub for single-threaded)
-      // For now, just return the thread local value
-      mlir::Value merged = adaptor.getThreadLocal();
+      mlir::Value merged = rt::ThreadLocal::merge(rewriter, mergeOp->getLoc())(mlir::ValueRange{adaptor.getThreadLocal(), combineFnPtr})[0];
       merged = rewriter.create<util::GenericMemrefCastOp>(mergeOp->getLoc(), typeConverter->convertType(mergeOp.getType()), merged);
       rewriter.replaceOp(mergeOp, merged);
       return mlir::success();
@@ -1378,16 +1227,12 @@ class CreateFromResultTableLowering : public SubOpConversionPattern<subop::Creat
       mlir::Value loaded = rewriter.create<util::LoadOp>(createOp->getLoc(), adaptor.getState());
       auto columnBuilders = rewriter.create<util::UnPackOp>(createOp->getLoc(), loaded);
       auto loc = createOp->getLoc();
-      // TODO Phase 5: Replace with PostgreSQL result set creation (NO ARROW)
-      // For now, create a placeholder
-      mlir::Value table = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
+      mlir::Value table = rt::ArrowTable::createEmpty(rewriter, loc)({})[0];
       for (auto i = 0ul; i < columnBuilders.getNumResults(); i++) {
          auto columnBuilder = columnBuilders.getResult(i);
-         // TODO Phase 5: Replace with PostgreSQL column finalization (NO ARROW)
-         auto column = columnBuilder; // For now, just use the builder as column
+         auto column = rt::ArrowColumnBuilder::finish(rewriter, loc)({columnBuilder})[0];
          mlir::Value columnName = rewriter.create<util::CreateConstVarLen>(loc, util::VarLen32Type::get(getContext()), mlir::cast<mlir::StringAttr>(createOp.getColumns()[i]));
-         // TODO Phase 5: Replace with PostgreSQL result set column add (NO ARROW)
-         // table = rt::ArrowTable::addColumn(rewriter, loc)({table, columnName, column})[0];
+         table = rt::ArrowTable::addColumn(rewriter, loc)({table, columnName, column})[0];
       }
       rewriter.replaceOp(createOp, table);
       return success();
@@ -1421,11 +1266,8 @@ class CreateTableLowering : public SubOpConversionPattern<subop::GenericCreateOp
             return "string";
          }
       }
-      llvm::errs() << "=== ERROR: Unknown type in stringifyValueType: ";
-      type.dump();
-      llvm::errs() << " ===\n";
-      llvm::errs().flush();
-      return "unknown";
+      assert(false);
+      return "";
    }
 
    public:
@@ -1441,16 +1283,14 @@ class CreateTableLowering : public SubOpConversionPattern<subop::GenericCreateOp
          auto type = mlir::cast<mlir::TypeAttr>(tableType.getMembers().getTypes()[i]).getValue();
          auto baseType = getBaseType(type);
          mlir::Value typeDescr = rewriter.create<util::CreateConstVarLen>(loc, util::VarLen32Type::get(getContext()), arrowDescrFromType(baseType));
-         // TODO Phase 5: Replace ArrowColumnBuilder with PostgreSQL tuple builder (NO ARROW)
-         Value columnBuilder = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
+         Value columnBuilder = rt::ArrowColumnBuilder::create(rewriter, loc)({typeDescr})[0];
          columnBuilders.push_back(columnBuilder);
       }
       mlir::Value tpl = rewriter.create<util::PackOp>(createOp->getLoc(), columnBuilders);
       auto tplSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), tpl.getType());
-      // TODO Phase 5: Implement ExecutionContext::allocStateRaw wrapper (CRITICAL)
-      mlir::Value ref = rewriter.create<util::AllocaOp>(loc, util::RefType::get(tpl.getType()), mlir::Value{});
+      mlir::Value ref = rt::ExecutionContext::allocStateRaw(rewriter, loc)({tplSize})[0];
       ref = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(tpl.getType()), ref);
-      rewriter.create<util::StoreOp>(createOp->getLoc(), tpl, ref, mlir::Value{});
+      rewriter.create<util::StoreOp>(createOp->getLoc(), tpl, ref, mlir::Value());
       rewriter.replaceOp(createOp, ref);
       return mlir::success();
    }
@@ -1461,51 +1301,10 @@ class GetExternalTableLowering : public SubOpConversionPattern<subop::GetExterna
    using SubOpConversionPattern<subop::GetExternalOp>::SubOpConversionPattern;
 
    LogicalResult matchAndRewrite(subop::GetExternalOp op, OpAdaptor adaptor, SubOpRewriter& rewriter) const override {
-      // DEBUG: Add logging to see if pattern is invoked
-      llvm::errs() << "DEBUG: GetExternalTableLowering pattern invoked\n";
-      llvm::errs() << "DEBUG: Operation type: " << op.getType() << "\n";
-      llvm::errs() << "DEBUG: Is TableType? " << mlir::isa<subop::TableType>(op.getType()) << "\n";
-      
-      try {
-      if (!mlir::isa<subop::TableType>(op.getType())) {
-         llvm::errs() << "DEBUG: GetExternalTableLowering pattern failed type check\n";
-         return failure();
-      }
-      
-      // Create description for DataSource
-      mlir::Value description = rewriter.create<util::CreateConstVarLen>(op->getLoc(), 
-         util::VarLen32Type::get(rewriter.getContext()), op.getDescrAttr());
-      
-      // Use DataSource::get which will call our PostgreSQLDataSource
-      // The PostgreSQLDataSource.h header defines DataSource::get to use PostgreSQL
-      auto loc = op->getLoc();
-      auto* context = rewriter.getContext();
-      
-      // Get or create the DataSource::get runtime function declaration
-      ModuleOp parentModule = op->getParentOfType<ModuleOp>();
-      mlir::func::FuncOp funcOp;
-      auto funcName = "DataSource_get";
-      
-      if (!(funcOp = parentModule.lookupSymbol<mlir::func::FuncOp>(funcName))) {
-         rewriter.atStartOf(parentModule.getBody(), [&](SubOpRewriter& rewriter) {
-            auto i8PtrType = util::RefType::get(context, rewriter.getI8Type());
-            funcOp = rewriter.create<mlir::func::FuncOp>(loc, funcName,
-               mlir::FunctionType::get(context, {description.getType()}, {i8PtrType}));
-            funcOp->setAttr("llvm.emit_c_interface", mlir::UnitAttr::get(context));
-         });
-      }
-      
-      // Call DataSource::get to create PostgreSQL data source
-      mlir::Value dataSource = rewriter.create<mlir::func::CallOp>(loc, funcOp, mlir::ValueRange{description}).getResult(0);
-      rewriter.replaceOp(op, dataSource);
+      if (!mlir::isa<subop::TableType>(op.getType())) return failure();
+      mlir::Value description = rewriter.create<util::CreateConstVarLen>(op->getLoc(), util::VarLen32Type::get(rewriter.getContext()), op.getDescrAttr());
+      rewriter.replaceOp(op, rt::DataSource::get(rewriter, op->getLoc())({description})[0]);
       return mlir::success();
-      } catch (const std::exception& e) {
-         llvm::errs() << "ERROR: Exception in GetExternalTableLowering: " << e.what() << "\n";
-         throw;
-      } catch (...) {
-         llvm::errs() << "ERROR: Unknown exception in GetExternalTableLowering\n";
-         throw;
-      }
    }
 };
 class GenerateLowering : public SubOpConversionPattern<subop::GenerateOp> {
@@ -1585,15 +1384,12 @@ class CreateBufferLowering : public SubOpConversionPattern<subop::GenericCreateO
       rewriter.atStartOf(&createOp->getParentOfType<mlir::func::FuncOp>().getBody().front(), [&](SubOpRewriter& rewriter) {
          if (createOp->hasAttrOfType<mlir::IntegerAttr>("group")) {
             Value groupId = rewriter.create<arith::ConstantIndexOp>(loc, mlir::cast<mlir::IntegerAttr>(createOp->getAttr("group")).getInt());
-            // TODO Phase 5: Implement GrowingBufferAllocator::getGroupAllocator wrapper
-            allocator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
+            allocator = rt::GrowingBufferAllocator::getGroupAllocator(rewriter, loc)({groupId})[0];
          } else {
-            // TODO Phase 5: Implement GrowingBufferAllocator::getDefaultAllocator wrapper
-            allocator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
+            allocator = rt::GrowingBufferAllocator::getDefaultAllocator(rewriter, loc)({})[0];
          }
       });
-      // TODO Phase 5: Implement GrowingBuffer::create wrapper
-      mlir::Value vector = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(createOp.getType()), mlir::Value{});
+      mlir::Value vector = rt::GrowingBuffer::create(rewriter, loc)({allocator, typeSize, initialCapacity})[0];
       rewriter.replaceOp(createOp, vector);
       return mlir::success();
    }
@@ -1627,9 +1423,9 @@ void implementBufferIterationRuntime(bool parallel, mlir::Value bufferIterator, 
       });
       rewriter.create<mlir::func::ReturnOp>(loc);
    });
+   Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
    Value parallelConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, parallel, rewriter.getI1Type());
-   // TODO Phase 4: Fix CallOp - call function by name, not by value
-   rewriter.create<mlir::func::CallOp>(loc, funcOp.getSymName(), funcOp.getResultTypes(), mlir::ValueRange{bufferIterator, parallelConst, ptr});
+   rt::BufferIterator::iterate(rewriter, loc)({bufferIterator, parallelConst, functionPointer, ptr});
 }
 void implementBufferIteration(bool parallel, mlir::Value bufferIterator, mlir::Type entryType, mlir::Location loc, SubOpRewriter& rewriter, mlir::TypeConverter& typeConverter, mlir::Operation* op, std::function<void(SubOpRewriter& rewriter, mlir::Value)> fn) {
    implementBufferIterationRuntime(parallel, bufferIterator, entryType, loc, rewriter, typeConverter, op, fn);
@@ -1644,8 +1440,7 @@ class ScanRefsVectorLowering : public SubOpConversionPattern<subop::ScanRefsOp> 
       ColumnMapping mapping;
       auto elementType = EntryStorageHelper(scanOp, bufferType.getMembers(), bufferType.hasLock(), typeConverter).getStorageType();
 
-      // TODO Phase 5: Implement GrowingBuffer::create wrapperIterator
-      auto iterator = rewriter.create<util::AllocaOp>(scanOp->getLoc(), util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
+      auto iterator = rt::GrowingBuffer::createIterator(rewriter, scanOp->getLoc())(adaptor.getState())[0];
       implementBufferIteration(scanOp->hasAttr("parallel"), iterator, elementType, scanOp->getLoc(), rewriter, *typeConverter, scanOp.getOperation(), [&](SubOpRewriter& rewriter, mlir::Value ptr) {
          mapping.define(scanOp.getRef(), ptr);
          rewriter.replaceTupleStream(scanOp, mapping);
@@ -1663,9 +1458,8 @@ class CreateHashMapLowering : public SubOpConversionPattern<subop::GenericCreate
 
       auto typeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHtEntryType(t, *typeConverter));
       Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(createOp->getLoc(), 4);
-      // TODO Phase 5: Implement Hashtable::create wrapper (CRITICAL for joins/aggregates)
-      auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value{});
-      rewriter.replaceOp(createOp, ValueRange{ptr});
+      auto ptr = rt::Hashtable::create(rewriter, createOp->getLoc())({typeSize, initialCapacity})[0];
+      rewriter.replaceOp(createOp, ptr);
       return mlir::success();
    }
 };
@@ -1679,9 +1473,8 @@ class CreateHashMultiMapLowering : public SubOpConversionPattern<subop::GenericC
       auto entryTypeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHashMultiMapEntryType(t, *typeConverter));
       auto valueTypeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHashMultiMapValueType(t, *typeConverter));
       Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(createOp->getLoc(), 4);
-      // TODO Phase 11: Implement HashMultiMap::create wrapper (for complex joins)
-      auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value{});
-      rewriter.replaceOp(createOp, ValueRange{ptr});
+      auto ptr = rt::HashMultiMap::create(rewriter, createOp->getLoc())({entryTypeSize, valueTypeSize, initialCapacity})[0];
+      rewriter.replaceOp(createOp, ptr);
       return mlir::success();
    }
 };
@@ -1694,8 +1487,7 @@ class CreateOpenHtFragmentLowering : public SubOpConversionPattern<subop::Generi
 
       auto typeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHtEntryType(t, *typeConverter));
       auto withLocks = rewriter.create<mlir::arith::ConstantIntOp>(createOp->getLoc(), t.getWithLock(), rewriter.getI1Type());
-      // TODO Phase 11: Implement PreAggregationHashtableFragment::create wrapper (optimized aggregates)
-      auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
+      auto ptr = rt::PreAggregationHashtableFragment::create(rewriter, createOp->getLoc())({typeSize, withLocks})[0];
       rewriter.replaceOpWithNewOp<util::GenericMemrefCastOp>(createOp, typeConverter->convertType(t), ptr);
       return mlir::success();
    }
@@ -1714,8 +1506,7 @@ class CreateArrayLowering : public SubOpConversionPattern<subop::CreateArrayOp> 
       auto elementType = storageHelper.getStorageType();
       auto typeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
       auto numBytes = rewriter.create<mlir::arith::MulIOp>(loc, typeSize, numElements);
-      // TODO Phase 5: Implement Buffer::createZeroed wrapper
-      mlir::Value vector = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), numBytes);
+      mlir::Value vector = rt::Buffer::createZeroed(rewriter, loc)({numBytes})[0];
       rewriter.replaceOpWithNewOp<util::BufferCastOp>(createOp, typeConverter->convertType(createOp.getType()), vector);
       return mlir::success();
    }
@@ -1788,8 +1579,7 @@ class CreateSegmentTreeViewLowering : public SubOpConversionPattern<subop::Creat
       //auto genericBuffer = rt::GrowingBuffer::sort(rewriter, loc)({adaptor.getToSort(), functionPointer})[0];
       Value sourceEntryTypeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), sourceElementType);
       Value stateTypeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), viewElementType);
-      // TODO Phase 12: Implement SegmentTreeView::build wrapper (window functions)
-      mlir::Value res = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(createOp.getType()), mlir::Value{});
+      mlir::Value res = rt::SegmentTreeView::build(rewriter, loc)({adaptor.getSource(), sourceEntryTypeSize, initialFnPtr, combineFnPtr, stateTypeSize})[0];
       rewriter.replaceOp(createOp, res);
       return mlir::success();
    }
@@ -1829,9 +1619,8 @@ class CreateHeapLowering : public SubOpConversionPattern<subop::CreateHeapOp> {
       Value typeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
       Value maxElements = rewriter.create<mlir::arith::ConstantIndexOp>(loc, heapType.getMaxElements());
       Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
-      // TODO Phase 12: Implement Heap::create wrapper (top-K queries)
-      auto heap = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(heapOp.getType()), mlir::Value{});
-      rewriter.replaceOp(heapOp, ValueRange{heap});
+      auto heap = rt::Heap::create(rewriter, loc)({maxElements, typeSize, functionPointer})[0];
+      rewriter.replaceOp(heapOp, heap);
       return mlir::success();
    }
 };
@@ -1842,8 +1631,7 @@ class MergeThreadLocalBuffer : public SubOpConversionPattern<subop::MergeOp> {
 
    LogicalResult matchAndRewrite(subop::MergeOp mergeOp, OpAdaptor adaptor, SubOpRewriter& rewriter) const override {
       if (!mlir::isa<subop::BufferType>(mergeOp.getType())) return mlir::failure();
-      // TODO Phase 5: Implement GrowingBuffer::merge wrapper
-      mlir::Value merged = adaptor.getThreadLocal();
+      mlir::Value merged = rt::GrowingBuffer::merge(rewriter, mergeOp->getLoc())(adaptor.getThreadLocal())[0];
       rewriter.replaceOp(mergeOp, merged);
       return mlir::success();
    }
@@ -1854,8 +1642,7 @@ class MergeThreadLocalHeap : public SubOpConversionPattern<subop::MergeOp> {
 
    LogicalResult matchAndRewrite(subop::MergeOp mergeOp, OpAdaptor adaptor, SubOpRewriter& rewriter) const override {
       if (!mlir::isa<subop::HeapType>(mergeOp.getType())) return mlir::failure();
-      // TODO Phase 12: Implement Heap::merge wrapper (top-K queries)
-      mlir::Value merged = adaptor.getThreadLocal();
+      mlir::Value merged = rt::Heap::merge(rewriter, mergeOp->getLoc())(adaptor.getThreadLocal())[0];
       rewriter.replaceOp(mergeOp, merged);
       return mlir::success();
    }
@@ -1904,8 +1691,7 @@ class MergeThreadLocalSimpleState : public SubOpConversionPattern<subop::MergeOp
       }
 
       Value combineFnPtr = rewriter.create<mlir::func::ConstantOp>(loc, combineFn.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(combineFn.getSymName())));
-      // TODO Phase 5: Implement SimpleState::merge wrapper
-      mlir::Value merged = adaptor.getThreadLocal();
+      mlir::Value merged = rt::SimpleState::merge(rewriter, mergeOp->getLoc())(mlir::ValueRange{adaptor.getThreadLocal(), combineFnPtr})[0];
       merged = rewriter.create<util::GenericMemrefCastOp>(mergeOp->getLoc(), typeConverter->convertType(mergeOp.getType()), merged);
       rewriter.replaceOp(mergeOp, merged);
       return mlir::success();
@@ -1983,8 +1769,7 @@ class MergeThreadLocalHashMap : public SubOpConversionPattern<subop::MergeOp> {
 
       Value combineFnPtr = rewriter.create<mlir::func::ConstantOp>(loc, combineFn.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(combineFn.getSymName())));
       Value eqFnPtr = rewriter.create<mlir::func::ConstantOp>(loc, eqFn.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(eqFn.getSymName())));
-      // TODO Phase 11: Implement Hashtable::merge wrapper (for aggregates)
-      mlir::Value merged = adaptor.getThreadLocal();
+      mlir::Value merged = rt::Hashtable::merge(rewriter, mergeOp->getLoc())(mlir::ValueRange{adaptor.getThreadLocal(), eqFnPtr, combineFnPtr})[0];
       merged = rewriter.create<util::GenericMemrefCastOp>(mergeOp->getLoc(), typeConverter->convertType(mergeOp.getType()), merged);
       rewriter.replaceOp(mergeOp, merged);
       return mlir::success();
@@ -2061,8 +1846,7 @@ class MergePreAggrHashMap : public SubOpConversionPattern<subop::MergeOp> {
       }
       Value combineFnPtr = rewriter.create<mlir::func::ConstantOp>(loc, combineFn.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(combineFn.getSymName())));
       Value eqFnPtr = rewriter.create<mlir::func::ConstantOp>(loc, eqFn.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(eqFn.getSymName())));
-      // TODO Phase 11: Implement PreAggregationHashtable::merge wrapper (optimized aggregates)
-      mlir::Value merged = adaptor.getThreadLocal();
+      mlir::Value merged = rt::PreAggregationHashtable::merge(rewriter, mergeOp->getLoc())(mlir::ValueRange{adaptor.getThreadLocal(), eqFnPtr, combineFnPtr})[0];
       merged = rewriter.create<util::GenericMemrefCastOp>(mergeOp->getLoc(), typeConverter->convertType(mergeOp.getType()), merged);
       rewriter.replaceOp(mergeOp, merged);
       return mlir::success();
@@ -2099,8 +1883,7 @@ class SortLowering : public SubOpConversionPattern<subop::CreateSortedViewOp> {
       });
 
       Value functionPointer = rewriter.create<mlir::func::ConstantOp>(sortOp->getLoc(), funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
-      // TODO Phase 12: Implement GrowingBuffer::sort wrapper (ORDER BY)
-      auto genericBuffer = adaptor.getToSort();
+      auto genericBuffer = rt::GrowingBuffer::sort(rewriter, sortOp->getLoc())({adaptor.getToSort(), functionPointer})[0];
       rewriter.replaceOpWithNewOp<util::BufferCastOp>(sortOp, typeConverter->convertType(sortOp.getType()), genericBuffer);
       return mlir::success();
    }
@@ -2154,8 +1937,7 @@ class ScanRefsHeapLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       auto loc = scanOp->getLoc();
       EntryStorageHelper storageHelper(scanOp, heapType.getMembers(), heapType.hasLock(), typeConverter);
       mlir::TupleType elementType = storageHelper.getStorageType();
-      // TODO Phase 12: Implement Heap::getBuffer wrapper (top-K queries)
-      auto buffer = adaptor.getState();
+      auto buffer = rt::Heap::getBuffer(rewriter, scanOp->getLoc())({adaptor.getState()})[0];
       auto castedBuffer = rewriter.create<util::BufferCastOp>(loc, util::BufferType::get(rewriter.getContext(), elementType), buffer);
       auto start = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
       auto end = rewriter.create<util::BufferGetLen>(loc, rewriter.getIndexType(), castedBuffer);
@@ -2212,9 +1994,9 @@ class ScanRefsContinuousViewLowering : public SubOpConversionPattern<subop::Scan
          });
          rewriter.create<mlir::func::ReturnOp>(loc);
       });
+      Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
       Value parallelConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, scanOp->hasAttr("parallel"), rewriter.getI1Type());
-      // TODO Phase 4: Fix CallOp - call function by name, not by value
-      rewriter.create<mlir::func::CallOp>(loc, funcOp.getSymName(), funcOp.getResultTypes(), mlir::ValueRange{parallelConst, adaptor.getState(), typeSize});
+      rt::Buffer::iterate(rewriter, loc)({parallelConst, adaptor.getState(), typeSize, functionPointer, rewriter.storeStepRequirements()});
       return mlir::success();
 
       return success();
@@ -2230,8 +2012,7 @@ class ScanHashMapLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       auto hashMapType = mlir::cast<subop::HashMapType>(scanRefsOp.getState().getType());
       ColumnMapping mapping;
       auto loc = scanRefsOp->getLoc();
-      // TODO Phase 5: Implement Hashtable::createIterator wrapper (CRITICAL)
-      auto it = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
+      auto it = rt::Hashtable::createIterator(rewriter, loc)({adaptor.getState()})[0];
       auto kvPtrType = util::RefType::get(getContext(), getHtKVType(hashMapType, *typeConverter));
       implementBufferIteration(scanRefsOp->hasAttr("parallel"), it, getHtEntryType(hashMapType, *typeConverter), loc, rewriter, *typeConverter, scanRefsOp.getOperation(), [&](SubOpRewriter& rewriter, mlir::Value ptr) {
          auto kvPtr = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, ptr, 2);
@@ -2250,8 +2031,7 @@ class ScanPreAggrHtLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       auto hashMapType = mlir::cast<subop::PreAggrHtType>(scanRefsOp.getState().getType());
       ColumnMapping mapping;
       auto loc = scanRefsOp->getLoc();
-      // TODO Phase 11: Implement PreAggregationHashtable::createIterator wrapper
-      auto it = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
+      auto it = rt::PreAggregationHashtable::createIterator(rewriter, loc)({adaptor.getState()})[0];
       auto kvPtrType = util::RefType::get(getContext(), getHtKVType(hashMapType, *typeConverter));
       implementBufferIteration(scanRefsOp->hasAttr("parallel"), it, util::RefType::get(getContext(), getHtEntryType(hashMapType, *typeConverter)), loc, rewriter, *typeConverter, scanRefsOp.getOperation(), [&](SubOpRewriter& rewriter, mlir::Value ptr) {
          ptr = rewriter.create<util::LoadOp>(loc, ptr, mlir::Value());
@@ -2271,8 +2051,7 @@ class ScanHashMultiMap : public SubOpConversionPattern<subop::ScanRefsOp> {
       if (!hashMultiMapType) return failure();
       ColumnMapping mapping;
       auto loc = scanRefsOp->getLoc();
-      // TODO Phase 5: Implement Hashtable::createIterator wrapper (CRITICAL)
-      auto it = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
+      auto it = rt::Hashtable::createIterator(rewriter, loc)({adaptor.getState()})[0];
       EntryStorageHelper valStorageHelper(scanRefsOp, hashMultiMapType.getValueMembers(), false, typeConverter);
       EntryStorageHelper keyStorageHelper(scanRefsOp, hashMultiMapType.getKeyMembers(), hashMultiMapType.hasLock(), typeConverter);
       auto i8PtrType = util::RefType::get(getContext(), rewriter.getI8Type());
@@ -2477,10 +2256,7 @@ class ScanExternalHashIndexListLowering : public SubOpConversionPattern<subop::S
       auto tupleType = mlir::TupleType::get(ctxt, unpackTypes(externalHashIndexType.getMembers().getTypes()));
       mlir::TypeRange typeRange{tupleType.getTypes()};
       auto i16T = mlir::IntegerType::get(rewriter.getContext(), 16);
-      // TODO Phase 5: Replace arrow::ArrayType with PostgreSQL tuple type (NO ARROW)
-      auto ptrType = util::RefType::get(ctxt, mlir::IntegerType::get(ctxt, 8));
-      mlir::SmallVector<mlir::Type> tupleTypes = {rewriter.getIndexType(), rewriter.getIndexType(), util::RefType::get(i16T), ptrType};
-      auto recordBatchInfoRepr = mlir::TupleType::get(ctxt, tupleTypes);
+      auto recordBatchInfoRepr = mlir::TupleType::get(ctxt, {rewriter.getIndexType(), rewriter.getIndexType(), util::RefType::get(i16T), util::RefType::get(arrow::ArrayType::get(ctxt))});
       auto convertedListType = typeConverter->convertType(listType);
 
       // Create while loop to extract all chained values from hash table
@@ -2497,8 +2273,7 @@ class ScanExternalHashIndexListLowering : public SubOpConversionPattern<subop::S
       // Check if iterator contains another value
       rewriter.atStartOf(conditionBlock, [&](SubOpRewriter& rewriter) {
          mlir::Value list = conditionBlock->getArgument(0);
-         // TODO Phase 12: Implement HashIndexIteration::hasNext wrapper (index scans)
-         mlir::Value cont = rewriter.create<mlir::arith::ConstantIntOp>(loc, 0, rewriter.getI1Type());
+         mlir::Value cont = rt::HashIndexIteration::hasNext(rewriter, loc)({list})[0];
          rewriter.create<scf::ConditionOp>(loc, cont, ValueRange({list}));
       });
 
@@ -2507,15 +2282,12 @@ class ScanExternalHashIndexListLowering : public SubOpConversionPattern<subop::S
          mlir::Value list = bodyBlock->getArgument(0);
          mlir::Value recordBatchPointer;
          rewriter.atStartOf(&scanOp->getParentOfType<mlir::func::FuncOp>().getBody().front(), [&](SubOpRewriter& rewriter) {
-            recordBatchPointer = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), recordBatchInfoRepr), mlir::Value{});
+            recordBatchPointer = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), recordBatchInfoRepr), mlir::Value());
          });
-         // TODO Phase 12: Implement HashIndexIteration::consumeRecordBatch wrapper (index scans)
-         // rt::HashIndexIteration::consumeRecordBatch(rewriter, loc)({list, recordBatchPointer});
+         rt::HashIndexIteration::consumeRecordBatch(rewriter, loc)({list, recordBatchPointer});
          mlir::Value lenRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 0);
          mlir::Value offsetRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 1);
-         // TODO Phase 5: Replace Arrow type with PostgreSQL tuple pointer type
-         auto postgresqlTupleType = mlir::IntegerType::get(ctxt, 8); // Temporary stub 
-         mlir::Value ptrRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(postgresqlTupleType)), recordBatchPointer, 3);
+         mlir::Value ptrRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(util::RefType::get(arrow::ArrayType::get(ctxt))), recordBatchPointer, 3);
          mlir::Value ptrToColumns = rewriter.create<util::LoadOp>(loc, ptrRef);
          std::vector<mlir::Value> arrays;
          for (size_t i = 0; i < externalHashIndexType.getMembers().getTypes().size(); i++) {
@@ -2617,23 +2389,7 @@ class FilterLowering : public SubOpTupleStreamConsumerConversionPattern<subop::F
       if (providedVals.size() == 1) {
          cond = providedVals[0];
       } else {
-         // DB ops need explicit result type
-         auto boolType = rewriter.getI1Type();
-         // Check if any operand is nullable
-         bool isNullable = false;
-         for (auto val : providedVals) {
-            if (auto nullableType = mlir::dyn_cast<db::NullableType>(val.getType())) {
-               isNullable = true;
-               break;
-            }
-         }
-         mlir::Type resultType;
-         if (isNullable) {
-            resultType = db::NullableType::get(rewriter.getContext(), boolType);
-         } else {
-            resultType = boolType;
-         }
-         cond = rewriter.create<db::AndOp>(filterOp.getLoc(), resultType, providedVals);
+         cond = rewriter.create<db::AndOp>(filterOp.getLoc(), providedVals);
       }
       if (!cond.getType().isInteger(1)) {
          cond = rewriter.create<db::DeriveTruth>(filterOp.getLoc(), cond);
@@ -2677,11 +2433,10 @@ class MaterializeHeapLowering : public SubOpTupleStreamConsumerConversionPattern
       EntryStorageHelper storageHelper(materializeOp, heapType.getMembers(), heapType.hasLock(), typeConverter);
       mlir::Value ref;
       rewriter.atStartOf(&rewriter.getCurrentStreamLoc()->getParentOfType<mlir::func::FuncOp>().getFunctionBody().front(), [&](SubOpRewriter& rewriter) {
-         ref = rewriter.create<util::AllocaOp>(materializeOp->getLoc(), util::RefType::get(storageHelper.getStorageType()), mlir::Value{});
+         ref = rewriter.create<util::AllocaOp>(materializeOp->getLoc(), util::RefType::get(storageHelper.getStorageType()), mlir::Value());
       });
       storageHelper.storeFromColumns(materializeOp.getMapping(), mapping, ref, rewriter, materializeOp->getLoc());
-      // TODO Phase 12: Implement Heap::insert wrapper (top-K queries)
-      // rt::Heap::insert(rewriter, materializeOp->getLoc())({adaptor.getState(), ref});
+      rt::Heap::insert(rewriter, materializeOp->getLoc())({adaptor.getState(), ref});
       rewriter.eraseOp(materializeOp);
       return mlir::success();
    }
@@ -2695,9 +2450,7 @@ class MaterializeVectorLowering : public SubOpTupleStreamConsumerConversionPatte
       auto bufferType = mlir::dyn_cast_or_null<subop::BufferType>(materializeOp.getState().getType());
       if (!bufferType) return failure();
       EntryStorageHelper storageHelper(materializeOp, bufferType.getMembers(), bufferType.hasLock(), typeConverter);
-      // TODO Phase 5: Implement GrowingBuffer::insert wrapper
-      auto elementType = storageHelper.getStorageType();
-      mlir::Value ref = rewriter.create<util::AllocaOp>(materializeOp->getLoc(), util::RefType::get(rewriter.getContext(), elementType), mlir::Value{});
+      mlir::Value ref = rt::GrowingBuffer::insert(rewriter, materializeOp->getLoc())({adaptor.getState()})[0];
       storageHelper.storeFromColumns(materializeOp.getMapping(), mapping, ref, rewriter, materializeOp->getLoc());
       rewriter.eraseOp(materializeOp);
       return mlir::success();
@@ -2763,10 +2516,9 @@ class LookupSegmentTreeViewLowering : public SubOpTupleStreamConsumerConversionP
       auto idxRight = unpackedRight[0];
       mlir::Value ref;
       rewriter.atStartOf(&rewriter.getCurrentStreamLoc()->getParentOfType<mlir::func::FuncOp>().getFunctionBody().front(), [&](SubOpRewriter& rewriter) {
-         ref = rewriter.create<util::AllocaOp>(lookupOp->getLoc(), util::RefType::get(typeConverter->convertType(stateType)), mlir::Value{});
+         ref = rewriter.create<util::AllocaOp>(lookupOp->getLoc(), util::RefType::get(typeConverter->convertType(stateType)), mlir::Value());
       });
-      // TODO Phase 12: Implement SegmentTreeView::lookup wrapper (window functions)
-      // rt::SegmentTreeView::lookup(rewriter, loc)({adaptor.getState(), ref, idxLeft, idxRight});
+      rt::SegmentTreeView::lookup(rewriter, loc)({adaptor.getState(), ref, idxLeft, idxRight});
       mapping.define(lookupOp.getRef(), ref);
       rewriter.replaceTupleStream(lookupOp, mapping);
       return mlir::success();
@@ -2860,7 +2612,7 @@ class PureLookupHashMapLowering : public SubOpTupleStreamConsumerConversionPatte
                            b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -2868,7 +2620,7 @@ class PureLookupHashMapLowering : public SubOpTupleStreamConsumerConversionPatte
                   }, [&](OpBuilder& b, Location loc) {
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                      //          ptr = &entry.next
-                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
@@ -2973,7 +2725,7 @@ class PureLookupPreAggregationHtLowering : public SubOpTupleStreamConsumerConver
                                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                                  Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                                  //          ptr = &entry.next
-                                 Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                                 Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                                  Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                                  //          yield ptr,done=false
                                  b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -2981,7 +2733,7 @@ class PureLookupPreAggregationHtLowering : public SubOpTupleStreamConsumerConver
                         }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
@@ -3086,7 +2838,7 @@ class LookupHashMultiMapLowering : public SubOpTupleStreamConsumerConversionPatt
                            b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -3094,7 +2846,7 @@ class LookupHashMultiMapLowering : public SubOpTupleStreamConsumerConversionPatt
                   }, [&](OpBuilder& b, Location loc) {
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                      //          ptr = &entry.next
-                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
@@ -3195,15 +2947,14 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
                      Value keyMatches = equalFnBuilder(b, keyValues, lookupKey);
                      auto ifOp2 = b.create<scf::IfOp>(
                         loc, keyMatches, [&](OpBuilder& b, Location loc) {
-                           // TODO Phase 11: Implement HashMultiMap::insertValue wrapper (complex joins)
-                           Value valRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), currEntryPtr, 0);
+                           Value valRef=rt::HashMultiMap::insertValue(rewriter,loc)({hashTable,currEntryPtr})[0];
                            valRef=rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(getContext(),mlir::TupleType::get(getContext(),{i8PtrType,valStorageHelper.getStorageType()})),valRef);
                            valRef=rewriter.create<util::TupleElementPtrOp>(loc, valStorageHelper.getRefType(), valRef, 1);
                            valStorageHelper.storeFromColumns(insertOp.getMapping(),mapping,valRef,rewriter,loc);
                            b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -3212,19 +2963,17 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
 
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                      //          ptr = &entry.next
-                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
                b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) {
-               // TODO Phase 11: Implement HashMultiMap::insertEntry wrapper (complex joins)
-               Value entryRef = rewriter.create<util::AllocaOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), mlir::Value{});
+               Value entryRef=rt::HashMultiMap::insertEntry(b,loc)({hashTable,hashed})[0];
                Value entryRefCasted= rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
                Value keyRef=rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, entryRefCasted, 3);
 
                keyStorageHelper.storeFromColumns(insertOp.getMapping(),mapping,keyRef,rewriter,loc);
-               // TODO Phase 11: Implement HashMultiMap::insertValue wrapper (complex joins)
-               Value valRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), entryRef, 0);
+               Value valRef=rt::HashMultiMap::insertValue(rewriter,loc)({hashTable,entryRef})[0];
                valRef=rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(getContext(),mlir::TupleType::get(getContext(),{i8PtrType,valStorageHelper.getStorageType()})),valRef);
                valRef=rewriter.create<util::TupleElementPtrOp>(loc, valStorageHelper.getRefType(), valRef, 1);
                valStorageHelper.storeFromColumns(insertOp.getMapping(),mapping,valRef,rewriter,loc);
@@ -3316,8 +3065,7 @@ class LookupPreAggrHtFragment : public SubOpTupleStreamConsumerConversionPattern
          loc, ifOp.getResults()[0], [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc, currEntryPtr); },
          [&](OpBuilder& b, Location loc) {
             auto initialVals = initValBuilder(rewriter);
-            // TODO Phase 11: Implement PreAggregationHashtableFragment::insert wrapper (optimized aggregates)
-            Value entryRef = rewriter.create<util::AllocaOp>(loc, bucketPtrType, mlir::Value{});
+            Value entryRef = rt::PreAggregationHashtableFragment::insert(b, loc)({adaptor.getState(), hashed})[0];
             Value entryRefCasted = rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
             Value kvRef = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, entryRefCasted, 2);
             Value keyRef = rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, kvRef, 0);
@@ -3325,8 +3073,7 @@ class LookupPreAggrHtFragment : public SubOpTupleStreamConsumerConversionPattern
             keyStorageHelper.storeOrderedValues(keyRef, lookupKey, rewriter, loc);
             valStorageHelper.storeOrderedValues(valRef, initialVals, rewriter, loc);
             if (fragmentType.hasLock()) {
-               // TODO Phase 5: Implement EntryLockWrapper::initialize wrapper (thread safety)
-               // rt::EntryLockWrapper::initialize(rewriter, loc)({valStorageHelper.getLockPointer(valRef, rewriter, loc)});
+               rt::EntryLock::initialize(rewriter, loc)({valStorageHelper.getLockPointer(valRef, rewriter, loc)});
             }
             b.create<scf::YieldOp>(loc, ValueRange{entryRefCasted});
          });
@@ -3436,7 +3183,7 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
                            b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -3444,15 +3191,14 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
                   }, [&](OpBuilder& b, Location loc) {
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                      //          ptr = &entry.next
-                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
+                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
                b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) {
                auto initialVals = initValBuilder(rewriter);
                //       %newEntry = ...
-               // TODO Phase 5: Implement Hashtable::insert wrapper (CRITICAL for joins/aggregates)
-               Value entryRef = rewriter.create<util::AllocaOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), mlir::Value{});
+               Value entryRef=rt::Hashtable::insert(b,loc)({hashTable,hashed})[0];
                Value entryRefCasted= rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
                Value kvRef = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, entryRefCasted, 2);
                Value keyRef = rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, kvRef, 0);
@@ -3488,9 +3234,7 @@ class LookupExternalHashIndexLowering : public SubOpTupleStreamConsumerConversio
 
       // Calculate hash value and perform lookup in external index hashmap
       auto hashValue = rewriter.create<db::Hash>(loc, rewriter.create<util::PackOp>(loc, mapping.resolve(lookupOp, lookupOp.getKeys())));
-      // PostgreSQL: Skip hash index lookup for now
-      auto ptrType = util::RefType::get(getContext(), IntegerType::get(getContext(), 8));
-      mlir::Value list = rewriter.create<util::InvalidRefOp>(loc, ptrType);
+      mlir::Value list = rt::HashIndexAccess::lookup(rewriter, loc)({adaptor.getState(), hashValue})[0];
 
       mapping.define(lookupOp.getRef(), list);
       rewriter.replaceTupleStream(lookupOp, mapping);
@@ -3615,9 +3359,7 @@ class ExternalHashIndexRefGatherOpLowering : public SubOpTupleStreamConsumerConv
             auto colArray = unPackedColumns[i];
             auto type = columnDefAttr.getColumn().type;
             //todo: use MLIR interfaces to get the "right" operation for loading a certain type from an arrow array?
-            // PostgreSQL: Replace Arrow load with field access
-            // For now, create a null value as placeholder
-            mlir::Value loaded = rewriter.create<db::NullOp>(gatherOp->getLoc(), type);
+            mlir::Value loaded = rewriter.create<db::LoadArrowOp>(gatherOp->getLoc(), type, colArray, currRow);
             mapping.define(columnDefAttr, loaded);
          }
       }
@@ -3929,10 +3671,8 @@ class CreateHashIndexedViewLowering : public SubOpConversionPattern<subop::Creat
       auto linkIsFirst = mlir::cast<mlir::StringAttr>(bufferType.getMembers().getNames()[0]).str() == createOp.getLinkMember();
       auto hashIsSecond = mlir::cast<mlir::StringAttr>(bufferType.getMembers().getNames()[1]).str() == createOp.getHashMember();
       if (!linkIsFirst || !hashIsSecond) return failure();
-      // PostgreSQL: Skip hash indexed view for now
-      auto ptrType = util::RefType::get(getContext(), IntegerType::get(getContext(), 8));
-      auto htView = rewriter.create<util::InvalidRefOp>(createOp->getLoc(), ptrType);
-      rewriter.replaceOp(createOp, ValueRange{htView});
+      auto htView = rt::HashIndexedView::build(rewriter, createOp->getLoc())({adaptor.getSource()})[0];
+      rewriter.replaceOp(createOp, htView);
       return success();
    }
 };
@@ -3951,9 +3691,7 @@ class CreateContinuousViewLowering : public SubOpConversionPattern<subop::Create
       }
       auto bufferType = mlir::dyn_cast<subop::BufferType>(createOp.getSource().getType());
       if (!bufferType) return failure();
-      // PostgreSQL: Skip continuous view for now
-      auto ptrType = util::RefType::get(getContext(), IntegerType::get(getContext(), 8));
-      auto genericBuffer = rewriter.create<util::InvalidRefOp>(createOp->getLoc(), ptrType);
+      auto genericBuffer = rt::GrowingBuffer::asContinuous(rewriter, createOp->getLoc())({adaptor.getSource()})[0];
       rewriter.replaceOpWithNewOp<util::BufferCastOp>(createOp, typeConverter->convertType(createOp.getType()), genericBuffer);
       return success();
    }
@@ -4092,10 +3830,7 @@ class GetExternalHashIndexLowering : public SubOpConversionPattern<subop::GetExt
       if (!mlir::isa<subop::ExternalHashIndexType>(op.getType())) return failure();
       mlir::Value description = rewriter.create<util::CreateConstVarLen>(op->getLoc(), util::VarLen32Type::get(rewriter.getContext()), op.getDescrAttr());
 
-      // PostgreSQL: For now, return null pointer instead of Arrow hash index
-      auto ptrType = util::RefType::get(getContext(), IntegerType::get(getContext(), 8));
-      mlir::Value nullPtr = rewriter.create<util::InvalidRefOp>(op->getLoc(), ptrType);
-      rewriter.replaceOp(op, nullPtr);
+      rewriter.replaceOp(op, rt::RelationHelper::accessHashIndex(rewriter, op->getLoc())({description})[0]);
       return mlir::success();
    }
 };
@@ -4107,25 +3842,20 @@ class CreateSimpleStateLowering : public SubOpConversionPattern<subop::CreateSim
       auto simpleStateType = mlir::dyn_cast_or_null<subop::SimpleStateType>(createOp.getType());
       if (!simpleStateType) return failure();
 
-      // Create storage helper early so it's available
-      EntryStorageHelper storageHelper(createOp, simpleStateType.getMembers(), simpleStateType.hasLock(), typeConverter);
-
       mlir::Value ref;
       if (createOp->hasAttr("allocateOnHeap")) {
          auto loweredType = mlir::cast<util::RefType>(typeConverter->convertType(createOp.getType()));
          mlir::Value typeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), loweredType.getElementType());
-         // PostgreSQL: Create simple state without LingoDB runtime
-         // Just allocate memory for now
-         ref = rewriter.create<util::AllocOp>(createOp->getLoc(), 
-            util::RefType::get(getContext(), storageHelper.getStorageType()), typeSize);
+         ref = rt::SimpleState::create(rewriter, createOp->getLoc())(mlir::ValueRange{typeSize})[0];
          ref = rewriter.create<util::GenericMemrefCastOp>(createOp->getLoc(), loweredType, ref);
 
       } else {
          rewriter.atStartOf(&createOp->getParentOfType<mlir::func::FuncOp>().getFunctionBody().front(), [&](SubOpRewriter& rewriter) {
-            ref = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value{});
+            ref = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value());
          });
       }
       if (!createOp.getInitFn().empty()) {
+         EntryStorageHelper storageHelper(createOp, simpleStateType.getMembers(), simpleStateType.hasLock(), typeConverter);
          rewriter.inlineBlock<tuples::ReturnOpAdaptor>(&createOp.getInitFn().front(), {}, [&](tuples::ReturnOpAdaptor returnOpAdaptor) {
             storageHelper.storeOrderedValues(ref, returnOpAdaptor.getResults(), rewriter, createOp->getLoc());
          });
@@ -4350,8 +4080,7 @@ class SetTrackedCountLowering : public SubOpConversionPattern<subop::SetTrackedC
       Value loadedTuple = rewriter.create<util::LoadOp>(loc, adaptor.getTupleCount());
       Value tupleCount = rewriter.create<util::UnPackOp>(loc, loadedTuple).getResults()[0];
 
-      // PostgreSQL: Skip execution context for now
-      // rt::ExecutionContext::setTupleCount(resultId, tupleCount);
+      rt::ExecutionContext::setTupleCount(rewriter, loc)({resultId, tupleCount});
       rewriter.eraseOp(setTrackedCountOp);
       return mlir::success();
    }
@@ -4371,8 +4100,7 @@ class LockLowering : public SubOpTupleStreamConsumerConversionPattern<subop::Loc
       auto storageHelper = EntryStorageHelper(lockOp, hashMapType.getValueMembers(), hashMapType.hasLock(), typeConverter);
       auto ref = mapping.resolve(lockOp, lockOp.getRef());
       auto lockPtr = storageHelper.getLockPointer(ref, rewriter, lockOp->getLoc());
-      // PostgreSQL: Skip locking for now
-      // rt::EntryLockWrapper::lock(rewriter, lockOp->getLoc())({lockPtr});
+      rt::EntryLock::lock(rewriter, lockOp->getLoc())({lockPtr});
       auto inflight = rewriter.createInFlight(mapping);
       rewriter.inlineBlock<tuples::ReturnOpAdaptor>(&lockOp.getNested().front(), inflight.getRes(), [&](tuples::ReturnOpAdaptor adaptor) {
          if (!adaptor.getResults().empty()) {
@@ -4382,8 +4110,7 @@ class LockLowering : public SubOpTupleStreamConsumerConversionPattern<subop::Loc
             rewriter.eraseOp(lockOp);
          }
       });
-      // PostgreSQL: Skip unlocking for now
-      // rt::EntryLockWrapper::unlock(rewriter, lockOp->getLoc())({lockPtr});
+      rt::EntryLock::unlock(rewriter, lockOp->getLoc())({lockPtr});
       return success();
    }
 };
@@ -4391,22 +4118,13 @@ class LockLowering : public SubOpTupleStreamConsumerConversionPattern<subop::Loc
 namespace {
 
 void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp executionGroup, mlir::IRMapping& mapping, mlir::TypeConverter& typeConverter) {
-   llvm::errs() << "DEBUG: handleExecutionStepCPU called\n";
-   llvm::errs() << "DEBUG: ExecutionStepOp has " << step.getSubOps().getBlocks().size() << " blocks\n";
-   if (!step.getSubOps().empty()) {
-      llvm::errs() << "DEBUG: First block has " << step.getSubOps().front().getOperations().size() << " operations\n";
-   }
-   
    // llvm::dbgs() << "[CPU] HANDLING STEP " << step << "\n";
    auto* ctxt = step->getContext();
-   llvm::errs() << "DEBUG: Creating SubOpRewriter\n";
    SubOpRewriter rewriter(step, mapping);
-   llvm::errs() << "DEBUG: Inserting patterns...\n";
    rewriter.insertPattern<MapLowering>(typeConverter, ctxt);
    rewriter.insertPattern<FilterLowering>(typeConverter, ctxt);
    rewriter.insertPattern<RenameLowering>(typeConverter, ctxt);
    //external
-   llvm::errs() << "DEBUG: Inserting GetExternalTableLowering pattern\n";
    rewriter.insertPattern<GetExternalTableLowering>(typeConverter, ctxt);
    rewriter.insertPattern<GetExternalHashIndexLowering>(typeConverter, ctxt);
    //ResultTable
@@ -4419,7 +4137,6 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
    rewriter.insertPattern<LookupSimpleStateLowering>(typeConverter, ctxt);
    //Table
    rewriter.insertPattern<ScanRefsTableLowering>(typeConverter, ctxt);
-   rewriter.insertPattern<ScanOpLowering>(typeConverter, ctxt);
    //rewriter.insertPattern<ScanRefsLocalTableLowering>(typeConverter, ctxt);
    rewriter.insertPattern<TableRefGatherOpLowering>(typeConverter, ctxt);
    //Buffer
@@ -4514,13 +4231,11 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
          rewriter.map(arg, input);
       } else {
          mlir::OpBuilder b(executionGroup);
-         // PostgreSQL: Skip thread local for now
-         mlir::Value threadLocal = mapping.lookup(param); // Just use the param directly
+         mlir::Value threadLocal = rt::ThreadLocal::getLocal(b, b.getUnknownLoc())({mapping.lookup(param)})[0];
          threadLocal = b.create<util::GenericMemrefCastOp>(threadLocal.getLoc(), typeConverter.convertType(arg.getType()), threadLocal);
          rewriter.map(arg, threadLocal);
       }
    }
-   llvm::errs() << "DEBUG: Collecting operations to rewrite\n";
    std::vector<mlir::Operation*> ops;
    for (auto& op : step.getSubOps().front()) {
       if (&op == step.getSubOps().front().getTerminator()) {
@@ -4528,20 +4243,9 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
       }
       ops.push_back(&op);
    }
-   llvm::errs() << "DEBUG: Found " << ops.size() << " operations to rewrite\n";
    for (auto* op : ops) {
-      llvm::errs() << "DEBUG: Rewriting operation: " << op->getName().getStringRef() << "\n";
       // llvm::dbgs() << "====OP: " << *op <<"\n";
-      try {
-         rewriter.rewrite(op, executionGroup);
-         llvm::errs() << "DEBUG: Successfully rewrote " << op->getName().getStringRef() << "\n";
-      } catch (const std::exception& e) {
-         llvm::errs() << "ERROR: Exception while rewriting " << op->getName().getStringRef() << ": " << e.what() << "\n";
-         throw;
-      } catch (...) {
-         llvm::errs() << "ERROR: Unknown exception while rewriting " << op->getName().getStringRef() << "\n";
-         throw;
-      }
+      rewriter.rewrite(op, executionGroup);
    }
    auto returnOp = mlir::cast<subop::ExecutionStepReturnOp>(step.getSubOps().front().getTerminator());
    for (auto [i, o] : llvm::zip(returnOp.getInputs(), step.getResults())) {
@@ -4552,46 +4256,9 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
 } // namespace
 
 void SubOpToControlFlowLoweringPass::runOnOperation() {
-   llvm::errs() << "=== DEBUG: SubOpToControlFlowLoweringPass::runOnOperation() called ===\n";
-   llvm::errs().flush();
-   
-   try {
    auto module = getOperation();
-   llvm::errs() << "=== DEBUG: getOperation() returned successfully ===\n";
-   llvm::errs() << "=== DEBUG: SubOp → DB pass starting ===\n";
-   llvm::errs().flush();
-   
-   // Check if we have ExecutionStepOp operations
-   bool hasExecutionSteps = false;
-   module.walk([&](subop::ExecutionStepOp step) {
-      hasExecutionSteps = true;
-      llvm::errs() << "Found ExecutionStepOp: " << step << "\n";
-   });
-   
-   if (!hasExecutionSteps) {
-      llvm::errs() << "WARNING: No ExecutionStepOp found! This might cause issues.\n";
-      module.walk([&](subop::ExecutionGroupOp group) {
-         llvm::errs() << "Found ExecutionGroupOp instead\n";
-         int opCount = 0;
-         for (auto& op : group.getSubOps().front()) {
-            opCount++;
-            llvm::errs() << "  Op " << opCount << ": " << op.getName() << "\n";
-         }
-      });
-   }
-   
-   llvm::errs() << "DEBUG: Getting context...\n";
+   getContext().getLoadedDialect<util::UtilDialect>()->getFunctionHelper().setParentModule(module);
    auto* ctxt = &getContext();
-   llvm::errs() << "DEBUG: Getting UtilDialect...\n";
-   auto* utilDialect = getContext().getLoadedDialect<util::UtilDialect>();
-   if (!utilDialect) {
-      llvm::errs() << "ERROR: UtilDialect not loaded!\n";
-      signalPassFailure();
-      return;
-   }
-   llvm::errs() << "DEBUG: Setting parent module...\n";
-   utilDialect->getFunctionHelper().setParentModule(module);
-   llvm::errs() << "DEBUG: Parent module set\n";
 
    TypeConverter typeConverter;
    typeConverter.addConversion([](mlir::Type t) { return t; });
@@ -4703,80 +4370,10 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    //rewriter.rewrite(module.getBody());
    std::vector<mlir::Operation*> toRemove;
    module->walk([&](subop::ExecutionGroupOp executionGroup) { // walk over "queries"
-      llvm::errs() << "DEBUG: Found ExecutionGroupOp\n";
-      llvm::errs() << "DEBUG: ExecutionGroup region has " << executionGroup.getRegion().getBlocks().size() << " blocks\n";
-      if (!executionGroup.getRegion().empty() && !executionGroup.getRegion().front().empty()) {
-         llvm::errs() << "DEBUG: First block has " << executionGroup.getRegion().front().getOperations().size() << " operations\n";
-         for (auto& op : executionGroup.getRegion().front().getOperations()) {
-            llvm::errs() << "DEBUG: Operation in ExecutionGroup: " << op.getName().getStringRef() << "\n";
-         }
-      }
-      
-      // HACK: Since SplitIntoExecutionSteps is crashing, we need to handle ExecutionGroupOp directly
-      llvm::errs() << "DEBUG: No ExecutionStepOp found, will create temporary wrapper\n";
-      
       mlir::IRMapping mapping;
-      
-      // Check if we need to create ExecutionStepOp
-      bool hasExecutionSteps = false;
-      for (auto& op : executionGroup.getRegion().front().getOperations()) {
-         if (mlir::isa<subop::ExecutionStepOp>(&op)) {
-            hasExecutionSteps = true;
-            break;
-         }
-      }
-      
-      if (!hasExecutionSteps && !executionGroup.getSubOps().empty()) {
-         llvm::errs() << "DEBUG: Creating temporary ExecutionStepOp wrapper\n";
-         
-         // Create a temporary ExecutionStepOp to wrap the SubOps
-         OpBuilder tempBuilder(&getContext());
-         tempBuilder.setInsertionPointToStart(&executionGroup.getRegion().front());
-         
-         // Collect all operations except the terminator
-         std::vector<mlir::Operation*> opsToMove;
-         for (auto& op : executionGroup.getSubOps().front()) {
-            if (!mlir::isa<subop::ExecutionGroupReturnOp>(&op)) {
-               opsToMove.push_back(&op);
-            }
-         }
-         
-         // Create ExecutionStepOp with empty inputs/outputs for now
-         auto step = tempBuilder.create<subop::ExecutionStepOp>(
-            executionGroup.getLoc(),
-            mlir::TypeRange{}, // No results for now
-            mlir::ValueRange{}, // No inputs
-            mlir::ArrayAttr{} // No thread local attributes
-         );
-         
-         // Move operations into the ExecutionStepOp
-         auto* stepBlock = new Block();
-         step.getSubOps().push_back(stepBlock);
-         
-         for (auto* op : opsToMove) {
-            op->moveBefore(stepBlock, stepBlock->end());
-         }
-         
-         // Add ExecutionStepReturnOp
-         OpBuilder stepBuilder(stepBlock, stepBlock->end());
-         stepBuilder.create<subop::ExecutionStepReturnOp>(
-            executionGroup.getLoc(),
-            mlir::ValueRange{} // No return values for now
-         );
-         
-         llvm::errs() << "DEBUG: Created ExecutionStepOp with " << opsToMove.size() << " operations\n";
-      }
-      
-      // Original code for ExecutionStepOp handling
       //todo: handle arguments of executionGroup
       for (auto& op : executionGroup.getRegion().front().getOperations()) {
          if (auto step = mlir::dyn_cast_or_null<subop::ExecutionStepOp>(&op)) {
-            llvm::errs() << "DEBUG: Processing ExecutionStepOp\n";
-            llvm::errs() << "  Inputs: " << step.getInputs().size() << "\n";
-            llvm::errs() << "  Results: " << step.getResults().size() << "\n";
-            
-            try {
-               llvm::errs() << "DEBUG: About to call handleExecutionStepCPU\n";
 #ifdef TRACER
             mlir::Value tracingStep;
             {
@@ -4801,20 +4398,12 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
             }
 #endif
             handleExecutionStepCPU(step, executionGroup, mapping, typeConverter);
-            llvm::errs() << "DEBUG: handleExecutionStepCPU completed successfully\n";
 #if TRACER
             {
                mlir::OpBuilder builder(executionGroup);
                rt::ExecutionStepTracing::end(builder, op.getLoc())({tracingStep});
             }
 #endif
-            } catch (const std::exception& e) {
-               llvm::errs() << "ERROR: Exception in handleExecutionStepCPU: " << e.what() << "\n";
-               throw;
-            } catch (...) {
-               llvm::errs() << "ERROR: Unknown exception in handleExecutionStepCPU\n";
-               throw;
-            }
          }
       }
       auto returnOp = mlir::cast<subop::ExecutionGroupReturnOp>(executionGroup.getRegion().front().getTerminator());
@@ -4828,8 +4417,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    getOperation()->walk([&](subop::SetResultOp setResultOp) {
       mlir::OpBuilder builder(setResultOp);
       mlir::Value idVal = builder.create<mlir::arith::ConstantIntOp>(setResultOp.getLoc(), setResultOp.getResultId(), mlir::IntegerType::get(builder.getContext(), 32));
-      // PostgreSQL: Skip execution context for now
-      // rt::ExecutionContextWrapper::setResult(builder, setResultOp->getLoc())({idVal, setResultOp.getState()});
+      pgx_lower::compiler::runtime::ExecutionContext::setResult(builder, setResultOp->getLoc())({idVal, setResultOp.getState()});
 
       toRemove.push_back(setResultOp);
    });
@@ -4852,97 +4440,29 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    module->walk([&](tuples::GetParamVal getParamVal) {
       getParamVal.replaceAllUsesWith(getParamVal.getParam());
    });
-   } catch (const std::exception& e) {
-      llvm::errs() << "=== ERROR: Exception in runOnOperation: " << e.what() << " ===\n";
-      llvm::errs().flush();
-      throw;
-   } catch (...) {
-      llvm::errs() << "=== ERROR: Unknown exception in runOnOperation ===\n";
-      llvm::errs().flush();
-      throw;
-   }
 }
 //} //namespace
 std::unique_ptr<mlir::Pass> subop::createLowerSubOpPass() {
-   llvm::errs() << "=== DEBUG: createLowerSubOpPass called ===\n";
-   llvm::errs().flush();
-   std::cerr << "=== CERR DEBUG: createLowerSubOpPass called ===\n" << std::flush;
-   fprintf(stderr, "=== FPRINTF DEBUG: createLowerSubOpPass called ===\n");
-   fflush(stderr);
-   
-   try {
-      llvm::errs() << "=== DEBUG: About to create SubOpToControlFlowLoweringPass ===\n";
-      llvm::errs().flush();
-      std::cerr << "=== CERR DEBUG: About to create SubOpToControlFlowLoweringPass ===\n" << std::flush;
-      
-      auto pass = std::make_unique<SubOpToControlFlowLoweringPass>();
-      
-      llvm::errs() << "=== DEBUG: SubOpToControlFlowLoweringPass created successfully ===\n";
-      llvm::errs().flush();
-      std::cerr << "=== CERR DEBUG: SubOpToControlFlowLoweringPass created successfully ===\n" << std::flush;
-      
-      return pass;
-   } catch (const std::exception& e) {
-      llvm::errs() << "=== ERROR: Exception creating SubOpToControlFlowLoweringPass: " << e.what() << " ===\n";
-      llvm::errs().flush();
-      std::cerr << "=== CERR ERROR: Exception creating SubOpToControlFlowLoweringPass: " << e.what() << " ===\n" << std::flush;
-      throw;
-   } catch (...) {
-      llvm::errs() << "=== ERROR: Unknown exception creating SubOpToControlFlowLoweringPass ===\n";
-      llvm::errs().flush();
-      std::cerr << "=== CERR ERROR: Unknown exception creating SubOpToControlFlowLoweringPass ===\n" << std::flush;
-      throw;
-   }
+   return std::make_unique<SubOpToControlFlowLoweringPass>();
 }
 void subop::setCompressionEnabled(bool compressionEnabled) {
    EntryStorageHelper::compressionEnabled = compressionEnabled;
 }
 void subop::createLowerSubOpPipeline(mlir::OpPassManager& pm) {
-   // SKIP ALL PASSES - the hang is in the pass manager infrastructure
-   llvm::errs() << "SKIPPING ALL SUBOP PASSES due to hang\n"; llvm::errs().flush();
-   return; // Exit without adding any passes
-   
-   llvm::errs() << "Adding FoldColumnsPass\n"; llvm::errs().flush();
+   pm.addPass(subop::createGlobalOptPass());
    pm.addPass(subop::createFoldColumnsPass());
-   llvm::errs() << "Adding ReuseLocalPass\n"; llvm::errs().flush();
    pm.addPass(subop::createReuseLocalPass());
-   llvm::errs() << "Adding SpecializeSubOpPass\n"; llvm::errs().flush();
    pm.addPass(subop::createSpecializeSubOpPass(true));
-   llvm::errs() << "Adding NormalizeSubOpPass\n"; llvm::errs().flush();
    pm.addPass(subop::createNormalizeSubOpPass());
-   
-   // Add PullGatherUpPass - this worked before
-   llvm::errs() << "Adding PullGatherUpPass\n"; llvm::errs().flush();
-   pm.addPass(subop::createPullGatherUpPass());
-   
-   // SKIP remaining passes to isolate hang
-   llvm::errs() << "SKIPPING ParallelizePass and PrepareLoweringPass to isolate hang\n"; llvm::errs().flush();
-   // pm.addPass(subop::createParallelizePass());
-   // pm.addPass(subop::createPrepareLoweringPass());
-   
-   // Add the crucial SubOp -> DB conversion pass
-   llvm::errs() << "SKIPPING LowerSubOpPass temporarily to isolate hang\n"; llvm::errs().flush();
-   // pm.addPass(subop::createLowerSubOpPass());
-   
-   // Add final canonicalization passes
-   llvm::errs() << "Adding CanonicalizerPass\n"; llvm::errs().flush();
-   pm.addPass(mlir::createCanonicalizerPass());
-   llvm::errs() << "Adding CSEPass\n"; llvm::errs().flush();
-   pm.addPass(mlir::createCSEPass());
-   
-   // Complete - this should give us DB operations
-   llvm::errs() << "Complete SubOp pipeline with LowerSubOpPass\n"; llvm::errs().flush();
-   return;
-   
    pm.addPass(subop::createPullGatherUpPass());
    pm.addPass(subop::createParallelizePass());
    pm.addPass(subop::createEnforceOrderPass());
    pm.addPass(subop::createInlineNestedMapPass());
    pm.addPass(subop::createFinalizePass());
-   pm.addPass(subop::createPrepareLoweringPass());
    pm.addPass(subop::createSplitIntoExecutionStepsPass());
    pm.addNestedPass<mlir::func::FuncOp>(subop::createParallelizePass());
    pm.addPass(subop::createSpecializeParallelPass());
+   pm.addPass(subop::createPrepareLoweringPass());
    pm.addPass(subop::createLowerSubOpPass());
    pm.addPass(mlir::createCanonicalizerPass());
    pm.addPass(mlir::createCSEPass());
@@ -4956,4 +4476,3 @@ void subop::registerSubOpToControlFlowConversionPasses() {
       "",
       subop::createLowerSubOpPipeline);
 }
-
