@@ -4898,6 +4898,7 @@ void subop::setCompressionEnabled(bool compressionEnabled) {
    EntryStorageHelper::compressionEnabled = compressionEnabled;
 }
 void subop::createLowerSubOpPipeline(mlir::OpPassManager& pm) {
+   // Start with just the first few passes to isolate the hang
    llvm::errs() << "Adding GlobalOptPass\n"; llvm::errs().flush();
    pm.addPass(subop::createGlobalOptPass());
    llvm::errs() << "Adding FoldColumnsPass\n"; llvm::errs().flush();
@@ -4913,17 +4914,14 @@ void subop::createLowerSubOpPipeline(mlir::OpPassManager& pm) {
    llvm::errs() << "Adding PullGatherUpPass\n"; llvm::errs().flush();
    pm.addPass(subop::createPullGatherUpPass());
    
-   // Test one more pass at a time to isolate crash
-   llvm::errs() << "Adding ParallelizePass\n"; llvm::errs().flush();
-   pm.addPass(subop::createParallelizePass());
-   
-   // Test PrepareLoweringPass by itself first
-   llvm::errs() << "Adding PrepareLoweringPass\n"; llvm::errs().flush();
-   pm.addPass(subop::createPrepareLoweringPass());
+   // SKIP remaining passes to isolate hang
+   llvm::errs() << "SKIPPING ParallelizePass and PrepareLoweringPass to isolate hang\n"; llvm::errs().flush();
+   // pm.addPass(subop::createParallelizePass());
+   // pm.addPass(subop::createPrepareLoweringPass());
    
    // Add the crucial SubOp -> DB conversion pass
-   llvm::errs() << "Adding LowerSubOpPass (SubOp -> DB conversion)\n"; llvm::errs().flush();
-   pm.addPass(subop::createLowerSubOpPass());
+   llvm::errs() << "SKIPPING LowerSubOpPass temporarily to isolate hang\n"; llvm::errs().flush();
+   // pm.addPass(subop::createLowerSubOpPass());
    
    // Add final canonicalization passes
    llvm::errs() << "Adding CanonicalizerPass\n"; llvm::errs().flush();
