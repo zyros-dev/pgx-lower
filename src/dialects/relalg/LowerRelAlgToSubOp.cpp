@@ -72,6 +72,8 @@ class BaseTableLowering : public OpConversionPattern<relalg::BaseTableOp> {
    public:
    using OpConversionPattern<relalg::BaseTableOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(relalg::BaseTableOp baseTableOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      llvm::errs() << "=== BaseTableLowering matchAndRewrite called ===\n";
+      llvm::errs() << "BaseTableLowering: About to create ScanRefsOp + GatherOp\n";
       auto required = getRequired(baseTableOp);
       std::vector<mlir::Type> types;
       std::vector<Attribute> colNames;
@@ -112,17 +114,39 @@ class BaseTableLowering : public OpConversionPattern<relalg::BaseTableOp> {
          rewriter.getStringAttr(scanDescription)
       );
       
-      // Create a ScanOp that reads from the external table
-      // Note: We need to create the ScanOp that produces a TupleStream, not replaces the BaseTableOp directly
-      auto scanOp = rewriter.create<subop::ScanOp>(
-         loc, 
+      // WORKAROUND: Create ScanRefsOp + GatherOp directly since NormalizeSubOpPass isn't working correctly
+      // This bypasses the broken transformation and creates the expected final structure
+      
+      // Create column reference for ScanRefsOp
+      auto& columnManager = rewriter.getContext()->getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
+      std::string scopeName = columnManager.getUniqueScope("scan");
+      auto scanRefDef = columnManager.createDef(scopeName, "ref");
+      
+      // Set the reference type based on the table structure  
+      auto tableType = mlir::cast<subop::TableType>(tableRefType);
+      auto refType = subop::TableEntryRefType::get(rewriter.getContext(), tableType.getMembers());
+      scanRefDef.getColumn().type = refType;
+      
+      // Create ScanRefsOp that produces references to table entries
+      auto scanRefsOp = rewriter.create<subop::ScanRefsOp>(
+         loc,
          tuples::TupleStreamType::get(rewriter.getContext()),
-         tableRef, 
+         tableRef,
+         scanRefDef
+      );
+      
+      // Create GatherOp that gathers the actual data from the references
+      auto scanRefRef = columnManager.createRef(&scanRefDef.getColumn());
+      auto gatherOp = rewriter.create<subop::GatherOp>(
+         loc,
+         tuples::TupleStreamType::get(rewriter.getContext()),
+         scanRefsOp.getResult(),
+         scanRefRef,
          rewriter.getDictionaryAttr(mapping)
       );
       
-      // Replace the BaseTableOp with the ScanOp's result
-      rewriter.replaceOp(baseTableOp, scanOp.getResult());
+      // Replace the BaseTableOp with the GatherOp's result  
+      rewriter.replaceOp(baseTableOp, gatherOp.getResult());
       return success();
    }
 };
@@ -3033,6 +3057,7 @@ class QueryReturnOpLowering : public OpConversionPattern<relalg::QueryReturnOp> 
 };
 
 void RelalgToSubOpLoweringPass::runOnOperation() {
+   llvm::errs() << "=== RelalgToSubOpLoweringPass::runOnOperation() called ===\n";
    auto module = getOperation();
    getContext().getLoadedDialect<util::UtilDialect>()->getFunctionHelper().setParentModule(module);
 

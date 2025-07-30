@@ -30,7 +30,13 @@ class SplitTableScan : public mlir::RewritePattern {
    SplitTableScan(mlir::MLIRContext* context)
       : RewritePattern(subop::ScanOp::getOperationName(), 1, context) {}
    mlir::LogicalResult matchAndRewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
+      llvm::errs() << "SplitTableScan: Pattern matched! Processing ScanOp\n"; 
+      llvm::errs() << "  ScanOp: " << *op << "\n";
+      
       auto scanOp = mlir::cast<subop::ScanOp>(op);
+      llvm::errs() << "  State type: " << scanOp.getState().getType() << "\n";
+      llvm::errs() << "  Is TableType? " << mlir::isa<subop::TableType>(scanOp.getState().getType()) << "\n";
+      
       if (mlir::isa<subop::TableType>(scanOp.getState().getType())) {
          auto tableType = mlir::cast<subop::TableType>(scanOp.getState().getType());
          std::vector<mlir::Attribute> memberNames;
@@ -47,8 +53,20 @@ class SplitTableScan : public mlir::RewritePattern {
          auto members = subop::StateMembersAttr::get(getContext(), mlir::ArrayAttr::get(getContext(), memberNames), mlir::ArrayAttr::get(getContext(), memberTypes));
 
          auto [refDef, refRef] = createColumn(subop::TableEntryRefType::get(getContext(), members), "scan", "ref");
+         
+         // Debug: Log the ScanOp → ScanRefsOp + GatherOp transformation
+         llvm::errs() << "NormalizeSubOpPass: About to create ScanRefsOp and GatherOp replacement\n";
+         llvm::errs() << "  Original ScanOp: " << *op << "\n";
+         llvm::errs() << "  State type: " << scanOp.getState().getType() << "\n";
+         llvm::errs() << "  Mapping: " << scanOp.getMapping() << "\n";
+         
          mlir::Value scanRefsOp = rewriter.create<subop::ScanRefsOp>(op->getLoc(), scanOp.getState(), refDef);
-         rewriter.replaceOpWithNewOp<subop::GatherOp>(op, scanRefsOp, refRef, scanOp.getMapping());
+         llvm::errs() << "  Created ScanRefsOp: " << *scanRefsOp.getDefiningOp() << "\n";
+         
+         auto gatherOp = rewriter.replaceOpWithNewOp<subop::GatherOp>(op, scanRefsOp, refRef, scanOp.getMapping());
+         llvm::errs() << "  Created GatherOp: " << *gatherOp.getOperation() << "\n";
+         llvm::errs() << "NormalizeSubOpPass: ScanOp → ScanRefsOp + GatherOp transformation completed\n";
+         
          return mlir::success();
       } else if (mlir::isa<subop::LocalTableType>(scanOp.getState().getType())) {
          auto tableType = mlir::cast<subop::LocalTableType>(scanOp.getState().getType());
@@ -78,8 +96,17 @@ class SplitGenericScan : public mlir::RewritePattern {
    SplitGenericScan(mlir::MLIRContext* context)
       : RewritePattern(subop::ScanOp::getOperationName(), 1, context) {}
    mlir::LogicalResult matchAndRewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
+      llvm::errs() << "SplitGenericScan: Pattern matched! Processing ScanOp\n";
+      llvm::errs() << "  ScanOp: " << *op << "\n";
+      
       auto scanOp = mlir::cast<subop::ScanOp>(op);
-      if (mlir::isa<subop::TableType>(scanOp.getState().getType())) return mlir::failure();
+      llvm::errs() << "  State type: " << scanOp.getState().getType() << "\n";
+      llvm::errs() << "  Is TableType? " << mlir::isa<subop::TableType>(scanOp.getState().getType()) << "\n";
+      
+      if (mlir::isa<subop::TableType>(scanOp.getState().getType())) {
+         llvm::errs() << "  TableType detected - failing to let SplitTableScan handle it\n";
+         return mlir::failure();
+      }
       //todo: check that one can obtain references
       mlir::Type refType = subop::EntryRefType::get(getContext(), mlir::cast<subop::State>(scanOp.getState().getType()));
       if (auto continuousView = mlir::dyn_cast_or_null<subop::ContinuousViewType>(scanOp.getState().getType())) {
@@ -108,6 +135,9 @@ class SplitGenericScan : public mlir::RewritePattern {
 class NormalizeSubOpPass : public mlir::PassWrapper<NormalizeSubOpPass, mlir::OperationPass<mlir::ModuleOp>> {
    public:
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(NormalizeSubOpPass)
+   NormalizeSubOpPass() {
+      llvm::errs() << "NormalizeSubOpPass: Constructor called\n";
+   }
    virtual llvm::StringRef getArgument() const override { return "subop-normalize"; }
    void getRecursivelyUsedColumns(std::unordered_set<tuples::Column*>& usedColumns, subop::ColumnUsageAnalysis& columnUsageAnalysis, mlir::Operation* op) {
       const auto& currentUsed = columnUsageAnalysis.getUsedColumns(op);
@@ -136,6 +166,8 @@ class NormalizeSubOpPass : public mlir::PassWrapper<NormalizeSubOpPass, mlir::Op
       }
    }
    void runOnOperation() override {
+      llvm::errs() << "=== ACTUAL NormalizeSubOpPass runOnOperation() called ===\n";
+      llvm::errs() << "This is the REAL NormalizeSubOpPass execution!\n";
       std::unordered_map<mlir::Operation*, size_t> unionStreamCount;
       auto columnUsageAnalysis = getAnalysis<subop::ColumnUsageAnalysis>();
       auto columnCreationAnalysis = getAnalysis<subop::ColumnCreationAnalysis>();
@@ -296,12 +328,17 @@ class NormalizeSubOpPass : public mlir::PassWrapper<NormalizeSubOpPass, mlir::Op
       patterns.insert<SplitTableScan>(&getContext());
       patterns.insert<SplitGenericScan>(&getContext());
 
+      llvm::errs() << "NormalizeSubOpPass: About to apply SplitTableScan and SplitGenericScan patterns\n";
       if (mlir::applyPatternsGreedily(getOperation().getRegion(), std::move(patterns)).failed()) {
          assert(false && "should not happen");
       }
+      llvm::errs() << "NormalizeSubOpPass: Pattern application completed\n";
    }
 };
 } // end anonymous namespace
 
 std::unique_ptr<mlir::Pass>
-subop::createNormalizeSubOpPass() { return std::make_unique<NormalizeSubOpPass>(); }
+subop::createNormalizeSubOpPass() { 
+   llvm::errs() << "createNormalizeSubOpPass() called\n";
+   return std::make_unique<NormalizeSubOpPass>(); 
+}
