@@ -341,14 +341,17 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             }
         });
         
-        auto pm12 = mlir::PassManager(&context);
-        logger.notice("Step 11: SplitIntoExecutionStepsPass (re-enabled)");
-        pm12.addPass(pgx_lower::compiler::dialect::subop::createSplitIntoExecutionStepsPass());
-        if (failed(pm12.run(module))) {
-            logger.error("SplitIntoExecutionStepsPass failed!");
-            return false;
-        }
-        logger.notice("SplitIntoExecutionStepsPass completed");
+        // TEMPORARILY SKIP SplitIntoExecutionStepsPass to continue debugging
+        logger.notice("Step 11: SKIPPING SplitIntoExecutionStepsPass temporarily");
+        logger.notice("TODO: Fix assertion failure in SplitIntoExecutionStepsPass");
+        // auto pm12 = mlir::PassManager(&context);
+        // logger.notice("Step 11: SplitIntoExecutionStepsPass (re-enabled)");
+        // pm12.addPass(pgx_lower::compiler::dialect::subop::createSplitIntoExecutionStepsPass());
+        // if (failed(pm12.run(module))) {
+        //     logger.error("SplitIntoExecutionStepsPass failed!");
+        //     return false;
+        // }
+        // logger.notice("SplitIntoExecutionStepsPass completed");
         
         logger.notice("All SubOp transform passes completed!");
         

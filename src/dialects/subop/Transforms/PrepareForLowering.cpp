@@ -22,10 +22,12 @@ class PrepareLoweringPass : public mlir::PassWrapper<PrepareLoweringPass, mlir::
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PrepareLoweringPass)
    virtual llvm::StringRef getArgument() const override { return "subop-prepare-lowering"; }
    void splitNested(subop::ExecutionGroupOp executionGroupOp) { // we take the query
+      llvm::errs() << "=== splitNested: Processing ExecutionGroupOp ===\n";
       std::vector<subop::ContainsNestedSubOps> opsWithNesting;
       executionGroupOp->walk<mlir::WalkOrder::PreOrder>([&](subop::ContainsNestedSubOps containsNestedSubOps) { // walk through query ops
          opsWithNesting.push_back(containsNestedSubOps); // gather ops that follow ContainsNestedSubOps interface (e.g., nested map or loop)
       });
+      llvm::errs() << "=== splitNested: Found " << opsWithNesting.size() << " ops with nesting ===\n";
       for (auto containsNestedSubOps : opsWithNesting) {
          llvm::DenseMap<mlir::Value, size_t> valueToNestedExecutionGroupOperand;
 
@@ -275,6 +277,7 @@ class PrepareLoweringPass : public mlir::PassWrapper<PrepareLoweringPass, mlir::
       }
    }
    void runOnOperation() override {
+      llvm::errs() << "=== PrepareLoweringPass::runOnOperation() STARTED ===\n";
       subop::ColumnUsageAnalysis usedColumns(getOperation());
       subop::ColumnCreationAnalysis createdColumns(getOperation());
       std::vector<mlir::Operation*> opsToErase;
@@ -365,9 +368,12 @@ class PrepareLoweringPass : public mlir::PassWrapper<PrepareLoweringPass, mlir::
       for (auto* op : opsToErase) {
          op->erase();
       }
+      llvm::errs() << "=== Checking for ExecutionGroupOp to process... ===\n";
       getOperation()->walk([&](subop::ExecutionGroupOp executionGroupOp) {
+         llvm::errs() << "=== Found ExecutionGroupOp, calling splitNested ===\n";
          splitNested(executionGroupOp);
       });
+      llvm::errs() << "=== PrepareLoweringPass::runOnOperation() COMPLETED ===\n";
    }
 };
 } // end anonymous namespace

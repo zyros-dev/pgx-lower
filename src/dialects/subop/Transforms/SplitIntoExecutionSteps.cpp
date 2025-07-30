@@ -34,14 +34,20 @@ class SplitIntoExecutionSteps : public mlir::PassWrapper<SplitIntoExecutionSteps
          std::unordered_map<mlir::Operation*, std::vector<mlir::Operation*>> steps;
          std::unordered_map<mlir::Operation*, mlir::Operation*> opToStep;
          
+         llvm::errs() << "=== Starting to process operations in ExecutionGroupOp ===\n";
+         int opCount = 0;
          for (mlir::Operation& op : firstBlock) {
+            opCount++;
+            llvm::errs() << "=== Processing operation " << opCount << ": " << op.getName() << " ===\n";
             if (mlir::isa<subop::ExecutionGroupReturnOp>(op)) {
+               llvm::errs() << "  Skipping ExecutionGroupReturnOp\n";
                continue;
             }
             mlir::Operation* beforeInStream = nullptr;
             for (auto operand : op.getOperands()) {
                if (mlir::isa<tuples::TupleStreamType>(operand.getType())) {
                   if (auto* producer = operand.getDefiningOp()) {
+                     llvm::errs() << "    Found TupleStreamType producer: " << producer->getName() << "\n";
                      if (beforeInStream) {
                         // Print detailed debug info before assertion failure
                         llvm::errs() << "=== ASSERTION FAILURE DEBUG ===\n";
