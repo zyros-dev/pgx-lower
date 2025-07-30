@@ -172,9 +172,12 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         // Dump IR after NormalizeSubOpPass to debug SplitIntoExecutionStepsPass crash
         logger.notice("=== IR after NormalizeSubOpPass ===");
         std::string irAfterNormalize;
-        llvm::raw_string_ostream normalizeStreaml(irAfterNormalize);
-        module.print(normalizeStreaml);
-        normalizeStreaml.flush();
+        llvm::raw_string_ostream normalizeStream(irAfterNormalize);
+        mlir::OpPrintingFlags flags;
+        flags.enableDebugInfo();
+        flags.elideLargeElementsAttrs(false);
+        module.print(normalizeStream, flags);
+        normalizeStream.flush();
         logger.notice("IR: " + irAfterNormalize);
     }
     
@@ -281,7 +284,10 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("=== IR before PrepareLoweringPass ===");
         std::string irBeforePrepare;
         llvm::raw_string_ostream prepareStream(irBeforePrepare);
-        module.print(prepareStream);
+        mlir::OpPrintingFlags flags;
+        flags.enableDebugInfo();
+        flags.elideLargeElementsAttrs(false);
+        module.print(prepareStream, flags);
         prepareStream.flush();
         logger.notice("IR: " + irBeforePrepare);
         
