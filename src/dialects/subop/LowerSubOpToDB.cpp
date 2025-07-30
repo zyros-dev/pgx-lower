@@ -403,10 +403,10 @@ class EntryStorageHelper {
             }
             // now, actually store the value (not just whether it's null)
             auto memberRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getContext(), memberInfo.stored), ref, memberInfo.offset);
-            rewriter.create<util::StoreOp>(loc, value, memberRef, mlir::Value());
+            rewriter.create<util::StoreOp>(loc, value, memberRef, mlir::Value{});
          }
          if (esh.nullBitsetType) {
-            rewriter.create<util::StoreOp>(loc, *nullBitSet, *nullBitSetRef, mlir::Value());
+            rewriter.create<util::StoreOp>(loc, *nullBitSet, *nullBitSetRef, mlir::Value{});
          }
       }
 
@@ -607,12 +607,12 @@ class SubOpRewriter {
          types.push_back(input.getType());
       }
       auto tupleType = mlir::TupleType::get(getContext(), types);
-      mlir::Value contextPtr = create<util::AllocaOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), tupleType), mlir::Value());
+      mlir::Value contextPtr = create<util::AllocaOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), tupleType), mlir::Value{});
       size_t offset = 0;
       for (auto [param, arg, isThreadLocal] : llvm::zip(executionStep.getInputs(), executionStep.getSubOps().front().getArguments(), executionStep.getIsThreadLocal())) {
          mlir::Value input = outerMapping.lookup(param);
          auto memberRef = create<util::TupleElementPtrOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), input.getType()), contextPtr, offset++);
-         create<util::StoreOp>(builder.getUnknownLoc(), input, memberRef, mlir::Value());
+         create<util::StoreOp>(builder.getUnknownLoc(), input, memberRef, mlir::Value{});
       }
       contextPtr = create<util::GenericMemrefCastOp>(builder.getUnknownLoc(), util::RefType::get(getContext(), getI8Type()), contextPtr);
       return contextPtr;
@@ -1129,7 +1129,7 @@ class CreateThreadLocalLowering : public SubOpConversionPattern<subop::CreateThr
          // TODO Phase 5: Create proper runtime function wrappers
          Value valPtrOrig = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), storeSize);
          Value valPtr = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(toStore[i].getType()), valPtr);
-         rewriter.create<util::StoreOp>(loc, toStore[i], valPtr, mlir::Value());
+         rewriter.create<util::StoreOp>(loc, toStore[i], valPtr, mlir::Value{});
          rewriter.create<util::StoreOp>(loc, valPtrOrig, arg, rewriter.create<mlir::arith::ConstantIndexOp>(loc, i));
       }
       Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
@@ -1224,7 +1224,7 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       // (parentModule will be declared below)
       // PostgreSQL iteration will be handled by calling DataSource::iterate
       // For now, create a placeholder iterator for the function call
-      mlir::Value iterator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value());
+      mlir::Value iterator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value{});
       ColumnMapping mapping;
 
       auto* ctxt = rewriter.getContext();
@@ -1311,7 +1311,7 @@ class ScanOpLowering : public SubOpConversionPattern<subop::ScanOp> {
       auto* context = rewriter.getContext();
       
       // Create a simple iterator for PostgreSQL table scanning
-      mlir::Value iterator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value());
+      mlir::Value iterator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value{});
       
       // For now, create a basic tuple stream result
       ColumnMapping mapping;
@@ -1355,7 +1355,7 @@ class MergeThreadLocalResultTable : public SubOpConversionPattern<subop::MergeOp
                results.push_back(leftBuilders.getResults()[i]);
             }
             auto packed = rewriter.create<util::PackOp>(loc, results);
-            rewriter.create<util::StoreOp>(loc, packed, leftPtr, mlir::Value());
+            rewriter.create<util::StoreOp>(loc, packed, leftPtr, mlir::Value{});
             rewriter.create<mlir::func::ReturnOp>(loc);
          });
       }
@@ -1380,7 +1380,7 @@ class CreateFromResultTableLowering : public SubOpConversionPattern<subop::Creat
       auto loc = createOp->getLoc();
       // TODO Phase 5: Replace with PostgreSQL result set creation (NO ARROW)
       // For now, create a placeholder
-      mlir::Value table = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+      mlir::Value table = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
       for (auto i = 0ul; i < columnBuilders.getNumResults(); i++) {
          auto columnBuilder = columnBuilders.getResult(i);
          // TODO Phase 5: Replace with PostgreSQL column finalization (NO ARROW)
@@ -1442,15 +1442,15 @@ class CreateTableLowering : public SubOpConversionPattern<subop::GenericCreateOp
          auto baseType = getBaseType(type);
          mlir::Value typeDescr = rewriter.create<util::CreateConstVarLen>(loc, util::VarLen32Type::get(getContext()), arrowDescrFromType(baseType));
          // TODO Phase 5: Replace ArrowColumnBuilder with PostgreSQL tuple builder (NO ARROW)
-         Value columnBuilder = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+         Value columnBuilder = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
          columnBuilders.push_back(columnBuilder);
       }
       mlir::Value tpl = rewriter.create<util::PackOp>(createOp->getLoc(), columnBuilders);
       auto tplSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), tpl.getType());
       // TODO Phase 5: Implement ExecutionContext::allocStateRaw wrapper (CRITICAL)
-      mlir::Value ref = rewriter.create<util::AllocaOp>(loc, util::RefType::get(tpl.getType()), mlir::Value());
+      mlir::Value ref = rewriter.create<util::AllocaOp>(loc, util::RefType::get(tpl.getType()), mlir::Value{});
       ref = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(tpl.getType()), ref);
-      rewriter.create<util::StoreOp>(createOp->getLoc(), tpl, ref, mlir::Value());
+      rewriter.create<util::StoreOp>(createOp->getLoc(), tpl, ref, mlir::Value{});
       rewriter.replaceOp(createOp, ref);
       return mlir::success();
    }
@@ -1586,14 +1586,14 @@ class CreateBufferLowering : public SubOpConversionPattern<subop::GenericCreateO
          if (createOp->hasAttrOfType<mlir::IntegerAttr>("group")) {
             Value groupId = rewriter.create<arith::ConstantIndexOp>(loc, mlir::cast<mlir::IntegerAttr>(createOp->getAttr("group")).getInt());
             // TODO Phase 5: Implement GrowingBufferAllocator::getGroupAllocator wrapper
-            allocator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+            allocator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
          } else {
             // TODO Phase 5: Implement GrowingBufferAllocator::getDefaultAllocator wrapper
-            allocator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+            allocator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
          }
       });
       // TODO Phase 5: Implement GrowingBuffer::create wrapper
-      mlir::Value vector = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(createOp.getType()), mlir::Value());
+      mlir::Value vector = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(createOp.getType()), mlir::Value{});
       rewriter.replaceOp(createOp, vector);
       return mlir::success();
    }
@@ -1645,7 +1645,7 @@ class ScanRefsVectorLowering : public SubOpConversionPattern<subop::ScanRefsOp> 
       auto elementType = EntryStorageHelper(scanOp, bufferType.getMembers(), bufferType.hasLock(), typeConverter).getStorageType();
 
       // TODO Phase 5: Implement GrowingBuffer::create wrapperIterator
-      auto iterator = rewriter.create<util::AllocaOp>(scanOp->getLoc(), util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+      auto iterator = rewriter.create<util::AllocaOp>(scanOp->getLoc(), util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
       implementBufferIteration(scanOp->hasAttr("parallel"), iterator, elementType, scanOp->getLoc(), rewriter, *typeConverter, scanOp.getOperation(), [&](SubOpRewriter& rewriter, mlir::Value ptr) {
          mapping.define(scanOp.getRef(), ptr);
          rewriter.replaceTupleStream(scanOp, mapping);
@@ -1664,7 +1664,7 @@ class CreateHashMapLowering : public SubOpConversionPattern<subop::GenericCreate
       auto typeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHtEntryType(t, *typeConverter));
       Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(createOp->getLoc(), 4);
       // TODO Phase 5: Implement Hashtable::create wrapper (CRITICAL for joins/aggregates)
-      auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value());
+      auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value{});
       rewriter.replaceOp(createOp, ValueRange{ptr});
       return mlir::success();
    }
@@ -1680,7 +1680,7 @@ class CreateHashMultiMapLowering : public SubOpConversionPattern<subop::GenericC
       auto valueTypeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHashMultiMapValueType(t, *typeConverter));
       Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(createOp->getLoc(), 4);
       // TODO Phase 11: Implement HashMultiMap::create wrapper (for complex joins)
-      auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value());
+      auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value{});
       rewriter.replaceOp(createOp, ValueRange{ptr});
       return mlir::success();
    }
@@ -1695,7 +1695,7 @@ class CreateOpenHtFragmentLowering : public SubOpConversionPattern<subop::Generi
       auto typeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHtEntryType(t, *typeConverter));
       auto withLocks = rewriter.create<mlir::arith::ConstantIntOp>(createOp->getLoc(), t.getWithLock(), rewriter.getI1Type());
       // TODO Phase 11: Implement PreAggregationHashtableFragment::create wrapper (optimized aggregates)
-      auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+      auto ptr = rewriter.create<util::AllocaOp>(createOp->getLoc(), util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
       rewriter.replaceOpWithNewOp<util::GenericMemrefCastOp>(createOp, typeConverter->convertType(t), ptr);
       return mlir::success();
    }
@@ -1789,7 +1789,7 @@ class CreateSegmentTreeViewLowering : public SubOpConversionPattern<subop::Creat
       Value sourceEntryTypeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), sourceElementType);
       Value stateTypeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), viewElementType);
       // TODO Phase 12: Implement SegmentTreeView::build wrapper (window functions)
-      mlir::Value res = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(createOp.getType()), mlir::Value());
+      mlir::Value res = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(createOp.getType()), mlir::Value{});
       rewriter.replaceOp(createOp, res);
       return mlir::success();
    }
@@ -1830,7 +1830,7 @@ class CreateHeapLowering : public SubOpConversionPattern<subop::CreateHeapOp> {
       Value maxElements = rewriter.create<mlir::arith::ConstantIndexOp>(loc, heapType.getMaxElements());
       Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
       // TODO Phase 12: Implement Heap::create wrapper (top-K queries)
-      auto heap = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(heapOp.getType()), mlir::Value());
+      auto heap = rewriter.create<util::AllocaOp>(loc, typeConverter->convertType(heapOp.getType()), mlir::Value{});
       rewriter.replaceOp(heapOp, ValueRange{heap});
       return mlir::success();
    }
@@ -2231,7 +2231,7 @@ class ScanHashMapLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       ColumnMapping mapping;
       auto loc = scanRefsOp->getLoc();
       // TODO Phase 5: Implement Hashtable::createIterator wrapper (CRITICAL)
-      auto it = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+      auto it = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
       auto kvPtrType = util::RefType::get(getContext(), getHtKVType(hashMapType, *typeConverter));
       implementBufferIteration(scanRefsOp->hasAttr("parallel"), it, getHtEntryType(hashMapType, *typeConverter), loc, rewriter, *typeConverter, scanRefsOp.getOperation(), [&](SubOpRewriter& rewriter, mlir::Value ptr) {
          auto kvPtr = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, ptr, 2);
@@ -2251,7 +2251,7 @@ class ScanPreAggrHtLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       ColumnMapping mapping;
       auto loc = scanRefsOp->getLoc();
       // TODO Phase 11: Implement PreAggregationHashtable::createIterator wrapper
-      auto it = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+      auto it = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
       auto kvPtrType = util::RefType::get(getContext(), getHtKVType(hashMapType, *typeConverter));
       implementBufferIteration(scanRefsOp->hasAttr("parallel"), it, util::RefType::get(getContext(), getHtEntryType(hashMapType, *typeConverter)), loc, rewriter, *typeConverter, scanRefsOp.getOperation(), [&](SubOpRewriter& rewriter, mlir::Value ptr) {
          ptr = rewriter.create<util::LoadOp>(loc, ptr, mlir::Value());
@@ -2272,7 +2272,7 @@ class ScanHashMultiMap : public SubOpConversionPattern<subop::ScanRefsOp> {
       ColumnMapping mapping;
       auto loc = scanRefsOp->getLoc();
       // TODO Phase 5: Implement Hashtable::createIterator wrapper (CRITICAL)
-      auto it = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value());
+      auto it = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), rewriter.getI8Type()), mlir::Value{});
       EntryStorageHelper valStorageHelper(scanRefsOp, hashMultiMapType.getValueMembers(), false, typeConverter);
       EntryStorageHelper keyStorageHelper(scanRefsOp, hashMultiMapType.getKeyMembers(), hashMultiMapType.hasLock(), typeConverter);
       auto i8PtrType = util::RefType::get(getContext(), rewriter.getI8Type());
@@ -2507,7 +2507,7 @@ class ScanExternalHashIndexListLowering : public SubOpConversionPattern<subop::S
          mlir::Value list = bodyBlock->getArgument(0);
          mlir::Value recordBatchPointer;
          rewriter.atStartOf(&scanOp->getParentOfType<mlir::func::FuncOp>().getBody().front(), [&](SubOpRewriter& rewriter) {
-            recordBatchPointer = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), recordBatchInfoRepr), mlir::Value());
+            recordBatchPointer = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), recordBatchInfoRepr), mlir::Value{});
          });
          // TODO Phase 12: Implement HashIndexIteration::consumeRecordBatch wrapper (index scans)
          // rt::HashIndexIteration::consumeRecordBatch(rewriter, loc)({list, recordBatchPointer});
@@ -2677,7 +2677,7 @@ class MaterializeHeapLowering : public SubOpTupleStreamConsumerConversionPattern
       EntryStorageHelper storageHelper(materializeOp, heapType.getMembers(), heapType.hasLock(), typeConverter);
       mlir::Value ref;
       rewriter.atStartOf(&rewriter.getCurrentStreamLoc()->getParentOfType<mlir::func::FuncOp>().getFunctionBody().front(), [&](SubOpRewriter& rewriter) {
-         ref = rewriter.create<util::AllocaOp>(materializeOp->getLoc(), util::RefType::get(storageHelper.getStorageType()), mlir::Value());
+         ref = rewriter.create<util::AllocaOp>(materializeOp->getLoc(), util::RefType::get(storageHelper.getStorageType()), mlir::Value{});
       });
       storageHelper.storeFromColumns(materializeOp.getMapping(), mapping, ref, rewriter, materializeOp->getLoc());
       // TODO Phase 12: Implement Heap::insert wrapper (top-K queries)
@@ -2697,7 +2697,7 @@ class MaterializeVectorLowering : public SubOpTupleStreamConsumerConversionPatte
       EntryStorageHelper storageHelper(materializeOp, bufferType.getMembers(), bufferType.hasLock(), typeConverter);
       // TODO Phase 5: Implement GrowingBuffer::insert wrapper
       auto elementType = storageHelper.getStorageType();
-      mlir::Value ref = rewriter.create<util::AllocaOp>(materializeOp->getLoc(), util::RefType::get(rewriter.getContext(), elementType), mlir::Value());
+      mlir::Value ref = rewriter.create<util::AllocaOp>(materializeOp->getLoc(), util::RefType::get(rewriter.getContext(), elementType), mlir::Value{});
       storageHelper.storeFromColumns(materializeOp.getMapping(), mapping, ref, rewriter, materializeOp->getLoc());
       rewriter.eraseOp(materializeOp);
       return mlir::success();
@@ -2763,7 +2763,7 @@ class LookupSegmentTreeViewLowering : public SubOpTupleStreamConsumerConversionP
       auto idxRight = unpackedRight[0];
       mlir::Value ref;
       rewriter.atStartOf(&rewriter.getCurrentStreamLoc()->getParentOfType<mlir::func::FuncOp>().getFunctionBody().front(), [&](SubOpRewriter& rewriter) {
-         ref = rewriter.create<util::AllocaOp>(lookupOp->getLoc(), util::RefType::get(typeConverter->convertType(stateType)), mlir::Value());
+         ref = rewriter.create<util::AllocaOp>(lookupOp->getLoc(), util::RefType::get(typeConverter->convertType(stateType)), mlir::Value{});
       });
       // TODO Phase 12: Implement SegmentTreeView::lookup wrapper (window functions)
       // rt::SegmentTreeView::lookup(rewriter, loc)({adaptor.getState(), ref, idxLeft, idxRight});
@@ -2860,7 +2860,7 @@ class PureLookupHashMapLowering : public SubOpTupleStreamConsumerConversionPatte
                            b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -2868,7 +2868,7 @@ class PureLookupHashMapLowering : public SubOpTupleStreamConsumerConversionPatte
                   }, [&](OpBuilder& b, Location loc) {
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                      //          ptr = &entry.next
-                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
@@ -2973,7 +2973,7 @@ class PureLookupPreAggregationHtLowering : public SubOpTupleStreamConsumerConver
                                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                                  Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                                  //          ptr = &entry.next
-                                 Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                                 Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                                  Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                                  //          yield ptr,done=false
                                  b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -2981,7 +2981,7 @@ class PureLookupPreAggregationHtLowering : public SubOpTupleStreamConsumerConver
                         }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
@@ -3086,7 +3086,7 @@ class LookupHashMultiMapLowering : public SubOpTupleStreamConsumerConversionPatt
                            b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -3094,7 +3094,7 @@ class LookupHashMultiMapLowering : public SubOpTupleStreamConsumerConversionPatt
                   }, [&](OpBuilder& b, Location loc) {
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                      //          ptr = &entry.next
-                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
@@ -3203,7 +3203,7 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
                            b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -3212,13 +3212,13 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
 
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                      //          ptr = &entry.next
-                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
                b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) {
                // TODO Phase 11: Implement HashMultiMap::insertEntry wrapper (complex joins)
-               Value entryRef = rewriter.create<util::AllocaOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), mlir::Value());
+               Value entryRef = rewriter.create<util::AllocaOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), mlir::Value{});
                Value entryRefCasted= rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
                Value keyRef=rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, entryRefCasted, 3);
 
@@ -3317,7 +3317,7 @@ class LookupPreAggrHtFragment : public SubOpTupleStreamConsumerConversionPattern
          [&](OpBuilder& b, Location loc) {
             auto initialVals = initValBuilder(rewriter);
             // TODO Phase 11: Implement PreAggregationHashtableFragment::insert wrapper (optimized aggregates)
-            Value entryRef = rewriter.create<util::AllocaOp>(loc, bucketPtrType, mlir::Value());
+            Value entryRef = rewriter.create<util::AllocaOp>(loc, bucketPtrType, mlir::Value{});
             Value entryRefCasted = rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
             Value kvRef = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, entryRefCasted, 2);
             Value keyRef = rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, kvRef, 0);
@@ -3436,7 +3436,7 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
                            b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                            //          ptr = &entry.next
-                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                           Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
@@ -3444,7 +3444,7 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
                   }, [&](OpBuilder& b, Location loc) {
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
                      //          ptr = &entry.next
-                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value());
+                     Value newEntryPtr=b.create<util::LoadOp>(loc,nextPtrAddr,mlir::Value{});
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
@@ -3452,7 +3452,7 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
                auto initialVals = initValBuilder(rewriter);
                //       %newEntry = ...
                // TODO Phase 5: Implement Hashtable::insert wrapper (CRITICAL for joins/aggregates)
-               Value entryRef = rewriter.create<util::AllocaOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), mlir::Value());
+               Value entryRef = rewriter.create<util::AllocaOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), mlir::Value{});
                Value entryRefCasted= rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
                Value kvRef = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, entryRefCasted, 2);
                Value keyRef = rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, kvRef, 0);
@@ -4122,7 +4122,7 @@ class CreateSimpleStateLowering : public SubOpConversionPattern<subop::CreateSim
 
       } else {
          rewriter.atStartOf(&createOp->getParentOfType<mlir::func::FuncOp>().getFunctionBody().front(), [&](SubOpRewriter& rewriter) {
-            ref = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value());
+            ref = rewriter.create<util::AllocaOp>(createOp->getLoc(), typeConverter->convertType(createOp.getType()), mlir::Value{});
          });
       }
       if (!createOp.getInitFn().empty()) {
@@ -4711,7 +4711,63 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
             llvm::errs() << "DEBUG: Operation in ExecutionGroup: " << op.getName().getStringRef() << "\n";
          }
       }
+      
+      // HACK: Since SplitIntoExecutionSteps is crashing, we need to handle ExecutionGroupOp directly
+      llvm::errs() << "DEBUG: No ExecutionStepOp found, will create temporary wrapper\n";
+      
       mlir::IRMapping mapping;
+      
+      // Check if we need to create ExecutionStepOp
+      bool hasExecutionSteps = false;
+      for (auto& op : executionGroup.getRegion().front().getOperations()) {
+         if (mlir::isa<subop::ExecutionStepOp>(&op)) {
+            hasExecutionSteps = true;
+            break;
+         }
+      }
+      
+      if (!hasExecutionSteps && !executionGroup.getSubOps().empty()) {
+         llvm::errs() << "DEBUG: Creating temporary ExecutionStepOp wrapper\n";
+         
+         // Create a temporary ExecutionStepOp to wrap the SubOps
+         OpBuilder tempBuilder(&getContext());
+         tempBuilder.setInsertionPointToStart(&executionGroup.getRegion().front());
+         
+         // Collect all operations except the terminator
+         std::vector<mlir::Operation*> opsToMove;
+         for (auto& op : executionGroup.getSubOps().front()) {
+            if (!mlir::isa<subop::ExecutionGroupReturnOp>(&op)) {
+               opsToMove.push_back(&op);
+            }
+         }
+         
+         // Create ExecutionStepOp with empty inputs/outputs for now
+         auto step = tempBuilder.create<subop::ExecutionStepOp>(
+            executionGroup.getLoc(),
+            mlir::TypeRange{}, // No results for now
+            mlir::ValueRange{}, // No inputs
+            mlir::ArrayAttr{} // No thread local attributes
+         );
+         
+         // Move operations into the ExecutionStepOp
+         auto* stepBlock = new Block();
+         step.getSubOps().push_back(stepBlock);
+         
+         for (auto* op : opsToMove) {
+            op->moveBefore(stepBlock, stepBlock->end());
+         }
+         
+         // Add ExecutionStepReturnOp
+         OpBuilder stepBuilder(stepBlock, stepBlock->end());
+         stepBuilder.create<subop::ExecutionStepReturnOp>(
+            executionGroup.getLoc(),
+            mlir::ValueRange{} // No return values for now
+         );
+         
+         llvm::errs() << "DEBUG: Created ExecutionStepOp with " << opsToMove.size() << " operations\n";
+      }
+      
+      // Original code for ExecutionStepOp handling
       //todo: handle arguments of executionGroup
       for (auto& op : executionGroup.getRegion().front().getOperations()) {
          if (auto step = mlir::dyn_cast_or_null<subop::ExecutionStepOp>(&op)) {
@@ -4865,8 +4921,18 @@ void subop::createLowerSubOpPipeline(mlir::OpPassManager& pm) {
    llvm::errs() << "Adding PrepareLoweringPass\n"; llvm::errs().flush();
    pm.addPass(subop::createPrepareLoweringPass());
    
-   // Test - stop here to see if PrepareLoweringPass works alone
-   llvm::errs() << "Stopping after PrepareLoweringPass for debugging\n"; llvm::errs().flush();
+   // Add the crucial SubOp -> DB conversion pass
+   llvm::errs() << "Adding LowerSubOpPass (SubOp -> DB conversion)\n"; llvm::errs().flush();
+   pm.addPass(subop::createLowerSubOpPass());
+   
+   // Add final canonicalization passes
+   llvm::errs() << "Adding CanonicalizerPass\n"; llvm::errs().flush();
+   pm.addPass(mlir::createCanonicalizerPass());
+   llvm::errs() << "Adding CSEPass\n"; llvm::errs().flush();
+   pm.addPass(mlir::createCSEPass());
+   
+   // Complete - this should give us DB operations
+   llvm::errs() << "Complete SubOp pipeline with LowerSubOpPass\n"; llvm::errs().flush();
    return;
    
    pm.addPass(subop::createPullGatherUpPass());
