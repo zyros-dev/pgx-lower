@@ -1144,28 +1144,13 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       mlir::Value memberMappingValue = rewriter.create<util::CreateConstVarLen>(scanOp->getLoc(), util::VarLen32Type::get(rewriter.getContext()), memberMapping);
       // Call DataSource::iterate to iterate over PostgreSQL tuples
       // The PostgreSQL data source was created by GetExternalTableLowering
-      auto loc = scanOp->getLoc();
       auto* context = rewriter.getContext();
       
       // Get or create the DataSource::iterate runtime function declaration
-      ModuleOp parentModule = scanOp->getParentOfType<ModuleOp>();
-      mlir::func::FuncOp iterateFuncOp;
-      auto iterateFuncName = "DataSource_iterate";
-      
-      if (!(iterateFuncOp = parentModule.lookupSymbol<mlir::func::FuncOp>(iterateFuncName))) {
-         rewriter.atStartOf(parentModule.getBody(), [&](SubOpRewriter& rewriter) {
-            auto i8PtrType = util::RefType::get(context, rewriter.getI8Type());
-            auto boolType = rewriter.getI1Type();
-            iterateFuncOp = rewriter.create<mlir::func::FuncOp>(loc, iterateFuncName,
-               mlir::FunctionType::get(context, 
-                  {i8PtrType, boolType, memberMappingValue.getType(), i8PtrType}, {}));
-            iterateFuncOp->setAttr("llvm.emit_c_interface", mlir::UnitAttr::get(context));
-         });
-      }
-      
-      // Create the iteration context
-      mlir::Value parallelFlag = rewriter.create<mlir::arith::ConstantIntOp>(loc, 0, 1); // false = sequential
-      mlir::Value contextPtr = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value());
+      // (parentModule will be declared below)
+      // PostgreSQL iteration will be handled by calling DataSource::iterate
+      // For now, create a placeholder iterator for the function call
+      mlir::Value iterator = rewriter.create<util::AllocaOp>(loc, util::RefType::get(context, rewriter.getI8Type()), mlir::Value());
       ColumnMapping mapping;
 
       auto* ctxt = rewriter.getContext();

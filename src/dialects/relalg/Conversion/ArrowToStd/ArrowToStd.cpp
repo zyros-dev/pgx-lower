@@ -263,7 +263,7 @@ class SimpleTypeConversionPattern : public ConversionPattern {
       if (typeConverter->convertTypes(op->getResultTypes(), convertedTypes).failed()) {
          return failure();
       }
-      rewriter.replaceOpWithNewOp<Op>(op, convertedTypes, ValueRange(operands), op->getAttrs());
+      rewriter.replaceOpWithNewOp<Op>(op, convertedTypes, operands, op->getAttrs());
       return success();
    }
 };
