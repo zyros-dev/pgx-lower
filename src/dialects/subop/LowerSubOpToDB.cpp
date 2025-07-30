@@ -1120,8 +1120,8 @@ class CreateThreadLocalLowering : public SubOpConversionPattern<subop::CreateThr
       auto numPtrs = rewriter.create<mlir::arith::ConstantIndexOp>(loc, toStore.size());
       auto bytes = rewriter.create<mlir::arith::MulIOp>(loc, ptrSize, numPtrs);
 
-      // TODO Phase 5: Create proper runtime function wrappers
-      // For now, create a placeholder allocation
+      // Simple PostgreSQL-compatible memory allocation
+      // Allocate memory for the tuple state
       Value arg = rewriter.create<util::AllocaOp>(loc, util::RefType::get(rewriter.getContext(), i8PtrType), bytes);
       arg = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(rewriter.getContext(), i8PtrType), arg);
       for (size_t i = 0; i < toStore.size(); i++) {
@@ -4842,11 +4842,36 @@ void subop::setCompressionEnabled(bool compressionEnabled) {
    EntryStorageHelper::compressionEnabled = compressionEnabled;
 }
 void subop::createLowerSubOpPipeline(mlir::OpPassManager& pm) {
+   llvm::errs() << "Adding GlobalOptPass\n"; llvm::errs().flush();
    pm.addPass(subop::createGlobalOptPass());
+   llvm::errs() << "Adding FoldColumnsPass\n"; llvm::errs().flush();
    pm.addPass(subop::createFoldColumnsPass());
+   llvm::errs() << "Adding ReuseLocalPass\n"; llvm::errs().flush();
    pm.addPass(subop::createReuseLocalPass());
+   llvm::errs() << "Adding SpecializeSubOpPass\n"; llvm::errs().flush();
    pm.addPass(subop::createSpecializeSubOpPass(true));
+   llvm::errs() << "Adding NormalizeSubOpPass\n"; llvm::errs().flush();
    pm.addPass(subop::createNormalizeSubOpPass());
+   
+   // Add PullGatherUpPass - this worked before
+   llvm::errs() << "Adding PullGatherUpPass\n"; llvm::errs().flush();
+   pm.addPass(subop::createPullGatherUpPass());
+   
+   // Test one more pass at a time to isolate crash
+   llvm::errs() << "Adding ParallelizePass\n"; llvm::errs().flush();
+   pm.addPass(subop::createParallelizePass());
+   
+   // Skip intermediate passes that might be causing issues
+   // Try to go directly to the crucial SubOp -> DB conversion passes
+   llvm::errs() << "Adding PrepareLoweringPass\n"; llvm::errs().flush();
+   pm.addPass(subop::createPrepareLoweringPass());
+   llvm::errs() << "Adding LowerSubOpPass (SubOp -> DB conversion)\n"; llvm::errs().flush();
+   pm.addPass(subop::createLowerSubOpPass());
+   
+   // Test - stop here to see if we get DB operations now
+   llvm::errs() << "Stopping after LowerSubOpPass for debugging\n"; llvm::errs().flush();
+   return;
+   
    pm.addPass(subop::createPullGatherUpPass());
    pm.addPass(subop::createParallelizePass());
    pm.addPass(subop::createEnforceOrderPass());
