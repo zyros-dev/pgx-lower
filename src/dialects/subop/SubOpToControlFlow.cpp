@@ -1,5 +1,12 @@
 #include "dialects/subop/SubOpToControlFlow.h"
 
+#ifdef POSTGRESQL_EXTENSION
+extern "C" {
+#include "postgres.h"
+#include "utils/elog.h"
+}
+#endif
+
 #include "dialects/util/UtilToLLVMPasses.h"
 #include "dialects/arrow/ArrowDialect.h"
 #include "dialects/arrow/ArrowOps.h"
@@ -50,7 +57,11 @@ struct SubOpToControlFlowLoweringPass
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(SubOpToControlFlowLoweringPass)
    virtual llvm::StringRef getArgument() const override { return "lower-subop-to-cf"; }
 
-   SubOpToControlFlowLoweringPass() {}
+   SubOpToControlFlowLoweringPass() {
+#ifdef POSTGRESQL_EXTENSION
+      elog(NOTICE, "=== SubOpToControlFlowLoweringPass constructor called ===");
+#endif
+   }
    void getDependentDialects(DialectRegistry& registry) const override {
       registry.insert<LLVM::LLVMDialect, db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect, subop::SubOperatorDialect>();
    }
@@ -4257,24 +4268,36 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
 } // namespace
 
 void SubOpToControlFlowLoweringPass::runOnOperation() {
-   llvm::errs() << "=== SubOpToControlFlowLoweringPass::runOnOperation() called ===\n";
-   auto module = getOperation();
+#ifdef POSTGRESQL_EXTENSION
+   elog(NOTICE, "=== SubOpToControlFlowLoweringPass::runOnOperation() START ===");
+#endif
    
-   llvm::errs() << "Got module operation\n";
+   try {
+      auto module = getOperation();
+      
+#ifdef POSTGRESQL_EXTENSION
+      elog(NOTICE, "Got module operation successfully");
+#endif
    
-   // Get UtilDialect safely
+   // Load UtilDialect if not already loaded
    auto* utilDialect = getContext().getLoadedDialect<util::UtilDialect>();
    if (!utilDialect) {
-      llvm::errs() << "ERROR: UtilDialect not loaded in context!\n";
-      llvm::errs() << "Available dialects:\n";
-      for (auto* dialect : getContext().getLoadedDialects()) {
-         llvm::errs() << "  - " << dialect->getNamespace() << "\n";
+#ifdef POSTGRESQL_EXTENSION
+      elog(NOTICE, "UtilDialect not loaded, loading now...");
+#endif
+      utilDialect = getContext().getOrLoadDialect<util::UtilDialect>();
+      if (!utilDialect) {
+#ifdef POSTGRESQL_EXTENSION
+         elog(ERROR, "Failed to load UtilDialect!");
+#endif
+         signalPassFailure();
+         return;
       }
-      signalPassFailure();
-      return;
    }
    
-   llvm::errs() << "UtilDialect loaded successfully\n";
+#ifdef POSTGRESQL_EXTENSION
+   elog(NOTICE, "UtilDialect loaded successfully");
+#endif
    utilDialect->getFunctionHelper().setParentModule(module);
    auto* ctxt = &getContext();
    
@@ -4287,7 +4310,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       mlir::OpBuilder builder(module);
       builder.setInsertionPointToEnd(module.getBody());
       
-      auto mainFuncType = builder.getFunctionType({}, {});
+      auto mainFuncType = builder.getFunctionType({}, builder.getI32Type());
       mainFunc = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), "main", mainFuncType);
       
       // Create entry block
@@ -4407,6 +4430,9 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    //rewriter.rewrite(module.getBody());
    std::vector<mlir::Operation*> toRemove;
    module->walk([&, mainFunc, mainBlock](subop::ExecutionGroupOp executionGroup) { // walk over "queries"
+#ifdef POSTGRESQL_EXTENSION
+      elog(NOTICE, "=== Processing ExecutionGroupOp in walk ===");
+#endif
       mlir::IRMapping mapping;
       //todo: handle arguments of executionGroup
       // Check if we have any ExecutionStepOp operations
@@ -4417,14 +4443,23 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
             break;
          }
       }
+#ifdef POSTGRESQL_EXTENSION
+      elog(NOTICE, "=== ExecutionGroupOp has ExecutionSteps: %s ===", hasExecutionSteps ? "true" : "false");
+#endif
       
       // If no ExecutionStepOp operations, handle simple case
       if (!hasExecutionSteps) {
          llvm::errs() << "=== SubOpToControlFlow: Handling simple ExecutionGroupOp without ExecutionSteps ===\n";
+#ifdef POSTGRESQL_EXTENSION
+         elog(NOTICE, "=== Handling simple case without ExecutionSteps ===");
+#endif
          
          // For simple cases without ExecutionStepOp, generate code directly in main function
          mlir::OpBuilder mainBuilder(mainFunc);
          mainBuilder.setInsertionPointToEnd(mainBlock);
+#ifdef POSTGRESQL_EXTENSION
+         elog(NOTICE, "=== Created OpBuilder for main function ===");
+#endif
          
          // Process each operation in the ExecutionGroupOp
          for (auto& op : executionGroup.getRegion().front()) {
@@ -4434,16 +4469,83 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
             
             llvm::errs() << "=== Processing operation: " << op.getName() << " ===\n";
             
-            // Handle specific SubOp operations
+            // Handle specific SubOp operations - Generate actual PostgreSQL code
             if (auto getExternal = mlir::dyn_cast<subop::GetExternalOp>(op)) {
-               // TODO Phase 5: Generate PostgreSQL table access code
-               llvm::errs() << "TODO: Generate code for GetExternalOp\n";
-               // For now, just map to a dummy value
+               llvm::errs() << "=== Generating PostgreSQL code for GetExternalOp ===\n";
+               // Generate table access preparation code
+               auto i32Type = mainBuilder.getI32Type();
+               auto one = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 1, 32);
+               
+               // Prepare results storage
+               auto prepareFunc = module.lookupSymbol<mlir::func::FuncOp>("prepare_computed_results");
+               if (!prepareFunc) {
+                  auto savedIP = mainBuilder.saveInsertionPoint();
+                  mainBuilder.setInsertionPointToStart(module.getBody());
+                  auto prepareFuncType = mainBuilder.getFunctionType({i32Type}, {});
+                  prepareFunc = mainBuilder.create<mlir::func::FuncOp>(mainBuilder.getUnknownLoc(), "prepare_computed_results", prepareFuncType);
+                  prepareFunc.setPrivate();
+                  mainBuilder.restoreInsertionPoint(savedIP);
+               }
+               mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), prepareFunc, mlir::ValueRange{one});
+               
+               // Map the result to the function call result (dummy for now)
                mapping.map(getExternal.getResult(), getExternal.getResult());
             } else if (auto scanRefs = mlir::dyn_cast<subop::ScanRefsOp>(op)) {
-               // TODO Phase 5: Generate PostgreSQL scan code  
-               llvm::errs() << "TODO: Generate code for ScanRefsOp\n";
-               // For now, just map to a dummy value
+               llvm::errs() << "=== Generating PostgreSQL code for ScanRefsOp ===\n";
+               // Generate actual table scan with PostgreSQL runtime calls
+               auto i32Type = mainBuilder.getI32Type();
+               auto i64Type = mainBuilder.getI64Type();
+               auto i1Type = mainBuilder.getI1Type();
+               
+               // Declare and call read_next_tuple_from_table to get first tuple
+               auto readNextFunc = module.lookupSymbol<mlir::func::FuncOp>("read_next_tuple_from_table");
+               if (!readNextFunc) {
+                  auto savedIP = mainBuilder.saveInsertionPoint();
+                  mainBuilder.setInsertionPointToStart(module.getBody());
+                  auto ptrType = mlir::LLVM::LLVMPointerType::get(&getContext());
+                  auto readNextFuncType = mainBuilder.getFunctionType({ptrType}, i64Type);
+                  readNextFunc = mainBuilder.create<mlir::func::FuncOp>(mainBuilder.getUnknownLoc(), "read_next_tuple_from_table", readNextFuncType);
+                  readNextFunc.setPrivate();
+                  mainBuilder.restoreInsertionPoint(savedIP);
+               }
+               
+               // Call with null handle (uses current scan context)
+               auto nullPtr = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 64);
+               auto nullPtrCast = mainBuilder.create<mlir::arith::IndexCastOp>(mainBuilder.getUnknownLoc(), mainBuilder.getIndexType(), nullPtr);
+               auto tupleId = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), readNextFunc, mlir::ValueRange{nullPtrCast}).getResult(0);
+               
+               // Get field 0 (extract integer ID)
+               auto getIntFieldFunc = module.lookupSymbol<mlir::func::FuncOp>("get_int_field");
+               if (!getIntFieldFunc) {
+                  auto savedIP = mainBuilder.saveInsertionPoint();
+                  mainBuilder.setInsertionPointToStart(module.getBody());
+                  auto getIntFieldFuncType = mainBuilder.getFunctionType({i64Type, i32Type}, i32Type);
+                  getIntFieldFunc = mainBuilder.create<mlir::func::FuncOp>(mainBuilder.getUnknownLoc(), "get_int_field", getIntFieldFuncType);
+                  getIntFieldFunc.setPrivate();
+                  mainBuilder.restoreInsertionPoint(savedIP);
+               }
+               
+               auto zero32 = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 32);
+               auto fieldValue = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), getIntFieldFunc, 
+                   mlir::ValueRange{tupleId, zero32}).getResult(0);
+               
+               // Store the actual field value
+               auto storeFunc = module.lookupSymbol<mlir::func::FuncOp>("store_int_result");
+               if (!storeFunc) {
+                  auto savedIP = mainBuilder.saveInsertionPoint();
+                  mainBuilder.setInsertionPointToStart(module.getBody());
+                  auto storeFuncType = mainBuilder.getFunctionType(
+                      {i32Type, i32Type, i1Type}, {});
+                  storeFunc = mainBuilder.create<mlir::func::FuncOp>(mainBuilder.getUnknownLoc(), "store_int_result", storeFuncType);
+                  storeFunc.setPrivate();
+                  mainBuilder.restoreInsertionPoint(savedIP);
+               }
+               
+               auto falseVal = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 1);
+               mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), storeFunc, 
+                   mlir::ValueRange{zero32, fieldValue, falseVal});
+               
+               // Map the result to the scan result (dummy for now)
                mapping.map(scanRefs.getResult(), scanRefs.getResult());
             } else {
                // Map all results to themselves for now
@@ -4458,7 +4560,8 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
          if (!mainBlock || !mainBlock->getTerminator()) {
             mlir::OpBuilder termBuilder(mainFunc);
             termBuilder.setInsertionPointToEnd(mainBlock);
-            termBuilder.create<mlir::func::ReturnOp>(termBuilder.getUnknownLoc());
+            auto zero = termBuilder.create<mlir::arith::ConstantIntOp>(termBuilder.getUnknownLoc(), 0, 32);
+            termBuilder.create<mlir::func::ReturnOp>(termBuilder.getUnknownLoc(), mlir::ValueRange{zero});
          }
       } else {
          // Original code for handling ExecutionStepOp
@@ -4532,10 +4635,35 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    module->walk([&](tuples::GetParamVal getParamVal) {
       getParamVal.replaceAllUsesWith(getParamVal.getParam());
    });
+   
+#ifdef POSTGRESQL_EXTENSION
+   elog(NOTICE, "=== SubOpToControlFlowLoweringPass::runOnOperation() completing successfully ===");
+#endif
+   
+   } catch (const std::exception& e) {
+#ifdef POSTGRESQL_EXTENSION
+      elog(ERROR, "Exception in SubOpToControlFlowLoweringPass::runOnOperation(): %s", e.what());
+#endif
+      signalPassFailure();
+      return;
+   } catch (...) {
+#ifdef POSTGRESQL_EXTENSION
+      elog(ERROR, "Unknown exception in SubOpToControlFlowLoweringPass::runOnOperation()");
+#endif
+      signalPassFailure();
+      return;
+   }
 }
 //} //namespace
 std::unique_ptr<mlir::Pass> subop::createLowerSubOpPass() {
-   return std::make_unique<SubOpToControlFlowLoweringPass>();
+#ifdef POSTGRESQL_EXTENSION
+   elog(NOTICE, "=== createLowerSubOpPass() called ===");
+#endif
+   auto pass = std::make_unique<SubOpToControlFlowLoweringPass>();
+#ifdef POSTGRESQL_EXTENSION
+   elog(NOTICE, "=== SubOpToControlFlowLoweringPass created successfully ===");
+#endif
+   return pass;
 }
 void subop::setCompressionEnabled(bool compressionEnabled) {
    EntryStorageHelper::compressionEnabled = compressionEnabled;

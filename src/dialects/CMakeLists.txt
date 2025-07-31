@@ -133,6 +133,7 @@ add_library(MLIRSubOpDialect STATIC
     subop/SubOperatorOps.cpp
     subop/SubOpToControlFlow.cpp
     subop/SubOpToControlFlowSimple.cpp
+    subop/SubOpToControlFlowMinimal.cpp
     # SubOp transform passes
     subop/Transforms/Passes.cpp
     subop/Transforms/FoldColumnsPass.cpp

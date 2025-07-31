@@ -248,32 +248,55 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     {
         auto pm3 = mlir::PassManager(&context);
         pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
-        // Use enhanced simple pass for actual table scanning
-        logger.notice("Creating Enhanced SimpleSubOpToControlFlowPass...");
-        auto simplePass = pgx_lower::compiler::dialect::subop::createSimpleSubOpToControlFlowPass();
-        if (!simplePass) {
-            logger.error("createSimpleSubOpToControlFlowPass returned null!");
+        // Use minimal pass to debug basic functionality
+        logger.notice("Creating MinimalSubOpToControlFlowPass - just removes ExecutionGroupOp...");
+        pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
+        
+        logger.notice("About to call createMinimalSubOpToControlFlowPass()...");
+        auto minimalPass = pgx_lower::compiler::dialect::subop::createMinimalSubOpToControlFlowPass();
+        if (!minimalPass) {
+            logger.error("createMinimalSubOpToControlFlowPass returned null!");
             return false;
         }
-        logger.notice("Enhanced SimpleSubOpToControlFlowPass created successfully");
-        pm3.addPass(std::move(simplePass));
+        logger.notice("MinimalSubOpToControlFlowPass created successfully");
+        pm3.addPass(std::move(minimalPass));
         pm3.addPass(mlir::createCanonicalizerPass());
         pm3.addPass(mlir::createCSEPass());
         
-        if (failed(pm3.run(module))) {
-            logger.error("Phase 3 (SubOp → Control Flow) failed!");
-            logger.error("Dumping module state after failure:");
-            std::string errorString;
-            llvm::raw_string_ostream errorStream(errorString);
-            module.print(errorStream);
-            errorStream.flush();
-            for (auto line : llvm::split(errorString, '\n')) {
-                if (!line.empty()) {
-                    logger.error("  " + line.str());
-                }
-            }
+        logger.notice("About to run Phase 3 pass manager...");
+        
+        // Verify module is valid before Phase 3
+        if (failed(mlir::verify(module))) {
+            logger.error("Module verification failed BEFORE Phase 3!");
+            module.dump();
             return false;
         }
+        logger.notice("Module verification passed before Phase 3");
+        
+        try {
+            logger.notice("Running pm3.run(module)...");
+            if (failed(pm3.run(module))) {
+                logger.error("Phase 3 (SubOp → Control Flow) failed during execution!");
+                logger.error("This means the pass manager run returned failure");
+                
+                // Check if module is still valid after failure
+                if (failed(mlir::verify(module))) {
+                    logger.error("Module became invalid during Phase 3 execution!");
+                    module.dump();
+                } else {
+                    logger.notice("Module is still valid after Phase 3 failure");
+                }
+                return false;
+            }
+        } catch (const std::exception& e) {
+            logger.error("Phase 3 (SubOp → Control Flow) threw exception: " + std::string(e.what()));
+            return false;
+        } catch (...) {
+            logger.error("Phase 3 (SubOp → Control Flow) threw unknown exception!");
+            logger.error("This suggests a crash during pass execution");
+            return false;
+        }
+        logger.notice("Phase 3 pass manager completed successfully");
         logger.notice("Phase 3 completed successfully");
     }
     
@@ -311,12 +334,12 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     }
     logger.notice("Lowered PostgreSQL typed field access MLIR to LLVM dialect!");
     
-    // Main function should have been created by Enhanced SimpleSubOpToControlFlow pass
+    // Main function should have been created by real SubOpToControlFlow pass
     // and lowered to LLVM dialect by ConvertFuncToLLVM pass
     auto mainFuncOp = module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("main");
     if (!mainFuncOp) {
         logger.error("Main function not found after lowering passes!");
-        logger.error("Enhanced SimpleSubOpToControlFlow should have created it");
+        logger.error("Real SubOpToControlFlow should have created it");
         return false;
     }
     

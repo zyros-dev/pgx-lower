@@ -1,5 +1,12 @@
 // Simplified SubOp to Control Flow lowering for basic queries
 #include "dialects/subop/SubOpToControlFlow.h"
+
+#ifdef POSTGRESQL_EXTENSION
+extern "C" {
+#include "postgres.h"
+#include "utils/elog.h"
+}
+#endif
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/DBOps.h"
@@ -50,9 +57,15 @@ public:
     llvm::StringRef getDescription() const override { return "Simple SubOp to Control Flow lowering"; }
     
     void runOnOperation() override {
+#ifdef POSTGRESQL_EXTENSION
+        elog(NOTICE, "=== SimpleSubOpToControlFlowPass::runOnOperation() START ===");
+#endif
         mlir::ModuleOp module = getOperation();
         auto &context = *module.getContext();
         mlir::OpBuilder builder(&context);
+#ifdef POSTGRESQL_EXTENSION
+        elog(NOTICE, "=== SimpleSubOpToControlFlowPass: Got module and created builder ===");
+#endif
         
         // Process ExecutionGroupOp operations
         llvm::SmallVector<ExecutionGroupOp, 4> execGroups;
