@@ -338,6 +338,7 @@ add_library(PgxLowerRuntime
     ../runtime/tuple_access.cpp
     ../runtime/PostgreSQLDataSource.cpp
     ../runtime/helpers.cpp
+    ../runtime/postgresql_runtime.cpp
 )
 
 target_include_directories(PgxLowerRuntime PUBLIC
