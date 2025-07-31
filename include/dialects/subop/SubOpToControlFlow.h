@@ -10,6 +10,7 @@ namespace subop {
 void setCompressionEnabled(bool compressionEnabled);
 std::unique_ptr<mlir::Pass> createLowerSubOpPass();
 std::unique_ptr<mlir::Pass> createLowerSubOpToControlFlowPass(); // New stub implementation
+std::unique_ptr<mlir::Pass> createSimpleSubOpToControlFlowPass(); // Simplified implementation
 void registerSubOpToControlFlowConversionPasses();
 void createLowerSubOpPipeline(mlir::OpPassManager& pm);
 } // end namespace subop

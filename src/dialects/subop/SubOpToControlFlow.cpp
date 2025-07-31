@@ -4257,9 +4257,45 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
 } // namespace
 
 void SubOpToControlFlowLoweringPass::runOnOperation() {
+   llvm::errs() << "=== SubOpToControlFlowLoweringPass::runOnOperation() called ===\n";
    auto module = getOperation();
-   getContext().getLoadedDialect<util::UtilDialect>()->getFunctionHelper().setParentModule(module);
+   
+   llvm::errs() << "Got module operation\n";
+   
+   // Get UtilDialect safely
+   auto* utilDialect = getContext().getLoadedDialect<util::UtilDialect>();
+   if (!utilDialect) {
+      llvm::errs() << "ERROR: UtilDialect not loaded in context!\n";
+      llvm::errs() << "Available dialects:\n";
+      for (auto* dialect : getContext().getLoadedDialects()) {
+         llvm::errs() << "  - " << dialect->getNamespace() << "\n";
+      }
+      signalPassFailure();
+      return;
+   }
+   
+   llvm::errs() << "UtilDialect loaded successfully\n";
+   utilDialect->getFunctionHelper().setParentModule(module);
    auto* ctxt = &getContext();
+   
+   // Check if main function exists
+   auto mainFunc = module.lookupSymbol<mlir::func::FuncOp>("main");
+   mlir::Block* mainBlock = nullptr;
+   if (!mainFunc) {
+      llvm::errs() << "=== Creating main function ===\n";
+      // Create main function if it doesn't exist
+      mlir::OpBuilder builder(module);
+      builder.setInsertionPointToEnd(module.getBody());
+      
+      auto mainFuncType = builder.getFunctionType({}, {});
+      mainFunc = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), "main", mainFuncType);
+      
+      // Create entry block
+      mainBlock = mainFunc.addEntryBlock();
+   } else {
+      llvm::errs() << "=== Main function already exists ===\n";
+      mainBlock = &mainFunc.getBody().front();
+   }
 
    TypeConverter typeConverter;
    typeConverter.addConversion([](mlir::Type t) { return t; });
@@ -4370,7 +4406,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
 
    //rewriter.rewrite(module.getBody());
    std::vector<mlir::Operation*> toRemove;
-   module->walk([&](subop::ExecutionGroupOp executionGroup) { // walk over "queries"
+   module->walk([&, mainFunc, mainBlock](subop::ExecutionGroupOp executionGroup) { // walk over "queries"
       mlir::IRMapping mapping;
       //todo: handle arguments of executionGroup
       // Check if we have any ExecutionStepOp operations
@@ -4386,15 +4422,43 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       if (!hasExecutionSteps) {
          llvm::errs() << "=== SubOpToControlFlow: Handling simple ExecutionGroupOp without ExecutionSteps ===\n";
          
-         // For simple cases without ExecutionStepOp, just map values directly
-         // This is a temporary solution for basic queries
+         // For simple cases without ExecutionStepOp, generate code directly in main function
+         mlir::OpBuilder mainBuilder(mainFunc);
+         mainBuilder.setInsertionPointToEnd(mainBlock);
+         
+         // Process each operation in the ExecutionGroupOp
          for (auto& op : executionGroup.getRegion().front()) {
-            if (!mlir::isa<subop::ExecutionGroupReturnOp>(op)) {
-               // For now, just map all values to themselves
+            if (mlir::isa<subop::ExecutionGroupReturnOp>(op)) {
+               continue;
+            }
+            
+            llvm::errs() << "=== Processing operation: " << op.getName() << " ===\n";
+            
+            // Handle specific SubOp operations
+            if (auto getExternal = mlir::dyn_cast<subop::GetExternalOp>(op)) {
+               // TODO Phase 5: Generate PostgreSQL table access code
+               llvm::errs() << "TODO: Generate code for GetExternalOp\n";
+               // For now, just map to a dummy value
+               mapping.map(getExternal.getResult(), getExternal.getResult());
+            } else if (auto scanRefs = mlir::dyn_cast<subop::ScanRefsOp>(op)) {
+               // TODO Phase 5: Generate PostgreSQL scan code  
+               llvm::errs() << "TODO: Generate code for ScanRefsOp\n";
+               // For now, just map to a dummy value
+               mapping.map(scanRefs.getResult(), scanRefs.getResult());
+            } else {
+               // Map all results to themselves for now
                for (auto result : op.getResults()) {
                   mapping.map(result, result);
                }
             }
+         }
+         
+         // Add return statement to main function if needed
+         // Note: We check after processing operations since they might insert code
+         if (!mainBlock || !mainBlock->getTerminator()) {
+            mlir::OpBuilder termBuilder(mainFunc);
+            termBuilder.setInsertionPointToEnd(mainBlock);
+            termBuilder.create<mlir::func::ReturnOp>(termBuilder.getUnknownLoc());
          }
       } else {
          // Original code for handling ExecutionStepOp

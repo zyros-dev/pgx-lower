@@ -248,13 +248,30 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     {
         auto pm3 = mlir::PassManager(&context);
         pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
-        pm3.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
+        // Use enhanced simple pass for actual table scanning
+        logger.notice("Creating Enhanced SimpleSubOpToControlFlowPass...");
+        auto simplePass = pgx_lower::compiler::dialect::subop::createSimpleSubOpToControlFlowPass();
+        if (!simplePass) {
+            logger.error("createSimpleSubOpToControlFlowPass returned null!");
+            return false;
+        }
+        logger.notice("Enhanced SimpleSubOpToControlFlowPass created successfully");
+        pm3.addPass(std::move(simplePass));
         pm3.addPass(mlir::createCanonicalizerPass());
         pm3.addPass(mlir::createCSEPass());
         
         if (failed(pm3.run(module))) {
             logger.error("Phase 3 (SubOp → Control Flow) failed!");
-            module.dump();
+            logger.error("Dumping module state after failure:");
+            std::string errorString;
+            llvm::raw_string_ostream errorStream(errorString);
+            module.print(errorStream);
+            errorStream.flush();
+            for (auto line : llvm::split(errorString, '\n')) {
+                if (!line.empty()) {
+                    logger.error("  " + line.str());
+                }
+            }
             return false;
         }
         logger.notice("Phase 3 completed successfully");
@@ -293,6 +310,15 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         return false;
     }
     logger.notice("Lowered PostgreSQL typed field access MLIR to LLVM dialect!");
+    
+    // Main function should have been created by Enhanced SimpleSubOpToControlFlow pass
+    // and lowered to LLVM dialect by ConvertFuncToLLVM pass
+    auto mainFuncOp = module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("main");
+    if (!mainFuncOp) {
+        logger.error("Main function not found after lowering passes!");
+        logger.error("Enhanced SimpleSubOpToControlFlow should have created it");
+        return false;
+    }
     
     // Dump the MLIR after all lowering passes to see what's causing LLVM IR translation to fail
     logger.notice("MLIR after all lowering passes:");
@@ -387,8 +413,8 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("Runtime function symbols registered successfully");
 
     // Lookup and invoke the main function
-    auto mainFunc = engine->lookupPacked("main");
-    if (!mainFunc) {
+    auto mainFuncPtr = engine->lookupPacked("main");
+    if (!mainFuncPtr) {
         auto error = pgx_lower::ErrorManager::compilationError("Failed to lookup main function in MLIR ExecutionEngine",
                                                                "Main function not found");
         pgx_lower::ErrorManager::reportError(error);
@@ -397,8 +423,8 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     }
 
     logger.notice("Looking up main function in MLIR ExecutionEngine...");
-    // Use LingoDB pattern: void (*)() function signature
-    auto fptr = reinterpret_cast<void (*)()>(mainFunc.get());
+    // Use standard C main signature: int (*)()
+    auto fptr = reinterpret_cast<int (*)()>(mainFuncPtr.get());
 
     logger.notice("About to execute JIT function - this is where PostgreSQL may crash...");
     logger.notice("all compilation stages working! only jit execution remaining...");
@@ -409,7 +435,8 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // Wrap JIT function execution in error handling to prevent server crash
     try {
         logger.notice("Calling JIT function now...");
-        fptr();  // void function call (LingoDB pattern)
+        int result = fptr();  // Standard C main call
+        logger.notice("JIT function returned: " + std::to_string(result));
         logger.notice("complete success! mlir jit function executed successfully!");
         logger.notice("all stages working: mlir compilation + jit execution!");
     } catch (const std::exception& e) {
