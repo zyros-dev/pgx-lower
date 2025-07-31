@@ -436,4 +436,13 @@ def AppendArrowOp : DB_Op<"arrow.append"> {
     let assemblyFormat = "$builder `:` type($builder) `,` $value `:` type($value) attr-dict";
 }
 
+// PostgreSQL-specific operations
+def DB_LoadPostgreSQLOp : DB_Op<"postgresql.load"> {
+    let summary = "loads value from PostgreSQL tuple";
+    
+    let arguments = (ins AnyType:$tuple, Index:$field_index, StrAttr:$field_name);
+    let results = (outs NullableDBType:$res);
+    let assemblyFormat = "$tuple `:` type($tuple) `,` $field_index `(` $field_name `)` `->` type($res) attr-dict";
+}
+
 #endif// OPS

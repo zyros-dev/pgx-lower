@@ -927,6 +927,87 @@ class CastOpLowering : public OpConversionPattern<db::CastOp> {
 };
 #endif // 0 - lingodb support functions not implemented
 
+// PostgreSQL-specific lowering
+class LoadPostgreSQLOpLowering : public OpConversionPattern<db::LoadPostgreSQLOp> {
+   public:
+   using OpConversionPattern<db::LoadPostgreSQLOp>::OpConversionPattern;
+   LogicalResult matchAndRewrite(db::LoadPostgreSQLOp loadOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      auto loc = loadOp->getLoc();
+      auto nullableType = mlir::dyn_cast_or_null<db::NullableType>(loadOp.getType());
+      auto baseType = nullableType ? nullableType.getType() : loadOp.getType();
+      auto convertedBaseType = typeConverter->convertType(baseType);
+      
+      // Get the function to call based on the type
+      std::string functionName;
+      mlir::Type returnType;
+      
+      if (baseType.isInteger(32)) {
+         functionName = "pgx_get_int_field";
+         returnType = rewriter.getI32Type();
+      } else if (baseType.isInteger(64)) {
+         functionName = "pgx_get_bigint_field";
+         returnType = rewriter.getI64Type();
+      } else if (auto stringType = mlir::dyn_cast_or_null<db::StringType>(baseType)) {
+         functionName = "pgx_get_text_field";
+         returnType = util::RefType::get(rewriter.getI8Type());
+      } else {
+         // Default to int32 for now
+         functionName = "pgx_get_int_field";
+         returnType = rewriter.getI32Type();
+      }
+      
+      // Look up or create the function
+      auto module = loadOp->getParentOfType<mlir::ModuleOp>();
+      auto funcOp = module.lookupSymbol<mlir::func::FuncOp>(functionName);
+      if (!funcOp) {
+         // Create function signature: (tuple_ptr, field_index) -> value
+         llvm::SmallVector<mlir::Type> argTypes{
+            util::RefType::get(rewriter.getI8Type()), // tuple pointer
+            rewriter.getI32Type()  // field index
+         };
+         
+         auto funcType = rewriter.getFunctionType(argTypes, returnType);
+         mlir::OpBuilder::InsertionGuard guard(rewriter);
+         rewriter.setInsertionPointToStart(module.getBody());
+         funcOp = rewriter.create<mlir::func::FuncOp>(loc, functionName, funcType);
+         funcOp.setPrivate();
+      }
+      
+      // Create the call
+      auto callOp = rewriter.create<mlir::func::CallOp>(loc, funcOp, 
+         mlir::ValueRange{adaptor.getTuple(), adaptor.getFieldIndex()});
+      
+      mlir::Value result = callOp.getResult(0);
+      
+      // Wrap in nullable if needed
+      if (nullableType) {
+         // Check for null
+         auto isNullFuncName = "pgx_is_null_field";
+         auto isNullFunc = module.lookupSymbol<mlir::func::FuncOp>(isNullFuncName);
+         if (!isNullFunc) {
+            llvm::SmallVector<mlir::Type> argTypes{
+               util::RefType::get(rewriter.getI8Type()), // tuple pointer
+               rewriter.getI32Type()  // field index
+            };
+            auto funcType = rewriter.getFunctionType(argTypes, rewriter.getI1Type());
+            mlir::OpBuilder::InsertionGuard guard(rewriter);
+            rewriter.setInsertionPointToStart(module.getBody());
+            isNullFunc = rewriter.create<mlir::func::FuncOp>(loc, isNullFuncName, funcType);
+            isNullFunc.setPrivate();
+         }
+         
+         auto isNullCall = rewriter.create<mlir::func::CallOp>(loc, isNullFunc,
+            mlir::ValueRange{adaptor.getTuple(), adaptor.getFieldIndex()});
+         
+         // Create nullable value
+         result = rewriter.create<db::AsNullableOp>(loc, nullableType, result, isNullCall.getResult(0));
+      }
+      
+      rewriter.replaceOp(loadOp, result);
+      return success();
+   }
+};
+
 class BetweenLowering : public OpConversionPattern<db::BetweenOp> {
    public:
    using OpConversionPattern<db::BetweenOp>::OpConversionPattern;
@@ -1166,9 +1247,8 @@ struct DBToStdLoweringPass
       patterns.insert<SimpleTypeConversionPattern<mlir::func::ConstantOp>>(typeConverter, &getContext());
       patterns.insert<SimpleTypeConversionPattern<mlir::func::CallIndirectOp>>(typeConverter, &getContext());
       patterns.insert<SimpleTypeConversionPattern<mlir::arith::SelectOp>>(typeConverter, &getContext());
-      // Arrow operations don't exist in pgx-lower - TODO: replace with PostgreSQL operations
-      // patterns.insert<LoadArrowOpLowering>(typeConverter, &getContext());
-      // patterns.insert<AppendArrowLowering>(typeConverter, &getContext());
+      // PostgreSQL operation lowering
+      patterns.insert<LoadPostgreSQLOpLowering>(typeConverter, &getContext());
       // TODO: Fix lingodb runtime dependencies
       // patterns.insert<StringCmpOpLowering>(typeConverter, ctxt);
       // patterns.insert<CharCmpOpLowering>(typeConverter, ctxt);

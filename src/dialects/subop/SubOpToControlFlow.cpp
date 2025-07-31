@@ -941,8 +941,12 @@ class TableRefGatherOpLowering : public SubOpTupleStreamConsumerConversionPatter
             auto columnDefAttr = mlir::cast<tuples::ColumnDefAttr>(gatherOp.getMapping().get(memberName));
             auto colArray = unPackedColumns[i];
             auto type = columnDefAttr.getColumn().type;
-            //todo: use MLIR interfaces to get the "right" operation for loading a certain type from an arrow array?
-            mlir::Value loaded = rewriter.create<db::LoadArrowOp>(gatherOp->getLoc(), type, colArray, currRow);
+            // PostgreSQL: Replace Arrow loading with PostgreSQL tuple field access
+            // In PostgreSQL context, currRow should be the tuple pointer
+            // Field index is i, field name is memberName
+            mlir::Value fieldIndex = rewriter.create<arith::ConstantIndexOp>(gatherOp->getLoc(), i);
+            mlir::StringAttr fieldNameAttr = rewriter.getStringAttr(memberName);
+            mlir::Value loaded = rewriter.create<db::LoadPostgreSQLOp>(gatherOp->getLoc(), type, currRow, fieldIndex, fieldNameAttr);
             mapping.define(columnDefAttr, loaded);
          }
       }
@@ -3351,8 +3355,12 @@ class ExternalHashIndexRefGatherOpLowering : public SubOpTupleStreamConsumerConv
             auto columnDefAttr = mlir::cast<tuples::ColumnDefAttr>(gatherOp.getMapping().get(memberName));
             auto colArray = unPackedColumns[i];
             auto type = columnDefAttr.getColumn().type;
-            //todo: use MLIR interfaces to get the "right" operation for loading a certain type from an arrow array?
-            mlir::Value loaded = rewriter.create<db::LoadArrowOp>(gatherOp->getLoc(), type, colArray, currRow);
+            // PostgreSQL: Replace Arrow loading with PostgreSQL tuple field access
+            // In PostgreSQL context, currRow should be the tuple pointer
+            // Field index is i, field name is memberName
+            mlir::Value fieldIndex = rewriter.create<arith::ConstantIndexOp>(gatherOp->getLoc(), i);
+            mlir::StringAttr fieldNameAttr = rewriter.getStringAttr(memberName);
+            mlir::Value loaded = rewriter.create<db::LoadPostgreSQLOp>(gatherOp->getLoc(), type, currRow, fieldIndex, fieldNameAttr);
             mapping.define(columnDefAttr, loaded);
          }
       }
