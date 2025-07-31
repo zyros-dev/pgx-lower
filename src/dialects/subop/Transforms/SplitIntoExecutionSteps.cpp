@@ -258,9 +258,16 @@ class SplitIntoExecutionSteps : public mlir::PassWrapper<SplitIntoExecutionSteps
          auto returnOp = mlir::cast<subop::ExecutionGroupReturnOp>(executionGroup.getSubOps().front().getTerminator());
          std::vector<mlir::Value> returnValues;
          for (auto result : returnOp.getInputs()) {
-            returnValues.push_back(stateMapping[result]);
+            if (stateMapping.count(result) == 0) {
+               llvm::errs() << "=== WARNING: Missing stateMapping for result, using original value ===\n";
+               returnValues.push_back(result);
+            } else {
+               returnValues.push_back(stateMapping[result]);
+            }
          }
-         returnOp->setOperands(returnValues);
+         if (!returnValues.empty()) {
+            returnOp->setOperands(returnValues);
+         }
       });
       } catch (const std::exception& e) {
          llvm::errs() << "=== EXCEPTION in SplitIntoExecutionSteps: " << e.what() << " ===\n";

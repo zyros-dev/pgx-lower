@@ -91,6 +91,11 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         "tests/unit/runtime/*.cpp"
     )
     
+    # Add individual test files
+    list(APPEND UNIT_TEST_SOURCES 
+        tests/unit/test_subop_simple.cpp
+    )
+    
     add_mlir_unit_test(mlir_unit_test 
         tests/unit/test_main.cpp
         tests/unit/test_helpers.cpp
