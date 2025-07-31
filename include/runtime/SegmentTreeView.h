@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_SEGMENTTREEVIEW_H
-#define LINGODB_RUNTIME_SEGMENTTREEVIEW_H
+#ifndef PGX_LOWER_RUNTIME_SEGMENTTREEVIEW_H
+#define PGX_LOWER_RUNTIME_SEGMENTTREEVIEW_H
 #include "GrowingBuffer.h"
 
 #include <cstdint>
@@ -40,4 +40,4 @@ class SegmentTreeView {
 };
 } // namespace pgx_lower::compiler::runtime
 
-#endif // LINGODB_RUNTIME_SEGMENTTREEVIEW_H
+#endif // PGX_LOWER_RUNTIME_SEGMENTTREEVIEW_H

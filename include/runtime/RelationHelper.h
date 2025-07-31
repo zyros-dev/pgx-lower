@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_RELATIONHELPER_H
-#define LINGODB_RUNTIME_RELATIONHELPER_H
+#ifndef PGX_LOWER_RUNTIME_RELATIONHELPER_H
+#define PGX_LOWER_RUNTIME_RELATIONHELPER_H
 
 #include "ExecutionContext.h"
 #include "LingoDBHashIndex.h"
@@ -18,4 +18,4 @@ class RelationHelper {
 };
 } // end namespace pgx_lower::compiler::runtime
 
-#endif //LINGODB_RUNTIME_RELATIONHELPER_H
+#endif //PGX_LOWER_RUNTIME_RELATIONHELPER_H

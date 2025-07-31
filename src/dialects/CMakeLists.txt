@@ -213,7 +213,7 @@ set_target_properties(MLIRRelAlgDialect PROPERTIES
 # Add dependency on generated files
 # PG dialect dependencies removed
 add_dependencies(MLIRSubOpDialect MLIRSubOpIncGen MLIRSubOpInterfacesIncGen MLIRTupleStreamIncGen MLIRUtilIncGen)
-add_dependencies(MLIRDBDialect MLIRDBIncGen)
+add_dependencies(MLIRDBDialect MLIRDBIncGen MLIRRelAlgIncGen)  # DBDialect needs RelAlg interfaces
 add_dependencies(MLIRTupleStreamDialect MLIRTupleStreamIncGen)
 add_dependencies(MLIRDSADialect MLIRDSAIncGen)
 add_dependencies(MLIRRelAlgDialect MLIRRelAlgIncGen)

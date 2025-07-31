@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_ENTRYLOCK_H
-#define LINGODB_RUNTIME_ENTRYLOCK_H
+#ifndef PGX_LOWER_RUNTIME_ENTRYLOCK_H
+#define PGX_LOWER_RUNTIME_ENTRYLOCK_H
 #include <atomic>
 
 namespace pgx_lower::compiler::runtime {
@@ -15,4 +15,4 @@ static_assert(sizeof(EntryLock) <= 8, "SpinLock is too big");
 
 } // namespace pgx_lower::compiler::runtime
 
-#endif //LINGODB_RUNTIME_ENTRYLOCK_H
+#endif //PGX_LOWER_RUNTIME_ENTRYLOCK_H

@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_HEAP_H
-#define LINGODB_RUNTIME_HEAP_H
+#ifndef PGX_LOWER_RUNTIME_HEAP_H
+#define PGX_LOWER_RUNTIME_HEAP_H
 #include "Buffer.h"
 #include "ThreadLocal.h"
 #include <cstddef>
@@ -42,4 +42,4 @@ class Heap {
    }
 };
 } // namespace pgx_lower::compiler::runtime
-#endif // LINGODB_RUNTIME_HEAP_H
+#endif // PGX_LOWER_RUNTIME_HEAP_H

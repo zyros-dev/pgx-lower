@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_TRACING_H
-#define LINGODB_RUNTIME_TRACING_H
+#ifndef PGX_LOWER_RUNTIME_TRACING_H
+#define PGX_LOWER_RUNTIME_TRACING_H
 
 #include "helpers.h"
 
@@ -11,4 +11,4 @@ class ExecutionStepTracing {
 };
 }; // namespace pgx_lower::compiler::runtime
 
-#endif //LINGODB_RUNTIME_TRACING_H
+#endif //PGX_LOWER_RUNTIME_TRACING_H

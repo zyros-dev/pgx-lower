@@ -1,7 +1,7 @@
-#ifndef LINGODB_RUNTIME_LAZYJOINHASHTABLE_H
-#define LINGODB_RUNTIME_LAZYJOINHASHTABLE_H
-#include "runtime/Buffer.h"
-#include "runtime/helpers.h"
+#ifndef PGX_LOWER_RUNTIME_LAZYJOINHASHTABLE_H
+#define PGX_LOWER_RUNTIME_LAZYJOINHASHTABLE_H
+#include "lingodb/runtime/Buffer.h"
+#include "lingodb/runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 class GrowingBuffer;
 class HashIndexedView {
@@ -31,4 +31,4 @@ class HashIndexedView {
    ~HashIndexedView();
 };
 } // end namespace pgx_lower::compiler::runtime
-#endif // LINGODB_RUNTIME_LAZYJOINHASHTABLE_H
+#endif // PGX_LOWER_RUNTIME_LAZYJOINHASHTABLE_H

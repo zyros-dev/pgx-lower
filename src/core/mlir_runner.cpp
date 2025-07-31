@@ -11,7 +11,7 @@
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/LowerDBToDSA.h"
 #include "dialects/dsa/DSADialect.h"
-#include "dialects/util/LowerDSAToLLVM.h"
+#include "dialects/util/UtilToLLVMPasses.h"
 #include "dialects/util/UtilDialect.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 
@@ -136,48 +136,130 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         module.walk([&](pgx_lower::compiler::dialect::subop::ExecutionGroupOp execGroup) {
             logger.notice("Found ExecutionGroupOp");
             logger.notice("Number of regions: " + std::to_string(execGroup->getNumRegions()));
-            if (execGroup.getSubOps().empty()) {
-                logger.error("ExecutionGroupOp has empty subOps region!");
+            if (execGroup.getRegion().empty()) {
+                logger.error("ExecutionGroupOp has empty region!");
             } else {
-                logger.notice("ExecutionGroupOp has " + std::to_string(execGroup.getSubOps().getBlocks().size()) + " blocks");
-                for (auto& block : execGroup.getSubOps()) {
+                logger.notice("ExecutionGroupOp region has " + std::to_string(execGroup.getRegion().getBlocks().size()) + " blocks");
+                for (auto& block : execGroup.getRegion()) {
                     logger.notice("Block has " + std::to_string(block.getOperations().size()) + " operations");
                     for (auto& op : block) {
                         logger.notice("  Operation: " + op.getName().getStringRef().str());
+                        if (op.getName().getStringRef() == "subop.execution_step") {
+                            logger.notice("    Found ExecutionStepOp!");
+                        }
                     }
                 }
             }
         });
     }
     
-    // Phase 2: SubOp transform pipeline
-    logger.notice("Phase 2: SubOp transform pipeline");
-    {
-        auto pm2 = mlir::PassManager(&context);
-        pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
-        pgx_lower::compiler::dialect::subop::createLowerSubOpPipeline(pm2);
+    // Phase 2: SubOp optimization passes (following LingoDB's Execution.cpp pattern)
+    logger.notice("Phase 2: SubOp optimization passes");
+    
+    // Test each pass individually to identify the failing one
+    std::vector<std::pair<std::string, std::function<std::unique_ptr<mlir::Pass>()>>> passes = {
+        {"GlobalOpt", []() { return pgx_lower::compiler::dialect::subop::createGlobalOptPass(); }},
+        {"FoldColumns", []() { return pgx_lower::compiler::dialect::subop::createFoldColumnsPass(); }},
+        {"ReuseLocal", []() { return pgx_lower::compiler::dialect::subop::createReuseLocalPass(); }},
+        {"SpecializeSubOp", []() { return pgx_lower::compiler::dialect::subop::createSpecializeSubOpPass(true); }},
+        {"NormalizeSubOp", []() { return pgx_lower::compiler::dialect::subop::createNormalizeSubOpPass(); }},
+        {"PullGatherUp", []() { return pgx_lower::compiler::dialect::subop::createPullGatherUpPass(); }},
+        {"EnforceOrder", []() { return pgx_lower::compiler::dialect::subop::createEnforceOrderPass(); }},
+        {"InlineNestedMap", []() { return pgx_lower::compiler::dialect::subop::createInlineNestedMapPass(); }},
+        {"Finalize", []() { return pgx_lower::compiler::dialect::subop::createFinalizePass(); }},
+        {"SplitIntoExecutionSteps", []() { return pgx_lower::compiler::dialect::subop::createSplitIntoExecutionStepsPass(); }},
+        {"SpecializeParallel", []() { return pgx_lower::compiler::dialect::subop::createSpecializeParallelPass(); }},
+        {"PrepareLowering", []() { return pgx_lower::compiler::dialect::subop::createPrepareLoweringPass(); }},
+    };
+    
+    for (auto& [passName, passCreator] : passes) {
+        logger.notice("Running SubOp pass: " + passName);
         
-        if (failed(pm2.run(module))) {
-            logger.error("Phase 2 (SubOp transforms) failed!");
+        // Dump module before SplitIntoExecutionSteps
+        if (passName == "SplitIntoExecutionSteps") {
+            logger.notice("=== Module state before SplitIntoExecutionSteps ===");
+            module.walk([&](pgx_lower::compiler::dialect::subop::ExecutionGroupOp execGroup) {
+                logger.notice("ExecutionGroupOp found:");
+                execGroup.print(llvm::errs());
+                llvm::errs() << "\n";
+            });
+        }
+        
+        auto pm = mlir::PassManager(&context);
+        if (passName == "Parallelize") {
+            pm.addNestedPass<mlir::func::FuncOp>(pgx_lower::compiler::dialect::subop::createParallelizePass());
+        } else {
+            pm.addPass(passCreator());
+        }
+        
+        if (failed(pm.run(module))) {
+            logger.error("SubOp pass FAILED: " + passName);
             module.dump();
             return false;
         }
-        logger.notice("Phase 2 completed successfully");
+        logger.notice("SubOp pass completed: " + passName);
     }
     
-    // Phase 3: SubOp → DB lowering (now with working stub)
-    logger.notice("Phase 3: SubOp → DB lowering (SubOpToControlFlow stub)");
+    // Add Parallelize pass separately (needs nested pass)
+    logger.notice("Running SubOp pass: Parallelize");
     {
-        auto pm3 = mlir::PassManager(&context);
-        pm3.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
-        
-        if (failed(pm3.run(module))) {
-            logger.error("Phase 3 (SubOp → ControlFlow stub) failed!");
+        auto pm = mlir::PassManager(&context);
+        pm.addNestedPass<mlir::func::FuncOp>(pgx_lower::compiler::dialect::subop::createParallelizePass());
+        if (failed(pm.run(module))) {
+            logger.error("SubOp pass FAILED: Parallelize");
             module.dump();
             return false;
         }
-        logger.notice("Phase 3 completed successfully with stub implementation");
+        logger.notice("SubOp pass completed: Parallelize");
     }
+    
+    logger.notice("Phase 2 completed successfully");
+    
+    // Phase 3: SubOp → Control Flow lowering (following LingoDB's Execution.cpp pattern)
+    logger.notice("Phase 3: SubOp → Control Flow lowering");
+    
+    // Debug: Check module state before SubOp lowering
+    logger.notice("=== Module state before SubOp → Control Flow ===");
+    module.walk([&](pgx_lower::compiler::dialect::subop::ExecutionGroupOp execGroup) {
+        logger.notice("Found ExecutionGroupOp before lowering");
+        if (!execGroup.getRegion().empty()) {
+            logger.notice("ExecutionGroupOp has " + std::to_string(execGroup.getRegion().getBlocks().size()) + " blocks");
+            for (auto& block : execGroup.getRegion()) {
+                logger.notice("Block has " + std::to_string(block.getOperations().size()) + " operations");
+            }
+        }
+    });
+    
+    {
+        auto pm3 = mlir::PassManager(&context);
+        pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
+        pm3.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
+        pm3.addPass(mlir::createCanonicalizerPass());
+        pm3.addPass(mlir::createCSEPass());
+        
+        if (failed(pm3.run(module))) {
+            logger.error("Phase 3 (SubOp → Control Flow) failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("Phase 3 completed successfully");
+    }
+    
+    // Phase 4: DB lowering pipeline
+    logger.notice("Phase 4: DB lowering pipeline");
+    {
+        auto pm4 = mlir::PassManager(&context);
+        pgx_lower::compiler::dialect::db::createLowerDBPipeline(pm4);
+        
+        if (failed(pm4.run(module))) {
+            logger.error("Phase 4 (DB lowering) failed!");
+            module.dump();
+            return false;
+        }
+        logger.notice("Phase 4 completed successfully");
+    }
+    
+    // Note: We skip Arrow lowering since we're using PostgreSQL instead
     
     // Now lower to LLVM
     auto pm2 = mlir::PassManager(&context);
