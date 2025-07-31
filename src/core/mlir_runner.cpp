@@ -169,7 +169,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("Phase 3: SubOp → DB lowering (SubOpToControlFlow stub)");
     {
         auto pm3 = mlir::PassManager(&context);
-        pm3.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpToControlFlowPass());
+        pm3.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
         
         if (failed(pm3.run(module))) {
             logger.error("Phase 3 (SubOp → ControlFlow stub) failed!");

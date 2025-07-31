@@ -7,6 +7,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/OpImplementation.h"
 
 namespace pgx_lower::compiler::dialect::arrow {
 
@@ -33,7 +34,7 @@ public:
         mlir::Type operandType, resultType;
         if (parser.parseOperand(operand) ||
             parser.parseColonType(operandType) ||
-            parser.parseArrowTypeAndOperands(resultType, {operand}) ||
+            parser.parseArrow(resultType) ||
             parser.resolveOperands({operand}, {operandType}, parser.getNameLoc(), result.operands) ||
             parser.addTypeToList(resultType, result.types))
             return mlir::failure();
@@ -44,8 +45,8 @@ public:
         p << " " << getOperand() << " : " << getOperand().getType() << " -> " << getResult().getType();
     }
     
-    mlir::Value getOperand() { return this->getOperands()[0]; }
-    mlir::Value getResult() { return this->getResults()[0]; }
+    mlir::Value getOperand() { return this->getOperation()->getOperand(0); }
+    mlir::Value getResult() { return this->getOperation()->getResult(0); }
 };
 
 } // namespace pgx_lower::compiler::dialect::arrow

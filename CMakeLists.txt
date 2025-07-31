@@ -109,6 +109,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRDSADialect
         MLIRTupleStreamDialect
         MLIRUtilDialect
+        PgxLowerRuntime
     )
     target_include_directories(mlir_unit_test PRIVATE 
         tests/unit

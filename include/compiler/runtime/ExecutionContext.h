@@ -2,24 +2,26 @@
 #define COMPILER_RUNTIME_EXECUTIONCONTEXT_H
 
 #include "runtime/ExecutionContext.h"
-#include "dialects/util/FunctionHelper.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/Location.h"
+#include "runtime/RuntimeFunctions.h"
 
 namespace pgx_lower::compiler::runtime {
 
-// Manual wrapper for ExecutionContext that provides MLIR-compatible interface
-// This replaces what runtime-header-tool would generate
-struct ExecutionContextWrapper {
-    // Wrapper that returns a callable for MLIR code generation
-    static auto setResult(mlir::OpBuilder& builder, mlir::Location loc) {
-        return [&builder, loc](std::initializer_list<mlir::Value> args) {
-            // TODO Phase 5: Generate actual MLIR calls to runtime setResult
-            // For now, this is a stub to get compilation working
-        };
-    }
-    
-    // Add other wrapped methods as needed
+// MLIR wrapper functions for ExecutionContext
+struct ExecutionContext {
+   static RuntimeFunction allocStateRaw(mlir::OpBuilder& builder, mlir::Location loc) {
+      // TODO Phase 5: Implement ExecutionContext::allocStateRaw wrapper
+      return RuntimeFunction("exec_alloc_state_raw", builder, loc);
+   }
+   
+   static RuntimeFunction setTupleCount(mlir::OpBuilder& builder, mlir::Location loc) {
+      // TODO Phase 5: Implement ExecutionContext::setTupleCount wrapper
+      return RuntimeFunction("exec_set_tuple_count", builder, loc);
+   }
+   
+   static RuntimeFunction setResult(mlir::OpBuilder& builder, mlir::Location loc) {
+      // TODO Phase 5: Implement ExecutionContext::setResult wrapper
+      return RuntimeFunction("exec_set_result", builder, loc);
+   }
 };
 
 } // namespace pgx_lower::compiler::runtime

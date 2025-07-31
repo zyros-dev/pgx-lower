@@ -337,6 +337,7 @@ set_target_properties(MLIRUtilDialect PROPERTIES
 add_library(PgxLowerRuntime
     ../runtime/tuple_access.cpp
     ../runtime/PostgreSQLDataSource.cpp
+    ../runtime/helpers.cpp
 )
 
 target_include_directories(PgxLowerRuntime PUBLIC
