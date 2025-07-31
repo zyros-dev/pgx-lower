@@ -182,6 +182,21 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
                 logger.notice("ExecutionGroupOp found:");
                 execGroup.print(llvm::errs());
                 llvm::errs() << "\n";
+                logger.notice("ExecutionGroupOp details:");
+                logger.notice("  Has regions: " + std::to_string(execGroup->getNumRegions()));
+                if (!execGroup.getRegion().empty()) {
+                    logger.notice("  Region has " + std::to_string(execGroup.getRegion().getBlocks().size()) + " blocks");
+                    for (auto& block : execGroup.getRegion()) {
+                        logger.notice("  Block has " + std::to_string(block.getOperations().size()) + " operations");
+                        for (auto& op : block) {
+                            std::string opStr;
+                            llvm::raw_string_ostream os(opStr);
+                            op.print(os);
+                            os.flush();
+                            logger.notice("    Op: " + opStr);
+                        }
+                    }
+                }
             });
         }
         

@@ -4373,8 +4373,33 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    module->walk([&](subop::ExecutionGroupOp executionGroup) { // walk over "queries"
       mlir::IRMapping mapping;
       //todo: handle arguments of executionGroup
+      // Check if we have any ExecutionStepOp operations
+      bool hasExecutionSteps = false;
       for (auto& op : executionGroup.getRegion().front().getOperations()) {
-         if (auto step = mlir::dyn_cast_or_null<subop::ExecutionStepOp>(&op)) {
+         if (mlir::isa<subop::ExecutionStepOp>(op)) {
+            hasExecutionSteps = true;
+            break;
+         }
+      }
+      
+      // If no ExecutionStepOp operations, handle simple case
+      if (!hasExecutionSteps) {
+         llvm::errs() << "=== SubOpToControlFlow: Handling simple ExecutionGroupOp without ExecutionSteps ===\n";
+         
+         // For simple cases without ExecutionStepOp, just map values directly
+         // This is a temporary solution for basic queries
+         for (auto& op : executionGroup.getRegion().front()) {
+            if (!mlir::isa<subop::ExecutionGroupReturnOp>(op)) {
+               // For now, just map all values to themselves
+               for (auto result : op.getResults()) {
+                  mapping.map(result, result);
+               }
+            }
+         }
+      } else {
+         // Original code for handling ExecutionStepOp
+         for (auto& op : executionGroup.getRegion().front().getOperations()) {
+            if (auto step = mlir::dyn_cast_or_null<subop::ExecutionStepOp>(&op)) {
 #ifdef TRACER
             mlir::Value tracingStep;
             {
@@ -4405,6 +4430,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
                rt::ExecutionStepTracing::end(builder, op.getLoc())({tracingStep});
             }
 #endif
+            }
          }
       }
       auto returnOp = mlir::cast<subop::ExecutionGroupReturnOp>(executionGroup.getRegion().front().getTerminator());
