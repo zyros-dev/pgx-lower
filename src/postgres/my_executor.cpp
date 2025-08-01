@@ -180,9 +180,8 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
     const auto mlir_success = mlir_runner::run_mlir_postgres_ast_translation(const_cast<PlannedStmt*>(stmt), logger);
     logger.notice("mlir_runner::run_mlir_postgres_ast_translation returned " + std::string(mlir_success ? "true" : "false"));
 
-    // TEMPORARY: Skip streaming to isolate crash
-    logger.notice("TEMPORARILY SKIPPING STREAMING TO ISOLATE CRASH");
-    if (false && mlir_success) {
+    // Stream results back to PostgreSQL
+    if (mlir_success) {
         logger.notice("JIT returned successfully, checking results...");
         // Check if JIT marked results as ready
         extern bool g_jit_results_ready;

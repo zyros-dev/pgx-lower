@@ -441,21 +441,30 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     }
 
     logger.notice("Looking up main function in MLIR ExecutionEngine...");
-    // Use standard C main signature: int (*)()
-    auto fptr = reinterpret_cast<int (*)()>(mainFuncPtr.get());
-
+    
     logger.notice("About to execute JIT function - this is where PostgreSQL may crash...");
     logger.notice("all compilation stages working! only jit execution remaining...");
 
     // Add detailed logging for JIT execution debugging
-    logger.notice("JIT function pointer address: " + std::to_string(reinterpret_cast<uint64_t>(fptr)));
+    logger.notice("JIT function pointer address: " + std::to_string(reinterpret_cast<uint64_t>(mainFuncPtr.get())));
     
     // Wrap JIT function execution in error handling to prevent server crash
     try {
         logger.notice("Calling JIT function now...");
-        logger.notice("About to invoke fptr() - this is the actual JIT call");
-        int result = fptr();  // Standard C main call
-        logger.notice("JIT function returned successfully with result: " + std::to_string(result));
+        logger.notice("About to invoke packed function - this is the actual JIT call");
+        
+        // Use the packed interface which is safer for MLIR
+        auto result = engine->invokePacked("main");
+        if (result) {
+            auto errMsg = std::string();
+            auto errStream = llvm::raw_string_ostream(errMsg);
+            llvm::handleAllErrors(std::move(result), [&](const llvm::ErrorInfoBase &E) {
+                errStream << E.message();
+            });
+            logger.error("Failed to invoke main function via invokePacked: " + errMsg);
+            return false;
+        }
+        logger.notice("JIT function invokePacked returned successfully");
         logger.notice("complete success! mlir jit function executed successfully!");
         logger.notice("all stages working: mlir compilation + jit execution!");
         logger.notice("About to return from JIT execution try block...");
