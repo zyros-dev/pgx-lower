@@ -87,7 +87,8 @@ PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context, MLI
     , logger_(logger)
     , builder_(nullptr)
     , currentModule_(nullptr)
-    , currentTupleHandle_(nullptr) {
+    , currentTupleHandle_(nullptr)
+    , currentPlannedStmt_(nullptr) {
     registerDialects();
 }
 
@@ -125,6 +126,9 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     }
     
     logger_.debug("Translating PostgreSQL PlannedStmt to MLIR");
+    
+    // Store the planned statement for accessing metadata
+    currentPlannedStmt_ = plannedStmt;
     
     // Create the MLIR module
     auto module = std::make_unique<mlir::ModuleOp>(
@@ -204,7 +208,7 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan) -> mlir::Operation* 
 }
 
 auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operation* {
-    if (!seqScan || !builder_ || !currentModule_) {
+    if (!seqScan || !builder_ || !currentModule_ || !currentPlannedStmt_) {
         return nullptr;
     }
     
@@ -213,34 +217,88 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operat
     auto location = builder_->getUnknownLoc();
     auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
     
-    // Extract table information from the SeqScan node
-    // For test 1, this should be the "test" table with one column "id"
+    // Get the RangeTblEntry for this scan
+    RangeTblEntry* rte = nullptr;
+    if (currentPlannedStmt_->rtable && seqScan->scan.scanrelid > 0) {
+        rte = static_cast<RangeTblEntry*>(
+            list_nth(currentPlannedStmt_->rtable, seqScan->scan.scanrelid - 1));
+    }
     
-    // Get the table name from the scan relation
-    auto tableId = builder_->getStringAttr("test"); // TODO Phase 6: Extract from seqScan->scanrelid
+    if (!rte) {
+        logger_.error("Could not find RangeTblEntry for scanrelid " + 
+                     std::to_string(seqScan->scan.scanrelid));
+        return nullptr;
+    }
     
-    // Create column metadata for the table using ColumnDefAttr
-    // For test 1: single column "id" of type INT4 (SERIAL)
+    // Get table name from relation OID
+    // For now, use "test" as placeholder - TODO: get actual table name
+    auto tableId = builder_->getStringAttr("test");
+    
+    // Create column metadata for the table using target list
     auto& columnManager = context_.getLoadedDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>()->getColumnManager();
     
     // Create a unique scope for this table
     std::string scopeName = columnManager.getUniqueScope("test");
     
-    // Create the column definition for "id"
-    auto idColDef = columnManager.createDef(scopeName, "id");
-    idColDef.getColumn().type = builder_->getI32Type(); // INT4
+    // Get column information from the target list
+    std::vector<mlir::NamedAttribute> colAttrs;
     
-    // Create the columns dictionary attribute
-    mlir::NamedAttribute colAttrs[] = {
-        builder_->getNamedAttr("id", idColDef)
-    };
+    // Check if we have a target list to determine columns
+    if (currentPlannedStmt_->planTree && currentPlannedStmt_->planTree->targetlist) {
+        List* targetList = currentPlannedStmt_->planTree->targetlist;
+        ListCell* lc;
+        
+        logger_.debug("Processing target list with " + std::to_string(list_length(targetList)) + " entries");
+        
+        foreach(lc, targetList) {
+            TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+            if (!tle || tle->resjunk) continue;
+            
+            // Check if this is a simple Var (column reference)
+            if (tle->expr && nodeTag(tle->expr) == T_Var) {
+                Var* var = reinterpret_cast<Var*>(tle->expr);
+                
+                // Get column name from TargetEntry
+                std::string colName = tle->resname ? tle->resname : "col" + std::to_string(var->varattno);
+                
+                logger_.debug("Found column: " + colName + " (varattno=" + 
+                            std::to_string(var->varattno) + ", vartype=" + 
+                            std::to_string(var->vartype) + ")");
+                
+                // Create column definition
+                auto colDef = columnManager.createDef(scopeName, colName);
+                
+                // Map PostgreSQL type to MLIR type
+                mlir::Type mlirType = getMLIRTypeForPostgreSQLType(var->vartype);
+                if (!mlirType) {
+                    logger_.notice("Unknown PostgreSQL type OID: " + std::to_string(var->vartype) + 
+                                  ", defaulting to i32");
+                    mlirType = builder_->getI32Type();
+                }
+                colDef.getColumn().type = mlirType;
+                
+                // Add to columns list
+                colAttrs.push_back(builder_->getNamedAttr(colName, colDef));
+            }
+        }
+    }
+    
+    // If no columns found, create default "id" column as fallback
+    if (colAttrs.empty()) {
+        logger_.notice("No columns found in target list, using default 'id' column");
+        auto idColDef = columnManager.createDef(scopeName, "id");
+        idColDef.getColumn().type = builder_->getI32Type();
+        colAttrs.push_back(builder_->getNamedAttr("id", idColDef));
+    }
+    
     auto columns = builder_->getDictionaryAttr(colAttrs);
     
     // Create the BaseTableOp which represents scanning a table
     auto baseTableOp = builder_->create<pgx_lower::compiler::dialect::relalg::BaseTableOp>(
         location, tupleStreamType, tableId, columns);
     
-    logger_.debug("Generated relalg.basetable operation for table 'test'");
+    logger_.debug("Generated relalg.basetable operation with " + 
+                 std::to_string(colAttrs.size()) + " columns");
     return baseTableOp;
 }
 

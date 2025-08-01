@@ -77,6 +77,7 @@ private:
     mlir::OpBuilder* builder_;  // Current builder context
     mlir::ModuleOp* currentModule_;  // Current module being built
     mlir::Value* currentTupleHandle_;  // Current tuple handle for field access (nullptr if none)
+    PlannedStmt* currentPlannedStmt_;  // Current planned statement for accessing metadata
     
     auto registerDialects() -> void;
     auto createRuntimeFunctionDeclarations(mlir::ModuleOp& module) -> void;
