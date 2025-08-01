@@ -5,6 +5,7 @@ extern "C" {
 #include "nodes/primnodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/parsenodes.h"
+#include "nodes/nodeFuncs.h"  // For exprType
 #include "utils/lsyscache.h"
 #include "utils/builtins.h"
 #include "catalog/pg_operator.h"
@@ -22,9 +23,11 @@ extern "C" {
 #include "dialects/relalg/RelAlgOps.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "dialects/tuplestream/TupleStreamTypes.h"
+#include "dialects/tuplestream/TupleStreamOps.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
+#include "dialects/db/DBOps.h"
 #include "dialects/dsa/DSADialect.h"
 #include "dialects/util/UtilDialect.h"
 
@@ -38,6 +41,10 @@ extern "C" {
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+
+// Import specific operations to avoid ambiguity
+using pgx_lower::compiler::dialect::tuples::ReturnOp;
+using pgx_lower::compiler::dialect::tuples::GetColumnOp;
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 
 
@@ -159,7 +166,8 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     
     // Build the query inside the QueryOp's query_ops region
     auto& queryBlock = queryOp.getQueryOps().emplaceBlock();
-    builder.setInsertionPointToStart(&queryBlock);
+    auto queryBuilder = mlir::OpBuilder::atBlockBegin(&queryBlock);
+    builder_ = &queryBuilder;  // Set the instance builder to the query builder
     
     // Translate the PostgreSQL plan tree to RelAlg operations
     if (!plannedStmt->planTree) {
@@ -168,15 +176,56 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     }
     
     // Translate the plan tree (SeqScan, etc.) to RelAlg operations
+    logger_.notice("ARITHMETIC DEBUG: About to call translatePlanNode");
     auto rootOp = translatePlanNode(plannedStmt->planTree);
     if (!rootOp) {
         logger_.error("Failed to translate plan tree to RelAlg operations");
         return nullptr;
     }
+    logger_.notice("ARITHMETIC DEBUG: translatePlanNode completed successfully");
+    
+    // Check if we need to add a Map operation for expressions
+    logger_.notice("ARITHMETIC DEBUG: Getting result from rootOp");
+    mlir::Value finalStream = rootOp->getResult(0);
+    logger_.notice("ARITHMETIC DEBUG: Got finalStream from rootOp");
+    if (plannedStmt->planTree && plannedStmt->planTree->targetlist) {
+        List* targetList = plannedStmt->planTree->targetlist;
+        
+        // Check if target list contains expressions
+        bool hasExpressions = false;
+        ListCell* lc;
+        foreach(lc, targetList) {
+            TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+            if (tle && !tle->resjunk && tle->expr && IsA(tle->expr, OpExpr)) {
+                hasExpressions = true;
+                logger_.debug("Found arithmetic expression in targetList - generating RelAlg Map");
+                break;
+            }
+        }
+        
+        if (hasExpressions) {
+            logger_.notice("ARITHMETIC: About to generate RelAlg Map operation");
+            logger_.notice("ARITHMETIC: finalStream valid? " + std::string(finalStream ? "yes" : "no"));
+            logger_.notice("ARITHMETIC: targetList length: " + std::to_string(list_length(targetList)));
+            
+            try {
+                logger_.notice("ARITHMETIC: Calling generateRelAlgMapOperation...");
+                // We're already using the query builder context
+                finalStream = generateRelAlgMapOperation(finalStream, targetList);
+                logger_.notice("ARITHMETIC: RelAlg Map operation generated successfully");
+            } catch (const std::exception& e) {
+                logger_.error("ARITHMETIC: Failed to generate RelAlg Map operation: " + std::string(e.what()));
+                return nullptr;
+            } catch (...) {
+                logger_.error("ARITHMETIC: Unknown exception in generateRelAlgMapOperation");
+                return nullptr;
+            }
+        }
+    }
     
     // The QueryOp expects a QueryReturnOp with the final tuple stream
-    builder.create<pgx_lower::compiler::dialect::relalg::QueryReturnOp>(
-        location, rootOp->getResult(0)
+    queryBuilder.create<pgx_lower::compiler::dialect::relalg::QueryReturnOp>(
+        location, finalStream
     );
     
     logger_.notice("Created proper RelAlg query structure - ready for lowering pipeline");
@@ -294,11 +343,14 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operat
     auto columns = builder_->getDictionaryAttr(colAttrs);
     
     // Create the BaseTableOp which represents scanning a table
+    logger_.notice("ARITHMETIC DEBUG: About to create BaseTableOp");
     auto baseTableOp = builder_->create<pgx_lower::compiler::dialect::relalg::BaseTableOp>(
         location, tupleStreamType, tableId, columns);
     
+    logger_.notice("ARITHMETIC DEBUG: BaseTableOp created successfully");
     logger_.debug("Generated relalg.basetable operation with " + 
                  std::to_string(colAttrs.size()) + " columns");
+    logger_.notice("ARITHMETIC DEBUG: About to return BaseTableOp");
     return baseTableOp;
 }
 
@@ -1077,12 +1129,37 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
     
     // Process target list expressions using RelAlg map operations if needed
     if (targetList && list_length(targetList) > 0) {
-        // For simple column references, we can use the base table directly
-        // For computed expressions, we need a map operation
+        // Analyze target list to detect expressions vs simple column references
         logger_.debug("Processing target list with " + std::to_string(list_length(targetList)) + " expressions");
         
-        // TODO Phase 5: Analyze target list to see if we need map operations
-        // For now, assume simple column references that don't need mapping
+        bool hasExpressions = false;
+        ListCell* lc;
+        foreach(lc, targetList) {
+            TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+            if (tle && !tle->resjunk && tle->expr) {
+                // Check if this is a complex expression (not just a simple column reference)
+                if (IsA(tle->expr, OpExpr) || IsA(tle->expr, FuncExpr)) {
+                    hasExpressions = true;
+                    logger_.debug("Found expression in target list - will need relalg.map operation");
+                    break;
+                }
+            }
+        }
+        
+        mlir::Value resultStream = baseTableOp.getResult();
+        if (hasExpressions) {
+            // Re-enable arithmetic expressions with proper error handling
+            try {
+                logger_.debug("Generating RelAlg Map operation for arithmetic expressions");
+                auto mapResult = generateRelAlgMapOperation(baseTableOp.getResult(), targetList);
+                // Use the map result as the base for further operations
+                resultStream = mapResult;
+                logger_.debug("RelAlg Map operation generated successfully - using map result for materialization");
+            } catch (const std::exception& e) {
+                logger_.error("Failed to generate RelAlg Map operation: " + std::string(e.what()));
+                return;  // Fall back to standard PostgreSQL execution
+            }
+        }
     }
     
     // Create a materialize operation to store results
@@ -1490,6 +1567,220 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
     
     logger_.debug("Generated complete aggregate accumulation loop");
     */
+}
+
+auto PostgreSQLASTTranslator::generateRelAlgMapOperation(mlir::Value baseTable, List* targetList) -> mlir::Value {
+    logger_.notice("ARITHMETIC MAP: Entered generateRelAlgMapOperation");
+    
+    if (!targetList || !builder_) {
+        logger_.notice("ARITHMETIC MAP: Early return - targetList or builder_ is null");
+        return baseTable;
+    }
+    
+    logger_.notice("ARITHMETIC MAP: Starting generation of relalg.map operation");
+    
+    auto location = builder_->getUnknownLoc();
+    auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
+    auto tupleType = pgx_lower::compiler::dialect::tuples::TupleType::get(&context_);
+    
+    // Collect computed columns from expressions
+    llvm::SmallVector<mlir::Attribute> computedColumns;
+    ListCell* lc;
+    int columnIndex = 0;
+    
+    foreach(lc, targetList) {
+        TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (!tle || tle->resjunk || !tle->expr) continue;
+        
+        // Check if this is an expression that needs computation
+        if (IsA(tle->expr, OpExpr) || IsA(tle->expr, FuncExpr)) {
+            // Get result type of the expression
+            Oid resultType = exprType((Node*)tle->expr);
+            mlir::Type mlirType = getMLIRTypeForPostgreSQLType(resultType);
+            
+            // Create column metadata for the computed column
+            std::string columnName = tle->resname ? tle->resname : ("computed_" + std::to_string(columnIndex));
+            auto& columnManager = context_.getLoadedDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>()->getColumnManager();
+            
+            // Create a unique column reference for this computed column
+            auto column = columnManager.get("@map", "@" + columnName);
+            auto columnRef = columnManager.createRef(column.get());
+            computedColumns.push_back(columnRef);
+            
+            logger_.debug("Added computed column: " + columnName + " with type OID " + std::to_string(resultType));
+        }
+        columnIndex++;
+    }
+    
+    if (computedColumns.empty()) {
+        logger_.debug("No expressions found - returning base table unchanged");
+        return baseTable;
+    }
+    
+    // Create the relalg.map operation
+    auto computedColumnsAttr = builder_->getArrayAttr(computedColumns);
+    auto mapOp = builder_->create<pgx_lower::compiler::dialect::relalg::MapOp>(
+        location, tupleStreamType, baseTable, computedColumnsAttr);
+    
+    // Build the computation region
+    auto* mapBlock = &mapOp.getPredicate().emplaceBlock();
+    mapBlock->addArgument(tupleType, location);
+    auto mapBuilder = mlir::OpBuilder::atBlockBegin(mapBlock);
+    
+    // Generate DB dialect operations for each expression
+    llvm::SmallVector<mlir::Value> computedValues;
+    columnIndex = 0;
+    
+    foreach(lc, targetList) {
+        TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (!tle || tle->resjunk || !tle->expr) continue;
+        
+        if (IsA(tle->expr, OpExpr)) {
+            // Handle arithmetic expressions
+            mlir::Value result = generateDBDialectExpression(mapBuilder, location, mapBlock->getArgument(0), tle->expr);
+            if (result) {
+                computedValues.push_back(result);
+                logger_.debug("Generated DB dialect expression for column " + std::to_string(columnIndex));
+            }
+        }
+        columnIndex++;
+    }
+    
+    // Return the computed values
+    if (!computedValues.empty()) {
+        mapBuilder.create<ReturnOp>(location, computedValues);
+    }
+    
+    logger_.debug("Generated relalg.map operation with " + std::to_string(computedValues.size()) + " computed expressions");
+    return mapOp.getResult();
+}
+
+auto PostgreSQLASTTranslator::generateDBDialectExpression(mlir::OpBuilder& builder, mlir::Location location, 
+                                                         mlir::Value tupleArg, Expr* expr) -> mlir::Value {
+    if (!expr) {
+        return nullptr;
+    }
+    
+    if (IsA(expr, OpExpr)) {
+        OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
+        
+        // Get operator name
+        const char* opName = get_opname(opExpr->opno);
+        if (!opName) {
+            logger_.error("Could not get operator name for opno: " + std::to_string(opExpr->opno));
+            return nullptr;
+        }
+        
+        logger_.debug("Generating DB dialect expression for operator: " + std::string(opName));
+        
+        // Get operands (assume binary operators for now)
+        if (list_length(opExpr->args) != 2) {
+            logger_.error("Only binary operators supported, got " + std::to_string(list_length(opExpr->args)) + " operands");
+            return nullptr;
+        }
+        
+        Node* leftNode = static_cast<Node*>(linitial(opExpr->args));
+        Node* rightNode = static_cast<Node*>(lsecond(opExpr->args));
+        
+        // Generate operand values
+        mlir::Value leftValue = generateDBDialectOperand(builder, location, tupleArg, leftNode);
+        mlir::Value rightValue = generateDBDialectOperand(builder, location, tupleArg, rightNode);
+        
+        if (!leftValue || !rightValue) {
+            logger_.error("Failed to generate operands for expression");
+            return nullptr;
+        }
+        
+        // Generate the appropriate DB dialect operation
+        if (strcmp(opName, "+") == 0) {
+            return builder.create<pgx_lower::compiler::dialect::db::AddOp>(location, leftValue, rightValue);
+        } else if (strcmp(opName, "-") == 0) {
+            return builder.create<pgx_lower::compiler::dialect::db::SubOp>(location, leftValue, rightValue);
+        } else if (strcmp(opName, "*") == 0) {
+            return builder.create<pgx_lower::compiler::dialect::db::MulOp>(location, leftValue, rightValue);
+        } else if (strcmp(opName, "/") == 0) {
+            return builder.create<pgx_lower::compiler::dialect::db::DivOp>(location, leftValue, rightValue);
+        } else if (strcmp(opName, "%") == 0) {
+            return builder.create<pgx_lower::compiler::dialect::db::ModOp>(location, leftValue, rightValue);
+        } else {
+            logger_.error("Unsupported arithmetic operator: " + std::string(opName));
+            return nullptr;
+        }
+    }
+    
+    logger_.error("Unsupported expression type in DB dialect generation");
+    return nullptr;
+}
+
+auto PostgreSQLASTTranslator::generateDBDialectOperand(mlir::OpBuilder& builder, mlir::Location location,
+                                                      mlir::Value tupleArg, Node* operandNode) -> mlir::Value {
+    if (!operandNode) {
+        return nullptr;
+    }
+    
+    if (IsA(operandNode, Var)) {
+        // Column reference - use tuples.getcol
+        Var* var = reinterpret_cast<Var*>(operandNode);
+        
+        // Get column information
+        // For now, create a simple column reference
+        // TODO: Get actual column metadata and names
+        std::string columnName = "col" + std::to_string(var->varattno);
+        auto& columnManager = context_.getLoadedDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>()->getColumnManager();
+        
+        // Convert PostgreSQL type to MLIR type
+        mlir::Type columnType = getMLIRTypeForPostgreSQLType(var->vartype);
+        
+        // Create column reference
+        auto column = columnManager.get("@table", "@" + columnName);
+        auto columnRef = columnManager.createRef(column.get());
+        
+        // Generate tuples.getcol operation
+        return builder.create<GetColumnOp>(location, columnType, tupleArg, columnRef);
+        
+    } else if (IsA(operandNode, Const)) {
+        // Constant value - use db.constant
+        Const* constNode = reinterpret_cast<Const*>(operandNode);
+        
+        if (constNode->constisnull) {
+            // Handle NULL constants if needed
+            logger_.error("NULL constants not yet supported in expressions");
+            return nullptr;
+        }
+        
+        // Convert PostgreSQL constant to MLIR constant
+        mlir::Type resultType = getMLIRTypeForPostgreSQLType(constNode->consttype);
+        return generateDBConstant(builder, location, constNode->constvalue, constNode->consttype, resultType);
+        
+    } else {
+        logger_.error("Unsupported operand type in expression");
+        return nullptr;
+    }
+}
+
+auto PostgreSQLASTTranslator::generateDBConstant(mlir::OpBuilder& builder, mlir::Location location,
+                                                 Datum value, Oid typeOid, mlir::Type mlirType) -> mlir::Value {
+    // Generate DB dialect constant based on PostgreSQL type
+    switch (typeOid) {
+        case INT2OID:
+            return builder.create<pgx_lower::compiler::dialect::db::ConstantOp>(
+                location, mlirType, builder.getI16IntegerAttr(DatumGetInt16(value)));
+        case INT4OID:
+            return builder.create<pgx_lower::compiler::dialect::db::ConstantOp>(
+                location, mlirType, builder.getI32IntegerAttr(DatumGetInt32(value)));
+        case INT8OID:
+            return builder.create<pgx_lower::compiler::dialect::db::ConstantOp>(
+                location, mlirType, builder.getI64IntegerAttr(DatumGetInt64(value)));
+        case FLOAT4OID:
+            return builder.create<pgx_lower::compiler::dialect::db::ConstantOp>(
+                location, mlirType, builder.getF32FloatAttr(DatumGetFloat4(value)));
+        case FLOAT8OID:
+            return builder.create<pgx_lower::compiler::dialect::db::ConstantOp>(
+                location, mlirType, builder.getF64FloatAttr(DatumGetFloat8(value)));
+        default:
+            logger_.error("Unsupported constant type OID: " + std::to_string(typeOid));
+            return nullptr;
+    }
 }
 
 auto createPostgreSQLASTTranslator(mlir::MLIRContext& context, MLIRLogger& logger) 

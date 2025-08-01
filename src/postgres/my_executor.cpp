@@ -66,6 +66,19 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
     }
 
     logger.debug("Using PostgreSQL AST translation approach");
+    
+    // Debug targetList availability
+    logger.notice("=== run_mlir_with_ast_translation: Query info ===");
+    logger.notice("PlannedStmt ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt)));
+    logger.notice("planTree ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree)));
+    if (stmt->planTree) {
+        logger.notice("planTree->targetlist ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree->targetlist)));
+        if (stmt->planTree->targetlist) {
+            logger.notice("targetlist length: " + std::to_string(list_length(stmt->planTree->targetlist)));
+        } else {
+            logger.notice("targetlist is NULL!");
+        }
+    }
 
     // For AST translation, the JIT manages its own table access
     // Set g_scan_context to null to indicate JIT should handle everything

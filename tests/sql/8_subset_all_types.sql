@@ -1,5 +1,5 @@
 LOAD 'pgx_lower.so';
-
+SET client_min_messages TO WARNING;
 DROP TABLE IF EXISTS all_types_test;
 
 CREATE TABLE all_types_test

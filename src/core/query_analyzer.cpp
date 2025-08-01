@@ -263,6 +263,14 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
     foreach(lc, plan->targetlist) {
         TargetEntry* tle = (TargetEntry*)lfirst(lc);
         if (tle && !tle->resjunk && tle->expr) {
+            // For now, allow arithmetic expressions to test the new RelAlg Map implementation
+            // Later we can add more sophisticated filtering
+            if (IsA(tle->expr, FuncExpr)) {
+                elog(DEBUG1, "Found function expression in target list - marking as incompatible");
+                caps.hasCompatibleTypes = false;
+                return;
+            }
+            
             Oid columnType = exprType((Node*)tle->expr);
             columnTypes.push_back(columnType);
         }

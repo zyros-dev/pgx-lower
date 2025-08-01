@@ -33,6 +33,7 @@ struct Plan;
 struct List;
 struct Node;
 typedef unsigned int Oid;
+typedef uintptr_t Datum;
 }
 
 namespace postgresql_ast {
@@ -91,6 +92,15 @@ private:
     auto isComparisonOperator(const char* opName) -> bool;
     auto isLogicalOperator(const char* opName) -> bool;
     auto isTextOperator(const char* opName) -> bool;
+    
+    // RelAlg Map operation generation for expressions
+    auto generateRelAlgMapOperation(mlir::Value baseTable, List* targetList) -> mlir::Value;
+    auto generateDBDialectExpression(mlir::OpBuilder& builder, mlir::Location location, 
+                                    mlir::Value tupleArg, Expr* expr) -> mlir::Value;
+    auto generateDBDialectOperand(mlir::OpBuilder& builder, mlir::Location location,
+                                 mlir::Value tupleArg, Node* operandNode) -> mlir::Value;
+    auto generateDBConstant(mlir::OpBuilder& builder, mlir::Location location,
+                           Datum value, Oid typeOid, mlir::Type mlirType) -> mlir::Value;
 };
 
 // Factory function

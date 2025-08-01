@@ -175,6 +175,17 @@ public:
                 builder.restoreInsertionPoint(savedIP);
             }
             
+            // Add function to store field as datum based on actual type
+            auto storeFieldAsDatumFunc = module.lookupSymbol<mlir::func::FuncOp>("store_field_as_datum");
+            if (!storeFieldAsDatumFunc) {
+                auto savedIP = builder.saveInsertionPoint();
+                builder.setInsertionPointToStart(module.getBody());
+                auto storeFieldAsDatumFuncType = builder.getFunctionType({i32Type, i64Type, i32Type}, {});
+                storeFieldAsDatumFunc = builder.create<mlir::func::FuncOp>(module.getLoc(), "store_field_as_datum", storeFieldAsDatumFuncType);
+                storeFieldAsDatumFunc.setPrivate();
+                builder.restoreInsertionPoint(savedIP);
+            }
+            
             auto storeIntFunc = module.lookupSymbol<mlir::func::FuncOp>("store_int_result");
             if (!storeIntFunc) {
                 auto savedIP = builder.saveInsertionPoint();
@@ -312,17 +323,12 @@ public:
                     // After region: process the current tuple
                     auto currentTuple = args[0];
                     
-                    // Extract and store all columns
+                    // Extract and store all columns using type-aware function
                     for (int colIdx = 0; colIdx < numColumns; colIdx++) {
-                        // Get field value from tuple
+                        // Use store_field_as_datum which handles type detection internally
                         auto colIdxConst = afterBuilder.create<mlir::arith::ConstantIntOp>(loc, colIdx, 32);
-                        mlir::Value getFieldArgs[] = {currentTuple, colIdxConst};
-                        auto fieldValue = afterBuilder.create<mlir::func::CallOp>(loc, getIntFieldFunc,
-                                                                                getFieldArgs).getResult(0);
-                        
-                        // Store the result for this column
-                        mlir::Value storeArgs[] = {colIdxConst, fieldValue, falseVal};
-                        afterBuilder.create<mlir::func::CallOp>(loc, storeIntFunc, storeArgs);
+                        mlir::Value storeFieldArgs[] = {colIdxConst, currentTuple, colIdxConst};
+                        afterBuilder.create<mlir::func::CallOp>(loc, storeFieldAsDatumFunc, storeFieldArgs);
                     }
                     
                     // Stream this tuple to the output

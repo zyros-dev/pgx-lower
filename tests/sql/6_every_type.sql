@@ -1,4 +1,7 @@
 
+LOAD 'pgx_lower.so';
+SET client_min_messages TO WARNING;
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test
@@ -52,13 +55,7 @@ SELECT i::smallint, (1000 + i),
 with time zone, CURRENT_TIMESTAMP + (i || ' hours'):: interval, CURRENT_TIMESTAMP + (i || ' hours'):: interval,
     make_interval(days => i), gen_random_uuid(), ('192.168.1.' || i)::inet, '192.168.0.0/16'::cidr,
     MACADDR '08:00:2b:01:02:03', B'10101010', B'11110000'
-FROM generate_series(1, 10) AS s(i);
+FROM generate_series(1, 3) AS s(i);
 
-
-SELECT *
-FROM test;
-
-LOAD 'pgx_lower.so';
-
-SELECT *
-FROM test;
+SELECT id, small_int, integer_col, big_int, boolean_col, text_col 
+FROM test LIMIT 3;

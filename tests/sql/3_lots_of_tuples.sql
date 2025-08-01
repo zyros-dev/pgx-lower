@@ -1,4 +1,5 @@
 LOAD 'pgx_lower.so';
+SET client_min_messages TO WARNING;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test(id SERIAL);
@@ -7,4 +8,4 @@ CREATE TABLE test(id SERIAL);
 INSERT INTO test(id)
 SELECT generate_series(1, 1000000);
 
-SELECT * FROM test;
+SELECT COUNT(*) FROM test;

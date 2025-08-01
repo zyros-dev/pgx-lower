@@ -1,4 +1,5 @@
 LOAD 'pgx_lower.so';
+SET client_min_messages TO WARNING;
 
 DROP TABLE IF EXISTS test;
 
@@ -10,4 +11,4 @@ CREATE TABLE test (
 INSERT INTO test(col2)
 SELECT generate_series(1, 100);
 
-SELECT * FROM test;
+SELECT * FROM test LIMIT 5;

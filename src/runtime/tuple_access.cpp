@@ -309,8 +309,9 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
         for (int i = 0; i < g_computed_results.numComputedColumns; i++) {
             slot->tts_values[i] = g_computed_results.computedValues[i];
             slot->tts_isnull[i] = g_computed_results.computedNulls[i];
-            elog(NOTICE, "add_tuple_to_result: streaming col[%d]=%d",
-                 i, DatumGetInt32(g_computed_results.computedValues[i]));
+            // Don't try to log values as integers - they might be other types
+            elog(NOTICE, "add_tuple_to_result: streaming col[%d] (type OID=%d)",
+                 i, g_computed_results.computedTypes[i]);
         }
         
         slot->tts_nvalid = g_computed_results.numComputedColumns;
@@ -530,6 +531,69 @@ extern "C" int32_t get_int_field_mlir(int64_t iteration_signal, int32_t field_in
 
 // Note: All other C interface functions are implemented in my_executor.cpp
 // Only get_numeric_field is kept here to support both unit tests and extension builds
+
+// Generic field extractor that stores Datum directly based on actual type
+extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_signal, int32_t field_index) {
+    elog(NOTICE, "store_field_as_datum called: columnIndex=%d, field_index=%d", columnIndex, field_index);
+    
+    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
+        elog(WARNING, "store_field_as_datum: No tuple available");
+        return;
+    }
+    
+    int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
+        elog(WARNING, "store_field_as_datum: field_index %d out of range", field_index);
+        return;
+    }
+    
+    bool isnull;
+    Datum value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, 
+                              g_current_tuple_passthrough.tupleDesc, &isnull);
+    
+    // Get the type OID for this column
+    Oid typeOid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
+    
+    elog(NOTICE, "store_field_as_datum: field_index=%d has type OID=%d", field_index, typeOid);
+    
+    // Store with the ORIGINAL type OID - this is critical for proper display
+    // The store_xxx_result functions hardcode their type OIDs, so we bypass them
+    // and call setResult directly to preserve the original column type
+    switch (typeOid) {
+        case INT2OID:
+            g_computed_results.setResult(columnIndex, Int16GetDatum(DatumGetInt16(value)), isnull, typeOid);
+            break;
+        case INT4OID:
+            g_computed_results.setResult(columnIndex, Int32GetDatum(DatumGetInt32(value)), isnull, typeOid);
+            break;
+        case INT8OID:
+            g_computed_results.setResult(columnIndex, Int64GetDatum(DatumGetInt64(value)), isnull, typeOid);
+            break;
+        case BOOLOID:
+            g_computed_results.setResult(columnIndex, BoolGetDatum(DatumGetBool(value)), isnull, typeOid);
+            break;
+        case TEXTOID:
+        case VARCHAROID:
+        case BPCHAROID: // CHAR type (blank-padded)
+            // Store the original text Datum directly - PostgreSQL manages the memory
+            // The issue might be that all text types should be normalized to TEXTOID for display
+            g_computed_results.setResult(columnIndex, value, isnull, TEXTOID);
+            break;
+        case FLOAT4OID:
+            // Store original float value with correct type - PostgreSQL will handle display
+            g_computed_results.setResult(columnIndex, Float4GetDatum(DatumGetFloat4(value)), isnull, typeOid);
+            break;
+        case FLOAT8OID:
+            // Store original double value with correct type - PostgreSQL will handle display
+            g_computed_results.setResult(columnIndex, Float8GetDatum(DatumGetFloat8(value)), isnull, typeOid);
+            break;
+        default:
+            // For unsupported complex types, store the original Datum with original type
+            // PostgreSQL will handle display formatting - we just pass through the data
+            g_computed_results.setResult(columnIndex, value, isnull, typeOid);
+            break;
+    }
+}
 
 // Critical runtime function for LowerSubOpToDB.cpp GetExternalOp lowering
 extern "C" void* DataSource_get(pgx_lower::compiler::runtime::VarLen32 description) {
