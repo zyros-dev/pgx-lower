@@ -107,9 +107,25 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
                 // For now, treat simple SELECT * as computed results since MinimalSubOpToControlFlow
                 // uses store_int_result which populates g_computed_results
                 // TODO: Eventually fix this to use table columns directly
-                selectedColumns = {-1};
-                g_computed_results.resize(1);
-                logger.notice("Configured for table column results via computed storage (temporary solution)");
+                
+                // Count actual number of columns selected
+                int numSelectedColumns = 0;
+                ListCell* lc2;
+                foreach (lc2, targetList) {
+                    auto* tle = static_cast<TargetEntry*>(lfirst(lc2));
+                    if (tle && !tle->resjunk) {
+                        numSelectedColumns++;
+                    }
+                }
+                
+                // Create computed result columns for each selected column
+                selectedColumns.clear();
+                for (int i = 0; i < numSelectedColumns; i++) {
+                    selectedColumns.push_back(-1); // -1 indicates computed result
+                }
+                g_computed_results.resize(numSelectedColumns);
+                logger.notice("Configured for table column results via computed storage (temporary solution) - " + 
+                            std::to_string(numSelectedColumns) + " columns");
             }
         }
         else {
@@ -136,18 +152,29 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
         resultAttr->atttypmod = -1;
         resultAttr->attnotnull = false;
         
-        if (selectedColumns[i] == -1) {
-            // Computed result column
-            strncpy(NameStr(resultAttr->attname), "result", NAMEDATALEN - 1);
-        } else {
-            // Table column - copy type and name from original table
-            if (false) { // Skip this check for JIT-managed tables
-                // const auto origAttr = TupleDescAttr(scanContext.tupleDesc, selectedColumns[i]);
-                // Skip attribute copying for JIT-managed tables
-            } else {
-                // Fallback naming
-                snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
+        // Try to get column names from target list
+        if (stmt->planTree && stmt->planTree->targetlist && i < list_length(stmt->planTree->targetlist)) {
+            ListCell* lc;
+            int colIdx = 0;
+            foreach (lc, stmt->planTree->targetlist) {
+                auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+                if (tle && !tle->resjunk) {
+                    if (colIdx == i) {
+                        if (tle->resname) {
+                            strncpy(NameStr(resultAttr->attname), tle->resname, NAMEDATALEN - 1);
+                            logger.notice("Setting column " + std::to_string(i) + " name to: " + std::string(tle->resname));
+                        } else {
+                            snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
+                            logger.notice("Setting column " + std::to_string(i) + " name to: col" + std::to_string(i));
+                        }
+                        break;
+                    }
+                    colIdx++;
+                }
             }
+        } else {
+            // Fallback naming
+            snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
         }
     }
     

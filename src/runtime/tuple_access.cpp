@@ -305,20 +305,21 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
         // Clear the slot
         ExecClearTuple(slot);
         
-        // Stream the computed result (already stored by store_int_result)
-        if (g_computed_results.numComputedColumns >= 1) {
-            slot->tts_values[0] = g_computed_results.computedValues[0];
-            slot->tts_isnull[0] = g_computed_results.computedNulls[0];
-            elog(NOTICE, "add_tuple_to_result: streaming value=%d",
-                 DatumGetInt32(g_computed_results.computedValues[0]));
+        // Stream all computed columns
+        for (int i = 0; i < g_computed_results.numComputedColumns; i++) {
+            slot->tts_values[i] = g_computed_results.computedValues[i];
+            slot->tts_isnull[i] = g_computed_results.computedNulls[i];
+            elog(NOTICE, "add_tuple_to_result: streaming col[%d]=%d",
+                 i, DatumGetInt32(g_computed_results.computedValues[i]));
         }
         
-        slot->tts_nvalid = 1;  // We have 1 column
+        slot->tts_nvalid = g_computed_results.numComputedColumns;
         ExecStoreVirtualTuple(slot);
         
         // Send the tuple to the destination
         bool result = g_tuple_streamer.dest->receiveSlot(slot, g_tuple_streamer.dest);
-        elog(NOTICE, "add_tuple_to_result: streaming returned %s", result ? "true" : "false");
+        elog(NOTICE, "add_tuple_to_result: streaming %d columns returned %s", 
+             g_computed_results.numComputedColumns, result ? "true" : "false");
         return result;
     }
     

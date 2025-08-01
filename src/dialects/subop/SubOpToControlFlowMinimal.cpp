@@ -15,6 +15,7 @@ extern "C" {
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
+#include <cctype>
 
 namespace pgx_lower::compiler::dialect::subop {
 
@@ -223,10 +224,48 @@ public:
             elog(NOTICE, "Generating PostgreSQL table scanning code with loop support");
 #endif
             
+            // Count number of columns from the ExecutionGroupOp
+            int numColumns = 1; // Default to 1 column
+            
+            // Try to determine actual column count from operations
+            for (auto execGroup : execGroups) {
+                // Look for GetExternalOp to extract column information
+                for (auto& op : execGroup.getRegion().front().getOperations()) {
+                    if (auto getExternal = mlir::dyn_cast<subop::GetExternalOp>(op)) {
+                        // The description contains column mapping information
+                        // Count the number of column mappings in the format "col$N":"colname"
+                        auto descr = getExternal.getDescr();
+                        std::string descrStr = descr.str();
+                        
+                        // Count occurrences of pattern "$N\""
+                        numColumns = 0;
+                        size_t pos = 0;
+                        while ((pos = descrStr.find("$", pos)) != std::string::npos) {
+                            // Check if this is a column mapping (has a digit after $)
+                            if (pos + 1 < descrStr.length() && std::isdigit(descrStr[pos + 1])) {
+                                numColumns++;
+                            }
+                            pos++;
+                        }
+                        
+                        if (numColumns == 0) {
+                            numColumns = 1; // Default to 1 if we can't parse
+                        }
+                        
+#ifdef POSTGRESQL_EXTENSION
+                        elog(NOTICE, "Detected %d columns from GetExternalOp description: %s", 
+                             numColumns, descrStr.c_str());
+#endif
+                        break;
+                    }
+                }
+            }
+            
             // Create constants
             auto i1Type = builder.getI1Type();
             auto zero32 = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
             auto one32 = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 1, 32);
+            auto two32 = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 2, 32);
             auto zero64 = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 64);
             auto falseVal = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 1);
             auto trueVal = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 1, 1);
@@ -234,8 +273,9 @@ public:
             // Create null pointer for table name (we'll use table OID instead)
             auto nullPtr = builder.create<mlir::LLVM::ZeroOp>(module.getLoc(), ptrType);
             
-            // Prepare results storage (1 column)
-            mlir::Value prepareArgs[] = {one32};
+            // Prepare results storage based on number of columns
+            auto numColsConst = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), numColumns, 32);
+            mlir::Value prepareArgs[] = {numColsConst};
             builder.create<mlir::func::CallOp>(module.getLoc(), prepareFunc, prepareArgs);
             
             // Open the table
@@ -272,14 +312,18 @@ public:
                     // After region: process the current tuple
                     auto currentTuple = args[0];
                     
-                    // Get the first field (id) from the tuple
-                    mlir::Value getFieldArgs[] = {currentTuple, zero32};
-                    auto fieldValue = afterBuilder.create<mlir::func::CallOp>(loc, getIntFieldFunc,
-                                                                            getFieldArgs).getResult(0);
-                    
-                    // Store the result
-                    mlir::Value storeArgs[] = {zero32, fieldValue, falseVal};
-                    afterBuilder.create<mlir::func::CallOp>(loc, storeIntFunc, storeArgs);
+                    // Extract and store all columns
+                    for (int colIdx = 0; colIdx < numColumns; colIdx++) {
+                        // Get field value from tuple
+                        auto colIdxConst = afterBuilder.create<mlir::arith::ConstantIntOp>(loc, colIdx, 32);
+                        mlir::Value getFieldArgs[] = {currentTuple, colIdxConst};
+                        auto fieldValue = afterBuilder.create<mlir::func::CallOp>(loc, getIntFieldFunc,
+                                                                                getFieldArgs).getResult(0);
+                        
+                        // Store the result for this column
+                        mlir::Value storeArgs[] = {colIdxConst, fieldValue, falseVal};
+                        afterBuilder.create<mlir::func::CallOp>(loc, storeIntFunc, storeArgs);
+                    }
                     
                     // Stream this tuple to the output
                     mlir::Value addTupleArgs[] = {currentTuple};
