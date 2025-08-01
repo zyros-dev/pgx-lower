@@ -1,1 +1,1 @@
-do not define this file yet
+psql: error: connection to server on socket "/tmp/.s.PGSQL.5432" failed: FATAL:  the database system is in recovery mode
