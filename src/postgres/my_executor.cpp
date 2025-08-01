@@ -104,28 +104,12 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
                 logger.notice("Configured for computed expression results");
             }
             else {
-                // Use original table columns - analyze which specific columns are selected
-                ListCell* lc;
-                foreach (lc, targetList) {
-                    auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-                    if (tle && !tle->resjunk && tle->expr && nodeTag(tle->expr) == T_Var) {
-                        auto* var = reinterpret_cast<Var*>(tle->expr);
-                        // Var->varattno is 1-based, convert to 0-based
-                        int columnIndex = var->varattno - 1;
-                        // For AST translation, we don't have tupleDesc yet, so just add all referenced columns
-                        if (columnIndex >= 0) {
-                            selectedColumns.push_back(columnIndex);
-                        }
-                    }
-                }
-                
-                if (selectedColumns.empty()) {
-                    // For AST translation, default to first column if we can't determine
-                    selectedColumns = {0};
-                    logger.notice("Configured for table column results (defaulting to first column)");
-                } else {
-                    logger.notice("Configured for table column results (" + std::to_string(selectedColumns.size()) + " selected columns)");
-                }
+                // For now, treat simple SELECT * as computed results since MinimalSubOpToControlFlow
+                // uses store_int_result which populates g_computed_results
+                // TODO: Eventually fix this to use table columns directly
+                selectedColumns = {-1};
+                g_computed_results.resize(1);
+                logger.notice("Configured for table column results via computed storage (temporary solution)");
             }
         }
         else {

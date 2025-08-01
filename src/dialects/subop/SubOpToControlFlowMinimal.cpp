@@ -218,43 +218,35 @@ public:
             auto one32 = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 1, 32);
             auto falseVal = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 1);
             
-            // Create string constant for table name
-            auto nullPtr = builder.create<mlir::LLVM::NullOp>(module.getLoc(), ptrType);
+            // Create null pointer for table name (we'll use table OID instead)
+            auto nullPtr = builder.create<mlir::LLVM::ZeroOp>(module.getLoc(), ptrType);
             
             // Prepare results storage (1 column)
-            builder.create<mlir::func::CallOp>(module.getLoc(), prepareFunc, mlir::ValueRange{one32});
+            mlir::Value prepareArgs[] = {one32};
+            builder.create<mlir::func::CallOp>(module.getLoc(), prepareFunc, prepareArgs);
             
             // Open the table
-            auto openCall = builder.create<mlir::func::CallOp>(module.getLoc(), openTableFunc, 
-                                                               mlir::ValueRange{nullPtr});
-            auto tableHandle = openCall.getResult(0);
+            mlir::Value openArgs[] = {nullPtr};
+            auto tableHandle = builder.create<mlir::func::CallOp>(module.getLoc(), openTableFunc, 
+                                                                 openArgs).getResult(0);
             
             // Read the first tuple
-            llvm::SmallVector<mlir::Value, 1> readArgs;
-            readArgs.push_back(mlir::Value(tableHandle));
-            auto readCall = builder.create<mlir::func::CallOp>(module.getLoc(), readNextFunc, 
-                                                               readArgs);
-            mlir::Value tuplePtr = readCall.getResult(0);
+            mlir::Value readArgs[] = {tableHandle};
+            auto tuplePtr = builder.create<mlir::func::CallOp>(module.getLoc(), readNextFunc, 
+                                                               readArgs).getResult(0);
             
             // Get the first field (id) from the tuple without checking if valid
             // Just assume we have at least one tuple for now
-            llvm::SmallVector<mlir::Value, 2> getFieldArgs;
-            getFieldArgs.push_back(tuplePtr);
-            getFieldArgs.push_back(mlir::Value(zero32));
-            auto getFieldCall = builder.create<mlir::func::CallOp>(module.getLoc(), getIntFieldFunc,
-                                                                   getFieldArgs);
-            mlir::Value fieldValue = getFieldCall.getResult(0);
+            mlir::Value getFieldArgs[] = {tuplePtr, zero32};
+            auto fieldValue = builder.create<mlir::func::CallOp>(module.getLoc(), getIntFieldFunc,
+                                                                getFieldArgs).getResult(0);
             
             // Store the result
-            llvm::SmallVector<mlir::Value, 3> storeArgs;
-            storeArgs.push_back(mlir::Value(zero32));
-            storeArgs.push_back(fieldValue);
-            storeArgs.push_back(mlir::Value(falseVal));
+            mlir::Value storeArgs[] = {zero32, fieldValue, falseVal};
             builder.create<mlir::func::CallOp>(module.getLoc(), storeIntFunc, storeArgs);
             
             // Close the table
-            llvm::SmallVector<mlir::Value, 1> closeArgs;
-            closeArgs.push_back(mlir::Value(tableHandle));
+            mlir::Value closeArgs[] = {tableHandle};
             builder.create<mlir::func::CallOp>(module.getLoc(), closeTableFunc, closeArgs);
             
             // Mark results ready for streaming
