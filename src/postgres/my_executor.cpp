@@ -171,34 +171,9 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
         extern bool g_jit_results_ready;
         logger.notice("g_jit_results_ready = " + std::string(g_jit_results_ready ? "true" : "false"));
         if (g_jit_results_ready) {
-            logger.notice("JIT execution successful - streaming results to PostgreSQL");
-            
-            // Check if we have computed results to stream (no original tuple needed)
-            logger.notice("g_computed_results.numComputedColumns = " + std::to_string(g_computed_results.numComputedColumns));
-            if (g_computed_results.numComputedColumns > 0) {
-                logger.notice("Streaming computed results without original tuple");
-                // Pass an empty passthrough since we only have computed results
-                PostgreSQLTuplePassthrough emptyPassthrough;
-                emptyPassthrough.originalTuple = nullptr;
-                emptyPassthrough.tupleDesc = nullptr;
-                logger.notice("About to call streamCompletePostgreSQLTuple with empty passthrough...");
-                const bool stream_success = g_tuple_streamer.streamCompletePostgreSQLTuple(emptyPassthrough);
-                if (!stream_success) {
-                    logger.error("Failed to stream computed results to PostgreSQL destination");
-                } else {
-                    logger.notice("Computed results successfully streamed to PostgreSQL destination");
-                }
-            } else if (g_current_tuple_passthrough.originalTuple) {
-                // Stream original tuple
-                const bool stream_success = g_tuple_streamer.streamCompletePostgreSQLTuple(g_current_tuple_passthrough);
-                if (!stream_success) {
-                    logger.error("Failed to stream results to PostgreSQL destination");
-                } else {
-                    logger.notice("Results successfully streamed to PostgreSQL destination");
-                }
-            } else {
-                logger.notice("No results to stream - neither computed results nor original tuple available");
-            }
+            logger.notice("JIT execution successful - results already streamed by JIT");
+            // The JIT now handles all streaming via add_tuple_to_result in the loop
+            // We don't need to stream anything here anymore
             g_jit_results_ready = false; // Reset flag
         }
     }

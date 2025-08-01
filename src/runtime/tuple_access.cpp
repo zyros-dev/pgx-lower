@@ -295,9 +295,35 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
         return false;
     }
     
-    elog(NOTICE, "add_tuple_to_result: Using original tuple path");
-    // Stream the complete PostgreSQL tuple (all data types preserved)
-    return g_tuple_streamer.streamCompletePostgreSQLTuple(g_current_tuple_passthrough);
+    elog(NOTICE, "add_tuple_to_result: Using computed results path (simplified)");
+    // For MinimalSubOpToControlFlow, we always use computed results
+    // The JIT has already called store_int_result to populate g_computed_results
+    
+    if (g_tuple_streamer.isActive && g_tuple_streamer.dest && g_tuple_streamer.slot) {
+        auto slot = g_tuple_streamer.slot;
+        
+        // Clear the slot
+        ExecClearTuple(slot);
+        
+        // Stream the computed result (already stored by store_int_result)
+        if (g_computed_results.numComputedColumns >= 1) {
+            slot->tts_values[0] = g_computed_results.computedValues[0];
+            slot->tts_isnull[0] = g_computed_results.computedNulls[0];
+            elog(NOTICE, "add_tuple_to_result: streaming value=%d",
+                 DatumGetInt32(g_computed_results.computedValues[0]));
+        }
+        
+        slot->tts_nvalid = 1;  // We have 1 column
+        ExecStoreVirtualTuple(slot);
+        
+        // Send the tuple to the destination
+        bool result = g_tuple_streamer.dest->receiveSlot(slot, g_tuple_streamer.dest);
+        elog(NOTICE, "add_tuple_to_result: streaming returned %s", result ? "true" : "false");
+        return result;
+    }
+    
+    elog(NOTICE, "add_tuple_to_result: tuple streamer not active");
+    return false;
 }
 
 // Typed field access functions for PostgreSQL dialect

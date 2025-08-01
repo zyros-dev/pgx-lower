@@ -186,7 +186,18 @@ public:
                 builder.restoreInsertionPoint(savedIP);
             }
             
-            // Add function to mark results ready for streaming
+            // Add function to stream individual tuples
+            auto addTupleFunc = module.lookupSymbol<mlir::func::FuncOp>("add_tuple_to_result");
+            if (!addTupleFunc) {
+                auto savedIP = builder.saveInsertionPoint();
+                builder.setInsertionPointToStart(module.getBody());
+                auto addTupleFuncType = builder.getFunctionType({i64Type}, {builder.getI1Type()});
+                addTupleFunc = builder.create<mlir::func::FuncOp>(module.getLoc(), "add_tuple_to_result", addTupleFuncType);
+                addTupleFunc.setPrivate();
+                builder.restoreInsertionPoint(savedIP);
+            }
+            
+            // Add function to mark results ready for streaming (called at end)
             auto markResultsReadyFunc = module.lookupSymbol<mlir::func::FuncOp>("mark_results_ready_for_streaming");
             if (!markResultsReadyFunc) {
                 auto savedIP = builder.saveInsertionPoint();
@@ -207,16 +218,18 @@ public:
                 builder.restoreInsertionPoint(savedIP);
             }
             
-            // Generate simplified PostgreSQL table scanning code without loops
+            // Generate PostgreSQL table scanning code with loop for multiple tuples
 #ifdef POSTGRESQL_EXTENSION
-            elog(NOTICE, "Generating SIMPLIFIED PostgreSQL table scanning code");
+            elog(NOTICE, "Generating PostgreSQL table scanning code with loop support");
 #endif
             
             // Create constants
             auto i1Type = builder.getI1Type();
             auto zero32 = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
             auto one32 = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 1, 32);
+            auto zero64 = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 64);
             auto falseVal = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 1);
+            auto trueVal = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 1, 1);
             
             // Create null pointer for table name (we'll use table OID instead)
             auto nullPtr = builder.create<mlir::LLVM::ZeroOp>(module.getLoc(), ptrType);
@@ -230,26 +243,61 @@ public:
             auto tableHandle = builder.create<mlir::func::CallOp>(module.getLoc(), openTableFunc, 
                                                                  openArgs).getResult(0);
             
-            // Read the first tuple
-            mlir::Value readArgs[] = {tableHandle};
-            auto tuplePtr = builder.create<mlir::func::CallOp>(module.getLoc(), readNextFunc, 
-                                                               readArgs).getResult(0);
+            // Create loop to read all tuples
+            // Use scf.while loop with tuple pointer as loop-carried value
+            auto scfBuilder = builder;
             
-            // Get the first field (id) from the tuple without checking if valid
-            // Just assume we have at least one tuple for now
-            mlir::Value getFieldArgs[] = {tuplePtr, zero32};
-            auto fieldValue = builder.create<mlir::func::CallOp>(module.getLoc(), getIntFieldFunc,
-                                                                getFieldArgs).getResult(0);
+            // Read first tuple before loop
+            mlir::Value initialReadArgs[] = {tableHandle};
+            auto initialTuple = scfBuilder.create<mlir::func::CallOp>(module.getLoc(), readNextFunc, 
+                                                                    initialReadArgs).getResult(0);
             
-            // Store the result
-            mlir::Value storeArgs[] = {zero32, fieldValue, falseVal};
-            builder.create<mlir::func::CallOp>(module.getLoc(), storeIntFunc, storeArgs);
+            // Create while loop that processes all tuples
+            auto whileOp = scfBuilder.create<mlir::scf::WhileOp>(
+                module.getLoc(),
+                mlir::TypeRange{i64Type}, // Loop-carried value: tuple pointer
+                mlir::ValueRange{initialTuple}, // Initial value: first tuple
+                [&](mlir::OpBuilder& beforeBuilder, mlir::Location loc, mlir::ValueRange args) {
+                    // Before region: check if current tuple is valid
+                    auto currentTuple = args[0];
+                    
+                    // Check if tuple is valid (non-zero)
+                    auto isValid = beforeBuilder.create<mlir::arith::CmpIOp>(
+                        loc, mlir::arith::CmpIPredicate::ne, currentTuple, zero64);
+                    
+                    // Pass the tuple to the after region
+                    beforeBuilder.create<mlir::scf::ConditionOp>(loc, isValid, args);
+                },
+                [&](mlir::OpBuilder& afterBuilder, mlir::Location loc, mlir::ValueRange args) {
+                    // After region: process the current tuple
+                    auto currentTuple = args[0];
+                    
+                    // Get the first field (id) from the tuple
+                    mlir::Value getFieldArgs[] = {currentTuple, zero32};
+                    auto fieldValue = afterBuilder.create<mlir::func::CallOp>(loc, getIntFieldFunc,
+                                                                            getFieldArgs).getResult(0);
+                    
+                    // Store the result
+                    mlir::Value storeArgs[] = {zero32, fieldValue, falseVal};
+                    afterBuilder.create<mlir::func::CallOp>(loc, storeIntFunc, storeArgs);
+                    
+                    // Stream this tuple to the output
+                    mlir::Value addTupleArgs[] = {currentTuple};
+                    afterBuilder.create<mlir::func::CallOp>(loc, addTupleFunc, addTupleArgs);
+                    
+                    // Read next tuple for next iteration
+                    mlir::Value readArgs[] = {tableHandle};
+                    auto nextTuple = afterBuilder.create<mlir::func::CallOp>(loc, readNextFunc, 
+                                                                            readArgs).getResult(0);
+                    
+                    afterBuilder.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{nextTuple});
+                });
             
-            // Close the table
+            // Close the table after loop
             mlir::Value closeArgs[] = {tableHandle};
             builder.create<mlir::func::CallOp>(module.getLoc(), closeTableFunc, closeArgs);
             
-            // Mark results ready for streaming
+            // Mark results ready for streaming (final signal to executor)
             builder.create<mlir::func::CallOp>(module.getLoc(), markResultsReadyFunc, mlir::ValueRange{});
             
             // Return void (no values) since invokePacked expects void function
