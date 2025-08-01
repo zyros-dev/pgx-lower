@@ -19,3 +19,4 @@ SELECT * FROM test LIMIT 5;
   4 | t
   5 | f
 (5 rows)
+
