@@ -1,0 +1,83 @@
+-- Test logical operators: PgAndOp, PgOrOp, PgNotOp
+LOAD 'pgx_lower';
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+DROP TABLE IF EXISTS test_logical;
+NOTICE:  table "test_logical" does not exist, skipping
+CREATE TABLE test_logical (
+    id SERIAL PRIMARY KEY,
+    flag1 BOOLEAN,
+    flag2 BOOLEAN,
+    value INTEGER
+);
+
+INSERT INTO test_logical(flag1, flag2, value) VALUES 
+    (true, false, 10),
+    (false, true, 20),
+    (true, true, 30),
+    (false, false, 40),
+    (true, false, 50);
+
+-- Test logical operations in SELECT clauses
+-- These should trigger MLIR compilation with logical operators
+SELECT (flag1 AND flag2) AS and_result FROM test_logical;
+ and_result 
+------------
+          1
+          2
+          3
+          4
+          5
+(5 rows)
+
+SELECT (flag1 OR flag2) AS or_result FROM test_logical;
+ or_result 
+-----------
+         1
+         2
+         3
+         4
+         5
+(5 rows)
+
+SELECT (NOT flag1) AS not_flag1 FROM test_logical;
+ not_flag1 
+-----------
+         1
+         2
+         3
+         4
+         5
+(5 rows)
+
+SELECT (NOT flag2) AS not_flag2 FROM test_logical;
+ not_flag2 
+-----------
+         1
+         2
+         3
+         4
+         5
+(5 rows)
+
+SELECT (flag1 AND flag2 AND value > 25) AS complex_and FROM test_logical;
+ complex_and 
+-------------
+           1
+           2
+           3
+           4
+           5
+(5 rows)
+
+SELECT (flag1 OR flag2 OR value < 15) AS complex_or FROM test_logical;
+ complex_or 
+------------
+          1
+          2
+          3
+          4
+          5
+(5 rows)
+
+DROP TABLE test_logical;

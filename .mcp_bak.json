@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "sequentialthinking": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "mcp/sequentialthinking"
+      ]
+    },
+    "ddg-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "duckduckgo-mcp-server"
+      ]
+    },
+    "local-pgx-lower": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp"
+    },
+    "deepwiki": {
+      "type": "sse",
+      "url": "https://mcp.deepwiki.com/sse"
+    },
+    "serena": {
+      "command": "/home/xzel/.local/bin/uv",
+      "args": ["run", "--directory", "/home/xzel/repos/serena", "serena-mcp-server"]
+    }
+  }
+}

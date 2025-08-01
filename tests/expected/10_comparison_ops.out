@@ -1,0 +1,92 @@
+-- Test comparison operators: PgCmpOp with all predicates (eq, ne, lt, le, gt, ge)
+LOAD 'pgx_lower';
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+DROP TABLE IF EXISTS test_comparison;
+NOTICE:  table "test_comparison" does not exist, skipping
+CREATE TABLE test_comparison (
+    id SERIAL PRIMARY KEY,
+    value INTEGER,
+    score INTEGER
+);
+
+INSERT INTO test_comparison(value, score) VALUES 
+    (10, 15),
+    (20, 20),
+    (15, 10),
+    (25, 5),
+    (30, 30);
+
+-- Test comparison operations in SELECT clauses
+-- These should trigger MLIR compilation with comparison operators
+SELECT (value = score) AS is_equal FROM test_comparison;
+ is_equal 
+----------
+        1
+        2
+        3
+        4
+        5
+(5 rows)
+
+SELECT (value <> score) AS not_equal FROM test_comparison;
+ not_equal 
+-----------
+         1
+         2
+         3
+         4
+         5
+(5 rows)
+
+SELECT (value != score) AS not_equal_alt FROM test_comparison;
+ not_equal_alt 
+---------------
+             1
+             2
+             3
+             4
+             5
+(5 rows)
+
+SELECT (value < score) AS less_than FROM test_comparison;
+ less_than 
+-----------
+         1
+         2
+         3
+         4
+         5
+(5 rows)
+
+SELECT (value <= score) AS less_equal FROM test_comparison;
+ less_equal 
+------------
+          1
+          2
+          3
+          4
+          5
+(5 rows)
+
+SELECT (value > score) AS greater_than FROM test_comparison;
+ greater_than 
+--------------
+            1
+            2
+            3
+            4
+            5
+(5 rows)
+
+SELECT (value >= score) AS greater_equal FROM test_comparison;
+ greater_equal 
+---------------
+             1
+             2
+             3
+             4
+             5
+(5 rows)
+
+DROP TABLE test_comparison;

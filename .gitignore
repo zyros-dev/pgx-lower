@@ -1,0 +1,70 @@
+venv/**
+third_party/**
+llvm-project/**
+cmake-build-debug/**
+CMakeFiles/**
+.idea/workspace.xml
+
+venv
+third_party
+llvm-project
+cmake-build-debug
+CMakeFiles
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+hasdrf
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Editor files
+*~
+#*#
+
+
+# Files and directories for indexers and other tools
+.cache/
+compile_commands.json
+
+# CMake build directories
+build/
+fast_output.txt
+
+
+.cursorignore
+
+.claude
+build*
+.idea*
+.idea
+llm_documentation
+chroma_db
+*.py
+*.gguf
+*-log
+.mcp.json
+.cursor
+memory_bank
+__pycache__
+Testing
+.vscode
+.serena
+.gemini

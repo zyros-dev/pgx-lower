@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "deepwiki": {
+      "command": "npx",
+      "args": ["-y", "@docsai/deepwiki"]
+    }
+  }
+}

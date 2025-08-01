@@ -1,0 +1,1 @@
+set(PostgreSQL_ROOT "/usr/local/pgsql") 

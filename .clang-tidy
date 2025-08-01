@@ -1,0 +1,13 @@
+---
+Checks: '-*,bugprone-*,clang-analyzer-*,performance-*,cert-*,cppcoreguidelines-*,google-*,hicpp-*,misc-*,modernize-*,mpi-*,openmp-*,portability-*,readability-*,-cppcoreguidelines-non-private-member-variables-in-classes,-hicpp-non-private-member-variables-in-classes,-misc-non-private-member-variables-in-classes,-readability-identifier-naming'
+
+
+WarningsAsErrors: 'modernize-use-auto,readability-function-size'
+
+CheckOptions:
+  - key: modernize-use-auto.MinTypeNameLength
+    value: 1
+  - key: readability-identifier-naming.TypeTemplateParameterIgnoredRegexp
+    value: expr-type
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '5000'

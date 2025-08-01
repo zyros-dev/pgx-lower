@@ -1,0 +1,19 @@
+LOAD 'pgx_lower.so';
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+SET client_min_messages TO WARNING;
+SELECT 'hello';
+ ?column? 
+----------
+ hello
+(1 row)
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test(id SERIAL);
+INSERT INTO test(id) VALUES (1);
+SELECT * FROM test;
+ id 
+----
+  1
+(1 row)
+
