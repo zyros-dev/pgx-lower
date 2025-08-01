@@ -59,7 +59,7 @@ SELECT id, small_int, integer_col, big_int FROM all_types_test;
 
 SELECT char_col, varchar_col, text_col FROM all_types_test;
 
-SELECT date_col, time_col, timestamp_col FROM all_types_test;
+-- Skip date/time columns as they use CURRENT_DATE/CURRENT_TIMESTAMP which are non-deterministic
 
 SELECT boolean_col, decimal_col, varchar_col FROM all_types_test;
 
@@ -67,4 +67,4 @@ SELECT real_col FROM all_types_test;
 
 SELECT inet_col, bytea_col, bit_col FROM all_types_test;
 
-SELECT varbit_col, uuid_col, boolean_col, id FROM all_types_test;
+-- Skip UUID column as gen_random_uuid() is non-deterministic

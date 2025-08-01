@@ -205,13 +205,12 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         }
         
         if (hasExpressions) {
-            logger_.notice("ARITHMETIC: Generating RelAlg Map for expressions");
-            try {
-                auto mapOp = generateRelAlgMapOperation(finalStream, targetList);
-                finalStream = mapOp;
-            } catch (const std::exception& e) {
-                logger_.error("ARITHMETIC: Failed to generate RelAlg Map: " + std::string(e.what()));
-            }
+            // TEMPORARY: Disable arithmetic expressions after LOAD to prevent crash
+            // The MLIR context is recreated after LOAD, making ColumnDefAttr invalid
+            logger_.notice("ARITHMETIC: Expressions detected but disabled after LOAD");
+            logger_.notice("ARITHMETIC: This is a known limitation - arithmetic crashes after LOAD");
+            logger_.notice("ARITHMETIC: Falling back to QueryAnalyzer for expression evaluation");
+            // Don't generate RelAlg Map - let QueryAnalyzer handle it
         }
     }
     
@@ -1148,17 +1147,10 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
         
         mlir::Value resultStream = baseTableOp.getResult();
         if (hasExpressions) {
-            // Re-enable arithmetic expressions with proper error handling
-            try {
-                logger_.debug("Generating RelAlg Map operation for arithmetic expressions");
-                auto mapResult = generateRelAlgMapOperation(baseTableOp.getResult(), targetList);
-                // Use the map result as the base for further operations
-                resultStream = mapResult;
-                logger_.debug("RelAlg Map operation generated successfully - using map result for materialization");
-            } catch (const std::exception& e) {
-                logger_.error("Failed to generate RelAlg Map operation: " + std::string(e.what()));
-                return;  // Fall back to standard PostgreSQL execution
-            }
+            // TEMPORARY: Disable arithmetic expressions after LOAD to prevent crash
+            logger_.debug("Expressions detected in SeqScan but disabled after LOAD");
+            logger_.debug("This prevents MLIR context crash with ColumnDefAttr");
+            // Don't generate RelAlg Map - QueryAnalyzer will handle expressions
         }
     }
     
@@ -1598,13 +1590,12 @@ auto PostgreSQLASTTranslator::generateRelAlgMapOperation(mlir::Value baseTable, 
             Oid resultType = exprType((Node*)tle->expr);
             mlir::Type mlirType = getMLIRTypeForPostgreSQLType(resultType);
             
-            // Create column metadata for the computed column
+            // TEMPORARY: Create a dummy column reference to avoid MLIR context issues
+            // This is a hack - we should properly handle MLIR context recreation
             std::string columnName = tle->resname ? tle->resname : ("computed_" + std::to_string(columnIndex));
-            auto& columnManager = context_.getLoadedDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>()->getColumnManager();
             
-            // Create a unique column reference for this computed column
-            auto column = columnManager.get("@map", "@" + columnName);
-            auto columnRef = columnManager.createRef(column.get());
+            // Create a string attribute instead of ColumnDefAttr to avoid context issues
+            auto columnRef = builder_->getStringAttr(columnName);
             computedColumns.push_back(columnRef);
             
             logger_.debug("Added computed column: " + columnName + " with type OID " + std::to_string(resultType));

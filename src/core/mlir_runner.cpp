@@ -121,6 +121,20 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     
     // Run each phase separately to isolate crashes
     
+    // Check if we have expressions that might crash after LOAD BEFORE running any passes
+    bool hasExpressions = false;
+    module.walk([&](mlir::Operation* op) {
+        if (op->getName().getStringRef().contains("relalg.map")) {
+            hasExpressions = true;
+            logger.notice("Found RelAlg Map operation BEFORE lowering: " + op->getName().getStringRef().str());
+        }
+    });
+    
+    if (hasExpressions) {
+        logger.notice("WARNING: Expressions detected - these are disabled after LOAD");
+        logger.notice("The AST translator should have disabled them already");
+    }
+    
     // Phase 1: RelAlg → SubOp lowering
     logger.notice("Phase 1: RelAlg → SubOp lowering");
     {

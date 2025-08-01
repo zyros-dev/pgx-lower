@@ -17,8 +17,6 @@ INSERT INTO test_arithmetic(val1, val2) VALUES
     (25, 6);
 -- Test arithmetic operations in SELECT clauses
 -- These should trigger MLIR compilation with arithmetic operators
--- BUT: After LOAD, MLIR context is recreated, so ColumnDefAttr crashes
--- Arithmetic is disabled, will show row IDs instead of computed values
 SELECT val1 + val2 AS addition FROM test_arithmetic;
  addition 
 ----------
