@@ -154,28 +154,59 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         return -1;
     }
 
-    const auto tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
+    elog(NOTICE, "read_next_tuple_from_table: About to call heap_getnext with scanDesc=%p", handle->scanDesc);
+    elog(NOTICE, "read_next_tuple_from_table: scanDesc->rs_rd=%p, snapshot=%p", 
+         handle->scanDesc->rs_rd, handle->scanDesc->rs_snapshot);
+    
+    HeapTuple tuple = nullptr;
+    try {
+        // Add PostgreSQL error handling around heap_getnext
+        PG_TRY();
+        {
+            tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
+            elog(NOTICE, "read_next_tuple_from_table: heap_getnext completed, tuple=%p", tuple);
+        }
+        PG_CATCH();
+        {
+            elog(ERROR, "read_next_tuple_from_table: heap_getnext threw PostgreSQL exception");
+            PG_RE_THROW();
+        }
+        PG_END_TRY();
+    } catch (const std::exception& e) {
+        elog(ERROR, "read_next_tuple_from_table: heap_getnext threw C++ exception: %s", e.what());
+        return -1;
+    } catch (...) {
+        elog(ERROR, "read_next_tuple_from_table: heap_getnext threw unknown exception");
+        return -1;
+    }
+    
     if (tuple == nullptr) {
         elog(NOTICE, "read_next_tuple_from_table: heap_getnext returned null - end of table");
         // End of table reached - return 0 to terminate MLIR loop
         return 0;
     }
 
+    elog(NOTICE, "read_next_tuple_from_table: About to process tuple, cleaning up previous tuple");
     // Clean up previous tuple if it exists
     if (g_current_tuple_passthrough.originalTuple) {
         heap_freetuple(g_current_tuple_passthrough.originalTuple);
         g_current_tuple_passthrough.originalTuple = nullptr;
     }
 
+    elog(NOTICE, "read_next_tuple_from_table: About to copy tuple with heap_copytuple");
     // Preserve the COMPLETE tuple (all columns, all types) for output
     g_current_tuple_passthrough.originalTuple = heap_copytuple(tuple);
     g_current_tuple_passthrough.tupleDesc = handle->tupleDesc;
 
+    elog(NOTICE, "read_next_tuple_from_table: Tuple copied successfully, getting iteration signal");
     // Return signal: "we have a tuple" (MLIR only uses this for iteration control)
-    return g_current_tuple_passthrough.getIterationSignal();
+    auto result = g_current_tuple_passthrough.getIterationSignal();
+    elog(NOTICE, "read_next_tuple_from_table: Returning iteration signal: %ld", result);
+    return result;
 }
 
 extern "C" void close_postgres_table(void* tableHandle) {
+    elog(NOTICE, "close_postgres_table called with handle: %p", tableHandle);
     if (!tableHandle) {
         return;
     }
@@ -304,8 +335,11 @@ extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index,
 
 // MLIR runtime functions for storing computed expression results
 extern "C" void store_int_result(int32_t columnIndex, int32_t value, bool isNull) {
+    elog(NOTICE, "store_int_result called with columnIndex=%d, value=%d, isNull=%s", 
+         columnIndex, value, isNull ? "true" : "false");
     Datum datum = Int32GetDatum(value);
     g_computed_results.setResult(columnIndex, datum, isNull, INT4OID);
+    elog(NOTICE, "store_int_result completed successfully");
 }
 
 extern "C" void store_bool_result(int32_t columnIndex, bool value, bool isNull) {
@@ -334,6 +368,16 @@ extern "C" void store_text_result(int32_t columnIndex, const char* value, bool i
 
 extern "C" void prepare_computed_results(int32_t numColumns) {
     g_computed_results.resize(numColumns);
+}
+
+// Global flag to indicate results are ready for streaming
+bool g_jit_results_ready = false;
+
+// Mark results as ready for streaming (called from JIT)
+extern "C" void mark_results_ready_for_streaming() {
+    elog(NOTICE, "mark_results_ready_for_streaming called from JIT");
+    g_jit_results_ready = true;
+    elog(NOTICE, "Results marked as ready for streaming");
 }
 
 //===----------------------------------------------------------------------===//
@@ -380,6 +424,38 @@ extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, boo
         *is_null = true;
         return 0.0;
     }
+}
+
+// MLIR-compatible wrapper functions for JIT integration
+// These functions match the signatures expected by our LLVM IR
+
+extern "C" int32_t get_int_field_mlir(int64_t iteration_signal, int32_t field_index) {
+    elog(NOTICE, "get_int_field_mlir called with iteration_signal=%ld, field_index=%d", iteration_signal, field_index);
+    
+    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
+        elog(NOTICE, "get_int_field: No current tuple available");
+        return 0;
+    }
+    
+    // PostgreSQL uses 1-based attribute indexing
+    const int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
+        elog(NOTICE, "get_int_field: field_index %d out of range (natts=%d)", field_index, g_current_tuple_passthrough.tupleDesc->natts);
+        return 0;
+    }
+    
+    bool isnull;
+    elog(NOTICE, "get_int_field: About to call heap_getattr for attribute %d", attr_num);
+    const auto value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
+    
+    if (isnull) {
+        elog(NOTICE, "get_int_field: Field %d is NULL", field_index);
+        return 0;
+    }
+    
+    auto result = DatumGetInt32(value);
+    elog(NOTICE, "get_int_field: Extracted value %d from field %d", result, field_index);
+    return result;
 }
 
 // Note: All other C interface functions are implemented in my_executor.cpp

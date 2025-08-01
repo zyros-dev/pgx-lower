@@ -248,11 +248,8 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     {
         auto pm3 = mlir::PassManager(&context);
         pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
-        // Use minimal pass to debug basic functionality
-        logger.notice("Creating MinimalSubOpToControlFlowPass - just removes ExecutionGroupOp...");
-        pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
-        
-        logger.notice("About to call createMinimalSubOpToControlFlowPass()...");
+        // Switch back to minimal pass that works, then gradually add functionality
+        logger.notice("Creating MinimalSubOpToControlFlowPass - works reliably...");
         auto minimalPass = pgx_lower::compiler::dialect::subop::createMinimalSubOpToControlFlowPass();
         if (!minimalPass) {
             logger.error("createMinimalSubOpToControlFlowPass returned null!");
@@ -300,18 +297,14 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("Phase 3 completed successfully");
     }
     
-    // Phase 4: DB lowering pipeline
+    // Phase 4: DB lowering pipeline  
     logger.notice("Phase 4: DB lowering pipeline");
     {
-        auto pm4 = mlir::PassManager(&context);
-        pgx_lower::compiler::dialect::db::createLowerDBPipeline(pm4);
-        
-        if (failed(pm4.run(module))) {
-            logger.error("Phase 4 (DB lowering) failed!");
-            module.dump();
-            return false;
-        }
-        logger.notice("Phase 4 completed successfully");
+        // Skip DB lowering since MinimalSubOpToControlFlow generates direct PostgreSQL calls
+        // The DB lowering passes expect DB dialect operations, but we removed all SubOp operations
+        // and generate direct func.func calls to PostgreSQL runtime functions
+        logger.notice("Skipping DB lowering - MinimalSubOpToControlFlow generates direct PostgreSQL runtime calls");
+        logger.notice("Phase 4 completed successfully (skipped)");
     }
     
     // Note: We skip Arrow lowering since we're using PostgreSQL instead
@@ -419,7 +412,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         addSymbol("read_next_tuple_from_table", reinterpret_cast<void*>(read_next_tuple_from_table));
         addSymbol("close_postgres_table", reinterpret_cast<void*>(close_postgres_table));
         addSymbol("add_tuple_to_result", reinterpret_cast<void*>(add_tuple_to_result));
-        addSymbol("get_int_field", reinterpret_cast<void*>(get_int_field));
+        addSymbol("get_int_field_mlir", reinterpret_cast<void*>(get_int_field_mlir));
         addSymbol("get_text_field", reinterpret_cast<void*>(get_text_field));
         addSymbol("get_numeric_field", reinterpret_cast<void*>(get_numeric_field));
         addSymbol("store_bool_result", reinterpret_cast<void*>(store_bool_result));
@@ -427,6 +420,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         addSymbol("store_bigint_result", reinterpret_cast<void*>(store_bigint_result));
         addSymbol("store_text_result", reinterpret_cast<void*>(store_text_result));
         addSymbol("prepare_computed_results", reinterpret_cast<void*>(prepare_computed_results));
+        addSymbol("mark_results_ready_for_streaming", reinterpret_cast<void*>(mark_results_ready_for_streaming));
         addSymbol("DataSource_get", reinterpret_cast<void*>(DataSource_get));
         // sum_aggregate removed - now implemented as pure MLIR operations
         
@@ -458,8 +452,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // Wrap JIT function execution in error handling to prevent server crash
     try {
         logger.notice("Calling JIT function now...");
+        logger.notice("About to invoke fptr() - this is the actual JIT call");
         int result = fptr();  // Standard C main call
-        logger.notice("JIT function returned: " + std::to_string(result));
+        logger.notice("JIT function returned successfully with result: " + std::to_string(result));
         logger.notice("complete success! mlir jit function executed successfully!");
         logger.notice("all stages working: mlir compilation + jit execution!");
     } catch (const std::exception& e) {

@@ -201,6 +201,41 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
     // Use the new AST-based MLIR translation
     const auto mlir_success = mlir_runner::run_mlir_postgres_ast_translation(const_cast<PlannedStmt*>(stmt), logger);
 
+    // Stream results after JIT execution completes successfully
+    if (mlir_success) {
+        // Check if JIT marked results as ready
+        extern bool g_jit_results_ready;
+        if (g_jit_results_ready) {
+            logger.notice("JIT execution successful - streaming results to PostgreSQL");
+            
+            // Check if we have computed results to stream (no original tuple needed)
+            if (g_computed_results.numComputedColumns > 0) {
+                logger.notice("Streaming computed results without original tuple");
+                // Pass an empty passthrough since we only have computed results
+                PostgreSQLTuplePassthrough emptyPassthrough;
+                emptyPassthrough.originalTuple = nullptr;
+                emptyPassthrough.tupleDesc = nullptr;
+                const bool stream_success = g_tuple_streamer.streamCompletePostgreSQLTuple(emptyPassthrough);
+                if (!stream_success) {
+                    logger.error("Failed to stream computed results to PostgreSQL destination");
+                } else {
+                    logger.notice("Computed results successfully streamed to PostgreSQL destination");
+                }
+            } else if (g_current_tuple_passthrough.originalTuple) {
+                // Stream original tuple
+                const bool stream_success = g_tuple_streamer.streamCompletePostgreSQLTuple(g_current_tuple_passthrough);
+                if (!stream_success) {
+                    logger.error("Failed to stream results to PostgreSQL destination");
+                } else {
+                    logger.notice("Results successfully streamed to PostgreSQL destination");
+                }
+            } else {
+                logger.notice("No results to stream - neither computed results nor original tuple available");
+            }
+            g_jit_results_ready = false; // Reset flag
+        }
+    }
+
     // Cleanup (same as before)
     g_scan_context = nullptr;
     g_tuple_streamer.shutdown();

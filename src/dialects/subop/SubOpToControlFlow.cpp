@@ -8,8 +8,9 @@ extern "C" {
 #endif
 
 #include "dialects/util/UtilToLLVMPasses.h"
-#include "dialects/arrow/ArrowDialect.h"
-#include "dialects/arrow/ArrowOps.h"
+// TODO Phase 5: Replace Arrow dialect references with PostgreSQL runtime calls
+// #include "dialects/arrow/ArrowDialect.h"
+// #include "dialects/arrow/ArrowOps.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/DBOps.h"
 #include "dialects/subop/SubOpDialect.h"
@@ -4445,6 +4446,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       }
 #ifdef POSTGRESQL_EXTENSION
       elog(NOTICE, "=== ExecutionGroupOp has ExecutionSteps: %s ===", hasExecutionSteps ? "true" : "false");
+      elog(NOTICE, "=== About to process ExecutionGroupOp operations ===");
 #endif
       
       // If no ExecutionStepOp operations, handle simple case
@@ -4607,6 +4609,9 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       }
       executionGroup.replaceAllUsesWith(results);
       toRemove.push_back(executionGroup);
+#ifdef POSTGRESQL_EXTENSION
+      elog(NOTICE, "=== ExecutionGroupOp processing completed successfully ===");
+#endif
    });
    getOperation()->walk([&](subop::SetResultOp setResultOp) {
       mlir::OpBuilder builder(setResultOp);
@@ -4617,10 +4622,16 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       toRemove.push_back(setResultOp);
    });
    for (auto* op : toRemove) {
+#ifdef POSTGRESQL_EXTENSION
+      elog(NOTICE, "=== About to erase operation: %s ===", op->getName().getStringRef().data());
+#endif
       op->dropAllReferences();
       op->dropAllDefinedValueUses();
       op->erase();
    }
+#ifdef POSTGRESQL_EXTENSION
+   elog(NOTICE, "=== All operations erased successfully ===");
+#endif
    std::vector<mlir::Operation*> defs;
    for (auto& op : module.getBody()->getOperations()) {
       if (auto funcOp = mlir::dyn_cast_or_null<mlir::func::FuncOp>(&op)) {

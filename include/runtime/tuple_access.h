@@ -243,6 +243,8 @@ auto get_next_tuple() -> int64_t;
 
 // Typed field access functions for PostgreSQL dialect
 auto get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int32_t;
+// MLIR-compatible wrapper for JIT integration
+extern "C" int32_t get_int_field_mlir(int64_t iteration_signal, int32_t field_index);
 auto get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int64_t;
 auto get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) -> double;
 
@@ -252,6 +254,7 @@ void store_bool_result(int32_t columnIndex, bool value, bool isNull);
 void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
 void store_text_result(int32_t columnIndex, const char* value, bool isNull);
 void prepare_computed_results(int32_t numColumns);
+void mark_results_ready_for_streaming();
 
 // Aggregate functions
 int64_t sum_aggregate(void* table_handle);
