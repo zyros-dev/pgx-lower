@@ -62,11 +62,44 @@ SELECT id, small_int, integer_col, big_int FROM all_types_test;
   3 |         3 |        1003 | 1000000000003
 (3 rows)
 
--- Test 8: Non-sequential column selection is not supported yet
--- MinimalSubOpToControlFlow doesn't implement column-to-field mapping
--- Will crash because it uses column indices as field indices (0,1,2 instead of 9,10,11)
 SELECT char_col, varchar_col, text_col FROM all_types_test;
-server closed the connection unexpectedly
-	This probably means the server terminated abnormally
-	before or while processing the request.
-connection to server was lost
+  char_col  | varchar_col |  text_col  
+------------+-------------+------------
+ xxxxxxxch1 | varchar_1   | text row 1
+ xxxxxxxch2 | varchar_2   | text row 2
+ xxxxxxxch3 | varchar_3   | text row 3
+(3 rows)
+
+SELECT date_col, time_col, timestamp_col FROM all_types_test;
+    date_col    | time_col |      timestamp_col      
+----------------+----------+-------------------------
+ 11-02-5882759  | 12:01:00 | Sat Dec 28 01:49:39.396565 2002
+ 11-02-5882759  | 12:02:00 | Sat Dec 28 02:49:39.396565 2002
+ 11-02-5882759  | 12:03:00 | Sat Dec 28 03:49:39.396565 2002
+(3 rows)
+
+SELECT boolean_col, decimal_col, varchar_col FROM all_types_test;
+ boolean_col | decimal_col | varchar_col 
+-------------+-------------+-------------
+ f           |      101.00 | varchar_1
+ t           |      102.00 | varchar_2
+ f           |      103.00 | varchar_3
+(3 rows)
+
+SELECT real_col FROM all_types_test;
+ real_col 
+----------
+      2.1
+      3.1
+      4.1
+(3 rows)
+
+SELECT inet_col, bytea_col, bit_col FROM all_types_test;
+   inet_col   |  bytea_col   |  bit_col 
+--------------+--------------+----------
+ 192.168.1.1  | \xdeadbeef   | 10101010
+ 192.168.1.2  | \xdeadbeef   | 10101010
+ 192.168.1.3  | \xdeadbeef   | 10101010
+(3 rows)
+
+DROP TABLE all_types_test;

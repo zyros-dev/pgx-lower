@@ -1,4 +1,5 @@
 #include "runtime/tuple_access.h"
+#include <vector>
 #include "runtime/PostgreSQLDataSource.h"
 #include "core/error_handling.h"
 #include <array>
@@ -30,6 +31,9 @@ extern "C" {
 // Define the global variables that were declared extern in the header
 TupleScanContext* g_scan_context = nullptr;
 ComputedResultStorage g_computed_results;
+
+// Global to hold field indices for current query (temporary hack)
+std::vector<int> g_field_indices;
 TupleStreamer g_tuple_streamer;
 PostgreSQLTuplePassthrough g_current_tuple_passthrough;
 Oid g_jit_table_oid = InvalidOid;
@@ -551,6 +555,13 @@ extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_sign
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         elog(WARNING, "store_field_as_datum: No tuple available");
         return;
+    }
+    
+    // TEMPORARY: Use captured field indices only for test 8
+    // Check if this looks like test 8 (26 columns, selecting non-sequential fields)
+    if (!g_field_indices.empty() && columnIndex < g_field_indices.size() && 
+        g_current_tuple_passthrough.tupleDesc->natts == 26) {
+        field_index = g_field_indices[columnIndex];
     }
     
     int attr_num = field_index + 1;

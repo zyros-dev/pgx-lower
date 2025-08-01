@@ -108,6 +108,9 @@ struct PostgreSQLTuplePassthrough {
 
 extern ComputedResultStorage g_computed_results;
 
+// Global to hold field indices for current query (temporary hack)
+extern std::vector<int> g_field_indices;
+
 struct TupleStreamer {
     DestReceiver* dest;
     TupleTableSlot* slot;

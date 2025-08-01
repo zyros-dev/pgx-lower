@@ -19,6 +19,7 @@ extern "C" {
 #undef dngettext
 
 #include "core/postgresql_ast_translator.h"
+#include "runtime/tuple_access.h"
 #include "dialects/relalg/RelAlgDialect.h"
 #include "dialects/relalg/RelAlgOps.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
@@ -204,11 +205,13 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         }
         
         if (hasExpressions) {
-            logger_.notice("ARITHMETIC: Detected expressions but skipping RelAlg Map due to LOAD issue");
-            logger_.notice("ARITHMETIC: LOAD command causes MLIR context issues with ColumnDefAttr");
-            // TODO: Fix MLIR context handling after LOAD to enable expressions
-            // For now, expressions will be handled by the query analyzer fallback
-            // which doesn't use persistent MLIR attributes
+            logger_.notice("ARITHMETIC: Generating RelAlg Map for expressions");
+            try {
+                auto mapOp = generateRelAlgMapOperation(finalStream, targetList);
+                finalStream = mapOp;
+            } catch (const std::exception& e) {
+                logger_.error("ARITHMETIC: Failed to generate RelAlg Map: " + std::string(e.what()));
+            }
         }
     }
     
@@ -281,6 +284,9 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operat
     // Get column information from the target list
     std::vector<mlir::NamedAttribute> colAttrs;
     
+    // TEMPORARY: Capture field indices for runtime
+    g_field_indices.clear();
+    
     // Check if we have a target list to determine columns
     if (currentPlannedStmt_->planTree && currentPlannedStmt_->planTree->targetlist) {
         List* targetList = currentPlannedStmt_->planTree->targetlist;
@@ -295,6 +301,11 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operat
             // Check if this is a simple Var (column reference)
             if (tle->expr && nodeTag(tle->expr) == T_Var) {
                 Var* var = reinterpret_cast<Var*>(tle->expr);
+                
+                // TEMPORARY: Capture field index for runtime
+                g_field_indices.push_back(var->varattno - 1); // Convert to 0-based
+                logger_.debug("Captured field index: " + std::to_string(var->varattno - 1) + " for column " + 
+                             (tle->resname ? tle->resname : "unnamed"));
                 
                 // Get column name from TargetEntry
                 std::string colName = tle->resname ? tle->resname : "col" + std::to_string(var->varattno);
