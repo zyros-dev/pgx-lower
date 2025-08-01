@@ -1,6 +1,5 @@
 -- Test basic arithmetic operators: PgAddOp, PgSubOp, PgMulOp, PgDivOp, PgModOp
 LOAD 'pgx_lower.so';
-SET client_min_messages TO WARNING;
 DROP TABLE IF EXISTS test_arithmetic;
 
 CREATE TABLE test_arithmetic (
