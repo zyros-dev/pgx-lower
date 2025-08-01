@@ -249,15 +249,23 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     {
         auto pm3 = mlir::PassManager(&context);
         pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
-        // Switch back to minimal pass that works, then gradually add functionality
-        logger.notice("Creating MinimalSubOpToControlFlowPass - works reliably...");
-        auto minimalPass = pgx_lower::compiler::dialect::subop::createMinimalSubOpToControlFlowPass();
-        if (!minimalPass) {
-            logger.error("createMinimalSubOpToControlFlowPass returned null!");
-            return false;
+        // Try the real SubOpToControlFlow pass
+        logger.notice("Creating real SubOpToControlFlowPass...");
+        auto realPass = pgx_lower::compiler::dialect::subop::createLowerSubOpToControlFlowPass();
+        if (!realPass) {
+            logger.error("createSubOpToControlFlowPass returned null!");
+            // Fall back to minimal
+            logger.notice("Falling back to MinimalSubOpToControlFlowPass...");
+            auto minimalPass = pgx_lower::compiler::dialect::subop::createMinimalSubOpToControlFlowPass();
+            if (!minimalPass) {
+                logger.error("createMinimalSubOpToControlFlowPass also returned null!");
+                return false;
+            }
+            pm3.addPass(std::move(minimalPass));
+        } else {
+            logger.notice("Real SubOpToControlFlowPass created successfully");
+            pm3.addPass(std::move(realPass));
         }
-        logger.notice("MinimalSubOpToControlFlowPass created successfully");
-        pm3.addPass(std::move(minimalPass));
         pm3.addPass(mlir::createCanonicalizerPass());
         pm3.addPass(mlir::createCSEPass());
         

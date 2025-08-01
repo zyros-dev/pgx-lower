@@ -145,14 +145,14 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
     // Configure each column in the result tuple descriptor
     for (int i = 0; i < numResultColumns; i++) {
         const auto resultAttr = TupleDescAttr(resultTupleDesc, i);
-        resultAttr->atttypid = INT4OID;  // Default to INT4 for now
-        resultAttr->attlen = sizeof(int32);
-        resultAttr->attbyval = true;
-        resultAttr->attalign = TYPALIGN_INT;
-        resultAttr->atttypmod = -1;
-        resultAttr->attnotnull = false;
         
-        // Try to get column names from target list
+        // Default type info
+        Oid columnType = INT4OID;
+        int typeLen = sizeof(int32);
+        bool typeByVal = true;
+        char typeAlign = TYPALIGN_INT;
+        
+        // Try to get column info from target list
         if (stmt->planTree && stmt->planTree->targetlist && i < list_length(stmt->planTree->targetlist)) {
             ListCell* lc;
             int colIdx = 0;
@@ -160,12 +160,31 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
                 auto* tle = static_cast<TargetEntry*>(lfirst(lc));
                 if (tle && !tle->resjunk) {
                     if (colIdx == i) {
+                        // Get column name
                         if (tle->resname) {
                             strncpy(NameStr(resultAttr->attname), tle->resname, NAMEDATALEN - 1);
                             logger.notice("Setting column " + std::to_string(i) + " name to: " + std::string(tle->resname));
                         } else {
                             snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
                             logger.notice("Setting column " + std::to_string(i) + " name to: col" + std::to_string(i));
+                        }
+                        
+                        // Get column type from expression
+                        if (tle->expr && nodeTag(tle->expr) == T_Var) {
+                            Var* var = reinterpret_cast<Var*>(tle->expr);
+                            columnType = var->vartype;
+                            
+                            // Get type properties
+                            int16 typLen;
+                            bool typByVal;
+                            char typAlign;
+                            get_typlenbyvalalign(columnType, &typLen, &typByVal, &typAlign);
+                            
+                            typeLen = typLen;
+                            typeByVal = typByVal;
+                            typeAlign = typAlign;
+                            
+                            logger.notice("Column " + std::to_string(i) + " type OID: " + std::to_string(columnType));
                         }
                         break;
                     }
@@ -176,6 +195,14 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
             // Fallback naming
             snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
         }
+        
+        // Set the type info
+        resultAttr->atttypid = columnType;
+        resultAttr->attlen = typeLen;
+        resultAttr->attbyval = typeByVal;
+        resultAttr->attalign = typeAlign;
+        resultAttr->atttypmod = -1;
+        resultAttr->attnotnull = false;
     }
     
     const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
