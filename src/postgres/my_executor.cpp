@@ -67,9 +67,9 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
 
     logger.debug("Using PostgreSQL AST translation approach");
 
-    // Setup global tuple scanning context (same as before)
-    TupleScanContext scanContext = {scanDesc, tupleDesc, true, 0};
-    g_scan_context = &scanContext;
+    // For AST translation, the JIT manages its own table access
+    // Set g_scan_context to null to indicate JIT should handle everything
+    g_scan_context = nullptr;
 
     // Configure column selection based on query type
     // For SELECT expressions (computed results), use -1 to indicate computed columns
@@ -112,23 +112,17 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
                         auto* var = reinterpret_cast<Var*>(tle->expr);
                         // Var->varattno is 1-based, convert to 0-based
                         int columnIndex = var->varattno - 1;
-                        if (columnIndex >= 0 && columnIndex < scanContext.tupleDesc->natts) {
+                        // For AST translation, we don't have tupleDesc yet, so just add all referenced columns
+                        if (columnIndex >= 0) {
                             selectedColumns.push_back(columnIndex);
                         }
                     }
                 }
                 
                 if (selectedColumns.empty()) {
-                    // Fallback: if we couldn't determine columns, use all columns
-                    if (scanContext.tupleDesc) {
-                        for (int i = 0; i < scanContext.tupleDesc->natts; i++) {
-                            selectedColumns.push_back(i);
-                        }
-                        logger.notice("Configured for table column results (all " + std::to_string(selectedColumns.size()) + " columns)");
-                    } else {
-                        selectedColumns = {0};
-                        logger.notice("Configured for table column results (fallback: 1 column)");
-                    }
+                    // For AST translation, default to first column if we can't determine
+                    selectedColumns = {0};
+                    logger.notice("Configured for table column results (defaulting to first column)");
                 } else {
                     logger.notice("Configured for table column results (" + std::to_string(selectedColumns.size()) + " selected columns)");
                 }
@@ -163,25 +157,9 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
             strncpy(NameStr(resultAttr->attname), "result", NAMEDATALEN - 1);
         } else {
             // Table column - copy type and name from original table
-            if (scanContext.tupleDesc && selectedColumns[i] < scanContext.tupleDesc->natts) {
-                const auto origAttr = TupleDescAttr(scanContext.tupleDesc, selectedColumns[i]);
-                
-                // Copy all relevant attributes from original column
-                resultAttr->atttypid = origAttr->atttypid;
-                resultAttr->attlen = origAttr->attlen;
-                resultAttr->attbyval = origAttr->attbyval;
-                resultAttr->attalign = origAttr->attalign;
-                resultAttr->atttypmod = origAttr->atttypmod;
-                resultAttr->attnotnull = origAttr->attnotnull;
-                resultAttr->attcacheoff = origAttr->attcacheoff;
-                resultAttr->attcollation = origAttr->attcollation;
-                
-                // Copy name
-                strncpy(NameStr(resultAttr->attname), NameStr(origAttr->attname), NAMEDATALEN - 1);
-                NameStr(resultAttr->attname)[NAMEDATALEN - 1] = '\0'; // Ensure null termination
-                
-                logger.debug("Copied column " + std::to_string(i) + ": " + NameStr(origAttr->attname) 
-                           + " (typeid=" + std::to_string(origAttr->atttypid) + ")");
+            if (false) { // Skip this check for JIT-managed tables
+                // const auto origAttr = TupleDescAttr(scanContext.tupleDesc, selectedColumns[i]);
+                // Skip attribute copying for JIT-managed tables
             } else {
                 // Fallback naming
                 snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
@@ -200,21 +178,27 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
 
     // Use the new AST-based MLIR translation
     const auto mlir_success = mlir_runner::run_mlir_postgres_ast_translation(const_cast<PlannedStmt*>(stmt), logger);
+    logger.notice("mlir_runner::run_mlir_postgres_ast_translation returned " + std::string(mlir_success ? "true" : "false"));
 
-    // Stream results after JIT execution completes successfully
-    if (mlir_success) {
+    // TEMPORARY: Skip streaming to isolate crash
+    logger.notice("TEMPORARILY SKIPPING STREAMING TO ISOLATE CRASH");
+    if (false && mlir_success) {
+        logger.notice("JIT returned successfully, checking results...");
         // Check if JIT marked results as ready
         extern bool g_jit_results_ready;
+        logger.notice("g_jit_results_ready = " + std::string(g_jit_results_ready ? "true" : "false"));
         if (g_jit_results_ready) {
             logger.notice("JIT execution successful - streaming results to PostgreSQL");
             
             // Check if we have computed results to stream (no original tuple needed)
+            logger.notice("g_computed_results.numComputedColumns = " + std::to_string(g_computed_results.numComputedColumns));
             if (g_computed_results.numComputedColumns > 0) {
                 logger.notice("Streaming computed results without original tuple");
                 // Pass an empty passthrough since we only have computed results
                 PostgreSQLTuplePassthrough emptyPassthrough;
                 emptyPassthrough.originalTuple = nullptr;
                 emptyPassthrough.tupleDesc = nullptr;
+                logger.notice("About to call streamCompletePostgreSQLTuple with empty passthrough...");
                 const bool stream_success = g_tuple_streamer.streamCompletePostgreSQLTuple(emptyPassthrough);
                 if (!stream_success) {
                     logger.error("Failed to stream computed results to PostgreSQL destination");
@@ -237,19 +221,25 @@ bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc
     }
 
     // Cleanup (same as before)
+    logger.notice("Beginning cleanup phase...");
     g_scan_context = nullptr;
+    logger.notice("Shutting down tuple streamer...");
     g_tuple_streamer.shutdown();
 
     if (g_current_tuple_passthrough.originalTuple) {
+        logger.notice("Freeing original tuple...");
         heap_freetuple(g_current_tuple_passthrough.originalTuple);
         g_current_tuple_passthrough.originalTuple = nullptr;
     }
 
+    logger.notice("Shutting down destination...");
     dest->rShutdown(dest);
 
+    logger.notice("Dropping slot and freeing tuple descriptor...");
     ExecDropSingleTupleTableSlot(slot);
     FreeTupleDesc(resultTupleDesc);
 
+    logger.notice("run_mlir_with_ast_translation completed successfully, returning " + std::string(mlir_success ? "true" : "false"));
     return mlir_success;
 }
 
@@ -302,19 +292,21 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
     const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
     
-    // Open table for actual execution (not for validation)
-    const auto rel = table_open(rte->relid, AccessShareLock);
-    const auto tupdesc = RelationGetDescr(rel);
-
-    const auto scanDesc = table_beginscan(rel, GetActiveSnapshot(), 0, nullptr);
-
-    // Try the new AST-based approach first
-    bool mlir_success = run_mlir_with_ast_translation(scanDesc, tupdesc, plan);
+    // For AST-based translation, the JIT manages its own table scan
+    // We don't open the table here to avoid double management
+    PGX_DEBUG("Using AST-based translation - JIT will manage table scan");
+    PGX_INFO("Table OID: " + std::to_string(rte->relid));
+    
+    // Store the table OID globally so the JIT can access it
+    extern Oid g_jit_table_oid;
+    g_jit_table_oid = rte->relid;
+    
+    // Pass null scanDesc since AST translation doesn't use it
+    bool mlir_success = run_mlir_with_ast_translation(nullptr, nullptr, plan);
 
     // AST translation is the primary and only method now
+    // No table cleanup needed since JIT handled it
 
-    table_endscan(scanDesc);
-    table_close(rel, AccessShareLock);
-
+    PGX_INFO("MyCppExecutor::execute completed, returning " + std::string(mlir_success ? "true" : "false"));
     return mlir_success;
 }

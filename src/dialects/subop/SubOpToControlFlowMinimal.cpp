@@ -54,7 +54,8 @@ public:
         elog(NOTICE, "Found %d ExecutionGroupOp operations to process", (int)execGroups.size());
 #endif
         
-        // Process ExecutionGroupOp operations and generate PostgreSQL code
+        // Extract table information from ExecutionGroupOp operations
+        std::string tableName;
         for (auto execGroup : execGroups) {
 #ifdef POSTGRESQL_EXTENSION
             elog(NOTICE, "Processing ExecutionGroupOp with %d operations", (int)execGroup.getRegion().front().getOperations().size());
@@ -71,8 +72,28 @@ public:
                 
                 if (auto getExternal = mlir::dyn_cast<subop::GetExternalOp>(op)) {
 #ifdef POSTGRESQL_EXTENSION
-                    elog(NOTICE, "Found GetExternalOp - table access preparation");
+                    elog(NOTICE, "Found GetExternalOp - extracting table name");
 #endif
+                    // Extract table name from the JSON-like description
+                    // Format: { "table": "test", "mapping": { "id$0" :"id"} }
+                    auto descr = getExternal.getDescr();
+                    std::string descrStr = descr.str();
+#ifdef POSTGRESQL_EXTENSION
+                    elog(NOTICE, "GetExternalOp description: %s", descrStr.c_str());
+#endif
+                    // Simple extraction - find "table": "xxx"
+                    size_t tablePos = descrStr.find("\"table\"");
+                    if (tablePos != std::string::npos) {
+                        size_t colonPos = descrStr.find(":", tablePos);
+                        size_t firstQuote = descrStr.find("\"", colonPos);
+                        size_t secondQuote = descrStr.find("\"", firstQuote + 1);
+                        if (firstQuote != std::string::npos && secondQuote != std::string::npos) {
+                            tableName = descrStr.substr(firstQuote + 1, secondQuote - firstQuote - 1);
+#ifdef POSTGRESQL_EXTENSION
+                            elog(NOTICE, "Extracted table name: %s", tableName.c_str());
+#endif
+                        }
+                    }
                 } else if (auto scanRefs = mlir::dyn_cast<subop::ScanRefsOp>(op)) {
 #ifdef POSTGRESQL_EXTENSION
                     elog(NOTICE, "Found ScanRefsOp - table scanning");

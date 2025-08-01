@@ -32,6 +32,7 @@ TupleScanContext* g_scan_context = nullptr;
 ComputedResultStorage g_computed_results;
 TupleStreamer g_tuple_streamer;
 PostgreSQLTuplePassthrough g_current_tuple_passthrough;
+Oid g_jit_table_oid = InvalidOid;
 
 namespace pgx_lower::runtime {
 
@@ -89,18 +90,39 @@ extern "C" void* open_postgres_table(const char* tableName) {
     elog(NOTICE, "open_postgres_table called with tableName: %s", tableName ? tableName : "NULL");
 
     try {
-        if (!g_scan_context) {
-            elog(NOTICE, "open_postgres_table: g_scan_context is null");
-            return nullptr;
-        }
-
         elog(NOTICE, "open_postgres_table: Creating PostgreSQLTableHandle...");
         auto* handle = new PostgreSQLTableHandle();
-        // Use the existing scan descriptor from the global context
-        handle->scanDesc = g_scan_context->scanDesc;
-        handle->tupleDesc = g_scan_context->tupleDesc;
-        handle->rel = nullptr;
-        handle->isOpen = true;
+        
+        if (!g_scan_context || !g_scan_context->scanDesc) {
+            // JIT-managed table access - we need to open the table ourselves
+            elog(NOTICE, "open_postgres_table: JIT-managed table access, opening table: %s", tableName ? tableName : "test");
+            
+            // Use the table OID passed from the executor
+            if (g_jit_table_oid != InvalidOid) {
+                Oid tableOid = g_jit_table_oid;
+                elog(NOTICE, "open_postgres_table: Using table OID: %u", tableOid);
+                
+                // Open the table
+                handle->rel = table_open(tableOid, AccessShareLock);
+                handle->tupleDesc = RelationGetDescr(handle->rel);
+                
+                // Create a new scan
+                handle->scanDesc = table_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr);
+                handle->isOpen = true;
+                
+                elog(NOTICE, "open_postgres_table: Successfully opened table with OID %u", tableOid);
+            } else {
+                elog(ERROR, "open_postgres_table: Cannot determine table to open");
+                delete handle;
+                return nullptr;
+            }
+        } else {
+            // Use the existing scan descriptor from the global context
+            handle->scanDesc = g_scan_context->scanDesc;
+            handle->tupleDesc = g_scan_context->tupleDesc;
+            handle->rel = nullptr;
+            handle->isOpen = true;
+        }
 
         elog(NOTICE, "open_postgres_table: Calling heap_rescan...");
         elog(NOTICE, "open_postgres_table: scanDesc=%p, tupleDesc=%p", handle->scanDesc, handle->tupleDesc);
@@ -212,8 +234,22 @@ extern "C" void close_postgres_table(void* tableHandle) {
     }
 
     auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
+    
+    // If we opened the table ourselves (JIT-managed), close it properly
+    if (handle->rel) {
+        elog(NOTICE, "close_postgres_table: Closing JIT-managed table scan");
+        if (handle->scanDesc) {
+            table_endscan(handle->scanDesc);
+        }
+        table_close(handle->rel, AccessShareLock);
+    }
+    
     handle->isOpen = false;
     delete handle;
+    
+    // Reset the global table OID for next query
+    elog(NOTICE, "close_postgres_table: Resetting g_jit_table_oid from %u to InvalidOid", g_jit_table_oid);
+    g_jit_table_oid = InvalidOid;
 }
 
 // MLIR Interface: Stream complete PostgreSQL tuple to output
@@ -378,6 +414,13 @@ extern "C" void mark_results_ready_for_streaming() {
     elog(NOTICE, "mark_results_ready_for_streaming called from JIT");
     g_jit_results_ready = true;
     elog(NOTICE, "Results marked as ready for streaming");
+    
+    // Add some validation
+    elog(NOTICE, "Validation: g_computed_results.numComputedColumns = %d", g_computed_results.numComputedColumns);
+    if (g_computed_results.numComputedColumns > 0) {
+        elog(NOTICE, "Validation: First computed value = %ld", DatumGetInt64(g_computed_results.computedValues[0]));
+    }
+    elog(NOTICE, "mark_results_ready_for_streaming completed - returning to JIT");
 }
 
 //===----------------------------------------------------------------------===//

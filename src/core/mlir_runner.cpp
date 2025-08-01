@@ -60,6 +60,7 @@
 #include <cstring>
 #include <signal.h>
 #include <cstdio> // For fprintf
+#include <atomic>
 
 // Include runtime functions after all LLVM/MLIR headers to avoid macro conflicts
 #include "runtime/tuple_access.h"
@@ -457,6 +458,11 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("JIT function returned successfully with result: " + std::to_string(result));
         logger.notice("complete success! mlir jit function executed successfully!");
         logger.notice("all stages working: mlir compilation + jit execution!");
+        logger.notice("About to return from JIT execution try block...");
+        
+        // Add memory barrier to ensure all writes are visible
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        logger.notice("Memory barrier completed after JIT execution");
     } catch (const std::exception& e) {
         logger.error("JIT function execution failed with exception: " + std::string(e.what()));
         logger.error("This indicates a runtime function is causing a crash");
@@ -467,6 +473,18 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         return false;
     }
 
+    logger.notice("execute_mlir_module returning true - execution completed successfully");
+    logger.notice("About to destroy ExecutionEngine...");
+    
+    // Add a delay to see if crash happens before destructor
+    logger.notice("Adding small delay before destroying ExecutionEngine...");
+    // Force a flush to ensure all logs are written
+    fflush(stdout);
+    fflush(stderr);
+    
+    // Explicitly reset the engine to trigger destructor
+    engine.reset();
+    logger.notice("ExecutionEngine destroyed successfully");
     return true;
 }
 
@@ -553,7 +571,10 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     logger.notice("Skipping full module dump due to crash issue");
     
     // Execute the MLIR module
-    return executeMLIRModule(*module, logger);
+    bool result = executeMLIRModule(*module, logger);
+    logger.notice("run_mlir_postgres_ast_translation: executeMLIRModule returned " + std::string(result ? "true" : "false"));
+    logger.notice("run_mlir_postgres_ast_translation: About to return to my_executor.cpp...");
+    return result;
 }
 #else
 // Unit test stub implementation

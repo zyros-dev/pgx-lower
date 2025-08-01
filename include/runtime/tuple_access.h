@@ -178,7 +178,7 @@ struct TupleStreamer {
                 if (i < selectedColumns.size()) {
                     const int origColumnIndex = selectedColumns[i];
 
-                    if (origColumnIndex >= 0 && origColumnIndex < origTupleDesc->natts) {
+                    if (origColumnIndex >= 0 && origTupleDesc && origColumnIndex < origTupleDesc->natts) {
                         // Regular column: copy from original tuple
                         // PostgreSQL uses 1-based attribute indexing
                         const auto value =
