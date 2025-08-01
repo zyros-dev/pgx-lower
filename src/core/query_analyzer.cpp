@@ -11,10 +11,16 @@ extern "C" {
 #include "nodes/nodeFuncs.h"
 #include "utils/lsyscache.h"
 }
+#include "postgres/executor_c.h"
 #endif
 
 #include <cstring>
 #include <vector>
+
+#ifdef POSTGRESQL_EXTENSION
+// Forward declaration of global flag defined in executor_c.cpp
+extern bool g_extension_after_load;
+#endif
 
 namespace pgx_lower {
 
@@ -22,15 +28,26 @@ namespace pgx_lower {
 
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
     // All conditions must be met for MLIR compatibility
-    return isSelectStatement &&           // Only SELECT statements
-           hasCompatibleTypes &&          // All types must be MLIR-supported
-           requiresSeqScan &&              // Must have sequential scan
-           !requiresJoin &&                // No joins yet
-           !requiresSort &&                // No sorting yet  
-           !requiresLimit &&               // No limits yet
-           !requiresFilter;                // No WHERE clauses yet (temporary)
+    bool compatible = isSelectStatement &&           // Only SELECT statements
+                      hasCompatibleTypes &&          // All types must be MLIR-supported
+                      requiresSeqScan &&              // Must have sequential scan
+                      !requiresJoin &&                // No joins yet
+                      !requiresSort &&                // No sorting yet  
+                      !requiresLimit &&               // No limits yet
+                      !requiresFilter;                // No WHERE clauses yet (temporary)
     // Note: requiresAggregation is allowed and supported (SUM, COUNT, etc.)
     // Note: requiresFilter temporarily disabled for debugging
+    
+    // After LOAD, expressions cause MLIR context issues, so disable them
+    if (hasExpressions) {
+#ifdef POSTGRESQL_EXTENSION
+        if (::g_extension_after_load) {
+            return false; // Expressions not supported after LOAD due to MLIR context recreation
+        }
+#endif
+    }
+    
+    return compatible;
 }
 
 auto QueryCapabilities::getDescription() const -> const char* {
@@ -109,6 +126,21 @@ auto QueryCapabilities::getDescription() const -> const char* {
         }
         strcpy(pos, "Limit");
         pos += strlen(pos);
+        needComma = true;
+    }
+
+    if (hasExpressions) {
+#ifdef POSTGRESQL_EXTENSION
+        if (::g_extension_after_load) {
+            if (needComma) {
+                strcpy(pos, ", ");
+                pos += 2;
+            }
+            strcpy(pos, "Expressions (disabled after LOAD)");
+            pos += strlen(pos);
+            needComma = true;
+        }
+#endif
     }
 
     strcpy(pos, " - Not yet supported by MLIR");
@@ -263,6 +295,12 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
     foreach(lc, plan->targetlist) {
         TargetEntry* tle = (TargetEntry*)lfirst(lc);
         if (tle && !tle->resjunk && tle->expr) {
+            // Check if this is a computed expression (not just a simple Var)
+            if (nodeTag(tle->expr) != T_Var) {
+                caps.hasExpressions = true;
+                elog(DEBUG1, "Found computed expression in target list (node type: %d)", nodeTag(tle->expr));
+            }
+            
             // For now, allow arithmetic expressions to test the new RelAlg Map implementation
             // Later we can add more sophisticated filtering
             if (IsA(tle->expr, FuncExpr)) {

@@ -24,6 +24,7 @@ struct QueryCapabilities {
     bool requiresLimit = false; // LIMIT clause
     bool isSelectStatement = false; // Only SELECT statements supported
     bool hasCompatibleTypes = false; // All column types are MLIR-compatible
+    bool hasExpressions = false; // Contains computed expressions (arithmetic, functions, etc.)
 
     // Check if MLIR can handle this combination
     [[nodiscard]] auto isMLIRCompatible() const -> bool;

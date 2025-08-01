@@ -21,6 +21,10 @@ Datum log_cpp_notice(PG_FUNCTION_ARGS);
 
 #ifdef __cplusplus
 }
+
+// Global flag to track if extension has been loaded via LOAD command
+// Declared outside C linkage to avoid conflicts
+extern bool g_extension_after_load;
 #endif
 
 #endif

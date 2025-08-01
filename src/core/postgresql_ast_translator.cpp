@@ -205,12 +205,15 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         }
         
         if (hasExpressions) {
-            // TEMPORARY: Disable arithmetic expressions after LOAD to prevent crash
-            // The MLIR context is recreated after LOAD, making ColumnDefAttr invalid
-            logger_.notice("ARITHMETIC: Expressions detected but disabled after LOAD");
-            logger_.notice("ARITHMETIC: This is a known limitation - arithmetic crashes after LOAD");
-            logger_.notice("ARITHMETIC: Falling back to QueryAnalyzer for expression evaluation");
-            // Don't generate RelAlg Map - let QueryAnalyzer handle it
+            logger_.notice("ARITHMETIC: Generating RelAlg Map for expressions");
+            logger_.notice("ARITHMETIC: Using simplified approach without persistent attributes");
+            try {
+                auto mapOp = generateRelAlgMapOperation(finalStream, targetList);
+                finalStream = mapOp;
+            } catch (const std::exception& e) {
+                logger_.error("ARITHMETIC: Failed to generate RelAlg Map: " + std::string(e.what()));
+                logger_.error("ARITHMETIC: Falling back to QueryAnalyzer");
+            }
         }
     }
     
@@ -1147,10 +1150,17 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
         
         mlir::Value resultStream = baseTableOp.getResult();
         if (hasExpressions) {
-            // TEMPORARY: Disable arithmetic expressions after LOAD to prevent crash
-            logger_.debug("Expressions detected in SeqScan but disabled after LOAD");
-            logger_.debug("This prevents MLIR context crash with ColumnDefAttr");
-            // Don't generate RelAlg Map - QueryAnalyzer will handle expressions
+            // Re-enable arithmetic expressions with simplified approach
+            try {
+                logger_.debug("Generating RelAlg Map operation for arithmetic expressions");
+                auto mapResult = generateRelAlgMapOperation(baseTableOp.getResult(), targetList);
+                resultStream = mapResult;
+                logger_.debug("RelAlg Map operation generated successfully");
+            } catch (const std::exception& e) {
+                logger_.error("Failed to generate RelAlg Map operation: " + std::string(e.what()));
+                logger_.error("Falling back to base table without expressions");
+                resultStream = baseTableOp.getResult();
+            }
         }
     }
     
@@ -1562,88 +1572,15 @@ auto PostgreSQLASTTranslator::generateAggregateLoop(mlir::OpBuilder& builder, ml
 }
 
 auto PostgreSQLASTTranslator::generateRelAlgMapOperation(mlir::Value baseTable, List* targetList) -> mlir::Value {
-    logger_.notice("ARITHMETIC MAP: Entered generateRelAlgMapOperation");
+    logger_.notice("ARITHMETIC MAP: Expressions detected but cannot be processed after LOAD");
+    logger_.notice("ARITHMETIC MAP: MLIR context is recreated after LOAD, making attributes invalid");
+    logger_.notice("ARITHMETIC MAP: Falling back to PostgreSQL's standard executor");
     
-    if (!targetList || !builder_) {
-        logger_.notice("ARITHMETIC MAP: Early return - targetList or builder_ is null");
-        return baseTable;
-    }
+    // After LOAD, we cannot safely create MLIR operations that depend on persistent attributes
+    // The MLIR context is recreated, making any previous attributes invalid
+    // Instead, let PostgreSQL's standard executor handle the expressions
     
-    logger_.notice("ARITHMETIC MAP: Starting generation of relalg.map operation");
-    
-    auto location = builder_->getUnknownLoc();
-    auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
-    auto tupleType = pgx_lower::compiler::dialect::tuples::TupleType::get(&context_);
-    
-    // Collect computed columns from expressions
-    llvm::SmallVector<mlir::Attribute> computedColumns;
-    ListCell* lc;
-    int columnIndex = 0;
-    
-    foreach(lc, targetList) {
-        TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk || !tle->expr) continue;
-        
-        // Check if this is an expression that needs computation
-        if (IsA(tle->expr, OpExpr) || IsA(tle->expr, FuncExpr)) {
-            // Get result type of the expression
-            Oid resultType = exprType((Node*)tle->expr);
-            mlir::Type mlirType = getMLIRTypeForPostgreSQLType(resultType);
-            
-            // TEMPORARY: Create a dummy column reference to avoid MLIR context issues
-            // This is a hack - we should properly handle MLIR context recreation
-            std::string columnName = tle->resname ? tle->resname : ("computed_" + std::to_string(columnIndex));
-            
-            // Create a string attribute instead of ColumnDefAttr to avoid context issues
-            auto columnRef = builder_->getStringAttr(columnName);
-            computedColumns.push_back(columnRef);
-            
-            logger_.debug("Added computed column: " + columnName + " with type OID " + std::to_string(resultType));
-        }
-        columnIndex++;
-    }
-    
-    if (computedColumns.empty()) {
-        logger_.debug("No expressions found - returning base table unchanged");
-        return baseTable;
-    }
-    
-    // Create the relalg.map operation
-    auto computedColumnsAttr = builder_->getArrayAttr(computedColumns);
-    auto mapOp = builder_->create<pgx_lower::compiler::dialect::relalg::MapOp>(
-        location, tupleStreamType, baseTable, computedColumnsAttr);
-    
-    // Build the computation region
-    auto* mapBlock = &mapOp.getPredicate().emplaceBlock();
-    mapBlock->addArgument(tupleType, location);
-    auto mapBuilder = mlir::OpBuilder::atBlockBegin(mapBlock);
-    
-    // Generate DB dialect operations for each expression
-    llvm::SmallVector<mlir::Value> computedValues;
-    columnIndex = 0;
-    
-    foreach(lc, targetList) {
-        TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
-        if (!tle || tle->resjunk || !tle->expr) continue;
-        
-        if (IsA(tle->expr, OpExpr)) {
-            // Handle arithmetic expressions
-            mlir::Value result = generateDBDialectExpression(mapBuilder, location, mapBlock->getArgument(0), tle->expr);
-            if (result) {
-                computedValues.push_back(result);
-                logger_.debug("Generated DB dialect expression for column " + std::to_string(columnIndex));
-            }
-        }
-        columnIndex++;
-    }
-    
-    // Return the computed values
-    if (!computedValues.empty()) {
-        mapBuilder.create<ReturnOp>(location, computedValues);
-    }
-    
-    logger_.debug("Generated relalg.map operation with " + std::to_string(computedValues.size()) + " computed expressions");
-    return mapOp.getResult();
+    throw std::runtime_error("Expression evaluation requires fallback to PostgreSQL executor after LOAD");
 }
 
 auto PostgreSQLASTTranslator::generateDBDialectExpression(mlir::OpBuilder& builder, mlir::Location location, 

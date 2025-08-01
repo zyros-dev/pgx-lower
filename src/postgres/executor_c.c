@@ -12,6 +12,10 @@ PG_MODULE_MAGIC;
 
 static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL; // NOLINT(*-avoid-non-const-global-variables)
 
+// External reference to global flag defined in executor_c.cpp
+extern bool g_extension_after_load;
+
+
 static bool try_cpp_executor_internal(const QueryDesc *queryDesc) {
     elog(NOTICE, "Calling C++ executor from C...");
     return try_cpp_executor_direct(queryDesc);
@@ -58,6 +62,9 @@ void _PG_init(void) {
     // Register SIGSEGV handler for debugging
     elog(NOTICE, "Registering custom sigsegv handler!");
     signal(SIGSEGV, segfault_handler);
+    
+    // Mark that extension has been loaded - this recreates MLIR context
+    g_extension_after_load = true;
 }
 
 void _PG_fini(void) {

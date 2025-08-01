@@ -5,6 +5,10 @@
 #include "mlir/IR/MLIRContext.h"
 #include "../../include/core/logging.h"
 
+// Global flag to track if extension has been loaded via LOAD command
+// This indicates MLIR context may have been recreated and expressions should be avoided
+bool g_extension_after_load = false;
+
 // Prevent gettext macro conflicts
 #ifdef gettext
 #undef gettext
