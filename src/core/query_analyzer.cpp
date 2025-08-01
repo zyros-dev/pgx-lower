@@ -38,14 +38,8 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
     // Note: requiresAggregation is allowed and supported (SUM, COUNT, etc.)
     // Note: requiresFilter temporarily disabled for debugging
     
-    // After LOAD, expressions cause MLIR context issues, so disable them
-    if (hasExpressions) {
-#ifdef POSTGRESQL_EXTENSION
-        if (::g_extension_after_load) {
-            return false; // Expressions not supported after LOAD due to MLIR context recreation
-        }
-#endif
-    }
+    // Expressions should work through MLIR - no fallback
+    // TODO: Fix MLIR expression compilation instead of avoiding it
     
     return compatible;
 }
