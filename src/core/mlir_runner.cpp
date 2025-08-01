@@ -541,15 +541,8 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     // Create the PostgreSQL AST translator
     const auto translator = postgresql_ast::createPostgreSQLASTTranslator(context, logger);
     
-    // Translate the PostgreSQL AST to MLIR with exception handling for fallback
-    std::unique_ptr<mlir::ModuleOp> module;
-    try {
-        module = translator->translateQuery(plannedStmt);
-    } catch (const std::exception& ex) {
-        logger.notice("MLIR translation failed with exception: " + std::string(ex.what()));
-        logger.notice("MLIR couldn't handle query, falling back to standard executor");
-        return false; // Return false to trigger PostgreSQL fallback, don't propagate exception
-    }
+    // Translate the PostgreSQL AST to MLIR - let crashes happen so we can debug them
+    const auto module = translator->translateQuery(plannedStmt);
     
     if (!module) {
         logger.error("Failed to translate PostgreSQL AST to MLIR");
