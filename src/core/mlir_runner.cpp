@@ -249,23 +249,15 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     {
         auto pm3 = mlir::PassManager(&context);
         pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
-        // Try the real SubOpToControlFlow pass
-        logger.notice("Creating real SubOpToControlFlowPass...");
-        auto realPass = pgx_lower::compiler::dialect::subop::createLowerSubOpToControlFlowPass();
-        if (!realPass) {
-            logger.error("createSubOpToControlFlowPass returned null!");
-            // Fall back to minimal
-            logger.notice("Falling back to MinimalSubOpToControlFlowPass...");
-            auto minimalPass = pgx_lower::compiler::dialect::subop::createMinimalSubOpToControlFlowPass();
-            if (!minimalPass) {
-                logger.error("createMinimalSubOpToControlFlowPass also returned null!");
-                return false;
-            }
-            pm3.addPass(std::move(minimalPass));
-        } else {
-            logger.notice("Real SubOpToControlFlowPass created successfully");
-            pm3.addPass(std::move(realPass));
+        // Use minimal pass that works for our simple queries
+        logger.notice("Creating MinimalSubOpToControlFlowPass...");
+        auto minimalPass = pgx_lower::compiler::dialect::subop::createMinimalSubOpToControlFlowPass();
+        if (!minimalPass) {
+            logger.error("createMinimalSubOpToControlFlowPass returned null!");
+            return false;
         }
+        logger.notice("MinimalSubOpToControlFlowPass created successfully");
+        pm3.addPass(std::move(minimalPass));
         pm3.addPass(mlir::createCanonicalizerPass());
         pm3.addPass(mlir::createCSEPass());
         
@@ -309,10 +301,10 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // Phase 4: DB lowering pipeline  
     logger.notice("Phase 4: DB lowering pipeline");
     {
-        // Skip DB lowering since MinimalSubOpToControlFlow generates direct PostgreSQL calls
-        // The DB lowering passes expect DB dialect operations, but we removed all SubOp operations
-        // and generate direct func.func calls to PostgreSQL runtime functions
+        // For now, skip DB lowering since MinimalSubOpToControlFlow generates direct calls
+        // TODO: Enable DB dialect for WHERE/GROUP BY/ORDER BY support
         logger.notice("Skipping DB lowering - MinimalSubOpToControlFlow generates direct PostgreSQL runtime calls");
+        logger.notice("TODO: Enable DB dialect for operator and expression support");
         logger.notice("Phase 4 completed successfully (skipped)");
     }
     
