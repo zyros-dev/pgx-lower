@@ -238,6 +238,10 @@ public:
             // Count number of columns from the ExecutionGroupOp
             int numColumns = 1; // Default to 1 column
             
+#ifdef POSTGRESQL_EXTENSION
+            elog(NOTICE, "MinimalSubOpToControlFlow: Looking for column count in ExecutionGroupOp");
+#endif
+            
             // Try to determine actual column count from operations
             for (auto execGroup : execGroups) {
                 // Look for GetExternalOp to extract column information
@@ -247,6 +251,9 @@ public:
                         // Count the number of column mappings in the format "col$N":"colname"
                         auto descr = getExternal.getDescr();
                         std::string descrStr = descr.str();
+#ifdef POSTGRESQL_EXTENSION
+                        elog(NOTICE, "MinimalSubOpToControlFlow: Found GetExternalOp with description: %s", descrStr.c_str());
+#endif
                         
                         // Count occurrences of pattern "$N\""
                         numColumns = 0;
@@ -324,8 +331,17 @@ public:
                     auto currentTuple = args[0];
                     
                     // Extract and store all columns using type-aware function
+#ifdef POSTGRESQL_EXTENSION
+                    elog(NOTICE, "MinimalSubOpToControlFlow: Processing tuple with %d columns", numColumns);
+#endif
                     for (int colIdx = 0; colIdx < numColumns; colIdx++) {
-                        // Use store_field_as_datum which handles type detection internally
+#ifdef POSTGRESQL_EXTENSION
+                        elog(NOTICE, "MinimalSubOpToControlFlow: Generating store_field_as_datum call for column %d", colIdx);
+#endif
+                        // TODO: Get actual field index from column mapping
+                        // For now, this assumes we're selecting all columns in order
+                        // This breaks for queries like "SELECT char_col, varchar_col, text_col"
+                        // where we need to map column 0->9, 1->10, 2->11
                         auto colIdxConst = afterBuilder.create<mlir::arith::ConstantIntOp>(loc, colIdx, 32);
                         mlir::Value storeFieldArgs[] = {colIdxConst, currentTuple, colIdxConst};
                         afterBuilder.create<mlir::func::CallOp>(loc, storeFieldAsDatumFunc, storeFieldArgs);

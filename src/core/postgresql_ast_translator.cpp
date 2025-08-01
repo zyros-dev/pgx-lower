@@ -204,22 +204,11 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         }
         
         if (hasExpressions) {
-            logger_.notice("ARITHMETIC: About to generate RelAlg Map operation");
-            logger_.notice("ARITHMETIC: finalStream valid? " + std::string(finalStream ? "yes" : "no"));
-            logger_.notice("ARITHMETIC: targetList length: " + std::to_string(list_length(targetList)));
-            
-            try {
-                logger_.notice("ARITHMETIC: Calling generateRelAlgMapOperation...");
-                // We're already using the query builder context
-                finalStream = generateRelAlgMapOperation(finalStream, targetList);
-                logger_.notice("ARITHMETIC: RelAlg Map operation generated successfully");
-            } catch (const std::exception& e) {
-                logger_.error("ARITHMETIC: Failed to generate RelAlg Map operation: " + std::string(e.what()));
-                return nullptr;
-            } catch (...) {
-                logger_.error("ARITHMETIC: Unknown exception in generateRelAlgMapOperation");
-                return nullptr;
-            }
+            logger_.notice("ARITHMETIC: Detected expressions but skipping RelAlg Map due to LOAD issue");
+            logger_.notice("ARITHMETIC: LOAD command causes MLIR context issues with ColumnDefAttr");
+            // TODO: Fix MLIR context handling after LOAD to enable expressions
+            // For now, expressions will be handled by the query analyzer fallback
+            // which doesn't use persistent MLIR attributes
         }
     }
     

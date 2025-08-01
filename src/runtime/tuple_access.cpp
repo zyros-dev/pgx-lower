@@ -310,8 +310,22 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
             slot->tts_values[i] = g_computed_results.computedValues[i];
             slot->tts_isnull[i] = g_computed_results.computedNulls[i];
             // Don't try to log values as integers - they might be other types
-            elog(NOTICE, "add_tuple_to_result: streaming col[%d] (type OID=%d)",
-                 i, g_computed_results.computedTypes[i]);
+            elog(NOTICE, "add_tuple_to_result: streaming col[%d] (type OID=%d, isNull=%s)",
+                 i, g_computed_results.computedTypes[i], 
+                 g_computed_results.computedNulls[i] ? "true" : "false");
+            
+            // Add validation for text types
+            if ((g_computed_results.computedTypes[i] == TEXTOID || 
+                 g_computed_results.computedTypes[i] == VARCHAROID ||
+                 g_computed_results.computedTypes[i] == BPCHAROID) && 
+                !g_computed_results.computedNulls[i]) {
+                // Check if the Datum is valid
+                void* ptr = DatumGetPointer(g_computed_results.computedValues[i]);
+                elog(NOTICE, "add_tuple_to_result: Text column %d has pointer=%p", i, ptr);
+                if (!ptr) {
+                    elog(ERROR, "add_tuple_to_result: NULL pointer for non-null text column %d", i);
+                }
+            }
         }
         
         slot->tts_nvalid = g_computed_results.numComputedColumns;
@@ -534,8 +548,6 @@ extern "C" int32_t get_int_field_mlir(int64_t iteration_signal, int32_t field_in
 
 // Generic field extractor that stores Datum directly based on actual type
 extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_signal, int32_t field_index) {
-    elog(NOTICE, "store_field_as_datum called: columnIndex=%d, field_index=%d", columnIndex, field_index);
-    
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         elog(WARNING, "store_field_as_datum: No tuple available");
         return;
@@ -553,8 +565,6 @@ extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_sign
     
     // Get the type OID for this column
     Oid typeOid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
-    
-    elog(NOTICE, "store_field_as_datum: field_index=%d has type OID=%d", field_index, typeOid);
     
     // Store with the ORIGINAL type OID - this is critical for proper display
     // The store_xxx_result functions hardcode their type OIDs, so we bypass them
