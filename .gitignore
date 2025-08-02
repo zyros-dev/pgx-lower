@@ -51,7 +51,6 @@ fast_output.txt
 
 .cursorignore
 
-.claude
 build*
 .idea*
 .idea
@@ -68,5 +67,3 @@ Testing
 .vscode
 .serena
 .gemini
-
-agent_documents
