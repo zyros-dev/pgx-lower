@@ -231,6 +231,19 @@ EntryStorageHelper::LazyValueMap EntryStorageHelper::getValueMap(mlir::Value ref
    return getValueMap(ref, rewriter, loc, members);
 }
 
+void EntryStorageHelper::storeOrderedValues(mlir::Value dest, mlir::ValueRange values, mlir::OpBuilder& rewriter, mlir::Location loc) {
+    // Store values in the order they appear in the tuple type
+    for (size_t i = 0; i < values.size(); ++i) {
+        auto elementPtr = rewriter.create<mlir::LLVM::GEPOp>(
+            loc, mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
+            dest, mlir::ValueRange{rewriter.create<mlir::LLVM::ConstantOp>(
+                loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0)),
+                rewriter.create<mlir::LLVM::ConstantOp>(
+                loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(i))});
+        rewriter.create<mlir::LLVM::StoreOp>(loc, values[i], elementPtr);
+    }
+}
+
 mlir::Value EntryStorageHelper::getPointer(mlir::Value ref, const std::string& memberName, mlir::OpBuilder& rewriter, mlir::Location loc) {
    // Find the member index and create a pointer to it
    for (size_t i = 0; i < members.size(); i++) {
@@ -370,7 +383,7 @@ void implementBufferIterationRuntime(bool parallel, mlir::Value bufferIterator, 
    funcOp.getBody().push_back(funcBody);
    auto ptr = rewriter.storeStepRequirements();
    rewriter.atStartOf(funcBody, [&](SubOpRewriter& funcRewriter) {
-      auto guard = funcRewriter.loadStepRequirements(contextPtr, &typeConverter);
+      auto guard = funcRewriter.loadStepRequirements(contextPtr, typeConverter);
       auto castedBuffer = funcRewriter.create<util::BufferCastOp>(loc, util::BufferType::get(funcRewriter.getContext(), entryType), buffer);
       auto start = funcRewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
       auto end = funcRewriter.create<util::BufferGetLen>(loc, funcRewriter.getIndexType(), castedBuffer);

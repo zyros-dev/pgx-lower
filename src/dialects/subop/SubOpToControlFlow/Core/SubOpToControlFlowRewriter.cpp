@@ -285,12 +285,6 @@ subop::InFlightOp SubOpRewriter::createInFlight(ColumnMapping mapping) {
     return ::mlir::cast<subop::InFlightOp>(newInFlight.getDefiningOp());
 }
 
-void SubOpRewriter::loadStepRequirements(mlir::Value contextPtr, mlir::TypeConverter& typeConverter) {
-    // Load step requirements from execution context
-    // This is a stub implementation - the actual implementation would load
-    // required state from the execution context pointer
-    // For now, this is a no-op to resolve compilation
-}
 
 } // namespace subop_to_cf
 } // namespace dialect

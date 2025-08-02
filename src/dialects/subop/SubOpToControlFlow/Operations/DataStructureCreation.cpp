@@ -21,10 +21,6 @@ using subop_to_control_flow::inlineBlock;
 
 // Forward declarations of helper functions
 class EntryStorageHelper;
-static mlir::TupleType getHtEntryType(subop::HashMapType t, mlir::TypeConverter& converter);
-static mlir::TupleType getHtEntryType(subop::PreAggrHtFragmentType t, mlir::TypeConverter& converter);
-static mlir::TupleType getHashMultiMapEntryType(subop::HashMultiMapType t, mlir::TypeConverter& converter);
-static mlir::TupleType getHashMultiMapValueType(subop::HashMultiMapType t, mlir::TypeConverter& converter);
 
 /**
  * CreateThreadLocalLowering - Lowers thread-local storage creation operations.
@@ -91,11 +87,11 @@ class CreateThreadLocalLowering : public SubOpConversionPattern<subop::CreateThr
       auto numPtrs = rewriter.create<mlir::arith::ConstantIndexOp>(loc, toStore.size());
       auto bytes = rewriter.create<mlir::arith::MulIOp>(loc, ptrSize, numPtrs);
 
-      Value arg = rt::ExecutionContext::allocStateRaw(rewriter, loc)({bytes})[0];
+      Value arg = rt::ExecutionContext::allocStateRaw(rewriter, loc)(mlir::ValueRange{bytes})[0];
       arg = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(rewriter.getContext(), i8PtrType), arg);
       for (size_t i = 0; i < toStore.size(); i++) {
          Value storeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), toStore[i].getType());
-         Value valPtrOrig = rt::ExecutionContext::allocStateRaw(rewriter, loc)({storeSize})[0];
+         Value valPtrOrig = rt::ExecutionContext::allocStateRaw(rewriter, loc)(mlir::ValueRange{storeSize})[0];
          Value valPtr = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(toStore[i].getType()), valPtrOrig);
          rewriter.create<util::StoreOp>(loc, toStore[i], valPtr, mlir::Value());
          rewriter.create<util::StoreOp>(loc, valPtrOrig, arg, rewriter.create<mlir::arith::ConstantIndexOp>(loc, i));
@@ -127,12 +123,12 @@ class CreateBufferLowering : public SubOpConversionPattern<subop::GenericCreateO
       rewriter.atStartOf(&createOp->getParentOfType<mlir::func::FuncOp>().getBody().front(), [&](SubOpRewriter& rewriter) {
          if (createOp->hasAttrOfType<mlir::IntegerAttr>("group")) {
             Value groupId = rewriter.create<arith::ConstantIndexOp>(loc, mlir::cast<mlir::IntegerAttr>(createOp->getAttr("group")).getInt());
-            allocator = rt::GrowingBufferAllocator::getGroupAllocator(rewriter, loc)({groupId})[0];
+            allocator = rt::GrowingBufferAllocator::getGroupAllocator(rewriter, loc)(mlir::ValueRange{groupId})[0];
          } else {
-            allocator = rt::GrowingBufferAllocator::getDefaultAllocator(rewriter, loc)({})[0];
+            allocator = rt::GrowingBufferAllocator::getDefaultAllocator(rewriter, loc)(mlir::ValueRange{})[0];
          }
       });
-      mlir::Value vector = rt::GrowingBuffer::create(rewriter, loc)({allocator, typeSize, initialCapacity})[0];
+      mlir::Value vector = rt::GrowingBuffer::create(rewriter, loc)(mlir::ValueRange{allocator, typeSize, initialCapacity})[0];
       rewriter.replaceOp(createOp, vector);
       return mlir::success();
    }
@@ -152,7 +148,7 @@ class CreateHashMapLowering : public SubOpConversionPattern<subop::GenericCreate
 
       auto typeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHtEntryType(t, *typeConverter));
       Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(createOp->getLoc(), 4);
-      auto ptr = rt::Hashtable::create(rewriter, createOp->getLoc())({typeSize, initialCapacity})[0];
+      auto ptr = rt::Hashtable::create(rewriter, createOp->getLoc())(mlir::ValueRange{typeSize, initialCapacity})[0];
       rewriter.replaceOp(createOp, ptr);
       return mlir::success();
    }
@@ -173,7 +169,7 @@ class CreateHashMultiMapLowering : public SubOpConversionPattern<subop::GenericC
       auto entryTypeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHashMultiMapEntryType(t, *typeConverter));
       auto valueTypeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHashMultiMapValueType(t, *typeConverter));
       Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(createOp->getLoc(), 4);
-      auto ptr = rt::HashMultiMap::create(rewriter, createOp->getLoc())({entryTypeSize, valueTypeSize, initialCapacity})[0];
+      auto ptr = rt::HashMultiMap::create(rewriter, createOp->getLoc())(mlir::ValueRange{entryTypeSize, valueTypeSize, initialCapacity})[0];
       rewriter.replaceOp(createOp, ptr);
       return mlir::success();
    }
@@ -193,7 +189,7 @@ class CreateOpenHtFragmentLowering : public SubOpConversionPattern<subop::Generi
 
       auto typeSize = rewriter.create<util::SizeOfOp>(createOp->getLoc(), rewriter.getIndexType(), getHtEntryType(t, *typeConverter));
       auto withLocks = rewriter.create<mlir::arith::ConstantIntOp>(createOp->getLoc(), t.getWithLock(), rewriter.getI1Type());
-      auto ptr = rt::PreAggregationHashtableFragment::create(rewriter, createOp->getLoc())({typeSize, withLocks})[0];
+      auto ptr = rt::PreAggregationHashtableFragment::create(rewriter, createOp->getLoc())(mlir::ValueRange{typeSize, withLocks})[0];
       rewriter.replaceOpWithNewOp<util::GenericMemrefCastOp>(createOp, typeConverter->convertType(t), ptr);
       return mlir::success();
    }
@@ -217,7 +213,7 @@ class CreateArrayLowering : public SubOpConversionPattern<subop::CreateArrayOp> 
       auto elementType = storageHelper.getStorageType();
       auto typeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
       auto numBytes = rewriter.create<mlir::arith::MulIOp>(loc, typeSize, numElements);
-      mlir::Value vector = rt::Buffer::createZeroed(rewriter, loc)({numBytes})[0];
+      mlir::Value vector = rt::Buffer::createZeroed(rewriter, loc)(mlir::ValueRange{numBytes})[0];
       rewriter.replaceOpWithNewOp<util::BufferCastOp>(createOp, typeConverter->convertType(createOp.getType()), vector);
       return mlir::success();
    }
@@ -295,7 +291,7 @@ class CreateSegmentTreeViewLowering : public SubOpConversionPattern<subop::Creat
       Value combineFnPtr = rewriter.create<mlir::func::ConstantOp>(loc, combineFn.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(combineFn.getSymName())));
       Value sourceEntryTypeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), sourceElementType);
       Value stateTypeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), viewElementType);
-      mlir::Value res = rt::SegmentTreeView::build(rewriter, loc)({adaptor.getSource(), sourceEntryTypeSize, initialFnPtr, combineFnPtr, stateTypeSize})[0];
+      mlir::Value res = rt::SegmentTreeView::build(rewriter, loc)(mlir::ValueRange{adaptor.getSource(), sourceEntryTypeSize, initialFnPtr, combineFnPtr, stateTypeSize})[0];
       rewriter.replaceOp(createOp, res);
       return mlir::success();
    }
@@ -341,7 +337,7 @@ class CreateHeapLowering : public SubOpConversionPattern<subop::CreateHeapOp> {
       Value typeSize = rewriter.create<util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
       Value maxElements = rewriter.create<mlir::arith::ConstantIndexOp>(loc, heapType.getMaxElements());
       Value functionPointer = rewriter.create<mlir::func::ConstantOp>(loc, funcOp.getFunctionType(), SymbolRefAttr::get(rewriter.getStringAttr(funcOp.getSymName())));
-      auto heap = rt::Heap::create(rewriter, loc)({maxElements, typeSize, functionPointer})[0];
+      auto heap = rt::Heap::create(rewriter, loc)(mlir::ValueRange{maxElements, typeSize, functionPointer})[0];
       rewriter.replaceOp(heapOp, heap);
       return mlir::success();
    }
@@ -361,7 +357,7 @@ class CreateHashIndexedViewLowering : public SubOpConversionPattern<subop::Creat
       auto linkIsFirst = mlir::cast<mlir::StringAttr>(bufferType.getMembers().getNames()[0]).str() == createOp.getLinkMember();
       auto hashIsSecond = mlir::cast<mlir::StringAttr>(bufferType.getMembers().getNames()[1]).str() == createOp.getHashMember();
       if (!linkIsFirst || !hashIsSecond) return failure();
-      auto htView = rt::HashIndexedView::build(rewriter, createOp->getLoc())({adaptor.getSource()})[0];
+      auto htView = rt::HashIndexedView::build(rewriter, createOp->getLoc())(mlir::ValueRange{adaptor.getSource()})[0];
       rewriter.replaceOp(createOp, htView);
       return success();
    }
@@ -388,7 +384,7 @@ class CreateContinuousViewLowering : public SubOpConversionPattern<subop::Create
       }
       auto bufferType = mlir::dyn_cast<subop::BufferType>(createOp.getSource().getType());
       if (!bufferType) return failure();
-      auto genericBuffer = rt::GrowingBuffer::asContinuous(rewriter, createOp->getLoc())({adaptor.getSource()})[0];
+      auto genericBuffer = rt::GrowingBuffer::asContinuous(rewriter, createOp->getLoc())(mlir::ValueRange{adaptor.getSource()})[0];
       rewriter.replaceOpWithNewOp<util::BufferCastOp>(createOp, typeConverter->convertType(createOp.getType()), genericBuffer);
       return success();
    }
@@ -407,7 +403,7 @@ class GetExternalHashIndexLowering : public SubOpConversionPattern<subop::GetExt
       if (!mlir::isa<subop::ExternalHashIndexType>(op.getType())) return failure();
       mlir::Value description = rewriter.create<util::CreateConstVarLen>(op->getLoc(), util::VarLen32Type::get(rewriter.getContext()), op.getDescrAttr());
 
-      rewriter.replaceOp(op, rt::RelationHelper::accessHashIndex(rewriter, op->getLoc())({description})[0]);
+      rewriter.replaceOp(op, rt::RelationHelper::accessHashIndex(rewriter, op->getLoc())(mlir::ValueRange{description})[0]);
       return mlir::success();
    }
 };

@@ -17,11 +17,6 @@ namespace pgx_lower::compiler::dialect::subop_to_cf {
     class SubOpRewriter;
 }
 
-//===----------------------------------------------------------------------===//
-// EntryStorageHelper - Forward declaration only
-//===----------------------------------------------------------------------===//
-
-class EntryStorageHelper;
 
 namespace subop_to_control_flow {
 

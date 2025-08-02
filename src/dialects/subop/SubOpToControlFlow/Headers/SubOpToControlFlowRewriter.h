@@ -17,6 +17,10 @@ namespace compiler {
 namespace dialect {
 namespace subop_to_cf {
 
+// Forward declarations
+class AbstractSubOpConversionPattern;
+class InFlightTupleStream;
+
 // Namespace aliases for convenience  
 namespace subop = pgx_lower::compiler::dialect::subop;
 namespace tuples = pgx_lower::compiler::dialect::tuples;
@@ -76,7 +80,7 @@ public:
 private:
     mlir::OpBuilder builder;
     std::vector<mlir::IRMapping> valueMapping;
-    std::unordered_map<std::string, std::vector<std::unique_ptr<pgx_lower::compiler::dialect::subop_to_cf::AbstractSubOpConversionPattern>>> patterns;
+    std::unordered_map<std::string, std::vector<std::unique_ptr<AbstractSubOpConversionPattern>>> patterns;
     llvm::DenseMap<mlir::Value, InFlightTupleStream> inFlightTupleStreams;
     std::vector<mlir::Operation*> toErase;
     std::unordered_set<mlir::Operation*> isErased;
@@ -106,30 +110,14 @@ public:
     mlir::MLIRContext* getContext() { return builder.getContext(); }
     
     // Value mapping methods needed by templates
-    mlir::Value getMapped(mlir::Value v) {
-        for (auto it = valueMapping.rbegin(); it != valueMapping.rend(); it++) {
-            if (it->contains(v)) {
-                return getMapped(it->lookup(v));
-            }
-        }
-        return v;
-    }
+    mlir::Value getMapped(mlir::Value v);
     
     // Stream consumer implementation for templates
-    mlir::LogicalResult implementStreamConsumer(mlir::Value stream, const std::function<mlir::LogicalResult(SubOpRewriter&, ColumnMapping&)>& impl) {
-        auto& streamInfo = inFlightTupleStreams[stream];
-        ColumnMapping mapping(streamInfo.inFlightOp);
-        mlir::OpBuilder::InsertionGuard guard(builder);
-        currentStreamLoc = streamInfo.inFlightOp.getOperation();
-        builder.setInsertionPoint(streamInfo.inFlightOp);
-        mlir::LogicalResult res = impl(*this, mapping);
-        currentStreamLoc = nullptr;
-        return res;
-    }
+    mlir::LogicalResult implementStreamConsumer(mlir::Value stream, const std::function<mlir::LogicalResult(SubOpRewriter&, ColumnMapping&)>& impl);
     
     /// Step requirement management
     mlir::Value storeStepRequirements();
-    void loadStepRequirements(mlir::Value contextPtr, mlir::TypeConverter& typeConverter);
+    Guard loadStepRequirements(mlir::Value contextPtr, mlir::TypeConverter* typeConverter);
     
     template <typename OpTy, typename... Args>
     OpTy create(mlir::Location location, Args&&... args) {
@@ -137,15 +125,9 @@ public:
     }
     
     // Additional methods needed by utilities
-    void eraseOp(mlir::Operation* op) {
-        op->erase();
-    }
+    void eraseOp(mlir::Operation* op);
     
-    void atStartOf(mlir::Block* block, const std::function<void(SubOpRewriter&)>& fn) {
-        mlir::OpBuilder::InsertionGuard guard(builder);
-        builder.setInsertionPointToStart(block);
-        fn(*this);
-    }
+    void atStartOf(mlir::Block* block, const std::function<void(SubOpRewriter&)>& fn);
     
     template<typename AdaptorType>
     void inlineBlock(mlir::Block* block, mlir::ValueRange arguments, const std::function<void(AdaptorType)>& fn) {
