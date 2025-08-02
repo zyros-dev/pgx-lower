@@ -43,6 +43,7 @@ using namespace mlir;
 namespace {
 using namespace pgx_lower::compiler::dialect;
 namespace rt = pgx_lower::compiler::runtime;
+using pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper;
 
 // EntryStorageHelper is now defined in SubOpToControlFlowUtilities.h
 

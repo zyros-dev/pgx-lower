@@ -162,7 +162,7 @@ class ScanRefsTableLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
       funcOp.getBody().push_back(funcBody);
       auto ptr = rewriter.storeStepRequirements();
       rewriter.atStartOf(funcBody, [&](SubOpRewriter& rewriter) {
-         rewriter.loadStepRequirements(contextPtr, *typeConverter);
+         rewriter.loadStepRequirements(contextPtr, typeConverter);
          recordBatchPointer = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(getContext(), recordBatchInfoRepr), recordBatchPointer);
          mlir::Value lenRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 0);
          mlir::Value offsetRef = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getIndexType()), recordBatchPointer, 1);

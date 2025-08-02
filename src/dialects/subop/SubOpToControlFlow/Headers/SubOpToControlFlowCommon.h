@@ -48,6 +48,9 @@ extern "C" {
 #include <stack>
 #include <unordered_set>
 
+// SubOp rewriter includes (needed for template method implementations)
+#include "SubOpToControlFlowRewriter.h"
+
 // Namespace declarations
 using namespace mlir;
 
@@ -77,6 +80,14 @@ class ColumnMapping;
 /// EntryStorageHelper utility class for managing entry storage operations
 class EntryStorageHelper {
 public:
+    // MemberInfo structure for metadata about storage members
+    struct MemberInfo {
+        bool isNullable = false;
+        size_t offset;
+        size_t nullBitOffset;
+        mlir::Type stored;
+    };
+    
     // Nested LazyValueMap class
     class LazyValueMap {
     public:
@@ -88,16 +99,17 @@ public:
         void populateNullBitSet();
         void ensureRefIsRefType();
         
-        std::vector<mlir::Value>::iterator begin() { return values.begin(); }
-        std::vector<mlir::Value>::iterator end() { return values.end(); }
-        
     private:
         mlir::Value ref;
         mlir::OpBuilder& rewriter;
         mlir::Location loc;
         const EntryStorageHelper& esh;
         mlir::ArrayAttr relevantMembers;
-        std::vector<mlir::Value> values;
+        std::unordered_map<std::string, mlir::Value> values;
+        std::unordered_map<std::string, mlir::Value> nullBitCache;
+        std::optional<mlir::Value> nullBitSet;
+        std::optional<mlir::Value> nullBitSetRef;
+        bool refIsRefType = false;
     };
     
     // Static compression flag
@@ -111,20 +123,29 @@ public:
     pgx_lower::compiler::dialect::util::RefType getRefType() const;
     mlir::Value ensureRefType(mlir::Value ref, mlir::OpBuilder& rewriter, mlir::Location loc) const;
     mlir::Value getLockPointer(mlir::Value ref, mlir::OpBuilder& rewriter, mlir::Location loc);
+    mlir::Value getPointer(mlir::Value ref, std::string member, mlir::OpBuilder& rewriter, mlir::Location loc);
     
     // Value mapping methods
     LazyValueMap getValueMap(mlir::Value ref, mlir::OpBuilder& rewriter, mlir::Location loc, mlir::ArrayAttr relevantMembers);
     LazyValueMap getValueMap(mlir::Value ref, mlir::OpBuilder& rewriter, mlir::Location loc); // Overload without relevantMembers
-    mlir::Value getPointer(mlir::Value ref, const std::string& memberName, mlir::OpBuilder& rewriter, mlir::Location loc);
     std::vector<mlir::Value> resolve(mlir::Operation* op, mlir::DictionaryAttr mapping, ColumnMapping columnMapping);
     void storeFromColumns(mlir::DictionaryAttr mapping, ColumnMapping& columnMapping, mlir::Value ref, mlir::OpBuilder& rewriter, mlir::Location loc);
     void loadIntoColumns(mlir::DictionaryAttr mapping, ColumnMapping& columnMapping, mlir::Value ref, mlir::OpBuilder& rewriter, mlir::Location loc);
+    void storeOrderedValues(mlir::Value dest, mlir::ValueRange values, mlir::OpBuilder& rewriter, mlir::Location loc);
     
 private:
     mlir::Operation* op;
     pgx_lower::compiler::dialect::subop::StateMembersAttr members;
     bool withLock;
     mlir::TypeConverter* typeConverter;
+    
+    // Storage type information
+    mlir::TupleType storageType;
+    std::unordered_map<std::string, MemberInfo> memberInfos;
+    
+    // Null bit management
+    mlir::Type nullBitsetType;
+    size_t nullBitSetPos;
 };
 class SubOpRewriter;
 
