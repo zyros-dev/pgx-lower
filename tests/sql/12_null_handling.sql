@@ -1,5 +1,6 @@
 -- Test null handling operators: PgIsNullOp, PgIsNotNullOp, PgCoalesceOp
 LOAD 'pgx_lower';
+SET client_min_messages TO NOTICE;
 
 DROP TABLE IF EXISTS test_nulls;
 

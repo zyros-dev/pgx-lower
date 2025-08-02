@@ -41,7 +41,14 @@ mlir::func::CallOp pgx_lower::compiler::dialect::util::FunctionHelper::call(mlir
    if (!funcOp) {
       mlir::OpBuilder::InsertionGuard insertionGuard(builder);
       builder.setInsertionPointToStart(fnHelper.parentModule.getBody());
-      funcOp = builder.create<mlir::func::FuncOp>(fnHelper.parentModule.getLoc(), function.getMangledName(), builder.getFunctionType(function.getParameterTypes()(builder.getContext()), function.getResultTypes()(builder.getContext())), builder.getStringAttr("private"), mlir::ArrayAttr{}, mlir::ArrayAttr{});
+      funcOp =
+          builder.create<mlir::func::FuncOp>(fnHelper.parentModule.getLoc(),
+                                             function.getMangledName(),
+                                             builder.getFunctionType(function.getParameterTypes()(builder.getContext()),
+                                                                     function.getResultTypes()(builder.getContext())),
+                                             builder.getStringAttr("private"),
+                                             mlir::ArrayAttr{},
+                                             mlir::ArrayAttr{});
 
       // add zeroext to boolean parameters for conversion i1 (llvm) -> bool (C++)
       for (unsigned i = 0; i < funcOp.getNumArguments(); ++i) {

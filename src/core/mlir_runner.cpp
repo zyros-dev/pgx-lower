@@ -95,7 +95,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // Verify the module before ExecutionEngine creation
     if (failed(mlir::verify(module))) {
         logger.error("MLIR module verification failed before ExecutionEngine creation");
-        module.dump();
+        
+        // Capture module as string for proper PostgreSQL logging
+        std::string moduleStr;
+        llvm::raw_string_ostream moduleStream(moduleStr);
+        module.print(moduleStream);
+        moduleStream.flush();
+        logger.notice("=== FAILED MODULE DUMP START ===");
+        logger.notice(moduleStr);
+        logger.notice("=== FAILED MODULE DUMP END ===");
+        
         return false;
     }
     logger.notice("MLIR module verification passed - proceeding to lowering");
@@ -113,7 +122,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     
     if (!hasRelAlgOps) {
         logger.error("No RelAlg operations found in module - AST translation may have failed");
-        module.dump();
+        
+        // Capture module as string for proper PostgreSQL logging
+        std::string moduleStr;
+        llvm::raw_string_ostream moduleStream(moduleStr);
+        module.print(moduleStream);
+        moduleStream.flush();
+        logger.notice("=== NO RELALG OPS MODULE DUMP START ===");
+        logger.notice(moduleStr);
+        logger.notice("=== NO RELALG OPS MODULE DUMP END ===");
+        
         return false;
     }
     
@@ -145,7 +163,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         pm1.addPass(pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPass());
         if (failed(pm1.run(module))) {
             logger.error("Phase 1 (RelAlg → SubOp) failed!");
-            module.dump();
+            
+            // Capture module as string for proper PostgreSQL logging
+            std::string moduleStr;
+            llvm::raw_string_ostream moduleStream(moduleStr);
+            module.print(moduleStream);
+            moduleStream.flush();
+            logger.notice("=== PHASE 1 FAILED MODULE DUMP START ===");
+            logger.notice(moduleStr);
+            logger.notice("=== PHASE 1 FAILED MODULE DUMP END ===");
+            
             return false;
         }
         logger.notice("Phase 1 completed successfully");
@@ -227,7 +254,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         
         if (failed(pm.run(module))) {
             logger.error("SubOp pass FAILED: " + passName);
-            module.dump();
+            
+            // Capture module as string for proper PostgreSQL logging
+            std::string moduleStr;
+            llvm::raw_string_ostream moduleStream(moduleStr);
+            module.print(moduleStream);
+            moduleStream.flush();
+            logger.notice("=== SUBOP PASS FAILED MODULE DUMP START ===");
+            logger.notice(moduleStr);
+            logger.notice("=== SUBOP PASS FAILED MODULE DUMP END ===");
+            
             return false;
         }
         logger.notice("SubOp pass completed: " + passName);
@@ -240,7 +276,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         pm.addNestedPass<mlir::func::FuncOp>(pgx_lower::compiler::dialect::subop::createParallelizePass());
         if (failed(pm.run(module))) {
             logger.error("SubOp pass FAILED: Parallelize");
-            module.dump();
+            
+            // Capture module as string for proper PostgreSQL logging
+            std::string moduleStr;
+            llvm::raw_string_ostream moduleStream(moduleStr);
+            module.print(moduleStream);
+            moduleStream.flush();
+            logger.notice("=== PARALLELIZE FAILED MODULE DUMP START ===");
+            logger.notice(moduleStr);
+            logger.notice("=== PARALLELIZE FAILED MODULE DUMP END ===");
+            
             return false;
         }
         logger.notice("SubOp pass completed: Parallelize");
@@ -283,7 +328,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         // Verify module is valid before Phase 3
         if (failed(mlir::verify(module))) {
             logger.error("Module verification failed BEFORE Phase 3!");
-            module.dump();
+            
+            // Capture module as string for proper PostgreSQL logging
+            std::string moduleStr;
+            llvm::raw_string_ostream moduleStream(moduleStr);
+            module.print(moduleStream);
+            moduleStream.flush();
+            logger.notice("=== PRE-PHASE-3 VERIFICATION FAILED MODULE DUMP START ===");
+            logger.notice(moduleStr);
+            logger.notice("=== PRE-PHASE-3 VERIFICATION FAILED MODULE DUMP END ===");
+            
             return false;
         }
         logger.notice("Module verification passed before Phase 3");
@@ -297,7 +351,15 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
                 // Check if module is still valid after failure
                 if (failed(mlir::verify(module))) {
                     logger.error("Module became invalid during Phase 3 execution!");
-                    module.dump();
+                    
+                    // Capture module as string for proper PostgreSQL logging
+                    std::string moduleStr;
+                    llvm::raw_string_ostream moduleStream(moduleStr);
+                    module.print(moduleStream);
+                    moduleStream.flush();
+                    logger.notice("=== PHASE 3 VERIFICATION FAILED MODULE DUMP START ===");
+                    logger.notice(moduleStr);
+                    logger.notice("=== PHASE 3 VERIFICATION FAILED MODULE DUMP END ===");
                 } else {
                     logger.notice("Module is still valid after Phase 3 failure");
                 }
@@ -340,7 +402,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     if (failed(pm2.run(module))) {
         logger.error("Remaining lowering passes failed");
         logger.error("Dumping module after standard lowering failure:");
-        module.dump();
+        
+        // Capture module as string for proper PostgreSQL logging
+        std::string moduleStr;
+        llvm::raw_string_ostream moduleStream(moduleStr);
+        module.print(moduleStream);
+        moduleStream.flush();
+        logger.notice("=== STANDARD LOWERING FAILED MODULE DUMP START ===");
+        logger.notice(moduleStr);
+        logger.notice("=== STANDARD LOWERING FAILED MODULE DUMP END ===");
+        
         return false;
     }
     logger.notice("Lowered PostgreSQL typed field access MLIR to LLVM dialect!");
@@ -373,7 +444,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     if (!llvmModule) {
         logger.error("MLIR to LLVM IR translation failed - this is the root cause");
         logger.error("Check for unsupported operations or type conversion issues in the MLIR module");
-        module.dump();
+        
+        // Capture module as string for proper PostgreSQL logging
+        std::string moduleStr;
+        llvm::raw_string_ostream moduleStream(moduleStr);
+        module.print(moduleStream);
+        moduleStream.flush();
+        logger.notice("=== LLVM TRANSLATION FAILED MODULE DUMP START ===");
+        logger.notice(moduleStr);
+        logger.notice("=== LLVM TRANSLATION FAILED MODULE DUMP END ===");
+        
         return false;
     }
     logger.notice("MLIR to LLVM IR translation successful");
@@ -571,10 +651,57 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     logger.notice("Module pointer is valid, attempting to verify...");
     
     // First verify the module is valid
-    if (failed(mlir::verify(*module))) {
+    auto verifyResult = mlir::verify(*module);
+    logger.notice("Verification result obtained, checking if failed...");
+    
+    if (failed(verifyResult)) {
         logger.error("Module verification failed! Module is invalid.");
+        logger.notice("About to start module dump process...");
         logger.notice("DUMPING INVALID MODULE FOR ANALYSIS:");
-        module->dump();
+        
+        try {
+            logger.notice("=== INVALID MODULE DUMP START ===");
+            
+            // First try to print the whole module
+            try {
+                std::string moduleStr;
+                llvm::raw_string_ostream moduleStream(moduleStr);
+                module->print(moduleStream);
+                moduleStream.flush();
+                
+                if (moduleStr.length() > 8000) {
+                    logger.notice("Module is large (" + std::to_string(moduleStr.length()) + " chars), splitting output...");
+                    for (size_t i = 0; i < moduleStr.length(); i += 7500) {
+                        std::string chunk = moduleStr.substr(i, 7500);
+                        logger.notice("CHUNK " + std::to_string(i/7500 + 1) + ": " + chunk);
+                    }
+                } else {
+                    logger.notice(moduleStr);
+                }
+            } catch (...) {
+                logger.error("Module print failed, trying to print operations individually...");
+                
+                // Try to print operations individually
+                module->walk([&](mlir::Operation* op) {
+                    try {
+                        std::string opStr;
+                        llvm::raw_string_ostream opStream(opStr);
+                        op->print(opStream);
+                        opStream.flush();
+                        logger.notice("OP: " + opStr);
+                    } catch (...) {
+                        logger.error("Failed to print operation: " + op->getName().getStringRef().str());
+                    }
+                });
+            }
+            
+            logger.notice("=== INVALID MODULE DUMP END ===");
+        } catch (const std::exception& e) {
+            logger.error("Failed to dump invalid module: " + std::string(e.what()));
+        } catch (...) {
+            logger.error("Failed to dump invalid module: unknown exception");
+        }
+        
         return false;
     }
     logger.notice("Module verification passed");

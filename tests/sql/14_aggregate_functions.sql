@@ -1,5 +1,6 @@
 -- Test aggregate functions: PgSumOp, PgCountOp, PgAvgOp, PgMinOp, PgMaxOp
 LOAD 'pgx_lower';
+SET client_min_messages TO NOTICE;
 
 DROP TABLE IF EXISTS test_aggregates;
 

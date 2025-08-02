@@ -1,5 +1,6 @@
 -- Test comparison operators: PgCmpOp with all predicates (eq, ne, lt, le, gt, ge)
 LOAD 'pgx_lower';
+SET client_min_messages TO NOTICE;
 
 DROP TABLE IF EXISTS test_comparison;
 
