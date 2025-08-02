@@ -1,0 +1,8 @@
+# This file is generated content from add_postgresql_mixed_extension.
+# No point in modifying it, it will be overwritten anyway.
+
+# Default version, always set
+default_version = '1.0'
+
+# Module pathname generated from target shared library name
+module_pathname = '$libdir/pgx_lower.so'
