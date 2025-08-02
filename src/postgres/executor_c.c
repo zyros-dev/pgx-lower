@@ -38,6 +38,13 @@ static void custom_executor(QueryDesc *queryDesc, const ScanDirection direction,
     else {
         elog(NOTICE, "MLIR successfully handled the query");
     }
+    
+    // Reset the after_load flag after the first query executes
+    // This allows subsequent queries to process expressions normally
+    if (g_extension_after_load) {
+        elog(NOTICE, "Resetting g_extension_after_load flag after first query");
+        g_extension_after_load = false;
+    }
 }
 
 static void segfault_handler(const int sig) {
