@@ -104,7 +104,6 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/core/query_analyzer.cpp
         src/core/error_handling.cpp
         src/core/logging.cpp
-        src/logging/mlir_logger.cpp
     )
     target_link_libraries(mlir_unit_test PRIVATE 
         gtest
