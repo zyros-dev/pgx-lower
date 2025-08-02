@@ -1,6 +1,4 @@
-#include "../Headers/SubOpToControlFlowCommon.h"
 #include "../Headers/SubOpToControlFlowPatterns.h"
-#include "../Headers/SubOpToControlFlowRewriter.h"
 #include "../Headers/SubOpToControlFlowUtilities.h"
 
 namespace pgx_lower {
@@ -134,7 +132,7 @@ class ScanRefsContinuousViewLowering : public SubOpConversionPattern<subop::Scan
       mlir::Value contextPtr = funcBody->addArgument(ptrType, loc);
       funcOp.getBody().push_back(funcBody);
       rewriter.atStartOf(funcBody, [&](SubOpRewriter& rewriter) {
-         auto guard = rewriter.loadStepRequirements(contextPtr, *typeConverter);
+         auto guard = rewriter.loadStepRequirements(contextPtr, typeConverter);
          auto castedBuffer = rewriter.create<util::BufferCastOp>(loc, bufferType, buffer);
          startPos = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.getIndexType(), startPos);
          endPos = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.getIndexType(), endPos);

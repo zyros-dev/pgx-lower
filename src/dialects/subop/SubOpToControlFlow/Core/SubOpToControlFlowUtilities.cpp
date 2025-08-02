@@ -19,6 +19,11 @@
 
 using namespace mlir;
 
+namespace pgx_lower {
+namespace compiler {
+namespace dialect {
+namespace subop_to_cf {
+
 //===----------------------------------------------------------------------===//
 // EntryStorageHelper - Implementation
 //===----------------------------------------------------------------------===//
@@ -75,7 +80,7 @@ EntryStorageHelper::EntryStorageHelper(mlir::Operation* op, subop::StateMembersA
       storageType = mlir::TupleType::get(members.getContext(), types);
    }
 
-   mlir::Value getPointer(mlir::Value ref, std::string member, mlir::OpBuilder& rewriter, mlir::Location loc) {
+mlir::Value EntryStorageHelper::getPointer(mlir::Value ref, std::string member, mlir::OpBuilder& rewriter, mlir::Location loc) {
       const auto& memberInfo = memberInfos.at(member);
       assert(!memberInfo.isNullable);
       return rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getContext(), memberInfo.stored), ref, memberInfo.offset);
@@ -226,16 +231,17 @@ void EntryStorageHelper::loadIntoColumns(mlir::DictionaryAttr mapping, ColumnMap
 }
 
 // Additional method implementations
-EntryStorageHelper::LazyValueMap EntryStorageHelper::getValueMap(mlir::Value ref, mlir::OpBuilder& rewriter, mlir::Location loc) {
+pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper::LazyValueMap pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper::getValueMap(mlir::Value ref, mlir::OpBuilder& rewriter, mlir::Location loc) {
    // Use all members as relevant members when not specified
-   return getValueMap(ref, rewriter, loc, members);
+   return getValueMap(ref, rewriter, loc, members.getNames());
 }
 
-void EntryStorageHelper::storeOrderedValues(mlir::Value dest, mlir::ValueRange values, mlir::OpBuilder& rewriter, mlir::Location loc) {
+void pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper::storeOrderedValues(mlir::Value dest, mlir::ValueRange values, mlir::OpBuilder& rewriter, mlir::Location loc) {
     // Store values in the order they appear in the tuple type
     for (size_t i = 0; i < values.size(); ++i) {
         auto elementPtr = rewriter.create<mlir::LLVM::GEPOp>(
             loc, mlir::LLVM::LLVMPointerType::get(rewriter.getContext()),
+            rewriter.getI8Type(), // Add missing elementType
             dest, mlir::ValueRange{rewriter.create<mlir::LLVM::ConstantOp>(
                 loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0)),
                 rewriter.create<mlir::LLVM::ConstantOp>(
@@ -244,31 +250,17 @@ void EntryStorageHelper::storeOrderedValues(mlir::Value dest, mlir::ValueRange v
     }
 }
 
-mlir::Value EntryStorageHelper::getPointer(mlir::Value ref, const std::string& memberName, mlir::OpBuilder& rewriter, mlir::Location loc) {
-   // Find the member index and create a pointer to it
-   for (size_t i = 0; i < members.size(); i++) {
-      auto member = mlir::cast<pgx_lower::compiler::dialect::subop::StateMemberAttr>(members[i]);
-      if (member.getName().str() == memberName) {
-         auto refType = ensureRefType(ref, rewriter, loc);
-         return rewriter.create<pgx_lower::compiler::dialect::util::TupleElementPtrOp>(loc, 
-            pgx_lower::compiler::dialect::util::RefType::get(refType.getContext(), member.getType()), 
-            refType, i);
-      }
-   }
-   // Return null value if member not found
-   return mlir::Value();
-}
+// Note: This method is already implemented above as the primary getPointer method
 
 // Static variable definition
-bool EntryStorageHelper::compressionEnabled = true;
+bool pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper::compressionEnabled = true;
 
-// Forward declaration for runtime helpers
-namespace rt {
-   class BufferIterator {
-   public:
-      static mlir::func::CallOp iterate(mlir::OpBuilder& builder, mlir::Location loc);
-   };
-}
+} // namespace subop_to_cf
+} // namespace dialect
+} // namespace compiler
+} // namespace pgx_lower
+
+// Runtime helpers are available through the rt namespace alias
 
 namespace pgx_lower {
 namespace compiler {
@@ -383,7 +375,7 @@ void implementBufferIterationRuntime(bool parallel, mlir::Value bufferIterator, 
    funcOp.getBody().push_back(funcBody);
    auto ptr = rewriter.storeStepRequirements();
    rewriter.atStartOf(funcBody, [&](SubOpRewriter& funcRewriter) {
-      auto guard = funcRewriter.loadStepRequirements(contextPtr, typeConverter);
+      auto guard = funcRewriter.loadStepRequirements(contextPtr, &typeConverter);
       auto castedBuffer = funcRewriter.create<util::BufferCastOp>(loc, util::BufferType::get(funcRewriter.getContext(), entryType), buffer);
       auto start = funcRewriter.create<mlir::arith::ConstantIndexOp>(loc, 0);
       auto end = funcRewriter.create<util::BufferGetLen>(loc, funcRewriter.getIndexType(), castedBuffer);

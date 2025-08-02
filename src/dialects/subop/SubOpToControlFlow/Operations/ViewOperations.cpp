@@ -1,6 +1,4 @@
-#include "../Headers/SubOpToControlFlowCommon.h"
 #include "../Headers/SubOpToControlFlowPatterns.h"
-#include "../Headers/SubOpToControlFlowRewriter.h"
 #include "../Headers/SubOpToControlFlowUtilities.h"
 
 namespace pgx_lower {
@@ -52,8 +50,12 @@ class SortLowering : public SubOpConversionPattern<subop::CreateSortedViewOp> {
          auto leftVals = storageHelper.getValueMap(funcBody->getArgument(0), rewriter, sortOp->getLoc(), sortOp.getSortBy());
          auto rightVals = storageHelper.getValueMap(funcBody->getArgument(1), rewriter, sortOp->getLoc(), sortOp.getSortBy());
          std::vector<mlir::Value> args;
-         args.insert(args.end(), leftVals.begin(), leftVals.end());
-         args.insert(args.end(), rightVals.begin(), rightVals.end());
+         for (const auto& pair : leftVals) {
+             args.push_back(pair.second);
+         }
+         for (const auto& pair : rightVals) {
+             args.push_back(pair.second);
+         }
          Block* sortLambda = &sortOp.getRegion().front();
          rewriter.inlineBlock<tuples::ReturnOpAdaptor>(sortLambda, args, [&](tuples::ReturnOpAdaptor adaptor) {
             rewriter.create<mlir::func::ReturnOp>(sortOp->getLoc(), adaptor.getResults());
