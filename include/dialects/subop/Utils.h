@@ -1,11 +1,11 @@
-#ifndef LINGODB_COMPILER_DIALECT_SUBOPERATOR_UTILS_H
-#define LINGODB_COMPILER_DIALECT_SUBOPERATOR_UTILS_H
+#ifndef PGX_LOWER_COMPILER_DIALECT_SUBOPERATOR_UTILS_H
+#define PGX_LOWER_COMPILER_DIALECT_SUBOPERATOR_UTILS_H
 #include "dialects/tuplestream/TupleStreamOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include <unordered_map>
 namespace pgx_lower::compiler::dialect::subop {
 class MapCreationHelper {
-   std::unordered_map<dialect::tuples::Column*, size_t> columnToIndex;
+   std::unordered_map<pgx_lower::compiler::dialect::tuples::Column*, size_t> columnToIndex;
    std::vector<mlir::Attribute> colRefs;
    mlir::Block* mapBlock;
    mlir::MLIRContext* context;
@@ -14,7 +14,7 @@ class MapCreationHelper {
    MapCreationHelper(mlir::MLIRContext* context) : context(context) {
       mapBlock = new mlir::Block;
    }
-   mlir::Value access(dialect::tuples::ColumnRefAttr columnRefAttr, mlir::Location loc) {
+   mlir::Value access(pgx_lower::compiler::dialect::tuples::ColumnRefAttr columnRefAttr, mlir::Location loc) {
       // TODO Phase 5: Fix when proper Column management is implemented
       auto& keyColumn = columnRefAttr.getColumn();
       if (columnToIndex.contains(&keyColumn)) {
@@ -41,4 +41,4 @@ class MapCreationHelper {
 };
 } //end namespace pgx_lower::compiler::dialect::subop
 
-#endif //LINGODB_COMPILER_DIALECT_SUBOPERATOR_UTILS_H
+#endif //PGX_LOWER_COMPILER_DIALECT_SUBOPERATOR_UTILS_H

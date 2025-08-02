@@ -66,8 +66,8 @@ void _PG_init(void) {
     elog(NOTICE, "Installing custom executor hook...");
     prev_ExecutorRun_hook = ExecutorRun_hook;
     ExecutorRun_hook = custom_executor;
-    // Register SIGSEGV handler for debugging
-    elog(NOTICE, "Registering custom sigsegv handler!");
+    // Enable SIGSEGV handler for proper debugging
+    elog(NOTICE, "SIGSEGV handler enabled for debugging!");
     signal(SIGSEGV, segfault_handler);
     
     // Mark that extension has been loaded - this recreates MLIR context

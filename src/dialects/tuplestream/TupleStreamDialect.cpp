@@ -1,4 +1,5 @@
 #include "dialects/tuplestream/TupleStreamDialect.h"
+#include "dialects/tuplestream/TupleStreamOps.h"
 #include "dialects/tuplestream/Column.h"
 #include "dialects/tuplestream/ColumnManager.h"
 #include "mlir/IR/Builders.h"
@@ -39,9 +40,10 @@ void pgx_lower::compiler::dialect::tuples::ColumnRefAttr::print(mlir::AsmPrinter
 }
 
 void TupleStreamDialect::initialize() {
-   // addOperations<
-   //    // Add operations when needed
-   // >();
+   addOperations<
+#define GET_OP_LIST
+#include "TupleStreamOps.cpp.inc"
+   >();
    
    // Initialize the column manager
    columnManager.setContext(getContext());

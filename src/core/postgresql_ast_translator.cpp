@@ -1988,7 +1988,7 @@ auto PostgreSQLASTTranslator::generateDBDialectExpression(mlir::OpBuilder& build
                 }
                 
                 // Ensure ColumnManager has context set
-                columnManager.setContext(builder.getContext());
+                columnManager.setContext(&context_);
                 
                 logger_.notice("About to create GetColumnOp with column type");
                 
