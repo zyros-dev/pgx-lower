@@ -81,3 +81,6 @@ Testing
 *.out
 *.tmp
 *.diffs
+
+# Dummy entry for file editing permissions
+dummy_placeholder
