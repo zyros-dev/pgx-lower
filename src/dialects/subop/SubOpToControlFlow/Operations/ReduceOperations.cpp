@@ -1,6 +1,4 @@
-#include "../Headers/SubOpToControlFlowCommon.h"
 #include "../Headers/SubOpToControlFlowPatterns.h"
-#include "../Headers/SubOpToControlFlowRewriter.h"
 #include "../Headers/SubOpToControlFlowUtilities.h"
 
 namespace pgx_lower {

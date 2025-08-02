@@ -46,6 +46,7 @@ compile_commands.json
 
 # CMake build directories
 build/
+_deps/
 fast_output.txt
 
 

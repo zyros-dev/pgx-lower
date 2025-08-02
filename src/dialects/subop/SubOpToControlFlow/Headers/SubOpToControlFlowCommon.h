@@ -48,8 +48,7 @@ extern "C" {
 #include <stack>
 #include <unordered_set>
 
-// SubOp rewriter includes (needed for template method implementations)
-#include "SubOpToControlFlowRewriter.h"
+// Forward declaration - full SubOpRewriter definition will be included later
 
 // Namespace declarations
 using namespace mlir;
@@ -98,6 +97,10 @@ public:
         mlir::Value loadValue(const std::string& name);
         void populateNullBitSet();
         void ensureRefIsRefType();
+        
+        // Iterator methods for range-based iteration
+        auto begin() const { return values.begin(); }
+        auto end() const { return values.end(); }
         
     private:
         mlir::Value ref;
@@ -185,14 +188,7 @@ class SubOpConversionPattern : public AbstractSubOpConversionPattern {
                           mlir::PatternBenefit benefit = 1)
       : AbstractSubOpConversionPattern(&typeConverter, std::string(OpT::getOperationName()), benefit,
                                        context) {}
-   mlir::LogicalResult matchAndRewrite(mlir::Operation* op, SubOpRewriter& rewriter) override {
-      std::vector<mlir::Value> newOperands;
-      for (auto operand : op->getOperands()) {
-         newOperands.push_back(rewriter.getMapped(operand));
-      }
-      OpAdaptor adaptor(newOperands);
-      return matchAndRewrite(mlir::cast<OpT>(op), adaptor, rewriter);
-   }
+   mlir::LogicalResult matchAndRewrite(mlir::Operation* op, SubOpRewriter& rewriter) override;
    virtual mlir::LogicalResult matchAndRewrite(OpT op, OpAdaptor adaptor, SubOpRewriter& rewriter) const = 0;
    virtual ~SubOpConversionPattern() {};
 };
@@ -205,18 +201,7 @@ class SubOpTupleStreamConsumerConversionPattern : public AbstractSubOpConversion
                                              mlir::PatternBenefit benefit = numConsumerParams)
       : AbstractSubOpConversionPattern(&typeConverter, std::string(OpType::getOperationName()), benefit,
                                        context) {}
-   mlir::LogicalResult matchAndRewrite(mlir::Operation* op, SubOpRewriter& rewriter) override {
-      auto castedOp = mlir::cast<OpType>(op);
-      auto stream = castedOp.getStream();
-      return rewriter.implementStreamConsumer(stream, [&](SubOpRewriter& rewriter, ColumnMapping& mapping) {
-         std::vector<mlir::Value> newOperands;
-         for (auto operand : op->getOperands()) {
-            newOperands.push_back(rewriter.getMapped(operand));
-         }
-         OpAdaptor adaptor(newOperands);
-         return matchAndRewrite(castedOp, adaptor, rewriter, mapping);
-      });
-   }
+   mlir::LogicalResult matchAndRewrite(mlir::Operation* op, SubOpRewriter& rewriter) override;
    virtual mlir::LogicalResult matchAndRewrite(OpType op, OpAdaptor adaptor, SubOpRewriter& rewriter, ColumnMapping& mapping) const = 0;
    virtual ~SubOpTupleStreamConsumerConversionPattern() {};
 };

@@ -1,6 +1,4 @@
-#include "../Headers/SubOpToControlFlowCommon.h"
 #include "../Headers/SubOpToControlFlowPatterns.h"
-#include "../Headers/SubOpToControlFlowRewriter.h"
 #include "../Headers/SubOpToControlFlowUtilities.h"
 
 namespace pgx_lower {
@@ -277,8 +275,12 @@ class CreateSegmentTreeViewLowering : public SubOpConversionPattern<subop::Creat
             auto leftValues = viewStorageHelper.getValueMap(left, rewriter, loc);
             auto rightValues = viewStorageHelper.getValueMap(right, rewriter, loc);
             std::vector<mlir::Value> args;
-            args.insert(args.end(), leftValues.begin(), leftValues.end());
-            args.insert(args.end(), rightValues.begin(), rightValues.end());
+            for (const auto& pair : leftValues) {
+                args.push_back(pair.second);
+            }
+            for (const auto& pair : rightValues) {
+                args.push_back(pair.second);
+            }
             Block* sortLambda = &createOp.getCombineFn().front();
             rewriter.inlineBlock<tuples::ReturnOpAdaptor>(sortLambda, args, [&](tuples::ReturnOpAdaptor adaptor) {
                viewStorageHelper.storeOrderedValues(dest, adaptor.getResults(), rewriter, loc);
@@ -327,8 +329,12 @@ class CreateHeapLowering : public SubOpConversionPattern<subop::CreateHeapOp> {
          auto leftVals = storageHelper.getValueMap(left, rewriter, loc, heapOp.getSortBy());
          auto rightVals = storageHelper.getValueMap(right, rewriter, loc, heapOp.getSortBy());
          std::vector<mlir::Value> args;
-         args.insert(args.end(), leftVals.begin(), leftVals.end());
-         args.insert(args.end(), rightVals.begin(), rightVals.end());
+         for (const auto& pair : leftVals) {
+             args.push_back(pair.second);
+         }
+         for (const auto& pair : rightVals) {
+             args.push_back(pair.second);
+         }
          Block* sortLambda = &heapOp.getRegion().front();
          rewriter.inlineBlock<tuples::ReturnOpAdaptor>(sortLambda, args, [&](tuples::ReturnOpAdaptor adaptor) {
             rewriter.create<mlir::func::ReturnOp>(loc, adaptor.getResults());

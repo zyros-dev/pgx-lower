@@ -1,6 +1,4 @@
-#include "../Headers/SubOpToControlFlowCommon.h"
 #include "../Headers/SubOpToControlFlowPatterns.h"
-#include "../Headers/SubOpToControlFlowRewriter.h"
 #include "../Headers/SubOpToControlFlowUtilities.h"
 
 namespace pgx_lower {
@@ -116,8 +114,8 @@ class PureLookupHashMapLowering : public SubOpTupleStreamConsumerConversionPatte
       mlir::Value hash = hashKeys(lookupKey, rewriter, lookupOp->getLoc());
       auto equalFnBuilder = [&lookupOp](mlir::OpBuilder& rewriter, EntryStorageHelper::LazyValueMap left, std::vector<Value> right) -> Value {
          std::vector<mlir::Value> arguments;
-         arguments.insert(arguments.end(), left.begin(), left.end());
-         arguments.insert(arguments.end(), right.begin(), right.end());
+         for (const auto& pair : left) { arguments.push_back(pair.second); }
+         for (const auto& value : right) { arguments.push_back(value); }
          auto res = inlineBlock(&lookupOp.getEqFn().front(), rewriter, arguments);
          return res[0];
       };
@@ -237,8 +235,8 @@ class PureLookupPreAggregationHtLowering : public SubOpTupleStreamConsumerConver
       ASSERT_WITH_OP(!lookupOp.getEqFn().empty(), lookupOp, "LookupOp must have an equality function");
       auto equalFnBuilder = [&lookupOp](mlir::OpBuilder& rewriter, EntryStorageHelper::LazyValueMap left, std::vector<Value> right) -> Value {
          std::vector<mlir::Value> arguments;
-         arguments.insert(arguments.end(), left.begin(), left.end());
-         arguments.insert(arguments.end(), right.begin(), right.end());
+         for (const auto& pair : left) { arguments.push_back(pair.second); }
+         for (const auto& value : right) { arguments.push_back(value); }
          auto res = inlineBlock(&lookupOp.getEqFn().front(), rewriter, arguments);
          return res[0];
       };
@@ -353,8 +351,8 @@ class LookupHashMultiMapLowering : public SubOpTupleStreamConsumerConversionPatt
       mlir::Value hash = hashKeys(lookupKey, rewriter, lookupOp->getLoc());
       auto equalFnBuilder = [&lookupOp](mlir::OpBuilder& rewriter, EntryStorageHelper::LazyValueMap left, std::vector<Value> right) -> Value {
          std::vector<mlir::Value> arguments;
-         arguments.insert(arguments.end(), left.begin(), left.end());
-         arguments.insert(arguments.end(), right.begin(), right.end());
+         for (const auto& pair : left) { arguments.push_back(pair.second); }
+         for (const auto& value : right) { arguments.push_back(value); }
          auto res = inlineBlock(&lookupOp.getEqFn().front(), rewriter, arguments);
          return res[0];
       };
@@ -471,8 +469,8 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
       mlir::Value hashTable = adaptor.getState();
       auto equalFnBuilder = [&insertOp](mlir::OpBuilder& rewriter, EntryStorageHelper::LazyValueMap left, std::vector<Value> right) -> Value {
          std::vector<mlir::Value> arguments;
-         arguments.insert(arguments.end(), left.begin(), left.end());
-         arguments.insert(arguments.end(), right.begin(), right.end());
+         for (const auto& pair : left) { arguments.push_back(pair.second); }
+         for (const auto& value : right) { arguments.push_back(value); }
          auto res = inlineBlock(&insertOp.getEqFn().front(), rewriter, arguments);
          return res[0];
       };
@@ -593,8 +591,8 @@ class LookupPreAggrHtFragment : public SubOpTupleStreamConsumerConversionPattern
       mlir::Value hash = hashKeys(lookupKey, rewriter, lookupOp->getLoc());
       auto equalFnBuilder = [&lookupOp](mlir::OpBuilder& rewriter, EntryStorageHelper::LazyValueMap left, std::vector<Value> right) -> Value {
          std::vector<mlir::Value> arguments;
-         arguments.insert(arguments.end(), left.begin(), left.end());
-         arguments.insert(arguments.end(), right.begin(), right.end());
+         for (const auto& pair : left) { arguments.push_back(pair.second); }
+         for (const auto& value : right) { arguments.push_back(value); }
          auto res = inlineBlock(&lookupOp.getEqFn().front(), rewriter, arguments);
          return res[0];
       };
@@ -692,8 +690,8 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
       mlir::Value hashTable = adaptor.getState();
       auto equalFnBuilder = [&lookupOp](mlir::OpBuilder& rewriter, EntryStorageHelper::LazyValueMap left, std::vector<Value> right) -> Value {
          std::vector<mlir::Value> arguments;
-         arguments.insert(arguments.end(), left.begin(), left.end());
-         arguments.insert(arguments.end(), right.begin(), right.end());
+         for (const auto& pair : left) { arguments.push_back(pair.second); }
+         for (const auto& value : right) { arguments.push_back(value); }
          auto res = inlineBlock(&lookupOp.getEqFn().front(), rewriter, arguments);
          return res[0];
       };

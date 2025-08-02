@@ -1,6 +1,4 @@
-#include "../Headers/SubOpToControlFlowCommon.h"
 #include "../Headers/SubOpToControlFlowPatterns.h"
-#include "../Headers/SubOpToControlFlowRewriter.h"
 #include "../Headers/SubOpToControlFlowUtilities.h"
 
 namespace pgx_lower {
@@ -22,12 +20,7 @@ using subop_to_control_flow::inlineBlock;
 // Forward declarations for helper functions and classes
 
 
-// Helper function for getting hash table key-value types
-static mlir::TupleType getHtKVType(subop::HashMapType t, mlir::TypeConverter& converter);
-static mlir::TupleType getHtKVType(subop::PreAggrHtType t, mlir::TypeConverter& converter);
-
-// Include forward declarations for EntryStorageHelper
-class EntryStorageHelper;
+// EntryStorageHelper is defined in SubOpToControlFlowUtilities.cpp
 
 ////////////////////////////////////////////////////////////////////////////////
 /////////////////////////// Thread-Local Merge Operations ////////////////////
@@ -159,8 +152,8 @@ class MergeThreadLocalSimpleState : public SubOpConversionPattern<subop::MergeOp
             auto leftValues = storageHelper.getValueMap(left, rewriter, loc);
             auto rightValues = storageHelper.getValueMap(right, rewriter, loc);
             std::vector<mlir::Value> args;
-            args.insert(args.end(), leftValues.begin(), leftValues.end());
-            args.insert(args.end(), rightValues.begin(), rightValues.end());
+            for (const auto& pair : leftValues) { args.push_back(pair.second); }
+            for (const auto& pair : rightValues) { args.push_back(pair.second); }
             for (size_t i = 0; i < args.size(); i++) {
                auto expectedType = mergeOp.getCombineFn().front().getArgument(i).getType();
                if (args[i].getType() != expectedType) {
@@ -228,8 +221,8 @@ class MergeThreadLocalHashMap : public SubOpConversionPattern<subop::MergeOp> {
                auto leftValues = valStorageHelper.getValueMap(left, rewriter, loc);
                auto rightValues = valStorageHelper.getValueMap(right, rewriter, loc);
                std::vector<mlir::Value> args;
-               args.insert(args.end(), leftValues.begin(), leftValues.end());
-               args.insert(args.end(), rightValues.begin(), rightValues.end());
+               for (const auto& pair : leftValues) { args.push_back(pair.second); }
+               for (const auto& pair : rightValues) { args.push_back(pair.second); }
                for (size_t i = 0; i < args.size(); i++) {
                   auto expectedType = mergeOp.getCombineFn().front().getArgument(i).getType();
                   if (args[i].getType() != expectedType) {
@@ -253,8 +246,8 @@ class MergeThreadLocalHashMap : public SubOpConversionPattern<subop::MergeOp> {
             auto leftKeys = keyStorageHelper.getValueMap(left, rewriter, loc);
             auto rightKeys = keyStorageHelper.getValueMap(right, rewriter, loc);
             std::vector<mlir::Value> args;
-            args.insert(args.end(), leftKeys.begin(), leftKeys.end());
-            args.insert(args.end(), rightKeys.begin(), rightKeys.end());
+            for (const auto& pair : leftKeys) { args.push_back(pair.second); }
+            for (const auto& pair : rightKeys) { args.push_back(pair.second); }
             auto res = inlineBlock(&mergeOp.getEqFn().front(), rewriter, args)[0];
             rewriter.create<mlir::func::ReturnOp>(loc, res);
          });
@@ -314,8 +307,8 @@ class MergePreAggrHashMap : public SubOpConversionPattern<subop::MergeOp> {
                auto leftValues = valStorageHelper.getValueMap(left, rewriter, loc);
                auto rightValues = valStorageHelper.getValueMap(right, rewriter, loc);
                std::vector<mlir::Value> args;
-               args.insert(args.end(), leftValues.begin(), leftValues.end());
-               args.insert(args.end(), rightValues.begin(), rightValues.end());
+               for (const auto& pair : leftValues) { args.push_back(pair.second); }
+               for (const auto& pair : rightValues) { args.push_back(pair.second); }
                for (size_t i = 0; i < args.size(); i++) {
                   auto expectedType = mergeOp.getCombineFn().front().getArgument(i).getType();
                   if (args[i].getType() != expectedType) {
@@ -339,8 +332,8 @@ class MergePreAggrHashMap : public SubOpConversionPattern<subop::MergeOp> {
             auto leftKeys = keyStorageHelper.getValueMap(left, rewriter, loc);
             auto rightKeys = keyStorageHelper.getValueMap(right, rewriter, loc);
             std::vector<mlir::Value> args;
-            args.insert(args.end(), leftKeys.begin(), leftKeys.end());
-            args.insert(args.end(), rightKeys.begin(), rightKeys.end());
+            for (const auto& pair : leftKeys) { args.push_back(pair.second); }
+            for (const auto& pair : rightKeys) { args.push_back(pair.second); }
             auto res = inlineBlock(&mergeOp.getEqFn().front(), rewriter, args)[0];
             rewriter.create<mlir::func::ReturnOp>(loc, res);
          });
