@@ -34,10 +34,10 @@ def TupleStream_ReturnOp : TupleStream_Op<"return", [Pure,ReturnLike,Terminator]
 def GetColumnOp : TupleStream_Op<"getcol", [Pure]> {
     let summary = "get column operation";
 
-    // TODO Phase 5: Change back to TupleStream_Tuple once type generation is fixed
-    let arguments = (ins AnyType:$tuple, ColumnRefAttr:$attr);
+    // Fixed: Match LingoDB's exact argument order and use proper TupleStream_Tuple type
+    let arguments = (ins ColumnRefAttr:$attr, TupleStream_Tuple:$tuple);
     let results = (outs AnyType : $res);
-    let assemblyFormat = [{  $tuple `[` $attr `]` `:` type($tuple) `->` type($res) attr-dict }];
+    let assemblyFormat = [{  $tuple custom<CustRef>($attr) `:` type($res) attr-dict }];
 }
 
 def GetParamVal: TupleStream_Op<"get_param_val", [Pure]> {
