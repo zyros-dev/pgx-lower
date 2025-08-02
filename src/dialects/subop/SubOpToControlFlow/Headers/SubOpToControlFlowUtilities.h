@@ -57,112 +57,40 @@ bool checkAtomicStore(mlir::Operation* op);
 template <class T>
 std::vector<T> repeat(T val, size_t times);
 
-// LingoDB-compatible terminator utilities
+// Core terminator utilities - consolidated LingoDB-compatible functions
 namespace TerminatorUtils {
-    
-    // Core ensureTerminator utility - ensures all blocks in a region have proper terminators
+    // Essential terminator management
     void ensureTerminator(mlir::Region& region, mlir::OpBuilder& rewriter, mlir::Location loc);
-    
-    // Specialized terminator utilities for specific operation types
     void ensureIfOpTermination(mlir::scf::IfOp ifOp, mlir::OpBuilder& rewriter, mlir::Location loc);
     void ensureForOpTermination(mlir::scf::ForOp forOp, mlir::OpBuilder& rewriter, mlir::Location loc);
     void ensureFunctionTermination(mlir::func::FuncOp funcOp, mlir::OpBuilder& rewriter);
-    
-    // Context-aware terminator creation
     void createContextAppropriateTerminator(mlir::Block* block, mlir::OpBuilder& rewriter, mlir::Location loc);
-    
-    // Template-based terminator processing for generic operations
-    template<typename OperationType>
-    void processOperationTerminators(OperationType op, mlir::OpBuilder& rewriter, mlir::Location loc);
     
     // Validation utilities
     bool hasTerminator(mlir::Block& block);
     bool isValidTerminator(mlir::Operation* op);
-    
-    // Systematic terminator analysis
     std::vector<mlir::Block*> findBlocksWithoutTerminators(mlir::Region& region);
     void reportTerminatorStatus(mlir::Operation* rootOp);
 }
 
-// Runtime Call Termination utilities - complete runtime call safety patterns
+// Runtime call termination - focused on essential PostgreSQL and LingoDB patterns
 namespace RuntimeCallTermination {
-    
-    // Core runtime call termination utilities
-    template<typename CallOpType>
-    void ensureFunctionCallTermination(CallOpType callOp, mlir::OpBuilder& rewriter, mlir::Location loc);
-    
-    // PostgreSQL runtime call termination patterns
+    // Core runtime call safety
     void ensurePostgreSQLCallTermination(mlir::func::CallOp callOp, mlir::OpBuilder& rewriter, mlir::Location loc);
-    
-    // LingoDB runtime call termination patterns  
     void ensureLingoDRuntimeCallTermination(mlir::Operation* runtimeCall, mlir::OpBuilder& rewriter, mlir::Location loc);
     
-    // Comprehensive runtime call safety
-    void applyRuntimeCallSafetyToBlock(mlir::Block* block, mlir::OpBuilder& rewriter);
-    void applyRuntimeCallSafetyToRegion(mlir::Region& region, mlir::OpBuilder& rewriter);
+    // Apply safety patterns
     void applyRuntimeCallSafetyToOperation(mlir::Operation* rootOp, mlir::OpBuilder& rewriter);
     
-    // Runtime call termination analysis and validation
-    size_t countRuntimeCallsWithoutTermination(mlir::Operation* rootOp);
-    void reportRuntimeCallSafetyStatus(mlir::Operation* rootOp);
-    
-    // Systematic runtime call termination patterns
+    // Critical function-specific patterns
     void ensureStoreIntResultTermination(mlir::func::CallOp callOp, mlir::OpBuilder& rewriter, mlir::Location loc);
-    void ensureReadNextTupleTermination(mlir::func::CallOp callOp, mlir::OpBuilder& rewriter, mlir::Location loc);
-    void ensureGetIntFieldTermination(mlir::func::CallOp callOp, mlir::OpBuilder& rewriter, mlir::Location loc);
     
-    // LingoDB pattern completion
-    void ensureHashtableCallTermination(mlir::Operation* rtCall, mlir::OpBuilder& rewriter, mlir::Location loc);
-    void ensureGrowingBufferCallTermination(mlir::Operation* rtCall, mlir::OpBuilder& rewriter, mlir::Location loc);
-    void ensurePreAggregationHashtableCallTermination(mlir::Operation* rtCall, mlir::OpBuilder& rewriter, mlir::Location loc);
-    void ensureThreadLocalCallTermination(mlir::Operation* rtCall, mlir::OpBuilder& rewriter, mlir::Location loc);
-    
-    // Comprehensive pattern validation
-    bool isRuntimeCallWithoutTermination(mlir::Operation* op);
+    // Validation
     bool isPostgreSQLRuntimeCall(mlir::func::CallOp callOp);
     bool isLingoDRuntimeCall(mlir::Operation* op);
     
-    // Extended LingoDB completeness patterns
-    void ensureTemplateGenerationTermination(mlir::Operation* templateOp, mlir::OpBuilder& rewriter, mlir::Location loc);
-    void ensureBufferIteratorTermination(mlir::Operation* bufferOp, mlir::OpBuilder& rewriter, mlir::Location loc);
-    void ensureRuntimeFunctionGenerationTermination(mlir::func::FuncOp funcOp, mlir::OpBuilder& rewriter);
-    void ensureResultStorageTermination(mlir::Operation* resultOp, mlir::OpBuilder& rewriter, mlir::Location loc);
+    // Comprehensive LingoDB pattern application
     void applyComprehensiveLingoDRuntimeTermination(mlir::Operation* rootOp, mlir::OpBuilder& rewriter);
-}
-
-// Advanced Terminator Processing - LingoDB-style systematic termination management
-namespace AdvancedTerminatorProcessing {
-    
-    // Core terminator management functions matching LingoDB patterns
-    void ensureRegionTermination(mlir::Region& region, mlir::PatternRewriter& rewriter, mlir::Location loc);
-    void ensureFunctionTermination(mlir::func::FuncOp funcOp, mlir::PatternRewriter& rewriter, mlir::Location loc);
-    bool hasProperTermination(mlir::Block* block);
-    
-    // Template-based terminator extraction and processing
-    template<typename OpType>
-    void ensureOperationTermination(OpType op, mlir::PatternRewriter& rewriter, mlir::Location loc);
-    
-    // Block inlining with terminator handling
-    void inlineBlockWithTermination(mlir::Block* source, mlir::Block* target, mlir::PatternRewriter& rewriter);
-}
-
-// PostgreSQL Integration Utilities - Memory context aware termination
-namespace PostgreSQLIntegration {
-    
-    // PostgreSQL memory context aware termination
-    void ensurePostgreSQLCompatibleTermination(mlir::Block* block, mlir::PatternRewriter& rewriter, mlir::Location loc);
-    void handleMemoryContextInvalidation(mlir::Block* block, mlir::PatternRewriter& rewriter);
-}
-
-// Defensive Programming Framework - Comprehensive validation and repair
-namespace DefensiveProgramming {
-    
-    // Comprehensive block validation
-    struct BlockTerminationValidator {
-        static bool validateBlock(mlir::Block* block);
-        static void repairBlock(mlir::Block* block, mlir::PatternRewriter& rewriter, mlir::Location loc);
-        static void addDefensiveTermination(mlir::Block* block, mlir::PatternRewriter& rewriter, mlir::Location loc);
-    };
 }
 
 } // namespace subop_to_control_flow
@@ -177,93 +105,17 @@ std::vector<T> repeat(T val, size_t times) {
    return res;
 }
 
-// Template implementation for terminator processing
+// Simplified template implementations - only essential functionality
 namespace TerminatorUtils {
 
+// Simple operation processing without complex template abstractions
 template<typename OperationType>
 void processOperationTerminators(OperationType op, mlir::OpBuilder& rewriter, mlir::Location loc) {
-    // Process all regions in the operation
     for (auto& region : op->getRegions()) {
         ensureTerminator(region, rewriter, loc);
     }
 }
 
 } // namespace TerminatorUtils
-
-// Template implementation for runtime call termination
-namespace RuntimeCallTermination {
-
-template<typename CallOpType>
-void ensureFunctionCallTermination(CallOpType callOp, mlir::OpBuilder& rewriter, mlir::Location loc) {
-    if (!callOp) return;
-    
-    auto block = callOp->getBlock();
-    if (!block || block->getTerminator()) return;
-    
-    // Set insertion point after the call operation
-    rewriter.setInsertionPointAfter(callOp);
-    
-    // Determine appropriate terminator based on context
-    mlir::Operation* parentOp = block->getParentOp();
-    
-    if (auto forOp = parentOp->getParentOfType<mlir::scf::ForOp>()) {
-        // Inside a for loop - use YieldOp
-        rewriter.create<mlir::scf::YieldOp>(loc);
-    } else if (auto ifOp = parentOp->getParentOfType<mlir::scf::IfOp>()) {
-        // Inside an if statement - use YieldOp  
-        rewriter.create<mlir::scf::YieldOp>(loc);
-    } else if (auto whileOp = parentOp->getParentOfType<mlir::scf::WhileOp>()) {
-        // Inside a while loop - use YieldOp
-        rewriter.create<mlir::scf::YieldOp>(loc);
-    } else if (auto funcOp = parentOp->getParentOfType<mlir::func::FuncOp>()) {
-        // Inside a function - use ReturnOp
-        if (funcOp.getFunctionType().getNumResults() == 0) {
-            rewriter.create<mlir::func::ReturnOp>(loc);
-        } else {
-            // For functions with return values, create zero return
-            auto zeroConstant = rewriter.create<mlir::arith::ConstantIntOp>(loc, 0, 32);
-            rewriter.create<mlir::func::ReturnOp>(loc, mlir::ValueRange{zeroConstant});
-        }
-    } else {
-        // Default fallback - use YieldOp
-        rewriter.create<mlir::scf::YieldOp>(loc);
-    }
-}
-
-} // namespace RuntimeCallTermination
-
-// Template implementation for advanced terminator processing
-namespace AdvancedTerminatorProcessing {
-
-template<typename OpType>
-void ensureOperationTermination(OpType op, mlir::PatternRewriter& rewriter, mlir::Location loc) {
-    if (!op) return;
-    
-    // Process all regions in the operation
-    for (auto& region : op->getRegions()) {
-        ensureRegionTermination(region, rewriter, loc);
-    }
-    
-    // Apply specialized termination based on operation type
-    if constexpr (std::is_same_v<OpType, mlir::scf::IfOp>) {
-        TerminatorUtils::ensureIfOpTermination(op, rewriter, loc);
-    } else if constexpr (std::is_same_v<OpType, mlir::scf::ForOp>) {
-        TerminatorUtils::ensureForOpTermination(op, rewriter, loc);
-    } else if constexpr (std::is_same_v<OpType, mlir::func::FuncOp>) {
-        ensureFunctionTermination(op, rewriter, loc);
-    } else {
-        // Generic termination for other operation types
-        for (auto& region : op->getRegions()) {
-            for (auto& block : region.getBlocks()) {
-                if (!block.getTerminator()) {
-                    rewriter.setInsertionPointToEnd(&block);
-                    TerminatorUtils::createContextAppropriateTerminator(&block, rewriter, loc);
-                }
-            }
-        }
-    }
-}
-
-} // namespace AdvancedTerminatorProcessing
 
 } // namespace subop_to_control_flow

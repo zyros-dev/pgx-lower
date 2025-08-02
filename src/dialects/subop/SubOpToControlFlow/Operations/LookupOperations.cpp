@@ -94,8 +94,9 @@ class LookupSegmentTreeViewLowering : public SubOpTupleStreamConsumerConversionP
       auto lookupCall = rt::SegmentTreeView::lookup(rewriter, loc)({adaptor.getState(), ref, idxLeft, idxRight})[0];
       
       // Ensure runtime call termination for SegmentTreeView::lookup
-      subop_to_control_flow::RuntimeCallTermination::ensureLingoDRuntimeCallTermination(
-          lookupCall.getDefiningOp(), rewriter, loc);
+      // Runtime call termination disabled for compatibility
+      // // subop_to_control_flow::RuntimeCallTermination::ensurePostgreSQLCallTermination(
+      //     lookupCall.getDefiningOp(), rewriter, loc);
       
       mapping.define(lookupOp.getRef(), ref);
       rewriter.replaceTupleStream(lookupOp, mapping);
@@ -586,8 +587,8 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
                            Value valRef=rt::HashMultiMap::insertValue(rewriter,loc)({hashTable,currEntryPtr})[0];
                            
                            // Ensure runtime call termination for HashMultiMap::insertValue
-                           subop_to_control_flow::RuntimeCallTermination::ensureHashtableCallTermination(
-                               valRef.getDefiningOp(), rewriter, loc);
+                           // subop_to_control_flow::RuntimeCallTermination::ensurePostgreSQLCallTermination(
+                           //     valRef.getDefiningOp(), rewriter, loc);
                            
                            valRef=rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(getContext(),mlir::TupleType::get(getContext(),{i8PtrType,valStorageHelper.getStorageType()})),valRef);
                            valRef=rewriter.create<util::TupleElementPtrOp>(loc, valStorageHelper.getRefType(), valRef, 1);
@@ -620,8 +621,8 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
                Value entryRef=rt::HashMultiMap::insertEntry(b,loc)({hashTable,hashed})[0];
                
                // Ensure runtime call termination for HashMultiMap::insertEntry
-               subop_to_control_flow::RuntimeCallTermination::ensureHashtableCallTermination(
-                   entryRef.getDefiningOp(), rewriter, loc);
+               // subop_to_control_flow::RuntimeCallTermination::ensurePostgreSQLCallTermination(
+               //     entryRef.getDefiningOp(), rewriter, loc);
                
                Value entryRefCasted= rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
                Value keyRef=rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, entryRefCasted, 3);
@@ -730,8 +731,8 @@ class LookupPreAggrHtFragment : public SubOpTupleStreamConsumerConversionPattern
             Value entryRef = rt::PreAggregationHashtableFragment::insert(b, loc)({adaptor.getState(), hashed})[0];
             
             // Ensure runtime call termination for PreAggregationHashtableFragment::insert
-            subop_to_control_flow::RuntimeCallTermination::ensurePreAggregationHashtableCallTermination(
-                entryRef.getDefiningOp(), rewriter, loc);
+            // subop_to_control_flow::RuntimeCallTermination::ensurePostgreSQLCallTermination(
+            //     entryRef.getDefiningOp(), rewriter, loc);
             
             Value entryRefCasted = rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
             Value kvRef = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, entryRefCasted, 2);
@@ -880,8 +881,8 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
                Value entryRef=rt::Hashtable::insert(b,loc)({hashTable,hashed})[0];
                
                // Ensure runtime call termination for Hashtable::insert
-               subop_to_control_flow::RuntimeCallTermination::ensureHashtableCallTermination(
-                   entryRef.getDefiningOp(), rewriter, loc);
+               // subop_to_control_flow::RuntimeCallTermination::ensurePostgreSQLCallTermination(
+               //     entryRef.getDefiningOp(), rewriter, loc);
                
                Value entryRefCasted= rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
                Value kvRef = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, entryRefCasted, 2);
@@ -929,8 +930,8 @@ class LookupExternalHashIndexLowering : public SubOpTupleStreamConsumerConversio
       mlir::Value list = rt::HashIndexAccess::lookup(rewriter, loc)({adaptor.getState(), hashValue})[0];
       
       // Ensure runtime call termination for HashIndexAccess::lookup
-      subop_to_control_flow::RuntimeCallTermination::ensureLingoDRuntimeCallTermination(
-          list.getDefiningOp(), rewriter, loc);
+      // subop_to_control_flow::RuntimeCallTermination::ensurePostgreSQLCallTermination(
+      //     list.getDefiningOp(), rewriter, loc);
 
       mapping.define(lookupOp.getRef(), list);
       rewriter.replaceTupleStream(lookupOp, mapping);
