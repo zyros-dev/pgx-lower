@@ -4268,7 +4268,7 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
 
 void SubOpToControlFlowLoweringPass::runOnOperation() {
    PGX_INFO("=== SubOpToControlFlowLoweringPass::runOnOperation() START ===");
-   llvm::errs() << "=== URGENT DEBUG: SubOpToControlFlowLoweringPass is executing! ===\n";
+   MLIR_PGX_DEBUG("SubOp", "SubOpToControlFlowLoweringPass is executing!");
    
    try {
       auto module = getOperation();
@@ -4295,7 +4295,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    auto mainFunc = module.lookupSymbol<mlir::func::FuncOp>("main");
    mlir::Block* mainBlock = nullptr;
    if (!mainFunc) {
-      llvm::errs() << "=== Creating main function ===\n";
+      MLIR_PGX_DEBUG("SubOp", "Creating main function");
       // Create main function if it doesn't exist
       mlir::OpBuilder builder(module);
       builder.setInsertionPointToEnd(module.getBody());
@@ -4306,7 +4306,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       // Create entry block
       mainBlock = mainFunc.addEntryBlock();
    } else {
-      llvm::errs() << "=== Main function already exists ===\n";
+      MLIR_PGX_DEBUG("SubOp", "Main function already exists");
       mainBlock = &mainFunc.getBody().front();
    }
 
@@ -4436,7 +4436,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       
       // If no ExecutionStepOp operations, handle simple case
       if (!hasExecutionSteps) {
-         llvm::errs() << "=== SubOpToControlFlow: Handling simple ExecutionGroupOp without ExecutionSteps ===\n";
+         MLIR_PGX_DEBUG("SubOp", "Handling simple ExecutionGroupOp without ExecutionSteps");
          PGX_INFO("=== Handling simple case without ExecutionSteps ===");
          
          // For simple cases without ExecutionStepOp, generate code directly in main function
@@ -4444,17 +4444,27 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
          mainBuilder.setInsertionPointToEnd(mainBlock);
          PGX_INFO("=== Created OpBuilder for main function ===");
          
+         // CRITICAL FIX: Pre-add terminator to prevent MLIR validation errors during operation creation
+         // This ensures the block always has a terminator, avoiding validation failures
+         if (!mainBlock->getTerminator()) {
+            auto preZero = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 32);
+            auto preTerminator = mainBuilder.create<mlir::func::ReturnOp>(mainBuilder.getUnknownLoc(), mlir::ValueRange{preZero});
+            MLIR_PGX_INFO("SubOp", "Pre-added terminator to prevent MLIR validation errors");
+            // Set insertion point before the terminator so operations are inserted before it
+            mainBuilder.setInsertionPoint(preTerminator);
+         }
+         
          // Process each operation in the ExecutionGroupOp
          for (auto& op : executionGroup.getRegion().front()) {
             if (mlir::isa<subop::ExecutionGroupReturnOp>(op)) {
                continue;
             }
             
-            llvm::errs() << "=== Processing operation: " << op.getName() << " ===\n";
+            MLIR_PGX_DEBUG("SubOp", "Processing operation: " + op.getName().getStringRef().str());
             
             // Handle specific SubOp operations - Generate actual PostgreSQL code
             if (auto getExternal = mlir::dyn_cast<subop::GetExternalOp>(op)) {
-               llvm::errs() << "=== Generating PostgreSQL code for GetExternalOp ===\n";
+               MLIR_PGX_DEBUG("SubOp", "Generating PostgreSQL code for GetExternalOp");
                // Generate table access preparation code
                auto i32Type = mainBuilder.getI32Type();
                auto one = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 1, 32);
@@ -4469,12 +4479,12 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
                   prepareFunc.setPrivate();
                   mainBuilder.restoreInsertionPoint(savedIP);
                }
-               mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), prepareFunc, mlir::ValueRange{one});
+               auto prepareCallOp = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), prepareFunc, mlir::ValueRange{one});
                
                // Map the result to the function call result (dummy for now)
                mapping.map(getExternal.getResult(), getExternal.getResult());
             } else if (auto scanRefs = mlir::dyn_cast<subop::ScanRefsOp>(op)) {
-               llvm::errs() << "=== Generating PostgreSQL code for ScanRefsOp ===\n";
+               MLIR_PGX_DEBUG("SubOp", "Generating PostgreSQL code for ScanRefsOp");
                // Generate actual table scan with PostgreSQL runtime calls
                auto i32Type = mainBuilder.getI32Type();
                auto i64Type = mainBuilder.getI64Type();
@@ -4525,23 +4535,9 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
                }
                
                auto falseVal = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 1);
-               mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), storeFunc, 
+               auto callOp = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), storeFunc, 
                    mlir::ValueRange{zero32, fieldValue, falseVal});
-               
-               // URGENT DEBUG: Check terminator status after func.call
-               auto currentBlock = mainBuilder.getInsertionBlock();
-               llvm::errs() << "=== TERMINATOR DEBUG: After store_int_result call ===\n";
-               llvm::errs() << "Current block: " << (currentBlock ? "valid" : "null") << "\n";
-               if (currentBlock) {
-                   llvm::errs() << "Block has terminator: " << (currentBlock->getTerminator() ? "yes" : "no") << "\n";
-                   if (!currentBlock->getTerminator()) {
-                       llvm::errs() << "Adding terminator now!\n";
-                       auto zero = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 32);
-                       mainBuilder.create<mlir::func::ReturnOp>(mainBuilder.getUnknownLoc(), mlir::ValueRange{zero});
-                       llvm::errs() << "Terminator added successfully!\n";
-                   }
-               }
-               
+
                // Map the result to the scan result (dummy for now)
                mapping.map(scanRefs.getResult(), scanRefs.getResult());
             } else {
@@ -4552,13 +4548,12 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
             }
          }
          
-         // Add return statement to main function if needed
-         // Note: We check after processing operations since they might insert code
-         if (!mainBlock || !mainBlock->getTerminator()) {
-            mlir::OpBuilder termBuilder(mainFunc);
-            termBuilder.setInsertionPointToEnd(mainBlock);
-            auto zero = termBuilder.create<mlir::arith::ConstantIntOp>(termBuilder.getUnknownLoc(), 0, 32);
-            termBuilder.create<mlir::func::ReturnOp>(termBuilder.getUnknownLoc(), mlir::ValueRange{zero});
+         // Terminator was pre-added to prevent MLIR validation errors
+         // All operations were inserted before the terminator, so block structure is correct
+         if (mainBlock && mainBlock->getTerminator()) {
+            MLIR_PGX_DEBUG("SubOp", "Main function block properly terminated");
+         } else {
+            PGX_WARNING("No main block found or terminator missing");
          }
       } else {
          // Original code for handling ExecutionStepOp
