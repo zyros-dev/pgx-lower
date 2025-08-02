@@ -46,8 +46,18 @@ compile_commands.json
 
 # CMake build directories
 build/
+build-*/
+cmake-build-*/
 _deps/
 fast_output.txt
+
+# Test results and outputs
+extension/results/
+*/results/
+
+# TableGen generated files (MLIR)
+*.cpp.inc
+*.h.inc
 
 
 .cursorignore
@@ -68,3 +78,6 @@ Testing
 .vscode
 .serena
 .gemini
+*.out
+*.tmp
+*.diffs
