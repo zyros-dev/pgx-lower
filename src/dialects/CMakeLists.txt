@@ -131,7 +131,19 @@ add_library(MLIRSubOpDialect STATIC
     subop/SubOpDialect.cpp
     subop/SubOpInterfaces.cpp
     subop/SubOperatorOps.cpp
-    subop/SubOpToControlFlow.cpp
+    # SubOpToControlFlow split files
+    subop/SubOpToControlFlow/Core/SubOpToControlFlowUtilities.cpp
+    subop/SubOpToControlFlow/Core/SubOpToControlFlowRewriter.cpp
+    subop/SubOpToControlFlow/Operations/TableOperations.cpp
+    subop/SubOpToControlFlow/Operations/ScanOperations.cpp
+    subop/SubOpToControlFlow/Operations/LookupOperations.cpp
+    subop/SubOpToControlFlow/Operations/DataStructureCreation.cpp
+    subop/SubOpToControlFlow/Operations/GatherScatterOperations.cpp
+    subop/SubOpToControlFlow/Operations/ReduceOperations.cpp
+    subop/SubOpToControlFlow/Operations/ViewOperations.cpp
+    subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp
+    subop/SubOpToControlFlow/Operations/ThreadLocalOperations.cpp
+    subop/SubOpToControlFlow/ExecutionEngine.cpp
     subop/SubOpToControlFlowSimple.cpp
     subop/SubOpToControlFlowMinimal.cpp
     subop/LowerSubOpToDB.cpp
@@ -228,6 +240,7 @@ add_dependencies(MLIRUtilDialect MLIRUtilIncGen)
 target_include_directories(MLIRSubOpDialect PUBLIC
     ${CMAKE_SOURCE_DIR}/include/dialects/subop
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/dialects/subop/SubOpToControlFlow/Headers  # Add this line
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_BINARY_DIR}/src/dialects
     ${LLVM_INCLUDE_DIRS}
