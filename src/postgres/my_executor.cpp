@@ -45,37 +45,26 @@ extern "C" {
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
-bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
-    auto logger = PostgreSQLLogger();
-
-    auto* dest = queryDesc->dest;
-
-    // Extract the planned statement for AST translation
-    const auto* stmt = queryDesc->plannedstmt;
-    if (!stmt) {
-        logger.error("PlannedStmt is null");
-        return false;
-    }
-
+void logQueryDebugInfo(const PlannedStmt* stmt, PostgreSQLLogger& logger) {
     logger.debug("Using PostgreSQL AST translation approach");
-    
+
     // Debug targetList availability
     logger.notice("=== run_mlir_with_ast_translation: Query info ===");
     logger.notice("PlannedStmt ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt)));
     logger.notice("planTree ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree)));
     if (stmt->planTree) {
-        logger.notice("planTree->targetlist ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree->targetlist)));
+        logger.notice("planTree->targetlist ptr: "
+                      + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree->targetlist)));
         if (stmt->planTree->targetlist) {
             logger.notice("targetlist length: " + std::to_string(list_length(stmt->planTree->targetlist)));
-        } else {
+        }
+        else {
             logger.notice("targetlist is NULL!");
         }
     }
+}
 
-    // For AST translation, the JIT manages its own table access
-    // Set g_scan_context to null to indicate JIT should handle everything
-    g_scan_context = nullptr;
-
+std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogger& logger) {
     // Configure column selection based on query type
     // For SELECT expressions (computed results), use -1 to indicate computed columns
     // For SELECT * (table columns), use 0, 1, 2, etc.
@@ -112,7 +101,7 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
                 // For now, treat simple SELECT * as computed results since MinimalSubOpToControlFlow
                 // uses store_int_result which populates g_computed_results
                 // TODO: Eventually fix this to use table columns directly
-                
+
                 // Count actual number of columns selected
                 int numSelectedColumns = 0;
                 ListCell* lc2;
@@ -122,15 +111,15 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
                         numSelectedColumns++;
                     }
                 }
-                
+
                 // Create computed result columns for each selected column
                 selectedColumns.clear();
                 for (int i = 0; i < numSelectedColumns; i++) {
                     selectedColumns.push_back(-1); // -1 indicates computed result
                 }
                 g_computed_results.resize(numSelectedColumns);
-                logger.notice("Configured for table column results via computed storage (temporary solution) - " + 
-                            std::to_string(numSelectedColumns) + " columns");
+                logger.notice("Configured for table column results via computed storage (temporary solution) - "
+                              + std::to_string(numSelectedColumns) + " columns");
             }
         }
         else {
@@ -143,20 +132,25 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         selectedColumns = {0};
     }
 
+    return selectedColumns;
+}
+
+TupleDesc
+setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedColumns, PostgreSQLLogger& logger) {
     // Create result tuple descriptor based on selected columns count
     const int numResultColumns = selectedColumns.size();
     const auto resultTupleDesc = CreateTemplateTupleDesc(numResultColumns);
-    
+
     // Configure each column in the result tuple descriptor
     for (int i = 0; i < numResultColumns; i++) {
         const auto resultAttr = TupleDescAttr(resultTupleDesc, i);
-        
+
         // Default type info
         Oid columnType = INT4OID;
         int typeLen = sizeof(int32);
         bool typeByVal = true;
         char typeAlign = TYPALIGN_INT;
-        
+
         // Try to get column info from target list
         if (stmt->planTree && stmt->planTree->targetlist && i < list_length(stmt->planTree->targetlist)) {
             ListCell* lc;
@@ -168,27 +162,29 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
                         // Get column name
                         if (tle->resname) {
                             strncpy(NameStr(resultAttr->attname), tle->resname, NAMEDATALEN - 1);
-                            logger.notice("Setting column " + std::to_string(i) + " name to: " + std::string(tle->resname));
-                        } else {
+                            logger.notice("Setting column " + std::to_string(i)
+                                          + " name to: " + std::string(tle->resname));
+                        }
+                        else {
                             snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
                             logger.notice("Setting column " + std::to_string(i) + " name to: col" + std::to_string(i));
                         }
-                        
+
                         // Get column type from expression
                         if (tle->expr && nodeTag(tle->expr) == T_Var) {
                             Var* var = reinterpret_cast<Var*>(tle->expr);
                             columnType = var->vartype;
-                            
+
                             // Get type properties
                             int16 typLen;
                             bool typByVal;
                             char typAlign;
                             get_typlenbyvalalign(columnType, &typLen, &typByVal, &typAlign);
-                            
+
                             typeLen = typLen;
                             typeByVal = typByVal;
                             typeAlign = typAlign;
-                            
+
                             logger.notice("Column " + std::to_string(i) + " type OID: " + std::to_string(columnType));
                         }
                         break;
@@ -196,11 +192,12 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
                     colIdx++;
                 }
             }
-        } else {
+        }
+        else {
             // Fallback naming
             snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
         }
-        
+
         // Set the type info
         resultAttr->atttypid = columnType;
         resultAttr->attlen = typeLen;
@@ -209,20 +206,11 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         resultAttr->atttypmod = -1;
         resultAttr->attnotnull = false;
     }
-    
-    const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
-    dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
-    
-    g_tuple_streamer.initialize(dest, slot);
-    g_tuple_streamer.setSelectedColumns(selectedColumns);
-    
-    // Clear any previous computed results before setup
-    // Note: This will be overridden by resize() for computed expressions
 
-    // Use the new AST-based MLIR translation
-    const auto mlir_success = mlir_runner::run_mlir_postgres_ast_translation(const_cast<PlannedStmt*>(stmt), logger);
-    logger.notice("mlir_runner::run_mlir_postgres_ast_translation returned " + std::string(mlir_success ? "true" : "false"));
+    return resultTupleDesc;
+}
 
+bool handleMLIRResults(bool mlir_success, PostgreSQLLogger& logger) {
     // Stream results back to PostgreSQL
     if (mlir_success) {
         logger.notice("JIT returned successfully, checking results...");
@@ -236,7 +224,10 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
             g_jit_results_ready = false; // Reset flag
         }
     }
+    return mlir_success;
+}
 
+void cleanupMLIRExecution(DestReceiver* dest, TupleTableSlot* slot, TupleDesc resultTupleDesc, PostgreSQLLogger& logger) {
     // Cleanup (same as before)
     logger.notice("Beginning cleanup phase...");
     g_scan_context = nullptr;
@@ -255,9 +246,77 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
     logger.notice("Dropping slot and freeing tuple descriptor...");
     ExecDropSingleTupleTableSlot(slot);
     FreeTupleDesc(resultTupleDesc);
+}
 
-    logger.notice("run_mlir_with_ast_translation completed successfully, returning " + std::string(mlir_success ? "true" : "false"));
-    return mlir_success;
+bool validateAndLogPlanStructure(const PlannedStmt* stmt) {
+    const auto rootPlan = stmt->planTree;
+    Plan* scanPlan = nullptr;
+
+    if (rootPlan->type == T_SeqScan) {
+        scanPlan = rootPlan;
+    }
+    else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
+        scanPlan = rootPlan->lefttree;
+        PGX_DEBUG("Detected aggregate query with SeqScan source");
+    }
+    else {
+        PGX_ERROR("Query analyzer bug: marked as compatible but not a simple SeqScan or Agg+SeqScan");
+        return false;
+    }
+
+    const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
+
+    PGX_DEBUG("Using AST-based translation - JIT will manage table scan");
+    PGX_INFO("Table OID: " + std::to_string(rte->relid));
+
+    return true;
+}
+
+bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
+    auto logger = PostgreSQLLogger();
+    auto* dest = queryDesc->dest;
+
+    // Extract the planned statement for AST translation
+    const auto* stmt = queryDesc->plannedstmt;
+    if (!stmt) {
+        logger.error("PlannedStmt is null");
+        return false;
+    }
+
+    // Log query debug information
+    logQueryDebugInfo(stmt, logger);
+
+    // For AST translation, the JIT manages its own table access
+    g_scan_context = nullptr;
+
+    // Analyze and configure column selection
+    auto selectedColumns = analyzeColumnSelection(stmt, logger);
+
+    // Setup tuple descriptor for results
+    auto resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns, logger);
+
+    // Initialize PostgreSQL result handling
+    const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
+    dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
+
+    g_tuple_streamer.initialize(dest, slot);
+    g_tuple_streamer.setSelectedColumns(selectedColumns);
+
+    // Execute MLIR translation
+    const auto mlir_success = mlir_runner::run_mlir_postgres_ast_translation(const_cast<PlannedStmt*>(stmt), logger);
+    logger.notice("mlir_runner::run_mlir_postgres_ast_translation returned "
+                  + std::string(mlir_success ? "true" : "false"));
+
+    // Handle results
+    auto final_result = handleMLIRResults(mlir_success, logger);
+
+    // Cleanup
+    cleanupMLIRExecution(dest, slot, resultTupleDesc, logger);
+
+    logger.notice("run_mlir_with_ast_translation completed successfully, returning "
+                  + std::string(final_result ? "true" : "false"));
+    return final_result;
 }
 
 auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
@@ -287,33 +346,10 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
         return false;
     }
 
-    const auto rootPlan = stmt->planTree;
-    Plan* scanPlan = nullptr;
-
-    if (rootPlan->type == T_SeqScan) {
-        // Simple sequential scan query
-        scanPlan = rootPlan;
-    }
-    else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
-        // Aggregate query with sequential scan as source
-        scanPlan = rootPlan->lefttree;
-        PGX_DEBUG("Detected aggregate query with SeqScan source");
-    }
-    else {
-        // This should not happen if analyzer is correct, but add safety check
-        PGX_ERROR("Query analyzer bug: marked as compatible but not a simple SeqScan or Agg+SeqScan");
+    if (!validateAndLogPlanStructure(stmt)) {
         return false;
     }
 
-    // QueryAnalyzer has already validated compatibility - proceed to execution
-    const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
-    const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
-    
-    // For AST-based translation, the JIT manages its own table scan
-    // We don't open the table here to avoid double management
-    PGX_DEBUG("Using AST-based translation - JIT will manage table scan");
-    PGX_INFO("Table OID: " + std::to_string(rte->relid));
-    
     // Pass null scanDesc since AST translation doesn't use it
     bool mlir_success = run_mlir_with_ast_translation(plan);
 
