@@ -2,6 +2,10 @@
 #include "core/mlir_logger.h"
 #include "core/error_handling.h"
 #include "core/postgresql_ast_translator.h"
+
+// Include MLIR diagnostic infrastructure
+#include "llvm/Support/SourceMgr.h"
+#include "mlir/IR/Diagnostics.h"
 // PG dialect removed - using RelAlg instead
 #include "dialects/relalg/RelAlgDialect.h"
 #include "dialects/relalg/LowerRelAlgToSubOp.h"
@@ -92,11 +96,54 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     mlir::registerLLVMDialectTranslation(context);
     mlir::registerBuiltinDialectTranslation(context);
 
+    // CRITICAL FIX 1: Setup detailed MLIR diagnostics BEFORE any verification
+    // Following LingoDB pattern from tools/ct/mlir-relalg-to-json.cpp:701-705
+    
+    // Create custom stream that bridges MLIR diagnostics to PostgreSQL logging
+    class PostgreSQLDiagnosticStream : public llvm::raw_ostream {
+    private:
+        std::string buffer;
+        MLIRLogger& pgLogger;
+        
+    public:
+        PostgreSQLDiagnosticStream(MLIRLogger& logger) : pgLogger(logger) {
+            SetUnbuffered();
+        }
+        
+        void write_impl(const char* ptr, size_t size) override {
+            buffer.append(ptr, size);
+            
+            // Process complete lines
+            size_t pos = 0;
+            while ((pos = buffer.find('\n')) != std::string::npos) {
+                std::string line = buffer.substr(0, pos);
+                if (!line.empty()) {
+                    pgLogger.error("MLIR Diagnostic: " + line);
+                }
+                buffer.erase(0, pos + 1);
+            }
+        }
+        
+        uint64_t current_pos() const override { 
+            return buffer.size(); 
+        }
+        
+        ~PostgreSQLDiagnosticStream() {
+            // Flush any remaining content
+            if (!buffer.empty()) {
+                pgLogger.error("MLIR Diagnostic (final): " + buffer);
+            }
+        }
+    };
+    
+    PostgreSQLDiagnosticStream pgDiagStream(logger);
+    llvm::SourceMgr sourceMgr;
+    mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context, pgDiagStream);
+    logger.notice("MLIR diagnostic handler configured with PostgreSQL bridge");
+    
     // Verify the module before ExecutionEngine creation
     if (failed(mlir::verify(module))) {
-        logger.error("MLIR module verification failed before ExecutionEngine creation");
-        
-        // Capture module as string for proper PostgreSQL logging
+        // CRITICAL FIX 1: Dump module BEFORE logging error to ensure we see malformed structure
         std::string moduleStr;
         llvm::raw_string_ostream moduleStream(moduleStr);
         module.print(moduleStream);
@@ -104,6 +151,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("=== FAILED MODULE DUMP START ===");
         logger.notice(moduleStr);
         logger.notice("=== FAILED MODULE DUMP END ===");
+        
+        logger.error("MLIR module verification failed before ExecutionEngine creation");
+        logger.error("Detailed verification errors should appear above via diagnostic handler");
         
         return false;
     }
@@ -162,9 +212,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         auto pm1 = mlir::PassManager(&context);
         pm1.addPass(pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPass());
         if (failed(pm1.run(module))) {
-            logger.error("Phase 1 (RelAlg → SubOp) failed!");
-            
-            // Capture module as string for proper PostgreSQL logging
+            // CRITICAL FIX 1: Dump module BEFORE logging error
             std::string moduleStr;
             llvm::raw_string_ostream moduleStream(moduleStr);
             module.print(moduleStream);
@@ -172,6 +220,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             logger.notice("=== PHASE 1 FAILED MODULE DUMP START ===");
             logger.notice(moduleStr);
             logger.notice("=== PHASE 1 FAILED MODULE DUMP END ===");
+            
+            logger.error("Phase 1 (RelAlg → SubOp) failed!");
+            logger.error("Detailed error messages should appear above via diagnostic handler");
             
             return false;
         }
@@ -253,9 +304,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         }
         
         if (failed(pm.run(module))) {
-            logger.error("SubOp pass FAILED: " + passName);
-            
-            // Capture module as string for proper PostgreSQL logging
+            // CRITICAL FIX 1: Dump module BEFORE logging error
             std::string moduleStr;
             llvm::raw_string_ostream moduleStream(moduleStr);
             module.print(moduleStream);
@@ -263,6 +312,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             logger.notice("=== SUBOP PASS FAILED MODULE DUMP START ===");
             logger.notice(moduleStr);
             logger.notice("=== SUBOP PASS FAILED MODULE DUMP END ===");
+            
+            logger.error("SubOp pass FAILED: " + passName);
+            logger.error("Detailed error messages should appear above via diagnostic handler");
             
             return false;
         }
@@ -275,9 +327,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         auto pm = mlir::PassManager(&context);
         pm.addNestedPass<mlir::func::FuncOp>(pgx_lower::compiler::dialect::subop::createParallelizePass());
         if (failed(pm.run(module))) {
-            logger.error("SubOp pass FAILED: Parallelize");
-            
-            // Capture module as string for proper PostgreSQL logging
+            // CRITICAL FIX 1: Dump module BEFORE logging error
             std::string moduleStr;
             llvm::raw_string_ostream moduleStream(moduleStr);
             module.print(moduleStream);
@@ -285,6 +335,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             logger.notice("=== PARALLELIZE FAILED MODULE DUMP START ===");
             logger.notice(moduleStr);
             logger.notice("=== PARALLELIZE FAILED MODULE DUMP END ===");
+            
+            logger.error("SubOp pass FAILED: Parallelize");
+            logger.error("Detailed error messages should appear above via diagnostic handler");
             
             return false;
         }
@@ -327,9 +380,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         
         // Verify module is valid before Phase 3
         if (failed(mlir::verify(module))) {
-            logger.error("Module verification failed BEFORE Phase 3!");
-            
-            // Capture module as string for proper PostgreSQL logging
+            // CRITICAL FIX 1: Dump module BEFORE logging error
             std::string moduleStr;
             llvm::raw_string_ostream moduleStream(moduleStr);
             module.print(moduleStream);
@@ -338,6 +389,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             logger.notice(moduleStr);
             logger.notice("=== PRE-PHASE-3 VERIFICATION FAILED MODULE DUMP END ===");
             
+            logger.error("Module verification failed BEFORE Phase 3!");
+            logger.error("Detailed verification errors should appear above via diagnostic handler");
+            
             return false;
         }
         logger.notice("Module verification passed before Phase 3");
@@ -345,14 +399,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         try {
             logger.notice("Running pm3.run(module)...");
             if (failed(pm3.run(module))) {
-                logger.error("Phase 3 (SubOp → Control Flow) failed during execution!");
-                logger.error("This means the pass manager run returned failure");
-                
                 // Check if module is still valid after failure
                 if (failed(mlir::verify(module))) {
-                    logger.error("Module became invalid during Phase 3 execution!");
-                    
-                    // Capture module as string for proper PostgreSQL logging
+                    // CRITICAL FIX 1: Dump module BEFORE logging error
                     std::string moduleStr;
                     llvm::raw_string_ostream moduleStream(moduleStr);
                     module.print(moduleStream);
@@ -360,9 +409,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
                     logger.notice("=== PHASE 3 VERIFICATION FAILED MODULE DUMP START ===");
                     logger.notice(moduleStr);
                     logger.notice("=== PHASE 3 VERIFICATION FAILED MODULE DUMP END ===");
+                    
+                    logger.error("Module became invalid during Phase 3 execution!");
                 } else {
                     logger.notice("Module is still valid after Phase 3 failure");
                 }
+                
+                logger.error("Phase 3 (SubOp → Control Flow) failed during execution!");
+                logger.error("This means the pass manager run returned failure");
+                logger.error("Detailed error messages should appear above via diagnostic handler");
+                
                 return false;
             }
         } catch (const std::exception& e) {
@@ -400,10 +456,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     pm2.addPass(mlir::createReconcileUnrealizedCastsPass());
 
     if (failed(pm2.run(module))) {
-        logger.error("Remaining lowering passes failed");
-        logger.error("Dumping module after standard lowering failure:");
-        
-        // Capture module as string for proper PostgreSQL logging
+        // CRITICAL FIX 1: Dump module BEFORE logging error
         std::string moduleStr;
         llvm::raw_string_ostream moduleStream(moduleStr);
         module.print(moduleStream);
@@ -411,6 +464,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("=== STANDARD LOWERING FAILED MODULE DUMP START ===");
         logger.notice(moduleStr);
         logger.notice("=== STANDARD LOWERING FAILED MODULE DUMP END ===");
+        
+        logger.error("Remaining lowering passes failed");
+        logger.error("Detailed error messages should appear above via diagnostic handler");
         
         return false;
     }
@@ -442,10 +498,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     
     auto llvmModule = mlir::translateModuleToLLVMIR(module, *llvmContext);
     if (!llvmModule) {
-        logger.error("MLIR to LLVM IR translation failed - this is the root cause");
-        logger.error("Check for unsupported operations or type conversion issues in the MLIR module");
-        
-        // Capture module as string for proper PostgreSQL logging
+        // CRITICAL FIX 1: Dump module BEFORE logging error
         std::string moduleStr;
         llvm::raw_string_ostream moduleStream(moduleStr);
         module.print(moduleStream);
@@ -453,6 +506,10 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("=== LLVM TRANSLATION FAILED MODULE DUMP START ===");
         logger.notice(moduleStr);
         logger.notice("=== LLVM TRANSLATION FAILED MODULE DUMP END ===");
+        
+        logger.error("MLIR to LLVM IR translation failed - this is the root cause");
+        logger.error("Check for unsupported operations or type conversion issues in the MLIR module");
+        logger.error("Detailed error messages should appear above via diagnostic handler");
         
         return false;
     }
@@ -603,6 +660,16 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
         return false;
     }
     
+    // Extract table OID from PlannedStmt and set global variable for runtime
+    g_jit_table_oid = InvalidOid; // Reset first
+    if (plannedStmt->rtable && list_length(plannedStmt->rtable) > 0) {
+        RangeTblEntry* rte = static_cast<RangeTblEntry*>(linitial(plannedStmt->rtable));
+        if (rte && rte->relid != InvalidOid) {
+            g_jit_table_oid = rte->relid;
+            logger.notice("MLIR Runner: Set table OID for runtime: " + std::to_string(g_jit_table_oid));
+        }
+    }
+    
     // Create MLIR context with explicit memory isolation from PostgreSQL
     mlir::MLIRContext context;
     
@@ -650,12 +717,55 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     
     logger.notice("Module pointer is valid, attempting to verify...");
     
+    // CRITICAL FIX 2: Setup detailed MLIR diagnostics for AST translator
+    // Create custom stream that bridges MLIR diagnostics to PostgreSQL logging
+    class PostgreSQLDiagnosticStream : public llvm::raw_ostream {
+    private:
+        std::string buffer;
+        MLIRLogger& pgLogger;
+        
+    public:
+        PostgreSQLDiagnosticStream(MLIRLogger& logger) : pgLogger(logger) {
+            SetUnbuffered();
+        }
+        
+        void write_impl(const char* ptr, size_t size) override {
+            buffer.append(ptr, size);
+            
+            // Process complete lines
+            size_t pos = 0;
+            while ((pos = buffer.find('\n')) != std::string::npos) {
+                std::string line = buffer.substr(0, pos);
+                if (!line.empty()) {
+                    pgLogger.error("MLIR AST Diagnostic: " + line);
+                }
+                buffer.erase(0, pos + 1);
+            }
+        }
+        
+        uint64_t current_pos() const override { 
+            return buffer.size(); 
+        }
+        
+        ~PostgreSQLDiagnosticStream() {
+            // Flush any remaining content
+            if (!buffer.empty()) {
+                pgLogger.error("MLIR AST Diagnostic (final): " + buffer);
+            }
+        }
+    };
+    
+    PostgreSQLDiagnosticStream pgASTDiagStream(logger);
+    llvm::SourceMgr sourceMgr;
+    mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context, pgASTDiagStream);
+    logger.notice("AST translator MLIR diagnostic handler configured with PostgreSQL bridge");
+    
     // First verify the module is valid
     auto verifyResult = mlir::verify(*module);
     logger.notice("Verification result obtained, checking if failed...");
     
     if (failed(verifyResult)) {
-        logger.error("Module verification failed! Module is invalid.");
+        // CRITICAL FIX 1: Dump module BEFORE logging error
         logger.notice("About to start module dump process...");
         logger.notice("DUMPING INVALID MODULE FOR ANALYSIS:");
         
@@ -701,6 +811,9 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
         } catch (...) {
             logger.error("Failed to dump invalid module: unknown exception");
         }
+        
+        logger.error("Module verification failed! Module is invalid.");
+        logger.error("Detailed verification errors should appear above via diagnostic handler");
         
         return false;
     }

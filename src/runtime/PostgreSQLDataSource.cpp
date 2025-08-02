@@ -18,6 +18,20 @@ PostgreSQLDataSource::PostgreSQLDataSource(const std::string& description) : sca
         }
     }
     
+    // Parse and set the table OID global variable
+    size_t oidPos = description.find("\"oid\": \"");
+    if (oidPos != std::string::npos) {
+        oidPos += 8; // Skip past "oid": "
+        size_t endPos = description.find("\"", oidPos);
+        if (endPos != std::string::npos) {
+            std::string oidStr = description.substr(oidPos, endPos - oidPos);
+            Oid tableOid = static_cast<Oid>(std::stoul(oidStr));
+            
+            // Set the global variable for runtime table access
+            ::g_jit_table_oid = tableOid;
+        }
+    }
+    
     // Open the PostgreSQL table
     scanContext = open_postgres_table(tableName.c_str());
 }

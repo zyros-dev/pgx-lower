@@ -227,6 +227,7 @@ struct TupleStreamer {
 extern TupleScanContext* g_scan_context;
 extern TupleStreamer g_tuple_streamer;
 extern PostgreSQLTuplePassthrough g_current_tuple_passthrough;
+extern Oid g_jit_table_oid; // Table OID for JIT-managed table access
 
 extern "C" {
 // MLIR Interface: Read next tuple for iteration control
