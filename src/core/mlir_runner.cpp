@@ -2,6 +2,7 @@
 #include "core/mlir_logger.h"
 #include "core/error_handling.h"
 #include "core/postgresql_ast_translator.h"
+#include "core/logging.h"
 
 // Include MLIR diagnostic infrastructure
 #include "llvm/Support/SourceMgr.h"

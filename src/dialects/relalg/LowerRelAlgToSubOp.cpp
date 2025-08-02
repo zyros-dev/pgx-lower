@@ -12,6 +12,7 @@
 #include "dialects/util/UtilOps.h"
 #include "dialects/util/UtilTypes.h"
 #include "dialects/util/FunctionHelper.h"
+#include "core/logging.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Async/IR/Async.h"
@@ -72,8 +73,8 @@ class BaseTableLowering : public OpConversionPattern<relalg::BaseTableOp> {
    public:
    using OpConversionPattern<relalg::BaseTableOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(relalg::BaseTableOp baseTableOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      llvm::errs() << "=== BaseTableLowering matchAndRewrite called ===\n";
-      llvm::errs() << "BaseTableLowering: About to create ScanRefsOp + GatherOp\n";
+      MLIR_PGX_DEBUG("RelAlg", "=== BaseTableLowering matchAndRewrite called ===");
+      MLIR_PGX_DEBUG("RelAlg", "BaseTableLowering: About to create ScanRefsOp + GatherOp");
       auto required = getRequired(baseTableOp);
       std::vector<mlir::Type> types;
       std::vector<Attribute> colNames;
@@ -3068,7 +3069,7 @@ class QueryReturnOpLowering : public OpConversionPattern<relalg::QueryReturnOp> 
 };
 
 void RelalgToSubOpLoweringPass::runOnOperation() {
-   llvm::errs() << "=== RelalgToSubOpLoweringPass::runOnOperation() called ===\n";
+   MLIR_PGX_DEBUG("RelAlg", "=== RelalgToSubOpLoweringPass::runOnOperation() called ===");
    auto module = getOperation();
    getContext().getLoadedDialect<util::UtilDialect>()->getFunctionHelper().setParentModule(module);
 

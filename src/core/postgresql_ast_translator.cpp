@@ -19,6 +19,7 @@ extern "C" {
 #undef dngettext
 
 #include "core/postgresql_ast_translator.h"
+#include "core/logging.h"
 #include "runtime/tuple_access.h"
 #include "dialects/relalg/RelAlgDialect.h"
 #include "dialects/relalg/RelAlgOps.h"
@@ -288,9 +289,17 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
             bool isOpExpr = IsA(expr, OpExpr);
             logger_.notice("EXPRESSION DETECTION: IsA(expr, OpExpr) = " + std::string(isOpExpr ? "true" : "false"));
             
+            logger_.notice("EXPRESSION DETECTION: About to check IsA(expr, BoolExpr)");
+            bool isBoolExpr = IsA(expr, BoolExpr);
+            logger_.notice("EXPRESSION DETECTION: IsA(expr, BoolExpr) = " + std::string(isBoolExpr ? "true" : "false"));
+            
             if (isOpExpr) {
                 hasExpressions = true;
                 logger_.notice("EXPRESSION DETECTION: Found arithmetic expression in targetList - generating RelAlg Map");
+                break;
+            } else if (isBoolExpr) {
+                hasExpressions = true;
+                logger_.notice("EXPRESSION DETECTION: Found logical expression in targetList - generating RelAlg Map");
                 break;
             }
             entryIndex++;
@@ -913,26 +922,35 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                // TODO Phase 8: Generate RelAlg MapOp with logical expression
-                logger_.notice("Logical operations not yet implemented in RelAlg translation");
-                return left; // Return first operand as placeholder
+                logger_.notice("Generating DB dialect AND operation");
+                
+                // Create DB dialect AND operation
+                auto andOp = builder_->create<pgx_lower::compiler::dialect::db::AndOp>(
+                    location, left, right);
+                return andOp.getResult();
             }
             break;
         case OR_EXPR:
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                // TODO Phase 8: Generate RelAlg MapOp with logical expression
-                logger_.notice("Logical operations not yet implemented in RelAlg translation");
-                return left; // Return first operand as placeholder
+                logger_.notice("Generating DB dialect OR operation");
+                
+                // Create DB dialect OR operation
+                auto orOp = builder_->create<pgx_lower::compiler::dialect::db::OrOp>(
+                    location, left, right);
+                return orOp.getResult();
             }
             break;
         case NOT_EXPR:
             if (operands.size() >= 1) {
                 auto operand = convertToBool(operands[0]);
-                // TODO Phase 8: Generate RelAlg MapOp with logical expression
-                logger_.notice("Logical operations not yet implemented in RelAlg translation");
-                return operand; // Return operand as placeholder
+                logger_.notice("Generating DB dialect NOT operation");
+                
+                // Create DB dialect NOT operation
+                auto notOp = builder_->create<pgx_lower::compiler::dialect::db::NotOp>(
+                    location, operand);
+                return notOp.getResult();
             }
             break;
     }

@@ -7,6 +7,7 @@
 #include "dialects/db/LowerDBToLLVM.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/DBOps.h"
+#include "core/logging.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -144,10 +145,14 @@ struct LowerDBToLLVMPass : public OperationPass<ModuleOp> {
         auto &context = getContext();
         
         // Log the module before lowering
-        llvm::errs() << "=== DB → LLVM Lowering Pass Started ===\n";
-        llvm::errs() << "Module before DB → LLVM lowering:\n";
-        module.print(llvm::errs());
-        llvm::errs() << "\n";
+        PGX_DEBUG("=== DB → LLVM Lowering Pass Started ===");
+        PGX_DEBUG("Module before DB → LLVM lowering:");
+        if (pgx::get_logger().should_log(pgx::LogLevel::DEBUG_LVL)) {
+            std::string moduleStr;
+            llvm::raw_string_ostream rso(moduleStr);
+            module.print(rso);
+            PGX_DEBUG(rso.str());
+        }
         
         DBTypeConverter typeConverter(&context);
         ConversionTarget target(context);
@@ -180,9 +185,14 @@ struct LowerDBToLLVMPass : public OperationPass<ModuleOp> {
         }
         
         // Log the module after lowering
-        llvm::errs() << "Module after DB → LLVM lowering:\n";
-        module.print(llvm::errs());
-        llvm::errs() << "\n=== DB → LLVM Lowering Pass Completed ===\n\n";
+        PGX_DEBUG("Module after DB → LLVM lowering:");
+        if (pgx::get_logger().should_log(pgx::LogLevel::DEBUG_LVL)) {
+            std::string moduleStr;
+            llvm::raw_string_ostream rso(moduleStr);
+            module.print(rso);
+            PGX_DEBUG(rso.str());
+        }
+        PGX_DEBUG("=== DB → LLVM Lowering Pass Completed ===");
     }
     
     StringRef getName() const override { return "LowerDBToLLVMPass"; }
