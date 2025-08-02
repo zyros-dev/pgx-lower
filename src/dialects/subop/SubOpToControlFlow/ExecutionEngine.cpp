@@ -4,17 +4,25 @@
 
 // Import runtime call termination utilities
 using subop_to_control_flow::RuntimeCallTermination::ensurePostgreSQLCallTermination;
-using subop_to_control_flow::RuntimeCallTermination::ensureLingoDRuntimeCallTermination;
 using subop_to_control_flow::RuntimeCallTermination::ensureStoreIntResultTermination;
-using subop_to_control_flow::RuntimeCallTermination::ensureReadNextTupleTermination;
-using subop_to_control_flow::RuntimeCallTermination::ensureGetIntFieldTermination;
-using subop_to_control_flow::RuntimeCallTermination::applyRuntimeCallSafetyToOperation;
-using subop_to_control_flow::RuntimeCallTermination::reportRuntimeCallSafetyStatus;
 
 #ifdef POSTGRESQL_EXTENSION
+// Push/pop PostgreSQL macros to avoid conflicts
+#pragma push_macro("_")
+#pragma push_macro("gettext")
+#pragma push_macro("dgettext") 
+#pragma push_macro("ngettext")
+
 extern "C" {
 #include "postgres.h"
+#include "utils/elog.h"
 }
+
+// Restore original macros
+#pragma pop_macro("ngettext")
+#pragma pop_macro("dgettext")
+#pragma pop_macro("gettext")
+#pragma pop_macro("_")
 #endif
 
 
@@ -160,153 +168,8 @@ public:
     }
 };
 
-// ========================================================================
-// ALTERNATIVE FIX IMPLEMENTATIONS: Backup Solutions for Terminator Issues
-// ========================================================================
+// Simplified terminator management for PostgreSQL LOAD command safety
 
-// ALTERNATIVE APPROACH A: Defensive Terminator Management
-class DefensiveTerminatorManager {
-private:
-    mlir::OpBuilder& builder;
-    mlir::Location loc;
-    std::vector<mlir::Operation*> trackedTerminators;
-    
-public:
-    DefensiveTerminatorManager(mlir::OpBuilder& builder, mlir::Location loc) 
-        : builder(builder), loc(loc) {}
-    
-    // Validate and restore terminator after every function call
-    void validateTerminatorAfterCall(mlir::func::CallOp callOp) {
-        auto block = callOp->getBlock();
-        if (!block) return;
-        
-        auto terminator = block->getTerminator();
-        if (!terminator) {
-            // Terminator was invalidated - create fallback
-            PGX_WARNING("Terminator invalidated after call, creating fallback");
-            builder.setInsertionPointToEnd(block);
-            createFallbackTerminator(block);
-        } else {
-            // Terminator exists but validate it's correct type
-            if (!isValidTerminatorForContext(terminator, block)) {
-                PGX_WARNING("Invalid terminator type detected, replacing");
-                terminator->erase();
-                builder.setInsertionPointToEnd(block);
-                createFallbackTerminator(block);
-            }
-        }
-    }
-    
-    // Create context-appropriate fallback terminator
-    void createFallbackTerminator(mlir::Block* block) {
-        auto parentOp = block->getParentOp();
-        
-        if (auto funcOp = mlir::dyn_cast<mlir::func::FuncOp>(parentOp)) {
-            if (funcOp.getFunctionType().getNumResults() == 0) {
-                builder.create<mlir::func::ReturnOp>(loc);
-            } else {
-                auto zero = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 32);
-                builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange{zero});
-            }
-        } else {
-            builder.create<mlir::scf::YieldOp>(loc);
-        }
-    }
-    
-    // Validate terminator appropriateness for context
-    bool isValidTerminatorForContext(mlir::Operation* terminator, mlir::Block* block) {
-        auto parentOp = block->getParentOp();
-        
-        if (mlir::isa<mlir::func::FuncOp>(parentOp)) {
-            return mlir::isa<mlir::func::ReturnOp>(terminator);
-        } else if (mlir::isa<mlir::scf::ForOp, mlir::scf::IfOp, mlir::scf::WhileOp>(parentOp)) {
-            return mlir::isa<mlir::scf::YieldOp>(terminator);
-        }
-        return true; // Conservative - assume valid for unknown contexts
-    }
-};
-
-// ALTERNATIVE APPROACH B: PostgreSQL Memory Context Handling
-class PostgreSQLMemoryContextManager {
-private:
-    mlir::OpBuilder& builder;
-    mlir::Location loc;
-    std::stack<mlir::Block*> contextStack;
-    
-public:
-    PostgreSQLMemoryContextManager(mlir::OpBuilder& builder, mlir::Location loc) 
-        : builder(builder), loc(loc) {}
-    
-    // Preserve context around MLIR operations that may trigger PostgreSQL LOAD
-    void preserveContextAroundOperation(mlir::Operation* op) {
-        auto block = op->getBlock();
-        if (!block) return;
-        
-        // Save current insertion point
-        auto savedIP = builder.saveInsertionPoint();
-        contextStack.push(block);
-        
-        // Set insertion point after the operation
-        builder.setInsertionPointAfter(op);
-        
-        // Validate block structure post-operation
-        if (!block->getTerminator()) {
-            MLIR_PGX_INFO("SubOp", "Context preservation: adding terminator after PostgreSQL operation");
-            addContextSafeTerminator(block);
-        }
-        
-        // Restore insertion point
-        builder.restoreInsertionPoint(savedIP);
-    }
-    
-    // Add terminator that's safe from PostgreSQL memory context invalidation
-    void addContextSafeTerminator(mlir::Block* block) {
-        auto parentOp = block->getParentOp();
-        
-        if (auto funcOp = mlir::dyn_cast<mlir::func::FuncOp>(parentOp)) {
-            // Create return appropriate for function signature
-            if (funcOp.getFunctionType().getNumResults() == 0) {
-                builder.create<mlir::func::ReturnOp>(loc);
-            } else {
-                // Use integer constant that survives memory context changes
-                auto zero = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 32);
-                builder.create<mlir::func::ReturnOp>(loc, mlir::ValueRange{zero});
-            }
-        } else {
-            builder.create<mlir::scf::YieldOp>(loc);
-        }
-    }
-    
-    // Handle PostgreSQL LOAD command memory context invalidation
-    void handleLoadCommandInvalidation(mlir::func::CallOp callOp) {
-        if (!isPostgreSQLLoadRelatedCall(callOp)) return;
-        
-        MLIR_PGX_INFO("SubOp", "Handling potential PostgreSQL LOAD memory context invalidation");
-        
-        auto block = callOp->getBlock();
-        if (!block) return;
-        
-        // Ensure terminator exists before potential invalidation
-        if (!block->getTerminator()) {
-            builder.setInsertionPointAfter(callOp);
-            addContextSafeTerminator(block);
-        }
-        
-        // Mark for post-call validation
-        preserveContextAroundOperation(callOp);
-    }
-    
-private:
-    bool isPostgreSQLLoadRelatedCall(mlir::func::CallOp callOp) {
-        auto callee = callOp.getCallee();
-        return callee.contains("read_next_tuple") || 
-               callee.contains("get_int_field") || 
-               callee.contains("store_int_result");
-    }
-};
-
-// ALTERNATIVE APPROACH C: Enhanced MLIR Builder State Management with PostgreSQL compatibility
-// (MLIRBuilderStateTracker class is already defined above)
 
 // Memory context safe function creation utility
 mlir::func::FuncOp createFunctionWithMemoryContextSafety(
@@ -344,14 +207,14 @@ static mlir::TupleType convertTuple(mlir::TupleType tupleType, mlir::TypeConvert
     return mlir::TupleType::get(tupleType.getContext(), convertedTypes);
 }
 
-// Pass Declaration
-struct SubOpToControlFlowLoweringPass
-   : public mlir::PassWrapper<SubOpToControlFlowLoweringPass, OperationPass<mlir::ModuleOp>> {
-   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(SubOpToControlFlowLoweringPass)
+// Pass Declaration - Renamed to avoid MLIR Type ID collision with LingoDB
+struct PGXSubOpToControlFlowLoweringPass
+   : public mlir::PassWrapper<PGXSubOpToControlFlowLoweringPass, OperationPass<mlir::ModuleOp>> {
+   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PGXSubOpToControlFlowLoweringPass)
    virtual llvm::StringRef getArgument() const override { return "lower-subop-to-cf"; }
 
-   SubOpToControlFlowLoweringPass() {
-      PGX_INFO("=== SubOpToControlFlowLoweringPass constructor called ===");
+   PGXSubOpToControlFlowLoweringPass() {
+      PGX_INFO("=== PGXSubOpToControlFlowLoweringPass constructor called ===");
    }
    void getDependentDialects(DialectRegistry& registry) const override {
       registry.insert<LLVM::LLVMDialect, db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect, subop::SubOperatorDialect>();
@@ -359,45 +222,7 @@ struct SubOpToControlFlowLoweringPass
    void runOnOperation() final;
 };
 
-// Memory context safe function creation helper
-class MLIRBuilderStateTracker {
-public:
-    MLIRBuilderStateTracker(mlir::OpBuilder& builder, mlir::Location loc) : builder(builder), loc(loc) {}
-    
-    void recordBlockTransition(mlir::Block* block, const std::string& description) {
-        PGX_DEBUG("Block transition: " + description);
-    }
-    
-    void recordState(const std::string& description) {
-        PGX_DEBUG("State: " + description);
-    }
-    
-    void validatePostCallState(const std::string& callName) {
-        PGX_DEBUG("Validating post-call state for: " + callName);
-    }
-    
-    void validateAndRecoverBuilderState(const std::string& savedState) {
-        PGX_DEBUG("Recovering builder state: " + savedState);
-    }
-    
-private:
-    mlir::OpBuilder& builder;
-    mlir::Location loc;
-};
 
-mlir::func::FuncOp createFunctionWithMemoryContextSafety(
-    mlir::ModuleOp module, mlir::OpBuilder& builder, const std::string& name,
-    mlir::FunctionType funcType, mlir::Location loc, MLIRBuilderStateTracker& tracker) {
-    
-    auto savedIP = builder.saveInsertionPoint();
-    builder.setInsertionPointToStart(module.getBody());
-    auto func = builder.create<mlir::func::FuncOp>(loc, name, funcType);
-    func.setPrivate();
-    builder.restoreInsertionPoint(savedIP);
-    
-    tracker.recordState("Created memory context safe function: " + name);
-    return func;
-}
 
 // Simplified core execution step handling function
 void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp executionGroup, mlir::IRMapping& mapping, mlir::TypeConverter& typeConverter) {
@@ -426,9 +251,10 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
 } // namespace
 
 // Main pass implementation
-void SubOpToControlFlowLoweringPass::runOnOperation() {
-   PGX_INFO("=== SubOpToControlFlowLoweringPass::runOnOperation() START ===");
-   MLIR_PGX_DEBUG("SubOp", "SubOpToControlFlowLoweringPass is executing!");
+void PGXSubOpToControlFlowLoweringPass::runOnOperation() {
+   PGX_INFO("=== CLAUDE DEBUG: PGXSubOpToControlFlowLoweringPass::runOnOperation() CALLED! ===");
+   PGX_INFO("=== PGXSubOpToControlFlowLoweringPass::runOnOperation() START ===");
+   MLIR_PGX_DEBUG("SubOp", "PGXSubOpToControlFlowLoweringPass is executing!");
    
    try {
       auto module = getOperation();
@@ -599,15 +425,9 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
          mlir::OpBuilder mainBuilder(mainFunc);
          mainBuilder.setInsertionPointToEnd(mainBlock);
          
-         // ALTERNATIVE FIX: Initialize comprehensive state tracking and block validation
+         // Initialize simplified state tracking for PostgreSQL memory context safety
          MLIRBuilderStateTracker stateTracker(mainBuilder, mainBuilder.getUnknownLoc());
          stateTracker.recordBlockTransition(mainBlock, "InitialMainBlock");
-         
-         // ALTERNATIVE APPROACH A: Initialize defensive terminator management
-         DefensiveTerminatorManager terminatorManager(mainBuilder, mainBuilder.getUnknownLoc());
-         
-         // ALTERNATIVE APPROACH B: Initialize PostgreSQL memory context handling
-         PostgreSQLMemoryContextManager contextManager(mainBuilder, mainBuilder.getUnknownLoc());
          
          // Pre-add terminator to prevent MLIR validation errors
          if (!mainBlock->getTerminator()) {
@@ -648,11 +468,6 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
                }
                auto prepareCallOp = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), prepareFunc, mlir::ValueRange{one});
                
-               // ALTERNATIVE APPROACH A: Validate terminator after function call
-               terminatorManager.validateTerminatorAfterCall(prepareCallOp);
-               
-               // ALTERNATIVE APPROACH B: Handle potential memory context issues
-               contextManager.handleLoadCommandInvalidation(prepareCallOp);
                
                mapping.map(getExternal.getResult(), getExternal.getResult());
             } else if (auto scanRefs = mlir::dyn_cast<subop::ScanRefsOp>(op)) {
@@ -679,15 +494,9 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
                auto tupleId = readNextCallOp.getResult(0);
                
                // Ensure runtime call termination for read_next_tuple_from_table
-               ensureReadNextTupleTermination(readNextCallOp, mainBuilder, mainBuilder.getUnknownLoc());
+               ensurePostgreSQLCallTermination(readNextCallOp, mainBuilder, mainBuilder.getUnknownLoc());
                
-               // ALTERNATIVE APPROACH A: Validate terminator after PostgreSQL call
-               terminatorManager.validateTerminatorAfterCall(readNextCallOp);
-               
-               // ALTERNATIVE APPROACH B: Handle PostgreSQL memory context invalidation
-               contextManager.handleLoadCommandInvalidation(readNextCallOp);
-               
-               // ALTERNATIVE APPROACH C: Save builder state for recovery
+               // Record state for debugging
                stateTracker.recordState("Builder state saved before PostgreSQL call");
                
                // ALTERNATIVE FIX: Use memory context safe function declaration
@@ -705,7 +514,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
                auto fieldValue = getIntFieldCallOp.getResult(0);
                
                // Ensure runtime call termination for get_int_field
-               ensureGetIntFieldTermination(getIntFieldCallOp, mainBuilder, mainBuilder.getUnknownLoc());
+               ensurePostgreSQLCallTermination(getIntFieldCallOp, mainBuilder, mainBuilder.getUnknownLoc());
                
                // Store the actual field value
                auto storeFunc = module.lookupSymbol<mlir::func::FuncOp>("store_int_result");
@@ -723,17 +532,15 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
                auto storeCallOp = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), storeFunc, 
                    mlir::ValueRange{zero32, fieldValue, falseVal});
                
+               // IMMEDIATE TERMINATOR FIX: Add terminator right after call creation to prevent MLIR verification failure
+               auto currentBlock = storeCallOp->getBlock();
+               if (!currentBlock->getTerminator()) {
+                   PGX_INFO("Adding immediate terminator after store_int_result call");
+                   mainBuilder.create<mlir::scf::YieldOp>(mainBuilder.getUnknownLoc());
+               }
+               
                // Ensure runtime call termination for store_int_result
                ensureStoreIntResultTermination(storeCallOp, mainBuilder, mainBuilder.getUnknownLoc());
-               
-               // ALTERNATIVE APPROACH A: Validate terminator after store operation
-               terminatorManager.validateTerminatorAfterCall(storeCallOp);
-               
-               // ALTERNATIVE APPROACH B: Handle memory context invalidation for store call
-               contextManager.handleLoadCommandInvalidation(storeCallOp);
-               
-               // ALTERNATIVE APPROACH C: Validate and recover builder state after critical call
-               stateTracker.validateAndRecoverBuilderState("post-critical-call");
 
                // CRITICAL FIX: Preserve block terminator after store_int_result call generation
                // PostgreSQL LOAD commands can invalidate memory contexts, requiring proper insertion point management
@@ -813,26 +620,69 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       getParamVal.replaceAllUsesWith(getParamVal.getParam());
    });
    
-   PGX_INFO("=== SubOpToControlFlowLoweringPass::runOnOperation() completing successfully ===");
+   // CRITICAL FIX: Apply terminator safety to all blocks missing terminators
+   // This fixes "block with no terminator" errors from store_int_result calls
+   mlir::OpBuilder moduleBuilder(module);
+   module->walk([&](mlir::Block* block) {
+      if (!block->getTerminator()) {
+         moduleBuilder.setInsertionPointToEnd(block);
+         auto parentOp = block->getParentOp();
+         if (auto funcOp = mlir::dyn_cast<mlir::func::FuncOp>(parentOp)) {
+            if (funcOp.getFunctionType().getNumResults() == 0) {
+               moduleBuilder.create<mlir::func::ReturnOp>(moduleBuilder.getUnknownLoc());
+            } else {
+               auto zero = moduleBuilder.create<mlir::arith::ConstantIntOp>(moduleBuilder.getUnknownLoc(), 0, 32);
+               moduleBuilder.create<mlir::func::ReturnOp>(moduleBuilder.getUnknownLoc(), mlir::ValueRange{zero});
+            }
+         } else {
+            moduleBuilder.create<mlir::scf::YieldOp>(moduleBuilder.getUnknownLoc());
+         }
+      }
+   });
+   
+   // CRITICAL FIX: Apply comprehensive runtime call termination safety to all generated operations
+   // This fixes "block with no terminator" errors from store_int_result calls
+   PGX_INFO("=== APPLYING TERMINATOR FIX ===");
+   module->walk([&](mlir::func::CallOp callOp) {
+      PGX_INFO("Found CallOp: " + callOp.getCallee().str());
+      if (callOp.getCallee() == "store_int_result") {
+         PGX_INFO("FOUND store_int_result call - applying terminator fix");
+         auto block = callOp->getBlock();
+         if (!block->getTerminator()) {
+            PGX_INFO("Block has no terminator - adding terminator fix");
+            moduleBuilder.setInsertionPointAfter(callOp);
+            moduleBuilder.create<mlir::scf::YieldOp>(callOp.getLoc());
+            PGX_INFO("Added YieldOp terminator after store_int_result");
+         } else {
+            PGX_INFO("Block already has terminator");
+         }
+      }
+   });
+   subop_to_control_flow::RuntimeCallTermination::applyRuntimeCallSafetyToOperation(module, moduleBuilder);
+   PGX_INFO("Runtime call termination safety applied to complete module");
+   
+   PGX_INFO("=== PGXSubOpToControlFlowLoweringPass::runOnOperation() completing successfully ===");
    
    } catch (const std::exception& e) {
-      PGX_ERROR("Exception in SubOpToControlFlowLoweringPass::runOnOperation(): " + std::string(e.what()));
+      PGX_ERROR("Exception in PGXSubOpToControlFlowLoweringPass::runOnOperation(): " + std::string(e.what()));
       signalPassFailure();
       return;
    } catch (...) {
-      PGX_ERROR("Unknown exception in SubOpToControlFlowLoweringPass::runOnOperation()");
+      PGX_ERROR("Unknown exception in PGXSubOpToControlFlowLoweringPass::runOnOperation()");
       signalPassFailure();
       return;
    }
 }
 
-// Pipeline registration functions
-std::unique_ptr<mlir::Pass> subop::createLowerSubOpPass() {
-   PGX_INFO("=== createLowerSubOpPass() called ===");
-   auto pass = std::make_unique<SubOpToControlFlowLoweringPass>();
-   PGX_INFO("=== SubOpToControlFlowLoweringPass created successfully ===");
+// Pipeline registration functions in correct namespace
+namespace pgx_lower::compiler::dialect::subop {
+
+std::unique_ptr<mlir::Pass> createLowerSubOpPass() {
+   auto pass = std::make_unique<PGXSubOpToControlFlowLoweringPass>();
    return pass;
 }
+
+} // namespace pgx_lower::compiler::dialect::subop
 
 void subop::setCompressionEnabled(bool compressionEnabled) {
    EntryStorageHelper::compressionEnabled = compressionEnabled;

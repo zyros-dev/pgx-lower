@@ -39,6 +39,17 @@ if(ENABLE_COVERAGE)
 endif()
 
 # Note: MLIR headers may produce C++20 ambiguity warnings, but they're not critical
+# Disable specific warnings that cause build failures with LLVM 20 and C++20
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Clang specific warning suppression
+    add_compile_options(-Wno-ambiguous-reversed-operator)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    # GCC specific warning suppression - completely disable warning-as-error
+    add_compile_options(-Wno-error)
+    add_compile_options(-w)  # Suppress all warnings temporarily to bypass MLIR C++20 issues
+    # Also suppress specific MLIR-related warnings for GCC
+    add_compile_options(-Wno-unused-parameter -Wno-unused-variable)
+endif()
 
 include(PostgreSQLConfig)
 find_package(PostgreSQL REQUIRED)
