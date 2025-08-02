@@ -922,11 +922,10 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                logger_.notice("Generating DB dialect AND operation");
+                logger_.notice("Generating arith dialect AND operation");
                 
-                // Create DB dialect AND operation
-                auto andOp = builder_->create<pgx_lower::compiler::dialect::db::AndOp>(
-                    location, left, right);
+                // Use arith dialect for boolean logic - will be properly lowered in pipeline
+                auto andOp = builder_->create<mlir::arith::AndIOp>(location, left, right);
                 return andOp.getResult();
             }
             break;
@@ -934,23 +933,23 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> mlir::Val
             if (operands.size() >= 2) {
                 auto left = convertToBool(operands[0]);
                 auto right = convertToBool(operands[1]);
-                logger_.notice("Generating DB dialect OR operation");
+                logger_.notice("Generating arith dialect OR operation");
                 
-                // Create DB dialect OR operation
-                auto orOp = builder_->create<pgx_lower::compiler::dialect::db::OrOp>(
-                    location, left, right);
+                // Use arith dialect for boolean logic - will be properly lowered in pipeline
+                auto orOp = builder_->create<mlir::arith::OrIOp>(location, left, right);
                 return orOp.getResult();
             }
             break;
         case NOT_EXPR:
             if (operands.size() >= 1) {
                 auto operand = convertToBool(operands[0]);
-                logger_.notice("Generating DB dialect NOT operation");
+                logger_.notice("Generating arith dialect XOR operation for NOT");
                 
-                // Create DB dialect NOT operation
-                auto notOp = builder_->create<pgx_lower::compiler::dialect::db::NotOp>(
-                    location, operand);
-                return notOp.getResult();
+                // Use arith dialect XOR with true constant for NOT operation
+                auto trueConst = builder_->create<mlir::arith::ConstantOp>(
+                    location, builder_->getI1Type(), builder_->getBoolAttr(true));
+                auto xorOp = builder_->create<mlir::arith::XOrIOp>(location, operand, trueConst);
+                return xorOp.getResult();
             }
             break;
     }
@@ -1860,11 +1859,19 @@ auto PostgreSQLASTTranslator::generateRelAlgMapOperation(mlir::Value baseTable, 
         if (isResjunk || !expr) continue;
         
         // Check if this is an expression that needs computation
-        if (IsA(expr, OpExpr) || IsA(expr, FuncExpr)) {
+        if (IsA(expr, OpExpr) || IsA(expr, FuncExpr) || IsA(expr, BoolExpr)) {
             std::string columnName = resname ? resname : ("computed_" + std::to_string(columnIndex));
             
-            // Create ColumnDefAttr for this computed expression - use i32 type for arithmetic results
-            auto columnDefAttr = columnManager.createDef("computed", columnName, builder_->getI32IntegerAttr(0));
+            // Create ColumnDefAttr for this computed expression
+            mlir::Attribute typeAttr;
+            if (IsA(expr, BoolExpr)) {
+                // Use i1 type for boolean results
+                typeAttr = builder_->getBoolAttr(false);
+            } else {
+                // Use i32 type for arithmetic results
+                typeAttr = builder_->getI32IntegerAttr(0);
+            }
+            auto columnDefAttr = columnManager.createDef("computed", columnName, typeAttr);
             computedColumns.push_back(columnDefAttr);
             
             logger_.notice("ARITHMETIC MAP: Pre-scan added ColumnDefAttr for: " + columnName);
@@ -1932,6 +1939,22 @@ auto PostgreSQLASTTranslator::generateRelAlgMapOperation(mlir::Value baseTable, 
                 }
             } catch (const std::exception& e) {
                 logger_.error("Failed to generate expression for column " + std::to_string(columnIndex) + ": " + e.what());
+                // Continue with other expressions
+            }
+        } else if (IsA(expr, BoolExpr)) {
+            logger_.notice("ARITHMETIC: Confirmed BoolExpr, about to call translateBoolExpr");
+            // Handle boolean expressions using the fixed translateBoolExpr
+            try {
+                auto savedBuilder = builder_;
+                builder_ = &mapBuilder;
+                mlir::Value result = translateBoolExpr(reinterpret_cast<BoolExpr*>(expr));
+                builder_ = savedBuilder;
+                if (result) {
+                    computedValues.push_back(result);
+                    logger_.debug("Generated boolean expression for column " + std::to_string(columnIndex) + " (ColumnDefAttr already added in pre-scan)");
+                }
+            } catch (const std::exception& e) {
+                logger_.error("Failed to generate boolean expression for column " + std::to_string(columnIndex) + ": " + e.what());
                 // Continue with other expressions
             }
         }

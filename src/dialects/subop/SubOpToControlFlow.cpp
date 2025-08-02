@@ -4268,6 +4268,7 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
 
 void SubOpToControlFlowLoweringPass::runOnOperation() {
    PGX_INFO("=== SubOpToControlFlowLoweringPass::runOnOperation() START ===");
+   llvm::errs() << "=== URGENT DEBUG: SubOpToControlFlowLoweringPass is executing! ===\n";
    
    try {
       auto module = getOperation();
@@ -4526,6 +4527,20 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
                auto falseVal = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 1);
                mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), storeFunc, 
                    mlir::ValueRange{zero32, fieldValue, falseVal});
+               
+               // URGENT DEBUG: Check terminator status after func.call
+               auto currentBlock = mainBuilder.getInsertionBlock();
+               llvm::errs() << "=== TERMINATOR DEBUG: After store_int_result call ===\n";
+               llvm::errs() << "Current block: " << (currentBlock ? "valid" : "null") << "\n";
+               if (currentBlock) {
+                   llvm::errs() << "Block has terminator: " << (currentBlock->getTerminator() ? "yes" : "no") << "\n";
+                   if (!currentBlock->getTerminator()) {
+                       llvm::errs() << "Adding terminator now!\n";
+                       auto zero = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 32);
+                       mainBuilder.create<mlir::func::ReturnOp>(mainBuilder.getUnknownLoc(), mlir::ValueRange{zero});
+                       llvm::errs() << "Terminator added successfully!\n";
+                   }
+               }
                
                // Map the result to the scan result (dummy for now)
                mapping.map(scanRefs.getResult(), scanRefs.getResult());

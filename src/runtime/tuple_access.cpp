@@ -617,60 +617,6 @@ extern "C" void* DataSource_get(pgx_lower::compiler::runtime::VarLen32 descripti
     }
 }
 
-// Expression computation runtime functions
-extern "C" int32_t compute_logical_expression(int64_t tuplePtr, int32_t col1Index, int32_t col2Index) {
-    PGX_NOTICE("compute_logical_expression: called with tuplePtr=" + std::to_string(tuplePtr) + 
-               ", col1Index=" + std::to_string(col1Index) + ", col2Index=" + std::to_string(col2Index));
-    
-    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
-        PGX_ERROR("compute_logical_expression: No current tuple available");
-        return 0; // Default to false
-    }
-    
-    // Extract boolean values from the tuple
-    bool is_null1 = false, is_null2 = false;
-    bool flag1 = false, flag2 = false;
-    
-    TupleDesc tupleDesc = g_current_tuple_passthrough.tupleDesc;
-    HeapTuple tuple = g_current_tuple_passthrough.originalTuple;
-    
-    // Get flag1 value (assuming it's a boolean column)
-    if (col1Index >= 0 && col1Index < tupleDesc->natts) {
-        Datum datum1 = heap_getattr(tuple, col1Index + 1, tupleDesc, &is_null1); // +1 for 1-based indexing
-        if (!is_null1) {
-            flag1 = DatumGetBool(datum1);
-        }
-    }
-    
-    // Get flag2 value (assuming it's a boolean column)
-    if (col2Index >= 0 && col2Index < tupleDesc->natts) {
-        Datum datum2 = heap_getattr(tuple, col2Index + 1, tupleDesc, &is_null2); // +1 for 1-based indexing
-        if (!is_null2) {
-            flag2 = DatumGetBool(datum2);
-        }
-    }
-    
-    PGX_NOTICE("compute_logical_expression: flag1=" + std::string(flag1 ? "true" : "false") + 
-               " (isNull=" + std::string(is_null1 ? "true" : "false") + 
-               "), flag2=" + std::string(flag2 ? "true" : "false") + 
-               " (isNull=" + std::string(is_null2 ? "true" : "false") + ")");
-    
-    // Compute logical AND
-    bool result = flag1 && flag2;
-    
-    PGX_NOTICE("compute_logical_expression: result (flag1 AND flag2) = " + std::string(result ? "true" : "false"));
-    
-    return result ? 1 : 0;
-}
-
-extern "C" void store_computed_result(int32_t columnIndex, int32_t value) {
-    PGX_NOTICE("store_computed_result: columnIndex=" + std::to_string(columnIndex) + ", value=" + std::to_string(value));
-    
-    // Store the boolean result
-    bool boolValue = (value != 0);
-    Datum datum = BoolGetDatum(boolValue);
-    g_computed_results.setResult(columnIndex, datum, false, BOOLOID);
-    
-    PGX_NOTICE("store_computed_result: stored boolean value=" + std::string(boolValue ? "true" : "false") + 
-               " in column " + std::to_string(columnIndex));
-}
+// Pipeline architecture restored - expression computation now flows through:
+// PostgreSQL AST → RelAlg → SubOp → DB → DSA → LLVM IR → JIT
+// All hardcoded expression shortcuts have been removed

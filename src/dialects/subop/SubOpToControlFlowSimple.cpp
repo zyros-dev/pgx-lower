@@ -170,13 +170,23 @@ public:
                         auto falseVal = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 1);
                         builder.create<mlir::func::CallOp>(module.getLoc(), storeFunc, 
                             mlir::ValueRange{zero32, fieldValue, falseVal});
+                        
+                        // Ensure block has proper terminator after function call
+                        auto currentBlock = builder.getInsertionBlock();
+                        if (currentBlock && !currentBlock->getTerminator()) {
+                            auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
+                            builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+                        }
                     }
                 }
             }
             
-            // Return 0
-            auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
-            builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+            // Ensure function has terminator if none was added yet
+            auto currentBlock = builder.getInsertionBlock();
+            if (currentBlock && !currentBlock->getTerminator()) {
+                auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
+                builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+            }
         }
         
         // Remove ExecutionGroupOp operations
