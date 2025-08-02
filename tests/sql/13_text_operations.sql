@@ -1,5 +1,6 @@
 -- Test text operators: PgLikeOp, PgConcatOp, PgSubstringOp
 LOAD 'pgx_lower';
+SET client_min_messages TO NOTICE;
 
 DROP TABLE IF EXISTS test_text;
 

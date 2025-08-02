@@ -1,5 +1,6 @@
 -- Test logical operators: PgAndOp, PgOrOp, PgNotOp
 LOAD 'pgx_lower';
+SET client_min_messages TO NOTICE;
 
 DROP TABLE IF EXISTS test_logical;
 
