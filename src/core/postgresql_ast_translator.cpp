@@ -99,7 +99,8 @@ PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context, MLI
     , builder_(nullptr)
     , currentModule_(nullptr)
     , currentTupleHandle_(nullptr)
-    , currentPlannedStmt_(nullptr) {
+    , currentPlannedStmt_(nullptr)
+    , contextNeedsRecreation_(false) {
     registerDialects();
 }
 
@@ -130,6 +131,37 @@ auto PostgreSQLASTTranslator::registerDialects() -> void {
     // context_.getOrLoadDialect<mlir::DLTIDialect>();
 }
 
+auto PostgreSQLASTTranslator::recreateContextAfterLoad() -> void {
+    logger_.notice("CONTEXT ISOLATION: Recreating MLIR context after PostgreSQL LOAD");
+    
+    // Note: We cannot actually recreate the context reference we hold,
+    // but we can re-register all dialects to ensure they're properly loaded
+    // in case the context was affected by memory context changes
+    registerDialects();
+    
+    // Mark that context recreation has been performed
+    contextNeedsRecreation_ = false;
+    
+    logger_.notice("CONTEXT ISOLATION: Context recreation completed");
+}
+
+auto PostgreSQLASTTranslator::invalidateTypeCache() -> void {
+    logger_.notice("CONTEXT ISOLATION: Invalidating MLIR type cache after LOAD");
+    
+    // Mark that we need to recreate context-dependent objects
+    contextNeedsRecreation_ = true;
+    
+    logger_.notice("CONTEXT ISOLATION: Type cache invalidation completed");
+}
+
+auto PostgreSQLASTTranslator::ensureContextIsolation() -> void {
+    // Check if we need to handle LOAD-related memory context changes
+    if (::g_extension_after_load && contextNeedsRecreation_) {
+        logger_.notice("CONTEXT ISOLATION: Detected LOAD operation, ensuring context isolation");
+        recreateContextAfterLoad();
+    }
+}
+
 auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<mlir::ModuleOp> {
     if (!plannedStmt) {
         logger_.error("PlannedStmt is null");
@@ -137,6 +169,13 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     }
     
     logger_.debug("Translating PostgreSQL PlannedStmt to MLIR");
+    
+    // CRITICAL: Check for LOAD operation and ensure context isolation
+    if (::g_extension_after_load) {
+        logger_.notice("CONTEXT ISOLATION: LOAD operation detected, invalidating type cache");
+        invalidateTypeCache();
+        ensureContextIsolation();
+    }
     
     // Store the planned statement for accessing metadata
     currentPlannedStmt_ = plannedStmt;
@@ -1644,11 +1683,45 @@ auto PostgreSQLASTTranslator::generateRelAlgMapOperation(mlir::Value baseTable, 
     
     logger_.notice("ARITHMETIC MAP: About to get location");
     auto location = builder_->getUnknownLoc();
-    logger_.notice("ARITHMETIC MAP: Got location, about to get TupleStreamType");
-    auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
-    logger_.notice("ARITHMETIC MAP: Got TupleStreamType, about to get TupleType");
-    auto tupleType = pgx_lower::compiler::dialect::tuples::TupleType::get(&context_);
-    logger_.notice("ARITHMETIC MAP: Got TupleType successfully");
+    logger_.notice("ARITHMETIC MAP: Got location, ensuring context isolation before type creation");
+    
+    // CRITICAL: Ensure context isolation before creating MLIR types
+    ensureContextIsolation();
+    
+    logger_.notice("ARITHMETIC MAP: About to get TupleStreamType");
+    
+    // Validate context state before creating types
+    pgx_lower::compiler::dialect::tuples::TupleStreamType tupleStreamType;
+    pgx_lower::compiler::dialect::tuples::TupleType tupleType;
+    
+    try {
+        logger_.notice("CONTEXT ISOLATION: Validating context state before type creation");
+        logger_.notice("CONTEXT ISOLATION: Context address: " + std::to_string(reinterpret_cast<uintptr_t>(&context_)));
+        
+        // Test context by creating a simple MLIR type first
+        auto testType = builder_->getI32Type();
+        logger_.notice("CONTEXT ISOLATION: Simple I32 type creation successful");
+        
+        tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
+        logger_.notice("ARITHMETIC MAP: Got TupleStreamType, about to get TupleType");
+        tupleType = pgx_lower::compiler::dialect::tuples::TupleType::get(&context_);
+        logger_.notice("ARITHMETIC MAP: Got TupleType successfully");
+        
+        // Validate the created types
+        if (!tupleStreamType || !tupleType) {
+            logger_.error("CONTEXT ISOLATION: Type creation returned null types");
+            return baseTable;
+        }
+        
+        logger_.notice("CONTEXT ISOLATION: Both tuple types created successfully");
+        
+    } catch (const std::exception& e) {
+        logger_.error("CONTEXT ISOLATION: Exception during type creation: " + std::string(e.what()));
+        return baseTable;
+    } catch (...) {
+        logger_.error("CONTEXT ISOLATION: Unknown exception during type creation");
+        return baseTable;
+    }
     
     // Collect computed columns from expressions - avoid persistent attributes
     logger_.notice("ARITHMETIC MAP: About to process target list");

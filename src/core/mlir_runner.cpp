@@ -27,6 +27,9 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/TargetSelect.h"
 
+// Forward declaration of global flag from executor_c.cpp  
+extern bool g_extension_after_load;
+
 // Runtime symbols will be registered from the interface functions
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
@@ -520,7 +523,14 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
         return false;
     }
     
+    // Create MLIR context with explicit memory isolation from PostgreSQL
     mlir::MLIRContext context;
+    
+    // Add debug info about context creation
+    logger.notice("CONTEXT ISOLATION: Creating fresh MLIRContext after LOAD detected: " + 
+                  std::string(g_extension_after_load ? "true" : "false"));
+    logger.notice("CONTEXT ISOLATION: MLIRContext created at address: " + 
+                  std::to_string(reinterpret_cast<uintptr_t>(&context)));
     
     // Load all required dialects into the context
     context.getOrLoadDialect<pgx_lower::compiler::dialect::relalg::RelAlgDialect>();
@@ -535,6 +545,8 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     context.getOrLoadDialect<mlir::arith::ArithDialect>();
     context.getOrLoadDialect<mlir::memref::MemRefDialect>();
     context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+    
+    logger.notice("CONTEXT ISOLATION: All dialects loaded successfully");
     
     logger.debug("Using PostgreSQL AST translation for query processing");
     

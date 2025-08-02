@@ -79,8 +79,12 @@ private:
     mlir::ModuleOp* currentModule_;  // Current module being built
     mlir::Value* currentTupleHandle_;  // Current tuple handle for field access (nullptr if none)
     PlannedStmt* currentPlannedStmt_;  // Current planned statement for accessing metadata
+    bool contextNeedsRecreation_;  // Track if context was invalidated by LOAD
     
     auto registerDialects() -> void;
+    auto recreateContextAfterLoad() -> void;
+    auto invalidateTypeCache() -> void;
+    auto ensureContextIsolation() -> void;
     auto createRuntimeFunctionDeclarations(mlir::ModuleOp& module) -> void;
     auto getMLIRTypeForPostgreSQLType(Oid typeOid) -> mlir::Type;
     auto getOperatorName(Oid operatorOid) -> const char*;
