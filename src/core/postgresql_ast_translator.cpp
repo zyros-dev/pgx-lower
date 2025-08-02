@@ -252,16 +252,48 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     if (plannedStmt->planTree && plannedStmt->planTree->targetlist) {
         List* targetList = plannedStmt->planTree->targetlist;
         
-        // Check if target list contains expressions
+        // Check if target list contains expressions - with detailed logging
         bool hasExpressions = false;
         ListCell* lc;
+        int entryIndex = 0;
         foreach(lc, targetList) {
             TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
-            if (tle && !tle->resjunk && tle->expr && IsA(tle->expr, OpExpr)) {
+            logger_.notice("EXPRESSION DETECTION: Processing TargetEntry " + std::to_string(entryIndex));
+            logger_.notice("EXPRESSION DETECTION: tle = " + std::string(tle ? "valid" : "null"));
+            
+            if (!tle) {
+                entryIndex++;
+                continue;
+            }
+            
+            logger_.notice("EXPRESSION DETECTION: About to access tle->resjunk");
+            bool isResjunk = tle->resjunk;
+            logger_.notice("EXPRESSION DETECTION: tle->resjunk = " + std::string(isResjunk ? "true" : "false"));
+            
+            if (isResjunk) {
+                entryIndex++;
+                continue;
+            }
+            
+            logger_.notice("EXPRESSION DETECTION: About to access tle->expr");
+            Expr* expr = tle->expr;
+            logger_.notice("EXPRESSION DETECTION: tle->expr = " + std::string(expr ? "valid" : "null"));
+            
+            if (!expr) {
+                entryIndex++;
+                continue;
+            }
+            
+            logger_.notice("EXPRESSION DETECTION: About to check IsA(expr, OpExpr)");
+            bool isOpExpr = IsA(expr, OpExpr);
+            logger_.notice("EXPRESSION DETECTION: IsA(expr, OpExpr) = " + std::string(isOpExpr ? "true" : "false"));
+            
+            if (isOpExpr) {
                 hasExpressions = true;
-                logger_.debug("Found arithmetic expression in targetList - generating RelAlg Map");
+                logger_.notice("EXPRESSION DETECTION: Found arithmetic expression in targetList - generating RelAlg Map");
                 break;
             }
+            entryIndex++;
         }
         
         if (hasExpressions) {
@@ -343,10 +375,12 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operat
     
     // Get table name from relation OID
     std::string tableName = "test";  // Default
+    Oid tableOid = InvalidOid;  // Capture the OID for enhanced identifier
     
     // Try to detect table name from context
     if (rte && rte->relid != InvalidOid) {
-        logger_.notice("Table OID from RTE: " + std::to_string(rte->relid));
+        tableOid = rte->relid;  // Capture the actual OID
+        logger_.notice("Table OID from RTE: " + std::to_string(tableOid));
         // For now, detect test_arithmetic by checking if we're in an expression test
         if (currentPlannedStmt_->planTree && currentPlannedStmt_->planTree->targetlist) {
             List* targetList = currentPlannedStmt_->planTree->targetlist;
@@ -360,7 +394,14 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operat
         }
     }
     
-    auto tableId = builder_->getStringAttr(tableName);
+    // Create enhanced table identifier that includes both name and OID
+    std::string enhancedTableId = tableName;
+    if (tableOid != InvalidOid) {
+        enhancedTableId = tableName + "|oid:" + std::to_string(tableOid);
+        logger_.notice("Enhanced table identifier: " + enhancedTableId);
+    }
+    
+    auto tableId = builder_->getStringAttr(enhancedTableId);
     
     // Create column metadata for the table using target list
     auto& columnManager = context_.getLoadedDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>()->getColumnManager();
@@ -1773,76 +1814,42 @@ auto PostgreSQLASTTranslator::generateRelAlgMapOperation(mlir::Value baseTable, 
         return baseTable;
     }
     
-    // Collect computed columns from expressions - avoid persistent attributes
-    logger_.notice("ARITHMETIC MAP: About to process target list");
+    // PRE-SCAN: Collect computed columns from expressions before creating Map operation
+    logger_.notice("ARITHMETIC MAP: Pre-scanning target list to collect ColumnDefAttr objects");
     llvm::SmallVector<mlir::Attribute> computedColumns;
+    
+    // Get the column manager from the TupleStream dialect
+    auto tupleStreamDialect = context_.getOrLoadDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>();
+    auto& columnManager = tupleStreamDialect->getColumnManager();
+    
     ListCell* lc;
     int columnIndex = 0;
     
-    logger_.notice("ARITHMETIC MAP: Starting foreach loop over target list");
     foreach(lc, targetList) {
-        logger_.notice("ARITHMETIC MAP: Processing target list entry " + std::to_string(columnIndex));
-        logger_.notice("ARITHMETIC MAP: lc pointer: " + std::to_string(reinterpret_cast<uintptr_t>(lc)));
+        TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (!tle) continue;
         
-        void* raw_ptr = lfirst(lc);
-        logger_.notice("ARITHMETIC MAP: lfirst(lc) pointer: " + std::to_string(reinterpret_cast<uintptr_t>(raw_ptr)));
-        
-        if (!raw_ptr) {
-            logger_.notice("ARITHMETIC MAP: lfirst(lc) returned null, skipping");
-            continue;
-        }
-        
-        TargetEntry* tle = static_cast<TargetEntry*>(raw_ptr);
-        logger_.notice("ARITHMETIC MAP: Got TargetEntry pointer: " + std::to_string(reinterpret_cast<uintptr_t>(tle)));
-        
-        // Safe access to TargetEntry fields after LOAD
-        bool isResjunk = false;
-        Expr* expr = nullptr;
-        const char* resname = nullptr;
-        
-        if (!tle) {
-            logger_.notice("ARITHMETIC MAP: TargetEntry is null, skipping");
-            continue;
-        }
-        
-        // Additional validation: check if the pointer looks reasonable
-        // This is a heuristic check to avoid accessing obviously invalid memory
-        uintptr_t ptr_value = reinterpret_cast<uintptr_t>(tle);
-        if (ptr_value < 0x1000 || ptr_value > 0x7FFFFFFFFFFF) {
-            logger_.notice("ARITHMETIC MAP: TargetEntry pointer looks invalid (" + std::to_string(ptr_value) + "), skipping");
-            continue;
-        }
-        
-        // For the immediate term, skip expression processing when LOAD is detected
-        // This prevents crashes while preserving the MLIR pipeline for non-LOAD cases
+        // Skip expression processing when LOAD is detected to prevent crashes
         if (::g_extension_after_load) {
-            logger_.notice("ARITHMETIC MAP: After LOAD detected - cannot process expressions");
-            logger_.notice("ARITHMETIC MAP: The TargetEntry structure was allocated before LOAD");
-            logger_.notice("ARITHMETIC MAP: Accessing any fields (resjunk, expr, resname) will crash");
-            // Skip this expression entirely - we cannot safely access ANY fields
-            continue;
+            continue;  // Skip this expression entirely after LOAD
         }
         
-        // Normal access for non-LOAD cases
-        isResjunk = tle->resjunk;
-        expr = tle->expr;
-        resname = tle->resname;
+        // Normal access for non-LOAD cases 
+        bool isResjunk = tle->resjunk;
+        Expr* expr = tle->expr;
+        const char* resname = tle->resname;
         
-        if (isResjunk || !expr) {
-            logger_.notice("ARITHMETIC MAP: TargetEntry invalid or no expression, skipping");
-            continue;
-        }
+        if (isResjunk || !expr) continue;
         
         // Check if this is an expression that needs computation
         if (IsA(expr, OpExpr) || IsA(expr, FuncExpr)) {
-            // Use simple string attributes instead of complex ColumnDefAttr
             std::string columnName = resname ? resname : ("computed_" + std::to_string(columnIndex));
             
-            // Create only basic string attribute - no complex persistent attributes
-            auto columnRef = builder_->getStringAttr(columnName);
-            computedColumns.push_back(columnRef);
+            // Create ColumnDefAttr for this computed expression - use i32 type for arithmetic results
+            auto columnDefAttr = columnManager.createDef("computed", columnName, builder_->getI32IntegerAttr(0));
+            computedColumns.push_back(columnDefAttr);
             
-            logger_.debug("Added computed column: " + columnName);
+            logger_.notice("ARITHMETIC MAP: Pre-scan added ColumnDefAttr for: " + columnName);
         }
         columnIndex++;
     }
@@ -1903,7 +1910,7 @@ auto PostgreSQLASTTranslator::generateRelAlgMapOperation(mlir::Value baseTable, 
                 mlir::Value result = generateDBDialectExpression(mapBuilder, location, mapBlock->getArgument(0), expr);
                 if (result) {
                     computedValues.push_back(result);
-                    logger_.debug("Generated DB dialect expression for column " + std::to_string(columnIndex));
+                    logger_.debug("Generated DB dialect expression for column " + std::to_string(columnIndex) + " (ColumnDefAttr already added in pre-scan)");
                 }
             } catch (const std::exception& e) {
                 logger_.error("Failed to generate expression for column " + std::to_string(columnIndex) + ": " + e.what());

@@ -288,8 +288,45 @@ public:
             auto falseVal = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 1);
             auto trueVal = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 1, 1);
             
-            // Create null pointer for table name (we'll use table OID instead)
-            auto nullPtr = builder.create<mlir::LLVM::ZeroOp>(module.getLoc(), ptrType);
+            // Create table name string constant from extracted table name
+            mlir::Value tableNamePtr;
+            if (!tableName.empty()) {
+#ifdef POSTGRESQL_EXTENSION
+                elog(NOTICE, "Creating LLVM string constant for table name: %s", tableName.c_str());
+#endif
+                // Create a global string constant for the table name
+                auto stringType = mlir::LLVM::LLVMArrayType::get(builder.getI8Type(), tableName.length() + 1);
+                auto stringAttr = builder.getStringAttr(tableName + '\0');
+                
+                auto savedIP = builder.saveInsertionPoint();
+                builder.setInsertionPointToStart(module.getBody());
+                
+                auto globalOp = builder.create<mlir::LLVM::GlobalOp>(
+                    module.getLoc(),
+                    stringType,
+                    /*isConstant=*/true,
+                    mlir::LLVM::Linkage::Internal,
+                    "table_name_str",
+                    stringAttr,
+                    /*alignment=*/0);
+                
+                builder.restoreInsertionPoint(savedIP);
+                
+                // Get address of the global string
+                auto globalAddr = builder.create<mlir::LLVM::AddressOfOp>(
+                    module.getLoc(), 
+                    mlir::LLVM::LLVMPointerType::get(&getContext()),
+                    globalOp.getSymName());
+                
+                // Cast to generic pointer
+                tableNamePtr = builder.create<mlir::LLVM::BitcastOp>(
+                    module.getLoc(), ptrType, globalAddr);
+            } else {
+#ifdef POSTGRESQL_EXTENSION
+                elog(WARNING, "No table name extracted, using NULL pointer");
+#endif
+                tableNamePtr = builder.create<mlir::LLVM::ZeroOp>(module.getLoc(), ptrType);
+            }
             
             // Prepare results storage based on number of columns
             auto numColsConst = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), numColumns, 32);
@@ -297,7 +334,7 @@ public:
             builder.create<mlir::func::CallOp>(module.getLoc(), prepareFunc, prepareArgs);
             
             // Open the table
-            mlir::Value openArgs[] = {nullPtr};
+            mlir::Value openArgs[] = {tableNamePtr};
             auto tableHandle = builder.create<mlir::func::CallOp>(module.getLoc(), openTableFunc, 
                                                                  openArgs).getResult(0);
             

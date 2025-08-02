@@ -16,15 +16,27 @@ using namespace pgx_lower::compiler::dialect::tuples;
 
 // Implement ColumnDefAttr custom assembly format methods
 mlir::Attribute pgx_lower::compiler::dialect::tuples::ColumnDefAttr::parse(mlir::AsmParser &parser, mlir::Type type) {
-   // For now, create dummy values - this is the minimal implementation needed
-   auto name = SymbolRefAttr::get(parser.getContext(), "dummy");
-   auto columnPtr = std::make_shared<Column>(); // Simple shared_ptr for now
-   auto fromExisting = UnitAttr::get(parser.getContext());
-   return ColumnDefAttr::get(parser.getContext(), name, columnPtr, fromExisting);
+   mlir::SymbolRefAttr sym;
+   mlir::Type t;
+   mlir::ArrayAttr fromExisting;
+   if (parser.parseLess() || parser.parseAttribute(sym) || parser.parseComma() || parser.parseType(t)) return Attribute();
+   if (parser.parseOptionalComma().succeeded()) {
+      if (parser.parseAttribute(fromExisting)) {
+         return Attribute();
+      }
+   }
+   if (parser.parseGreater()) return Attribute();
+   auto columnDef = parser.getContext()->getLoadedDialect<TupleStreamDialect>()->getColumnManager().createDef(sym, fromExisting);
+   columnDef.getColumn().type = t;
+   return columnDef;
 }
 
 void pgx_lower::compiler::dialect::tuples::ColumnDefAttr::print(mlir::AsmPrinter &printer) const {
-   printer << "@column";
+   printer << "<" << getName() << "," << getColumn().type;
+   if (auto fromexisting = getFromExisting()) {
+      printer << "," << fromexisting;
+   }
+   printer << ">";
 }
 
 // Implement ColumnRefAttr custom assembly format methods  
@@ -36,7 +48,7 @@ mlir::Attribute pgx_lower::compiler::dialect::tuples::ColumnRefAttr::parse(mlir:
 }
 
 void pgx_lower::compiler::dialect::tuples::ColumnRefAttr::print(mlir::AsmPrinter &printer) const {
-   printer << "@ref";
+   printer << "<" << getName() << ">";
 }
 
 void TupleStreamDialect::initialize() {

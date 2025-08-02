@@ -79,8 +79,19 @@ class BaseTableLowering : public OpConversionPattern<relalg::BaseTableOp> {
       std::vector<Attribute> colNames;
       std::vector<Attribute> colTypes;
       std::vector<NamedAttribute> mapping;
-      std::string tableName = mlir::cast<mlir::StringAttr>(baseTableOp->getAttr("table_identifier")).str();
-      std::string scanDescription = R"({ "table": ")" + tableName + R"(", "mapping": { )";
+      std::string tableIdentifier = mlir::cast<mlir::StringAttr>(baseTableOp->getAttr("table_identifier")).str();
+      
+      // Parse table name and OID from identifier (format: "tableName|oid:12345")
+      std::string tableName = tableIdentifier;
+      std::string tableOid = "0"; // Default
+      
+      size_t oidPos = tableIdentifier.find("|oid:");
+      if (oidPos != std::string::npos) {
+          tableName = tableIdentifier.substr(0, oidPos);
+          tableOid = tableIdentifier.substr(oidPos + 5); // Skip "|oid:"
+      }
+      
+      std::string scanDescription = R"({ "table": ")" + tableName + R"(", "oid": ")" + tableOid + R"(", "mapping": { )";
       bool first = true;
       for (auto namedAttr : baseTableOp.getColumns().getValue()) {
          auto identifier = namedAttr.getName();
