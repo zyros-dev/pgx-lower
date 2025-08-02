@@ -91,7 +91,12 @@ class LookupSegmentTreeViewLowering : public SubOpTupleStreamConsumerConversionP
       rewriter.atStartOf(&rewriter.getCurrentStreamLoc()->getParentOfType<mlir::func::FuncOp>().getFunctionBody().front(), [&](SubOpRewriter& rewriter) {
          ref = rewriter.create<util::AllocaOp>(lookupOp->getLoc(), util::RefType::get(typeConverter->convertType(stateType)), mlir::Value());
       });
-      rt::SegmentTreeView::lookup(rewriter, loc)({adaptor.getState(), ref, idxLeft, idxRight});
+      auto lookupCall = rt::SegmentTreeView::lookup(rewriter, loc)({adaptor.getState(), ref, idxLeft, idxRight})[0];
+      
+      // Ensure runtime call termination for SegmentTreeView::lookup
+      subop_to_control_flow::RuntimeCallTermination::ensureLingoDRuntimeCallTermination(
+          lookupCall.getDefiningOp(), rewriter, loc);
+      
       mapping.define(lookupOp.getRef(), ref);
       rewriter.replaceTupleStream(lookupOp, mapping);
       return mlir::success();
@@ -186,6 +191,10 @@ class PureLookupHashMapLowering : public SubOpTupleStreamConsumerConversionPatte
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
+                     ifOp2.ensureTerminator(ifOp2.getThenRegion(), rewriter, loc);
+                     if (!ifOp2.getElseRegion().empty()) {
+                         ifOp2.ensureTerminator(ifOp2.getElseRegion(), rewriter, loc);
+                     }
                      b.create<scf::YieldOp>(loc, ifOp2.getResults());
                   }, [&](OpBuilder& b, Location loc) {
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
@@ -194,7 +203,15 @@ class PureLookupHashMapLowering : public SubOpTupleStreamConsumerConversionPatte
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
+               ifOpH.ensureTerminator(ifOpH.getThenRegion(), rewriter, loc);
+               if (!ifOpH.getElseRegion().empty()) {
+                   ifOpH.ensureTerminator(ifOpH.getElseRegion(), rewriter, loc);
+               }
                b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); });
+               ifOp.ensureTerminator(ifOp.getThenRegion(), rewriter, loc);
+               if (!ifOp.getElseRegion().empty()) {
+                   ifOp.ensureTerminator(ifOp.getElseRegion(), rewriter, loc);
+               }
 
                Value done = ifOp.getResult(0);
                Value newPtr = ifOp.getResult(1);
@@ -208,6 +225,10 @@ class PureLookupHashMapLowering : public SubOpTupleStreamConsumerConversionPatte
             Value invalidPtr = rewriter.create<util::InvalidRefOp>(loc, bucketPtrType);
             rewriter.create<scf::YieldOp>(loc, ValueRange{invalidPtr});
          });
+      ifOpOuter.ensureTerminator(ifOpOuter.getThenRegion(), rewriter, loc);
+      if (!ifOpOuter.getElseRegion().empty()) {
+          ifOpOuter.ensureTerminator(ifOpOuter.getElseRegion(), rewriter, loc);
+      }
 
       Value currEntryPtr = ifOpOuter.getResult(0);
       currEntryPtr = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), currEntryPtr);
@@ -303,6 +324,10 @@ class PureLookupPreAggregationHtLowering : public SubOpTupleStreamConsumerConver
                                  Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                                  //          yield ptr,done=false
                                  b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
+                           ifOp2.ensureTerminator(ifOp2.getThenRegion(), rewriter, loc);
+                           if (!ifOp2.getElseRegion().empty()) {
+                               ifOp2.ensureTerminator(ifOp2.getElseRegion(), rewriter, loc);
+                           }
                            b.create<scf::YieldOp>(loc, ifOp2.getResults());
                         }, [&](OpBuilder& b, Location loc) {
                            Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
@@ -311,7 +336,15 @@ class PureLookupPreAggregationHtLowering : public SubOpTupleStreamConsumerConver
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
+                     ifOpH.ensureTerminator(ifOpH.getThenRegion(), rewriter, loc);
+                     if (!ifOpH.getElseRegion().empty()) {
+                         ifOpH.ensureTerminator(ifOpH.getElseRegion(), rewriter, loc);
+                     }
                      b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); });
+               ifOp.ensureTerminator(ifOp.getThenRegion(), rewriter, loc);
+               if (!ifOp.getElseRegion().empty()) {
+                   ifOp.ensureTerminator(ifOp.getElseRegion(), rewriter, loc);
+               }
 
                Value done = ifOp.getResult(0);
                Value newPtr = ifOp.getResult(1);
@@ -325,6 +358,10 @@ class PureLookupPreAggregationHtLowering : public SubOpTupleStreamConsumerConver
             Value invalidPtr = rewriter.create<util::InvalidRefOp>(loc, bucketPtrType);
             rewriter.create<scf::YieldOp>(loc, ValueRange{invalidPtr});
          });
+      ifOpOuter.ensureTerminator(ifOpOuter.getThenRegion(), rewriter, loc);
+      if (!ifOpOuter.getElseRegion().empty()) {
+          ifOpOuter.ensureTerminator(ifOpOuter.getElseRegion(), rewriter, loc);
+      }
 
       Value currEntryPtr = ifOpOuter.getResult(0);
       currEntryPtr = rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(getContext(), rewriter.getI8Type()), currEntryPtr);
@@ -420,6 +457,10 @@ class LookupHashMultiMapLowering : public SubOpTupleStreamConsumerConversionPatt
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
+                     ifOp2.ensureTerminator(ifOp2.getThenRegion(), rewriter, loc);
+                     if (!ifOp2.getElseRegion().empty()) {
+                         ifOp2.ensureTerminator(ifOp2.getElseRegion(), rewriter, loc);
+                     }
                      b.create<scf::YieldOp>(loc, ifOp2.getResults());
                   }, [&](OpBuilder& b, Location loc) {
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
@@ -428,7 +469,15 @@ class LookupHashMultiMapLowering : public SubOpTupleStreamConsumerConversionPatt
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
+               ifOpH.ensureTerminator(ifOpH.getThenRegion(), rewriter, loc);
+               if (!ifOpH.getElseRegion().empty()) {
+                   ifOpH.ensureTerminator(ifOpH.getElseRegion(), rewriter, loc);
+               }
                b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); });
+         ifOp.ensureTerminator(ifOp.getThenRegion(), rewriter, loc);
+         if (!ifOp.getElseRegion().empty()) {
+             ifOp.ensureTerminator(ifOp.getElseRegion(), rewriter, loc);
+         }
 
          Value done = ifOp.getResult(0);
          Value newPtr = ifOp.getResult(1);
@@ -442,6 +491,10 @@ class LookupHashMultiMapLowering : public SubOpTupleStreamConsumerConversionPatt
             Value invalidPtr = rewriter.create<util::InvalidRefOp>(loc, bucketPtrType);
             rewriter.create<scf::YieldOp>(loc, ValueRange{invalidPtr});
          });
+      ifOpOuter.ensureTerminator(ifOpOuter.getThenRegion(), rewriter, loc);
+      if (!ifOpOuter.getElseRegion().empty()) {
+          ifOpOuter.ensureTerminator(ifOpOuter.getElseRegion(), rewriter, loc);
+      }
 
       Value currEntryPtr = ifOpOuter.getResult(0);
       mapping.define(lookupOp.getRef(), currEntryPtr);
@@ -531,6 +584,11 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
                      auto ifOp2 = b.create<scf::IfOp>(
                         loc, keyMatches, [&](OpBuilder& b, Location loc) {
                            Value valRef=rt::HashMultiMap::insertValue(rewriter,loc)({hashTable,currEntryPtr})[0];
+                           
+                           // Ensure runtime call termination for HashMultiMap::insertValue
+                           subop_to_control_flow::RuntimeCallTermination::ensureHashtableCallTermination(
+                               valRef.getDefiningOp(), rewriter, loc);
+                           
                            valRef=rewriter.create<util::GenericMemrefCastOp>(loc, util::RefType::get(getContext(),mlir::TupleType::get(getContext(),{i8PtrType,valStorageHelper.getStorageType()})),valRef);
                            valRef=rewriter.create<util::TupleElementPtrOp>(loc, valStorageHelper.getRefType(), valRef, 1);
                            valStorageHelper.storeFromColumns(insertOp.getMapping(),mapping,valRef,rewriter,loc);
@@ -541,6 +599,10 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
+                     ifOp2.ensureTerminator(ifOp2.getThenRegion(), rewriter, loc);
+                     if (!ifOp2.getElseRegion().empty()) {
+                         ifOp2.ensureTerminator(ifOp2.getElseRegion(), rewriter, loc);
+                     }
                      b.create<scf::YieldOp>(loc, ifOp2.getResults());
                   }, [&](OpBuilder& b, Location loc) {
 
@@ -550,8 +612,17 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
+               ifOpH.ensureTerminator(ifOpH.getThenRegion(), rewriter, loc);
+               if (!ifOpH.getElseRegion().empty()) {
+                   ifOpH.ensureTerminator(ifOpH.getElseRegion(), rewriter, loc);
+               }
                b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) {
                Value entryRef=rt::HashMultiMap::insertEntry(b,loc)({hashTable,hashed})[0];
+               
+               // Ensure runtime call termination for HashMultiMap::insertEntry
+               subop_to_control_flow::RuntimeCallTermination::ensureHashtableCallTermination(
+                   entryRef.getDefiningOp(), rewriter, loc);
+               
                Value entryRefCasted= rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
                Value keyRef=rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, entryRefCasted, 3);
 
@@ -561,6 +632,10 @@ class InsertMultiMapLowering : public SubOpTupleStreamConsumerConversionPattern<
                valRef=rewriter.create<util::TupleElementPtrOp>(loc, valStorageHelper.getRefType(), valRef, 1);
                valStorageHelper.storeFromColumns(insertOp.getMapping(),mapping,valRef,rewriter,loc);
                b.create<scf::YieldOp>(loc, ValueRange{falseValue, entryRefCasted}); });
+         ifOp.ensureTerminator(ifOp.getThenRegion(), rewriter, loc);
+         if (!ifOp.getElseRegion().empty()) {
+             ifOp.ensureTerminator(ifOp.getElseRegion(), rewriter, loc);
+         }
          //       if(compare(entry.key,key)){
 
          Value done = ifOp.getResult(0);
@@ -653,6 +728,11 @@ class LookupPreAggrHtFragment : public SubOpTupleStreamConsumerConversionPattern
          [&](OpBuilder& b, Location loc) {
             auto initialVals = initValBuilder(rewriter);
             Value entryRef = rt::PreAggregationHashtableFragment::insert(b, loc)({adaptor.getState(), hashed})[0];
+            
+            // Ensure runtime call termination for PreAggregationHashtableFragment::insert
+            subop_to_control_flow::RuntimeCallTermination::ensurePreAggregationHashtableCallTermination(
+                entryRef.getDefiningOp(), rewriter, loc);
+            
             Value entryRefCasted = rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
             Value kvRef = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, entryRefCasted, 2);
             Value keyRef = rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, kvRef, 0);
@@ -778,6 +858,10 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
                            Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                            //          yield ptr,done=false
                            b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr }); });
+                     ifOp2.ensureTerminator(ifOp2.getThenRegion(), rewriter, loc);
+                     if (!ifOp2.getElseRegion().empty()) {
+                         ifOp2.ensureTerminator(ifOp2.getElseRegion(), rewriter, loc);
+                     }
                      b.create<scf::YieldOp>(loc, ifOp2.getResults());
                   }, [&](OpBuilder& b, Location loc) {
                      Value nextPtrAddr=rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, currEntryPtr, 0);
@@ -786,10 +870,19 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
                      Value newPtr=b.create<util::GenericMemrefCastOp>(loc, bucketPtrType,newEntryPtr);
                      //          yield ptr,done=false
                      b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
+               ifOpH.ensureTerminator(ifOpH.getThenRegion(), rewriter, loc);
+               if (!ifOpH.getElseRegion().empty()) {
+                   ifOpH.ensureTerminator(ifOpH.getElseRegion(), rewriter, loc);
+               }
                b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) {
                auto initialVals = initValBuilder(rewriter);
                //       %newEntry = ...
                Value entryRef=rt::Hashtable::insert(b,loc)({hashTable,hashed})[0];
+               
+               // Ensure runtime call termination for Hashtable::insert
+               subop_to_control_flow::RuntimeCallTermination::ensureHashtableCallTermination(
+                   entryRef.getDefiningOp(), rewriter, loc);
+               
                Value entryRefCasted= rewriter.create<util::GenericMemrefCastOp>(loc, bucketPtrType, entryRef);
                Value kvRef = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, entryRefCasted, 2);
                Value keyRef = rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, kvRef, 0);
@@ -798,6 +891,10 @@ class LookupHashMapLowering : public SubOpTupleStreamConsumerConversionPattern<s
                valStorageHelper.storeOrderedValues(valRef,initialVals,rewriter,loc);
 
                b.create<scf::YieldOp>(loc, ValueRange{falseValue, entryRefCasted}); });
+         ifOp.ensureTerminator(ifOp.getThenRegion(), rewriter, loc);
+         if (!ifOp.getElseRegion().empty()) {
+             ifOp.ensureTerminator(ifOp.getElseRegion(), rewriter, loc);
+         }
          //       if(compare(entry.key,key)){
 
          Value done = ifOp.getResult(0);
@@ -830,6 +927,10 @@ class LookupExternalHashIndexLowering : public SubOpTupleStreamConsumerConversio
       // Calculate hash value and perform lookup in external index hashmap
       auto hashValue = rewriter.create<db::Hash>(loc, rewriter.create<util::PackOp>(loc, mapping.resolve(lookupOp, lookupOp.getKeys())));
       mlir::Value list = rt::HashIndexAccess::lookup(rewriter, loc)({adaptor.getState(), hashValue})[0];
+      
+      // Ensure runtime call termination for HashIndexAccess::lookup
+      subop_to_control_flow::RuntimeCallTermination::ensureLingoDRuntimeCallTermination(
+          list.getDefiningOp(), rewriter, loc);
 
       mapping.define(lookupOp.getRef(), list);
       rewriter.replaceTupleStream(lookupOp, mapping);
