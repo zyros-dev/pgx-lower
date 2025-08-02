@@ -84,11 +84,14 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
-    # Collect all test source files
+    # Collect all test source files (excluding mlir_runner_test.cpp which needs full MLIR pipeline)
     file(GLOB_RECURSE UNIT_TEST_SOURCES 
         "tests/unit/core/*.cpp"
         "tests/unit/dialects/*.cpp"
         "tests/unit/runtime/*.cpp"
+    )
+    list(REMOVE_ITEM UNIT_TEST_SOURCES 
+        "${CMAKE_SOURCE_DIR}/tests/unit/core/mlir_runner_test.cpp"
     )
     
     # Add individual test files
@@ -99,12 +102,13 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     add_mlir_unit_test(mlir_unit_test 
         tests/unit/test_main.cpp
         tests/unit/test_helpers.cpp
+        tests/unit/mocks/mlir_runner_mock.cpp
         ${UNIT_TEST_SOURCES}
-        src/core/mlir_runner.cpp
         src/core/query_analyzer.cpp
         src/core/error_handling.cpp
         src/core/logging.cpp
         src/logging/console_logger.cpp
+        src/runtime/helpers.cpp
     )
     target_link_libraries(mlir_unit_test PRIVATE 
         gtest
@@ -114,7 +118,6 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRDSADialect
         MLIRTupleStreamDialect
         MLIRUtilDialect
-        PgxLowerRuntime
     )
     target_include_directories(mlir_unit_test PRIVATE 
         tests/unit

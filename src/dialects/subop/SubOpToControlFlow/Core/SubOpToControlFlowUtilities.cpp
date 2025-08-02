@@ -305,24 +305,32 @@ TupleType convertTuple(TupleType tupleType, TypeConverter& typeConverter) {
    return TupleType::get(tupleType.getContext(), TypeRange(types));
 }
 
+// Moved to subop_to_control_flow namespace below
+/*
 mlir::TupleType getHtKVType(subop::HashMapType t, mlir::TypeConverter& converter) {
    auto keyTupleType = EntryStorageHelper(nullptr, t.getKeyMembers(), false, &converter).getStorageType();
    auto valTupleType = EntryStorageHelper(nullptr, t.getValueMembers(), t.getWithLock(), &converter).getStorageType();
    return mlir::cast<mlir::TupleType>(converter.convertType(mlir::TupleType::get(t.getContext(), {keyTupleType, valTupleType})));
 }
+*/
 
+/*
 mlir::TupleType getHtKVType(subop::PreAggrHtFragmentType t, mlir::TypeConverter& converter) {
    auto keyTupleType = EntryStorageHelper(nullptr, t.getKeyMembers(), false, &converter).getStorageType();
    auto valTupleType = EntryStorageHelper(nullptr, t.getValueMembers(), t.getWithLock(), &converter).getStorageType();
    return mlir::cast<mlir::TupleType>(converter.convertType(mlir::TupleType::get(t.getContext(), {keyTupleType, valTupleType})));
 }
+*/
 
+/*
 mlir::TupleType getHtKVType(subop::PreAggrHtType t, mlir::TypeConverter& converter) {
    auto keyTupleType = EntryStorageHelper(nullptr, t.getKeyMembers(), false, &converter).getStorageType();
    auto valTupleType = EntryStorageHelper(nullptr, t.getValueMembers(), t.getWithLock(), &converter).getStorageType();
    return mlir::cast<mlir::TupleType>(converter.convertType(mlir::TupleType::get(t.getContext(), {keyTupleType, valTupleType})));
 }
+*/
 
+/*
 mlir::TupleType getHtEntryType(subop::HashMapType t, mlir::TypeConverter& converter) {
    auto i8PtrType = util::RefType::get(t.getContext(), IntegerType::get(t.getContext(), 8));
    return mlir::TupleType::get(t.getContext(), {i8PtrType, mlir::IndexType::get(t.getContext()), getHtKVType(t, converter)});
@@ -349,6 +357,7 @@ mlir::TupleType getHashMultiMapValueType(subop::HashMultiMapType t, mlir::TypeCo
    auto i8PtrType = util::RefType::get(t.getContext(), IntegerType::get(t.getContext(), 8));
    return mlir::TupleType::get(t.getContext(), {i8PtrType, valTupleType});
 }
+*/
 
 mlir::Value hashKeys(std::vector<mlir::Value> keys, OpBuilder& rewriter, Location loc) {
    if (keys.size() == 1) {
@@ -520,3 +529,57 @@ void implementAtomicReduceFull(pgx_lower::compiler::dialect::subop::ReduceOp red
 } // namespace dialect
 } // namespace compiler
 } // namespace pgx_lower
+
+// Functions that need to be in the subop_to_control_flow namespace for external linkage
+namespace subop_to_control_flow {
+
+// Namespace alias for convenience
+namespace subop = pgx_lower::compiler::dialect::subop;
+namespace util = pgx_lower::compiler::dialect::util;
+
+mlir::TupleType getHtKVType(subop::HashMapType t, mlir::TypeConverter& converter) {
+   auto keyTupleType = pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper(nullptr, t.getKeyMembers(), false, &converter).getStorageType();
+   auto valTupleType = pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper(nullptr, t.getValueMembers(), t.getWithLock(), &converter).getStorageType();
+   return mlir::cast<mlir::TupleType>(converter.convertType(mlir::TupleType::get(t.getContext(), {keyTupleType, valTupleType})));
+}
+
+mlir::TupleType getHtKVType(subop::PreAggrHtFragmentType t, mlir::TypeConverter& converter) {
+   auto keyTupleType = pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper(nullptr, t.getKeyMembers(), false, &converter).getStorageType();
+   auto valTupleType = pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper(nullptr, t.getValueMembers(), t.getWithLock(), &converter).getStorageType();
+   return mlir::cast<mlir::TupleType>(converter.convertType(mlir::TupleType::get(t.getContext(), {keyTupleType, valTupleType})));
+}
+
+mlir::TupleType getHtKVType(subop::PreAggrHtType t, mlir::TypeConverter& converter) {
+   auto keyTupleType = pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper(nullptr, t.getKeyMembers(), false, &converter).getStorageType();
+   auto valTupleType = pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper(nullptr, t.getValueMembers(), t.getWithLock(), &converter).getStorageType();
+   return mlir::cast<mlir::TupleType>(converter.convertType(mlir::TupleType::get(t.getContext(), {keyTupleType, valTupleType})));
+}
+
+mlir::TupleType getHtEntryType(subop::HashMapType t, mlir::TypeConverter& converter) {
+   auto i8PtrType = util::RefType::get(t.getContext(), mlir::IntegerType::get(t.getContext(), 8));
+   return mlir::TupleType::get(t.getContext(), {i8PtrType, mlir::IndexType::get(t.getContext()), getHtKVType(t, converter)});
+}
+
+mlir::TupleType getHtEntryType(subop::PreAggrHtFragmentType t, mlir::TypeConverter& converter) {
+   auto i8PtrType = util::RefType::get(t.getContext(), mlir::IntegerType::get(t.getContext(), 8));
+   return mlir::TupleType::get(t.getContext(), {i8PtrType, mlir::IndexType::get(t.getContext()), getHtKVType(t, converter)});
+}
+
+mlir::TupleType getHtEntryType(subop::PreAggrHtType t, mlir::TypeConverter& converter) {
+   auto i8PtrType = util::RefType::get(t.getContext(), mlir::IntegerType::get(t.getContext(), 8));
+   return mlir::TupleType::get(t.getContext(), {i8PtrType, mlir::IndexType::get(t.getContext()), getHtKVType(t, converter)});
+}
+
+mlir::TupleType getHashMultiMapEntryType(subop::HashMultiMapType t, mlir::TypeConverter& converter) {
+   auto keyTupleType = pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper(nullptr, t.getKeyMembers(), false, &converter).getStorageType();
+   auto i8PtrType = util::RefType::get(t.getContext(), mlir::IntegerType::get(t.getContext(), 8));
+   return mlir::TupleType::get(t.getContext(), {i8PtrType, mlir::IndexType::get(t.getContext()), i8PtrType, keyTupleType});
+}
+
+mlir::TupleType getHashMultiMapValueType(subop::HashMultiMapType t, mlir::TypeConverter& converter) {
+   auto valTupleType = pgx_lower::compiler::dialect::subop_to_cf::EntryStorageHelper(nullptr, t.getValueMembers(), false, &converter).getStorageType();
+   auto i8PtrType = util::RefType::get(t.getContext(), mlir::IntegerType::get(t.getContext(), 8));
+   return mlir::TupleType::get(t.getContext(), {i8PtrType, mlir::IndexType::get(t.getContext()), valTupleType});
+}
+
+} // namespace subop_to_control_flow
