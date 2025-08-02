@@ -17,6 +17,15 @@ using subop_to_control_flow::hashKeys;
 using subop_to_control_flow::unpackTypes;
 using subop_to_control_flow::inlineBlock;
 
+// Using terminator utilities for defensive programming
+using subop_to_control_flow::TerminatorUtils::ensureTerminator;
+using subop_to_control_flow::TerminatorUtils::ensureIfOpTermination;
+using subop_to_control_flow::TerminatorUtils::ensureForOpTermination;
+using subop_to_control_flow::TerminatorUtils::createContextAppropriateTerminator;
+
+// Using runtime call termination utilities for comprehensive safety
+using subop_to_control_flow::RuntimeCallTermination::applyRuntimeCallSafetyToOperation;
+
 // Helper template function for repeating values
 template <class T>
 static std::vector<T> repeat(T val, size_t times) {
@@ -46,6 +55,10 @@ class MapLowering : public SubOpTupleStreamConsumerConversionPattern<subop::MapO
       mapping.define(mapOp.getComputedCols(), res);
 
       rewriter.replaceTupleStream(mapOp, mapping);
+      
+      // Apply comprehensive runtime call safety to map operation (critical for expressions)
+      applyRuntimeCallSafetyToOperation(mapOp, rewriter);
+      
       return success();
    }
 };
@@ -88,10 +101,20 @@ class FilterLowering : public SubOpTupleStreamConsumerConversionPattern<subop::F
          cond = rewriter.create<db::NotOp>(filterOp->getLoc(), cond);
       }
       auto ifOp = rewriter.create<mlir::scf::IfOp>(filterOp->getLoc(), mlir::TypeRange{}, cond);
-      ifOp.ensureTerminator(ifOp.getThenRegion(), rewriter, filterOp->getLoc());
+      
+      // Use comprehensive terminator validation instead of basic ensureTerminator
+      ensureIfOpTermination(ifOp, rewriter, filterOp->getLoc());
+      
+      // Apply comprehensive runtime call safety to filter operation
+      applyRuntimeCallSafetyToOperation(filterOp, rewriter);
+      
       rewriter.atStartOf(ifOp.thenBlock(), [&](SubOpRewriter& rewriter) {
          rewriter.replaceTupleStream(filterOp, mapping);
       });
+      
+      // Final terminator validation to ensure proper structure
+      ensureTerminator(ifOp.getThenRegion(), rewriter, filterOp->getLoc());
+      
       return success();
    }
 };
@@ -203,6 +226,9 @@ class LoopLowering : public SubOpConversionPattern<subop::LoopOp> {
       rewriter.atStartOf(before, [&](SubOpRewriter& rewriter) {
          rewriter.create<mlir::scf::ConditionOp>(loc, before->getArgument(0), before->getArguments());
       });
+      
+      // Ensure before region has proper termination
+      ensureTerminator(whileOp.getBefore(), rewriter, loc);
 
       auto nestedExecutionGroup = mlir::dyn_cast_or_null<subop::NestedExecutionGroupOp>(&loopOp.getBody()->front());
       if (!nestedExecutionGroup) {
@@ -265,6 +291,11 @@ class LoopLowering : public SubOpConversionPattern<subop::LoopOp> {
          }
          rewriter.create<mlir::scf::YieldOp>(loc, res);
       });
+      
+      // Ensure both regions of while loop have proper termination
+      ensureTerminator(whileOp.getBefore(), rewriter, loc);
+      ensureTerminator(whileOp.getAfter(), rewriter, loc);
+      
       rewriter.replaceOp(loopOp, whileOp.getResults().drop_front());
       return success();
    }

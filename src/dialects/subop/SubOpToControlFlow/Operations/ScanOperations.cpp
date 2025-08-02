@@ -17,6 +17,17 @@ using subop_to_control_flow::hashKeys;
 using subop_to_control_flow::unpackTypes;
 using subop_to_control_flow::inlineBlock;
 
+// Using terminator utilities for defensive programming
+using subop_to_control_flow::TerminatorUtils::ensureTerminator;
+using subop_to_control_flow::TerminatorUtils::ensureForOpTermination;
+using subop_to_control_flow::TerminatorUtils::createContextAppropriateTerminator;
+using subop_to_control_flow::TerminatorUtils::reportTerminatorStatus;
+
+// Using runtime call termination utilities for comprehensive safety
+using subop_to_control_flow::RuntimeCallTermination::applyRuntimeCallSafetyToOperation;
+using subop_to_control_flow::RuntimeCallTermination::ensureGrowingBufferCallTermination;
+using subop_to_control_flow::RuntimeCallTermination::ensureHashtableCallTermination;
+
 // ============================================================================
 // Scan Operations - Vector, State, and View Scanning
 // ============================================================================
@@ -35,6 +46,10 @@ class ScanRefsVectorLowering : public SubOpConversionPattern<subop::ScanRefsOp> 
       implementBufferIteration(scanOp->hasAttr("parallel"), iterator, elementType, scanOp->getLoc(), rewriter, *typeConverter, scanOp.getOperation(), [&](SubOpRewriter& rewriter, mlir::Value ptr) {
          mapping.define(scanOp.getRef(), ptr);
          rewriter.replaceTupleStream(scanOp, mapping);
+         
+         // Ensure runtime call termination for GrowingBuffer::createIterator
+         subop_to_control_flow::RuntimeCallTermination::ensureGrowingBufferCallTermination(
+             iterator.getDefiningOp(), rewriter, scanOp->getLoc());
       });
       return success();
    }
@@ -72,6 +87,9 @@ class ScanRefsSortedViewLowering : public SubOpConversionPattern<subop::ScanRefs
          mapping.define(scanOp.getRef(), currElementPtr);
          rewriter.replaceTupleStream(scanOp, mapping);
       });
+      
+      // Systematic terminator validation after ForOp construction
+      ensureForOpTermination(forOp, rewriter, loc);
 
       return success();
    }
@@ -174,6 +192,10 @@ class ScanHashMapLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
          auto kvPtr = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, ptr, 2);
          mapping.define(scanRefsOp.getRef(), kvPtr);
          rewriter.replaceTupleStream(scanRefsOp, mapping);
+         
+         // Ensure runtime call termination for Hashtable::createIterator
+         subop_to_control_flow::RuntimeCallTermination::ensureHashtableCallTermination(
+             it.getDefiningOp(), rewriter, loc);
       });
       return success();
    }
@@ -195,6 +217,10 @@ class ScanPreAggrHtLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
          auto kvPtr = rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, ptr, 2);
          mapping.define(scanRefsOp.getRef(), kvPtr);
          rewriter.replaceTupleStream(scanRefsOp, mapping);
+         
+         // Ensure runtime call termination for PreAggregationHashtable::createIterator
+         subop_to_control_flow::RuntimeCallTermination::ensurePreAggregationHashtableCallTermination(
+             it.getDefiningOp(), rewriter, loc);
       });
       return success();
    }
@@ -219,6 +245,10 @@ class ScanHashMultiMap : public SubOpConversionPattern<subop::ScanRefsOp> {
          auto keyPtr = rewriter.create<util::TupleElementPtrOp>(loc, keyStorageHelper.getRefType(), ptr, 3);
          auto valueListPtr = rewriter.create<util::TupleElementPtrOp>(loc, i8PtrPtrType, ptr, 2);
          mlir::Value valuePtr = rewriter.create<util::LoadOp>(loc, valueListPtr);
+         
+         // Ensure runtime call termination for Hashtable::createIterator (HashMultiMap)
+         subop_to_control_flow::RuntimeCallTermination::ensureHashtableCallTermination(
+             it.getDefiningOp(), rewriter, loc);
          auto whileOp = rewriter.create<mlir::scf::WhileOp>(loc, i8PtrType, valuePtr);
          Block* before = new Block;
          Block* after = new Block;
