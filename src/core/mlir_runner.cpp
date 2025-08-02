@@ -13,6 +13,7 @@
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/subop/SubOpToControlFlow.h"
+#include "dialects/subop/SubOpPasses.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/LowerDBToDSA.h"
 #include "dialects/dsa/DSADialect.h"
@@ -347,8 +348,8 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     
     logger.notice("Phase 2 completed successfully");
     
-    // Phase 3: SubOp → Control Flow lowering (following LingoDB's Execution.cpp pattern)
-    logger.notice("Phase 3: SubOp → Control Flow lowering");
+    // Phase 3: SubOp optimization and preparation (following LingoDB's Execution.cpp pattern)
+    logger.notice("Phase 3: SubOp optimization and preparation");
     
     // Debug: Check module state before SubOp lowering
     logger.notice("=== Module state before SubOp → Control Flow ===");
@@ -363,90 +364,99 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     });
     
     {
-        auto pm3 = mlir::PassManager(&context);
         pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
-        // Use minimal pass that works for our simple queries
-        logger.notice("Creating MinimalSubOpToControlFlowPass...");
-        auto minimalPass = pgx_lower::compiler::dialect::subop::createMinimalSubOpToControlFlowPass();
-        if (!minimalPass) {
-            logger.error("createMinimalSubOpToControlFlowPass returned null!");
-            return false;
-        }
-        logger.notice("MinimalSubOpToControlFlowPass created successfully");
-        pm3.addPass(std::move(minimalPass));
-        pm3.addPass(mlir::createCanonicalizerPass());
-        pm3.addPass(mlir::createCSEPass());
+        // Phase 3 now only does SubOp preparation - no control flow conversion
+        // Control flow happens after DB lowering in the final LLVM conversion phase
+        logger.notice("Phase 3 preparation completed - SubOp ready for DB lowering");
         
-        logger.notice("About to run Phase 3 pass manager...");
-        
-        // Verify module is valid before Phase 3
+        // Verify module is valid before proceeding to Phase 4
         if (failed(mlir::verify(module))) {
-            // CRITICAL FIX 1: Dump module BEFORE logging error
+            // CRITICAL FIX: Dump module BEFORE logging error
             std::string moduleStr;
             llvm::raw_string_ostream moduleStream(moduleStr);
             module.print(moduleStream);
             moduleStream.flush();
-            logger.notice("=== PRE-PHASE-3 VERIFICATION FAILED MODULE DUMP START ===");
+            logger.notice("=== PRE-PHASE-4 VERIFICATION FAILED MODULE DUMP START ===");
             logger.notice(moduleStr);
-            logger.notice("=== PRE-PHASE-3 VERIFICATION FAILED MODULE DUMP END ===");
+            logger.notice("=== PRE-PHASE-4 VERIFICATION FAILED MODULE DUMP END ===");
             
-            logger.error("Module verification failed BEFORE Phase 3!");
+            logger.error("Module verification failed BEFORE Phase 4!");
             logger.error("Detailed verification errors should appear above via diagnostic handler");
             
             return false;
         }
-        logger.notice("Module verification passed before Phase 3");
-        
-        try {
-            logger.notice("Running pm3.run(module)...");
-            if (failed(pm3.run(module))) {
-                // Check if module is still valid after failure
-                if (failed(mlir::verify(module))) {
-                    // CRITICAL FIX 1: Dump module BEFORE logging error
-                    std::string moduleStr;
-                    llvm::raw_string_ostream moduleStream(moduleStr);
-                    module.print(moduleStream);
-                    moduleStream.flush();
-                    logger.notice("=== PHASE 3 VERIFICATION FAILED MODULE DUMP START ===");
-                    logger.notice(moduleStr);
-                    logger.notice("=== PHASE 3 VERIFICATION FAILED MODULE DUMP END ===");
-                    
-                    logger.error("Module became invalid during Phase 3 execution!");
-                } else {
-                    logger.notice("Module is still valid after Phase 3 failure");
-                }
-                
-                logger.error("Phase 3 (SubOp → Control Flow) failed during execution!");
-                logger.error("This means the pass manager run returned failure");
-                logger.error("Detailed error messages should appear above via diagnostic handler");
-                
-                return false;
-            }
-        } catch (const std::exception& e) {
-            logger.error("Phase 3 (SubOp → Control Flow) threw exception: " + std::string(e.what()));
-            return false;
-        } catch (...) {
-            logger.error("Phase 3 (SubOp → Control Flow) threw unknown exception!");
-            logger.error("This suggests a crash during pass execution");
-            return false;
-        }
-        logger.notice("Phase 3 pass manager completed successfully");
+        logger.notice("Module verification passed - ready for Phase 4");
         logger.notice("Phase 3 completed successfully");
     }
     
-    // Phase 4: DB lowering pipeline  
-    logger.notice("Phase 4: DB lowering pipeline");
+    // Phase 4: SubOp → DB lowering (arith operations to DB operations)
+    logger.notice("Phase 4: SubOp → DB lowering");
     {
-        // For now, skip DB lowering since MinimalSubOpToControlFlow generates direct calls
-        // TODO: Enable DB dialect for WHERE/GROUP BY/ORDER BY support
-        logger.notice("Skipping DB lowering - MinimalSubOpToControlFlow generates direct PostgreSQL runtime calls");
-        logger.notice("TODO: Enable DB dialect for operator and expression support");
-        logger.notice("Phase 4 completed successfully (skipped)");
+        auto pm4 = mlir::PassManager(&context);
+        // First convert arith operations (arith.andi, arith.ori) to DB operations
+        pm4.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpToDBPass());
+        pm4.addPass(mlir::createCanonicalizerPass());
+        pm4.addPass(mlir::createCSEPass());
+        
+        if (failed(pm4.run(module))) {
+            // CRITICAL FIX: Dump module BEFORE logging error
+            std::string moduleStr;
+            llvm::raw_string_ostream moduleStream(moduleStr);
+            module.print(moduleStream);
+            moduleStream.flush();
+            logger.notice("=== PHASE 4 FAILED MODULE DUMP START ===");
+            logger.notice(moduleStr);
+            logger.notice("=== PHASE 4 FAILED MODULE DUMP END ===");
+            
+            logger.error("Phase 4 (SubOp → DB) failed!");
+            logger.error("Detailed error messages should appear above via diagnostic handler");
+            
+            return false;
+        }
+        logger.notice("Phase 4 completed successfully");
+    }
+    
+    // Phase 5: SubOp → ControlFlow lowering (now happens after DB conversion)
+    logger.notice("Phase 5: SubOp → ControlFlow lowering");
+    {
+        auto pm5 = mlir::PassManager(&context);
+        // Now convert SubOp to ControlFlow (after DB operations have been converted)
+        pm5.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
+        pm5.addPass(mlir::createCanonicalizerPass());
+        pm5.addPass(mlir::createCSEPass());
+        
+        if (failed(pm5.run(module))) {
+            // CRITICAL FIX: Dump module BEFORE logging error
+            std::string moduleStr;
+            llvm::raw_string_ostream moduleStream(moduleStr);
+            module.print(moduleStream);
+            moduleStream.flush();
+            logger.notice("=== PHASE 5 FAILED MODULE DUMP START ===");
+            logger.notice(moduleStr);
+            logger.notice("=== PHASE 5 FAILED MODULE DUMP END ===");
+            
+            logger.error("Phase 5 (SubOp → ControlFlow) failed!");
+            logger.error("Detailed error messages should appear above via diagnostic handler");
+            
+            return false;
+        }
+        logger.notice("Phase 5 completed successfully");
+    }
+    
+    // Phase 6: DB → DSA lowering (temporarily skipped)
+    logger.notice("Phase 6: DB → DSA lowering");
+    {
+        // TODO: Enable DB lowering pipeline once DB → DSA conversion is implemented
+        // auto pm6 = mlir::PassManager(&context);
+        // pgx_lower::compiler::dialect::db::createLowerDBPipeline(pm6);
+        logger.notice("Skipping DB → DSA lowering - proceeding directly to LLVM conversion");
+        logger.notice("TODO: Implement full DB → DSA → LLVM pipeline");
+        logger.notice("Phase 6 completed successfully (skipped)");
     }
     
     // Note: We skip Arrow lowering since we're using PostgreSQL instead
     
-    // Now lower to LLVM
+    // Final Phase: Standard dialect → LLVM lowering
     auto pm2 = mlir::PassManager(&context);
     pm2.addPass(mlir::createConvertSCFToCFPass());
     pm2.addPass(mlir::createConvertControlFlowToLLVMPass());
@@ -473,12 +483,12 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     }
     logger.notice("Lowered PostgreSQL typed field access MLIR to LLVM dialect!");
     
-    // Main function should have been created by real SubOpToControlFlow pass
+    // Main function should have been created by SubOpToControlFlow pass (Phase 4)
     // and lowered to LLVM dialect by ConvertFuncToLLVM pass
     auto mainFuncOp = module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("main");
     if (!mainFuncOp) {
         logger.error("Main function not found after lowering passes!");
-        logger.error("Real SubOpToControlFlow should have created it");
+        logger.error("Phase 4 SubOpToControlFlow should have created it");
         return false;
     }
     

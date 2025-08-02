@@ -21,8 +21,9 @@ std::unique_ptr<mlir::Pass> createSplitIntoExecutionStepsPass();
 std::unique_ptr<mlir::Pass> createSpecializeParallelPass();
 std::unique_ptr<mlir::Pass> createPrepareLoweringPass();
 
-// Lowering pass
+// Lowering passes
 std::unique_ptr<mlir::Pass> createLowerSubOpPass();
+std::unique_ptr<mlir::Pass> createLowerSubOpToDBPass();
 
 } // namespace pgx_lower::compiler::dialect::subop
 

@@ -1,0 +1,100 @@
+#separator:tab
+#html:true
+#deck:pgx-lower PostgreSQL Integration
+#notetype:Basic
+
+What is the core function in executor_c.c that intercepts PostgreSQL queries?	<code>static void custom_executor(QueryDesc *queryDesc, ...)</code><br>This function hooks into PostgreSQL's execution pipeline and attempts MLIR handling before falling back to the standard executor.
+
+How does the fallback mechanism work in the PostgreSQL hook system?	<code>if (!mlir_handled) { standard_ExecutorRun(queryDesc, direction, count, execute_once); }</code><br>If MLIR execution fails or returns false, the system automatically falls back to PostgreSQL's standard executor.
+
+What are the key files in the PostgreSQL integration layer?	<b>Core files:</b><br><code>src/postgres/executor_c.c</code> - C hook integration<br><code>src/postgres/executor_c.cpp</code> - C++ wrapper<br><code>src/postgres/my_executor.cpp</code> - MLIR coordinator<br><code>include/runtime/tuple_access.h</code> - Tuple streaming
+
+What is the primary difference between LingoDB and PostgreSQL execution models?	<b>LingoDB:</b> Standalone process with complete memory control<br><b>PostgreSQL:</b> Embedded hook system sharing memory contexts with PostgreSQL runtime<br>This creates memory management challenges unique to the PostgreSQL integration.
+
+What causes the "PostgreSQL AST memory is invalid" error in tests 10 and 13?	The PostgreSQL <code>LOAD</code> command destroys and recreates memory contexts, invalidating AST node pointers that MLIR still references during execution.
+
+How is the LOAD command issue detected in the current implementation?	<code>bool g_extension_after_load = false;</code><br>This global flag is set to true in <code>_PG_init()</code> and checked in the executor to detect when memory contexts have been recreated.
+
+What was the major breakthrough achieved in v1.0 milestone?	<b>Context isolation</b> - Creating private MLIR context instances instead of sharing contexts with PostgreSQL, eliminating all segmentation faults (8/15 tests previously crashed).
+
+How does memory context isolation work in my_executor.cpp?	<b>Before:</b> <code>mlir::MLIRContext *sharedContext = builder.getContext();</code><br><b>After:</b> <code>mlir::MLIRContext &context_;</code> - Private context instance<br>This prevents PostgreSQL memory interference.
+
+What is the role of the TupleStreamer class?	<code>TupleStreamer</code> handles dual result sources:<br>1. Original table columns via <code>heap_getattr()</code><br>2. Computed expression results via <code>g_computed_results</code><br>It maintains PostgreSQL tuple format compatibility.
+
+How are PostgreSQL types preserved in the result streaming system?	<code>get_typlenbyvalalign(columnType, &typLen, &typByVal, &typAlign);</code><br>The system extracts PostgreSQL type properties and configures result tuple descriptors to maintain full type fidelity.
+
+What structure stores computed expression results for streaming?	<code>struct ComputedResultStorage {<br>&nbsp;&nbsp;std::vector&lt;Datum&gt; computedValues;<br>&nbsp;&nbsp;std::vector&lt;bool&gt; computedNulls;<br>&nbsp;&nbsp;std::vector&lt;Oid&gt; computedTypes;<br>};</code><br>This bridges MLIR computation with PostgreSQL result format.
+
+How does the PostgreSQL integration handle original table columns vs computed results?	<code>if (origColumnIndex >= 0) {<br>&nbsp;&nbsp;// Table column: heap_getattr(originalTuple, ...)<br>} else if (origColumnIndex == -1) {<br>&nbsp;&nbsp;// Computed result: g_computed_results.computedValues[i]<br>}</code>
+
+What are the three proposed solutions for AST memory context issues?	<b>Option A:</b> AST Deep Copying - Copy nodes to MLIR-managed memory<br><b>Option B:</b> Memory Context Switching - Use persistent memory contexts<br><b>Option C:</b> Lazy AST Analysis - Re-analyze AST at execution time
+
+Why does PostgreSQL integration require different table access patterns than LingoDB?	<b>LingoDB:</b> <code>auto table = storageManager.openTable(tableName);</code><br><b>PostgreSQL:</b> <code>TableScanDesc scanDesc = table_beginscan(relation, snapshot, 0, NULL);</code><br>Must use PostgreSQL's heap APIs instead of direct storage access.
+
+What is the current status of tests 1-7 vs tests 8-15?	<b>Tests 1-7:</b> ✅ Passing consistently (basic table scans, simple projections, WHERE clauses)<br><b>Tests 8-15:</b> ❌ Failing due to LOAD command memory issues and LLVM verification failures
+
+How does error handling differ between LingoDB and PostgreSQL integration?	<b>LingoDB:</b> Simple C++ exceptions<br><b>PostgreSQL:</b> Must use <code>elog(ERROR, "message")</code> and handle C++/PostgreSQL boundary with <code>extern "C"</code> blocks
+
+What is the segfault handler implementation in executor_c.c?	<code>static void segfault_handler(const int sig) {<br>&nbsp;&nbsp;void *array[32];<br>&nbsp;&nbsp;size_t size = backtrace(array, 32);<br>&nbsp;&nbsp;elog(LOG, "Caught signal %d (SIGSEGV)");<br>&nbsp;&nbsp;// Log backtrace and exit<br>}</code>
+
+How are C++ exceptions caught and converted to PostgreSQL errors?	<code>try {<br>&nbsp;&nbsp;executeMLIR();<br>} catch (const std::exception& ex) {<br>&nbsp;&nbsp;elog(ERROR, "C++ exception: %s", ex.what());<br>&nbsp;&nbsp;log_cpp_backtrace();<br>}</code>
+
+What causes the "Module verification failed" errors in tests 9, 11, 12, 14, 15?	MLIR→LLVM IR conversion generates invalid LLVM modules, typically due to type mismatches or missing function declarations in arithmetic operations.
+
+How does the PostgreSQL integration maintain result format compatibility?	<code>TupleTableSlot* slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);<br>slot->tts_values[i] = Int64GetDatum(value);<br>slot->tts_isnull[i] = false;<br>dest->receiveSlot(slot, dest);</code>
+
+What is the PostgreSQLTuplePassthrough structure used for?	It enables dual-format handling by carrying both original PostgreSQL tuples and computed results through the streaming pipeline, allowing seamless integration of table data and MLIR computations.
+
+Why are aggregate functions currently failing in test 14?	<code>ERROR: Agg not yet implemented</code><br>Aggregate functions (SUM, COUNT, AVG) are not implemented in the current system and are a planned development item for v1.3.
+
+How does memory context complexity differ from LingoDB's approach?	<b>LingoDB:</b> <code>auto context = std::make_unique&lt;mlir::MLIRContext&gt;();</code> - Simple ownership<br><b>PostgreSQL:</b> <code>MemoryContextSwitchTo(queryContext);</code> - Complex shared context management
+
+What is the purpose of the g_extension_after_load flag?	It marks when PostgreSQL has recreated memory contexts after a LOAD command, signaling that AST node pointers may be invalid and MLIR execution should be handled carefully.
+
+How does the system handle both table columns and computed expressions in results?	The TupleStreamer iterates through result columns, using <code>origColumnIndex >= 0</code> for table columns (via heap_getattr) and <code>origColumnIndex == -1</code> for computed results (via g_computed_results).
+
+What are the key architectural differences from LingoDB's execution model?	1. <b>Memory Management:</b> Shared vs isolated contexts<br>2. <b>Table Access:</b> PostgreSQL APIs vs direct storage<br>3. <b>Result Format:</b> PostgreSQL tuples vs custom structures<br>4. <b>Process Model:</b> Embedded hook vs standalone execution
+
+How does PostgreSQL type system integration work in setupTupleDescriptor?	<code>if (tle->expr && nodeTag(tle->expr) == T_Var) {<br>&nbsp;&nbsp;Var* var = reinterpret_cast&lt;Var*&gt;(tle->expr);<br>&nbsp;&nbsp;columnType = var->vartype;<br>&nbsp;&nbsp;get_typlenbyvalalign(columnType, &typLen, &typByVal, &typAlign);<br>}</code>
+
+What is the current query compatibility logic that temporarily disables expressions?	<code>bool isMLIRCompatible() const {<br>&nbsp;&nbsp;return isSelectStatement && hasCompatibleTypes && requiresSeqScan && !requiresJoin && !requiresSort && !requiresLimit && !requiresFilter; // No WHERE clauses<br>}</code>
+
+How does the context isolation system work in mlir_runner.cpp?	<code>extern bool g_extension_after_load;<br><br>bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) {<br>&nbsp;&nbsp;mlir::MLIRContext context; // Fresh isolated context<br>&nbsp;&nbsp;logger.notice("CONTEXT ISOLATION: Creating fresh MLIRContext");<br>}</code>
+
+What is the main execution flow in run_mlir_with_ast_translation?	<b>4-step pipeline:</b><br>1. Extract planned statement from queryDesc<br>2. Configure result handling and analyze columns<br>3. Execute MLIR translation<br>4. Stream results via TupleStreamer
+
+How are PostgreSQL tuple descriptors configured for type compatibility?	<code>resultAttr->atttypid = columnType;<br>resultAttr->attlen = typeLen;<br>resultAttr->attbyval = typeByVal;<br>resultAttr->attalign = typeAlign;</code><br>This ensures PostgreSQL type system properties are preserved.
+
+What error causes the "null!tuples.tuple" failures in tests 8-15?	PostgreSQL LOAD command invalidates memory contexts containing expression data, causing tuple access operations to fail when MLIR tries to evaluate WHERE clauses or computed expressions.
+
+How does the hybrid error handling system work?	<b>C++ Layer:</b> Standard exceptions with backtrace logging<br><b>PostgreSQL Boundary:</b> Conversion to <code>elog(ERROR)</code> calls<br><b>Signal Handling:</b> SIGSEGV handler with stack traces
+
+What is the difference between MinimalSubOpToControlFlow and full SubOpToControlFlow?	<b>Minimal:</b> Basic control flow without optimizations (current implementation)<br><b>Full:</b> Complete LingoDB control flow with compression, optimization, and parallel execution (planned upgrade)
+
+Why does the PostgreSQL integration skip the DB dialect in the current implementation?	The DB dialect handles WHERE/GROUP BY/ORDER BY operations, which require stable expression evaluation. It's currently skipped due to memory context issues but is needed for complex query support.
+
+How does the segfault handler provide debugging information?	<code>void *array[32];<br>size_t size = backtrace(array, 32);<br>char **strings = backtrace_symbols(array, size);<br>for (size_t i = 0; i < size; ++i) {<br>&nbsp;&nbsp;elog(LOG, "  %s", strings[i]);<br>}</code>
+
+What are the five successfully resolved components in v1.0?	1. ✅ Segmentation Faults - Context isolation<br>2. ✅ Basic Query Execution - SELECT, WHERE, table scans<br>3. ✅ Result Streaming - PostgreSQL tuple format<br>4. ✅ Hook Integration - Clean fallback mechanism<br>5. ✅ Type System - PostgreSQL compatibility
+
+What are the four active development challenges after v1.0?	1. ⚠️ Memory Context Invalidation - LOAD command issues<br>2. ⚠️ LLVM Module Verification - Generated IR failures<br>3. ⚠️ Complex Expressions - Memory timing issues<br>4. ⚠️ Aggregate Functions - Not yet implemented
+
+How does PostgreSQL table access differ from LingoDB's approach?	<b>PostgreSQL:</b> <code>HeapTuple tuple;<br>while ((tuple = heap_getnext(scanDesc, ForwardScanDirection)) != NULL) {<br>&nbsp;&nbsp;// Complex tuple format, PostgreSQL memory managed<br>}</code><br>vs LingoDB's direct storage access
+
+What is the role of ComputedResultStorage in bridging MLIR and PostgreSQL?	<code>struct ComputedResultStorage {<br>&nbsp;&nbsp;void setResult(int columnIndex, Datum value, bool isNull, Oid typeOid) {<br>&nbsp;&nbsp;&nbsp;&nbsp;computedValues[columnIndex] = value;<br>&nbsp;&nbsp;&nbsp;&nbsp;computedNulls[columnIndex] = isNull;<br>&nbsp;&nbsp;}<br>};</code><br>Converts MLIR results to PostgreSQL Datum format.
+
+How does memory context switching work as a proposed solution?	<code>MemoryContext mlirContext = AllocSetContextCreate(TopMemoryContext, ...);<br>MemoryContext oldContext = MemoryContextSwitchTo(mlirContext);<br>// Perform MLIR operations in safe context<br>MemoryContextSwitchTo(oldContext);</code>
+
+What is the complexity comparison table insight between LingoDB and PostgreSQL integration?	<b>HIGH complexity:</b> Memory Management, Process Model, Lifecycle<br><b>MEDIUM complexity:</b> Table Access, Result Format, Type System<br><b>LOW complexity:</b> Error Handling<br>PostgreSQL integration adds significant complexity vs LingoDB's controlled environment.
+
+How does the executor hook handle both success and failure cases?	<code>const bool mlir_handled = try_cpp_executor_internal(queryDesc);<br><br>if (!mlir_handled) {<br>&nbsp;&nbsp;// Clean fallback to PostgreSQL standard executor<br>&nbsp;&nbsp;standard_ExecutorRun(queryDesc, direction, count, execute_once);<br>}</code>
+
+What are the three priority levels for implementation todos?	<b>Priority 1:</b> LLVM Module Verification (v1.1) - Tests 9, 11, 12<br><b>Priority 2:</b> Memory Context Resolution (v1.2) - Tests 10, 13<br><b>Priority 3:</b> Aggregate Functions (v1.3) - Test 14
+
+How does the PostgreSQL integration maintain the LingoDB pipeline flow?	<b>Complete pipeline:</b> PostgreSQL AST → RelAlg → SubOp → DB → DSA → LLVM IR → JIT<br>All LingoDB dialects are properly registered and the pipeline follows LingoDB's proven architecture exactly.
+
+What makes the PostgreSQL integration architecture more complex than LingoDB's standalone approach?	<b>5 key factors:</b><br>1. Embedded within PostgreSQL vs standalone execution<br>2. Shared memory contexts vs isolated MLIR context<br>3. PostgreSQL APIs vs direct storage access<br>4. PostgreSQL tuple format vs custom structures<br>5. PostgreSQL elog system vs C++ exceptions
+
+How does the system detect and handle the extension initialization state?	<code>void _PG_init(void) {<br>&nbsp;&nbsp;g_extension_after_load = true; // Mark memory context recreation<br>&nbsp;&nbsp;signal(SIGSEGV, segfault_handler);<br>}<br><br>// Later in executor:<br>if (g_extension_after_load) {<br>&nbsp;&nbsp;g_extension_after_load = false; // Reset after first query<br>}</code>
+
+What is the key insight about LingoDB architecture adaptation to PostgreSQL?	The PostgreSQL integration demonstrates that <b>LingoDB's MLIR architecture successfully adapts to complex production database environments</b>, with the core MLIR compilation pipeline remaining intact while handling PostgreSQL-specific challenges through careful integration layers.

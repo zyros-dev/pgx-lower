@@ -1,0 +1,88 @@
+#separator:tab
+#html:true
+#deck:MLIR Database Architecture Concepts
+#notetype:Basic
+
+What is the primary purpose of the RelAlg dialect in MLIR database systems?	The RelAlg dialect serves as a <b>comprehensive relational algebra representation</b> that acts as an intermediate layer between SQL parsing and lower-level execution dialects. It implements SQL semantics with advanced optimization support including <b>column folding, predicate pushdown, and join order optimization</b>.
+
+What operation signature does RelAlg BaseTableOp use?	<code>relalg.basetable {table_identifier = "name"} columns: {col => @scope::@attr({type = T})}</code><br><br>This creates columns via DictionaryAttr mapping column names to ColumnDefAttr and maps to table access methods with catalog integration.
+
+How does RelAlg SelectionOp implement WHERE clause processing?	SelectionOp uses a <b>single block with tuple argument returning boolean</b>:<br><code>relalg.selection %rel (%tuple: !tuples.tuple) { predicate_body }</code><br><br>It supports <b>predicate pushdown through joins and aggregates</b> and enables predicate combination and simplification.
+
+What is the key conversion pattern for RelAlg MapOp?	MapOp computes new columns from existing ones using:<br><code>relalg.map %rel computes : [computed_cols] (%tuple: !tuples.tuple) { computation_body }</code><br><br>It performs <b>column folding to remove unused computations</b> and <b>common subexpression elimination</b>.
+
+How does RelAlg InnerJoinOp handle join optimization?	InnerJoinOp supports <b>multiple algorithm support</b> with hash join optimization via <code>useHashJoin</code> attribute:<br><code>relalg.join %left, %right (%tuple: !tuples.tuple) { join_predicate }</code><br><br>Join order optimization uses dynamic programming algorithms for optimal execution plans.
+
+What aggregation strategy does RelAlg AggregationOp use?	AggregationOp uses <b>hash-based grouping for large datasets</b>:<br><code>relalg.aggregation %rel [group_by_cols] computes : [agg_cols] (%stream, %tuple) { agg_body }</code><br><br>It can infer functional dependencies and supports <b>multiple aggregate functions per group</b>.
+
+What is the core execution model of the SubOp dialect?	SubOp provides an <b>imperative execution model with explicit state management</b>, contrasting with declarative RelAlg dialect. It uses <b>typed state containers and streaming operations</b> with precise memory control and built-in parallel execution support.
+
+How does SubOp ScanOp convert state to streams?	ScanOp sequentially scans state and creates tuple streams:<br><code>subop.scan %state : !subop.buffer<[id: i64, name: !db.string]> {mapping}</code><br><br>It maps state members to stream columns with <b>sequential access pattern for cache efficiency</b>.
+
+What operation signature does SubOp MaterializeOp use?	<code>subop.materialize %stream {mapping}, %buffer : !subop.buffer<[type_spec]></code><br><br>It stores stream tuples into state with column mapping and <b>in-place updates</b>, appending to buffer with memory management.
+
+How does SubOp GenericCreateOp implement state creation?	GenericCreateOp provides unified state creation for any state type:<br><code>subop.create !subop.buffer<[id: i64, name: !db.string]></code><br><br>It implements <b>StateCreator interface with memory lifecycle management integration</b>.
+
+What lookup strategy does SubOp LookupOp use?	LookupOp performs key-based lookups producing optional references:<br><code>subop.lookup %input_stream %map [@key] eq: ([%stored], [%lookup]) { equality_function }</code><br><br>It uses <b>hash table integration for O(1) average performance</b> with custom equality functions.
+
+What filtering strategy does SubOp FilterOp implement?	FilterOp filters tuples based on boolean columns:<br><code>subop.filter %stream all_true [@condition::@pred]</code><br><br>It supports <b>all_true (keep if all conditions true) and none_true modes</b> with early termination on first false condition.
+
+What is the primary purpose of the DB dialect in database MLIR systems?	The DB dialect defines <b>database primitives, types, and operations with SQL semantics</b>, particularly supporting NULL values and three-valued logic. It provides a <b>rich type system with nullable wrapper support</b> and SQL-compatible NULL handling.
+
+How does DB ConstantOp handle different data types?	DB ConstantOp creates constant values with extensive support:<br><code>db.constant(42) : i32<br>db.constant("hello") : !db.string<br>db.constant("100.01") : !db.decimal<10,2></code><br><br>It supports <b>constant folding capabilities and type-safe literal creation</b>.
+
+What NULL semantics does DB NullOp implement?	DB NullOp creates NULL values for nullable types:<br><code>db.null : !db.nullable<i32></code><br><br>It provides <b>direct NULL representation in type system</b> that integrates with three-valued logic for SQL compliance.
+
+How does DB AsNullableOp enable SQL NULL handling?	DB AsNullableOp converts values to nullable type:<br><code>db.as_nullable %val : i32 -> !db.nullable<i32><br>db.as_nullable %val : i32, %flag -> !db.nullable<i32></code><br><br>Essential for SQL NULL semantics with <b>optional null flag parameter for conditional NULL creation</b>.
+
+What operation does DB IsNullOp implement?	DB IsNullOp tests if nullable value is NULL:<br><code>db.isnull %nullable_val : !db.nullable<i32></code><br><br>It implements <b>SQL IS NULL operator by extracting null flag</b> from nullable type structure and folds to constant when structure is known.
+
+What NULL propagation do DB arithmetic operations implement?	DB Add/Sub/Mul/Div operations implement <b>SQL NULL propagation</b>:<br><code>db.add %left : !db.nullable<i32>, %right : !db.nullable<i32></code><br><br><b>Any NULL operand produces NULL result</b> following SQL three-valued logic semantics.
+
+How does DB CmpOp handle three-valued logic?	DB CmpOp supports multiple predicates with SQL three-valued logic:<br><code>db.compare eq %left : i32, %right : i32<br>db.compare isa %left : !db.nullable<i32>, %right : !db.nullable<i32></code><br><br><b>Standard comparisons with NULL return NULL, but special isa predicate: NULL = NULL → true</b>.
+
+How do DB AndOp and OrOp implement SQL three-valued logic?	DB AndOp/OrOp implement SQL three-valued logic with canonicalization:<br><code>db.and %cond1, %cond2, %cond3 : i1, i1, i1</code><br><br><b>TRUE AND NULL → NULL, FALSE AND NULL → FALSE<br>TRUE OR NULL → TRUE, FALSE OR NULL → NULL</b> with short-circuit evaluation.
+
+What is the purpose of DSA dialect in database compilation?	DSA (Data Structure Abstraction) dialect provides <b>final lowering to LLVM for data structures</b>. It bridges high-level database operations to low-level memory layouts and algorithms optimized for code generation, handling complex data structure traversal.
+
+What DSA types are commonly used in database systems?	Key DSA types for database operations:<br><code>DSA_Column<T> → llvm.ptr to columnar data<br>DSA_Record<schema> → llvm.struct matching schema<br>DSA_RecordBatch<T> → llvm.struct with batch metadata<br>DSA_Buffer<T> → llvm.ptr with growth metadata</code><br><br>These enable efficient LLVM code generation for database operations.
+
+How do DSA operations lower to LLVM?	Essential DSA→LLVM lowering patterns:<br><code>dsa.get_record → LLVM GEP + load operations<br>dsa.at → LLVM struct field access + NULL check<br>dsa.load/store → Direct LLVM load/store<br>dsa.array_get/set → LLVM GEP + load/store</code><br><br><b>Requires complex memory layout management and runtime function integration</b>.
+
+What is the DPHyp algorithm in database query optimization?	<b>DPHyp</b> uses dynamic programming to find optimal join sequences for complex queries. It systematically explores join orders, considers cardinality estimates, and selects the most efficient execution plan. Particularly effective for <b>multi-table queries</b> where traditional heuristics fail.
+
+How does hash join implementation work in MLIR database systems?	Hash Join uses two-phase implementation:<br><b>Build Phase:</b> Create hash table from smaller relation using key columns<br><b>Probe Phase:</b> Look up keys from larger relation with O(1) average time<br><br>Provides <b>efficient join execution with good cache locality</b> and collision handling.
+
+What aggregation strategy do database MLIR systems use?	Database systems implement <b>hash-based grouping with DISTINCT handling</b>:<br>• Analysis Phase: Examines aggregate functions, groups by DISTINCT requirements<br>• Supports: sum, min, max, count, count(*), any<br>• Uses <b>multiple hash tables for different DISTINCT requirements</b> to optimize performance.
+
+How does column folding optimization work?	Column folding eliminates unused columns early in the pipeline:<br><b>Analysis Phase:</b> Tracks column usage throughout query plan<br><b>Implementation:</b> Projects only required columns at each operation<br><b>Benefits:</b> Reduces memory footprint, improves cache efficiency, enables more aggressive optimizations.
+
+What is predicate pushdown optimization?	Predicate pushdown moves filter conditions closer to data sources:<br>• <b>Reduces intermediate result sizes</b><br>• <b>Improves cache efficiency</b><br>• <b>Enables early filtering</b><br>Instead of scanning all rows then filtering, filters are applied during the scan operation.
+
+How does selectivity-based reordering work?	Database systems reorder predicates by estimated selectivity:<br>• <b>High selectivity predicates first</b> (eliminate more rows)<br>• <b>Low cost predicates before expensive ones</b><br>• <b>Data type considerations</b> (integers faster than strings)<br>Results in fewer tuples processed by expensive operations.
+
+What makes MLIR database type systems superior for SQL operations?	MLIR database type systems provide:<br><b>Core Types:</b> <code>!db.string</code>, <code>!db.decimal<precision,scale></code>, <code>!db.date<granularity></code><br><b>Nullable Types:</b> <code>!db.nullable<T></code> for proper NULL handling<br><b>SQL Compatibility:</b> Three-valued logic, precision preservation, automatic type inference.
+
+How does three-valued logic work in database systems?	Three-valued logic extends boolean logic for SQL NULL handling:<br><b>Values:</b> TRUE, FALSE, UNKNOWN (NULL)<br><b>Operations:</b><br>• TRUE AND NULL → NULL<br>• FALSE AND NULL → FALSE<br>• TRUE OR NULL → TRUE<br>• FALSE OR NULL → NULL<br>This preserves SQL semantics for NULL comparisons.
+
+What is the difference between nullable and non-nullable types?	<b>Non-nullable:</b> <code>i32, !db.string</code> - cannot hold NULL values<br><b>Nullable:</b> <code>!db.nullable<i32></code> - can hold either value or NULL<br><b>Conversion:</b> <code>db.as_nullable</code> wraps values, <code>db.nullable_get_val</code> unwraps (unsafe)<br><b>Testing:</b> <code>db.isnull</code> checks for NULL state.
+
+How do database systems handle type conversions?	Database type conversion through DB CastOp:<br><code>db.cast %str : !db.string -> i32<br>db.cast %int : i32 -> !db.decimal<10,2></code><br><br>Provides <b>extensive constant folding for known conversions</b> and maps to SQL cast operations with proper error handling.
+
+How does streaming execution model work in database systems?	Streaming execution uses tuple streams between operations:<br><b>Concept:</b> Operations produce and consume tuple streams<br><b>Benefits:</b> Pipeline parallelism, reduced memory footprint, cache-friendly processing<br><b>Operations:</b> <code>scan</code> (state→stream), <code>materialize</code> (stream→state), <code>map</code> (transform streams).
+
+What memory access optimizations are used in database MLIR?	Database systems optimize memory access through:<br><b>Sequential Access:</b> Cache-friendly scan patterns<br><b>Batch Operations:</b> Process multiple tuples together<br><b>Vectorization:</b> SIMD operations for arithmetic<br><b>Memory Layout:</b> Column-oriented storage for analytics.
+
+How does parallel execution work in database MLIR systems?	Parallel execution through thread-local operations:<br><code>subop.create_thread_local</code>: Per-thread state isolation<br><code>subop.reduce</code>: Parallel reduction with combine functions<br><code>subop.merge</code>: Efficient thread-local result merging<br><br>Eliminates synchronization overhead and scales with thread count.
+
+What vectorization opportunities exist in database operations?	Database operations enable extensive vectorization:<br><b>Arithmetic:</b> SIMD operations on numeric columns<br><b>Comparisons:</b> Vectorized predicates with bit masks<br><b>Hash Computation:</b> Parallel hash calculation<br><b>Memory Access:</b> Vectorized loads and stores<br>Results in 4-8x speedup for arithmetic-heavy queries.
+
+How does MLIR database compilation work?	Database compilation follows multi-dialect lowering:<br><b>Pipeline:</b> SQL → RelAlg → SubOp → DB → DSA → LLVM IR → Machine Code<br><b>Optimization:</b> Each dialect level applies appropriate transformations<br><b>Benefits:</b> Composable optimizations, target-specific code generation.
+
+What are the benefits of JIT compilation for databases?	JIT compilation provides:<br><b>Performance:</b> 2-10x speedup over interpretation<br><b>Specialization:</b> Code optimized for specific queries<br><b>Adaptability:</b> Runtime optimization based on data characteristics<br><b>Integration:</b> Works with existing database systems.
+
+How does expression compilation work in database systems?	Expression compilation through DB dialect:<br><b>Operations:</b> Arithmetic, comparisons, type conversions, function calls<br><b>Optimization:</b> Constant folding, NULL propagation analysis, vectorization<br><b>Integration:</b> Compiled expressions work with database type systems and NULL semantics.
+
+What error handling strategies are used in database compilation?	Database compilation implements comprehensive error handling:<br><b>Compilation Errors:</b> Type checking, operation validation, clear error messages<br><b>Runtime Errors:</b> Division by zero, overflow detection, memory allocation failures<br><b>Integration:</b> Transaction rollback on errors, proper error code mapping.
+
+How does cost-based optimization work in MLIR database systems?	Cost-based optimization considers:<br><b>Cardinality:</b> Estimated number of tuples at each operation<br><b>Selectivity:</b> Fraction of tuples passing predicates<br><b>Algorithm Cost:</b> CPU and memory costs for different implementations<br><b>Applications:</b> Join algorithm selection, join order optimization, materialization decisions.
