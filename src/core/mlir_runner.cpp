@@ -573,6 +573,8 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     // First verify the module is valid
     if (failed(mlir::verify(*module))) {
         logger.error("Module verification failed! Module is invalid.");
+        logger.notice("DUMPING INVALID MODULE FOR ANALYSIS:");
+        module->dump();
         return false;
     }
     logger.notice("Module verification passed");

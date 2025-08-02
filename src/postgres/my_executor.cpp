@@ -45,15 +45,7 @@ extern "C" {
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
-void registerConversionPipeline() {
-    mlir::PassPipelineRegistration<>("convert-to-llvm", "Convert MLIR to LLVM dialect", [](mlir::OpPassManager& pm) {
-        pm.addPass(mlir::createConvertFuncToLLVMPass());
-        pm.addPass(mlir::createArithToLLVMConversionPass());
-        pm.addPass(mlir::createConvertSCFToCFPass());
-    });
-}
-
-bool run_mlir_with_ast_translation(const TableScanDesc scanDesc, const TupleDesc tupleDesc, const QueryDesc* queryDesc) {
+bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
     auto logger = PostgreSQLLogger();
 
     auto* dest = queryDesc->dest;
@@ -322,12 +314,8 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     PGX_DEBUG("Using AST-based translation - JIT will manage table scan");
     PGX_INFO("Table OID: " + std::to_string(rte->relid));
     
-    // Store the table OID globally so the JIT can access it
-    extern Oid g_jit_table_oid;
-    g_jit_table_oid = rte->relid;
-    
     // Pass null scanDesc since AST translation doesn't use it
-    bool mlir_success = run_mlir_with_ast_translation(nullptr, nullptr, plan);
+    bool mlir_success = run_mlir_with_ast_translation(plan);
 
     // AST translation is the primary and only method now
     // No table cleanup needed since JIT handled it

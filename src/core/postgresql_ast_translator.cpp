@@ -163,12 +163,22 @@ auto PostgreSQLASTTranslator::ensureContextIsolation() -> void {
 }
 
 auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<mlir::ModuleOp> {
+    logger_.notice("=== STARTING PostgreSQL AST TRANSLATION ===");
+    logger_.notice("Global g_extension_after_load flag: " + std::string(g_extension_after_load ? "true" : "false"));
+    
     if (!plannedStmt) {
         logger_.error("PlannedStmt is null");
         return nullptr;
     }
     
+    logger_.notice("PlannedStmt received successfully");
+    
     logger_.debug("Translating PostgreSQL PlannedStmt to MLIR");
+    logger_.notice("PlannedStmt command type: " + std::to_string(static_cast<int>(plannedStmt->commandType)));
+    logger_.notice("PlannedStmt has RTEs: " + std::string(plannedStmt->rtable ? "true" : "false"));
+    if (plannedStmt->rtable) {
+        logger_.notice("Number of RTEs: " + std::to_string(list_length(plannedStmt->rtable)));
+    }
     
     // CRITICAL: Check for LOAD operation and ensure context isolation
     if (::g_extension_after_load) {
@@ -179,22 +189,30 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     
     // Store the planned statement for accessing metadata
     currentPlannedStmt_ = plannedStmt;
+    logger_.notice("Stored PlannedStmt reference successfully");
     
     // Create the MLIR module
+    logger_.notice("Creating MLIR module...");
     auto module = std::make_unique<mlir::ModuleOp>(
         mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_)));
     currentModule_ = module.get();
+    logger_.notice("MLIR module created successfully");
     
     // Create builder for this module
+    logger_.notice("Creating MLIR OpBuilder...");
     mlir::OpBuilder builder(&context_);
     builder.setInsertionPointToEnd(module->getBody());
     builder_ = &builder;
+    logger_.notice("MLIR OpBuilder created successfully");
     
     // Create runtime function declarations
+    logger_.notice("Creating runtime function declarations...");
     createRuntimeFunctionDeclarations(*module);
+    logger_.notice("Runtime function declarations created successfully");
     
     // IMPLEMENT PROPER LINGODB PIPELINE - NO SHORTCUTS!
     // Following LingoDB pattern: Create QueryOp that will contain RelAlg operations
+    logger_.notice("About to translate plan node using LingoDB pipeline...");
     
     auto location = builder.getUnknownLoc();
     auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
@@ -267,9 +285,16 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
 }
 
 auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan) -> mlir::Operation* {
+    logger_.notice("=== TRANSLATING PLAN NODE ===");
+    logger_.notice("Plan pointer: " + std::string(plan ? "valid" : "null"));
+    logger_.notice("Builder pointer: " + std::string(builder_ ? "valid" : "null"));
+    
     if (!plan || !builder_) {
+        logger_.error("translatePlanNode failed: null pointers");
         return nullptr;
     }
+    
+    logger_.notice("Plan node type: " + std::to_string(static_cast<int>(nodeTag(plan))));
     
     switch (nodeTag(plan)) {
         case T_SeqScan:
@@ -287,7 +312,14 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan) -> mlir::Operation* 
 }
 
 auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan) -> mlir::Operation* {
+    logger_.notice("=== TRANSLATING SEQSCAN ===");
+    logger_.notice("SeqScan pointer: " + std::string(seqScan ? "valid" : "null"));
+    logger_.notice("Builder pointer: " + std::string(builder_ ? "valid" : "null"));
+    logger_.notice("Module pointer: " + std::string(currentModule_ ? "valid" : "null"));
+    logger_.notice("PlannedStmt pointer: " + std::string(currentPlannedStmt_ ? "valid" : "null"));
+    
     if (!seqScan || !builder_ || !currentModule_ || !currentPlannedStmt_) {
+        logger_.error("SeqScan translation failed: null pointers detected");
         return nullptr;
     }
     
@@ -1704,16 +1736,35 @@ auto PostgreSQLASTTranslator::generateRelAlgMapOperation(mlir::Value baseTable, 
         
         tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
         logger_.notice("ARITHMETIC MAP: Got TupleStreamType, about to get TupleType");
+        
+        // Create TupleType following LingoDB pattern - it's an opaque type without column info
         tupleType = pgx_lower::compiler::dialect::tuples::TupleType::get(&context_);
         logger_.notice("ARITHMETIC MAP: Got TupleType successfully");
         
-        // Validate the created types
-        if (!tupleStreamType || !tupleType) {
-            logger_.error("CONTEXT ISOLATION: Type creation returned null types");
+        // Validate the created types more thoroughly
+        if (!tupleType || !tupleStreamType) {
+            logger_.error("CONTEXT ISOLATION: Type creation returned null types - tupleType valid: " + 
+                         std::string(tupleType ? "true" : "false") + 
+                         ", tupleStreamType valid: " + 
+                         std::string(tupleStreamType ? "true" : "false"));
             return baseTable;
         }
         
-        logger_.notice("CONTEXT ISOLATION: Both tuple types created successfully");
+        // Log type details for debugging
+        std::string tupleTypeStr = "unknown";
+        std::string tupleStreamTypeStr = "unknown";
+        try {
+            llvm::raw_string_ostream osType(tupleTypeStr);
+            tupleType.print(osType);
+            
+            llvm::raw_string_ostream osStreamType(tupleStreamTypeStr);
+            tupleStreamType.print(osStreamType);
+            
+            logger_.notice("ARITHMETIC MAP: TupleType: " + tupleTypeStr);
+            logger_.notice("ARITHMETIC MAP: TupleStreamType: " + tupleStreamTypeStr);
+        } catch (...) {
+            logger_.error("ARITHMETIC MAP: Exception while printing types");
+        }
         
     } catch (const std::exception& e) {
         logger_.error("CONTEXT ISOLATION: Exception during type creation: " + std::string(e.what()));
@@ -1967,6 +2018,15 @@ auto PostgreSQLASTTranslator::generateDBDialectExpression(mlir::OpBuilder& build
                 auto val1Ref = columnManager.createRef(&val1Column.getColumn());
                 auto val2Ref = columnManager.createRef(&val2Column.getColumn());
                 
+                // Validate column references
+                if (!val1Ref || !val2Ref) {
+                    logger_.error("Column reference creation failed - val1Ref: " + 
+                                 std::string(val1Ref ? "valid" : "null") + 
+                                 ", val2Ref: " + 
+                                 std::string(val2Ref ? "valid" : "null"));
+                    return nullptr;
+                }
+                
                 // Create GetColumnOp operations to access the columns
                 logger_.notice("Creating GetColumnOp for val1");
                 std::string tupleArgTypeStr = "null";
@@ -1985,6 +2045,25 @@ auto PostgreSQLASTTranslator::generateDBDialectExpression(mlir::OpBuilder& build
                 if (!tupleArg) {
                     logger_.error("tupleArg is null - cannot create GetColumnOp");
                     return nullptr;
+                }
+                
+                // Validate tupleArg type
+                if (!tupleArg.getType()) {
+                    logger_.error("tupleArg type is null - cannot create GetColumnOp");
+                    return nullptr;
+                }
+                
+                // Check if tupleArg type is actually a TupleType
+                if (!mlir::isa<pgx_lower::compiler::dialect::tuples::TupleType>(tupleArg.getType())) {
+                    std::string argTypeStr = "unknown";
+                    try {
+                        llvm::raw_string_ostream os(argTypeStr);
+                        tupleArg.getType().print(os);
+                    } catch (...) {
+                        argTypeStr = "exception_in_print";
+                    }
+                    logger_.error("tupleArg type is not TupleType, it is: " + argTypeStr);
+                    logger_.error("This may cause GetColumnOp to fail");
                 }
                 
                 // Ensure ColumnManager has context set
@@ -2014,7 +2093,25 @@ auto PostgreSQLASTTranslator::generateDBDialectExpression(mlir::OpBuilder& build
                         logger_.notice("  resultType is: " + resultTypeStr);
                     }
                     
-                    mlir::Value leftValue = builder.create<GetColumnOp>(location, resultType, val1Ref, tupleArg);
+                    // Try to create the GetColumnOp with detailed error handling
+                    mlir::Value leftValue;
+                    try {
+                        logger_.notice("GETCOL: About to call builder.create<GetColumnOp>");
+                        leftValue = builder.create<GetColumnOp>(location, resultType, val1Ref, tupleArg);
+                        logger_.notice("GETCOL: GetColumnOp creation successful");
+                    } catch (const std::exception& e) {
+                        logger_.error("GETCOL: Exception creating GetColumnOp: " + std::string(e.what()));
+                        return nullptr;
+                    } catch (...) {
+                        logger_.error("GETCOL: Unknown exception creating GetColumnOp");
+                        return nullptr;
+                    }
+                    
+                    if (!leftValue) {
+                        logger_.error("GETCOL: GetColumnOp returned null value");
+                        return nullptr;
+                    }
+                    
                     logger_.notice("Created GetColumnOp for val1 successfully");
                     
                     // Same for val2
@@ -2024,7 +2121,24 @@ auto PostgreSQLASTTranslator::generateDBDialectExpression(mlir::OpBuilder& build
                     }
                     
                     logger_.notice("Creating GetColumnOp for val2");
-                    mlir::Value rightValue = builder.create<GetColumnOp>(location, resultType, val2Ref, tupleArg);
+                    mlir::Value rightValue;
+                    try {
+                        logger_.notice("GETCOL: About to call builder.create<GetColumnOp> for val2");
+                        rightValue = builder.create<GetColumnOp>(location, resultType, val2Ref, tupleArg);
+                        logger_.notice("GETCOL: GetColumnOp creation successful for val2");
+                    } catch (const std::exception& e) {
+                        logger_.error("GETCOL: Exception creating GetColumnOp for val2: " + std::string(e.what()));
+                        return nullptr;
+                    } catch (...) {
+                        logger_.error("GETCOL: Unknown exception creating GetColumnOp for val2");
+                        return nullptr;
+                    }
+                    
+                    if (!rightValue) {
+                        logger_.error("GETCOL: GetColumnOp for val2 returned null value");
+                        return nullptr;
+                    }
+                    
                     logger_.notice("Created GetColumnOp for val2 successfully");
                 
                     // Generate the appropriate DB dialect operation
@@ -2088,8 +2202,19 @@ auto PostgreSQLASTTranslator::generateDBDialectOperand(mlir::OpBuilder& builder,
         auto column = columnManager.get("@table", "@" + columnName);
         auto columnRef = columnManager.createRef(column.get());
         
-        // Generate tuples.getcol operation
-        return builder.create<GetColumnOp>(location, columnType, columnRef, tupleArg);
+        // Generate tuples.getcol operation with error handling
+        try {
+            logger_.notice("GETCOL: About to create GetColumnOp for simple column reference");
+            auto result = builder.create<GetColumnOp>(location, columnType, columnRef, tupleArg);
+            logger_.notice("GETCOL: GetColumnOp creation successful for column reference");
+            return result;
+        } catch (const std::exception& e) {
+            logger_.error("GETCOL: Exception creating GetColumnOp for column reference: " + std::string(e.what()));
+            return nullptr;
+        } catch (...) {
+            logger_.error("GETCOL: Unknown exception creating GetColumnOp for column reference");
+            return nullptr;
+        }
         
     } else if (IsA(operandNode, Const)) {
         // Constant value - use db.constant
