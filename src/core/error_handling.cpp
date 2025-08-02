@@ -1,5 +1,6 @@
 #include "core/error_handling.h"
 #include "core/mlir_logger.h"
+#include "core/logging.h"
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
@@ -63,17 +64,13 @@ auto ErrorInfo::getFormattedMessage() const -> std::string {
 #ifdef POSTGRESQL_EXTENSION
 
 void PostgreSQLErrorHandler::handleError(const ErrorInfo& error) {
-    int pgLevel;
-
     switch (error.severity) {
-    case ErrorSeverity::INFO_LEVEL: pgLevel = NOTICE; break;
-    case ErrorSeverity::WARNING_LEVEL: pgLevel = WARNING; break;
-    case ErrorSeverity::ERROR_LEVEL: pgLevel = ERROR; break;
-    case ErrorSeverity::FATAL_LEVEL: pgLevel = FATAL; break;
-    default: pgLevel = ERROR; break;
+    case ErrorSeverity::INFO_LEVEL: PGX_INFO(error.getFormattedMessage()); break;
+    case ErrorSeverity::WARNING_LEVEL: PGX_WARNING(error.getFormattedMessage()); break;
+    case ErrorSeverity::ERROR_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
+    case ErrorSeverity::FATAL_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
+    default: PGX_ERROR(error.getFormattedMessage()); break;
     }
-
-    elog(pgLevel, "%s", error.getFormattedMessage().c_str());
 }
 
 bool PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const {

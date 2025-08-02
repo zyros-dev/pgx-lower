@@ -1,6 +1,7 @@
 #include "core/query_analyzer.h"
 #include "core/mlir_logger.h" 
 #include "core/error_handling.h"
+#include "core/logging.h"
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
@@ -153,13 +154,13 @@ QueryCapabilities QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) {
         return caps;
     }
 
-    elog(DEBUG1, "Analyzing PostgreSQL plan for MLIR compatibility");
+    PGX_DEBUG("Analyzing PostgreSQL plan for MLIR compatibility");
 
     try {
         // 1. Check command type first (CMD_SELECT only)
         caps.isSelectStatement = checkCommandType(stmt);
         if (!caps.isSelectStatement) {
-            elog(DEBUG1, "Not a SELECT statement, MLIR not compatible");
+            PGX_DEBUG("Not a SELECT statement, MLIR not compatible");
             return caps;
         }
 
@@ -192,33 +193,33 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
     case T_IndexScan:
     case T_IndexOnlyScan:
     case T_BitmapHeapScan:
-        elog(DEBUG1, "Index scans not yet supported by MLIR");
+        PGX_DEBUG("Index scans not yet supported by MLIR");
         caps.requiresSeqScan = false; // This is an index scan, not seq scan
         break;
 
     case T_NestLoop:
     case T_MergeJoin:
     case T_HashJoin:
-        elog(DEBUG1, "Join operations not yet supported by MLIR");
+        PGX_DEBUG("Join operations not yet supported by MLIR");
         caps.requiresJoin = true;
         break;
 
     case T_Sort:
-        elog(DEBUG1, "Sort operations not yet supported by MLIR");
+        PGX_DEBUG("Sort operations not yet supported by MLIR");
         caps.requiresSort = true;
         break;
 
     case T_Limit:
-        elog(DEBUG1, "Limit operations not yet supported by MLIR");
+        PGX_DEBUG("Limit operations not yet supported by MLIR");
         caps.requiresLimit = true;
         break;
 
     case T_Agg:
-        elog(DEBUG1, "Aggregation operations detected - MLIR support available");
+        PGX_DEBUG("Aggregation operations detected - MLIR support available");
         caps.requiresAggregation = true;
         break;
 
-    default: elog(DEBUG1, "Unknown plan node type: %d", nodeTag(plan)); break;
+    default: PGX_DEBUG("Unknown plan node type: " + std::to_string(nodeTag(plan))); break;
     }
 
     // Check for filters
@@ -254,13 +255,13 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
 }
 
 void QueryAnalyzer::analyzeSeqScan(const SeqScan* seqScan, QueryCapabilities& caps) {
-    elog(DEBUG1, "Found sequential scan on table");
+    PGX_DEBUG("Found sequential scan on table");
     caps.requiresSeqScan = true;
 }
 
 void QueryAnalyzer::analyzeFilter(const Plan* plan, QueryCapabilities& caps) {
     if (plan->qual) {
-        elog(DEBUG1, "Found WHERE clause - filtering required");
+        PGX_DEBUG("Found WHERE clause - filtering required");
         caps.requiresFilter = true;
     }
 }
@@ -272,7 +273,7 @@ void QueryAnalyzer::analyzeProjection(const Plan* plan, QueryCapabilities& caps)
         // Simple heuristic: if we have a target list, we might need projection
         // For now, we'll be conservative and not mark this as requiring projection
         // since our current MLIR implementation handles basic projections
-        elog(DEBUG1, "Target list found - basic projection handling available");
+        PGX_DEBUG("Target list found - basic projection handling available");
     }
 }
 
@@ -292,13 +293,13 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
             // Check if this is a computed expression (not just a simple Var)
             if (nodeTag(tle->expr) != T_Var) {
                 caps.hasExpressions = true;
-                elog(DEBUG1, "Found computed expression in target list (node type: %d)", nodeTag(tle->expr));
+                PGX_DEBUG("Found computed expression in target list (node type: " + std::to_string(nodeTag(tle->expr)) + ")");
             }
             
             // For now, allow arithmetic expressions to test the new RelAlg Map implementation
             // Later we can add more sophisticated filtering
             if (IsA(tle->expr, FuncExpr)) {
-                elog(DEBUG1, "Found function expression in target list - marking as incompatible");
+                PGX_DEBUG("Found function expression in target list - marking as incompatible");
                 caps.hasCompatibleTypes = false;
                 return;
             }
@@ -309,7 +310,7 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
     }
 
     if (columnTypes.empty()) {
-        elog(DEBUG1, "No columns found in target list");
+        PGX_DEBUG("No columns found in target list");
         caps.hasCompatibleTypes = false;
         return;
     }
@@ -317,15 +318,14 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
     // Analyze type compatibility using built-in system
     auto [supportedCount, unsupportedCount] = analyzeTypeCompatibility(columnTypes);
     
-    elog(DEBUG1, "Type analysis: %d supported, %d unsupported out of %zu total columns", 
-         supportedCount, unsupportedCount, columnTypes.size());
+    PGX_DEBUG("Type analysis: " + std::to_string(supportedCount) + " supported, " + std::to_string(unsupportedCount) + " unsupported out of " + std::to_string(columnTypes.size()) + " total columns");
 
     // For now, require ALL types to be supported
     // In the future, we could allow partial support with fallbacks
     caps.hasCompatibleTypes = (unsupportedCount == 0);
     
     if (!caps.hasCompatibleTypes) {
-        elog(DEBUG1, "Some column types not supported by MLIR runtime");
+        PGX_DEBUG("Some column types not supported by MLIR runtime");
     }
 }
 
@@ -336,8 +336,7 @@ bool QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) {
     
     bool isSelect = (stmt->commandType == CMD_SELECT);
     if (!isSelect) {
-        elog(DEBUG1, "Command type %d is not SELECT, MLIR only supports SELECT statements", 
-             stmt->commandType);
+        PGX_DEBUG("Command type " + std::to_string(stmt->commandType) + " is not SELECT, MLIR only supports SELECT statements");
     }
     
     return isSelect;

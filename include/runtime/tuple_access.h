@@ -32,7 +32,6 @@ extern "C" {
 #include "nodes/primnodes.h"
 #include "postgres.h"
 #include "tcop/dest.h"
-#include "utils/elog.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
@@ -63,12 +62,12 @@ struct ComputedResultStorage {
     }
 
     void resize(int numColumns) {
-        elog(NOTICE, "ComputedResultStorage::resize called with numColumns=%d", numColumns);
+        PGX_NOTICE("ComputedResultStorage::resize called with numColumns=" + std::to_string(numColumns));
         numComputedColumns = numColumns;
         computedValues.resize(numColumns, 0);
         computedNulls.resize(numColumns, true);
         computedTypes.resize(numColumns, InvalidOid);
-        elog(NOTICE, "ComputedResultStorage::resize completed, numComputedColumns=%d", numComputedColumns);
+        PGX_NOTICE("ComputedResultStorage::resize completed, numComputedColumns=" + std::to_string(numComputedColumns));
     }
 
     void setResult(int columnIndex, Datum value, bool isNull, Oid typeOid) {
@@ -211,7 +210,7 @@ struct TupleStreamer {
 
             return dest->receiveSlot(slot, dest);
         } catch (...) {
-            elog(WARNING, "Exception caught in streamCompletePostgreSQLTuple");
+            PGX_WARNING("Exception caught in streamCompletePostgreSQLTuple");
             return false;
         }
     }

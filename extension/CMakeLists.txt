@@ -14,7 +14,9 @@ add_postgresql_mixed_extension(
             ../src/core/query_analyzer.cpp
             ../src/core/error_handling.cpp
             ../src/core/logging.cpp
+            ../src/core/logging_c.cpp
             ../src/logging/mlir_logger_pg.cpp
+            ../src/logging/console_logger.cpp
         SCRIPTS 
             sql/pgx_lower--1.0.sql
         REGRESS

@@ -1,9 +1,9 @@
 #include "dialects/subop/SubOpToControlFlow.h"
+#include "core/logging.h"
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
 #include "postgres.h"
-#include "utils/elog.h"
 }
 #endif
 
@@ -59,9 +59,7 @@ struct SubOpToControlFlowLoweringPass
    virtual llvm::StringRef getArgument() const override { return "lower-subop-to-cf"; }
 
    SubOpToControlFlowLoweringPass() {
-#ifdef POSTGRESQL_EXTENSION
-      elog(NOTICE, "=== SubOpToControlFlowLoweringPass constructor called ===");
-#endif
+      PGX_INFO("=== SubOpToControlFlowLoweringPass constructor called ===");
    }
    void getDependentDialects(DialectRegistry& registry) const override {
       registry.insert<LLVM::LLVMDialect, db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect, subop::SubOperatorDialect>();
@@ -4269,36 +4267,26 @@ void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp
 } // namespace
 
 void SubOpToControlFlowLoweringPass::runOnOperation() {
-#ifdef POSTGRESQL_EXTENSION
-   elog(NOTICE, "=== SubOpToControlFlowLoweringPass::runOnOperation() START ===");
-#endif
+   PGX_INFO("=== SubOpToControlFlowLoweringPass::runOnOperation() START ===");
    
    try {
       auto module = getOperation();
       
-#ifdef POSTGRESQL_EXTENSION
-      elog(NOTICE, "Got module operation successfully");
-#endif
+      PGX_INFO("Got module operation successfully");
    
    // Load UtilDialect if not already loaded
    auto* utilDialect = getContext().getLoadedDialect<util::UtilDialect>();
    if (!utilDialect) {
-#ifdef POSTGRESQL_EXTENSION
-      elog(NOTICE, "UtilDialect not loaded, loading now...");
-#endif
+      PGX_INFO("UtilDialect not loaded, loading now...");
       utilDialect = getContext().getOrLoadDialect<util::UtilDialect>();
       if (!utilDialect) {
-#ifdef POSTGRESQL_EXTENSION
-         elog(ERROR, "Failed to load UtilDialect!");
-#endif
+         PGX_ERROR("Failed to load UtilDialect!");
          signalPassFailure();
          return;
       }
    }
    
-#ifdef POSTGRESQL_EXTENSION
-   elog(NOTICE, "UtilDialect loaded successfully");
-#endif
+   PGX_INFO("UtilDialect loaded successfully");
    utilDialect->getFunctionHelper().setParentModule(module);
    auto* ctxt = &getContext();
    
@@ -4431,9 +4419,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
    //rewriter.rewrite(module.getBody());
    std::vector<mlir::Operation*> toRemove;
    module->walk([&, mainFunc, mainBlock](subop::ExecutionGroupOp executionGroup) { // walk over "queries"
-#ifdef POSTGRESQL_EXTENSION
-      elog(NOTICE, "=== Processing ExecutionGroupOp in walk ===");
-#endif
+      PGX_INFO("=== Processing ExecutionGroupOp in walk ===");
       mlir::IRMapping mapping;
       //todo: handle arguments of executionGroup
       // Check if we have any ExecutionStepOp operations
@@ -4444,24 +4430,18 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
             break;
          }
       }
-#ifdef POSTGRESQL_EXTENSION
-      elog(NOTICE, "=== ExecutionGroupOp has ExecutionSteps: %s ===", hasExecutionSteps ? "true" : "false");
-      elog(NOTICE, "=== About to process ExecutionGroupOp operations ===");
-#endif
+      PGX_INFO("=== ExecutionGroupOp has ExecutionSteps: " + std::string(hasExecutionSteps ? "true" : "false") + " ===");
+      PGX_INFO("=== About to process ExecutionGroupOp operations ===");
       
       // If no ExecutionStepOp operations, handle simple case
       if (!hasExecutionSteps) {
          llvm::errs() << "=== SubOpToControlFlow: Handling simple ExecutionGroupOp without ExecutionSteps ===\n";
-#ifdef POSTGRESQL_EXTENSION
-         elog(NOTICE, "=== Handling simple case without ExecutionSteps ===");
-#endif
+         PGX_INFO("=== Handling simple case without ExecutionSteps ===");
          
          // For simple cases without ExecutionStepOp, generate code directly in main function
          mlir::OpBuilder mainBuilder(mainFunc);
          mainBuilder.setInsertionPointToEnd(mainBlock);
-#ifdef POSTGRESQL_EXTENSION
-         elog(NOTICE, "=== Created OpBuilder for main function ===");
-#endif
+         PGX_INFO("=== Created OpBuilder for main function ===");
          
          // Process each operation in the ExecutionGroupOp
          for (auto& op : executionGroup.getRegion().front()) {
@@ -4609,9 +4589,7 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       }
       executionGroup.replaceAllUsesWith(results);
       toRemove.push_back(executionGroup);
-#ifdef POSTGRESQL_EXTENSION
-      elog(NOTICE, "=== ExecutionGroupOp processing completed successfully ===");
-#endif
+      PGX_INFO("=== ExecutionGroupOp processing completed successfully ===");
    });
    getOperation()->walk([&](subop::SetResultOp setResultOp) {
       mlir::OpBuilder builder(setResultOp);
@@ -4622,16 +4600,12 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       toRemove.push_back(setResultOp);
    });
    for (auto* op : toRemove) {
-#ifdef POSTGRESQL_EXTENSION
-      elog(NOTICE, "=== About to erase operation: %s ===", op->getName().getStringRef().data());
-#endif
+      PGX_INFO("=== About to erase operation: " + std::string(op->getName().getStringRef().data()) + " ===");
       op->dropAllReferences();
       op->dropAllDefinedValueUses();
       op->erase();
    }
-#ifdef POSTGRESQL_EXTENSION
-   elog(NOTICE, "=== All operations erased successfully ===");
-#endif
+   PGX_INFO("=== All operations erased successfully ===");
    std::vector<mlir::Operation*> defs;
    for (auto& op : module.getBody()->getOperations()) {
       if (auto funcOp = mlir::dyn_cast_or_null<mlir::func::FuncOp>(&op)) {
@@ -4647,33 +4621,23 @@ void SubOpToControlFlowLoweringPass::runOnOperation() {
       getParamVal.replaceAllUsesWith(getParamVal.getParam());
    });
    
-#ifdef POSTGRESQL_EXTENSION
-   elog(NOTICE, "=== SubOpToControlFlowLoweringPass::runOnOperation() completing successfully ===");
-#endif
+   PGX_INFO("=== SubOpToControlFlowLoweringPass::runOnOperation() completing successfully ===");
    
    } catch (const std::exception& e) {
-#ifdef POSTGRESQL_EXTENSION
-      elog(ERROR, "Exception in SubOpToControlFlowLoweringPass::runOnOperation(): %s", e.what());
-#endif
+      PGX_ERROR("Exception in SubOpToControlFlowLoweringPass::runOnOperation(): " + std::string(e.what()));
       signalPassFailure();
       return;
    } catch (...) {
-#ifdef POSTGRESQL_EXTENSION
-      elog(ERROR, "Unknown exception in SubOpToControlFlowLoweringPass::runOnOperation()");
-#endif
+      PGX_ERROR("Unknown exception in SubOpToControlFlowLoweringPass::runOnOperation()");
       signalPassFailure();
       return;
    }
 }
 //} //namespace
 std::unique_ptr<mlir::Pass> subop::createLowerSubOpPass() {
-#ifdef POSTGRESQL_EXTENSION
-   elog(NOTICE, "=== createLowerSubOpPass() called ===");
-#endif
+   PGX_INFO("=== createLowerSubOpPass() called ===");
    auto pass = std::make_unique<SubOpToControlFlowLoweringPass>();
-#ifdef POSTGRESQL_EXTENSION
-   elog(NOTICE, "=== SubOpToControlFlowLoweringPass created successfully ===");
-#endif
+   PGX_INFO("=== SubOpToControlFlowLoweringPass created successfully ===");
    return pass;
 }
 void subop::setCompressionEnabled(bool compressionEnabled) {

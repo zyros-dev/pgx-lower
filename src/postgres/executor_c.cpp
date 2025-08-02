@@ -37,7 +37,7 @@ static void log_cpp_backtrace() {
         for (size_t i = 0; i < size; ++i) {
             oss << strings[i] << std::endl;
         }
-        elog(LOG, "%s", oss.str().c_str());
+        PGX_INFO(oss.str());
         free(strings);
     }
 }
@@ -48,11 +48,11 @@ bool try_cpp_executor_direct(const QueryDesc* queryDesc) {
         MyCppExecutor executor;
         return executor.execute(queryDesc);
     } catch (const std::exception& ex) {
-        elog(ERROR, "C++ exception: %s", ex.what());
+        PGX_ERROR("C++ exception: " + std::string(ex.what()));
         log_cpp_backtrace();
         return false;
     } catch (...) {
-        elog(ERROR, "Unknown C++ exception occurred!");
+        PGX_ERROR("Unknown C++ exception occurred!");
         log_cpp_backtrace();
         return false;
     }
@@ -67,7 +67,7 @@ Datum try_cpp_executor(PG_FUNCTION_ARGS) {
 
 PG_FUNCTION_INFO_V1(log_cpp_notice);
 Datum log_cpp_notice(PG_FUNCTION_ARGS) {
-    elog(NOTICE, "Hello from C++!");
+    PGX_NOTICE("Hello from C++!");
     PG_RETURN_VOID();
 }
 
