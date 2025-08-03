@@ -31,3 +31,8 @@ CompileFlags:
     - "-D__USE_ISOC99"
     - "-D__USE_ISOC95"
   CompilationDatabase: ./compile_commands.json
+Index:
+  Exclude:
+    - "build*/_deps/**"
+    - "**/build*/_deps/**"
+    - "_deps/**"

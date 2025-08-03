@@ -716,9 +716,6 @@ void subop::createLowerSubOpPipeline(mlir::OpPassManager& pm) {
    pm.addPass(mlir::createCSEPass());
 }
 
-std::unique_ptr<mlir::Pass> subop::createLowerSubOpToControlFlowPass() {
-   return subop::createLowerSubOpPass();
-}
 
 void subop::registerSubOpToControlFlowConversionPasses() {
    ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
