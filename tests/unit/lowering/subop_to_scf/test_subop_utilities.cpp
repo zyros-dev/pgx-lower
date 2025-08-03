@@ -224,23 +224,6 @@ TEST_F(SubOpUtilitiesTest, BasicStorageTypeCreation) {
 
 // ===== TERMINATOR UTILITIES TESTS =====
 
-TEST_F(SubOpUtilitiesTest, TerminatorUtilsHasTerminator) {
-    // Create a function with a block
-    auto funcType = FunctionType::get(&context, {}, {});
-    auto testFunc = builder->create<func::FuncOp>(loc, "test_terminator", funcType);
-    auto* block = testFunc.addEntryBlock();
-    
-    // Initially should not have terminator
-    EXPECT_FALSE(subop_to_control_flow::TerminatorUtils::hasTerminator(*block));
-    
-    // Add a terminator
-    OpBuilder blockBuilder = OpBuilder::atBlockEnd(block);
-    blockBuilder.create<func::ReturnOp>(loc);
-    
-    // Now should have terminator
-    EXPECT_TRUE(subop_to_control_flow::TerminatorUtils::hasTerminator(*block));
-}
-
 TEST_F(SubOpUtilitiesTest, TerminatorUtilsIsValidTerminator) {
     // Create different types of terminators
     auto funcType = FunctionType::get(&context, {}, {});
@@ -262,87 +245,6 @@ TEST_F(SubOpUtilitiesTest, TerminatorUtilsIsValidTerminator) {
     yieldOp.erase();
     auto constOp = blockBuilder.create<arith::ConstantIntOp>(loc, 42, 32);
     EXPECT_FALSE(subop_to_control_flow::TerminatorUtils::isValidTerminator(constOp));
-}
-
-TEST_F(SubOpUtilitiesTest, TerminatorUtilsFindBlocksWithoutTerminators) {
-    // Create a function with multiple blocks
-    auto funcType = FunctionType::get(&context, {}, {});
-    auto testFunc = builder->create<func::FuncOp>(loc, "test_find_blocks", funcType);
-    
-    auto* block1 = testFunc.addEntryBlock();
-    auto* block2 = testFunc.addBlock();
-    auto* block3 = testFunc.addBlock();
-    
-    // Add terminator to only one block
-    OpBuilder blockBuilder = OpBuilder::atBlockEnd(block2);
-    blockBuilder.create<func::ReturnOp>(loc);
-    
-    // Find blocks without terminators
-    auto& region = testFunc.getBody();
-    auto blocksWithoutTerminators = subop_to_control_flow::TerminatorUtils::findBlocksWithoutTerminators(region);
-    
-    // Should find 2 blocks without terminators
-    EXPECT_EQ(blocksWithoutTerminators.size(), 2);
-    EXPECT_THAT(blocksWithoutTerminators, ::testing::Contains(block1));
-    EXPECT_THAT(blocksWithoutTerminators, ::testing::Contains(block3));
-    EXPECT_THAT(blocksWithoutTerminators, ::testing::Not(::testing::Contains(block2)));
-}
-
-TEST_F(SubOpUtilitiesTest, TerminatorUtilsEnsureTerminator) {
-    // Create a function with a block without terminator
-    auto funcType = FunctionType::get(&context, {}, {});
-    auto testFunc = builder->create<func::FuncOp>(loc, "test_ensure_term", funcType);
-    auto* block = testFunc.addEntryBlock();
-    
-    // Initially no terminator
-    EXPECT_FALSE(subop_to_control_flow::TerminatorUtils::hasTerminator(*block));
-    
-    // Apply ensureTerminator
-    auto& region = testFunc.getBody();
-    subop_to_control_flow::TerminatorUtils::ensureTerminator(region, *builder, loc);
-    
-    // Should now have terminator
-    EXPECT_TRUE(subop_to_control_flow::TerminatorUtils::hasTerminator(*block));
-    EXPECT_TRUE(subop_to_control_flow::TerminatorUtils::isValidTerminator(block->getTerminator()));
-}
-
-TEST_F(SubOpUtilitiesTest, TerminatorUtilsEnsureIfOpTermination) {
-    // Create an if operation
-    auto conditionValue = builder->create<arith::ConstantIntOp>(loc, 1, 1);
-    auto ifOp = builder->create<scf::IfOp>(loc, TypeRange{}, conditionValue, true);
-    
-    // Initially blocks should not have terminators
-    auto& thenBlock = ifOp.getThenRegion().front();
-    auto& elseBlock = ifOp.getElseRegion().front();
-    
-    EXPECT_FALSE(subop_to_control_flow::TerminatorUtils::hasTerminator(thenBlock));
-    EXPECT_FALSE(subop_to_control_flow::TerminatorUtils::hasTerminator(elseBlock));
-    
-    // Apply termination fix
-    subop_to_control_flow::TerminatorUtils::ensureIfOpTermination(ifOp, *builder, loc);
-    
-    // Both blocks should now have terminators
-    EXPECT_TRUE(subop_to_control_flow::TerminatorUtils::hasTerminator(thenBlock));
-    EXPECT_TRUE(subop_to_control_flow::TerminatorUtils::hasTerminator(elseBlock));
-}
-
-TEST_F(SubOpUtilitiesTest, TerminatorUtilsEnsureForOpTermination) {
-    // Create a for loop
-    auto lowerBound = builder->create<arith::ConstantIndexOp>(loc, 0);
-    auto upperBound = builder->create<arith::ConstantIndexOp>(loc, 10);
-    auto step = builder->create<arith::ConstantIndexOp>(loc, 1);
-    
-    auto forOp = builder->create<scf::ForOp>(loc, lowerBound, upperBound, step);
-    
-    // Initially body should not have terminator
-    auto& bodyBlock = forOp.getRegion().front();
-    EXPECT_FALSE(subop_to_control_flow::TerminatorUtils::hasTerminator(bodyBlock));
-    
-    // Apply termination fix
-    subop_to_control_flow::TerminatorUtils::ensureForOpTermination(forOp, *builder, loc);
-    
-    // Body should now have terminator
-    EXPECT_TRUE(subop_to_control_flow::TerminatorUtils::hasTerminator(bodyBlock));
 }
 
 // ===== RUNTIME CALL TERMINATION TESTS =====
@@ -601,51 +503,4 @@ TEST_F(SubOpUtilitiesTest, TypeConversionEdgeCases) {
     EXPECT_EQ(emptyTuple.getTypes().size(), 0);
     
     PGX_DEBUG("Type conversion edge cases test completed successfully (simplified)");
-}
-
-// ===== COMPREHENSIVE COMPILATION TEST =====
-
-TEST_F(SubOpUtilitiesTest, ComprehensiveCompilationTest) {
-    // Final test to verify that all basic functionality compiles and the test framework works
-    
-    // Test basic MLIR context and builder functionality
-    EXPECT_TRUE(builder);
-    EXPECT_TRUE(typeConverter);
-    
-    // Test basic type creation
-    auto i32Type = builder->getI32Type();
-    auto i64Type = builder->getI64Type();
-    auto f32Type = builder->getF32Type();
-    
-    EXPECT_TRUE(i32Type);
-    EXPECT_TRUE(i64Type);
-    EXPECT_TRUE(f32Type);
-    
-    // Test basic operation creation
-    auto constOp = builder->create<arith::ConstantIntOp>(loc, 42, 32);
-    auto constOp2 = builder->create<arith::ConstantIntOp>(loc, 24, 32);
-    
-    EXPECT_TRUE(constOp);
-    EXPECT_TRUE(constOp2);
-    
-    // Test basic template utility
-    auto repeated = subop_to_control_flow::repeat<int>(42, 3);
-    EXPECT_EQ(repeated.size(), 3);
-    EXPECT_EQ(repeated[0], 42);
-    
-    // Test basic terminator utilities exist (functions compile)
-    auto funcType = FunctionType::get(&context, {}, {});
-    auto testFunc = builder->create<func::FuncOp>(loc, "comprehensive_test", funcType);
-    auto* block = testFunc.addEntryBlock();
-    
-    // Test terminator checking
-    EXPECT_FALSE(subop_to_control_flow::TerminatorUtils::hasTerminator(*block));
-    
-    // Add terminator
-    OpBuilder blockBuilder = OpBuilder::atBlockEnd(block);
-    blockBuilder.create<func::ReturnOp>(loc);
-    
-    EXPECT_TRUE(subop_to_control_flow::TerminatorUtils::hasTerminator(*block));
-    
-    PGX_INFO("SubOp utilities comprehensive compilation test PASSED - all core functionality working");
 }

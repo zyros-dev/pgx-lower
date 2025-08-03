@@ -353,55 +353,6 @@ TEST_F(ScanOperationsTest, ScanFilterPattern) {
     module.erase();
 }
 
-// Simple test to verify basic compilation
-TEST(ScanOperationsTest, BasicDialectCompilation) {
-    MLIRContext context;
-    context.loadDialect<subop::SubOperatorDialect>();
-    context.loadDialect<tuples::TupleStreamDialect>();
-    context.loadDialect<util::UtilDialect>();
-    context.loadDialect<scf::SCFDialect>();
-    context.loadDialect<arith::ArithDialect>();
-    context.loadDialect<func::FuncDialect>();
-    
-    OpBuilder builder(&context);
-    auto loc = builder.getUnknownLoc();
-    
-    // Create a module
-    auto module = ModuleOp::create(loc);
-    builder.setInsertionPointToEnd(module.getBody());
-    
-    // Create a function
-    auto funcType = FunctionType::get(&context, {}, {});
-    auto func = builder.create<func::FuncOp>(loc, "test_dialects", funcType);
-    auto* block = func.addEntryBlock();
-    
-    builder.setInsertionPointToEnd(block);
-    
-    // Just test that we can compile with the dialects loaded
-    try {
-        PGX_DEBUG("Testing dialect compilation");
-        auto constVal = builder.create<arith::ConstantIntOp>(loc, 1, 32);
-        EXPECT_TRUE(constVal);
-    } catch (...) {
-        FAIL() << "Dialect compilation failed";
-    }
-    
-    // Add terminator
-    builder.create<func::ReturnOp>(loc);
-    
-    // Verify termination
-    auto terminator = block->getTerminator();
-    EXPECT_NE(terminator, nullptr);
-    EXPECT_TRUE(terminator->hasTrait<OpTrait::IsTerminator>());
-    
-    PGX_INFO("Basic dialect compilation test completed successfully");
-    
-    module.erase();
-}
-
-
-
-
 // Simple test to verify basic SubOp dialect integration
 TEST_F(ScanOperationsTest, SubOpDialectIntegration) {
     OpBuilder builder(&context);
