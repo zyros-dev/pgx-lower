@@ -179,7 +179,8 @@ namespace {
             
             // Check for common problematic patterns
             if (op->getNumResults() == 0 && op->getNumOperands() == 0 && 
-                !op->hasTrait<mlir::OpTrait::IsTerminator>()) {
+                !op->hasTrait<mlir::OpTrait::IsTerminator>() &&
+                opName != "func.func" && opName != "builtin.module") {
                 PGX_WARNING(("Operation " + opName + " has no operands or results (suspicious)").c_str());
             }
             
