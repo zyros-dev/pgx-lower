@@ -130,10 +130,7 @@ public:
     void atStartOf(mlir::Block* block, const std::function<void(SubOpRewriter&)>& fn);
     
     template<typename AdaptorType>
-    void inlineBlock(mlir::Block* block, mlir::ValueRange arguments, const std::function<void(AdaptorType)>& fn) {
-        // Simplified inlineBlock implementation
-        // This is a stub - full implementation would be in the source file
-    }
+    void inlineBlock(mlir::Block* block, mlir::ValueRange arguments, const std::function<void(AdaptorType)>& fn);
     
     // Critical missing methods identified by research
     

@@ -285,6 +285,66 @@ subop::InFlightOp SubOpRewriter::createInFlight(ColumnMapping mapping) {
     return ::mlir::cast<subop::InFlightOp>(newInFlight.getDefiningOp());
 }
 
+void SubOpRewriter::registerOpInserted(::mlir::Operation* op) {
+    if (op->getDialect()->getNamespace() == "subop") {
+        toRewrite.push_back(op);
+    } else {
+        op->walk([&](::mlir::Operation* nestedOp) {
+            if (nestedOp->getDialect()->getNamespace() != "subop") {
+                for (auto& operand : nestedOp->getOpOperands()) {
+                    operand.set(getMapped(operand.get()));
+                }
+            }
+        });
+    }
+}
+
+template<typename AdaptorType>
+void SubOpRewriter::inlineBlock(::mlir::Block* block, ::mlir::ValueRange arguments, const std::function<void(AdaptorType)>& fn) {
+    PGX_DEBUG("Inlining block with " + std::to_string(arguments.size()) + " arguments");
+    
+    // Map block arguments to provided values using IRMapping
+    for (auto z : llvm::zip(block->getArguments(), arguments)) {
+        std::get<0>(z).replaceAllUsesWith(std::get<1>(z));
+    }
+    
+    // Separate operations from terminator into proper collections
+    std::vector<::mlir::Operation*> toInsert;
+    ::mlir::Operation* terminator = nullptr;
+    
+    for (auto& op : block->getOperations()) {
+        if (&op != block->getTerminator()) {
+            toInsert.push_back(&op);
+        } else {
+            terminator = &op;
+            break;
+        }
+    }
+    
+    // Insert non-terminator operations first using proper clone and mapping
+    for (auto* op : toInsert) {
+        op->remove();
+        builder.insert(op);
+        registerOpInserted(op);
+    }
+    
+    // Process terminator through adaptor callback with mapped operands
+    std::vector<::mlir::Value> adaptorVals;
+    for (auto operand : terminator->getOperands()) {
+        adaptorVals.push_back(getMapped(operand));
+    }
+    AdaptorType adaptor(adaptorVals);
+    fn(adaptor);
+    
+    // Ensure proper operation ordering by cleaning up terminator
+    terminator->remove();
+    eraseOp(terminator);
+}
+
+// Explicit template instantiations for common adaptor types
+namespace tuples = ::pgx_lower::compiler::dialect::tuples;
+template void SubOpRewriter::inlineBlock<tuples::ReturnOpAdaptor>(::mlir::Block* block, ::mlir::ValueRange arguments, const std::function<void(tuples::ReturnOpAdaptor)>& fn);
+
 
 } // namespace subop_to_cf
 } // namespace dialect
