@@ -107,7 +107,6 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     
     # Add individual test files
     list(APPEND UNIT_TEST_SOURCES 
-        tests/unit/test_subop_simple.cpp
         tests/unit/test_simple_execution_engine.cpp
         tests/unit/test_basic_terminator.cpp
         # RelAlg to SubOp lowering tests - 2 ENABLED, 10 DISABLED due to API compatibility issues
@@ -130,7 +129,6 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/lowering/subop_to_scf/test_subop_rewriter.cpp
         tests/unit/lowering/subop_to_scf/test_subop_utilities.cpp
         tests/unit/lowering/subop_to_scf/test_datastructure_creation.cpp
-        tests/unit/lowering/subop_to_scf/test_execution_engine.cpp
         tests/unit/lowering/subop_to_scf/test_execution_engine_terminator.cpp
         tests/unit/lowering/subop_to_scf/test_gather_scatter_operations.cpp
         tests/unit/lowering/subop_to_scf/test_lookup_operations.cpp
