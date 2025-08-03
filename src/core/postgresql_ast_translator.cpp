@@ -1350,27 +1350,14 @@ auto PostgreSQLASTTranslator::generateTupleIterationLoop(mlir::OpBuilder& builde
         }
     }
     
-    // Create a materialize operation to store results
-    // This will be lowered to actual result handling by SubOp lowering
-    // For now, create a simple LocalTable type with empty members
-    auto emptyNames = builder.getArrayAttr({});
-    auto emptyTypes = builder.getArrayAttr({});
-    auto emptyColumns = builder.getArrayAttr({});
-    auto stateMembersAttr = pgx_lower::compiler::dialect::subop::StateMembersAttr::get(
-        &context_, emptyNames, emptyTypes);
-    auto resultTableType = pgx_lower::compiler::dialect::subop::LocalTableType::get(
-        &context_, stateMembersAttr, emptyColumns);
-    
-    auto emptyRefs = builder.getArrayAttr({});
-    
-    auto materializeOp = queryBuilder.create<pgx_lower::compiler::dialect::relalg::MaterializeOp>(
-        location, resultTableType, tupleStream, emptyRefs, emptyColumns);
+    // MaterializeOp has been removed - directly return the tuple stream
+    // The result handling will be done by the lowering pipeline
     
     // Return from query
     queryBuilder.create<pgx_lower::compiler::dialect::relalg::QueryReturnOp>(
-        location, mlir::ValueRange{materializeOp.getResult()});
+        location, mlir::ValueRange{tupleStream});
     
-    logger_.debug("Generated RelAlg query with basetable → materialize pattern");
+    logger_.debug("Generated RelAlg query with direct tuple stream return");
 }
 
 auto PostgreSQLASTTranslator::processTargetListWithRealTuple(mlir::OpBuilder& builder, mlir::Location location,

@@ -63,9 +63,7 @@ static relalg::ColumnSet getRequired(Operator op) {
          required.insert(getRequired(consumingOp));
          required.insert(consumingOp.getUsedColumns());
       }
-      if (auto materializeOp = mlir::dyn_cast_or_null<relalg::MaterializeOp>(user)) {
-         required.insert(relalg::ColumnSet::fromArrayAttr(materializeOp.getCols()));
-      }
+      // MaterializeOp has been removed - no longer needed
    }
    return available.intersect(required);
 }
@@ -762,11 +760,13 @@ class CountingSetOperationLowering : public ConversionPattern {
    CountingSetOperationLowering(mlir::MLIRContext* context)
       : ConversionPattern(MatchAnyOpTypeTag(), 1, context) {}
    LogicalResult match(mlir::Operation* op) const override {
-      return mlir::success(mlir::isa<relalg::ExceptOp, relalg::IntersectOp>(op));
+      // ExceptOp and IntersectOp have been removed
+      return mlir::failure();
    }
    void rewrite(Operation* op, ArrayRef<Value> operands, ConversionPatternRewriter& rewriter) const override {
       bool distinct = op->getAttrOfType<relalg::SetSemanticAttr>("set_semantic").getValue() == relalg::SetSemantic::distinct;
-      bool except = mlir::isa<relalg::ExceptOp>(op);
+      // ExceptOp has been removed - this pattern no longer applies
+      bool except = false;
       auto* context = getContext();
       auto loc = op->getLoc();
 
@@ -1402,39 +1402,6 @@ class InnerJoinNLLowering : public OpConversionPattern<relalg::InnerJoinOp> {
       return success();
    }
 };
-class SemiJoinLowering : public OpConversionPattern<relalg::SemiJoinOp> {
-   public:
-   using OpConversionPattern<relalg::SemiJoinOp>::OpConversionPattern;
-
-   LogicalResult matchAndRewrite(relalg::SemiJoinOp semiJoinOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      auto loc = semiJoinOp->getLoc();
-      bool reverse = semiJoinOp->hasAttr("reverseSides");
-      bool useHash = semiJoinOp->hasAttr("useHashJoin");
-      bool useIndexNestedLoop = semiJoinOp->hasAttr("useIndexNestedLoop");
-      auto rightHash = semiJoinOp->getAttrOfType<mlir::ArrayAttr>("rightHash");
-      auto leftHash = semiJoinOp->getAttrOfType<mlir::ArrayAttr>("leftHash");
-      auto nullsEqual = semiJoinOp->getAttrOfType<mlir::ArrayAttr>("nullsEqual");
-
-      if (!reverse) {
-         rewriter.replaceOp(semiJoinOp, translateNL(adaptor.getLeft(), adaptor.getRight(), useHash, useIndexNestedLoop, nullsEqual, leftHash, rightHash, getRequired(mlir::cast<Operator>(semiJoinOp.getRight().getDefiningOp())), rewriter, semiJoinOp, [loc, &semiJoinOp](mlir::Value v, mlir::ConversionPatternRewriter& rewriter) -> mlir::Value {
-                               auto filtered = translateSelection(v, semiJoinOp.getPredicate(), rewriter, loc);
-                               auto [markerDefAttr, markerRefAttr] = createColumn(rewriter.getI1Type(), "marker", "marker");
-                               return rewriter.create<subop::FilterOp>(loc, anyTuple(filtered, markerDefAttr, rewriter, loc), subop::FilterSemantic::all_true, rewriter.getArrayAttr({markerRefAttr}));
-                            }));
-      } else {
-         auto [flagAttrDef, flagAttrRef] = createColumn(rewriter.getI1Type(), "materialized", "marker");
-         auto [_, scan] = translateNLWithMarker(adaptor.getLeft(), adaptor.getRight(), useHash, nullsEqual, leftHash, rightHash, getRequired(mlir::cast<Operator>(semiJoinOp.getLeft().getDefiningOp())), rewriter, loc, flagAttrDef, [loc, &semiJoinOp](mlir::Value v, mlir::Value, mlir::ConversionPatternRewriter& rewriter, tuples::ColumnRefAttr ref, std::string flagMember) -> mlir::Value {
-            auto filtered = translateSelection(v, semiJoinOp.getPredicate(), rewriter, loc);
-            auto [markerDefAttr, markerRefAttr] = createColumn(rewriter.getI1Type(), "marker", "marker");
-            auto afterBool = mapBool(filtered, rewriter, loc, true, &markerDefAttr.getColumn());
-            rewriter.create<subop::ScatterOp>(loc, afterBool, ref, rewriter.getDictionaryAttr(rewriter.getNamedAttr(flagMember, markerRefAttr)));
-            return {};
-         });
-         rewriter.replaceOpWithNewOp<subop::FilterOp>(semiJoinOp, scan, subop::FilterSemantic::all_true, rewriter.getArrayAttr({flagAttrRef}));
-      }
-      return success();
-   }
-};
 class MarkJoinLowering : public OpConversionPattern<relalg::MarkJoinOp> {
    public:
    using OpConversionPattern<relalg::MarkJoinOp>::OpConversionPattern;
@@ -1466,39 +1433,8 @@ class MarkJoinLowering : public OpConversionPattern<relalg::MarkJoinOp> {
       return success();
    }
 };
-class AntiSemiJoinLowering : public OpConversionPattern<relalg::AntiSemiJoinOp> {
-   public:
-   using OpConversionPattern<relalg::AntiSemiJoinOp>::OpConversionPattern;
-
-   LogicalResult matchAndRewrite(relalg::AntiSemiJoinOp antiSemiJoinOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      auto loc = antiSemiJoinOp->getLoc();
-      bool reverse = antiSemiJoinOp->hasAttr("reverseSides");
-      bool useHash = antiSemiJoinOp->hasAttr("useHashJoin");
-      bool useIndexNestedLoop = antiSemiJoinOp->hasAttr("useIndexNestedLoop");
-      auto rightHash = antiSemiJoinOp->getAttrOfType<mlir::ArrayAttr>("rightHash");
-      auto leftHash = antiSemiJoinOp->getAttrOfType<mlir::ArrayAttr>("leftHash");
-      auto nullsEqual = antiSemiJoinOp->getAttrOfType<mlir::ArrayAttr>("nullsEqual");
-
-      if (!reverse) {
-         rewriter.replaceOp(antiSemiJoinOp, translateNL(adaptor.getLeft(), adaptor.getRight(), useHash, useIndexNestedLoop, nullsEqual, leftHash, rightHash, getRequired(mlir::cast<Operator>(antiSemiJoinOp.getRight().getDefiningOp())), rewriter, antiSemiJoinOp, [loc, &antiSemiJoinOp](mlir::Value v, mlir::ConversionPatternRewriter& rewriter) -> mlir::Value {
-                               auto filtered = translateSelection(v, antiSemiJoinOp.getPredicate(), rewriter, loc);
-                               auto [markerDefAttr, markerRefAttr] = createColumn(rewriter.getI1Type(), "marker", "marker");
-                               return rewriter.create<subop::FilterOp>(loc, anyTuple(filtered, markerDefAttr, rewriter, loc), subop::FilterSemantic::none_true, rewriter.getArrayAttr({markerRefAttr}));
-                            }));
-      } else {
-         auto [flagAttrDef, flagAttrRef] = createColumn(rewriter.getI1Type(), "materialized", "marker");
-         auto [_, scan] = translateNLWithMarker(adaptor.getLeft(), adaptor.getRight(), useHash, nullsEqual, leftHash, rightHash, getRequired(mlir::cast<Operator>(antiSemiJoinOp.getLeft().getDefiningOp())), rewriter, loc, flagAttrDef, [loc, &antiSemiJoinOp](mlir::Value v, mlir::Value, mlir::ConversionPatternRewriter& rewriter, tuples::ColumnRefAttr ref, std::string flagMember) -> mlir::Value {
-            auto filtered = translateSelection(v, antiSemiJoinOp.getPredicate(), rewriter, loc);
-            auto [markerDefAttr, markerRefAttr] = createColumn(rewriter.getI1Type(), "marker", "marker");
-            auto afterBool = mapBool(filtered, rewriter, loc, true, &markerDefAttr.getColumn());
-            rewriter.create<subop::ScatterOp>(loc, afterBool, ref, rewriter.getDictionaryAttr(rewriter.getNamedAttr(flagMember, markerRefAttr)));
-            return {};
-         });
-         rewriter.replaceOpWithNewOp<subop::FilterOp>(antiSemiJoinOp, scan, subop::FilterSemantic::none_true, rewriter.getArrayAttr({flagAttrRef}));
-      }
-      return success();
-   }
-};
+// DELETED: FullOuterJoinOp removed
+/*
 class FullOuterJoinLowering : public OpConversionPattern<relalg::FullOuterJoinOp> {
    public:
    using OpConversionPattern<relalg::FullOuterJoinOp>::OpConversionPattern;
@@ -1536,6 +1472,9 @@ class FullOuterJoinLowering : public OpConversionPattern<relalg::FullOuterJoinOp
       return success();
    }
 };
+*/
+// DELETED: OuterJoinOp removed
+/*
 class OuterJoinLowering : public OpConversionPattern<relalg::OuterJoinOp> {
    public:
    using OpConversionPattern<relalg::OuterJoinOp>::OpConversionPattern;
@@ -1576,6 +1515,7 @@ class OuterJoinLowering : public OpConversionPattern<relalg::OuterJoinOp> {
       return success();
    }
 };
+*/
 class SingleJoinLowering : public OpConversionPattern<relalg::SingleJoinOp> {
    public:
    using OpConversionPattern<relalg::SingleJoinOp>::OpConversionPattern;
@@ -1794,6 +1734,8 @@ class TmpLowering : public OpConversionPattern<relalg::TmpOp> {
       return success();
    }
 };
+// DELETED: MaterializeOp removed
+/*
 class MaterializeLowering : public OpConversionPattern<relalg::MaterializeOp> {
    public:
    using OpConversionPattern<relalg::MaterializeOp>::OpConversionPattern;
@@ -1818,6 +1760,7 @@ class MaterializeLowering : public OpConversionPattern<relalg::MaterializeOp> {
       return success();
    }
 };
+*/
 class DistAggrFunc {
    protected:
    Type stateType;
@@ -2223,6 +2166,8 @@ static std::tuple<mlir::Value, mlir::DictionaryAttr, mlir::DictionaryAttr> perfo
    createReduceFn(loc, rewriter, distAggrFuncs, referenceRefAttr, afterLookup, names, defMapping);
    return {state, rewriter.getDictionaryAttr(defMapping), rewriter.getDictionaryAttr(computedDefMapping)};
 }
+// DELETED: WindowOp removed
+/*
 class WindowLowering : public OpConversionPattern<relalg::WindowOp> {
    public:
    using OpConversionPattern<relalg::WindowOp>::OpConversionPattern;
@@ -2585,6 +2530,7 @@ class WindowLowering : public OpConversionPattern<relalg::WindowOp> {
       return success();
    }
 };
+*/
 class AggregationLowering : public OpConversionPattern<relalg::AggregationOp> {
    public:
    using OpConversionPattern<relalg::AggregationOp>::OpConversionPattern;
@@ -3137,7 +3083,6 @@ void RelalgToSubOpLoweringPass::runOnOperation() {
    patterns.insert<SelectionLowering>(typeConverter, ctxt);
    patterns.insert<MapLowering>(typeConverter, ctxt);
    patterns.insert<SortLowering>(typeConverter, ctxt);
-   patterns.insert<MaterializeLowering>(typeConverter, ctxt);
    patterns.insert<RenamingLowering>(typeConverter, ctxt);
    patterns.insert<ProjectionAllLowering>(typeConverter, ctxt);
    patterns.insert<ProjectionDistinctLowering>(typeConverter, ctxt);
@@ -3147,11 +3092,6 @@ void RelalgToSubOpLoweringPass::runOnOperation() {
    patterns.insert<CrossProductLowering>(typeConverter, ctxt);
    patterns.insert<InnerJoinNLLowering>(typeConverter, ctxt);
    patterns.insert<AggregationLowering>(typeConverter, ctxt);
-   patterns.insert<WindowLowering>(typeConverter, ctxt);
-   patterns.insert<SemiJoinLowering>(typeConverter, ctxt);
-   patterns.insert<AntiSemiJoinLowering>(typeConverter, ctxt);
-   patterns.insert<OuterJoinLowering>(typeConverter, ctxt);
-   patterns.insert<FullOuterJoinLowering>(typeConverter, ctxt);
    patterns.insert<SingleJoinLowering>(typeConverter, ctxt);
    patterns.insert<LimitLowering>(typeConverter, ctxt);
    patterns.insert<TopKLowering>(typeConverter, ctxt);

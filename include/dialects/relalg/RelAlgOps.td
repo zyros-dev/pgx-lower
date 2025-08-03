@@ -252,19 +252,6 @@ def GroupJoinOp : RelAlg_Op<"groupjoin", [Pure,Operator,BinaryOperator]> {
         bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
     }];
 }
-def WindowOp : RelAlg_Op<"window", [Pure,Operator,UnaryOperator]> {
-    let summary = "window operation";
-
-    let arguments = (ins TupleStream:$rel, ArrayAttr:$partition_by,ArrayAttr:$order_by, ArrayAttr:$computed_cols,I64Attr:$from,I64Attr:$to);
-    let results = (outs TupleStream:$result);
-    let regions = (region SizedRegion<1>:$aggr_func);
-    let assemblyFormat = [{ $rel `partitionBy` `:` custom<CustRefArr>($partition_by) `orderBy` `:` custom<SortSpecs>($order_by) `rows_between` `:` $from `and` $to `computes` `:` custom<CustDefArr>($computed_cols) custom<CustRegion>($aggr_func)  attr-dict-with-keyword }];
-
-    let extraClassDeclaration = [{
-        ColumnSet getUsedColumns();
-        ColumnSet getCreatedColumns();
-    }];
-}
 
 def SortOp : RelAlg_Op<"sort", [Pure,Operator,UnaryOperator]> {
     let summary = "sort operation";
@@ -295,15 +282,6 @@ def InnerJoinOp : RelAlg_JoinOp<"join"> {
     }];
 }
 
-def SemiJoinOp : RelAlg_JoinOp<"semijoin"> {
-    let summary = "semi join operation";
-    let extraClassDeclaration = [{
-        ColumnSet getAvailableColumns();
-        mlir::LogicalResult foldColumns(dialect::relalg::ColumnFoldInfo& columnInfo);
-        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
-        pgx_lower::compiler::dialect::relalg::FunctionalDependencies getFDs();
-    }];
-}
 
 def AntiSemiJoinOp : RelAlg_JoinOp<"antisemijoin"> {
     let summary = "antisemi join operation";
@@ -316,33 +294,7 @@ def AntiSemiJoinOp : RelAlg_JoinOp<"antisemijoin"> {
     }];
 }
 
-def OuterJoinOp : RelAlg_JoinOp<"outerjoin"> {
-    let summary = "outer join operation";
 
-    let arguments = (ins TupleStream:$left,TupleStream:$right,ArrayAttr:$mapping);
-    let assemblyFormat = [{ $left `,` $right custom<CustRegion>($predicate)  custom<CustAttrMapping>($mapping) attr-dict-with-keyword }];
-
-    let extraClassDeclaration = [{
-        ColumnSet getCreatedColumns();
-        ColumnSet getUsedColumns();
-        ColumnSet getAvailableColumns();
-        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
-    }];
-
-}
-
-def FullOuterJoinOp : RelAlg_JoinOp<"fullouterjoin"> {
-    let summary = "full outer join operation";
-    let arguments = (ins TupleStream:$left,TupleStream:$right,ArrayAttr:$mapping);
-    let assemblyFormat = [{ $left `,` $right custom<CustRegion>($predicate)  custom<CustAttrMapping>($mapping) attr-dict-with-keyword }];
-
-    let extraClassDeclaration = [{
-        ColumnSet getCreatedColumns();
-        ColumnSet getUsedColumns();
-        ColumnSet getAvailableColumns();
-        bool canColumnReach(Operator source, Operator target, const pgx_lower::compiler::dialect::tuples::Column* col);
-    }];
-}
 
 def SingleJoinOp : RelAlg_JoinOp<"singlejoin"> {
     let summary = "single join operation";
@@ -429,13 +381,7 @@ def UnionOp : RelAlg_BinarySetOp<"union"> {
     let summary = "union operation";
 }
 
-def IntersectOp : RelAlg_BinarySetOp<"intersect"> {
-    let summary = "intersect operation";
-}
 
-def ExceptOp : RelAlg_BinarySetOp<"except"> {
-    let summary = "except operation";
-}
 
 def NestedOp : RelAlg_Op<"nested", [Pure,Operator]> {
     let summary = "nested";
@@ -484,11 +430,6 @@ def ExistsOp : RelAlg_Op<"exists", [Pure]> {
     let assemblyFormat = [{  $rel attr-dict }];
 }
 
-def MaterializeOp : RelAlg_Op<"materialize", [Pure]> {
-    let arguments = (ins TupleStream:$rel,ArrayAttr:$cols,ArrayAttr:$columns);
-    let results = (outs SubOp_ResultTable:$result);
-    let assemblyFormat = [{  $rel custom<CustRefArr>($cols) `=` `>` $columns `:` type($result) attr-dict }];
-}
 
 def TmpOp : RelAlg_Op<"tmp", [Pure,Operator]> {
     let summary = "temporary materialization";
@@ -498,21 +439,7 @@ def TmpOp : RelAlg_Op<"tmp", [Pure,Operator]> {
     let assemblyFormat = [{  $rel custom<CustRefArr>($cols) `->` type($resulting) attr-dict }];
 }
 
-def GetScalarOp : RelAlg_Op<"getscalar", [Pure]> {
-    let summary = "get column";
 
-    let arguments = (ins ColumnRefAttr:$attr, TupleStream:$rel);
-    let results = (outs AnyType : $res);
-    let assemblyFormat = [{  custom<CustRef>($attr) $rel `:` type($res) attr-dict }];
-}
-
-def GetListOp : RelAlg_Op<"getlist", [Pure]> {
-    let summary = "get multiple columns";
-
-    let arguments = (ins TupleStream:$rel,ArrayAttr:$cols);
-    let results = (outs DSA_Collection:$res);
-    let assemblyFormat = [{ $rel custom<CustRefArr>($cols) `:` type($res) attr-dict }];
-}
 
 def InOp : RelAlg_Op<"in", [Pure]> {
     let summary = "in operation";
