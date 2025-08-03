@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OwningOpRef.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -41,7 +40,7 @@ TEST(ConstRelationUnionLoweringTest, BasicRelAlgOperationCreation) {
     
     // Create a function container
     auto funcType = builder.getFunctionType({}, {});
-    auto func = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_relalg", funcType);
+    auto func = builder.create<func::FuncOp>(builder.getUnknownLoc(), "test_relalg", funcType);
     auto* entryBlock = func.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);
     
@@ -51,11 +50,12 @@ TEST(ConstRelationUnionLoweringTest, BasicRelAlgOperationCreation) {
     columnManager.setContext(&context);
     
     // Create simple column definitions
-    auto idColumnDef = columnManager.createDef("test", "id");
+    std::string scope = columnManager.getUniqueScope("test");
+    auto idColumnDef = columnManager.createDef(scope, "id");
     auto& idColumn = idColumnDef.getColumn();
     idColumn.type = builder.getI32Type();
     
-    auto nameColumnDef = columnManager.createDef("test", "name");
+    auto nameColumnDef = columnManager.createDef(scope, "name");
     auto& nameColumn = nameColumnDef.getColumn();
     nameColumn.type = builder.getType<db::StringType>();
     
@@ -71,13 +71,13 @@ TEST(ConstRelationUnionLoweringTest, BasicRelAlgOperationCreation) {
     
     // Create ConstRelationOp
     auto constRelation = builder.create<relalg::ConstRelationOp>(
-        UnknownLoc::get(&context),
+        builder.getUnknownLoc(),
         builder.getArrayAttr({idColumnDef, nameColumnDef}),
         builder.getArrayAttr({row1, row2})
     );
     
     // Add function terminator
-    builder.create<func::ReturnOp>(UnknownLoc::get(&context));
+    builder.create<func::ReturnOp>(builder.getUnknownLoc());
     
     // Verify the module
     EXPECT_TRUE(succeeded(module.verify()));
@@ -109,7 +109,7 @@ TEST(ConstRelationUnionLoweringTest, UnionOperationCreation) {
     
     // Create function container
     auto funcType = builder.getFunctionType({}, {});
-    auto func = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_union", funcType);
+    auto func = builder.create<func::FuncOp>(builder.getUnknownLoc(), "test_union", funcType);
     auto* entryBlock = func.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);
     
@@ -119,7 +119,8 @@ TEST(ConstRelationUnionLoweringTest, UnionOperationCreation) {
     columnManager.setContext(&context);
     
     // Create column definitions
-    auto idColumnDef = columnManager.createDef("test", "id");
+    std::string scope = columnManager.getUniqueScope("test");
+    auto idColumnDef = columnManager.createDef(scope, "id");
     auto& idColumn = idColumnDef.getColumn();
     idColumn.type = builder.getI32Type();
     
@@ -128,20 +129,20 @@ TEST(ConstRelationUnionLoweringTest, UnionOperationCreation) {
     auto row2 = builder.getArrayAttr({builder.getI32IntegerAttr(2)});
     
     auto constRelation1 = builder.create<relalg::ConstRelationOp>(
-        UnknownLoc::get(&context),
+        builder.getUnknownLoc(),
         builder.getArrayAttr({idColumnDef}),
         builder.getArrayAttr({row1})
     );
     
     auto constRelation2 = builder.create<relalg::ConstRelationOp>(
-        UnknownLoc::get(&context),
+        builder.getUnknownLoc(),
         builder.getArrayAttr({idColumnDef}),
         builder.getArrayAttr({row2})
     );
     
     // Create UnionOp with ALL semantic
     auto unionOp = builder.create<relalg::UnionOp>(
-        UnknownLoc::get(&context),
+        builder.getUnknownLoc(),
         constRelation1.getResult().getType(), // result type
         relalg::SetSemantic::all,
         constRelation1.getResult(),
@@ -150,7 +151,7 @@ TEST(ConstRelationUnionLoweringTest, UnionOperationCreation) {
     );
     
     // Add function terminator
-    builder.create<func::ReturnOp>(UnknownLoc::get(&context));
+    builder.create<func::ReturnOp>(builder.getUnknownLoc());
     
     // Verify the module
     EXPECT_TRUE(succeeded(module.verify()));

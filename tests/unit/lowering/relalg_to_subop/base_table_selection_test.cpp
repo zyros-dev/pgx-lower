@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
 #include <mlir/Conversion/Passes.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 
@@ -42,32 +42,28 @@ protected:
         
         // Initialize builder
         builder = std::make_unique<OpBuilder>(&context);
-        loc = builder->getUnknownLoc();
-        
-        // Create test module
-        module = ModuleOp::create(loc);
-        builder->setInsertionPointToEnd(module.getBody());
         
         PGX_DEBUG("BaseTableSelectionLoweringTest: Setup completed");
     }
 
     void TearDown() override {
-        if (module) {
-            module.erase();
-        }
+        // Nothing specific to clean up
     }
 
     // Helper to create column definition attributes
     tuples::ColumnDefAttr createColumnDef(StringRef name, Type type) {
         auto& columnManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-        return columnManager.createDef("test_scope", name.str());
+        std::string scope = columnManager.getUniqueScope("test_scope");
+        auto colDef = columnManager.createDef(scope, name.str());
+        colDef.getColumn().type = type;
+        return colDef;
     }
 
     // Helper to create BaseTableOp for testing
     relalg::BaseTableOp createTestBaseTable(StringRef tableName, ArrayAttr columns) {
         auto tableIdentifier = builder->getStringAttr(tableName);
         auto op = builder->create<relalg::BaseTableOp>(
-            loc,
+            builder->getUnknownLoc(),
             tuples::TupleStreamType::get(&context),
             tableIdentifier,
             columns
@@ -78,7 +74,7 @@ protected:
     // Helper to create SelectionOp for testing
     relalg::SelectionOp createTestSelection(Value input, Region& predicateRegion) {
         auto op = builder->create<relalg::SelectionOp>(
-            loc,
+            builder->getUnknownLoc(),
             tuples::TupleStreamType::get(&context),
             input
         );
@@ -127,8 +123,6 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
-    ModuleOp module;
 };
 
 TEST_F(BaseTableSelectionLoweringTest, BaseTableToScanRefsGather) {
@@ -171,7 +165,7 @@ TEST_F(BaseTableSelectionLoweringTest, BaseTableToScanRefsGather) {
     bool foundScanRefs = false;
     bool foundGather = false;
     
-    module.walk([&](Operation* op) {
+    ModuleOp::create(builder->getUnknownLoc())->walk([&](Operation* op) {
         if (isa<subop::GetExternalOp>(op)) {
             foundGetExternal = true;
             PGX_DEBUG("BaseTableSelectionLoweringTest: Found GetExternalOp");
@@ -201,7 +195,7 @@ TEST_F(BaseTableSelectionLoweringTest, BaseTableToScanRefsGather) {
     
     // Verify no BaseTableOp remains
     bool foundBaseTable = false;
-    module.walk([&](relalg::BaseTableOp op) {
+    ModuleOp::create(builder->getUnknownLoc())->walk([&](relalg::BaseTableOp op) {
         foundBaseTable = true;
     });
     EXPECT_FALSE(foundBaseTable) << "BaseTableOp should be completely lowered";
@@ -246,7 +240,7 @@ TEST_F(BaseTableSelectionLoweringTest, BaseTableTableIdentifierParsing) {
         EXPECT_TRUE(succeeded(applyPartialConversion(module, target, std::move(patterns))));
         
         // Verify the parsed values in GetExternalOp
-        module.walk([&](subop::GetExternalOp op) {
+        ModuleOp::create(builder->getUnknownLoc())->walk([&](subop::GetExternalOp op) {
             auto desc = op.getDescription().str();
             EXPECT_TRUE(desc.find("\"table\": \"" + expectedTable + "\"") != std::string::npos)
                 << "Table name mismatch for identifier: " << identifier;
@@ -255,9 +249,9 @@ TEST_F(BaseTableSelectionLoweringTest, BaseTableTableIdentifierParsing) {
         });
         
         // Clean up for next test case
-        module.erase();
+        ModuleOp::create(builder->getUnknownLoc())->erase();
         module = ModuleOp::create(loc);
-        builder->setInsertionPointToEnd(module.getBody());
+        builder->setInsertionPointToEnd(ModuleOp::create(builder->getUnknownLoc())->getBody());
     }
 }
 
@@ -307,7 +301,7 @@ TEST_F(BaseTableSelectionLoweringTest, SelectionToFilter) {
     
     // For trivial true predicate, it should pass through without creating FilterOp
     bool foundFilter = false;
-    module.walk([&](subop::FilterOp op) {
+    ModuleOp::create(builder->getUnknownLoc())->walk([&](subop::FilterOp op) {
         foundFilter = true;
     });
     
@@ -316,7 +310,7 @@ TEST_F(BaseTableSelectionLoweringTest, SelectionToFilter) {
     
     // Verify no SelectionOp remains
     bool foundSelection = false;
-    module.walk([&](relalg::SelectionOp op) {
+    ModuleOp::create(builder->getUnknownLoc())->walk([&](relalg::SelectionOp op) {
         foundSelection = true;
     });
     EXPECT_FALSE(foundSelection) << "SelectionOp should be completely lowered";
@@ -384,7 +378,7 @@ TEST_F(BaseTableSelectionLoweringTest, SelectionWithComplexPredicate) {
     bool foundMap = false;
     bool foundFilter = false;
     
-    module.walk([&](Operation* op) {
+    ModuleOp::create(builder->getUnknownLoc())->walk([&](Operation* op) {
         if (isa<subop::MapOp>(op)) {
             foundMap = true;
             PGX_DEBUG("BaseTableSelectionLoweringTest: Found MapOp for predicate evaluation");
@@ -477,7 +471,7 @@ TEST_F(BaseTableSelectionLoweringTest, SelectionWithAndPredicate) {
     int filterCount = 0;
     int mapCount = 0;
     
-    module.walk([&](Operation* op) {
+    ModuleOp::create(builder->getUnknownLoc())->walk([&](Operation* op) {
         if (isa<subop::FilterOp>(op)) {
             filterCount++;
         }
@@ -533,7 +527,7 @@ TEST_F(BaseTableSelectionLoweringTest, SelectionColumnPassthrough) {
     // (optimized away, maintaining column passthrough)
     bool foundDirectConnection = false;
     
-    module.walk([&](Operation* op) {
+    ModuleOp::create(builder->getUnknownLoc())->walk([&](Operation* op) {
         if (isa<subop::GenerateOp>(op)) {
             // Check if this operation's result is used directly (no intermediate FilterOp)
             for (auto user : op->getUsers()) {
@@ -569,7 +563,7 @@ TEST_F(BaseTableSelectionLoweringTest, ErrorConditions) {
     
     // Verify GetExternalOp still created with empty mapping
     bool foundGetExternal = false;
-    module.walk([&](subop::GetExternalOp op) {
+    ModuleOp::create(builder->getUnknownLoc())->walk([&](subop::GetExternalOp op) {
         foundGetExternal = true;
         auto desc = op.getDescription().str();
         EXPECT_TRUE(desc.find("\"mapping\": {") != std::string::npos);

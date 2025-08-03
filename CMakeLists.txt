@@ -110,8 +110,19 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/test_subop_simple.cpp
         tests/unit/test_simple_execution_engine.cpp
         tests/unit/test_basic_terminator.cpp
-        # New RelAlg -> SubOp lowering tests
+        # RelAlg to SubOp lowering tests - ALL MUST COMPILE
+        tests/unit/lowering/relalg_to_subop/aggregation_test.cpp
+        tests/unit/lowering/relalg_to_subop/base_table_selection_test.cpp
         tests/unit/lowering/relalg_to_subop/const_relation_union_test.cpp
+        tests/unit/lowering/relalg_to_subop/error_handling_test.cpp
+        tests/unit/lowering/relalg_to_subop/join_operations_test.cpp
+        tests/unit/lowering/relalg_to_subop/map_renaming_test.cpp
+        tests/unit/lowering/relalg_to_subop/pass_pipeline_test.cpp
+        tests/unit/lowering/relalg_to_subop/performance_regression_test.cpp
+        tests/unit/lowering/relalg_to_subop/projection_test.cpp
+        tests/unit/lowering/relalg_to_subop/sort_limit_test.cpp
+        tests/unit/lowering/relalg_to_subop/tmp_materialization_test.cpp
+        tests/unit/lowering/relalg_to_subop/type_conversion_test.cpp
         # SubOp to SCF lowering tests - ALL MUST COMPILE
         tests/unit/lowering/subop_to_scf/test_controlflow_operations.cpp
         tests/unit/lowering/subop_to_scf/test_subop_rewriter.cpp

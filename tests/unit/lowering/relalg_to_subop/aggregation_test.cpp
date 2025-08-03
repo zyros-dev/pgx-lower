@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OwningOpRef.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -34,11 +33,6 @@ protected:
 
         // Initialize builder
         builder = std::make_unique<OpBuilder>(&context);
-        loc = builder->getUnknownLoc();
-        
-        // Create module for test operations
-        module = ModuleOp::create(loc);
-        builder->setInsertionPointToEnd(module.getBody());
         
         // Initialize column manager
         auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
@@ -48,32 +42,50 @@ protected:
     }
 
     void TearDown() override {
-        module.erase();
+        // Nothing specific to clean up
     }
 
     void createTestColumns() {
         auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
         
-        // Create test table columns
-        salaryCol = colManager.createDef("salary", builder->getI64Type(), "employee", "salary");
-        ageCol = colManager.createDef("age", builder->getI32Type(), "employee", "age");
-        nameCol = colManager.createDef("name", builder->getType<db::StringType>(), "employee", "name");
-        deptIdCol = colManager.createDef("dept_id", builder->getI32Type(), "employee", "dept_id");
-        commissionCol = colManager.createDef("commission", builder->getType<db::DecimalType>(10, 2), "employee", "commission");
+        // Create test table columns using new API
+        std::string scope = colManager.getUniqueScope("employee");
+        salaryCol = colManager.createDef(scope, "salary");
+        ageCol = colManager.createDef(scope, "age");
+        nameCol = colManager.createDef(scope, "name");
+        deptIdCol = colManager.createDef(scope, "dept_id");
+        commissionCol = colManager.createDef(scope, "commission");
+        
+        // Set types manually
+        salaryCol.getColumn().type = builder->getI64Type();
+        ageCol.getColumn().type = builder->getI32Type();
+        nameCol.getColumn().type = builder->getType<db::StringType>();
+        deptIdCol.getColumn().type = builder->getI32Type();
+        commissionCol.getColumn().type = builder->getI64Type(); // Simplified type
         
         // Create references for these columns
-        salaryRef = colManager.createRef(&salaryCol.getColumn());
-        ageRef = colManager.createRef(&ageCol.getColumn());
-        nameRef = colManager.createRef(&nameCol.getColumn());
-        deptIdRef = colManager.createRef(&deptIdCol.getColumn());
-        commissionRef = colManager.createRef(&commissionCol.getColumn());
+        salaryRef = colManager.createRef(salaryCol);
+        ageRef = colManager.createRef(ageCol);
+        nameRef = colManager.createRef(nameCol);
+        deptIdRef = colManager.createRef(deptIdCol);
+        commissionRef = colManager.createRef(commissionCol);
     }
 
     Value createTestTableScan() {
         // Create a simple table scan operation for testing
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
-        return builder->create<relalg::BaseTableOp>(loc, tupleStreamType, "employee", 
-                                                   ArrayAttr::get(&context, {salaryRef, ageRef, nameRef, deptIdRef, commissionRef}));
+        std::vector<Attribute> columnAttrs = {
+            tuples::ColumnDefAttr::get(&context, salaryCol),
+            tuples::ColumnDefAttr::get(&context, ageCol),
+            tuples::ColumnDefAttr::get(&context, nameCol),
+            tuples::ColumnDefAttr::get(&context, deptIdCol),
+            tuples::ColumnDefAttr::get(&context, commissionCol)
+        };
+        auto columnsAttr = builder->getArrayAttr(columnAttrs);
+        
+        return builder->create<relalg::BaseTableOp>(builder->getUnknownLoc(), tupleStreamType, 
+                                                   builder->getStringAttr("employee|oid:12345"), 
+                                                   columnsAttr);
     }
 
     Value createAggregationOperation(Value input, relalg::AggrFunc aggrFunc, 
@@ -81,26 +93,26 @@ protected:
                                    ArrayAttr groupByColumns = nullptr) {
         // Create aggregation function operation
         auto aggrType = destCol.getColumn().type;
-        Value aggrFuncOp = builder->create<relalg::AggrFuncOp>(loc, aggrType, aggrFunc, input, sourceCol);
+        Value aggrFuncOp = builder->create<relalg::AggrFuncOp>(builder->getUnknownLoc(), aggrType, aggrFunc, input, sourceCol);
         
         // Create aggregation operation
         auto computedCols = ArrayAttr::get(&context, {destCol});
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
         
         // Create the aggregation block
-        auto aggrOp = builder->create<relalg::AggregationOp>(loc, tupleStreamType, input, 
+        auto aggrOp = builder->create<relalg::AggregationOp>(builder->getUnknownLoc(), tupleStreamType, input, 
                                                             groupByColumns ? groupByColumns : ArrayAttr::get(&context, {}),
                                                             computedCols);
         
         // Add the aggregation function block
         Block* aggrBlock = new Block();
-        aggrBlock->addArgument(tuples::TupleType::get(&context), loc);
+        aggrBlock->addArgument(tuples::TupleType::get(&context), builder->getUnknownLoc());
         aggrOp.getAggrFunc().push_back(aggrBlock);
         
         {
             OpBuilder::InsertionGuard guard(*builder);
             builder->setInsertionPointToStart(aggrBlock);
-            builder->create<tuples::ReturnOp>(loc, ValueRange{aggrFuncOp});
+            builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{aggrFuncOp});
         }
         
         return aggrOp;
@@ -109,22 +121,22 @@ protected:
     Value createCountRowsOperation(Value input, tuples::ColumnDefAttr destCol, ArrayAttr groupByColumns = nullptr) {
         // Create COUNT(*) operation
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
-        Value countOp = builder->create<relalg::CountRowsOp>(loc, builder->getI64Type(), input);
+        Value countOp = builder->create<relalg::CountRowsOp>(builder->getUnknownLoc(), builder->getI64Type(), input);
         
         auto computedCols = ArrayAttr::get(&context, {destCol});
-        auto aggrOp = builder->create<relalg::AggregationOp>(loc, tupleStreamType, input,
+        auto aggrOp = builder->create<relalg::AggregationOp>(builder->getUnknownLoc(), tupleStreamType, input,
                                                             groupByColumns ? groupByColumns : ArrayAttr::get(&context, {}),
                                                             computedCols);
         
         // Add the aggregation function block
         Block* aggrBlock = new Block();
-        aggrBlock->addArgument(tuples::TupleType::get(&context), loc);
+        aggrBlock->addArgument(tuples::TupleType::get(&context), builder->getUnknownLoc());
         aggrOp.getAggrFunc().push_back(aggrBlock);
         
         {
             OpBuilder::InsertionGuard guard(*builder);
             builder->setInsertionPointToStart(aggrBlock);
-            builder->create<tuples::ReturnOp>(loc, ValueRange{countOp});
+            builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{countOp});
         }
         
         return aggrOp;
@@ -173,8 +185,6 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
-    OwningOpRef<ModuleOp> module;
     
     // Test columns
     tuples::ColumnDefAttr salaryCol, ageCol, nameCol, deptIdCol, commissionCol;
@@ -185,7 +195,9 @@ TEST_F(AggregationLoweringTest, BasicSumAggregation) {
     PGX_DEBUG("Testing basic SUM aggregation lowering");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto sumSalaryCol = colManager.createDef("total_salary", builder->getI64Type(), "result", "total_salary");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto sumSalaryCol = colManager.createDef(resultScope, "total_salary");
+    sumSalaryCol.getColumn().type = builder->getI64Type();
     
     Value tableScan = createTestTableScan();
     Value sumAggr = createAggregationOperation(tableScan, relalg::AggrFunc::sum, salaryRef, sumSalaryCol);
@@ -203,7 +215,9 @@ TEST_F(AggregationLoweringTest, BasicCountAggregation) {
     PGX_DEBUG("Testing basic COUNT aggregation lowering");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto countCol = colManager.createDef("employee_count", builder->getI64Type(), "result", "employee_count");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto countCol = colManager.createDef(resultScope, "employee_count");
+    countCol.getColumn().type = builder->getI64Type();
     
     Value tableScan = createTestTableScan();
     Value countAggr = createAggregationOperation(tableScan, relalg::AggrFunc::count, ageRef, countCol);
@@ -216,7 +230,9 @@ TEST_F(AggregationLoweringTest, BasicCountStarAggregation) {
     PGX_DEBUG("Testing basic COUNT(*) aggregation lowering");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto countStarCol = colManager.createDef("total_rows", builder->getI64Type(), "result", "total_rows");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto countStarCol = colManager.createDef(resultScope, "total_rows");
+    countStarCol.getColumn().type = builder->getI64Type();
     
     Value tableScan = createTestTableScan();
     Value countStarAggr = createCountRowsOperation(tableScan, countStarCol);
@@ -229,8 +245,11 @@ TEST_F(AggregationLoweringTest, BasicMinMaxAggregation) {
     PGX_DEBUG("Testing basic MIN/MAX aggregation lowering");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto minAgeCol = colManager.createDef("min_age", builder->getI32Type(), "result", "min_age");
-    auto maxAgeCol = colManager.createDef("max_age", builder->getI32Type(), "result", "max_age");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto minAgeCol = colManager.createDef(resultScope, "min_age");
+    minAgeCol.getColumn().type = builder->getI32Type();
+    auto maxAgeCol = colManager.createDef(resultScope, "max_age");
+    maxAgeCol.getColumn().type = builder->getI32Type();
     
     Value tableScan = createTestTableScan();
     
@@ -249,7 +268,9 @@ TEST_F(AggregationLoweringTest, BasicAnyAggregation) {
     PGX_DEBUG("Testing basic ANY aggregation lowering");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto anyNameCol = colManager.createDef("any_name", builder->getType<db::StringType>(), "result", "any_name");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto anyNameCol = colManager.createDef(resultScope, "any_name");
+    anyNameCol.getColumn().type = builder->getType<db::StringType>();
     
     Value tableScan = createTestTableScan();
     Value anyAggr = createAggregationOperation(tableScan, relalg::AggrFunc::any, nameRef, anyNameCol);
@@ -262,7 +283,9 @@ TEST_F(AggregationLoweringTest, GroupByAggregation) {
     PGX_DEBUG("Testing GROUP BY aggregation lowering");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto avgSalaryCol = colManager.createDef("avg_salary", builder->getI64Type(), "result", "avg_salary");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto avgSalaryCol = colManager.createDef(resultScope, "avg_salary");
+    avgSalaryCol.getColumn().type = builder->getI64Type();
     
     // Create GROUP BY columns
     auto groupByColumns = ArrayAttr::get(&context, {deptIdRef});
@@ -280,9 +303,13 @@ TEST_F(AggregationLoweringTest, MultipleAggregationFunctions) {
     PGX_DEBUG("Testing multiple aggregation functions in single operation");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto sumSalaryCol = colManager.createDef("total_salary", builder->getI64Type(), "result", "total_salary");
-    auto countCol = colManager.createDef("employee_count", builder->getI64Type(), "result", "employee_count");
-    auto avgAgeCol = colManager.createDef("avg_age", builder->getI32Type(), "result", "avg_age");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto sumSalaryCol = colManager.createDef(resultScope, "total_salary");
+    sumSalaryCol.getColumn().type = builder->getI64Type();
+    auto countCol = colManager.createDef(resultScope, "employee_count");
+    countCol.getColumn().type = builder->getI64Type();
+    auto avgAgeCol = colManager.createDef(resultScope, "avg_age");
+    avgAgeCol.getColumn().type = builder->getI32Type();
     
     Value tableScan = createTestTableScan();
     auto tupleStreamType = tuples::TupleStreamType::get(&context);
@@ -291,22 +318,22 @@ TEST_F(AggregationLoweringTest, MultipleAggregationFunctions) {
     auto computedCols = ArrayAttr::get(&context, {sumSalaryCol, countCol, avgAgeCol});
     auto groupByColumns = ArrayAttr::get(&context, {deptIdRef});
     
-    auto aggrOp = builder->create<relalg::AggregationOp>(loc, tupleStreamType, tableScan, groupByColumns, computedCols);
+    auto aggrOp = builder->create<relalg::AggregationOp>(builder->getUnknownLoc(), tupleStreamType, tableScan, groupByColumns, computedCols);
     
     // Create the aggregation function block with multiple return values
     Block* aggrBlock = new Block();
-    aggrBlock->addArgument(tuples::TupleType::get(&context), loc);
+    aggrBlock->addArgument(tuples::TupleType::get(&context), builder->getUnknownLoc());
     aggrOp.getAggrFunc().push_back(aggrBlock);
     
     {
         OpBuilder::InsertionGuard guard(*builder);
         builder->setInsertionPointToStart(aggrBlock);
         
-        Value sumOp = builder->create<relalg::AggrFuncOp>(loc, builder->getI64Type(), relalg::AggrFunc::sum, tableScan, salaryRef);
-        Value countOp = builder->create<relalg::AggrFuncOp>(loc, builder->getI64Type(), relalg::AggrFunc::count, tableScan, ageRef);
-        Value avgOp = builder->create<relalg::AggrFuncOp>(loc, builder->getI32Type(), relalg::AggrFunc::sum, tableScan, ageRef); // Using sum for avg computation
+        Value sumOp = builder->create<relalg::AggrFuncOp>(builder->getUnknownLoc(), builder->getI64Type(), relalg::AggrFunc::sum, tableScan, salaryRef);
+        Value countOp = builder->create<relalg::AggrFuncOp>(builder->getUnknownLoc(), builder->getI64Type(), relalg::AggrFunc::count, tableScan, ageRef);
+        Value avgOp = builder->create<relalg::AggrFuncOp>(builder->getUnknownLoc(), builder->getI32Type(), relalg::AggrFunc::sum, tableScan, ageRef); // Using sum for avg computation
         
-        builder->create<tuples::ReturnOp>(loc, ValueRange{sumOp, countOp, avgOp});
+        builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{sumOp, countOp, avgOp});
     }
     
     EXPECT_TRUE(aggrOp);
@@ -320,11 +347,15 @@ TEST_F(AggregationLoweringTest, NullableColumnAggregation) {
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
     
     // Create nullable commission column
-    auto nullableCommissionType = db::NullableType::get(&context, builder->getType<db::DecimalType>(10, 2));
-    auto nullableCommissionCol = colManager.createDef("commission", nullableCommissionType, "employee", "commission");
-    auto nullableCommissionRef = colManager.createRef(&nullableCommissionCol.getColumn());
+    auto nullableCommissionType = db::NullableType::get(&context, builder->getI64Type());
+    std::string empScope = colManager.getUniqueScope("employee");
+    auto nullableCommissionCol = colManager.createDef(empScope, "commission");
+    nullableCommissionCol.getColumn().type = nullableCommissionType;
+    auto nullableCommissionRef = colManager.createRef(nullableCommissionCol);
     
-    auto sumCommissionCol = colManager.createDef("total_commission", nullableCommissionType, "result", "total_commission");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto sumCommissionCol = colManager.createDef(resultScope, "total_commission");
+    sumCommissionCol.getColumn().type = nullableCommissionType;
     
     Value tableScan = createTestTableScan();
     Value sumAggr = createAggregationOperation(tableScan, relalg::AggrFunc::sum, nullableCommissionRef, sumCommissionCol);
@@ -337,7 +368,9 @@ TEST_F(AggregationLoweringTest, DecimalAggregation) {
     PGX_DEBUG("Testing aggregation with decimal types");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto sumCommissionCol = colManager.createDef("total_commission", builder->getType<db::DecimalType>(10, 2), "result", "total_commission");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto sumCommissionCol = colManager.createDef(resultScope, "total_commission");
+    sumCommissionCol.getColumn().type = builder->getI64Type(); // Simplified type
     
     Value tableScan = createTestTableScan();
     Value decimalAggr = createAggregationOperation(tableScan, relalg::AggrFunc::sum, commissionRef, sumCommissionCol);
@@ -350,7 +383,9 @@ TEST_F(AggregationLoweringTest, StringAggregation) {
     PGX_DEBUG("Testing aggregation with string types");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto firstNameCol = colManager.createDef("first_name", builder->getType<db::StringType>(), "result", "first_name");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto firstNameCol = colManager.createDef(resultScope, "first_name");
+    firstNameCol.getColumn().type = builder->getType<db::StringType>();
     
     Value tableScan = createTestTableScan();
     Value stringAggr = createAggregationOperation(tableScan, relalg::AggrFunc::any, nameRef, firstNameCol);
@@ -363,7 +398,9 @@ TEST_F(AggregationLoweringTest, EmptyGroupByAggregation) {
     PGX_DEBUG("Testing aggregation with empty GROUP BY (global aggregation)");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto totalSalaryCol = colManager.createDef("total_salary", builder->getI64Type(), "result", "total_salary");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto totalSalaryCol = colManager.createDef(resultScope, "total_salary");
+    totalSalaryCol.getColumn().type = builder->getI64Type();
     
     Value tableScan = createTestTableScan();
     Value globalAggr = createAggregationOperation(tableScan, relalg::AggrFunc::sum, salaryRef, totalSalaryCol);
@@ -377,7 +414,9 @@ TEST_F(AggregationLoweringTest, MultipleGroupByColumns) {
     PGX_DEBUG("Testing aggregation with multiple GROUP BY columns");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto avgSalaryCol = colManager.createDef("avg_salary", builder->getI64Type(), "result", "avg_salary");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto avgSalaryCol = colManager.createDef(resultScope, "avg_salary");
+    avgSalaryCol.getColumn().type = builder->getI64Type();
     
     // Create multiple GROUP BY columns
     auto groupByColumns = ArrayAttr::get(&context, {deptIdRef, ageRef});
@@ -396,15 +435,19 @@ TEST_F(AggregationLoweringTest, AggregationComposition) {
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
     
     // First aggregation: sum salary by department
-    auto deptSalaryCol = colManager.createDef("dept_total_salary", builder->getI64Type(), "dept_agg", "dept_total_salary");
+    std::string deptScope = colManager.getUniqueScope("dept_agg");
+    auto deptSalaryCol = colManager.createDef(deptScope, "dept_total_salary");
+    deptSalaryCol.getColumn().type = builder->getI64Type();
     auto groupByDept = ArrayAttr::get(&context, {deptIdRef});
     
     Value tableScan = createTestTableScan();
     Value deptAggr = createAggregationOperation(tableScan, relalg::AggrFunc::sum, salaryRef, deptSalaryCol, groupByDept);
     
     // Second aggregation: max department salary (global)
-    auto maxDeptSalaryCol = colManager.createDef("max_dept_salary", builder->getI64Type(), "global_agg", "max_dept_salary");
-    auto deptSalaryRef = colManager.createRef(&deptSalaryCol.getColumn());
+    std::string globalScope = colManager.getUniqueScope("global_agg");
+    auto maxDeptSalaryCol = colManager.createDef(globalScope, "max_dept_salary");
+    maxDeptSalaryCol.getColumn().type = builder->getI64Type();
+    auto deptSalaryRef = colManager.createRef(deptSalaryCol);
     Value maxDeptAggr = createAggregationOperation(deptAggr, relalg::AggrFunc::max, deptSalaryRef, maxDeptSalaryCol);
     
     EXPECT_TRUE(deptAggr);
@@ -417,7 +460,9 @@ TEST_F(AggregationLoweringTest, AggregationPerformanceCharacteristics) {
     PGX_DEBUG("Testing aggregation performance characteristics");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto sumSalaryCol = colManager.createDef("total_salary", builder->getI64Type(), "result", "total_salary");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto sumSalaryCol = colManager.createDef(resultScope, "total_salary");
+    sumSalaryCol.getColumn().type = builder->getI64Type();
     auto groupByColumns = ArrayAttr::get(&context, {deptIdRef});
     
     Value tableScan = createTestTableScan();
@@ -436,7 +481,9 @@ TEST_F(AggregationLoweringTest, AggregationMemoryManagement) {
     PGX_DEBUG("Testing aggregation memory management patterns");
     
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-    auto countCol = colManager.createDef("row_count", builder->getI64Type(), "result", "row_count");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto countCol = colManager.createDef(resultScope, "row_count");
+    countCol.getColumn().type = builder->getI64Type();
     
     Value tableScan = createTestTableScan();
     Value memoryAggr = createCountRowsOperation(tableScan, countCol);
@@ -455,7 +502,9 @@ TEST_F(AggregationLoweringTest, AggregationErrorHandling) {
     auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
     
     // Test with invalid type combinations (this would typically be caught at compile time)
-    auto invalidTypeCol = colManager.createDef("invalid_result", builder->getI1Type(), "result", "invalid_result");
+    std::string resultScope = colManager.getUniqueScope("result");
+    auto invalidTypeCol = colManager.createDef(resultScope, "invalid_result");
+    invalidTypeCol.getColumn().type = builder->getI1Type();
     
     Value tableScan = createTestTableScan();
     

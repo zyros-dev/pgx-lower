@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
 #include <mlir/Conversion/Passes.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 
@@ -43,10 +43,6 @@ protected:
         
         // Initialize builder
         builder = std::make_unique<OpBuilder>(&context);
-        loc = builder->getUnknownLoc();
-        
-        // Create test module
-        module = ModuleOp::create(loc);
         builder->setInsertionPointToEnd(module.getBody());
         
         // Set up diagnostic capture
@@ -61,7 +57,7 @@ protected:
 
     void TearDown() override {
         PGX_DEBUG("ErrorHandlingLoweringTest: Tearing down test environment");
-        module.erase();
+        // Nothing specific to clean up
     }
 
     // Helper method to run lowering pass and capture results
@@ -128,8 +124,6 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
-    OwningOpRef<ModuleOp> module;
 };
 
 // Test Category 1: Pattern Match Failure Testing
