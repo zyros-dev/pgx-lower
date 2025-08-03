@@ -164,6 +164,7 @@ auto PostgreSQLASTTranslator::ensureContextIsolation() -> void {
 }
 
 auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<mlir::ModuleOp> {
+    logger_.notice("XZEL_DEBUG_FUNCTION_ENTRY_123456789");
     logger_.notice("=== STARTING PostgreSQL AST TRANSLATION ===");
     logger_.notice("Global g_extension_after_load flag: " + std::string(g_extension_after_load ? "true" : "false"));
     
@@ -212,19 +213,38 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     logger_.notice("Runtime function declarations created successfully");
     
     // IMPLEMENT PROPER LINGODB PIPELINE - NO SHORTCUTS!
-    // Following LingoDB pattern: Create QueryOp that will contain RelAlg operations
+    // Following LingoDB pattern: Create main function first, then QueryOp inside it
     logger_.notice("About to translate plan node using LingoDB pipeline...");
+    logger_.notice("XZEL_DEBUG_123456789_MAIN_FUNCTION_IMPLEMENTATION_START");
     
     auto location = builder.getUnknownLoc();
+    logger_.notice("CHECKPOINT 1: Got location");
     auto tupleStreamType = pgx_lower::compiler::dialect::tuples::TupleStreamType::get(&context_);
+    logger_.notice("CHECKPOINT 2: Got tupleStreamType");
     
-    // Create QueryOp - this is the top-level operation that contains the query plan
-    // QueryOp expects TypeRange for results and ValueRange for inputs
+    // Create main function wrapper (LingoDB pattern requires ExecutionGroupOp inside main function)
+    logger_.notice("Creating main function wrapper for LingoDB architecture compliance");
+    
+    // STEP 1: Create main function at module level
+    auto mainFuncType = builder.getFunctionType({}, {});
+    builder.setInsertionPointToEnd(module->getBody());  // Ensure we're at module level
+    auto mainFunc = builder.create<mlir::func::FuncOp>(location, "main", mainFuncType);
+    mainFunc.setPublic();
+    logger_.notice("Main function created successfully at module level");
+    
+    // STEP 2: Create entry block and switch builder to main function body
+    auto& mainEntryBlock = mainFunc.getBody().emplaceBlock();
+    builder.setInsertionPointToStart(&mainEntryBlock);
+    logger_.notice("Builder switched to main function body");
+    
+    // STEP 3: Create QueryOp inside main function
+    logger_.notice("About to create QueryOp inside main function");
     auto queryOp = builder.create<pgx_lower::compiler::dialect::relalg::QueryOp>(
         location, 
         mlir::TypeRange{tupleStreamType},  // Results
         mlir::ValueRange{}                  // No inputs for a simple query
     );
+    logger_.notice("QueryOp created successfully inside main function");
     
     // Build the query inside the QueryOp's query_ops region
     auto& queryBlock = queryOp.getQueryOps().emplaceBlock();
@@ -316,6 +336,12 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     queryBuilder.create<pgx_lower::compiler::dialect::relalg::QueryReturnOp>(
         location, finalStream
     );
+    
+    // Add proper termination for main function (LingoDB architecture requirement)
+    logger_.notice("Adding main function termination for LingoDB compliance");
+    // Switch back to main function builder to add return statement
+    builder.setInsertionPointToEnd(&mainEntryBlock);
+    builder.create<mlir::func::ReturnOp>(location);
     
     logger_.notice("Created proper RelAlg query structure - ready for lowering pipeline");
     

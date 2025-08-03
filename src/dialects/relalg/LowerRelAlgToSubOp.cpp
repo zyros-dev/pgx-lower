@@ -296,6 +296,8 @@ class MapLowering : public OpConversionPattern<relalg::MapOp> {
    LogicalResult matchAndRewrite(relalg::MapOp mapOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       subop::MapCreationHelper helper(rewriter.getContext());
       std::vector<mlir::Operation*> toMove;
+      
+      // Move operations but be careful with terminator
       for (auto& op : mapOp.getRegion().front()) {
          toMove.push_back(&op);
       }
@@ -303,6 +305,8 @@ class MapLowering : public OpConversionPattern<relalg::MapOp> {
          op->remove();
          helper.getMapBlock()->push_back(op);
       }
+      
+      // Replace GetColumnOp operations with helper access
       std::vector<mlir::Operation*> toErase;
       helper.getMapBlock()->walk([&](tuples::GetColumnOp getColumnOp) {
          getColumnOp.replaceAllUsesWith(helper.access(getColumnOp.getAttr(), getColumnOp->getLoc()));
@@ -311,6 +315,15 @@ class MapLowering : public OpConversionPattern<relalg::MapOp> {
       for (auto* op : toErase) {
          rewriter.eraseOp(op);
       }
+      
+      // Ensure the block has a proper terminator after operations are moved/erased
+      if (!helper.getMapBlock()->empty() && !helper.getMapBlock()->getTerminator()) {
+         PGX_NOTICE("MapLowering: Adding missing terminator to map block");
+         rewriter.setInsertionPointToEnd(helper.getMapBlock());
+         // Create an empty return operation as a fallback terminator
+         rewriter.create<tuples::ReturnOp>(mapOp.getLoc(), ValueRange{});
+      }
+      
       auto mapOp2 = rewriter.replaceOpWithNewOp<subop::MapOp>(mapOp, tuples::TupleStreamType::get(rewriter.getContext()), adaptor.getRel(), mapOp.getComputedCols(), helper.getColRefs());
       mapOp2.getFn().push_back(helper.getMapBlock());
       return success();
@@ -3056,11 +3069,22 @@ class QueryOpLowering : public OpConversionPattern<relalg::QueryOp> {
       
       // Ensure proper termination after region inlining
       auto& region = executionGroup.getSubOps();
-      if (!region.empty() && !region.back().empty()) {
-         auto& lastBlock = region.back();
-         if (!lastBlock.getTerminator()) {
-            rewriter.setInsertionPointToEnd(&lastBlock);
-            rewriter.create<subop::ExecutionGroupReturnOp>(queryOp.getLoc(), queryOp.getResults());
+      
+      // DEBUG: Show region structure
+      PGX_NOTICE("DEBUG: ExecutionGroup region has " + std::to_string(region.getBlocks().size()) + " blocks");
+      
+      // Fix ALL blocks to ensure they have terminators
+      if (!region.empty()) {
+         int blockIndex = 0;
+         for (auto& block : region.getBlocks()) {
+            blockIndex++;
+            if (!block.empty() && !block.getTerminator()) {
+               PGX_NOTICE("DEBUG: Adding terminator to block " + std::to_string(blockIndex));
+               rewriter.setInsertionPointToEnd(&block);
+               rewriter.create<subop::ExecutionGroupReturnOp>(queryOp.getLoc(), ValueRange{});
+            } else if (!block.empty()) {
+               PGX_NOTICE("DEBUG: Block " + std::to_string(blockIndex) + " already has terminator");
+            }
          }
       }
       

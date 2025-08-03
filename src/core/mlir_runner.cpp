@@ -63,17 +63,49 @@ namespace {
             blockCount++;
             std::string blockInfo = "Block #" + std::to_string(blockCount);
             
+            // Show parent operation info for debugging
+            std::string parentOpName = "unknown";
+            if (mlir::Operation* parentOp = block->getParentOp()) {
+                parentOpName = parentOp->getName().getStringRef().str();
+            }
+            logger.notice(blockInfo + " parent operation: " + parentOpName);
+            
             if (block->empty()) {
-                logger.notice(blockInfo + " is empty (no operations)");
+                logger.notice(blockInfo + " is empty (no operations), parent: " + parentOpName);
                 hasTerminatorIssues = true;
                 blockWithTerminatorIssues++;
                 return;
             }
             
             // Check if block has proper terminator
+            // NOTE: Module bodies don't require terminators in MLIR (NoTerminator trait)
+            bool requiresTerminator = true;
+            if (mlir::Operation* parentOp = block->getParentOp()) {
+                std::string actualOpName = parentOp->getName().getStringRef().str();
+                logger.notice("TERMINATOR_DEBUG: Checking parent operation name: '" + actualOpName + "'");
+                
+                // Check for module operations (handle both "builtin.module" and "module")  
+                // According to MLIR docs, ModuleOp uses NoTerminator trait
+                if (actualOpName == "builtin.module" || actualOpName == "module") {
+                    logger.notice("TERMINATOR_DEBUG: Module body detected - no terminator required (NoTerminator trait)");
+                    requiresTerminator = false;
+                }
+                
+                // Also check if parent operation has NoTerminator trait
+                if (parentOp->hasTrait<mlir::OpTrait::NoTerminator>()) {
+                    logger.notice("TERMINATOR_DEBUG: Parent operation has NoTerminator trait - no terminator required");
+                    requiresTerminator = false;
+                }
+            }
+            
             mlir::Operation& lastOp = block->back();
-            if (!lastOp.hasTrait<mlir::OpTrait::IsTerminator>()) {
-                logger.error(blockInfo + " missing terminator! Last op: " + lastOp.getName().getStringRef().str());
+            
+            // Additional debug info
+            logger.notice("TERMINATOR_DEBUG: requiresTerminator = " + std::string(requiresTerminator ? "true" : "false"));
+            logger.notice("TERMINATOR_DEBUG: lastOp.hasTrait<IsTerminator> = " + std::string(lastOp.hasTrait<mlir::OpTrait::IsTerminator>() ? "true" : "false"));
+            
+            if (requiresTerminator && !lastOp.hasTrait<mlir::OpTrait::IsTerminator>()) {
+                logger.error(blockInfo + " missing terminator! Last op: " + lastOp.getName().getStringRef().str() + ", parent: " + parentOpName);
                 hasTerminatorIssues = true;
                 blockWithTerminatorIssues++;
                 
@@ -83,8 +115,18 @@ namespace {
                 block->print(blockStream);
                 blockStream.flush();
                 logger.error("Problematic block contents: " + blockStr);
+                
+                // Show more context - what operations are in this block
+                logger.notice("Block contains " + std::to_string(block->getOperations().size()) + " operations:");
+                int opIndex = 0;
+                for (auto& op : *block) {
+                    opIndex++;
+                    logger.notice("  Op " + std::to_string(opIndex) + ": " + op.getName().getStringRef().str());
+                }
+            } else if (requiresTerminator) {
+                logger.notice(blockInfo + " has valid terminator: " + lastOp.getName().getStringRef().str() + ", parent: " + parentOpName);
             } else {
-                logger.debug(blockInfo + " has valid terminator: " + lastOp.getName().getStringRef().str());
+                logger.notice(blockInfo + " is module body - no terminator required, parent: " + parentOpName);
             }
             
             // Validate each operation in the block
