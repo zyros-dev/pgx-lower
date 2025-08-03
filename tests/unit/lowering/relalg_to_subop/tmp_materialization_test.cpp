@@ -108,7 +108,7 @@ protected:
         op->walk([](Operation* nestedOp) {
             if (auto createOp = dyn_cast<subop::CreateThreadLocalOp>(nestedOp)) {
                 // Thread-local state should be properly initialized
-                EXPECT_TRUE(createOp.getInitial().hasValue());
+                EXPECT_TRUE(createOp.getInitFn().hasValue());
             }
         });
     }
@@ -126,7 +126,7 @@ TEST_F(TmpMaterializationLoweringTest, TmpTableCreation) {
     
     // Create input stream
     auto streamType = createTupleStreamType();
-    auto inputStream = builder->create<tuples::ConstantOp>(builder->getUnknownLoc(), streamType, builder->getUnitAttr());
+    auto inputStream = builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), streamType);
     
     // Create column definitions for TmpOp
     auto columnMembers = createColumnMembers();
@@ -157,7 +157,7 @@ TEST_F(TmpMaterializationLoweringTest, MaterializationStrategy) {
     
     // Create input stream
     auto streamType = createTupleStreamType();
-    auto inputStream = builder->create<tuples::ConstantOp>(builder->getUnknownLoc(), streamType, builder->getUnitAttr());
+    auto inputStream = builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), streamType);
     
     // Test different materialization strategies
     
@@ -213,7 +213,7 @@ TEST_F(TmpMaterializationLoweringTest, StorageLifecycle) {
     
     // Create input stream
     auto streamType = createTupleStreamType();
-    auto inputStream = builder->create<tuples::ConstantOp>(builder->getUnknownLoc(), streamType, builder->getUnitAttr());
+    auto inputStream = builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), streamType);
     
     // Test complete storage lifecycle
     
@@ -268,7 +268,7 @@ TEST_F(TmpMaterializationLoweringTest, MemoryVsDiskMaterialization) {
     builder->setInsertionPointToEnd(module.getBody());
     
     auto streamType = createTupleStreamType();
-    auto inputStream = builder->create<tuples::ConstantOp>(builder->getUnknownLoc(), streamType, builder->getUnitAttr());
+    auto inputStream = builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), streamType);
     auto bufferMembers = createColumnMembers();
     
     // Test memory materialization (default buffer)
@@ -315,7 +315,7 @@ TEST_F(TmpMaterializationLoweringTest, ConcurrentTemporaryAccess) {
     builder->setInsertionPointToEnd(module.getBody());
     
     auto streamType = createTupleStreamType();
-    auto inputStream = builder->create<tuples::ConstantOp>(builder->getUnknownLoc(), streamType, builder->getUnitAttr());
+    auto inputStream = builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), streamType);
     auto bufferMembers = createColumnMembers();
     
     // Test thread-local temporary storage for parallel operations
@@ -382,7 +382,7 @@ TEST_F(TmpMaterializationLoweringTest, StorageOverflowHandling) {
     builder->setInsertionPointToEnd(module.getBody());
     
     auto streamType = createTupleStreamType();
-    auto inputStream = builder->create<tuples::ConstantOp>(builder->getUnknownLoc(), streamType, builder->getUnitAttr());
+    auto inputStream = builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), streamType);
     auto bufferMembers = createColumnMembers();
     
     // Test bounded heap for memory-limited scenarios
@@ -428,7 +428,7 @@ TEST_F(TmpMaterializationLoweringTest, StorageOverflowHandling) {
         overflowTable.getRes(), columnMapping);
     
     auto combinedResults = builder->create<subop::UnionOp>(builder->getUnknownLoc(), streamType,
-        ValueRange{memoryResults.getRes(), overflowResults.getRes()});
+        ValueRange{memoryResults.getResult(), overflowResults.getResult()});
     
     EXPECT_TRUE(combinedResults);
     EXPECT_EQ(combinedResults.getInputs().size(), 2);
@@ -443,7 +443,7 @@ TEST_F(TmpMaterializationLoweringTest, MaterializationPerformance) {
     builder->setInsertionPointToEnd(module.getBody());
     
     auto streamType = createTupleStreamType();
-    auto inputStream = builder->create<tuples::ConstantOp>(builder->getUnknownLoc(), streamType, builder->getUnitAttr());
+    auto inputStream = builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), streamType);
     auto bufferMembers = createColumnMembers();
     
     // Test batch materialization for efficiency
@@ -494,7 +494,7 @@ TEST_F(TmpMaterializationLoweringTest, TmpOpMultipleOutputs) {
     builder->setInsertionPointToEnd(module.getBody());
     
     auto streamType = createTupleStreamType();
-    auto inputStream = builder->create<tuples::ConstantOp>(builder->getUnknownLoc(), streamType, builder->getUnitAttr());
+    auto inputStream = builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), streamType);
     auto bufferMembers = createColumnMembers();
     
     // Create TmpOp with multiple outputs (common pattern for temp tables)
@@ -544,7 +544,7 @@ TEST_F(TmpMaterializationLoweringTest, ComplexMaterializationWorkflow) {
     builder->setInsertionPointToEnd(module.getBody());
     
     auto streamType = createTupleStreamType();
-    auto inputStream = builder->create<tuples::ConstantOp>(builder->getUnknownLoc(), streamType, builder->getUnitAttr());
+    auto inputStream = builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), streamType);
     auto bufferMembers = createColumnMembers();
     auto columnMapping = createColumnMapping();
     

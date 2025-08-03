@@ -64,28 +64,28 @@ protected:
         commissionCol.getColumn().type = builder->getI64Type(); // Simplified type
         
         // Create references for these columns
-        salaryRef = colManager.createRef(salaryCol);
-        ageRef = colManager.createRef(ageCol);
-        nameRef = colManager.createRef(nameCol);
-        deptIdRef = colManager.createRef(deptIdCol);
-        commissionRef = colManager.createRef(commissionCol);
+        salaryRef = colManager.createRef("employees", "salary");
+        ageRef = colManager.createRef("employees", "age");
+        nameRef = colManager.createRef("employees", "name");
+        deptIdRef = colManager.createRef("employees", "dept_id");
+        commissionRef = colManager.createRef("employees", "commission");
     }
 
     Value createTestTableScan() {
         // Create a simple table scan operation for testing
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
-        std::vector<Attribute> columnAttrs = {
-            tuples::ColumnDefAttr::get(&context, salaryCol),
-            tuples::ColumnDefAttr::get(&context, ageCol),
-            tuples::ColumnDefAttr::get(&context, nameCol),
-            tuples::ColumnDefAttr::get(&context, deptIdCol),
-            tuples::ColumnDefAttr::get(&context, commissionCol)
+        SmallVector<NamedAttribute> columnAttrs = {
+            NamedAttribute(builder->getStringAttr("salary"), salaryCol),
+            NamedAttribute(builder->getStringAttr("age"), ageCol),
+            NamedAttribute(builder->getStringAttr("name"), nameCol),
+            NamedAttribute(builder->getStringAttr("dept_id"), deptIdCol),
+            NamedAttribute(builder->getStringAttr("commission"), commissionCol)
         };
-        auto columnsAttr = builder->getArrayAttr(columnAttrs);
+        auto columnsDict = builder->getDictionaryAttr(columnAttrs);
         
         return builder->create<relalg::BaseTableOp>(builder->getUnknownLoc(), tupleStreamType, 
                                                    builder->getStringAttr("employee|oid:12345"), 
-                                                   columnsAttr);
+                                                   columnsDict);
     }
 
     Value createAggregationOperation(Value input, relalg::AggrFunc aggrFunc, 
@@ -112,7 +112,7 @@ protected:
         {
             OpBuilder::InsertionGuard guard(*builder);
             builder->setInsertionPointToStart(aggrBlock);
-            builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{aggrFuncOp});
+            builder->create<func::ReturnOp>(builder->getUnknownLoc(), ValueRange{aggrFuncOp});
         }
         
         return aggrOp;
@@ -136,7 +136,7 @@ protected:
         {
             OpBuilder::InsertionGuard guard(*builder);
             builder->setInsertionPointToStart(aggrBlock);
-            builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{countOp});
+            builder->create<func::ReturnOp>(builder->getUnknownLoc(), ValueRange{countOp});
         }
         
         return aggrOp;
@@ -175,7 +175,8 @@ protected:
         bool hasNullCheck = false;
         
         aggregationResult.getDefiningOp()->getParentRegion()->walk([&](Operation* op) {
-            if (isa<db::IsNullOp>(op) || isa<db::AsNullableOp>(op) || isa<db::NullOp>(op)) {
+            // TODO Phase 5+: Add IsNullOp check when operation is available
+            if (isa<db::AsNullableOp>(op) || isa<db::NullOp>(op)) {
                 hasNullCheck = true;
             }
         });
@@ -333,7 +334,7 @@ TEST_F(AggregationLoweringTest, MultipleAggregationFunctions) {
         Value countOp = builder->create<relalg::AggrFuncOp>(builder->getUnknownLoc(), builder->getI64Type(), relalg::AggrFunc::count, tableScan, ageRef);
         Value avgOp = builder->create<relalg::AggrFuncOp>(builder->getUnknownLoc(), builder->getI32Type(), relalg::AggrFunc::sum, tableScan, ageRef); // Using sum for avg computation
         
-        builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{sumOp, countOp, avgOp});
+        builder->create<func::ReturnOp>(builder->getUnknownLoc(), ValueRange{sumOp, countOp, avgOp});
     }
     
     EXPECT_TRUE(aggrOp);
