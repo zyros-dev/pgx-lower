@@ -171,21 +171,117 @@ public:
                         auto storeCallOp = builder.create<mlir::func::CallOp>(module.getLoc(), storeFunc, 
                             mlir::ValueRange{zero32, fieldValue, falseVal});
                         
-                        // IMMEDIATE TERMINATOR FIX: Add terminator right after call to prevent MLIR verification failure
+                        // ENHANCED TERMINATOR FIX: Comprehensive block termination handling
                         auto currentBlock = storeCallOp->getBlock();
-                        if (!currentBlock->getTerminator()) {
-                            auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
-                            builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+                        PGX_DEBUG("store_int_result call generated, checking block termination");
+                        
+                        if (!currentBlock) {
+                            PGX_ERROR("store_int_result call created in null block - critical error");
+                            return;
+                        }
+                        
+                        // Validate block state before terminator addition
+                        if (currentBlock->getTerminator()) {
+                            PGX_DEBUG("Block already has terminator, skipping addition");
+                        } else {
+                            PGX_DEBUG("Block missing terminator, analyzing parent operation context");
+                            
+                            // Determine appropriate terminator based on parent operation context
+                            mlir::Operation* parentOp = currentBlock->getParentOp();
+                            bool terminatorAdded = false;
+                            
+                            if (auto funcOp = mlir::dyn_cast_or_null<mlir::func::FuncOp>(parentOp)) {
+                                // Function context - add return with appropriate type
+                                auto funcType = funcOp.getFunctionType();
+                                if (funcType.getNumResults() == 1 && funcType.getResult(0).isInteger(32)) {
+                                    auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
+                                    builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+                                    terminatorAdded = true;
+                                    PGX_DEBUG("Added function return terminator for i32 result");
+                                } else if (funcType.getNumResults() == 0) {
+                                    builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{});
+                                    terminatorAdded = true;
+                                    PGX_DEBUG("Added function return terminator for void result");
+                                }
+                            } else if (mlir::isa_and_nonnull<mlir::scf::ForOp, mlir::scf::WhileOp, mlir::scf::IfOp>(parentOp)) {
+                                // SCF context - add yield
+                                builder.create<mlir::scf::YieldOp>(module.getLoc(), mlir::ValueRange{});
+                                terminatorAdded = true;
+                                PGX_DEBUG("Added SCF yield terminator for loop/conditional context");
+                            } else if (mlir::isa_and_nonnull<mlir::cf::CondBranchOp, mlir::cf::BranchOp>(parentOp)) {
+                                // Control flow context - would need specific branch target, fallback to return
+                                PGX_WARNING("Control flow context detected but cannot determine branch target, using return fallback");
+                                auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
+                                builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+                                terminatorAdded = true;
+                            }
+                            
+                            // Fallback terminator if context analysis failed
+                            if (!terminatorAdded) {
+                                PGX_WARNING("Could not determine appropriate terminator from parent context, using default return");
+                                auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
+                                builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+                                terminatorAdded = true;
+                            }
+                            
+                            // Comprehensive block validation after terminator addition
+                            if (terminatorAdded) {
+                                auto newTerminator = currentBlock->getTerminator();
+                                if (newTerminator) {
+                                    PGX_DEBUG("Successfully added terminator to block after store_int_result call");
+                                    
+                                    // Verify terminator is valid for its context
+                                    if (auto returnOp = mlir::dyn_cast<mlir::func::ReturnOp>(newTerminator)) {
+                                        auto expectedRetType = returnOp->getParentOfType<mlir::func::FuncOp>().getFunctionType().getResults();
+                                        auto actualRetTypes = returnOp.getOperandTypes();
+                                        if (expectedRetType.size() != actualRetTypes.size()) {
+                                            PGX_ERROR("Return terminator type mismatch between expected and actual result types");
+                                        } else {
+                                            PGX_DEBUG("Return terminator validated successfully");
+                                        }
+                                    } else if (mlir::isa<mlir::scf::YieldOp>(newTerminator)) {
+                                        PGX_DEBUG("Yield terminator validated successfully");
+                                    }
+                                } else {
+                                    PGX_ERROR("Failed to add terminator - block still missing terminator after addition attempt");
+                                }
+                            }
                         }
                     }
                 }
             }
             
-            // Ensure function has terminator if none was added yet
+            // ENHANCED FUNCTION TERMINATOR VALIDATION: Ensure function has proper terminator
             auto currentBlock = builder.getInsertionBlock();
             if (currentBlock && !currentBlock->getTerminator()) {
-                auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
-                builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+                PGX_DEBUG("Function entry block missing terminator, adding default return");
+                
+                // Validate we're in the correct function context
+                auto parentFunc = currentBlock->getParentOp();
+                auto funcOp = mlir::dyn_cast_or_null<mlir::func::FuncOp>(parentFunc);
+                if (funcOp) {
+                    auto funcType = funcOp.getFunctionType();
+                    if (funcType.getNumResults() == 1 && funcType.getResult(0).isInteger(32)) {
+                        auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
+                        builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+                        PGX_DEBUG("Added i32 return terminator to function entry block");
+                    } else if (funcType.getNumResults() == 0) {
+                        builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{});
+                        PGX_DEBUG("Added void return terminator to function entry block");
+                    } else {
+                        PGX_WARNING("Function has unexpected return type, using default i32 return");
+                        auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
+                        builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+                    }
+                } else {
+                    PGX_ERROR("Block found without function parent - using emergency return terminator");
+                    auto zero = builder.create<mlir::arith::ConstantIntOp>(module.getLoc(), 0, 32);
+                    builder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{zero});
+                }
+            } else if (currentBlock && currentBlock->getTerminator()) {
+                PGX_DEBUG("Function entry block already has terminator - validation complete");
+            } else if (!currentBlock) {
+                PGX_ERROR("No insertion block available for function terminator validation");
             }
         }
         

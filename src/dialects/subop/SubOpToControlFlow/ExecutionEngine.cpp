@@ -318,16 +318,24 @@ void PGXSubOpToControlFlowLoweringPass::runOnOperation() {
       return util::RefType::get(t.getContext(), mlir::IntegerType::get(ctxt, 8));
    });
    typeConverter.addConversion([&](subop::SortedViewType t) -> Type {
-      return util::BufferType::get(t.getContext(), EntryStorageHelper(nullptr, t.getBasedOn().getMembers(), t.hasLock(), &typeConverter).getStorageType());
+      // Defer EntryStorageHelper construction to avoid circular dependency during typeConverter initialization
+      EntryStorageHelper helper(nullptr, t.getBasedOn().getMembers(), t.hasLock(), &typeConverter);
+      return util::BufferType::get(t.getContext(), helper.getStorageType());
    });
    typeConverter.addConversion([&](subop::ArrayType t) -> Type {
-      return util::BufferType::get(t.getContext(), EntryStorageHelper(nullptr, t.getMembers(), t.hasLock(), &typeConverter).getStorageType());
+      // Defer EntryStorageHelper construction to avoid circular dependency during typeConverter initialization
+      EntryStorageHelper helper(nullptr, t.getMembers(), t.hasLock(), &typeConverter);
+      return util::BufferType::get(t.getContext(), helper.getStorageType());
    });
    typeConverter.addConversion([&](subop::ContinuousViewType t) -> Type {
-      return util::BufferType::get(t.getContext(), EntryStorageHelper(nullptr, t.getBasedOn().getMembers(), t.hasLock(), &typeConverter).getStorageType());
+      // Defer EntryStorageHelper construction to avoid circular dependency during typeConverter initialization
+      EntryStorageHelper helper(nullptr, t.getBasedOn().getMembers(), t.hasLock(), &typeConverter);
+      return util::BufferType::get(t.getContext(), helper.getStorageType());
    });
    typeConverter.addConversion([&](subop::SimpleStateType t) -> Type {
-      return util::RefType::get(t.getContext(), EntryStorageHelper(nullptr, t.getMembers(), t.hasLock(), &typeConverter).getStorageType());
+      // Defer EntryStorageHelper construction to avoid circular dependency during typeConverter initialization
+      EntryStorageHelper helper(nullptr, t.getMembers(), t.hasLock(), &typeConverter);
+      return util::RefType::get(t.getContext(), helper.getStorageType());
    });
    typeConverter.addConversion([&](subop::HashMapType t) -> Type {
       return util::RefType::get(t.getContext(), mlir::IntegerType::get(ctxt, 8));
