@@ -12,6 +12,7 @@
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/db/DBDialect.h"
+#include "dialects/db/DBTypes.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "dialects/util/UtilDialect.h"
 #include "core/logging.h"

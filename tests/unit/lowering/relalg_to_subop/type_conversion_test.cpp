@@ -11,6 +11,7 @@
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/DBOps.h"
+#include "dialects/db/DBTypes.h"
 #include "dialects/util/UtilDialect.h"
 #include "dialects/tuples/TupleStreamDialect.h"
 #include "dialects/tuples/TupleStreamOps.h"
@@ -51,7 +52,7 @@ protected:
     Type createI64Type() { return builder->getI64Type(); }
     Type createF64Type() { return builder->getF64Type(); }
     Type createI1Type() { return builder->getI1Type(); }
-    Type createStringType() { return util::StringType::get(&context); }
+    Type createStringType() { return builder->getType<db::StringType>(); }
     
     // Helper to create database nullable types
     Type createNullableType(Type baseType) {

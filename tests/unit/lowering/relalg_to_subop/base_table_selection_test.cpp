@@ -16,6 +16,7 @@
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
+#include "dialects/db/DBTypes.h"
 #include "dialects/util/UtilDialect.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "dialects/tuplestream/TupleStreamOps.h"
@@ -138,7 +139,7 @@ TEST_F(BaseTableSelectionLoweringTest, BaseTableToScanRefsGather) {
     auto idColDef = columnManager.createDef("test", "id");
     idColDef.getColumn().type = builder->getI32Type();
     auto nameColDef = columnManager.createDef("test", "name");
-    nameColDef.getColumn().type = builder->getType<db::StringType>();
+    nameColDef.getColumn().type = db::StringType::get(&context);
     
     auto columns = builder->getArrayAttr({
         NamedAttribute(builder->getStringAttr("id"), idColDef),
@@ -431,13 +432,13 @@ TEST_F(BaseTableSelectionLoweringTest, SelectionWithAndPredicate) {
     
     // String column (priority 10) 
     auto strColDef = columnManager.createDef("test", "str_col");
-    strColDef.getColumn().type = builder->getType<db::StringType>();
+    strColDef.getColumn().type = db::StringType::get(&context);
     auto strColRef = columnManager.createRef(&strColDef.getColumn());
     auto strGetCol = builder->create<tuples::GetColumnOp>(
-        loc, builder->getType<db::StringType>(), strColRef
+        loc, db::StringType::get(&context), strColRef
     );
     auto strConst = builder->create<db::ConstantOp>(
-        loc, builder->getType<db::StringType>(), builder->getStringAttr("test")
+        loc, db::StringType::get(&context), builder->getStringAttr("test")
     );
     auto strCmp = builder->create<db::CmpOp>(
         loc, db::DBCmpPredicate::eq, strGetCol.getResult(), strConst.getResult()
@@ -608,7 +609,7 @@ TEST_F(BaseTableSelectionLoweringTest, ModuleVerification) {
     EXPECT_TRUE(succeeded(applyPartialConversion(module, target, std::move(patterns))));
     
     // Verify the resulting module is valid MLIR
-    EXPECT_TRUE(succeeded(verify(module))) << "Lowered module should pass MLIR verification";
+    EXPECT_TRUE(succeeded(mlir::verify(module))) << "Lowered module should pass MLIR verification";
     
     PGX_DEBUG("BaseTableSelectionLoweringTest: Module verification completed successfully");
 }

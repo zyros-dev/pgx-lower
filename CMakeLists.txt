@@ -112,20 +112,14 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/test_basic_terminator.cpp
         # New RelAlg -> SubOp lowering tests
         tests/unit/lowering/relalg_to_subop/const_relation_union_test.cpp
-        # Lowering tests - fixing API compatibility issues one by one
-        # tests/unit/lowering/test_execution_engine.cpp (needs default constructor fix)
-        # tests/unit/lowering/test_controlflow_operations.cpp
-        # tests/unit/lowering/test_subop_rewriter.cpp (API compatibility issues)
-        # tests/unit/lowering/test_subop_utilities.cpp (missing header)
-        # tests/unit/lowering/test_controlflow_operations.cpp (wrong include path)
-        # tests/unit/lowering/test_datastructure_creation.cpp (API compatibility issues)
-        # tests/unit/lowering/test_gather_scatter_operations.cpp (API compatibility issues)
-        # tests/unit/lowering/test_lookup_operations.cpp (API compatibility issues)
-        # tests/unit/lowering/test_reduce_operations.cpp (API compatibility issues)
-        # tests/unit/lowering/test_scan_operations.cpp (API compatibility issues)
-        # tests/unit/lowering/test_table_operations.cpp (API compatibility issues)
-        # tests/unit/lowering/test_threadlocal_operations.cpp (API compatibility issues)
-        # tests/unit/lowering/test_view_operations.cpp (API compatibility issues)
+        # Lowering tests - Only the CONFIRMED working one for now
+        tests/unit/lowering/test_controlflow_operations.cpp
+        # Still have compile issues - need header fixes
+        # tests/unit/lowering/test_datastructure_creation.cpp (missing SubOpTypes.h)
+        # tests/unit/lowering/test_reduce_operations.cpp (missing lingodb header)
+        # tests/unit/lowering/test_execution_engine_terminator.cpp (missing headers)
+        # tests/unit/lowering/test_subop_utilities.cpp (constructor issue)
+        # tests/unit/lowering/test_threadlocal_operations.cpp (missing headers)
     )
     
     add_mlir_unit_test(mlir_unit_test 

@@ -13,6 +13,7 @@
 #include "dialects/tuples/TupleStreamOps.h"
 #include "dialects/db/DBOps.h"
 #include "dialects/db/DBDialect.h"
+#include "dialects/db/DBTypes.h"
 #include "core/logging.h"
 
 using namespace mlir;
@@ -133,7 +134,7 @@ TEST_F(JoinOperationsLoweringTest, CrossProductLowering) {
     // Create two mock tables
     auto leftTable = createMockTable("customers", {
         {"id", builder->getI64Type()},
-        {"name", builder->getType<db::StringType>()}
+        {"name", db::StringType::get(&context)}
     }, loc);
     
     auto rightTable = createMockTable("orders", {
@@ -167,7 +168,7 @@ TEST_F(JoinOperationsLoweringTest, InnerJoinNestedLoopLowering) {
     // Create two mock tables
     auto leftTable = createMockTable("customers", {
         {"id", builder->getI64Type()},
-        {"name", builder->getType<db::StringType>()}
+        {"name", db::StringType::get(&context)}
     }, loc);
     
     auto rightTable = createMockTable("orders", {
@@ -207,7 +208,7 @@ TEST_F(JoinOperationsLoweringTest, InnerJoinHashLowering) {
     // Create two mock tables
     auto leftTable = createMockTable("customers", {
         {"id", builder->getI64Type()},
-        {"name", builder->getType<db::StringType>()}
+        {"name", db::StringType::get(&context)}
     }, loc);
     
     auto rightTable = createMockTable("orders", {
@@ -259,7 +260,7 @@ TEST_F(JoinOperationsLoweringTest, MarkJoinLowering) {
     // Create two mock tables
     auto leftTable = createMockTable("customers", {
         {"id", builder->getI64Type()},
-        {"name", builder->getType<db::StringType>()}
+        {"name", db::StringType::get(&context)}
     }, loc);
     
     auto rightTable = createMockTable("orders", {
@@ -305,7 +306,7 @@ TEST_F(JoinOperationsLoweringTest, MarkJoinReversedLowering) {
     // Create two mock tables
     auto leftTable = createMockTable("customers", {
         {"id", builder->getI64Type()},
-        {"name", builder->getType<db::StringType>()}
+        {"name", db::StringType::get(&context)}
     }, loc);
     
     auto rightTable = createMockTable("orders", {
@@ -349,7 +350,7 @@ TEST_F(JoinOperationsLoweringTest, SingleJoinLowering) {
     // Create two mock tables
     auto leftTable = createMockTable("customers", {
         {"id", builder->getI64Type()},
-        {"name", builder->getType<db::StringType>()}
+        {"name", db::StringType::get(&context)}
     }, loc);
     
     auto rightTable = createMockTable("orders", {
@@ -407,7 +408,7 @@ TEST_F(JoinOperationsLoweringTest, SingleJoinConstantLowering) {
     // Create two mock tables
     auto leftTable = createMockTable("customers", {
         {"id", builder->getI64Type()},
-        {"name", builder->getType<db::StringType>()}
+        {"name", db::StringType::get(&context)}
     }, loc);
     
     auto rightTable = createMockTable("constants", {
@@ -507,7 +508,7 @@ TEST_F(JoinOperationsLoweringTest, JoinMemoryManagement) {
     // Create larger mock tables to test memory efficiency
     auto leftTable = createMockTable("large_table", {
         {"id", builder->getI64Type()},
-        {"data1", builder->getType<db::StringType>()},
+        {"data1", db::StringType::get(&context)},
         {"data2", builder->getF64Type()}
     }, loc);
     
@@ -555,13 +556,13 @@ TEST_F(JoinOperationsLoweringTest, JoinNullHandling) {
     
     // Create tables with nullable columns
     auto leftTable = createMockTable("nullable_table", {
-        {"id", builder->getType<db::NullableType>(builder->getI64Type())},
+        {"id", db::NullableType::get(&context, builder->getI64Type())},
         {"value", builder->getI32Type()}
     }, loc);
     
     auto rightTable = createMockTable("reference_table", {
-        {"ref_id", builder->getType<db::NullableType>(builder->getI64Type())},
-        {"description", builder->getType<db::StringType>()}
+        {"ref_id", db::NullableType::get(&context, builder->getI64Type())},
+        {"description", db::StringType::get(&context)}
     }, loc);
     
     auto tupleStreamType = tuples::TupleStreamType::get(&context);
@@ -590,7 +591,7 @@ TEST_F(JoinOperationsLoweringTest, JoinNullHandling) {
     predicateBlock.addArgument(tupleType, loc);
     
     createEqualityPredicate(predicateBlock, "nullable_table", "id", "reference_table", "ref_id", 
-                           builder->getType<db::NullableType>(builder->getI64Type()));
+                           db::NullableType::get(&context, builder->getI64Type()));
     
     // Verify null handling configuration
     EXPECT_TRUE(nullJoin->hasAttr("nullsEqual"));

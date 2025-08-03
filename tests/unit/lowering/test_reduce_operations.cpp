@@ -164,13 +164,7 @@ TEST_F(ReduceOperationsTest, AtomicIntegerAdditionReduction) {
     // Create a tuple stream
     auto streamValue = createSimpleTupleStream();
     
-    // Create a reference value (mock simple state)
-    auto i32Type = builder->getI32Type();
-    auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {builder->getStringAttr("sum")}),
-        ArrayAttr::get(context.get(), {TypeAttr::get(i32Type)}));
-    auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-    auto refValue = builder->create<util::UndefOp>(loc, stateType);
+    // Note: ReduceOp uses ColumnRefAttr for ref, not a value operand
     
     // Create column and member attributes
     auto columnAttr = builder->getStringAttr("test_col");
@@ -180,7 +174,7 @@ TEST_F(ReduceOperationsTest, AtomicIntegerAdditionReduction) {
     auto members = builder->getArrayAttr({memberAttr});
     
     // Create reduce operation with atomic attribute
-    auto reduceOp = createSimpleReduceOp(streamValue, refValue, columns, members);
+    auto reduceOp = createSimpleReduceOp(streamValue, columns, members);
     reduceOp->setAttr("atomic", builder->getUnitAttr());
     
     // Verify the operation was created correctly
@@ -209,20 +203,13 @@ TEST_F(ReduceOperationsTest, AtomicFloatAdditionReduction) {
     
     auto streamValue = createSimpleTupleStream();
     
-    auto f32Type = builder->getF32Type();
-    auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {builder->getStringAttr("sum")}),
-        ArrayAttr::get(context.get(), {TypeAttr::get(f32Type)}));
-    auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-    auto refValue = builder->create<util::UndefOp>(loc, stateType);
-    
     auto columnAttr = builder->getStringAttr("test_col");
     auto memberAttr = builder->getStringAttr("sum");
     
     auto columns = builder->getArrayAttr({columnAttr});
     auto members = builder->getArrayAttr({memberAttr});
     
-    auto reduceOp = createFloatReduceOp(streamValue, refValue, columns, members);
+    auto reduceOp = createFloatReduceOp(streamValue, columns, members);
     reduceOp->setAttr("atomic", builder->getUnitAttr());
     
     // Verify floating-point atomic reduction structure
@@ -247,20 +234,13 @@ TEST_F(ReduceOperationsTest, AtomicBitwiseOrReduction) {
     
     auto streamValue = createSimpleTupleStream();
     
-    auto i32Type = builder->getI32Type();
-    auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {builder->getStringAttr("flags")}),
-        ArrayAttr::get(context.get(), {TypeAttr::get(i32Type)}));
-    auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-    auto refValue = builder->create<util::UndefOp>(loc, stateType);
-    
     auto columnAttr = builder->getStringAttr("test_col");
     auto memberAttr = builder->getStringAttr("flags");
     
     auto columns = builder->getArrayAttr({columnAttr});
     auto members = builder->getArrayAttr({memberAttr});
     
-    auto reduceOp = createBitwiseOrReduceOp(streamValue, refValue, columns, members);
+    auto reduceOp = createBitwiseOrReduceOp(streamValue, columns, members);
     reduceOp->setAttr("atomic", builder->getUnitAttr());
     
     EXPECT_TRUE(reduceOp);
@@ -284,14 +264,6 @@ TEST_F(ReduceOperationsTest, NonAtomicSimpleStateReduction) {
     
     auto streamValue = createSimpleTupleStream();
     
-    // Create a simple state type
-    auto i32Type = builder->getI32Type();
-    auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {builder->getStringAttr("sum")}),
-        ArrayAttr::get(context.get(), {TypeAttr::get(i32Type)}));
-    auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-    auto refValue = builder->create<util::UndefOp>(loc, stateType);
-    
     auto columnAttr = builder->getStringAttr("test_col");
     auto memberAttr = builder->getStringAttr("sum");
     
@@ -299,14 +271,13 @@ TEST_F(ReduceOperationsTest, NonAtomicSimpleStateReduction) {
     auto members = builder->getArrayAttr({memberAttr});
     
     // Create reduce operation WITHOUT atomic attribute
-    auto reduceOp = createSimpleReduceOp(streamValue, refValue, columns, members);
+    auto reduceOp = createSimpleReduceOp(streamValue, columns, members);
     
     EXPECT_TRUE(reduceOp);
     EXPECT_FALSE(reduceOp->hasAttr("atomic"));
     
-    // Test that it recognizes the reference type
-    auto refColumn = reduceOp.getRef();
-    EXPECT_TRUE(refColumn);
+    // Test that the ref attribute was set
+    EXPECT_TRUE(reduceOp.getRef());
     
     PGX_INFO("Non-atomic simple state test completed successfully");
 }
@@ -319,16 +290,10 @@ TEST_F(ReduceOperationsTest, MultipleReductionOperationsTest) {
     auto funcOp = createTestFunction("test_multiple", funcType);
     
     auto streamValue = createSimpleTupleStream();
-    auto i32Type = builder->getI32Type();
     
     std::vector<subop::ReduceOp> reduceOps;
     
     for (int i = 0; i < 3; i++) {
-        auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-            ArrayAttr::get(context.get(), {builder->getStringAttr("sum_" + std::to_string(i))}),
-            ArrayAttr::get(context.get(), {TypeAttr::get(i32Type)}));
-        auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-        auto refValue = builder->create<util::UndefOp>(loc, stateType);
         
         auto columnAttr = builder->getStringAttr("col_" + std::to_string(i));
         auto memberAttr = builder->getStringAttr("sum_" + std::to_string(i));
@@ -336,7 +301,7 @@ TEST_F(ReduceOperationsTest, MultipleReductionOperationsTest) {
         auto columns = builder->getArrayAttr({columnAttr});
         auto members = builder->getArrayAttr({memberAttr});
         
-        auto reduceOp = createSimpleReduceOp(streamValue, refValue, columns, members);
+        auto reduceOp = createSimpleReduceOp(streamValue, columns, members);
         reduceOp->setAttr("atomic", builder->getUnitAttr());
         reduceOps.push_back(reduceOp);
     }
@@ -364,19 +329,6 @@ TEST_F(ReduceOperationsTest, MultipleMemberAggregationPattern) {
     auto i32Type = builder->getI32Type();
     auto f32Type = builder->getF32Type();
     
-    // Create state with multiple members
-    auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {
-            builder->getStringAttr("sum"),
-            builder->getStringAttr("count")
-        }),
-        ArrayAttr::get(context.get(), {
-            TypeAttr::get(f32Type),
-            TypeAttr::get(i32Type)
-        }));
-    auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-    auto refValue = builder->create<util::UndefOp>(loc, stateType);
-    
     // Create column and member attributes
     auto keyColumn = builder->getStringAttr("group_key");
     auto valueColumn = builder->getStringAttr("value");
@@ -387,7 +339,11 @@ TEST_F(ReduceOperationsTest, MultipleMemberAggregationPattern) {
     auto columns = builder->getArrayAttr({keyColumn, valueColumn});
     auto members = builder->getArrayAttr({sumMember, countMember});
     
-    auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refValue, columns, members);
+    // Create a simple ColumnRefAttr for testing
+    auto symbolRef = builder->getSymbolRefAttr("test_ref");
+    auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
+    
+    auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);
     
     // Create simple reduction region
     auto& region = reduceOp.getRegion();
@@ -434,18 +390,6 @@ TEST_F(ReduceOperationsTest, ArithmeticOperationsInReduction) {
     auto f64Type = builder->getF64Type();
     auto i32Type = builder->getI32Type();
     
-    auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {
-            builder->getStringAttr("sum"),
-            builder->getStringAttr("count")
-        }),
-        ArrayAttr::get(context.get(), {
-            TypeAttr::get(f64Type),
-            TypeAttr::get(i32Type)
-        }));
-    auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-    auto refValue = builder->create<util::UndefOp>(loc, stateType);
-    
     auto valueColumn = builder->getStringAttr("input_value");
     
     auto columns = builder->getArrayAttr({valueColumn});
@@ -454,7 +398,11 @@ TEST_F(ReduceOperationsTest, ArithmeticOperationsInReduction) {
         builder->getStringAttr("count")
     });
     
-    auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refValue, columns, members);
+    // Create a simple ColumnRefAttr for testing
+    auto symbolRef = builder->getSymbolRefAttr("test_ref");
+    auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
+    
+    auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);
     
     // Create reduction logic with arithmetic operations
     auto& region = reduceOp.getRegion();
@@ -502,21 +450,17 @@ TEST_F(ReduceOperationsTest, BooleanOperationsInReduction) {
     
     auto streamValue = createSimpleTupleStream();
     
-    // Create reference with boolean type
-    auto boolType = builder->getI1Type();
-    auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {builder->getStringAttr("flag_sum")}),
-        ArrayAttr::get(context.get(), {TypeAttr::get(boolType)}));
-    auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-    auto refValue = builder->create<util::UndefOp>(loc, stateType);
-    
     auto columnAttr = builder->getStringAttr("flag_col");
     auto memberAttr = builder->getStringAttr("flag_sum");
     
     auto columns = builder->getArrayAttr({columnAttr});
     auto members = builder->getArrayAttr({memberAttr});
     
-    auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refValue, columns, members);
+    // Create a simple ColumnRefAttr for testing
+    auto symbolRef = builder->getSymbolRefAttr("test_ref");
+    auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
+    
+    auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);
     
     // Create OR reduction for boolean flags
     auto& region = reduceOp.getRegion();
@@ -559,11 +503,6 @@ TEST_F(ReduceOperationsTest, ComplexArithmeticOperations) {
     auto streamValue = createSimpleTupleStream();
     
     auto i32Type = builder->getI32Type();
-    auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {builder->getStringAttr("result")}),
-        ArrayAttr::get(context.get(), {TypeAttr::get(i32Type)}));
-    auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-    auto refValue = builder->create<util::UndefOp>(loc, stateType);
     
     auto columnAttr = builder->getStringAttr("test_col");
     auto memberAttr = builder->getStringAttr("result");
@@ -571,7 +510,11 @@ TEST_F(ReduceOperationsTest, ComplexArithmeticOperations) {
     auto columns = builder->getArrayAttr({columnAttr});
     auto members = builder->getArrayAttr({memberAttr});
     
-    auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refValue, columns, members);
+    // Create a simple ColumnRefAttr for testing
+    auto symbolRef = builder->getSymbolRefAttr("test_ref");
+    auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
+    
+    auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);
     
     // Create region with complex arithmetic operations
     auto& region = reduceOp.getRegion();
@@ -612,20 +555,13 @@ TEST_F(ReduceOperationsTest, TerminatorSafetyInReductions) {
     
     auto streamValue = createSimpleTupleStream();
     
-    auto i32Type = builder->getI32Type();
-    auto memberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {builder->getStringAttr("sum")}),
-        ArrayAttr::get(context.get(), {TypeAttr::get(i32Type)}));
-    auto stateType = subop::SimpleStateType::get(context.get(), memberAttrs);
-    auto refValue = builder->create<util::UndefOp>(loc, stateType);
-    
     auto columnAttr = builder->getStringAttr("test_col");
     auto memberAttr = builder->getStringAttr("sum");
     
     auto columns = builder->getArrayAttr({columnAttr});
     auto members = builder->getArrayAttr({memberAttr});
     
-    auto reduceOp = createSimpleReduceOp(streamValue, refValue, columns, members);
+    auto reduceOp = createSimpleReduceOp(streamValue, columns, members);
     
     // Verify the reduction region has proper termination
     auto& region = reduceOp.getRegion();
@@ -663,25 +599,13 @@ TEST_F(ReduceOperationsTest, IntegrationTestMultipleReductionPatterns) {
     auto streamValue = createSimpleTupleStream();
     
     // Test 1: Integer reduction
-    auto i32Type = builder->getI32Type();
-    auto intMemberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {builder->getStringAttr("int_sum")}),
-        ArrayAttr::get(context.get(), {TypeAttr::get(i32Type)}));
-    auto intStateType = subop::SimpleStateType::get(context.get(), intMemberAttrs);
-    auto intRefValue = builder->create<util::UndefOp>(loc, intStateType);
-    auto intReduce = createSimpleReduceOp(streamValue, intRefValue,
+    auto intReduce = createSimpleReduceOp(streamValue,
         builder->getArrayAttr({builder->getStringAttr("int_col")}),
         builder->getArrayAttr({builder->getStringAttr("int_sum")}));
     intReduce->setAttr("atomic", builder->getUnitAttr());
     
     // Test 2: Float reduction
-    auto f32Type = builder->getF32Type();
-    auto floatMemberAttrs = subop::StateMembersAttr::get(context.get(), 
-        ArrayAttr::get(context.get(), {builder->getStringAttr("float_sum")}),
-        ArrayAttr::get(context.get(), {TypeAttr::get(f32Type)}));
-    auto floatStateType = subop::SimpleStateType::get(context.get(), floatMemberAttrs);
-    auto floatRefValue = builder->create<util::UndefOp>(loc, floatStateType);
-    auto floatReduce = createFloatReduceOp(streamValue, floatRefValue,
+    auto floatReduce = createFloatReduceOp(streamValue,
         builder->getArrayAttr({builder->getStringAttr("float_col")}),
         builder->getArrayAttr({builder->getStringAttr("float_sum")}));
     floatReduce->setAttr("atomic", builder->getUnitAttr());

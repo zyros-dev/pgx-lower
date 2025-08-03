@@ -17,6 +17,7 @@
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
+#include "dialects/db/DBTypes.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "dialects/util/UtilDialect.h"
 #include "core/logging.h"
@@ -74,7 +75,7 @@ protected:
         auto col1 = colManager.createDef("test", "id");
         col1.getColumn().type = builder.getI32Type();
         auto col2 = colManager.createDef("test", "name");
-        col2.getColumn().type = db::StringType::get(&context);
+        col2.getColumn().type = builder.getType<db::StringType>();
         
         std::vector<NamedAttribute> columns = {
             builder.getNamedAttr("id", col1),

@@ -12,6 +12,7 @@
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
+#include "dialects/db/DBTypes.h"
 #include "dialects/util/UtilDialect.h"
 #include "dialects/tuples/TupleStreamDialect.h"
 #include "dialects/tuples/TupleStreamOps.h"
@@ -364,7 +365,7 @@ TEST_F(SortLimitLoweringTest, SpaceshipComparisonGeneration) {
     auto intCol = createColumnRef("int_col", builder->getI32Type());
     auto floatCol = createColumnRef("float_col", builder->getF64Type());
     auto stringCol = createColumnRef("string_col", 
-        builder->getType<db::StringType>());
+        db::StringType::get(&context));
     
     auto sortSpec1 = createSortSpec(intCol, relalg::SortSpec::asc);
     auto sortSpec2 = createSortSpec(floatCol, relalg::SortSpec::desc);

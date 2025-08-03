@@ -11,6 +11,7 @@
 #include "dialects/relalg/RelAlgOps.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
+#include "dialects/db/DBTypes.h"
 #include "dialects/tuples/TupleStreamOps.h"
 #include "dialects/util/UtilDialect.h"
 #include "core/logging.h"
