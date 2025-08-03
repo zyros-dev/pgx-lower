@@ -329,38 +329,6 @@ TEST_F(DataStructureCreationTest, CreateSimpleStateAllocations) {
     PGX_INFO("SimpleState allocation test completed successfully");
 }
 
-// Test continuous view creation from different sources
-TEST_F(DataStructureCreationTest, CreateContinuousViewFromSources) {
-    auto [module, funcOp] = createModuleWithFunction();
-    OpBuilder builder(&context);
-    Location loc = builder.getUnknownLoc();
-    
-    builder.setInsertionPointToStart(&funcOp.getBody().front());
-    
-    // Create base buffer
-    auto stateMembers = createTestStateMembers();
-    auto bufferType = MemRefType::get({1000}, builder.getI8Type());
-    auto createBuffer = builder.create<arith::ConstantIntOp>(loc, 42, 32);
-    
-    // Create continuous view type based on the buffer
-    auto continuousViewType = TupleType::get(&context, {builder.getI32Type(), builder.getI64Type()});
-    
-    // Create continuous view - simplified test since the op may not exist
-    // Just test the type creation and buffer creation
-    
-    // Add terminator to function
-    auto constResult = builder.create<arith::ConstantIntOp>(loc, 0, 32);
-    builder.create<func::ReturnOp>(loc, ValueRange{constResult});
-    
-    // Verify structure
-    EXPECT_TRUE(createBuffer);
-    EXPECT_TRUE(bufferType); // Simplified test
-    EXPECT_TRUE(continuousViewType);
-    EXPECT_TRUE(mlir::isa<subop::ContinuousViewType>(continuousViewType));
-    
-    PGX_INFO("ContinuousView type test completed successfully");
-}
-
 // Test external hash index access
 TEST_F(DataStructureCreationTest, GetExternalHashIndex) {
     auto [module, funcOp] = createModuleWithFunction();

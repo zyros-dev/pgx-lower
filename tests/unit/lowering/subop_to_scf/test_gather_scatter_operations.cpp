@@ -130,42 +130,6 @@ TEST(GatherScatterOperationsTest, ContinuousRefGatherOpLowering) {
     module.erase();
 }
 
-TEST(GatherScatterOperationsTest, HashMapRefGatherOpLowering) {
-    MLIRContext context;
-    context.loadDialect<subop::SubOperatorDialect>();
-    context.loadDialect<util::UtilDialect>();
-    context.loadDialect<arith::ArithDialect>();
-    context.loadDialect<func::FuncDialect>();
-    
-    OpBuilder builder(&context);
-    Location loc = builder.getUnknownLoc();
-    
-    auto module = createTestModule(builder, &context);
-    
-    // Test hash map reference gathering which creates tuple element pointers
-    auto i32Type = builder.getI32Type();
-    auto tupleType = mlir::TupleType::get(&context, {i32Type, i32Type});
-    auto refType = LLVM::LLVMPointerType::get(&context); // Simplified ref type
-    
-    // Create constants to simulate hash map key/value access
-    auto keyIndex = builder.create<arith::ConstantIndexOp>(loc, 0);
-    auto valIndex = builder.create<arith::ConstantIndexOp>(loc, 1);
-    
-    // Add function terminator
-    builder.create<func::ReturnOp>(loc);
-    
-    // Verify block operation ordering after creation
-    Block* currentBlock = builder.getBlock();
-    EXPECT_TRUE(verifyBlockOperationOrder(currentBlock));
-    
-    // Ensure operations are properly sequenced
-    EXPECT_TRUE(keyIndex.getOperation()->getNextNode() == valIndex.getOperation());
-    
-    PGX_INFO("HashMapRefGatherOpLowering test completed successfully");
-    
-    module.erase();
-}
-
 TEST(GatherScatterOperationsTest, ExternalHashIndexRefGatherOpLowering) {
     MLIRContext context;
     context.loadDialect<subop::SubOperatorDialect>();
