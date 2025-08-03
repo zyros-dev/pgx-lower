@@ -23,6 +23,9 @@ using namespace pgx_lower::compiler::dialect;
 using namespace pgx_lower::compiler::dialect::subop_to_cf;
 
 class SubOpRewriterTest : public ::testing::Test {
+public:
+    SubOpRewriterTest() = default;
+    
 protected:
     void SetUp() override {
         context.loadDialect<subop::SubOperatorDialect>();
@@ -32,7 +35,7 @@ protected:
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<cf::ControlFlowDialect>();
         context.loadDialect<func::FuncDialect>();
-        context.loadDialect<LLVM::LLVMDialect>();
+        // context.loadDialect<LLVM::LLVMDialect>(); // LLVM dialect not needed for basic tests
         
         builder = std::make_unique<OpBuilder>(&context);
         loc = builder->getUnknownLoc();
@@ -432,9 +435,9 @@ TEST_F(SubOpRewriterTest, RewriterOperationCreationPatterns) {
     auto constOp = rewriter.create<arith::ConstantIntOp>(loc, 42, 32);
     EXPECT_TRUE(constOp);
     
-    // Test utility operations
-    auto allocaOp = rewriter.create<util::AllocaOp>(loc, 
-        util::RefType::get(&context, builder->getI32Type()), Value());
+    // Test utility operations - create alloca without size parameter
+    auto refType = util::RefType::get(&context, builder->getI32Type());
+    auto allocaOp = rewriter.create<util::AllocaOp>(loc, refType, Value{});
     EXPECT_TRUE(allocaOp);
     
     // Test that operations are properly created without affecting block terminators

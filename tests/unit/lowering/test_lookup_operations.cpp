@@ -1,20 +1,16 @@
 #include <gtest/gtest.h>
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OwningOpRef.h"
-#include "mlir/Pass/PassManager.h"
-#include "mlir/Transforms/Passes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
-#include "dialects/subop/SubOpPasses.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/util/UtilDialect.h"
-#include "dialects/tuples/TupleStreamDialect.h"
-#include "test_helpers.h"
+#include "dialects/tuplestream/TupleStreamDialect.h"
+#include "core/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;
@@ -39,6 +35,9 @@ using namespace pgx_lower::compiler::dialect;
  * - Error handling and missing key scenarios
  */
 class LookupOperationsTest : public ::testing::Test {
+public:
+    LookupOperationsTest() = default;
+    
 protected:
     void SetUp() override {
         context.loadDialect<subop::SubOperatorDialect>();

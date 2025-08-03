@@ -4,6 +4,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -13,7 +14,6 @@
 
 // Include the target utilities
 #include "dialects/subop/SubOpToControlFlow/Headers/SubOpToControlFlowUtilities.h"
-#include "dialects/subop/SubOpToControlFlow/Core/SubOpToControlFlowUtilities.cpp"
 
 // Include required dialects
 #include "dialects/subop/SubOpDialect.h"
@@ -21,6 +21,7 @@
 #include "dialects/db/DBDialect.h"
 #include "dialects/util/UtilDialect.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
+#include "dialects/tuplestream/TupleStreamOps.h"
 #include "core/logging.h"
 
 using namespace mlir;
@@ -28,6 +29,9 @@ using namespace pgx_lower::compiler::dialect;
 using namespace subop_to_control_flow;
 
 class SubOpUtilitiesTest : public ::testing::Test {
+public:
+    SubOpUtilitiesTest() = default;
+    
 protected:
     void SetUp() override {
         // Load all required dialects

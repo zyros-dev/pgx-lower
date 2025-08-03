@@ -108,6 +108,22 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     # Add individual test files
     list(APPEND UNIT_TEST_SOURCES 
         tests/unit/test_subop_simple.cpp
+        tests/unit/test_simple_execution_engine.cpp
+        tests/unit/test_basic_terminator.cpp
+        # Lowering tests - fixing API compatibility issues one by one
+        # tests/unit/lowering/test_execution_engine_terminator.cpp (complex API issues)
+        tests/unit/lowering/test_controlflow_operations.cpp
+        # tests/unit/lowering/test_subop_rewriter.cpp (API compatibility issues)
+        # tests/unit/lowering/test_subop_utilities.cpp (missing header)
+        # tests/unit/lowering/test_controlflow_operations.cpp (wrong include path)
+        # tests/unit/lowering/test_datastructure_creation.cpp (API compatibility issues)
+        # tests/unit/lowering/test_gather_scatter_operations.cpp (API compatibility issues)
+        # tests/unit/lowering/test_lookup_operations.cpp (API compatibility issues)
+        # tests/unit/lowering/test_reduce_operations.cpp (API compatibility issues)
+        # tests/unit/lowering/test_scan_operations.cpp (API compatibility issues)
+        # tests/unit/lowering/test_table_operations.cpp (API compatibility issues)
+        # tests/unit/lowering/test_threadlocal_operations.cpp (API compatibility issues)
+        # tests/unit/lowering/test_view_operations.cpp (API compatibility issues)
     )
     
     add_mlir_unit_test(mlir_unit_test 

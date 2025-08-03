@@ -16,19 +16,26 @@
 #include "dialects/relalg/RelAlgDialect.h"
 #include "dialects/util/UtilDialect.h"
 #include "dialects/util/UtilTypes.h"
-#include "dialects/tuples/TupleStreamDialect.h"
+#include "dialects/tuplestream/TupleStreamDialect.h"
+#include "dialects/tuplestream/TupleStreamOps.h"
+#include "dialects/tuplestream/TupleStreamTypes.h"
+#include "mlir/Dialect/LLVM/LLVMDialect.h"
+#include "core/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;
 
 class DataStructureCreationTest : public ::testing::Test {
+public:
+    DataStructureCreationTest() = default;
+    
 protected:
     void SetUp() override {
         context.loadDialect<subop::SubOperatorDialect>();
         context.loadDialect<db::DBDialect>();
         context.loadDialect<relalg::RelAlgDialect>();
         context.loadDialect<util::UtilDialect>();
-        context.loadDialect<tuples::TupleStreamDialect>();
+        context.loadDialect<tuplestream::TupleStreamDialect>();
         context.loadDialect<scf::SCFDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<func::FuncDialect>();
@@ -55,12 +62,22 @@ protected:
         return {module, funcOp};
     }
     
-    // Helper to create tuple type for testing
-    TupleType createTestTupleType() {
+    // Helper to create state members for testing
+    subop::StateMembersAttr createTestStateMembers() {
         OpBuilder builder(&context);
         auto i32Type = builder.getI32Type();
         auto i64Type = builder.getI64Type();
-        return TupleType::get(&context, {i32Type, i64Type});
+        SmallVector<Attribute> names = {
+            builder.getStringAttr("field1"),
+            builder.getStringAttr("field2")
+        };
+        SmallVector<Attribute> types = {
+            TypeAttr::get(i32Type),
+            TypeAttr::get(i64Type)
+        };
+        return subop::StateMembersAttr::get(&context, 
+            builder.getArrayAttr(names), 
+            builder.getArrayAttr(types));
     }
 };
 
@@ -72,27 +89,25 @@ TEST_F(DataStructureCreationTest, CreateThreadLocalBasicStructure) {
     
     builder.setInsertionPointToStart(&funcOp.getBody().front());
     
-    // Create a thread local type
-    auto elementType = builder.getI32Type();
-    auto threadLocalType = subop::ThreadLocalType::get(&context, elementType);
+    // Create a simple state for thread local wrapping
+    auto stateMembers = createTestStateMembers();
+    auto simpleStateType = subop::SimpleStateType::get(&context, stateMembers);
+    auto threadLocalType = subop::ThreadLocalType::get(&context, simpleStateType);
     
     // Create the thread local operation
     auto createThreadLocal = builder.create<subop::CreateThreadLocalOp>(
         loc, threadLocalType);
     
-    // Add initialization region
-    auto* initRegion = &createThreadLocal.getInitFn();
-    auto* initBlock = &initRegion->emplaceBlock();
-    builder.setInsertionPointToStart(initBlock);
-    
-    // Add simple initialization
-    auto constOp = builder.create<arith::ConstantIntOp>(loc, 42, 32);
-    builder.create<tuples::ReturnOp>(loc, ValueRange{constOp});
+    // Add terminator to function
+    auto constResult = builder.create<arith::ConstantIntOp>(loc, 0, 32);
+    builder.create<func::ReturnOp>(loc, ValueRange{constResult});
     
     // Verify structure
     EXPECT_TRUE(createThreadLocal);
-    EXPECT_EQ(createThreadLocal.getInitFn().getBlocks().size(), 1);
     EXPECT_TRUE(threadLocalType);
+    EXPECT_TRUE(mlir::isa<subop::ThreadLocalType>(createThreadLocal.getType()));
+    
+    PGX_INFO("CreateThreadLocalOp test completed successfully");
 }
 
 // Test buffer creation operations
@@ -104,20 +119,8 @@ TEST_F(DataStructureCreationTest, CreateBufferStructure) {
     builder.setInsertionPointToStart(&funcOp.getBody().front());
     
     // Create buffer type with member specification
-    auto i32Type = builder.getI32Type();
-    auto i64Type = builder.getI64Type();
-    
-    SmallVector<Attribute> memberNames = {
-        builder.getStringAttr("field1"),
-        builder.getStringAttr("field2")
-    };
-    SmallVector<Type> memberTypes = {i32Type, i64Type};
-    
-    auto memberSpec = tuples::TupleStreamTypeExtension::get(&context, 
-        builder.getArrayAttr(memberNames), 
-        TypeRange(memberTypes));
-    
-    auto bufferType = subop::BufferType::get(&context, memberSpec, false);
+    auto stateMembers = createTestStateMembers();
+    auto bufferType = subop::BufferType::get(&context, stateMembers);
     
     // Create buffer operation
     auto createBuffer = builder.create<subop::GenericCreateOp>(loc, bufferType);
@@ -125,10 +128,16 @@ TEST_F(DataStructureCreationTest, CreateBufferStructure) {
     // Add initial capacity attribute
     createBuffer->setAttr("initial_capacity", builder.getI64IntegerAttr(2048));
     
+    // Add terminator to function
+    auto constResult = builder.create<arith::ConstantIntOp>(loc, 0, 32);
+    builder.create<func::ReturnOp>(loc, ValueRange{constResult});
+    
     // Verify structure
     EXPECT_TRUE(createBuffer);
     EXPECT_TRUE(mlir::isa<subop::BufferType>(createBuffer.getType()));
     EXPECT_TRUE(createBuffer->hasAttr("initial_capacity"));
+    
+    PGX_INFO("Buffer creation test completed successfully");
 }
 
 // Test hash map creation operations
@@ -139,27 +148,34 @@ TEST_F(DataStructureCreationTest, CreateHashMapStructure) {
     
     builder.setInsertionPointToStart(&funcOp.getBody().front());
     
-    // Create key and value types
+    // Create key and value member specifications
     auto keyType = builder.getI32Type();
     auto valueType = builder.getI64Type();
     
-    // Create member specifications for key and value
     SmallVector<Attribute> keyNames = {builder.getStringAttr("key")};
+    SmallVector<Attribute> keyTypes = {TypeAttr::get(keyType)};
+    auto keySpec = subop::StateMembersAttr::get(&context,
+        builder.getArrayAttr(keyNames), builder.getArrayAttr(keyTypes));
+    
     SmallVector<Attribute> valueNames = {builder.getStringAttr("value")};
+    SmallVector<Attribute> valueTypesAttr = {TypeAttr::get(valueType)};
+    auto valueSpec = subop::StateMembersAttr::get(&context,
+        builder.getArrayAttr(valueNames), builder.getArrayAttr(valueTypesAttr));
     
-    auto keySpec = tuples::TupleStreamTypeExtension::get(&context,
-        builder.getArrayAttr(keyNames), TypeRange(keyType));
-    auto valueSpec = tuples::TupleStreamTypeExtension::get(&context,
-        builder.getArrayAttr(valueNames), TypeRange(valueType));
-    
-    auto hashMapType = subop::HashMapType::get(&context, keySpec, valueSpec);
+    auto hashMapType = subop::HashmapType::get(&context, keySpec, valueSpec, false);
     
     // Create hash map operation
     auto createHashMap = builder.create<subop::GenericCreateOp>(loc, hashMapType);
     
+    // Add terminator to function
+    auto constResult = builder.create<arith::ConstantIntOp>(loc, 0, 32);
+    builder.create<func::ReturnOp>(loc, ValueRange{constResult});
+    
     // Verify structure
     EXPECT_TRUE(createHashMap);
-    EXPECT_TRUE(mlir::isa<subop::HashMapType>(createHashMap.getType()));
+    EXPECT_TRUE(mlir::isa<subop::HashmapType>(createHashMap.getType()));
+    
+    PGX_INFO("HashMap creation test completed successfully");
 }
 
 // Test hash multi-map creation
@@ -170,26 +186,34 @@ TEST_F(DataStructureCreationTest, CreateHashMultiMapStructure) {
     
     builder.setInsertionPointToStart(&funcOp.getBody().front());
     
-    // Create key and value types for multi-map
+    // Create key and value member specifications
     auto keyType = builder.getI32Type();
     auto valueType = builder.getI64Type();
     
     SmallVector<Attribute> keyNames = {builder.getStringAttr("key")};
+    SmallVector<Attribute> keyTypes = {TypeAttr::get(keyType)};
+    auto keySpec = subop::StateMembersAttr::get(&context,
+        builder.getArrayAttr(keyNames), builder.getArrayAttr(keyTypes));
+    
     SmallVector<Attribute> valueNames = {builder.getStringAttr("value")};
+    SmallVector<Attribute> valueTypesAttr = {TypeAttr::get(valueType)};
+    auto valueSpec = subop::StateMembersAttr::get(&context,
+        builder.getArrayAttr(valueNames), builder.getArrayAttr(valueTypesAttr));
     
-    auto keySpec = tuples::TupleStreamTypeExtension::get(&context,
-        builder.getArrayAttr(keyNames), TypeRange(keyType));
-    auto valueSpec = tuples::TupleStreamTypeExtension::get(&context,
-        builder.getArrayAttr(valueNames), TypeRange(valueType));
-    
-    auto hashMultiMapType = subop::HashMultiMapType::get(&context, keySpec, valueSpec);
+    auto hashMultiMapType = subop::HashMultimapType::get(&context, keySpec, valueSpec);
     
     // Create hash multi-map operation
     auto createHashMultiMap = builder.create<subop::GenericCreateOp>(loc, hashMultiMapType);
     
+    // Add terminator to function
+    auto constResult = builder.create<arith::ConstantIntOp>(loc, 0, 32);
+    builder.create<func::ReturnOp>(loc, ValueRange{constResult});
+    
     // Verify structure
     EXPECT_TRUE(createHashMultiMap);
-    EXPECT_TRUE(mlir::isa<subop::HashMultiMapType>(createHashMultiMap.getType()));
+    EXPECT_TRUE(mlir::isa<subop::HashMultimapType>(createHashMultiMap.getType()));
+    
+    PGX_INFO("HashMultiMap creation test completed successfully");
 }
 
 // Test array creation with specified size
