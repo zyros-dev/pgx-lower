@@ -1181,6 +1181,21 @@ auto PostgreSQLASTTranslator::createRuntimeFunctionDeclarations(mlir::ModuleOp& 
     auto addTupleFunc = builder_->create<mlir::func::FuncOp>(location, "add_tuple_to_result", funcType);
     addTupleFunc.setPrivate();
     
+    // Generate function body with entry block and placeholder operations to prevent empty body errors
+    // These will be replaced by proper runtime calls during the lowering passes
+    auto* entryBlock = addTupleFunc.addEntryBlock();
+    auto savedIP = builder_->saveInsertionPoint();
+    builder_->setInsertionPointToStart(entryBlock);
+    
+    // Add a placeholder operation to prevent empty body - will be replaced in lowering passes
+    // Use arith.constant as a harmless placeholder that can be optimized away
+    auto placeholderConst = builder_->create<mlir::arith::ConstantIntOp>(location, 0, 32);
+    
+    // Return void (function has void return type)
+    builder_->create<mlir::func::ReturnOp>(location, mlir::ValueRange{});
+    
+    builder_->restoreInsertionPoint(savedIP);
+    
     // More runtime functions will be added by lowering passes as needed
     
     logger_.debug("Created minimal runtime function declarations");
