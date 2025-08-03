@@ -85,7 +85,7 @@ protected:
         auto arg0 = block->getArgument(0);
         auto arg1 = block->getArgument(block->getNumArguments() - 1); // Last argument is the member
         auto addOp = builder->create<arith::AddIOp>(loc, arg0, arg1);
-        builder->create<tuples::ReturnOp>(loc, addOp);
+        builder->create<tuples::ReturnOp>(loc, ValueRange{addOp.getResult()});
         
         return reduceOp;
     }

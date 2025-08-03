@@ -144,8 +144,8 @@ TEST(GatherScatterOperationsTest, HashMapRefGatherOpLowering) {
     
     // Test hash map reference gathering which creates tuple element pointers
     auto i32Type = builder.getI32Type();
-    auto tupleType = util::TupleType::get(&context, {i32Type, i32Type});
-    auto refType = util::RefType::get(&context, tupleType);
+    auto tupleType = mlir::TupleType::get(&context, {i32Type, i32Type});
+    auto refType = LLVM::LLVMPointerType::get(&context); // Simplified ref type
     
     // Create constants to simulate hash map key/value access
     auto keyIndex = builder.create<arith::ConstantIndexOp>(loc, 0);
@@ -181,7 +181,7 @@ TEST(GatherScatterOperationsTest, ExternalHashIndexRefGatherOpLowering) {
     
     // Test external hash index gathering (PostgreSQL tuple field access)
     auto i32Type = builder.getI32Type();
-    auto textType = db::TextType::get(&context);
+    auto textType = builder.getI8Type(); // Simplified text type
     
     // Simulate PostgreSQL tuple field access pattern
     auto fieldIndex = builder.create<arith::ConstantIndexOp>(loc, 0);
@@ -189,7 +189,7 @@ TEST(GatherScatterOperationsTest, ExternalHashIndexRefGatherOpLowering) {
     
     // Create a mock tuple pointer value
     auto ptrType = LLVM::LLVMPointerType::get(&context);
-    auto nullPtr = builder.create<LLVM::NullOp>(loc, ptrType);
+    auto nullPtr = builder.create<LLVM::ZeroOp>(loc, ptrType);
     
     // Add function terminator
     builder.create<func::ReturnOp>(loc);
@@ -388,7 +388,7 @@ TEST(GatherScatterOperationsTest, MemoryAccessPatternSafety) {
     auto i32Type = builder.getI32Type();
     
     // Create memory access pattern simulating buffer operations
-    auto basePtr = builder.create<LLVM::NullOp>(loc, ptrType);
+    auto basePtr = builder.create<LLVM::ZeroOp>(loc, ptrType);
     auto offset = builder.create<arith::ConstantIndexOp>(loc, 8);
     auto loadValue = builder.create<arith::ConstantIntOp>(loc, 42, 32);
     
@@ -513,8 +513,9 @@ TEST(GatherScatterOperationsTest, NestedBlockOperationOrdering) {
     auto thenOp2 = builder.create<arith::ConstantIntOp>(loc, 20, 32);
     
     // Return to main function block and add terminator
-    auto funcBlocks = &module.getOps<func::FuncOp>().begin()->getBlocks();
-    builder.setInsertionPointToEnd(&funcBlocks->front());
+    auto funcOp = *module.getOps<func::FuncOp>().begin();
+    auto& funcBlocks = funcOp.getBlocks();
+    builder.setInsertionPointToEnd(&funcBlocks.front());
     builder.create<func::ReturnOp>(loc);
     
     // Verify then block operation ordering
@@ -592,11 +593,11 @@ TEST(GatherScatterOperationsTest, PostgreSQLTupleFieldAccess) {
     
     // Test PostgreSQL-specific tuple field access patterns
     auto i32Type = builder.getI32Type();
-    auto textType = db::TextType::get(&context);
+    auto textType = builder.getI8Type(); // Simplified text type
     auto ptrType = LLVM::LLVMPointerType::get(&context);
     
     // Simulate PostgreSQL tuple access sequence
-    auto tuplePtr = builder.create<LLVM::NullOp>(loc, ptrType);
+    auto tuplePtr = builder.create<LLVM::ZeroOp>(loc, ptrType);
     auto fieldIndex = builder.create<arith::ConstantIndexOp>(loc, 2);
     auto fieldNameAttr = builder.getStringAttr("customer_name");
     
@@ -638,8 +639,8 @@ TEST(GatherScatterOperationsTest, PostgreSQLMemoryContextInvalidation) {
     auto ptrType = LLVM::LLVMPointerType::get(&context);
     
     // Simulate memory context operations that might be invalidated
-    auto memContextPtr = builder.create<LLVM::NullOp>(loc, ptrType);
-    auto expressionPtr = builder.create<LLVM::NullOp>(loc, ptrType);
+    auto memContextPtr = builder.create<LLVM::ZeroOp>(loc, ptrType);
+    auto expressionPtr = builder.create<LLVM::ZeroOp>(loc, ptrType);
     auto validationCheck = builder.create<arith::ConstantIntOp>(loc, 1, 1);
     
     // Add function terminator
