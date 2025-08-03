@@ -2967,11 +2967,19 @@ class QueryOpLowering : public OpConversionPattern<relalg::QueryOp> {
       
       // Ensure proper termination after region inlining
       auto& region = executionGroup.getSubOps();
-      if (!region.empty() && !region.back().empty()) {
-         auto& lastBlock = region.back();
-         if (!lastBlock.getTerminator()) {
-            rewriter.setInsertionPointToEnd(&lastBlock);
-            rewriter.create<subop::ExecutionGroupReturnOp>(queryOp.getLoc(), queryOp.getResults());
+      
+      // Fix both front and back blocks to ensure all blocks have terminators
+      if (!region.empty()) {
+         // Check front block (ExecutionEngine expects this to have terminator)
+         if (!region.front().empty() && !region.front().getTerminator()) {
+            rewriter.setInsertionPointToEnd(&region.front());
+            rewriter.create<subop::ExecutionGroupReturnOp>(queryOp.getLoc(), ValueRange{});
+         }
+         
+         // Check back block (our previous fix)
+         if (!region.back().empty() && !region.back().getTerminator()) {
+            rewriter.setInsertionPointToEnd(&region.back());
+            rewriter.create<subop::ExecutionGroupReturnOp>(queryOp.getLoc(), ValueRange{});
          }
       }
       
