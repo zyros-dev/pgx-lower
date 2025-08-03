@@ -129,6 +129,22 @@ public:
                 auto prepareFuncType = builder.getFunctionType({i32Type}, {});
                 prepareFunc = builder.create<mlir::func::FuncOp>(module.getLoc(), "prepare_computed_results", prepareFuncType);
                 prepareFunc.setPrivate();
+                
+                // Generate function body with entry block and LLVM call
+                auto* entryBlock = prepareFunc.addEntryBlock();
+                mlir::OpBuilder funcBuilder(&getContext());
+                funcBuilder.setInsertionPointToStart(entryBlock);
+                
+                // Create LLVM call to external runtime function
+                auto externalFuncType = mlir::LLVM::LLVMFunctionType::get(
+                    funcBuilder.getI32Type(), {funcBuilder.getI32Type()});
+                auto callOp = funcBuilder.create<mlir::LLVM::CallOp>(
+                    module.getLoc(), externalFuncType, "prepare_computed_results_impl", 
+                    entryBlock->getArguments());
+                
+                // Return void
+                funcBuilder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{});
+                
                 builder.restoreInsertionPoint(savedIP);
             }
             
@@ -141,6 +157,23 @@ public:
                 auto openTableFuncType = builder.getFunctionType({ptrType}, ptrType);
                 openTableFunc = builder.create<mlir::func::FuncOp>(module.getLoc(), "open_postgres_table", openTableFuncType);
                 openTableFunc.setPrivate();
+                
+                // Generate function body with entry block and LLVM call
+                auto* entryBlock = openTableFunc.addEntryBlock();
+                mlir::OpBuilder funcBuilder(&getContext());
+                funcBuilder.setInsertionPointToStart(entryBlock);
+                
+                // Create LLVM call to external runtime function
+                auto externalFuncType = mlir::LLVM::LLVMFunctionType::get(
+                    mlir::LLVM::LLVMPointerType::get(&getContext()), 
+                    {mlir::LLVM::LLVMPointerType::get(&getContext())});
+                auto callOp = funcBuilder.create<mlir::LLVM::CallOp>(
+                    module.getLoc(), externalFuncType, "open_postgres_table_impl", 
+                    entryBlock->getArguments());
+                
+                // Return the result
+                funcBuilder.create<mlir::func::ReturnOp>(module.getLoc(), callOp.getResults());
+                
                 builder.restoreInsertionPoint(savedIP);
             }
             
@@ -151,6 +184,22 @@ public:
                 auto readNextFuncType = builder.getFunctionType({ptrType}, i64Type);
                 readNextFunc = builder.create<mlir::func::FuncOp>(module.getLoc(), "read_next_tuple_from_table", readNextFuncType);
                 readNextFunc.setPrivate();
+                
+                // Generate function body with entry block and LLVM call
+                auto* entryBlock = readNextFunc.addEntryBlock();
+                mlir::OpBuilder funcBuilder(&getContext());
+                funcBuilder.setInsertionPointToStart(entryBlock);
+                
+                // Create LLVM call to external runtime function
+                auto externalFuncType = mlir::LLVM::LLVMFunctionType::get(
+                    funcBuilder.getI64Type(), {mlir::LLVM::LLVMPointerType::get(&getContext())});
+                auto callOp = funcBuilder.create<mlir::LLVM::CallOp>(
+                    module.getLoc(), externalFuncType, "read_next_tuple_from_table_impl", 
+                    entryBlock->getArguments());
+                
+                // Return the result
+                funcBuilder.create<mlir::func::ReturnOp>(module.getLoc(), callOp.getResults());
+                
                 builder.restoreInsertionPoint(savedIP);
             }
             
@@ -172,6 +221,23 @@ public:
                 auto storeFieldAsDatumFuncType = builder.getFunctionType({i32Type, i64Type, i32Type}, {});
                 storeFieldAsDatumFunc = builder.create<mlir::func::FuncOp>(module.getLoc(), "store_field_as_datum", storeFieldAsDatumFuncType);
                 storeFieldAsDatumFunc.setPrivate();
+                
+                // Generate function body with entry block and LLVM call
+                auto* entryBlock = storeFieldAsDatumFunc.addEntryBlock();
+                mlir::OpBuilder funcBuilder(&getContext());
+                funcBuilder.setInsertionPointToStart(entryBlock);
+                
+                // Create LLVM call to external runtime function
+                auto externalFuncType = mlir::LLVM::LLVMFunctionType::get(
+                    funcBuilder.getI32Type(), 
+                    {funcBuilder.getI32Type(), funcBuilder.getI64Type(), funcBuilder.getI32Type()});
+                auto callOp = funcBuilder.create<mlir::LLVM::CallOp>(
+                    module.getLoc(), externalFuncType, "store_field_as_datum_impl", 
+                    entryBlock->getArguments());
+                
+                // Return void
+                funcBuilder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{});
+                
                 builder.restoreInsertionPoint(savedIP);
             }
             
@@ -195,6 +261,22 @@ public:
                 auto addTupleFuncType = builder.getFunctionType({i64Type}, {builder.getI1Type()});
                 addTupleFunc = builder.create<mlir::func::FuncOp>(module.getLoc(), "add_tuple_to_result", addTupleFuncType);
                 addTupleFunc.setPrivate();
+                
+                // Generate function body with entry block and LLVM call
+                auto* entryBlock = addTupleFunc.addEntryBlock();
+                mlir::OpBuilder funcBuilder(&getContext());
+                funcBuilder.setInsertionPointToStart(entryBlock);
+                
+                // Create LLVM call to external runtime function
+                auto externalFuncType = mlir::LLVM::LLVMFunctionType::get(
+                    funcBuilder.getI1Type(), {funcBuilder.getI64Type()});
+                auto callOp = funcBuilder.create<mlir::LLVM::CallOp>(
+                    module.getLoc(), externalFuncType, "add_tuple_to_result_impl", 
+                    entryBlock->getArguments());
+                
+                // Return the result
+                funcBuilder.create<mlir::func::ReturnOp>(module.getLoc(), callOp.getResults());
+                
                 builder.restoreInsertionPoint(savedIP);
             }
             
@@ -206,6 +288,22 @@ public:
                 auto markResultsReadyFuncType = builder.getFunctionType({}, {});
                 markResultsReadyFunc = builder.create<mlir::func::FuncOp>(module.getLoc(), "mark_results_ready_for_streaming", markResultsReadyFuncType);
                 markResultsReadyFunc.setPrivate();
+                
+                // Generate function body with entry block and LLVM call
+                auto* entryBlock = markResultsReadyFunc.addEntryBlock();
+                mlir::OpBuilder funcBuilder(&getContext());
+                funcBuilder.setInsertionPointToStart(entryBlock);
+                
+                // Create LLVM call to external runtime function  
+                auto externalFuncType = mlir::LLVM::LLVMFunctionType::get(
+                    funcBuilder.getI32Type(), {});
+                auto callOp = funcBuilder.create<mlir::LLVM::CallOp>(
+                    module.getLoc(), externalFuncType, "mark_results_ready_for_streaming_impl", 
+                    mlir::ValueRange{});
+                
+                // Return void
+                funcBuilder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{});
+                
                 builder.restoreInsertionPoint(savedIP);
             }
             
@@ -216,6 +314,22 @@ public:
                 auto closeTableFuncType = builder.getFunctionType({ptrType}, {});
                 closeTableFunc = builder.create<mlir::func::FuncOp>(module.getLoc(), "close_postgres_table", closeTableFuncType);
                 closeTableFunc.setPrivate();
+                
+                // Generate function body with entry block and LLVM call
+                auto* entryBlock = closeTableFunc.addEntryBlock();
+                mlir::OpBuilder funcBuilder(&getContext());
+                funcBuilder.setInsertionPointToStart(entryBlock);
+                
+                // Create LLVM call to external runtime function
+                auto externalFuncType = mlir::LLVM::LLVMFunctionType::get(
+                    funcBuilder.getI32Type(), {mlir::LLVM::LLVMPointerType::get(&getContext())});
+                auto callOp = funcBuilder.create<mlir::LLVM::CallOp>(
+                    module.getLoc(), externalFuncType, "close_postgres_table_impl", 
+                    entryBlock->getArguments());
+                
+                // Return void
+                funcBuilder.create<mlir::func::ReturnOp>(module.getLoc(), mlir::ValueRange{});
+                
                 builder.restoreInsertionPoint(savedIP);
             }
             
