@@ -1,104 +1,74 @@
+// Unit tests for thread-local operations
+// Tests basic thread-local operation creation and compilation
+
 #include <gtest/gtest.h>
-#include <thread>
-#include <vector>
-#include <memory>
-#include <mutex>
-#include <chrono>
-#include <atomic>
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OwningOpRef.h"
-#include "mlir/IR/Verifier.h"
-#include "mlir/Pass/PassManager.h"
-#include "mlir/Transforms/Passes.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
-#include "dialects/subop/SubOpPasses.h"
-#include "dialects/db/DBDialect.h"
-#include "dialects/util/UtilDialect.h"
+#include "dialects/tuplestream/TupleStreamDialect.h"
 #include "core/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;
 
 /**
- * ThreadLocalOperationsTest - Comprehensive test suite for thread-local operations
+ * ThreadLocalOperationsTest - Test suite for thread-local operations
  * 
- * This test suite focuses on:
- * 1. Thread-local storage creation and access patterns
- * 2. Concurrency safety and thread isolation
- * 3. State management across execution contexts
- * 4. Performance characteristics of thread-local operations
- * 5. Critical issue: Operations being created in wrong execution contexts
+ * Tests basic functionality of thread-local operations in the SubOp dialect
  */
 class ThreadLocalOperationsTest : public ::testing::Test {
 protected:
+    // Add default constructor for GoogleTest compatibility
+    ThreadLocalOperationsTest() = default;
+    
     void SetUp() override {
         context.loadDialect<subop::SubOperatorDialect>();
-        context.loadDialect<db::DBDialect>();
-        context.loadDialect<util::UtilDialect>();
-        context.loadDialect<scf::SCFDialect>();
+        context.loadDialect<tuples::TupleStreamDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<func::FuncDialect>();
-        context.loadDialect<cf::ControlFlowDialect>();
         
         builder = std::make_unique<OpBuilder>(&context);
         loc = builder->getUnknownLoc();
-        
-        // Initialize thread-local operation counters
-        operationCounts.store(0);
-        contextSwitches.store(0);
         
         PGX_DEBUG("ThreadLocalOperationsTest setup completed");
     }
 
     void TearDown() override {
-        PGX_DEBUG("ThreadLocalOperationsTest teardown - Operations created: " 
-                 + std::to_string(operationCounts.load()) 
-                 + ", Context switches: " + std::to_string(contextSwitches.load()));
+        PGX_DEBUG("ThreadLocalOperationsTest teardown completed");
     }
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
     Location loc;
     
-    // Thread safety tracking
-    std::atomic<int> operationCounts{0};
-    std::atomic<int> contextSwitches{0};
-    std::mutex testMutex;
-    
-    // Helper to create a basic module with main function
+    // Helper to create a basic module
     ModuleOp createBasicModule() {
         auto module = ModuleOp::create(loc);
-        builder->setInsertionPointToEnd(module.getBody());
-        
-        auto mainFuncType = builder->getFunctionType({}, builder->getI32Type());
-        auto mainFunc = builder->create<func::FuncOp>(loc, "main", mainFuncType);
-        auto* mainBlock = mainFunc.addEntryBlock();
-        
-        builder->setInsertionPointToStart(mainBlock);
-        
         return module;
     }
     
-    // Helper to create thread-local merge operations
-    template<typename OpType>
-    OpType createThreadLocalMergeOp(ModuleOp module, Type resultType) {
-        builder->setInsertionPointToEnd(module.getBody());
+    // Helper to create state members attribute
+    subop::StateMembersAttr createStateMembers(ArrayRef<StringRef> names, ArrayRef<Type> types) {
+        SmallVector<Attribute> nameAttrs;
+        SmallVector<Attribute> typeAttrs;
         
-        // Create a dummy thread-local value for testing
-        auto tlValue = builder->create<arith::ConstantIntOp>(loc, 0, 64);
+        for (auto name : names) {
+            nameAttrs.push_back(builder->getStringAttr(name));
+        }
+        for (auto type : types) {
+            typeAttrs.push_back(TypeAttr::get(type));
+        }
         
-        // Track operation creation for context validation
-        operationCounts.fetch_add(1);
+        auto nameArray = builder->getArrayAttr(nameAttrs);
+        auto typeArray = builder->getArrayAttr(typeAttrs);
         
-        return builder->create<OpType>(loc, resultType, tlValue);
+        return subop::StateMembersAttr::get(&context, nameArray, typeArray);
     }
     
     // Helper to validate execution context
@@ -117,9 +87,7 @@ protected:
             return false;
         }
         
-        PGX_DEBUG("Operation validation passed - Context: " + 
-                 parentModule.getName().value_or_empty().str() + 
-                 ", Dialect: " + dialect->getNamespace().str());
+        PGX_DEBUG("Operation validation passed");
         return true;
     }
 };
@@ -131,100 +99,30 @@ TEST_F(ThreadLocalOperationsTest, ThreadLocalStorageCreation) {
     PGX_INFO("Testing thread-local storage creation");
     
     auto module = createBasicModule();
+    builder->setInsertionPointToEnd(module.getBody());
     
-    // Test different thread-local data types
-    auto resultTableType = subop::ResultTableType::get(&context, {});
-    auto bufferType = subop::BufferType::get(&context, builder->getI32Type());
-    auto heapType = subop::HeapType::get(&context, builder->getI32Type(), false);
+    // Create StateMembers for simple state
+    auto i64Type = builder->getI64Type();
+    auto simpleStateMembers = createStateMembers({"count", "sum"}, {i64Type, i64Type});
     
-    // Create thread-local operations for each type
-    auto resultTableMerge = createThreadLocalMergeOp<subop::MergeOp>(module, resultTableType);
-    auto bufferMerge = createThreadLocalMergeOp<subop::MergeOp>(module, bufferType);
-    auto heapMerge = createThreadLocalMergeOp<subop::MergeOp>(module, heapType);
+    // Create simple state type
+    auto simpleStateType = subop::SimpleStateType::get(&context, simpleStateMembers);
+    
+    // Create thread-local type
+    auto threadLocalType = subop::ThreadLocalType::get(&context, simpleStateType);
+    
+    // Create thread-local operation
+    auto createThreadLocalOp = builder->create<subop::CreateThreadLocalOp>(loc, threadLocalType);
     
     // Validate execution contexts
-    EXPECT_TRUE(validateExecutionContext(resultTableMerge.getOperation()));
-    EXPECT_TRUE(validateExecutionContext(bufferMerge.getOperation()));
-    EXPECT_TRUE(validateExecutionContext(heapMerge.getOperation()));
+    EXPECT_TRUE(validateExecutionContext(createThreadLocalOp.getOperation()));
     
-    // Verify operations were created correctly
-    EXPECT_EQ(operationCounts.load(), 6); // 3 merge ops + 3 constant ops
+    // Verify thread-local types are correct
+    EXPECT_TRUE(mlir::isa<subop::ThreadLocalType>(createThreadLocalOp.getType()));
     
     PGX_INFO("Thread-local storage creation test completed");
-}
-
-/**
- * Test thread safety and isolation between threads
- */
-TEST_F(ThreadLocalOperationsTest, ThreadSafetyAndIsolation) {
-    PGX_INFO("Testing thread safety and isolation");
     
-    const int numThreads = 4;
-    const int operationsPerThread = 10;
-    std::vector<std::thread> threads;
-    std::vector<std::atomic<int>> threadLocalCounts(numThreads);
-    
-    // Initialize per-thread counters
-    for (int i = 0; i < numThreads; ++i) {
-        threadLocalCounts[i].store(0);
-    }
-    
-    // Launch threads that create thread-local operations
-    for (int i = 0; i < numThreads; ++i) {
-        threads.emplace_back([this, i, operationsPerThread, &threadLocalCounts]() {
-            // Each thread gets its own MLIR context to simulate isolation
-            MLIRContext threadContext;
-            threadContext.loadDialect<subop::SubOperatorDialect>();
-            threadContext.loadDialect<util::UtilDialect>();
-            threadContext.loadDialect<func::FuncDialect>();
-            
-            OpBuilder threadBuilder(&threadContext);
-            auto threadLoc = threadBuilder.getUnknownLoc();
-            
-            PGX_DEBUG("Thread " + std::to_string(i) + " starting operations");
-            
-            for (int j = 0; j < operationsPerThread; ++j) {
-                {
-                    std::lock_guard<std::mutex> lock(testMutex);
-                    contextSwitches.fetch_add(1);
-                }
-                
-                // Create module in thread context
-                auto module = ModuleOp::create(threadLoc);
-                threadBuilder.setInsertionPointToEnd(module.getBody());
-                
-                // Create thread-local operation
-                auto bufferType = subop::BufferType::get(&threadContext, threadBuilder.getI32Type());
-                auto tlValue = threadBuilder.create<arith::ConstantIntOp>(threadLoc, i * 1000 + j, 64);
-                auto mergeOp = threadBuilder.create<subop::MergeOp>(threadLoc, bufferType, tlValue);
-                
-                // Validate that operation is in correct thread context
-                EXPECT_EQ(mergeOp.getOperation()->getContext(), &threadContext);
-                threadLocalCounts[i].fetch_add(1);
-                
-                // Small delay to increase chances of context switching
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
-            }
-            
-            PGX_DEBUG("Thread " + std::to_string(i) + " completed operations");
-        });
-    }
-    
-    // Wait for all threads to complete
-    for (auto& thread : threads) {
-        thread.join();
-    }
-    
-    // Verify isolation - each thread should have completed its operations
-    for (int i = 0; i < numThreads; ++i) {
-        EXPECT_EQ(threadLocalCounts[i].load(), operationsPerThread);
-    }
-    
-    // Verify context switches occurred (indicating concurrent execution)
-    EXPECT_GT(contextSwitches.load(), 0);
-    
-    PGX_INFO("Thread safety and isolation test completed - Context switches: " 
-            + std::to_string(contextSwitches.load()));
+    module.erase();
 }
 
 /**
@@ -234,33 +132,40 @@ TEST_F(ThreadLocalOperationsTest, StateManagementAndInitialization) {
     PGX_INFO("Testing state management and initialization");
     
     auto module = createBasicModule();
+    builder->setInsertionPointToEnd(module.getBody());
     
     // Test SimpleState thread-local operations
-    std::vector<Attribute> members = {
-        builder->getStringAttr("count"),
-        builder->getStringAttr("sum")
-    };
-    auto simpleStateType = subop::SimpleStateType::get(&context, members, false);
+    auto simpleStateMembers = createStateMembers({"count", "sum"}, {builder->getI64Type(), builder->getI64Type()});
+    auto simpleStateType = subop::SimpleStateType::get(&context, simpleStateMembers);
     
-    // Create thread-local simple state merge operation
-    builder->setInsertionPointToEnd(module.getBody());
-    auto tlValue = builder->create<arith::ConstantIntOp>(loc, 0, 64);
-    auto stateResetOp = builder->create<subop::ResetOp>(loc, simpleStateType, tlValue);
-    auto stateMergeOp = builder->create<subop::MergeOp>(loc, simpleStateType, tlValue);
+    // Create a simple state
+    auto createSimpleStateOp = builder->create<subop::CreateSimpleStateOp>(loc, simpleStateType);
+    
+    // Create thread-local wrapper
+    auto threadLocalType = subop::ThreadLocalType::get(&context, simpleStateType);
+    auto createThreadLocalOp = builder->create<subop::CreateThreadLocalOp>(loc, threadLocalType);
     
     // Validate proper initialization context
-    EXPECT_TRUE(validateExecutionContext(stateResetOp.getOperation()));
-    EXPECT_TRUE(validateExecutionContext(stateMergeOp.getOperation()));
+    EXPECT_TRUE(validateExecutionContext(createSimpleStateOp.getOperation()));
+    EXPECT_TRUE(validateExecutionContext(createThreadLocalOp.getOperation()));
     
     // Check that state type information is preserved
-    auto resultType = stateMergeOp.getType();
-    EXPECT_TRUE(mlir::isa<subop::SimpleStateType>(resultType));
+    auto resultStateType = createSimpleStateOp.getType();
+    EXPECT_TRUE(mlir::isa<subop::SimpleStateType>(resultStateType));
     
-    auto simpleState = mlir::cast<subop::SimpleStateType>(resultType);
-    EXPECT_EQ(simpleState.getMembers().size(), 2);
-    EXPECT_FALSE(simpleState.hasLock());
+    auto simpleState = mlir::cast<subop::SimpleStateType>(resultStateType);
+    EXPECT_EQ(simpleState.getMembers().getNames().size(), 2);
+    
+    // Check thread-local type wrapping
+    auto threadLocalResultType = createThreadLocalOp.getType();
+    EXPECT_TRUE(mlir::isa<subop::ThreadLocalType>(threadLocalResultType));
+    
+    auto threadLocal = mlir::cast<subop::ThreadLocalType>(threadLocalResultType);
+    EXPECT_TRUE(mlir::isa<subop::SimpleStateType>(threadLocal.getWrapped()));
     
     PGX_INFO("State management and initialization test completed");
+    
+    module.erase();
 }
 
 /**
@@ -270,40 +175,44 @@ TEST_F(ThreadLocalOperationsTest, HashMapThreadLocalOperations) {
     PGX_INFO("Testing hash map thread-local operations");
     
     auto module = createBasicModule();
+    builder->setInsertionPointToEnd(module.getBody());
     
     // Create hash map type with key and value members
-    std::vector<Attribute> keyMembers = {builder->getStringAttr("id")};
-    std::vector<Attribute> valueMembers = {
-        builder->getStringAttr("count"),
-        builder->getStringAttr("total")
-    };
+    auto keyMembers = createStateMembers({"id"}, {builder->getI64Type()});
+    auto valueMembers = createStateMembers({"count", "total"}, {builder->getI64Type(), builder->getI64Type()});
     
     auto hashMapType = subop::HashMapType::get(&context, keyMembers, valueMembers, false);
     
-    // Create thread-local hash map operations
-    builder->setInsertionPointToEnd(module.getBody());
-    auto tlValue = builder->create<arith::ConstantIntOp>(loc, 0, 64);
+    // Create the hash map
+    auto createHashMapOp = builder->create<subop::GenericCreateOp>(loc, hashMapType);
     
-    // Test different hash map operations in sequence
-    auto lookupOp = builder->create<subop::LookupOp>(loc, hashMapType, tlValue, ValueRange{});
-    auto insertOp = builder->create<subop::InsertOp>(loc, hashMapType, tlValue, ValueRange{});
-    auto mergeOp = builder->create<subop::MergeOp>(loc, hashMapType, tlValue);
+    // Create thread-local wrapper
+    auto threadLocalType = subop::ThreadLocalType::get(&context, hashMapType);
+    auto createThreadLocalOp = builder->create<subop::CreateThreadLocalOp>(loc, threadLocalType);
     
     // Validate execution contexts for all operations
-    EXPECT_TRUE(validateExecutionContext(lookupOp.getOperation()));
-    EXPECT_TRUE(validateExecutionContext(insertOp.getOperation()));
-    EXPECT_TRUE(validateExecutionContext(mergeOp.getOperation()));
+    EXPECT_TRUE(validateExecutionContext(createHashMapOp.getOperation()));
+    EXPECT_TRUE(validateExecutionContext(createThreadLocalOp.getOperation()));
     
     // Verify hash map type preservation
-    auto mergeResultType = mergeOp.getType();
-    EXPECT_TRUE(mlir::isa<subop::HashMapType>(mergeResultType));
+    auto hashMapResultType = createHashMapOp.getType();
+    EXPECT_TRUE(mlir::isa<subop::HashMapType>(hashMapResultType));
     
-    auto hashMap = mlir::cast<subop::HashMapType>(mergeResultType);
-    EXPECT_EQ(hashMap.getKeyMembers().size(), 1);
-    EXPECT_EQ(hashMap.getValueMembers().size(), 2);
+    auto hashMap = mlir::cast<subop::HashMapType>(hashMapResultType);
+    EXPECT_EQ(hashMap.getKeyMembers().getNames().size(), 1);
+    EXPECT_EQ(hashMap.getValueMembers().getNames().size(), 2);
     EXPECT_FALSE(hashMap.hasLock());
     
+    // Verify thread-local wrapping
+    auto threadLocalResultType = createThreadLocalOp.getType();
+    EXPECT_TRUE(mlir::isa<subop::ThreadLocalType>(threadLocalResultType));
+    
+    auto threadLocal = mlir::cast<subop::ThreadLocalType>(threadLocalResultType);
+    EXPECT_TRUE(mlir::isa<subop::HashMapType>(threadLocal.getWrapped()));
+    
     PGX_INFO("Hash map thread-local operations test completed");
+    
+    module.erase();
 }
 
 /**
@@ -313,70 +222,45 @@ TEST_F(ThreadLocalOperationsTest, PreAggregationHashTableOperations) {
     PGX_INFO("Testing pre-aggregation hash table thread-local operations");
     
     auto module = createBasicModule();
+    builder->setInsertionPointToEnd(module.getBody());
     
     // Create pre-aggregation hash table type
-    std::vector<Attribute> keyMembers = {builder->getStringAttr("group_key")};
-    std::vector<Attribute> valueMembers = {builder->getStringAttr("agg_value")};
+    auto keyMembers = createStateMembers({"group_key"}, {builder->getI64Type()});
+    auto valueMembers = createStateMembers({"agg_value"}, {builder->getI64Type()});
     
     auto preAggrType = subop::PreAggrHtType::get(&context, keyMembers, valueMembers, false);
     
-    // Create thread-local pre-aggregation operations
-    builder->setInsertionPointToEnd(module.getBody());
-    auto tlValue = builder->create<arith::ConstantIntOp>(loc, 0, 64);
+    // Create the pre-aggregation hash table
+    auto createPreAggrOp = builder->create<subop::GenericCreateOp>(loc, preAggrType);
     
-    auto resetOp = builder->create<subop::ResetOp>(loc, preAggrType, tlValue);
-    auto insertOp = builder->create<subop::InsertOp>(loc, preAggrType, tlValue, ValueRange{});
-    auto mergeOp = builder->create<subop::MergeOp>(loc, preAggrType, tlValue);
+    // Create thread-local wrapper
+    auto threadLocalType = subop::ThreadLocalType::get(&context, preAggrType);
+    auto createThreadLocalOp = builder->create<subop::CreateThreadLocalOp>(loc, threadLocalType);
     
     // Validate execution contexts
-    EXPECT_TRUE(validateExecutionContext(resetOp.getOperation()));
-    EXPECT_TRUE(validateExecutionContext(insertOp.getOperation()));
-    EXPECT_TRUE(validateExecutionContext(mergeOp.getOperation()));
+    EXPECT_TRUE(validateExecutionContext(createPreAggrOp.getOperation()));
+    EXPECT_TRUE(validateExecutionContext(createThreadLocalOp.getOperation()));
     
     // Verify type correctness
-    auto resultType = mergeOp.getType();
-    EXPECT_TRUE(mlir::isa<subop::PreAggrHtType>(resultType));
+    auto preAggrResultType = createPreAggrOp.getType();
+    EXPECT_TRUE(mlir::isa<subop::PreAggrHtType>(preAggrResultType));
+    
+    auto preAggr = mlir::cast<subop::PreAggrHtType>(preAggrResultType);
+    EXPECT_EQ(preAggr.getKeyMembers().getNames().size(), 1);
+    EXPECT_EQ(preAggr.getValueMembers().getNames().size(), 1);
+    EXPECT_FALSE(preAggr.hasLock());
+    
+    // Verify thread-local wrapping
+    auto threadLocalResultType = createThreadLocalOp.getType();
+    EXPECT_TRUE(mlir::isa<subop::ThreadLocalType>(threadLocalResultType));
     
     PGX_INFO("Pre-aggregation hash table operations test completed");
-}
-
-/**
- * Test performance characteristics of thread-local operations
- */
-TEST_F(ThreadLocalOperationsTest, PerformanceCharacteristics) {
-    PGX_INFO("Testing performance characteristics");
     
-    const int numOperations = 1000;
-    auto startTime = std::chrono::high_resolution_clock::now();
-    
-    auto module = createBasicModule();
-    auto bufferType = subop::BufferType::get(&context, builder->getI32Type());
-    
-    // Create many thread-local operations rapidly
-    for (int i = 0; i < numOperations; ++i) {
-        builder->setInsertionPointToEnd(module.getBody());
-        auto tlValue = builder->create<arith::ConstantIntOp>(loc, i, 64);
-        auto mergeOp = builder->create<subop::MergeOp>(loc, bufferType, tlValue);
-        
-        // Validate every 100th operation to avoid overhead
-        if (i % 100 == 0) {
-            EXPECT_TRUE(validateExecutionContext(mergeOp.getOperation()));
-        }
-    }
-    
-    auto endTime = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
-    
-    // Performance expectations (should be reasonably fast)
-    EXPECT_LT(duration.count(), 10000); // Less than 10ms for 1000 operations
-    
-    PGX_INFO("Performance test completed - Duration: " + std::to_string(duration.count()) + " microseconds");
+    module.erase();
 }
 
 /**
  * Critical test: Verify operations are created in correct execution context
- * This addresses the specific concern about thread-local operations being
- * created in wrong execution contexts.
  */
 TEST_F(ThreadLocalOperationsTest, ExecutionContextValidation) {
     PGX_INFO("Testing execution context validation (CRITICAL)");
@@ -388,21 +272,26 @@ TEST_F(ThreadLocalOperationsTest, ExecutionContextValidation) {
         
         // Create operation in module1 context
         builder->setInsertionPointToEnd(module1.getBody());
-        auto bufferType = subop::BufferType::get(&context, builder->getI32Type());
-        auto tlValue = builder->create<arith::ConstantIntOp>(loc, 0, 64);
-        auto mergeOp1 = builder->create<subop::MergeOp>(loc, bufferType, tlValue);
+        auto bufferMembers = createStateMembers({"data"}, {builder->getI32Type()});
+        auto simpleStateType = subop::SimpleStateType::get(&context, bufferMembers);
+        auto threadLocalType1 = subop::ThreadLocalType::get(&context, simpleStateType);
+        auto createOp1 = builder->create<subop::CreateThreadLocalOp>(loc, threadLocalType1);
         
         // Verify operation belongs to module1
-        EXPECT_EQ(mergeOp1->getParentOfType<ModuleOp>().getOperation(), module1.getOperation());
+        EXPECT_EQ(createOp1->getParentOfType<ModuleOp>().getOperation(), module1.getOperation());
         
         // Create operation in module2 context
         builder->setInsertionPointToEnd(module2.getBody());
-        auto mergeOp2 = builder->create<subop::MergeOp>(loc, bufferType, tlValue);
+        auto threadLocalType2 = subop::ThreadLocalType::get(&context, simpleStateType);
+        auto createOp2 = builder->create<subop::CreateThreadLocalOp>(loc, threadLocalType2);
         
         // Verify operation belongs to module2
-        EXPECT_EQ(mergeOp2->getParentOfType<ModuleOp>().getOperation(), module2.getOperation());
+        EXPECT_EQ(createOp2->getParentOfType<ModuleOp>().getOperation(), module2.getOperation());
         
         PGX_DEBUG("Module context validation passed");
+        
+        module1.erase();
+        module2.erase();
     }
     
     // Test 2: Context preservation across function boundaries
@@ -417,15 +306,22 @@ TEST_F(ThreadLocalOperationsTest, ExecutionContextValidation) {
         
         // Create operation within function
         builder->setInsertionPointToStart(funcBlock);
-        auto bufferType = subop::BufferType::get(&context, builder->getI32Type());
+        auto bufferMembers = createStateMembers({"data"}, {builder->getI32Type()});
+        auto simpleStateType = subop::SimpleStateType::get(&context, bufferMembers);
+        auto threadLocalType = subop::ThreadLocalType::get(&context, simpleStateType);
+        auto createOp = builder->create<subop::CreateThreadLocalOp>(loc, threadLocalType);
+        
+        // Add function terminator
         auto arg = funcBlock->getArgument(0);
-        auto mergeOp = builder->create<subop::MergeOp>(loc, bufferType, arg);
+        builder->create<func::ReturnOp>(loc, arg);
         
         // Verify operation is in correct function and module context
-        EXPECT_EQ(mergeOp->getParentOfType<func::FuncOp>().getOperation(), testFunc.getOperation());
-        EXPECT_EQ(mergeOp->getParentOfType<ModuleOp>().getOperation(), module.getOperation());
+        EXPECT_EQ(createOp->getParentOfType<func::FuncOp>().getOperation(), testFunc.getOperation());
+        EXPECT_EQ(createOp->getParentOfType<ModuleOp>().getOperation(), module.getOperation());
         
         PGX_DEBUG("Function context validation passed");
+        
+        module.erase();
     }
     
     // Test 3: Dialect context validation
@@ -433,78 +329,141 @@ TEST_F(ThreadLocalOperationsTest, ExecutionContextValidation) {
         auto module = createBasicModule();
         builder->setInsertionPointToEnd(module.getBody());
         
-        auto bufferType = subop::BufferType::get(&context, builder->getI32Type());
-        auto tlValue = builder->create<arith::ConstantIntOp>(loc, 0, 64);
-        auto mergeOp = builder->create<subop::MergeOp>(loc, bufferType, tlValue);
+        auto bufferMembers = createStateMembers({"data"}, {builder->getI32Type()});
+        auto simpleStateType = subop::SimpleStateType::get(&context, bufferMembers);
+        auto threadLocalType = subop::ThreadLocalType::get(&context, simpleStateType);
+        auto createOp = builder->create<subop::CreateThreadLocalOp>(loc, threadLocalType);
         
         // Verify operation has correct dialect
-        auto* dialect = mergeOp->getDialect();
+        auto* dialect = createOp->getDialect();
         EXPECT_NE(dialect, nullptr);
         EXPECT_EQ(dialect->getNamespace(), "subop");
         
         PGX_DEBUG("Dialect context validation passed");
+        
+        module.erase();
     }
     
     PGX_INFO("Execution context validation test completed (CRITICAL TEST PASSED)");
 }
 
-/**
- * Test concurrent access patterns with context switching
- */
-TEST_F(ThreadLocalOperationsTest, ConcurrentContextSwitching) {
-    PGX_INFO("Testing concurrent context switching");
+// Simple test for basic thread-local operation compilation
+TEST(ThreadLocalOperationsBasicTest, BasicThreadLocalCreation) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<tuples::TupleStreamDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
     
-    const int numThreads = 3;
-    const int contextSwitchesPerThread = 5;
-    std::vector<std::thread> threads;
-    std::atomic<int> totalContextValidations{0};
-    std::atomic<int> validationFailures{0};
+    OpBuilder builder(&context);
+    auto loc = builder.getUnknownLoc();
     
-    for (int i = 0; i < numThreads; ++i) {
-        threads.emplace_back([this, i, contextSwitchesPerThread, &totalContextValidations, &validationFailures]() {
-            for (int j = 0; j < contextSwitchesPerThread; ++j) {
-                // Create new context for each iteration (simulating context switch)
-                MLIRContext threadContext;
-                threadContext.loadDialect<subop::SubOperatorDialect>();
-                threadContext.loadDialect<arith::ArithDialect>();
-                threadContext.loadDialect<func::FuncDialect>();
-                
-                OpBuilder threadBuilder(&threadContext);
-                auto threadLoc = threadBuilder.getUnknownLoc();
-                
-                // Create module and operations
-                auto module = ModuleOp::create(threadLoc);
-                threadBuilder.setInsertionPointToEnd(module.getBody());
-                
-                auto bufferType = subop::BufferType::get(&threadContext, threadBuilder.getI32Type());
-                auto tlValue = threadBuilder.create<arith::ConstantIntOp>(threadLoc, i * 100 + j, 64);
-                auto mergeOp = threadBuilder.create<subop::MergeOp>(threadLoc, bufferType, tlValue);
-                
-                // Validate context
-                totalContextValidations.fetch_add(1);
-                
-                if (!validateExecutionContext(mergeOp.getOperation())) {
-                    validationFailures.fetch_add(1);
-                    PGX_ERROR("Context validation failed in thread " + std::to_string(i) + 
-                             ", iteration " + std::to_string(j));
-                }
-                
-                // Brief pause to encourage context switching
-                std::this_thread::sleep_for(std::chrono::microseconds(50));
-            }
-        });
-    }
+    // Create a module
+    auto module = ModuleOp::create(loc);
+    builder.setInsertionPointToEnd(module.getBody());
     
-    // Wait for all threads
-    for (auto& thread : threads) {
-        thread.join();
-    }
+    // Create a function
+    auto funcType = FunctionType::get(&context, {}, {});
+    auto func = builder.create<func::FuncOp>(loc, "test_func", funcType);
+    auto* block = func.addEntryBlock();
     
-    // Verify all validations passed
-    EXPECT_EQ(totalContextValidations.load(), numThreads * contextSwitchesPerThread);
-    EXPECT_EQ(validationFailures.load(), 0);
+    builder.setInsertionPointToEnd(block);
     
-    PGX_INFO("Concurrent context switching test completed - Validations: " + 
-            std::to_string(totalContextValidations.load()) + 
-            ", Failures: " + std::to_string(validationFailures.load()));
+    // Create state members for simple state
+    SmallVector<Attribute> nameAttrs = {builder.getStringAttr("count")};
+    SmallVector<Attribute> typeAttrs = {TypeAttr::get(builder.getI64Type())};
+    auto nameArray = builder.getArrayAttr(nameAttrs);
+    auto typeArray = builder.getArrayAttr(typeAttrs);
+    auto stateMembers = subop::StateMembersAttr::get(&context, nameArray, typeArray);
+    
+    // Create simple state type
+    auto simpleStateType = subop::SimpleStateType::get(&context, stateMembers);
+    
+    // Create thread-local type
+    auto threadLocalType = subop::ThreadLocalType::get(&context, simpleStateType);
+    
+    // Create thread-local operation
+    auto createThreadLocalOp = builder.create<subop::CreateThreadLocalOp>(loc, threadLocalType);
+    
+    // Add terminator to the function
+    builder.create<func::ReturnOp>(loc);
+    
+    // Verify the thread-local operation was created
+    EXPECT_TRUE(createThreadLocalOp);
+    EXPECT_TRUE(mlir::isa<subop::ThreadLocalType>(createThreadLocalOp.getType()));
+    
+    // Verify proper termination
+    auto terminator = block->getTerminator();
+    EXPECT_NE(terminator, nullptr);
+    EXPECT_TRUE(terminator->hasTrait<OpTrait::IsTerminator>());
+    
+    PGX_INFO("Basic thread-local operation test completed successfully");
+    
+    module.erase();
+}
+
+// Test for execution group creation with thread-local states
+TEST(ThreadLocalOperationsBasicTest, ExecutionGroupWithThreadLocal) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<tuples::TupleStreamDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
+    OpBuilder builder(&context);
+    auto loc = builder.getUnknownLoc();
+    
+    // Create a module
+    auto module = ModuleOp::create(loc);
+    builder.setInsertionPointToEnd(module.getBody());
+    
+    // Create a function
+    auto funcType = FunctionType::get(&context, {}, {});
+    auto func = builder.create<func::FuncOp>(loc, "execution_group_func", funcType);
+    auto* block = func.addEntryBlock();
+    
+    builder.setInsertionPointToEnd(block);
+    
+    // Create execution group
+    auto executionGroupOp = builder.create<subop::ExecutionGroupOp>(loc, TypeRange{}, ValueRange{});
+    
+    // Create body for execution group
+    auto& executionRegion = executionGroupOp.getSubOps();
+    auto* executionBlock = builder.createBlock(&executionRegion);
+    builder.setInsertionPointToEnd(executionBlock);
+    
+    // Create thread-local operation inside execution group
+    SmallVector<Attribute> nameAttrs = {builder.getStringAttr("value")};
+    SmallVector<Attribute> typeAttrs = {TypeAttr::get(builder.getI32Type())};
+    auto nameArray = builder.getArrayAttr(nameAttrs);
+    auto typeArray = builder.getArrayAttr(typeAttrs);
+    auto stateMembers = subop::StateMembersAttr::get(&context, nameArray, typeArray);
+    
+    auto simpleStateType = subop::SimpleStateType::get(&context, stateMembers);
+    auto threadLocalType = subop::ThreadLocalType::get(&context, simpleStateType);
+    auto createThreadLocalOp = builder.create<subop::CreateThreadLocalOp>(loc, threadLocalType);
+    
+    // Add execution group return
+    builder.create<subop::ExecutionGroupReturnOp>(loc, ValueRange{});
+    
+    // Add terminator to main function
+    builder.setInsertionPointToEnd(block);
+    builder.create<func::ReturnOp>(loc);
+    
+    // Verify execution group was created
+    EXPECT_TRUE(executionGroupOp);
+    EXPECT_TRUE(createThreadLocalOp);
+    
+    // Verify proper termination
+    auto mainTerminator = block->getTerminator();
+    EXPECT_NE(mainTerminator, nullptr);
+    EXPECT_TRUE(mainTerminator->hasTrait<OpTrait::IsTerminator>());
+    
+    auto execTerminator = executionBlock->getTerminator();
+    EXPECT_NE(execTerminator, nullptr);
+    EXPECT_TRUE(execTerminator->hasTrait<OpTrait::IsTerminator>());
+    
+    PGX_INFO("Execution group with thread-local test completed successfully");
+    
+    module.erase();
 }

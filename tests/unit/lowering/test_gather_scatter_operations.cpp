@@ -1,3 +1,6 @@
+// Simplified unit tests for GatherScatter operations
+// Tests basic gather/scatter operations compilation and functionality
+
 #include <gtest/gtest.h>
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
@@ -10,78 +13,61 @@
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/db/DBDialect.h"
+#include "dialects/db/DBTypes.h"
 #include "dialects/util/UtilDialect.h"
+#include "dialects/util/UtilTypes.h"
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "core/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;
 
-class GatherScatterOperationsTest : public ::testing::Test {
-public:
-    GatherScatterOperationsTest() = default;
+// Helper to create a basic module with function
+static ModuleOp createTestModule(OpBuilder& builder, MLIRContext* context) {
+    Location loc = builder.getUnknownLoc();
+    auto module = ModuleOp::create(loc);
+    builder.setInsertionPointToEnd(module.getBody());
     
-protected:
-    void SetUp() override {
-        context.loadDialect<subop::SubOperatorDialect>();
-        context.loadDialect<db::DBDialect>();
-        context.loadDialect<util::UtilDialect>();
-        context.loadDialect<tuplestream::TupleStreamDialect>();
-        context.loadDialect<scf::SCFDialect>();
-        context.loadDialect<arith::ArithDialect>();
-        context.loadDialect<func::FuncDialect>();
-        context.loadDialect<LLVM::LLVMDialect>();
-        
-        PGX_DEBUG("Setting up GatherScatterOperationsTest");
-    }
+    // Create a test function
+    auto funcType = FunctionType::get(context, {}, {});
+    auto func = builder.create<func::FuncOp>(loc, "test_func", funcType);
+    auto* entryBlock = func.addEntryBlock();
+    builder.setInsertionPointToEnd(entryBlock);
+    
+    return module;
+}
 
-    void TearDown() override {
-        PGX_DEBUG("Tearing down GatherScatterOperationsTest");
-    }
-
-    MLIRContext context;
+// Helper to verify block ordering - operations should be in insertion order
+static bool verifyBlockOperationOrder(Block* block) {
+    if (!block || block->empty()) return true;
     
-    // Helper to create a basic module with function
-    ModuleOp createTestModule(OpBuilder& builder) {
-        Location loc = builder.getUnknownLoc();
-        auto module = ModuleOp::create(loc);
-        builder.setInsertionPointToEnd(module.getBody());
-        
-        // Create a test function
-        auto funcType = FunctionType::get(&context, {}, {});
-        auto func = builder.create<func::FuncOp>(loc, "test_func", funcType);
-        auto* entryBlock = func.addEntryBlock();
-        builder.setInsertionPointToEnd(entryBlock);
-        
-        return module;
-    }
-    
-    // Helper to verify block ordering - operations should be in insertion order
-    bool verifyBlockOperationOrder(Block* block) {
-        if (!block || block->empty()) return true;
-        
-        // Check that operations are in the expected order based on insertion
-        Operation* prev = &block->front();
-        for (auto& op : block->getOperations()) {
-            if (&op != prev && &op != prev->getNextNode()) {
-                PGX_ERROR("Block operation ordering violation detected");
-                return false;
-            }
-            prev = &op;
+    // Check that operations are in the expected order based on insertion
+    Operation* prev = &block->front();
+    for (auto& op : block->getOperations()) {
+        if (&op != prev && &op != prev->getNextNode()) {
+            PGX_ERROR("Block operation ordering violation detected");
+            return false;
         }
-        return true;
+        prev = &op;
     }
-};
+    return true;
+}
 
 //===----------------------------------------------------------------------===//
 // Gather Operation Tests
 //===----------------------------------------------------------------------===//
 
-TEST_F(GatherScatterOperationsTest, DefaultGatherOpCreation) {
+TEST(GatherScatterOperationsTest, BasicGatherOpCreation) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<util::UtilDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Create a basic gather operation structure using existing types
     auto i32Type = builder.getI32Type();
@@ -100,16 +86,22 @@ TEST_F(GatherScatterOperationsTest, DefaultGatherOpCreation) {
     EXPECT_TRUE(intValue);
     EXPECT_TRUE(refType);
     
-    PGX_DEBUG("DefaultGatherOpCreation test completed successfully");
+    PGX_INFO("BasicGatherOpCreation test completed successfully");
     
     module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, ContinuousRefGatherOpLowering) {
+TEST(GatherScatterOperationsTest, ContinuousRefGatherOpLowering) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<util::UtilDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test continuous reference gathering which should unpack references
     // and create array element pointer operations
@@ -133,16 +125,22 @@ TEST_F(GatherScatterOperationsTest, ContinuousRefGatherOpLowering) {
     
     EXPECT_EQ(op0->getNextNode(), op1);
     
-    PGX_DEBUG("ContinuousRefGatherOpLowering test completed successfully");
+    PGX_INFO("ContinuousRefGatherOpLowering test completed successfully");
     
     module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, HashMapRefGatherOpLowering) {
+TEST(GatherScatterOperationsTest, HashMapRefGatherOpLowering) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<util::UtilDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test hash map reference gathering which creates tuple element pointers
     auto i32Type = builder.getI32Type();
@@ -163,16 +161,23 @@ TEST_F(GatherScatterOperationsTest, HashMapRefGatherOpLowering) {
     // Ensure operations are properly sequenced
     EXPECT_TRUE(keyIndex.getOperation()->getNextNode() == valIndex.getOperation());
     
-    PGX_DEBUG("HashMapRefGatherOpLowering test completed successfully");
+    PGX_INFO("HashMapRefGatherOpLowering test completed successfully");
     
     module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, ExternalHashIndexRefGatherOpLowering) {
+TEST(GatherScatterOperationsTest, ExternalHashIndexRefGatherOpLowering) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<db::DBDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    context.loadDialect<LLVM::LLVMDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test external hash index gathering (PostgreSQL tuple field access)
     auto i32Type = builder.getI32Type();
@@ -202,16 +207,21 @@ TEST_F(GatherScatterOperationsTest, ExternalHashIndexRefGatherOpLowering) {
     // Field name should be available as string attribute
     EXPECT_EQ(fieldNameAttr.getValue(), "test_field");
     
-    PGX_DEBUG("ExternalHashIndexRefGatherOpLowering test completed successfully");
+    PGX_INFO("ExternalHashIndexRefGatherOpLowering test completed successfully");
     
     module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, ParallelGatherOperations) {
+TEST(GatherScatterOperationsTest, ParallelGatherOperations) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test multiple gather operations that might execute concurrently
     auto i32Type = builder.getI32Type();
@@ -236,7 +246,7 @@ TEST_F(GatherScatterOperationsTest, ParallelGatherOperations) {
         EXPECT_EQ(gatherOps[i-1]->getNextNode(), gatherOps[i]);
     }
     
-    PGX_DEBUG("ParallelGatherOperations test completed successfully");
+    PGX_INFO("ParallelGatherOperations test completed successfully");
     
     module.erase();
 }
@@ -245,11 +255,16 @@ TEST_F(GatherScatterOperationsTest, ParallelGatherOperations) {
 // Scatter Operation Tests
 //===----------------------------------------------------------------------===//
 
-TEST_F(GatherScatterOperationsTest, ContinuousRefScatterOpLowering) {
+TEST(GatherScatterOperationsTest, ContinuousRefScatterOpLowering) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test continuous reference scattering with atomic store check
     auto i32Type = builder.getI32Type();
@@ -259,6 +274,9 @@ TEST_F(GatherScatterOperationsTest, ContinuousRefScatterOpLowering) {
     auto baseIndex = builder.create<arith::ConstantIndexOp>(loc, 0);
     auto bufferIndex = builder.create<arith::ConstantIndexOp>(loc, 1);
     auto storeValue = builder.create<arith::ConstantIntOp>(loc, 42, 32);
+    
+    // Add function terminator
+    builder.create<func::ReturnOp>(loc);
     
     // Verify scatter operations maintain proper ordering
     Block* currentBlock = builder.getBlock();
@@ -272,14 +290,21 @@ TEST_F(GatherScatterOperationsTest, ContinuousRefScatterOpLowering) {
     EXPECT_EQ(baseOp->getNextNode(), bufferOp);
     EXPECT_EQ(bufferOp->getNextNode(), storeOp);
     
-    PGX_DEBUG("ContinuousRefScatterOpLowering test completed successfully");
+    PGX_INFO("ContinuousRefScatterOpLowering test completed successfully");
+    
+    module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, ScatterOpLowering) {
+TEST(GatherScatterOperationsTest, ScatterOpLowering) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test generic scatter operation lowering for state entry references
     auto i32Type = builder.getI32Type();
@@ -288,6 +313,9 @@ TEST_F(GatherScatterOperationsTest, ScatterOpLowering) {
     auto refValue = builder.create<arith::ConstantIntOp>(loc, 100, 32);
     auto storeValue = builder.create<arith::ConstantIntOp>(loc, 200, 32);
     
+    // Add function terminator
+    builder.create<func::ReturnOp>(loc);
+    
     // Test atomic store operation ordering
     Block* currentBlock = builder.getBlock();
     EXPECT_TRUE(verifyBlockOperationOrder(currentBlock));
@@ -295,14 +323,21 @@ TEST_F(GatherScatterOperationsTest, ScatterOpLowering) {
     // Verify reference resolution happens before store
     EXPECT_EQ(refValue.getOperation()->getNextNode(), storeValue.getOperation());
     
-    PGX_DEBUG("ScatterOpLowering test completed successfully");
+    PGX_INFO("ScatterOpLowering test completed successfully");
+    
+    module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, HashMultiMapScatterOp) {
+TEST(GatherScatterOperationsTest, HashMultiMapScatterOp) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test hash multi-map scatter operation which unpacks references
     auto i32Type = builder.getI32Type();
@@ -311,6 +346,9 @@ TEST_F(GatherScatterOperationsTest, HashMultiMapScatterOp) {
     auto unpackIndex0 = builder.create<arith::ConstantIndexOp>(loc, 0);
     auto unpackIndex1 = builder.create<arith::ConstantIndexOp>(loc, 1);
     auto valueToStore = builder.create<arith::ConstantIntOp>(loc, 300, 32);
+    
+    // Add function terminator
+    builder.create<func::ReturnOp>(loc);
     
     // Verify unpacking operations precede store operations
     Block* currentBlock = builder.getBlock();
@@ -324,18 +362,26 @@ TEST_F(GatherScatterOperationsTest, HashMultiMapScatterOp) {
     EXPECT_EQ(unpack0Op->getNextNode(), unpack1Op);
     EXPECT_EQ(unpack1Op->getNextNode(), storeOp);
     
-    PGX_DEBUG("HashMultiMapScatterOp test completed successfully");
+    PGX_INFO("HashMultiMapScatterOp test completed successfully");
+    
+    module.erase();
 }
 
 //===----------------------------------------------------------------------===//
 // Memory Pattern and Safety Tests
 //===----------------------------------------------------------------------===//
 
-TEST_F(GatherScatterOperationsTest, MemoryAccessPatternSafety) {
+TEST(GatherScatterOperationsTest, MemoryAccessPatternSafety) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    context.loadDialect<LLVM::LLVMDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test memory access patterns for gather/scatter operations
     auto ptrType = LLVM::LLVMPointerType::get(&context);
@@ -346,6 +392,9 @@ TEST_F(GatherScatterOperationsTest, MemoryAccessPatternSafety) {
     auto offset = builder.create<arith::ConstantIndexOp>(loc, 8);
     auto loadValue = builder.create<arith::ConstantIntOp>(loc, 42, 32);
     
+    // Add function terminator
+    builder.create<func::ReturnOp>(loc);
+    
     // Verify memory operations maintain proper ordering for safety
     Block* currentBlock = builder.getBlock();
     EXPECT_TRUE(verifyBlockOperationOrder(currentBlock));
@@ -354,14 +403,21 @@ TEST_F(GatherScatterOperationsTest, MemoryAccessPatternSafety) {
     EXPECT_EQ(basePtr.getOperation()->getNextNode(), offset.getOperation());
     EXPECT_EQ(offset.getOperation()->getNextNode(), loadValue.getOperation());
     
-    PGX_DEBUG("MemoryAccessPatternSafety test completed successfully");
+    PGX_INFO("MemoryAccessPatternSafety test completed successfully");
+    
+    module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, AtomicStoreCheck) {
+TEST(GatherScatterOperationsTest, AtomicStoreCheck) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test atomic store checking functionality
     auto i32Type = builder.getI32Type();
@@ -369,6 +425,9 @@ TEST_F(GatherScatterOperationsTest, AtomicStoreCheck) {
     // Create operations to test atomic store behavior
     auto atomicValue = builder.create<arith::ConstantIntOp>(loc, 1, 32);
     auto nonAtomicValue = builder.create<arith::ConstantIntOp>(loc, 0, 32);
+    
+    // Add function terminator
+    builder.create<func::ReturnOp>(loc);
     
     // On x86_64, aligned stores should be atomic
 #ifdef __x86_64__
@@ -383,18 +442,25 @@ TEST_F(GatherScatterOperationsTest, AtomicStoreCheck) {
     Block* currentBlock = builder.getBlock();
     EXPECT_TRUE(verifyBlockOperationOrder(currentBlock));
     
-    PGX_DEBUG("AtomicStoreCheck test completed successfully");
+    PGX_INFO("AtomicStoreCheck test completed successfully");
+    
+    module.erase();
 }
 
 //===----------------------------------------------------------------------===//
 // Block Ordering and Control Flow Tests
 //===----------------------------------------------------------------------===//
 
-TEST_F(GatherScatterOperationsTest, BlockOperationOrderingStress) {
+TEST(GatherScatterOperationsTest, BlockOperationOrderingStress) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Stress test block operation ordering with many operations
     std::vector<Operation*> operations;
@@ -405,6 +471,9 @@ TEST_F(GatherScatterOperationsTest, BlockOperationOrderingStress) {
         operations.push_back(constOp.getOperation());
     }
     
+    // Add function terminator
+    builder.create<func::ReturnOp>(loc);
+    
     // Verify all operations maintain strict insertion order
     Block* currentBlock = builder.getBlock();
     EXPECT_TRUE(verifyBlockOperationOrder(currentBlock));
@@ -414,40 +483,60 @@ TEST_F(GatherScatterOperationsTest, BlockOperationOrderingStress) {
         EXPECT_EQ(operations[i-1]->getNextNode(), operations[i]);
     }
     
-    PGX_DEBUG("BlockOperationOrderingStress test completed with 100 operations");
+    PGX_INFO("BlockOperationOrderingStress test completed with 100 operations");
+    
+    module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, NestedBlockOperationOrdering) {
+TEST(GatherScatterOperationsTest, NestedBlockOperationOrdering) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    context.loadDialect<scf::SCFDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test operation ordering within nested control flow structures
     auto i1Type = builder.getI1Type();
     auto condition = builder.create<arith::ConstantIntOp>(loc, 1, 1);
     
     // Create nested block structure to test ordering
-    auto ifOp = builder.create<scf::IfOp>(loc, condition, false);
+    auto ifOp = builder.create<scf::IfOp>(loc, TypeRange{}, condition, false);
     
     // Add operations to then block
     builder.setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
     auto thenOp1 = builder.create<arith::ConstantIntOp>(loc, 10, 32);
     auto thenOp2 = builder.create<arith::ConstantIntOp>(loc, 20, 32);
     
+    // Return to main function block and add terminator
+    auto funcBlocks = &module.getOps<func::FuncOp>().begin()->getBlocks();
+    builder.setInsertionPointToEnd(&funcBlocks->front());
+    builder.create<func::ReturnOp>(loc);
+    
     // Verify then block operation ordering
     Block* thenBlock = &ifOp.getThenRegion().front();
     EXPECT_TRUE(verifyBlockOperationOrder(thenBlock));
     EXPECT_EQ(thenOp1.getOperation()->getNextNode(), thenOp2.getOperation());
     
-    PGX_DEBUG("NestedBlockOperationOrdering test completed successfully");
+    PGX_INFO("NestedBlockOperationOrdering test completed successfully");
+    
+    module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, GatherScatterInterleaving) {
+TEST(GatherScatterOperationsTest, GatherScatterInterleaving) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test interleaved gather and scatter operations to verify ordering
     auto i32Type = builder.getI32Type();
@@ -467,6 +556,9 @@ TEST_F(GatherScatterOperationsTest, GatherScatterInterleaving) {
         }
     }
     
+    // Add function terminator
+    builder.create<func::ReturnOp>(loc);
+    
     // Verify interleaved operations maintain proper ordering
     Block* currentBlock = builder.getBlock();
     EXPECT_TRUE(verifyBlockOperationOrder(currentBlock));
@@ -476,18 +568,27 @@ TEST_F(GatherScatterOperationsTest, GatherScatterInterleaving) {
         EXPECT_EQ(interleavedOps[i-1]->getNextNode(), interleavedOps[i]);
     }
     
-    PGX_DEBUG("GatherScatterInterleaving test completed with interleaved pattern");
+    PGX_INFO("GatherScatterInterleaving test completed with interleaved pattern");
+    
+    module.erase();
 }
 
 //===----------------------------------------------------------------------===//
 // PostgreSQL Integration Tests
 //===----------------------------------------------------------------------===//
 
-TEST_F(GatherScatterOperationsTest, PostgreSQLTupleFieldAccess) {
+TEST(GatherScatterOperationsTest, PostgreSQLTupleFieldAccess) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<db::DBDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    context.loadDialect<LLVM::LLVMDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test PostgreSQL-specific tuple field access patterns
     auto i32Type = builder.getI32Type();
@@ -498,6 +599,9 @@ TEST_F(GatherScatterOperationsTest, PostgreSQLTupleFieldAccess) {
     auto tuplePtr = builder.create<LLVM::NullOp>(loc, ptrType);
     auto fieldIndex = builder.create<arith::ConstantIndexOp>(loc, 2);
     auto fieldNameAttr = builder.getStringAttr("customer_name");
+    
+    // Add function terminator
+    builder.create<func::ReturnOp>(loc);
     
     // Test LoadPostgreSQLOp creation pattern used in ExternalHashIndexRefGatherOpLowering
     // Note: We can't create actual LoadPostgreSQLOp without complete dialect setup,
@@ -512,14 +616,22 @@ TEST_F(GatherScatterOperationsTest, PostgreSQLTupleFieldAccess) {
     // Field name should be available as string attribute
     EXPECT_EQ(fieldNameAttr.getValue(), "customer_name");
     
-    PGX_DEBUG("PostgreSQLTupleFieldAccess test completed successfully");
+    PGX_INFO("PostgreSQLTupleFieldAccess test completed successfully");
+    
+    module.erase();
 }
 
-TEST_F(GatherScatterOperationsTest, PostgreSQLMemoryContextInvalidation) {
+TEST(GatherScatterOperationsTest, PostgreSQLMemoryContextInvalidation) {
+    MLIRContext context;
+    context.loadDialect<subop::SubOperatorDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<func::FuncDialect>();
+    context.loadDialect<LLVM::LLVMDialect>();
+    
     OpBuilder builder(&context);
     Location loc = builder.getUnknownLoc();
     
-    auto module = createTestModule(builder);
+    auto module = createTestModule(builder, &context);
     
     // Test patterns that might be affected by PostgreSQL LOAD command memory invalidation
     auto i32Type = builder.getI32Type();
@@ -529,6 +641,9 @@ TEST_F(GatherScatterOperationsTest, PostgreSQLMemoryContextInvalidation) {
     auto memContextPtr = builder.create<LLVM::NullOp>(loc, ptrType);
     auto expressionPtr = builder.create<LLVM::NullOp>(loc, ptrType);
     auto validationCheck = builder.create<arith::ConstantIntOp>(loc, 1, 1);
+    
+    // Add function terminator
+    builder.create<func::ReturnOp>(loc);
     
     // These operations represent the pattern where PostgreSQL LOAD invalidates memory
     // causing expression access to fail
@@ -543,5 +658,7 @@ TEST_F(GatherScatterOperationsTest, PostgreSQLMemoryContextInvalidation) {
     EXPECT_EQ(contextOp->getNextNode(), exprOp);
     EXPECT_EQ(exprOp->getNextNode(), checkOp);
     
-    PGX_DEBUG("PostgreSQLMemoryContextInvalidation test completed successfully");
+    PGX_INFO("PostgreSQLMemoryContextInvalidation test completed successfully");
+    
+    module.erase();
 }

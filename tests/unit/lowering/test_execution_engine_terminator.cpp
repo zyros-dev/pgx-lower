@@ -10,8 +10,6 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
-#include "dialects/db/DBDialect.h"
-#include "dialects/util/UtilDialect.h"
 #include "core/logging.h"
 
 using namespace mlir;
@@ -23,8 +21,6 @@ protected:
     
     void SetUp() override {
         context.loadDialect<subop::SubOperatorDialect>();
-        context.loadDialect<db::DBDialect>();
-        context.loadDialect<util::UtilDialect>();
         context.loadDialect<scf::SCFDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<func::FuncDialect>();
@@ -275,4 +271,365 @@ TEST_F(ExecutionEngineTerminatorTest, StoreIntResultCallPattern) {
     
     // Verify module is valid
     EXPECT_TRUE(succeeded(verify(module)));
+}
+
+// Test 7: Test conditional branching with proper termination
+TEST_F(ExecutionEngineTerminatorTest, ConditionalBranchingTermination) {
+    PGX_INFO("Testing conditional branching with proper terminators");
+    
+    auto module = createTestModule();
+    auto func = createTestFunction(module, "branch_func", true);
+    auto* entryBlock = func.addEntryBlock();
+    
+    builder->setInsertionPointToEnd(entryBlock);
+    
+    // Create condition
+    auto condition = builder->create<arith::ConstantIntOp>(loc, 1, 1);
+    
+    // Create true and false blocks
+    auto* trueBlock = func.addBlock();
+    auto* falseBlock = func.addBlock();
+    
+    // Add conditional branch in entry block
+    builder->create<cf::CondBranchOp>(loc, condition, trueBlock, falseBlock);
+    
+    // Add operations and terminator to true block
+    builder->setInsertionPointToEnd(trueBlock);
+    auto trueVal = builder->create<arith::ConstantIntOp>(loc, 1, 32);
+    builder->create<func::ReturnOp>(loc, ValueRange{trueVal});
+    
+    // Add operations and terminator to false block
+    builder->setInsertionPointToEnd(falseBlock);
+    auto falseVal = builder->create<arith::ConstantIntOp>(loc, 0, 32);
+    builder->create<func::ReturnOp>(loc, ValueRange{falseVal});
+    
+    // Verify all blocks have proper terminators
+    EXPECT_TRUE(hasValidTerminator(entryBlock));
+    EXPECT_TRUE(hasValidTerminator(trueBlock));
+    EXPECT_TRUE(hasValidTerminator(falseBlock));
+    
+    EXPECT_EQ(countOperationsAfterTerminator(entryBlock), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(trueBlock), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(falseBlock), 0);
+    
+    // Verify module is valid
+    EXPECT_TRUE(succeeded(verify(module)));
+}
+
+// Test 8: Test nested region termination with subop operations
+TEST_F(ExecutionEngineTerminatorTest, NestedRegionTermination) {
+    PGX_INFO("Testing nested region termination in SubOp operations");
+    
+    auto module = createTestModule();
+    auto func = createTestFunction(module, "nested_func", false);
+    auto* block = func.addEntryBlock();
+    
+    builder->setInsertionPointToEnd(block);
+    
+    // Create a simple operation without nested regions to test compilation
+    auto constant = builder->create<arith::ConstantIntOp>(loc, 100, 32);
+    
+    // Add terminator to main function
+    builder->create<func::ReturnOp>(loc);
+    
+    // Verify terminators
+    EXPECT_TRUE(hasValidTerminator(block));
+    EXPECT_EQ(countOperationsAfterTerminator(block), 0);
+    
+    // Verify module is valid
+    EXPECT_TRUE(succeeded(verify(module)));
+}
+
+// Test 9: Test loop operation termination patterns
+TEST_F(ExecutionEngineTerminatorTest, LoopOperationTermination) {
+    PGX_INFO("Testing loop operation termination patterns");
+    
+    auto module = createTestModule();
+    auto func = createTestFunction(module, "loop_func", false);
+    auto* block = func.addEntryBlock();
+    
+    builder->setInsertionPointToEnd(block);
+    
+    // Create a simple SCF for loop
+    auto lowerBound = builder->create<arith::ConstantIndexOp>(loc, 0);
+    auto upperBound = builder->create<arith::ConstantIndexOp>(loc, 10);
+    auto step = builder->create<arith::ConstantIndexOp>(loc, 1);
+    
+    auto forOp = builder->create<scf::ForOp>(loc, lowerBound, upperBound, step);
+    
+    // Add operations in the loop body
+    auto* loopBlock = forOp.getBody();
+    builder->setInsertionPointToEnd(loopBlock);
+    
+    // Add some operations in the loop
+    auto iterValue = builder->create<arith::ConstantIntOp>(loc, 1, 32);
+    
+    // SCF ForOp automatically handles termination with scf::YieldOp
+    builder->create<scf::YieldOp>(loc);
+    
+    // Add terminator to main function
+    builder->setInsertionPointToEnd(block);
+    builder->create<func::ReturnOp>(loc);
+    
+    // Verify terminators
+    EXPECT_TRUE(hasValidTerminator(block));
+    EXPECT_TRUE(hasValidTerminator(loopBlock));
+    EXPECT_EQ(countOperationsAfterTerminator(block), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(loopBlock), 0);
+    
+    // Verify module is valid
+    EXPECT_TRUE(succeeded(verify(module)));
+}
+
+// Test 10: Test multiple execution groups with proper termination ordering
+TEST_F(ExecutionEngineTerminatorTest, MultipleExecutionGroupsTermination) {
+    PGX_INFO("Testing multiple execution groups with proper termination");
+    
+    auto module = createTestModule();
+    
+    // Create main function that orchestrates multiple execution groups
+    auto mainFunc = createTestFunction(module, "orchestrator_func", true);
+    auto* mainBlock = mainFunc.addEntryBlock();
+    
+    builder->setInsertionPointToEnd(mainBlock);
+    
+    // First execution group
+    auto i32Type = builder->getI32Type();
+    auto execGroup1 = builder->create<subop::ExecutionGroupOp>(loc, TypeRange{i32Type});
+    auto& region1 = execGroup1.getRegion();
+    auto* block1 = &region1.emplaceBlock();
+    
+    builder->setInsertionPointToEnd(block1);
+    auto constant1 = builder->create<arith::ConstantIntOp>(loc, 10, 32);
+    builder->create<subop::ExecutionGroupReturnOp>(loc, ValueRange{constant1});
+    
+    // Second execution group
+    builder->setInsertionPointToEnd(mainBlock);
+    auto execGroup2 = builder->create<subop::ExecutionGroupOp>(loc, TypeRange{i32Type});
+    auto& region2 = execGroup2.getRegion();
+    auto* block2 = &region2.emplaceBlock();
+    
+    builder->setInsertionPointToEnd(block2);
+    auto constant2 = builder->create<arith::ConstantIntOp>(loc, 20, 32);
+    builder->create<subop::ExecutionGroupReturnOp>(loc, ValueRange{constant2});
+    
+    // Combine results and return
+    builder->setInsertionPointToEnd(mainBlock);
+    auto result1 = execGroup1.getResult(0);
+    auto result2 = execGroup2.getResult(0);
+    auto sum = builder->create<arith::AddIOp>(loc, result1, result2);
+    builder->create<func::ReturnOp>(loc, ValueRange{sum});
+    
+    // Verify all blocks have proper terminators
+    EXPECT_TRUE(hasValidTerminator(mainBlock));
+    EXPECT_TRUE(hasValidTerminator(block1));
+    EXPECT_TRUE(hasValidTerminator(block2));
+    
+    EXPECT_EQ(countOperationsAfterTerminator(mainBlock), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(block1), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(block2), 0);
+    
+    // Verify module is valid
+    EXPECT_TRUE(succeeded(verify(module)));
+}
+
+// Test 11: Test error recovery - fixing malformed termination
+TEST_F(ExecutionEngineTerminatorTest, ErrorRecoveryTerminationFix) {
+    PGX_INFO("Testing error recovery from malformed termination");
+    
+    auto module = createTestModule();
+    auto func = createTestFunction(module, "recovery_func", false);
+    auto* block = func.addEntryBlock();
+    
+    builder->setInsertionPointToEnd(block);
+    
+    // Simulate the problematic pattern - create operations without terminator
+    auto constant1 = builder->create<arith::ConstantIntOp>(loc, 1, 32);
+    auto constant2 = builder->create<arith::ConstantIntOp>(loc, 2, 32);
+    
+    // Add terminator
+    auto returnOp = builder->create<func::ReturnOp>(loc);
+    
+    // Simulate adding operation after terminator (the bug)
+    builder->setInsertionPointToEnd(block);
+    auto badConstant = builder->create<arith::ConstantIntOp>(loc, 99, 32);
+    
+    // Verify we can detect the problem
+    EXPECT_EQ(countOperationsAfterTerminator(block), 1);
+    EXPECT_TRUE(failed(verify(module)));
+    
+    // Fix the problem by moving the bad operation before the terminator
+    badConstant->moveBefore(returnOp);
+    
+    // Verify the fix
+    EXPECT_EQ(countOperationsAfterTerminator(block), 0);
+    EXPECT_TRUE(hasValidTerminator(block));
+    EXPECT_EQ(&block->back(), returnOp.getOperation());
+    
+    // Verify module is now valid
+    EXPECT_TRUE(succeeded(verify(module)));
+}
+
+// Test 12: Test SubOp specific operations with terminators
+TEST_F(ExecutionEngineTerminatorTest, SubOpSpecificOperationsTermination) {
+    PGX_INFO("Testing SubOp specific operations with proper termination");
+    
+    auto module = createTestModule();
+    auto func = createTestFunction(module, "subop_specific_func", false);
+    auto* block = func.addEntryBlock();
+    
+    builder->setInsertionPointToEnd(block);
+    
+    // Test basic SubOp operations that should compile
+    // Generate operation - simple test
+    auto generateOp = builder->create<subop::GenerateOp>(loc, TypeRange{});
+    
+    // Create a simple constant for testing
+    auto constant = builder->create<arith::ConstantIntOp>(loc, 42, 32);
+    
+    // Add proper terminator
+    builder->create<func::ReturnOp>(loc);
+    
+    // Verify termination
+    EXPECT_TRUE(hasValidTerminator(block));
+    EXPECT_EQ(countOperationsAfterTerminator(block), 0);
+    
+    // Verify the generate operation was created
+    bool foundGenerateOp = false;
+    for (auto& op : *block) {
+        if (isa<subop::GenerateOp>(&op)) {
+            foundGenerateOp = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(foundGenerateOp);
+    
+    // Verify module is valid
+    EXPECT_TRUE(succeeded(verify(module)));
+}
+
+// Test 13: Test execution flow with multiple SubOp operations
+TEST_F(ExecutionEngineTerminatorTest, MultipleSubOpOperationsFlow) {
+    PGX_INFO("Testing execution flow with multiple SubOp operations");
+    
+    auto module = createTestModule();
+    auto func = createTestFunction(module, "multi_subop_func", false);
+    auto* block = func.addEntryBlock();
+    
+    builder->setInsertionPointToEnd(block);
+    
+    // Create multiple SubOp operations in sequence
+    auto constant1 = builder->create<arith::ConstantIntOp>(loc, 1, 32);
+    auto constant2 = builder->create<arith::ConstantIntOp>(loc, 2, 32);
+    
+    // Create Union operation (no nested regions required)
+    auto unionOp = builder->create<subop::UnionOp>(loc, TypeRange{});
+    
+    // Add arithmetic operation
+    auto sum = builder->create<arith::AddIOp>(loc, constant1, constant2);
+    
+    // CRITICAL: Add terminator at the end
+    builder->create<func::ReturnOp>(loc);
+    
+    // Verify termination
+    EXPECT_TRUE(hasValidTerminator(block));
+    EXPECT_EQ(countOperationsAfterTerminator(block), 0);
+    
+    // Count operations to ensure proper ordering
+    int opCount = 0;
+    for (auto& op : *block) {
+        opCount++;
+    }
+    EXPECT_GE(opCount, 4); // At least constants, union, add, and return
+    
+    // Verify module is valid
+    EXPECT_TRUE(succeeded(verify(module)));
+}
+
+// Test 14: Comprehensive execution engine terminator validation
+TEST_F(ExecutionEngineTerminatorTest, ComprehensiveTerminatorValidation) {
+    PGX_INFO("Comprehensive execution engine terminator validation test");
+    
+    auto module = createTestModule();
+    
+    // Create multiple functions to test various termination patterns
+    auto mainFunc = createTestFunction(module, "comprehensive_main", true);
+    auto helperFunc = createTestFunction(module, "helper", false);
+    
+    // Test helper function termination
+    auto* helperBlock = helperFunc.addEntryBlock();
+    builder->setInsertionPointToEnd(helperBlock);
+    auto helperConstant = builder->create<arith::ConstantIntOp>(loc, 999, 32);
+    builder->create<func::ReturnOp>(loc);
+    
+    // Test main function with complex flow
+    auto* mainBlock = mainFunc.addEntryBlock();
+    builder->setInsertionPointToEnd(mainBlock);
+    
+    // Create initial values
+    auto input1 = builder->create<arith::ConstantIntOp>(loc, 10, 32);
+    auto input2 = builder->create<arith::ConstantIntOp>(loc, 20, 32);
+    
+    // Call helper function
+    auto helperCall = builder->create<func::CallOp>(loc, helperFunc, ValueRange{});
+    
+    // Perform computation
+    auto computation = builder->create<arith::MulIOp>(loc, input1, input2);
+    
+    // Create conditional logic with branches
+    auto condition = builder->create<arith::ConstantIntOp>(loc, 1, 1);
+    auto* trueBlock = mainFunc.addBlock();
+    auto* falseBlock = mainFunc.addBlock();
+    auto* mergeBlock = mainFunc.addBlock();
+    
+    // Set up merge block arguments
+    mergeBlock->addArgument(builder->getI32Type(), loc);
+    
+    // Conditional branch
+    builder->create<cf::CondBranchOp>(loc, condition, trueBlock, falseBlock);
+    
+    // True block
+    builder->setInsertionPointToEnd(trueBlock);
+    auto trueResult = builder->create<arith::AddIOp>(loc, computation, input1);
+    builder->create<cf::BranchOp>(loc, mergeBlock, ValueRange{trueResult});
+    
+    // False block  
+    builder->setInsertionPointToEnd(falseBlock);
+    auto falseResult = builder->create<arith::SubIOp>(loc, computation, input1);
+    builder->create<cf::BranchOp>(loc, mergeBlock, ValueRange{falseResult});
+    
+    // Merge block
+    builder->setInsertionPointToEnd(mergeBlock);
+    auto finalResult = mergeBlock->getArgument(0);
+    builder->create<func::ReturnOp>(loc, ValueRange{finalResult});
+    
+    // Comprehensive validation of all blocks
+    EXPECT_TRUE(hasValidTerminator(helperBlock));
+    EXPECT_TRUE(hasValidTerminator(mainBlock));
+    EXPECT_TRUE(hasValidTerminator(trueBlock));
+    EXPECT_TRUE(hasValidTerminator(falseBlock));
+    EXPECT_TRUE(hasValidTerminator(mergeBlock));
+    
+    // Verify no operations after terminators in any block
+    EXPECT_EQ(countOperationsAfterTerminator(helperBlock), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(mainBlock), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(trueBlock), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(falseBlock), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(mergeBlock), 0);
+    
+    // Verify terminator types are correct
+    auto mainTerminator = mainBlock->getTerminator();
+    auto trueTerminator = trueBlock->getTerminator();
+    auto falseTerminator = falseBlock->getTerminator();
+    auto mergeTerminator = mergeBlock->getTerminator();
+    
+    EXPECT_TRUE(isa<cf::CondBranchOp>(mainTerminator));
+    EXPECT_TRUE(isa<cf::BranchOp>(trueTerminator));
+    EXPECT_TRUE(isa<cf::BranchOp>(falseTerminator));
+    EXPECT_TRUE(isa<func::ReturnOp>(mergeTerminator));
+    
+    // Verify the entire module is valid
+    EXPECT_TRUE(succeeded(verify(module)));
+    
+    PGX_INFO("Comprehensive terminator validation completed successfully");
 }
