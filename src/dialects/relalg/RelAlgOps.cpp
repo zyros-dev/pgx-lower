@@ -566,17 +566,12 @@ ColumnSet getFreeColumns(::mlir::Operation* op) {
 BinaryOperatorType getBinaryOperatorType(mlir::Operation* op) {
    return ::llvm::TypeSwitch<mlir::Operation*, BinaryOperatorType>(op)
       .Case<relalg::UnionOp>([&](mlir::Operation* op) { return BinaryOperatorType::Union; })
-      .Case<relalg::IntersectOp>([&](mlir::Operation* op) { return BinaryOperatorType::Intersection; })
-      .Case<relalg::ExceptOp>([&](mlir::Operation* op) { return BinaryOperatorType::Except; })
       .Case<relalg::CrossProductOp>([&](mlir::Operation* op) { return BinaryOperatorType::CP; })
       .Case<relalg::InnerJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::InnerJoin; })
-      .Case<relalg::SemiJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::SemiJoin; })
       .Case<relalg::AntiSemiJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::AntiSemiJoin; })
       .Case<relalg::SingleJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::OuterJoin; })
       .Case<relalg::MarkJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::MarkJoin; })
       .Case<relalg::CollectionJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::CollectionJoin; })
-      .Case<relalg::OuterJoinOp>([&](relalg::OuterJoinOp op) { return BinaryOperatorType::OuterJoin; })
-      .Case<relalg::FullOuterJoinOp>([&](relalg::FullOuterJoinOp op) { return BinaryOperatorType::FullOuterJoin; })
       .Default([&](auto x) {
          return BinaryOperatorType::None;
       });
@@ -596,10 +591,8 @@ UnaryOperatorType getUnaryOperatorType(mlir::Operation* op) {
 bool isJoin(mlir::Operation* op) {
     auto type = getBinaryOperatorType(op);
     return type == BinaryOperatorType::InnerJoin || 
-           type == BinaryOperatorType::SemiJoin ||
            type == BinaryOperatorType::AntiSemiJoin ||
            type == BinaryOperatorType::OuterJoin ||
-           type == BinaryOperatorType::FullOuterJoin ||
            type == BinaryOperatorType::MarkJoin ||
            type == BinaryOperatorType::CollectionJoin;
 }
@@ -789,21 +782,7 @@ bool GroupJoinOp::canColumnReach(Operator source, Operator target, const tuples:
    return false;
 }
 
-ColumnSet WindowOp::getCreatedColumns() {
-   return ColumnSet::fromArrayAttr(getComputedCols());
-}
 
-ColumnSet WindowOp::getUsedColumns() {
-   auto used = relalg::detail::getUsedColumns(getOperation());
-   used.insert(ColumnSet::fromArrayAttr(getPartitionBy()));
-   getOperation()->walk([&](relalg::AggrFuncOp aggrFn) {
-      used.insert(&aggrFn.getAttr().getColumn());
-   });
-   for (mlir::Attribute a : getOrderBy()) {
-      used.insert(&mlir::dyn_cast_or_null<relalg::SortSpecificationAttr>(a).getAttr().getColumn());
-   }
-   return used;
-}
 
 ColumnSet SortOp::getUsedColumns() {
    ColumnSet used;
@@ -825,27 +804,9 @@ ColumnSet ConstRelationOp::getCreatedColumns() {
    return ColumnSet::fromArrayAttr(getColumns());
 }
 
-ColumnSet AntiSemiJoinOp::getAvailableColumns() {
-   return relalg::detail::getAvailableColumns(leftChild());
-}
 
-bool AntiSemiJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
-   if (getRight().getDefiningOp() == source) {
-      return false;
-   }
-   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
-}
 
-ColumnSet SemiJoinOp::getAvailableColumns() {
-   return relalg::detail::getAvailableColumns(leftChild());
-}
 
-bool SemiJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
-   if (getRight().getDefiningOp() == source) {
-      return false;
-   }
-   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
-}
 
 ColumnSet MarkJoinOp::getAvailableColumns() {
    auto available = relalg::detail::getAvailableColumns(leftChild());
@@ -962,24 +923,9 @@ ColumnSet CollectionJoinOp::getCreatedColumns() {
 }
 
 // FullOuterJoinOp
-ColumnSet FullOuterJoinOp::getUsedColumns() {
-   return relalg::detail::getUsedColumns(getOperation());
-}
 
-ColumnSet FullOuterJoinOp::getAvailableColumns() {
-   auto available = relalg::detail::getAvailableColumns(leftChild());
-   available.insert(relalg::detail::getAvailableColumns(rightChild()));
-   available.insert(ColumnSet::fromArrayAttr(getMapping()));
-   return available;
-}
 
-bool FullOuterJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
-   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
-}
 
-ColumnSet FullOuterJoinOp::getCreatedColumns() {
-   return ColumnSet::fromArrayAttr(getMapping());
-}
 
 // InnerJoinOp
 FunctionalDependencies InnerJoinOp::getFDs() {
@@ -1016,24 +962,9 @@ ColumnSet NestedOp::getCreatedColumns() {
 }
 
 // OuterJoinOp
-ColumnSet OuterJoinOp::getUsedColumns() {
-   return relalg::detail::getUsedColumns(getOperation());
-}
 
-ColumnSet OuterJoinOp::getAvailableColumns() {
-   auto available = relalg::detail::getAvailableColumns(leftChild());
-   available.insert(relalg::detail::getAvailableColumns(rightChild()));
-   available.insert(ColumnSet::fromArrayAttr(getMapping()));
-   return available;
-}
 
-bool OuterJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
-   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
-}
 
-ColumnSet OuterJoinOp::getCreatedColumns() {
-   return ColumnSet::fromArrayAttr(getMapping());
-}
 
 // ProjectionOp
 ColumnSet ProjectionOp::getUsedColumns() {
@@ -1058,13 +989,32 @@ FunctionalDependencies SelectionOp::getFDs() {
 }
 
 // SemiJoinOp
-FunctionalDependencies SemiJoinOp::getFDs() {
-   return relalg::detail::getFDs(getOperation());
-}
 
 // SingleJoinOp
 ColumnSet SingleJoinOp::getUsedColumns() {
    return relalg::detail::getUsedColumns(getOperation());
+}
+
+ColumnSet AntiSemiJoinOp::getAvailableColumns() {
+   return relalg::detail::getAvailableColumns(leftChild());
+}
+
+bool AntiSemiJoinOp::canColumnReach(Operator source, Operator target, const tuples::Column* col) {
+   if (getRight().getDefiningOp() == source) {
+      return false;
+   }
+   return relalg::detail::canColumnReach(this->getOperation(), source, target, col);
+}
+
+FunctionalDependencies AntiSemiJoinOp::getFDs() {
+   // AntiSemiJoin only returns rows from left that don't match right
+   // So FDs from left are preserved
+   return getChildren()[0].getFDs();
+}
+
+mlir::LogicalResult AntiSemiJoinOp::foldColumns(ColumnFoldInfo& columnInfo) {
+   // AntiSemiJoin doesn't create columns, just passes through left side
+   return mlir::success();
 }
 
 ColumnSet SingleJoinOp::getAvailableColumns() {
@@ -1083,16 +1033,7 @@ ColumnSet SingleJoinOp::getCreatedColumns() {
 }
 
 // ColumnFoldable implementations
-mlir::LogicalResult AntiSemiJoinOp::foldColumns(ColumnFoldInfo& columnInfo) {
-   // AntiSemiJoin doesn't create columns, just passes through left side
-   return mlir::success();
-}
 
-FunctionalDependencies AntiSemiJoinOp::getFDs() {
-   // AntiSemiJoin only returns rows from left that don't match right
-   // So FDs from left are preserved
-   return getChildren()[0].getFDs();
-}
 
 mlir::LogicalResult CrossProductOp::foldColumns(ColumnFoldInfo& columnInfo) {
    // CrossProduct combines columns from both sides
@@ -1119,10 +1060,6 @@ mlir::LogicalResult SelectionOp::foldColumns(ColumnFoldInfo& columnInfo) {
    return mlir::success();
 }
 
-mlir::LogicalResult SemiJoinOp::foldColumns(ColumnFoldInfo& columnInfo) {
-   // SemiJoin doesn't create columns, just passes through left side
-   return mlir::success();
-}
 
 // SortSpecificationAttr implementation
 mlir::Attribute SortSpecificationAttr::parse(mlir::AsmParser& parser, mlir::Type type) {
