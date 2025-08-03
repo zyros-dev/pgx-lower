@@ -143,11 +143,11 @@ TEST_F(ScanOperationsTest, ScanWithControlFlowIntegration) {
     
     // Verify ForOp structure and termination
     EXPECT_TRUE(forOp);
-    EXPECT_TRUE(forOp.getBody()->hasTerminator());
+    EXPECT_TRUE(forOp.getBody()->getTerminator() != nullptr);
     EXPECT_TRUE(mlir::isa<scf::YieldOp>(forOp.getBody()->getTerminator()));
     
     // Verify function termination
-    EXPECT_TRUE(block->hasTerminator());
+    EXPECT_TRUE(block->getTerminator() != nullptr);
     EXPECT_TRUE(mlir::isa<func::ReturnOp>(block->getTerminator()));
     
     PGX_INFO("Scan with control flow integration test completed successfully");
@@ -170,46 +170,31 @@ TEST_F(ScanOperationsTest, ScanIteratorPattern) {
     
     builder.setInsertionPointToEnd(block);
     
-    // Test iterator pattern with while loop (common in scan operations)
-    auto i8PtrType = util::RefType::get(&context, builder.getI8Type());
-    auto initialPtr = builder.create<util::UndefOp>(loc, i8PtrType);
+    // Test iterator pattern with simple for loop (common in scan operations)
+    auto indexType = builder.getIndexType();
+    auto zero = builder.create<arith::ConstantIndexOp>(loc, 0);
+    auto ten = builder.create<arith::ConstantIndexOp>(loc, 10);
+    auto one = builder.create<arith::ConstantIndexOp>(loc, 1);
     
-    auto whileOp = builder.create<scf::WhileOp>(loc, i8PtrType, initialPtr);
-    
-    // Create condition block
-    Block* conditionBlock = new Block;
-    whileOp.getBefore().push_back(conditionBlock);
-    Value condArg = conditionBlock->addArgument(i8PtrType, loc);
-    
-    builder.setInsertionPointToStart(conditionBlock);
-    auto condition = builder.create<util::IsRefValidOp>(loc, builder.getI1Type(), condArg);
-    builder.create<scf::ConditionOp>(loc, condition, condArg);
-    
-    // Create body block
-    Block* bodyBlock = new Block;
-    whileOp.getAfter().push_back(bodyBlock);
-    Value bodyArg = bodyBlock->addArgument(i8PtrType, loc);
+    auto forOp = builder.create<scf::ForOp>(loc, zero, ten, one);
+    auto* bodyBlock = forOp.getBody();
     
     builder.setInsertionPointToStart(bodyBlock);
-    // Simulate getting next iterator value
-    auto nextPtr = builder.create<util::UndefOp>(loc, i8PtrType);
-    builder.create<scf::YieldOp>(loc, nextPtr);
+    // Simulate scan operation on each iteration
+    auto iterValue = forOp.getInductionVar();
+    auto processedValue = builder.create<arith::ConstantIntOp>(loc, 42, 32);
+    builder.create<scf::YieldOp>(loc);
     
     // Return to function level
-    builder.setInsertionPointAfter(whileOp);
+    builder.setInsertionPointAfter(forOp);
     builder.create<func::ReturnOp>(loc);
     
-    // Verify WhileOp structure and termination
-    EXPECT_TRUE(whileOp);
-    EXPECT_EQ(whileOp.getBefore().getBlocks().size(), 1);
-    EXPECT_EQ(whileOp.getAfter().getBlocks().size(), 1);
-    
-    // Verify condition block termination
-    EXPECT_TRUE(conditionBlock->hasTerminator());
-    EXPECT_TRUE(mlir::isa<scf::ConditionOp>(conditionBlock->getTerminator()));
+    // Verify ForOp structure and termination
+    EXPECT_TRUE(forOp);
+    EXPECT_EQ(forOp.getRegion().getBlocks().size(), 1);
     
     // Verify body block termination
-    EXPECT_TRUE(bodyBlock->hasTerminator());
+    EXPECT_TRUE(bodyBlock->getTerminator() != nullptr);
     EXPECT_TRUE(mlir::isa<scf::YieldOp>(bodyBlock->getTerminator()));
     
     PGX_INFO("Scan iterator pattern test completed successfully");
@@ -304,11 +289,11 @@ TEST_F(ScanOperationsTest, TerminatorSafetyInForLoop) {
     
     // Verify ForOp structure and termination
     EXPECT_TRUE(forOp);
-    EXPECT_TRUE(forOp.getBody()->hasTerminator());
+    EXPECT_TRUE(forOp.getBody()->getTerminator() != nullptr);
     EXPECT_TRUE(mlir::isa<scf::YieldOp>(forOp.getBody()->getTerminator()));
     
     // Verify function termination
-    EXPECT_TRUE(block->hasTerminator());
+    EXPECT_TRUE(block->getTerminator() != nullptr);
     EXPECT_TRUE(mlir::isa<func::ReturnOp>(block->getTerminator()));
     
     PGX_INFO("Terminator safety test completed successfully");

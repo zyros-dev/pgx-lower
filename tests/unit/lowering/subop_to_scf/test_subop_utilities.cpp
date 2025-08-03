@@ -64,7 +64,7 @@ protected:
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
     std::unique_ptr<TypeConverter> typeConverter;
-    Location loc;
+    Location loc = UnknownLoc::get(&context);
     ModuleOp module;
 };
 

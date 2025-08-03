@@ -15,7 +15,6 @@
 
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
-#include "dialects/subop/SubOpOpsTypes.h"
 #include "dialects/util/UtilDialect.h"
 #include "dialects/util/UtilOps.h"
 #include "dialects/util/UtilTypes.h"
@@ -65,7 +64,7 @@ protected:
     // Helper to create a reduce operation with a simple region
     subop::ReduceOp createSimpleReduceOp(Value streamValue, ArrayAttr columns, ArrayAttr members) {
         // Create a simple ColumnRefAttr for testing
-        auto symbolRef = builder->getSymbolRefAttr("test_ref");
+        auto symbolRef = mlir::SymbolRefAttr::get(context.get(), "test_ref");
         // For testing, use nullptr for the column pointer - this may cause issues but is simplest for compilation testing
         auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
         
@@ -86,7 +85,7 @@ protected:
         auto arg0 = block->getArgument(0);
         auto arg1 = block->getArgument(block->getNumArguments() - 1); // Last argument is the member
         auto addOp = builder->create<arith::AddIOp>(loc, arg0, arg1);
-        builder->create<tuples::ReturnOp>(loc, ValueRange{addOp});
+        builder->create<tuples::ReturnOp>(loc, addOp);
         
         return reduceOp;
     }
@@ -94,7 +93,7 @@ protected:
     // Helper to create a floating-point reduce operation
     subop::ReduceOp createFloatReduceOp(Value streamValue, ArrayAttr columns, ArrayAttr members) {
         // Create a simple ColumnRefAttr for testing
-        auto symbolRef = builder->getSymbolRefAttr("test_ref");
+        auto symbolRef = mlir::SymbolRefAttr::get(context.get(), "test_ref");
         auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
         
         auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);
@@ -119,7 +118,7 @@ protected:
     // Helper to create a bitwise OR reduce operation
     subop::ReduceOp createBitwiseOrReduceOp(Value streamValue, ArrayAttr columns, ArrayAttr members) {
         // Create a simple ColumnRefAttr for testing
-        auto symbolRef = builder->getSymbolRefAttr("test_ref");
+        auto symbolRef = mlir::SymbolRefAttr::get(context.get(), "test_ref");
         auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
         
         auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);
@@ -143,7 +142,7 @@ protected:
 
     std::unique_ptr<MLIRContext> context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
+    Location loc = UnknownLoc::get(context.get());
     ModuleOp module;
     
     // Helper to create a simple tuple stream
@@ -340,7 +339,7 @@ TEST_F(ReduceOperationsTest, MultipleMemberAggregationPattern) {
     auto members = builder->getArrayAttr({sumMember, countMember});
     
     // Create a simple ColumnRefAttr for testing
-    auto symbolRef = builder->getSymbolRefAttr("test_ref");
+    auto symbolRef = mlir::SymbolRefAttr::get(context.get(), "test_ref");
     auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
     
     auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);
@@ -369,7 +368,8 @@ TEST_F(ReduceOperationsTest, MultipleMemberAggregationPattern) {
     auto one = builder->create<arith::ConstantIntOp>(loc, 1, 32);
     auto newCount = builder->create<arith::AddIOp>(loc, currentCount, one);
     
-    builder->create<tuples::ReturnOp>(loc, ValueRange{newSum, newCount});
+    SmallVector<Value> results = {newSum, newCount};
+    builder->create<tuples::ReturnOp>(loc, results);
     
     EXPECT_TRUE(reduceOp);
     EXPECT_EQ(reduceOp.getColumns().size(), 2);
@@ -399,7 +399,7 @@ TEST_F(ReduceOperationsTest, ArithmeticOperationsInReduction) {
     });
     
     // Create a simple ColumnRefAttr for testing
-    auto symbolRef = builder->getSymbolRefAttr("test_ref");
+    auto symbolRef = mlir::SymbolRefAttr::get(context.get(), "test_ref");
     auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
     
     auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);
@@ -425,7 +425,8 @@ TEST_F(ReduceOperationsTest, ArithmeticOperationsInReduction) {
     auto one = builder->create<arith::ConstantIntOp>(loc, 1, 32);
     auto newCount = builder->create<arith::AddIOp>(loc, currentCount, one);
     
-    builder->create<tuples::ReturnOp>(loc, ValueRange{newSum, newCount});
+    SmallVector<Value> results = {newSum, newCount};
+    builder->create<tuples::ReturnOp>(loc, results);
     
     EXPECT_TRUE(reduceOp);
     EXPECT_EQ(reduceOp.getMembers().size(), 2);
@@ -457,7 +458,7 @@ TEST_F(ReduceOperationsTest, BooleanOperationsInReduction) {
     auto members = builder->getArrayAttr({memberAttr});
     
     // Create a simple ColumnRefAttr for testing
-    auto symbolRef = builder->getSymbolRefAttr("test_ref");
+    auto symbolRef = mlir::SymbolRefAttr::get(context.get(), "test_ref");
     auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
     
     auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);
@@ -466,6 +467,7 @@ TEST_F(ReduceOperationsTest, BooleanOperationsInReduction) {
     auto& region = reduceOp.getRegion();
     auto* block = &region.emplaceBlock();
     
+    auto boolType = builder->getI1Type();
     block->addArgument(boolType, loc); // input flag
     block->addArgument(boolType, loc); // current flag
     
@@ -511,7 +513,7 @@ TEST_F(ReduceOperationsTest, ComplexArithmeticOperations) {
     auto members = builder->getArrayAttr({memberAttr});
     
     // Create a simple ColumnRefAttr for testing
-    auto symbolRef = builder->getSymbolRefAttr("test_ref");
+    auto symbolRef = mlir::SymbolRefAttr::get(context.get(), "test_ref");
     auto refAttr = tuples::ColumnRefAttr::get(context.get(), symbolRef, nullptr);
     
     auto reduceOp = builder->create<subop::ReduceOp>(loc, streamValue, refAttr, columns, members);

@@ -38,7 +38,7 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
+    Location loc = UnknownLoc::get(&context);
     
     // Helper to create a basic module with main function
     ModuleOp createBasicModule() {
@@ -158,7 +158,7 @@ TEST_F(ExecutionEngineTest, ControlFlowTerminatorHandling) {
     builder->create<func::ReturnOp>(loc, ValueRange{ifOp.getResult(0)});
     
     // Verify all blocks have terminators
-    EXPECT_TRUE(entryBlock.getTerminator());
+    EXPECT_TRUE(entryBlock->getTerminator());
     EXPECT_TRUE(ifOp.getThenRegion().front().getTerminator());
     EXPECT_TRUE(ifOp.getElseRegion().front().getTerminator());
     
@@ -193,8 +193,8 @@ TEST_F(ExecutionEngineTest, ArithmeticOperationsMemorySafety) {
     builder->create<func::ReturnOp>(loc, ValueRange{mulOp});
     
     // Verify terminator exists
-    EXPECT_TRUE(arithBlock.getTerminator());
-    EXPECT_TRUE(isa<func::ReturnOp>(arithBlock.getTerminator()));
+    EXPECT_TRUE(arithBlock->getTerminator());
+    EXPECT_TRUE(isa<func::ReturnOp>(arithBlock->getTerminator()));
     
     // Verify MLIR is valid
     EXPECT_TRUE(succeeded(verify(module)));
@@ -335,8 +335,8 @@ TEST_F(ExecutionEngineTest, FunctionCallOperationsSafety) {
     builder->create<func::ReturnOp>(loc, callOp.getResults());
     
     // Verify both functions have terminators
-    EXPECT_TRUE(helperBlock.getTerminator());
-    EXPECT_TRUE(callerBlock.getTerminator());
+    EXPECT_TRUE(helperBlock->getTerminator());
+    EXPECT_TRUE(callerBlock->getTerminator());
     
     // Verify module is valid
     EXPECT_TRUE(succeeded(verify(module)));
@@ -377,7 +377,7 @@ TEST_F(ExecutionEngineTest, LoopOperationsComplexControlFlow) {
     builder->create<func::ReturnOp>(loc, forOp.getResults());
     
     // Verify terminators
-    EXPECT_TRUE(entryBlock.getTerminator());
+    EXPECT_TRUE(entryBlock->getTerminator());
     EXPECT_TRUE(forOp.getBody()->getTerminator());
     
     // Verify MLIR is valid

@@ -32,7 +32,7 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
+    Location loc = UnknownLoc::get(&context);
     
     // Helper: Create a simple module with a function  
     ModuleOp createTestModule() {
@@ -195,7 +195,7 @@ TEST_F(ExecutionEngineTerminatorTest, ExecutionGroupTermination) {
     
     // Create an ExecutionGroup operation with proper type signature
     auto i32Type = builder->getI32Type();
-    auto execGroup = builder->create<subop::ExecutionGroupOp>(loc, TypeRange{i32Type});
+    auto execGroup = builder->create<subop::ExecutionGroupOp>(loc, TypeRange{i32Type}, ValueRange{});
     
     // Add a region with a block to the ExecutionGroup
     auto& region = execGroup.getRegion();
@@ -286,31 +286,31 @@ TEST_F(ExecutionEngineTerminatorTest, ConditionalBranchingTermination) {
     // Create condition
     auto condition = builder->create<arith::ConstantIntOp>(loc, 1, 1);
     
-    // Create true and false blocks
-    auto* trueBlock = func.addBlock();
-    auto* falseBlock = func.addBlock();
+    // Create SCF if operation with proper termination
+    auto ifOp = builder->create<scf::IfOp>(loc, builder->getI32Type(), condition, true);
     
-    // Add conditional branch in entry block
-    builder->create<cf::CondBranchOp>(loc, condition, trueBlock, falseBlock);
-    
-    // Add operations and terminator to true block
-    builder->setInsertionPointToEnd(trueBlock);
+    // Then block
+    builder->setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
     auto trueVal = builder->create<arith::ConstantIntOp>(loc, 1, 32);
-    builder->create<func::ReturnOp>(loc, ValueRange{trueVal});
+    builder->create<scf::YieldOp>(loc, ValueRange{trueVal});
     
-    // Add operations and terminator to false block
-    builder->setInsertionPointToEnd(falseBlock);
+    // Else block  
+    builder->setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
     auto falseVal = builder->create<arith::ConstantIntOp>(loc, 0, 32);
-    builder->create<func::ReturnOp>(loc, ValueRange{falseVal});
+    builder->create<scf::YieldOp>(loc, ValueRange{falseVal});
+    
+    // Return result
+    builder->setInsertionPointToEnd(entryBlock);
+    builder->create<func::ReturnOp>(loc, ValueRange{ifOp.getResult(0)});
     
     // Verify all blocks have proper terminators
     EXPECT_TRUE(hasValidTerminator(entryBlock));
-    EXPECT_TRUE(hasValidTerminator(trueBlock));
-    EXPECT_TRUE(hasValidTerminator(falseBlock));
+    EXPECT_TRUE(hasValidTerminator(&ifOp.getThenRegion().front()));
+    EXPECT_TRUE(hasValidTerminator(&ifOp.getElseRegion().front()));
     
     EXPECT_EQ(countOperationsAfterTerminator(entryBlock), 0);
-    EXPECT_EQ(countOperationsAfterTerminator(trueBlock), 0);
-    EXPECT_EQ(countOperationsAfterTerminator(falseBlock), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(&ifOp.getThenRegion().front()), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(&ifOp.getElseRegion().front()), 0);
     
     // Verify module is valid
     EXPECT_TRUE(succeeded(verify(module)));
@@ -395,7 +395,7 @@ TEST_F(ExecutionEngineTerminatorTest, MultipleExecutionGroupsTermination) {
     
     // First execution group
     auto i32Type = builder->getI32Type();
-    auto execGroup1 = builder->create<subop::ExecutionGroupOp>(loc, TypeRange{i32Type});
+    auto execGroup1 = builder->create<subop::ExecutionGroupOp>(loc, TypeRange{i32Type}, ValueRange{});
     auto& region1 = execGroup1.getRegion();
     auto* block1 = &region1.emplaceBlock();
     
@@ -405,7 +405,7 @@ TEST_F(ExecutionEngineTerminatorTest, MultipleExecutionGroupsTermination) {
     
     // Second execution group
     builder->setInsertionPointToEnd(mainBlock);
-    auto execGroup2 = builder->create<subop::ExecutionGroupOp>(loc, TypeRange{i32Type});
+    auto execGroup2 = builder->create<subop::ExecutionGroupOp>(loc, TypeRange{i32Type}, ValueRange{});
     auto& region2 = execGroup2.getRegion();
     auto* block2 = &region2.emplaceBlock();
     
@@ -481,8 +481,9 @@ TEST_F(ExecutionEngineTerminatorTest, SubOpSpecificOperationsTermination) {
     builder->setInsertionPointToEnd(block);
     
     // Test basic SubOp operations that should compile
-    // Generate operation - simple test
-    auto generateOp = builder->create<subop::GenerateOp>(loc, TypeRange{});
+    // Generate operation - simple test (need to provide required attributes)
+    auto emptyColumns = builder->getArrayAttr({});
+    auto generateOp = builder->create<subop::GenerateOp>(loc, TypeRange{}, emptyColumns);
     
     // Create a simple constant for testing
     auto constant = builder->create<arith::ConstantIntOp>(loc, 42, 32);
@@ -522,8 +523,8 @@ TEST_F(ExecutionEngineTerminatorTest, MultipleSubOpOperationsFlow) {
     auto constant1 = builder->create<arith::ConstantIntOp>(loc, 1, 32);
     auto constant2 = builder->create<arith::ConstantIntOp>(loc, 2, 32);
     
-    // Create Union operation (no nested regions required)
-    auto unionOp = builder->create<subop::UnionOp>(loc, TypeRange{});
+    // Create Union operation (no nested regions required) - need to provide streams
+    auto unionOp = builder->create<subop::UnionOp>(loc, ValueRange{});
     
     // Add arithmetic operation
     auto sum = builder->create<arith::AddIOp>(loc, constant1, constant2);
@@ -576,57 +577,44 @@ TEST_F(ExecutionEngineTerminatorTest, ComprehensiveTerminatorValidation) {
     // Perform computation
     auto computation = builder->create<arith::MulIOp>(loc, input1, input2);
     
-    // Create conditional logic with branches
+    // Create conditional logic using SCF operations
     auto condition = builder->create<arith::ConstantIntOp>(loc, 1, 1);
-    auto* trueBlock = mainFunc.addBlock();
-    auto* falseBlock = mainFunc.addBlock();
-    auto* mergeBlock = mainFunc.addBlock();
+    auto ifOp = builder->create<scf::IfOp>(loc, builder->getI32Type(), condition, true);
     
-    // Set up merge block arguments
-    mergeBlock->addArgument(builder->getI32Type(), loc);
-    
-    // Conditional branch
-    builder->create<cf::CondBranchOp>(loc, condition, trueBlock, falseBlock);
-    
-    // True block
-    builder->setInsertionPointToEnd(trueBlock);
+    // Then block - add computation
+    builder->setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
     auto trueResult = builder->create<arith::AddIOp>(loc, computation, input1);
-    builder->create<cf::BranchOp>(loc, mergeBlock, ValueRange{trueResult});
+    builder->create<scf::YieldOp>(loc, ValueRange{trueResult});
     
-    // False block  
-    builder->setInsertionPointToEnd(falseBlock);
+    // Else block - subtract computation  
+    builder->setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
     auto falseResult = builder->create<arith::SubIOp>(loc, computation, input1);
-    builder->create<cf::BranchOp>(loc, mergeBlock, ValueRange{falseResult});
+    builder->create<scf::YieldOp>(loc, ValueRange{falseResult});
     
-    // Merge block
-    builder->setInsertionPointToEnd(mergeBlock);
-    auto finalResult = mergeBlock->getArgument(0);
-    builder->create<func::ReturnOp>(loc, ValueRange{finalResult});
+    // Return final result
+    builder->setInsertionPointToEnd(mainBlock);
+    builder->create<func::ReturnOp>(loc, ValueRange{ifOp.getResult(0)});
     
     // Comprehensive validation of all blocks
     EXPECT_TRUE(hasValidTerminator(helperBlock));
     EXPECT_TRUE(hasValidTerminator(mainBlock));
-    EXPECT_TRUE(hasValidTerminator(trueBlock));
-    EXPECT_TRUE(hasValidTerminator(falseBlock));
-    EXPECT_TRUE(hasValidTerminator(mergeBlock));
+    EXPECT_TRUE(hasValidTerminator(&ifOp.getThenRegion().front()));
+    EXPECT_TRUE(hasValidTerminator(&ifOp.getElseRegion().front()));
     
     // Verify no operations after terminators in any block
     EXPECT_EQ(countOperationsAfterTerminator(helperBlock), 0);
     EXPECT_EQ(countOperationsAfterTerminator(mainBlock), 0);
-    EXPECT_EQ(countOperationsAfterTerminator(trueBlock), 0);
-    EXPECT_EQ(countOperationsAfterTerminator(falseBlock), 0);
-    EXPECT_EQ(countOperationsAfterTerminator(mergeBlock), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(&ifOp.getThenRegion().front()), 0);
+    EXPECT_EQ(countOperationsAfterTerminator(&ifOp.getElseRegion().front()), 0);
     
     // Verify terminator types are correct
     auto mainTerminator = mainBlock->getTerminator();
-    auto trueTerminator = trueBlock->getTerminator();
-    auto falseTerminator = falseBlock->getTerminator();
-    auto mergeTerminator = mergeBlock->getTerminator();
+    auto thenTerminator = ifOp.getThenRegion().front().getTerminator();
+    auto elseTerminator = ifOp.getElseRegion().front().getTerminator();
     
-    EXPECT_TRUE(isa<cf::CondBranchOp>(mainTerminator));
-    EXPECT_TRUE(isa<cf::BranchOp>(trueTerminator));
-    EXPECT_TRUE(isa<cf::BranchOp>(falseTerminator));
-    EXPECT_TRUE(isa<func::ReturnOp>(mergeTerminator));
+    EXPECT_TRUE(isa<func::ReturnOp>(mainTerminator));
+    EXPECT_TRUE(isa<scf::YieldOp>(thenTerminator));
+    EXPECT_TRUE(isa<scf::YieldOp>(elseTerminator));
     
     // Verify the entire module is valid
     EXPECT_TRUE(succeeded(verify(module)));

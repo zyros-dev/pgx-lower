@@ -10,7 +10,6 @@
 
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/subop/SubOpOps.h"
-#include "dialects/subop/SubOpTypes.h"
 #include "dialects/subop/SubOpPasses.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/relalg/RelAlgDialect.h"
@@ -19,7 +18,7 @@
 #include "dialects/tuplestream/TupleStreamDialect.h"
 #include "dialects/tuplestream/TupleStreamOps.h"
 #include "dialects/tuplestream/TupleStreamTypes.h"
-#include "mlir/Dialect/LLVM/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "core/logging.h"
 
 using namespace mlir;
@@ -417,7 +416,7 @@ TEST_F(DataStructureCreationTest, TerminatorValidationInCreation) {
     
     // Verify function block has terminator
     auto& funcBlock = funcOp.getBody().front();
-    EXPECT_TRUE(funcBlock.hasTerminator());
+    EXPECT_TRUE(funcBlock.getTerminator() != nullptr);
     
     // Test should validate that data structure creation doesn't add operations
     // after terminators. This is the type of bug the unit test should catch.

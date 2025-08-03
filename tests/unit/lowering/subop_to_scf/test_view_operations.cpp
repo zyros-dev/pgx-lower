@@ -29,7 +29,7 @@ protected:
         // Load all required dialects
         context.loadDialect<subop::SubOperatorDialect>();
         context.loadDialect<util::UtilDialect>();
-        context.loadDialect<tuplestream::TupleStreamDialect>();
+        context.loadDialect<tuples::TupleStreamDialect>();
         context.loadDialect<scf::SCFDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<func::FuncDialect>();
@@ -52,7 +52,7 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
+    Location loc = UnknownLoc::get(&context);
     ModuleOp module;
 };
 
@@ -341,7 +341,7 @@ TEST_F(ViewOperationsTest, SortOperationTerminatorHandling) {
     // Verify terminator has proper operands
     auto terminatorOp = mlir::cast<func::ReturnOp>(sortBlock->getTerminator());
     EXPECT_EQ(terminatorOp.getOperands().size(), 1);
-    EXPECT_EQ(terminatorOp.getOperands()[0], cmpResult);
+    EXPECT_EQ(terminatorOp.getOperands()[0], cmpResult.getResult());
     
     PGX_DEBUG("Sort operation terminator handling completed");
 }

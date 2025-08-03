@@ -43,7 +43,7 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
+    Location loc = UnknownLoc::get(&context);
     
     // Helper to create a test execution step
     subop::ExecutionStepOp createTestExecutionStep() {
