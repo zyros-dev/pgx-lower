@@ -13,9 +13,6 @@ PG_MODULE_MAGIC;
 
 static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL; // NOLINT(*-avoid-non-const-global-variables)
 
-// External reference to global flag defined in executor_c.cpp
-extern bool g_extension_after_load;
-
 
 static bool try_cpp_executor_internal(const QueryDesc *queryDesc) {
     PGX_NOTICE_C("Calling C++ executor from C...");
@@ -40,12 +37,6 @@ static void custom_executor(QueryDesc *queryDesc, const ScanDirection direction,
         PGX_NOTICE_C("MLIR successfully handled the query");
     }
     
-    // Reset the after_load flag after the first query executes
-    // This allows subsequent queries to process expressions normally
-    if (g_extension_after_load) {
-        PGX_NOTICE_C("Resetting g_extension_after_load flag after first query");
-        g_extension_after_load = false;
-    }
 }
 
 static void segfault_handler(const int sig) {
@@ -75,8 +66,6 @@ void _PG_init(void) {
     PGX_NOTICE_C("SIGSEGV handler enabled for debugging!");
     signal(SIGSEGV, segfault_handler);
     
-    // Mark that extension has been loaded - this recreates MLIR context
-    g_extension_after_load = true;
 }
 
 void _PG_fini(void) {
