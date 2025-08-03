@@ -365,7 +365,7 @@ TEST_F(SortLimitLoweringTest, SpaceshipComparisonGeneration) {
     auto intCol = createColumnRef("int_col", builder->getI32Type());
     auto floatCol = createColumnRef("float_col", builder->getF64Type());
     auto stringCol = createColumnRef("string_col", 
-        db::StringType::get(&context));
+        builder->getType<db::StringType>());
     
     auto sortSpec1 = createSortSpec(intCol, relalg::SortSpec::asc);
     auto sortSpec2 = createSortSpec(floatCol, relalg::SortSpec::desc);

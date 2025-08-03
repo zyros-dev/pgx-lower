@@ -112,13 +112,14 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/test_basic_terminator.cpp
         # New RelAlg -> SubOp lowering tests
         tests/unit/lowering/relalg_to_subop/const_relation_union_test.cpp
-        # Lowering tests - Only the CONFIRMED working one for now
-        tests/unit/lowering/test_controlflow_operations.cpp
+        # SubOp to SCF lowering tests
+        tests/unit/lowering/subop_to_scf/test_controlflow_operations.cpp
+        tests/unit/lowering/subop_to_scf/test_subop_rewriter.cpp
+        tests/unit/lowering/subop_to_scf/test_subop_utilities.cpp
         # Still have compile issues - need header fixes
         # tests/unit/lowering/test_datastructure_creation.cpp (missing SubOpTypes.h)
         # tests/unit/lowering/test_reduce_operations.cpp (missing lingodb header)
         # tests/unit/lowering/test_execution_engine_terminator.cpp (missing headers)
-        # tests/unit/lowering/test_subop_utilities.cpp (constructor issue)
         # tests/unit/lowering/test_threadlocal_operations.cpp (missing headers)
     )
     
