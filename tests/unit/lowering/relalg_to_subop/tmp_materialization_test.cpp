@@ -428,7 +428,7 @@ TEST_F(TmpMaterializationLoweringTest, StorageOverflowHandling) {
         overflowTable.getRes(), columnMapping);
     
     auto combinedResults = builder->create<subop::UnionOp>(builder->getUnknownLoc(), streamType,
-        ValueRange{memoryResults.getRes(), overflowResults.getRes()});
+        ValueRange{memoryResults.getResult(), overflowResults.getResult()});
     
     EXPECT_TRUE(combinedResults);
     EXPECT_EQ(combinedResults.getInputs().size(), 2);

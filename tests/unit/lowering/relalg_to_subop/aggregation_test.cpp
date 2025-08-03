@@ -112,7 +112,7 @@ protected:
         {
             OpBuilder::InsertionGuard guard(*builder);
             builder->setInsertionPointToStart(aggrBlock);
-            builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{aggrFuncOp});
+            builder->create<func::ReturnOp>(builder->getUnknownLoc(), ValueRange{aggrFuncOp});
         }
         
         return aggrOp;
@@ -136,7 +136,7 @@ protected:
         {
             OpBuilder::InsertionGuard guard(*builder);
             builder->setInsertionPointToStart(aggrBlock);
-            builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{countOp});
+            builder->create<func::ReturnOp>(builder->getUnknownLoc(), ValueRange{countOp});
         }
         
         return aggrOp;
@@ -175,7 +175,8 @@ protected:
         bool hasNullCheck = false;
         
         aggregationResult.getDefiningOp()->getParentRegion()->walk([&](Operation* op) {
-            if (isa<db::IsNullOp>(op) || isa<db::AsNullableOp>(op) || isa<db::NullOp>(op)) {
+            // TODO Phase 5+: Add IsNullOp check when operation is available
+            if (isa<db::AsNullableOp>(op) || isa<db::NullOp>(op)) {
                 hasNullCheck = true;
             }
         });
@@ -333,7 +334,7 @@ TEST_F(AggregationLoweringTest, MultipleAggregationFunctions) {
         Value countOp = builder->create<relalg::AggrFuncOp>(builder->getUnknownLoc(), builder->getI64Type(), relalg::AggrFunc::count, tableScan, ageRef);
         Value avgOp = builder->create<relalg::AggrFuncOp>(builder->getUnknownLoc(), builder->getI32Type(), relalg::AggrFunc::sum, tableScan, ageRef); // Using sum for avg computation
         
-        builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{sumOp, countOp, avgOp});
+        builder->create<func::ReturnOp>(builder->getUnknownLoc(), ValueRange{sumOp, countOp, avgOp});
     }
     
     EXPECT_TRUE(aggrOp);
