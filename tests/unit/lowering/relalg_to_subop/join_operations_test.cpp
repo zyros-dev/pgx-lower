@@ -3,6 +3,8 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "dialects/relalg/RelAlgOps.h"
@@ -10,7 +12,7 @@
 #include "dialects/subop/SubOpOps.h"
 #include "dialects/subop/SubOpDialect.h"
 #include "dialects/tuplestream/TupleStreamTypes.h"
-#include "dialects/tuples/TupleStreamOps.h"
+#include "dialects/tuplestream/TupleStreamOps.h"
 #include "dialects/db/DBOps.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/DBTypes.h"
@@ -25,7 +27,7 @@ class JoinOperationsLoweringTest : public ::testing::Test {
 protected:
     void SetUp() override {
         context.getOrLoadDialect<relalg::RelAlgDialect>();
-        context.getOrLoadDialect<subop::SubOpDialect>();
+        context.getOrLoadDialect<subop::SubOperatorDialect>();
         context.getOrLoadDialect<tuples::TupleStreamDialect>();
         context.getOrLoadDialect<db::DBDialect>();
         context.getOrLoadDialect<func::FuncDialect>();
@@ -49,7 +51,7 @@ protected:
         SmallVector<NamedAttribute> columnAttrs;
         for (const auto& [colName, colType] : columns) {
             auto colDefAttr = tuples::ColumnDefAttr::get(&context, 
-                tuples::ColumnAttr::get(&context, tableName, colName), colType);
+                tuples::ColumnDefAttr::get(&context, colName, colType), colType);
             columnAttrs.push_back(builder->getNamedAttr(colName, colDefAttr));
         }
         
@@ -75,16 +77,16 @@ protected:
         
         // Get left column value
         auto leftColRef = tuples::ColumnRefAttr::get(&context,
-            tuples::ColumnAttr::get(&context, leftTable, leftCol));
+            tuples::ColumnDefAttr::get(&context, leftCol, colType));
         auto leftVal = builder->create<tuples::GetColumnOp>(loc, colType, tupleArg, leftColRef);
         
         // Get right column value  
         auto rightColRef = tuples::ColumnRefAttr::get(&context,
-            tuples::ColumnAttr::get(&context, rightTable, rightCol));
+            tuples::ColumnDefAttr::get(&context, rightCol, colType));
         auto rightVal = builder->create<tuples::GetColumnOp>(loc, colType, tupleArg, rightColRef);
         
         // Create equality comparison
-        auto cmpOp = builder->create<db::CompareOp>(loc, builder->getI1Type(),
+        auto cmpOp = builder->create<db::CmpOp>(loc, builder->getI1Type(),
                                                    db::DBCmpPredicate::eq, leftVal, rightVal);
         
         builder->create<tuples::ReturnOp>(loc, cmpOp.getResult());
@@ -97,7 +99,7 @@ protected:
         SmallVector<Attribute> keyAttrs;
         for (size_t i = 0; i < tableNames.size() && i < colNames.size(); ++i) {
             auto colRef = tuples::ColumnRefAttr::get(&context,
-                tuples::ColumnAttr::get(&context, tableNames[i], colNames[i]));
+                tuples::ColumnDefAttr::get(&context, colNames[i], builder->getI64Type()));
             keyAttrs.push_back(colRef);
         }
         return builder->getArrayAttr(keyAttrs);
@@ -270,7 +272,7 @@ TEST_F(JoinOperationsLoweringTest, MarkJoinLowering) {
     
     // Create mark attribute for existence check
     auto markAttr = tuples::ColumnDefAttr::get(&context,
-        tuples::ColumnAttr::get(&context, "mark", "has_orders"), builder->getI1Type());
+        "has_orders", builder->getI1Type());
     
     // Create MarkJoin operation
     auto tupleStreamType = tuples::TupleStreamType::get(&context);
@@ -316,7 +318,7 @@ TEST_F(JoinOperationsLoweringTest, MarkJoinReversedLowering) {
     
     // Create mark attribute
     auto markAttr = tuples::ColumnDefAttr::get(&context,
-        tuples::ColumnAttr::get(&context, "mark", "has_orders"), builder->getI1Type());
+        "has_orders", builder->getI1Type());
     
     // Create MarkJoin operation with reversed sides
     auto tupleStreamType = tuples::TupleStreamType::get(&context);

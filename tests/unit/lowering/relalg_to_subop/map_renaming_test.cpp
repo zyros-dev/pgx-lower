@@ -40,14 +40,12 @@ protected:
         context.loadDialect<LLVM::LLVMDialect>();
         
         builder = std::make_unique<OpBuilder>(&context);
-        loc = builder->getUnknownLoc();
     }
 
     // Helper to create a mock input relation
     Value createMockInputRelation() {
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
-        return builder->create<arith::ConstantOp>(
-            loc, tupleStreamType, builder->getUnitAttr());
+        return builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), tupleStreamType);
     }
 
     // Helper to create test column definitions
@@ -57,14 +55,18 @@ protected:
         std::vector<Attribute> columnDefs;
         
         // Create test columns with different types
-        auto intColumn = colManager.createColumn("computed_int", builder->getI32Type());
-        auto floatColumn = colManager.createColumn("computed_float", builder->getF64Type());
-        auto stringColumn = colManager.createColumn("computed_string", 
-            builder->getType<LLVM::LLVMPointerType>());
+        std::string scope = colManager.getUniqueScope("test");
+        auto intColumn = colManager.createDef(scope, "computed_int");
+        auto floatColumn = colManager.createDef(scope, "computed_float");
+        auto stringColumn = colManager.createDef(scope, "computed_string");
         
-        columnDefs.push_back(colManager.createDef(intColumn));
-        columnDefs.push_back(colManager.createDef(floatColumn));
-        columnDefs.push_back(colManager.createDef(stringColumn));
+        intColumn.getColumn().type = builder->getI32Type();
+        floatColumn.getColumn().type = builder->getF64Type();
+        stringColumn.getColumn().type = builder->getType<LLVM::LLVMPointerType>();
+        
+        columnDefs.push_back(tuples::ColumnDefAttr::get(&context, intColumn));
+        columnDefs.push_back(tuples::ColumnDefAttr::get(&context, floatColumn));
+        columnDefs.push_back(tuples::ColumnDefAttr::get(&context, stringColumn));
         
         return columnDefs;
     }
@@ -76,13 +78,18 @@ protected:
         std::vector<Attribute> columnRefs;
         
         // Create input columns
-        auto sourceInt = colManager.createColumn("source_int", builder->getI32Type());
-        auto sourceFloat = colManager.createColumn("source_float", builder->getF64Type());
-        auto sourceBool = colManager.createColumn("source_bool", builder->getI1Type());
+        std::string inputScope = colManager.getUniqueScope("input");
+        auto sourceInt = colManager.createDef(inputScope, "source_int");
+        auto sourceFloat = colManager.createDef(inputScope, "source_float");
         
-        columnRefs.push_back(colManager.createRef(sourceInt));
-        columnRefs.push_back(colManager.createRef(sourceFloat));
-        columnRefs.push_back(colManager.createRef(sourceBool));
+        sourceInt.getColumn().type = builder->getI32Type();
+        sourceFloat.getColumn().type = builder->getF64Type();
+        auto sourceBool = colManager.createDef(inputScope, "source_bool");
+        sourceBool.getColumn().type = builder->getI1Type();
+        
+        columnRefs.push_back(tuples::ColumnRefAttr::get(&context, colManager.createRef(sourceInt)));
+        columnRefs.push_back(tuples::ColumnRefAttr::get(&context, colManager.createRef(sourceFloat)));
+        columnRefs.push_back(tuples::ColumnRefAttr::get(&context, colManager.createRef(sourceBool)));
         
         return columnRefs;
     }
@@ -92,7 +99,7 @@ protected:
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
         ArrayAttr computedAttr = builder->getArrayAttr(computedCols);
         
-        auto mapOp = builder->create<relalg::MapOp>(loc, tupleStreamType, inputRel, computedAttr);
+        auto mapOp = builder->create<relalg::MapOp>(builder->getUnknownLoc(), tupleStreamType, inputRel, computedAttr);
         
         // Create the computation region with expressions
         Region& predicate = mapOp.getPredicate();
@@ -100,7 +107,7 @@ protected:
         
         // Add tuple argument to the block
         auto tupleType = tuples::TupleType::get(&context);
-        block.addArgument(tupleType, loc);
+        block.addArgument(tupleType, builder->getUnknownLoc());
         
         // Set insertion point to populate the region
         OpBuilder::InsertionGuard guard(*builder);
@@ -108,27 +115,33 @@ protected:
         
         // Create sample expressions using GetColumnOp and arithmetic
         auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
-        auto sourceInt = colManager.createColumn("source_int", builder->getI32Type());
-        auto sourceFloat = colManager.createColumn("source_float", builder->getF64Type());
+        std::string exprScope = colManager.getUniqueScope("expr");
+        auto sourceInt = colManager.createDef(exprScope, "source_int");
+        auto sourceFloat = colManager.createDef(exprScope, "source_float");
+        
+        sourceInt.getColumn().type = builder->getI32Type();
+        sourceFloat.getColumn().type = builder->getF64Type();
         
         auto intRef = colManager.createRef(sourceInt);
         auto floatRef = colManager.createRef(sourceFloat);
         
         // Get source values using GetColumnOp
         auto tupleArg = block.getArgument(0);
-        auto intVal = builder->create<tuples::GetColumnOp>(loc, builder->getI32Type(), intRef, tupleArg);
-        auto floatVal = builder->create<tuples::GetColumnOp>(loc, builder->getF64Type(), floatRef, tupleArg);
+        auto intRefAttr = tuples::ColumnRefAttr::get(&context, intRef);
+        auto floatRefAttr = tuples::ColumnRefAttr::get(&context, floatRef);
+        auto intVal = builder->create<tuples::GetColumnOp>(builder->getUnknownLoc(), builder->getI32Type(), intRefAttr, tupleArg);
+        auto floatVal = builder->create<tuples::GetColumnOp>(builder->getUnknownLoc(), builder->getF64Type(), floatRefAttr, tupleArg);
         
         // Create computed expressions
-        auto doubledInt = builder->create<arith::MulIOp>(loc, intVal, intVal); // square the int
-        auto halfFloat = builder->create<arith::DivFOp>(loc, floatVal, 
-            builder->create<arith::ConstantFloatOp>(loc, llvm::APFloat(2.0), builder->getF64Type()));
+        auto doubledInt = builder->create<arith::MulIOp>(builder->getUnknownLoc(), intVal, intVal); // square the int
+        auto halfFloat = builder->create<arith::DivFOp>(builder->getUnknownLoc(), floatVal, 
+            builder->create<arith::ConstantFloatOp>(builder->getUnknownLoc(), llvm::APFloat(2.0), builder->getF64Type()));
         
         // Create a string computation placeholder
-        auto stringPtr = builder->create<LLVM::NullOp>(loc, builder->getType<LLVM::LLVMPointerType>());
+        auto stringPtr = builder->create<LLVM::NullOp>(builder->getUnknownLoc(), builder->getType<LLVM::LLVMPointerType>());
         
         // Return the computed values
-        builder->create<tuples::ReturnOp>(loc, ValueRange{doubledInt, halfFloat, stringPtr});
+        builder->create<tuples::ReturnOp>(builder->getUnknownLoc(), ValueRange{doubledInt, halfFloat, stringPtr});
         
         return mapOp;
     }
@@ -162,7 +175,6 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
 };
 
 TEST_F(MapRenamingLoweringTest, MapExpressionLowering) {

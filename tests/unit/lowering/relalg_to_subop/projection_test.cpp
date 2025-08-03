@@ -5,6 +5,9 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 
 #include "dialects/relalg/RelAlgDialect.h"
 #include "dialects/relalg/RelAlgOps.h"
@@ -14,6 +17,8 @@
 #include "dialects/tuplestream/TupleStreamTypes.h"
 #include "dialects/db/DBDialect.h"
 #include "dialects/util/UtilDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/Verifier.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;
@@ -32,7 +37,6 @@ protected:
         context.loadDialect<LLVM::LLVMDialect>();
         
         builder = std::make_unique<OpBuilder>(&context);
-        loc = builder->getUnknownLoc();
     }
 
     // Helper to create a mock RelAlg projection operation
@@ -43,9 +47,10 @@ protected:
         
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
         ArrayAttr colsAttr = builder->getArrayAttr(columnRefs);
+        auto setSemanticAttr = relalg::SetSemanticAttr::get(&context, setSemantic);
         
         return builder->create<relalg::ProjectionOp>(
-            loc, tupleStreamType, inputRel, colsAttr, setSemantic);
+            builder->getUnknownLoc(), tupleStreamType, setSemanticAttr, inputRel, colsAttr);
     }
 
     // Helper to create column references for testing
@@ -55,14 +60,18 @@ protected:
         std::vector<Attribute> columnRefs;
         
         // Create test columns with different types
-        auto intColumn = colManager.createColumn("test_int", builder->getI32Type());
-        auto stringColumn = colManager.createColumn("test_string", 
-            builder->getType<LLVM::LLVMPointerType>());
-        auto boolColumn = colManager.createColumn("test_bool", builder->getI1Type());
+        std::string scope = colManager.getUniqueScope("test");
+        auto intColumn = colManager.createDef(scope, "test_int");
+        auto stringColumn = colManager.createDef(scope, "test_string");
+        auto boolColumn = colManager.createDef(scope, "test_bool");
         
-        columnRefs.push_back(colManager.createRef(intColumn));
-        columnRefs.push_back(colManager.createRef(stringColumn));
-        columnRefs.push_back(colManager.createRef(boolColumn));
+        intColumn.getColumn().type = builder->getI32Type();
+        stringColumn.getColumn().type = builder->getType<LLVM::LLVMPointerType>();
+        boolColumn.getColumn().type = builder->getI1Type();
+        
+        columnRefs.push_back(tuples::ColumnDefAttr::get(&context, intColumn));
+        columnRefs.push_back(tuples::ColumnDefAttr::get(&context, stringColumn));
+        columnRefs.push_back(tuples::ColumnDefAttr::get(&context, boolColumn));
         
         return columnRefs;
     }
@@ -70,13 +79,11 @@ protected:
     // Helper to create a mock input relation
     Value createMockInputRelation() {
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
-        return builder->create<arith::ConstantOp>(
-            loc, tupleStreamType, builder->getUnitAttr());
+        return builder->create<tuples::TupleStreamOp>(builder->getUnknownLoc(), tupleStreamType);
     }
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
 };
 
 TEST_F(ProjectionLoweringTest, ProjectionAllLowering) {
@@ -130,7 +137,7 @@ TEST_F(ProjectionLoweringTest, ProjectionDistinctLowering) {
     // Verify column references are properly structured
     auto colsAttr = projectionOp.getCols();
     for (auto col : colsAttr) {
-        EXPECT_TRUE(mlir::isa<tuples::ColumnRefAttr>(col));
+        EXPECT_TRUE(mlir::isa<tuples::ColumnDefAttr>(col));
     }
     
     // Test that this operation should be handled by ProjectionDistinctLowering
@@ -196,7 +203,7 @@ TEST_F(ProjectionLoweringTest, ProjectionSingleColumn) {
     
     // Verify the single column is correctly referenced
     auto colsAttr = projectionOp.getCols();
-    EXPECT_TRUE(mlir::isa<tuples::ColumnRefAttr>(colsAttr[0]));
+    EXPECT_TRUE(mlir::isa<tuples::ColumnDefAttr>(colsAttr[0]));
 }
 
 TEST_F(ProjectionLoweringTest, ProjectionDistinctPerformance) {
@@ -226,9 +233,9 @@ TEST_F(ProjectionLoweringTest, ProjectionDistinctPerformance) {
     
     auto colsAttr = projectionOp.getCols();
     for (auto col : colsAttr) {
-        auto columnRef = mlir::cast<tuples::ColumnRefAttr>(col);
+        auto columnDef = mlir::cast<tuples::ColumnDefAttr>(col);
         // Each column should have proper type information for hash computation
-        EXPECT_TRUE(columnRef.getColumn().type);
+        EXPECT_TRUE(columnDef.getColumn().type);
     }
 }
 
@@ -244,16 +251,16 @@ TEST_F(ProjectionLoweringTest, ProjectionMetadataPropagation) {
     auto colsAttr = projectionOp.getCols();
     
     for (auto col : colsAttr) {
-        auto columnRef = mlir::cast<tuples::ColumnRefAttr>(col);
+        auto columnDef = mlir::cast<tuples::ColumnDefAttr>(col);
         
         // Verify type information is preserved
-        EXPECT_TRUE(columnRef.getColumn().type);
+        EXPECT_TRUE(columnDef.getColumn().type);
         
         // Verify column names are preserved  
-        EXPECT_FALSE(columnRef.getColumn().getName().empty());
+        EXPECT_FALSE(columnDef.getColumn().name.empty());
         
         // Types should match expected test types
-        Type colType = columnRef.getColumn().type;
+        Type colType = columnDef.getColumn().type;
         EXPECT_TRUE(colType.isIntOrFloat() || 
                    mlir::isa<LLVM::LLVMPointerType>(colType) ||
                    colType.isInteger(1));
@@ -294,12 +301,12 @@ TEST_F(ProjectionLoweringTest, ProjectionLoweringReadiness) {
 // Integration test to verify the lowering patterns work with MLIR infrastructure
 TEST_F(ProjectionLoweringTest, ProjectionLoweringIntegration) {
     // Create a module to hold our operations
-    auto module = ModuleOp::create(loc);
+    auto module = ModuleOp::create(builder->getUnknownLoc());
     builder->setInsertionPointToEnd(module.getBody());
     
     // Create a function to hold projection operations
     auto funcType = builder->getFunctionType({}, {});
-    auto func = builder->create<func::FuncOp>(loc, "test_projection", funcType);
+    auto func = builder->create<func::FuncOp>(builder->getUnknownLoc(), "test_projection", funcType);
     auto& entryBlock = func.getBody().emplaceBlock();
     builder->setInsertionPointToStart(&entryBlock);
     
@@ -311,7 +318,7 @@ TEST_F(ProjectionLoweringTest, ProjectionLoweringIntegration) {
     auto distinctProjection = createProjectionOp(inputRel, columnRefs, relalg::SetSemantic::distinct);
     
     // Add terminator
-    builder->create<func::ReturnOp>(loc);
+    builder->create<func::ReturnOp>(builder->getUnknownLoc());
     
     // Verify module structure
     EXPECT_TRUE(module);

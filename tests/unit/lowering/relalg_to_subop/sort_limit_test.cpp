@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OwningOpRef.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -14,8 +13,8 @@
 #include "dialects/db/DBDialect.h"
 #include "dialects/db/DBTypes.h"
 #include "dialects/util/UtilDialect.h"
-#include "dialects/tuples/TupleStreamDialect.h"
-#include "dialects/tuples/TupleStreamOps.h"
+#include "dialects/tuplestream/TupleStreamDialect.h"
+#include "dialects/tuplestream/TupleStreamOps.h"
 
 // TODO Phase 5: Include the actual lowering pass headers when implemented
 // #include "dialects/relalg/RelAlgToSubOpPass.h"
@@ -35,12 +34,11 @@ protected:
         context.loadDialect<arith::ArithDialect>();
         
         builder = std::make_unique<OpBuilder>(&context);
-        loc = builder->getUnknownLoc();
     }
 
     // Create a test module with RelAlg operations for lowering
-    OwningOpRef<ModuleOp> createTestModule() {
-        auto module = ModuleOp::create(loc);
+    ModuleOp createTestModule() {
+        auto module = ModuleOp::create(builder->getUnknownLoc());
         builder->setInsertionPointToEnd(module.getBody());
         return module;
     }
@@ -48,15 +46,15 @@ protected:
     // Create a test table relation
     Value createTestTableScan() {
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
-        return builder->create<relalg::BaseTableOp>(loc, tupleStreamType, 
+        return builder->create<relalg::BaseTableOp>(builder->getUnknownLoc(), tupleStreamType, 
             builder->getStringAttr("test_table"), 
             builder->getDictionaryAttr({})); // Empty columns for testing
     }
 
     // Create test column references
     tuples::ColumnRefAttr createColumnRef(StringRef name, Type type) {
-        return tuples::ColumnRefAttr::get(&context, 
-            builder->getStringAttr(name), type);
+        auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
+        return colManager.createRef("test_table", name);
     }
 
     // Create sort specification attributes
@@ -115,7 +113,6 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
 };
 
 //===----------------------------------------------------------------------===//
@@ -127,7 +124,7 @@ TEST_F(SortLimitLoweringTest, LimitOperationLowering) {
     auto module = createTestModule();
     
     auto tableScan = createTestTableScan();
-    auto limitOp = builder->create<relalg::LimitOp>(loc, 
+    auto limitOp = builder->create<relalg::LimitOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         builder->getI32IntegerAttr(10), 
         tableScan);
@@ -159,7 +156,7 @@ TEST_F(SortLimitLoweringTest, SortOperationLowering) {
     auto columnRef = createColumnRef("column1", builder->getI32Type());
     auto sortSpec = createSortSpec(columnRef, relalg::SortSpec::asc);
     
-    auto sortOp = builder->create<relalg::SortOp>(loc, 
+    auto sortOp = builder->create<relalg::SortOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         tableScan, 
         builder->getArrayAttr({sortSpec}));
@@ -189,7 +186,7 @@ TEST_F(SortLimitLoweringTest, TopKOperationLowering) {
     auto columnRef = createColumnRef("score", builder->getF64Type());
     auto sortSpec = createSortSpec(columnRef, relalg::SortSpec::desc);
     
-    auto topkOp = builder->create<relalg::TopKOp>(loc, 
+    auto topkOp = builder->create<relalg::TopKOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         builder->getI32IntegerAttr(5), 
         tableScan, 
@@ -227,7 +224,7 @@ TEST_F(SortLimitLoweringTest, SortMultiColumnLowering) {
     auto sortSpec1 = createSortSpec(columnRef1, relalg::SortSpec::desc);
     auto sortSpec2 = createSortSpec(columnRef2, relalg::SortSpec::asc);
     
-    auto sortOp = builder->create<relalg::SortOp>(loc, 
+    auto sortOp = builder->create<relalg::SortOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         tableScan, 
         builder->getArrayAttr({sortSpec1, sortSpec2}));
@@ -261,14 +258,14 @@ TEST_F(SortLimitLoweringTest, TopKVsSortEfficiency) {
     auto sortSpec = createSortSpec(columnRef, relalg::SortSpec::asc);
     
     // Create TopK(10) - should use heap for efficiency
-    auto topkOp = builder->create<relalg::TopKOp>(loc, 
+    auto topkOp = builder->create<relalg::TopKOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         builder->getI32IntegerAttr(10), 
         tableScan, 
         builder->getArrayAttr({sortSpec}));
     
     // Create full Sort - should use buffer + sorted view
-    auto sortOp = builder->create<relalg::SortOp>(loc, 
+    auto sortOp = builder->create<relalg::SortOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         tableScan, 
         builder->getArrayAttr({sortSpec}));
@@ -301,7 +298,7 @@ TEST_F(SortLimitLoweringTest, LimitZeroRowsLowering) {
     auto module = createTestModule();
     
     auto tableScan = createTestTableScan();
-    auto limitOp = builder->create<relalg::LimitOp>(loc, 
+    auto limitOp = builder->create<relalg::LimitOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         builder->getI32IntegerAttr(0), 
         tableScan);
@@ -324,17 +321,17 @@ TEST_F(SortLimitLoweringTest, EmptyInputGracefulHandling) {
     auto sortSpec = createSortSpec(columnRef, relalg::SortSpec::asc);
     
     // All operations should handle empty input without errors
-    auto limitOp = builder->create<relalg::LimitOp>(loc, 
+    auto limitOp = builder->create<relalg::LimitOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         builder->getI32IntegerAttr(10), 
         tableScan);
     
-    auto sortOp = builder->create<relalg::SortOp>(loc, 
+    auto sortOp = builder->create<relalg::SortOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         tableScan, 
         builder->getArrayAttr({sortSpec}));
     
-    auto topkOp = builder->create<relalg::TopKOp>(loc, 
+    auto topkOp = builder->create<relalg::TopKOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         builder->getI32IntegerAttr(5), 
         tableScan, 
@@ -371,7 +368,7 @@ TEST_F(SortLimitLoweringTest, SpaceshipComparisonGeneration) {
     auto sortSpec2 = createSortSpec(floatCol, relalg::SortSpec::desc);
     auto sortSpec3 = createSortSpec(stringCol, relalg::SortSpec::asc);
     
-    auto sortOp = builder->create<relalg::SortOp>(loc, 
+    auto sortOp = builder->create<relalg::SortOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         tableScan, 
         builder->getArrayAttr({sortSpec1, sortSpec2, sortSpec3}));
@@ -390,7 +387,7 @@ TEST_F(SortLimitLoweringTest, SpaceshipComparisonGeneration) {
     // 
     // // Verify the comparison region is generated correctly
     // module.get().walk([&](subop::CreateSortedViewOp op) {
-    //     EXPECT_TRUE(op.getRegion().hasOneBlock());
+    //     EXPECT_TRUE(op.getRegion().hasOneBbuilder->getUnknownLoc()k());
     //     // TODO: Verify comparison logic for mixed types and orderings
     // });
 }
@@ -404,7 +401,7 @@ TEST_F(SortLimitLoweringTest, NullHandlingCompliance) {
         builder->getType<db::NullableType>(builder->getI32Type()));
     auto sortSpec = createSortSpec(nullableCol, relalg::SortSpec::asc);
     
-    auto sortOp = builder->create<relalg::SortOp>(loc, 
+    auto sortOp = builder->create<relalg::SortOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         tableScan, 
         builder->getArrayAttr({sortSpec}));
@@ -431,7 +428,7 @@ TEST_F(SortLimitLoweringTest, SortStabilityVerification) {
     // Sort by primary only - secondary should maintain input order for ties
     auto sortSpec = createSortSpec(primaryCol, relalg::SortSpec::asc);
     
-    auto sortOp = builder->create<relalg::SortOp>(loc, 
+    auto sortOp = builder->create<relalg::SortOp>(builder->getUnknownLoc(), 
         tableScan.getType(), 
         tableScan, 
         builder->getArrayAttr({sortSpec}));

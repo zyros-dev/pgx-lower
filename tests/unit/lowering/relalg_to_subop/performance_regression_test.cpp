@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <numeric>
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -15,6 +16,7 @@
 #include <mlir/Conversion/Passes.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/IR/Diagnostics.h>
@@ -81,7 +83,6 @@ protected:
         
         // Initialize builder
         builder = std::make_unique<OpBuilder>(&context);
-        loc = builder->getUnknownLoc();
         
         // Reset memory tracker
         memoryTracker.reset();
@@ -104,12 +105,12 @@ protected:
             std::string scopeName = columnManager.getUniqueScope("table");
             auto columnDef = columnManager.createDef(scopeName, columnName);
             columnDef.getColumn().type = builder->getI32Type(); // Use I32 for simplicity
-            columns.push_back(builder->getNamedAttr(columnName, columnDef));
+            columns.push_back(builder->getNamedAttr(columnName, tuples::ColumnDefAttr::get(&context, columnDef)));
         }
         
         auto columnsAttr = builder->getDictionaryAttr(columns);
         return builder->create<relalg::BaseTableOp>(
-            loc, 
+            builder->getUnknownLoc(), 
             tuples::TupleStreamType::get(&context),
             builder->getStringAttr(tableName + "|oid:12345"),
             columnsAttr
@@ -142,14 +143,14 @@ protected:
                     OpBuilder predicateBuilder(&context);
                     predicateBuilder.setInsertionPointToEnd(predicateBlock.get());
                     auto trueValue = predicateBuilder.create<arith::ConstantOp>(
-                        loc, 
+                        builder->getUnknownLoc(), 
                         predicateBuilder.getI1Type(), 
                         predicateBuilder.getBoolAttr(true)
                     );
-                    predicateBuilder.create<tuples::ReturnOp>(loc, trueValue.getResult());
+                    predicateBuilder.create<tuples::ReturnOp>(builder->getUnknownLoc(), trueValue.getResult());
                     
                     auto joinOp = builder->create<relalg::InnerJoinOp>(
-                        loc,
+                        builder->getUnknownLoc(),
                         tuples::TupleStreamType::get(&context),
                         leftOp->getResult(0),
                         rightOp->getResult(0)
@@ -173,7 +174,7 @@ protected:
     relalg::SelectionOp createComplexSelection(Operation* inputOp, size_t numPredicates) {
         // Create selection with complex AND predicate
         auto selectionOp = builder->create<relalg::SelectionOp>(
-            loc,
+            builder->getUnknownLoc(),
             tuples::TupleStreamType::get(&context),
             inputOp->getResult(0)
         );
@@ -184,7 +185,7 @@ protected:
         predicateBuilder.setInsertionPointToEnd(predicateBlock.get());
         
         mlir::Value result = predicateBuilder.create<arith::ConstantOp>(
-            loc, 
+            builder->getUnknownLoc(), 
             predicateBuilder.getI1Type(), 
             predicateBuilder.getBoolAttr(true)
         ).getResult();
@@ -192,19 +193,19 @@ protected:
         // Add multiple predicates (simulated with constants for testing)
         for (size_t i = 0; i < numPredicates; ++i) {
             auto predicate = predicateBuilder.create<arith::ConstantOp>(
-                loc,
+                builder->getUnknownLoc(),
                 predicateBuilder.getI1Type(),
                 predicateBuilder.getBoolAttr(true)
             );
             result = predicateBuilder.create<arith::AndIOp>(
-                loc,
+                builder->getUnknownLoc(),
                 predicateBuilder.getI1Type(),
                 result,
                 predicate.getResult()
             ).getResult();
         }
         
-        predicateBuilder.create<tuples::ReturnOp>(loc, result);
+        predicateBuilder.create<tuples::ReturnOp>(builder->getUnknownLoc(), result);
         selectionOp.getPredicate().push_back(predicateBlock.release());
         
         return selectionOp;
@@ -215,9 +216,9 @@ protected:
         PerformanceMetrics metrics;
         
         // Create module containing the operation
-        auto module = ModuleOp::create(loc);
+        auto module = ModuleOp::create(builder->getUnknownLoc());
         auto funcOp = func::FuncOp::create(
-            loc, 
+            builder->getUnknownLoc(), 
             "test_func", 
             builder->getFunctionType({}, {operation->getResult(0).getType()})
         );
@@ -228,7 +229,7 @@ protected:
         
         // Clone the operation into the function
         auto clonedOp = funcBuilder.clone(*operation);
-        funcBuilder.create<func::ReturnOp>(loc, clonedOp->getResult(0));
+        funcBuilder.create<func::ReturnOp>(builder->getUnknownLoc(), clonedOp->getResult(0));
         
         module.push_back(funcOp);
         
@@ -248,7 +249,7 @@ protected:
         
         // Create pass manager and add lowering pass
         PassManager pm(&context);
-        pm.addPass(createLowerRelAlgToSubOpPass());
+        pm.addPass(pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPass());
         
         // Measure lowering time
         auto startTime = std::chrono::high_resolution_clock::now();
@@ -270,7 +271,7 @@ protected:
             // Count SubOp operations created
             module.walk([&](Operation* op) {
                 if (isa<subop::ScanRefsOp, subop::GatherOp, subop::FilterOp, 
-                        subop::MapOp, subop::CreateOp, subop::InsertOp>(op)) {
+                        subop::MapOp, subop::GenericCreateOp, subop::InsertOp>(op)) {
                     metrics.numSubOpOperationsCreated++;
                 }
             });
@@ -296,7 +297,6 @@ protected:
 
     MLIRContext context;
     std::unique_ptr<OpBuilder> builder;
-    Location loc;
     MemoryTracker memoryTracker;
 };
 
@@ -345,14 +345,14 @@ TEST_F(PerformanceRegressionTest, JoinLoweringPerformance) {
     OpBuilder predicateBuilder(&context);
     predicateBuilder.setInsertionPointToEnd(predicateBlock.get());
     auto trueValue = predicateBuilder.create<arith::ConstantOp>(
-        loc, 
+        builder->getUnknownLoc(), 
         predicateBuilder.getI1Type(), 
         predicateBuilder.getBoolAttr(true)
     );
-    predicateBuilder.create<tuples::ReturnOp>(loc, trueValue.getResult());
+    predicateBuilder.create<tuples::ReturnOp>(builder->getUnknownLoc(), trueValue.getResult());
     
     auto joinOp = builder->create<relalg::InnerJoinOp>(
-        loc,
+        builder->getUnknownLoc(),
         tuples::TupleStreamType::get(&context),
         leftTable.getResult(),
         rightTable.getResult()
@@ -511,14 +511,14 @@ TEST_F(PerformanceRegressionTest, CompilationTimeRegression) {
     OpBuilder predicateBuilder(&context);
     predicateBuilder.setInsertionPointToEnd(predicateBlock.get());
     auto trueValue = predicateBuilder.create<arith::ConstantOp>(
-        loc, 
+        builder->getUnknownLoc(), 
         predicateBuilder.getI1Type(), 
         predicateBuilder.getBoolAttr(true)
     );
-    predicateBuilder.create<tuples::ReturnOp>(loc, trueValue.getResult());
+    predicateBuilder.create<tuples::ReturnOp>(builder->getUnknownLoc(), trueValue.getResult());
     
     auto joinOp = builder->create<relalg::InnerJoinOp>(
-        loc,
+        builder->getUnknownLoc(),
         tuples::TupleStreamType::get(&context),
         leftTable.getResult(),
         rightTable.getResult()
