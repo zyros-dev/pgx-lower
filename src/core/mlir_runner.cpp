@@ -9,6 +9,8 @@ extern "C" {
 #include "postgres.h"
 #include "utils/elog.h"
 #include "utils/errcodes.h"
+#include "executor/executor.h"
+#include "nodes/execnodes.h"
 }
 
 // Include MLIR diagnostic infrastructure
@@ -40,8 +42,6 @@ extern "C" {
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/TargetSelect.h"
 
-// Forward declaration of global flag from executor_c.cpp  
-extern bool g_extension_after_load;
 
 // MLIR Verification and Diagnostic Infrastructure
 namespace {
@@ -348,6 +348,10 @@ namespace {
 #include "runtime/tuple_access.h"
 
 namespace mlir_runner {
+
+// Global storage for runtime access to PostgreSQL EState
+EState* g_current_estate = nullptr;
+ExprContext* g_current_expr_context = nullptr;
 
 // Signal handler infrastructure for MLIR crash protection
 static volatile sig_atomic_t signal_caught = 0;
@@ -1141,6 +1145,30 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
 
 
 #ifndef BUILDING_UNIT_TESTS
+bool run_mlir_with_estate(PlannedStmt* stmt, EState* estate, ExprContext* econtext, MLIRLogger& logger) {
+    if (!estate || !econtext) {
+        logger.error("EState or ExprContext is null - cannot proceed with safe MLIR execution");
+        return false;
+    }
+    
+    PGX_DEBUG("MLIR runner using proper EState and ExprContext");
+    
+    // Store for runtime access (now using real PostgreSQL objects)
+    g_current_estate = estate;
+    g_current_expr_context = econtext;
+    
+    // Call existing pipeline with proper memory context protection
+    bool result = run_mlir_postgres_ast_translation(stmt, logger);
+    
+    PGX_DEBUG("MLIR execution completed, clearing global context references");
+    
+    // Clear global references
+    g_current_estate = nullptr;
+    g_current_expr_context = nullptr;
+    
+    return result;
+}
+
 bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) {
     if (!plannedStmt) {
         logger.error("PlannedStmt is null");
@@ -1161,8 +1189,7 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     mlir::MLIRContext context;
     
     // Add debug info about context creation
-    logger.notice("CONTEXT ISOLATION: Creating fresh MLIRContext after LOAD detected: " + 
-                  std::string(g_extension_after_load ? "true" : "false"));
+    logger.notice("CONTEXT ISOLATION: Creating fresh MLIRContext with EState memory protection");
     logger.notice("CONTEXT ISOLATION: MLIRContext created at address: " + 
                   std::to_string(reinterpret_cast<uintptr_t>(&context)));
     
@@ -1289,7 +1316,12 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     return result;
 }
 #else
-// Unit test stub implementation
+// Unit test stub implementations
+bool run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, MLIRLogger& logger) {
+    logger.notice("PostgreSQL EState integration not available in unit tests");
+    return false;
+}
+
 bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) {
     logger.notice("PostgreSQL AST translation not available in unit tests");
     return false;

@@ -5,26 +5,38 @@
 #include "core/error_handling.h"
 #include "../../include/core/logging.h"
 
-#include "executor/executor.h"
 #include "runtime/tuple_access.h"
 
 #include <vector>
 
 extern "C" {
+#include "postgres.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/table.h"
 #include "catalog/pg_type.h"
 #include "executor/tuptable.h"
+#include "executor/executor.h"
+#include "executor/execdesc.h"
 #include "nodes/plannodes.h"
 #include "nodes/primnodes.h"
-#include "postgres.h"
+#include "nodes/execnodes.h"
 #include "tcop/dest.h"
 #include "utils/elog.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/builtins.h"
+#include "utils/memutils.h"
+
+// Explicit function declarations for EState management
+EState *CreateExecutorState(void);
+void FreeExecutorState(EState *estate);
+ExprContext *CreateExprContext(EState *estate);
+
+// Macro for resetting expression context (from executor.h)
+#define ResetExprContext(econtext) \
+    MemoryContextReset((econtext)->ecxt_per_tuple_memory)
 }
 
 // Undefine PostgreSQL macros that conflict with LLVM
@@ -44,6 +56,96 @@ extern "C" {
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
+
+/*
+ * RAII Pattern for PostgreSQL EState Management
+ * 
+ * The EStateGuard class ensures that PostgreSQL's EState and ExprContext
+ * are properly cleaned up in ALL scenarios:
+ * - Normal function exit
+ * - Exception thrown during MLIR execution
+ * - Early return due to error conditions
+ * 
+ * This follows PostgreSQL extension best practices and prevents
+ * memory leaks that could occur with manual cleanup patterns.
+ */
+
+// RAII wrapper for PostgreSQL EState management
+class EStateGuard {
+private:
+    EState* estate_;
+    ExprContext* econtext_;
+    MemoryContext old_context_;
+    bool initialized_;
+    
+public:
+    explicit EStateGuard() 
+        : estate_(nullptr), econtext_(nullptr), old_context_(CurrentMemoryContext), initialized_(false) {
+        
+        // Create EState for proper PostgreSQL memory context hierarchy
+        estate_ = CreateExecutorState();
+        if (!estate_) {
+            throw std::runtime_error("Failed to create EState");
+        }
+        
+        // Switch to per-query memory context
+        old_context_ = MemoryContextSwitchTo(estate_->es_query_cxt);
+        
+        // Create expression context for safe evaluation
+        econtext_ = CreateExprContext(estate_);
+        if (!econtext_) {
+            // Restore context and cleanup EState on failure
+            MemoryContextSwitchTo(old_context_);
+            FreeExecutorState(estate_);
+            throw std::runtime_error("Failed to create ExprContext");
+        }
+        
+        initialized_ = true;
+        PGX_DEBUG("EStateGuard: Created EState and ExprContext successfully");
+    }
+    
+    ~EStateGuard() {
+        if (initialized_) {
+            PGX_DEBUG("EStateGuard: Beginning automatic cleanup");
+            
+            // Reset per-tuple context if econtext exists
+            if (econtext_) {
+                ResetExprContext(econtext_);
+            }
+            
+            // Restore original memory context
+            MemoryContextSwitchTo(old_context_);
+            
+            // Free EState (automatically cleans up econtext and es_query_cxt)
+            if (estate_) {
+                FreeExecutorState(estate_);
+            }
+            
+            PGX_DEBUG("EStateGuard: Automatic cleanup completed");
+        }
+    }
+    
+    // Accessors
+    EState* getEState() const { 
+        return initialized_ ? estate_ : nullptr; 
+    }
+    
+    ExprContext* getExprContext() const { 
+        return initialized_ ? econtext_ : nullptr; 
+    }
+    
+    bool isValid() const { 
+        return initialized_ && estate_ && econtext_; 
+    }
+    
+    // Non-copyable to prevent resource management issues
+    EStateGuard(const EStateGuard&) = delete;
+    EStateGuard& operator=(const EStateGuard&) = delete;
+    
+    // Non-movable for simplicity (could be implemented if needed)
+    EStateGuard(EStateGuard&&) = delete;
+    EStateGuard& operator=(EStateGuard&&) = delete;
+};
 
 void logQueryDebugInfo(const PlannedStmt* stmt, PostgreSQLLogger& logger) {
     logger.debug("Using PostgreSQL AST translation approach");
@@ -287,36 +389,68 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
     // Log query debug information
     logQueryDebugInfo(stmt, logger);
 
-    // For AST translation, the JIT manages its own table access
-    g_scan_context = nullptr;
+    PGX_DEBUG("Creating EStateGuard for automatic PostgreSQL memory management");
+    
+    try {
+        // RAII: Automatic EState and ExprContext management
+        EStateGuard estate_guard;
+        
+        if (!estate_guard.isValid()) {
+            logger.error("Failed to initialize EState and ExprContext");
+            return false;
+        }
+        
+        EState* estate = estate_guard.getEState();
+        ExprContext* econtext = estate_guard.getExprContext();
+        
+        PGX_DEBUG("EState and ExprContext initialized successfully via RAII");
+        
+        // For AST translation, the JIT manages its own table access
+        g_scan_context = nullptr;
 
-    // Analyze and configure column selection
-    auto selectedColumns = analyzeColumnSelection(stmt, logger);
+        // Analyze and configure column selection
+        auto selectedColumns = analyzeColumnSelection(stmt, logger);
 
-    // Setup tuple descriptor for results
-    auto resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns, logger);
+        // Setup tuple descriptor for results
+        auto resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns, logger);
 
-    // Initialize PostgreSQL result handling
-    const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
-    dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
+        // Initialize PostgreSQL result handling
+        const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
+        dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
 
-    g_tuple_streamer.initialize(dest, slot);
-    g_tuple_streamer.setSelectedColumns(selectedColumns);
+        g_tuple_streamer.initialize(dest, slot);
+        g_tuple_streamer.setSelectedColumns(selectedColumns);
 
-    // Execute MLIR translation
-    const auto mlir_success = mlir_runner::run_mlir_postgres_ast_translation(const_cast<PlannedStmt*>(stmt), logger);
-    logger.notice("mlir_runner::run_mlir_postgres_ast_translation returned "
-                  + std::string(mlir_success ? "true" : "false"));
+        // Execute MLIR translation with proper memory contexts
+        const auto mlir_success = mlir_runner::run_mlir_with_estate(
+            const_cast<PlannedStmt*>(stmt), estate, econtext, logger);
+        
+        logger.notice("mlir_runner::run_mlir_with_estate returned "
+                      + std::string(mlir_success ? "true" : "false"));
 
-    // Handle results
-    auto final_result = handleMLIRResults(mlir_success, logger);
+        // Handle results
+        auto final_result = handleMLIRResults(mlir_success, logger);
 
-    // Cleanup
-    cleanupMLIRExecution(dest, slot, resultTupleDesc, logger);
+        // Cleanup
+        cleanupMLIRExecution(dest, slot, resultTupleDesc, logger);
 
-    logger.notice("run_mlir_with_ast_translation completed successfully, returning "
-                  + std::string(final_result ? "true" : "false"));
-    return final_result;
+        logger.notice("run_mlir_with_ast_translation completed successfully, returning "
+                      + std::string(final_result ? "true" : "false"));
+        
+        // EStateGuard destructor will automatically handle all cleanup
+        return final_result;
+        
+    } catch (const std::exception& e) {
+        logger.error("Exception in RAII EState management: " + std::string(e.what()));
+        // EStateGuard destructor will automatically handle cleanup
+        return false;
+    } catch (...) {
+        logger.error("Unknown exception in RAII EState management");
+        // EStateGuard destructor will automatically handle cleanup
+        return false;
+    }
+    
+    // Note: No manual cleanup needed - RAII handles everything automatically
 }
 
 auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
