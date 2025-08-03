@@ -34,12 +34,20 @@ shift
 case "$operation" in
     utest)
         echo "Building and running unit tests..."
-        # Force clean build to catch compilation errors
-        /home/xzel/repos/pgx-lower/tools/build_queue.sh "bash -c 'rm -rf build-utest && make utest && cd build-utest && ./mlir_unit_test'"
+        # Use make utest which should handle incremental builds and catch compilation errors
+        /home/xzel/repos/pgx-lower/tools/build_queue.sh "make utest"
         exit_code=$?
         if [[ $exit_code -ne 0 ]]; then
-            echo "ERROR: Unit test build or execution failed with exit code $exit_code"
+            echo "ERROR: Unit test build failed with exit code $exit_code"
             exit $exit_code
+        fi
+        # Only run tests if build succeeded
+        echo "Running unit tests..."
+        cd build-utest && ./mlir_unit_test "$@"
+        test_exit_code=$?
+        if [[ $test_exit_code -ne 0 ]]; then
+            echo "ERROR: Unit tests failed with exit code $test_exit_code"
+            exit $test_exit_code
         fi
         ;;
     ptest)
