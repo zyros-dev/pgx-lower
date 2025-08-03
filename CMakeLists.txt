@@ -108,6 +108,24 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     # Add individual test files
     list(APPEND UNIT_TEST_SOURCES 
         tests/unit/test_subop_simple.cpp
+        tests/unit/test_simple_execution_engine.cpp
+        tests/unit/test_basic_terminator.cpp
+        # New RelAlg -> SubOp lowering tests
+        tests/unit/lowering/relalg_to_subop/const_relation_union_test.cpp
+        # SubOp to SCF lowering tests - ALL MUST COMPILE
+        tests/unit/lowering/subop_to_scf/test_controlflow_operations.cpp
+        tests/unit/lowering/subop_to_scf/test_subop_rewriter.cpp
+        tests/unit/lowering/subop_to_scf/test_subop_utilities.cpp
+        tests/unit/lowering/subop_to_scf/test_datastructure_creation.cpp
+        tests/unit/lowering/subop_to_scf/test_execution_engine.cpp
+        tests/unit/lowering/subop_to_scf/test_execution_engine_terminator.cpp
+        tests/unit/lowering/subop_to_scf/test_gather_scatter_operations.cpp
+        tests/unit/lowering/subop_to_scf/test_lookup_operations.cpp
+        tests/unit/lowering/subop_to_scf/test_reduce_operations.cpp
+        tests/unit/lowering/subop_to_scf/test_scan_operations.cpp
+        tests/unit/lowering/subop_to_scf/test_table_operations.cpp
+        tests/unit/lowering/subop_to_scf/test_threadlocal_operations.cpp
+        tests/unit/lowering/subop_to_scf/test_view_operations.cpp
     )
     
     add_mlir_unit_test(mlir_unit_test 
