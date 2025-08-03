@@ -34,7 +34,13 @@ shift
 case "$operation" in
     utest)
         echo "Building and running unit tests..."
-        /home/xzel/repos/pgx-lower/tools/build_queue.sh bash -c "make utest && ./build/mlir_unit_test $*"
+        # Force clean build to catch compilation errors
+        /home/xzel/repos/pgx-lower/tools/build_queue.sh "bash -c 'rm -rf build-utest && make utest && cd build-utest && ./mlir_unit_test'"
+        exit_code=$?
+        if [[ $exit_code -ne 0 ]]; then
+            echo "ERROR: Unit test build or execution failed with exit code $exit_code"
+            exit $exit_code
+        fi
         ;;
     ptest)
         echo "Building for PostgreSQL tests (NOT queued - regression tests handle their own coordination)..."
@@ -43,22 +49,47 @@ case "$operation" in
     build)
         echo "Building everything..."
         /home/xzel/repos/pgx-lower/tools/build_queue.sh make all "$@"
+        exit_code=$?
+        if [[ $exit_code -ne 0 ]]; then
+            echo "ERROR: Build failed with exit code $exit_code"
+            exit $exit_code
+        fi
         ;;
     clean)
         echo "Cleaning build artifacts..."
         /home/xzel/repos/pgx-lower/tools/build_queue.sh make clean "$@"
+        exit_code=$?
+        if [[ $exit_code -ne 0 ]]; then
+            echo "ERROR: Clean failed with exit code $exit_code"
+            exit $exit_code
+        fi
         ;;
     compile_commands)
         echo "Generating compile_commands.json..."
         /home/xzel/repos/pgx-lower/tools/qcompile_commands.sh
+        exit_code=$?
+        if [[ $exit_code -ne 0 ]]; then
+            echo "ERROR: compile_commands.json generation failed with exit code $exit_code"
+            exit $exit_code
+        fi
         ;;
     dialects)
         echo "Building dialects..."
         /home/xzel/repos/pgx-lower/tools/build_queue.sh make -C build src/dialects "$@"
+        exit_code=$?
+        if [[ $exit_code -ne 0 ]]; then
+            echo "ERROR: Dialects build failed with exit code $exit_code"
+            exit $exit_code
+        fi
         ;;
     extension)
         echo "Building PostgreSQL extension..."
         /home/xzel/repos/pgx-lower/tools/build_queue.sh make -C extension "$@"
+        exit_code=$?
+        if [[ $exit_code -ne 0 ]]; then
+            echo "ERROR: Extension build failed with exit code $exit_code"
+            exit $exit_code
+        fi
         ;;
     *)
         echo "Unknown operation: $operation"
