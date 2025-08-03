@@ -3053,6 +3053,17 @@ class QueryOpLowering : public OpConversionPattern<relalg::QueryOp> {
       executionGroup.getSubOps().getBlocks().clear();
 
       rewriter.inlineRegionBefore(queryOp.getQueryOps(), executionGroup.getSubOps(), executionGroup.getSubOps().end());
+      
+      // Ensure proper termination after region inlining
+      auto& region = executionGroup.getSubOps();
+      if (!region.empty() && !region.back().empty()) {
+         auto& lastBlock = region.back();
+         if (!lastBlock.getTerminator()) {
+            rewriter.setInsertionPointToEnd(&lastBlock);
+            rewriter.create<subop::ExecutionGroupReturnOp>(queryOp.getLoc(), queryOp.getResults());
+         }
+      }
+      
       rewriter.replaceOp(queryOp, executionGroup);
       return mlir::success();
    }
