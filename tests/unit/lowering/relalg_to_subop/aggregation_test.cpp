@@ -64,28 +64,28 @@ protected:
         commissionCol.getColumn().type = builder->getI64Type(); // Simplified type
         
         // Create references for these columns
-        salaryRef = colManager.createRef(salaryCol);
-        ageRef = colManager.createRef(ageCol);
-        nameRef = colManager.createRef(nameCol);
-        deptIdRef = colManager.createRef(deptIdCol);
-        commissionRef = colManager.createRef(commissionCol);
+        salaryRef = colManager.createRef("employees", "salary");
+        ageRef = colManager.createRef("employees", "age");
+        nameRef = colManager.createRef("employees", "name");
+        deptIdRef = colManager.createRef("employees", "dept_id");
+        commissionRef = colManager.createRef("employees", "commission");
     }
 
     Value createTestTableScan() {
         // Create a simple table scan operation for testing
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
-        std::vector<Attribute> columnAttrs = {
-            tuples::ColumnDefAttr::get(&context, salaryCol),
-            tuples::ColumnDefAttr::get(&context, ageCol),
-            tuples::ColumnDefAttr::get(&context, nameCol),
-            tuples::ColumnDefAttr::get(&context, deptIdCol),
-            tuples::ColumnDefAttr::get(&context, commissionCol)
+        SmallVector<NamedAttribute> columnAttrs = {
+            NamedAttribute(builder->getStringAttr("salary"), salaryCol),
+            NamedAttribute(builder->getStringAttr("age"), ageCol),
+            NamedAttribute(builder->getStringAttr("name"), nameCol),
+            NamedAttribute(builder->getStringAttr("dept_id"), deptIdCol),
+            NamedAttribute(builder->getStringAttr("commission"), commissionCol)
         };
-        auto columnsAttr = builder->getArrayAttr(columnAttrs);
+        auto columnsDict = builder->getDictionaryAttr(columnAttrs);
         
         return builder->create<relalg::BaseTableOp>(builder->getUnknownLoc(), tupleStreamType, 
                                                    builder->getStringAttr("employee|oid:12345"), 
-                                                   columnsAttr);
+                                                   columnsDict);
     }
 
     Value createAggregationOperation(Value input, relalg::AggrFunc aggrFunc, 

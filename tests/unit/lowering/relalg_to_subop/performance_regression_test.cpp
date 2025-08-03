@@ -105,7 +105,7 @@ protected:
             std::string scopeName = columnManager.getUniqueScope("table");
             auto columnDef = columnManager.createDef(scopeName, columnName);
             columnDef.getColumn().type = builder->getI32Type(); // Use I32 for simplicity
-            columns.push_back(builder->getNamedAttr(columnName, tuples::ColumnDefAttr::get(&context, columnDef)));
+            columns.push_back(builder->getNamedAttr(columnName, columnDef));
         }
         
         auto columnsAttr = builder->getDictionaryAttr(columns);

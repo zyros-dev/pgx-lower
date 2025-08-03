@@ -130,7 +130,7 @@ TEST_F(SortLimitLoweringTest, LimitOperationLowering) {
         tableScan);
     
     // Verify RelAlg operation was created
-    verifyRelAlgOpExists(module.get(), "relalg.limit");
+    verifyRelAlgOpExists(module, "relalg.limit");
     
     // TODO Phase 5: Implement actual lowering and verify SubOp operations
     // After lowering, should contain:
@@ -142,10 +142,10 @@ TEST_F(SortLimitLoweringTest, LimitOperationLowering) {
     EXPECT_EQ(limitOp.getMaxRows(), 10);
     
     // TODO Phase 5: Enable when lowering passes are implemented
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
-    // verifyContainsSubOpType(module.get(), "subop.create_heap");
-    // verifyContainsSubOpType(module.get(), "subop.materialize");
-    // verifyContainsSubOpType(module.get(), "subop.scan");
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
+    // verifyContainsSubOpType(module, "subop.create_heap");
+    // verifyContainsSubOpType(module, "subop.materialize");
+    // verifyContainsSubOpType(module, "subop.scan");
 }
 
 TEST_F(SortLimitLoweringTest, SortOperationLowering) {
@@ -161,7 +161,7 @@ TEST_F(SortLimitLoweringTest, SortOperationLowering) {
         tableScan, 
         builder->getArrayAttr({sortSpec}));
     
-    verifyRelAlgOpExists(module.get(), "relalg.sort");
+    verifyRelAlgOpExists(module, "relalg.sort");
     EXPECT_EQ(sortOp.getSortspecs().size(), 1);
     
     // TODO Phase 5: Implement actual lowering and verify SubOp operations
@@ -172,10 +172,10 @@ TEST_F(SortLimitLoweringTest, SortOperationLowering) {
     // 4. subop.scan with sequential attribute
     
     // TODO Phase 5: Enable when lowering passes are implemented
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
-    // verifyContainsSubOpType(module.get(), "subop.create_sorted_view");
-    // verifyContainsSubOpType(module.get(), "subop.materialize");
-    // verifyContainsSubOpType(module.get(), "subop.scan");
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
+    // verifyContainsSubOpType(module, "subop.create_sorted_view");
+    // verifyContainsSubOpType(module, "subop.materialize");
+    // verifyContainsSubOpType(module, "subop.scan");
 }
 
 TEST_F(SortLimitLoweringTest, TopKOperationLowering) {
@@ -192,7 +192,7 @@ TEST_F(SortLimitLoweringTest, TopKOperationLowering) {
         tableScan, 
         builder->getArrayAttr({sortSpec}));
     
-    verifyRelAlgOpExists(module.get(), "relalg.topk");
+    verifyRelAlgOpExists(module, "relalg.topk");
     EXPECT_EQ(topkOp.getMaxRows(), 5);
     EXPECT_EQ(topkOp.getSortspecs().size(), 1);
     
@@ -203,10 +203,10 @@ TEST_F(SortLimitLoweringTest, TopKOperationLowering) {
     // 3. subop.scan to read top-K results
     
     // TODO Phase 5: Enable when lowering passes are implemented
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
-    // verifyContainsSubOpType(module.get(), "subop.create_heap");
-    // verifyContainsSubOpType(module.get(), "subop.materialize");
-    // verifyContainsSubOpType(module.get(), "subop.scan");
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
+    // verifyContainsSubOpType(module, "subop.create_heap");
+    // verifyContainsSubOpType(module, "subop.materialize");
+    // verifyContainsSubOpType(module, "subop.scan");
 }
 
 //===----------------------------------------------------------------------===//
@@ -229,7 +229,7 @@ TEST_F(SortLimitLoweringTest, SortMultiColumnLowering) {
         tableScan, 
         builder->getArrayAttr({sortSpec1, sortSpec2}));
     
-    verifyRelAlgOpExists(module.get(), "relalg.sort");
+    verifyRelAlgOpExists(module, "relalg.sort");
     EXPECT_EQ(sortOp.getSortspecs().size(), 2);
     
     // Verify sort specification ordering is preserved
@@ -245,8 +245,8 @@ TEST_F(SortLimitLoweringTest, SortMultiColumnLowering) {
     // The spaceship comparison should check column1 DESC first, then column2 ASC
     
     // TODO Phase 5: Enable when lowering passes are implemented  
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
-    // verifyContainsSubOpType(module.get(), "subop.create_sorted_view");
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
+    // verifyContainsSubOpType(module, "subop.create_sorted_view");
 }
 
 TEST_F(SortLimitLoweringTest, TopKVsSortEfficiency) {
@@ -270,19 +270,19 @@ TEST_F(SortLimitLoweringTest, TopKVsSortEfficiency) {
         tableScan, 
         builder->getArrayAttr({sortSpec}));
     
-    verifyRelAlgOpExists(module.get(), "relalg.topk");
-    verifyRelAlgOpExists(module.get(), "relalg.sort");
+    verifyRelAlgOpExists(module, "relalg.topk");
+    verifyRelAlgOpExists(module, "relalg.sort");
     
     // TODO Phase 5: Verify different lowering strategies
     // TopK should create: CreateHeapOp (size-limited)
     // Sort should create: GenericCreateOp (buffer) + CreateSortedViewOp
     
     // TODO Phase 5: Enable when lowering passes are implemented
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
     // 
-    // auto heapCount = countSubOpType(module.get(), "subop.create_heap");
-    // auto sortedViewCount = countSubOpType(module.get(), "subop.create_sorted_view");
-    // auto bufferCount = countSubOpType(module.get(), "subop.create");
+    // auto heapCount = countSubOpType(module, "subop.create_heap");
+    // auto sortedViewCount = countSubOpType(module, "subop.create_sorted_view");
+    // auto bufferCount = countSubOpType(module, "subop.create");
     // 
     // EXPECT_GE(heapCount, 1); // TopK creates heap
     // EXPECT_GE(sortedViewCount, 1); // Sort creates sorted view
@@ -303,12 +303,12 @@ TEST_F(SortLimitLoweringTest, LimitZeroRowsLowering) {
         builder->getI32IntegerAttr(0), 
         tableScan);
     
-    verifyRelAlgOpExists(module.get(), "relalg.limit");
+    verifyRelAlgOpExists(module, "relalg.limit");
     EXPECT_EQ(limitOp.getMaxRows(), 0);
     
     // TODO Phase 5: Verify heap with max_elements=0 is created
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
-    // auto heapCount = countSubOpType(module.get(), "subop.create_heap");
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
+    // auto heapCount = countSubOpType(module, "subop.create_heap");
     // EXPECT_EQ(heapCount, 1);
 }
 
@@ -337,15 +337,15 @@ TEST_F(SortLimitLoweringTest, EmptyInputGracefulHandling) {
         tableScan, 
         builder->getArrayAttr({sortSpec}));
     
-    verifyRelAlgOpExists(module.get(), "relalg.limit");
-    verifyRelAlgOpExists(module.get(), "relalg.sort");
-    verifyRelAlgOpExists(module.get(), "relalg.topk");
+    verifyRelAlgOpExists(module, "relalg.limit");
+    verifyRelAlgOpExists(module, "relalg.sort");
+    verifyRelAlgOpExists(module, "relalg.topk");
     
     // TODO Phase 5: Verify lowered operations handle empty input gracefully
     // All SubOp operations should handle empty materialization correctly
     
     // TODO Phase 5: Enable when lowering passes are implemented
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
 }
 
 //===----------------------------------------------------------------------===//
@@ -373,7 +373,7 @@ TEST_F(SortLimitLoweringTest, SpaceshipComparisonGeneration) {
         tableScan, 
         builder->getArrayAttr({sortSpec1, sortSpec2, sortSpec3}));
     
-    verifyRelAlgOpExists(module.get(), "relalg.sort");
+    verifyRelAlgOpExists(module, "relalg.sort");
     EXPECT_EQ(sortOp.getSortspecs().size(), 3);
     
     // TODO Phase 5: Verify spaceship comparison region handles:
@@ -383,10 +383,10 @@ TEST_F(SortLimitLoweringTest, SpaceshipComparisonGeneration) {
     // 4. Mixed ASC/DESC handling
     
     // TODO Phase 5: Enable when lowering passes are implemented
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
     // 
     // // Verify the comparison region is generated correctly
-    // module.get().walk([&](subop::CreateSortedViewOp op) {
+    // module.walk([&](subop::CreateSortedViewOp op) {
     //     EXPECT_TRUE(op.getRegion().hasOneBbuilder->getUnknownLoc()k());
     //     // TODO: Verify comparison logic for mixed types and orderings
     // });
@@ -406,14 +406,14 @@ TEST_F(SortLimitLoweringTest, NullHandlingCompliance) {
         tableScan, 
         builder->getArrayAttr({sortSpec}));
     
-    verifyRelAlgOpExists(module.get(), "relalg.sort");
+    verifyRelAlgOpExists(module, "relalg.sort");
     
     // TODO Phase 5: Verify null handling in comparison regions
     // PostgreSQL standard: NULL values should sort last in ASC order
     //                     and first in DESC order
     
     // TODO Phase 5: Enable when lowering passes are implemented
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
     // 
     // // Verify null handling logic in generated comparison regions
 }
@@ -433,13 +433,13 @@ TEST_F(SortLimitLoweringTest, SortStabilityVerification) {
         tableScan, 
         builder->getArrayAttr({sortSpec}));
     
-    verifyRelAlgOpExists(module.get(), "relalg.sort");
+    verifyRelAlgOpExists(module, "relalg.sort");
     
     // TODO Phase 5: Verify spaceship comparison uses tuple position as tiebreaker
     // This ensures sort stability as required by LingoDB architecture
     
     // TODO Phase 5: Enable when lowering passes are implemented
-    // ASSERT_TRUE(runLoweringPasses(module.get()).succeeded());
+    // ASSERT_TRUE(runLoweringPasses(module).succeeded());
     // 
     // // Verify comparison regions include tiebreaker logic for stability
 }

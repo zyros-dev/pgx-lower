@@ -350,7 +350,7 @@ TEST_F(TypeConversionLoweringTest, TypeInferenceDuringLowering) {
     // Create test values
     auto val1 = builder->create<db::ConstantOp>(builder->getUnknownLoc(), i32Type, builder->getI32IntegerAttr(10));
     auto val2 = builder->create<db::ConstantOp>(builder->getUnknownLoc(), i32Type, builder->getI32IntegerAttr(20));
-    auto nullableVal = builder->create<db::AsNullableOp>(builder->getUnknownLoc(), nullableI32, val1);
+    auto nullableVal = builder->create<db::AsNullableOp>(builder->getUnknownLoc(), nullableI32, val1.getResult(), Value{});
     
     // Test arithmetic operations with type inference
     auto addOp = builder->create<db::AddOp>(builder->getUnknownLoc(), i32Type, val1, val2);

@@ -48,10 +48,13 @@ protected:
         auto tupleStreamType = tuples::TupleStreamType::get(&context);
         
         // Create column definitions
+        auto& colManager = context.getLoadedDialect<tuples::TupleStreamDialect>()->getColumnManager();
         SmallVector<NamedAttribute> columnAttrs;
         for (const auto& [colName, colType] : columns) {
-            auto colDefAttr = tuples::ColumnDefAttr::get(&context, 
-                tuples::ColumnDefAttr::get(&context, colName, colType), colType);
+            std::string scope = colManager.getUniqueScope(tableName);
+            auto colDef = colManager.createDef(scope, colName);
+            colDef.getColumn().type = colType;
+            auto colDefAttr = tuples::ColumnDefAttr::get(&context, colDef);
             columnAttrs.push_back(builder->getNamedAttr(colName, colDefAttr));
         }
         
