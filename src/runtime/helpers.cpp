@@ -1,5 +1,5 @@
 #include "compiler/runtime/helpers.h"
-#include "dialects/util/FunctionHelper.h"
+#include "compiler/Dialect/util/FunctionHelper.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 
 namespace pgx_lower::compiler::runtime {

@@ -60,7 +60,7 @@ include(PostgreSQLExtension)
 
 # Include directories for the new structure
 include_directories(
-    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
     ${PostgreSQL_INCLUDE_DIRS}
     ${PostgreSQL_SERVER_INCLUDE_DIRS}
 )
@@ -80,8 +80,8 @@ add_subdirectory(tools/build-tools)
 # Create empty runtime_funcs_ptr library for now
 add_library(runtime_funcs_ptr INTERFACE)
 
-# Add dialect library
-add_subdirectory(src/dialects)
+# Add compiler library (includes dialects)
+add_subdirectory(src/compiler)
 
 # Add the main extension
 add_subdirectory(extension)
@@ -144,10 +144,10 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/test_helpers.cpp
         tests/unit/mocks/mlir_runner_mock.cpp
         ${UNIT_TEST_SOURCES}
-        src/core/query_analyzer.cpp
-        src/core/error_handling.cpp
-        src/core/logging.cpp
-        src/logging/console_logger.cpp
+        src/execution/query_analyzer.cpp
+        src/execution/error_handling.cpp
+        src/utility/logging.cpp
+        src/utility/logging/console_logger.cpp
         src/runtime/helpers.cpp
     )
     target_link_libraries(mlir_unit_test PRIVATE 
@@ -158,9 +158,16 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRDSADialect
         MLIRTupleStreamDialect
         MLIRUtilDialect
+        MLIRRelAlgToSubOp
+        MLIRSubOpToControlFlow
+        MLIRDBToDSA
+        MLIRDBToLLVM
+        MLIRDSAToLLVM
+        MLIRUtilToLLVM
     )
     target_include_directories(mlir_unit_test PRIVATE 
         tests/unit
+        src/compiler/Conversion/SubOpToControlFlow
     )
     target_compile_definitions(mlir_unit_test PRIVATE BUILDING_UNIT_TESTS)
 endif()

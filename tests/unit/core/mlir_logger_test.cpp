@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <core/mlir_logger.h>
+#include <execution/mlir_logger.h>
 #include <sstream>
 
 class MLIRLoggerTest : public ::testing::Test {

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "core/mlir_builder.h"
-#include "core/mlir_logger.h"
+#include "execution/mlir_builder.h"
+#include "execution/mlir_logger.h"
 #include "mlir/IR/MLIRContext.h"
 #include <vector>
 

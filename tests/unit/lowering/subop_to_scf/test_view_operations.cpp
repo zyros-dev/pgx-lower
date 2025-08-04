@@ -11,11 +11,11 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 // Include required dialects
-#include "dialects/subop/SubOpDialect.h"
-#include "dialects/subop/SubOpOps.h"
-#include "dialects/tuplestream/TupleStreamDialect.h"
-#include "dialects/util/UtilDialect.h"
-#include "core/logging.h"
+#include "compiler/Dialect/SubOperator/SubOpDialect.h"
+#include "compiler/Dialect/SubOperator/SubOpOps.h"
+#include "compiler/Dialect/TupleStream/TupleStreamDialect.h"
+#include "compiler/Dialect/util/UtilDialect.h"
+#include "execution/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;

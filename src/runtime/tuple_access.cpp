@@ -1,7 +1,7 @@
 #include "runtime/tuple_access.h"
 #include <vector>
 #include "runtime/PostgreSQLDataSource.h"
-#include "core/error_handling.h"
+#include "execution/error_handling.h"
 #include <array>
 #include <cstring>
 #include <memory>

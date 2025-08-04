@@ -5,18 +5,18 @@ add_postgresql_mixed_extension(
         pgx_lower
         VERSION 1.0
         C_SOURCES 
-            ../src/postgres/executor_c.c
+            ../src/execution/postgres/executor_c.c
         CPP_SOURCES
-            ../src/postgres/my_executor.cpp 
-            ../src/postgres/executor_c.cpp
-            ../src/core/mlir_runner.cpp 
-            ../src/core/postgresql_ast_translator.cpp
-            ../src/core/query_analyzer.cpp
-            ../src/core/error_handling.cpp
-            ../src/core/logging.cpp
-            ../src/core/logging_c.cpp
-            ../src/logging/mlir_logger_pg.cpp
-            ../src/logging/console_logger.cpp
+            ../src/execution/postgres/my_executor.cpp 
+            ../src/execution/postgres/executor_c.cpp
+            ../src/execution/mlir_runner.cpp 
+            ../src/execution/postgresql_ast_translator.cpp
+            ../src/execution/query_analyzer.cpp
+            ../src/execution/error_handling.cpp
+            ../src/utility/logging.cpp
+            ../src/utility/logging_c.cpp
+            ../src/utility/logging/mlir_logger_pg.cpp
+            ../src/utility/logging/console_logger.cpp
         SCRIPTS 
             sql/pgx_lower--1.0.sql
         REGRESS
