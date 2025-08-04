@@ -16,6 +16,8 @@
 
 #include <cassert>
 #include <stack>
+#include <memory>
+#include <unordered_set>
 
 using namespace mlir;
 
@@ -126,8 +128,8 @@ const auto& ColumnMapping::getMapping() {
 }
 
 /// SubOpRewriter constructor implementation
-SubOpRewriter::SubOpRewriter(subop::ExecutionStepOp executionStep, ::mlir::IRMapping& outerMapping) 
-    : builder(executionStep), executionStepContexts{} {
+SubOpRewriter::SubOpRewriter(subop::ExecutionStepOp executionStep, ::mlir::IRMapping& outerMapping, mlir::TypeConverter* tc) 
+    : builder(executionStep), typeConverter(tc), executionStepContexts{} {
     valueMapping.push_back(::mlir::IRMapping());
     executionStepContexts.push({executionStep, outerMapping});
 }
@@ -341,7 +343,48 @@ void SubOpRewriter::inlineBlock(::mlir::Block* block, ::mlir::ValueRange argumen
     eraseOp(terminator);
 }
 
-// Explicit template instantiations for common adaptor types
+// Pattern registration and rewriting methods
+template <class PatternT, typename... Args>
+void SubOpRewriter::insertPattern(Args&&... args) {
+    auto uniquePtr = std::make_unique<PatternT>(std::forward<Args>(args)...);
+    std::string opName = uniquePtr->getOperationName();
+    patterns[opName].push_back(std::move(uniquePtr));
+    MLIR_PGX_DEBUG("SubOp", "Registered pattern for operation: " + opName);
+}
+
+void SubOpRewriter::rewrite(mlir::Operation* op, mlir::Operation* before) {
+    if (isErased.contains(op)) return;
+    if (before) {
+        builder.setInsertionPoint(before);
+    } else {
+        builder.setInsertionPoint(op);
+    }
+    
+    std::string opName = op->getName().getStringRef().str();
+    auto it = patterns.find(opName);
+    if (it != patterns.end()) {
+        for (const auto& pattern : it->second) {
+            if (pattern->matchAndRewrite(op, *this).succeeded()) {
+                MLIR_PGX_DEBUG("SubOp", "Successfully applied pattern for operation: " + opName);
+                return;
+            }
+        }
+    }
+    MLIR_PGX_DEBUG("SubOp", "No matching pattern found for operation: " + opName);
+}
+
+void SubOpRewriter::rewrite(mlir::Block* block) {
+    auto& ops = block->getOperations();
+    for (auto it = ops.begin(); it != ops.end(); ++it) {
+        rewrite(&*it);
+    }
+}
+
+bool SubOpRewriter::shouldRewrite(mlir::Operation* op) {
+    return !isErased.contains(op) && patterns.find(op->getName().getStringRef().str()) != patterns.end();
+}
+
+// Explicit template instantiations for common adaptor types  
 namespace tuples = ::pgx_lower::compiler::dialect::tuples;
 template void SubOpRewriter::inlineBlock<tuples::ReturnOpAdaptor>(::mlir::Block* block, ::mlir::ValueRange arguments, const std::function<void(tuples::ReturnOpAdaptor)>& fn);
 

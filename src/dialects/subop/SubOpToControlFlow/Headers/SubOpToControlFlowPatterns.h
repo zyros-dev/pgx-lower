@@ -33,6 +33,15 @@ mlir::LogicalResult SubOpTupleStreamConsumerConversionPattern<OpType, numConsume
    });
 }
 
+// Pattern registration functions
+void populateSubOpToControlFlowConversionPatterns(mlir::RewritePatternSet& patterns, 
+                                                  mlir::TypeConverter& typeConverter,
+                                                  mlir::MLIRContext* context);
+
+void populateTableOperationPatterns(mlir::RewritePatternSet& patterns, 
+                                    mlir::TypeConverter& typeConverter,
+                                    mlir::MLIRContext* context);
+
 } // namespace subop_to_cf
 } // namespace dialect
 } // namespace compiler

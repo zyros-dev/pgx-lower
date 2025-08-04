@@ -95,10 +95,10 @@ private:
 
 public:
     /// Constructor that initializes the rewriter with execution step context
-    SubOpRewriter(subop::ExecutionStepOp executionStep, mlir::IRMapping& outerMapping);
+    SubOpRewriter(subop::ExecutionStepOp executionStep, mlir::IRMapping& outerMapping, mlir::TypeConverter* tc = nullptr);
     
     /// Alternate constructor for compatibility
-    SubOpRewriter(mlir::OpBuilder& b) : builder(b) {
+    SubOpRewriter(mlir::OpBuilder& b, mlir::TypeConverter* tc = nullptr) : builder(b), typeConverter(tc) {
         valueMapping.push_back(mlir::IRMapping());
     }
     
@@ -108,6 +108,13 @@ public:
     auto getIndexType() { return builder.getIndexType(); }
     auto getStringAttr(const llvm::Twine& str) { return builder.getStringAttr(str); }
     mlir::MLIRContext* getContext() { return builder.getContext(); }
+    
+    // Type converter access - CRITICAL FIX for compilation errors
+    mlir::TypeConverter* typeConverter = nullptr;
+    mlir::TypeConverter& getTypeConverter() { 
+        assert(typeConverter && "TypeConverter must be set during construction");
+        return *typeConverter; 
+    }
     
     // Value mapping methods needed by templates
     mlir::Value getMapped(mlir::Value v);

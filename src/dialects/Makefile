@@ -1063,54 +1063,6 @@ subop/SubOpToControlFlow/Operations/ViewOperations.cpp.s:
 	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f src/dialects/CMakeFiles/MLIRSubOpDialect.dir/build.make src/dialects/CMakeFiles/MLIRSubOpDialect.dir/subop/SubOpToControlFlow/Operations/ViewOperations.cpp.s
 .PHONY : subop/SubOpToControlFlow/Operations/ViewOperations.cpp.s
 
-subop/SubOpToControlFlowMinimal.o: subop/SubOpToControlFlowMinimal.cpp.o
-.PHONY : subop/SubOpToControlFlowMinimal.o
-
-# target to build an object file
-subop/SubOpToControlFlowMinimal.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f src/dialects/CMakeFiles/MLIRSubOpDialect.dir/build.make src/dialects/CMakeFiles/MLIRSubOpDialect.dir/subop/SubOpToControlFlowMinimal.cpp.o
-.PHONY : subop/SubOpToControlFlowMinimal.cpp.o
-
-subop/SubOpToControlFlowMinimal.i: subop/SubOpToControlFlowMinimal.cpp.i
-.PHONY : subop/SubOpToControlFlowMinimal.i
-
-# target to preprocess a source file
-subop/SubOpToControlFlowMinimal.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f src/dialects/CMakeFiles/MLIRSubOpDialect.dir/build.make src/dialects/CMakeFiles/MLIRSubOpDialect.dir/subop/SubOpToControlFlowMinimal.cpp.i
-.PHONY : subop/SubOpToControlFlowMinimal.cpp.i
-
-subop/SubOpToControlFlowMinimal.s: subop/SubOpToControlFlowMinimal.cpp.s
-.PHONY : subop/SubOpToControlFlowMinimal.s
-
-# target to generate assembly for a file
-subop/SubOpToControlFlowMinimal.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f src/dialects/CMakeFiles/MLIRSubOpDialect.dir/build.make src/dialects/CMakeFiles/MLIRSubOpDialect.dir/subop/SubOpToControlFlowMinimal.cpp.s
-.PHONY : subop/SubOpToControlFlowMinimal.cpp.s
-
-subop/SubOpToControlFlowSimple.o: subop/SubOpToControlFlowSimple.cpp.o
-.PHONY : subop/SubOpToControlFlowSimple.o
-
-# target to build an object file
-subop/SubOpToControlFlowSimple.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f src/dialects/CMakeFiles/MLIRSubOpDialect.dir/build.make src/dialects/CMakeFiles/MLIRSubOpDialect.dir/subop/SubOpToControlFlowSimple.cpp.o
-.PHONY : subop/SubOpToControlFlowSimple.cpp.o
-
-subop/SubOpToControlFlowSimple.i: subop/SubOpToControlFlowSimple.cpp.i
-.PHONY : subop/SubOpToControlFlowSimple.i
-
-# target to preprocess a source file
-subop/SubOpToControlFlowSimple.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f src/dialects/CMakeFiles/MLIRSubOpDialect.dir/build.make src/dialects/CMakeFiles/MLIRSubOpDialect.dir/subop/SubOpToControlFlowSimple.cpp.i
-.PHONY : subop/SubOpToControlFlowSimple.cpp.i
-
-subop/SubOpToControlFlowSimple.s: subop/SubOpToControlFlowSimple.cpp.s
-.PHONY : subop/SubOpToControlFlowSimple.s
-
-# target to generate assembly for a file
-subop/SubOpToControlFlowSimple.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f src/dialects/CMakeFiles/MLIRSubOpDialect.dir/build.make src/dialects/CMakeFiles/MLIRSubOpDialect.dir/subop/SubOpToControlFlowSimple.cpp.s
-.PHONY : subop/SubOpToControlFlowSimple.cpp.s
-
 subop/SubOperatorOps.o: subop/SubOperatorOps.cpp.o
 .PHONY : subop/SubOperatorOps.o
 
@@ -1873,12 +1825,6 @@ help:
 	@echo "... subop/SubOpToControlFlow/Operations/ViewOperations.o"
 	@echo "... subop/SubOpToControlFlow/Operations/ViewOperations.i"
 	@echo "... subop/SubOpToControlFlow/Operations/ViewOperations.s"
-	@echo "... subop/SubOpToControlFlowMinimal.o"
-	@echo "... subop/SubOpToControlFlowMinimal.i"
-	@echo "... subop/SubOpToControlFlowMinimal.s"
-	@echo "... subop/SubOpToControlFlowSimple.o"
-	@echo "... subop/SubOpToControlFlowSimple.i"
-	@echo "... subop/SubOpToControlFlowSimple.s"
 	@echo "... subop/SubOperatorOps.o"
 	@echo "... subop/SubOperatorOps.i"
 	@echo "... subop/SubOperatorOps.s"
