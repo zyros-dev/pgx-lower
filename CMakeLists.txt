@@ -151,6 +151,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/execution/query_analyzer.cpp
         src/execution/error_handling.cpp
         src/utility/logging.cpp
+        src/utility/logging_tools.cpp
         src/utility/logging/console_logger.cpp
         src/runtime/helpers.cpp
     )

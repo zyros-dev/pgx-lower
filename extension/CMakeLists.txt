@@ -15,6 +15,7 @@ add_postgresql_mixed_extension(
             ../src/execution/error_handling.cpp
             ../src/utility/logging.cpp
             ../src/utility/logging_c.cpp
+            ../src/utility/logging_tools.cpp
             ../src/utility/logging/mlir_logger_pg.cpp
             ../src/utility/logging/console_logger.cpp
         SCRIPTS 
