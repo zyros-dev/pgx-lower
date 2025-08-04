@@ -140,6 +140,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/lowering/subop_to_scf/test_table_operations.cpp
         tests/unit/lowering/subop_to_scf/test_threadlocal_operations.cpp
         tests/unit/lowering/subop_to_scf/test_view_operations.cpp
+        tests/unit/lowering/subop_to_scf/test_pattern_registration.cpp
     )
     
     add_mlir_unit_test(mlir_unit_test 

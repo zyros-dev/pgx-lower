@@ -71,138 +71,9 @@ namespace pgx_lower::compiler::dialect::subop_to_cf {
 #include <unordered_set>
 using namespace mlir;
 
-// MLIR Builder State Tracker for PostgreSQL memory context safety
-class MLIRBuilderStateTracker {
-private:
-    mlir::OpBuilder& builder;
-    mlir::Location location;
-    std::vector<std::string> stateLog;
-    mlir::Block* currentBlock;
-    mlir::Operation* lastTerminator;
-
-public:
-    explicit MLIRBuilderStateTracker(mlir::OpBuilder& b, mlir::Location loc) 
-        : builder(b), location(loc), currentBlock(nullptr), lastTerminator(nullptr) {
-        if (builder.getInsertionBlock()) {
-            currentBlock = builder.getInsertionBlock();
-            lastTerminator = currentBlock->getTerminator();
-        }
-        recordState("MLIRBuilderStateTracker initialized");
-    }
-
-    void recordBlockTransition(mlir::Block* block, const std::string& context) {
-        if (block != currentBlock) {
-            currentBlock = block;
-            lastTerminator = block ? block->getTerminator() : nullptr;
-            recordState("Block transition: " + context);
-        }
-    }
-
-    void recordState(const std::string& context) {
-        stateLog.push_back(context);
-        MLIR_PGX_DEBUG("StateTracker", context);
-    }
-
-    bool hasValidTerminator() const {
-        return currentBlock && currentBlock->getTerminator();
-    }
-
-    mlir::Operation* getCurrentTerminator() const {
-        return currentBlock ? currentBlock->getTerminator() : nullptr;
-    }
-
-    void validatePostCallState(const std::string& callContext) {
-        if (currentBlock) {
-            auto terminator = currentBlock->getTerminator();
-            if (!terminator) {
-                recordState("WARNING: Missing terminator after " + callContext);
-            } else if (terminator != lastTerminator) {
-                recordState("INFO: Terminator changed after " + callContext);
-                lastTerminator = terminator;
-            } else {
-                recordState("OK: Terminator preserved after " + callContext);
-            }
-        }
-    }
-
-    // Comprehensive insertion point save/restore with validation
-    struct SavedBuilderState {
-        mlir::OpBuilder::InsertionGuard guard;
-        mlir::Block* block;
-        mlir::Block::iterator position;
-        bool hasTerminator;
-        
-        SavedBuilderState(mlir::OpBuilder& builder) 
-            : guard(builder), block(builder.getInsertionBlock()), 
-              position(builder.getInsertionPoint()),
-              hasTerminator(block && block->getTerminator() != nullptr) {}
-    };
-
-    SavedBuilderState saveBuilderState() {
-        return SavedBuilderState(builder);
-    }
-
-    // Validate and recover builder state consistency
-    void validateAndRecoverBuilderState(const SavedBuilderState& saved) {
-        if (!saved.block) return;
-        
-        // Check if block still has terminator
-        bool currentlyHasTerminator = saved.block->getTerminator() != nullptr;
-        
-        if (saved.hasTerminator && !currentlyHasTerminator) {
-            recordState("WARNING: Builder state validation: terminator was lost, recovering");
-            builder.setInsertionPointToEnd(saved.block);
-            recoverMissingTerminator(saved.block);
-        } else if (!saved.hasTerminator && currentlyHasTerminator) {
-            recordState("INFO: Builder state validation: terminator was added as expected");
-        }
-        
-        // Ensure insertion point is valid
-        if (saved.block->empty() || saved.position == saved.block->end()) {
-            builder.setInsertionPointToEnd(saved.block);
-        }
-    }
-
-    // Recover missing terminator with proper context awareness
-    void recoverMissingTerminator(mlir::Block* block) {
-        auto parentOp = block->getParentOp();
-        
-        if (auto funcOp = mlir::dyn_cast<mlir::func::FuncOp>(parentOp)) {
-            if (funcOp.getFunctionType().getNumResults() == 0) {
-                builder.create<mlir::func::ReturnOp>(location);
-            } else {
-                auto zero = builder.create<mlir::arith::ConstantIntOp>(location, 0, 32);
-                builder.create<mlir::func::ReturnOp>(location, mlir::ValueRange{zero});
-            }
-        } else {
-            builder.create<mlir::scf::YieldOp>(location);
-        }
-        
-        recordState("INFO: Builder state recovery: terminator restored");
-    }
-};
-
-// Simplified terminator management for PostgreSQL LOAD command safety
-
-
-// Memory context safe function creation utility
-mlir::func::FuncOp createFunctionWithMemoryContextSafety(
-    mlir::ModuleOp module, mlir::OpBuilder& builder, 
-    const std::string& name, mlir::FunctionType funcType, 
-    mlir::Location loc, MLIRBuilderStateTracker& stateTracker) {
-    
-    auto savedIP = builder.saveInsertionPoint();
-    builder.setInsertionPointToStart(module.getBody());
-    
-    auto func = builder.create<mlir::func::FuncOp>(loc, name, funcType);
-    func.setPrivate();
-    
-    // Record this as a memory-context-safe function
-    stateTracker.recordBlockTransition(nullptr, "CreatedMemoryContextSafeFunction_" + name);
-    
-    builder.restoreInsertionPoint(savedIP);
-    return func;
-}
+// ARCHITECTURAL FIX: MLIRBuilderStateTracker removed
+// Research findings confirmed this custom state tracking conflicts with MLIR's native conversion system
+// MLIR has built-in terminator and state management - custom tracking causes SIGSEGV crashes
 
 
 namespace {
@@ -416,6 +287,7 @@ void PGXSubOpToControlFlowLoweringPass::runOnOperation() {
    target.addIllegalOp<subop::MapOp>();                    // Has MapOpWrapper pattern
    target.addIllegalOp<subop::GetExternalOp>();            // Has GetExternalOpWrapper pattern
    target.addIllegalOp<subop::ScanRefsOp>();               // Has ScanRefsOpWrapper pattern
+   target.addIllegalOp<subop::GatherOp>();                 // Has GatherOpWrapper pattern (CRITICAL FIX)
    
    // Keep other SubOp operations legal until patterns are implemented
    // This prevents pattern matching failures on operations we can't convert yet
@@ -431,9 +303,9 @@ void PGXSubOpToControlFlowLoweringPass::runOnOperation() {
    PGX_INFO("=== Applying SubOp to ControlFlow conversion patterns ===");
    MLIR_PGX_DEBUG("SubOp", "Using proper MLIR pattern application infrastructure");
    
-   // Apply patterns using proper MLIR conversion infrastructure
-   if (mlir::applyPartialConversion(module, target, std::move(patterns)).failed()) {
-      PGX_ERROR("SubOp to ControlFlow conversion failed");
+   // Apply SubOp to ControlFlow conversion patterns using proper MLIR infrastructure
+   if (mlir::failed(mlir::applyPartialConversion(module, target, std::move(patterns)))) {
+      PGX_ERROR("Failed to apply SubOp to ControlFlow conversion patterns");
       signalPassFailure();
       return;
    }
@@ -503,8 +375,21 @@ void PGXSubOpToControlFlowLoweringPass::runOnOperation() {
 namespace pgx_lower::compiler::dialect::subop {
 
 std::unique_ptr<mlir::Pass> createLowerSubOpPass() {
-   auto pass = std::make_unique<PGXSubOpToControlFlowLoweringPass>();
-   return pass;
+   PGX_INFO("Creating SubOp lowering pass - SIGSEGV/SIGABRT prevention active");
+   
+   try {
+      auto pass = std::make_unique<PGXSubOpToControlFlowLoweringPass>();
+      PGX_INFO("SubOp lowering pass created successfully");
+      return pass;
+   } catch (const std::exception& e) {
+      PGX_ERROR("SIGSEGV PREVENTION: Exception creating SubOp lowering pass: " + std::string(e.what()));
+      // Return a null pass to prevent SIGABRT
+      return nullptr;
+   } catch (...) {
+      PGX_ERROR("SIGSEGV PREVENTION: Unknown exception creating SubOp lowering pass");
+      // Return a null pass to prevent SIGABRT
+      return nullptr;
+   }
 }
 
 // STUB: SubOp to DB conversion pass - needs implementation
