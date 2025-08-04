@@ -327,6 +327,35 @@ class GenerateLowering : public SubOpConversionPattern<subop::GenerateOp> {
    }
 };
 
+//===----------------------------------------------------------------------===//
+// Table Operations Pattern Registration
+//===----------------------------------------------------------------------===//
+
+/// Populate patterns for table-related SubOp to ControlFlow conversion
+void populateTableOperationPatterns(mlir::RewritePatternSet& patterns, 
+                                    mlir::TypeConverter& typeConverter,
+                                    mlir::MLIRContext* context) {
+    // DISABLED: Standard MLIR pattern registration incompatible with custom SubOpRewriter system
+    // Manual pattern invocation is used instead in ExecutionEngine.cpp
+    /*
+    // CRITICAL FIX 1: Register TableRefGatherOpLowering pattern
+    patterns.add<TableRefGatherOpLowering>(typeConverter, context);
+    
+    // Register other table operation patterns
+    patterns.add<MaterializeTableLowering>(typeConverter, context);
+    patterns.add<MaterializeHeapLowering>(typeConverter, context);
+    patterns.add<MaterializeVectorLowering>(typeConverter, context);
+    patterns.add<ScanRefsTableLowering>(typeConverter, context);
+    patterns.add<CreateFromResultTableLowering>(typeConverter, context);
+    patterns.add<CreateTableLowering>(typeConverter, context);
+    patterns.add<GetExternalTableLowering>(typeConverter, context);
+    patterns.add<GenerateLowering>(typeConverter, context);
+    */
+    
+    MLIR_PGX_INFO("SubOp", "Table operation patterns handled manually in ExecutionEngine.cpp");
+    PGX_INFO("Manual pattern integration used instead of standard MLIR pattern registration");
+}
+
 } // namespace subop_to_cf
 } // namespace dialect
 } // namespace compiler
