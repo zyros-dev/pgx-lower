@@ -102,9 +102,16 @@ public:
         valueMapping.push_back(mlir::IRMapping());
     }
     
+    /// Constructor for MLIR pattern wrapper integration
+    SubOpRewriter(mlir::PatternRewriter& rewriter, mlir::TypeConverter& tc) 
+        : builder(rewriter), typeConverter(&tc) {
+        valueMapping.push_back(mlir::IRMapping());
+    }
+    
     // Essential methods used by utilities
     auto getI1Type() { return builder.getI1Type(); }
     auto getI8Type() { return builder.getI8Type(); }
+    auto getI32Type() { return builder.getI32Type(); }
     auto getIndexType() { return builder.getIndexType(); }
     auto getStringAttr(const llvm::Twine& str) { return builder.getStringAttr(str); }
     mlir::MLIRContext* getContext() { return builder.getContext(); }
@@ -134,6 +141,9 @@ public:
     // Additional methods needed by utilities
     void eraseOp(mlir::Operation* op);
     
+    // Integer type getters for pattern usage
+    auto getIntegerType(unsigned width) { return builder.getIntegerType(width); }
+    
     void atStartOf(mlir::Block* block, const std::function<void(SubOpRewriter&)>& fn);
     
     template<typename AdaptorType>
@@ -143,6 +153,8 @@ public:
     
     /// Additional type builders and attribute accessors
     auto setInsertionPointAfter(mlir::Operation* op) { return builder.setInsertionPointAfter(op); }
+    auto setInsertionPointToStart(mlir::Block* block) { return builder.setInsertionPointToStart(block); }
+    auto setInsertionPointToEnd(mlir::Block* block) { return builder.setInsertionPointToEnd(block); }
     auto getIntegerAttr(mlir::Type t, int64_t v) { return builder.getIntegerAttr(t, v); }
     auto getNamedAttr(llvm::StringRef s, mlir::Attribute v) { return builder.getNamedAttr(s, v); }
     auto getArrayAttr(llvm::ArrayRef<mlir::Attribute> v) { return builder.getArrayAttr(v); }

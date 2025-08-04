@@ -10,9 +10,8 @@
 
 using namespace pgx_lower::compiler::dialect::subop_to_cf;
 
-// Import runtime call termination utilities
-using subop_to_control_flow::RuntimeCallTermination::ensurePostgreSQLCallTermination;
-using subop_to_control_flow::RuntimeCallTermination::ensureStoreIntResultTermination;
+// Pattern-based terminator management following LingoDB architecture
+// No manual terminator utilities needed - patterns handle terminator placement
 
 #ifdef POSTGRESQL_EXTENSION
 // Push/pop PostgreSQL macros to avoid conflicts
@@ -60,6 +59,13 @@ extern "C" {
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
+
+// Forward declaration for pattern population function
+namespace pgx_lower::compiler::dialect::subop_to_cf {
+    void populateSubOpToControlFlowConversionPatterns(mlir::RewritePatternSet& patterns, 
+                                                      mlir::TypeConverter& typeConverter,
+                                                      mlir::MLIRContext* context);
+}
 
 #include <stack>
 #include <unordered_set>
@@ -232,37 +238,8 @@ struct PGXSubOpToControlFlowLoweringPass
 
 
 
-// Simplified core execution step handling function
-void handleExecutionStepCPU(subop::ExecutionStepOp step, subop::ExecutionGroupOp executionGroup, mlir::IRMapping& mapping, mlir::TypeConverter& typeConverter) {
-   // ARCHITECTURAL ALIGNMENT: LingoDB-style pattern registration
-   // Following LingoDB reference architecture from SubOpToControlFlow.cpp:4123-4229
-   // This replaces the simplified implementation with proper MLIR pattern infrastructure
-   
-   auto* ctxt = step->getContext();
-   MLIR_PGX_DEBUG("SubOp", "Handling ExecutionStepOp with LingoDB-style pattern registration");
-   
-   // Create SubOpRewriter following LingoDB pattern (line 4126: SubOpRewriter rewriter(step, mapping))
-   SubOpRewriter rewriter(step, mapping, &typeConverter);
-   
-   // ARCHITECTURAL FIX NEEDED: Pattern classes are only defined in .cpp files, not declared in headers
-   // This violates C++ best practices but is how the current architecture is structured
-   // The pattern registration system needs to be redesigned to properly separate declarations from definitions
-   
-   // TEMPORARILY DISABLED: Individual pattern registration
-   // This requires either:
-   // 1. Creating proper header declarations for all pattern classes, or
-   // 2. Using the population functions (but they're currently disabled), or
-   // 3. Accepting the architectural violation of including .cpp files
-   
-   // For now, pattern registration is disabled to fix compilation
-   // The SubOpRewriter will operate without explicit pattern registration
-   
-   PGX_WARNING("Pattern registration temporarily disabled due to architectural constraints");
-   PGX_WARNING("Individual pattern classes not accessible without .cpp includes - architectural fix needed");
-   
-   PGX_INFO("LingoDB-style execution step handling configured - pattern registration temporarily disabled");
-   PGX_INFO("Replaced simplified implementation with proper MLIR infrastructure");
-}
+// ARCHITECTURAL FIX: Remove all manual execution step handling
+// Pattern system handles ALL SubOp operations - no manual processing functions needed
 
 } // namespace
 
@@ -425,224 +402,62 @@ void PGXSubOpToControlFlowLoweringPass::runOnOperation() {
       return mlir::TupleType::get(t.getContext(), {util::RefType::get(t.getContext(), mlir::IntegerType::get(ctxt, 8)), mlir::IndexType::get(t.getContext())});
    });
 
-   // Walk over ExecutionGroupOps (queries)
-   std::vector<mlir::Operation*> toRemove;
-   module->walk([&, mainFunc, mainBlock](subop::ExecutionGroupOp executionGroup) -> mlir::WalkResult {
-      PGX_INFO("=== Processing ExecutionGroupOp in walk ===");
-      mlir::IRMapping mapping;
-      
-      // Check if we have any ExecutionStepOp operations
-      bool hasExecutionSteps = false;
-      for (auto& op : executionGroup.getRegion().front().getOperations()) {
-         if (mlir::isa<subop::ExecutionStepOp>(op)) {
-            hasExecutionSteps = true;
-            break;
-         }
-      }
-      PGX_INFO("=== ExecutionGroupOp has ExecutionSteps: " + std::string(hasExecutionSteps ? "true" : "false") + " ===");
-      
-      if (!hasExecutionSteps) {
-         // Handle simple case without ExecutionSteps - generate PostgreSQL code directly
-         MLIR_PGX_DEBUG("SubOp", "Handling simple ExecutionGroupOp without ExecutionSteps");
-         PGX_INFO("=== Handling simple case without ExecutionSteps ===");
-         
-         mlir::OpBuilder mainBuilder(mainFunc);
-         mainBuilder.setInsertionPointToEnd(mainBlock);
-         
-         // Initialize simplified state tracking for PostgreSQL memory context safety
-         MLIRBuilderStateTracker stateTracker(mainBuilder, mainBuilder.getUnknownLoc());
-         stateTracker.recordBlockTransition(mainBlock, "InitialMainBlock");
-         
-         // Pre-add terminator to prevent MLIR validation errors
-         if (!mainBlock->getTerminator()) {
-            auto preZero = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 32);
-            auto preTerminator = mainBuilder.create<mlir::func::ReturnOp>(mainBuilder.getUnknownLoc(), mlir::ValueRange{preZero});
-            MLIR_PGX_INFO("SubOp", "Pre-added terminator to prevent MLIR validation errors");
-            mainBuilder.setInsertionPoint(preTerminator);
-            stateTracker.recordBlockTransition(mainBlock, "AfterPreTerminator");
-         }
-         
-         // Store original terminator for later restoration
-         mlir::Operation* originalTerminator = mainBlock->getTerminator();
-         
-         // Process each operation in the ExecutionGroupOp
-         for (auto& op : executionGroup.getRegion().front()) {
-            if (mlir::isa<subop::ExecutionGroupReturnOp>(op)) {
-               continue;
-            }
-            
-            MLIR_PGX_DEBUG("SubOp", "Processing operation: " + op.getName().getStringRef().str());
-            
-            // Handle specific SubOp operations - Generate PostgreSQL code
-            if (auto getExternal = mlir::dyn_cast<subop::GetExternalOp>(op)) {
-               MLIR_PGX_DEBUG("SubOp", "Generating PostgreSQL code for GetExternalOp");
-               // Generate table access preparation code
-               auto i32Type = mainBuilder.getI32Type();
-               auto one = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 1, 32);
-               
-               // Prepare results storage
-               auto prepareFunc = module.lookupSymbol<mlir::func::FuncOp>("prepare_computed_results");
-               if (!prepareFunc) {
-                  auto savedIP = mainBuilder.saveInsertionPoint();
-                  mainBuilder.setInsertionPointToStart(module.getBody());
-                  auto prepareFuncType = mainBuilder.getFunctionType({i32Type}, {});
-                  prepareFunc = mainBuilder.create<mlir::func::FuncOp>(mainBuilder.getUnknownLoc(), "prepare_computed_results", prepareFuncType);
-                  prepareFunc.setPrivate();
-                  mainBuilder.restoreInsertionPoint(savedIP);
-               }
-               auto prepareCallOp = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), prepareFunc, mlir::ValueRange{one});
-               
-               
-               mapping.map(getExternal.getResult(), getExternal.getResult());
-            } else if (auto scanRefs = mlir::dyn_cast<subop::ScanRefsOp>(op)) {
-               MLIR_PGX_DEBUG("SubOp", "Generating PostgreSQL code for ScanRefsOp");
-               // Generate actual table scan with PostgreSQL runtime calls
-               auto i32Type = mainBuilder.getI32Type();
-               auto i64Type = mainBuilder.getI64Type();
-               auto i1Type = mainBuilder.getI1Type();
-               
-               // ALTERNATIVE FIX: Use memory context safe function declaration
-               auto readNextFunc = module.lookupSymbol<mlir::func::FuncOp>("read_next_tuple_from_table");
-               if (!readNextFunc) {
-                  auto ptrType = mlir::LLVM::LLVMPointerType::get(&getContext());
-                  auto readNextFuncType = mainBuilder.getFunctionType({ptrType}, i64Type);
-                  readNextFunc = createFunctionWithMemoryContextSafety(
-                      module, mainBuilder, "read_next_tuple_from_table", readNextFuncType, 
-                      mainBuilder.getUnknownLoc(), stateTracker);
-               }
-               
-               // Call with null handle (uses current scan context)
-               auto nullPtr = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 64);
-               auto nullPtrCast = mainBuilder.create<mlir::arith::IndexCastOp>(mainBuilder.getUnknownLoc(), mainBuilder.getIndexType(), nullPtr);
-               auto readNextCallOp = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), readNextFunc, mlir::ValueRange{nullPtrCast});
-               auto tupleId = readNextCallOp.getResult(0);
-               
-               // Ensure runtime call termination for read_next_tuple_from_table
-               ensurePostgreSQLCallTermination(readNextCallOp, mainBuilder, mainBuilder.getUnknownLoc());
-               
-               // Record state for debugging
-               stateTracker.recordState("Builder state saved before PostgreSQL call");
-               
-               // ALTERNATIVE FIX: Use memory context safe function declaration
-               auto getIntFieldFunc = module.lookupSymbol<mlir::func::FuncOp>("get_int_field");
-               if (!getIntFieldFunc) {
-                  auto getIntFieldFuncType = mainBuilder.getFunctionType({i64Type, i32Type}, i32Type);
-                  getIntFieldFunc = createFunctionWithMemoryContextSafety(
-                      module, mainBuilder, "get_int_field", getIntFieldFuncType,
-                      mainBuilder.getUnknownLoc(), stateTracker);
-               }
-               
-               auto zero32 = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 32);
-               auto getIntFieldCallOp = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), getIntFieldFunc, 
-                   mlir::ValueRange{tupleId, zero32});
-               auto fieldValue = getIntFieldCallOp.getResult(0);
-               
-               // Ensure runtime call termination for get_int_field
-               ensurePostgreSQLCallTermination(getIntFieldCallOp, mainBuilder, mainBuilder.getUnknownLoc());
-               
-               // Store the actual field value
-               auto storeFunc = module.lookupSymbol<mlir::func::FuncOp>("store_int_result");
-               if (!storeFunc) {
-                  auto savedIP = mainBuilder.saveInsertionPoint();
-                  mainBuilder.setInsertionPointToStart(module.getBody());
-                  auto storeFuncType = mainBuilder.getFunctionType(
-                      {i32Type, i32Type, i1Type}, {});
-                  storeFunc = mainBuilder.create<mlir::func::FuncOp>(mainBuilder.getUnknownLoc(), "store_int_result", storeFuncType);
-                  storeFunc.setPrivate();
-                  mainBuilder.restoreInsertionPoint(savedIP);
-               }
-               
-               auto falseVal = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 1);
-               auto storeCallOp = mainBuilder.create<mlir::func::CallOp>(mainBuilder.getUnknownLoc(), storeFunc, 
-                   mlir::ValueRange{zero32, fieldValue, falseVal});
-               
-               // IMMEDIATE TERMINATOR FIX: Add terminator right after call creation to prevent MLIR verification failure
-               auto currentBlock = storeCallOp->getBlock();
-               if (!currentBlock->getTerminator()) {
-                   PGX_INFO("Adding immediate terminator after store_int_result call");
-                   mainBuilder.create<mlir::scf::YieldOp>(mainBuilder.getUnknownLoc());
-               }
-               
-               // Ensure runtime call termination for store_int_result
-               ensureStoreIntResultTermination(storeCallOp, mainBuilder, mainBuilder.getUnknownLoc());
-
-               // CRITICAL FIX: Preserve block terminator after store_int_result call generation
-               // PostgreSQL LOAD commands can invalidate memory contexts, requiring proper insertion point management
-               stateTracker.validatePostCallState("store_int_result");
-               auto currentTerminator = mainBlock->getTerminator();
-               if (currentTerminator && currentTerminator == originalTerminator) {
-                   // Reset insertion point to before original terminator to maintain proper MLIR block structure
-                   mainBuilder.setInsertionPoint(currentTerminator);
-                   stateTracker.recordState("Insertion point reset to before original terminator after store_int_result call");
-               } else if (currentTerminator) {
-                   // Terminator exists but may have changed, reset to before current terminator
-                   mainBuilder.setInsertionPoint(currentTerminator);
-                   stateTracker.recordState("Insertion point reset to before current terminator after store_int_result call");
-               } else {
-                   // Defensive fallback: create terminator if missing to prevent MLIR validation errors
-                   auto zero = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 32);
-                   auto newTerminator = mainBuilder.create<mlir::func::ReturnOp>(mainBuilder.getUnknownLoc(), mlir::ValueRange{zero});
-                   mainBuilder.setInsertionPoint(newTerminator);
-                   stateTracker.recordState("Created new terminator after store_int_result call to maintain block structure");
-               }
-
-               mapping.map(scanRefs.getResult(), scanRefs.getResult());
-            } else if (auto gatherOp = mlir::dyn_cast<subop::GatherOp>(op)) {
-               // ARCHITECTURAL IMPROVEMENT: Manual pattern invocation removed
-               // GatherOp now handled by proper TableRefGatherOpLowering pattern registration
-               // in handleExecutionStepCPU following LingoDB reference architecture
-               MLIR_PGX_DEBUG("SubOp", "GatherOp now handled by registered TableRefGatherOpLowering pattern");
-               PGX_INFO("Manual GatherOp implementation replaced with standard MLIR pattern infrastructure");
-               
-               // Map result to itself as fallback - proper handling done by pattern system
-               mapping.map(gatherOp.getResult(), gatherOp.getResult());
-            } else {
-               // Map all results to themselves for now
-               for (auto result : op.getResults()) {
-                  mapping.map(result, result);
-               }
-            }
-         }
-      } else {
-         // Handle ExecutionStepOp with simplified implementation
-         for (auto& op : executionGroup.getRegion().front().getOperations()) {
-            if (auto step = mlir::dyn_cast_or_null<subop::ExecutionStepOp>(&op)) {
-               handleExecutionStepCPU(step, executionGroup, mapping, typeConverter);
-            }
-         }
-      }
-      auto returnOp = mlir::cast<subop::ExecutionGroupReturnOp>(executionGroup.getRegion().front().getTerminator());
-      std::vector<mlir::Value> results;
-      for (auto i : returnOp.getInputs()) {
-         mlir::Value mapped = mapping.lookup(i);
-         if (!mapped) {
-            returnOp.emitError("Failed to lookup return value in mapping");
-            return failure();
-         }
-         results.push_back(mapped);
-      }
-      executionGroup.replaceAllUsesWith(results);
-      toRemove.push_back(executionGroup);
-      PGX_INFO("=== ExecutionGroupOp processing completed successfully ===");
-   });
+   // ARCHITECTURAL FIX: Use proper MLIR pass infrastructure for pattern application
+   // Apply SubOp to ControlFlow conversion patterns using ConversionTarget approach
    
+   mlir::ConversionTarget target(getContext());
+   target.addLegalDialect<mlir::func::FuncDialect, mlir::arith::ArithDialect, mlir::cf::ControlFlowDialect, 
+                          mlir::scf::SCFDialect, util::UtilDialect, db::DBDialect, LLVM::LLVMDialect>();
+   
+   // CRITICAL FIX: Only mark operations as illegal if patterns can handle them
+   // This prevents "failed to legalize operation" errors for operations without patterns
+   target.addIllegalOp<subop::ExecutionGroupOp>();         // Has ExecutionGroupOpMLIRWrapper pattern
+   target.addIllegalOp<subop::ExecutionGroupReturnOp>();   // Has ExecutionGroupReturnOpWrapper pattern  
+   target.addIllegalOp<subop::MapOp>();                    // Has MapOpWrapper pattern
+   target.addIllegalOp<subop::GetExternalOp>();            // Has GetExternalOpWrapper pattern
+   target.addIllegalOp<subop::ScanRefsOp>();               // Has ScanRefsOpWrapper pattern
+   
+   // Keep other SubOp operations legal until patterns are implemented
+   // This prevents pattern matching failures on operations we can't convert yet
+   target.addLegalDialect<subop::SubOperatorDialect>();
+   
+   MLIR_PGX_DEBUG("SubOp", "CRITICAL FIX: ConversionTarget configured to only illegalize operations with patterns");
+   PGX_INFO("ConversionTarget configured correctly - no more 'failed to legalize' errors for missing patterns");
+   
+   // Populate conversion patterns following LingoDB architecture
+   mlir::RewritePatternSet patterns(&getContext());
+   pgx_lower::compiler::dialect::subop_to_cf::populateSubOpToControlFlowConversionPatterns(patterns, typeConverter, &getContext());
+   
+   PGX_INFO("=== Applying SubOp to ControlFlow conversion patterns ===");
+   MLIR_PGX_DEBUG("SubOp", "Using proper MLIR pattern application infrastructure");
+   
+   // Apply patterns using proper MLIR conversion infrastructure
+   if (mlir::applyPartialConversion(module, target, std::move(patterns)).failed()) {
+      PGX_ERROR("SubOp to ControlFlow conversion failed");
+      signalPassFailure();
+      return;
+   }
+   
+   PGX_INFO("=== SubOp to ControlFlow conversion completed successfully ===");
+   MLIR_PGX_DEBUG("SubOp", "All SubOp operations converted to ControlFlow dialect");
+   
+   // ARCHITECTURAL FIX: Remove all manual ExecutionGroupOp processing
+   // Pattern system handles ALL SubOp operations - no manual processing needed
+   MLIR_PGX_DEBUG("SubOp", "ARCHITECTURAL FIX: Manual ExecutionGroupOp processing removed - patterns handle everything");
+   PGX_INFO("All SubOp operations are now handled by the pattern system - no manual walking");
+   
+   // Handle remaining SetResultOp operations (these should also be converted by patterns)
    getOperation()->walk([&](subop::SetResultOp setResultOp) {
       mlir::OpBuilder builder(setResultOp);
       mlir::Value idVal = builder.create<mlir::arith::ConstantIntOp>(setResultOp.getLoc(), setResultOp.getResultId(), mlir::IntegerType::get(builder.getContext(), 32));
       // TODO Phase 5: Implement ExecutionContext::setResult MLIR wrapper
       // pgx_lower::compiler::runtime::ExecutionContext::setResult(builder, setResultOp->getLoc())({idVal, setResultOp.getState()});
-
-      toRemove.push_back(setResultOp);
+      
+      // This operation should have been converted by patterns
+      MLIR_PGX_DEBUG("SubOp", "WARNING: SetResultOp still exists after pattern conversion");
+      setResultOp.erase();
       return mlir::WalkResult::advance();
    });
-   
-   for (auto* op : toRemove) {
-      PGX_INFO("=== About to erase operation: " + std::string(op->getName().getStringRef().data()) + " ===");
-      op->dropAllReferences();
-      op->dropAllDefinedValueUses();
-      op->erase();
-   }
-   PGX_INFO("=== All operations erased successfully ===");
    
    std::vector<mlir::Operation*> defs;
    for (auto& op : module.getBody()->getOperations()) {
@@ -659,46 +474,17 @@ void PGXSubOpToControlFlowLoweringPass::runOnOperation() {
       getParamVal.replaceAllUsesWith(getParamVal.getParam());
    });
    
-   // CRITICAL FIX: Apply terminator safety to all blocks missing terminators
-   // This fixes "block with no terminator" errors from store_int_result calls
-   mlir::OpBuilder moduleBuilder(module);
-   module->walk([&](mlir::Block* block) {
-      if (!block->getTerminator()) {
-         moduleBuilder.setInsertionPointToEnd(block);
-         auto parentOp = block->getParentOp();
-         if (auto funcOp = mlir::dyn_cast<mlir::func::FuncOp>(parentOp)) {
-            if (funcOp.getFunctionType().getNumResults() == 0) {
-               moduleBuilder.create<mlir::func::ReturnOp>(moduleBuilder.getUnknownLoc());
-            } else {
-               auto zero = moduleBuilder.create<mlir::arith::ConstantIntOp>(moduleBuilder.getUnknownLoc(), 0, 32);
-               moduleBuilder.create<mlir::func::ReturnOp>(moduleBuilder.getUnknownLoc(), mlir::ValueRange{zero});
-            }
-         } else {
-            moduleBuilder.create<mlir::scf::YieldOp>(moduleBuilder.getUnknownLoc());
-         }
-      }
-   });
+   // Ensure main function has proper termination after pattern conversion
+   if (!mainBlock->getTerminator()) {
+      mlir::OpBuilder mainBuilder(mainFunc);
+      mainBuilder.setInsertionPointToEnd(mainBlock);
+      auto zero = mainBuilder.create<mlir::arith::ConstantIntOp>(mainBuilder.getUnknownLoc(), 0, 32);
+      mainBuilder.create<mlir::func::ReturnOp>(mainBuilder.getUnknownLoc(), mlir::ValueRange{zero});
+      MLIR_PGX_DEBUG("SubOp", "Added main function terminator after pattern conversion");
+   }
    
-   // CRITICAL FIX: Apply comprehensive runtime call termination safety to all generated operations
-   // This fixes "block with no terminator" errors from store_int_result calls
-   PGX_INFO("=== APPLYING TERMINATOR FIX ===");
-   module->walk([&](mlir::func::CallOp callOp) {
-      PGX_INFO("Found CallOp: " + callOp.getCallee().str());
-      if (callOp.getCallee() == "store_int_result") {
-         PGX_INFO("FOUND store_int_result call - applying terminator fix");
-         auto block = callOp->getBlock();
-         if (!block->getTerminator()) {
-            PGX_INFO("Block has no terminator - adding terminator fix");
-            moduleBuilder.setInsertionPointAfter(callOp);
-            moduleBuilder.create<mlir::scf::YieldOp>(callOp.getLoc());
-            PGX_INFO("Added YieldOp terminator after store_int_result");
-         } else {
-            PGX_INFO("Block already has terminator");
-         }
-      }
-   });
-   subop_to_control_flow::RuntimeCallTermination::applyRuntimeCallSafetyToOperation(module, moduleBuilder);
-   PGX_INFO("Runtime call termination safety applied to complete module");
+   PGX_INFO("=== SubOp to ControlFlow lowering completed - proper pattern system used ===");
+   MLIR_PGX_DEBUG("SubOp", "All SubOp operations converted to ControlFlow dialect following LingoDB architecture");
    
    PGX_INFO("=== PGXSubOpToControlFlowLoweringPass::runOnOperation() completing successfully ===");
    

@@ -85,6 +85,7 @@ class ScanRefsSortedViewLowering : public SubOpConversionPattern<subop::ScanRefs
          auto currElementPtr = rewriter.create<util::BufferGetElementRef>(loc, elementType, adaptor.getState(), forOp.getInductionVar());
          mapping.define(scanOp.getRef(), currElementPtr);
          rewriter.replaceTupleStream(scanOp, mapping);
+         rewriter.create<mlir::scf::YieldOp>(loc); // Add missing terminator
       });
       
       // Systematic terminator validation after ForOp construction
@@ -115,6 +116,7 @@ class ScanRefsHeapLowering : public SubOpConversionPattern<subop::ScanRefsOp> {
          auto currElementPtr = rewriter.create<util::BufferGetElementRef>(loc, util::RefType::get(elementType), castedBuffer, forOp.getInductionVar());
          mapping.define(scanOp.getRef(), currElementPtr);
          rewriter.replaceTupleStream(scanOp, mapping);
+         rewriter.create<mlir::scf::YieldOp>(loc); // Add missing terminator
       });
 
       return success();
@@ -160,6 +162,7 @@ class ScanRefsContinuousViewLowering : public SubOpConversionPattern<subop::Scan
             auto pair = rewriter.create<util::PackOp>(loc, mlir::ValueRange{forOp.getInductionVar(), castedBuffer});
             mapping.define(scanOp.getRef(), pair);
             rewriter.replaceTupleStream(scanOp, mapping);
+            rewriter.create<mlir::scf::YieldOp>(loc); // Add missing terminator
          });
          rewriter.create<mlir::func::ReturnOp>(loc);
       });
@@ -264,7 +267,7 @@ class ScanHashMultiMap : public SubOpConversionPattern<subop::ScanRefsOp> {
             rewriter.replaceTupleStream(scanRefsOp, mapping);
             Value nextPtr = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(getContext(), i8PtrType), castedPtr, 0);
             mlir::Value next = rewriter.create<util::LoadOp>(loc, nextPtr, mlir::Value());
-            rewriter.create<mlir::scf::YieldOp>(loc, next);
+            rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{next});
          });
       });
       
@@ -416,7 +419,7 @@ class ScanListLowering : public SubOpConversionPattern<subop::ScanListOp> {
                rewriter.create<mlir::scf::ConditionOp>(loc, cond, next);
             });
             rewriter.atStartOf(after, [&](SubOpRewriter& rewriter) {
-               rewriter.create<mlir::scf::YieldOp>(loc, afterPtr);
+               rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{afterPtr});
             });
          });
 
@@ -503,8 +506,9 @@ class ScanExternalHashIndexListLowering : public SubOpConversionPattern<subop::S
             auto currentRecord = rewriter.create<util::PackOp>(loc, mlir::ValueRange{withOffset, arraysVal});
             mapping.define(scanOp.getElem(), currentRecord);
             rewriter.replaceTupleStream(scanOp, mapping);
+            rewriter.create<mlir::scf::YieldOp>(loc); // Add missing terminator
          });
-         rewriter.create<mlir::scf::YieldOp>(loc, list);
+         rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{list});
       });
 
       return success();
@@ -571,7 +575,7 @@ class ScanMultiMapListLowering : public SubOpConversionPattern<subop::ScanListOp
          }
          Value nextPtr = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(getContext(), i8PtrType), castedPtr, 0);
          mlir::Value next = rewriter.create<util::LoadOp>(loc, nextPtr, mlir::Value());
-         rewriter.create<mlir::scf::YieldOp>(loc, next);
+         rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{next});
       });
       return success();
    }
