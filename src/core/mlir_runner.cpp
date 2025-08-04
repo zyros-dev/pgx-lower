@@ -539,9 +539,12 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("MLIR diagnostic handler configured with PostgreSQL bridge");
     
     // Verify the module before ExecutionEngine creation
-    // Note: MLIR verification disabled due to LLVM 20 compatibility issues
-    // TODO: Re-enable verification once proper MLIR API is identified
-    logger.notice("MLIR module verification skipped due to LLVM 20 compatibility - proceeding to lowering");
+    logger.notice("Running MLIR module verification before lowering pipeline");
+    if (mlir::failed(mlir::verify(module))) {
+        logger.error("MLIR module verification failed - module contains structural errors");
+        module->dump();
+        throw std::runtime_error("MLIR module verification failed");
+    }
     logger.notice("MLIR module verification passed - proceeding to lowering");
     
     logger.notice("=== Running FULL LingoDB lowering pipeline ===");
