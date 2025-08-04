@@ -214,12 +214,47 @@ SubOpRewriter::NestingGuard SubOpRewriter::nest(::mlir::IRMapping& outerMapping,
 }
 
 ::mlir::Value SubOpRewriter::getMapped(::mlir::Value v) {
+    // SAFETY: Add recursion depth tracking to prevent stack overflow
+    static thread_local int recursionDepth = 0;
+    
+    // SIGSEGV PREVENTION: Guard against infinite recursion
+    if (recursionDepth > 50) {
+        PGX_ERROR("getMapped: Maximum recursion depth exceeded - preventing stack overflow");
+        return v;
+    }
+    
+    // SAFETY CHECK: Validate input value
+    if (!v) {
+        PGX_WARNING("getMapped called with null value");
+        return v;
+    }
+    
+    // SAFETY CHECK: Validate value has valid type
+    if (!v.getType()) {
+        PGX_WARNING("getMapped called with value having null type");
+        return v;
+    }
+    
+    recursionDepth++;
+    
+    mlir::Value result = v;
     for (auto it = valueMapping.rbegin(); it != valueMapping.rend(); it++) {
         if (it->contains(v)) {
-            return getMapped(it->lookup(v));
+            auto lookupValue = it->lookup(v);
+            // SAFETY CHECK: Avoid recursing with the same value
+            if (lookupValue != v) {
+                result = getMapped(lookupValue);
+            } else {
+                MLIR_PGX_DEBUG("SubOp", "getMapped: Circular self-reference detected - returning original value");
+                result = v;
+            }
+            break;
         }
     }
-    return v;
+    
+    recursionDepth--;
+    
+    return result;
 }
 
 void SubOpRewriter::atStartOf(::mlir::Block* block, const std::function<void(SubOpRewriter&)>& fn) {

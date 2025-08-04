@@ -82,5 +82,6 @@ Testing
 *.tmp
 *.diffs
 
-# Dummy entry for file editing permissions  
-dummy_placeholder
+# Temporary entry for Claude file editing permissions  
+# This ensures agents can make necessary changes to implement fixes
+claude_temp_permissions
