@@ -3,6 +3,8 @@
 #include "execution/error_handling.h"
 #include "execution/postgresql_ast_translator.h"
 #include "execution/logging.h"
+#include "utility/logging_tools.h"
+#include <sstream>
 
 // PostgreSQL error handling (must be included before LLVM to avoid macro conflicts)
 extern "C" {
@@ -412,18 +414,18 @@ bool install_mlir_signal_handlers(MLIRLogger& logger) {
     
     // Install handlers for critical signals
     if (sigaction(SIGSEGV, &sa, &old_sigsegv) != 0) {
-        PGX_ERROR("Failed to install SIGSEGV handler");
+        PGX_INFO("Failed to install SIGSEGV handler");
         return false;
     }
     
     if (sigaction(SIGBUS, &sa, &old_sigbus) != 0) {
-        PGX_ERROR("Failed to install SIGBUS handler");
+        PGX_INFO("Failed to install SIGBUS handler");
         sigaction(SIGSEGV, &old_sigsegv, nullptr); // Restore SIGSEGV
         return false;
     }
     
     if (sigaction(SIGABRT, &sa, &old_sigabrt) != 0) {
-        PGX_ERROR("Failed to install SIGABRT handler");
+        PGX_INFO("Failed to install SIGABRT handler");
         sigaction(SIGSEGV, &old_sigsegv, nullptr); // Restore SIGSEGV
         sigaction(SIGBUS, &old_sigbus, nullptr); // Restore SIGBUS
         return false;
@@ -829,21 +831,22 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         return false;
     }
     logger.notice("Phase 5: SubOp → ControlFlow lowering - PROTECTED BY SIGNAL HANDLERS");
-    
+
     // Reset signal state before crash-prone operation
     signal_caught = 0;
     caught_signal = 0;
-    
+
     // Set up signal protection jump point
     int sig = sigsetjmp(signal_jmp_buf, 1);
     if (sig != 0) {
+        logger.notice("Hit an error!");
         // Signal was caught - convert to PostgreSQL error
         const char* sig_name = get_signal_name(sig);
-        
+
         std::string error_msg = "MLIR Phase 5 lowering crashed with signal: " + std::string(sig_name);
-        PGX_ERROR(error_msg.c_str());
-        PGX_ERROR("Stack trace should be visible above in stderr");
-        PGX_ERROR("Converting signal to PostgreSQL error to prevent backend termination");
+        logger.notice(error_msg.c_str());
+        logger.notice("Stack trace should be visible above in stderr");
+        logger.notice("Converting signal to PostgreSQL error to prevent backend termination");
         
         // Use PostgreSQL's ereport to generate a proper error
         ereport(ERROR,
@@ -866,12 +869,16 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             logger.notice("Phase 5: SubOp lowering pass added successfully");
         } else {
             logger.error("Phase 5: Failed to create SubOp lowering pass - skipping");
-            PGX_ERROR("CRITICAL: SubOp lowering pass creation failed - bypassing Phase 5");
+            PGX_INFO("CRITICAL: SubOp lowering pass creation failed - bypassing Phase 5");
         }
         logger.notice("Phase 5: Add canonicalizer pass!");
         pm5.addPass(mlir::createCanonicalizerPass());
         logger.notice("Phase 5: Add cse pass!");
         pm5.addPass(mlir::createCSEPass());
+        
+        // CRITICAL DEBUG: Dump MLIR module before Phase 5 crash using utility function
+        logger.notice("Using fully expanded logging to show all nested regions...");
+        pgx_lower::utility::logMLIRModuleFullyExpanded(module, logger, "BEFORE PHASE 5 CRASH");
         
         if (mlir::failed(pm5.run(module))) {
             // CRITICAL FIX: Dump module BEFORE logging error
@@ -1098,9 +1105,9 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         const char* sig_name = get_signal_name(jit_sig);
         
         std::string jit_error_msg = "JIT execution crashed with signal: " + std::string(sig_name);
-        PGX_ERROR(jit_error_msg.c_str());
-        PGX_ERROR("Stack trace should be visible above in stderr");
-        PGX_ERROR("Converting JIT crash to PostgreSQL error to prevent backend termination");
+        PGX_INFO(jit_error_msg.c_str());
+        PGX_INFO("Stack trace should be visible above in stderr");
+        PGX_INFO("Converting JIT crash to PostgreSQL error to prevent backend termination");
         
         // Use PostgreSQL's ereport to generate a proper error
         ereport(ERROR,
