@@ -11,6 +11,9 @@
 
 PG_MODULE_MAGIC;
 
+// External reference to the global flag defined in executor_c.cpp
+extern bool g_extension_after_load;
+
 static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL; // NOLINT(*-avoid-non-const-global-variables)
 
 
@@ -66,6 +69,9 @@ void _PG_init(void) {
     PGX_NOTICE_C("SIGSEGV handler enabled for debugging!");
     signal(SIGSEGV, segfault_handler);
     
+    // CRITICAL FIX: Set LOAD detection flag
+    g_extension_after_load = true;
+    PGX_NOTICE_C("LOAD detection flag set - memory context protection enabled");
 }
 
 void _PG_fini(void) {
