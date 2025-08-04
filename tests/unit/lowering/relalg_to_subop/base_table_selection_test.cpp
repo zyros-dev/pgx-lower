@@ -10,17 +10,17 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 
-#include "dialects/relalg/RelAlgDialect.h"
-#include "dialects/relalg/RelAlgOps.h"
-#include "dialects/relalg/LowerRelAlgToSubOp.h"
-#include "dialects/subop/SubOpDialect.h"
-#include "dialects/subop/SubOpOps.h"
-#include "dialects/db/DBDialect.h"
-#include "dialects/db/DBTypes.h"
-#include "dialects/util/UtilDialect.h"
-#include "dialects/tuplestream/TupleStreamDialect.h"
-#include "dialects/tuplestream/TupleStreamOps.h"
-#include "core/logging.h"
+#include "compiler/Dialect/RelAlg/RelAlgDialect.h"
+#include "compiler/Dialect/RelAlg/RelAlgOps.h"
+#include "compiler/Conversion/RelAlgToSubOp/LowerRelAlgToSubOp.h"
+#include "compiler/Dialect/SubOperator/SubOpDialect.h"
+#include "compiler/Dialect/SubOperator/SubOpOps.h"
+#include "compiler/Dialect/DB/DBDialect.h"
+#include "compiler/Dialect/DB/DBTypes.h"
+#include "compiler/Dialect/util/UtilDialect.h"
+#include "compiler/Dialect/TupleStream/TupleStreamDialect.h"
+#include "compiler/Dialect/TupleStream/TupleStreamOps.h"
+#include "execution/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;

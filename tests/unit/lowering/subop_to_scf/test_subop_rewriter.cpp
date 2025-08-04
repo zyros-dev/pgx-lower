@@ -9,14 +9,14 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Transforms/DialectConversion.h"
 
-#include "src/dialects/subop/SubOpToControlFlow/Headers/SubOpToControlFlowRewriter.h"
-#include "src/dialects/subop/SubOpToControlFlow/Headers/SubOpToControlFlowCommon.h"
-#include "dialects/subop/SubOpDialect.h"
-#include "dialects/subop/SubOpOps.h"
-#include "dialects/tuplestream/TupleStreamOps.h"
-#include "dialects/util/UtilDialect.h"
-#include "dialects/util/UtilOps.h"
-#include "core/logging.h"
+#include "SubOpToControlFlowRewriter.h"
+#include "SubOpToControlFlowCommon.h"
+#include "compiler/Dialect/SubOperator/SubOpDialect.h"
+#include "compiler/Dialect/SubOperator/SubOpOps.h"
+#include "compiler/Dialect/TupleStream/TupleStreamOps.h"
+#include "compiler/Dialect/util/UtilDialect.h"
+#include "compiler/Dialect/util/UtilOps.h"
+#include "execution/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;

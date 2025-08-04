@@ -9,21 +9,21 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
-#include <core/mlir_runner.h>
+#include <execution/mlir_runner.h>
 #include "../test_helpers.h"
 #include <signal.h>
-#include <dialects/relalg/RelAlgDialect.h>
-#include <dialects/relalg/RelAlgOps.h>
-#include <dialects/relalg/LowerRelAlgToSubOp.h>
-#include <dialects/subop/SubOpDialect.h>
-#include <dialects/subop/SubOpOps.h>
-#include <dialects/subop/SubOpToControlFlow.h>
-#include <dialects/subop/Transforms/Passes.h>
-#include <dialects/db/DBDialect.h>
-#include <dialects/dsa/DSADialect.h>
-#include <dialects/util/UtilDialect.h>
-#include <dialects/tuplestream/TupleStreamDialect.h>
-#include <dialects/tuplestream/TupleStreamOps.h>
+#include <compiler/Dialect/RelAlg/RelAlgDialect.h>
+#include <compiler/Dialect/RelAlg/RelAlgOps.h>
+#include <compiler/Conversion/RelAlgToSubOp/LowerRelAlgToSubOp.h>
+#include <compiler/Dialect/SubOperator/SubOpDialect.h>
+#include <compiler/Dialect/SubOperator/SubOpOps.h>
+#include <compiler/Dialect/SubOperator/SubOpToControlFlow.h>
+#include <compiler/Dialect/SubOperator/Transforms/Passes.h>
+#include <compiler/Dialect/DB/DBDialect.h>
+#include <compiler/Dialect/DSA/DSADialect.h>
+#include <compiler/Dialect/util/UtilDialect.h>
+#include <compiler/Dialect/TupleStream/TupleStreamDialect.h>
+#include <compiler/Dialect/TupleStream/TupleStreamOps.h>
 #include <runtime/helpers.h>
 
 // DataSource_get stub for unit tests

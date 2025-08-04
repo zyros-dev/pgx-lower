@@ -13,15 +13,15 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/PatternMatch.h"
 
-#include "dialects/subop/SubOpDialect.h"
-#include "dialects/subop/SubOpOps.h"
-#include "dialects/util/UtilDialect.h"
-#include "dialects/util/UtilOps.h"
-#include "dialects/util/UtilTypes.h"
-#include "dialects/tuplestream/TupleStreamDialect.h"
-#include "dialects/tuplestream/TupleStreamOps.h"
-#include "dialects/tuplestream/TupleStreamTypes.h"
-#include "core/logging.h"
+#include "compiler/Dialect/SubOperator/SubOpDialect.h"
+#include "compiler/Dialect/SubOperator/SubOpOps.h"
+#include "compiler/Dialect/util/UtilDialect.h"
+#include "compiler/Dialect/util/UtilOps.h"
+#include "compiler/Dialect/util/UtilTypes.h"
+#include "compiler/Dialect/TupleStream/TupleStreamDialect.h"
+#include "compiler/Dialect/TupleStream/TupleStreamOps.h"
+#include "compiler/Dialect/TupleStream/TupleStreamTypes.h"
+#include "execution/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;

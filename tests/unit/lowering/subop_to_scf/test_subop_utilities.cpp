@@ -13,15 +13,15 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 // Include the target utilities
-#include "../../../src/dialects/subop/SubOpToControlFlow/Headers/SubOpToControlFlowUtilities.h"
+#include "SubOpToControlFlowUtilities.h"
 
 // Include required dialects
-#include "dialects/subop/SubOpDialect.h"
-#include "dialects/subop/SubOpOps.h"
-#include "dialects/db/DBDialect.h"
-#include "dialects/util/UtilDialect.h"
-#include "dialects/tuplestream/TupleStreamDialect.h"
-#include "core/logging.h"
+#include "compiler/Dialect/SubOperator/SubOpDialect.h"
+#include "compiler/Dialect/SubOperator/SubOpOps.h"
+#include "compiler/Dialect/DB/DBDialect.h"
+#include "compiler/Dialect/util/UtilDialect.h"
+#include "compiler/Dialect/TupleStream/TupleStreamDialect.h"
+#include "execution/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;

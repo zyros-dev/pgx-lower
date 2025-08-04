@@ -6,15 +6,15 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
-#include "dialects/relalg/RelAlgOps.h"
-#include "dialects/relalg/RelAlgDialect.h"
-#include "dialects/subop/SubOpOps.h"
-#include "dialects/subop/SubOpDialect.h"
-#include "dialects/db/DBDialect.h"
-#include "dialects/db/DBTypes.h"
-#include "dialects/tuplestream/TupleStreamDialect.h"
-#include "dialects/util/UtilDialect.h"
-#include "core/logging.h"
+#include "compiler/Dialect/RelAlg/RelAlgOps.h"
+#include "compiler/Dialect/RelAlg/RelAlgDialect.h"
+#include "compiler/Dialect/SubOperator/SubOpOps.h"
+#include "compiler/Dialect/SubOperator/SubOpDialect.h"
+#include "compiler/Dialect/DB/DBDialect.h"
+#include "compiler/Dialect/DB/DBTypes.h"
+#include "compiler/Dialect/TupleStream/TupleStreamDialect.h"
+#include "compiler/Dialect/util/UtilDialect.h"
+#include "execution/logging.h"
 
 using namespace mlir;
 using namespace pgx_lower::compiler::dialect;

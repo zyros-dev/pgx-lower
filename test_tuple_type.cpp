@@ -1,4 +1,4 @@
-#include "dialects/tuplestream/TupleStreamTypes.h"
+#include "compiler/Dialect/tuplestream/TupleStreamTypes.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/IR/MLIRContext.h"
 

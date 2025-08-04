@@ -1,4 +1,4 @@
-#include "core/mlir_runner.h"
+#include "execution/mlir_runner.h"
 #include "../test_helpers.h"
 
 // Mock implementations of mlir_runner functions for unit tests

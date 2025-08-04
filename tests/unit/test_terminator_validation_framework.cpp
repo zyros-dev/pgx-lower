@@ -1,8 +1,8 @@
 // Test file for terminator validation framework
 // This file tests the LingoDB-style terminator utility infrastructure
 
-#include "dialects/subop/SubOpToControlFlow/Headers/SubOpToControlFlowUtilities.h"
-#include "core/logging.h"
+#include "SubOpToControlFlowUtilities.h"
+#include "execution/logging.h"
 
 #include "gtest/gtest.h"
 #include "mlir/IR/MLIRContext.h"

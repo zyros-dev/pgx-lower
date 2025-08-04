@@ -9,7 +9,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "core/logging.h"
+#include "execution/logging.h"
 
 using namespace mlir;
 

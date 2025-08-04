@@ -9,11 +9,11 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
-#include "dialects/subop/SubOpDialect.h"
-#include "dialects/subop/SubOpOps.h"
-#include "dialects/tuplestream/TupleStreamDialect.h"
-#include "dialects/util/UtilDialect.h"
-#include "core/logging.h"
+#include "compiler/Dialect/SubOperator/SubOpDialect.h"
+#include "compiler/Dialect/SubOperator/SubOpOps.h"
+#include "compiler/Dialect/TupleStream/TupleStreamDialect.h"
+#include "compiler/Dialect/util/UtilDialect.h"
+#include "execution/logging.h"
 #include "test_helpers.h"
 
 using namespace mlir;
