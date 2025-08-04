@@ -507,6 +507,14 @@ std::unique_ptr<mlir::Pass> createLowerSubOpPass() {
    return pass;
 }
 
+// STUB: SubOp to DB conversion pass - needs implementation
+// For now, return a pass that does nothing to unblock testing
+std::unique_ptr<mlir::Pass> createLowerSubOpToDBPass() {
+   // TODO: Implement actual SubOp to DB lowering pass
+   // For now, return a pass that simply passes through without transformation
+   return mlir::createCanonicalizerPass();
+}
+
 } // namespace pgx_lower::compiler::dialect::subop
 
 void subop::setCompressionEnabled(bool compressionEnabled) {

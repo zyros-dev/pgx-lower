@@ -215,7 +215,8 @@ SubOpRewriter::NestingGuard SubOpRewriter::nest(::mlir::IRMapping& outerMapping,
 
 ::mlir::Value SubOpRewriter::getMapped(::mlir::Value v) {
     // SAFETY: Add recursion depth tracking to prevent stack overflow
-    static thread_local int recursionDepth = 0;
+    // Note: Removed thread_local for shared library compatibility
+    static int recursionDepth = 0;
     
     // SIGSEGV PREVENTION: Guard against infinite recursion
     if (recursionDepth > 50) {

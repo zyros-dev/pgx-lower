@@ -14,3 +14,7 @@ add_mlir_conversion_library(MLIRDBToDSA
         MLIRDBDialect
         MLIRDSADialect
 )
+
+set_target_properties(MLIRDBToDSA PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)

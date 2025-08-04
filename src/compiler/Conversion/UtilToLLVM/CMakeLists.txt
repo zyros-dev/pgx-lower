@@ -14,3 +14,7 @@ add_mlir_conversion_library(MLIRUtilToLLVM
         MLIRIR
         MLIRUtilDialect
 )
+
+set_target_properties(MLIRUtilToLLVM PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)

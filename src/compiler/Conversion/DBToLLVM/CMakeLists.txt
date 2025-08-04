@@ -14,3 +14,7 @@ add_mlir_conversion_library(MLIRDBToLLVM
         MLIRDBDialect
         MLIRLLVMDialect
 )
+
+set_target_properties(MLIRDBToLLVM PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)

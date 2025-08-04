@@ -16,6 +16,9 @@ cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 project(pgx_lower LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
 
+# Enable position-independent code globally for shared library compatibility
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 set(CMAKE_BUILD_TYPE Debug)

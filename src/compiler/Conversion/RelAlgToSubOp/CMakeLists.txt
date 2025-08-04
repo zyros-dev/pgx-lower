@@ -14,3 +14,7 @@ add_mlir_conversion_library(MLIRRelAlgToSubOp
         MLIRRelAlgDialect
         MLIRSubOpDialect
 )
+
+set_target_properties(MLIRRelAlgToSubOp PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)

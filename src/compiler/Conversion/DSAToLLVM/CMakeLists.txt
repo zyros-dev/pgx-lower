@@ -14,3 +14,7 @@ add_mlir_conversion_library(MLIRDSAToLLVM
         MLIRDSADialect
         MLIRLLVMDialect
 )
+
+set_target_properties(MLIRDSAToLLVM PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
