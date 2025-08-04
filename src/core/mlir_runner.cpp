@@ -16,6 +16,7 @@ extern "C" {
 // Include MLIR diagnostic infrastructure
 #include "llvm/Support/SourceMgr.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Verifier.h"
 // PG dialect removed - using RelAlg instead
 #include "dialects/relalg/RelAlgDialect.h"
 #include "dialects/relalg/LowerRelAlgToSubOp.h"
@@ -50,9 +51,13 @@ namespace {
         logger.notice("=== ENHANCED VERIFICATION: " + phase + " ===");
         
         // Check for basic module validity first
-        // Note: MLIR verification disabled due to LLVM 20 compatibility issues
-        // TODO: Re-enable verification once proper MLIR API is identified
-        logger.debug("Basic MLIR verification skipped for phase: " + phase);
+        logger.debug("Running basic MLIR verification for phase: " + phase);
+        if (mlir::failed(mlir::verify(module))) {
+            logger.error("MLIR module verification failed for phase: " + phase);
+            module.dump();
+            throw std::runtime_error("MLIR module verification failed in phase: " + phase);
+        }
+        logger.debug("Basic MLIR verification passed for phase: " + phase);
         
         // Enhanced terminator validation for all blocks
         bool hasTerminatorIssues = false;
@@ -542,7 +547,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("Running MLIR module verification before lowering pipeline");
     if (mlir::failed(mlir::verify(module))) {
         logger.error("MLIR module verification failed - module contains structural errors");
-        module->dump();
+        module.dump();
         throw std::runtime_error("MLIR module verification failed");
     }
     logger.notice("MLIR module verification passed - proceeding to lowering");
@@ -772,9 +777,12 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         logger.notice("Phase 3 preparation completed - SubOp ready for DB lowering");
         
         // Verify module is valid before proceeding to Phase 4
-        // Note: MLIR verification disabled due to LLVM 20 compatibility issues
-        // TODO: Re-enable verification once proper MLIR API is identified
-        logger.notice("Module verification skipped before Phase 4 due to LLVM 20 compatibility");
+        logger.notice("Running module verification before Phase 4");
+        if (mlir::failed(mlir::verify(module))) {
+            logger.error("Module verification failed before Phase 4");
+            module.dump();
+            throw std::runtime_error("Module verification failed before Phase 4");
+        }
         logger.notice("Module verification passed - ready for Phase 4");
         logger.notice("Phase 3 completed successfully");
     }
@@ -1278,9 +1286,12 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     logger.notice("AST translator MLIR diagnostic handler configured with PostgreSQL bridge");
     
     // First verify the module is valid
-    // Note: MLIR verification disabled due to LLVM 20 compatibility issues
-    // TODO: Re-enable verification once proper MLIR API is identified
-    logger.notice("Module verification skipped due to LLVM 20 compatibility");
+    logger.notice("Running module verification");
+    if (mlir::failed(mlir::verify(*module))) {
+        logger.error("Module verification failed");
+        module->dump();
+        throw std::runtime_error("Module verification failed");
+    }
     logger.notice("Module verification passed");
     
     // Count operations in the module
