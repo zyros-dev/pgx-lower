@@ -16,6 +16,7 @@ extern "C" {
 // Include MLIR diagnostic infrastructure
 #include "llvm/Support/SourceMgr.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Verifier.h"
 // PG dialect removed - using RelAlg instead
 #include "dialects/relalg/RelAlgDialect.h"
 #include "dialects/relalg/LowerRelAlgToSubOp.h"
@@ -47,12 +48,16 @@ extern "C" {
 namespace {
     // Enhanced verification with detailed terminator and block validation
     bool verifyMLIRModuleWithDetails(mlir::ModuleOp module, MLIRLogger& logger, const std::string& phase) {
-        logger.notice("=== ENHANCED VERIFICATION: " + phase + " ===");
+        PGX_DEBUG(("Enhanced verification for phase: " + phase).c_str());
         
         // Check for basic module validity first
-        // Note: MLIR verification disabled due to LLVM 20 compatibility issues
-        // TODO: Re-enable verification once proper MLIR API is identified
-        logger.debug("Basic MLIR verification skipped for phase: " + phase);
+        PGX_DEBUG(("Running basic MLIR verification for phase: " + phase).c_str());
+        if (mlir::failed(mlir::verify(module))) {
+            logger.error("MLIR module verification failed for phase: " + phase);
+            module.dump();
+            throw std::runtime_error("MLIR module verification failed in phase: " + phase);
+        }
+        PGX_DEBUG(("Basic MLIR verification passed for phase: " + phase).c_str());
         
         // Enhanced terminator validation for all blocks
         bool hasTerminatorIssues = false;
@@ -469,10 +474,10 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     // Install signal handlers to protect against MLIR crashes
     SignalHandlerGuard signalGuard(logger);
     
-    logger.notice("About to initialize native target and create ExecutionEngine...");
+    PGX_DEBUG("About to initialize native target and create ExecutionEngine...");
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
-    logger.notice("Native target initialized successfully");
+    PGX_DEBUG("Native target initialized successfully");
 
     mlir::DialectRegistry registry;
     mlir::registerAllToLLVMIRTranslations(registry);
@@ -539,10 +544,10 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("MLIR diagnostic handler configured with PostgreSQL bridge");
     
     // Verify the module before ExecutionEngine creation
-    logger.notice("Running MLIR module verification before lowering pipeline");
+    PGX_DEBUG("Running MLIR module verification before lowering pipeline");
     if (mlir::failed(mlir::verify(module))) {
         logger.error("MLIR module verification failed - module contains structural errors");
-        module->dump();
+        module.dump();
         throw std::runtime_error("MLIR module verification failed");
     }
     logger.notice("MLIR module verification passed - proceeding to lowering");
@@ -614,7 +619,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             
             return false;
         }
-        logger.notice("Phase 1 completed successfully");
+        PGX_DEBUG("Phase 1 completed successfully");
         
         // VERIFICATION CHECKPOINT: After RelAlg → SubOp conversion
         if (!verifyMLIRModuleWithDetails(module, logger, "Phase 1 Complete (RelAlg → SubOp)")) {
@@ -665,7 +670,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     };
     
     for (auto& [passName, passCreator] : passes) {
-        logger.notice("Running SubOp pass: " + passName);
+        PGX_DEBUG(("Running SubOp pass: " + passName).c_str());
         
         // Dump module before SplitIntoExecutionSteps
         if (passName == "SplitIntoExecutionSteps") {
@@ -714,11 +719,11 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             
             return false;
         }
-        logger.notice("SubOp pass completed: " + passName);
+        PGX_DEBUG(("SubOp pass completed: " + passName).c_str());
     }
     
     // Add Parallelize pass separately (needs nested pass)
-    logger.notice("Running SubOp pass: Parallelize");
+    PGX_DEBUG("Running SubOp pass: Parallelize");
     {
         auto pm = mlir::PassManager(&context);
         pm.addNestedPass<mlir::func::FuncOp>(pgx_lower::compiler::dialect::subop::createParallelizePass());
@@ -737,10 +742,10 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             
             return false;
         }
-        logger.notice("SubOp pass completed: Parallelize");
+        PGX_DEBUG("SubOp pass completed: Parallelize");
     }
     
-    logger.notice("Phase 2 completed successfully");
+    PGX_DEBUG("Phase 2 completed successfully");
     
     // VERIFICATION CHECKPOINT: After SubOp optimization passes
     if (!verifyMLIRModuleWithDetails(module, logger, "Phase 2 Complete (SubOp Optimization)")) {
@@ -769,14 +774,17 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         pgx_lower::compiler::dialect::subop::setCompressionEnabled(false);
         // Phase 3 now only does SubOp preparation - no control flow conversion
         // Control flow happens after DB lowering in the final LLVM conversion phase
-        logger.notice("Phase 3 preparation completed - SubOp ready for DB lowering");
+        PGX_DEBUG("Phase 3 preparation completed - SubOp ready for DB lowering");
         
         // Verify module is valid before proceeding to Phase 4
-        // Note: MLIR verification disabled due to LLVM 20 compatibility issues
-        // TODO: Re-enable verification once proper MLIR API is identified
-        logger.notice("Module verification skipped before Phase 4 due to LLVM 20 compatibility");
-        logger.notice("Module verification passed - ready for Phase 4");
-        logger.notice("Phase 3 completed successfully");
+        PGX_DEBUG("Running module verification before Phase 4");
+        if (mlir::failed(mlir::verify(module))) {
+            logger.error("Module verification failed before Phase 4");
+            module.dump();
+            throw std::runtime_error("Module verification failed before Phase 4");
+        }
+        PGX_DEBUG("Module verification passed - ready for Phase 4");
+        PGX_DEBUG("Phase 3 completed successfully");
     }
     
     // Phase 4: SubOp → DB lowering (arith operations to DB operations)
@@ -803,7 +811,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             
             return false;
         }
-        logger.notice("Phase 4 completed successfully");
+        PGX_DEBUG("Phase 4 completed successfully");
         
         // VERIFICATION CHECKPOINT: After SubOp → DB lowering
         if (!verifyMLIRModuleWithDetails(module, logger, "Phase 4 Complete (SubOp → DB)")) {
@@ -873,7 +881,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
             
             return false;
         }
-        logger.notice("Phase 5 completed successfully - NO CRASH DETECTED");
+        PGX_DEBUG("Phase 5 completed successfully - NO CRASH DETECTED");
         
         // VERIFICATION CHECKPOINT: After SubOp → ControlFlow lowering
         if (!verifyMLIRModuleWithDetails(module, logger, "Phase 5 Complete (SubOp → ControlFlow)")) {
@@ -957,7 +965,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     logger.notice("Lowered MLIR: " + mlirString);
 
     // Enhanced ExecutionEngine creation with detailed error diagnostics
-    logger.notice("Creating ExecutionEngine with enhanced error reporting...");
+    PGX_DEBUG("Creating ExecutionEngine with enhanced error reporting...");
     
     // Test LLVM IR translation manually first to catch translation errors
     auto llvmContext = std::make_unique<llvm::LLVMContext>();
@@ -1020,7 +1028,7 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     auto engine = std::move(*maybeEngine);
 
     // Register runtime function symbols with the ExecutionEngine
-    logger.notice("Registering runtime function symbols with ExecutionEngine...");
+    PGX_DEBUG("Registering runtime function symbols with ExecutionEngine...");
     
     // Register runtime symbols using the MLIR ExecutionEngine registerSymbols API
     engine->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
@@ -1064,13 +1072,13 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         return false;
     }
 
-    logger.notice("Looking up main function in MLIR ExecutionEngine...");
+    PGX_DEBUG("Looking up main function in MLIR ExecutionEngine...");
     
-    logger.notice("About to execute JIT function - this is where PostgreSQL may crash...");
-    logger.notice("all compilation stages working! only jit execution remaining...");
+    logger.notice("About to execute JIT function");
+    PGX_DEBUG("all compilation stages working! only jit execution remaining...");
 
     // Add detailed logging for JIT execution debugging
-    logger.notice("JIT function pointer address: " + std::to_string(reinterpret_cast<uint64_t>(mainFuncPtr.get())));
+    PGX_DEBUG(("JIT function pointer address: " + std::to_string(reinterpret_cast<uint64_t>(mainFuncPtr.get()))).c_str());
     
     // Reset signal state before JIT execution
     signal_caught = 0;
@@ -1099,8 +1107,8 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
     
     // Wrap JIT function execution in error handling to prevent server crash
     try {
-        logger.notice("Calling JIT function now - PROTECTED BY SIGNAL HANDLERS...");
-        logger.notice("About to invoke packed function - this is the actual JIT call");
+        PGX_DEBUG("Calling JIT function now - PROTECTED BY SIGNAL HANDLERS...");
+        PGX_DEBUG("About to invoke packed function - this is the actual JIT call");
         
         // Use the packed interface which is safer for MLIR
         auto result = engine->invokePacked("main");
@@ -1115,12 +1123,12 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         }
         logger.notice("JIT function invokePacked returned successfully - NO CRASH DETECTED");
         logger.notice("complete success! mlir jit function executed successfully!");
-        logger.notice("all stages working: mlir compilation + jit execution!");
-        logger.notice("About to return from JIT execution try block...");
+        PGX_DEBUG("all stages working: mlir compilation + jit execution!");
+        PGX_DEBUG("About to return from JIT execution try block...");
         
         // Add memory barrier to ensure all writes are visible
         std::atomic_thread_fence(std::memory_order_seq_cst);
-        logger.notice("Memory barrier completed after JIT execution");
+        PGX_DEBUG("Memory barrier completed after JIT execution");
     } catch (const std::exception& e) {
         logger.error("JIT function execution failed with exception: " + std::string(e.what()));
         logger.error("This indicates a runtime function is causing a crash");
@@ -1131,18 +1139,18 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         return false;
     }
 
-    logger.notice("execute_mlir_module returning true - execution completed successfully");
-    logger.notice("About to destroy ExecutionEngine...");
+    PGX_DEBUG("execute_mlir_module returning true - execution completed successfully");
+    PGX_DEBUG("About to destroy ExecutionEngine...");
     
     // Add a delay to see if crash happens before destructor
-    logger.notice("Adding small delay before destroying ExecutionEngine...");
+    PGX_DEBUG("Adding small delay before destroying ExecutionEngine...");
     // Force a flush to ensure all logs are written
     fflush(stdout);
     fflush(stderr);
     
     // Explicitly reset the engine to trigger destructor
     engine.reset();
-    logger.notice("ExecutionEngine destroyed successfully");
+    PGX_DEBUG("ExecutionEngine destroyed successfully");
     return true;
 }
 
@@ -1278,9 +1286,12 @@ bool run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     logger.notice("AST translator MLIR diagnostic handler configured with PostgreSQL bridge");
     
     // First verify the module is valid
-    // Note: MLIR verification disabled due to LLVM 20 compatibility issues
-    // TODO: Re-enable verification once proper MLIR API is identified
-    logger.notice("Module verification skipped due to LLVM 20 compatibility");
+    logger.notice("Running module verification");
+    if (mlir::failed(mlir::verify(*module))) {
+        logger.error("Module verification failed");
+        module->dump();
+        throw std::runtime_error("Module verification failed");
+    }
     logger.notice("Module verification passed");
     
     // Count operations in the module
