@@ -1,0 +1,48 @@
+#ifndef PGX_LOWER_RUNTIME_PREAGGREGATIONHASHTABLE_H
+#define PGX_LOWER_RUNTIME_PREAGGREGATIONHASHTABLE_H
+#include "lingodb/runtime/Buffer.h"
+#include "lingodb/runtime/ThreadLocal.h"
+#include <cstddef>
+#include <cstdint>
+namespace pgx_lower::compiler::runtime {
+class PreAggregationHashtableFragment {
+   public:
+   struct Entry {
+      Entry* next;
+      size_t hashValue;
+      uint8_t content[];
+      //kv follows
+   };
+   static constexpr size_t numOutputs = 64;
+   static constexpr size_t hashtableSize = 1024;
+   Entry* ht[hashtableSize];
+   size_t typeSize;
+   size_t len;
+   runtime::FlexibleBuffer* outputs[numOutputs];
+   bool withLocks;
+   PreAggregationHashtableFragment(size_t typeSize, bool withLocks) : ht(), typeSize(typeSize), len(0), outputs(), withLocks(withLocks) {}
+   static PreAggregationHashtableFragment* create(size_t typeSize, bool withLocks);
+   Entry* insert(size_t hash);
+   ~PreAggregationHashtableFragment();
+};
+class PreAggregationHashtable {
+   using Entry = PreAggregationHashtableFragment::Entry;
+   struct PartitionHt {
+      Entry** ht;
+      size_t hashMask;
+   };
+   PartitionHt ht[PreAggregationHashtableFragment::numOutputs];
+   runtime::FlexibleBuffer buffer;
+   PreAggregationHashtable() : ht(), buffer(1, sizeof(PreAggregationHashtableFragment::Entry*)) {
+   }
+
+   public:
+   static runtime::PreAggregationHashtable* merge(ThreadLocal*, bool (*eq)(uint8_t*, uint8_t*), void (*combine)(uint8_t*, uint8_t*));
+   Entry* lookup(size_t hash);
+   runtime::BufferIterator* createIterator();
+   ~PreAggregationHashtable();
+};
+
+} // end namespace pgx_lower::compiler::runtime
+
+#endif //PGX_LOWER_RUNTIME_PREAGGREGATIONHASHTABLE_H

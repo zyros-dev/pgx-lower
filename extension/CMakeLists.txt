@@ -50,6 +50,13 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRTupleStreamDialect
     MLIRRelAlgDialect
     MLIRUtilDialect
+    # Add conversion libraries for MLIR lowering passes
+    MLIRRelAlgToSubOp
+    MLIRSubOpToControlFlow  # Fixes: createLowerSubOpPass() missing symbol
+    MLIRDBToDSA
+    MLIRDBToLLVM
+    MLIRDSAToLLVM
+    MLIRUtilToLLVM
     -Wl,--as-needed
 )
 
