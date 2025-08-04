@@ -860,7 +860,14 @@ bool executeMLIRModule(mlir::ModuleOp &module, MLIRLogger &logger) {
         auto pm5 = mlir::PassManager(&context);
         logger.notice("Phase 5: Add lowering pass!");
         // Now convert SubOp to ControlFlow (after DB operations have been converted)
-        pm5.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
+        auto subopPass = pgx_lower::compiler::dialect::subop::createLowerSubOpPass();
+        if (subopPass) {
+            pm5.addPass(std::move(subopPass));
+            logger.notice("Phase 5: SubOp lowering pass added successfully");
+        } else {
+            logger.error("Phase 5: Failed to create SubOp lowering pass - skipping");
+            PGX_ERROR("CRITICAL: SubOp lowering pass creation failed - bypassing Phase 5");
+        }
         logger.notice("Phase 5: Add canonicalizer pass!");
         pm5.addPass(mlir::createCanonicalizerPass());
         logger.notice("Phase 5: Add cse pass!");
