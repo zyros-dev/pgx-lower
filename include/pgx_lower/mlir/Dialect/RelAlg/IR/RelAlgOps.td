@@ -8,6 +8,8 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
+include "mlir/IR/BuiltinTypes.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 
 include "RelAlgInterfaces.td"
 
@@ -19,6 +21,9 @@ def RelAlg_Dialect : Dialect {
     let name = "relalg";
     let summary = "A dialect for relational algebra in pgx-lower";
     let cppNamespace = "::pgx::mlir::relalg";
+    
+    // Disable properties system to avoid namespace issues
+    let usePropertiesForAttributes = 0;
 
     let extraClassDeclaration = [{
         private:
@@ -56,21 +61,9 @@ def RelAlg_Table : RelAlg_Type<"Table", "table"> {
 
 class RelAlg_Attr<string name> : AttrDef<RelAlg_Dialect, name>;
 
-def TableMetaDataAttr : RelAlg_Attr<"TableMetaData"> {
-    let mnemonic = "table_metadata";
-    let parameters = (ins "std::string":$tableName, "ArrayAttr":$columns);
-    let hasCustomAssemblyFormat = 1;
-}
-
-def ColumnDefAttr : RelAlg_Attr<"ColumnDef"> {
-    let mnemonic = "columndef";
-    let parameters = (ins "SymbolRefAttr":$name, "Type":$type, OptionalParameter<"Attribute">:$fromExisting);
-    let hasCustomAssemblyFormat = 1;
-}
-
 def ColumnRefAttr : RelAlg_Attr<"ColumnRef"> {
     let mnemonic = "columnref";
-    let parameters = (ins "SymbolRefAttr":$name);
+    let parameters = (ins "std::string":$name);
     let hasCustomAssemblyFormat = 1;
 }
 
@@ -87,14 +80,14 @@ class RelAlg_Op<string mnemonic, list<Trait> traits = []> : Op<RelAlg_Dialect, m
 //===----------------------------------------------------------------------===//
 
 def BaseTableOp : RelAlg_Op<"basetable",
-        [SingleBlockImplicitTerminator<"pgx::mlir::relalg::RelAlg_ReturnOp">]> {
+        [SingleBlockImplicitTerminator<"ReturnOp">]> {
     let summary = "base table operation";
     let description = [{
         Represents access to a base table in the database.
         Creates a tuple stream from the specified table.
     }];
 
-    let arguments = (ins StrAttr:$table_identifier, TableMetaDataAttr:$meta);
+    let arguments = (ins StrAttr:$table_name);
     let results = (outs RelAlg_TupleStream:$result);
     let regions = (region SizedRegion<1>:$body);
 }
@@ -110,7 +103,7 @@ def ProjectionOp : RelAlg_Op<"projection", [Pure]> {
         Equivalent to SELECT clause in SQL.
     }];
 
-    let arguments = (ins RelAlg_TupleStream:$rel, ArrayAttr:$cols);
+    let arguments = (ins RelAlg_TupleStream:$rel);
     let results = (outs RelAlg_TupleStream:$result);
 }
 
@@ -134,7 +127,7 @@ def MapOp : RelAlg_Op<"map", [Pure]> {
         The region defines the computation for new columns.
     }];
 
-    let arguments = (ins RelAlg_TupleStream:$rel, ArrayAttr:$computed_cols);
+    let arguments = (ins RelAlg_TupleStream:$rel);
     let results = (outs RelAlg_TupleStream:$result);
     let regions = (region SizedRegion<1>:$computation);
 }
@@ -147,7 +140,7 @@ def MaterializeOp : RelAlg_Op<"materialize", [Pure]> {
         to returnable results.
     }];
 
-    let arguments = (ins RelAlg_TupleStream:$rel, ArrayAttr:$cols);
+    let arguments = (ins RelAlg_TupleStream:$rel);
     let results = (outs RelAlg_Table:$result);
 }
 
@@ -155,7 +148,7 @@ def MaterializeOp : RelAlg_Op<"materialize", [Pure]> {
 // Terminators
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-def RelAlg_ReturnOp : RelAlg_Op<"return", [Pure, ReturnLike, Terminator]> {
+def ReturnOp : RelAlg_Op<"return", [Pure, ReturnLike, Terminator]> {
     let summary = "relational algebra return operation";
     let description = [{
         Terminator for relational algebra operations. Returns values from regions.
@@ -177,7 +170,7 @@ def GetColumnOp : RelAlg_Op<"getcol", [Pure]> {
         Used within regions to access tuple data.
     }];
 
-    let arguments = (ins ColumnRefAttr:$attr, RelAlg_Tuple:$tuple);
+    let arguments = (ins StrAttr:$column_name, RelAlg_Tuple:$tuple);
     let results = (outs AnyType:$res);
 }
 

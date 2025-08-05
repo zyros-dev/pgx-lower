@@ -12,30 +12,25 @@ using namespace pgx::mlir::relalg;
 
 void BaseTableOp::print(OpAsmPrinter& printer) {
     printer << " ";
-    printer.printAttributeWithoutType(getTableIdentifierAttr());
-    printer << " ";
-    printer.printAttribute(getMeta());
+    printer.printAttributeWithoutType(getTableNameAttr());
     printer << " -> ";
     printer.printType(getResult().getType());
-    printer.printOptionalAttrDict((*this)->getAttrs(), {"table_identifier", "meta"});
+    printer.printOptionalAttrDict((*this)->getAttrs(), {"table_name"});
     printer << " ";
     printer.printRegion(getBody(), /*printEntryBlockArgs=*/false);
 }
 
 ParseResult BaseTableOp::parse(OpAsmParser& parser, OperationState& result) {
-    StringAttr tableId;
-    TableMetaDataAttr meta;
+    StringAttr tableName;
     Type resultType;
     
-    if (parser.parseAttribute(tableId) ||
-        parser.parseAttribute(meta) ||
+    if (parser.parseAttribute(tableName) ||
         parser.parseArrow() ||
         parser.parseType(resultType)) {
         return failure();
     }
     
-    result.addAttribute("table_identifier", tableId);
-    result.addAttribute("meta", meta);
+    result.addAttribute("table_name", tableName);
     result.addTypes(resultType);
     
     Region* body = result.addRegion();
@@ -55,20 +50,16 @@ ParseResult BaseTableOp::parse(OpAsmParser& parser, OperationState& result) {
 void ProjectionOp::print(OpAsmPrinter& printer) {
     printer << " ";
     printer.printOperand(getRel());
-    printer << " ";
-    printer.printAttribute(getCols());
     printer << " -> ";
     printer.printType(getResult().getType());
-    printer.printOptionalAttrDict((*this)->getAttrs(), {"cols"});
+    printer.printOptionalAttrDict((*this)->getAttrs());
 }
 
 ParseResult ProjectionOp::parse(OpAsmParser& parser, OperationState& result) {
     OpAsmParser::UnresolvedOperand rel;
-    ArrayAttr cols;
     Type relType, resultType;
     
     if (parser.parseOperand(rel) ||
-        parser.parseAttribute(cols) ||
         parser.parseArrow() ||
         parser.parseType(resultType) ||
         parser.parseOptionalAttrDict(result.attributes) ||
@@ -77,7 +68,6 @@ ParseResult ProjectionOp::parse(OpAsmParser& parser, OperationState& result) {
         return failure();
     }
     
-    result.addAttribute("cols", cols);
     result.addTypes(resultType);
     
     if (parser.resolveOperand(rel, relType, result.operands)) {
@@ -138,23 +128,18 @@ ParseResult SelectionOp::parse(OpAsmParser& parser, OperationState& result) {
 void MapOp::print(OpAsmPrinter& printer) {
     printer << " ";
     printer.printOperand(getRel());
-    printer << " computes ";
-    printer.printAttribute(getComputedCols());
     printer << " ";
     printer.printRegion(getComputation(), /*printEntryBlockArgs=*/false);
     printer << " -> ";
     printer.printType(getResult().getType());
-    printer.printOptionalAttrDict((*this)->getAttrs(), {"computed_cols"});
+    printer.printOptionalAttrDict((*this)->getAttrs());
 }
 
 ParseResult MapOp::parse(OpAsmParser& parser, OperationState& result) {
     OpAsmParser::UnresolvedOperand rel;
-    ArrayAttr computedCols;
     Type relType, resultType;
     
-    if (parser.parseOperand(rel) ||
-        parser.parseKeyword("computes") ||
-        parser.parseAttribute(computedCols)) {
+    if (parser.parseOperand(rel)) {
         return failure();
     }
     
@@ -171,7 +156,6 @@ ParseResult MapOp::parse(OpAsmParser& parser, OperationState& result) {
         return failure();
     }
     
-    result.addAttribute("computed_cols", computedCols);
     result.addTypes(resultType);
     
     if (parser.resolveOperand(rel, relType, result.operands)) {
@@ -188,20 +172,16 @@ ParseResult MapOp::parse(OpAsmParser& parser, OperationState& result) {
 void MaterializeOp::print(OpAsmPrinter& printer) {
     printer << " ";
     printer.printOperand(getRel());
-    printer << " ";
-    printer.printAttribute(getCols());
     printer << " -> ";
     printer.printType(getResult().getType());
-    printer.printOptionalAttrDict((*this)->getAttrs(), {"cols"});
+    printer.printOptionalAttrDict((*this)->getAttrs());
 }
 
 ParseResult MaterializeOp::parse(OpAsmParser& parser, OperationState& result) {
     OpAsmParser::UnresolvedOperand rel;
-    ArrayAttr cols;
     Type relType, resultType;
     
     if (parser.parseOperand(rel) ||
-        parser.parseAttribute(cols) ||
         parser.parseArrow() ||
         parser.parseType(resultType) ||
         parser.parseOptionalAttrDict(result.attributes) ||
@@ -210,7 +190,6 @@ ParseResult MaterializeOp::parse(OpAsmParser& parser, OperationState& result) {
         return failure();
     }
     
-    result.addAttribute("cols", cols);
     result.addTypes(resultType);
     
     if (parser.resolveOperand(rel, relType, result.operands)) {
@@ -226,21 +205,21 @@ ParseResult MaterializeOp::parse(OpAsmParser& parser, OperationState& result) {
 
 void GetColumnOp::print(OpAsmPrinter& printer) {
     printer << " ";
-    printer.printOperand(getTuple());
+    printer.printAttributeWithoutType(getColumnNameAttr());
     printer << " ";
-    printer.printAttribute(getAttr());
+    printer.printOperand(getTuple());
     printer << " -> ";
     printer.printType(getRes().getType());
-    printer.printOptionalAttrDict((*this)->getAttrs(), {"attr"});
+    printer.printOptionalAttrDict((*this)->getAttrs(), {"column_name"});
 }
 
 ParseResult GetColumnOp::parse(OpAsmParser& parser, OperationState& result) {
+    StringAttr columnName;
     OpAsmParser::UnresolvedOperand tuple;
-    ColumnRefAttr attr;
     Type tupleType, resultType;
     
-    if (parser.parseOperand(tuple) ||
-        parser.parseAttribute(attr) ||
+    if (parser.parseAttribute(columnName) ||
+        parser.parseOperand(tuple) ||
         parser.parseArrow() ||
         parser.parseType(resultType) ||
         parser.parseOptionalAttrDict(result.attributes) ||
@@ -249,7 +228,7 @@ ParseResult GetColumnOp::parse(OpAsmParser& parser, OperationState& result) {
         return failure();
     }
     
-    result.addAttribute("attr", attr);
+    result.addAttribute("column_name", columnName);
     result.addTypes(resultType);
     
     if (parser.resolveOperand(tuple, tupleType, result.operands)) {
@@ -258,6 +237,8 @@ ParseResult GetColumnOp::parse(OpAsmParser& parser, OperationState& result) {
     
     return success();
 }
+
+// Properties system disabled - using traditional attributes
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"
