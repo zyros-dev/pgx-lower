@@ -1,7 +1,7 @@
 #ifndef POSTGRESQL_AST_TRANSLATOR_H
 #define POSTGRESQL_AST_TRANSLATOR_H
 
-#include "mlir_logger.h"
+#include "execution/mlir_logger.h"
 #include <memory>
 
 // Forward declarations to avoid include issues
