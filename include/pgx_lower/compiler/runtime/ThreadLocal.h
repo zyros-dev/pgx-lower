@@ -1,8 +1,8 @@
 #ifndef COMPILER_RUNTIME_THREADLOCAL_H
 #define COMPILER_RUNTIME_THREADLOCAL_H
 
-#include "runtime/ThreadLocal.h"
-#include "runtime/RuntimeFunctions.h"
+#include "pgx_lower/runtime/ThreadLocal.h"
+#include "pgx_lower/runtime/RuntimeFunctions.h"
 
 namespace pgx_lower::compiler::runtime {
 

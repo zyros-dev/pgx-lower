@@ -1,8 +1,8 @@
 #ifndef COMPILER_RUNTIME_EXECUTIONCONTEXT_H
 #define COMPILER_RUNTIME_EXECUTIONCONTEXT_H
 
-#include "runtime/ExecutionContext.h"
-#include "runtime/RuntimeFunctions.h"
+#include "pgx_lower/runtime/ExecutionContext.h"
+#include "pgx_lower/runtime/RuntimeFunctions.h"
 
 namespace pgx_lower::compiler::runtime {
 
