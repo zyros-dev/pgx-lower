@@ -122,7 +122,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
         src/utility/logging/console_logger.cpp
-        src/runtime/helpers_stub.cpp
+        src/runtime/helpers.cpp
     )
     target_link_libraries(mlir_unit_test PRIVATE 
         gtest
