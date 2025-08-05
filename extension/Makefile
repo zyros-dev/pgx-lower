@@ -185,269 +185,293 @@ pgx_lower/fast:
 	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/build
 .PHONY : pgx_lower/fast
 
-__/src/core/error_handling.o: __/src/core/error_handling.cpp.o
-.PHONY : __/src/core/error_handling.o
+__/src/execution/error_handling.o: __/src/execution/error_handling.cpp.o
+.PHONY : __/src/execution/error_handling.o
 
 # target to build an object file
-__/src/core/error_handling.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/error_handling.cpp.o
-.PHONY : __/src/core/error_handling.cpp.o
+__/src/execution/error_handling.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/error_handling.cpp.o
+.PHONY : __/src/execution/error_handling.cpp.o
 
-__/src/core/error_handling.i: __/src/core/error_handling.cpp.i
-.PHONY : __/src/core/error_handling.i
+__/src/execution/error_handling.i: __/src/execution/error_handling.cpp.i
+.PHONY : __/src/execution/error_handling.i
 
 # target to preprocess a source file
-__/src/core/error_handling.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/error_handling.cpp.i
-.PHONY : __/src/core/error_handling.cpp.i
+__/src/execution/error_handling.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/error_handling.cpp.i
+.PHONY : __/src/execution/error_handling.cpp.i
 
-__/src/core/error_handling.s: __/src/core/error_handling.cpp.s
-.PHONY : __/src/core/error_handling.s
+__/src/execution/error_handling.s: __/src/execution/error_handling.cpp.s
+.PHONY : __/src/execution/error_handling.s
 
 # target to generate assembly for a file
-__/src/core/error_handling.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/error_handling.cpp.s
-.PHONY : __/src/core/error_handling.cpp.s
+__/src/execution/error_handling.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/error_handling.cpp.s
+.PHONY : __/src/execution/error_handling.cpp.s
 
-__/src/core/logging.o: __/src/core/logging.cpp.o
-.PHONY : __/src/core/logging.o
+__/src/execution/mlir_runner.o: __/src/execution/mlir_runner.cpp.o
+.PHONY : __/src/execution/mlir_runner.o
 
 # target to build an object file
-__/src/core/logging.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/logging.cpp.o
-.PHONY : __/src/core/logging.cpp.o
+__/src/execution/mlir_runner.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/mlir_runner.cpp.o
+.PHONY : __/src/execution/mlir_runner.cpp.o
 
-__/src/core/logging.i: __/src/core/logging.cpp.i
-.PHONY : __/src/core/logging.i
+__/src/execution/mlir_runner.i: __/src/execution/mlir_runner.cpp.i
+.PHONY : __/src/execution/mlir_runner.i
 
 # target to preprocess a source file
-__/src/core/logging.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/logging.cpp.i
-.PHONY : __/src/core/logging.cpp.i
+__/src/execution/mlir_runner.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/mlir_runner.cpp.i
+.PHONY : __/src/execution/mlir_runner.cpp.i
 
-__/src/core/logging.s: __/src/core/logging.cpp.s
-.PHONY : __/src/core/logging.s
+__/src/execution/mlir_runner.s: __/src/execution/mlir_runner.cpp.s
+.PHONY : __/src/execution/mlir_runner.s
 
 # target to generate assembly for a file
-__/src/core/logging.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/logging.cpp.s
-.PHONY : __/src/core/logging.cpp.s
+__/src/execution/mlir_runner.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/mlir_runner.cpp.s
+.PHONY : __/src/execution/mlir_runner.cpp.s
 
-__/src/core/logging_c.o: __/src/core/logging_c.cpp.o
-.PHONY : __/src/core/logging_c.o
+__/src/execution/postgres/executor_c.o: __/src/execution/postgres/executor_c.c.o
+.PHONY : __/src/execution/postgres/executor_c.o
 
 # target to build an object file
-__/src/core/logging_c.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/logging_c.cpp.o
-.PHONY : __/src/core/logging_c.cpp.o
+__/src/execution/postgres/executor_c.c.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/postgres/executor_c.c.o
+.PHONY : __/src/execution/postgres/executor_c.c.o
 
-__/src/core/logging_c.i: __/src/core/logging_c.cpp.i
-.PHONY : __/src/core/logging_c.i
+__/src/execution/postgres/executor_c.i: __/src/execution/postgres/executor_c.c.i
+.PHONY : __/src/execution/postgres/executor_c.i
 
 # target to preprocess a source file
-__/src/core/logging_c.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/logging_c.cpp.i
-.PHONY : __/src/core/logging_c.cpp.i
+__/src/execution/postgres/executor_c.c.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/postgres/executor_c.c.i
+.PHONY : __/src/execution/postgres/executor_c.c.i
 
-__/src/core/logging_c.s: __/src/core/logging_c.cpp.s
-.PHONY : __/src/core/logging_c.s
+__/src/execution/postgres/executor_c.s: __/src/execution/postgres/executor_c.c.s
+.PHONY : __/src/execution/postgres/executor_c.s
 
 # target to generate assembly for a file
-__/src/core/logging_c.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/logging_c.cpp.s
-.PHONY : __/src/core/logging_c.cpp.s
+__/src/execution/postgres/executor_c.c.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/postgres/executor_c.c.s
+.PHONY : __/src/execution/postgres/executor_c.c.s
 
-__/src/core/mlir_runner.o: __/src/core/mlir_runner.cpp.o
-.PHONY : __/src/core/mlir_runner.o
+__/src/execution/postgres/executor_c.o: __/src/execution/postgres/executor_c.cpp.o
+.PHONY : __/src/execution/postgres/executor_c.o
 
 # target to build an object file
-__/src/core/mlir_runner.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/mlir_runner.cpp.o
-.PHONY : __/src/core/mlir_runner.cpp.o
+__/src/execution/postgres/executor_c.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/postgres/executor_c.cpp.o
+.PHONY : __/src/execution/postgres/executor_c.cpp.o
 
-__/src/core/mlir_runner.i: __/src/core/mlir_runner.cpp.i
-.PHONY : __/src/core/mlir_runner.i
+__/src/execution/postgres/executor_c.i: __/src/execution/postgres/executor_c.cpp.i
+.PHONY : __/src/execution/postgres/executor_c.i
 
 # target to preprocess a source file
-__/src/core/mlir_runner.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/mlir_runner.cpp.i
-.PHONY : __/src/core/mlir_runner.cpp.i
+__/src/execution/postgres/executor_c.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/postgres/executor_c.cpp.i
+.PHONY : __/src/execution/postgres/executor_c.cpp.i
 
-__/src/core/mlir_runner.s: __/src/core/mlir_runner.cpp.s
-.PHONY : __/src/core/mlir_runner.s
+__/src/execution/postgres/executor_c.s: __/src/execution/postgres/executor_c.cpp.s
+.PHONY : __/src/execution/postgres/executor_c.s
 
 # target to generate assembly for a file
-__/src/core/mlir_runner.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/mlir_runner.cpp.s
-.PHONY : __/src/core/mlir_runner.cpp.s
+__/src/execution/postgres/executor_c.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/postgres/executor_c.cpp.s
+.PHONY : __/src/execution/postgres/executor_c.cpp.s
 
-__/src/core/postgresql_ast_translator.o: __/src/core/postgresql_ast_translator.cpp.o
-.PHONY : __/src/core/postgresql_ast_translator.o
+__/src/execution/postgres/my_executor.o: __/src/execution/postgres/my_executor.cpp.o
+.PHONY : __/src/execution/postgres/my_executor.o
 
 # target to build an object file
-__/src/core/postgresql_ast_translator.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/postgresql_ast_translator.cpp.o
-.PHONY : __/src/core/postgresql_ast_translator.cpp.o
+__/src/execution/postgres/my_executor.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/postgres/my_executor.cpp.o
+.PHONY : __/src/execution/postgres/my_executor.cpp.o
 
-__/src/core/postgresql_ast_translator.i: __/src/core/postgresql_ast_translator.cpp.i
-.PHONY : __/src/core/postgresql_ast_translator.i
+__/src/execution/postgres/my_executor.i: __/src/execution/postgres/my_executor.cpp.i
+.PHONY : __/src/execution/postgres/my_executor.i
 
 # target to preprocess a source file
-__/src/core/postgresql_ast_translator.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/postgresql_ast_translator.cpp.i
-.PHONY : __/src/core/postgresql_ast_translator.cpp.i
+__/src/execution/postgres/my_executor.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/postgres/my_executor.cpp.i
+.PHONY : __/src/execution/postgres/my_executor.cpp.i
 
-__/src/core/postgresql_ast_translator.s: __/src/core/postgresql_ast_translator.cpp.s
-.PHONY : __/src/core/postgresql_ast_translator.s
+__/src/execution/postgres/my_executor.s: __/src/execution/postgres/my_executor.cpp.s
+.PHONY : __/src/execution/postgres/my_executor.s
 
 # target to generate assembly for a file
-__/src/core/postgresql_ast_translator.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/postgresql_ast_translator.cpp.s
-.PHONY : __/src/core/postgresql_ast_translator.cpp.s
+__/src/execution/postgres/my_executor.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/execution/postgres/my_executor.cpp.s
+.PHONY : __/src/execution/postgres/my_executor.cpp.s
 
-__/src/core/query_analyzer.o: __/src/core/query_analyzer.cpp.o
-.PHONY : __/src/core/query_analyzer.o
+__/src/frontend/SQL/postgresql_ast_translator.o: __/src/frontend/SQL/postgresql_ast_translator.cpp.o
+.PHONY : __/src/frontend/SQL/postgresql_ast_translator.o
 
 # target to build an object file
-__/src/core/query_analyzer.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/query_analyzer.cpp.o
-.PHONY : __/src/core/query_analyzer.cpp.o
+__/src/frontend/SQL/postgresql_ast_translator.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/frontend/SQL/postgresql_ast_translator.cpp.o
+.PHONY : __/src/frontend/SQL/postgresql_ast_translator.cpp.o
 
-__/src/core/query_analyzer.i: __/src/core/query_analyzer.cpp.i
-.PHONY : __/src/core/query_analyzer.i
+__/src/frontend/SQL/postgresql_ast_translator.i: __/src/frontend/SQL/postgresql_ast_translator.cpp.i
+.PHONY : __/src/frontend/SQL/postgresql_ast_translator.i
 
 # target to preprocess a source file
-__/src/core/query_analyzer.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/query_analyzer.cpp.i
-.PHONY : __/src/core/query_analyzer.cpp.i
+__/src/frontend/SQL/postgresql_ast_translator.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/frontend/SQL/postgresql_ast_translator.cpp.i
+.PHONY : __/src/frontend/SQL/postgresql_ast_translator.cpp.i
 
-__/src/core/query_analyzer.s: __/src/core/query_analyzer.cpp.s
-.PHONY : __/src/core/query_analyzer.s
+__/src/frontend/SQL/postgresql_ast_translator.s: __/src/frontend/SQL/postgresql_ast_translator.cpp.s
+.PHONY : __/src/frontend/SQL/postgresql_ast_translator.s
 
 # target to generate assembly for a file
-__/src/core/query_analyzer.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/core/query_analyzer.cpp.s
-.PHONY : __/src/core/query_analyzer.cpp.s
+__/src/frontend/SQL/postgresql_ast_translator.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/frontend/SQL/postgresql_ast_translator.cpp.s
+.PHONY : __/src/frontend/SQL/postgresql_ast_translator.cpp.s
 
-__/src/logging/console_logger.o: __/src/logging/console_logger.cpp.o
-.PHONY : __/src/logging/console_logger.o
+__/src/frontend/SQL/query_analyzer.o: __/src/frontend/SQL/query_analyzer.cpp.o
+.PHONY : __/src/frontend/SQL/query_analyzer.o
 
 # target to build an object file
-__/src/logging/console_logger.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/logging/console_logger.cpp.o
-.PHONY : __/src/logging/console_logger.cpp.o
+__/src/frontend/SQL/query_analyzer.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/frontend/SQL/query_analyzer.cpp.o
+.PHONY : __/src/frontend/SQL/query_analyzer.cpp.o
 
-__/src/logging/console_logger.i: __/src/logging/console_logger.cpp.i
-.PHONY : __/src/logging/console_logger.i
+__/src/frontend/SQL/query_analyzer.i: __/src/frontend/SQL/query_analyzer.cpp.i
+.PHONY : __/src/frontend/SQL/query_analyzer.i
 
 # target to preprocess a source file
-__/src/logging/console_logger.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/logging/console_logger.cpp.i
-.PHONY : __/src/logging/console_logger.cpp.i
+__/src/frontend/SQL/query_analyzer.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/frontend/SQL/query_analyzer.cpp.i
+.PHONY : __/src/frontend/SQL/query_analyzer.cpp.i
 
-__/src/logging/console_logger.s: __/src/logging/console_logger.cpp.s
-.PHONY : __/src/logging/console_logger.s
+__/src/frontend/SQL/query_analyzer.s: __/src/frontend/SQL/query_analyzer.cpp.s
+.PHONY : __/src/frontend/SQL/query_analyzer.s
 
 # target to generate assembly for a file
-__/src/logging/console_logger.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/logging/console_logger.cpp.s
-.PHONY : __/src/logging/console_logger.cpp.s
+__/src/frontend/SQL/query_analyzer.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/frontend/SQL/query_analyzer.cpp.s
+.PHONY : __/src/frontend/SQL/query_analyzer.cpp.s
 
-__/src/logging/mlir_logger_pg.o: __/src/logging/mlir_logger_pg.cpp.o
-.PHONY : __/src/logging/mlir_logger_pg.o
+__/src/utility/logging.o: __/src/utility/logging.cpp.o
+.PHONY : __/src/utility/logging.o
 
 # target to build an object file
-__/src/logging/mlir_logger_pg.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/logging/mlir_logger_pg.cpp.o
-.PHONY : __/src/logging/mlir_logger_pg.cpp.o
+__/src/utility/logging.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging.cpp.o
+.PHONY : __/src/utility/logging.cpp.o
 
-__/src/logging/mlir_logger_pg.i: __/src/logging/mlir_logger_pg.cpp.i
-.PHONY : __/src/logging/mlir_logger_pg.i
+__/src/utility/logging.i: __/src/utility/logging.cpp.i
+.PHONY : __/src/utility/logging.i
 
 # target to preprocess a source file
-__/src/logging/mlir_logger_pg.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/logging/mlir_logger_pg.cpp.i
-.PHONY : __/src/logging/mlir_logger_pg.cpp.i
+__/src/utility/logging.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging.cpp.i
+.PHONY : __/src/utility/logging.cpp.i
 
-__/src/logging/mlir_logger_pg.s: __/src/logging/mlir_logger_pg.cpp.s
-.PHONY : __/src/logging/mlir_logger_pg.s
+__/src/utility/logging.s: __/src/utility/logging.cpp.s
+.PHONY : __/src/utility/logging.s
 
 # target to generate assembly for a file
-__/src/logging/mlir_logger_pg.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/logging/mlir_logger_pg.cpp.s
-.PHONY : __/src/logging/mlir_logger_pg.cpp.s
+__/src/utility/logging.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging.cpp.s
+.PHONY : __/src/utility/logging.cpp.s
 
-__/src/postgres/executor_c.o: __/src/postgres/executor_c.c.o
-.PHONY : __/src/postgres/executor_c.o
+__/src/utility/logging/console_logger.o: __/src/utility/logging/console_logger.cpp.o
+.PHONY : __/src/utility/logging/console_logger.o
 
 # target to build an object file
-__/src/postgres/executor_c.c.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/postgres/executor_c.c.o
-.PHONY : __/src/postgres/executor_c.c.o
+__/src/utility/logging/console_logger.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging/console_logger.cpp.o
+.PHONY : __/src/utility/logging/console_logger.cpp.o
 
-__/src/postgres/executor_c.i: __/src/postgres/executor_c.c.i
-.PHONY : __/src/postgres/executor_c.i
+__/src/utility/logging/console_logger.i: __/src/utility/logging/console_logger.cpp.i
+.PHONY : __/src/utility/logging/console_logger.i
 
 # target to preprocess a source file
-__/src/postgres/executor_c.c.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/postgres/executor_c.c.i
-.PHONY : __/src/postgres/executor_c.c.i
+__/src/utility/logging/console_logger.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging/console_logger.cpp.i
+.PHONY : __/src/utility/logging/console_logger.cpp.i
 
-__/src/postgres/executor_c.s: __/src/postgres/executor_c.c.s
-.PHONY : __/src/postgres/executor_c.s
+__/src/utility/logging/console_logger.s: __/src/utility/logging/console_logger.cpp.s
+.PHONY : __/src/utility/logging/console_logger.s
 
 # target to generate assembly for a file
-__/src/postgres/executor_c.c.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/postgres/executor_c.c.s
-.PHONY : __/src/postgres/executor_c.c.s
+__/src/utility/logging/console_logger.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging/console_logger.cpp.s
+.PHONY : __/src/utility/logging/console_logger.cpp.s
 
-__/src/postgres/executor_c.o: __/src/postgres/executor_c.cpp.o
-.PHONY : __/src/postgres/executor_c.o
+__/src/utility/logging/mlir_logger_pg.o: __/src/utility/logging/mlir_logger_pg.cpp.o
+.PHONY : __/src/utility/logging/mlir_logger_pg.o
 
 # target to build an object file
-__/src/postgres/executor_c.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/postgres/executor_c.cpp.o
-.PHONY : __/src/postgres/executor_c.cpp.o
+__/src/utility/logging/mlir_logger_pg.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging/mlir_logger_pg.cpp.o
+.PHONY : __/src/utility/logging/mlir_logger_pg.cpp.o
 
-__/src/postgres/executor_c.i: __/src/postgres/executor_c.cpp.i
-.PHONY : __/src/postgres/executor_c.i
+__/src/utility/logging/mlir_logger_pg.i: __/src/utility/logging/mlir_logger_pg.cpp.i
+.PHONY : __/src/utility/logging/mlir_logger_pg.i
 
 # target to preprocess a source file
-__/src/postgres/executor_c.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/postgres/executor_c.cpp.i
-.PHONY : __/src/postgres/executor_c.cpp.i
+__/src/utility/logging/mlir_logger_pg.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging/mlir_logger_pg.cpp.i
+.PHONY : __/src/utility/logging/mlir_logger_pg.cpp.i
 
-__/src/postgres/executor_c.s: __/src/postgres/executor_c.cpp.s
-.PHONY : __/src/postgres/executor_c.s
+__/src/utility/logging/mlir_logger_pg.s: __/src/utility/logging/mlir_logger_pg.cpp.s
+.PHONY : __/src/utility/logging/mlir_logger_pg.s
 
 # target to generate assembly for a file
-__/src/postgres/executor_c.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/postgres/executor_c.cpp.s
-.PHONY : __/src/postgres/executor_c.cpp.s
+__/src/utility/logging/mlir_logger_pg.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging/mlir_logger_pg.cpp.s
+.PHONY : __/src/utility/logging/mlir_logger_pg.cpp.s
 
-__/src/postgres/my_executor.o: __/src/postgres/my_executor.cpp.o
-.PHONY : __/src/postgres/my_executor.o
+__/src/utility/logging_c.o: __/src/utility/logging_c.cpp.o
+.PHONY : __/src/utility/logging_c.o
 
 # target to build an object file
-__/src/postgres/my_executor.cpp.o:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/postgres/my_executor.cpp.o
-.PHONY : __/src/postgres/my_executor.cpp.o
+__/src/utility/logging_c.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging_c.cpp.o
+.PHONY : __/src/utility/logging_c.cpp.o
 
-__/src/postgres/my_executor.i: __/src/postgres/my_executor.cpp.i
-.PHONY : __/src/postgres/my_executor.i
+__/src/utility/logging_c.i: __/src/utility/logging_c.cpp.i
+.PHONY : __/src/utility/logging_c.i
 
 # target to preprocess a source file
-__/src/postgres/my_executor.cpp.i:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/postgres/my_executor.cpp.i
-.PHONY : __/src/postgres/my_executor.cpp.i
+__/src/utility/logging_c.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging_c.cpp.i
+.PHONY : __/src/utility/logging_c.cpp.i
 
-__/src/postgres/my_executor.s: __/src/postgres/my_executor.cpp.s
-.PHONY : __/src/postgres/my_executor.s
+__/src/utility/logging_c.s: __/src/utility/logging_c.cpp.s
+.PHONY : __/src/utility/logging_c.s
 
 # target to generate assembly for a file
-__/src/postgres/my_executor.cpp.s:
-	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/postgres/my_executor.cpp.s
-.PHONY : __/src/postgres/my_executor.cpp.s
+__/src/utility/logging_c.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging_c.cpp.s
+.PHONY : __/src/utility/logging_c.cpp.s
+
+__/src/utility/logging_tools.o: __/src/utility/logging_tools.cpp.o
+.PHONY : __/src/utility/logging_tools.o
+
+# target to build an object file
+__/src/utility/logging_tools.cpp.o:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging_tools.cpp.o
+.PHONY : __/src/utility/logging_tools.cpp.o
+
+__/src/utility/logging_tools.i: __/src/utility/logging_tools.cpp.i
+.PHONY : __/src/utility/logging_tools.i
+
+# target to preprocess a source file
+__/src/utility/logging_tools.cpp.i:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging_tools.cpp.i
+.PHONY : __/src/utility/logging_tools.cpp.i
+
+__/src/utility/logging_tools.s: __/src/utility/logging_tools.cpp.s
+.PHONY : __/src/utility/logging_tools.s
+
+# target to generate assembly for a file
+__/src/utility/logging_tools.cpp.s:
+	cd /home/xzel/repos/pgx-lower && $(MAKE) $(MAKESILENT) -f extension/CMakeFiles/pgx_lower.dir/build.make extension/CMakeFiles/pgx_lower.dir/__/src/utility/logging_tools.cpp.s
+.PHONY : __/src/utility/logging_tools.cpp.s
 
 # Help Target
 help:
@@ -463,39 +487,42 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... pgx_lower"
-	@echo "... __/src/core/error_handling.o"
-	@echo "... __/src/core/error_handling.i"
-	@echo "... __/src/core/error_handling.s"
-	@echo "... __/src/core/logging.o"
-	@echo "... __/src/core/logging.i"
-	@echo "... __/src/core/logging.s"
-	@echo "... __/src/core/logging_c.o"
-	@echo "... __/src/core/logging_c.i"
-	@echo "... __/src/core/logging_c.s"
-	@echo "... __/src/core/mlir_runner.o"
-	@echo "... __/src/core/mlir_runner.i"
-	@echo "... __/src/core/mlir_runner.s"
-	@echo "... __/src/core/postgresql_ast_translator.o"
-	@echo "... __/src/core/postgresql_ast_translator.i"
-	@echo "... __/src/core/postgresql_ast_translator.s"
-	@echo "... __/src/core/query_analyzer.o"
-	@echo "... __/src/core/query_analyzer.i"
-	@echo "... __/src/core/query_analyzer.s"
-	@echo "... __/src/logging/console_logger.o"
-	@echo "... __/src/logging/console_logger.i"
-	@echo "... __/src/logging/console_logger.s"
-	@echo "... __/src/logging/mlir_logger_pg.o"
-	@echo "... __/src/logging/mlir_logger_pg.i"
-	@echo "... __/src/logging/mlir_logger_pg.s"
-	@echo "... __/src/postgres/executor_c.o"
-	@echo "... __/src/postgres/executor_c.i"
-	@echo "... __/src/postgres/executor_c.s"
-	@echo "... __/src/postgres/executor_c.o"
-	@echo "... __/src/postgres/executor_c.i"
-	@echo "... __/src/postgres/executor_c.s"
-	@echo "... __/src/postgres/my_executor.o"
-	@echo "... __/src/postgres/my_executor.i"
-	@echo "... __/src/postgres/my_executor.s"
+	@echo "... __/src/execution/error_handling.o"
+	@echo "... __/src/execution/error_handling.i"
+	@echo "... __/src/execution/error_handling.s"
+	@echo "... __/src/execution/mlir_runner.o"
+	@echo "... __/src/execution/mlir_runner.i"
+	@echo "... __/src/execution/mlir_runner.s"
+	@echo "... __/src/execution/postgres/executor_c.o"
+	@echo "... __/src/execution/postgres/executor_c.i"
+	@echo "... __/src/execution/postgres/executor_c.s"
+	@echo "... __/src/execution/postgres/executor_c.o"
+	@echo "... __/src/execution/postgres/executor_c.i"
+	@echo "... __/src/execution/postgres/executor_c.s"
+	@echo "... __/src/execution/postgres/my_executor.o"
+	@echo "... __/src/execution/postgres/my_executor.i"
+	@echo "... __/src/execution/postgres/my_executor.s"
+	@echo "... __/src/frontend/SQL/postgresql_ast_translator.o"
+	@echo "... __/src/frontend/SQL/postgresql_ast_translator.i"
+	@echo "... __/src/frontend/SQL/postgresql_ast_translator.s"
+	@echo "... __/src/frontend/SQL/query_analyzer.o"
+	@echo "... __/src/frontend/SQL/query_analyzer.i"
+	@echo "... __/src/frontend/SQL/query_analyzer.s"
+	@echo "... __/src/utility/logging.o"
+	@echo "... __/src/utility/logging.i"
+	@echo "... __/src/utility/logging.s"
+	@echo "... __/src/utility/logging/console_logger.o"
+	@echo "... __/src/utility/logging/console_logger.i"
+	@echo "... __/src/utility/logging/console_logger.s"
+	@echo "... __/src/utility/logging/mlir_logger_pg.o"
+	@echo "... __/src/utility/logging/mlir_logger_pg.i"
+	@echo "... __/src/utility/logging/mlir_logger_pg.s"
+	@echo "... __/src/utility/logging_c.o"
+	@echo "... __/src/utility/logging_c.i"
+	@echo "... __/src/utility/logging_c.s"
+	@echo "... __/src/utility/logging_tools.o"
+	@echo "... __/src/utility/logging_tools.i"
+	@echo "... __/src/utility/logging_tools.s"
 .PHONY : help
 
 
