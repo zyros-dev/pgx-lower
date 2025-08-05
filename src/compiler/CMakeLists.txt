@@ -7,6 +7,8 @@
 # Add MLIR support utilities (when they exists)
 # add_subdirectory(mlir-support)
 
-# NOTE: Dialect and Conversion directories removed for clean slate refactor
-# Will be rebuilt incrementally using LingoDB 2022 architecture:
-# RelAlg → DB → DSA → Standard MLIR
+# Add MLIR dialects - starting with RelAlg
+add_subdirectory(../mlir/Dialect/RelAlg RelAlgDialect)
+
+# NOTE: Remaining dialects and conversions will be rebuilt incrementally
+# Architecture: RelAlg → DB → DSA → Standard MLIR
