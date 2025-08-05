@@ -1,7 +1,7 @@
 #ifndef COMPILER_RUNTIME_ENTRYLOCK_H
 #define COMPILER_RUNTIME_ENTRYLOCK_H
 
-#include "runtime/EntryLock.h"
+#include "pgx_lower/runtime/EntryLock.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 
