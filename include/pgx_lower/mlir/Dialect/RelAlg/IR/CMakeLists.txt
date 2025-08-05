@@ -1,0 +1,11 @@
+# RelAlg TableGen definitions
+set(LLVM_TARGET_DEFINITIONS RelAlgOps.td)
+mlir_tablegen(RelAlgOps.h.inc -gen-op-decls)
+mlir_tablegen(RelAlgOps.cpp.inc -gen-op-defs)
+mlir_tablegen(RelAlgOpsDialect.h.inc -gen-dialect-decls)
+mlir_tablegen(RelAlgOpsDialect.cpp.inc -gen-dialect-defs)
+mlir_tablegen(RelAlgOpsAttributes.h.inc -gen-attrdef-decls)
+mlir_tablegen(RelAlgOpsAttributes.cpp.inc -gen-attrdef-defs)
+mlir_tablegen(RelAlgOpsTypes.h.inc -gen-typedef-decls)
+mlir_tablegen(RelAlgOpsTypes.cpp.inc -gen-typedef-defs)
+add_public_tablegen_target(MLIRRelAlgOpsIncGen)

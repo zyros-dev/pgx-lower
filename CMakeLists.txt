@@ -59,11 +59,19 @@ find_package(PostgreSQL REQUIRED)
 find_package(LLVM REQUIRED)
 find_package(MLIR REQUIRED)
 
+# Include MLIR CMake modules for TableGen
+list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+include(TableGen)
+include(AddMLIR)
+include(AddLLVM)
+
 include(PostgreSQLExtension)
 
 # Include directories for the new structure
 include_directories(
     ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_BINARY_DIR}/include/pgx_lower
     ${PostgreSQL_INCLUDE_DIRS}
     ${PostgreSQL_SERVER_INCLUDE_DIRS}
 )
@@ -82,6 +90,9 @@ add_subdirectory(tools/build-tools)
 
 # Create empty runtime_funcs_ptr library for now
 add_library(runtime_funcs_ptr INTERFACE)
+
+# Add include directory for TableGen processing
+add_subdirectory(include/pgx_lower/mlir/Dialect/RelAlg/IR)
 
 # Add compiler library (includes dialects)
 add_subdirectory(src/compiler)
@@ -103,6 +114,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         "tests/unit/core/*.cpp"
         "tests/unit/runtime/*.cpp"
         "tests/unit/logging/*.cpp"
+        "tests/unit/dialects/*.cpp"
     )
     # Exclude mlir_runner_test.cpp until MLIR pipeline is rebuilt
     list(REMOVE_ITEM UNIT_TEST_SOURCES 
@@ -138,8 +150,8 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     )
     target_link_libraries(mlir_unit_test PRIVATE 
         gtest
-        # NOTE: All MLIR dialect libraries removed for clean slate refactor
-        # Will be re-added incrementally as dialects are rebuilt
+        MLIRRelAlgDialect
+        # NOTE: Additional MLIR dialect libraries will be added as they are rebuilt
     )
     target_include_directories(mlir_unit_test PRIVATE 
         tests/unit
