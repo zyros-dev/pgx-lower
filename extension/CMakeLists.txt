@@ -18,6 +18,10 @@ add_postgresql_mixed_extension(
             ../src/utility/logging_tools.cpp
             ../src/utility/logging/mlir_logger_pg.cpp
             ../src/utility/logging/console_logger.cpp
+            ../src/runtime/tuple_access.cpp
+            ../src/runtime/PostgreSQLDataSource.cpp
+            ../src/runtime/helpers.cpp
+            ../src/runtime/postgresql_runtime.cpp
         SCRIPTS 
             sql/pgx_lower--1.0.sql
         REGRESS
