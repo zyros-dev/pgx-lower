@@ -54,11 +54,11 @@ validate_scf_includes() {
     echo -e "\n${BLUE}=== Validating SCF Dialect Includes ===${NC}"
     
     local scf_files=(
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Core/SubOpToControlFlowUtilities.cpp"
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ScanOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Core/SubOpToControlFlowUtilities.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ScanOperations.cpp"
     )
     
     local found_scf_includes=0
@@ -89,8 +89,8 @@ validate_yieldop_patterns() {
     echo -e "\n${BLUE}=== Validating YieldOp Usage Patterns ===${NC}"
     
     local files_to_check=(
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
         "$PROJECT_ROOT/tests/unit/test_terminator_validation_framework.cpp"
     )
     
@@ -131,8 +131,8 @@ validate_ifop_patterns() {
     echo -e "\n${BLUE}=== Validating IfOp Termination Patterns ===${NC}"
     
     local files_to_check=(
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
         "$PROJECT_ROOT/tests/unit/test_terminator_validation_framework.cpp"
     )
     
@@ -171,7 +171,7 @@ validate_forop_patterns() {
     echo -e "\n${BLUE}=== Validating ForOp Termination Patterns ===${NC}"
     
     local files_to_check=(
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ScanOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ScanOperations.cpp"
         "$PROJECT_ROOT/tests/unit/test_terminator_validation_framework.cpp"
     )
     
@@ -219,9 +219,9 @@ validate_scf_controlflow_mixing() {
     echo -e "\n${BLUE}=== Validating SCF vs ControlFlow Dialect Mixing ===${NC}"
     
     local files_to_check=(
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
-        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
+##        "$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
     )
     
     for file in "${files_to_check[@]}"; do

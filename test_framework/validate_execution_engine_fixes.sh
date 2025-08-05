@@ -53,7 +53,7 @@ log_test() {
 validate_execution_engine_file() {
     echo -e "\n${BLUE}=== Validating ExecutionEngine.cpp Structure ===${NC}"
     
-    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
     
     if [ ! -f "$exec_file" ]; then
         log_test "ExecutionEngine.cpp file exists" "FAIL" "File not found: $exec_file"
@@ -83,7 +83,7 @@ validate_execution_engine_file() {
 validate_store_int_result_function() {
     echo -e "\n${BLUE}=== Validating store_int_result Function ===${NC}"
     
-    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
     
     # Check if store_int_result function exists
     if grep -q "store_int_result" "$exec_file"; then
@@ -122,7 +122,7 @@ validate_store_int_result_function() {
 validate_terminator_insertion_patterns() {
     echo -e "\n${BLUE}=== Validating Terminator Insertion Patterns ===${NC}"
     
-    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
     
     # Check for block terminator validation
     if grep -q "getTerminator()" "$exec_file"; then
@@ -159,7 +159,7 @@ validate_terminator_insertion_patterns() {
 validate_runtime_call_integration() {
     echo -e "\n${BLUE}=== Validating Runtime Call Integration ===${NC}"
     
-    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
     
     # Check for runtime function call patterns
     if grep -q "CallOp\|RuntimeCall" "$exec_file"; then
@@ -189,7 +189,7 @@ validate_runtime_call_integration() {
 validate_logging_debugging() {
     echo -e "\n${BLUE}=== Validating Logging and Debugging ===${NC}"
     
-    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
     
     # Check for PGX logging usage
     if grep -q "PGX_DEBUG\|PGX_INFO\|PGX_ERROR\|PGX_WARNING" "$exec_file"; then
@@ -218,7 +218,7 @@ validate_logging_debugging() {
 validate_fix_implementation() {
     echo -e "\n${BLUE}=== Validating Fix Implementation Patterns ===${NC}"
     
-    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##    local exec_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
     
     # Check for specific line ranges mentioned in Agent instructions (lines 365-377)
     local line_count=$(wc -l < "$exec_file" 2>/dev/null || echo 0)
@@ -252,7 +252,7 @@ generate_validation_report() {
     
     echo "Validation Date: $(date)"
     echo "Project Root: $PROJECT_ROOT"
-    echo "ExecutionEngine File: src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##    echo "ExecutionEngine File: src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
     echo ""
     
     echo "=== VALIDATION SUMMARY ==="

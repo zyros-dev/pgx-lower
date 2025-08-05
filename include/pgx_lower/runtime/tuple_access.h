@@ -265,6 +265,6 @@ int64_t sum_aggregate(void* table_handle);
 
 auto get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) -> double;
 
-// Critical runtime function for SubOp->DB conversion (GetExternalOp lowering)
+// Critical runtime function for DB dialect (GetExternalOp lowering)
 void* DataSource_get(pgx_lower::compiler::runtime::VarLen32 description);
 }

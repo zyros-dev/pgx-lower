@@ -200,7 +200,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogge
                 logger.notice("Configured for computed expression results");
             }
             else {
-                // For now, treat simple SELECT * as computed results since MinimalSubOpToControlFlow
+                // For now, treat simple SELECT * as computed results since minimal control flow
                 // uses store_int_result which populates g_computed_results
                 // TODO: Eventually fix this to use table columns directly
 
