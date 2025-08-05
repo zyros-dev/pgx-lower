@@ -1,4 +1,5 @@
 #include "mlir/ExecutionEngine/CRunnerUtils.h"
+#include "execution/logging.h"
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
@@ -10,11 +11,14 @@ extern "C" {
 
 // Memory allocation functions
 void* pgx_exec_alloc_state_raw(int64_t size) {
-    // Allocate memory for execution state
-    return malloc(size);
+    RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Starting memory allocation for execution state, size: " + std::to_string(size));
+    void* result = malloc(size);
+    RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Memory allocation completed, ptr: " + std::to_string(reinterpret_cast<uintptr_t>(result)));
+    return result;
 }
 
 void pgx_exec_free_state(void* state) {
+    RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Freeing execution state, ptr: " + std::to_string(reinterpret_cast<uintptr_t>(state)));
     free(state);
 }
 
@@ -57,11 +61,12 @@ struct PostgreSQLDataSource {
 };
 
 void* pgx_datasource_get(void* table_ref) {
-    // Create a data source for the given table
+    RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Creating data source for table_ref: " + std::to_string(reinterpret_cast<uintptr_t>(table_ref)));
     auto* ds = new PostgreSQLDataSource();
     ds->table_data = table_ref;
     ds->current_row = 0;
     ds->total_rows = 0; // Would be set from table metadata
+    RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Data source created successfully");
     return ds;
 }
 
@@ -73,6 +78,7 @@ struct DataSourceIteration {
 };
 
 void* pgx_datasource_iteration_init(void* datasource, int64_t start, int64_t end) {
+    RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Initializing data source iteration, range: " + std::to_string(start) + " to " + std::to_string(end));
     auto* iter = new DataSourceIteration();
     iter->datasource = (PostgreSQLDataSource*)datasource;
     iter->start_row = start;
@@ -140,6 +146,7 @@ void pgx_growing_buffer_insert(void* buffer, void* value, int64_t value_size) {
 
 // PostgreSQL-specific tuple access functions
 int32_t pgx_get_int_field(void* tuple, int32_t field_index) {
+    RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Accessing integer field " + std::to_string(field_index) + " from tuple");
     // In real implementation, would extract from PostgreSQL tuple format
     // For now, return dummy value
     return 42;

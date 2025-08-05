@@ -102,6 +102,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     file(GLOB_RECURSE UNIT_TEST_SOURCES 
         "tests/unit/core/*.cpp"
         "tests/unit/runtime/*.cpp"
+        "tests/unit/logging/*.cpp"
     )
     # Exclude mlir_runner_test.cpp until MLIR pipeline is rebuilt
     list(REMOVE_ITEM UNIT_TEST_SOURCES 
@@ -112,17 +113,28 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     # temporarily removed due to clean slate refactor - they reference deleted MLIR components
     # Will be restored once basic dialects are rebuilt
     
-    add_mlir_unit_test(mlir_unit_test 
-        tests/unit/test_main.cpp
-        tests/unit/test_helpers.cpp
-        tests/unit/mocks/mlir_runner_mock.cpp
-        ${UNIT_TEST_SOURCES}
+    # Build list of additional sources based on configuration
+    set(UNIT_TEST_ADDITIONAL_SOURCES
         src/frontend/SQL/query_analyzer.cpp
         src/execution/error_handling.cpp
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
         src/utility/logging/console_logger.cpp
         src/runtime/helpers.cpp
+    )
+    
+    # Add PostgreSQL-specific sources only when building as extension
+    if(POSTGRESQL_EXTENSION)
+        list(APPEND UNIT_TEST_ADDITIONAL_SOURCES 
+            src/utility/logging/mlir_logger_pg.cpp)
+    endif()
+    
+    add_mlir_unit_test(mlir_unit_test 
+        tests/unit/test_main.cpp
+        tests/unit/test_helpers.cpp
+        tests/unit/mocks/mlir_runner_mock.cpp
+        ${UNIT_TEST_SOURCES}
+        ${UNIT_TEST_ADDITIONAL_SOURCES}
     )
     target_link_libraries(mlir_unit_test PRIVATE 
         gtest

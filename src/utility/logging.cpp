@@ -74,6 +74,7 @@ void Logger::log(LogLevel level, const char* file, int line, const std::string& 
 
     const std::string formatted_message = std::string("[") + level_str + "] " + message;
 
+    // Use unified stream output - the PGX macros in the header handle PostgreSQL integration
     if (level == LogLevel::DEBUG_LVL && debug_to_file && debug_file.is_open()) {
         // Send DEBUG logs to file if configured
         debug_file << formatted_message << " (" << filename << ":" << line << ")" << std::endl;

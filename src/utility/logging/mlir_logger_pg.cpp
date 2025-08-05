@@ -1,4 +1,5 @@
 #include "execution/mlir_logger.h"
+#include "execution/logging.h"
 
 // Prevent libintl.h conflicts with PostgreSQL macros
 // This is a bit strange to me - so LLVM drags in some macros from libintl.h
@@ -13,13 +14,13 @@ extern "C" {
 
 // PostgreSQL logger implementation for the extension
 void PostgreSQLLogger::notice(const std::string& message) {
-    elog(NOTICE, "%s", message.c_str());
+    PGX_NOTICE(message);
 }
 
 void PostgreSQLLogger::error(const std::string& message) {
-    elog(ERROR, "%s", message.c_str());
+    PGX_ERROR(message);
 }
 
 void PostgreSQLLogger::debug(const std::string& message) {
-    elog(LOG, "%s", message.c_str());
+    PGX_DEBUG(message);
 }
