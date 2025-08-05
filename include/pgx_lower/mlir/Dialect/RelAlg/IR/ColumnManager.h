@@ -10,7 +10,6 @@
 namespace pgx::mlir::relalg {
 
 // Forward declarations
-class ColumnDefAttr;
 class ColumnRefAttr;
 
 struct Column {
@@ -28,8 +27,7 @@ public:
         this->context = context; 
     }
     
-    ColumnDefAttr createDef(::mlir::SymbolRefAttr name, ::mlir::Attribute fromExisting = nullptr);
-    ColumnRefAttr createRef(::mlir::SymbolRefAttr name);
+    ColumnRefAttr createRef(const std::string& name);
     
 private:
     ::mlir::MLIRContext* context = nullptr;
