@@ -238,5 +238,7 @@ ParseResult GetColumnOp::parse(OpAsmParser& parser, OperationState& result) {
     return success();
 }
 
+// Properties system disabled - using traditional attributes
+
 #define GET_OP_CLASSES
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"

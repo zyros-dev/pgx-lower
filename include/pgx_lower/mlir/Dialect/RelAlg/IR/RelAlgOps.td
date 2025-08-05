@@ -21,6 +21,9 @@ def RelAlg_Dialect : Dialect {
     let name = "relalg";
     let summary = "A dialect for relational algebra in pgx-lower";
     let cppNamespace = "::pgx::mlir::relalg";
+    
+    // Disable properties system to avoid namespace issues
+    let usePropertiesForAttributes = 0;
 
     let extraClassDeclaration = [{
         private:

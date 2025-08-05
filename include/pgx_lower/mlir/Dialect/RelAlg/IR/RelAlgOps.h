@@ -15,8 +15,7 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"  
 #include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
 
-// Ensure MLIR types are available for generated code (only what we need)
-using mlir::StringAttr;
+// Forward declarations for generated code - avoid using declarations that interfere with TableGen
 
 #define GET_ATTRDEF_CLASSES
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h.inc"
