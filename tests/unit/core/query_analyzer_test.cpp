@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <execution/query_analyzer.h>
+#include <frontend/SQL/query_analyzer.h>
 
 class QueryAnalyzerTest : public ::testing::Test {
    protected:

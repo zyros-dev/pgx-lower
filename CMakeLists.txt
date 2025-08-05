@@ -117,7 +117,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/test_helpers.cpp
         tests/unit/mocks/mlir_runner_mock.cpp
         ${UNIT_TEST_SOURCES}
-        src/execution/query_analyzer.cpp
+        src/frontend/SQL/query_analyzer.cpp
         src/execution/error_handling.cpp
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
