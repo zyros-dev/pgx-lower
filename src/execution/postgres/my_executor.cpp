@@ -1,7 +1,7 @@
 #include "execution/postgres/my_executor.h"
 #include "execution/mlir_runner.h"
 #include "execution/mlir_logger.h"
-#include "execution/query_analyzer.h"
+#include "frontend/SQL/query_analyzer.h"
 #include "execution/error_handling.h"
 #include "execution/logging.h"
 
