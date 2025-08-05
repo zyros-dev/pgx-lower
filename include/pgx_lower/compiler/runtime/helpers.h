@@ -5,7 +5,7 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "compiler/Dialect/util/FunctionHelper.h"
+// NOTE: compiler/Dialect/util/FunctionHelper.h removed for clean slate refactor
 #include <vector>
 #include <string>
 
@@ -121,7 +121,7 @@ struct GrowingBuffer {
 
 } // namespace pgx_lower::compiler::runtime
 
-// Include all runtime wrappers
-#include "compiler/runtime/all_wrappers.h"
+// NOTE: compiler/runtime/all_wrappers.h removed for clean slate refactor
+// Runtime wrappers will be rebuilt incrementally
 
 #endif // COMPILER_RUNTIME_HELPERS_H

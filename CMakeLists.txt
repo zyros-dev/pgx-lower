@@ -98,51 +98,19 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
-    # Collect all test source files (excluding mlir_runner_test.cpp which needs full MLIR pipeline)
+    # Clean slate refactor - minimal unit tests for core infrastructure only
     file(GLOB_RECURSE UNIT_TEST_SOURCES 
         "tests/unit/core/*.cpp"
-        "tests/unit/dialects/*.cpp"
         "tests/unit/runtime/*.cpp"
     )
+    # Exclude mlir_runner_test.cpp until MLIR pipeline is rebuilt
     list(REMOVE_ITEM UNIT_TEST_SOURCES 
         "${CMAKE_SOURCE_DIR}/tests/unit/core/mlir_runner_test.cpp"
     )
     
-    # Add individual test files
-    list(APPEND UNIT_TEST_SOURCES 
-        tests/unit/test_simple_execution_engine.cpp
-        tests/unit/test_basic_terminator.cpp
-        # RelAlg to SubOp lowering tests - 2 ENABLED, 10 DISABLED due to API compatibility issues
-        # ENABLED tests (compile successfully):
-        tests/unit/lowering/relalg_to_subop/const_relation_union_test.cpp
-        tests/unit/lowering/relalg_to_subop/sort_limit_test.cpp
-        # DISABLED tests - TODO Phase 5+: Fix and re-enable when APIs are updated
-        # tests/unit/lowering/relalg_to_subop/aggregation_test.cpp                 # AsNullableOp missing, ColumnManager API changes
-        # tests/unit/lowering/relalg_to_subop/base_table_selection_test.cpp        # API changes needed
-        # tests/unit/lowering/relalg_to_subop/error_handling_test.cpp              # Major API overhaul needed
-        # tests/unit/lowering/relalg_to_subop/join_operations_test.cpp             # ColumnDefAttr API changes
-        # tests/unit/lowering/relalg_to_subop/map_renaming_test.cpp                # TupleStreamOp missing, ValueRange issues
-        # tests/unit/lowering/relalg_to_subop/pass_pipeline_test.cpp               # Dialect namespace issues
-        # tests/unit/lowering/relalg_to_subop/performance_regression_test.cpp      # Build system conflicts
-        # tests/unit/lowering/relalg_to_subop/projection_test.cpp                  # ColumnDefAttr API changes
-        # tests/unit/lowering/relalg_to_subop/tmp_materialization_test.cpp         # ValueRange constructor issues
-        # tests/unit/lowering/relalg_to_subop/type_conversion_test.cpp             # ValueRange constructor issues
-        # SubOp to SCF lowering tests - ALL MUST COMPILE
-        tests/unit/lowering/subop_to_scf/test_controlflow_operations.cpp
-        tests/unit/lowering/subop_to_scf/test_subop_rewriter.cpp
-        tests/unit/lowering/subop_to_scf/test_subop_utilities.cpp
-        tests/unit/lowering/subop_to_scf/test_datastructure_creation.cpp
-        tests/unit/lowering/subop_to_scf/test_execution_engine_terminator.cpp
-        tests/unit/lowering/subop_to_scf/test_gather_scatter_operations.cpp
-        tests/unit/lowering/subop_to_scf/test_lookup_operations.cpp
-        tests/unit/lowering/subop_to_scf/test_reduce_operations.cpp
-        tests/unit/lowering/subop_to_scf/test_scan_operations.cpp
-        tests/unit/lowering/subop_to_scf/test_table_operations.cpp
-        tests/unit/lowering/subop_to_scf/test_threadlocal_operations.cpp
-        tests/unit/lowering/subop_to_scf/test_view_operations.cpp
-        tests/unit/lowering/subop_to_scf/test_pattern_registration.cpp
-        tests/unit/lowering/subop_to_scf/test_pattern_execution.cpp
-    )
+    # NOTE: test_expression_handling.cpp and test_runtime_wrapper_pattern.cpp
+    # temporarily removed due to clean slate refactor - they reference deleted MLIR components
+    # Will be restored once basic dialects are rebuilt
     
     add_mlir_unit_test(mlir_unit_test 
         tests/unit/test_main.cpp
@@ -154,26 +122,15 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
         src/utility/logging/console_logger.cpp
-        src/runtime/helpers.cpp
+        src/runtime/helpers_stub.cpp
     )
     target_link_libraries(mlir_unit_test PRIVATE 
         gtest
-        MLIRRelAlgDialect
-        MLIRSubOpDialect
-        MLIRDBDialect
-        MLIRDSADialect
-        MLIRTupleStreamDialect
-        MLIRUtilDialect
-        MLIRRelAlgToSubOp
-        MLIRSubOpToControlFlow
-        MLIRDBToDSA
-        MLIRDBToLLVM
-        MLIRDSAToLLVM
-        MLIRUtilToLLVM
+        # NOTE: All MLIR dialect libraries removed for clean slate refactor
+        # Will be re-added incrementally as dialects are rebuilt
     )
     target_include_directories(mlir_unit_test PRIVATE 
         tests/unit
-        src/compiler/Conversion/SubOpToControlFlow
     )
     target_compile_definitions(mlir_unit_test PRIVATE BUILDING_UNIT_TESTS)
 endif()

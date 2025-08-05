@@ -9,8 +9,8 @@ add_postgresql_mixed_extension(
         CPP_SOURCES
             ../src/execution/postgres/my_executor.cpp 
             ../src/execution/postgres/executor_c.cpp
-            ../src/execution/mlir_runner.cpp 
-            ../src/execution/postgresql_ast_translator.cpp
+            ../src/execution/mlir_runner_stub.cpp 
+            ../src/execution/postgresql_ast_translator_stub.cpp
             ../src/execution/query_analyzer.cpp
             ../src/execution/error_handling.cpp
             ../src/utility/logging.cpp
@@ -38,26 +38,15 @@ add_postgresql_mixed_extension(
             15_special_operators
 )
 
-# Link the MLIR dialect libraries
-# Note: MLIRPgDialect removed as we deleted the PG dialect
+# Clean slate refactor - removed all MLIR dialect libraries
+# These will be re-added incrementally as dialects are rebuilt
 target_link_libraries(pgx_lower PRIVATE 
     -Wl,--no-as-needed
     -Wl,--whole-archive
-    PgxLowerRuntime  # Re-added: needed for RuntimeCallGenerator implementation
+    # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt
     -Wl,--no-whole-archive
-    MLIRSubOpDialect
-    MLIRDBDialect
-    MLIRDSADialect
-    MLIRTupleStreamDialect
-    MLIRRelAlgDialect
-    MLIRUtilDialect
-    # Add conversion libraries for MLIR lowering passes
-    MLIRRelAlgToSubOp
-    MLIRSubOpToControlFlow  # Fixes: createLowerSubOpPass() missing symbol
-    MLIRDBToDSA
-    MLIRDBToLLVM
-    MLIRDSAToLLVM
-    MLIRUtilToLLVM
+    # NOTE: All MLIR dialect libraries removed for clean slate refactor
+    # Will be re-added as: RelAlg → DB → DSA → Standard MLIR dialects
     -Wl,--as-needed
 )
 
