@@ -14,7 +14,7 @@ namespace utility {
  * 
  * This function walks through all operations in the module and logs each one
  * individually with full details. Useful for debugging when operations contain
- * nested regions that get truncated in compact dumps (like subop.execution_group).
+ * nested regions that get truncated in compact dumps (like complex operations).
  * 
  * @param module The MLIR module to log
  * @param logger The logger instance to use
@@ -27,7 +27,7 @@ void logMLIRModuleVerbose(mlir::ModuleOp module, MLIRLogger& logger, const std::
  * 
  * This function forces complete expansion of all nested regions and operations
  * without any folding or truncation. Use this when you need to see the complete
- * structure of complex operations like subop.execution_group that contain nested regions.
+ * structure of complex operations that contain nested regions.
  * 
  * @param module The MLIR module to log
  * @param logger The logger instance to use

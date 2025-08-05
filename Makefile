@@ -88,12 +88,12 @@ rebuild-utest:
 
 utest: build-utest
 	@echo "Running unit tests..."
-	cd $(BUILD_DIR_UTEST) && ./mlir_unit_test --gtest_filter="-SubOpSimpleTest.BasicLowering" && cd -
+	cd $(BUILD_DIR_UTEST) && ./mlir_unit_test && cd -
 	@echo "Unit tests completed!"
 
 utest-run:
 	@echo "Running unit tests without rebuild..."
-	cd $(BUILD_DIR_UTEST) && ./mlir_unit_test --gtest_filter="-SubOpSimpleTest.BasicLowering" && cd -
+	cd $(BUILD_DIR_UTEST) && ./mlir_unit_test && cd -
 	@echo "Unit tests completed!"
 
 utest-all:

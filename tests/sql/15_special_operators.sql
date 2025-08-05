@@ -1,7 +1,7 @@
 -- Test special operators: PgBetweenOp, PgInOp, PgCaseOp
 LOAD 'pgx_lower';
 -- CRITICAL: Do not change logging level - required for MLIR pipeline visibility
--- NOTICE level enables full debugging of PostgreSQL AST → RelAlg → SubOp → LLVM → JIT pipeline
+-- NOTICE level enables full debugging of PostgreSQL AST → RelAlg → DB → LLVM → JIT pipeline
 -- WARNING level suppresses essential MLIR compilation logs and breaks debugging capability
 SET client_min_messages TO NOTICE;
 

@@ -63,7 +63,7 @@ validate_mlir_patterns() {
     echo -e "\n${BLUE}=== Validating MLIR Operation Patterns ===${NC}"
     
     # Check ExecutionEngine patterns
-    local exec_engine_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
+##    local exec_engine_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/ExecutionEngine.cpp"
     if check_file_exists "$exec_engine_file" "ExecutionEngine implementation"; then
         # Check for store_int_result termination patterns
         if grep -q "store_int_result" "$exec_engine_file"; then
@@ -85,7 +85,7 @@ validate_mlir_patterns() {
     fi
     
     # Check LookupOperations patterns
-    local lookup_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
+##    local lookup_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/LookupOperations.cpp"
     if check_file_exists "$lookup_file" "LookupOperations implementation"; then
         # Check for ensureTerminator patterns
         if grep -q "ensureTerminator" "$lookup_file"; then
@@ -103,7 +103,7 @@ validate_mlir_patterns() {
     fi
     
     # Check ControlFlowOperations patterns
-    local control_flow_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
+##    local control_flow_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ControlFlowOperations.cpp"
     if check_file_exists "$control_flow_file" "ControlFlowOperations implementation"; then
         # Check for systematic terminator validation
         if grep -q "getTerminator\|ensureTerminator" "$control_flow_file"; then
@@ -114,7 +114,7 @@ validate_mlir_patterns() {
     fi
     
     # Check ScanOperations patterns
-    local scan_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ScanOperations.cpp"
+##    local scan_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Operations/ScanOperations.cpp"
     if check_file_exists "$scan_file" "ScanOperations implementation"; then
         # Check for runtime call termination patterns
         if grep -q "RuntimeCall\|store_int_result" "$scan_file"; then
@@ -134,8 +134,8 @@ validate_scf_compliance() {
     echo -e "\n${BLUE}=== Validating SCF Dialect Compliance ===${NC}"
     
     # Check for proper SCF usage patterns
-    local core_utilities_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Core/SubOpToControlFlowUtilities.cpp"
-    if check_file_exists "$core_utilities_file" "SubOpToControlFlow utilities"; then
+##    local core_utilities_file="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Core/SubOpToControlFlowUtilities.cpp"
+##    if check_file_exists "$core_utilities_file" "SubOpToControlFlow utilities"; then
         # Check for SCF dialect imports
         if grep -q "#include.*SCF\|scf::" "$core_utilities_file"; then
             log_test "SCF dialect integration" "PASS" "Found SCF dialect usage"
@@ -156,8 +156,8 @@ validate_scf_compliance() {
 validate_header_compliance() {
     echo -e "\n${BLUE}=== Validating Header File Compliance ===${NC}"
     
-    local utilities_header="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Headers/SubOpToControlFlowUtilities.h"
-    if check_file_exists "$utilities_header" "SubOpToControlFlow utilities header"; then
+##    local utilities_header="$PROJECT_ROOT/src/dialects/subop/SubOpToControlFlow/Headers/SubOpToControlFlowUtilities.h"
+##    if check_file_exists "$utilities_header" "SubOpToControlFlow utilities header"; then
         # Check for terminator-related declarations
         if grep -q "ensureTerminator\|getTerminator" "$utilities_header"; then
             log_test "Terminator function declarations" "PASS" "Found terminator function declarations"

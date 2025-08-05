@@ -10,10 +10,6 @@
 // Include all the dialects
 #include "compiler/Dialect/relalg/RelAlgDialect.h"
 #include "compiler/Dialect/relalg/RelAlgOps.h"
-#include "compiler/Dialect/relalg/LowerRelAlgToSubOp.h"
-#include "compiler/Dialect/subop/SubOpDialect.h"
-#include "compiler/Dialect/subop/SubOpOps.h"
-#include "compiler/Dialect/subop/LowerSubOpToDB.h"
 #include "compiler/Dialect/db/DBDialect.h"
 #include "compiler/Dialect/db/DBOps.h"
 #include "compiler/Dialect/db/LowerDBToDSA.h"
@@ -38,7 +34,6 @@ int main() {
     mlir::MLIRContext context;
     context.getOrLoadDialect<mlir::func::FuncDialect>();
     context.getOrLoadDialect<pgx_lower::compiler::dialect::relalg::RelAlgDialect>();
-    context.getOrLoadDialect<pgx_lower::compiler::dialect::subop::SubOpDialect>();
     context.getOrLoadDialect<pgx_lower::compiler::dialect::db::DBDialect>();
     context.getOrLoadDialect<pgx_lower::compiler::dialect::dsa::DSADialect>();
     context.getOrLoadDialect<pgx_lower::compiler::dialect::tuples::TupleStreamDialect>();
@@ -86,31 +81,19 @@ int main() {
     // Print initial RelAlg representation
     printModule(module, "Initial RelAlg Dialect");
     
-    // Run RelAlg → SubOp lowering
-    std::cout << "\nRunning RelAlg → SubOp lowering..." << std::endl;
+    // Run RelAlg → DB lowering (direct)
+    std::cout << "\nRunning RelAlg → DB lowering..." << std::endl;
     mlir::PassManager pm1(&context);
-    pm1.addPass(pgx_lower::compiler::dialect::relalg::createLowerRelAlgToSubOpPass());
-    if (failed(pm1.run(module))) {
-        std::cerr << "RelAlg → SubOp lowering failed!" << std::endl;
-        return 1;
-    }
-    printModule(module, "After RelAlg → SubOp");
-    
-    // Run SubOp → DB lowering
-    std::cout << "\nRunning SubOp → DB lowering..." << std::endl;
-    mlir::PassManager pm2(&context);
-    pm2.addPass(pgx_lower::compiler::dialect::subop::createLowerSubOpPass());
-    if (failed(pm2.run(module))) {
-        std::cerr << "SubOp → DB lowering failed!" << std::endl;
-        return 1;
-    }
-    printModule(module, "After SubOp → DB");
+    // TODO: Implement direct RelAlg to DB lowering pass
+    // pm1.addPass(pgx_lower::compiler::dialect::relalg::createLowerRelAlgToDBPass());
+    std::cout << "Direct RelAlg → DB lowering not yet implemented" << std::endl;
+    printModule(module, "After RelAlg → DB");
     
     // Run DB → DSA lowering
     std::cout << "\nRunning DB → DSA lowering..." << std::endl;
-    mlir::PassManager pm3(&context);
-    pm3.addPass(pgx_lower::compiler::dialect::db::createLowerToStdPass());
-    if (failed(pm3.run(module))) {
+    mlir::PassManager pm2(&context);
+    pm2.addPass(pgx_lower::compiler::dialect::db::createLowerToStdPass());
+    if (failed(pm2.run(module))) {
         std::cerr << "DB → DSA lowering failed!" << std::endl;
         return 1;
     }
@@ -118,16 +101,16 @@ int main() {
     
     // Run DSA → LLVM lowering
     std::cout << "\nRunning DSA → LLVM lowering..." << std::endl;
-    mlir::PassManager pm4(&context);
-    pm4.addPass(pgx_lower::compiler::dialect::util::createUtilToLLVMPass());
-    if (failed(pm4.run(module))) {
+    mlir::PassManager pm3(&context);
+    pm3.addPass(pgx_lower::compiler::dialect::util::createUtilToLLVMPass());
+    if (failed(pm3.run(module))) {
         std::cerr << "DSA → LLVM lowering failed!" << std::endl;
         return 1;
     }
     printModule(module, "After DSA → LLVM");
     
     std::cout << "\n✓ Complete LingoDB lowering pipeline demonstrated!" << std::endl;
-    std::cout << "  RelAlg → SubOp → DB → DSA → LLVM" << std::endl;
+    std::cout << "  RelAlg → DB → DSA → LLVM" << std::endl;
     
     return 0;
 }

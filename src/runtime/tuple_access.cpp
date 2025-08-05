@@ -292,7 +292,7 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
     }
     
     PGX_NOTICE("add_tuple_to_result: Using computed results path (simplified)");
-    // For MinimalSubOpToControlFlow, we always use computed results
+    // For minimal control flow, we always use computed results
     // The JIT has already called store_int_result to populate g_computed_results
     
     if (g_tuple_streamer.isActive && g_tuple_streamer.dest && g_tuple_streamer.slot) {
@@ -602,7 +602,7 @@ extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_sign
     }
 }
 
-// Critical runtime function for LowerSubOpToDB.cpp GetExternalOp lowering
+// Critical runtime function for DB dialect GetExternalOp lowering
 extern "C" void* DataSource_get(pgx_lower::compiler::runtime::VarLen32 description) {
     try {
         // Call the PostgreSQL DataSource factory
@@ -618,5 +618,5 @@ extern "C" void* DataSource_get(pgx_lower::compiler::runtime::VarLen32 descripti
 }
 
 // Pipeline architecture restored - expression computation now flows through:
-// PostgreSQL AST → RelAlg → SubOp → DB → DSA → LLVM IR → JIT
+// PostgreSQL AST → RelAlg → DB → DSA → LLVM IR → JIT
 // All hardcoded expression shortcuts have been removed
