@@ -18,7 +18,7 @@ extern "C" {
 #undef ngettext
 #undef dngettext
 
-#include "execution/postgresql_ast_translator.h"
+#include "pgx_lower/frontend/postgresql_ast_translator.h"
 #include "execution/logging.h"
 #include "runtime/tuple_access.h"
 

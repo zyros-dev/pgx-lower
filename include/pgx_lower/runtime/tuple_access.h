@@ -12,7 +12,6 @@
 #include "execution/logging.h"
 
 #include "executor/executor.h"
-#include "runtime/tuple_access.h"
 
 #include <vector>
 

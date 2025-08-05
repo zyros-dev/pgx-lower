@@ -1,5 +1,5 @@
-#ifndef COMPILER_RUNTIME_ENTRYLOCK_H
-#define COMPILER_RUNTIME_ENTRYLOCK_H
+#ifndef COMPILER_RUNTIME_ENTRYLOCKWRAPPER_H
+#define COMPILER_RUNTIME_ENTRYLOCKWRAPPER_H
 
 #include "runtime/EntryLock.h"
 #include "mlir/IR/Builders.h"
@@ -32,4 +32,4 @@ struct EntryLockWrapper {
 
 } // namespace pgx_lower::compiler::runtime
 
-#endif // COMPILER_RUNTIME_ENTRYLOCK_H
+#endif // COMPILER_RUNTIME_ENTRYLOCKWRAPPER_H
