@@ -80,8 +80,14 @@ bool PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const {
 #else
 
 void PostgreSQLErrorHandler::handleError(const ErrorInfo& error) {
-    // Fallback to console when not in PostgreSQL extension
-    std::cerr << "PostgreSQL: " << error.getFormattedMessage() << '\n';
+    // Fallback to PGX logging when not in PostgreSQL extension
+    switch (error.severity) {
+    case ErrorSeverity::INFO_LEVEL: PGX_INFO(error.getFormattedMessage()); break;
+    case ErrorSeverity::WARNING_LEVEL: PGX_WARNING(error.getFormattedMessage()); break;
+    case ErrorSeverity::ERROR_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
+    case ErrorSeverity::FATAL_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
+    default: PGX_ERROR(error.getFormattedMessage()); break;
+    }
 }
 
 auto PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const -> bool {
@@ -93,8 +99,13 @@ auto PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const ->
 // ===== ConsoleErrorHandler =====
 
 void ConsoleErrorHandler::handleError(const ErrorInfo& error) {
-    std::ostream& stream = (error.severity >= ErrorSeverity::ERROR_LEVEL) ? std::cerr : std::cout;
-    stream << error.getFormattedMessage() << '\n';
+    switch (error.severity) {
+    case ErrorSeverity::INFO_LEVEL: PGX_INFO(error.getFormattedMessage()); break;
+    case ErrorSeverity::WARNING_LEVEL: PGX_WARNING(error.getFormattedMessage()); break;
+    case ErrorSeverity::ERROR_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
+    case ErrorSeverity::FATAL_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
+    default: PGX_ERROR(error.getFormattedMessage()); break;
+    }
 }
 
 auto ConsoleErrorHandler::shouldAbortOnError(const ErrorInfo& error) const -> bool {

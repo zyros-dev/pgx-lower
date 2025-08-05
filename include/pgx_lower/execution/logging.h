@@ -93,25 +93,25 @@ extern Logger& get_logger();
 #undef PGX_INFO
 #define PGX_INFO(msg) \
     do { \
-        elog(NOTICE, "[INFO] %s (%s:%d)", (msg), __FILE__, __LINE__); \
+        elog(NOTICE, "[INFO] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
     } while (0)
 
 #undef PGX_DEBUG
 #define PGX_DEBUG(msg) \
     do { \
-        elog(LOG, "[DEBUG] %s (%s:%d)", (msg), __FILE__, __LINE__); \
+        elog(LOG, "[DEBUG] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
     } while (0)
 
 #undef PGX_WARNING
 #define PGX_WARNING(msg) \
     do { \
-        elog(WARNING, "[WARNING] %s (%s:%d)", (msg), __FILE__, __LINE__); \
+        elog(WARNING, "[WARNING] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
     } while (0)
 
 #undef PGX_ERROR
 #define PGX_ERROR(msg) \
     do { \
-        elog(ERROR, "[ERROR] %s (%s:%d)", (msg), __FILE__, __LINE__); \
+        elog(ERROR, "[ERROR] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
     } while (0)
 #endif
 
