@@ -96,41 +96,8 @@ def BaseTableOp : RelAlg_Op<"basetable",
 // Operators
 //===----------------------------------------------------------------------===//
 
-def ProjectionOp : RelAlg_Op<"projection", [Pure]> {
-    let summary = "projection operation";
-    let description = [{
-        Projects specified columns from the input relation.
-        Equivalent to SELECT clause in SQL.
-    }];
 
-    let arguments = (ins RelAlg_TupleStream:$rel);
-    let results = (outs RelAlg_TupleStream:$result);
-}
 
-def SelectionOp : RelAlg_Op<"selection", [Pure]> {
-    let summary = "selection operation";  
-    let description = [{
-        Filter tuple stream based on a predicate.
-        The region returns 1 iff the tuple should be in the output.
-        Equivalent to WHERE clause in SQL.
-    }];
-
-    let arguments = (ins RelAlg_TupleStream:$rel);
-    let results = (outs RelAlg_TupleStream:$result);
-    let regions = (region SizedRegion<1>:$predicate);
-}
-
-def MapOp : RelAlg_Op<"map", [Pure]> {
-    let summary = "map operation";
-    let description = [{
-        Computes additional columns for each tuple in the stream.
-        The region defines the computation for new columns.
-    }];
-
-    let arguments = (ins RelAlg_TupleStream:$rel);
-    let results = (outs RelAlg_TupleStream:$result);
-    let regions = (region SizedRegion<1>:$computation);
-}
 
 def MaterializeOp : RelAlg_Op<"materialize", [Pure]> {
     let summary = "materialize operation";
