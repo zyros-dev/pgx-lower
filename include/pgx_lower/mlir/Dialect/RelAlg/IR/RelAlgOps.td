@@ -87,7 +87,7 @@ def BaseTableOp : RelAlg_Op<"basetable",
         Creates a tuple stream from the specified table.
     }];
 
-    let arguments = (ins StrAttr:$table_name);
+    let arguments = (ins StrAttr:$table_name, I64Attr:$table_oid);
     let results = (outs RelAlg_TupleStream:$result);
     let regions = (region SizedRegion<1>:$body);
 }
@@ -105,7 +105,7 @@ def MaterializeOp : RelAlg_Op<"materialize", [Pure]> {
         to returnable results.
     }];
 
-    let arguments = (ins RelAlg_TupleStream:$rel);
+    let arguments = (ins RelAlg_TupleStream:$rel, ArrayAttr:$columns);
     let results = (outs RelAlg_Table:$result);
 }
 

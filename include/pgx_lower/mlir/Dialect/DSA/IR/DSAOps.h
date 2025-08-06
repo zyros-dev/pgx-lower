@@ -8,6 +8,8 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 
+#include "mlir/Dialect/DSA/IR/DSADialect.h"
+
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/DSA/IR/DSAOpsTypes.h.inc"
 

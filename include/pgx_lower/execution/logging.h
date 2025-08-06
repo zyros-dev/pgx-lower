@@ -138,6 +138,14 @@ extern Logger& get_logger();
         } \
     } while (0)
 
+#define MLIR_PGX_WARNING(dialect, msg) \
+    do { \
+        if (pgx::get_logger().should_log(pgx::LogLevel::WARNING_LVL)) { \
+            std::string formatted_msg = std::string("[") + dialect + "] " + msg; \
+            pgx::get_logger().log(pgx::LogLevel::WARNING_LVL, __FILE__, __LINE__, formatted_msg); \
+        } \
+    } while (0)
+
 #define MLIR_PGX_ERROR(dialect, msg) \
     do { \
         if (pgx::get_logger().should_log(pgx::LogLevel::ERROR_LVL)) { \

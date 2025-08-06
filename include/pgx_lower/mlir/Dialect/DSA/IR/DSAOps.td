@@ -81,7 +81,7 @@ def ScanSourceOp : DSA_Op<"scan_source", [Pure]> {
         ```
     }];
 
-    let arguments = (ins AnyType:$table_description);
+    let arguments = (ins StrAttr:$table_description);
     let results = (outs DSA_GenericIterable:$result);
     let hasCustomAssemblyFormat = 1;
 }

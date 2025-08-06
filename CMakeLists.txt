@@ -118,6 +118,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         "tests/unit/logging/*.cpp"
         "tests/unit/dialects/*.cpp"
         "tests/unit/frontend/*.cpp"
+        "tests/unit/conversion/*.cpp"
     )
     # mlir_runner_test.cpp now included - minimal MLIR context and dialect loading implemented
     
@@ -155,6 +156,11 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRRelAlgDialect
         MLIRDBDialect
         MLIRDSADialect
+        MLIRRelAlgToDSAConversion
+        MLIRFuncDialect
+        MLIRPass
+        MLIRTransforms
+        MLIRParser
         # NOTE: Additional MLIR dialect libraries will be added as they are rebuilt
     )
     target_include_directories(mlir_unit_test PRIVATE 
