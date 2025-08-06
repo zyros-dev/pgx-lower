@@ -45,14 +45,17 @@ class RelAlg_Type<string name, string typeMnemonic> : TypeDef<RelAlg_Dialect, na
 
 def RelAlg_TupleStream : RelAlg_Type<"TupleStream", "tuplestream"> {
     let summary = "tuple stream type";
+    let assemblyFormat = "";
 }
 
 def RelAlg_Tuple : RelAlg_Type<"Tuple", "tuple"> {
-    let summary = "tuple type";
+    let summary = "tuple type"; 
+    let assemblyFormat = "";
 }
 
 def RelAlg_Table : RelAlg_Type<"Table", "table"> {
     let summary = "table type";
+    let assemblyFormat = "";
 }
 
 //===----------------------------------------------------------------------===//
@@ -72,7 +75,6 @@ def ColumnRefAttr : RelAlg_Attr<"ColumnRef"> {
 //===----------------------------------------------------------------------===//
 
 class RelAlg_Op<string mnemonic, list<Trait> traits = []> : Op<RelAlg_Dialect, mnemonic, traits> {
-    let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -90,6 +92,7 @@ def BaseTableOp : RelAlg_Op<"basetable",
     let arguments = (ins StrAttr:$table_name, I64Attr:$table_oid);
     let results = (outs RelAlg_TupleStream:$result);
     let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "$table_name $table_oid $body attr-dict `:` type($result)";
 }
 
 //===----------------------------------------------------------------------===//
@@ -107,6 +110,7 @@ def MaterializeOp : RelAlg_Op<"materialize", [Pure]> {
 
     let arguments = (ins RelAlg_TupleStream:$rel, ArrayAttr:$columns);
     let results = (outs RelAlg_Table:$result);
+    let assemblyFormat = "$rel $columns attr-dict `:` type($rel) `->` type($result)";
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -137,6 +141,7 @@ def GetColumnOp : RelAlg_Op<"getcol", [Pure]> {
 
     let arguments = (ins StrAttr:$column_name, RelAlg_Tuple:$tuple);
     let results = (outs AnyType:$res);
+    let assemblyFormat = "$column_name `from` $tuple attr-dict `:` type($tuple) `->` type($res)";
 }
 
 #endif // PGX_DIALECT_RELALG_IR_OPS

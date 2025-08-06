@@ -40,22 +40,27 @@ class DSA_Collection<string name, string typeMnemonic> : DSA_Type<name, typeMnem
 
 def DSA_GenericIterable : DSA_Collection<"GenericIterable", "generic_iterable"> {
     let summary = "generic iterable type returned by scan_source";
+    let assemblyFormat = "";
 }
 
 def DSA_RecordBatch : DSA_Collection<"RecordBatch", "record_batch"> {
     let summary = "chunk of records processed together";
+    let assemblyFormat = "";
 }
 
 def DSA_Record : DSA_Collection<"Record", "record"> {
     let summary = "individual row of data";
+    let assemblyFormat = "";
 }
 
 def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
     let summary = "result construction utility";
+    let assemblyFormat = "";
 }
 
 def DSA_Table : DSA_Type<"Table", "table"> {
     let summary = "final materialized result table";
+    let assemblyFormat = "";
 }
 
 //===----------------------------------------------------------------------===//
@@ -83,7 +88,7 @@ def ScanSourceOp : DSA_Op<"scan_source", [Pure]> {
 
     let arguments = (ins StrAttr:$table_description);
     let results = (outs DSA_GenericIterable:$result);
-    let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = "$table_description attr-dict `:` type($result)";
 }
 
 def AtOp : DSA_Op<"at", [Pure]> {
@@ -99,7 +104,7 @@ def AtOp : DSA_Op<"at", [Pure]> {
 
     let arguments = (ins DSA_Record:$record, StrAttr:$column_name);
     let results = (outs AnyType:$result);
-    let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = "$record `[` $column_name `]` attr-dict `:` `(` type($record) `)` `->` type($result)";
 }
 
 //===----------------------------------------------------------------------===//
@@ -127,7 +132,7 @@ def ForOp : DSA_Op<"for", [
     let arguments = (ins DSA_GenericIterable:$iterable);
     let results = (outs);
     let regions = (region SizedRegion<1>:$body);
-    let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = "$iterable $body attr-dict `:` type($iterable)";
 }
 
 def YieldOp : DSA_Op<"yield", [Pure, ReturnLike, Terminator]> {
@@ -158,7 +163,7 @@ def CreateDSOp : DSA_Op<"create_ds", [Pure]> {
 
     let arguments = (ins);
     let results = (outs DSA_TableBuilder:$result);
-    let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = "attr-dict `:` type($result)";
 }
 
 def DSAppendOp : DSA_Op<"ds_append", []> {
@@ -174,7 +179,7 @@ def DSAppendOp : DSA_Op<"ds_append", []> {
 
     let arguments = (ins DSA_TableBuilder:$builder, Variadic<AnyType>:$values);
     let results = (outs);
-    let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = "$builder `,` $values attr-dict `:` type($builder) (`,` type($values)^)?";
 }
 
 def NextRowOp : DSA_Op<"next_row", []> {
@@ -190,7 +195,7 @@ def NextRowOp : DSA_Op<"next_row", []> {
 
     let arguments = (ins DSA_TableBuilder:$builder);
     let results = (outs);
-    let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = "$builder attr-dict `:` type($builder)";
 }
 
 def FinalizeOp : DSA_Op<"finalize", [Pure]> {
@@ -206,7 +211,7 @@ def FinalizeOp : DSA_Op<"finalize", [Pure]> {
 
     let arguments = (ins DSA_TableBuilder:$builder);
     let results = (outs DSA_Table:$result);
-    let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = "$builder attr-dict `:` `(` type($builder) `)` `->` type($result)";
 }
 
 #endif // PGX_DIALECT_DSA_IR_OPS
