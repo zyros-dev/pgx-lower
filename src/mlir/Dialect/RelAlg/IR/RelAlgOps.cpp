@@ -119,38 +119,6 @@ ParseResult GetColumnOp::parse(OpAsmParser& parser, OperationState& result) {
     return success();
 }
 
-//===----------------------------------------------------------------------===//
-// QueryOp
-//===----------------------------------------------------------------------===//
-
-void QueryOp::print(OpAsmPrinter& printer) {
-    printer << " -> ";
-    printer.printType(getResult().getType());
-    printer.printOptionalAttrDict((*this)->getAttrs());
-    printer << " ";
-    printer.printRegion(getBody(), /*printEntryBlockArgs=*/false);
-}
-
-ParseResult QueryOp::parse(OpAsmParser& parser, OperationState& result) {
-    Type resultType;
-    
-    if (parser.parseArrow() ||
-        parser.parseType(resultType)) {
-        return failure();
-    }
-    
-    result.addTypes(resultType);
-    
-    Region* body = result.addRegion();
-    if (parser.parseOptionalAttrDict(result.attributes) ||
-        parser.parseRegion(*body, /*arguments=*/{}, /*argTypes=*/{})) {
-        return failure();
-    }
-    
-    QueryOp::ensureTerminator(*body, parser.getBuilder(), result.location);
-    return success();
-}
-
 // Properties system disabled - using traditional attributes
 
 #define GET_OP_CLASSES

@@ -96,28 +96,6 @@ def BaseTableOp : RelAlg_Op<"basetable",
 // Operators
 //===----------------------------------------------------------------------===//
 
-def QueryOp : RelAlg_Op<"query", [SingleBlockImplicitTerminator<"QueryReturnOp">]> {
-    let summary = "query operation";
-    let description = [{
-        Represents a complete query that produces a tuple stream.
-        Contains a region with the query computation.
-    }];
-
-    let arguments = (ins);
-    let results = (outs RelAlg_TupleStream:$result);
-    let regions = (region SizedRegion<1>:$body);
-}
-
-def QueryReturnOp : RelAlg_Op<"query_return", [Pure, ReturnLike, Terminator]> {
-    let summary = "query return operation";
-    let description = [{
-        Terminator for query operations. Returns a tuple stream from a query.
-    }];
-
-    let arguments = (ins RelAlg_TupleStream:$operand);
-    let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
-    let assemblyFormat = "$operand attr-dict `:` type($operand)";
-}
 
 def MaterializeOp : RelAlg_Op<"materialize", [Pure]> {
     let summary = "materialize operation";
