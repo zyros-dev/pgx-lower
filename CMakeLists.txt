@@ -117,11 +117,9 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         "tests/unit/runtime/*.cpp"
         "tests/unit/logging/*.cpp"
         "tests/unit/dialects/*.cpp"
+        "tests/unit/frontend/*.cpp"
     )
-    # Exclude mlir_runner_test.cpp until MLIR pipeline is rebuilt
-    list(REMOVE_ITEM UNIT_TEST_SOURCES 
-        "${CMAKE_SOURCE_DIR}/tests/unit/core/mlir_runner_test.cpp"
-    )
+    # mlir_runner_test.cpp now included - minimal MLIR context and dialect loading implemented
     
     # NOTE: test_expression_handling.cpp and test_runtime_wrapper_pattern.cpp
     # temporarily removed due to clean slate refactor - they reference deleted MLIR components
@@ -130,7 +128,9 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     # Build list of additional sources based on configuration
     set(UNIT_TEST_ADDITIONAL_SOURCES
         src/frontend/SQL/query_analyzer.cpp
+        src/frontend/SQL/postgresql_ast_translator.cpp
         src/execution/error_handling.cpp
+        src/execution/mlir_runner.cpp
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
         src/utility/logging/console_logger.cpp
