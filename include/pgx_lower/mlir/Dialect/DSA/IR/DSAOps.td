@@ -34,21 +34,21 @@ class DSA_Type<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name> {
 }
 
 // Base class for collection types following LingoDB patterns
-class DSA_Collection<string name, string typeMnemonic> : DSA_Type<name, typeMnemonic> {
-    let summary = "base collection type";
+class DSA_Collection<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name, [], "::mlir::Type"> {
+    let mnemonic = typeMnemonic;
 }
 
-def DSA_GenericIterable : DSA_Collection<"GenericIterable", "generic_iterable"> {
+def DSA_GenericIterable : DSA_Type<"GenericIterable", "generic_iterable"> {
     let summary = "generic iterable type returned by scan_source";
     let assemblyFormat = "";
 }
 
-def DSA_RecordBatch : DSA_Collection<"RecordBatch", "record_batch"> {
+def DSA_RecordBatch : DSA_Type<"RecordBatch", "record_batch"> {
     let summary = "chunk of records processed together";
     let assemblyFormat = "";
 }
 
-def DSA_Record : DSA_Collection<"Record", "record"> {
+def DSA_Record : DSA_Type<"Record", "record"> {
     let summary = "individual row of data";
     let assemblyFormat = "";
 }

@@ -4,6 +4,9 @@
 #include "mlir/IR/Types.h"
 #include "mlir/IR/BuiltinTypes.h"
 
+// Forward declare TupleType properly
+using TupleType = ::mlir::TupleType;
+
 #define GET_TYPEDEF_CLASSES  
 #include "mlir/Dialect/DSA/IR/DSAOpsTypes.h.inc"
 
