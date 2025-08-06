@@ -13,6 +13,9 @@ class OpBuilder;
 class Operation;
 class Type;
 class Location;
+namespace func {
+class FuncOp;
+} // namespace func
 }
 
 // PostgreSQL C headers - need extern "C" wrapping
@@ -59,6 +62,10 @@ private:
     // Plan node translation
     auto translatePlanNode(Plan* plan, struct TranslationContext& context) -> mlir::Operation*;
     auto translateSeqScan(SeqScan* seqScan, struct TranslationContext& context) -> mlir::Operation*;
+    
+    // Helper functions for translateQuery refactoring
+    auto createQueryFunction(mlir::OpBuilder& builder, struct TranslationContext& context) -> mlir::func::FuncOp;
+    auto generateRelAlgOperations(mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, struct TranslationContext& context) -> bool;
     
     // Tuple iteration and result processing
     auto generateTupleIterationLoop(mlir::OpBuilder& builder, mlir::Location location, 

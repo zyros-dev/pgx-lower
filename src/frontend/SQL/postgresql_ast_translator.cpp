@@ -90,7 +90,7 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         return nullptr;
     }
     
-    // Create MLIR module
+    // Create MLIR module and builder context
     auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
     mlir::OpBuilder builder(&context_);
     builder.setInsertionPointToStart(module.getBody());
@@ -100,38 +100,18 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     context.currentStmt = plannedStmt;
     context.builder = &builder;
     
-    PGX_DEBUG("Creating runtime function declarations");
-    
-    // Create runtime function declaration (matching successful output)
-    auto i64Type = builder.getIntegerType(64);
-    auto funcType = builder.getFunctionType({i64Type}, {});
-    auto funcOp = builder.create<mlir::func::FuncOp>(
-        builder.getUnknownLoc(), "add_tuple_to_result", funcType);
-    funcOp.setPrivate();
-    
-    PGX_DEBUG("Creating query operation");
-    
-    // Get TupleStream type - use IntegerType as placeholder since !tuples.tuplestream isn't defined
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context_);
-    
-    // Create QueryOp 
-    auto queryOp = builder.create<pgx::mlir::relalg::QueryOp>(
-        builder.getUnknownLoc(), tupleStreamType);
-    auto& queryBody = queryOp.getBody().emplaceBlock();
-    builder.setInsertionPointToStart(&queryBody);
-    
-    PGX_DEBUG("Translating plan tree inside query");
-    
-    // Translate the plan tree inside the query region
-    auto baseTableOp = translatePlanNode(plannedStmt->planTree, context);
-    if (!baseTableOp) {
-        PGX_ERROR("Failed to translate plan node");
+    // Create query function with RelAlg operations
+    auto queryFunc = createQueryFunction(builder, context);
+    if (!queryFunc) {
+        PGX_ERROR("Failed to create query function");
         return nullptr;
     }
     
-    // Create QueryReturn to terminate the query
-    builder.create<pgx::mlir::relalg::QueryReturnOp>(
-        builder.getUnknownLoc(), baseTableOp->getResult(0));
+    // Generate RelAlg operations inside the function
+    if (!generateRelAlgOperations(queryFunc, plannedStmt, context)) {
+        PGX_ERROR("Failed to generate RelAlg operations");
+        return nullptr;
+    }
     
     PGX_INFO("PostgreSQL AST translation completed successfully");
     return std::make_unique<mlir::ModuleOp>(module);
@@ -190,6 +170,49 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     
     PGX_DEBUG("SeqScan translation completed successfully");
     return baseTableOp;
+}
+
+auto PostgreSQLASTTranslator::createQueryFunction(mlir::OpBuilder& builder, TranslationContext& context) -> mlir::func::FuncOp {
+    PGX_DEBUG("Creating query function using func::FuncOp pattern");
+    
+    // Get RelAlg Table type for return value - MaterializeOp produces !relalg.table
+    auto relAlgTableType = pgx::mlir::relalg::TableType::get(&context_);
+    
+    // Create func::FuncOp following LingoDB's pattern: func.func @query() -> !relalg.table
+    auto queryFuncType = builder.getFunctionType({}, {relAlgTableType});
+    auto queryFunc = builder.create<mlir::func::FuncOp>(
+        builder.getUnknownLoc(), "query", queryFuncType);
+    
+    // Create function body
+    auto& queryBody = queryFunc.getBody().emplaceBlock();
+    builder.setInsertionPointToStart(&queryBody);
+    
+    return queryFunc;
+}
+
+auto PostgreSQLASTTranslator::generateRelAlgOperations(mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, TranslationContext& context) -> bool {
+    PGX_DEBUG("Generating RelAlg operations inside function body");
+    
+    // Translate the plan tree inside the function body
+    auto baseTableOp = translatePlanNode(plannedStmt->planTree, context);
+    if (!baseTableOp) {
+        PGX_ERROR("Failed to translate plan node");
+        return false;
+    }
+    
+    // Get RelAlg Table type for MaterializeOp
+    auto relAlgTableType = pgx::mlir::relalg::TableType::get(&context_);
+    
+    // Materialize tuple stream to table using MaterializeOp
+    auto materializeOp = context.builder->create<pgx::mlir::relalg::MaterializeOp>(
+        context.builder->getUnknownLoc(), relAlgTableType, baseTableOp->getResult(0));
+    
+    // Use standard func.return with materialized result
+    context.builder->create<mlir::func::ReturnOp>(
+        context.builder->getUnknownLoc(), materializeOp.getResult());
+    
+    PGX_DEBUG("RelAlg operations generated successfully");
+    return true;
 }
 
 auto createPostgreSQLASTTranslator(mlir::MLIRContext& context, MLIRLogger& logger) 
