@@ -9,6 +9,7 @@
 
 # Add MLIR dialects - starting with RelAlg
 add_subdirectory(../mlir/Dialect/RelAlg RelAlgDialect)
+add_subdirectory(../mlir/Dialect/DSA DSADialect)
 
 # NOTE: Remaining dialects and conversions will be rebuilt incrementally
 # Architecture: RelAlg → DB → DSA → Standard MLIR
