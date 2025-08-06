@@ -93,6 +93,7 @@ add_library(runtime_funcs_ptr INTERFACE)
 
 # Add include directory for TableGen processing
 add_subdirectory(include/pgx_lower/mlir/Dialect/RelAlg/IR)
+add_subdirectory(include/pgx_lower/mlir/Dialect/DB/IR)
 add_subdirectory(include/pgx_lower/mlir/Dialect/DSA/IR)
 
 # Add compiler library (includes dialects)
@@ -152,6 +153,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     target_link_libraries(mlir_unit_test PRIVATE 
         gtest
         MLIRRelAlgDialect
+        MLIRDBDialect
         MLIRDSADialect
         # NOTE: Additional MLIR dialect libraries will be added as they are rebuilt
     )

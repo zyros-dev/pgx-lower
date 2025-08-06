@@ -309,3 +309,186 @@ TEST_F(DSABasicTest, AssemblyFormatRoundTripTest) {
     EXPECT_TRUE(scanOp->hasAttr("custom_assembly_format") || true); // Always true for now
     EXPECT_TRUE(yieldOp->getName().getStringRef() == "dsa.yield");
 }
+
+//===----------------------------------------------------------------------===//
+// Edge Case Tests - Addressing Reviewer 3 Concerns
+//===----------------------------------------------------------------------===//
+
+TEST_F(DSABasicTest, EdgeCases_NullHandling) {
+    OpBuilder builder(&context);
+    auto loc = builder.getUnknownLoc();
+    
+    // Test AtOp with null-like values and edge case column names
+    auto genericIterableType = GenericIterableType::get(&context);
+    auto recordType = RecordType::get(&context);
+    auto i32Type = builder.getI32Type();
+    
+    // Create an iterable operand
+    auto tableDesc = builder.create<mlir::arith::ConstantIntOp>(loc, 42, i32Type);
+    auto iterableOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDesc.getResult());
+    auto forOp = builder.create<ForOp>(loc, iterableOp.getResult());
+    
+    Region& bodyRegion = forOp.getBody();
+    Block* bodyBlock = &bodyRegion.emplaceBlock();
+    bodyBlock->addArgument(recordType, loc);
+    OpBuilder bodyBuilder(bodyBlock, bodyBlock->begin());
+    auto recordArg = bodyBlock->getArgument(0);
+    
+    // Test edge case: empty column name
+    auto emptyColumnName = bodyBuilder.getStringAttr("");
+    auto atOpEmpty = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, emptyColumnName);
+    ASSERT_TRUE(atOpEmpty);
+    EXPECT_EQ(atOpEmpty.getColumnNameAttr().getValue().str(), "");
+    
+    // Test edge case: column name with special characters
+    auto specialColumnName = bodyBuilder.getStringAttr("column_with_!@#$%");
+    auto atOpSpecial = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, specialColumnName);
+    ASSERT_TRUE(atOpSpecial);
+    EXPECT_EQ(atOpSpecial.getColumnNameAttr().getValue().str(), "column_with_!@#$%");
+    
+    // Test edge case: very long column name
+    std::string longColumnName(255, 'x'); // 255 character column name
+    auto longColumnAttr = bodyBuilder.getStringAttr(longColumnName);
+    auto atOpLong = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, longColumnAttr);
+    ASSERT_TRUE(atOpLong);
+    EXPECT_EQ(atOpLong.getColumnNameAttr().getValue().str(), longColumnName);
+    
+    bodyBuilder.create<YieldOp>(loc);
+}
+
+TEST_F(DSABasicTest, EdgeCases_EmptyOperations) {
+    OpBuilder builder(&context);
+    auto loc = builder.getUnknownLoc();
+    auto tableBuilderType = TableBuilderType::get(&context);
+    
+    // Test DSAppendOp with no values (empty append)
+    auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
+    SmallVector<Value> emptyValues;
+    auto appendOpEmpty = builder.create<DSAppendOp>(loc, createOp.getResult(), emptyValues);
+    
+    ASSERT_TRUE(appendOpEmpty);
+    EXPECT_EQ(appendOpEmpty.getBuilder(), createOp.getResult());
+    EXPECT_EQ(appendOpEmpty.getValues().size(), 0);
+    
+    // Test YieldOp with empty results (which is normal)
+    auto yieldOpEmpty = builder.create<YieldOp>(loc);
+    ASSERT_TRUE(yieldOpEmpty);
+    EXPECT_EQ(yieldOpEmpty.getResults().size(), 0);
+}
+
+TEST_F(DSABasicTest, EdgeCases_TypeCompatibility) {
+    OpBuilder builder(&context);
+    auto loc = builder.getUnknownLoc();
+    
+    // Test operations with different types than usual
+    auto genericIterableType = GenericIterableType::get(&context);
+    auto f32Type = builder.getF32Type();
+    auto indexType = builder.getIndexType();
+    
+    // Test ScanSourceOp with different result types
+    auto floatTableDesc = builder.create<mlir::arith::ConstantFloatOp>(loc, APFloat(0.0f), f32Type);
+    
+    // Create ScanSourceOp that takes float input
+    // Note: TableGen definition allows AnyType for table_description
+    auto scanOpFloat = builder.create<ScanSourceOp>(loc, genericIterableType, floatTableDesc.getResult());
+    ASSERT_TRUE(scanOpFloat);
+    EXPECT_EQ(scanOpFloat.getResult().getType(), genericIterableType);
+    EXPECT_EQ(scanOpFloat.getTableDescription().getType(), f32Type);
+    
+    // Test AtOp returning different types
+    auto forOp = builder.create<ForOp>(loc, scanOpFloat.getResult());
+    Region& bodyRegion = forOp.getBody();
+    Block* bodyBlock = &bodyRegion.emplaceBlock();
+    bodyBlock->addArgument(RecordType::get(&context), loc);
+    OpBuilder bodyBuilder(bodyBlock, bodyBlock->begin());
+    auto recordArg = bodyBlock->getArgument(0);
+    
+    // AtOp returning index type
+    auto columnName = bodyBuilder.getStringAttr("index_column");
+    auto atOpIndex = bodyBuilder.create<AtOp>(loc, indexType, recordArg, columnName);
+    ASSERT_TRUE(atOpIndex);
+    EXPECT_EQ(atOpIndex.getResult().getType(), indexType);
+    
+    bodyBuilder.create<YieldOp>(loc);
+}
+
+TEST_F(DSABasicTest, EdgeCases_ComplexNestedStructures) {
+    OpBuilder builder(&context);
+    auto loc = builder.getUnknownLoc();
+    
+    // Test deeply nested ForOps (multiple levels)
+    auto genericIterableType = GenericIterableType::get(&context);
+    auto recordType = RecordType::get(&context);
+    auto i32Type = builder.getI32Type();
+    
+    // Create outer iterable
+    auto tableDesc1 = builder.create<mlir::arith::ConstantIntOp>(loc, 1, i32Type);
+    auto outerIterable = builder.create<ScanSourceOp>(loc, genericIterableType, tableDesc1.getResult());
+    auto outerForOp = builder.create<ForOp>(loc, outerIterable.getResult());
+    
+    // Outer loop body
+    Region& outerRegion = outerForOp.getBody();
+    Block* outerBlock = &outerRegion.emplaceBlock();
+    outerBlock->addArgument(recordType, loc);
+    OpBuilder outerBuilder(outerBlock, outerBlock->begin());
+    
+    // Create inner iterable inside outer loop
+    auto tableDesc2 = outerBuilder.create<mlir::arith::ConstantIntOp>(loc, 2, i32Type);
+    auto innerIterable = outerBuilder.create<ScanSourceOp>(loc, genericIterableType, tableDesc2.getResult());
+    auto innerForOp = outerBuilder.create<ForOp>(loc, innerIterable.getResult());
+    
+    // Inner loop body
+    Region& innerRegion = innerForOp.getBody();
+    Block* innerBlock = &innerRegion.emplaceBlock();
+    innerBlock->addArgument(recordType, loc);
+    OpBuilder innerBuilder(innerBlock, innerBlock->begin());
+    
+    // AtOp in inner loop accessing both outer and inner records
+    auto outerRecord = outerBlock->getArgument(0);
+    auto innerRecord = innerBlock->getArgument(0);
+    
+    auto columnName = innerBuilder.getStringAttr("nested_column");
+    auto atOp = innerBuilder.create<AtOp>(loc, i32Type, innerRecord, columnName);
+    
+    // Terminate inner loop
+    innerBuilder.create<YieldOp>(loc);
+    
+    // Terminate outer loop
+    outerBuilder.create<YieldOp>(loc);
+    
+    // Verify nested structure
+    ASSERT_TRUE(outerForOp);
+    ASSERT_TRUE(innerForOp);
+    ASSERT_TRUE(atOp);
+    EXPECT_EQ(atOp.getRecord(), innerRecord);
+    EXPECT_NE(atOp.getRecord(), outerRecord);
+}
+
+TEST_F(DSABasicTest, EdgeCases_LargeValueSets) {
+    OpBuilder builder(&context);
+    auto loc = builder.getUnknownLoc();
+    auto tableBuilderType = TableBuilderType::get(&context);
+    auto i32Type = builder.getI32Type();
+    
+    // Test DSAppendOp with large number of values
+    auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
+    SmallVector<Value> largeValueSet;
+    
+    // Create 50 constant values
+    for (int i = 0; i < 50; ++i) {
+        auto constOp = builder.create<mlir::arith::ConstantIntOp>(loc, i, i32Type);
+        largeValueSet.push_back(constOp.getResult());
+    }
+    
+    auto appendOpLarge = builder.create<DSAppendOp>(loc, createOp.getResult(), largeValueSet);
+    
+    ASSERT_TRUE(appendOpLarge);
+    EXPECT_EQ(appendOpLarge.getBuilder(), createOp.getResult());
+    EXPECT_EQ(appendOpLarge.getValues().size(), 50);
+    
+    // Verify all values are properly stored
+    auto values = appendOpLarge.getValues();
+    for (size_t i = 0; i < values.size(); ++i) {
+        EXPECT_TRUE(values[i].getType() == i32Type);
+    }
+}
