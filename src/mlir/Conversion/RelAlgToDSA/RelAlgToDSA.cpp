@@ -15,16 +15,11 @@
 
 using namespace mlir;
 
-namespace {
-
 //===----------------------------------------------------------------------===//
-// BaseTableOp Lowering Pattern
+// BaseTableOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-struct BaseTableToScanSourcePattern : public OpRewritePattern<::pgx::mlir::relalg::BaseTableOp> {
-    BaseTableToScanSourcePattern(MLIRContext *context) : OpRewritePattern<::pgx::mlir::relalg::BaseTableOp>(context) {}
-
-    LogicalResult matchAndRewrite(::pgx::mlir::relalg::BaseTableOp op, PatternRewriter &rewriter) const override {
+LogicalResult mlir::pgx_conversion::BaseTableToScanSourcePattern::matchAndRewrite(::pgx::mlir::relalg::BaseTableOp op, PatternRewriter &rewriter) const {
         MLIR_PGX_DEBUG("RelAlgToDSA", "Lowering BaseTableOp to ScanSourceOp");
         
         // Get table name and OID from the operation
@@ -47,17 +42,13 @@ struct BaseTableToScanSourcePattern : public OpRewritePattern<::pgx::mlir::relal
         MLIR_PGX_DEBUG("RelAlgToDSA", "Created ScanSourceOp for table: " + tableName + " (OID: " + std::to_string(tableOid) + ")");
         
         return success();
-    }
-};
+}
 
 //===----------------------------------------------------------------------===//
-// MaterializeOp Lowering Pattern  
+// MaterializeOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-struct MaterializeToResultBuilderPattern : public OpRewritePattern<::pgx::mlir::relalg::MaterializeOp> {
-    MaterializeToResultBuilderPattern(MLIRContext *context) : OpRewritePattern<::pgx::mlir::relalg::MaterializeOp>(context) {}
-
-    LogicalResult matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op, PatternRewriter &rewriter) const override {
+LogicalResult mlir::pgx_conversion::MaterializeToResultBuilderPattern::matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op, PatternRewriter &rewriter) const {
         MLIR_PGX_DEBUG("RelAlgToDSA", "Lowering MaterializeOp to DSA result builder pattern");
         
         Location loc = op.getLoc();
@@ -119,17 +110,13 @@ struct MaterializeToResultBuilderPattern : public OpRewritePattern<::pgx::mlir::
         rewriter.replaceOp(op, finalizeOp.getResult());
         
         return success();
-    }
-};
+}
 
 //===----------------------------------------------------------------------===//
-// ReturnOp Lowering Pattern
+// ReturnOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-struct ReturnOpLoweringPattern : public OpRewritePattern<::pgx::mlir::relalg::ReturnOp> {
-    ReturnOpLoweringPattern(MLIRContext *context) : OpRewritePattern<::pgx::mlir::relalg::ReturnOp>(context) {}
-
-    LogicalResult matchAndRewrite(::pgx::mlir::relalg::ReturnOp op, PatternRewriter &rewriter) const override {
+LogicalResult mlir::pgx_conversion::ReturnOpLoweringPattern::matchAndRewrite(::pgx::mlir::relalg::ReturnOp op, PatternRewriter &rewriter) const {
         MLIR_PGX_DEBUG("RelAlgToDSA", "Lowering ReturnOp to YieldOp");
         
         // Convert RelAlg ReturnOp to DSA YieldOp
@@ -138,8 +125,9 @@ struct ReturnOpLoweringPattern : public OpRewritePattern<::pgx::mlir::relalg::Re
         
         MLIR_PGX_DEBUG("RelAlgToDSA", "Successfully converted ReturnOp to YieldOp");
         return success();
-    }
-};
+}
+
+namespace {
 
 //===----------------------------------------------------------------------===//
 // RelAlg to DSA Conversion Pass
@@ -174,9 +162,9 @@ struct RelAlgToDSAPass : public PassWrapper<RelAlgToDSAPass, OperationPass<func:
         RewritePatternSet patterns(&getContext());
         
         // Add conversion patterns
-        patterns.add<BaseTableToScanSourcePattern>(&getContext());
-        patterns.add<MaterializeToResultBuilderPattern>(&getContext());
-        patterns.add<ReturnOpLoweringPattern>(&getContext());
+        patterns.add<mlir::pgx_conversion::BaseTableToScanSourcePattern>(&getContext());
+        patterns.add<mlir::pgx_conversion::MaterializeToResultBuilderPattern>(&getContext());
+        patterns.add<mlir::pgx_conversion::ReturnOpLoweringPattern>(&getContext());
         
         // Apply the conversion
         if (failed(applyPartialConversion(getOperation(), target, std::move(patterns)))) {

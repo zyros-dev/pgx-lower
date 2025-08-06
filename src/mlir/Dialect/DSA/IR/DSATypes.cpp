@@ -2,6 +2,7 @@
 #include "mlir/Dialect/DSA/IR/DSADialect.h"
 #include "execution/logging.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/Builders.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
