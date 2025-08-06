@@ -165,7 +165,8 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     auto baseTableOp = context.builder->create<pgx::mlir::relalg::BaseTableOp>(
         context.builder->getUnknownLoc(),
         tupleStreamType,
-        context.builder->getStringAttr(tableIdentifier)
+        context.builder->getStringAttr(tableIdentifier),
+        context.builder->getI64IntegerAttr(0)  // TODO Phase 5: Get actual table OID from PostgreSQL catalog
     );
     
     PGX_DEBUG("SeqScan translation completed successfully");
@@ -204,8 +205,14 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(mlir::func::FuncOp queryF
     auto relAlgTableType = pgx::mlir::relalg::TableType::get(&context_);
     
     // Materialize tuple stream to table using MaterializeOp
+    // For SELECT *, we need to specify which columns to materialize
+    // TODO Phase 4: Extract actual column list from SELECT statement
+    llvm::SmallVector<mlir::Attribute> columnAttrs;
+    columnAttrs.push_back(context.builder->getStringAttr("*"));  // Placeholder for SELECT *
+    auto columnsArrayAttr = context.builder->getArrayAttr(columnAttrs);
+    
     auto materializeOp = context.builder->create<pgx::mlir::relalg::MaterializeOp>(
-        context.builder->getUnknownLoc(), relAlgTableType, baseTableOp->getResult(0));
+        context.builder->getUnknownLoc(), relAlgTableType, baseTableOp->getResult(0), columnsArrayAttr);
     
     // Use standard func.return with materialized result
     context.builder->create<mlir::func::ReturnOp>(

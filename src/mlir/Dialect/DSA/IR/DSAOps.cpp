@@ -13,31 +13,25 @@ using namespace pgx::mlir::dsa;
 
 void ScanSourceOp::print(OpAsmPrinter& printer) {
     printer << " ";
-    printer.printOperand(getTableDescription());
+    printer.printAttributeWithoutType(getTableDescriptionAttr());
     printer << " -> ";
     printer.printType(getResult().getType());
-    printer.printOptionalAttrDict((*this)->getAttrs());
+    printer.printOptionalAttrDict((*this)->getAttrs(), {"table_description"});
 }
 
 ParseResult ScanSourceOp::parse(OpAsmParser& parser, OperationState& result) {
-    OpAsmParser::UnresolvedOperand tableDesc;
-    Type tableDescType, resultType;
+    StringAttr tableDescriptionAttr;
+    Type resultType;
     
-    if (parser.parseOperand(tableDesc) ||
+    if (parser.parseAttribute(tableDescriptionAttr) ||
         parser.parseArrow() ||
         parser.parseType(resultType) ||
         parser.parseOptionalAttrDict(result.attributes)) {
         return failure();
     }
     
+    result.addAttribute("table_description", tableDescriptionAttr);
     result.addTypes(resultType);
-    
-    // Infer the table description type from the operand
-    tableDescType = IntegerType::get(parser.getContext(), 32); // Use i32 as default
-    
-    if (parser.resolveOperand(tableDesc, tableDescType, result.operands)) {
-        return failure();
-    }
     
     return success();
 }

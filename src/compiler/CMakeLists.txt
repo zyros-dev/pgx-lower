@@ -12,5 +12,8 @@ add_subdirectory(../mlir/Dialect/RelAlg RelAlgDialect)
 add_subdirectory(../mlir/Dialect/DB DBDialect)
 add_subdirectory(../mlir/Dialect/DSA DSADialect)
 
+# Add conversion passes
+add_subdirectory(../mlir/Conversion/RelAlgToDSA RelAlgToDSAConversion)
+
 # NOTE: Remaining dialects and conversions will be rebuilt incrementally
 # Architecture: RelAlg → DB → DSA → Standard MLIR

@@ -72,17 +72,16 @@ TEST_F(DSABasicTest, ScanSourceOpCreation) {
     auto loc = builder.getUnknownLoc();
     
     auto genericIterableType = GenericIterableType::get(&context);
-    auto i32Type = builder.getI32Type();
     
-    // Create a dummy constant as table description
-    auto tableDesc = builder.create<mlir::arith::ConstantIntOp>(loc, 42, i32Type);
+    // Create JSON table description as StringAttr
+    auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
     
-    // Create ScanSourceOp
-    auto scanOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDesc.getResult());
+    // Create ScanSourceOp with StringAttr
+    auto scanOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDescAttr);
     
     ASSERT_TRUE(scanOp);
     EXPECT_EQ(scanOp.getResult().getType(), genericIterableType);
-    EXPECT_EQ(scanOp.getTableDescription(), tableDesc.getResult());
+    EXPECT_EQ(scanOp.getTableDescriptionAttr().getValue().str(), "{\"table\":\"test\"}");
 }
 
 TEST_F(DSABasicTest, CreateDSOpCreation) {
@@ -137,8 +136,8 @@ TEST_F(DSABasicTest, AtOpCreation) {
     auto i32Type = builder.getI32Type();
     
     // Create an iterable operand (similar to ForOp test)
-    auto tableDesc = builder.create<mlir::arith::ConstantIntOp>(loc, 42, i32Type);
-    auto iterableOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDesc.getResult());
+    auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
+    auto iterableOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDescAttr);
     
     // Create ForOp to get a proper record argument
     auto forOp = builder.create<ForOp>(loc, iterableOp.getResult());
@@ -232,8 +231,8 @@ TEST_F(DSABasicTest, ForOpCreation) {
     auto i32Type = builder.getI32Type();
     
     // Create an iterable operand
-    auto tableDesc = builder.create<mlir::arith::ConstantIntOp>(loc, 42, i32Type);
-    auto iterableOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDesc.getResult());
+    auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
+    auto iterableOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDescAttr);
     
     // Create ForOp with proper region and block arguments
     auto forOp = builder.create<ForOp>(loc, iterableOp.getResult());
@@ -288,14 +287,13 @@ TEST_F(DSABasicTest, AssemblyFormatRoundTripTest) {
     
     // Test ScanSourceOp basic properties for assembly format
     auto genericIterableType = GenericIterableType::get(&context);
-    auto i32Type = builder.getI32Type();
-    auto tableDesc = builder.create<mlir::arith::ConstantIntOp>(loc, 42, i32Type);
-    auto scanOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDesc.getResult());
+    auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
+    auto scanOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDescAttr);
     
     // Verify the operation was created with proper structure
     ASSERT_TRUE(scanOp);
     EXPECT_EQ(scanOp.getResult().getType(), genericIterableType);
-    EXPECT_EQ(scanOp.getTableDescription(), tableDesc.getResult());
+    EXPECT_EQ(scanOp.getTableDescriptionAttr().getValue().str(), "{\"table\":\"test\"}");
     
     // Test YieldOp assembly format - should have standard format  
     auto yieldOp = builder.create<YieldOp>(loc);
@@ -324,8 +322,8 @@ TEST_F(DSABasicTest, EdgeCases_NullHandling) {
     auto i32Type = builder.getI32Type();
     
     // Create an iterable operand
-    auto tableDesc = builder.create<mlir::arith::ConstantIntOp>(loc, 42, i32Type);
-    auto iterableOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDesc.getResult());
+    auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
+    auto iterableOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDescAttr);
     auto forOp = builder.create<ForOp>(loc, iterableOp.getResult());
     
     Region& bodyRegion = forOp.getBody();
@@ -385,15 +383,14 @@ TEST_F(DSABasicTest, EdgeCases_TypeCompatibility) {
     auto f32Type = builder.getF32Type();
     auto indexType = builder.getIndexType();
     
-    // Test ScanSourceOp with different result types
-    auto floatTableDesc = builder.create<mlir::arith::ConstantFloatOp>(loc, APFloat(0.0f), f32Type);
+    // Test ScanSourceOp with different JSON descriptions
+    auto floatTableDescAttr = builder.getStringAttr("{\"table\":\"float_test\", \"type\":\"float\"}");
     
-    // Create ScanSourceOp that takes float input
-    // Note: TableGen definition allows AnyType for table_description
-    auto scanOpFloat = builder.create<ScanSourceOp>(loc, genericIterableType, floatTableDesc.getResult());
+    // Create ScanSourceOp with more complex JSON
+    auto scanOpFloat = builder.create<ScanSourceOp>(loc, genericIterableType, floatTableDescAttr);
     ASSERT_TRUE(scanOpFloat);
     EXPECT_EQ(scanOpFloat.getResult().getType(), genericIterableType);
-    EXPECT_EQ(scanOpFloat.getTableDescription().getType(), f32Type);
+    EXPECT_EQ(scanOpFloat.getTableDescriptionAttr().getValue().str(), "{\"table\":\"float_test\", \"type\":\"float\"}");
     
     // Test AtOp returning different types
     auto forOp = builder.create<ForOp>(loc, scanOpFloat.getResult());
@@ -422,8 +419,8 @@ TEST_F(DSABasicTest, EdgeCases_ComplexNestedStructures) {
     auto i32Type = builder.getI32Type();
     
     // Create outer iterable
-    auto tableDesc1 = builder.create<mlir::arith::ConstantIntOp>(loc, 1, i32Type);
-    auto outerIterable = builder.create<ScanSourceOp>(loc, genericIterableType, tableDesc1.getResult());
+    auto tableDesc1Attr = builder.getStringAttr("{\"table\":\"outer\"}");
+    auto outerIterable = builder.create<ScanSourceOp>(loc, genericIterableType, tableDesc1Attr);
     auto outerForOp = builder.create<ForOp>(loc, outerIterable.getResult());
     
     // Outer loop body
@@ -433,8 +430,8 @@ TEST_F(DSABasicTest, EdgeCases_ComplexNestedStructures) {
     OpBuilder outerBuilder(outerBlock, outerBlock->begin());
     
     // Create inner iterable inside outer loop
-    auto tableDesc2 = outerBuilder.create<mlir::arith::ConstantIntOp>(loc, 2, i32Type);
-    auto innerIterable = outerBuilder.create<ScanSourceOp>(loc, genericIterableType, tableDesc2.getResult());
+    auto tableDesc2Attr = outerBuilder.getStringAttr("{\"table\":\"inner\"}");
+    auto innerIterable = outerBuilder.create<ScanSourceOp>(loc, genericIterableType, tableDesc2Attr);
     auto innerForOp = outerBuilder.create<ForOp>(loc, innerIterable.getResult());
     
     // Inner loop body

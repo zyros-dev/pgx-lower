@@ -13,24 +13,29 @@ using namespace pgx::mlir::relalg;
 void BaseTableOp::print(OpAsmPrinter& printer) {
     printer << " ";
     printer.printAttributeWithoutType(getTableNameAttr());
+    printer << " ";
+    printer.printAttributeWithoutType(getTableOidAttr());
     printer << " -> ";
     printer.printType(getResult().getType());
-    printer.printOptionalAttrDict((*this)->getAttrs(), {"table_name"});
+    printer.printOptionalAttrDict((*this)->getAttrs(), {"table_name", "table_oid"});
     printer << " ";
     printer.printRegion(getBody(), /*printEntryBlockArgs=*/false);
 }
 
 ParseResult BaseTableOp::parse(OpAsmParser& parser, OperationState& result) {
     StringAttr tableName;
+    IntegerAttr tableOid;
     Type resultType;
     
     if (parser.parseAttribute(tableName) ||
+        parser.parseAttribute(tableOid) ||
         parser.parseArrow() ||
         parser.parseType(resultType)) {
         return failure();
     }
     
     result.addAttribute("table_name", tableName);
+    result.addAttribute("table_oid", tableOid);
     result.addTypes(resultType);
     
     Region* body = result.addRegion();
@@ -53,16 +58,20 @@ ParseResult BaseTableOp::parse(OpAsmParser& parser, OperationState& result) {
 void MaterializeOp::print(OpAsmPrinter& printer) {
     printer << " ";
     printer.printOperand(getRel());
+    printer << " ";
+    printer.printAttributeWithoutType(getColumnsAttr());
     printer << " -> ";
     printer.printType(getResult().getType());
-    printer.printOptionalAttrDict((*this)->getAttrs());
+    printer.printOptionalAttrDict((*this)->getAttrs(), {"columns"});
 }
 
 ParseResult MaterializeOp::parse(OpAsmParser& parser, OperationState& result) {
     OpAsmParser::UnresolvedOperand rel;
+    ArrayAttr columnsAttr;
     Type relType, resultType;
     
     if (parser.parseOperand(rel) ||
+        parser.parseAttribute(columnsAttr) ||
         parser.parseArrow() ||
         parser.parseType(resultType) ||
         parser.parseOptionalAttrDict(result.attributes) ||
@@ -71,6 +80,7 @@ ParseResult MaterializeOp::parse(OpAsmParser& parser, OperationState& result) {
         return failure();
     }
     
+    result.addAttribute("columns", columnsAttr);
     result.addTypes(resultType);
     
     if (parser.resolveOperand(rel, relType, result.operands)) {
