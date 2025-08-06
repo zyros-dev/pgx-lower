@@ -57,8 +57,8 @@ private:
     auto translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> mlir::Value;
     
     // Plan node translation
-    auto translatePlanNode(Plan* plan) -> mlir::Operation*;
-    auto translateSeqScan(SeqScan* seqScan) -> mlir::Operation*;
+    auto translatePlanNode(Plan* plan, struct TranslationContext& context) -> mlir::Operation*;
+    auto translateSeqScan(SeqScan* seqScan, struct TranslationContext& context) -> mlir::Operation*;
     
     // Tuple iteration and result processing
     auto generateTupleIterationLoop(mlir::OpBuilder& builder, mlir::Location location, 

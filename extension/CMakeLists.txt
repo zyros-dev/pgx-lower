@@ -42,15 +42,17 @@ add_postgresql_mixed_extension(
             15_special_operators
 )
 
-# Clean slate refactor - removed all MLIR dialect libraries
-# These will be re-added incrementally as dialects are rebuilt
+# MLIR dialect libraries for TypeID resolution  
+# These are required for extension loading to resolve MLIR dialect TypeIDs
 target_link_libraries(pgx_lower PRIVATE 
     -Wl,--no-as-needed
     -Wl,--whole-archive
+    MLIRRelAlgDialect
+    MLIRDBDialect  
+    MLIRDSADialect
     # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt
     -Wl,--no-whole-archive
-    # NOTE: All MLIR dialect libraries removed for clean slate refactor
-    # Will be re-added as: RelAlg → DB → DSA → Standard MLIR dialects
+    # Standard MLIR dialects required by our dialects
     -Wl,--as-needed
 )
 
