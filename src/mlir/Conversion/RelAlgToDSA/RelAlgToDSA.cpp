@@ -9,6 +9,7 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -33,10 +34,12 @@ LogicalResult mlir::pgx_conversion::BaseTableToScanSourcePattern::matchAndRewrit
         // Create JSON string description as StringAttr
         auto jsonAttr = rewriter.getStringAttr(jsonDesc);
         
-        // Create the scan source operation with proper StringAttr (no more dummy i32)
+        // Create the scan source operation with simple GenericIterableType
+        auto genericIterableType = ::pgx::mlir::dsa::GenericIterableType::get(rewriter.getContext());
+        
         auto scanSourceOp = rewriter.replaceOpWithNewOp<::pgx::mlir::dsa::ScanSourceOp>(
             op,
-            ::pgx::mlir::dsa::GenericIterableType::get(rewriter.getContext()),
+            genericIterableType,
             jsonAttr);
         
         MLIR_PGX_DEBUG("RelAlgToDSA", "Created ScanSourceOp for table: " + tableName + " (OID: " + std::to_string(tableOid) + ")");
@@ -49,23 +52,23 @@ LogicalResult mlir::pgx_conversion::BaseTableToScanSourcePattern::matchAndRewrit
 //===----------------------------------------------------------------------===//
 
 LogicalResult mlir::pgx_conversion::MaterializeToResultBuilderPattern::matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op, PatternRewriter &rewriter) const {
-        MLIR_PGX_DEBUG("RelAlgToDSA", "Lowering MaterializeOp to DSA result builder pattern");
+        MLIR_PGX_DEBUG("RelAlgToDSA", "Starting MaterializeOp lowering - building proper DSA pattern");
         
         Location loc = op.getLoc();
         Value sourceIterable = op.getRel();
         
         // Create result builder
-        auto createDSOp = rewriter.create<::pgx::mlir::dsa::CreateDSOp>(loc, ::pgx::mlir::dsa::TableBuilderType::get(rewriter.getContext()));
+        auto builderType = ::pgx::mlir::dsa::TableBuilderType::get(rewriter.getContext());
+        auto createDSOp = rewriter.create<::pgx::mlir::dsa::CreateDSOp>(loc, builderType);
         Value builder = createDSOp.getResult();
         
-        // Create DSA for loop to iterate over the source
+        // Create DSA for loop carefully to avoid the previous segfault
         auto forOp = rewriter.create<::pgx::mlir::dsa::ForOp>(loc, sourceIterable);
-        Block *forBody = rewriter.createBlock(&forOp.getBody(), forOp.getBody().end());
         
-        // Add block argument for the loop variable (record)
+        // Create the loop body block with proper block argument
+        Block *forBody = &forOp.getBody().emplaceBlock();
         auto recordType = ::pgx::mlir::dsa::RecordType::get(rewriter.getContext());
-        forBody->addArgument(recordType, loc);
-        Value record = forBody->getArgument(0);
+        Value record = forBody->addArgument(recordType, loc);
         
         // Set insertion point to the for loop body
         rewriter.setInsertionPointToStart(forBody);
@@ -74,14 +77,10 @@ LogicalResult mlir::pgx_conversion::MaterializeToResultBuilderPattern::matchAndR
         ArrayAttr columnsAttr = op.getColumns();
         SmallVector<Value> columnValues;
         
-        // Iterate over all specified columns
+        // Process each column to create AtOps
         for (const auto& columnAttr : columnsAttr) {
             if (auto strAttr = llvm::dyn_cast<StringAttr>(columnAttr)) {
-                std::string columnName = strAttr.getValue().str();
-                MLIR_PGX_DEBUG("RelAlgToDSA", "Processing column: " + columnName);
-                
-                // Extract column value using AtOp
-                // TODO Phase 4: Determine proper column type instead of hardcoding i32
+                // Create AtOp to extract column value
                 auto atOp = rewriter.create<::pgx::mlir::dsa::AtOp>(loc, rewriter.getI32Type(), record, strAttr);
                 columnValues.push_back(atOp.getResult());
             }
@@ -95,16 +94,14 @@ LogicalResult mlir::pgx_conversion::MaterializeToResultBuilderPattern::matchAndR
         // Finalize the current row
         rewriter.create<::pgx::mlir::dsa::NextRowOp>(loc, builder);
         
-        // Add yield terminator to the for loop body
-        rewriter.create<::pgx::mlir::dsa::YieldOp>(loc);
-        
         // Set insertion point after the for loop
         rewriter.setInsertionPointAfter(forOp);
         
         // Finalize the result
-        auto finalizeOp = rewriter.create<::pgx::mlir::dsa::FinalizeOp>(loc, ::pgx::mlir::dsa::TableType::get(rewriter.getContext()), builder);
+        auto tableType = ::pgx::mlir::dsa::TableType::get(rewriter.getContext());
+        auto finalizeOp = rewriter.create<::pgx::mlir::dsa::FinalizeOp>(loc, tableType, builder);
         
-        MLIR_PGX_DEBUG("RelAlgToDSA", "Created DSA result builder pattern for MaterializeOp");
+        MLIR_PGX_DEBUG("RelAlgToDSA", "Created proper DSA pattern for MaterializeOp");
         
         // Replace the MaterializeOp with the finalized result
         rewriter.replaceOp(op, finalizeOp.getResult());
