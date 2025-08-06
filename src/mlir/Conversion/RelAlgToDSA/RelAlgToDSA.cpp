@@ -27,12 +27,13 @@ struct BaseTableToScanSourcePattern : public OpRewritePattern<::pgx::mlir::relal
     LogicalResult matchAndRewrite(::pgx::mlir::relalg::BaseTableOp op, PatternRewriter &rewriter) const override {
         MLIR_PGX_DEBUG("RelAlgToDSA", "Lowering BaseTableOp to ScanSourceOp");
         
-        // Get table name from the operation
+        // Get table name and OID from the operation
         std::string tableName = op.getTableName().str();
+        auto tableOid = op.getTableOidAttr().getInt();
         
         // Create JSON description for scan source
-        // Format: {"table": "table_name"}
-        std::string jsonDesc = "{\"table\":\"" + tableName + "\"}";
+        // Format: {"table": "table_name", "oid": table_oid}
+        std::string jsonDesc = "{\"table\":\"" + tableName + "\",\"oid\":" + std::to_string(tableOid) + "}";
         
         // Create JSON string description as StringAttr
         auto jsonAttr = rewriter.getStringAttr(jsonDesc);
@@ -43,7 +44,7 @@ struct BaseTableToScanSourcePattern : public OpRewritePattern<::pgx::mlir::relal
             ::pgx::mlir::dsa::GenericIterableType::get(rewriter.getContext()),
             jsonAttr);
         
-        MLIR_PGX_DEBUG("RelAlgToDSA", "Created ScanSourceOp for table: " + tableName);
+        MLIR_PGX_DEBUG("RelAlgToDSA", "Created ScanSourceOp for table: " + tableName + " (OID: " + std::to_string(tableOid) + ")");
         
         return success();
     }
