@@ -59,8 +59,6 @@ private:
     // Plan node translation
     auto translatePlanNode(Plan* plan) -> mlir::Operation*;
     auto translateSeqScan(SeqScan* seqScan) -> mlir::Operation*;
-    auto translateProjection(List* targetList) -> mlir::Operation*;
-    auto translateSelection(List* qual) -> mlir::Operation*;
     
     // Tuple iteration and result processing
     auto generateTupleIterationLoop(mlir::OpBuilder& builder, mlir::Location location, 
@@ -97,8 +95,6 @@ private:
     auto isLogicalOperator(const char* opName) -> bool;
     auto isTextOperator(const char* opName) -> bool;
     
-    // RelAlg Map operation generation for expressions
-    auto generateRelAlgMapOperation(mlir::Value baseTable, List* targetList) -> mlir::Value;
     auto generateDBDialectExpression(mlir::OpBuilder& builder, mlir::Location location, 
                                     mlir::Value tupleArg, Expr* expr) -> mlir::Value;
     auto generateDBDialectOperand(mlir::OpBuilder& builder, mlir::Location location,
