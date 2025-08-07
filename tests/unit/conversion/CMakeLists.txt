@@ -81,3 +81,30 @@ target_link_libraries(test_phase3a_integration
 
 # Register Phase 3a integration tests with CTest
 add_test(NAME Phase3AIntegrationTest COMMAND test_phase3a_integration)
+
+# Functional conversion tests - tests that actually run conversions and verify output
+add_executable(test_functional_conversions test_functional_conversions.cpp)
+
+target_link_libraries(test_functional_conversions
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRDBToDSAConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRTransforms
+    MLIRDialectConversion
+    MLIRParser
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register functional conversion tests with CTest
+add_test(NAME FunctionalConversionsTest COMMAND test_functional_conversions)

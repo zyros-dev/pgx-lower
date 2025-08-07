@@ -28,7 +28,6 @@ extern "C" {
 #endif
 
 // Define the global variables that were declared extern in the header
-TupleScanContext* g_scan_context = nullptr;
 ComputedResultStorage g_computed_results;
 
 // Global to hold field indices for current query (temporary hack)
@@ -96,35 +95,27 @@ extern "C" void* open_postgres_table(const char* tableName) {
         PGX_NOTICE("open_postgres_table: Creating PostgreSQLTableHandle...");
         auto* handle = new PostgreSQLTableHandle();
         
-        if (!g_scan_context || !g_scan_context->scanDesc) {
-            // JIT-managed table access - we need to open the table ourselves
-            PGX_NOTICE("open_postgres_table: JIT-managed table access, opening table: " + std::string(tableName ? tableName : "test"));
+        // JIT-managed table access - we need to open the table ourselves
+        PGX_NOTICE("open_postgres_table: JIT-managed table access, opening table: " + std::string(tableName ? tableName : "test"));
+        
+        // Use the table OID passed from the executor
+        if (g_jit_table_oid != InvalidOid) {
+            Oid tableOid = g_jit_table_oid;
+            PGX_NOTICE("open_postgres_table: Using table OID: " + std::to_string(tableOid));
             
-            // Use the table OID passed from the executor
-            if (g_jit_table_oid != InvalidOid) {
-                Oid tableOid = g_jit_table_oid;
-                PGX_NOTICE("open_postgres_table: Using table OID: " + std::to_string(tableOid));
-                
-                // Open the table
-                handle->rel = table_open(tableOid, AccessShareLock);
-                handle->tupleDesc = RelationGetDescr(handle->rel);
-                
-                // Create a new scan
-                handle->scanDesc = table_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr);
-                handle->isOpen = true;
-                
-                PGX_NOTICE("open_postgres_table: Successfully opened table with OID " + std::to_string(tableOid));
-            } else {
-                PGX_ERROR("open_postgres_table: Cannot determine table to open");
-                delete handle;
-                return nullptr;
-            }
-        } else {
-            // Use the existing scan descriptor from the global context
-            handle->scanDesc = g_scan_context->scanDesc;
-            handle->tupleDesc = g_scan_context->tupleDesc;
-            handle->rel = nullptr;
+            // Open the table
+            handle->rel = table_open(tableOid, AccessShareLock);
+            handle->tupleDesc = RelationGetDescr(handle->rel);
+            
+            // Create a new scan
+            handle->scanDesc = table_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr);
             handle->isOpen = true;
+            
+            PGX_NOTICE("open_postgres_table: Successfully opened table with OID " + std::to_string(tableOid));
+        } else {
+            PGX_ERROR("open_postgres_table: Cannot determine table to open");
+            delete handle;
+            return nullptr;
         }
 
         PGX_NOTICE("open_postgres_table: Calling heap_rescan...");

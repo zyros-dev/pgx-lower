@@ -332,7 +332,6 @@ bool handleMLIRResults(bool mlir_success, PostgreSQLLogger& logger) {
 void cleanupMLIRExecution(DestReceiver* dest, TupleTableSlot* slot, TupleDesc resultTupleDesc, PostgreSQLLogger& logger) {
     // Cleanup (same as before)
     logger.notice("Beginning cleanup phase...");
-    g_scan_context = nullptr;
     logger.notice("Shutting down tuple streamer...");
     g_tuple_streamer.shutdown();
 
@@ -404,9 +403,6 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         ExprContext* econtext = estate_guard.getExprContext();
         
         PGX_DEBUG("EState and ExprContext initialized successfully via RAII");
-        
-        // For AST translation, the JIT manages its own table access
-        g_scan_context = nullptr;
 
         // Analyze and configure column selection
         auto selectedColumns = analyzeColumnSelection(stmt, logger);
