@@ -70,17 +70,25 @@ ExprContext *CreateExprContext(EState *estate);
  * memory leaks that could occur with manual cleanup patterns.
  */
 
-// RAII wrapper for PostgreSQL EState management
-class EStateGuard {
+// RAII wrapper for comprehensive PostgreSQL resource management
+class PsqlMemoryContextGuard {
 private:
+    // Execution state resources
     EState* estate_;
     ExprContext* econtext_;
     MemoryContext old_context_;
+    
+    // Result streaming resources
+    DestReceiver* dest_;
+    TupleTableSlot* slot_;
+    TupleDesc tuple_desc_;
+    
     bool initialized_;
     
 public:
-    explicit EStateGuard() 
-        : estate_(nullptr), econtext_(nullptr), old_context_(CurrentMemoryContext), initialized_(false) {
+    explicit PsqlMemoryContextGuard() 
+        : estate_(nullptr), econtext_(nullptr), old_context_(CurrentMemoryContext)
+        , dest_(nullptr), slot_(nullptr), tuple_desc_(nullptr), initialized_(false) {
         
         // Create EState for proper PostgreSQL memory context hierarchy
         estate_ = CreateExecutorState();
@@ -101,31 +109,65 @@ public:
         }
         
         initialized_ = true;
-        PGX_DEBUG("EStateGuard: Created EState and ExprContext successfully");
+        PGX_DEBUG("PsqlMemoryContextGuard: Created EState and ExprContext successfully");
     }
     
-    ~EStateGuard() {
+    ~PsqlMemoryContextGuard() {
         if (initialized_) {
-            PGX_DEBUG("EStateGuard: Beginning automatic cleanup");
+            PGX_DEBUG("PsqlMemoryContextGuard: Beginning comprehensive cleanup");
             
-            // Reset per-tuple context if econtext exists
+            // 1. Clean up global tuple streamer first
+            PGX_DEBUG("PsqlMemoryContextGuard: Shutting down global tuple streamer");
+            g_tuple_streamer.shutdown();
+            
+            // 2. Clean up global tuple passthrough if it exists
+            if (g_current_tuple_passthrough.originalTuple) {
+                PGX_DEBUG("PsqlMemoryContextGuard: Freeing global tuple passthrough");
+                heap_freetuple(g_current_tuple_passthrough.originalTuple);
+                g_current_tuple_passthrough.originalTuple = nullptr;
+            }
+            
+            // 3. Clean up result streaming resources
+            if (dest_) {
+                PGX_DEBUG("PsqlMemoryContextGuard: Shutting down destination receiver");
+                dest_->rShutdown(dest_);
+                dest_ = nullptr;
+            }
+            
+            if (slot_) {
+                PGX_DEBUG("PsqlMemoryContextGuard: Dropping tuple slot");
+                ExecDropSingleTupleTableSlot(slot_);
+                slot_ = nullptr;
+            }
+            
+            if (tuple_desc_) {
+                PGX_DEBUG("PsqlMemoryContextGuard: Freeing tuple descriptor");
+                FreeTupleDesc(tuple_desc_);
+                tuple_desc_ = nullptr;
+            }
+            
+            // 2. Clean up execution state resources
             if (econtext_) {
+                PGX_DEBUG("PsqlMemoryContextGuard: Resetting expression context");
                 ResetExprContext(econtext_);
             }
             
-            // Restore original memory context
+            // 3. Restore original memory context
+            PGX_DEBUG("PsqlMemoryContextGuard: Restoring memory context");
             MemoryContextSwitchTo(old_context_);
             
-            // Free EState (automatically cleans up econtext and es_query_cxt)
+            // 4. Free EState (automatically cleans up econtext and es_query_cxt)
             if (estate_) {
+                PGX_DEBUG("PsqlMemoryContextGuard: Freeing executor state");
                 FreeExecutorState(estate_);
+                estate_ = nullptr;
             }
             
-            PGX_DEBUG("EStateGuard: Automatic cleanup completed");
+            PGX_DEBUG("PsqlMemoryContextGuard: Comprehensive cleanup completed");
         }
     }
     
-    // Accessors
+    // Execution state accessors
     EState* getEState() const { 
         return initialized_ ? estate_ : nullptr; 
     }
@@ -134,17 +176,30 @@ public:
         return initialized_ ? econtext_ : nullptr; 
     }
     
+    // Result streaming setup
+    void setupResultStreaming(DestReceiver* dest, TupleTableSlot* slot, TupleDesc tuple_desc) {
+        if (!initialized_) {
+            throw std::runtime_error("Cannot setup result streaming on uninitialized PsqlMemoryContextGuard");
+        }
+        
+        dest_ = dest;
+        slot_ = slot;
+        tuple_desc_ = tuple_desc;
+        
+        PGX_DEBUG("PsqlMemoryContextGuard: Result streaming resources registered for cleanup");
+    }
+    
     bool isValid() const { 
         return initialized_ && estate_ && econtext_; 
     }
     
     // Non-copyable to prevent resource management issues
-    EStateGuard(const EStateGuard&) = delete;
-    EStateGuard& operator=(const EStateGuard&) = delete;
+    PsqlMemoryContextGuard(const PsqlMemoryContextGuard&) = delete;
+    PsqlMemoryContextGuard& operator=(const PsqlMemoryContextGuard&) = delete;
     
     // Non-movable for simplicity (could be implemented if needed)
-    EStateGuard(EStateGuard&&) = delete;
-    EStateGuard& operator=(EStateGuard&&) = delete;
+    PsqlMemoryContextGuard(PsqlMemoryContextGuard&&) = delete;
+    PsqlMemoryContextGuard& operator=(PsqlMemoryContextGuard&&) = delete;
 };
 
 void logQueryDebugInfo(const PlannedStmt* stmt, PostgreSQLLogger& logger) {
@@ -195,8 +250,6 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogge
             if (hasComputedExpressions) {
                 // Use computed results: -1 indicates to use g_computed_results
                 selectedColumns = {-1};
-                // Initialize computed results storage for 1 column
-                g_computed_results.resize(1);
                 logger.notice("Configured for computed expression results");
             }
             else {
@@ -219,7 +272,6 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogge
                 for (int i = 0; i < numSelectedColumns; i++) {
                     selectedColumns.push_back(-1); // -1 indicates computed result
                 }
-                g_computed_results.resize(numSelectedColumns);
                 logger.notice("Configured for table column results via computed storage (temporary solution) - "
                               + std::to_string(numSelectedColumns) + " columns");
             }
@@ -329,25 +381,7 @@ bool handleMLIRResults(bool mlir_success, PostgreSQLLogger& logger) {
     return mlir_success;
 }
 
-void cleanupMLIRExecution(DestReceiver* dest, TupleTableSlot* slot, TupleDesc resultTupleDesc, PostgreSQLLogger& logger) {
-    // Cleanup (same as before)
-    logger.notice("Beginning cleanup phase...");
-    logger.notice("Shutting down tuple streamer...");
-    g_tuple_streamer.shutdown();
-
-    if (g_current_tuple_passthrough.originalTuple) {
-        logger.notice("Freeing original tuple...");
-        heap_freetuple(g_current_tuple_passthrough.originalTuple);
-        g_current_tuple_passthrough.originalTuple = nullptr;
-    }
-
-    logger.notice("Shutting down destination...");
-    dest->rShutdown(dest);
-
-    logger.notice("Dropping slot and freeing tuple descriptor...");
-    ExecDropSingleTupleTableSlot(slot);
-    FreeTupleDesc(resultTupleDesc);
-}
+// cleanupMLIRExecution function removed - all cleanup now handled by PsqlMemoryContextGuard RAII
 
 bool validateAndLogPlanStructure(const PlannedStmt* stmt) {
     const auto rootPlan = stmt->planTree;
@@ -388,24 +422,30 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
     // Log query debug information
     logQueryDebugInfo(stmt, logger);
 
-    PGX_DEBUG("Creating EStateGuard for automatic PostgreSQL memory management");
+    PGX_DEBUG("Creating PsqlMemoryContextGuard for comprehensive PostgreSQL resource management");
     
     try {
-        // RAII: Automatic EState and ExprContext management
-        EStateGuard estate_guard;
+        // RAII: Comprehensive PostgreSQL resource management (execution state + result streaming)
+        PsqlMemoryContextGuard psql_guard;
         
-        if (!estate_guard.isValid()) {
-            logger.error("Failed to initialize EState and ExprContext");
+        if (!psql_guard.isValid()) {
+            logger.error("Failed to initialize PostgreSQL memory contexts");
             return false;
         }
         
-        EState* estate = estate_guard.getEState();
-        ExprContext* econtext = estate_guard.getExprContext();
+        EState* estate = psql_guard.getEState();
+        ExprContext* econtext = psql_guard.getExprContext();
         
-        PGX_DEBUG("EState and ExprContext initialized successfully via RAII");
+        PGX_DEBUG("PostgreSQL memory contexts initialized successfully via RAII");
 
         // Analyze and configure column selection
         auto selectedColumns = analyzeColumnSelection(stmt, logger);
+
+        // Initialize computed results storage if using computed results path
+        if (!selectedColumns.empty() && selectedColumns[0] == -1) {
+            g_computed_results.resize(selectedColumns.size());
+            PGX_DEBUG("Allocated computed results storage for " + std::to_string(selectedColumns.size()) + " columns");
+        }
 
         // Setup tuple descriptor for results
         auto resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns, logger);
@@ -413,6 +453,9 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         // Initialize PostgreSQL result handling
         const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
         dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
+
+        // Register result streaming resources with RAII guard for automatic cleanup
+        psql_guard.setupResultStreaming(dest, slot, resultTupleDesc);
 
         g_tuple_streamer.initialize(dest, slot);
         g_tuple_streamer.setSelectedColumns(selectedColumns);
@@ -427,22 +470,19 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         // Handle results
         auto final_result = handleMLIRResults(mlir_success, logger);
 
-        // Cleanup
-        cleanupMLIRExecution(dest, slot, resultTupleDesc, logger);
-
         logger.notice("run_mlir_with_ast_translation completed successfully, returning "
                       + std::string(final_result ? "true" : "false"));
         
-        // EStateGuard destructor will automatically handle all cleanup
+        // PsqlMemoryContextGuard destructor will automatically handle ALL PostgreSQL cleanup
         return final_result;
         
     } catch (const std::exception& e) {
-        logger.error("Exception in RAII EState management: " + std::string(e.what()));
-        // EStateGuard destructor will automatically handle cleanup
+        logger.error("Exception in PostgreSQL memory management: " + std::string(e.what()));
+        // PsqlMemoryContextGuard destructor will automatically handle comprehensive cleanup
         return false;
     } catch (...) {
-        logger.error("Unknown exception in RAII EState management");
-        // EStateGuard destructor will automatically handle cleanup
+        logger.error("Unknown exception in PostgreSQL memory management");
+        // PsqlMemoryContextGuard destructor will automatically handle comprehensive cleanup
         return false;
     }
     
