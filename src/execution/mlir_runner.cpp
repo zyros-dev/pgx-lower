@@ -1,5 +1,4 @@
 #include "execution/mlir_runner.h"
-#include "execution/mlir_logger.h"
 #include "execution/error_handling.h"
 #include "execution/logging.h"
 #include <sstream>
@@ -69,7 +68,7 @@ static bool initialize_mlir_context(mlir::MLIRContext& context) {
     }
 }
 
-auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) -> bool {
+auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
     if (!plannedStmt) {
         auto error = pgx_lower::ErrorManager::postgresqlError("Null PlannedStmt provided to MLIR runner");
         pgx_lower::ErrorManager::reportError(error);
@@ -86,7 +85,7 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
         }
         
         // Phase 1: AST Translation - PostgreSQL AST → RelAlg MLIR
-        auto translator = postgresql_ast::createPostgreSQLASTTranslator(context, logger);
+        auto translator = postgresql_ast::createPostgreSQLASTTranslator(context);
         auto module = translator->translateQuery(plannedStmt);
         
         if (!module) {
@@ -133,7 +132,7 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
     }
 }
 
-auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, MLIRLogger& logger) -> bool {
+auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext) -> bool {
     if (!plannedStmt || !estate) {
         auto error = pgx_lower::ErrorManager::postgresqlError("Null parameters provided to MLIR runner with EState");
         pgx_lower::ErrorManager::reportError(error);
@@ -153,7 +152,7 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         
         // Phase 1: AST Translation - PostgreSQL AST → RelAlg MLIR
         PGX_INFO("Starting Phase 1: PostgreSQL AST to RelAlg translation with EState support");
-        auto translator = postgresql_ast::createPostgreSQLASTTranslator(context, logger);
+        auto translator = postgresql_ast::createPostgreSQLASTTranslator(context);
         auto module = translator->translateQuery(plannedStmt);
         
         if (!module) {

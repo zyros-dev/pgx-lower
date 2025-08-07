@@ -21,7 +21,6 @@ extern "C" {
 #undef dngettext
 
 #include "frontend/SQL/postgresql_ast_translator.h"
-#include "execution/mlir_logger.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -30,23 +29,7 @@ extern "C" {
 #include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 
-// Mock MLIRLogger implementation for testing
-class MockMLIRLogger : public MLIRLogger {
-public:
-    explicit MockMLIRLogger(mlir::MLIRContext& context) {}
-    
-    void notice(const std::string& message) override {
-        // Store or ignore - for testing
-    }
-    
-    void error(const std::string& message) override {
-        // Store or ignore - for testing
-    }
-    
-    void debug(const std::string& message) override {
-        // Store or ignore - for testing
-    }
-};
+// MockMLIRLogger removed - using unified PGX logging system
 
 using namespace postgresql_ast;
 using namespace mlir;
@@ -59,20 +42,14 @@ protected:
         context->getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
         context->getOrLoadDialect<func::FuncDialect>();
         
-        // Create mock MLIRLogger
-        logger = std::make_unique<MockMLIRLogger>(*context);
-        
         // Create translator
-        translator = createPostgreSQLASTTranslator(*context, *logger);
+        translator = createPostgreSQLASTTranslator(*context);
     }
 
     void TearDown() override {
         // Note: Order matters for proper cleanup
         if (translator) {
             translator.reset();
-        }
-        if (logger) {
-            logger.reset();
         }
         if (context) {
             context.reset();
@@ -127,7 +104,6 @@ protected:
     }
 
     std::unique_ptr<MLIRContext> context;
-    std::unique_ptr<MockMLIRLogger> logger;
     std::unique_ptr<PostgreSQLASTTranslator> translator;
 };
 

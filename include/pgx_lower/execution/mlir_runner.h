@@ -1,7 +1,6 @@
 #ifndef MLIR_RUNNER_H
 #define MLIR_RUNNER_H
 
-#include "mlir_logger.h"
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -20,10 +19,10 @@ namespace mlir_runner {
 using ExternalFunction = std::function<int64_t()>;
 
 // PostgreSQL Integration - New AST-based translation (replaces ColumnExpression approach)
-auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) -> bool;
+auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool;
 
 // PostgreSQL Integration with EState memory context support
-auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, MLIRLogger& logger) -> bool;
+auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext) -> bool;
 
 } // namespace mlir_runner
 

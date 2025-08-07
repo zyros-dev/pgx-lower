@@ -76,8 +76,8 @@ private:
     mlir::MLIRContext& context_;
 };
 
-PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context, MLIRLogger& logger) 
-    : context_(context), logger_(logger), builder_(nullptr), currentModule_(nullptr), 
+PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context) 
+    : context_(context), builder_(nullptr), currentModule_(nullptr), 
       currentTupleHandle_(nullptr), currentPlannedStmt_(nullptr), contextNeedsRecreation_(false) {
     PGX_DEBUG("PostgreSQLASTTranslator initialized with minimal implementation");
 }
@@ -228,9 +228,9 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(mlir::func::FuncOp queryF
     return true;
 }
 
-auto createPostgreSQLASTTranslator(mlir::MLIRContext& context, MLIRLogger& logger) 
+auto createPostgreSQLASTTranslator(mlir::MLIRContext& context) 
     -> std::unique_ptr<PostgreSQLASTTranslator> {
-    return std::make_unique<PostgreSQLASTTranslator>(context, logger);
+    return std::make_unique<PostgreSQLASTTranslator>(context);
 }
 
 } // namespace postgresql_ast

@@ -1,5 +1,6 @@
 #include "execution/mlir_runner.h"
 #include "../test_helpers.h"
+#include <string>
 
 // Mock implementations of mlir_runner functions for unit tests
 // These are completely isolated from PostgreSQL
@@ -22,12 +23,12 @@ extern "C" {
 
 namespace mlir_runner {
     
-    bool run_mlir_postgres_table_scan(const std::string& table_name, MLIRLogger& logger) {
+    bool run_mlir_postgres_table_scan(const std::string& table_name) {
         // Mock implementation always succeeds
         return true;
     }
     
-    bool run_mlir_postgres_typed_table_scan(const std::string& table_name, MLIRLogger& logger) {
+    bool run_mlir_postgres_typed_table_scan(const std::string& table_name) {
         // Mock implementation always succeeds
         return true;
     }

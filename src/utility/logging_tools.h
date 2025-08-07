@@ -3,8 +3,6 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Operation.h"
 
-// Forward declarations
-class MLIRLogger;
 
 namespace pgx_lower {
 namespace utility {
@@ -20,7 +18,7 @@ namespace utility {
  * @param logger The logger instance to use
  * @param context Context string to include in log messages
  */
-void logMLIRModuleVerbose(mlir::ModuleOp module, MLIRLogger& logger, const std::string& context);
+void logMLIRModuleVerbose(mlir::ModuleOp module, const std::string& context);
 
 /**
  * @brief Log MLIR module with full expansion of all regions and operations
@@ -33,7 +31,7 @@ void logMLIRModuleVerbose(mlir::ModuleOp module, MLIRLogger& logger, const std::
  * @param logger The logger instance to use
  * @param context Context string to include in log messages
  */
-void logMLIRModuleFullyExpanded(mlir::ModuleOp module, MLIRLogger& logger, const std::string& context);
+void logMLIRModuleFullyExpanded(mlir::ModuleOp module, const std::string& context);
 
 /**
  * @brief Log MLIR module in compact format
@@ -45,7 +43,7 @@ void logMLIRModuleFullyExpanded(mlir::ModuleOp module, MLIRLogger& logger, const
  * @param logger The logger instance to use
  * @param context Context string to include in log messages
  */
-void logMLIRModuleCompact(mlir::ModuleOp module, MLIRLogger& logger, const std::string& context);
+void logMLIRModuleCompact(mlir::ModuleOp module, const std::string& context);
 
 /**
  * @brief Log a single MLIR operation with full details
@@ -54,7 +52,7 @@ void logMLIRModuleCompact(mlir::ModuleOp module, MLIRLogger& logger, const std::
  * @param logger The logger instance to use
  * @param context Context string to include in log messages
  */
-void logMLIROperation(mlir::Operation* op, MLIRLogger& logger, const std::string& context);
+void logMLIROperation(mlir::Operation* op, const std::string& context);
 
 /**
  * @brief Log MLIR operation hierarchy with indentation
@@ -67,7 +65,7 @@ void logMLIROperation(mlir::Operation* op, MLIRLogger& logger, const std::string
  * @param context Context string to include in log messages
  * @param depth Current nesting depth (for indentation)
  */
-void logMLIROperationHierarchy(mlir::Operation* op, MLIRLogger& logger, const std::string& context, int depth = 0);
+void logMLIROperationHierarchy(mlir::Operation* op, const std::string& context, int depth = 0);
 
 } // namespace utility
 } // namespace pgx_lower

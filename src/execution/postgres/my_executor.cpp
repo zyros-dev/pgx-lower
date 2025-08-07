@@ -1,6 +1,5 @@
 #include "execution/postgres/my_executor.h"
 #include "execution/mlir_runner.h"
-#include "execution/mlir_logger.h"
 #include "frontend/SQL/query_analyzer.h"
 #include "execution/error_handling.h"
 #include "execution/logging.h"
@@ -202,7 +201,7 @@ public:
     PsqlMemoryContextGuard& operator=(PsqlMemoryContextGuard&&) = delete;
 };
 
-void logQueryDebugInfo(const PlannedStmt* stmt, PostgreSQLLogger& logger) {
+void logQueryDebugInfo(const PlannedStmt* stmt) {
     PGX_DEBUG("Using PostgreSQL AST translation approach");
 
     // Debug targetList availability
@@ -221,7 +220,7 @@ void logQueryDebugInfo(const PlannedStmt* stmt, PostgreSQLLogger& logger) {
     }
 }
 
-std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogger& logger) {
+std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
     // Configure column selection based on query type
     // For SELECT expressions (computed results), use -1 to indicate computed columns
     // For SELECT * (table columns), use 0, 1, 2, etc.
@@ -290,7 +289,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogge
 }
 
 TupleDesc
-setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedColumns, PostgreSQLLogger& logger) {
+setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedColumns) {
     // Create result tuple descriptor based on selected columns count
     const int numResultColumns = selectedColumns.size();
     const auto resultTupleDesc = CreateTemplateTupleDesc(numResultColumns);
@@ -364,7 +363,7 @@ setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedCo
     return resultTupleDesc;
 }
 
-bool handleMLIRResults(bool mlir_success, PostgreSQLLogger& logger) {
+bool handleMLIRResults(bool mlir_success) {
     // Stream results back to PostgreSQL
     if (mlir_success) {
         PGX_INFO("JIT returned successfully, checking results...");
@@ -409,7 +408,6 @@ bool validateAndLogPlanStructure(const PlannedStmt* stmt) {
 }
 
 bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
-    auto logger = PostgreSQLLogger();
     auto* dest = queryDesc->dest;
 
     // Extract the planned statement for AST translation
@@ -420,7 +418,7 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
     }
 
     // Log query debug information
-    logQueryDebugInfo(stmt, logger);
+    logQueryDebugInfo(stmt);
 
     PGX_DEBUG("Creating PsqlMemoryContextGuard for comprehensive PostgreSQL resource management");
     
@@ -439,7 +437,7 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         PGX_DEBUG("PostgreSQL memory contexts initialized successfully via RAII");
 
         // Analyze and configure column selection
-        auto selectedColumns = analyzeColumnSelection(stmt, logger);
+        auto selectedColumns = analyzeColumnSelection(stmt);
 
         // Initialize computed results storage if using computed results path
         if (!selectedColumns.empty() && selectedColumns[0] == -1) {
@@ -448,7 +446,7 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         }
 
         // Setup tuple descriptor for results
-        auto resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns, logger);
+        auto resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns);
 
         // Initialize PostgreSQL result handling
         const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
@@ -462,13 +460,13 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
 
         // Execute MLIR translation with proper memory contexts
         const auto mlir_success = mlir_runner::run_mlir_with_estate(
-            const_cast<PlannedStmt*>(stmt), estate, econtext, logger);
+            const_cast<PlannedStmt*>(stmt), estate, econtext);
         
         PGX_INFO("mlir_runner::run_mlir_with_estate returned "
                       + std::string(mlir_success ? "true" : "false"));
 
         // Handle results
-        auto final_result = handleMLIRResults(mlir_success, logger);
+        auto final_result = handleMLIRResults(mlir_success);
 
         PGX_INFO("run_mlir_with_ast_translation completed successfully, returning "
                       + std::string(final_result ? "true" : "false"));

@@ -1,6 +1,5 @@
 #include "logging_tools.h"
 #include "execution/logging.h"
-#include "execution/mlir_logger.h"
 
 #include "mlir/IR/Operation.h"
 #include "llvm/Support/raw_ostream.h"
@@ -10,7 +9,7 @@
 namespace pgx_lower {
 namespace utility {
 
-void logMLIRModuleVerbose(mlir::ModuleOp module, MLIRLogger& logger, const std::string& context) {
+void logMLIRModuleVerbose(mlir::ModuleOp module, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== VERBOSE MLIR MODULE DUMP: " + context + " ===");
     
     // Walk all operations and print them individually to get full operation content
@@ -43,7 +42,7 @@ void logMLIRModuleVerbose(mlir::ModuleOp module, MLIRLogger& logger, const std::
     MLIR_PGX_INFO("MLIR", "=== END VERBOSE MLIR MODULE DUMP: " + context + " ===");
 }
 
-void logMLIRModuleFullyExpanded(mlir::ModuleOp module, MLIRLogger& logger, const std::string& context) {
+void logMLIRModuleFullyExpanded(mlir::ModuleOp module, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== FULLY EXPANDED MLIR MODULE DUMP: " + context + " ===");
     
     std::string moduleStr;
@@ -73,7 +72,7 @@ void logMLIRModuleFullyExpanded(mlir::ModuleOp module, MLIRLogger& logger, const
     MLIR_PGX_INFO("MLIR", "=== END FULLY EXPANDED MLIR MODULE DUMP: " + context + " ===");
 }
 
-void logMLIRModuleCompact(mlir::ModuleOp module, MLIRLogger& logger, const std::string& context) {
+void logMLIRModuleCompact(mlir::ModuleOp module, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== COMPACT MLIR MODULE DUMP: " + context + " ===");
     
     std::string moduleStr;
@@ -94,7 +93,7 @@ void logMLIRModuleCompact(mlir::ModuleOp module, MLIRLogger& logger, const std::
     MLIR_PGX_INFO("MLIR", "=== END COMPACT MLIR MODULE DUMP: " + context + " ===");
 }
 
-void logMLIROperation(mlir::Operation* op, MLIRLogger& logger, const std::string& context) {
+void logMLIROperation(mlir::Operation* op, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== MLIR OPERATION DUMP: " + context + " ===");
     
     std::string opStr;
@@ -112,14 +111,14 @@ void logMLIROperation(mlir::Operation* op, MLIRLogger& logger, const std::string
         lineNum++;
     }
     
-    logger.notice(("=== END MLIR OPERATION DUMP: " + context + " ===").c_str());
+    MLIR_PGX_INFO("MLIR", "=== END MLIR OPERATION DUMP: " + context + " ===");
 }
 
-void logMLIROperationHierarchy(mlir::Operation* op, MLIRLogger& logger, const std::string& context, int depth) {
+void logMLIROperationHierarchy(mlir::Operation* op, const std::string& context, int depth) {
     std::string indent(depth * 2, ' ');
     std::string prefix = "HIERARCHY_D" + std::to_string(depth) + ": " + indent;
     
-    logger.notice((prefix + "Operation: " + op->getName().getStringRef().str()).c_str());
+    MLIR_PGX_INFO("MLIR", prefix + "Operation: " + op->getName().getStringRef().str());
     
     // Log operation details
     std::string opStr;
@@ -131,14 +130,14 @@ void logMLIROperationHierarchy(mlir::Operation* op, MLIRLogger& logger, const st
     std::istringstream opStrStream(opStr);
     std::string firstLine;
     if (std::getline(opStrStream, firstLine)) {
-        logger.notice((prefix + firstLine).c_str());
+        MLIR_PGX_INFO("MLIR", prefix + firstLine);
     }
     
     // Recursively log nested operations
     for (auto& region : op->getRegions()) {
         for (auto& block : region.getBlocks()) {
             for (auto& nested_op : block.getOperations()) {
-                logMLIROperationHierarchy(&nested_op, logger, context, depth + 1);
+                logMLIROperationHierarchy(&nested_op, context, depth + 1);
             }
         }
     }
