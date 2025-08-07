@@ -1,6 +1,7 @@
 #pragma once
 #include <utility>
 #include <vector>
+#include <string>
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
@@ -30,7 +31,7 @@ struct QueryCapabilities {
     [[nodiscard]] auto isMLIRCompatible() const -> bool;
 
     // Get human-readable description
-    [[nodiscard]] auto getDescription() const -> const char*;
+    [[nodiscard]] auto getDescription() const -> std::string;
 };
 
 class QueryAnalyzer {

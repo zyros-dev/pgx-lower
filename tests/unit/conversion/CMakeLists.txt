@@ -54,3 +54,30 @@ target_link_libraries(test_conversion_basics
 
 # Register basic conversion tests with CTest
 add_test(NAME ConversionBasicsTest COMMAND test_conversion_basics)
+
+# Phase 3a integration tests
+add_executable(test_phase3a_integration test_phase3a_integration.cpp)
+
+target_link_libraries(test_phase3a_integration
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRDBToDSAConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRTransforms
+    MLIRDialectConversion
+    MLIRParser
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register Phase 3a integration tests with CTest
+add_test(NAME Phase3AIntegrationTest COMMAND test_phase3a_integration)

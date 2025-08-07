@@ -112,19 +112,23 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         target.addLegalDialect<arith::ArithDialect>();
         target.addLegalDialect<func::FuncDialect>();
         
-        // RelAlg operations are illegal (need to be converted)
+        // RelAlg operations that have working conversions are illegal (need to be converted)
         target.addIllegalOp<::pgx::mlir::relalg::BaseTableOp>();
-        target.addIllegalOp<::pgx::mlir::relalg::GetColumnOp>();
-        target.addIllegalOp<::pgx::mlir::relalg::MaterializeOp>();
         target.addIllegalOp<::pgx::mlir::relalg::ReturnOp>();
+        
+        // Phase 3a: Leave GetColumnOp and MaterializeOp as legal until Phase 5 implementation
+        // This prevents conversion failures from unimplemented patterns
+        target.addLegalOp<::pgx::mlir::relalg::GetColumnOp>();
+        target.addLegalOp<::pgx::mlir::relalg::MaterializeOp>();
         
         RewritePatternSet patterns(&getContext());
         
-        // Add conversion patterns
+        // Add conversion patterns for implemented operations only
         patterns.add<mlir::pgx_conversion::BaseTableToExternalSourcePattern>(&getContext());
-        patterns.add<mlir::pgx_conversion::GetColumnToGetFieldPattern>(&getContext());
-        patterns.add<mlir::pgx_conversion::MaterializeToStreamResultsPattern>(&getContext());
         patterns.add<mlir::pgx_conversion::ReturnOpToFuncReturnPattern>(&getContext());
+        
+        // Phase 3a: Skip unimplemented patterns (GetColumnOp and MaterializeOp are legal)
+        // These will be added in Phase 5 when proper implementations are ready
         
         // Apply the conversion
         if (failed(applyPartialConversion(getOperation(), target, std::move(patterns)))) {
