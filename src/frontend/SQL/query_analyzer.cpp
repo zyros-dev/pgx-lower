@@ -232,7 +232,7 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
     
     // Extract types from plan's target list (no table access needed)
     foreach(lc, plan->targetlist) {
-        TargetEntry* tle = (TargetEntry*)lfirst(lc);
+        TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
         if (tle && !tle->resjunk && tle->expr) {
             // Check if this is a computed expression (not just a simple Var)
             if (nodeTag(tle->expr) != T_Var) {
@@ -248,7 +248,7 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
                 return;
             }
             
-            Oid columnType = exprType((Node*)tle->expr);
+            Oid columnType = exprType(reinterpret_cast<Node*>(tle->expr));
             columnTypes.push_back(columnType);
         }
     }
