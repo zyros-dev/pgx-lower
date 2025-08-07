@@ -112,7 +112,7 @@ def AtOp : DSA_Op<"at", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def ForOp : DSA_Op<"for", [
-    SingleBlockImplicitTerminator<"YieldOp">,
+    SingleBlockImplicitTerminator<"pgx::mlir::dsa::YieldOp">,
     RecursiveMemoryEffects
 ]> {
     let summary = "loop operation with implicit yield terminator";
