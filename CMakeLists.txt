@@ -117,6 +117,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         "tests/unit/runtime/*.cpp"
         "tests/unit/logging/*.cpp"
         "tests/unit/dialects/*.cpp"
+        "tests/unit/dialect_dsa/*.cpp"  # Added for new DSA operations tests
         "tests/unit/frontend/*.cpp"
         "tests/unit/conversion/*.cpp"
     )
@@ -157,9 +158,14 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRDBDialect
         MLIRDSADialect
         MLIRRelAlgToDSAConversion
+        MLIRRelAlgToDBConversion      # New RelAlg -> DB conversion
+        MLIRDBToDSAConversion         # New DB -> DSA conversion
         MLIRFuncDialect
+        MLIRArithDialect
+        MLIRSCFDialect
         MLIRPass
         MLIRTransforms
+        MLIRDialectConversion
         MLIRParser
         # NOTE: Additional MLIR dialect libraries will be added as they are rebuilt
     )

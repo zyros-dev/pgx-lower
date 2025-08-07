@@ -38,29 +38,70 @@ class DSA_Collection<string name, string typeMnemonic> : TypeDef<DSA_Dialect, na
     let mnemonic = typeMnemonic;
 }
 
-def DSA_GenericIterable : DSA_Type<"GenericIterable", "generic_iterable"> {
-    let summary = "generic iterable type returned by scan_source";
-    let assemblyFormat = "";
+// Parameterized types following LingoDB patterns
+def DSA_GenericIterable : DSA_Collection<"GenericIterable", "iterable"> {
+    let summary = "generic iterable";
+    let parameters = (ins "Type":$elementType, "std::string":$iteratorName);
+    let hasCustomAssemblyFormat = 1;
 }
 
-def DSA_RecordBatch : DSA_Type<"RecordBatch", "record_batch"> {
-    let summary = "chunk of records processed together";
-    let assemblyFormat = "";
+def DSA_RecordBatch : DSA_Collection<"RecordBatch", "record_batch"> {
+    let summary = "record_batch";
+    let parameters = (ins "::mlir::TupleType":$rowType);
+    let assemblyFormat = "`<` $rowType `>`";
 }
 
-def DSA_Record : DSA_Type<"Record", "record"> {
-    let summary = "individual row of data";
-    let assemblyFormat = "";
+def DSA_Record : DSA_Collection<"Record", "record"> {
+    let summary = "record";
+    let parameters = (ins "::mlir::TupleType":$rowType);
+    let assemblyFormat = "`<` $rowType `>`";
 }
 
 def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
-    let summary = "result construction utility";
-    let assemblyFormat = "";
+    let summary = "table builder";
+    let description = [{
+        Stateful table builder with a fixed schema. Values to the last row can
+        be added using `ds_append` and once all columns are filled, the row can
+        be finalized using `next_row`. The final table can be created using
+        `finalize`.
+    }];
+    let parameters = (ins "::mlir::TupleType":$rowType);
+    let assemblyFormat = "`<` $rowType `>`";
 }
 
 def DSA_Table : DSA_Type<"Table", "table"> {
-    let summary = "final materialized result table";
+    let summary = "materialized table";
     let assemblyFormat = "";
+}
+
+def DSA_Flag : DSA_Type<"Flag", "flag"> {
+    let summary = "binary flag";
+    let description = [{
+        Flag which can be used to terminate a `for` loop. Flag types are lowered 
+        to local variables allocated using `alloca`.
+
+        For example, a flag is used to terminate iteration over records when reaching 
+        the output limit or to indicate whether a matching join row has been found.
+    }];
+    let assemblyFormat = "";
+}
+
+def DSA_Vector : DSA_Collection<"Vector", "vector"> {
+    let summary = "vector";
+    let parameters = (ins "Type":$elementType);
+    let assemblyFormat = "`<` $elementType `>`";
+}
+
+def DSA_AggregationHashtable : DSA_Collection<"AggregationHashtable", "aggr_ht"> {
+    let summary = "aggregation hashtable";
+    let parameters = (ins "::mlir::TupleType":$keyType, "::mlir::TupleType":$valType);
+    let assemblyFormat = "`<` $keyType `,` $valType `>`";
+}
+
+def DSA_JoinHashtable : DSA_Collection<"JoinHashtable", "join_ht"> {
+    let summary = "join hashtable";
+    let parameters = (ins "::mlir::TupleType":$keyType, "::mlir::TupleType":$valType);
+    let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -152,6 +193,64 @@ def YieldOp : DSA_Op<"yield", [Pure, ReturnLike, Terminator]> {
     let arguments = (ins Variadic<AnyType>:$results);
     let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
     let assemblyFormat = "attr-dict ($results^ `:` type($results))?";
+}
+
+//===----------------------------------------------------------------------===//
+// Flag Operations (Missing from LingoDB reference)
+//===----------------------------------------------------------------------===//
+
+def CreateFlagOp : DSA_Op<"createflag", [Pure]> {
+    let summary = "Create flag";
+    let description = [{
+        Create a binary flag that can be used to control loop termination.
+        Flag types are lowered to local variables allocated using `alloca`.
+    }];
+    let results = (outs DSA_Flag:$flag);
+    let assemblyFormat = "attr-dict `:` type($flag)";
+}
+
+def SetFlagOp : DSA_Op<"setflag", []> {
+    let summary = "Set flag to a value";
+    let description = [{
+        Set the flag to a specified boolean value.
+    }];
+    let arguments = (ins DSA_Flag:$flag, I1:$val);
+    let assemblyFormat = "$flag `,` $val attr-dict `:` type($flag)";
+}
+
+def GetFlagOp : DSA_Op<"getflag", [Pure]> {
+    let summary = "Get flag value";
+    let description = [{
+        Get the current value of the flag.
+    }];
+    let arguments = (ins DSA_Flag:$flag);
+    let results = (outs I1:$res);
+    let assemblyFormat = "$flag attr-dict `:` type($flag) `->` type($res)";
+}
+
+//===----------------------------------------------------------------------===//
+// Hashtable Operations (Missing from LingoDB reference)
+//===----------------------------------------------------------------------===//
+
+def HashtableInsertOp : DSA_Op<"ht_insert", []> {
+    let summary = "insert into a JoinHashtable or AggregationHashTable";
+    let description = [{
+        Insert a key-value pair into a hashtable with custom hash and equality functions.
+    }];
+    let arguments = (ins AnyType:$ht, AnyType:$key, Optional<AnyType>:$val);
+    let regions = (region AnyRegion:$hash, AnyRegion:$equal, AnyRegion:$reduce);
+    let assemblyFormat = "$ht `,` $key `:` type($key) (`,` $val^ `:` type($val))? $hash $equal $reduce attr-dict `:` type($ht)";
+}
+
+def LookupOp : DSA_Op<"lookup", [Pure]> {
+    let summary = "lookup in a hash table";
+    let description = [{
+        Lookup entries in a hashtable that match the given key.
+        Returns an iterable over matching entries.
+    }];
+    let arguments = (ins AnyType:$collection, AnyType:$key);
+    let results = (outs DSA_GenericIterable:$iterable);
+    let assemblyFormat = "$collection `:` type($collection) `,` $key `:` type($key) `->` type($iterable) attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

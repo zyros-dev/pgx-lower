@@ -67,18 +67,52 @@ LogicalResult mlir::pgx_conversion::MaterializeToResultBuilderPattern::matchAndR
         // Step 2: Create basic MaterializeOp lowering structure (placeholder for nested ForOp)
         // TODO: Add nested ForOp pattern once segfault is resolved
         Value input = op.getRel();
-        MLIR_PGX_DEBUG("RelAlgToDSA", "MaterializeOp input obtained: " + std::to_string(reinterpret_cast<uintptr_t>(input.getAsOpaquePointer())));
+        MLIR_PGX_DEBUG("RelAlgToDSA", "MaterializeOp input obtained successfully");
         
-        // Create basic operations to populate the table (simulating materialization)
-        MLIR_PGX_DEBUG("RelAlgToDSA", "Creating materialization operations...");
+        // Step 2.1: Create proper nested ForOp pattern following LingoDB architecture
+        MLIR_PGX_DEBUG("RelAlgToDSA", "Creating nested ForOp pattern for materialization...");
         
-        // For now, create some dummy data to test the basic pattern
-        // In the final implementation, this will be inside nested ForOp loops
-        auto constantOp = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32IntegerAttr(42));
-        auto dsAppendOp = rewriter.create<::pgx::mlir::dsa::DSAppendOp>(loc, createDSOp.getResult(), ValueRange{constantOp.getResult()});
+        // Outer ForOp: Iterate over generic iterable (record batches)
+        // Following LingoDB pattern: RecordBatch → Record iteration
+        auto outerForOp = rewriter.create<::pgx::mlir::dsa::ForOp>(loc, TypeRange{}, input, ValueRange{});
+        Block* outerBlock = outerForOp.getBody();
+        rewriter.setInsertionPointToStart(outerBlock);
+        
+        Value batchArg = outerBlock->getArgument(0);  // Current record batch
+        MLIR_PGX_DEBUG("RelAlgToDSA", "Outer ForOp created for record batch iteration");
+        
+        // Inner ForOp: Iterate over records in the current batch
+        auto innerForOp = rewriter.create<::pgx::mlir::dsa::ForOp>(loc, TypeRange{}, batchArg, ValueRange{});
+        Block* innerBlock = innerForOp.getBody();
+        rewriter.setInsertionPointToStart(innerBlock);
+        
+        Value recordArg = innerBlock->getArgument(0);  // Current record
+        MLIR_PGX_DEBUG("RelAlgToDSA", "Inner ForOp created for individual record processing");
+        
+        // Step 2.2: Process each record - extract data using AtOp
+        // This simulates column extraction from the record
+        auto atOp = rewriter.create<::pgx::mlir::dsa::AtOp>(loc, 
+            rewriter.getI32Type(),  // Result type
+            recordArg,              // Record to extract from  
+            rewriter.getStringAttr("data"));  // Column name
+        
+        // Step 2.3: Append extracted data to table builder
+        auto dsAppendOp = rewriter.create<::pgx::mlir::dsa::DSAppendOp>(loc, 
+            createDSOp.getResult(), 
+            ValueRange{atOp.getResult()});
         auto nextRowOp = rewriter.create<::pgx::mlir::dsa::NextRowOp>(loc, createDSOp.getResult());
         
-        MLIR_PGX_DEBUG("RelAlgToDSA", "Materialization operations created successfully");
+        MLIR_PGX_DEBUG("RelAlgToDSA", "Record processing operations created");
+        
+        // Step 2.4: Complete nested ForOp structure with proper terminators
+        rewriter.create<::pgx::mlir::dsa::YieldOp>(loc, ValueRange{});
+        
+        rewriter.setInsertionPointAfter(innerForOp);
+        rewriter.create<::pgx::mlir::dsa::YieldOp>(loc, ValueRange{});
+        
+        rewriter.setInsertionPointAfter(outerForOp);
+        
+        MLIR_PGX_DEBUG("RelAlgToDSA", "Nested ForOp pattern completed successfully");
         
         // Step 3: Finalize the table builder
         MLIR_PGX_DEBUG("RelAlgToDSA", "Creating FinalizeOp...");

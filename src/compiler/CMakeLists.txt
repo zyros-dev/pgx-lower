@@ -12,8 +12,12 @@ add_subdirectory(../mlir/Dialect/RelAlg RelAlgDialect)
 add_subdirectory(../mlir/Dialect/DB DBDialect)
 add_subdirectory(../mlir/Dialect/DSA DSADialect)
 
-# Add conversion passes
+# Add conversion passes - Following proper LingoDB pipeline: RelAlg → DB → DSA
+add_subdirectory(../mlir/Conversion/RelAlgToDB RelAlgToDBConversion)
+add_subdirectory(../mlir/Conversion/DBToDSA DBToDSAConversion)
+
+# Keep legacy RelAlgToDSA for migration testing (DEPRECATED - violates architecture)
 add_subdirectory(../mlir/Conversion/RelAlgToDSA RelAlgToDSAConversion)
 
-# NOTE: Remaining dialects and conversions will be rebuilt incrementally
+# NOTE: Remaining dialects and conversions will be rebuilt incrementally  
 # Architecture: RelAlg → DB → DSA → Standard MLIR
