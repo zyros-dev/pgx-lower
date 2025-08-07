@@ -119,17 +119,25 @@ def ForOp : DSA_Op<"for", [
     let description = [{
         Loop operation that iterates over an iterable with implicit yield terminator.
         The body region contains the loop body that processes each element.
+        Supports iteration over different collection types following LingoDB patterns.
         
-        Example:
+        Examples:
         ```mlir
-        dsa.for %record in %iterable : !dsa.generic_iterable {
+        // Outer loop over generic iterable (record batches)
+        dsa.for %batch in %iterable : !dsa.generic_iterable {
+            // Process %batch
+            dsa.yield
+        }
+        
+        // Inner loop over record batch (individual records)  
+        dsa.for %record in %batch : !dsa.record_batch {
             // Process %record
             dsa.yield
         }
         ```
     }];
 
-    let arguments = (ins DSA_GenericIterable:$iterable);
+    let arguments = (ins AnyType:$iterable);
     let results = (outs);
     let regions = (region SizedRegion<1>:$body);
     let assemblyFormat = "$iterable $body attr-dict `:` type($iterable)";
