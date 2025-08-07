@@ -120,6 +120,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         "tests/unit/dialect_dsa/*.cpp"  # Added for new DSA operations tests
         "tests/unit/frontend/*.cpp"
         "tests/unit/conversion/*.cpp"
+        "tests/unit/mlir/*.cpp"  # Added for pass pipeline tests
     )
     # mlir_runner_test.cpp now included - minimal MLIR context and dialect loading implemented
     
@@ -136,6 +137,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
         src/runtime/helpers.cpp
+        src/mlir/Passes.cpp  # Added for centralized pass pipeline
     )
     
     
@@ -154,6 +156,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRRelAlgToDSAConversion
         MLIRRelAlgToDBConversion      # New RelAlg -> DB conversion
         MLIRDBToDSAConversion         # New DB -> DSA conversion
+        MLIRPgxLowerPasses            # Centralized pass pipeline infrastructure
         MLIRFuncDialect
         MLIRArithDialect
         MLIRSCFDialect
