@@ -37,6 +37,11 @@ struct GetColumnToGetFieldPattern : public OpConversionPattern<::pgx::mlir::rela
 };
 
 /// Pattern to convert RelAlg MaterializeOp to DB result streaming operations
+/// 
+/// CRITICAL: This pattern is DISABLED in Phase 3a per LingoDB research findings.
+/// MaterializeOp creates DSA operations (dsa.create_ds, dsa.ds_append, etc.), not DB operations.
+/// MaterializeOp belongs in Phase 3b (DB→DSA), not Phase 3a (RelAlg→DB).
+/// In Phase 3a, MaterializeOp is marked as LEGAL and passes through unchanged.
 struct MaterializeToStreamResultsPattern : public OpConversionPattern<::pgx::mlir::relalg::MaterializeOp> {
     using OpConversionPattern<::pgx::mlir::relalg::MaterializeOp>::OpConversionPattern;
     

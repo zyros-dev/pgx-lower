@@ -45,17 +45,17 @@ class RelAlg_Type<string name, string typeMnemonic> : TypeDef<RelAlg_Dialect, na
 
 def RelAlg_TupleStream : RelAlg_Type<"TupleStream", "tuplestream"> {
     let summary = "tuple stream type";
-    let assemblyFormat = "";
+    let hasCustomAssemblyFormat = 1;
 }
 
 def RelAlg_Tuple : RelAlg_Type<"Tuple", "tuple"> {
     let summary = "tuple type"; 
-    let assemblyFormat = "";
+    let hasCustomAssemblyFormat = 1;
 }
 
 def RelAlg_Table : RelAlg_Type<"Table", "table"> {
     let summary = "table type";
-    let assemblyFormat = "";
+    let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//

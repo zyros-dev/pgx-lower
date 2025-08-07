@@ -17,144 +17,70 @@
 using namespace mlir;
 
 //===----------------------------------------------------------------------===//
-// GetExternalOp Lowering Pattern Implementation
+// PHASE 3B - DB TO DSA CONVERSION (FUTURE WORK - NOT YET IMPLEMENTED)
+//===----------------------------------------------------------------------===//
+// 
+// ARCHITECTURAL NOTE: This file contains placeholder implementations for Phase 3b.
+// Phase 3b (DB→DSA lowering) should NOT be implemented until Phase 3a (RelAlg→DB) 
+// is complete and fully validated.
+//
+// Current Status: ALL CONVERSION PATTERNS DISABLED/STUBBED OUT
+// TODO Phase 3b: Implement actual DB→DSA conversion patterns
+//
+//===----------------------------------------------------------------------===//
+
+
+//===----------------------------------------------------------------------===//
+// GetExternalOp Lowering Pattern Implementation (PHASE 3B - DISABLED)
 //===----------------------------------------------------------------------===//
 
 LogicalResult mlir::pgx_conversion::GetExternalToScanSourcePattern::matchAndRewrite(::pgx::db::GetExternalOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
-    MLIR_PGX_DEBUG("DBToDSA", "Lowering GetExternalOp to ScanSourceOp");
+    PGX_ERROR("Phase 3b DB→DSA conversion not yet implemented - GetExternalOp pattern disabled");
+    return failure();
     
-    // Get table OID from the operation - extract value from constant
-    auto tableOid = op.getTableOid();
-    
-    // Extract table OID value (should be a constant from GetExternalOp)
-    int64_t tableOidValue = 0;
-    if (auto constOp = tableOid.getDefiningOp<arith::ConstantIntOp>()) {
-        tableOidValue = constOp.value();
-    } else {
-        PGX_WARNING("GetExternalOp table OID is not a compile-time constant");
-        tableOidValue = 0; // Use placeholder value
-    }
-    
-    // Create JSON description for scan source
-    // Format: {"table_oid": table_oid}
-    std::string jsonDesc = "{\"table_oid\":" + std::to_string(tableOidValue) + "}";
-    
-    // Create JSON string description as StringAttr
-    auto jsonAttr = rewriter.getStringAttr(jsonDesc);
-    
-    // Create the scan source operation with proper LingoDB iterable type
-    // Following LingoDB pattern: !dsa.iterable<!dsa.record_batch<tuple<...>>, table_chunk_iterator>
-    // For now using generic tuple type - in full implementation would use actual schema
-    auto tupleType = rewriter.getTupleType({rewriter.getI32Type()});
-    auto genericIterableType = ::pgx::mlir::dsa::GenericIterableType::get(
-        rewriter.getContext(),
-        ::pgx::mlir::dsa::RecordBatchType::get(rewriter.getContext(), tupleType),
-        "table_chunk_iterator");
-        
-    auto scanSourceOp = rewriter.replaceOpWithNewOp<::pgx::mlir::dsa::ScanSourceOp>(
-        op,
-        genericIterableType,
-        jsonAttr);
-    
-    MLIR_PGX_DEBUG("DBToDSA", "Created ScanSourceOp for table OID: " + std::to_string(tableOidValue));
-    
-    return success();
+    // TODO Phase 3b: Implement GetExternalOp → ScanSourceOp conversion
+    // This should be implemented after Phase 3a (RelAlg→DB) is complete
+    // 
+    // Expected implementation:
+    // - Extract table OID from GetExternalOp
+    // - Create ScanSourceOp with proper LingoDB iterable type
+    // - Use proper JSON description format for scan source
 }
 
 //===----------------------------------------------------------------------===//
-// GetFieldOp Lowering Pattern Implementation
+// GetFieldOp Lowering Pattern Implementation (PHASE 3B - DISABLED)
 //===----------------------------------------------------------------------===//
 
 LogicalResult mlir::pgx_conversion::GetFieldToAtPattern::matchAndRewrite(::pgx::db::GetFieldOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
-    MLIR_PGX_DEBUG("DBToDSA", "Lowering GetFieldOp to AtOp");
+    PGX_ERROR("Phase 3b DB→DSA conversion not yet implemented - GetFieldOp pattern disabled");
+    return failure();
     
-    Location loc = op.getLoc();
-    
-    // Get field information
-    auto fieldIndex = op.getFieldIndex();
-    auto typeOid = op.getTypeOid();
-    
-    // Extract field index value - handle both constant values and attributes
-    int64_t fieldIndexValue = 0;
-    if (auto constOp = fieldIndex.getDefiningOp<arith::ConstantIndexOp>()) {
-        // Field index is a constant index value
-        fieldIndexValue = constOp.value();
-    } else if (auto intAttr = fieldIndex.getType().dyn_cast<IntegerType>()) {
-        // Try to extract from constant integer operation
-        if (auto constIntOp = fieldIndex.getDefiningOp<arith::ConstantIntOp>()) {
-            fieldIndexValue = constIntOp.value();
-        } else {
-            PGX_ERROR("GetFieldOp field index must be a compile-time constant");
-            return failure();
-        }
-    } else {
-        PGX_ERROR("GetFieldOp field index has unsupported type");
-        return failure();
-    }
-    
-    // For this lowering, we need a record to extract from
-    // This should come from the external source handle being converted to a record iterator
-    // For now, create a placeholder - in full implementation this would be properly connected
-    auto tupleType = rewriter.getTupleType({rewriter.getI32Type()});
-    auto recordType = ::pgx::mlir::dsa::RecordType::get(rewriter.getContext(), tupleType);
-    
-    // Create a placeholder record argument (this would be properly wired in full implementation)
-    // TODO Phase 5: Add proper type validation instead of unsafe assumptions
-    Value recordValue = adaptor.getHandle();
-    
-    // Validate handle type before conversion - add safety check
-    if (!recordValue.getType().isa<::pgx::db::ExternalSourceType>()) {
-        PGX_WARNING("Handle type validation needed - unsafe type assumption");
-        // TODO Phase 5: Implement proper handle type conversion and validation
-    }
-    
-    // Create AtOp to extract field value using column name
-    // Convert field index to column name (placeholder approach for now)
-    std::string columnName = "field_" + std::to_string(fieldIndexValue);
-    auto atOp = rewriter.replaceOpWithNewOp<::pgx::mlir::dsa::AtOp>(
-        op,
-        rewriter.getI32Type(),                    // Result type
-        recordValue,                              // Record to extract from
-        rewriter.getStringAttr(columnName));      // Column name
-    
-    MLIR_PGX_DEBUG("DBToDSA", "Created AtOp for field index: " + std::to_string(fieldIndexValue));
-    
-    return success();
+    // TODO Phase 3b: Implement GetFieldOp → AtOp conversion
+    // This should be implemented after Phase 3a (RelAlg→DB) is complete
+    //
+    // Expected implementation:
+    // - Extract field index and type information from GetFieldOp
+    // - Create AtOp with proper record extraction
+    // - Handle field index to column name mapping
+    // - Implement proper type validation and conversion
 }
 
 //===----------------------------------------------------------------------===//
-// StreamResultsOp Lowering Pattern Implementation  
+// StreamResultsOp Lowering Pattern Implementation (PHASE 3B - DISABLED)
 //===----------------------------------------------------------------------===//
 
 LogicalResult mlir::pgx_conversion::StreamResultsToFinalizePattern::matchAndRewrite(::pgx::db::StreamResultsOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
-    MLIR_PGX_DEBUG("DBToDSA", "Lowering StreamResultsOp to DSA finalization operations");
+    PGX_ERROR("Phase 3b DB→DSA conversion not yet implemented - StreamResultsOp pattern disabled");
+    return failure();
     
-    Location loc = op.getLoc();
-    
-    // Create a table builder for result materialization
-    auto tupleType = rewriter.getTupleType({rewriter.getI32Type()});
-    auto tableBuilderType = ::pgx::mlir::dsa::TableBuilderType::get(rewriter.getContext(), tupleType);
-    auto createDSOp = rewriter.create<::pgx::mlir::dsa::CreateDSOp>(loc, tableBuilderType);
-    
-    // Add sample data to demonstrate the pattern (in full implementation this would be actual results)
-    auto constantOp = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32IntegerAttr(42));
-    auto dsAppendOp = rewriter.create<::pgx::mlir::dsa::DSAppendOp>(loc, 
-        createDSOp.getResult(), 
-        ValueRange{constantOp.getResult()});
-    auto nextRowOp = rewriter.create<::pgx::mlir::dsa::NextRowOp>(loc, createDSOp.getResult());
-    
-    // Finalize the table
-    auto tableType = ::pgx::mlir::dsa::TableType::get(rewriter.getContext());
-    auto finalizeOp = rewriter.create<::pgx::mlir::dsa::FinalizeOp>(loc, 
-        tableType,
-        createDSOp.getResult());
-    
-    // Replace the streaming operation
-    rewriter.replaceOp(op, ValueRange{});  // StreamResultsOp has no return value
-    
-    MLIR_PGX_DEBUG("DBToDSA", "Created DSA finalization operations");
-    
-    return success();
+    // TODO Phase 3b: Implement StreamResultsOp → DSA finalization operations
+    // This should be implemented after Phase 3a (RelAlg→DB) is complete
+    //
+    // Expected implementation:
+    // - Create table builder for result materialization (CreateDSOp)
+    // - Add proper data streaming operations (DSAppendOp, NextRowOp)
+    // - Finalize table with FinalizeOp
+    // - Replace StreamResultsOp with proper DSA operations
 }
 
 namespace {
@@ -176,6 +102,21 @@ struct DBToDSAPass : public PassWrapper<DBToDSAPass, OperationPass<func::FuncOp>
     StringRef getDescription() const final { return "Convert DB dialect to DSA dialect"; }
 
     void runOnOperation() override {
+        PGX_ERROR("Phase 3b DB→DSA conversion pass not yet implemented - DISABLED");
+        signalPassFailure();
+        
+        // TODO Phase 3b: Implement actual DB→DSA conversion pass
+        // This pass should be enabled after Phase 3a (RelAlg→DB) is complete
+        //
+        // Expected implementation structure:
+        // - Set up conversion target with DSA dialect as legal
+        // - Mark DB operations as illegal (need conversion)
+        // - Add actual conversion patterns (currently disabled above)
+        // - Apply partial conversion with proper error handling
+        
+        return;
+        
+        /* DISABLED IMPLEMENTATION - TODO Phase 3b:
         MLIR_PGX_INFO("DBToDSA", "Starting DB to DSA conversion pass");
         
         ConversionTarget target(getContext());
@@ -214,6 +155,7 @@ struct DBToDSAPass : public PassWrapper<DBToDSAPass, OperationPass<func::FuncOp>
         } else {
             MLIR_PGX_INFO("DBToDSA", "DB to DSA conversion completed successfully");
         }
+        */
     }
 };
 
