@@ -11,7 +11,7 @@ namespace pgx_lower {
 namespace utility {
 
 void logMLIRModuleVerbose(mlir::ModuleOp module, MLIRLogger& logger, const std::string& context) {
-    logger.notice(("=== VERBOSE MLIR MODULE DUMP: " + context + " ===").c_str());
+    MLIR_PGX_INFO("MLIR", "=== VERBOSE MLIR MODULE DUMP: " + context + " ===");
     
     // Walk all operations and print them individually to get full operation content
     module.walk([&](mlir::Operation* op) {
@@ -33,18 +33,18 @@ void logMLIRModuleVerbose(mlir::ModuleOp module, MLIRLogger& logger, const std::
         int lineNum = 1;
         while (std::getline(opStrStream, line)) {
             std::string logLine = "VERBOSE_OP_LINE_" + std::to_string(lineNum) + ": " + line;
-            logger.notice(logLine.c_str());
+            MLIR_PGX_INFO("MLIR", logLine);
             lineNum++;
         }
-        logger.notice("=== END OPERATION ===");
+        MLIR_PGX_INFO("MLIR", "=== END OPERATION ===");
         return mlir::WalkResult::advance();
     });
     
-    logger.notice(("=== END VERBOSE MLIR MODULE DUMP: " + context + " ===").c_str());
+    MLIR_PGX_INFO("MLIR", "=== END VERBOSE MLIR MODULE DUMP: " + context + " ===");
 }
 
 void logMLIRModuleFullyExpanded(mlir::ModuleOp module, MLIRLogger& logger, const std::string& context) {
-    logger.notice(("=== FULLY EXPANDED MLIR MODULE DUMP: " + context + " ===").c_str());
+    MLIR_PGX_INFO("MLIR", "=== FULLY EXPANDED MLIR MODULE DUMP: " + context + " ===");
     
     std::string moduleStr;
     llvm::raw_string_ostream stream(moduleStr);
@@ -66,15 +66,15 @@ void logMLIRModuleFullyExpanded(mlir::ModuleOp module, MLIRLogger& logger, const
     int lineNum = 1;
     while (std::getline(moduleStream, line)) {
         std::string logLine = "EXPANDED_LINE_" + std::to_string(lineNum) + ": " + line;
-        logger.notice(logLine.c_str());
+        MLIR_PGX_INFO("MLIR", logLine);
         lineNum++;
     }
     
-    logger.notice(("=== END FULLY EXPANDED MLIR MODULE DUMP: " + context + " ===").c_str());
+    MLIR_PGX_INFO("MLIR", "=== END FULLY EXPANDED MLIR MODULE DUMP: " + context + " ===");
 }
 
 void logMLIRModuleCompact(mlir::ModuleOp module, MLIRLogger& logger, const std::string& context) {
-    logger.notice(("=== COMPACT MLIR MODULE DUMP: " + context + " ===").c_str());
+    MLIR_PGX_INFO("MLIR", "=== COMPACT MLIR MODULE DUMP: " + context + " ===");
     
     std::string moduleStr;
     llvm::raw_string_ostream stream(moduleStr);
@@ -87,15 +87,15 @@ void logMLIRModuleCompact(mlir::ModuleOp module, MLIRLogger& logger, const std::
     int lineNum = 1;
     while (std::getline(moduleStream, line)) {
         std::string logLine = "MLIR_LINE_" + std::to_string(lineNum) + ": " + line;
-        logger.notice(logLine.c_str());
+        MLIR_PGX_INFO("MLIR", logLine);
         lineNum++;
     }
     
-    logger.notice(("=== END COMPACT MLIR MODULE DUMP: " + context + " ===").c_str());
+    MLIR_PGX_INFO("MLIR", "=== END COMPACT MLIR MODULE DUMP: " + context + " ===");
 }
 
 void logMLIROperation(mlir::Operation* op, MLIRLogger& logger, const std::string& context) {
-    logger.notice(("=== MLIR OPERATION DUMP: " + context + " ===").c_str());
+    MLIR_PGX_INFO("MLIR", "=== MLIR OPERATION DUMP: " + context + " ===");
     
     std::string opStr;
     llvm::raw_string_ostream opStream(opStr);
@@ -108,7 +108,7 @@ void logMLIROperation(mlir::Operation* op, MLIRLogger& logger, const std::string
     int lineNum = 1;
     while (std::getline(opStrStream, line)) {
         std::string logLine = "OP_LINE_" + std::to_string(lineNum) + ": " + line;
-        logger.notice(logLine.c_str());
+        MLIR_PGX_INFO("MLIR", logLine);
         lineNum++;
     }
     
