@@ -162,14 +162,72 @@ TEST_F(FunctionalConversionsTest, TestReturnOpConversion) {
     PGX_DEBUG("ReturnOp to func::ReturnOp conversion test completed successfully");
 }
 
-
-
-// Test that MaterializeOp remains unchanged in partial conversion (Phase 3a)
-// NOTE: This test is disabled due to complex type serialization issues
-TEST_F(FunctionalConversionsTest, DISABLED_TestPartialConversionMaterializeOp) {
-    PGX_DEBUG("Starting partial conversion test for MaterializeOp");
+// Test GetColumnOp handling (should remain unconverted in Phase 3a)
+TEST_F(FunctionalConversionsTest, DISABLED_TestGetColumnOpConversion) {
+    PGX_DEBUG("Testing GetColumnOp remains unconverted (disabled in Phase 3a)");
     
-    // Create function with MaterializeOp (which should remain legal in Phase 3a)
+    // Create a simple module and function for testing
+    auto module = ModuleOp::create(builder->getUnknownLoc());
+    builder->setInsertionPointToStart(module.getBody());
+    
+    // Create function that returns a nullable int32 type (result of GetColumnOp)
+    auto nullableI32Type = ::pgx::db::NullableI32Type::get(&context);
+    auto funcType = builder->getFunctionType({}, {nullableI32Type});
+    auto funcOp = builder->create<func::FuncOp>(
+        builder->getUnknownLoc(), "test_get_column", funcType);
+    
+    Block* entryBlock = funcOp.addEntryBlock();
+    builder->setInsertionPointToStart(entryBlock);
+    
+    // Create BaseTableOp to provide tuple source
+    auto tupleStreamType = ::pgx::mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
+        builder->getUnknownLoc(),
+        tupleStreamType,
+        builder->getStringAttr("test_table"),
+        builder->getI64IntegerAttr(54321));
+    
+    // Create GetColumnOp that extracts from the tuple stream
+    auto getColumnOp = builder->create<::pgx::mlir::relalg::GetColumnOp>(
+        builder->getUnknownLoc(),
+        nullableI32Type,  // Result type
+        builder->getStringAttr("test_column"),  // Column name
+        baseTableOp.getResult());  // Tuple input
+    
+    // Create return with the column value
+    builder->create<::pgx::mlir::relalg::ReturnOp>(
+        builder->getUnknownLoc(), getColumnOp.getResult());
+    
+    // Verify GetColumnOp exists before conversion
+    EXPECT_TRUE(containsOperation<::pgx::mlir::relalg::GetColumnOp>(funcOp));
+    EXPECT_FALSE(containsOperation<::pgx::db::GetFieldOp>(funcOp));
+    
+    // Verify the module is well-formed before conversion
+    EXPECT_TRUE(module.verify().succeeded()) << "Module should verify before conversion";
+    
+    // Create and run RelAlgToDB conversion pass on the function
+    PassManager pm(&context);
+    pm.addPass(::pgx_conversion::createRelAlgToDBPass());
+    
+    auto result = pm.run(funcOp);
+    EXPECT_TRUE(result.succeeded()) << "RelAlgToDB pass should succeed";
+    
+    // Verify GetColumnOp remains unconverted (pattern disabled in Phase 3a)
+    EXPECT_TRUE(containsOperation<::pgx::mlir::relalg::GetColumnOp>(funcOp)) << "GetColumnOp should remain unconverted";
+    EXPECT_FALSE(containsOperation<::pgx::db::GetFieldOp>(funcOp)) << "No GetFieldOp should be created";
+    
+    // Verify BaseTableOp was still converted to GetExternalOp
+    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::BaseTableOp>(funcOp)) << "BaseTableOp should be converted";
+    EXPECT_TRUE(containsOperation<::pgx::db::GetExternalOp>(funcOp)) << "GetExternalOp should exist";
+    
+    PGX_DEBUG("GetColumnOp remains unconverted test completed successfully");
+}
+
+// Test MaterializeOp to StreamResultsOp conversion in Phase 3a - DISABLED due to segfault
+TEST_F(FunctionalConversionsTest, DISABLED_TestMaterializeOpConversion) {
+    PGX_DEBUG("Starting MaterializeOp to StreamResultsOp conversion test");
+    
+    // Create function with MaterializeOp to test conversion
     auto module = ModuleOp::create(builder->getUnknownLoc());
     builder->setInsertionPointToStart(module.getBody());
     
@@ -181,13 +239,25 @@ TEST_F(FunctionalConversionsTest, DISABLED_TestPartialConversionMaterializeOp) {
     Block* entryBlock = funcOp.addEntryBlock();
     builder->setInsertionPointToStart(entryBlock);
     
-    // Create BaseTableOp first
+    // Create BaseTableOp first with proper region setup
     auto tupleStreamType = ::pgx::mlir::relalg::TupleStreamType::get(&context);
     auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
         builder->getUnknownLoc(),
         tupleStreamType,
         builder->getStringAttr("partial_table"),
         builder->getI64IntegerAttr(77777));
+    
+    // BaseTableOp requires a region with implicit terminator, so set up the region
+    Block& baseTableBlock = baseTableOp.getBody().emplaceBlock();
+    OpBuilder::InsertionGuard guard(*builder);
+    builder->setInsertionPointToStart(&baseTableBlock);
+    
+    // Create the required terminator for the BaseTableOp region
+    builder->create<::pgx::mlir::relalg::ReturnOp>(
+        builder->getUnknownLoc(), ValueRange{});
+    
+    // Reset insertion point to function level
+    builder->setInsertionPointToEnd(entryBlock);
     
     // Create MaterializeOp
     llvm::SmallVector<mlir::Attribute> columnAttrs;
@@ -215,19 +285,25 @@ TEST_F(FunctionalConversionsTest, DISABLED_TestPartialConversionMaterializeOp) {
     
     // The RelAlgToDBPass operates on func::FuncOp, so run it on the function
     auto result = pm.run(funcOp);
-    EXPECT_TRUE(result.succeeded()) << "RelAlgToDB pass should succeed with partial conversion";
+    EXPECT_TRUE(result.succeeded()) << "RelAlgToDB pass should succeed with full Phase 3a conversion";
     
-    // Verify MaterializeOp remains unchanged (stays legal in Phase 3a)
-    EXPECT_TRUE(containsOperation<::pgx::mlir::relalg::MaterializeOp>(funcOp)) 
-        << "MaterializeOp should remain unchanged in Phase 3a";
+    // Verify all RelAlg operations are converted in Phase 3a
+    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::MaterializeOp>(funcOp)) 
+        << "MaterializeOp should be converted in Phase 3a";
+    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::BaseTableOp>(funcOp))
+        << "BaseTableOp should be converted in Phase 3a";
+    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp))
+        << "ReturnOp should be converted in Phase 3a";
     
-    // But BaseTableOp and ReturnOp should be converted
-    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::BaseTableOp>(funcOp));
-    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp));
-    EXPECT_TRUE(containsOperation<::pgx::db::GetExternalOp>(funcOp));
-    EXPECT_TRUE(containsOperation<func::ReturnOp>(funcOp));
+    // Verify DB operations are created
+    EXPECT_TRUE(containsOperation<::pgx::db::GetExternalOp>(funcOp))
+        << "GetExternalOp should be created from BaseTableOp";
+    EXPECT_TRUE(containsOperation<::pgx::db::StreamResultsOp>(funcOp))
+        << "StreamResultsOp should be created from MaterializeOp";
+    EXPECT_TRUE(containsOperation<func::ReturnOp>(funcOp))
+        << "func::ReturnOp should be created from RelAlg ReturnOp";
     
-    PGX_DEBUG("Partial conversion test completed successfully");
+    PGX_DEBUG("MaterializeOp to StreamResultsOp conversion test completed successfully");
 }
 
 // Test pass verification and error handling
