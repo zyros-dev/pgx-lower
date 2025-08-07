@@ -20,15 +20,24 @@ using namespace mlir;
 // GetExternalOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir::pgx_conversion::GetExternalToScanSourcePattern::matchAndRewrite(::pgx::db::GetExternalOp op, PatternRewriter &rewriter) const {
+LogicalResult mlir::pgx_conversion::GetExternalToScanSourcePattern::matchAndRewrite(::pgx::db::GetExternalOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
     MLIR_PGX_DEBUG("DBToDSA", "Lowering GetExternalOp to ScanSourceOp");
     
-    // Get table OID from the operation
+    // Get table OID from the operation - extract value from constant
     auto tableOid = op.getTableOid();
+    
+    // Extract table OID value (should be a constant from GetExternalOp)
+    int64_t tableOidValue = 0;
+    if (auto constOp = tableOid.getDefiningOp<arith::ConstantIntOp>()) {
+        tableOidValue = constOp.value();
+    } else {
+        PGX_WARNING("GetExternalOp table OID is not a compile-time constant");
+        tableOidValue = 0; // Use placeholder value
+    }
     
     // Create JSON description for scan source
     // Format: {"table_oid": table_oid}
-    std::string jsonDesc = "{\"table_oid\":" + std::to_string(tableOid) + "}";
+    std::string jsonDesc = "{\"table_oid\":" + std::to_string(tableOidValue) + "}";
     
     // Create JSON string description as StringAttr
     auto jsonAttr = rewriter.getStringAttr(jsonDesc);
@@ -47,7 +56,7 @@ LogicalResult mlir::pgx_conversion::GetExternalToScanSourcePattern::matchAndRewr
         genericIterableType,
         jsonAttr);
     
-    MLIR_PGX_DEBUG("DBToDSA", "Created ScanSourceOp for table OID: " + std::to_string(tableOid));
+    MLIR_PGX_DEBUG("DBToDSA", "Created ScanSourceOp for table OID: " + std::to_string(tableOidValue));
     
     return success();
 }
@@ -56,7 +65,7 @@ LogicalResult mlir::pgx_conversion::GetExternalToScanSourcePattern::matchAndRewr
 // GetFieldOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir::pgx_conversion::GetFieldToAtPattern::matchAndRewrite(::pgx::db::GetFieldOp op, PatternRewriter &rewriter) const {
+LogicalResult mlir::pgx_conversion::GetFieldToAtPattern::matchAndRewrite(::pgx::db::GetFieldOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
     MLIR_PGX_DEBUG("DBToDSA", "Lowering GetFieldOp to AtOp");
     
     Location loc = op.getLoc();
@@ -64,6 +73,24 @@ LogicalResult mlir::pgx_conversion::GetFieldToAtPattern::matchAndRewrite(::pgx::
     // Get field information
     auto fieldIndex = op.getFieldIndex();
     auto typeOid = op.getTypeOid();
+    
+    // Extract field index value - handle both constant values and attributes
+    int64_t fieldIndexValue = 0;
+    if (auto constOp = fieldIndex.getDefiningOp<arith::ConstantIndexOp>()) {
+        // Field index is a constant index value
+        fieldIndexValue = constOp.value();
+    } else if (auto intAttr = fieldIndex.getType().dyn_cast<IntegerType>()) {
+        // Try to extract from constant integer operation
+        if (auto constIntOp = fieldIndex.getDefiningOp<arith::ConstantIntOp>()) {
+            fieldIndexValue = constIntOp.value();
+        } else {
+            PGX_ERROR("GetFieldOp field index must be a compile-time constant");
+            return failure();
+        }
+    } else {
+        PGX_ERROR("GetFieldOp field index has unsupported type");
+        return failure();
+    }
     
     // For this lowering, we need a record to extract from
     // This should come from the external source handle being converted to a record iterator
@@ -73,7 +100,7 @@ LogicalResult mlir::pgx_conversion::GetFieldToAtPattern::matchAndRewrite(::pgx::
     
     // Create a placeholder record argument (this would be properly wired in full implementation)
     // TODO Phase 5: Add proper type validation instead of unsafe assumptions
-    Value recordValue = op.getHandle();
+    Value recordValue = adaptor.getHandle();
     
     // Validate handle type before conversion - add safety check
     if (!recordValue.getType().isa<::pgx::db::ExternalSourceType>()) {
@@ -81,14 +108,16 @@ LogicalResult mlir::pgx_conversion::GetFieldToAtPattern::matchAndRewrite(::pgx::
         // TODO Phase 5: Implement proper handle type conversion and validation
     }
     
-    // Create AtOp to extract field value
+    // Create AtOp to extract field value using column name
+    // Convert field index to column name (placeholder approach for now)
+    std::string columnName = "field_" + std::to_string(fieldIndexValue);
     auto atOp = rewriter.replaceOpWithNewOp<::pgx::mlir::dsa::AtOp>(
         op,
         rewriter.getI32Type(),                    // Result type
         recordValue,                              // Record to extract from
-        rewriter.getI32IntegerAttr(fieldIndex.getZExtValue()));  // Field position
+        rewriter.getStringAttr(columnName));      // Column name
     
-    MLIR_PGX_DEBUG("DBToDSA", "Created AtOp for field index: " + std::to_string(fieldIndex.getZExtValue()));
+    MLIR_PGX_DEBUG("DBToDSA", "Created AtOp for field index: " + std::to_string(fieldIndexValue));
     
     return success();
 }
@@ -97,7 +126,7 @@ LogicalResult mlir::pgx_conversion::GetFieldToAtPattern::matchAndRewrite(::pgx::
 // StreamResultsOp Lowering Pattern Implementation  
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir::pgx_conversion::StreamResultsToFinalizePattern::matchAndRewrite(::pgx::db::StreamResultsOp op, PatternRewriter &rewriter) const {
+LogicalResult mlir::pgx_conversion::StreamResultsToFinalizePattern::matchAndRewrite(::pgx::db::StreamResultsOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
     MLIR_PGX_DEBUG("DBToDSA", "Lowering StreamResultsOp to DSA finalization operations");
     
     Location loc = op.getLoc();

@@ -10,3 +10,16 @@ using namespace pgx::mlir::dsa;
 
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/DSA/IR/DSAOpsTypes.cpp.inc"
+
+namespace pgx {
+namespace mlir {
+namespace dsa {
+void DSADialect::registerTypes() {
+    addTypes<
+#define GET_TYPEDEF_LIST
+#include "mlir/Dialect/DSA/IR/DSAOpsTypes.cpp.inc"
+    >();
+}
+} // namespace dsa
+} // namespace mlir
+} // namespace pgx

@@ -28,23 +28,34 @@ TEST_F(DSABasicTest, DialectRegistration) {
 }
 
 TEST_F(DSABasicTest, TypeCreation) {
-    // Test all 5 DSA types can be created
-    auto genericIterableType = GenericIterableType::get(&context);
-    ASSERT_TRUE(genericIterableType);
-    EXPECT_EQ(genericIterableType.getMnemonic(), "generic_iterable");
+    // Test DSA types can be created with proper parameters
+    OpBuilder builder(&context);
     
-    auto recordBatchType = RecordBatchType::get(&context);
+    // Create basic types needed for DSA type construction
+    auto i32Type = builder.getI32Type();
+    auto emptyTupleType = TupleType::get(&context, {});
+    
+    // GenericIterableType needs element type and iterator name
+    auto genericIterableType = GenericIterableType::get(&context, i32Type, "test_iter");
+    ASSERT_TRUE(genericIterableType);
+    EXPECT_EQ(genericIterableType.getMnemonic(), "iterable");
+    
+    // RecordBatchType needs row type
+    auto recordBatchType = RecordBatchType::get(&context, emptyTupleType);
     ASSERT_TRUE(recordBatchType);
     EXPECT_EQ(recordBatchType.getMnemonic(), "record_batch");
     
-    auto recordType = RecordType::get(&context);
+    // RecordType needs row type
+    auto recordType = RecordType::get(&context, emptyTupleType);
     ASSERT_TRUE(recordType);
     EXPECT_EQ(recordType.getMnemonic(), "record");
     
-    auto tableBuilderType = TableBuilderType::get(&context);
+    // TableBuilderType needs row type
+    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
     ASSERT_TRUE(tableBuilderType);
     EXPECT_EQ(tableBuilderType.getMnemonic(), "table_builder");
     
+    // TableType uses basic get method
     auto tableType = TableType::get(&context);
     ASSERT_TRUE(tableType);
     EXPECT_EQ(tableType.getMnemonic(), "table");
@@ -52,9 +63,13 @@ TEST_F(DSABasicTest, TypeCreation) {
 
 TEST_F(DSABasicTest, CollectionTypeHierarchy) {
     // Test that collection types follow LingoDB patterns
-    auto genericIterableType = GenericIterableType::get(&context);
-    auto recordBatchType = RecordBatchType::get(&context);
-    auto recordType = RecordType::get(&context);
+    OpBuilder builder(&context);
+    auto i32Type = builder.getI32Type();
+    auto emptyTupleType = TupleType::get(&context, {});
+    
+    auto genericIterableType = GenericIterableType::get(&context, i32Type, "test_iter");
+    auto recordBatchType = RecordBatchType::get(&context, emptyTupleType);
+    auto recordType = RecordType::get(&context, emptyTupleType);
     
     // All should be collection types based on the TableGen definitions
     ASSERT_TRUE(genericIterableType);
@@ -71,7 +86,8 @@ TEST_F(DSABasicTest, ScanSourceOpCreation) {
     OpBuilder builder(&context);
     auto loc = builder.getUnknownLoc();
     
-    auto genericIterableType = GenericIterableType::get(&context);
+    auto i32Type = builder.getI32Type();
+    auto genericIterableType = GenericIterableType::get(&context, i32Type, "test_iter");
     
     // Create JSON table description as StringAttr
     auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
@@ -88,7 +104,8 @@ TEST_F(DSABasicTest, CreateDSOpCreation) {
     OpBuilder builder(&context);
     auto loc = builder.getUnknownLoc();
     
-    auto tableBuilderType = TableBuilderType::get(&context);
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
     
     // Create CreateDSOp
     auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
@@ -101,7 +118,8 @@ TEST_F(DSABasicTest, FinalizeOpCreation) {
     OpBuilder builder(&context);
     auto loc = builder.getUnknownLoc();
     
-    auto tableBuilderType = TableBuilderType::get(&context);
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
     auto tableType = TableType::get(&context);
     
     // Create a dummy builder
@@ -112,7 +130,7 @@ TEST_F(DSABasicTest, FinalizeOpCreation) {
     
     ASSERT_TRUE(finalizeOp);
     EXPECT_EQ(finalizeOp.getResult().getType(), tableType);
-    EXPECT_EQ(finalizeOp.getBuilder(), createOp.getResult());
+    EXPECT_TRUE(finalizeOp.getBuilder() == createOp.getResult());
 }
 
 TEST_F(DSABasicTest, YieldOpCreation) {
@@ -131,9 +149,10 @@ TEST_F(DSABasicTest, AtOpCreation) {
     OpBuilder builder(&context);
     auto loc = builder.getUnknownLoc();
     
-    auto genericIterableType = GenericIterableType::get(&context);
-    auto recordType = RecordType::get(&context);
     auto i32Type = builder.getI32Type();
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto genericIterableType = GenericIterableType::get(&context, i32Type, "test_iter");
+    auto recordType = RecordType::get(&context, emptyTupleType);
     
     // Create an iterable operand (similar to ForOp test)
     auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
@@ -161,7 +180,7 @@ TEST_F(DSABasicTest, AtOpCreation) {
     // Verify AtOp was created correctly
     ASSERT_TRUE(atOp);
     EXPECT_EQ(atOp.getResult().getType(), i32Type);
-    EXPECT_EQ(atOp.getRecord(), recordArg);
+    EXPECT_TRUE(atOp.getRecord() == recordArg);
     EXPECT_EQ(atOp.getRecord().getType(), recordType);
     EXPECT_EQ(atOp.getColumnNameAttr().getValue().str(), "test_column");
     
@@ -177,8 +196,9 @@ TEST_F(DSABasicTest, DSAppendOpCreation) {
     OpBuilder builder(&context);
     auto loc = builder.getUnknownLoc();
     
-    auto tableBuilderType = TableBuilderType::get(&context);
     auto i32Type = builder.getI32Type();
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
     
     // Create builder and values
     auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
@@ -190,7 +210,7 @@ TEST_F(DSABasicTest, DSAppendOpCreation) {
     auto appendOp = builder.create<DSAppendOp>(loc, createOp.getResult(), values);
     
     ASSERT_TRUE(appendOp);
-    EXPECT_EQ(appendOp.getBuilder(), createOp.getResult());
+    EXPECT_TRUE(appendOp.getBuilder() == createOp.getResult());
     EXPECT_EQ(appendOp.getValues().size(), 2);
 }
 
@@ -198,7 +218,8 @@ TEST_F(DSABasicTest, NextRowOpCreation) {
     OpBuilder builder(&context);
     auto loc = builder.getUnknownLoc();
     
-    auto tableBuilderType = TableBuilderType::get(&context);
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
     
     // Create builder
     auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
@@ -207,7 +228,7 @@ TEST_F(DSABasicTest, NextRowOpCreation) {
     auto nextRowOp = builder.create<NextRowOp>(loc, createOp.getResult());
     
     ASSERT_TRUE(nextRowOp);
-    EXPECT_EQ(nextRowOp.getBuilder(), createOp.getResult());
+    EXPECT_TRUE(nextRowOp.getBuilder() == createOp.getResult());
 }
 
 TEST_F(DSABasicTest, AllOperationsRegistered) {
@@ -226,9 +247,10 @@ TEST_F(DSABasicTest, ForOpCreation) {
     OpBuilder builder(&context);
     auto loc = builder.getUnknownLoc();
     
-    auto genericIterableType = GenericIterableType::get(&context);
-    auto recordType = RecordType::get(&context);
     auto i32Type = builder.getI32Type();
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto genericIterableType = GenericIterableType::get(&context, i32Type, "test_iter");
+    auto recordType = RecordType::get(&context, emptyTupleType);
     
     // Create an iterable operand
     auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
@@ -264,7 +286,7 @@ TEST_F(DSABasicTest, ForOpCreation) {
     
     // Verify ForOp structure
     ASSERT_TRUE(forOp);
-    EXPECT_EQ(forOp.getIterable(), iterableOp.getResult());
+    EXPECT_TRUE(forOp.getIterable() == iterableOp.getResult());
     EXPECT_EQ(bodyRegion.getBlocks().size(), 1);
     EXPECT_EQ(bodyBlock->getNumArguments(), 1);
     EXPECT_EQ(bodyBlock->getArgument(0).getType(), recordType);
@@ -272,7 +294,7 @@ TEST_F(DSABasicTest, ForOpCreation) {
     // Verify AtOp was created correctly inside the loop
     ASSERT_TRUE(atOp);
     EXPECT_EQ(atOp.getResult().getType(), i32Type);
-    EXPECT_EQ(atOp.getRecord(), recordArg);
+    EXPECT_TRUE(atOp.getRecord() == recordArg);
     EXPECT_EQ(atOp.getColumnNameAttr().getValue().str(), "test_column");
     
     // Verify YieldOp terminates the region properly
@@ -286,7 +308,8 @@ TEST_F(DSABasicTest, AssemblyFormatRoundTripTest) {
     auto loc = builder.getUnknownLoc();
     
     // Test ScanSourceOp basic properties for assembly format
-    auto genericIterableType = GenericIterableType::get(&context);
+    auto i32Type = builder.getI32Type();
+    auto genericIterableType = GenericIterableType::get(&context, i32Type, "test_iter");
     auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
     auto scanOp = builder.create<ScanSourceOp>(loc, genericIterableType, tableDescAttr);
     
@@ -317,9 +340,10 @@ TEST_F(DSABasicTest, EdgeCases_NullHandling) {
     auto loc = builder.getUnknownLoc();
     
     // Test AtOp with null-like values and edge case column names
-    auto genericIterableType = GenericIterableType::get(&context);
-    auto recordType = RecordType::get(&context);
     auto i32Type = builder.getI32Type();
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto genericIterableType = GenericIterableType::get(&context, i32Type, "test_iter");
+    auto recordType = RecordType::get(&context, emptyTupleType);
     
     // Create an iterable operand
     auto tableDescAttr = builder.getStringAttr("{\"table\":\"test\"}");
@@ -357,7 +381,8 @@ TEST_F(DSABasicTest, EdgeCases_NullHandling) {
 TEST_F(DSABasicTest, EdgeCases_EmptyOperations) {
     OpBuilder builder(&context);
     auto loc = builder.getUnknownLoc();
-    auto tableBuilderType = TableBuilderType::get(&context);
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
     
     // Test DSAppendOp with no values (empty append)
     auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
@@ -365,7 +390,7 @@ TEST_F(DSABasicTest, EdgeCases_EmptyOperations) {
     auto appendOpEmpty = builder.create<DSAppendOp>(loc, createOp.getResult(), emptyValues);
     
     ASSERT_TRUE(appendOpEmpty);
-    EXPECT_EQ(appendOpEmpty.getBuilder(), createOp.getResult());
+    EXPECT_TRUE(appendOpEmpty.getBuilder() == createOp.getResult());
     EXPECT_EQ(appendOpEmpty.getValues().size(), 0);
     
     // Test YieldOp with empty results (which is normal)
@@ -379,9 +404,9 @@ TEST_F(DSABasicTest, EdgeCases_TypeCompatibility) {
     auto loc = builder.getUnknownLoc();
     
     // Test operations with different types than usual
-    auto genericIterableType = GenericIterableType::get(&context);
     auto f32Type = builder.getF32Type();
     auto indexType = builder.getIndexType();
+    auto genericIterableType = GenericIterableType::get(&context, f32Type, "test_iter");
     
     // Test ScanSourceOp with different JSON descriptions
     auto floatTableDescAttr = builder.getStringAttr("{\"table\":\"float_test\", \"type\":\"float\"}");
@@ -396,7 +421,8 @@ TEST_F(DSABasicTest, EdgeCases_TypeCompatibility) {
     auto forOp = builder.create<ForOp>(loc, scanOpFloat.getResult());
     Region& bodyRegion = forOp.getBody();
     Block* bodyBlock = &bodyRegion.emplaceBlock();
-    bodyBlock->addArgument(RecordType::get(&context), loc);
+    auto emptyTupleType = TupleType::get(&context, {});
+    bodyBlock->addArgument(RecordType::get(&context, emptyTupleType), loc);
     OpBuilder bodyBuilder(bodyBlock, bodyBlock->begin());
     auto recordArg = bodyBlock->getArgument(0);
     
@@ -414,9 +440,10 @@ TEST_F(DSABasicTest, EdgeCases_ComplexNestedStructures) {
     auto loc = builder.getUnknownLoc();
     
     // Test deeply nested ForOps (multiple levels)
-    auto genericIterableType = GenericIterableType::get(&context);
-    auto recordType = RecordType::get(&context);
     auto i32Type = builder.getI32Type();
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto genericIterableType = GenericIterableType::get(&context, i32Type, "test_iter");
+    auto recordType = RecordType::get(&context, emptyTupleType);
     
     // Create outer iterable
     auto tableDesc1Attr = builder.getStringAttr("{\"table\":\"outer\"}");
@@ -457,15 +484,16 @@ TEST_F(DSABasicTest, EdgeCases_ComplexNestedStructures) {
     ASSERT_TRUE(outerForOp);
     ASSERT_TRUE(innerForOp);
     ASSERT_TRUE(atOp);
-    EXPECT_EQ(atOp.getRecord(), innerRecord);
-    EXPECT_NE(atOp.getRecord(), outerRecord);
+    EXPECT_TRUE(atOp.getRecord() == innerRecord);
+    EXPECT_TRUE(atOp.getRecord() != outerRecord);
 }
 
 TEST_F(DSABasicTest, EdgeCases_LargeValueSets) {
     OpBuilder builder(&context);
     auto loc = builder.getUnknownLoc();
-    auto tableBuilderType = TableBuilderType::get(&context);
     auto i32Type = builder.getI32Type();
+    auto emptyTupleType = TupleType::get(&context, {});
+    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
     
     // Test DSAppendOp with large number of values
     auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
@@ -480,7 +508,7 @@ TEST_F(DSABasicTest, EdgeCases_LargeValueSets) {
     auto appendOpLarge = builder.create<DSAppendOp>(loc, createOp.getResult(), largeValueSet);
     
     ASSERT_TRUE(appendOpLarge);
-    EXPECT_EQ(appendOpLarge.getBuilder(), createOp.getResult());
+    EXPECT_TRUE(appendOpLarge.getBuilder() == createOp.getResult());
     EXPECT_EQ(appendOpLarge.getValues().size(), 50);
     
     // Verify all values are properly stored

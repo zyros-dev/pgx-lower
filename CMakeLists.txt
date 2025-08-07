@@ -165,7 +165,6 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRSCFDialect
         MLIRPass
         MLIRTransforms
-        MLIRDialectConversion
         MLIRParser
         # NOTE: Additional MLIR dialect libraries will be added as they are rebuilt
     )

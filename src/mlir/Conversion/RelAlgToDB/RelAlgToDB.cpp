@@ -20,18 +20,19 @@ using namespace mlir;
 // BaseTableOp Lowering Pattern Implementation  
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir::pgx_conversion::BaseTableToExternalSourcePattern::matchAndRewrite(::pgx::mlir::relalg::BaseTableOp op, PatternRewriter &rewriter) const {
+LogicalResult mlir::pgx_conversion::BaseTableToExternalSourcePattern::matchAndRewrite(::pgx::mlir::relalg::BaseTableOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
     MLIR_PGX_DEBUG("RelAlgToDB", "Lowering BaseTableOp to DB external source operations");
     
     // Get table OID from the operation
-    auto tableOid = op.getTableOidAttr().getInt();
+    auto tableOid = op.getTableOidAttr().getValue().getZExtValue();
     std::string tableName = op.getTableName().str();
     
     // Create DB get_external operation to initialize PostgreSQL table access
+    auto tableOidValue = rewriter.create<arith::ConstantIntOp>(op.getLoc(), tableOid, rewriter.getI64Type());
     auto getExternalOp = rewriter.replaceOpWithNewOp<::pgx::db::GetExternalOp>(
         op,
         ::pgx::db::ExternalSourceType::get(rewriter.getContext()),
-        rewriter.getI64IntegerAttr(tableOid));
+        tableOidValue.getResult());
     
     MLIR_PGX_DEBUG("RelAlgToDB", "Created GetExternalOp for table: " + tableName + " (OID: " + std::to_string(tableOid) + ")");
     
@@ -42,98 +43,40 @@ LogicalResult mlir::pgx_conversion::BaseTableToExternalSourcePattern::matchAndRe
 // GetColumnOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir::pgx_conversion::GetColumnToGetFieldPattern::matchAndRewrite(::pgx::mlir::relalg::GetColumnOp op, PatternRewriter &rewriter) const {
-    MLIR_PGX_DEBUG("RelAlgToDB", "Lowering GetColumnOp to DB get_field operation");
+LogicalResult mlir::pgx_conversion::GetColumnToGetFieldPattern::matchAndRewrite(::pgx::mlir::relalg::GetColumnOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
+    MLIR_PGX_DEBUG("RelAlgToDB", "GetColumnOp lowering not yet implemented");
     
-    Location loc = op.getLoc();
+    // TODO: Implement GetColumnOp to GetFieldOp conversion once RelAlg dialect is complete
+    // For now, return failure to indicate this conversion is not supported
+    PGX_WARNING("GetColumnOp to GetFieldOp conversion not yet implemented - Phase 5 work");
     
-    // Extract column information from RelAlg GetColumnOp
-    auto columnRef = op.getAttr().dyn_cast<::pgx::mlir::relalg::ColumnRefAttr>();
-    if (!columnRef) {
-        MLIR_PGX_ERROR("RelAlgToDB", "GetColumnOp missing valid column reference");
-        return failure();
-    }
-    
-    // Get the external source handle (should be available from BaseTable lowering)
-    Value sourceHandle = op.getRel();
-    
-    // Create DB get_field operation with proper field index and type OID
-    // TODO Phase 5: Implement catalog lookup for actual field index and type OID
-    // Extract column information from catalog instead of using hardcoded values
-    std::string columnName = columnRef.getColumn().str();
-    auto fieldIndex = rewriter.getIndexAttr(0);  // TODO Phase 5: Replace with catalog.getColumnIndex(tableName, columnName)
-    auto typeOid = rewriter.getI32IntegerAttr(23);  // TODO Phase 5: Replace with catalog.getColumnTypeOID(tableName, columnName)
-    
-    PGX_WARNING("Using placeholder field index and type OID - catalog integration needed");
-    
-    auto getFieldOp = rewriter.replaceOpWithNewOp<::pgx::db::GetFieldOp>(
-        op,
-        ::pgx::db::NullableI32Type::get(rewriter.getContext()),  // Result type with null handling
-        sourceHandle,
-        fieldIndex,
-        typeOid);
-    
-    MLIR_PGX_DEBUG("RelAlgToDB", "Created GetFieldOp for column extraction");
-    
-    return success();
+    return failure();
 }
 
 //===----------------------------------------------------------------------===//
 // MaterializeOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir::pgx_conversion::MaterializeToStreamResultsPattern::matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op, PatternRewriter &rewriter) const {
-    MLIR_PGX_DEBUG("RelAlgToDB", "Lowering MaterializeOp to DB result streaming operations");
+LogicalResult mlir::pgx_conversion::MaterializeToStreamResultsPattern::matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
+    MLIR_PGX_DEBUG("RelAlgToDB", "MaterializeOp lowering not yet implemented");
     
-    Location loc = op.getLoc();
-    Value input = op.getRel();
+    // TODO: Implement MaterializeOp to StreamResultsOp conversion once RelAlg dialect is complete
+    // For now, return failure to indicate this conversion is not supported
+    PGX_WARNING("MaterializeOp to StreamResultsOp conversion not yet implemented - Phase 5 work");
     
-    // Step 1: Create a loop structure to iterate over input data
-    // This uses SCF for loop to demonstrate the pattern
-    auto lowerBound = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-    auto upperBound = rewriter.create<arith::ConstantIndexOp>(loc, 10); // Placeholder iteration count  
-    auto step = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    
-    auto forOp = rewriter.create<scf::ForOp>(loc, lowerBound, upperBound, step, ValueRange{});
-    Block* forBlock = forOp.getBody();
-    rewriter.setInsertionPointToStart(forBlock);
-    
-    // Step 2: Inside the loop, process each tuple and store results
-    // Create placeholder operations for result handling
-    auto constantValue = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32IntegerAttr(42));
-    auto nullableValue = rewriter.create<::pgx::db::AsNullableOp>(loc, 
-        ::pgx::db::NullableI32Type::get(rewriter.getContext()),
-        constantValue.getResult());
-    
-    // Store the result value at field index 0
-    auto fieldIndex = rewriter.getIndexAttr(0);
-    rewriter.create<::pgx::db::StoreResultOp>(loc, nullableValue.getResult(), fieldIndex);
-    
-    // Terminate the loop
-    rewriter.create<scf::YieldOp>(loc);
-    
-    // Step 3: After processing all tuples, stream results to PostgreSQL
-    rewriter.setInsertionPointAfter(forOp);
-    auto streamResultsOp = rewriter.create<::pgx::db::StreamResultsOp>(loc);
-    
-    MLIR_PGX_DEBUG("RelAlgToDB", "Created result streaming operations");
-    
-    // Replace the MaterializeOp with the streaming operation result
-    rewriter.replaceOp(op, ValueRange{});  // MaterializeOp has no return value after lowering
-    
-    return success();
+    return failure();
 }
 
 //===----------------------------------------------------------------------===//
 // ReturnOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir::pgx_conversion::ReturnOpToFuncReturnPattern::matchAndRewrite(::pgx::mlir::relalg::ReturnOp op, PatternRewriter &rewriter) const {
+LogicalResult mlir::pgx_conversion::ReturnOpToFuncReturnPattern::matchAndRewrite(::pgx::mlir::relalg::ReturnOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
     MLIR_PGX_DEBUG("RelAlgToDB", "Lowering ReturnOp to func.return");
     
     // Convert RelAlg ReturnOp to func.return (standard MLIR function return)
     // At DB level, we work with standard function semantics
-    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, op.getResults());
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, adaptor.getOperands());
     
     MLIR_PGX_DEBUG("RelAlgToDB", "Successfully converted ReturnOp to func.return");
     return success();
