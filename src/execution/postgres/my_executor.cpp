@@ -202,7 +202,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogge
             else {
                 // For now, treat simple SELECT * as computed results since minimal control flow
                 // uses store_int_result which populates g_computed_results
-                // TODO: Eventually fix this to use table columns directly
+                // TODO Phase 6: Eventually fix this to use table columns directly
 
                 // Count actual number of columns selected
                 int numSelectedColumns = 0;

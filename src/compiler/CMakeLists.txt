@@ -16,8 +16,8 @@ add_subdirectory(../mlir/Dialect/DSA DSADialect)
 add_subdirectory(../mlir/Conversion/RelAlgToDB RelAlgToDBConversion)
 add_subdirectory(../mlir/Conversion/DBToDSA DBToDSAConversion)
 
-# Keep legacy RelAlgToDSA for migration testing (DEPRECATED - violates architecture)
-add_subdirectory(../mlir/Conversion/RelAlgToDSA RelAlgToDSAConversion)
+# RelAlgToDSA bypass REMOVED - violated LingoDB architecture
+# Proper pipeline: RelAlg → DB → DSA
 
 # NOTE: Remaining dialects and conversions will be rebuilt incrementally  
 # Architecture: RelAlg → DB → DSA → Standard MLIR

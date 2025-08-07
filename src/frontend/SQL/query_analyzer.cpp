@@ -40,7 +40,7 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
     // Note: requiresFilter temporarily disabled for debugging
     
     // Expressions should work through MLIR - no fallback
-    // TODO: Fix MLIR expression compilation instead of avoiding it
+    // TODO Phase 5: Fix MLIR expression compilation instead of avoiding it
     
     return compatible;
 }

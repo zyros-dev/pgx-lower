@@ -4,6 +4,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
 #include <memory>
 
