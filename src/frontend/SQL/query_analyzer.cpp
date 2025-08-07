@@ -38,10 +38,7 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
                       !requiresFilter;                // No WHERE clauses yet (temporary)
     // Note: requiresAggregation is allowed and supported (SUM, COUNT, etc.)
     // Note: requiresFilter temporarily disabled for debugging
-    
-    // Expressions should work through MLIR - no fallback
-    // TODO Phase 5: Fix MLIR expression compilation instead of avoiding it
-    
+
     return compatible;
 }
 

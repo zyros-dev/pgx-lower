@@ -9,8 +9,18 @@
 
 // PostgreSQL headers for testing PlannedStmt and EState integration
 extern "C" {
+    // Forward declarations
+    struct Plan;
+    struct List;
+    
     struct PlannedStmt {
         int dummy; // Mock structure for testing
+        struct Plan* planTree; // This field is accessed by AST translator
+        struct List* rtable; // Range table list - also accessed
+    };
+    
+    struct Plan {
+        int type; // Plan node type - T_SeqScan, etc.
     };
     
     struct EState {
@@ -19,6 +29,10 @@ extern "C" {
     
     struct ExprContext {
         int dummy; // Mock structure for testing
+    };
+    
+    struct List {
+        int dummy; // Mock list structure
     };
 }
 
@@ -78,6 +92,8 @@ TEST_F(MLIRRunnerTest, MockPlannedStmtProcessing) {
     // Create a mock PlannedStmt for testing
     PlannedStmt mock_stmt;
     mock_stmt.dummy = 123;
+    mock_stmt.planTree = nullptr; // Mock data - will cause AST translation to fail gracefully
+    mock_stmt.rtable = nullptr; // Mock data - no range table
     
     // Test that the runner processes the mock statement
     // With the new full pipeline implementation, mock data will fail at AST translation
@@ -104,6 +120,8 @@ TEST_F(MLIRRunnerTest, MockEStateProcessing) {
     // Create mock structures for testing
     PlannedStmt mock_stmt;
     mock_stmt.dummy = 123;
+    mock_stmt.planTree = nullptr; // Mock data - will cause AST translation to fail gracefully
+    mock_stmt.rtable = nullptr; // Mock data - no range table
     
     EState mock_estate;
     mock_estate.dummy = 456;
@@ -122,6 +140,8 @@ TEST_F(MLIRRunnerTest, MockEStateProcessing) {
 TEST_F(MLIRRunnerTest, MultipleCalls) {
     PlannedStmt mock_stmt;
     mock_stmt.dummy = 123;
+    mock_stmt.planTree = nullptr; // Mock data - will cause AST translation to fail gracefully
+    mock_stmt.rtable = nullptr; // Mock data - no range table
     
     // Multiple calls should all fail consistently (mock data cannot be translated)
     // This verifies that the runner doesn't maintain improper state between calls
@@ -137,6 +157,8 @@ TEST_F(MLIRRunnerTest, FullPipelineBehavior) {
     
     PlannedStmt mock_stmt;
     mock_stmt.dummy = 123;
+    mock_stmt.planTree = nullptr; // Mock data - will cause AST translation to fail gracefully
+    mock_stmt.rtable = nullptr; // Mock data - no range table
     
     // The runner now attempts full compilation pipeline:
     // 1. Initialize MLIR context and dialects ✓

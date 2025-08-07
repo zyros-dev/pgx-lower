@@ -194,6 +194,12 @@ auto PostgreSQLASTTranslator::createQueryFunction(mlir::OpBuilder& builder, Tran
 auto PostgreSQLASTTranslator::generateRelAlgOperations(mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, TranslationContext& context) -> bool {
     PGX_DEBUG("Generating RelAlg operations inside function body");
     
+    // Safety check for mock PlannedStmt in unit tests
+    if (!plannedStmt->planTree) {
+        PGX_ERROR("PlannedStmt planTree is null - likely mock data in unit test");
+        return false;
+    }
+    
     // Translate the plan tree inside the function body
     auto baseTableOp = translatePlanNode(plannedStmt->planTree, context);
     if (!baseTableOp) {
