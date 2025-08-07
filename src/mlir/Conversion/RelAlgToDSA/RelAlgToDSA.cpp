@@ -94,6 +94,9 @@ LogicalResult mlir::pgx_conversion::MaterializeToResultBuilderPattern::matchAndR
         // Finalize the current row
         rewriter.create<::pgx::mlir::dsa::NextRowOp>(loc, builder);
         
+        // Add yield terminator to the for loop body - CRITICAL for MLIR validation
+        rewriter.create<::pgx::mlir::dsa::YieldOp>(loc);
+        
         // Set insertion point after the for loop
         rewriter.setInsertionPointAfter(forOp);
         
