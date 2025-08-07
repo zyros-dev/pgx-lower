@@ -24,6 +24,9 @@ def DSA_Dialect : Dialect {
     // Removing this causes compilation errors with BytecodeOpInterface and Attribute resolution
     let usePropertiesForAttributes = 0;
     
+    // Enable type printing/parsing
+    let useDefaultTypePrinterParser = 1;
+    
     let extraClassDeclaration = [{
         private:
         void registerTypes();
@@ -79,7 +82,6 @@ def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
 
 def DSA_Table : DSA_Type<"Table", "table"> {
     let summary = "materialized table";
-    let assemblyFormat = "";
 }
 
 def DSA_Flag : DSA_Type<"Flag", "flag"> {
@@ -91,7 +93,6 @@ def DSA_Flag : DSA_Type<"Flag", "flag"> {
         For example, a flag is used to terminate iteration over records when reaching 
         the output limit or to indicate whether a matching join row has been found.
     }];
-    let assemblyFormat = "";
 }
 
 def DSA_Vector : DSA_Collection<"Vector", "vector"> {
