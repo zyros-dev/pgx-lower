@@ -52,6 +52,31 @@ void RelAlgDialect::initialize() {
 
 // ColumnDefAttr parsing removed - not implemented yet
 
+// Type print/parse methods - custom implementation to prevent segfaults
+void pgx::mlir::relalg::TupleStreamType::print(::mlir::AsmPrinter &printer) const {
+    // No parameters to print for simple types
+}
+
+mlir::Type pgx::mlir::relalg::TupleStreamType::parse(::mlir::AsmParser &parser) {
+    return get(parser.getContext());
+}
+
+void pgx::mlir::relalg::TupleType::print(::mlir::AsmPrinter &printer) const {
+    // No parameters to print for simple types
+}
+
+mlir::Type pgx::mlir::relalg::TupleType::parse(::mlir::AsmParser &parser) {
+    return get(parser.getContext());
+}
+
+void pgx::mlir::relalg::TableType::print(::mlir::AsmPrinter &printer) const {
+    // No parameters to print for simple types
+}
+
+mlir::Type pgx::mlir::relalg::TableType::parse(::mlir::AsmParser &parser) {
+    return get(parser.getContext());
+}
+
 void pgx::mlir::relalg::ColumnRefAttr::print(::mlir::AsmPrinter& printer) const {
     printer << "<" << getName() << ">";
 }

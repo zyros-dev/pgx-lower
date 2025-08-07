@@ -80,32 +80,30 @@ LogicalResult mlir::pgx_conversion::GetColumnToGetFieldPattern::matchAndRewrite(
 //===----------------------------------------------------------------------===//
 // MaterializeOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
+// 
+// CRITICAL: This pattern is DISABLED in Phase 3a per LingoDB research findings
+// 
+// LingoDB research shows that MaterializeOp does NOT convert to DB operations.
+// Instead, MaterializeOp creates a sequence of DSA operations:
+//   - dsa.create_ds (Creates TableBuilder with schema)
+//   - dsa.ds_append (Appends values to builder) 
+//   - dsa.next_row (Completes each row)
+//   - dsa.finalize (Creates final table)
+//
+// Therefore, MaterializeOp belongs in Phase 3b (DB→DSA), not Phase 3a (RelAlg→DB).
+// In Phase 3a, MaterializeOp is marked as LEGAL and passes through unchanged.
+// 
+// This explains why previous attempts to convert MaterializeOp to DB operations failed -
+// it was architecturally incorrect according to LingoDB's proven patterns.
+//
+// The pattern below is kept for reference but is NOT registered in Phase 3a.
+//===----------------------------------------------------------------------===//
 
 LogicalResult mlir::pgx_conversion::MaterializeToStreamResultsPattern::matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
-    MLIR_PGX_DEBUG("RelAlgToDB", "START: MaterializeOp lowering");
-    
-    // MaterializeOp converts a tuple stream to a materialized table
-    // This is essential for type conversion in the MLIR pipeline
-    
-    // Get the input relation from adaptor  
-    Value inputRel = adaptor.getRel();
-    
-    // Get the expected table type from the original MaterializeOp result
-    auto tableType = op.getResult().getType();
-    
-    MLIR_PGX_DEBUG("RelAlgToDB", "Creating type conversion for MaterializeOp");
-    
-    // Create proper type conversion from tuple stream to table type
-    // This is the essential function of MaterializeOp - convert streaming data to materialized result
-    auto castOp = rewriter.create<mlir::UnrealizedConversionCastOp>(
-        op.getLoc(), tableType, inputRel);
-    
-    // Replace MaterializeOp with the converted type
-    rewriter.replaceOp(op, castOp.getResult(0));
-    
-    MLIR_PGX_DEBUG("RelAlgToDB", "SUCCESS: MaterializeOp lowering completed");
-    
-    return success();
+    // This pattern should never be called in Phase 3a since MaterializeOp is marked as LEGAL
+    MLIR_PGX_ERROR("RelAlgToDB", "CRITICAL ERROR: MaterializeOp pattern called but MaterializeOp should be LEGAL in Phase 3a");
+    MLIR_PGX_ERROR("RelAlgToDB", "MaterializeOp belongs in Phase 3b (DB→DSA) per LingoDB architecture");
+    return failure();
 }
 
 //===----------------------------------------------------------------------===//
@@ -143,7 +141,7 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
     StringRef getDescription() const final { return "Convert RelAlg dialect to DB dialect"; }
 
     void runOnOperation() override {
-        MLIR_PGX_INFO("RelAlgToDB", "Starting RelAlg to DB conversion pass (Phase 3a COMPLETE)");
+        MLIR_PGX_INFO("RelAlgToDB", "Starting RelAlg to DB conversion pass (Phase 3a - MaterializeOp deferred to Phase 3b)");
         
         ConversionTarget target(getContext());
         
@@ -161,8 +159,11 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         // GetColumnOp will be needed later for expression evaluation
         // target.addIllegalOp<::pgx::mlir::relalg::GetColumnOp>();
         target.addLegalOp<::pgx::mlir::relalg::GetColumnOp>();  // Mark as legal (no conversion)
-        // MaterializeOp is MANDATORY for type conversion - converts !relalg.tuplestream to !dsa.table
-        target.addIllegalOp<::pgx::mlir::relalg::MaterializeOp>();
+        
+        // CRITICAL: MaterializeOp is LEGAL in Phase 3a - it belongs in Phase 3b (DB→DSA)
+        // LingoDB research shows MaterializeOp creates DSA operations (dsa.create_ds, dsa.ds_append, etc.)
+        // Since we're in RelAlg→DB phase, MaterializeOp should pass through unchanged for later DSA conversion
+        target.addLegalOp<::pgx::mlir::relalg::MaterializeOp>();  // Mark as legal (no conversion in Phase 3a)
         
         RewritePatternSet patterns(&getContext());
         
@@ -171,8 +172,11 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         patterns.add<mlir::pgx_conversion::ReturnOpToFuncReturnPattern>(&getContext());
         // TODO Phase 5: GetColumnOp pattern FULLY DISABLED - not needed for test 1
         // patterns.add<mlir::pgx_conversion::GetColumnToGetFieldPattern>(&getContext());
-        // MaterializeOp pattern - converts MaterializeOp for proper type handling
-        patterns.add<mlir::pgx_conversion::MaterializeToStreamResultsPattern>(&getContext());
+        
+        // CRITICAL: MaterializeOp pattern REMOVED - no conversion in Phase 3a
+        // MaterializeOp is legal and passes through unchanged to Phase 3b (DB→DSA conversion)
+        // LingoDB research confirms MaterializeOp creates DSA operations, not DB operations
+        // patterns.add<mlir::pgx_conversion::MaterializeToStreamResultsPattern>(&getContext());
         
         // Apply the conversion
         if (failed(applyPartialConversion(getOperation(), target, std::move(patterns)))) {
