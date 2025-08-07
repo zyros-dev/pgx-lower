@@ -158,7 +158,7 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         // Test 1 only requires BaseTableOp → MaterializeOp → ReturnOp pipeline
         // GetColumnOp will be needed later for expression evaluation
         // target.addIllegalOp<::pgx::mlir::relalg::GetColumnOp>();
-        target.addLegalOp<::pgx::mlir::relalg::GetColumnOp>();  // Mark as legal (no conversion)
+        target.addIllegalOp<::pgx::mlir::relalg::GetColumnOp>();  // Mark as illegal (must be converted)
         
         // CRITICAL: MaterializeOp is LEGAL in Phase 3a - it belongs in Phase 3b (DB→DSA)
         // LingoDB research shows MaterializeOp creates DSA operations (dsa.create_ds, dsa.ds_append, etc.)
@@ -170,8 +170,8 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         // Add conversion patterns for all implemented RelAlg to DB operations
         patterns.add<mlir::pgx_conversion::BaseTableToExternalSourcePattern>(&getContext());
         patterns.add<mlir::pgx_conversion::ReturnOpToFuncReturnPattern>(&getContext());
-        // TODO Phase 5: GetColumnOp pattern FULLY DISABLED - not needed for test 1
-        // patterns.add<mlir::pgx_conversion::GetColumnToGetFieldPattern>(&getContext());
+        // GetColumnOp pattern enabled to fix Test 1 crash
+        patterns.add<mlir::pgx_conversion::GetColumnToGetFieldPattern>(&getContext());
         
         // CRITICAL: MaterializeOp pattern REMOVED - no conversion in Phase 3a
         // MaterializeOp is legal and passes through unchanged to Phase 3b (DB→DSA conversion)

@@ -24,6 +24,7 @@ extern "C" {
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "storage/lockdefs.h"
+#include "utils/memutils.h"
 }
 #endif
 
@@ -37,6 +38,29 @@ PostgreSQLTuplePassthrough g_current_tuple_passthrough;
 Oid g_jit_table_oid = InvalidOid;
 
 namespace pgx_lower::runtime {
+
+// Memory context safety check for PostgreSQL operations
+static bool check_memory_context_safety() {
+#ifdef POSTGRESQL_EXTENSION
+    // Check if we're in a valid PostgreSQL memory context
+    // This is critical because LOAD commands can invalidate memory contexts
+    if (!CurrentMemoryContext) {
+        PGX_ERROR("check_memory_context_safety: No current memory context");
+        return false;
+    }
+    
+    // Additional checks for context validity
+    if (CurrentMemoryContext == ErrorContext) {
+        PGX_WARNING("check_memory_context_safety: In error context - may not be safe for PostgreSQL operations");
+        return false;
+    }
+    
+    return true;
+#else
+    // In unit tests, always return true
+    return true;
+#endif
+}
 
 struct TupleHandle {
     HeapTuple heap_tuple;
@@ -90,6 +114,12 @@ struct PostgreSQLTableHandle {
 
 extern "C" void* open_postgres_table(const char* tableName) {
     PGX_NOTICE("open_postgres_table called with tableName: " + std::string(tableName ? tableName : "NULL"));
+
+    // Critical: Check memory context safety before PostgreSQL operations
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("open_postgres_table: Memory context unsafe for PostgreSQL operations");
+        return nullptr;
+    }
 
     try {
         PGX_NOTICE("open_postgres_table: Creating PostgreSQLTableHandle...");
@@ -158,6 +188,12 @@ extern "C" void* open_postgres_table(const char* tableName) {
 extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     if (!tableHandle) {
         PGX_NOTICE("read_next_tuple_from_table: tableHandle is null");
+        return -1;
+    }
+    
+    // Critical: Check memory context safety before PostgreSQL heap operations
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("read_next_tuple_from_table: Memory context unsafe for PostgreSQL operations");
         return -1;
     }
 
@@ -328,6 +364,13 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
 
 // Typed field access functions for PostgreSQL dialect
 extern "C" int32_t get_int_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
+    // Critical: Check memory context safety before PostgreSQL tuple access
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("get_int_field: Memory context unsafe for PostgreSQL operations");
+        *is_null = true;
+        return 0;
+    }
+    
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         *is_null = true;
         return 0;
@@ -497,6 +540,12 @@ extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, boo
 
 extern "C" int32_t get_int_field_mlir(int64_t iteration_signal, int32_t field_index) {
     PGX_TRACE("get_int_field_mlir called with iteration_signal=" + std::to_string(iteration_signal) + ", field_index=" + std::to_string(field_index));
+    
+    // Critical: Check memory context safety before PostgreSQL tuple access
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("get_int_field_mlir: Memory context unsafe for PostgreSQL operations");
+        return 0;
+    }
     
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         PGX_TRACE("get_int_field: No current tuple available");
