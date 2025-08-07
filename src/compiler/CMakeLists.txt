@@ -16,6 +16,9 @@ add_subdirectory(../mlir/Dialect/DSA DSADialect)
 add_subdirectory(../mlir/Conversion/RelAlgToDB RelAlgToDBConversion)
 add_subdirectory(../mlir/Conversion/DBToDSA DBToDSAConversion)
 
+# Add centralized pass pipeline infrastructure
+add_subdirectory(../mlir MLIRPasses)
+
 # RelAlgToDSA bypass REMOVED - violated LingoDB architecture
 # Proper pipeline: RelAlg → DB → DSA
 

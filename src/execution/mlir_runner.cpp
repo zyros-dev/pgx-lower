@@ -22,6 +22,9 @@
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/Conversion/DBToDSA/DBToDSA.h"
 
+// Centralized pass pipeline
+#include "mlir/Passes.h"
+
 // PostgreSQL error handling (only include when not building unit tests)
 #ifndef BUILDING_UNIT_TESTS
 extern "C" {
@@ -47,6 +50,21 @@ namespace mlir_runner {
 // This resolves TypeID symbol linking issues by registering dialect TypeIDs
 static bool initialize_mlir_context(mlir::MLIRContext& context) {
     try {
+        // First validate library loading before proceeding
+        if (!mlir::pgx_lower::validateLibraryLoading()) {
+            PGX_ERROR("Library loading validation failed");
+            return false;
+        }
+        
+        // Register all pgx-lower passes before loading dialects
+        mlir::pgx_lower::registerAllPgxLoweringPasses();
+        
+        // Validate pass registration
+        if (!mlir::pgx_lower::validatePassRegistration()) {
+            PGX_ERROR("Pass registration validation failed");
+            return false;
+        }
+        
         // Load standard MLIR dialects
         context.getOrLoadDialect<mlir::func::FuncDialect>();
         context.getOrLoadDialect<mlir::arith::ArithDialect>();
@@ -56,7 +74,13 @@ static bool initialize_mlir_context(mlir::MLIRContext& context) {
         context.getOrLoadDialect<pgx::db::DBDialect>();
         context.getOrLoadDialect<pgx::mlir::dsa::DSADialect>();
         
-        PGX_INFO("MLIR dialects loaded successfully");
+        // Validate dialect registration
+        if (!mlir::pgx_lower::validateDialectRegistration()) {
+            PGX_ERROR("Dialect registration validation failed");
+            return false;
+        }
+        
+        PGX_INFO("MLIR dialects and passes loaded successfully");
         return true;
         
     } catch (const std::exception& e) {
@@ -99,18 +123,20 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
             return false;
         }
         
-        // Phase 3a+3b: Set up PassManager and run RelAlg→DB→DSA lowering pipeline
-        // MINIMAL IMPLEMENTATION: Enable DB→DSA for Test 1 only
+        // Phase 3c: Use centralized pass pipeline for RelAlg→DB→DSA lowering
+        PGX_INFO("Configuring centralized lowering pipeline");
         mlir::PassManager pm(&context);
-        pm.addPass(mlir::pgx_conversion::createRelAlgToDBPass());
-        // Phase 3b: Add DB→DSA pass - MINIMAL implementation for Test 1
-        pm.addPass(mlir::pgx_conversion::createDBToDSAPass());
         
-        // Run the lowering pipeline (Phase 3a+3b: RelAlg → DB → DSA)
+        // Use centralized pipeline configuration with verification enabled
+        mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
+        
+        // Run the lowering pipeline (Phase 3a+3b+3c: RelAlg → DB → DSA)
+        PGX_INFO("Running complete lowering pipeline");
         if (failed(pm.run(*module))) {
             PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB → DSA)");
             return false;
         }
+        PGX_INFO("Lowering pipeline completed successfully");
         
         // Phase 4: Final verification (Phase 3a: DB dialect)
         if (failed(mlir::verify(*module))) {
@@ -172,18 +198,20 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
             return false;
         }
         
-        // Phase 3a+3b: Set up PassManager and run RelAlg→DB→DSA lowering pipeline
-        // MINIMAL IMPLEMENTATION: Enable DB→DSA for Test 1 only
+        // Phase 3c: Use centralized pass pipeline for RelAlg→DB→DSA lowering
+        PGX_INFO("Configuring centralized lowering pipeline");
         mlir::PassManager pm(&context);
-        pm.addPass(mlir::pgx_conversion::createRelAlgToDBPass());
-        // Phase 3b: Add DB→DSA pass - MINIMAL implementation for Test 1
-        pm.addPass(mlir::pgx_conversion::createDBToDSAPass());
         
-        // Run the lowering pipeline (Phase 3a+3b: RelAlg → DB → DSA)
+        // Use centralized pipeline configuration with verification enabled
+        mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
+        
+        // Run the lowering pipeline (Phase 3a+3b+3c: RelAlg → DB → DSA)
+        PGX_INFO("Running complete lowering pipeline");
         if (failed(pm.run(*module))) {
             PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB → DSA)");
             return false;
         }
+        PGX_INFO("Lowering pipeline completed successfully");
         
         // Phase 4: Final verification (Phase 3a: DB dialect)
         if (failed(mlir::verify(*module))) {
