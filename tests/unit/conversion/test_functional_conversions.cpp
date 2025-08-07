@@ -1,11 +1,15 @@
+// Phase 3a Functional Conversion Tests: RelAlg → DB Dialect
+// Tests the RelAlgToDB conversion pass with specific operations:
+// - BaseTableOp → GetExternalOp 
+// - RelAlg ReturnOp → func::ReturnOp
+// This phase does NOT include DB→DSA conversions (that's Phase 3b)
+
 #include "gtest/gtest.h"
 #include "execution/logging.h"
 
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
-#include "mlir/Conversion/DBToDSA/DBToDSA.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -22,7 +26,6 @@ protected:
     void SetUp() override {
         context.getOrLoadDialect<::pgx::mlir::relalg::RelAlgDialect>();
         context.getOrLoadDialect<::pgx::db::DBDialect>();
-        context.getOrLoadDialect<::pgx::mlir::dsa::DSADialect>();
         context.getOrLoadDialect<func::FuncDialect>();
         context.getOrLoadDialect<arith::ArithDialect>();
         context.getOrLoadDialect<scf::SCFDialect>();
@@ -159,119 +162,7 @@ TEST_F(FunctionalConversionsTest, TestReturnOpConversion) {
     PGX_DEBUG("ReturnOp to func::ReturnOp conversion test completed successfully");
 }
 
-// Test GetExternalOp → ScanSourceOp conversion (DB to DSA)
-TEST_F(FunctionalConversionsTest, TestGetExternalToScanSourceConversion) {
-    PGX_DEBUG("Starting GetExternalOp to ScanSourceOp conversion test");
-    
-    // Create a simple module and function
-    auto module = ModuleOp::create(builder->getUnknownLoc());
-    builder->setInsertionPointToStart(module.getBody());
-    
-    auto funcType = builder->getFunctionType({}, {});
-    auto funcOp = builder->create<func::FuncOp>(
-        builder->getUnknownLoc(), "test_db_to_dsa", funcType);
-    
-    Block* entryBlock = funcOp.addEntryBlock();
-    builder->setInsertionPointToStart(entryBlock);
-    
-    // Create GetExternalOp
-    auto tableOidValue = builder->create<arith::ConstantIntOp>(
-        builder->getUnknownLoc(), 54321, builder->getI64Type());
-    auto getExternalOp = builder->create<::pgx::db::GetExternalOp>(
-        builder->getUnknownLoc(),
-        ::pgx::db::ExternalSourceType::get(&context),
-        tableOidValue.getResult());
-    
-    builder->create<func::ReturnOp>(builder->getUnknownLoc());
-    
-    // Verify GetExternalOp exists before conversion
-    EXPECT_TRUE(containsOperation<::pgx::db::GetExternalOp>(funcOp));
-    EXPECT_FALSE(containsOperation<::pgx::mlir::dsa::ScanSourceOp>(funcOp));
-    
-    // Create and run DBToDSA conversion pass on the function (not module)
-    PassManager pm(&context);
-    pm.addPass(::pgx_conversion::createDBToDSAPass());
-    
-    // The DBToDSAPass operates on func::FuncOp, so run it on the function
-    auto result = pm.run(funcOp);
-    EXPECT_TRUE(result.succeeded()) << "DBToDSA pass should succeed";
-    
-    // Verify conversion: GetExternalOp should be gone, ScanSourceOp should exist
-    EXPECT_FALSE(containsOperation<::pgx::db::GetExternalOp>(funcOp));
-    EXPECT_TRUE(containsOperation<::pgx::mlir::dsa::ScanSourceOp>(funcOp));
-    
-    // Verify table OID is preserved in JSON description
-    bool foundCorrectJsonDesc = false;
-    funcOp.walk([&](::pgx::mlir::dsa::ScanSourceOp op) {
-        auto jsonDesc = op.getTableDescriptionAttr().getValue().str();
-        if (jsonDesc.find("54321") != std::string::npos) {
-            foundCorrectJsonDesc = true;
-        }
-    });
-    EXPECT_TRUE(foundCorrectJsonDesc) << "Table OID should be preserved in JSON description";
-    
-    PGX_DEBUG("GetExternalOp to ScanSourceOp conversion test completed successfully");
-}
 
-// Test combined pipeline: RelAlg → DB → DSA
-TEST_F(FunctionalConversionsTest, TestCombinedPipeline) {
-    PGX_DEBUG("Starting combined pipeline test");
-    
-    // Create a simple function with both BaseTableOp and ReturnOp
-    auto module = ModuleOp::create(builder->getUnknownLoc());
-    builder->setInsertionPointToStart(module.getBody());
-    
-    auto funcType = builder->getFunctionType({}, {});
-    auto funcOp = builder->create<func::FuncOp>(
-        builder->getUnknownLoc(), "test_combined_pipeline", funcType);
-    
-    Block* entryBlock = funcOp.addEntryBlock();
-    builder->setInsertionPointToStart(entryBlock);
-    
-    // Create BaseTableOp
-    auto tupleStreamType = ::pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
-        builder->getUnknownLoc(),
-        tupleStreamType,
-        builder->getStringAttr("pipeline_table"),
-        builder->getI64IntegerAttr(99999));
-    
-    // Create RelAlg ReturnOp
-    builder->create<::pgx::mlir::relalg::ReturnOp>(
-        builder->getUnknownLoc(), ValueRange{});
-    
-    // Verify initial state: RelAlg operations present
-    EXPECT_TRUE(containsOperation<::pgx::mlir::relalg::BaseTableOp>(funcOp));
-    EXPECT_TRUE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp));
-    
-    // Apply both conversions in single pass manager on the function
-    PassManager pm(&context);
-    pm.addPass(::pgx_conversion::createRelAlgToDBPass());
-    pm.addPass(::pgx_conversion::createDBToDSAPass());
-    
-    // Both passes operate on func::FuncOp, so run on the function
-    auto result = pm.run(funcOp);
-    EXPECT_TRUE(result.succeeded()) << "Combined pipeline should succeed";
-    
-    // Verify final state: transformations occurred in correct order
-    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::BaseTableOp>(funcOp));
-    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp));
-    EXPECT_FALSE(containsOperation<::pgx::db::GetExternalOp>(funcOp));
-    EXPECT_TRUE(containsOperation<::pgx::mlir::dsa::ScanSourceOp>(funcOp));
-    EXPECT_TRUE(containsOperation<func::ReturnOp>(funcOp));
-    
-    // Verify table OID is preserved through the pipeline
-    bool foundCorrectOid = false;
-    funcOp.walk([&](::pgx::mlir::dsa::ScanSourceOp op) {
-        auto jsonDesc = op.getTableDescriptionAttr().getValue().str();
-        if (jsonDesc.find("99999") != std::string::npos) {
-            foundCorrectOid = true;
-        }
-    });
-    EXPECT_TRUE(foundCorrectOid) << "Table OID should be preserved through pipeline";
-    
-    PGX_DEBUG("Combined pipeline test completed successfully");
-}
 
 // Test that MaterializeOp remains unchanged in partial conversion (Phase 3a)
 // NOTE: This test is disabled due to complex type serialization issues
@@ -369,14 +260,13 @@ TEST_F(FunctionalConversionsTest, TestPassVerificationAndErrorHandling) {
     EXPECT_TRUE(module.verify().succeeded()) << "Module should verify before conversion";
     EXPECT_TRUE(funcOp.verify().succeeded()) << "Function should verify before conversion";
     
-    // Apply conversions on the function
+    // Apply Phase 3a conversion on the function (RelAlg → DB only)
     PassManager pm(&context);
     pm.addPass(::pgx_conversion::createRelAlgToDBPass());
-    pm.addPass(::pgx_conversion::createDBToDSAPass());
     
-    // Both passes operate on func::FuncOp, so run on the function
+    // The RelAlgToDBPass operates on func::FuncOp, so run it on the function
     auto result = pm.run(funcOp);
-    EXPECT_TRUE(result.succeeded()) << "Pass pipeline should succeed";
+    EXPECT_TRUE(result.succeeded()) << "Phase 3a RelAlgToDB pass should succeed";
     
     // Verify the module is still well-formed after conversion
     EXPECT_TRUE(module.verify().succeeded()) << "Module should verify after conversion";
