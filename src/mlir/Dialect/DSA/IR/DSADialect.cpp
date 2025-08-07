@@ -19,6 +19,10 @@ struct DSAInlinerInterface : public DialectInlinerInterface {
    }
 };
 
+// Include type storage definitions first
+#define GET_TYPEDEF_CLASSES
+#include "mlir/Dialect/DSA/IR/DSAOpsTypes.cpp.inc"
+
 void DSADialect::initialize() {
     PGX_DEBUG("Initializing DSA dialect");
     
