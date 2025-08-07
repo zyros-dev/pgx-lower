@@ -74,8 +74,7 @@ TEST_F(QueryAnalyzerTest, QueryAnalyzerExtended) {
 
     // Test capabilities description
     auto description = caps1.getDescription();
-    EXPECT_NE(description, nullptr);
-    EXPECT_NE(strlen(description), 0);
+    EXPECT_FALSE(description.empty());
 
     std::cout << "[TEST] Extended query analyzer tests completed!" << std::endl;
 }

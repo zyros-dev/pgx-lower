@@ -17,6 +17,7 @@ extern "C" {
 
 #include <cstring>
 #include <vector>
+#include <sstream>
 
 #ifdef POSTGRESQL_EXTENSION
 // Forward declaration of global flag defined in executor_c.cpp
@@ -42,102 +43,48 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
     return compatible;
 }
 
-auto QueryCapabilities::getDescription() const -> const char* {
-    if (isMLIRCompatible()) {
+auto QueryCapabilities::getDescription() const -> std::string {
+    if (isMLIRCompatible())
         return "Sequential scan with optional aggregation - MLIR compatible";
-    }
 
-    static thread_local char description[256];
-    char* pos = description;
+    std::vector<std::string> requirements;
 
-    strcpy(pos, "Requires: ");
-    pos += strlen(pos);
-
-    bool needComma = false;
-
-    if (requiresSeqScan) {
-        strcpy(pos, "SeqScan");
-        pos += strlen(pos);
-        needComma = true;
-    }
-
-    if (requiresFilter) {
-        if (needComma) {
-            strcpy(pos, ", ");
-            pos += 2;
-        }
-        strcpy(pos, "Filter");
-        pos += strlen(pos);
-        needComma = true;
-    }
-
-    if (requiresProjection) {
-        if (needComma) {
-            strcpy(pos, ", ");
-            pos += 2;
-        }
-        strcpy(pos, "Projection");
-        pos += strlen(pos);
-        needComma = true;
-    }
-
-    if (requiresAggregation) {
-        if (needComma) {
-            strcpy(pos, ", ");
-            pos += 2;
-        }
-        strcpy(pos, "Aggregation");
-        pos += strlen(pos);
-        needComma = true;
-    }
-
-    if (requiresJoin) {
-        if (needComma) {
-            strcpy(pos, ", ");
-            pos += 2;
-        }
-        strcpy(pos, "Join");
-        pos += strlen(pos);
-        needComma = true;
-    }
-
-    if (requiresSort) {
-        if (needComma) {
-            strcpy(pos, ", ");
-            pos += 2;
-        }
-        strcpy(pos, "Sort");
-        pos += strlen(pos);
-        needComma = true;
-    }
-
-    if (requiresLimit) {
-        if (needComma) {
-            strcpy(pos, ", ");
-            pos += 2;
-        }
-        strcpy(pos, "Limit");
-        pos += strlen(pos);
-        needComma = true;
-    }
+    if (requiresSeqScan)
+        requirements.emplace_back("SeqScan");
+    if (requiresFilter)
+        requirements.emplace_back("Filter");
+    if (requiresProjection)
+        requirements.emplace_back("Projection");
+    if (requiresAggregation)
+        requirements.emplace_back("Aggregation");
+    if (requiresJoin)
+        requirements.emplace_back("Join");
+    if (requiresSort)
+        requirements.emplace_back("Sort");
+    if (requiresLimit)
+        requirements.emplace_back("Limit");
 
     if (hasExpressions) {
 #ifdef POSTGRESQL_EXTENSION
         if (::g_extension_after_load) {
-            if (needComma) {
-                strcpy(pos, ", ");
-                pos += 2;
-            }
-            strcpy(pos, "Expressions (disabled after LOAD)");
-            pos += strlen(pos);
-            needComma = true;
+            requirements.emplace_back("Expressions (disabled after LOAD)");
         }
 #endif
     }
 
-    strcpy(pos, " - Not yet supported by MLIR");
+    std::ostringstream oss;
+    oss << "Requires: ";
 
-    return description;
+    for (size_t i = 0; i < requirements.size(); ++i) {
+        if (i > 0) {
+            oss << ", ";
+        }
+        oss << requirements[i];
+    }
+
+    oss << " - Not yet supported by MLIR";
+
+    return oss.str();
 }
 
 #ifdef POSTGRESQL_EXTENSION

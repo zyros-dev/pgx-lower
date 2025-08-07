@@ -194,3 +194,51 @@ TEST_F(ConversionBasicsTest, TestConversionPassInstantiation) {
     
     MLIR_PGX_DEBUG("UnitTest", "Conversion pass instantiation test passed");
 }
+
+// Test that conversions work without type conflicts
+TEST_F(ConversionBasicsTest, TestConversionPrerequisites) {
+    MLIR_PGX_DEBUG("UnitTest", "Testing conversion prerequisites");
+    
+    // Test that we can create individual operations that will be used in conversion
+    auto module = ModuleOp::create(builder->getUnknownLoc());
+    builder->setInsertionPointToStart(module.getBody());
+    
+    auto funcType = builder->getFunctionType({}, {});
+    auto funcOp = builder->create<func::FuncOp>(
+        builder->getUnknownLoc(), "prerequisites", funcType);
+    
+    Block* entryBlock = funcOp.addEntryBlock();
+    builder->setInsertionPointToStart(entryBlock);
+    
+    // Create each operation type that participates in conversion
+    auto tableOidValue = builder->create<arith::ConstantIntOp>(
+        builder->getUnknownLoc(), 12345, builder->getI64Type());
+    
+    auto getExternalOp = builder->create<::pgx::db::GetExternalOp>(
+        builder->getUnknownLoc(),
+        ::pgx::db::ExternalSourceType::get(&context),
+        tableOidValue.getResult());
+    
+    // Create DSA ScanSourceOp
+    auto tupleType = builder->getTupleType({builder->getI32Type()});
+    auto recordBatchType = ::pgx::mlir::dsa::RecordBatchType::get(&context, tupleType);
+    auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
+        &context, recordBatchType, "test_iterator");
+    
+    auto scanSourceOp = builder->create<::pgx::mlir::dsa::ScanSourceOp>(
+        builder->getUnknownLoc(), 
+        iterableType,
+        builder->getStringAttr("{\"table_oid\":12345}"));
+    
+    builder->create<func::ReturnOp>(builder->getUnknownLoc());
+    
+    EXPECT_TRUE(funcOp.verify().succeeded());
+    EXPECT_TRUE(module.verify().succeeded());
+    
+    // Verify operations have expected attributes
+    EXPECT_EQ(tableOidValue.value(), 12345);
+    EXPECT_TRUE(getExternalOp.getTableOid() == tableOidValue.getResult());
+    EXPECT_TRUE(scanSourceOp.getTableDescriptionAttr().getValue().contains("12345"));
+    
+    MLIR_PGX_DEBUG("UnitTest", "Conversion prerequisites test passed");
+}
