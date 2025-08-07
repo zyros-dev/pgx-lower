@@ -1,6 +1,5 @@
 #include "execution/postgres/my_executor.h"
 #include "execution/mlir_runner.h"
-#include "execution/mlir_logger.h"
 #include "frontend/SQL/query_analyzer.h"
 #include "execution/error_handling.h"
 #include "execution/logging.h"
@@ -202,26 +201,26 @@ public:
     PsqlMemoryContextGuard& operator=(PsqlMemoryContextGuard&&) = delete;
 };
 
-void logQueryDebugInfo(const PlannedStmt* stmt, PostgreSQLLogger& logger) {
-    logger.debug("Using PostgreSQL AST translation approach");
+void logQueryDebugInfo(const PlannedStmt* stmt) {
+    PGX_DEBUG("Using PostgreSQL AST translation approach");
 
     // Debug targetList availability
-    logger.notice("=== run_mlir_with_ast_translation: Query info ===");
-    logger.notice("PlannedStmt ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt)));
-    logger.notice("planTree ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree)));
+    PGX_INFO("=== run_mlir_with_ast_translation: Query info ===");
+    PGX_INFO("PlannedStmt ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt)));
+    PGX_INFO("planTree ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree)));
     if (stmt->planTree) {
-        logger.notice("planTree->targetlist ptr: "
+        PGX_INFO("planTree->targetlist ptr: "
                       + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree->targetlist)));
         if (stmt->planTree->targetlist) {
-            logger.notice("targetlist length: " + std::to_string(list_length(stmt->planTree->targetlist)));
+            PGX_INFO("targetlist length: " + std::to_string(list_length(stmt->planTree->targetlist)));
         }
         else {
-            logger.notice("targetlist is NULL!");
+            PGX_INFO("targetlist is NULL!");
         }
     }
 }
 
-std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogger& logger) {
+std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
     // Configure column selection based on query type
     // For SELECT expressions (computed results), use -1 to indicate computed columns
     // For SELECT * (table columns), use 0, 1, 2, etc.
@@ -250,7 +249,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogge
             if (hasComputedExpressions) {
                 // Use computed results: -1 indicates to use g_computed_results
                 selectedColumns = {-1};
-                logger.notice("Configured for computed expression results");
+                PGX_INFO("Configured for computed expression results");
             }
             else {
                 // For now, treat simple SELECT * as computed results since minimal control flow
@@ -272,7 +271,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogge
                 for (int i = 0; i < numSelectedColumns; i++) {
                     selectedColumns.push_back(-1); // -1 indicates computed result
                 }
-                logger.notice("Configured for table column results via computed storage (temporary solution) - "
+                PGX_INFO("Configured for table column results via computed storage (temporary solution) - "
                               + std::to_string(numSelectedColumns) + " columns");
             }
         }
@@ -290,7 +289,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt, PostgreSQLLogge
 }
 
 TupleDesc
-setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedColumns, PostgreSQLLogger& logger) {
+setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedColumns) {
     // Create result tuple descriptor based on selected columns count
     const int numResultColumns = selectedColumns.size();
     const auto resultTupleDesc = CreateTemplateTupleDesc(numResultColumns);
@@ -316,12 +315,12 @@ setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedCo
                         // Get column name
                         if (tle->resname) {
                             strncpy(NameStr(resultAttr->attname), tle->resname, NAMEDATALEN - 1);
-                            logger.notice("Setting column " + std::to_string(i)
+                            PGX_INFO("Setting column " + std::to_string(i)
                                           + " name to: " + std::string(tle->resname));
                         }
                         else {
                             snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
-                            logger.notice("Setting column " + std::to_string(i) + " name to: col" + std::to_string(i));
+                            PGX_INFO("Setting column " + std::to_string(i) + " name to: col" + std::to_string(i));
                         }
 
                         // Get column type from expression
@@ -339,7 +338,7 @@ setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedCo
                             typeByVal = typByVal;
                             typeAlign = typAlign;
 
-                            logger.notice("Column " + std::to_string(i) + " type OID: " + std::to_string(columnType));
+                            PGX_INFO("Column " + std::to_string(i) + " type OID: " + std::to_string(columnType));
                         }
                         break;
                     }
@@ -364,15 +363,15 @@ setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& selectedCo
     return resultTupleDesc;
 }
 
-bool handleMLIRResults(bool mlir_success, PostgreSQLLogger& logger) {
+bool handleMLIRResults(bool mlir_success) {
     // Stream results back to PostgreSQL
     if (mlir_success) {
-        logger.notice("JIT returned successfully, checking results...");
+        PGX_INFO("JIT returned successfully, checking results...");
         // Check if JIT marked results as ready
         extern bool g_jit_results_ready;
-        logger.notice("g_jit_results_ready = " + std::string(g_jit_results_ready ? "true" : "false"));
+        PGX_INFO("g_jit_results_ready = " + std::string(g_jit_results_ready ? "true" : "false"));
         if (g_jit_results_ready) {
-            logger.notice("JIT execution successful - results already streamed by JIT");
+            PGX_INFO("JIT execution successful - results already streamed by JIT");
             // The JIT now handles all streaming via add_tuple_to_result in the loop
             // We don't need to stream anything here anymore
             g_jit_results_ready = false; // Reset flag
@@ -409,18 +408,17 @@ bool validateAndLogPlanStructure(const PlannedStmt* stmt) {
 }
 
 bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
-    auto logger = PostgreSQLLogger();
     auto* dest = queryDesc->dest;
 
     // Extract the planned statement for AST translation
     const auto* stmt = queryDesc->plannedstmt;
     if (!stmt) {
-        logger.error("PlannedStmt is null");
+        PGX_ERROR("PlannedStmt is null");
         return false;
     }
 
     // Log query debug information
-    logQueryDebugInfo(stmt, logger);
+    logQueryDebugInfo(stmt);
 
     PGX_DEBUG("Creating PsqlMemoryContextGuard for comprehensive PostgreSQL resource management");
     
@@ -429,7 +427,7 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         PsqlMemoryContextGuard psql_guard;
         
         if (!psql_guard.isValid()) {
-            logger.error("Failed to initialize PostgreSQL memory contexts");
+            PGX_ERROR("Failed to initialize PostgreSQL memory contexts");
             return false;
         }
         
@@ -439,7 +437,7 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         PGX_DEBUG("PostgreSQL memory contexts initialized successfully via RAII");
 
         // Analyze and configure column selection
-        auto selectedColumns = analyzeColumnSelection(stmt, logger);
+        auto selectedColumns = analyzeColumnSelection(stmt);
 
         // Initialize computed results storage if using computed results path
         if (!selectedColumns.empty() && selectedColumns[0] == -1) {
@@ -448,7 +446,7 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         }
 
         // Setup tuple descriptor for results
-        auto resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns, logger);
+        auto resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns);
 
         // Initialize PostgreSQL result handling
         const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
@@ -462,26 +460,26 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
 
         // Execute MLIR translation with proper memory contexts
         const auto mlir_success = mlir_runner::run_mlir_with_estate(
-            const_cast<PlannedStmt*>(stmt), estate, econtext, logger);
+            const_cast<PlannedStmt*>(stmt), estate, econtext);
         
-        logger.notice("mlir_runner::run_mlir_with_estate returned "
+        PGX_INFO("mlir_runner::run_mlir_with_estate returned "
                       + std::string(mlir_success ? "true" : "false"));
 
         // Handle results
-        auto final_result = handleMLIRResults(mlir_success, logger);
+        auto final_result = handleMLIRResults(mlir_success);
 
-        logger.notice("run_mlir_with_ast_translation completed successfully, returning "
+        PGX_INFO("run_mlir_with_ast_translation completed successfully, returning "
                       + std::string(final_result ? "true" : "false"));
         
         // PsqlMemoryContextGuard destructor will automatically handle ALL PostgreSQL cleanup
         return final_result;
         
     } catch (const std::exception& e) {
-        logger.error("Exception in PostgreSQL memory management: " + std::string(e.what()));
+        PGX_ERROR("Exception in PostgreSQL memory management: " + std::string(e.what()));
         // PsqlMemoryContextGuard destructor will automatically handle comprehensive cleanup
         return false;
     } catch (...) {
-        logger.error("Unknown exception in PostgreSQL memory management");
+        PGX_ERROR("Unknown exception in PostgreSQL memory management");
         // PsqlMemoryContextGuard destructor will automatically handle comprehensive cleanup
         return false;
     }

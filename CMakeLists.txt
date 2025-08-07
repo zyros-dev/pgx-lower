@@ -135,15 +135,9 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/execution/mlir_runner.cpp
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
-        src/utility/logging/console_logger.cpp
         src/runtime/helpers.cpp
     )
     
-    # Add PostgreSQL-specific sources only when building as extension
-    if(POSTGRESQL_EXTENSION)
-        list(APPEND UNIT_TEST_ADDITIONAL_SOURCES 
-            src/utility/logging/mlir_logger_pg.cpp)
-    endif()
     
     add_mlir_unit_test(mlir_unit_test 
         tests/unit/test_main.cpp

@@ -1,7 +1,6 @@
 #ifndef POSTGRESQL_AST_TRANSLATOR_H
 #define POSTGRESQL_AST_TRANSLATOR_H
 
-#include "execution/mlir_logger.h"
 #include <memory>
 
 // Forward declarations to avoid include issues
@@ -42,7 +41,7 @@ typedef uintptr_t Datum;
 namespace postgresql_ast {
 class PostgreSQLASTTranslator {
 public:
-    explicit PostgreSQLASTTranslator(mlir::MLIRContext& context, MLIRLogger& logger);
+    explicit PostgreSQLASTTranslator(mlir::MLIRContext& context);
     ~PostgreSQLASTTranslator() = default;
 
     // Main translation entry points
@@ -79,7 +78,6 @@ private:
                                        mlir::Value tupleHandle, List* targetList) -> void;
 
     mlir::MLIRContext& context_;
-    MLIRLogger& logger_;
     mlir::OpBuilder* builder_;  // Current builder context
     mlir::ModuleOp* currentModule_;  // Current module being built
     mlir::Value* currentTupleHandle_;  // Current tuple handle for field access (nullptr if none)
@@ -111,7 +109,7 @@ private:
 };
 
 // Factory function
-auto createPostgreSQLASTTranslator(mlir::MLIRContext& context, MLIRLogger& logger) 
+auto createPostgreSQLASTTranslator(mlir::MLIRContext& context) 
     -> std::unique_ptr<PostgreSQLASTTranslator>;
 
 } // namespace postgresql_ast

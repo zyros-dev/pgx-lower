@@ -1,5 +1,4 @@
 #include "execution/mlir_runner.h"
-#include "execution/mlir_logger.h"
 #include "execution/error_handling.h"
 #include "execution/logging.h"
 #include <sstream>
@@ -69,14 +68,10 @@ static bool initialize_mlir_context(mlir::MLIRContext& context) {
     }
 }
 
-auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& logger) -> bool {
+auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
     if (!plannedStmt) {
-        PGX_ERROR("Null PlannedStmt provided to MLIR runner");
-#ifndef BUILDING_UNIT_TESTS
-        ereport(ERROR, 
-                (errcode(ERRCODE_INTERNAL_ERROR),
-                 errmsg("Invalid planned statement for MLIR compilation")));
-#endif
+        auto error = pgx_lower::ErrorManager::postgresqlError("Null PlannedStmt provided to MLIR runner");
+        pgx_lower::ErrorManager::reportError(error);
         return false;
     }
     
@@ -84,16 +79,13 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
         // Create MLIR context and load dialects
         mlir::MLIRContext context;
         if (!initialize_mlir_context(context)) {
-#ifndef BUILDING_UNIT_TESTS
-            ereport(ERROR, 
-                    (errcode(ERRCODE_INTERNAL_ERROR),
-                     errmsg("Failed to initialize MLIR context and dialects")));
-#endif
+            auto error = pgx_lower::ErrorManager::postgresqlError("Failed to initialize MLIR context and dialects");
+            pgx_lower::ErrorManager::reportError(error);
             return false;
         }
         
         // Phase 1: AST Translation - PostgreSQL AST → RelAlg MLIR
-        auto translator = postgresql_ast::createPostgreSQLASTTranslator(context, logger);
+        auto translator = postgresql_ast::createPostgreSQLASTTranslator(context);
         auto module = translator->translateQuery(plannedStmt);
         
         if (!module) {
@@ -130,32 +122,20 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
         return true;
         
     } catch (const std::exception& e) {
-        PGX_ERROR("MLIR runner exception: " + std::string(e.what()));
-#ifndef BUILDING_UNIT_TESTS
-        ereport(ERROR, 
-                (errcode(ERRCODE_INTERNAL_ERROR),
-                 errmsg("MLIR compilation failed: %s", e.what())));
-#endif
+        auto error = pgx_lower::ErrorManager::postgresqlError("MLIR compilation failed: " + std::string(e.what()));
+        pgx_lower::ErrorManager::reportError(error);
         return false;
     } catch (...) {
-        PGX_ERROR("Unknown error in MLIR runner");
-#ifndef BUILDING_UNIT_TESTS
-        ereport(ERROR, 
-                (errcode(ERRCODE_INTERNAL_ERROR),
-                 errmsg("Unknown error during MLIR compilation")));
-#endif
+        auto error = pgx_lower::ErrorManager::postgresqlError("Unknown error during MLIR compilation");
+        pgx_lower::ErrorManager::reportError(error);
         return false;
     }
 }
 
-auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, MLIRLogger& logger) -> bool {
+auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext) -> bool {
     if (!plannedStmt || !estate) {
-        PGX_ERROR("Null parameters provided to MLIR runner with EState");
-#ifndef BUILDING_UNIT_TESTS
-        ereport(ERROR, 
-                (errcode(ERRCODE_INTERNAL_ERROR),
-                 errmsg("Invalid parameters for MLIR compilation with EState")));
-#endif
+        auto error = pgx_lower::ErrorManager::postgresqlError("Null parameters provided to MLIR runner with EState");
+        pgx_lower::ErrorManager::reportError(error);
         return false;
     }
     
@@ -165,17 +145,14 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         // Create MLIR context and load dialects
         mlir::MLIRContext context;
         if (!initialize_mlir_context(context)) {
-#ifndef BUILDING_UNIT_TESTS
-            ereport(ERROR, 
-                    (errcode(ERRCODE_INTERNAL_ERROR),
-                     errmsg("Failed to initialize MLIR context and dialects")));
-#endif
+            auto error = pgx_lower::ErrorManager::postgresqlError("Failed to initialize MLIR context and dialects");
+            pgx_lower::ErrorManager::reportError(error);
             return false;
         }
         
         // Phase 1: AST Translation - PostgreSQL AST → RelAlg MLIR
         PGX_INFO("Starting Phase 1: PostgreSQL AST to RelAlg translation with EState support");
-        auto translator = postgresql_ast::createPostgreSQLASTTranslator(context, logger);
+        auto translator = postgresql_ast::createPostgreSQLASTTranslator(context);
         auto module = translator->translateQuery(plannedStmt);
         
         if (!module) {

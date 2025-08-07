@@ -2,7 +2,6 @@
 #include <llvm/Config/llvm-config.h>
 #include <mlir/IR/MLIRContext.h>
 #include <execution/mlir_runner.h>
-#include <execution/mlir_logger.h>
 #include <execution/logging.h>
 #include "../test_helpers.h"
 #include <signal.h>
@@ -43,7 +42,6 @@ extern "C" {
 
 class MLIRRunnerTest : public ::testing::Test {
    protected:
-    ConsoleLogger logger;
     
     void SetUp() override {
         // Setup for each test
@@ -83,7 +81,7 @@ TEST_F(MLIRRunnerTest, DialectLoadingTest) {
 // Test the basic MLIR runner function with null input
 TEST_F(MLIRRunnerTest, NullPlannedStmtHandling) {
     // Test that the runner handles null PlannedStmt gracefully
-    bool result = mlir_runner::run_mlir_postgres_ast_translation(nullptr, logger);
+    bool result = mlir_runner::run_mlir_postgres_ast_translation(nullptr);
     EXPECT_FALSE(result); // Should return false for null input
 }
 
@@ -98,7 +96,7 @@ TEST_F(MLIRRunnerTest, MockPlannedStmtProcessing) {
     // Test that the runner processes the mock statement
     // With the new full pipeline implementation, mock data will fail at AST translation
     // This is expected behavior - the runner now attempts full compilation
-    bool result = mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger);
+    bool result = mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt);
     EXPECT_FALSE(result); // Should return false because mock PlannedStmt cannot be translated
 }
 
@@ -106,12 +104,12 @@ TEST_F(MLIRRunnerTest, MockPlannedStmtProcessing) {
 TEST_F(MLIRRunnerTest, NullEStateHandling) {
     // Test null PlannedStmt
     EState mock_estate;
-    bool result = mlir_runner::run_mlir_with_estate(nullptr, &mock_estate, nullptr, logger);
+    bool result = mlir_runner::run_mlir_with_estate(nullptr, &mock_estate, nullptr);
     EXPECT_FALSE(result);
     
     // Test null EState
     PlannedStmt mock_stmt;
-    result = mlir_runner::run_mlir_with_estate(&mock_stmt, nullptr, nullptr, logger);
+    result = mlir_runner::run_mlir_with_estate(&mock_stmt, nullptr, nullptr);
     EXPECT_FALSE(result);
 }
 
@@ -132,7 +130,7 @@ TEST_F(MLIRRunnerTest, MockEStateProcessing) {
     // Test that the runner processes the mock structures
     // With the new full pipeline implementation, mock data will fail at AST translation
     // This is expected behavior - the runner now attempts full compilation
-    bool result = mlir_runner::run_mlir_with_estate(&mock_stmt, &mock_estate, &mock_econtext, logger);
+    bool result = mlir_runner::run_mlir_with_estate(&mock_stmt, &mock_estate, &mock_econtext);
     EXPECT_FALSE(result); // Should return false because mock PlannedStmt cannot be translated
 }
 
@@ -145,9 +143,9 @@ TEST_F(MLIRRunnerTest, MultipleCalls) {
     
     // Multiple calls should all fail consistently (mock data cannot be translated)
     // This verifies that the runner doesn't maintain improper state between calls
-    EXPECT_FALSE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger));
-    EXPECT_FALSE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger));
-    EXPECT_FALSE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger));
+    EXPECT_FALSE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt));
+    EXPECT_FALSE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt));
+    EXPECT_FALSE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt));
 }
 
 // Test that demonstrates the full pipeline behavior
@@ -167,7 +165,7 @@ TEST_F(MLIRRunnerTest, FullPipelineBehavior) {
     // 4. DB → DSA dialect lowering (not reached) 
     // 5. Final verification (not reached)
     
-    bool result = mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger);
+    bool result = mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt);
     EXPECT_FALSE(result); // Expected to fail at AST translation with mock data
     
     // TODO Phase 5: Add tests with proper PlannedStmt structures that can be translated

@@ -1,5 +1,4 @@
 #include "execution/error_handling.h"
-#include "execution/mlir_logger.h"
 #include "execution/logging.h"
 
 #ifdef POSTGRESQL_EXTENSION
