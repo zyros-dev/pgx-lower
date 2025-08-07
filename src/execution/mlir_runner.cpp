@@ -91,7 +91,7 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt, MLIRLogger& log
         // Full AST translation pipeline will be implemented incrementally
         PGX_INFO("MLIR context successfully initialized - dialects loaded and TypeIDs registered");
         
-        // TODO: Implement PostgreSQL AST → RelAlg → DB → DSA → LLVM IR → JIT pipeline
+        // TODO Phase 4: Implement PostgreSQL AST → RelAlg → DB → DSA → LLVM IR → JIT pipeline
         PGX_WARNING("Full MLIR compilation pipeline not yet implemented - returning early success");
         
         return true;
@@ -147,7 +147,7 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         // Full EState integration will be implemented incrementally
         PGX_INFO("MLIR context with EState successfully initialized - dialects loaded and TypeIDs registered");
         
-        // TODO: Implement full pipeline with proper EState memory management
+        // TODO Phase 5: Implement full pipeline with proper EState memory management
         PGX_WARNING("Full MLIR compilation with EState pipeline not yet implemented - returning early success");
         
         return true;

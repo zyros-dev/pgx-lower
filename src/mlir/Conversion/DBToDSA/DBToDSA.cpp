@@ -72,8 +72,14 @@ LogicalResult mlir::pgx_conversion::GetFieldToAtPattern::matchAndRewrite(::pgx::
     auto recordType = ::pgx::mlir::dsa::RecordType::get(rewriter.getContext(), tupleType);
     
     // Create a placeholder record argument (this would be properly wired in full implementation)
-    // Convert the external source handle to assume it's now a record
+    // TODO Phase 5: Add proper type validation instead of unsafe assumptions
     Value recordValue = op.getHandle();
+    
+    // Validate handle type before conversion - add safety check
+    if (!recordValue.getType().isa<::pgx::db::ExternalSourceType>()) {
+        PGX_WARNING("Handle type validation needed - unsafe type assumption");
+        // TODO Phase 5: Implement proper handle type conversion and validation
+    }
     
     // Create AtOp to extract field value
     auto atOp = rewriter.replaceOpWithNewOp<::pgx::mlir::dsa::AtOp>(

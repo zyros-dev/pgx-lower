@@ -58,9 +58,13 @@ LogicalResult mlir::pgx_conversion::GetColumnToGetFieldPattern::matchAndRewrite(
     Value sourceHandle = op.getRel();
     
     // Create DB get_field operation with proper field index and type OID
-    // Note: For now using placeholder values - in full implementation these would come from catalog
-    auto fieldIndex = rewriter.getIndexAttr(0);  // Placeholder field index
-    auto typeOid = rewriter.getI32IntegerAttr(23);  // INT4OID as placeholder
+    // TODO Phase 5: Implement catalog lookup for actual field index and type OID
+    // Extract column information from catalog instead of using hardcoded values
+    std::string columnName = columnRef.getColumn().str();
+    auto fieldIndex = rewriter.getIndexAttr(0);  // TODO Phase 5: Replace with catalog.getColumnIndex(tableName, columnName)
+    auto typeOid = rewriter.getI32IntegerAttr(23);  // TODO Phase 5: Replace with catalog.getColumnTypeOID(tableName, columnName)
+    
+    PGX_WARNING("Using placeholder field index and type OID - catalog integration needed");
     
     auto getFieldOp = rewriter.replaceOpWithNewOp<::pgx::db::GetFieldOp>(
         op,
