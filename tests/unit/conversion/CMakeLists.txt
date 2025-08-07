@@ -94,3 +94,44 @@ target_link_libraries(test_focused_lowering_validation
 
 # Register focused validation tests with CTest
 add_test(NAME FocusedLoweringValidationTest COMMAND test_focused_lowering_validation)
+
+# MaterializeOp lowering validation tests
+add_executable(test_materialize_op_lowering test_materialize_op_lowering.cpp)
+
+target_link_libraries(test_materialize_op_lowering
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDSADialect
+    MLIRRelAlgToDSAConversion
+    MLIRFuncDialect
+    MLIRPass
+    MLIRTransforms
+    MLIRDialectConversion
+    MLIRParser
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register MaterializeOp lowering tests with CTest
+add_test(NAME MaterializeOpLoweringTest COMMAND test_materialize_op_lowering)
+
+# Simple MaterializeOp lowering validation tests
+add_executable(test_materialize_op_simple test_materialize_op_simple.cpp)
+
+target_link_libraries(test_materialize_op_simple
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDSADialect
+    MLIRRelAlgToDSAConversion
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register simple MaterializeOp tests with CTest
+add_test(NAME SimpleMaterializeOpLoweringTest COMMAND test_materialize_op_simple)
