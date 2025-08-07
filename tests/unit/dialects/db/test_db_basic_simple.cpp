@@ -49,7 +49,7 @@ TEST_F(DBBasicSimpleTest, GetExternalOpCreation) {
     
     ASSERT_TRUE(getExternalOp);
     EXPECT_EQ(getExternalOp.getHandle().getType(), externalSourceType);
-    EXPECT_EQ(getExternalOp.getTableOid(), tableOid.getResult());
+    EXPECT_TRUE(getExternalOp.getTableOid() == tableOid.getResult());
 }
 
 TEST_F(DBBasicSimpleTest, StreamResultsOpCreation) {

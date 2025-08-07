@@ -50,6 +50,8 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRRelAlgDialect
     MLIRDBDialect  
     MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRDBToDSAConversion
     # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt
     -Wl,--no-whole-archive
     # Standard MLIR dialects required by our dialects

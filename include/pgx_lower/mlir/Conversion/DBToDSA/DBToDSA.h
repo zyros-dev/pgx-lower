@@ -23,7 +23,8 @@ struct GetExternalToScanSourcePattern : public OpConversionPattern<::pgx::db::Ge
     using OpConversionPattern<::pgx::db::GetExternalOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(::pgx::db::GetExternalOp op,
-                                  PatternRewriter &rewriter) const override;
+                                  OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
 };
 
 /// Pattern to convert DB GetFieldOp to DSA AtOp
@@ -31,7 +32,8 @@ struct GetFieldToAtPattern : public OpConversionPattern<::pgx::db::GetFieldOp> {
     using OpConversionPattern<::pgx::db::GetFieldOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(::pgx::db::GetFieldOp op,
-                                  PatternRewriter &rewriter) const override;
+                                  OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
 };
 
 /// Pattern to convert DB StreamResultsOp to DSA finalization operations
@@ -39,7 +41,8 @@ struct StreamResultsToFinalizePattern : public OpConversionPattern<::pgx::db::St
     using OpConversionPattern<::pgx::db::StreamResultsOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(::pgx::db::StreamResultsOp op,
-                                  PatternRewriter &rewriter) const override;
+                                  OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
 };
 
 //===----------------------------------------------------------------------===//

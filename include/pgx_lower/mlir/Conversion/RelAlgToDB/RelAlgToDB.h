@@ -23,7 +23,8 @@ struct BaseTableToExternalSourcePattern : public OpConversionPattern<::pgx::mlir
     using OpConversionPattern<::pgx::mlir::relalg::BaseTableOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(::pgx::mlir::relalg::BaseTableOp op,
-                                  PatternRewriter &rewriter) const override;
+                                  OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
 };
 
 /// Pattern to convert RelAlg GetColumnOp to DB GetFieldOp
@@ -31,7 +32,8 @@ struct GetColumnToGetFieldPattern : public OpConversionPattern<::pgx::mlir::rela
     using OpConversionPattern<::pgx::mlir::relalg::GetColumnOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(::pgx::mlir::relalg::GetColumnOp op,
-                                  PatternRewriter &rewriter) const override;
+                                  OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
 };
 
 /// Pattern to convert RelAlg MaterializeOp to DB result streaming operations
@@ -39,7 +41,8 @@ struct MaterializeToStreamResultsPattern : public OpConversionPattern<::pgx::mli
     using OpConversionPattern<::pgx::mlir::relalg::MaterializeOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op,
-                                  PatternRewriter &rewriter) const override;
+                                  OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
 };
 
 /// Pattern to convert RelAlg ReturnOp to func.return
@@ -47,7 +50,8 @@ struct ReturnOpToFuncReturnPattern : public OpConversionPattern<::pgx::mlir::rel
     using OpConversionPattern<::pgx::mlir::relalg::ReturnOp>::OpConversionPattern;
     
     LogicalResult matchAndRewrite(::pgx::mlir::relalg::ReturnOp op,
-                                  PatternRewriter &rewriter) const override;
+                                  OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
 };
 
 //===----------------------------------------------------------------------===//

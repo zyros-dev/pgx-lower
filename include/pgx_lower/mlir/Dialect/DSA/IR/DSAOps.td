@@ -23,6 +23,14 @@ def DSA_Dialect : Dialect {
     // REQUIRED: Properties system disabled due to MLIR v20 compatibility issues
     // Removing this causes compilation errors with BytecodeOpInterface and Attribute resolution
     let usePropertiesForAttributes = 0;
+    
+    let extraClassDeclaration = [{
+        private:
+        void registerTypes();
+
+        public:
+
+    }];
 }
 
 //===----------------------------------------------------------------------===//

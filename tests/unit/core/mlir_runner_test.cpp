@@ -80,9 +80,10 @@ TEST_F(MLIRRunnerTest, MockPlannedStmtProcessing) {
     mock_stmt.dummy = 123;
     
     // Test that the runner processes the mock statement
-    // Currently returns true after loading dialects (minimal implementation)
+    // With the new full pipeline implementation, mock data will fail at AST translation
+    // This is expected behavior - the runner now attempts full compilation
     bool result = mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger);
-    EXPECT_TRUE(result); // Should return true after successful dialect loading
+    EXPECT_FALSE(result); // Should return false because mock PlannedStmt cannot be translated
 }
 
 // Test the EState variant with null inputs
@@ -111,9 +112,10 @@ TEST_F(MLIRRunnerTest, MockEStateProcessing) {
     mock_econtext.dummy = 789;
     
     // Test that the runner processes the mock structures
-    // Currently returns true after loading dialects (minimal implementation)
+    // With the new full pipeline implementation, mock data will fail at AST translation
+    // This is expected behavior - the runner now attempts full compilation
     bool result = mlir_runner::run_mlir_with_estate(&mock_stmt, &mock_estate, &mock_econtext, logger);
-    EXPECT_TRUE(result); // Should return true after successful dialect loading
+    EXPECT_FALSE(result); // Should return false because mock PlannedStmt cannot be translated
 }
 
 // Test that multiple calls don't interfere with each other
@@ -121,8 +123,31 @@ TEST_F(MLIRRunnerTest, MultipleCalls) {
     PlannedStmt mock_stmt;
     mock_stmt.dummy = 123;
     
-    // Multiple calls should all succeed
-    EXPECT_TRUE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger));
-    EXPECT_TRUE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger));
-    EXPECT_TRUE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger));
+    // Multiple calls should all fail consistently (mock data cannot be translated)
+    // This verifies that the runner doesn't maintain improper state between calls
+    EXPECT_FALSE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger));
+    EXPECT_FALSE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger));
+    EXPECT_FALSE(mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger));
+}
+
+// Test that demonstrates the full pipeline behavior
+TEST_F(MLIRRunnerTest, FullPipelineBehavior) {
+    // This test documents the expected behavior of the new full pipeline implementation
+    // When given invalid mock data, the pipeline should fail at AST translation step
+    
+    PlannedStmt mock_stmt;
+    mock_stmt.dummy = 123;
+    
+    // The runner now attempts full compilation pipeline:
+    // 1. Initialize MLIR context and dialects ✓
+    // 2. Translate PostgreSQL AST to RelAlg MLIR ✗ (fails with mock data)
+    // 3. RelAlg → DB dialect lowering (not reached)
+    // 4. DB → DSA dialect lowering (not reached) 
+    // 5. Final verification (not reached)
+    
+    bool result = mlir_runner::run_mlir_postgres_ast_translation(&mock_stmt, logger);
+    EXPECT_FALSE(result); // Expected to fail at AST translation with mock data
+    
+    // TODO Phase 5: Add tests with proper PlannedStmt structures that can be translated
+    // These would test the full pipeline: AST → RelAlg → DB → DSA → (future: LLVM IR → JIT)
 }
