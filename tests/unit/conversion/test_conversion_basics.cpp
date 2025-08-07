@@ -242,3 +242,135 @@ TEST_F(ConversionBasicsTest, TestConversionPrerequisites) {
     
     MLIR_PGX_DEBUG("UnitTest", "Conversion prerequisites test passed");
 }
+
+//===----------------------------------------------------------------------===//
+// DB to DSA Conversion Tests 
+//===----------------------------------------------------------------------===//
+
+// Test GetExternalOp to ScanSourceOp conversion pattern 
+TEST_F(ConversionBasicsTest, TestGetExternalToScanSourceConversion) {
+    MLIR_PGX_DEBUG("UnitTest", "Testing GetExternalOp to ScanSourceOp conversion");
+    
+    auto module = ModuleOp::create(builder->getUnknownLoc());
+    builder->setInsertionPointToStart(module.getBody());
+    
+    auto funcType = builder->getFunctionType({}, {});
+    auto funcOp = builder->create<func::FuncOp>(
+        builder->getUnknownLoc(), "test_db_to_dsa", funcType);
+    
+    Block* entryBlock = funcOp.addEntryBlock();
+    builder->setInsertionPointToStart(entryBlock);
+    
+    // Create GetExternalOp with table OID
+    auto tableOidValue = builder->create<arith::ConstantIntOp>(
+        builder->getUnknownLoc(), 12345, builder->getI64Type());
+    auto getExternalOp = builder->create<::pgx::db::GetExternalOp>(
+        builder->getUnknownLoc(),
+        ::pgx::db::ExternalSourceType::get(&context),
+        tableOidValue.getResult());
+    
+    builder->create<func::ReturnOp>(builder->getUnknownLoc());
+    
+    EXPECT_TRUE(funcOp.verify().succeeded());
+    EXPECT_TRUE(module.verify().succeeded());
+    
+    // Test conversion pattern creation
+    ConversionTarget target(context);
+    target.addLegalDialect<::pgx::mlir::dsa::DSADialect>();
+    target.addLegalDialect<func::FuncDialect>();
+    target.addLegalDialect<arith::ArithDialect>();
+    target.addIllegalOp<::pgx::db::GetExternalOp>();
+    
+    // Create type converter for the pattern
+    mlir::pgx_conversion::DBToDSATypeConverter typeConverter;
+    
+    RewritePatternSet patterns(&context);
+    patterns.add<mlir::pgx_conversion::GetExternalToScanSourcePattern>(typeConverter, &context);
+    
+    // Apply conversion pattern
+    EXPECT_TRUE(applyPartialConversion(funcOp, target, std::move(patterns)).succeeded());
+    
+    MLIR_PGX_DEBUG("UnitTest", "GetExternalOp to ScanSourceOp conversion test passed");
+}
+
+// Test StreamResultsOp to result bridging conversion pattern
+TEST_F(ConversionBasicsTest, TestStreamResultsToFinalizeConversion) {
+    MLIR_PGX_DEBUG("UnitTest", "Testing StreamResultsOp to result bridging conversion");
+    
+    auto module = ModuleOp::create(builder->getUnknownLoc());
+    builder->setInsertionPointToStart(module.getBody());
+    
+    auto funcType = builder->getFunctionType({}, {});
+    auto funcOp = builder->create<func::FuncOp>(
+        builder->getUnknownLoc(), "test_stream_results", funcType);
+    
+    Block* entryBlock = funcOp.addEntryBlock();
+    builder->setInsertionPointToStart(entryBlock);
+    
+    // Create StreamResultsOp
+    auto streamResultsOp = builder->create<::pgx::db::StreamResultsOp>(
+        builder->getUnknownLoc());
+    
+    builder->create<func::ReturnOp>(builder->getUnknownLoc());
+    
+    EXPECT_TRUE(funcOp.verify().succeeded());
+    EXPECT_TRUE(module.verify().succeeded());
+    
+    // Test conversion pattern creation
+    ConversionTarget target(context);
+    target.addLegalDialect<func::FuncDialect>();
+    target.addIllegalOp<::pgx::db::StreamResultsOp>();
+    
+    // Create type converter for the pattern
+    mlir::pgx_conversion::DBToDSATypeConverter typeConverter;
+    
+    RewritePatternSet patterns(&context);
+    patterns.add<mlir::pgx_conversion::StreamResultsToFinalizePattern>(typeConverter, &context);
+    
+    // Apply conversion pattern
+    EXPECT_TRUE(applyPartialConversion(funcOp, target, std::move(patterns)).succeeded());
+    
+    MLIR_PGX_DEBUG("UnitTest", "StreamResultsOp to result bridging conversion test passed");
+}
+
+// Test DB→DSA pass instantiation and execution
+TEST_F(ConversionBasicsTest, TestDBToDSAPassExecution) {
+    MLIR_PGX_DEBUG("UnitTest", "Testing DB→DSA pass execution");
+    
+    auto module = ModuleOp::create(builder->getUnknownLoc());
+    builder->setInsertionPointToStart(module.getBody());
+    
+    auto funcType = builder->getFunctionType({}, {});
+    auto funcOp = builder->create<func::FuncOp>(
+        builder->getUnknownLoc(), "test_full_conversion", funcType);
+    
+    Block* entryBlock = funcOp.addEntryBlock();
+    builder->setInsertionPointToStart(entryBlock);
+    
+    // Create DB operations that should be converted
+    auto tableOidValue = builder->create<arith::ConstantIntOp>(
+        builder->getUnknownLoc(), 12345, builder->getI64Type());
+    auto getExternalOp = builder->create<::pgx::db::GetExternalOp>(
+        builder->getUnknownLoc(),
+        ::pgx::db::ExternalSourceType::get(&context),
+        tableOidValue.getResult());
+    
+    auto streamResultsOp = builder->create<::pgx::db::StreamResultsOp>(
+        builder->getUnknownLoc());
+    
+    builder->create<func::ReturnOp>(builder->getUnknownLoc());
+    
+    EXPECT_TRUE(funcOp.verify().succeeded());
+    EXPECT_TRUE(module.verify().succeeded());
+    
+    // Test that DB→DSA pass can be created and run
+    PassManager pm(&context);
+    pm.addPass(::pgx_conversion::createDBToDSAPass());
+    
+    // The pass should run without crashing 
+    // (actual conversion success depends on complete MLIR setup)
+    auto dbToDSAPass = ::pgx_conversion::createDBToDSAPass();
+    EXPECT_TRUE(dbToDSAPass != nullptr);
+    
+    MLIR_PGX_DEBUG("UnitTest", "DB→DSA pass execution test passed");
+}

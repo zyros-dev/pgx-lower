@@ -24,6 +24,9 @@ def RelAlg_Dialect : Dialect {
     
     // Disable properties system to avoid namespace issues
     let usePropertiesForAttributes = 0;
+    
+    // Enable type printing/parsing
+    let useDefaultTypePrinterParser = 1;
 
     let extraClassDeclaration = [{
         private:
@@ -45,17 +48,14 @@ class RelAlg_Type<string name, string typeMnemonic> : TypeDef<RelAlg_Dialect, na
 
 def RelAlg_TupleStream : RelAlg_Type<"TupleStream", "tuplestream"> {
     let summary = "tuple stream type";
-    let hasCustomAssemblyFormat = 1;
 }
 
 def RelAlg_Tuple : RelAlg_Type<"Tuple", "tuple"> {
-    let summary = "tuple type"; 
-    let hasCustomAssemblyFormat = 1;
+    let summary = "tuple type";
 }
 
 def RelAlg_Table : RelAlg_Type<"Table", "table"> {
     let summary = "table type";
-    let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -92,7 +92,6 @@ def BaseTableOp : RelAlg_Op<"basetable",
     let arguments = (ins StrAttr:$table_name, I64Attr:$table_oid);
     let results = (outs RelAlg_TupleStream:$result);
     let regions = (region SizedRegion<1>:$body);
-    let assemblyFormat = "$table_name $table_oid $body attr-dict `:` type($result)";
 }
 
 //===----------------------------------------------------------------------===//

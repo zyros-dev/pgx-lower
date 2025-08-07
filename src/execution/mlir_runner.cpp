@@ -99,16 +99,16 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
             return false;
         }
         
-        // Phase 3a: Set up PassManager and run RelAlg→DB lowering pipeline only
-        // NOTE: Phase 3b (DB→DSA) is NOT implemented yet - enforce phase boundaries!
+        // Phase 3a+3b: Set up PassManager and run RelAlg→DB→DSA lowering pipeline
+        // MINIMAL IMPLEMENTATION: Enable DB→DSA for Test 1 only
         mlir::PassManager pm(&context);
         pm.addPass(mlir::pgx_conversion::createRelAlgToDBPass());
-        // TODO Phase 3b: Add DB→DSA pass after Phase 3a is complete and validated
-        // pm.addPass(mlir::pgx_conversion::createDBToDSAPass());
+        // Phase 3b: Add DB→DSA pass - MINIMAL implementation for Test 1
+        pm.addPass(mlir::pgx_conversion::createDBToDSAPass());
         
-        // Run the lowering pipeline (Phase 3a only: RelAlg → DB)
+        // Run the lowering pipeline (Phase 3a+3b: RelAlg → DB → DSA)
         if (failed(pm.run(*module))) {
-            PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB)");
+            PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB → DSA)");
             return false;
         }
         
@@ -121,7 +121,7 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
         // TODO Phase 3b: DB → DSA lowering (future work)
         // TODO Phase 4: DSA → LLVM IR lowering (future work) 
         // TODO Phase 5: LLVM IR → JIT compilation (future work)
-        PGX_WARNING("Phase 3b-5 not yet implemented: DB→DSA→LLVM→JIT pipeline");
+        PGX_WARNING("Phase 4-5 not yet implemented: DSA→LLVM→JIT pipeline");
         
         return true;
         
@@ -172,16 +172,16 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
             return false;
         }
         
-        // Phase 3a: Set up PassManager and run RelAlg→DB lowering pipeline only
-        // NOTE: Phase 3b (DB→DSA) is NOT implemented yet - enforce phase boundaries!
+        // Phase 3a+3b: Set up PassManager and run RelAlg→DB→DSA lowering pipeline
+        // MINIMAL IMPLEMENTATION: Enable DB→DSA for Test 1 only
         mlir::PassManager pm(&context);
         pm.addPass(mlir::pgx_conversion::createRelAlgToDBPass());
-        // TODO Phase 3b: Add DB→DSA pass after Phase 3a is complete and validated
-        // pm.addPass(mlir::pgx_conversion::createDBToDSAPass());
+        // Phase 3b: Add DB→DSA pass - MINIMAL implementation for Test 1
+        pm.addPass(mlir::pgx_conversion::createDBToDSAPass());
         
-        // Run the lowering pipeline (Phase 3a only: RelAlg → DB)
+        // Run the lowering pipeline (Phase 3a+3b: RelAlg → DB → DSA)
         if (failed(pm.run(*module))) {
-            PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB)");
+            PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB → DSA)");
             return false;
         }
         
@@ -194,7 +194,7 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         // TODO Phase 3b: DB → DSA lowering (future work)
         // TODO Phase 4: DSA → LLVM IR lowering (future work)
         // TODO Phase 5: LLVM IR → JIT compilation (future work) 
-        PGX_WARNING("Phase 3b-5 not yet implemented: DB→DSA→LLVM→JIT pipeline with EState");
+        PGX_WARNING("Phase 4-5 not yet implemented: DSA→LLVM→JIT pipeline with EState");
         
         return true;
         

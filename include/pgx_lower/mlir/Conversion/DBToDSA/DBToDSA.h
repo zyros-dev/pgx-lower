@@ -5,6 +5,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
 #include <memory>
 
@@ -20,7 +21,8 @@ namespace pgx_conversion {
 
 /// Pattern to convert DB GetExternalOp to DSA ScanSourceOp
 struct GetExternalToScanSourcePattern : public OpConversionPattern<::pgx::db::GetExternalOp> {
-    using OpConversionPattern<::pgx::db::GetExternalOp>::OpConversionPattern;
+    GetExternalToScanSourcePattern(mlir::TypeConverter &typeConverter, MLIRContext *context)
+        : OpConversionPattern<::pgx::db::GetExternalOp>(typeConverter, context) {}
     
     LogicalResult matchAndRewrite(::pgx::db::GetExternalOp op,
                                   OpAdaptor adaptor,
@@ -38,11 +40,35 @@ struct GetFieldToAtPattern : public OpConversionPattern<::pgx::db::GetFieldOp> {
 
 /// Pattern to convert DB StreamResultsOp to DSA finalization operations
 struct StreamResultsToFinalizePattern : public OpConversionPattern<::pgx::db::StreamResultsOp> {
-    using OpConversionPattern<::pgx::db::StreamResultsOp>::OpConversionPattern;
+    StreamResultsToFinalizePattern(mlir::TypeConverter &typeConverter, MLIRContext *context)
+        : OpConversionPattern<::pgx::db::StreamResultsOp>(typeConverter, context) {}
     
     LogicalResult matchAndRewrite(::pgx::db::StreamResultsOp op,
                                   OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const override;
+};
+
+/// Pattern to convert RelAlg MaterializeOp to DSA operations
+struct MaterializeToDSAPattern : public OpConversionPattern<::pgx::mlir::relalg::MaterializeOp> {
+    MaterializeToDSAPattern(mlir::TypeConverter &typeConverter, MLIRContext *context)
+        : OpConversionPattern<::pgx::mlir::relalg::MaterializeOp>(typeConverter, context) {}
+    
+    LogicalResult matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op,
+                                  OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
+};
+
+//===----------------------------------------------------------------------===//
+// DB to DSA Type Converter
+//===----------------------------------------------------------------------===//
+
+/// Type converter for DB to DSA conversion
+class DBToDSATypeConverter : public TypeConverter {
+public:
+    DBToDSATypeConverter();
+    
+    /// Get Arrow schema description for a type (for DSA CreateDS)
+    std::string getArrowDescription(Type type) const;
 };
 
 //===----------------------------------------------------------------------===//
