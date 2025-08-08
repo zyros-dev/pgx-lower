@@ -19,7 +19,6 @@
 
 // Conversion passes
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
-#include "mlir/Conversion/DBToDSA/DBToDSA.h"
 
 // Centralized pass pipeline
 #include "mlir/Passes.h"

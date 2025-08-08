@@ -3,7 +3,6 @@
 
 // Include all conversion passes
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
-#include "mlir/Conversion/DBToDSA/DBToDSA.h"
 #include "mlir/Conversion/DSAToLLVM/DSAToLLVM.h"
 
 // Include dialect headers for verification
@@ -83,7 +82,6 @@ void registerAllPgxLoweringPasses() {
     
     // Register conversion passes in dependency order
     ::mlir::pgx_conversion::registerRelAlgToDBConversionPasses();
-    ::mlir::pgx_conversion::registerDBToDSAConversionPasses();
     ::mlir::pgx_conversion::registerDSAToLLVMConversionPasses();
     
     // TODO: Register future passes here
@@ -108,16 +106,6 @@ void createRelAlgToDBPipeline(mlir::PassManager& pm) {
     PGX_DEBUG("RelAlg → DB pipeline configured");
 }
 
-void createDBToDSAPipeline(mlir::PassManager& pm) {
-    PGX_DEBUG("Creating DB → DSA lowering pipeline");
-    
-    // Phase 3b: DB → DSA lowering (nested since it's anchored on func::FuncOp)
-    pm.addNestedPass<mlir::func::FuncOp>(::mlir::pgx_conversion::createDBToDSAPass());
-    
-    // Verification is handled by PassManager enableVerifier flag
-    
-    PGX_DEBUG("DB → DSA pipeline configured");
-}
 
 void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) {
     auto pipelineStart = std::chrono::high_resolution_clock::now();
@@ -135,8 +123,6 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) 
     pm.addNestedPass<mlir::func::FuncOp>(::mlir::pgx_conversion::createRelAlgToDBPass());
     PGX_DEBUG("Added nested RelAlg → DB lowering pass");
     
-    pm.addNestedPass<mlir::func::FuncOp>(::mlir::pgx_conversion::createDBToDSAPass());
-    PGX_DEBUG("Added nested DB → DSA lowering pass");
     
     // Phase 4a - DSA → LLVM lowering (operates on module level)
     pm.addPass(::mlir::pgx_conversion::createDSAToLLVMPass());
@@ -251,11 +237,6 @@ bool validatePassRegistration() {
         return false;
     }
     
-    auto dbToDSAPass = ::mlir::pgx_conversion::createDBToDSAPass();
-    if (!dbToDSAPass) {
-        PGX_ERROR("Failed to create DBToDSA pass");
-        return false;
-    }
     
     auto dsaToLLVMPass = ::mlir::pgx_conversion::createDSAToLLVMPass();
     if (!dsaToLLVMPass) {
@@ -269,10 +250,6 @@ bool validatePassRegistration() {
         return false;
     }
     
-    if (dbToDSAPass->getName().empty()) {
-        PGX_ERROR("DBToDSA pass has empty name");
-        return false;
-    }
     
     if (dsaToLLVMPass->getName().empty()) {
         PGX_ERROR("DSAToLLVM pass has empty name");

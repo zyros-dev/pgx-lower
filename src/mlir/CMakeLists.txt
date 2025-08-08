@@ -12,7 +12,6 @@ add_mlir_library(MLIRPgxLowerPasses
     MLIRDBDialect
     MLIRDSADialect
     MLIRRelAlgToDBConversion
-    MLIRDBToDSAConversion
     MLIRFuncDialect
     MLIRArithDialect
     MLIRLLVMDialect

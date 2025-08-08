@@ -2,7 +2,6 @@
 #include "execution/logging.h"
 
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
-#include "mlir/Conversion/DBToDSA/DBToDSA.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
@@ -37,15 +36,12 @@ protected:
 TEST_F(Phase3AIntegrationTest, TestPhase3APassInstantiation) {
     // Test that the conversion passes can be created
     auto relAlgToDBPass = ::pgx_conversion::createRelAlgToDBPass();
-    auto dbToDSAPass = ::pgx_conversion::createDBToDSAPass();
     
     EXPECT_TRUE(relAlgToDBPass != nullptr);
-    EXPECT_TRUE(dbToDSAPass != nullptr);
     
     // Create pass manager
     PassManager pm(&context);
     pm.addPass(::pgx_conversion::createRelAlgToDBPass());
-    pm.addPass(::pgx_conversion::createDBToDSAPass());
     
     // This should not crash
     EXPECT_TRUE(true);
@@ -74,10 +70,8 @@ TEST_F(Phase3AIntegrationTest, TestPhase3aPassPipeline) {
     // Test that passes work together by testing individual pass creation
     // The conversion passes operate on func::FuncOp, not ModuleOp
     auto relAlgToDBPass = ::pgx_conversion::createRelAlgToDBPass();
-    auto dbToDSAPass = ::pgx_conversion::createDBToDSAPass();
     
     EXPECT_TRUE(relAlgToDBPass != nullptr);
-    EXPECT_TRUE(dbToDSAPass != nullptr);
     
     // We can't easily test the actual pass pipeline without proper function setups
     // But we've verified the passes can be created and the implementation exists

@@ -8,7 +8,6 @@ target_link_libraries(test_pass_pipeline
     MLIRDBDialect
     MLIRDSADialect
     MLIRRelAlgToDBConversion
-    MLIRDBToDSAConversion
     MLIRFuncDialect
     MLIRArithDialect
     MLIRPass

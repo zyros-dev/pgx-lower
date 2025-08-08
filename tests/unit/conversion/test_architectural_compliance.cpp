@@ -2,7 +2,6 @@
 #include "execution/logging.h"
 
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
-#include "mlir/Conversion/DBToDSA/DBToDSA.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
@@ -159,10 +158,8 @@ TEST_F(ArchitecturalComplianceTest, TestConversionPassesAvailable) {
     
     // Test that conversion pass creation functions exist
     auto relAlgToDBPass = ::pgx_conversion::createRelAlgToDBPass();
-    auto dbToDSAPass = ::pgx_conversion::createDBToDSAPass();
     
     EXPECT_TRUE(relAlgToDBPass != nullptr);
-    EXPECT_TRUE(dbToDSAPass != nullptr);
     
     PGX_INFO("✅ ARCHITECTURAL COMPLIANCE: Conversion passes available");
 }
@@ -177,7 +174,6 @@ TEST_F(ArchitecturalComplianceTest, TestPassManagerConfiguration) {
     pm.addPass(::pgx_conversion::createRelAlgToDBPass());
     
     // Add DB to DSA conversion pass  
-    pm.addPass(::pgx_conversion::createDBToDSAPass());
     
     // Just test that the PassManager was configured successfully
     // We don't run it because we'd need valid MLIR module with RelAlg ops
