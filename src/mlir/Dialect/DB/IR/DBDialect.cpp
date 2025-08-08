@@ -1,5 +1,6 @@
 #include "mlir/Dialect/DB/IR/DBDialect.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DB/IR/DBTypes.h"
 #include "execution/logging.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
@@ -36,5 +37,8 @@ void DBDialect::initialize() {
     
     PGX_DEBUG("DB dialect initialization complete");
 }
+
+// Custom type parsing/printing temporarily disabled due to TableGen namespace issues
+// TODO: Fix namespace resolution and implement proper dialect-level type printing
 
 #include "mlir/Dialect/DB/IR/DBOpsDialect.cpp.inc"
