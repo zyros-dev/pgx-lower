@@ -193,3 +193,28 @@ target_link_libraries(test_materialize_phase4c2
 
 # Register MaterializeOp Phase 4c-2 tests with CTest
 add_test(NAME MaterializePhase4c2Test COMMAND test_materialize_phase4c2)
+
+# Translator infrastructure tests
+add_executable(test_translator_infrastructure test_translator_infrastructure_simple.cpp)
+
+target_link_libraries(test_translator_infrastructure
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRTransforms
+    MLIRDialectConversion
+    MLIRParser
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+add_test(NAME TranslatorInfrastructureTest COMMAND test_translator_infrastructure)
