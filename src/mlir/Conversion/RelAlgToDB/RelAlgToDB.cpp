@@ -40,6 +40,7 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         
         ::pgx::mlir::relalg::TranslatorContext loweringContext;
         SmallVector<::pgx::mlir::relalg::MaterializeOp> processedOps;
+        SmallVector<::pgx::mlir::relalg::BaseTableOp> consumedBaseTableOps;
         
         getOperation().walk([&](Operation* op) {
             if (isTranslationHook(op)) {
@@ -52,6 +53,14 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
                 // Store MaterializeOp for later processing to avoid iterator invalidation
                 if (auto materializeOp = dyn_cast<::pgx::mlir::relalg::MaterializeOp>(op)) {
                     processedOps.push_back(materializeOp);
+                    
+                    // Track consumed BaseTableOps
+                    auto inputOp = materializeOp.getRel().getDefiningOp();
+                    if (inputOp) {
+                        if (auto baseTableOp = dyn_cast<::pgx::mlir::relalg::BaseTableOp>(inputOp)) {
+                            consumedBaseTableOps.push_back(baseTableOp);
+                        }
+                    }
                 }
             }
         });
@@ -67,7 +76,7 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         }
         
         updateFunctionSignature(getOperation());
-        eraseRemainingRelAlgOperations();
+        eraseConsumedRelAlgOperations(consumedBaseTableOps);
         
         MLIR_PGX_INFO("RelAlgToDB", "Pass execution completed - LingoDB pattern");
     }
@@ -114,38 +123,21 @@ private:
         }
     }
     
-    // Safe erasure of remaining RelAlg operations (BaseTable, etc) after translation
-    void eraseRemainingRelAlgOperations() {
+    // Safe erasure of consumed RelAlg operations (only those processed by MaterializeOps)
+    void eraseConsumedRelAlgOperations(const SmallVector<::pgx::mlir::relalg::BaseTableOp>& consumedBaseTableOps) {
         MLIR_PGX_DEBUG("RelAlgToDB", "Erasing consumed RelAlg operations");
         
         // Collect RelAlg operations to erase
         SmallVector<Operation*> opsToErase;
-        getOperation().walk([&](Operation* op) {
-            // CRITICAL: Never erase func.return operations!
-            if (isa<func::ReturnOp>(op)) {
-                return;  // Skip return operations
+        // Only erase BaseTableOps that were actually consumed by MaterializeOps
+        for (auto baseTableOp : consumedBaseTableOps) {
+            if (baseTableOp->use_empty()) {
+                opsToErase.push_back(baseTableOp);
+                MLIR_PGX_DEBUG("RelAlgToDB", "Erasing consumed BaseTableOp");
+            } else {
+                MLIR_PGX_DEBUG("RelAlgToDB", "Consumed BaseTableOp still has uses, not erasing");
             }
-            
-            if (op->getDialect() && 
-                op->getDialect()->getNamespace() == "relalg") {
-                // Only erase BaseTableOps and other RelAlg ops (NOT MaterializeOps - already handled)
-                if (isa<::pgx::mlir::relalg::MaterializeOp>(op)) {
-                    // Skip MaterializeOps - already handled in main loop
-                    return;
-                } else if (isa<::pgx::mlir::relalg::BaseTableOp>(op)) {
-                    // BaseTableOps should have no uses after MaterializeOps are replaced
-                    if (op->use_empty()) {
-                        opsToErase.push_back(op);
-                    } else {
-                        MLIR_PGX_DEBUG("RelAlgToDB", "BaseTableOp still has uses, not erasing");
-                    }
-                }
-                // Other RelAlg operations can be erased if they have no uses
-                else if (op->use_empty()) {
-                    opsToErase.push_back(op);
-                }
-            }
-        });
+        }
         
         // Erase in reverse order to handle dependencies correctly
         for (auto it = opsToErase.rbegin(); it != opsToErase.rend(); ++it) {
