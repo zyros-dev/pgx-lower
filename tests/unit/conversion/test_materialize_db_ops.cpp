@@ -46,7 +46,7 @@ protected:
 };
 
 // Test to verify MaterializeOp generates the correct DB+DSA operation sequence for Phase 4c-3
-TEST_F(MaterializeDBOpsTest, DISABLED_VerifyDBSequence) {
+TEST_F(MaterializeDBOpsTest, VerifyDBSequence) {
     PGX_DEBUG("Testing MaterializeOp → DB+DSA operation sequence generation (Phase 4c-3)");
     
     // Create module and function
@@ -215,14 +215,32 @@ TEST_F(MaterializeDBOpsTest, VerifyMixedDBDSAOperations) {
     LogicalResult result = pm.run(funcOp);
     ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
     
-    // DEBUGGING: Dump the MLIR to see what was generated
-    PGX_INFO("=== MLIR DUMP AFTER RelAlgToDB PASS ===");
-    std::string mlir_output;
-    llvm::raw_string_ostream stream(mlir_output);
-    funcOp.print(stream, mlir::OpPrintingFlags().enableDebugInfo());
-    stream.flush();
-    PGX_INFO("Generated MLIR:\n" + mlir_output);
-    PGX_INFO("=== END MLIR DUMP ===");
+    // DEBUGGING: First verify MLIR module validity before printing
+    PGX_INFO("=== MLIR VALIDATION BEFORE DUMP ===");
+    try {
+        if (funcOp.verify().failed()) {
+            PGX_ERROR("MLIR verification failed - module is invalid");
+        } else {
+            PGX_INFO("MLIR verification passed - attempting to dump");
+        }
+    } catch (const std::exception& e) {
+        PGX_ERROR("Exception during MLIR verification: " + std::string(e.what()));
+    }
+    
+    // Try to safely dump the MLIR
+    PGX_INFO("=== ATTEMPTING MLIR DUMP ===");
+    try {
+        std::string mlir_output;
+        llvm::raw_string_ostream stream(mlir_output);
+        funcOp.print(stream, mlir::OpPrintingFlags().enableDebugInfo());
+        stream.flush();
+        PGX_INFO("Generated MLIR:\n" + mlir_output);
+        PGX_INFO("=== END MLIR DUMP ===");
+    } catch (const std::exception& e) {
+        PGX_ERROR("Exception during MLIR dump: " + std::string(e.what()));
+    } catch (...) {
+        PGX_ERROR("Unknown exception during MLIR dump");
+    }
     
     // Verify we have BOTH DB and DSA operations (Phase 4c-3 architecture)
     bool hasDBOps = false;

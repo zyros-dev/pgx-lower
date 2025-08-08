@@ -116,12 +116,38 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         
         MLIR_PGX_INFO("RelAlgToDB", "Completed RelAlg to DB conversion pass - safely erased replaced operations");
         
+        // DEBUG: Log what operations remain in the function before verification
+        MLIR_PGX_INFO("RelAlgToDB", "=== OPERATIONS REMAINING AFTER CONVERSION ===");
+        int opCount = 0;
+        funcOp.walk([&](Operation *op) {
+            opCount++;
+            std::string opName = op->getName().getStringRef().str();
+            std::string dialectName = op->getDialect() ? op->getDialect()->getNamespace().str() : "unknown";
+            MLIR_PGX_INFO("RelAlgToDB", "Op #" + std::to_string(opCount) + ": " + dialectName + "." + opName);
+            
+            // Check if operation has valid types
+            for (auto result : op->getResults()) {
+                std::string typeName = "unknown";
+                if (result.getType()) {
+                    // Just check if type exists, don't try to print it yet
+                    typeName = "valid-type";
+                } else {
+                    typeName = "null-type";
+                }
+                MLIR_PGX_INFO("RelAlgToDB", "  Result type: " + typeName);
+            }
+        });
+        MLIR_PGX_INFO("RelAlgToDB", "Total operations: " + std::to_string(opCount));
+        MLIR_PGX_INFO("RelAlgToDB", "=== END OPERATIONS LIST ===");
+        
         // Verify the function is still valid after conversion
+        MLIR_PGX_INFO("RelAlgToDB", "Starting function verification...");
         if (failed(funcOp.verify())) {
             MLIR_PGX_ERROR("RelAlgToDB", "Function verification failed after conversion");
             signalPassFailure();
             return;
         }
+        MLIR_PGX_INFO("RelAlgToDB", "Function verification passed successfully");
         
         MLIR_PGX_DEBUG("RelAlgToDB", "Function verification passed");
     }
