@@ -38,149 +38,28 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
     void runOnOperation() override {
         MLIR_PGX_INFO("RelAlgToDB", "Starting RelAlg to DB conversion pass (LingoDB Pattern)");
         
-        // Collect MaterializeOps to process
-        SmallVector<::pgx::mlir::relalg::MaterializeOp> materializeOps;
-        getOperation().walk([&](::pgx::mlir::relalg::MaterializeOp op) {
-            materializeOps.push_back(op);
-        });
-        
-        // Handle empty functions gracefully
-        if (materializeOps.empty()) {
-            MLIR_PGX_INFO("RelAlgToDB", "No MaterializeOps found - pass completes successfully");
-            return;
-        }
-        
-        // Process each MaterializeOp using LingoDB pattern
-        for (auto materializeOp : materializeOps) {
-            ::pgx::mlir::relalg::TranslatorContext loweringContext;
-            
-            // Create translator and execute
-            auto node = ::pgx::mlir::relalg::Translator::createTranslator(materializeOp);
-            node->setInfo(nullptr, ::pgx::mlir::relalg::ColumnSet());
-            
-            // CRITICAL: Create builder with proper context
-            // Use the function's builder context to maintain consistency
-            OpBuilder builder(&getContext());
-            
-            // Ensure we have a valid insertion block
-            if (!materializeOp->getBlock()) {
-                MLIR_PGX_ERROR("RelAlgToDB", "MaterializeOp has no parent block!");
-                continue;
-            }
-            
-            // Set insertion point BEFORE the materialize op
-            // This ensures generated operations go in the right place
-            builder.setInsertionPoint(materializeOp);
-            
-            // EXTRA SAFETY: Ensure we're not inserting after a terminator
-            if (auto* block = builder.getInsertionBlock()) {
-                if (block->empty()) {
-                    MLIR_PGX_ERROR("RelAlgToDB", "Insertion block is empty!");
-                    continue;
-                }
-                // Ensure we're inserting before any terminator
-                if (auto* terminator = block->getTerminator()) {
-                    if (builder.getInsertionPoint() == block->end() ||
-                        &*builder.getInsertionPoint() == terminator) {
-                        // We're at or after the terminator, move before it
-                        builder.setInsertionPoint(terminator);
+        ::pgx::mlir::relalg::TranslatorContext loweringContext;
+        getOperation().walk([&](Operation* op) {
+            if (isTranslationHook(op)) {
+                auto node = ::pgx::mlir::relalg::Translator::createTranslator(op);
+                node->setInfo(nullptr, ::pgx::mlir::relalg::ColumnSet());
+                OpBuilder builder(op);
+                node->produce(loweringContext, builder);
+                node->done();
+                
+                // Replace MaterializeOp result with DSA table
+                if (auto materializeOp = dyn_cast<::pgx::mlir::relalg::MaterializeOp>(op)) {
+                    auto dsaTable = loweringContext.getQueryResult();
+                    if (dsaTable) {
+                        materializeOp.replaceAllUsesWith(dsaTable);
+                        materializeOp.erase();
                     }
                 }
             }
-            
-            // Verify block structure before produce
-            if (auto* block = builder.getInsertionBlock()) {
-                if (!block->getTerminator()) {
-                    MLIR_PGX_ERROR("RelAlgToDB", "Block has no terminator before produce!");
-                } else {
-                    MLIR_PGX_DEBUG("RelAlgToDB", "Block has terminator before produce");
-                }
-            }
-            
-            node->produce(loweringContext, builder);
-            node->done();
-            
-            // Verify block structure after produce
-            if (auto* block = builder.getInsertionBlock()) {
-                if (!block->getTerminator()) {
-                    MLIR_PGX_ERROR("RelAlgToDB", "Block has no terminator after produce!");
-                    // This is a critical error - the produce() method broke the block structure
-                } else {
-                    MLIR_PGX_DEBUG("RelAlgToDB", "Block still has terminator after produce");
-                }
-            }
-            
-            // Get the DSA table result from context and replace MaterializeOp
-            auto dsaTable = loweringContext.getQueryResult();
-            if (dsaTable) {
-                MLIR_PGX_DEBUG("RelAlgToDB", "Replacing MaterializeOp uses with DSA table");
-                
-                // CRITICAL: Replace all uses of MaterializeOp with DSA table
-                // This includes return operations
-                if (!materializeOp.use_empty()) {
-                    MLIR_PGX_DEBUG("RelAlgToDB", "MaterializeOp has uses, replacing with DSA table");
-                    
-                    // Before replacing, check if any uses are return operations
-                    for (auto& use : materializeOp->getUses()) {
-                        if (auto returnOp = dyn_cast<func::ReturnOp>(use.getOwner())) {
-                            MLIR_PGX_DEBUG("RelAlgToDB", "Found return operation using MaterializeOp");
-                        }
-                    }
-                    
-                    materializeOp.replaceAllUsesWith(dsaTable);
-                    
-                    // Verify return operations are updated
-                    getOperation().walk([&](func::ReturnOp returnOp) {
-                        for (auto operand : returnOp.getOperands()) {
-                            if (operand == dsaTable) {
-                                MLIR_PGX_DEBUG("RelAlgToDB", "Return operation successfully updated with DSA table");
-                            }
-                        }
-                    });
-                }
-                
-                MLIR_PGX_DEBUG("RelAlgToDB", "Erasing MaterializeOp after replacement");
-                materializeOp.erase();
-            } else {
-                MLIR_PGX_ERROR("RelAlgToDB", "No DSA table result from translator!");
-            }
-        }
-        
-        // CRITICAL: Before erasing RelAlg operations, ensure all terminators are intact
-        // This includes verifying that return operations still exist and are valid
-        getOperation().walk([&](func::ReturnOp returnOp) {
-            if (returnOp.getNumOperands() == 0) {
-                MLIR_PGX_ERROR("RelAlgToDB", "Found return operation with no operands!");
-            }
         });
         
-        // Keep the proven function signature update
         updateFunctionSignature(getOperation());
-        
-        // Erase remaining RelAlg operations safely  
         eraseRelAlgOperations();
-        
-        // Final verification: ensure basic block structure is maintained
-        bool hasStructuralIssues = false;
-        getOperation().walk([&](Block* block) {
-            if (!block->getTerminator() && !block->empty()) {
-                MLIR_PGX_ERROR("RelAlgToDB", "Found block without terminator!");
-                hasStructuralIssues = true;
-                
-                // Log the last operation in the block for debugging
-                if (!block->empty()) {
-                    auto& lastOp = block->back();
-                    MLIR_PGX_ERROR("RelAlgToDB", "Last operation in block: " + 
-                                  lastOp.getName().getStringRef().str());
-                }
-            }
-        });
-        
-        if (hasStructuralIssues) {
-            MLIR_PGX_ERROR("RelAlgToDB", "Generated IR has structural issues - blocks without terminators");
-            signalPassFailure();
-            return;
-        }
         
         MLIR_PGX_INFO("RelAlgToDB", "Pass execution completed - LingoDB pattern");
     }
