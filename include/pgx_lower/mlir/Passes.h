@@ -28,11 +28,6 @@ void registerAllPgxLoweringPasses();
 /// @param pm The pass manager to populate with passes
 void createRelAlgToDBPipeline(mlir::PassManager& pm);
 
-/// Create the DB → DSA lowering pipeline
-/// Transforms DB dialect operations into DSA (Data Structures & Algorithms) operations
-/// 
-/// @param pm The pass manager to populate with passes
-void createDBToDSAPipeline(mlir::PassManager& pm);
 
 /// Create the complete lowering pipeline from RelAlg to DSA
 /// This is the main pipeline for Test 1 execution

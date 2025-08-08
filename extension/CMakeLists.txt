@@ -49,7 +49,6 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRDBDialect  
     MLIRDSADialect
     MLIRRelAlgToDBConversion
-    MLIRDBToDSAConversion
     MLIRDSAToLLVMConversion  # Phase 4a DSA -> LLVM conversion
     MLIRPgxLowerPasses  # Central pass registration
     # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt

@@ -18,7 +18,6 @@
 
 // Conversion pass includes for registration verification
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
-#include "mlir/Conversion/DBToDSA/DBToDSA.h"
 
 namespace {
 
@@ -72,7 +71,6 @@ TEST_F(PassPipelineTest, TestPassRegistration) {
     
     // Verify passes are registered by checking if we can create them
     ASSERT_NO_THROW(mlir::pgx_conversion::createRelAlgToDBPass());
-    ASSERT_NO_THROW(mlir::pgx_conversion::createDBToDSAPass());
 }
 
 // Test 2: Complete Pipeline Creation
@@ -99,15 +97,6 @@ TEST_F(PassPipelineTest, TestRelAlgToDBPipelineCreation) {
     ASSERT_NO_THROW(mlir::pgx_lower::createRelAlgToDBPipeline(pm));
 }
 
-// Test 4: DB to DSA Pipeline Creation
-TEST_F(PassPipelineTest, TestDBToDSAPipelineCreation) {
-    PGX_DEBUG("Testing DB → DSA pipeline creation");
-    
-    mlir::PassManager pm(context.get());
-    
-    // Should create pipeline without throwing
-    ASSERT_NO_THROW(mlir::pgx_lower::createDBToDSAPipeline(pm));
-}
 
 // Test 5: Pipeline Execution on Empty Module
 TEST_F(PassPipelineTest, TestPipelineExecutionOnEmptyModule) {

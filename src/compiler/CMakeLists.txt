@@ -14,7 +14,6 @@ add_subdirectory(../mlir/Dialect/DSA DSADialect)
 
 # Add conversion passes - Following proper LingoDB pipeline: RelAlg → DB → DSA → LLVM
 add_subdirectory(../mlir/Conversion/RelAlgToDB RelAlgToDBConversion)
-add_subdirectory(../mlir/Conversion/DBToDSA DBToDSAConversion)
 # DSA to LLVM conversion - Phase 4a implementation
 add_subdirectory(../mlir/Conversion/DSAToLLVM DSAToLLVMConversion)
 

@@ -155,7 +155,6 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRDSADialect
         MLIRRelAlgToDSAConversion
         MLIRRelAlgToDBConversion      # New RelAlg -> DB conversion
-        MLIRDBToDSAConversion         # New DB -> DSA conversion
         MLIRDSAToLLVMConversion       # New DSA -> LLVM conversion (Phase 4a)
         MLIRPgxLowerPasses            # Centralized pass pipeline infrastructure
         MLIRFuncDialect
