@@ -174,10 +174,11 @@ TEST_F(RelAlgToDBTest, MaterializeOpPassThrough) {
     PGX_DEBUG("MaterializeOpPassThrough test completed - Phase 4c-1 scope verified");
 }
 
-TEST_F(RelAlgToDBTest, ReturnOpConversion) {
-    PGX_DEBUG("Running ReturnOpConversion test");
+TEST_F(RelAlgToDBTest, ReturnOpPassThrough) {
+    PGX_DEBUG("Running ReturnOpPassThrough test - Phase 4c-1");
     
-    // Create a function with RelAlg ReturnOp
+    // In Phase 4c-1, ReturnOp should NOT be converted
+    // It should pass through unchanged to later phases
     auto funcType = builder.getFunctionType({}, {});
     auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_return", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
@@ -189,19 +190,93 @@ TEST_F(RelAlgToDBTest, ReturnOpConversion) {
     // Run the pass
     runRelAlgToDBPass(funcOp);
     
-    // Should have func.return instead of relalg.return
+    // Should still have relalg.return (NOT converted in Phase 4c-1)
+    bool foundRelAlgReturn = false;
+    funcOp.walk([&](pgx::mlir::relalg::ReturnOp op) {
+        foundRelAlgReturn = true;
+        PGX_DEBUG("Found relalg.return - correctly passed through");
+    });
+    
+    // Should NOT have func.return
     bool foundFuncReturn = false;
     funcOp.walk([&](func::ReturnOp op) {
         foundFuncReturn = true;
     });
     
-    int relalgReturnCount = 0;
-    funcOp.walk([&](pgx::mlir::relalg::ReturnOp op) {
-        relalgReturnCount++;
+    EXPECT_TRUE(foundRelAlgReturn) << "relalg.return should pass through unchanged in Phase 4c-1";
+    EXPECT_FALSE(foundFuncReturn) << "func.return should NOT be created in Phase 4c-1";
+    
+    PGX_DEBUG("ReturnOpPassThrough test completed - Phase 4c-1 behavior verified");
+}
+
+TEST_F(RelAlgToDBTest, Phase4c1CompleteExample) {
+    PGX_DEBUG("Running Phase4c1CompleteExample test");
+    
+    // Test a complete example showing Phase 4c-1 scope:
+    // BaseTableOp converts, all others pass through
+    auto funcType = builder.getFunctionType({}, {});
+    auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_complete", funcType);
+    auto* entryBlock = funcOp.addEntryBlock();
+    builder.setInsertionPointToStart(entryBlock);
+    
+    // Create a typical query pattern: BaseTable -> Materialize -> Return
+    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder.create<pgx::mlir::relalg::BaseTableOp>(
+        UnknownLoc::get(&context),
+        tupleStreamType,
+        builder.getStringAttr("employees"),
+        builder.getI64IntegerAttr(54321)  // table OID
+    );
+    
+    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    // Create columns attribute for MaterializeOp
+    llvm::SmallVector<mlir::Attribute> columnAttrs;
+    columnAttrs.push_back(builder.getStringAttr("*"));
+    auto columnsArrayAttr = builder.getArrayAttr(columnAttrs);
+    
+    auto materializeOp = builder.create<pgx::mlir::relalg::MaterializeOp>(
+        UnknownLoc::get(&context),
+        tableType,
+        baseTableOp.getResult(),
+        columnsArrayAttr
+    );
+    
+    builder.create<pgx::mlir::relalg::ReturnOp>(UnknownLoc::get(&context), materializeOp.getResult());
+    
+    // Run the pass
+    runRelAlgToDBPass(funcOp);
+    
+    // Verify Phase 4c-1 behavior:
+    // 1. BaseTableOp converted to db.get_external
+    bool foundGetExternal = false;
+    funcOp.walk([&](pgx::db::GetExternalOp op) {
+        foundGetExternal = true;
+        auto constantOp = op.getTableOid().getDefiningOp<arith::ConstantIntOp>();
+        ASSERT_TRUE(constantOp != nullptr);
+        EXPECT_EQ(constantOp.value(), 54321) << "Table OID should be preserved";
     });
+    EXPECT_TRUE(foundGetExternal) << "BaseTableOp should be converted";
     
-    EXPECT_TRUE(foundFuncReturn) << "func.return not found after conversion";
-    EXPECT_EQ(relalgReturnCount, 0) << "relalg.return still exists after conversion";
+    // 2. No BaseTableOp remaining
+    int baseTableCount = 0;
+    funcOp.walk([&](pgx::mlir::relalg::BaseTableOp op) {
+        baseTableCount++;
+    });
+    EXPECT_EQ(baseTableCount, 0) << "No BaseTableOp should remain";
     
-    PGX_DEBUG("ReturnOpConversion test completed successfully");
+    // 3. MaterializeOp passed through unchanged
+    bool foundMaterialize = false;
+    funcOp.walk([&](pgx::mlir::relalg::MaterializeOp op) {
+        foundMaterialize = true;
+    });
+    EXPECT_TRUE(foundMaterialize) << "MaterializeOp should pass through";
+    
+    // 4. ReturnOp passed through unchanged
+    bool foundReturn = false;
+    funcOp.walk([&](pgx::mlir::relalg::ReturnOp op) {
+        foundReturn = true;
+    });
+    EXPECT_TRUE(foundReturn) << "ReturnOp should pass through";
+    
+    PGX_DEBUG("Phase4c1CompleteExample test completed - all Phase 4c-1 requirements verified");
 }

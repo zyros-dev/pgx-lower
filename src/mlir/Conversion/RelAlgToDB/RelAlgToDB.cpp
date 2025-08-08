@@ -51,93 +51,6 @@ LogicalResult mlir::pgx_conversion::BaseTableToExternalSourcePattern::matchAndRe
     return success();
 }
 
-//===----------------------------------------------------------------------===//
-// GetColumnOp Lowering Pattern Implementation
-//===----------------------------------------------------------------------===//
-
-LogicalResult mlir::pgx_conversion::GetColumnToGetFieldPattern::matchAndRewrite(::pgx::mlir::relalg::GetColumnOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
-    MLIR_PGX_DEBUG("RelAlgToDB", "Lowering GetColumnOp to DB get_column operation");
-    
-    // Extract column name from the operation
-    std::string columnName = op.getColumnName().str();
-    
-    MLIR_PGX_INFO("RelAlgToDB", "Converting GetColumnOp for column '" + columnName + "'");
-    
-    // Debug: Log operation location and block info
-    if (op->getBlock()) {
-        MLIR_PGX_DEBUG("RelAlgToDB", "GetColumnOp is in block: " + 
-                       std::to_string(op->getBlock()->getNumArguments()) + " arguments");
-    }
-    
-    // Phase 4c-1: Generate db.get_column operation
-    // This operation is designed to work with RelAlg compatibility
-    // The tuple operand should be an external source handle after conversion
-    Value externalHandle = adaptor.getTuple();
-    
-    // Check if the operand was successfully converted
-    if (!externalHandle) {
-        MLIR_PGX_ERROR("RelAlgToDB", "Failed to get converted tuple operand for GetColumnOp");
-        MLIR_PGX_ERROR("RelAlgToDB", "Operands count: " + std::to_string(adaptor.getOperands().size()));
-        return failure();
-    }
-    
-    // Create column attribute for the DB operation
-    auto columnAttr = rewriter.getStringAttr(columnName);
-    
-    // Determine the result type - for Phase 4c-1, we'll use nullable i32 as default
-    // In a full implementation, this would be determined by schema lookup
-    auto resultType = ::pgx::db::NullableI32Type::get(rewriter.getContext());
-    
-    // Create DB get_column operation
-    auto getColumnOp = rewriter.create<::pgx::db::GetColumnOp>(
-        op.getLoc(),
-        resultType,
-        externalHandle,
-        columnAttr);
-    
-    // Replace the original operation
-    rewriter.replaceOp(op, getColumnOp.getResult());
-    
-    MLIR_PGX_DEBUG("RelAlgToDB", "Successfully converted GetColumnOp '" + columnName + "' to db.get_column");
-    
-    return success();
-}
-
-//===----------------------------------------------------------------------===//
-// MaterializeOp Lowering Pattern Implementation
-//===----------------------------------------------------------------------===//
-// 
-// CRITICAL: This pattern is DISABLED in Phase 4c-1 per architectural design
-// 
-// MaterializeOp represents the final result preparation and belongs in a later phase.
-// In Phase 4c-1, we focus ONLY on database operations (table access, column extraction).
-// MaterializeOp will be handled in Phase 4c-2 when we introduce DSA operations.
-// 
-// The pattern below is kept for reference but is NOT registered in Phase 4c-1.
-//===----------------------------------------------------------------------===//
-
-LogicalResult mlir::pgx_conversion::MaterializeToStreamResultsPattern::matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
-    // This pattern should never be called in Phase 4c-1 since MaterializeOp is marked as LEGAL
-    MLIR_PGX_ERROR("RelAlgToDB", "CRITICAL ERROR: MaterializeOp pattern called but MaterializeOp should be LEGAL in Phase 4c-1");
-    MLIR_PGX_ERROR("RelAlgToDB", "MaterializeOp will be handled in Phase 4c-2 (DSA operations)");
-    return failure();
-}
-
-//===----------------------------------------------------------------------===//
-// ReturnOp Lowering Pattern Implementation
-//===----------------------------------------------------------------------===//
-
-LogicalResult mlir::pgx_conversion::ReturnOpToFuncReturnPattern::matchAndRewrite(::pgx::mlir::relalg::ReturnOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
-    MLIR_PGX_DEBUG("RelAlgToDB", "Lowering ReturnOp to func.return");
-    
-    // Convert RelAlg ReturnOp to func.return (standard MLIR function return)
-    // At DB level, we work with standard function semantics
-    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, adaptor.getOperands());
-    
-    MLIR_PGX_DEBUG("RelAlgToDB", "Successfully converted ReturnOp to func.return");
-    return success();
-}
-
 namespace {
 
 //===----------------------------------------------------------------------===//
@@ -169,14 +82,14 @@ public:
         // This is critical for operations like MaterializeOp that may have 
         // partially converted operands
         addSourceMaterialization([](OpBuilder &builder, Type type, ValueRange inputs, Location loc) {
-            // If we need to materialize a RelAlg type from a DB type, 
-            // we should fail as this indicates a conversion problem
-            if (type.isa<::pgx::mlir::relalg::TupleStreamType>() && 
+            // For Phase 4c-1, we allow MaterializeOp to use converted values
+            // by creating an UnrealizedConversionCastOp
+            if (mlir::isa<::pgx::mlir::relalg::TupleStreamType>(type) && 
                 inputs.size() == 1 && 
-                inputs[0].getType().isa<::pgx::db::ExternalSourceType>()) {
-                // This case shouldn't happen in a well-formed conversion
-                // Return null to indicate materialization failure
-                return Value();
+                mlir::isa<::pgx::db::ExternalSourceType>(inputs[0].getType())) {
+                // Create a cast to allow MaterializeOp to use the converted value
+                return builder.create<mlir::UnrealizedConversionCastOp>(
+                    loc, type, inputs[0]).getResult(0);
             }
             
             // For other cases, just return the input unchanged
@@ -199,9 +112,9 @@ public:
         // Add target materialization to handle MaterializeOp's converted operands
         addTargetMaterialization([](OpBuilder &builder, Type type, ValueRange inputs, Location loc) {
             // If MaterializeOp needs a TupleStream but gets an ExternalSource, we need to handle it
-            if (type.isa<::pgx::mlir::relalg::TupleStreamType>() && 
+            if (mlir::isa<::pgx::mlir::relalg::TupleStreamType>(type) && 
                 inputs.size() == 1 && 
-                inputs[0].getType().isa<::pgx::db::ExternalSourceType>()) {
+                mlir::isa<::pgx::db::ExternalSourceType>(inputs[0].getType())) {
                 // For Phase 4c-1, we can't materialize this properly
                 // Return null to indicate conversion failure
                 // This will prevent MaterializeOp from being used with converted operands
@@ -246,20 +159,15 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         target.addLegalDialect<arith::ArithDialect>();
         target.addLegalDialect<func::FuncDialect>();
         
-        // Mark RelAlg operations that should be converted to DB operations as illegal
+        // PHASE 4c-1: ONLY BaseTableOp should be converted
+        // All other RelAlg operations pass through to later phases
         target.addIllegalOp<::pgx::mlir::relalg::BaseTableOp>();  // Converts to db.get_external
-        target.addIllegalOp<::pgx::mlir::relalg::GetColumnOp>();  // Converts to db.get_column
-        target.addIllegalOp<::pgx::mlir::relalg::ReturnOp>();     // Converts to func.return
         
-        // CRITICAL: MaterializeOp is LEGAL in Phase 4c-1
-        // MaterializeOp represents result preparation and will be handled in Phase 4c-2 with DSA operations
-        // In Phase 4c-1, we focus only on database access operations
-        // MaterializeOp needs special handling since its operands may be converted
-        target.addDynamicallyLegalOp<::pgx::mlir::relalg::MaterializeOp>([&](::pgx::mlir::relalg::MaterializeOp op) {
-            // MaterializeOp is legal and should pass through
-            // We'll handle type mismatches through materialization
-            return true;
-        });
+        // CRITICAL: The following operations are LEGAL in Phase 4c-1
+        // They will be handled in later phases with proper infrastructure
+        target.addLegalOp<::pgx::mlir::relalg::GetColumnOp>();    // Pass through - needs tuple iteration
+        target.addLegalOp<::pgx::mlir::relalg::MaterializeOp>();  // Pass through - needs DSA operations
+        target.addLegalOp<::pgx::mlir::relalg::ReturnOp>();       // Pass through - needs result handling
         
         // Create type converter for RelAlg to DB types
         RelAlgToDBTypeConverter typeConverter;
@@ -270,15 +178,15 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         
         RewritePatternSet patterns(&getContext());
         
-        // Add conversion patterns for all implemented RelAlg to DB operations
+        // PHASE 4c-1: Register ONLY BaseTableOp conversion pattern
+        // All other patterns are removed to ensure clean architectural boundaries
         patterns.add<mlir::pgx_conversion::BaseTableToExternalSourcePattern>(typeConverter, &getContext());
-        patterns.add<mlir::pgx_conversion::ReturnOpToFuncReturnPattern>(typeConverter, &getContext());
-        patterns.add<mlir::pgx_conversion::GetColumnToGetFieldPattern>(typeConverter, &getContext());
         
-        // CRITICAL: MaterializeOp pattern NOT registered in Phase 4c-1
-        // MaterializeOp is legal and passes through unchanged to Phase 4c-2 (DSA operations)
-        // Phase 4c-1 focuses only on database access patterns
-        // patterns.add<mlir::pgx_conversion::MaterializeToStreamResultsPattern>(&getContext());
+        // CRITICAL: The following patterns are NOT registered in Phase 4c-1:
+        // - GetColumnToGetFieldPattern: Needs tuple iteration infrastructure
+        // - MaterializeToStreamResultsPattern: Needs DSA operations
+        // - ReturnOpToFuncReturnPattern: Needs result handling infrastructure
+        // These will be added in later phases when proper support is available
         
         // Apply the conversion with type converter
         // Use applyPartialConversion to allow legal operations to remain
@@ -288,19 +196,29 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         } else {
             MLIR_PGX_INFO("RelAlgToDB", "RelAlg to DB conversion completed successfully");
             
-            // Post-conversion validation: ensure no orphaned RelAlg operations
-            bool hasOrphanedOps = false;
+            // Post-conversion validation: ensure ONLY BaseTableOp was converted
+            bool hasUnconvertedBaseTable = false;
+            bool hasLegalOps = false;
             getOperation().walk([&](Operation *op) {
-                if (isa<::pgx::mlir::relalg::BaseTableOp>(op) ||
-                    isa<::pgx::mlir::relalg::GetColumnOp>(op)) {
-                    MLIR_PGX_ERROR("RelAlgToDB", "Found unconverted RelAlg operation: " + 
+                if (isa<::pgx::mlir::relalg::BaseTableOp>(op)) {
+                    MLIR_PGX_ERROR("RelAlgToDB", "Found unconverted BaseTableOp - this should not happen");
+                    hasUnconvertedBaseTable = true;
+                }
+                // These operations should remain unchanged in Phase 4c-1
+                if (isa<::pgx::mlir::relalg::GetColumnOp>(op) ||
+                    isa<::pgx::mlir::relalg::MaterializeOp>(op) ||
+                    isa<::pgx::mlir::relalg::ReturnOp>(op)) {
+                    hasLegalOps = true;
+                    MLIR_PGX_DEBUG("RelAlgToDB", "Found legal RelAlg operation (as expected): " + 
                                    op->getName().getStringRef().str());
-                    hasOrphanedOps = true;
                 }
             });
             
-            if (hasOrphanedOps) {
-                MLIR_PGX_ERROR("RelAlgToDB", "Conversion incomplete - orphaned RelAlg operations remain");
+            if (hasUnconvertedBaseTable) {
+                MLIR_PGX_ERROR("RelAlgToDB", "Phase 4c-1 conversion incomplete - BaseTableOp not converted");
+            }
+            if (hasLegalOps) {
+                MLIR_PGX_INFO("RelAlgToDB", "Phase 4c-1: Other RelAlg operations correctly passed through");
             }
         }
     }

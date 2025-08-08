@@ -117,9 +117,9 @@ TEST_F(FunctionalConversionsTest, TestBaseTableToGetExternalConversion) {
     PGX_DEBUG("BaseTableOp to GetExternalOp conversion test completed successfully");
 }
 
-// Test ReturnOp → func::ReturnOp conversion
-TEST_F(FunctionalConversionsTest, TestReturnOpConversion) {
-    PGX_DEBUG("Starting ReturnOp to func::ReturnOp conversion test");
+// Test ReturnOp handling (should remain unconverted in Phase 4c-1)
+TEST_F(FunctionalConversionsTest, TestReturnOpPassThrough) {
+    PGX_DEBUG("Testing ReturnOp remains unconverted in Phase 4c-1");
     
     // Create a simple module and function
     auto module = ModuleOp::create(builder->getUnknownLoc());
@@ -127,7 +127,7 @@ TEST_F(FunctionalConversionsTest, TestReturnOpConversion) {
     
     auto funcType = builder->getFunctionType({}, {});
     auto funcOp = builder->create<func::FuncOp>(
-        builder->getUnknownLoc(), "test_return_conversion", funcType);
+        builder->getUnknownLoc(), "test_return_passthrough", funcType);
     
     Block* entryBlock = funcOp.addEntryBlock();
     builder->setInsertionPointToStart(entryBlock);
@@ -151,15 +151,17 @@ TEST_F(FunctionalConversionsTest, TestReturnOpConversion) {
     auto result = pm.run(funcOp);
     EXPECT_TRUE(result.succeeded()) << "RelAlgToDB pass should succeed";
     
-    // Verify conversion: RelAlg ReturnOp should be gone, func::ReturnOp should exist
-    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp));
-    EXPECT_TRUE(containsOperation<func::ReturnOp>(funcOp));
+    // In Phase 4c-1, ReturnOp remains unconverted (marked as LEGAL)
+    EXPECT_TRUE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp)) 
+        << "RelAlg ReturnOp should remain unconverted in Phase 4c-1";
+    EXPECT_FALSE(containsOperation<func::ReturnOp>(funcOp))
+        << "No func::ReturnOp should be created in Phase 4c-1";
     
-    // Count func::ReturnOp after conversion (should be 1)
+    // Count func::ReturnOp after conversion (should still be 0)
     int funcReturnCountAfter = countOperations<func::ReturnOp>(funcOp);
-    EXPECT_EQ(funcReturnCountAfter, 1) << "Should have exactly one func::ReturnOp after conversion";
+    EXPECT_EQ(funcReturnCountAfter, 0) << "Should still have no func::ReturnOp in Phase 4c-1";
     
-    PGX_DEBUG("ReturnOp to func::ReturnOp conversion test completed successfully");
+    PGX_DEBUG("ReturnOp pass-through test completed successfully");
 }
 
 // Test GetColumnOp handling (should remain unconverted in Phase 3a)
@@ -281,11 +283,11 @@ TEST_F(FunctionalConversionsTest, DISABLED_TestMaterializeOpConversion) {
     EXPECT_TRUE(containsOperation<::pgx::mlir::relalg::MaterializeOp>(funcOp)) 
         << "MaterializeOp should remain LEGAL (unconverted) in Phase 3a per LingoDB research";
     
-    // Verify RelAlg ReturnOp is still converted to func::ReturnOp (this conversion still works)
-    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp))
-        << "RelAlg ReturnOp should be converted to func::ReturnOp in Phase 3a";
-    EXPECT_TRUE(containsOperation<func::ReturnOp>(funcOp))
-        << "func::ReturnOp should exist after conversion";
+    // Verify RelAlg ReturnOp remains unconverted in Phase 4c-1
+    EXPECT_TRUE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp))
+        << "RelAlg ReturnOp should remain unconverted in Phase 4c-1";
+    EXPECT_FALSE(containsOperation<func::ReturnOp>(funcOp))
+        << "No func::ReturnOp should be created in Phase 4c-1";
     
     // Verify BaseTableOp was converted to GetExternalOp (this conversion still works)
     EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::BaseTableOp>(funcOp))
@@ -368,7 +370,7 @@ TEST_F(FunctionalConversionsTest, TestPartialConversionBehavior) {
         builder->getStringAttr("partial_test_table"),
         builder->getI64IntegerAttr(88888));
     
-    // Create RelAlg ReturnOp (should be converted in Phase 3a)
+    // Create RelAlg ReturnOp (remains unconverted in Phase 4c-1)
     builder->create<::pgx::mlir::relalg::ReturnOp>(
         builder->getUnknownLoc(), ValueRange{});
     
@@ -378,25 +380,25 @@ TEST_F(FunctionalConversionsTest, TestPartialConversionBehavior) {
     EXPECT_FALSE(containsOperation<::pgx::db::GetExternalOp>(funcOp));
     EXPECT_FALSE(containsOperation<func::ReturnOp>(funcOp));
     
-    // Apply RelAlgToDB conversion (Phase 3a partial conversion)
+    // Apply RelAlgToDB conversion (Phase 4c-1 partial conversion)
     PassManager pm(&context);
     pm.addPass(::pgx_conversion::createRelAlgToDBPass());
     
     auto result = pm.run(funcOp);
-    EXPECT_TRUE(result.succeeded()) << "Phase 3a partial conversion should succeed";
+    EXPECT_TRUE(result.succeeded()) << "Phase 4c-1 partial conversion should succeed";
     
-    // Verify partial conversion results:
+    // Verify partial conversion results for Phase 4c-1:
     // - BaseTableOp should be converted to GetExternalOp
-    // - ReturnOp should be converted to func::ReturnOp
+    // - ReturnOp should remain unconverted (LEGAL in Phase 4c-1)
     // - Other operations (like MaterializeOp, GetColumnOp) would remain legal if present
     EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::BaseTableOp>(funcOp)) 
-        << "BaseTableOp should be converted in Phase 3a";
-    EXPECT_FALSE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp)) 
-        << "ReturnOp should be converted in Phase 3a";
+        << "BaseTableOp should be converted in Phase 4c-1";
+    EXPECT_TRUE(containsOperation<::pgx::mlir::relalg::ReturnOp>(funcOp)) 
+        << "ReturnOp should remain unconverted in Phase 4c-1";
     EXPECT_TRUE(containsOperation<::pgx::db::GetExternalOp>(funcOp)) 
         << "GetExternalOp should be created from BaseTableOp";
-    EXPECT_TRUE(containsOperation<func::ReturnOp>(funcOp)) 
-        << "func::ReturnOp should be created from RelAlg ReturnOp";
+    EXPECT_FALSE(containsOperation<func::ReturnOp>(funcOp)) 
+        << "No func::ReturnOp should be created in Phase 4c-1";
     
     // Verify table OID preservation
     bool foundCorrectOid = false;
