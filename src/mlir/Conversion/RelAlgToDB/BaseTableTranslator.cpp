@@ -85,6 +85,9 @@ private:
     void processTuple(TranslatorContext& context, ::mlir::OpBuilder& builder,
                      TranslatorContext::AttributeResolverScope& scope,
                      ::mlir::Location loc, ::mlir::Value tableHandle) {
+        // For Phase 4c-4, we create a simplified single-tuple processing
+        // without complex control flow that could break MLIR block structure
+        
         // Extract field value using db.get_field
         // For Test 1, extract field 0 (id column)
         auto fieldIndex = builder.create<::mlir::arith::ConstantIndexOp>(loc, 0);
@@ -108,7 +111,12 @@ private:
         // Call consumer for streaming (one tuple at a time)
         if (consumer) {
             MLIR_PGX_DEBUG("RelAlg", "Streaming tuple to consumer");
+            
+            // CRITICAL: Save and restore insertion point around consume call
+            // This prevents the consumer from corrupting our block structure
+            auto savedIP = builder.saveInsertionPoint();
             consumer->consume(this, builder, context);
+            builder.restoreInsertionPoint(savedIP);
         }
     }
     
