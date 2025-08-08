@@ -1,6 +1,12 @@
+// Test suite for Phase 4c-3: MaterializeTranslator DSA-based Result Materialization
+// In Phase 4c-3, the MaterializeTranslator uses DSA operations (create_ds, ds_append, 
+// next_row, finalize) to materialize query results following the LingoDB architecture.
+// The RelAlgToDB pass now generates mixed DB+DSA operations as per the design document.
+
 #include <gtest/gtest.h>
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
@@ -14,9 +20,9 @@
 
 using namespace mlir;
 
-// Test to verify MaterializeOp generates the correct DB operation sequence
+// Test to verify MaterializeOp generates the correct DB+DSA operation sequence for Phase 4c-3
 TEST(MaterializeDBOpsTest, VerifyDBSequence) {
-    PGX_DEBUG("Testing MaterializeOp → DB operation sequence generation");
+    PGX_DEBUG("Testing MaterializeOp → DB+DSA operation sequence generation (Phase 4c-3)");
     
     MLIRContext context;
     OpBuilder builder(&context);
@@ -24,6 +30,7 @@ TEST(MaterializeDBOpsTest, VerifyDBSequence) {
     // Load required dialects
     context.loadDialect<pgx::mlir::relalg::RelAlgDialect>();
     context.loadDialect<pgx::db::DBDialect>();
+    context.loadDialect<pgx::mlir::dsa::DSADialect>();
     context.loadDialect<func::FuncDialect>();
     context.loadDialect<arith::ArithDialect>();
     context.loadDialect<scf::SCFDialect>();
@@ -69,12 +76,16 @@ TEST(MaterializeDBOpsTest, VerifyDBSequence) {
     LogicalResult result = pm.run(funcOp);
     ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
     
-    // Verify the DB operation sequence
-    // Should have: get_external → iterate_external → get_field → store_result → stream_results
+    // Verify the DB+DSA operation sequence for Phase 4c-3
+    // BaseTable generates: get_external → iterate_external → get_field  
+    // Materialize generates: create_ds → ds_append → next_row → finalize → stream_results
     int getExternalCount = 0;
     int iterateExternalCount = 0;
     int getFieldCount = 0;
-    int storeResultCount = 0;
+    int createDsCount = 0;
+    int dsAppendCount = 0;
+    int nextRowCount = 0;
+    int finalizeCount = 0;
     int streamResultsCount = 0;
     int scfWhileCount = 0;
     
@@ -91,9 +102,21 @@ TEST(MaterializeDBOpsTest, VerifyDBSequence) {
             getFieldCount++;
             PGX_DEBUG("Found db.get_field");
         }
-        else if (isa<pgx::db::StoreResultOp>(op)) {
-            storeResultCount++;
-            PGX_DEBUG("Found db.store_result");
+        else if (isa<pgx::mlir::dsa::CreateDSOp>(op)) {
+            createDsCount++;
+            PGX_DEBUG("Found dsa.create_ds");
+        }
+        else if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
+            dsAppendCount++;
+            PGX_DEBUG("Found dsa.ds_append");
+        }
+        else if (isa<pgx::mlir::dsa::NextRowOp>(op)) {
+            nextRowCount++;
+            PGX_DEBUG("Found dsa.next_row");
+        }
+        else if (isa<pgx::mlir::dsa::FinalizeOp>(op)) {
+            finalizeCount++;
+            PGX_DEBUG("Found dsa.finalize");
         }
         else if (isa<pgx::db::StreamResultsOp>(op)) {
             streamResultsCount++;
@@ -105,11 +128,14 @@ TEST(MaterializeDBOpsTest, VerifyDBSequence) {
         }
     });
     
-    // Verify the exact sequence
+    // Verify the exact sequence for Phase 4c-3
     EXPECT_EQ(getExternalCount, 1) << "Should have exactly one db.get_external";
     EXPECT_EQ(iterateExternalCount, 1) << "Should have exactly one db.iterate_external";
     EXPECT_EQ(getFieldCount, 1) << "Should have exactly one db.get_field";
-    EXPECT_EQ(storeResultCount, 1) << "Should have exactly one db.store_result";
+    EXPECT_EQ(createDsCount, 1) << "Should have exactly one dsa.create_ds";
+    EXPECT_GE(dsAppendCount, 1) << "Should have at least one dsa.ds_append (one per consume call)";
+    EXPECT_GE(nextRowCount, 1) << "Should have at least one dsa.next_row (one per consume call)";
+    EXPECT_EQ(finalizeCount, 1) << "Should have exactly one dsa.finalize";
     EXPECT_EQ(streamResultsCount, 1) << "Should have exactly one db.stream_results";
     EXPECT_EQ(scfWhileCount, 1) << "Should have exactly one scf.while loop";
     
@@ -127,12 +153,12 @@ TEST(MaterializeDBOpsTest, VerifyDBSequence) {
     });
     EXPECT_EQ(baseTableCount, 0) << "BaseTableOp should be converted";
     
-    PGX_DEBUG("MaterializeOp → DB operation sequence verification completed");
+    PGX_DEBUG("MaterializeOp → DB+DSA operation sequence verification completed");
 }
 
-// Test to verify DB operations only (no DSA operations)
-TEST(MaterializeDBOpsTest, NoMixedOperations) {
-    PGX_DEBUG("Testing RelAlgToDB generates only DB operations (no DSA)");
+// Test to verify RelAlgToDB generates mixed DB+DSA operations for Phase 4c-3
+TEST(MaterializeDBOpsTest, VerifyMixedDBDSAOperations) {
+    PGX_DEBUG("Testing RelAlgToDB generates mixed DB+DSA operations (Phase 4c-3)");
     
     MLIRContext context;
     OpBuilder builder(&context);
@@ -140,6 +166,7 @@ TEST(MaterializeDBOpsTest, NoMixedOperations) {
     // Load required dialects
     context.loadDialect<pgx::mlir::relalg::RelAlgDialect>();
     context.loadDialect<pgx::db::DBDialect>();
+    context.loadDialect<pgx::mlir::dsa::DSADialect>();
     context.loadDialect<func::FuncDialect>();
     context.loadDialect<arith::ArithDialect>();
     context.loadDialect<scf::SCFDialect>();
@@ -149,7 +176,7 @@ TEST(MaterializeDBOpsTest, NoMixedOperations) {
     builder.setInsertionPointToStart(module.getBody());
     
     auto funcType = builder.getFunctionType({}, {});
-    auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_no_dsa", funcType);
+    auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_mixed_ops", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);
     
@@ -185,7 +212,7 @@ TEST(MaterializeDBOpsTest, NoMixedOperations) {
     LogicalResult result = pm.run(funcOp);
     ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
     
-    // Verify we have ONLY DB operations, NO DSA operations
+    // Verify we have BOTH DB and DSA operations (Phase 4c-3 architecture)
     bool hasDBOps = false;
     bool hasDSAOps = false;
     
@@ -197,14 +224,14 @@ TEST(MaterializeDBOpsTest, NoMixedOperations) {
         }
         if (dialectNamespace == "dsa") {
             hasDSAOps = true;
-            PGX_ERROR("UNEXPECTED: Found DSA operation: " + op->getName().getStringRef().str());
+            PGX_DEBUG("Found DSA operation: " + op->getName().getStringRef().str());
         }
     });
     
-    EXPECT_TRUE(hasDBOps) << "Should have DB operations from RelAlg conversion";
-    EXPECT_FALSE(hasDSAOps) << "Should NOT have DSA operations - RelAlgToDB should generate only DB ops";
+    EXPECT_TRUE(hasDBOps) << "Should have DB operations from BaseTable conversion";
+    EXPECT_TRUE(hasDSAOps) << "Should have DSA operations from Materialize conversion (Phase 4c-3)";
     
-    PGX_DEBUG("No DSA operations test completed - only DB operations found");
+    PGX_DEBUG("Mixed DB+DSA operations test completed - Phase 4c-3 architecture verified");
 }
 
 // Test pass infrastructure
@@ -217,6 +244,7 @@ TEST(MaterializeDBOpsTest, PassExists) {
     // Load required dialects
     context.loadDialect<pgx::mlir::relalg::RelAlgDialect>();
     context.loadDialect<pgx::db::DBDialect>();
+    context.loadDialect<pgx::mlir::dsa::DSADialect>();
     context.loadDialect<func::FuncDialect>();
     
     // Create module and function
