@@ -29,6 +29,12 @@ if [[ -f "$LOCK_FILE" ]]; then
         echo "  Agent: $lock_agent"
         echo "  PID: $lock_pid"
         echo "  Duration: ${lock_age}s"
+        # Show progress indicators
+        if [[ $lock_age -gt 300 ]]; then
+            echo -e "  ${YELLOW}⚠️  Long build (>5min)${NC}"
+        elif [[ $lock_age -gt 600 ]]; then
+            echo -e "  ${RED}⚠️  Very long build (>10min)${NC}"
+        fi
     else
         echo -e "${RED}⚠️  Stale Lock Detected:${NC}"
         echo "  Agent: $lock_agent (process died)"
@@ -56,7 +62,15 @@ if [[ -d "$QUEUE_DIR" ]]; then
                 timestamp=$(echo "$info" | cut -d'|' -f3)
                 wait_time=$(($(date +%s) - timestamp))
                 
-                echo "  $position. $agent: $cmd (waiting ${wait_time}s)"
+                # Add wait time warnings
+                wait_warning=""
+                if [[ $wait_time -gt 300 ]]; then
+                    wait_warning=" ${YELLOW}(>5min)${NC}"
+                elif [[ $wait_time -gt 600 ]]; then
+                    wait_warning=" ${RED}(>10min!)${NC}"
+                fi
+                
+                echo -e "  $position. $agent: $cmd (waiting ${wait_time}s)${wait_warning}"
                 ((position++))
             fi
         done

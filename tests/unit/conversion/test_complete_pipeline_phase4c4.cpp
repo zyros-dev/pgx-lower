@@ -130,7 +130,7 @@ TEST_F(CompletePipelineTest, DISABLED_CompleteStreamingPipeline) {
         });
         
         EXPECT_EQ(relalgCount, 0) << "All RelAlg operations should be erased";
-        EXPECT_GT(dbCount, 0) << "Should have generated DB operations";
+        EXPECT_EQ(dbCount, 0) << "Should NOT have generated DB operations - LingoDB uses only DSA";
         EXPECT_GT(dsaCount, 0) << "Should have generated DSA operations";
         
     } catch (...) {
@@ -171,25 +171,25 @@ TEST_F(CompletePipelineTest, DISABLED_StreamingBehaviorValidation) {
     runRelAlgToDBPass(funcOp);
     
     // Verify streaming pattern:
-    // 1. DSA append operations should be inside the streaming loop
+    // 1. DSA append operations should be inside the DSA for loops
     bool hasAppendInsideLoop = false;
-    funcOp.walk([&](mlir::scf::WhileOp whileOp) {
-        whileOp.getBody()->walk([&](pgx::mlir::dsa::DSAppendOp) {
+    funcOp.walk([&](pgx::mlir::dsa::ForOp forOp) {
+        forOp.getBody().walk([&](pgx::mlir::dsa::DSAppendOp) {
             hasAppendInsideLoop = true;
         });
     });
     
     EXPECT_TRUE(hasAppendInsideLoop) 
-        << "DSAppendOp should be inside streaming loop for true streaming behavior";
+        << "DSAppendOp should be inside DSA for loops for true streaming behavior";
     
-    // 2. Table finalization should be outside the loop
+    // 2. Table finalization should be outside the loops
     bool hasFinalizeOutsideLoop = false;
     funcOp.walk([&](pgx::mlir::dsa::FinalizeOp finalizeOp) {
-        // Check that FinalizeOp is not inside any WhileOp
+        // Check that FinalizeOp is not inside any ForOp
         bool insideLoop = false;
         mlir::Operation* parent = finalizeOp->getParentOp();
         while (parent && parent != funcOp) {
-            if (mlir::isa<mlir::scf::WhileOp>(parent)) {
+            if (mlir::isa<pgx::mlir::dsa::ForOp>(parent)) {
                 insideLoop = true;
                 break;
             }
@@ -238,9 +238,9 @@ TEST_F(CompletePipelineTest, DISABLED_EmptyTableHandling) {
     EXPECT_GE(countOps<pgx::mlir::dsa::FinalizeOp>(funcOp), 1) 
         << "Should finalize DSA table even if empty";
     
-    // 3. The streaming loop should handle empty case gracefully
-    EXPECT_GE(countOps<mlir::scf::WhileOp>(funcOp), 1) 
-        << "Should have WhileOp that handles empty table case";
+    // 3. The DSA for loops should handle empty case gracefully
+    EXPECT_GE(countOps<pgx::mlir::dsa::ForOp>(funcOp), 2) 
+        << "Should have nested ForOp loops that handle empty table case";
 }
 
 TEST_F(CompletePipelineTest, DISABLED_ExtensibilityValidation) {
@@ -275,10 +275,10 @@ TEST_F(CompletePipelineTest, DISABLED_ExtensibilityValidation) {
     runRelAlgToDBPass(funcOp);
     
     // Verify that the generated code structure supports extension:
-    // 1. The streaming loop should be modular
-    int whileOpCount = countOps<mlir::scf::WhileOp>(funcOp);
-    EXPECT_EQ(whileOpCount, 1) 
-        << "Should have exactly one streaming loop for modularity";
+    // 1. The DSA streaming loops should be modular
+    int forOpCount = countOps<pgx::mlir::dsa::ForOp>(funcOp);
+    EXPECT_GE(forOpCount, 2) 
+        << "Should have nested DSA for loops for modularity";
     
     // 2. Column handling should be flexible
     int appendOpCount = countOps<pgx::mlir::dsa::DSAppendOp>(funcOp);
@@ -319,8 +319,8 @@ TEST_F(CompletePipelineTest, DISABLED_PerformanceMetrics) {
     
     // 2. No unnecessary memory allocations inside loop
     bool hasAllocInsideLoop = false;
-    funcOp.walk([&](mlir::scf::WhileOp whileOp) {
-        whileOp.getBody()->walk([&](mlir::Operation* op) {
+    funcOp.walk([&](pgx::mlir::dsa::ForOp forOp) {
+        forOp.getBody().walk([&](mlir::Operation* op) {
             // Check for any memory allocation operations
             if (op->getName().getStringRef().contains("alloc") ||
                 op->getName().getStringRef().contains("malloc")) {

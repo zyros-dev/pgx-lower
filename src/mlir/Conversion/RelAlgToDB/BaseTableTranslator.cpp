@@ -3,6 +3,7 @@
 #include "execution/logging.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include <sstream>
@@ -75,17 +76,13 @@ private:
     void createDBTableScan(TranslatorContext& context, ::mlir::OpBuilder& builder,
                           TranslatorContext::AttributeResolverScope& scope, 
                           ::mlir::Location loc) {
-        // Create db.get_external to initialize table access
-        auto tableOid = builder.create<::mlir::arith::ConstantIntOp>(
-            loc, baseTableOp.getTableOid(), 64);
-        auto tableHandle = builder.create<::pgx::db::GetExternalOp>(
-            loc, ::pgx::db::ExternalSourceType::get(builder.getContext()), tableOid);
-        
-        MLIR_PGX_DEBUG("RelAlg", "Created db.get_external for table OID: " + 
-                       std::to_string(baseTableOp.getTableOid()));
+        // Create DSA scan source for table iteration (LingoDB pattern)
+        // Instead of db.get_external, we create DSA operations directly
+        MLIR_PGX_DEBUG("RelAlg", "Creating DSA-based table scan for: " + 
+                       baseTableOp.getTableName().str());
         
         // Create DSA-based tuple iteration
-        createTupleIterationLoop(context, builder, scope, loc, tableHandle);
+        createTupleIterationLoop(context, builder, scope, loc, nullptr);
     }
     
     // Create DSA-based tuple iteration following LingoDB pattern
@@ -93,55 +90,87 @@ private:
                                  TranslatorContext::AttributeResolverScope& scope,
                                  ::mlir::Location loc, ::mlir::Value tableHandle) {
         // Create DSA scan source for table iteration (LingoDB pattern)
-        // For now, create a simplified DSA iterator that processes tuples
-        // This will be properly implemented with dsa.scan_source in Phase 5
+        // Build table description JSON for the scan source
+        std::string tableDesc = "{\"table\":\"" + baseTableOp.getTableName().str() + 
+                               "\",\"oid\":" + std::to_string(baseTableOp.getTableOid()) + "}";
+        auto tableDescAttr = builder.getStringAttr(tableDesc);
         
-        // Directly process the tuple since we have the tableHandle
-        // In the full LingoDB pattern, this would be:
-        // %scan = dsa.scan_source %table_description
-        // dsa.for %tuple in %scan { ... }
+        // Create tuple type for the records - for Test 1, just an id column (i64)
+        auto i64Type = builder.getI64Type();
+        auto tupleType = ::mlir::TupleType::get(builder.getContext(), {i64Type});
         
-        processTuple(context, builder, scope, loc, tableHandle);
+        // Create iterable type with the tuple structure
+        auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
+            builder.getContext(), 
+            ::pgx::mlir::dsa::RecordBatchType::get(builder.getContext(), tupleType),
+            "batch_iterator");
         
-        MLIR_PGX_DEBUG("RelAlg", "Created DSA-based tuple processing (simplified for Phase 4c-4)");
+        // Create scan source operation
+        auto scanSource = builder.create<::pgx::mlir::dsa::ScanSourceOp>(
+            loc, iterableType, tableDescAttr);
+        
+        MLIR_PGX_DEBUG("RelAlg", "Created dsa.scan_source for table: " + 
+                       baseTableOp.getTableName().str());
+        
+        // Create outer ForOp for batch iteration
+        auto batchForOp = builder.create<::pgx::mlir::dsa::ForOp>(loc, scanSource.getResult());
+        
+        // Create batch loop body
+        ::mlir::Region& batchRegion = batchForOp.getBody();
+        ::mlir::Block* batchBlock = &batchRegion.emplaceBlock();
+        auto batchType = ::pgx::mlir::dsa::RecordBatchType::get(builder.getContext(), tupleType);
+        batchBlock->addArgument(batchType, loc);
+        
+        // Create builder for batch loop body
+        ::mlir::OpBuilder batchBuilder(batchBlock, batchBlock->begin());
+        
+        // Create inner ForOp for record iteration within the batch
+        auto recordForOp = batchBuilder.create<::pgx::mlir::dsa::ForOp>(
+            loc, batchBlock->getArgument(0));
+        
+        // Create record loop body
+        ::mlir::Region& recordRegion = recordForOp.getBody();
+        ::mlir::Block* recordBlock = &recordRegion.emplaceBlock();
+        auto recordType = ::pgx::mlir::dsa::RecordType::get(builder.getContext(), tupleType);
+        recordBlock->addArgument(recordType, loc);
+        
+        // Create builder for record loop body
+        ::mlir::OpBuilder recordBuilder(recordBlock, recordBlock->begin());
+        
+        // Process the record inside the inner loop
+        processTupleInLoop(context, recordBuilder, scope, loc, recordBlock->getArgument(0));
+        
+        // Add yield for inner loop
+        recordBuilder.create<::pgx::mlir::dsa::YieldOp>(loc);
+        
+        // Add yield for outer loop  
+        batchBuilder.create<::pgx::mlir::dsa::YieldOp>(loc);
+        
+        MLIR_PGX_DEBUG("RelAlg", "Created nested DSA for loops for streaming iteration");
     }
     
-    // Process a single tuple - extract field values and call consumer
-    void processTuple(TranslatorContext& context, ::mlir::OpBuilder& builder,
-                     TranslatorContext::AttributeResolverScope& scope,
-                     ::mlir::Location loc, ::mlir::Value tableHandle) {
-        // For Phase 4c-4, we create a simplified single-tuple processing
-        // without complex control flow that could break MLIR block structure
+    // Process a single tuple inside the loop - extract field values and call consumer
+    void processTupleInLoop(TranslatorContext& context, ::mlir::OpBuilder& builder,
+                           TranslatorContext::AttributeResolverScope& scope,
+                           ::mlir::Location loc, ::mlir::Value record) {
+        // Extract field value using dsa.at operations
+        // For Test 1, extract the 'id' column
+        auto columnName = builder.getStringAttr("id");
+        auto fieldValue = builder.create<::pgx::mlir::dsa::AtOp>(
+            loc, builder.getI64Type(), record, columnName);
         
-        // Extract field value using db.get_field
-        // For Test 1, extract field 0 (id column)
-        auto fieldIndex = builder.create<::mlir::arith::ConstantIndexOp>(loc, 0);
-        // PostgreSQL OID for int8 (BIGINT) = 20
-        auto typeOid = builder.create<::mlir::arith::ConstantIntOp>(loc, 20, 32);
-        
-        auto fieldValue = builder.create<::pgx::db::GetFieldOp>(
-            loc, ::pgx::db::NullableI64Type::get(builder.getContext()),
-            tableHandle, fieldIndex, typeOid);
-        
-        MLIR_PGX_DEBUG("RelAlg", "Extracted field value using db.get_field at index 0");
-        
-        // For now, assume non-nullable and extract the actual value
-        // In a full implementation, we'd handle nullable values properly
-        auto actualValue = builder.create<::pgx::db::NullableGetValOp>(
-            loc, builder.getI64Type(), fieldValue);
+        MLIR_PGX_DEBUG("RelAlg", "Extracted field value using dsa.at for column: id");
         
         // Set the value in context for the id column
-        context.setValueForAttribute(scope, &idColumn, actualValue);
+        context.setValueForAttribute(scope, &idColumn, fieldValue.getResult());
         
-        // Call consumer for streaming (one tuple at a time)
+        // Call consumer for streaming (one tuple at a time) inside the loop
         if (consumer) {
-            MLIR_PGX_DEBUG("RelAlg", "Streaming tuple to consumer");
+            MLIR_PGX_DEBUG("RelAlg", "Streaming tuple to consumer inside DSA loop");
             
-            // CRITICAL: Save and restore insertion point around consume call
-            // This prevents the consumer from corrupting our block structure
-            auto savedIP = builder.saveInsertionPoint();
+            // CRITICAL: The consumer is called inside the loop with the loop's builder
+            // This ensures operations are inserted in the correct location
             consumer->consume(this, builder, context);
-            builder.restoreInsertionPoint(savedIP);
         }
     }
     

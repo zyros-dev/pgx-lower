@@ -467,3 +467,21 @@ target_link_libraries(test_minimal_relalg_to_db
 )
 add_test(NAME MinimalRelAlgToDBTest COMMAND test_minimal_relalg_to_db)
 
+# BaseTable DSA streaming pattern test
+add_executable(test_base_table_dsa relalg_to_db/test_base_table_dsa.cpp)
+target_link_libraries(test_base_table_dsa
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME BaseTableDSATest COMMAND test_base_table_dsa)
+
+
