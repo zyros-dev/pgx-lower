@@ -74,8 +74,8 @@ private:
         
         // Create the "before" region (condition check)
         {
-            auto* beforeBlock = new ::mlir::Block();
-            whileOp.getBefore().push_back(beforeBlock);
+            auto& beforeRegion = whileOp.getBefore();
+            auto* beforeBlock = builder.createBlock(&beforeRegion);
             ::mlir::OpBuilder beforeBuilder(beforeBlock, beforeBlock->end());
             
             // Check if there's a next tuple
@@ -88,8 +88,8 @@ private:
         
         // Create the "after" region (loop body)
         {
-            auto* afterBlock = new ::mlir::Block();
-            whileOp.getAfter().push_back(afterBlock);
+            auto& afterRegion = whileOp.getAfter();
+            auto* afterBlock = builder.createBlock(&afterRegion);
             ::mlir::OpBuilder afterBuilder(afterBlock, afterBlock->end());
             
             // Process the current tuple
@@ -142,8 +142,8 @@ public:
     void done() override {
         MLIR_PGX_DEBUG("RelAlg", "BaseTableTranslator::done() - Completed DB-based table scan");
         
-        // The BaseTableOp has been fully lowered to DB operations
-        baseTableOp.erase();
+        // Don't erase the BaseTableOp here - let the pass handle it after updating uses
+        // baseTableOp.erase();
     }
 };
 

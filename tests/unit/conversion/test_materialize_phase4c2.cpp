@@ -32,7 +32,9 @@ TEST(MaterializePhase4c2Test, DISABLED_VerifyDSASequence) {
     auto module = ModuleOp::create(UnknownLoc::get(&context));
     builder.setInsertionPointToStart(module.getBody());
     
-    auto funcType = builder.getFunctionType({}, {});
+    // Function returns a RelAlg table
+    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto funcType = builder.getFunctionType({}, {tableType});
     auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_materialize_dsa", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);
@@ -47,7 +49,6 @@ TEST(MaterializePhase4c2Test, DISABLED_VerifyDSASequence) {
     );
     
     // Create MaterializeOp
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
     llvm::SmallVector<mlir::Attribute> columnAttrs;
     columnAttrs.push_back(builder.getStringAttr("id"));
     auto columnsArrayAttr = builder.getArrayAttr(columnAttrs);
@@ -59,8 +60,8 @@ TEST(MaterializePhase4c2Test, DISABLED_VerifyDSASequence) {
         columnsArrayAttr
     );
     
-    // Create return
-    builder.create<pgx::mlir::relalg::ReturnOp>(UnknownLoc::get(&context));
+    // Create return with the MaterializeOp result
+    builder.create<func::ReturnOp>(UnknownLoc::get(&context), materializeOp.getResult());
     
     // Run the RelAlgToDB pass
     PassManager pm(&context);
@@ -140,7 +141,9 @@ TEST(MaterializePhase4c2Test, DISABLED_MixedDBDSAOperations) {
     auto module = ModuleOp::create(UnknownLoc::get(&context));
     builder.setInsertionPointToStart(module.getBody());
     
-    auto funcType = builder.getFunctionType({}, {});
+    // Function returns a RelAlg table
+    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto funcType = builder.getFunctionType({}, {tableType});
     auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_mixed_ops", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);
@@ -155,7 +158,6 @@ TEST(MaterializePhase4c2Test, DISABLED_MixedDBDSAOperations) {
     );
     
     // Create MaterializeOp
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
     llvm::SmallVector<mlir::Attribute> columnAttrs;
     columnAttrs.push_back(builder.getStringAttr("*"));
     auto columnsArrayAttr = builder.getArrayAttr(columnAttrs);
@@ -167,8 +169,8 @@ TEST(MaterializePhase4c2Test, DISABLED_MixedDBDSAOperations) {
         columnsArrayAttr
     );
     
-    // Create return
-    builder.create<pgx::mlir::relalg::ReturnOp>(UnknownLoc::get(&context));
+    // Create return with the MaterializeOp result
+    builder.create<func::ReturnOp>(UnknownLoc::get(&context), materializeOp.getResult());
     
     // Run the RelAlgToDB pass
     PassManager pm(&context);
@@ -215,7 +217,9 @@ TEST(MaterializePhase4c2Test, PassExists) {
     auto module = ModuleOp::create(UnknownLoc::get(&context));
     builder.setInsertionPointToStart(module.getBody());
     
-    auto funcType = builder.getFunctionType({}, {});
+    // Function returns a RelAlg table
+    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto funcType = builder.getFunctionType({}, {tableType});
     auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_pass_exists", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);

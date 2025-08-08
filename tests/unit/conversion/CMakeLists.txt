@@ -295,3 +295,156 @@ target_link_libraries(test_materialize_db_ops
 
 # Register MaterializeOp DB operations tests with CTest
 add_test(NAME MaterializeDBOpsTest COMMAND test_materialize_db_ops)
+
+# Phase 4c-4: Complete Pipeline Integration tests
+add_executable(test_complete_pipeline_phase4c4 test_complete_pipeline_phase4c4.cpp)
+target_link_libraries(test_complete_pipeline_phase4c4
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRSCFDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    pgx_logging
+)
+add_test(NAME CompletePipelinePhase4c4Test COMMAND test_complete_pipeline_phase4c4)
+
+# Simple Pipeline test for debugging
+add_executable(test_simple_pipeline_phase4c4 test_simple_pipeline_phase4c4.cpp)
+target_link_libraries(test_simple_pipeline_phase4c4
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRSCFDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    pgx_logging
+)
+add_test(NAME SimplePipelinePhase4c4Test COMMAND test_simple_pipeline_phase4c4)
+
+# Phase 4c-4 Basic test
+add_executable(test_phase4c4_basic test_phase4c4_basic.cpp)
+target_link_libraries(test_phase4c4_basic
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRSCFDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    pgx_logging
+)
+add_test(NAME Phase4c4BasicTest COMMAND test_phase4c4_basic)
+
+# Phase 4c-4 Simplified architecture test (no segfault)
+add_executable(test_relalg_to_db_phase4c4 test_relalg_to_db_phase4c4.cpp)
+target_link_libraries(test_relalg_to_db_phase4c4
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRSCFDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    pgx_logging
+)
+add_test(NAME RelAlgToDBPhase4c4Test COMMAND test_relalg_to_db_phase4c4)
+
+# Simple RelAlgToDB tests for debugging
+add_executable(test_relalg_to_db_simple test_relalg_to_db_simple.cpp)
+target_link_libraries(test_relalg_to_db_simple
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    pgx_logging
+)
+add_test(NAME RelAlgToDBSimpleTest COMMAND test_relalg_to_db_simple)
+
+# Segfault debug test
+add_executable(test_segfault_debug test_segfault_debug.cpp)
+target_link_libraries(test_segfault_debug
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRSCFDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    pgx_logging
+)
+add_test(NAME SegfaultDebugTest COMMAND test_segfault_debug)
+
+# Materialize only test
+add_executable(test_materialize_only test_materialize_only.cpp)
+target_link_libraries(test_materialize_only
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRSCFDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    pgx_logging
+)
+add_test(NAME MaterializeOnlyTest COMMAND test_materialize_only)
+
+# Fixed RelAlgToDB test
+add_executable(test_relalg_to_db_fixed test_relalg_to_db_fixed.cpp)
+target_link_libraries(test_relalg_to_db_fixed
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRSCFDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    MLIRParser
+    pgx_logging
+)
+add_test(NAME RelAlgToDBFixedTest COMMAND test_relalg_to_db_fixed)
+
+# Minimal RelAlgToDB test (to diagnose segfault)
+add_executable(test_minimal_relalg_to_db test_minimal_relalg_to_db.cpp)
+target_link_libraries(test_minimal_relalg_to_db
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRSCFDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    pgx_logging
+)
+add_test(NAME MinimalRelAlgToDBTest COMMAND test_minimal_relalg_to_db)

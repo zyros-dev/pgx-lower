@@ -16,6 +16,7 @@ private:
     ::pgx::mlir::relalg::MaterializeOp materializeOp;
     OrderedAttributes orderedAttributes;
     ::mlir::Value tableBuilder;  // DSA table builder for result materialization
+    ::mlir::Value finalTable;    // The finalized DSA table (result of this operation)
     
 public:
     explicit MaterializeTranslator(::pgx::mlir::relalg::MaterializeOp op) 
@@ -73,7 +74,7 @@ public:
         processInputRelation(context, builder);
         
         // Finalize the DSA table and stream results
-        finalizeAndStreamResults(builder, loc);
+        finalizeAndStreamResults(builder, loc, context);
     }
     
 private:
@@ -95,12 +96,20 @@ private:
     }
     
     // Finalize the DSA table and stream results
-    void finalizeAndStreamResults(::mlir::OpBuilder& builder, ::mlir::Location loc) {
+    void finalizeAndStreamResults(::mlir::OpBuilder& builder, ::mlir::Location loc, 
+                                  TranslatorContext& context) {
         // Finalize the DSA table builder to create the final table
-        auto tableType = ::pgx::mlir::dsa::TableType::get(builder.getContext());
+        auto tupleType = createTupleType(builder);
+        auto tableType = ::pgx::mlir::dsa::TableType::get(builder.getContext(), tupleType);
         auto table = builder.create<::pgx::mlir::dsa::FinalizeOp>(loc, tableType, tableBuilder);
         
         MLIR_PGX_DEBUG("RelAlg", "Finalized DSA table");
+        
+        // Store the final table for direct value propagation
+        finalTable = table.getResult();
+        
+        // Store in context for pass to retrieve
+        context.setQueryResult(finalTable);
         
         // Generate db.stream_results to output the materialized table
         builder.create<::pgx::db::StreamResultsOp>(loc);
@@ -119,6 +128,9 @@ public:
         // Collect values for all columns in this tuple
         llvm::SmallVector<::mlir::Value> tupleValues;
         for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
+            const Column* col = orderedAttributes.getAttrs()[i];
+            MLIR_PGX_DEBUG("RelAlg", "Resolving column " + std::to_string(i));
+            
             auto val = orderedAttributes.resolve(context, i);
             tupleValues.push_back(val);
             
@@ -139,8 +151,13 @@ public:
     void done() override {
         MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator::done() - Completed DSA-based materialization");
         
-        // The MaterializeOp has been fully lowered to DB+DSA operations
-        materializeOp.erase();
+        // Don't erase the MaterializeOp here - let the pass handle it after updating uses
+        // The pass will call replaceAllUsesWith and then erase the operation
+    }
+    
+    // Get the finalized DSA table value
+    ::mlir::Value getFinalTable() const {
+        return finalTable;
     }
 };
 

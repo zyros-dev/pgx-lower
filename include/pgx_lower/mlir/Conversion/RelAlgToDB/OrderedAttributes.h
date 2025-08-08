@@ -44,7 +44,9 @@ public:
     // Resolve a column at a specific position to its corresponding value
     ::mlir::Value resolve(TranslatorContext& context, size_t pos) {
         assert(pos < attrs.size() && "Position out of bounds");
-        return context.getValueForAttribute(attrs[pos]);
+        auto val = context.getUnsafeValueForAttribute(attrs[pos]);
+        assert(val && "Column value not found in context - translator didn't set value");
+        return val;
     }
     
     // Insert a new column with its type

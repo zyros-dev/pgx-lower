@@ -82,6 +82,8 @@ def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
 
 def DSA_Table : DSA_Type<"Table", "table"> {
     let summary = "materialized table";
+    let parameters = (ins "::mlir::TupleType":$rowType);
+    let assemblyFormat = "`<` $rowType `>`";
 }
 
 def DSA_Flag : DSA_Type<"Flag", "flag"> {

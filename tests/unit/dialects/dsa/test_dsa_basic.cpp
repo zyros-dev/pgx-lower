@@ -55,8 +55,9 @@ TEST_F(DSABasicTest, TypeCreation) {
     ASSERT_TRUE(tableBuilderType);
     EXPECT_EQ(tableBuilderType.getMnemonic(), "table_builder");
     
-    // TableType uses basic get method
-    auto tableType = TableType::get(&context);
+    // TableType now requires a tuple type parameter
+    auto tupleType = builder.getTupleType({builder.getI32Type()});
+    auto tableType = TableType::get(&context, tupleType);
     ASSERT_TRUE(tableType);
     EXPECT_EQ(tableType.getMnemonic(), "table");
 }
@@ -120,7 +121,7 @@ TEST_F(DSABasicTest, FinalizeOpCreation) {
     
     auto emptyTupleType = TupleType::get(&context, {});
     auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
-    auto tableType = TableType::get(&context);
+    auto tableType = TableType::get(&context, emptyTupleType);
     
     // Create a dummy builder
     auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
