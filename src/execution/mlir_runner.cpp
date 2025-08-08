@@ -4,6 +4,7 @@
 
 // MLIR Core Infrastructure
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/IR/Verifier.h"
 
@@ -112,7 +113,7 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
         }
         
         // Phase 2: Verify initial MLIR module
-        if (failed(mlir::verify(*module))) {
+        if (mlir::failed(mlir::verify(module->getOperation()))) {
             PGX_ERROR("Initial RelAlg MLIR module verification failed");
             return false;
         }
@@ -126,14 +127,14 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
         
         // Run the lowering pipeline (Phase 3a+3b+3c: RelAlg → DB → DSA)
         PGX_INFO("Running complete lowering pipeline");
-        if (failed(pm.run(*module))) {
+        if (mlir::failed(pm.run(*module))) {
             PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB → DSA)");
             return false;
         }
         PGX_INFO("Lowering pipeline completed successfully");
         
         // Phase 4: Final verification (DSA dialect)
-        if (failed(mlir::verify(*module))) {
+        if (mlir::failed(mlir::verify(module->getOperation()))) {
             PGX_ERROR("Final DSA MLIR module verification failed");
             return false;
         }
@@ -197,13 +198,13 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
         
         PGX_INFO("Running complete lowering pipeline");
-        if (failed(pm.run(*module))) {
+        if (mlir::failed(pm.run(*module))) {
             PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB → DSA)");
             return false;
         }
         PGX_INFO("Lowering pipeline completed successfully");
         
-        if (failed(mlir::verify(*module))) {
+        if (mlir::failed(mlir::verify(module->getOperation()))) {
             PGX_ERROR("Final DB MLIR module verification failed");
             return false;
         }
