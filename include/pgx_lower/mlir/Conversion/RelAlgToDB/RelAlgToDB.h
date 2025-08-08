@@ -27,38 +27,6 @@ struct BaseTableToExternalSourcePattern : public OpConversionPattern<::pgx::mlir
                                   ConversionPatternRewriter &rewriter) const override;
 };
 
-/// Pattern to convert RelAlg GetColumnOp to DB GetFieldOp
-struct GetColumnToGetFieldPattern : public OpConversionPattern<::pgx::mlir::relalg::GetColumnOp> {
-    using OpConversionPattern<::pgx::mlir::relalg::GetColumnOp>::OpConversionPattern;
-    
-    LogicalResult matchAndRewrite(::pgx::mlir::relalg::GetColumnOp op,
-                                  OpAdaptor adaptor,
-                                  ConversionPatternRewriter &rewriter) const override;
-};
-
-/// Pattern to convert RelAlg MaterializeOp to DB result streaming operations
-/// 
-/// CRITICAL: This pattern is DISABLED in Phase 3a per LingoDB research findings.
-/// MaterializeOp creates DSA operations (dsa.create_ds, dsa.ds_append, etc.), not DB operations.
-/// MaterializeOp belongs in Phase 3b (DB→DSA), not Phase 3a (RelAlg→DB).
-/// In Phase 3a, MaterializeOp is marked as LEGAL and passes through unchanged.
-struct MaterializeToStreamResultsPattern : public OpConversionPattern<::pgx::mlir::relalg::MaterializeOp> {
-    using OpConversionPattern<::pgx::mlir::relalg::MaterializeOp>::OpConversionPattern;
-    
-    LogicalResult matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op,
-                                  OpAdaptor adaptor,
-                                  ConversionPatternRewriter &rewriter) const override;
-};
-
-/// Pattern to convert RelAlg ReturnOp to func.return
-struct ReturnOpToFuncReturnPattern : public OpConversionPattern<::pgx::mlir::relalg::ReturnOp> {
-    using OpConversionPattern<::pgx::mlir::relalg::ReturnOp>::OpConversionPattern;
-    
-    LogicalResult matchAndRewrite(::pgx::mlir::relalg::ReturnOp op,
-                                  OpAdaptor adaptor,
-                                  ConversionPatternRewriter &rewriter) const override;
-};
-
 //===----------------------------------------------------------------------===//
 // Pass Creation and Registration
 //===----------------------------------------------------------------------===//
