@@ -48,6 +48,7 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRRelAlgDialect
     MLIRDBDialect  
     MLIRDSADialect
+    MLIRUtilDialect  # Phase 4b Util dialect for memory and tuples
     MLIRRelAlgToDBConversion
     MLIRDSAToLLVMConversion  # Phase 4a DSA -> LLVM conversion
     MLIRPgxLowerPasses  # Central pass registration

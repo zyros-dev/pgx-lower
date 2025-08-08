@@ -95,6 +95,7 @@ add_library(runtime_funcs_ptr INTERFACE)
 add_subdirectory(include/pgx_lower/mlir/Dialect/RelAlg/IR)
 add_subdirectory(include/pgx_lower/mlir/Dialect/DB/IR)
 add_subdirectory(include/pgx_lower/mlir/Dialect/DSA/IR)
+add_subdirectory(include/pgx_lower/mlir/Dialect/Util/IR)
 
 # Add compiler library (includes dialects)
 add_subdirectory(src/compiler)
@@ -153,6 +154,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRRelAlgDialect
         MLIRDBDialect
         MLIRDSADialect
+        MLIRUtilDialect               # Phase 4b Util dialect for memory and tuples
         MLIRRelAlgToDSAConversion
         MLIRRelAlgToDBConversion      # New RelAlg -> DB conversion
         MLIRDSAToLLVMConversion       # New DSA -> LLVM conversion (Phase 4a)
