@@ -448,3 +448,4 @@ target_link_libraries(test_minimal_relalg_to_db
     pgx_logging
 )
 add_test(NAME MinimalRelAlgToDBTest COMMAND test_minimal_relalg_to_db)
+

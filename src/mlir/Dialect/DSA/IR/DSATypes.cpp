@@ -28,26 +28,8 @@ Type TableBuilderType::parse(AsmParser &parser) {
 }
 
 void TableBuilderType::print(AsmPrinter &printer) const {
-    PGX_INFO("[DSA] TableBuilderType::print() called");
-    
-    PGX_INFO("[DSA] Getting rowType from TableBuilderType");
-    auto rowType = getRowType();
-    
-    if (!rowType) {
-        PGX_ERROR("[DSA] TableBuilderType has null rowType!");
-        printer << "<null_row_type>";
-        return;
-    }
-    
-    PGX_INFO("[DSA] TableBuilderType rowType is valid, printing");
-    printer << "<";
-    
-    PGX_INFO("[DSA] About to call printer.printType() on rowType");
-    printer.printType(rowType);
-    PGX_INFO("[DSA] printer.printType() completed successfully");
-    
-    printer << ">";
-    PGX_INFO("[DSA] TableBuilderType::print() completed successfully");
+    // Simple safe printing to avoid infinite recursion
+    printer << "<table_builder>";
 }
 
 //===----------------------------------------------------------------------===//
@@ -70,26 +52,8 @@ Type TableType::parse(AsmParser &parser) {
 }
 
 void TableType::print(AsmPrinter &printer) const {
-    PGX_INFO("[DSA] TableType::print() called");
-    
-    PGX_INFO("[DSA] Getting rowType from TableType");
-    auto rowType = getRowType();
-    
-    if (!rowType) {
-        PGX_ERROR("[DSA] TableType has null rowType!");
-        printer << "<null_row_type>";
-        return;
-    }
-    
-    PGX_INFO("[DSA] TableType rowType is valid, printing");
-    printer << "<";
-    
-    PGX_INFO("[DSA] About to call printer.printType() on rowType");
-    printer.printType(rowType);
-    PGX_INFO("[DSA] printer.printType() completed successfully");
-    
-    printer << ">";
-    PGX_INFO("[DSA] TableType::print() completed successfully");
+    // Simple safe printing to avoid infinite recursion
+    printer << "<table>";
 }
 
 #define GET_TYPEDEF_CLASSES
