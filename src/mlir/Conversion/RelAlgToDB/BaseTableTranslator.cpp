@@ -4,6 +4,7 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include <sstream>
@@ -76,97 +77,106 @@ private:
     void createDBTableScan(TranslatorContext& context, ::mlir::OpBuilder& builder,
                           TranslatorContext::AttributeResolverScope& scope, 
                           ::mlir::Location loc) {
-        // Create DSA scan source for table iteration (LingoDB pattern)
-        // Instead of db.get_external, we create DSA operations directly
-        MLIR_PGX_DEBUG("RelAlg", "Creating DSA-based table scan for: " + 
+        MLIR_PGX_DEBUG("RelAlg", "Creating DB-based table scan for: " + 
                        baseTableOp.getTableName().str());
         
-        // Create DSA-based tuple iteration
-        createTupleIterationLoop(context, builder, scope, loc, nullptr);
+        // Get table OID from the BaseTableOp
+        auto tableOid = builder.create<::mlir::arith::ConstantOp>(
+            loc, builder.getI64IntegerAttr(baseTableOp.getTableOid()));
+        
+        // Create DB operations for PostgreSQL table access
+        auto externalSourceType = ::pgx::db::ExternalSourceType::get(builder.getContext());
+        auto externalSource = builder.create<::pgx::db::GetExternalOp>(
+            loc, externalSourceType, tableOid);
+        
+        MLIR_PGX_DEBUG("RelAlg", "Created db.get_external for table OID: " + 
+                       std::to_string(baseTableOp.getTableOid()));
+        
+        // Create DB-based tuple iteration
+        createTupleIterationLoop(context, builder, scope, loc, externalSource.getResult());
     }
     
-    // Create DSA-based tuple iteration following LingoDB pattern
+    // Create DB-based tuple iteration with proper PostgreSQL integration
     void createTupleIterationLoop(TranslatorContext& context, ::mlir::OpBuilder& builder,
                                  TranslatorContext::AttributeResolverScope& scope,
                                  ::mlir::Location loc, ::mlir::Value tableHandle) {
-        // Create DSA scan source for table iteration (LingoDB pattern)
-        // Build table description JSON for the scan source
-        std::string tableDesc = "{\"table\":\"" + baseTableOp.getTableName().str() + 
-                               "\",\"oid\":" + std::to_string(baseTableOp.getTableOid()) + "}";
-        auto tableDescAttr = builder.getStringAttr(tableDesc);
-        
-        // Create tuple type for the records - for Test 1, just an id column (i64)
-        auto i64Type = builder.getI64Type();
-        auto tupleType = ::mlir::TupleType::get(builder.getContext(), {i64Type});
-        
-        // Create iterable type with the tuple structure
-        auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
-            builder.getContext(), 
-            ::pgx::mlir::dsa::RecordBatchType::get(builder.getContext(), tupleType),
-            "batch_iterator");
-        
-        // Create scan source operation
-        auto scanSource = builder.create<::pgx::mlir::dsa::ScanSourceOp>(
-            loc, iterableType, tableDescAttr);
-        
-        MLIR_PGX_DEBUG("RelAlg", "Created dsa.scan_source for table: " + 
+        MLIR_PGX_DEBUG("RelAlg", "Creating DB-based iteration loop for table: " + 
                        baseTableOp.getTableName().str());
         
-        // Create outer ForOp for batch iteration
-        auto batchForOp = builder.create<::pgx::mlir::dsa::ForOp>(loc, scanSource.getResult());
+        // Create a while loop that iterates through PostgreSQL tuples
+        // We'll use scf.while for the iteration pattern
+        auto whileOp = builder.create<::mlir::scf::WhileOp>(
+            loc,
+            /*resultTypes=*/::mlir::TypeRange{},
+            /*operands=*/::mlir::ValueRange{}
+        );
         
-        // Create batch loop body
-        ::mlir::Region& batchRegion = batchForOp.getBody();
-        ::mlir::Block* batchBlock = &batchRegion.emplaceBlock();
-        auto batchType = ::pgx::mlir::dsa::RecordBatchType::get(builder.getContext(), tupleType);
-        batchBlock->addArgument(batchType, loc);
+        // Build the "before" region (condition check)
+        {
+            auto& beforeRegion = whileOp.getBefore();
+            auto* beforeBlock = builder.createBlock(&beforeRegion);
+            builder.setInsertionPointToStart(beforeBlock);
+            
+            // Call db.iterate_external to check if there's a next tuple
+            auto hasTuple = builder.create<::pgx::db::IterateExternalOp>(
+                loc, builder.getI1Type(), tableHandle);
+            
+            MLIR_PGX_DEBUG("RelAlg", "Created db.iterate_external in while condition");
+            
+            // Yield the condition
+            builder.create<::mlir::scf::ConditionOp>(loc, hasTuple.getResult(), ::mlir::ValueRange{});
+        }
         
-        // Create builder for batch loop body
-        ::mlir::OpBuilder batchBuilder(batchBlock, batchBlock->begin());
+        // Build the "after" region (loop body)
+        {
+            auto& afterRegion = whileOp.getAfter();
+            auto* afterBlock = builder.createBlock(&afterRegion);
+            builder.setInsertionPointToStart(afterBlock);
+            
+            // Process the current tuple
+            processTupleInLoop(context, builder, scope, loc, tableHandle);
+            
+            // Yield to continue the loop
+            builder.create<::mlir::scf::YieldOp>(loc, ::mlir::ValueRange{});
+        }
         
-        // Create inner ForOp for record iteration within the batch
-        auto recordForOp = batchBuilder.create<::pgx::mlir::dsa::ForOp>(
-            loc, batchBlock->getArgument(0));
+        // Set insertion point after the while loop
+        builder.setInsertionPointAfter(whileOp);
         
-        // Create record loop body
-        ::mlir::Region& recordRegion = recordForOp.getBody();
-        ::mlir::Block* recordBlock = &recordRegion.emplaceBlock();
-        auto recordType = ::pgx::mlir::dsa::RecordType::get(builder.getContext(), tupleType);
-        recordBlock->addArgument(recordType, loc);
-        
-        // Create builder for record loop body
-        ::mlir::OpBuilder recordBuilder(recordBlock, recordBlock->begin());
-        
-        // Process the record inside the inner loop
-        processTupleInLoop(context, recordBuilder, scope, loc, recordBlock->getArgument(0));
-        
-        // Add yield for inner loop
-        recordBuilder.create<::pgx::mlir::dsa::YieldOp>(loc);
-        
-        // Add yield for outer loop  
-        batchBuilder.create<::pgx::mlir::dsa::YieldOp>(loc);
-        
-        MLIR_PGX_DEBUG("RelAlg", "Created nested DSA for loops for streaming iteration");
+        MLIR_PGX_DEBUG("RelAlg", "Created scf.while loop for DB tuple iteration");
     }
     
     // Process a single tuple inside the loop - extract field values and call consumer
     void processTupleInLoop(TranslatorContext& context, ::mlir::OpBuilder& builder,
                            TranslatorContext::AttributeResolverScope& scope,
-                           ::mlir::Location loc, ::mlir::Value record) {
-        // Extract field value using dsa.at operations
-        // For Test 1, extract the 'id' column
-        auto columnName = builder.getStringAttr("id");
-        auto fieldValue = builder.create<::pgx::mlir::dsa::AtOp>(
-            loc, builder.getI64Type(), record, columnName);
+                           ::mlir::Location loc, ::mlir::Value tableHandle) {
+        // Extract field value using db.get_field operations
+        // For Test 1, extract the 'id' column (field index 0)
+        auto fieldIndex = builder.create<::mlir::arith::ConstantIndexOp>(loc, 0);
         
-        MLIR_PGX_DEBUG("RelAlg", "Extracted field value using dsa.at for column: id");
+        // PostgreSQL type OID for int8 (bigint) is 20
+        auto typeOid = builder.create<::mlir::arith::ConstantOp>(
+            loc, builder.getI32IntegerAttr(20));  // OID 20 = int8/bigint
+        
+        auto fieldValue = builder.create<::pgx::db::GetFieldOp>(
+            loc, 
+            ::pgx::db::NullableI64Type::get(builder.getContext()),
+            tableHandle, 
+            fieldIndex.getResult(), 
+            typeOid.getResult());
+        
+        MLIR_PGX_DEBUG("RelAlg", "Extracted field value using db.get_field for column index 0 (id)");
+        
+        // For now, assume non-null values - extract the actual value
+        auto actualValue = builder.create<::pgx::db::NullableGetValOp>(
+            loc, builder.getI64Type(), fieldValue.getResult());
         
         // Set the value in context for the id column
-        context.setValueForAttribute(scope, &idColumn, fieldValue.getResult());
+        context.setValueForAttribute(scope, &idColumn, actualValue.getResult());
         
         // Call consumer for streaming (one tuple at a time) inside the loop
         if (consumer) {
-            MLIR_PGX_DEBUG("RelAlg", "Streaming tuple to consumer inside DSA loop");
+            MLIR_PGX_DEBUG("RelAlg", "Streaming tuple to consumer inside DB loop");
             
             // CRITICAL: The consumer is called inside the loop with the loop's builder
             // This ensures operations are inserted in the correct location

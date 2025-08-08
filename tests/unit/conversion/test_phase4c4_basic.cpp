@@ -84,9 +84,9 @@ TEST_F(Phase4c4BasicTest, PassRunsSuccessfully) {
         else if (dialectName == "relalg") relalgOpCount++;
     });
     
-    // Verify transformation occurred (LingoDB pattern: DSA only)
-    EXPECT_EQ(dbOpCount, 0) << "Should NOT generate DB operations - LingoDB uses only DSA";
-    EXPECT_GT(dsaOpCount, 0) << "Should generate DSA operations";
+    // Verify transformation occurred (Mixed DB+DSA pattern for PostgreSQL)
+    EXPECT_GT(dbOpCount, 0) << "Should generate DB operations for PostgreSQL table access";
+    EXPECT_GT(dsaOpCount, 0) << "Should generate DSA operations for result materialization";
     EXPECT_EQ(relalgOpCount, 0) << "All RelAlg operations should be erased";
     
     std::cerr << "Phase 4c-4 Basic Test Results:\n";
@@ -123,28 +123,29 @@ TEST_F(Phase4c4BasicTest, ProducerConsumerPattern) {
     auto result = pm.run(funcOp);
     ASSERT_TRUE(succeeded(result)) << "Pass should run successfully";
     
-    // Check for DSA streaming pattern (LingoDB pattern)
-    bool hasScanSource = false;
-    bool hasForLoops = false;
+    // Check for mixed DB+DSA pattern (PostgreSQL integration)
+    bool hasGetExternal = false;
+    bool hasIterateExternal = false;
+    bool hasWhileLoop = false;
     bool hasDSAppend = false;
+    int dbOpCount = 0;
     int dsaOpCount = 0;
-    int forLoopCount = 0;
     
     funcOp.walk([&](mlir::Operation* op) {
-        if (op->getName().getStringRef() == "dsa.scan_source") hasScanSource = true;
-        if (op->getName().getStringRef() == "dsa.for") {
-            hasForLoops = true;
-            forLoopCount++;
-        }
+        if (op->getName().getStringRef() == "db.get_external") hasGetExternal = true;
+        if (op->getName().getStringRef() == "db.iterate_external") hasIterateExternal = true;
+        if (op->getName().getStringRef() == "scf.while") hasWhileLoop = true;
         if (op->getName().getStringRef() == "dsa.ds_append") hasDSAppend = true;
+        if (op->getDialect() && op->getDialect()->getNamespace() == "db") dbOpCount++;
         if (op->getDialect() && op->getDialect()->getNamespace() == "dsa") dsaOpCount++;
     });
     
-    EXPECT_TRUE(hasScanSource) << "Should have dsa.scan_source for streaming";
-    EXPECT_TRUE(hasForLoops) << "Should have dsa.for loops for iteration";
-    EXPECT_GE(forLoopCount, 2) << "Should have nested dsa.for loops";
+    EXPECT_TRUE(hasGetExternal) << "Should have db.get_external for PostgreSQL table access";
+    EXPECT_TRUE(hasIterateExternal) << "Should have db.iterate_external for tuple iteration";
+    EXPECT_TRUE(hasWhileLoop) << "Should have scf.while loop for iteration";
     EXPECT_TRUE(hasDSAppend) << "Should have dsa.ds_append for materialization";
-    EXPECT_GT(dsaOpCount, 0) << "Should have DSA operations for data structure management";
+    EXPECT_GT(dbOpCount, 0) << "Should have DB operations for PostgreSQL integration";
+    EXPECT_GT(dsaOpCount, 0) << "Should have DSA operations for result materialization";
 }
 
 } // namespace

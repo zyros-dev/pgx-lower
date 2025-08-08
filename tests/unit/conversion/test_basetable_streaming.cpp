@@ -120,40 +120,42 @@ TEST_F(BaseTableStreamingTest, GeneratesStreamingOperations) {
     // Create return op
     builder->create<::mlir::func::ReturnOp>(loc);
     
-    // Verify the generated MLIR contains DSA streaming operations (LingoDB pattern)
-    bool hasScanSource = false;
-    bool hasNestedForLoops = false;
-    bool hasAtOperation = false;
-    bool hasYieldTerminators = false;
-    int forLoopCount = 0;
+    // Verify the generated MLIR contains DB operations for PostgreSQL integration
+    bool hasGetExternal = false;
+    bool hasIterateExternal = false;
+    bool hasGetField = false;
+    bool hasWhileLoop = false;
+    bool hasScfYield = false;
     
     func.walk([&](::mlir::Operation* op) {
-        if (::mlir::isa<::pgx::mlir::dsa::ScanSourceOp>(op)) {
-            hasScanSource = true;
-            MLIR_PGX_DEBUG("Test", "Found dsa.scan_source operation");
+        if (::mlir::isa<::pgx::db::GetExternalOp>(op)) {
+            hasGetExternal = true;
+            MLIR_PGX_DEBUG("Test", "Found db.get_external operation");
         }
-        if (::mlir::isa<::pgx::mlir::dsa::ForOp>(op)) {
-            forLoopCount++;
-            MLIR_PGX_DEBUG("Test", "Found dsa.for loop");
+        if (::mlir::isa<::pgx::db::IterateExternalOp>(op)) {
+            hasIterateExternal = true;
+            MLIR_PGX_DEBUG("Test", "Found db.iterate_external operation");
         }
-        if (::mlir::isa<::pgx::mlir::dsa::AtOp>(op)) {
-            hasAtOperation = true;
-            MLIR_PGX_DEBUG("Test", "Found dsa.at operation for field access");
+        if (::mlir::isa<::pgx::db::GetFieldOp>(op)) {
+            hasGetField = true;
+            MLIR_PGX_DEBUG("Test", "Found db.get_field operation for field access");
         }
-        if (::mlir::isa<::pgx::mlir::dsa::YieldOp>(op)) {
-            hasYieldTerminators = true;
-            MLIR_PGX_DEBUG("Test", "Found dsa.yield terminator");
+        if (::mlir::isa<::mlir::scf::WhileOp>(op)) {
+            hasWhileLoop = true;
+            MLIR_PGX_DEBUG("Test", "Found scf.while loop for iteration");
+        }
+        if (::mlir::isa<::mlir::scf::YieldOp>(op)) {
+            hasScfYield = true;
+            MLIR_PGX_DEBUG("Test", "Found scf.yield terminator");
         }
     });
     
-    // Check for nested loops (should have 2 dsa.for operations)
-    hasNestedForLoops = (forLoopCount >= 2);
-    
-    // Verify all expected DSA operations were generated
-    EXPECT_TRUE(hasScanSource) << "Missing dsa.scan_source operation";
-    EXPECT_TRUE(hasNestedForLoops) << "Missing nested dsa.for loops (found " << forLoopCount << ")";
-    EXPECT_TRUE(hasAtOperation) << "Missing dsa.at operation for field access";
-    EXPECT_TRUE(hasYieldTerminators) << "Missing dsa.yield terminators";
+    // Verify all expected DB operations were generated
+    EXPECT_TRUE(hasGetExternal) << "Missing db.get_external operation";
+    EXPECT_TRUE(hasIterateExternal) << "Missing db.iterate_external operation";
+    EXPECT_TRUE(hasGetField) << "Missing db.get_field operation for field access";
+    EXPECT_TRUE(hasWhileLoop) << "Missing scf.while loop for iteration";
+    EXPECT_TRUE(hasScfYield) << "Missing scf.yield terminators";
     
     // The consumer should have been called for each tuple
     // (In the actual implementation, this would happen during execution)
@@ -186,35 +188,28 @@ TEST_F(BaseTableStreamingTest, ProducerConsumerCoordination) {
     TranslatorContext translatorContext;
     translator->produce(translatorContext, *builder);
     
-    // Verify the structure ensures consume is called inside the DSA nested loops
+    // Verify the structure ensures consume is called inside the scf.while loop
     bool foundConsumeCallSite = false;
-    int nestedForDepth = 0;
-    int maxDepth = 0;
+    bool hasWhileLoop = false;
+    bool hasGetFieldInLoop = false;
     
-    // Walk and count ForOps to determine nesting
-    func.walk([&](::pgx::mlir::dsa::ForOp forOp) {
-        int localDepth = 0;
-        // Count how many parent ForOps this ForOp has
-        ::mlir::Operation* parent = forOp->getParentOp();
-        while (parent) {
-            if (::mlir::isa<::pgx::mlir::dsa::ForOp>(parent)) {
-                localDepth++;
+    // Walk and check for proper structure
+    func.walk([&](::mlir::scf::WhileOp whileOp) {
+        hasWhileLoop = true;
+        
+        // Check if db.get_field is inside the while loop
+        whileOp.walk([&](::mlir::Operation* op) {
+            if (::mlir::isa<::pgx::db::GetFieldOp>(op)) {
+                hasGetFieldInLoop = true;
+                foundConsumeCallSite = true;
+                MLIR_PGX_DEBUG("Test", "Found db.get_field inside scf.while loop for consume calls");
             }
-            parent = parent->getParentOp();
-        }
-        
-        // If this ForOp has a parent ForOp, we have nesting
-        if (localDepth > 0) {
-            foundConsumeCallSite = true;
-            MLIR_PGX_DEBUG("Test", "Found nested dsa.for loops for consume calls");
-        }
-        
-        // Track max nesting depth (0 = top level, 1 = nested once, etc.)
-        maxDepth = std::max(maxDepth, localDepth + 1);
+        });
     });
     
-    EXPECT_TRUE(foundConsumeCallSite) << "Consumer call site not properly set up in DSA nested loops";
-    EXPECT_GE(maxDepth, 2) << "Expected at least 2 levels of nesting for batch/record iteration";
+    EXPECT_TRUE(hasWhileLoop) << "Missing scf.while loop for iteration";
+    EXPECT_TRUE(foundConsumeCallSite) << "Consumer call site not properly set up in while loop";
+    EXPECT_TRUE(hasGetFieldInLoop) << "Expected db.get_field inside while loop for tuple processing";
     
     builder->create<::mlir::func::ReturnOp>(loc);
 }
@@ -259,27 +254,32 @@ TEST_F(BaseTableStreamingTest, MemoryEfficiencyStructure) {
     
     EXPECT_FALSE(hasBatchingOps) << "Found batching operations - not true streaming";
     
-    // Verify streaming pattern: DSA nested loops with single-record processing
+    // Verify streaming pattern: DB operations with single-tuple processing
     bool hasStreamingPattern = false;
-    bool hasScanSource = false;
-    bool hasAtOp = false;
+    bool hasGetExternal = false;
+    bool hasIterateExternal = false;
+    bool hasGetField = false;
     
-    // Check for DSA streaming pattern
+    // Check for DB streaming pattern
     func.walk([&](::mlir::Operation* op) {
-        if (::mlir::isa<::pgx::mlir::dsa::ScanSourceOp>(op)) {
-            hasScanSource = true;
+        if (::mlir::isa<::pgx::db::GetExternalOp>(op)) {
+            hasGetExternal = true;
         }
-        if (::mlir::isa<::pgx::mlir::dsa::AtOp>(op)) {
-            hasAtOp = true;
-            MLIR_PGX_DEBUG("Test", "Found streaming pattern with dsa.at operation");
+        if (::mlir::isa<::pgx::db::IterateExternalOp>(op)) {
+            hasIterateExternal = true;
+        }
+        if (::mlir::isa<::pgx::db::GetFieldOp>(op)) {
+            hasGetField = true;
+            MLIR_PGX_DEBUG("Test", "Found streaming pattern with db.get_field operation");
         }
     });
     
-    hasStreamingPattern = hasScanSource && hasAtOp;
+    hasStreamingPattern = hasGetExternal && hasIterateExternal && hasGetField;
     
-    EXPECT_TRUE(hasStreamingPattern) << "Missing DSA streaming pattern with single-record processing";
-    EXPECT_TRUE(hasScanSource) << "Missing dsa.scan_source for streaming";
-    EXPECT_TRUE(hasAtOp) << "Missing dsa.at for field access in streaming";
+    EXPECT_TRUE(hasStreamingPattern) << "Missing DB streaming pattern with single-tuple processing";
+    EXPECT_TRUE(hasGetExternal) << "Missing db.get_external for PostgreSQL table access";
+    EXPECT_TRUE(hasIterateExternal) << "Missing db.iterate_external for tuple iteration";
+    EXPECT_TRUE(hasGetField) << "Missing db.get_field for field access in streaming";
     
     builder->create<::mlir::func::ReturnOp>(loc);
 }
