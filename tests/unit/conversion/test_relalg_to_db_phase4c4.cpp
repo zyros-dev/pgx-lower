@@ -208,8 +208,8 @@ TEST(RelAlgToDBPhase4c4Test, MultipleMaterializeOps) {
     builder.setInsertionPointToStart(module.getBody());
     
     // Function returns two tables
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
-    auto funcType = builder.getFunctionType({}, {tableType, tableType});
+    auto relAlgTableType = pgx::mlir::relalg::TableType::get(&context);
+    auto funcType = builder.getFunctionType({}, {relAlgTableType, relAlgTableType});
     auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_multiple", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);
@@ -227,7 +227,7 @@ TEST(RelAlgToDBPhase4c4Test, MultipleMaterializeOps) {
     columns1.push_back(builder.getStringAttr("col1"));
     auto materialize1 = builder.create<pgx::mlir::relalg::MaterializeOp>(
         UnknownLoc::get(&context),
-        tableType,
+        relAlgTableType,
         baseTable1.getResult(),
         builder.getArrayAttr(columns1)
     );
@@ -244,14 +244,14 @@ TEST(RelAlgToDBPhase4c4Test, MultipleMaterializeOps) {
     columns2.push_back(builder.getStringAttr("col2"));
     auto materialize2 = builder.create<pgx::mlir::relalg::MaterializeOp>(
         UnknownLoc::get(&context),
-        tableType,
+        relAlgTableType,
         baseTable2.getResult(),
         builder.getArrayAttr(columns2)
     );
     
     // Return both materialized tables
-    builder.create<func::ReturnOp>(UnknownLoc::get(&context), 
-        ValueRange{materialize1.getResult(), materialize2.getResult()});
+    llvm::SmallVector<mlir::Value, 2> results = {materialize1.getResult(), materialize2.getResult()};
+    builder.create<func::ReturnOp>(UnknownLoc::get(&context), results);
     
     // Run the RelAlgToDB pass
     PassManager pm(&context);

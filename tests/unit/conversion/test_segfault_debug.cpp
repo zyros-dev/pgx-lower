@@ -75,7 +75,7 @@ TEST_F(SegfaultDebugTest, MinimalPipelineWithLogging) {
     
     auto result = pm.run(funcOp);
     
-    if (succeeded(result)) {
+    if (mlir::succeeded(result)) {
         std::cerr << "[TEST] Pass succeeded\n";
         
         // Verify operations were transformed
