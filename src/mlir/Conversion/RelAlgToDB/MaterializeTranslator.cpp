@@ -3,6 +3,7 @@
 #include "execution/logging.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinTypes.h"
 
@@ -14,6 +15,7 @@ class MaterializeTranslator : public Translator {
 private:
     ::pgx::mlir::relalg::MaterializeOp materializeOp;
     OrderedAttributes orderedAttributes;
+    ::mlir::Value tableBuilder;  // DSA table builder for result materialization
     
 public:
     explicit MaterializeTranslator(::pgx::mlir::relalg::MaterializeOp op) 
@@ -56,18 +58,32 @@ public:
     }
     
     void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-        MLIR_PGX_INFO("RelAlg", "MaterializeTranslator::produce() - Starting materialization with DB operations");
+        MLIR_PGX_INFO("RelAlg", "MaterializeTranslator::produce() - Starting materialization with DSA operations");
         
         auto loc = materializeOp.getLoc();
+        
+        // Create DSA table builder based on column types
+        auto tupleType = createTupleType(builder);
+        auto tableBuilderType = ::pgx::mlir::dsa::TableBuilderType::get(builder.getContext(), tupleType);
+        tableBuilder = builder.create<::pgx::mlir::dsa::CreateDSOp>(loc, tableBuilderType);
+        
+        MLIR_PGX_DEBUG("RelAlg", "Created DSA table builder with tuple type");
         
         // Process input relation - this will call consume() for each tuple
         processInputRelation(context, builder);
         
-        // Stream the results after all tuples are processed
-        streamResults(builder, loc);
+        // Finalize the DSA table and stream results
+        finalizeAndStreamResults(builder, loc);
     }
     
 private:
+    
+    // Create tuple type from ordered attributes
+    ::mlir::TupleType createTupleType(::mlir::OpBuilder& builder) {
+        // Build the tuple type from ordered attribute types
+        // For Test 1, we expect one column (id: i32)
+        return orderedAttributes.getTupleType(builder.getContext());
+    }
     
     // Process input relation by calling child's produce
     void processInputRelation(TranslatorContext& context, ::mlir::OpBuilder& builder) {
@@ -78,9 +94,15 @@ private:
         }
     }
     
-    // Stream the results after all tuples are processed
-    void streamResults(::mlir::OpBuilder& builder, ::mlir::Location loc) {
-        // Generate db.stream_results to output the accumulated results
+    // Finalize the DSA table and stream results
+    void finalizeAndStreamResults(::mlir::OpBuilder& builder, ::mlir::Location loc) {
+        // Finalize the DSA table builder to create the final table
+        auto tableType = ::pgx::mlir::dsa::TableType::get(builder.getContext());
+        auto table = builder.create<::pgx::mlir::dsa::FinalizeOp>(loc, tableType, tableBuilder);
+        
+        MLIR_PGX_DEBUG("RelAlg", "Finalized DSA table");
+        
+        // Generate db.stream_results to output the materialized table
         builder.create<::pgx::db::StreamResultsOp>(loc);
         
         MLIR_PGX_DEBUG("RelAlg", "Generated db.stream_results operation");
@@ -90,33 +112,34 @@ public:
     
     void consume(Translator* child, ::mlir::OpBuilder& builder, 
                 TranslatorContext& context) override {
-        MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator::consume() - Processing tuple from child using DB operations");
+        MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator::consume() - Processing single tuple from child using DSA operations");
         
         auto loc = materializeOp.getLoc();
         
-        // Process each column and store in result tuple
+        // Collect values for all columns in this tuple
+        llvm::SmallVector<::mlir::Value> tupleValues;
         for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
             auto val = orderedAttributes.resolve(context, i);
+            tupleValues.push_back(val);
             
-            // Convert to nullable type for DB operation compatibility
-            auto nullableVal = builder.create<::pgx::db::AsNullableOp>(
-                loc, ::pgx::db::NullableI64Type::get(builder.getContext()), val);
-            
-            // Store the value in the result tuple at the appropriate field index
-            auto fieldIndex = builder.create<::mlir::arith::ConstantIndexOp>(loc, i);
-            builder.create<::pgx::db::StoreResultOp>(
-                loc, nullableVal, fieldIndex);
-            
-            MLIR_PGX_DEBUG("RelAlg", "Stored field " + std::to_string(i) + " using db.store_result");
+            MLIR_PGX_DEBUG("RelAlg", "Collected field " + std::to_string(i) + " for DSA append");
         }
         
-        MLIR_PGX_DEBUG("RelAlg", "Completed storing tuple fields");
+        // Append all values to the DSA table builder in one operation
+        builder.create<::pgx::mlir::dsa::DSAppendOp>(loc, tableBuilder, tupleValues);
+        
+        MLIR_PGX_DEBUG("RelAlg", "Appended tuple values to DSA table builder");
+        
+        // Finalize the current row in the builder
+        builder.create<::pgx::mlir::dsa::NextRowOp>(loc, tableBuilder);
+        
+        MLIR_PGX_DEBUG("RelAlg", "Finalized row in DSA table builder - ready for next tuple");
     }
     
     void done() override {
-        MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator::done() - Completed DB-based materialization");
+        MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator::done() - Completed DSA-based materialization");
         
-        // The MaterializeOp has been fully lowered to DB operations
+        // The MaterializeOp has been fully lowered to DB+DSA operations
         materializeOp.erase();
     }
 };
