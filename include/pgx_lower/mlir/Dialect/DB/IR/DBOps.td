@@ -35,8 +35,9 @@ def DB_Dialect : Dialect {
         void registerTypes();
         
         public:
-            // Custom type parsing/printing temporarily disabled due to TableGen namespace issues
-            // TODO: Fix namespace resolution in generated header
+            // Type parsing and printing methods for DB dialect custom types
+            ::mlir::Type parseType(::mlir::DialectAsmParser &parser) const override;
+            void printType(::mlir::Type type, ::mlir::DialectAsmPrinter &printer) const override;
     }];
 }
 

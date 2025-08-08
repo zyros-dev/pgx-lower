@@ -37,7 +37,11 @@ TEST_F(RelAlgToDBFixesTest, EmptyFunctionHandling) {
     auto funcOp = builder.create<func::FuncOp>(
         builder.getUnknownLoc(), "empty_query", funcType);
     
-    funcOp.addEntryBlock();
+    auto* entryBlock = funcOp.addEntryBlock();
+    builder.setInsertionPointToStart(entryBlock);
+    
+    // Add required terminator for empty function
+    builder.create<func::ReturnOp>(builder.getUnknownLoc());
     
     // Run the pass
     PassManager pm(&context);

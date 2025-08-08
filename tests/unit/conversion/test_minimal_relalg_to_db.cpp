@@ -74,7 +74,11 @@ TEST_F(MinimalRelAlgToDBTest, EmptyFunctionHandling) {
     auto funcOp = builder.create<mlir::func::FuncOp>(
         builder.getUnknownLoc(), "empty_query", funcType);
     
-    funcOp.addEntryBlock();
+    auto* entryBlock = funcOp.addEntryBlock();
+    builder.setInsertionPointToStart(entryBlock);
+    
+    // Add required terminator for empty function
+    builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
     
     // Run the pass
     mlir::PassManager pm(&context);

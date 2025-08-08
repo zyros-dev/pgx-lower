@@ -38,7 +38,68 @@ void DBDialect::initialize() {
     PGX_DEBUG("DB dialect initialization complete");
 }
 
-// Custom type parsing/printing temporarily disabled due to TableGen namespace issues
-// TODO: Fix namespace resolution and implement proper dialect-level type printing
+//===----------------------------------------------------------------------===//
+// DB Dialect Type Parsing and Printing
+//===----------------------------------------------------------------------===//
+
+mlir::Type DBDialect::parseType(mlir::DialectAsmParser &parser) const {
+    llvm::StringRef mnemonic;
+    if (parser.parseKeyword(&mnemonic)) {
+        return {};
+    }
+    
+    // Parse our simple types by mnemonic
+    if (mnemonic == "external_source") {
+        return ExternalSourceType::get(parser.getContext());
+    }
+    if (mnemonic == "nullable_i32") {
+        return NullableI32Type::get(parser.getContext());
+    }
+    if (mnemonic == "nullable_i64") {
+        return NullableI64Type::get(parser.getContext());
+    }
+    if (mnemonic == "nullable_f64") {
+        return NullableF64Type::get(parser.getContext());
+    }
+    if (mnemonic == "nullable_bool") {
+        return NullableBoolType::get(parser.getContext());
+    }
+    if (mnemonic == "sql_null") {
+        return SqlNullType::get(parser.getContext());
+    }
+    
+    parser.emitError(parser.getNameLoc(), "unknown db type: ") << mnemonic;
+    return {};
+}
+
+void DBDialect::printType(mlir::Type type, mlir::DialectAsmPrinter &printer) const {
+    // Print our types by their mnemonic
+    if (auto ext = type.dyn_cast<ExternalSourceType>()) {
+        printer << "external_source";
+        return;
+    }
+    if (type.isa<NullableI32Type>()) {
+        printer << "nullable_i32";
+        return;
+    }
+    if (type.isa<NullableI64Type>()) {
+        printer << "nullable_i64";
+        return;
+    }
+    if (type.isa<NullableF64Type>()) {
+        printer << "nullable_f64";
+        return;
+    }
+    if (type.isa<NullableBoolType>()) {
+        printer << "nullable_bool";
+        return;
+    }
+    if (type.isa<SqlNullType>()) {
+        printer << "sql_null";
+        return;
+    }
+    
+    printer << "<unknown db type>";
+}
 
 #include "mlir/Dialect/DB/IR/DBOpsDialect.cpp.inc"
