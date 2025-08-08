@@ -74,7 +74,7 @@ TEST(RelAlgToDBFixedTest, ProperOperationLifecycle) {
         else if (dialectName == "relalg") relalgOpsAfter++;
     });
     
-    EXPECT_GT(dbOpsAfter, 0) << "Should generate DB operations";
+    EXPECT_EQ(dbOpsAfter, 0) << "Should NOT generate DB operations - LingoDB uses only DSA";
     EXPECT_GT(dsaOpsAfter, 0) << "Should generate DSA operations";
     EXPECT_EQ(relalgOpsAfter, 0) << "All RelAlg operations should be erased";
     

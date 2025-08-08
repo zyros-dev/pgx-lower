@@ -111,8 +111,8 @@ TEST(RelAlgToDBPhase4c4Test, SimplifiedArchitectureNoSegfault) {
         }
     });
     
-    EXPECT_TRUE(hasDBOps) << "Should have DB operations from BaseTableOp conversion";
-    EXPECT_TRUE(hasDSAOps) << "Should have DSA operations from MaterializeOp conversion";
+    EXPECT_FALSE(hasDBOps) << "Should NOT have DB operations - LingoDB uses only DSA";
+    EXPECT_TRUE(hasDSAOps) << "Should have DSA operations throughout";
     
     // Skip printing for now to avoid segfault - there may be an issue with DSA table type printing
     // TODO: Fix DSA table type printing and re-enable this check

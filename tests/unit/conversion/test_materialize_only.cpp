@@ -102,7 +102,7 @@ TEST_F(MaterializeOnlyTest, MaterializeWithoutReturn) {
         std::cerr << "[TEST] DB ops: " << dbOpCount << ", DSA ops: " << dsaOpCount 
                   << ", RelAlg ops remaining: " << relalgOpCount << "\n";
         
-        EXPECT_GT(dbOpCount, 0) << "Should generate DB operations";
+        EXPECT_EQ(dbOpCount, 0) << "Should NOT generate DB operations - LingoDB uses only DSA";
         EXPECT_GT(dsaOpCount, 0) << "Should generate DSA operations";
         EXPECT_EQ(relalgOpCount, 0) << "All RelAlg operations should be erased";
         

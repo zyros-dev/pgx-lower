@@ -172,15 +172,15 @@ TEST_F(StreamingMemoryValidationTest, ConstantMemoryForLargeTable) {
     
     EXPECT_FALSE(hasBatchAllocations) << "Found batch memory allocations";
     
-    // Verify streaming pattern without SCF requirements
+    // Verify DSA streaming pattern
     bool hasStreamingPattern = false;
     func.walk([&](::mlir::Operation* op) {
-        if (::mlir::isa<::pgx::db::GetFieldOp>(op)) {
+        if (::mlir::isa<::pgx::mlir::dsa::AtOp>(op)) {
             hasStreamingPattern = true;
         }
     });
     
-    EXPECT_TRUE(hasStreamingPattern) << "Missing streaming pattern";
+    EXPECT_TRUE(hasStreamingPattern) << "Missing DSA streaming pattern (dsa.at for field access)";
     
     builder->create<::mlir::func::ReturnOp>(loc);
     
@@ -257,16 +257,16 @@ TEST_F(StreamingMemoryValidationTest, ProducerConsumerDirectConnection) {
     TranslatorContext translatorContext;
     translator->produce(translatorContext, *builder);
     
-    // Verify direct producer-consumer connection
+    // Verify direct producer-consumer connection with DSA operations
     bool hasDirectConnection = false;
     func.walk([&](::mlir::Operation* op) {
         // Check for direct processing operations
-        if (::mlir::isa<::pgx::db::GetFieldOp>(op)) {
+        if (::mlir::isa<::pgx::mlir::dsa::AtOp>(op)) {
             hasDirectConnection = true;
         }
     });
     
-    EXPECT_TRUE(hasDirectConnection) << "Missing direct producer-consumer connection";
+    EXPECT_TRUE(hasDirectConnection) << "Missing direct producer-consumer connection (dsa.at for field access)";
     
     builder->create<::mlir::func::ReturnOp>(loc);
     
