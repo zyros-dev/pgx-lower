@@ -313,6 +313,24 @@ target_link_libraries(test_complete_pipeline_phase4c4
 )
 add_test(NAME CompletePipelinePhase4c4Test COMMAND test_complete_pipeline_phase4c4)
 
+# RelAlgToDB fixes test
+add_executable(test_relalg_to_db_fixes test_relalg_to_db_fixes.cpp)
+target_link_libraries(test_relalg_to_db_fixes
+    gtest
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    PostgresQueryLogger
+)
+add_test(NAME RelAlgToDBFixesTest COMMAND test_relalg_to_db_fixes)
+
 # Simple Pipeline test for debugging
 add_executable(test_simple_pipeline_phase4c4 test_simple_pipeline_phase4c4.cpp)
 target_link_libraries(test_simple_pipeline_phase4c4
