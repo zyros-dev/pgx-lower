@@ -1,7 +1,6 @@
 #include "execution/mlir_runner.h"
 #include "execution/error_handling.h"
 #include "execution/logging.h"
-#include <sstream>
 
 // MLIR Core Infrastructure
 #include "mlir/IR/MLIRContext.h"
@@ -9,9 +8,9 @@
 #include "mlir/IR/Verifier.h"
 
 // Dialect headers
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
@@ -37,12 +36,8 @@ extern "C" {
 #endif
 
 // Include MLIR diagnostic infrastructure
-#include "llvm/Support/SourceMgr.h"
-#include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/Verifier.h"
 
 #include <fstream>
-#include "llvm/IR/Verifier.h"
 
 namespace mlir_runner {
 
@@ -70,9 +65,9 @@ static bool initialize_mlir_context(mlir::MLIRContext& context) {
         context.getOrLoadDialect<mlir::arith::ArithDialect>();
         
         // Load custom dialects to register their TypeIDs
-        context.getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
-        context.getOrLoadDialect<pgx::db::DBDialect>();
-        context.getOrLoadDialect<pgx::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<::pgx::mlir::relalg::RelAlgDialect>();
+        context.getOrLoadDialect<::pgx::db::DBDialect>();
+        context.getOrLoadDialect<::pgx::mlir::dsa::DSADialect>();
         
         // Validate dialect registration
         if (!mlir::pgx_lower::validateDialectRegistration()) {
@@ -138,16 +133,15 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
         }
         PGX_INFO("Lowering pipeline completed successfully");
         
-        // Phase 4: Final verification (Phase 3a: DB dialect)
+        // Phase 4: Final verification (DSA dialect)
         if (failed(mlir::verify(*module))) {
-            PGX_ERROR("Final DB MLIR module verification failed");
+            PGX_ERROR("Final DSA MLIR module verification failed");
             return false;
         }
         
-        // TODO Phase 3b: DB → DSA lowering (future work)
-        // TODO Phase 4: DSA → LLVM IR lowering (future work) 
+        // TODO Phase 4b: DSA → LLVM IR lowering (next implementation phase)
         // TODO Phase 5: LLVM IR → JIT compilation (future work)
-        PGX_WARNING("Phase 4-5 not yet implemented: DSA→LLVM→JIT pipeline");
+        PGX_WARNING("Phase 4b-5 not yet implemented: DSA→LLVM→JIT pipeline");
         
         return true;
         
@@ -180,7 +174,6 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
             return false;
         }
         
-        // Phase 1: AST Translation - PostgreSQL AST → RelAlg MLIR
         PGX_INFO("Starting Phase 1: PostgreSQL AST to RelAlg translation with EState support");
         auto translator = postgresql_ast::createPostgreSQLASTTranslator(context);
         auto module = translator->translateQuery(plannedStmt);
@@ -192,20 +185,18 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         
         PGX_INFO("Phase 1 complete: RelAlg MLIR module created successfully");
         
-        // Phase 2: Verify initial MLIR module
         if (failed(mlir::verify(*module))) {
             PGX_ERROR("Initial RelAlg MLIR module verification failed");
             return false;
         }
         
-        // Phase 3c: Use centralized pass pipeline for RelAlg→DB→DSA lowering
+        PGX_INFO("Initial RelAlg MLIR module verified successfully");
+        
         PGX_INFO("Configuring centralized lowering pipeline");
         mlir::PassManager pm(&context);
         
-        // Use centralized pipeline configuration with verification enabled
         mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
         
-        // Run the lowering pipeline (Phase 3a+3b+3c: RelAlg → DB → DSA)
         PGX_INFO("Running complete lowering pipeline");
         if (failed(pm.run(*module))) {
             PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB → DSA)");
@@ -213,15 +204,10 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         }
         PGX_INFO("Lowering pipeline completed successfully");
         
-        // Phase 4: Final verification (Phase 3a: DB dialect)
         if (failed(mlir::verify(*module))) {
             PGX_ERROR("Final DB MLIR module verification failed");
             return false;
         }
-        
-        // TODO Phase 3b: DB → DSA lowering (future work)
-        // TODO Phase 4: DSA → LLVM IR lowering (future work)
-        // TODO Phase 5: LLVM IR → JIT compilation (future work) 
         PGX_WARNING("Phase 4-5 not yet implemented: DSA→LLVM→JIT pipeline with EState");
         
         return true;

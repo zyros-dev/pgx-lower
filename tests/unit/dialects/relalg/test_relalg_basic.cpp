@@ -53,12 +53,7 @@ TEST(RelAlgBasicTest, BaseTableOpWithTableOid) {
         builder.getStringAttr("customers"),
         builder.getI64IntegerAttr(12345));
     
-    // Initialize the region properly
-    Block *baseTableBody = &baseTableOp.getBody().emplaceBlock();
-    OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPointToStart(baseTableBody);
-    builder.create<ReturnOp>(builder.getUnknownLoc());
-    
+    // BaseTableOp no longer has a body - it's a simple operation
     builder.setInsertionPointAfter(baseTableOp);
     builder.create<func::ReturnOp>(builder.getUnknownLoc());
     
@@ -95,11 +90,7 @@ TEST(RelAlgBasicTest, MaterializeOpWithColumns) {
         builder.getStringAttr("orders"),
         builder.getI64IntegerAttr(67890));
     
-    Block *baseTableBody = &baseTableOp.getBody().emplaceBlock();
-    OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPointToStart(baseTableBody);
-    builder.create<ReturnOp>(builder.getUnknownLoc());
-    
+    // BaseTableOp no longer has a body - it's a simple operation
     // Test MaterializeOp with columns attribute
     builder.setInsertionPointAfter(baseTableOp);
     SmallVector<Attribute> columnAttrs;

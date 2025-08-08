@@ -161,12 +161,12 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     // Get tuple stream type
     auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context_);
     
-    // Create BaseTableOp - this matches the successful output exactly
+    // Create BaseTableOp - simplified without region for Test 1
     auto baseTableOp = context.builder->create<pgx::mlir::relalg::BaseTableOp>(
         context.builder->getUnknownLoc(),
         tupleStreamType,
         context.builder->getStringAttr(tableIdentifier),
-        context.builder->getI64IntegerAttr(0)  // TODO Phase 5: Get actual table OID from PostgreSQL catalog
+        context.builder->getI64IntegerAttr(tableOid)  // Use actual table OID
     );
     
     PGX_DEBUG("SeqScan translation completed successfully");

@@ -81,8 +81,7 @@ class RelAlg_Op<string mnemonic, list<Trait> traits = []> : Op<RelAlg_Dialect, m
 // Operations that "create" relations
 //===----------------------------------------------------------------------===//
 
-def BaseTableOp : RelAlg_Op<"basetable",
-        [SingleBlockImplicitTerminator<"ReturnOp">]> {
+def BaseTableOp : RelAlg_Op<"basetable", [Pure]> {
     let summary = "base table operation";
     let description = [{
         Represents access to a base table in the database.
@@ -91,7 +90,7 @@ def BaseTableOp : RelAlg_Op<"basetable",
 
     let arguments = (ins StrAttr:$table_name, I64Attr:$table_oid);
     let results = (outs RelAlg_TupleStream:$result);
-    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "$table_name $table_oid attr-dict `:` type($result)";
 }
 
 //===----------------------------------------------------------------------===//

@@ -56,12 +56,7 @@ TEST_F(SimpleMaterializeTest, DirectConversionTest) {
         builder->getI64IntegerAttr(1)
     );
     
-    // Add terminator to BaseTableOp body
-    Block *body = &dummyOp.getBody().emplaceBlock();
-    OpBuilder::InsertionGuard guard(*builder);
-    builder->setInsertionPointToStart(body);
-    builder->create<::pgx::mlir::relalg::ReturnOp>(builder->getUnknownLoc());
-    
+    // BaseTableOp no longer has a body - it's a simple operation
     // Create MaterializeOp
     builder->setInsertionPointAfter(dummyOp);
     auto columnNames = builder->getArrayAttr({builder->getStringAttr("col1")});

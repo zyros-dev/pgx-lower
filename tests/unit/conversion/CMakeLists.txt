@@ -177,3 +177,26 @@ target_link_libraries(test_simple_materialize
 
 # Register simple materialize test with CTest
 add_test(NAME SimpleMaterializeTest COMMAND test_simple_materialize)
+
+# DSA to LLVM conversion tests - Phase 4a implementation
+add_executable(test_dsa_to_llvm test_dsa_to_llvm.cpp)
+
+target_link_libraries(test_dsa_to_llvm
+    gtest 
+    gtest_main
+    MLIRDSADialect
+    MLIRLLVMDialect
+    MLIRDSAToLLVMConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRTransformUtils
+    MLIRIR
+    MLIRParser
+    MLIRPass
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register DSA to LLVM tests with CTest
+add_test(NAME DSAToLLVMTest COMMAND test_dsa_to_llvm)

@@ -15,4 +15,5 @@ add_mlir_library(MLIRPgxLowerPasses
     MLIRDBToDSAConversion
     MLIRFuncDialect
     MLIRArithDialect
+    MLIRLLVMDialect
 )

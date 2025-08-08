@@ -50,9 +50,14 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRDSADialect
     MLIRRelAlgToDBConversion
     MLIRDBToDSAConversion
+    MLIRDSAToLLVMConversion  # Phase 4a DSA -> LLVM conversion
+    MLIRPgxLowerPasses  # Central pass registration
     # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt
     -Wl,--no-whole-archive
     # Standard MLIR dialects required by our dialects
+    MLIRLLVMDialect  # Required for DSA -> LLVM conversion
+    MLIRLLVMCommonConversion  # LLVM conversion infrastructure
+    MLIRFuncToLLVM  # Function to LLVM conversion patterns
     -Wl,--as-needed
 )
 

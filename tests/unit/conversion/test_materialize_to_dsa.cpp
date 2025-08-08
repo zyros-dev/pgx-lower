@@ -4,6 +4,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
@@ -26,6 +27,7 @@ protected:
         context.getOrLoadDialect<::pgx::db::DBDialect>();
         context.getOrLoadDialect<::pgx::mlir::dsa::DSADialect>();
         context.getOrLoadDialect<func::FuncDialect>();
+        context.getOrLoadDialect<arith::ArithDialect>();
         
         builder = std::make_unique<OpBuilder>(&context);
     }
@@ -80,12 +82,7 @@ TEST_F(MaterializeToDSATest, MaterializeOpConvertsToCreateDSFinalize) {
         builder->getI64IntegerAttr(12345)
     );
     
-    // BaseTableOp needs a body with ReturnOp terminator
-    Block *baseTableBody = &baseTableOp.getBody().emplaceBlock();
-    OpBuilder::InsertionGuard guard(*builder);
-    builder->setInsertionPointToStart(baseTableBody);
-    builder->create<::pgx::mlir::relalg::ReturnOp>(builder->getUnknownLoc());
-    
+    // BaseTableOp no longer has a body - it's a simple operation
     // Create MaterializeOp with column specification
     builder->setInsertionPointAfter(baseTableOp);
     auto columnNames = builder->getArrayAttr({builder->getStringAttr("id")});
@@ -191,12 +188,7 @@ TEST_F(MaterializeToDSATest, ConversionPreservesModuleStructure) {
         builder->getI64IntegerAttr(54321)
     );
     
-    // BaseTableOp needs a body with ReturnOp terminator
-    Block *baseTableBody = &baseTableOp.getBody().emplaceBlock();
-    OpBuilder::InsertionGuard guard(*builder);
-    builder->setInsertionPointToStart(baseTableBody);
-    builder->create<::pgx::mlir::relalg::ReturnOp>(builder->getUnknownLoc());
-    
+    // BaseTableOp no longer has a body - it's a simple operation
     // Create MaterializeOp
     builder->setInsertionPointAfter(baseTableOp);
     auto columnNames = builder->getArrayAttr({builder->getStringAttr("value")});
@@ -237,6 +229,130 @@ TEST_F(MaterializeToDSATest, ConversionPreservesModuleStructure) {
     EXPECT_EQ(totalOpsAfter, totalOpsBefore + 1) << "Should have net +1 operations (MaterializeOp → CreateDS + Finalize)";
     
     PGX_DEBUG("Module structure preservation test completed successfully");
+}
+
+// Test that GetExternalOp converts to DSA ScanSourceOp
+TEST_F(MaterializeToDSATest, GetExternalOpConvertsToScanSource) {
+    PGX_DEBUG("Testing GetExternalOp conversion to DSA ScanSourceOp");
+    
+    // Create module and function
+    auto moduleOp = ModuleOp::create(builder->getUnknownLoc());
+    builder->setInsertionPointToStart(moduleOp.getBody());
+    
+    auto funcType = builder->getFunctionType({}, {});
+    auto funcOp = builder->create<func::FuncOp>(
+        builder->getUnknownLoc(), "test_get_external", funcType);
+    
+    Block* entryBlock = funcOp.addEntryBlock();
+    builder->setInsertionPointToStart(entryBlock);
+    
+    // Create GetExternalOp
+    auto externalSourceType = ::pgx::db::ExternalSourceType::get(&context);
+    auto tableOid = builder->create<arith::ConstantOp>(
+        builder->getUnknownLoc(),
+        builder->getI64IntegerAttr(12345)
+    );
+    
+    auto getExternalOp = builder->create<::pgx::db::GetExternalOp>(
+        builder->getUnknownLoc(),
+        externalSourceType,
+        tableOid.getResult()
+    );
+    
+    // Add return operation
+    builder->create<func::ReturnOp>(builder->getUnknownLoc());
+    
+    PGX_DEBUG("Created GetExternalOp, verifying operation before conversion");
+    
+    // Verify GetExternalOp exists before conversion
+    auto getExternals = collectOpsOfType<::pgx::db::GetExternalOp>(funcOp);
+    EXPECT_EQ(getExternals.size(), 1) << "GetExternalOp should exist before conversion";
+    
+    // Verify no DSA ScanSourceOp exists before conversion
+    auto scanSourcesBefore = collectOpsOfType<::pgx::mlir::dsa::ScanSourceOp>(funcOp);
+    EXPECT_EQ(scanSourcesBefore.size(), 0) << "No DSA ScanSourceOp should exist before conversion";
+    
+    PGX_DEBUG("Running DBToDSA conversion pass");
+    
+    // Apply DBToDSA conversion pass
+    PassManager passManager(&context);
+    passManager.addNestedPass<func::FuncOp>(::mlir::pgx_conversion::createDBToDSAPass());
+    
+    auto result = passManager.run(moduleOp);
+    EXPECT_TRUE(result.succeeded()) << "DBToDSA pass should succeed";
+    
+    PGX_DEBUG("DBToDSA conversion completed, verifying results");
+    
+    // Verify GetExternalOp is converted (removed)
+    auto getExternalsAfter = collectOpsOfType<::pgx::db::GetExternalOp>(funcOp);
+    EXPECT_EQ(getExternalsAfter.size(), 0) << "GetExternalOp should be converted and removed";
+    
+    // Verify DSA ScanSourceOp is created
+    auto scanSourcesAfter = collectOpsOfType<::pgx::mlir::dsa::ScanSourceOp>(funcOp);
+    EXPECT_EQ(scanSourcesAfter.size(), 1) << "One DSA ScanSourceOp should be created";
+    
+    if (!scanSourcesAfter.empty()) {
+        auto scanSource = scanSourcesAfter[0];
+        
+        // Verify ScanSourceOp produces GenericIterableType
+        auto scanResult = scanSource.getResult();
+        EXPECT_TRUE(scanResult.getType().isa<::pgx::mlir::dsa::GenericIterableType>())
+            << "ScanSourceOp should produce GenericIterableType";
+            
+        // Verify the table description attribute
+        auto tableDesc = scanSource.getTableDescription();
+        EXPECT_TRUE(tableDesc.contains("postgresql_table"))
+            << "ScanSourceOp should have postgresql_table description";
+    }
+    
+    PGX_DEBUG("GetExternalOp conversion test completed successfully");
+}
+
+// Test that StreamResultsOp is properly handled (removed as no-op)
+TEST_F(MaterializeToDSATest, StreamResultsOpIsRemoved) {
+    PGX_DEBUG("Testing StreamResultsOp removal during DBToDSA conversion");
+    
+    // Create module and function
+    auto moduleOp = ModuleOp::create(builder->getUnknownLoc());
+    builder->setInsertionPointToStart(moduleOp.getBody());
+    
+    auto funcType = builder->getFunctionType({}, {});
+    auto funcOp = builder->create<func::FuncOp>(
+        builder->getUnknownLoc(), "test_stream_results", funcType);
+    
+    Block* entryBlock = funcOp.addEntryBlock();
+    builder->setInsertionPointToStart(entryBlock);
+    
+    // Create StreamResultsOp
+    auto streamResultsOp = builder->create<::pgx::db::StreamResultsOp>(
+        builder->getUnknownLoc()
+    );
+    
+    // Add return operation
+    builder->create<func::ReturnOp>(builder->getUnknownLoc());
+    
+    PGX_DEBUG("Created StreamResultsOp, verifying operation before conversion");
+    
+    // Verify StreamResultsOp exists before conversion
+    auto streamResults = collectOpsOfType<::pgx::db::StreamResultsOp>(funcOp);
+    EXPECT_EQ(streamResults.size(), 1) << "StreamResultsOp should exist before conversion";
+    
+    PGX_DEBUG("Running DBToDSA conversion pass");
+    
+    // Apply DBToDSA conversion pass
+    PassManager passManager(&context);
+    passManager.addNestedPass<func::FuncOp>(::mlir::pgx_conversion::createDBToDSAPass());
+    
+    auto result = passManager.run(moduleOp);
+    EXPECT_TRUE(result.succeeded()) << "DBToDSA pass should succeed";
+    
+    PGX_DEBUG("DBToDSA conversion completed, verifying results");
+    
+    // Verify StreamResultsOp is removed
+    auto streamResultsAfter = collectOpsOfType<::pgx::db::StreamResultsOp>(funcOp);
+    EXPECT_EQ(streamResultsAfter.size(), 0) << "StreamResultsOp should be removed";
+    
+    PGX_DEBUG("StreamResultsOp removal test completed successfully");
 }
 
 } // namespace
