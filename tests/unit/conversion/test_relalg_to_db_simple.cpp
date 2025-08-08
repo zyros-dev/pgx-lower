@@ -69,8 +69,8 @@ TEST(RelAlgToDBSimpleTest, MaterializeOpAlone) {
     auto module = ModuleOp::create(UnknownLoc::get(&context));
     builder.setInsertionPointToStart(module.getBody());
     
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
-    auto funcType = builder.getFunctionType({}, {tableType});
+    auto relAlgTableType = pgx::mlir::relalg::TableType::get(&context);
+    auto funcType = builder.getFunctionType({}, {relAlgTableType});
     auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_materialize_alone", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);
@@ -87,7 +87,7 @@ TEST(RelAlgToDBSimpleTest, MaterializeOpAlone) {
     
     auto materializeOp = builder.create<pgx::mlir::relalg::MaterializeOp>(
         UnknownLoc::get(&context),
-        tableType,
+        relAlgTableType,
         streamArg,
         columnsArrayAttr
     );
@@ -96,7 +96,7 @@ TEST(RelAlgToDBSimpleTest, MaterializeOpAlone) {
     builder.create<func::ReturnOp>(UnknownLoc::get(&context), materializeOp.getResult());
     
     // Update function type to accept the stream argument
-    auto newFuncType = builder.getFunctionType({tupleStreamType}, {tableType});
+    auto newFuncType = builder.getFunctionType({tupleStreamType}, {relAlgTableType});
     funcOp.setType(newFuncType);
     
     // Run the RelAlgToDB pass

@@ -81,7 +81,7 @@ TEST_F(SimplePipelineTest, SimpleTranslation) {
     pm.addPass(mlir::pgx_conversion::createRelAlgToDBPass());
     
     auto result = pm.run(funcOp);
-    ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
+    ASSERT_TRUE(mlir::succeeded(result)) << "RelAlgToDB pass failed";
     
     // Verify the function
     auto verifyResult = funcOp.verify();
@@ -124,7 +124,7 @@ TEST_F(SimplePipelineTest, ManualTranslationCheck) {
     pm.addPass(mlir::pgx_conversion::createRelAlgToDBPass());
     
     auto result = pm.run(funcOp);
-    ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
+    ASSERT_TRUE(mlir::succeeded(result)) << "RelAlgToDB pass failed";
     
     // Walk the function to see what operations remain
     std::cerr << "\n=== Operations after pass ===\n";

@@ -217,9 +217,8 @@ TEST(MaterializePhase4c2Test, PassExists) {
     auto module = ModuleOp::create(UnknownLoc::get(&context));
     builder.setInsertionPointToStart(module.getBody());
     
-    // Function returns a RelAlg table
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
-    auto funcType = builder.getFunctionType({}, {tableType});
+    // Function returns nothing - just testing pass runs
+    auto funcType = builder.getFunctionType({}, {});
     auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_pass_exists", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);
