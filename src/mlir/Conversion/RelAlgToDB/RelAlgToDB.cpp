@@ -44,14 +44,15 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         
         // Process each MaterializeOp and perform translation
         // We need to handle proper operation lifecycle management
-        llvm::SmallVector<::pgx::mlir::relalg::MaterializeOp> materializeOps;
-        llvm::SmallVector<Operation*> opsToErase;
+        // Store pointers to avoid invalidation issues when erasing
+        llvm::SmallVector<Operation*> materializeOps;
         
         funcOp.walk([&](::pgx::mlir::relalg::MaterializeOp materializeOp) {
-            materializeOps.push_back(materializeOp);
+            materializeOps.push_back(materializeOp.getOperation());
         });
         
-        for (auto materializeOp : materializeOps) {
+        for (auto* opPtr : materializeOps) {
+            auto materializeOp = cast<::pgx::mlir::relalg::MaterializeOp>(opPtr);
             MLIR_PGX_INFO("RelAlgToDB", "Processing MaterializeOp translation");
             
             // Create a fresh context for each MaterializeOp
@@ -90,9 +91,6 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
             
             // Replace all uses of the MaterializeOp result with the DSA table
             materializeOp.getResult().replaceAllUsesWith(dsaTable);
-            
-            // Schedule for erasure after all replacements are done
-            opsToErase.push_back(materializeOp);
         }
         
         // Skip function signature update to avoid type mismatch issues
@@ -100,30 +98,56 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         // Function signature update might be causing issues with MLIR verification
         MLIR_PGX_DEBUG("RelAlgToDB", "Skipping function signature update to avoid type issues");
         
-        // Theory A: Use MLIR's built-in pattern system for safe operation cleanup
-        // Instead of manual erasure, let MLIR handle dead code elimination
-        MLIR_PGX_INFO("RelAlgToDB", "Using MLIR's pattern system for operation cleanup");
+        // Theory C: Safer erasure with proper use validation
+        // Only erase MaterializeOp operations that we've replaced
+        // Leave other RelAlg operations for now to avoid complex dependency issues
+        MLIR_PGX_INFO("RelAlgToDB", "Erasing replaced MaterializeOp operations safely");
         
-        // Create an empty pattern set - we don't need actual patterns
-        // Just running applyPatternsAndFoldGreedily will trigger dead code elimination
-        RewritePatternSet patterns(&getContext());
-        
-        // Apply patterns with folding and DCE
-        // This will automatically clean up any operations that have no uses
-        if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
-            MLIR_PGX_ERROR("RelAlgToDB", "Pattern application failed");
-            signalPassFailure();
-            return;
+        for (auto* opPtr : materializeOps) {
+            // Check if operation is still valid and has no uses
+            if (opPtr && opPtr->use_empty()) {
+                MLIR_PGX_DEBUG("RelAlgToDB", "Erasing MaterializeOp - no remaining uses");
+                opPtr->erase();
+            } else if (opPtr && !opPtr->use_empty()) {
+                // This shouldn't happen if replaceAllUsesWith worked correctly
+                MLIR_PGX_WARNING("RelAlgToDB", "MaterializeOp still has uses after replacement!");
+            }
         }
         
-        MLIR_PGX_INFO("RelAlgToDB", "Completed RelAlg to DB conversion pass - MLIR handled cleanup");
+        MLIR_PGX_INFO("RelAlgToDB", "Completed RelAlg to DB conversion pass - safely erased replaced operations");
+        
+        // DEBUG: Log what operations remain in the function before verification
+        MLIR_PGX_INFO("RelAlgToDB", "=== OPERATIONS REMAINING AFTER CONVERSION ===");
+        int opCount = 0;
+        funcOp.walk([&](Operation *op) {
+            opCount++;
+            std::string opName = op->getName().getStringRef().str();
+            std::string dialectName = op->getDialect() ? op->getDialect()->getNamespace().str() : "unknown";
+            MLIR_PGX_INFO("RelAlgToDB", "Op #" + std::to_string(opCount) + ": " + dialectName + "." + opName);
+            
+            // Check if operation has valid types
+            for (auto result : op->getResults()) {
+                std::string typeName = "unknown";
+                if (result.getType()) {
+                    // Just check if type exists, don't try to print it yet
+                    typeName = "valid-type";
+                } else {
+                    typeName = "null-type";
+                }
+                MLIR_PGX_INFO("RelAlgToDB", "  Result type: " + typeName);
+            }
+        });
+        MLIR_PGX_INFO("RelAlgToDB", "Total operations: " + std::to_string(opCount));
+        MLIR_PGX_INFO("RelAlgToDB", "=== END OPERATIONS LIST ===");
         
         // Verify the function is still valid after conversion
+        MLIR_PGX_INFO("RelAlgToDB", "Starting function verification...");
         if (failed(funcOp.verify())) {
             MLIR_PGX_ERROR("RelAlgToDB", "Function verification failed after conversion");
             signalPassFailure();
             return;
         }
+        MLIR_PGX_INFO("RelAlgToDB", "Function verification passed successfully");
         
         MLIR_PGX_DEBUG("RelAlgToDB", "Function verification passed");
     }
