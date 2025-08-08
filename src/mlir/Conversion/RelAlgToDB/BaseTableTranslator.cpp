@@ -38,11 +38,36 @@ public:
         MLIR_PGX_INFO("RelAlg", "BaseTableTranslator::produce() - Beginning DB-based table scan for: " + 
                       baseTableOp.getTableName().str());
         
+        // Log builder state before operations
+        auto* currentBlock = builder.getInsertionBlock();
+        if (currentBlock) {
+            MLIR_PGX_DEBUG("RelAlg", "Builder insertion block has " + 
+                          std::to_string(currentBlock->getNumArguments()) + " args, " +
+                          std::to_string(std::distance(currentBlock->begin(), currentBlock->end())) + " ops");
+            if (currentBlock->getTerminator()) {
+                MLIR_PGX_DEBUG("RelAlg", "Block has terminator: " + 
+                              currentBlock->getTerminator()->getName().getStringRef().str());
+            } else {
+                MLIR_PGX_WARNING("RelAlg", "Block has NO terminator before BaseTable operations");
+            }
+        }
+        
         auto scope = context.createScope();
         auto loc = baseTableOp.getLoc();
         
         // Create DB operations following the correct pipeline architecture
         createDBTableScan(context, builder, scope, loc);
+        
+        // Log builder state after operations
+        if (currentBlock) {
+            MLIR_PGX_DEBUG("RelAlg", "After BaseTable ops - block has " + 
+                          std::to_string(std::distance(currentBlock->begin(), currentBlock->end())) + " ops");
+            if (currentBlock->getTerminator()) {
+                MLIR_PGX_DEBUG("RelAlg", "Block still has terminator after BaseTable ops");
+            } else {
+                MLIR_PGX_ERROR("RelAlg", "Block LOST terminator during BaseTable operations!");
+            }
+        }
     }
     
 private:

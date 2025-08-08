@@ -39,6 +39,8 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         MLIR_PGX_INFO("RelAlgToDB", "Starting RelAlg to DB conversion pass (LingoDB Pattern)");
         
         ::pgx::mlir::relalg::TranslatorContext loweringContext;
+        SmallVector<::pgx::mlir::relalg::MaterializeOp> processedOps;
+        
         getOperation().walk([&](Operation* op) {
             if (isTranslationHook(op)) {
                 auto node = ::pgx::mlir::relalg::Translator::createTranslator(op);
@@ -47,19 +49,25 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
                 node->produce(loweringContext, builder);
                 node->done();
                 
-                // Replace MaterializeOp result with DSA table
+                // Store MaterializeOp for later processing to avoid iterator invalidation
                 if (auto materializeOp = dyn_cast<::pgx::mlir::relalg::MaterializeOp>(op)) {
-                    auto dsaTable = loweringContext.getQueryResult();
-                    if (dsaTable) {
-                        materializeOp.replaceAllUsesWith(dsaTable);
-                        materializeOp.erase();
-                    }
+                    processedOps.push_back(materializeOp);
                 }
             }
         });
         
+        // Process MaterializeOps after walk to avoid iterator invalidation
+        for (auto materializeOp : processedOps) {
+            auto dsaTable = loweringContext.getQueryResult();
+            if (dsaTable) {
+                MLIR_PGX_DEBUG("RelAlgToDB", "Replacing MaterializeOp with DSA table");
+                materializeOp.replaceAllUsesWith(dsaTable);
+                materializeOp.erase();
+            }
+        }
+        
         updateFunctionSignature(getOperation());
-        eraseRelAlgOperations();
+        eraseRemainingRelAlgOperations();
         
         MLIR_PGX_INFO("RelAlgToDB", "Pass execution completed - LingoDB pattern");
     }
@@ -106,8 +114,8 @@ private:
         }
     }
     
-    // Safe erasure of RelAlg operations after translation
-    void eraseRelAlgOperations() {
+    // Safe erasure of remaining RelAlg operations (BaseTable, etc) after translation
+    void eraseRemainingRelAlgOperations() {
         MLIR_PGX_DEBUG("RelAlgToDB", "Erasing consumed RelAlg operations");
         
         // Collect RelAlg operations to erase
@@ -120,12 +128,10 @@ private:
             
             if (op->getDialect() && 
                 op->getDialect()->getNamespace() == "relalg") {
-                // Only erase MaterializeOps and BaseTableOps that were consumed
+                // Only erase BaseTableOps and other RelAlg ops (NOT MaterializeOps - already handled)
                 if (isa<::pgx::mlir::relalg::MaterializeOp>(op)) {
-                    // MaterializeOps should have been replaced by DSA tables
-                    if (op->use_empty()) {
-                        opsToErase.push_back(op);
-                    }
+                    // Skip MaterializeOps - already handled in main loop
+                    return;
                 } else if (isa<::pgx::mlir::relalg::BaseTableOp>(op)) {
                     // BaseTableOps should have no uses after MaterializeOps are replaced
                     if (op->use_empty()) {
