@@ -46,9 +46,15 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         // We need to handle proper operation lifecycle management
         // Store pointers to avoid invalidation issues when erasing
         llvm::SmallVector<Operation*> materializeOps;
+        llvm::SmallVector<Operation*> baseTableOps;
         
         funcOp.walk([&](::pgx::mlir::relalg::MaterializeOp materializeOp) {
             materializeOps.push_back(materializeOp.getOperation());
+        });
+        
+        // Also collect BaseTableOp operations for erasure after translation
+        funcOp.walk([&](::pgx::mlir::relalg::BaseTableOp baseTableOp) {
+            baseTableOps.push_back(baseTableOp.getOperation());
         });
         
         for (auto* opPtr : materializeOps) {
@@ -98,10 +104,10 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         // Function signature update might be causing issues with MLIR verification
         MLIR_PGX_DEBUG("RelAlgToDB", "Skipping function signature update to avoid type issues");
         
-        // Theory C: Safer erasure with proper use validation
-        // Only erase MaterializeOp operations that we've replaced
-        // Leave other RelAlg operations for now to avoid complex dependency issues
-        MLIR_PGX_INFO("RelAlgToDB", "Erasing replaced MaterializeOp operations safely");
+        // Erase all RelAlg operations after translation
+        // MaterializeOp operations have their uses replaced with DSA tables
+        // BaseTableOp operations are leaf nodes with no results
+        MLIR_PGX_INFO("RelAlgToDB", "Erasing replaced RelAlg operations");
         
         for (auto* opPtr : materializeOps) {
             // Check if operation is still valid and has no uses
@@ -114,7 +120,19 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
             }
         }
         
-        MLIR_PGX_INFO("RelAlgToDB", "Completed RelAlg to DB conversion pass - safely erased replaced operations");
+        // Erase BaseTableOp operations after translation
+        // BaseTableOp operations are leaf nodes that get converted to DB operations
+        // They have no results to replace, so we can safely erase them
+        MLIR_PGX_INFO("RelAlgToDB", "Erasing BaseTableOp operations after translation");
+        
+        for (auto* opPtr : baseTableOps) {
+            if (opPtr) {
+                MLIR_PGX_DEBUG("RelAlgToDB", "Erasing BaseTableOp");
+                opPtr->erase();
+            }
+        }
+        
+        MLIR_PGX_INFO("RelAlgToDB", "Completed RelAlg to DB conversion pass - safely erased all RelAlg operations");
         
         // DEBUG: Log what operations remain in the function before verification
         MLIR_PGX_INFO("RelAlgToDB", "=== OPERATIONS REMAINING AFTER CONVERSION ===");
