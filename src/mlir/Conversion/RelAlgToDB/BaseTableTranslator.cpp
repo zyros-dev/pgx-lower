@@ -3,10 +3,10 @@
 #include "execution/logging.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include <sstream>
 
 namespace pgx {
 namespace mlir {
@@ -24,8 +24,8 @@ public:
         : Translator(op), 
           baseTableOp(op),
           idColumn(::mlir::IntegerType::get(op.getContext(), 64)) {
-        PGX_DEBUG("Created BaseTableTranslator for table: " + 
-                  op.getTableName().str());
+        MLIR_PGX_DEBUG("RelAlg", "Created BaseTableTranslator for table: " + 
+                       op.getTableName().str());
         
         // Initialize available columns - for Test 1, just create an 'id' column
         availableColumns.insert(&idColumn);
@@ -36,57 +36,97 @@ public:
     }
     
     void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-        PGX_INFO("BaseTableTranslator::produce() - Beginning table scan for: " + 
-                 baseTableOp.getTableName().str());
+        MLIR_PGX_INFO("RelAlg", "BaseTableTranslator::produce() - Beginning DB-based table scan for: " + 
+                      baseTableOp.getTableName().str());
         
         auto scope = context.createScope();
         auto loc = baseTableOp.getLoc();
         
-        // Create the scan loop structure
-        auto forOp = createScanLoop(builder, loc);
-        
-        // Set insertion point inside the loop
-        auto& loopBody = forOp.getRegion().front();
-        builder.setInsertionPointToStart(&loopBody);
-        
-        // Generate tuple values and process
-        generateTupleValues(context, builder, scope, loc);
-        
-        // Restore insertion point after loop
-        builder.setInsertionPointAfter(forOp);
+        // Create DB operations following the correct pipeline architecture
+        createDBTableScan(context, builder, scope, loc);
     }
     
 private:
-    // Create the loop structure for scanning rows
-    ::mlir::scf::ForOp createScanLoop(::mlir::OpBuilder& builder, ::mlir::Location loc) {
-        // For Test 1, we implement a simplified version that creates a simple loop
-        // In the future, this will use DSA scan operations like LingoDB
+    // Create the DB-based table scan following the correct architecture
+    void createDBTableScan(TranslatorContext& context, ::mlir::OpBuilder& builder,
+                          TranslatorContext::AttributeResolverScope& scope, 
+                          ::mlir::Location loc) {
+        // Create db.get_external to initialize table access
+        auto tableOid = builder.create<::mlir::arith::ConstantIntOp>(
+            loc, baseTableOp.getTableOid(), 64);
+        auto tableHandle = builder.create<::pgx::db::GetExternalOp>(
+            loc, ::pgx::db::ExternalSourceType::get(builder.getContext()), tableOid);
         
-        // Create a simple constant to represent the number of rows (1 for Test 1)
-        auto rowCount = builder.create<::mlir::arith::ConstantIndexOp>(loc, 1);
-        auto zero = builder.create<::mlir::arith::ConstantIndexOp>(loc, 0);
-        auto one = builder.create<::mlir::arith::ConstantIndexOp>(loc, 1);
+        MLIR_PGX_DEBUG("RelAlg", "Created db.get_external for table OID: " + 
+                       std::to_string(baseTableOp.getTableOid()));
         
-        // Create a simple for loop to iterate over rows
-        return builder.create<::mlir::scf::ForOp>(
-            loc, zero, rowCount, one, ::mlir::ValueRange{});
+        // Create scf.while loop for tuple iteration
+        createTupleIterationLoop(context, builder, scope, loc, tableHandle);
     }
     
-    // Generate values for the current tuple and call consumer
-    void generateTupleValues(TranslatorContext& context, ::mlir::OpBuilder& builder,
-                           TranslatorContext::AttributeResolverScope& scope, 
-                           ::mlir::Location loc) {
-        // For Test 1, create a constant value for the 'id' column
-        // This is a simplified implementation - real version would read from storage
-        auto idValue = builder.create<::mlir::arith::ConstantIntOp>(
-            loc, 1, builder.getI64Type());
+    // Create the iteration loop using scf.while and db.iterate_external
+    void createTupleIterationLoop(TranslatorContext& context, ::mlir::OpBuilder& builder,
+                                 TranslatorContext::AttributeResolverScope& scope,
+                                 ::mlir::Location loc, ::mlir::Value tableHandle) {
+        // Create scf.while loop that iterates over tuples
+        auto whileOp = builder.create<::mlir::scf::WhileOp>(
+            loc, ::mlir::TypeRange{}, ::mlir::ValueRange{});
         
-        // Map the column values in the context using Column-based resolution
-        context.setValueForAttribute(scope, &idColumn, idValue);
+        // Create the "before" region (condition check)
+        {
+            auto* beforeBlock = new ::mlir::Block();
+            whileOp.getBefore().push_back(beforeBlock);
+            ::mlir::OpBuilder beforeBuilder(beforeBlock, beforeBlock->end());
+            
+            // Check if there's a next tuple
+            auto hasTuple = beforeBuilder.create<::pgx::db::IterateExternalOp>(
+                loc, tableHandle);
+            
+            beforeBuilder.create<::mlir::scf::ConditionOp>(
+                loc, hasTuple, ::mlir::ValueRange{});
+        }
         
-        // Call the consumer to process this tuple
+        // Create the "after" region (loop body)
+        {
+            auto* afterBlock = new ::mlir::Block();
+            whileOp.getAfter().push_back(afterBlock);
+            ::mlir::OpBuilder afterBuilder(afterBlock, afterBlock->end());
+            
+            // Process the current tuple
+            processTuple(context, afterBuilder, scope, loc, tableHandle);
+            
+            // Yield to continue the loop
+            afterBuilder.create<::mlir::scf::YieldOp>(loc, ::mlir::ValueRange{});
+        }
+    }
+    
+    // Process a single tuple - extract field values and call consumer
+    void processTuple(TranslatorContext& context, ::mlir::OpBuilder& builder,
+                     TranslatorContext::AttributeResolverScope& scope,
+                     ::mlir::Location loc, ::mlir::Value tableHandle) {
+        // Extract field value using db.get_field
+        // For Test 1, extract field 0 (id column)
+        auto fieldIndex = builder.create<::mlir::arith::ConstantIndexOp>(loc, 0);
+        // PostgreSQL OID for int8 (BIGINT) = 20
+        auto typeOid = builder.create<::mlir::arith::ConstantIntOp>(loc, 20, 32);
+        
+        auto fieldValue = builder.create<::pgx::db::GetFieldOp>(
+            loc, ::pgx::db::NullableI64Type::get(builder.getContext()),
+            tableHandle, fieldIndex, typeOid);
+        
+        MLIR_PGX_DEBUG("RelAlg", "Extracted field value using db.get_field at index 0");
+        
+        // For now, assume non-nullable and extract the actual value
+        // In a full implementation, we'd handle nullable values properly
+        auto actualValue = builder.create<::pgx::db::NullableGetValOp>(
+            loc, builder.getI64Type(), fieldValue);
+        
+        // Set the value in context for the id column
+        context.setValueForAttribute(scope, &idColumn, actualValue);
+        
+        // Call consumer for streaming (one tuple at a time)
         if (consumer) {
-            PGX_DEBUG("Calling consumer from BaseTableTranslator");
+            MLIR_PGX_DEBUG("RelAlg", "Streaming tuple to consumer");
             consumer->consume(this, builder, context);
         }
     }
@@ -100,7 +140,10 @@ public:
     }
     
     void done() override {
-        PGX_DEBUG("BaseTableTranslator::done() - Completed table scan");
+        MLIR_PGX_DEBUG("RelAlg", "BaseTableTranslator::done() - Completed DB-based table scan");
+        
+        // The BaseTableOp has been fully lowered to DB operations
+        baseTableOp.erase();
     }
 };
 
@@ -108,7 +151,7 @@ public:
 std::unique_ptr<Translator> createBaseTableTranslator(::mlir::Operation* op) {
     auto baseTableOp = ::mlir::dyn_cast<::pgx::mlir::relalg::BaseTableOp>(op);
     if (!baseTableOp) {
-        PGX_ERROR("createBaseTableTranslator called with non-BaseTableOp");
+        MLIR_PGX_ERROR("RelAlg", "createBaseTableTranslator called with non-BaseTableOp");
         return createDummyTranslator(op);
     }
     return std::make_unique<BaseTableTranslator>(baseTableOp);

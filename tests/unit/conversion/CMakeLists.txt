@@ -218,3 +218,79 @@ target_link_libraries(test_translator_infrastructure
 )
 
 add_test(NAME TranslatorInfrastructureTest COMMAND test_translator_infrastructure)
+
+# BaseTable streaming tests - Phase 4c-2 implementation
+add_executable(test_basetable_streaming test_basetable_streaming.cpp)
+
+target_link_libraries(test_basetable_streaming
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRTransforms
+    MLIRDialectConversion
+    MLIRParser
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register BaseTable streaming tests with CTest
+add_test(NAME BaseTableStreamingTest COMMAND test_basetable_streaming)
+
+# Streaming memory validation tests - Phase 4c-2 memory efficiency
+add_executable(test_streaming_memory_validation test_streaming_memory_validation.cpp)
+
+target_link_libraries(test_streaming_memory_validation
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRTransforms
+    MLIRDialectConversion
+    MLIRParser
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register streaming memory validation tests with CTest
+add_test(NAME StreamingMemoryValidationTest COMMAND test_streaming_memory_validation)
+
+# MaterializeOp DB operations tests - Corrected architecture (DB ops only)
+add_executable(test_materialize_db_ops test_materialize_db_ops.cpp)
+
+target_link_libraries(test_materialize_db_ops
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRTransforms
+    MLIRDialectConversion
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register MaterializeOp DB operations tests with CTest
+add_test(NAME MaterializeDBOpsTest COMMAND test_materialize_db_ops)
