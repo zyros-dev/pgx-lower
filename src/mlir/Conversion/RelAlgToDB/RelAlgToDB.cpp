@@ -27,12 +27,20 @@ LogicalResult mlir::pgx_conversion::BaseTableToExternalSourcePattern::matchAndRe
     auto tableOid = op.getTableOidAttr().getValue().getZExtValue();
     std::string tableName = op.getTableName().str();
     
+    // BaseTableOp has a region but produces a tuple stream
+    // For now, we'll just produce the external source handle
+    // The region processing will be handled elsewhere
+    
     // Create DB get_external operation to initialize PostgreSQL table access
     auto tableOidValue = rewriter.create<arith::ConstantIntOp>(op.getLoc(), tableOid, rewriter.getI64Type());
-    auto getExternalOp = rewriter.replaceOpWithNewOp<::pgx::db::GetExternalOp>(
-        op,
+    auto getExternalOp = rewriter.create<::pgx::db::GetExternalOp>(
+        op.getLoc(),
         ::pgx::db::ExternalSourceType::get(rewriter.getContext()),
         tableOidValue.getResult());
+    
+    // BaseTableOp produces a tuple stream, but GetExternalOp produces an external source handle
+    // For now, just replace the operation - the type conversion will handle the rest
+    rewriter.replaceOp(op, getExternalOp.getResult());
     
     MLIR_PGX_DEBUG("RelAlgToDB", "Created GetExternalOp for table: " + tableName + " (OID: " + std::to_string(tableOid) + ")");
     

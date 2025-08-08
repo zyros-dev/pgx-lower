@@ -4,6 +4,7 @@
 // Include all conversion passes
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/Conversion/DBToDSA/DBToDSA.h"
+#include "mlir/Conversion/DSAToLLVM/DSAToLLVM.h"
 
 // Include dialect headers for verification
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
@@ -83,9 +84,9 @@ void registerAllPgxLoweringPasses() {
     // Register conversion passes in dependency order
     ::mlir::pgx_conversion::registerRelAlgToDBConversionPasses();
     ::mlir::pgx_conversion::registerDBToDSAConversionPasses();
+    ::mlir::pgx_conversion::registerDSAToLLVMConversionPasses();
     
     // TODO: Register future passes here
-    // - DSA to LLVM conversion passes (Phase 4)
     // - Optimization passes
     // - Canonicalization passes
     
@@ -137,8 +138,12 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) 
     pm.addNestedPass<mlir::func::FuncOp>(::mlir::pgx_conversion::createDBToDSAPass());
     PGX_DEBUG("Added nested DB → DSA lowering pass");
     
-    // TODO: Phase 4 - DSA → LLVM lowering
-    // pm.addNestedPass<mlir::func::FuncOp>(::mlir::pgx_conversion::createDSAToLLVMPass());
+    // Phase 4a - DSA → LLVM lowering (operates on module level)
+    pm.addPass(::mlir::pgx_conversion::createDSAToLLVMPass());
+    PGX_DEBUG("Added DSA → LLVM lowering pass");
+    
+    // TODO: Phase 4b - JIT execution engine setup
+    // TODO: Phase 4c - Complete MLIR → LLVM → JIT pipeline
     
     // TODO: Optimization passes
     // pm.addPass(mlir::createCanonicalizerPass());
@@ -162,10 +167,10 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) 
 // Future Pipeline Extensions
 //===----------------------------------------------------------------------===//
 
-// TODO: Implement DSA → LLVM pipeline for Phase 4
+// TODO: Implement DSA → LLVM pipeline for Phase 4a
 // void createDSAToLLVMPipeline(mlir::PassManager& pm) {
 //     PGX_DEBUG("Creating DSA → LLVM lowering pipeline");
-//     // Phase 4 implementation
+//     // Phase 4a implementation
 // }
 
 // TODO: Implement optimization pipeline
@@ -252,6 +257,12 @@ bool validatePassRegistration() {
         return false;
     }
     
+    auto dsaToLLVMPass = ::mlir::pgx_conversion::createDSAToLLVMPass();
+    if (!dsaToLLVMPass) {
+        PGX_ERROR("Failed to create DSAToLLVM pass");
+        return false;
+    }
+    
     // Verify passes have valid names
     if (relalgToDBPass->getName().empty()) {
         PGX_ERROR("RelAlgToDB pass has empty name");
@@ -260,6 +271,11 @@ bool validatePassRegistration() {
     
     if (dbToDSAPass->getName().empty()) {
         PGX_ERROR("DBToDSA pass has empty name");
+        return false;
+    }
+    
+    if (dsaToLLVMPass->getName().empty()) {
+        PGX_ERROR("DSAToLLVM pass has empty name");
         return false;
     }
     
