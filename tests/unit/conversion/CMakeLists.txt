@@ -79,31 +79,7 @@ target_link_libraries(test_phase3a_integration
 # Register Phase 3a integration tests with CTest
 add_test(NAME Phase3AIntegrationTest COMMAND test_phase3a_integration)
 
-# Functional conversion tests - tests that actually run conversions and verify output
-add_executable(test_functional_conversions test_functional_conversions.cpp)
-
-target_link_libraries(test_functional_conversions
-    gtest 
-    gtest_main
-    MLIRRelAlgDialect
-    MLIRDBDialect
-    MLIRDSADialect
-    MLIRRelAlgToDBConversion
-    MLIRFuncDialect
-    MLIRArithDialect
-    MLIRSCFDialect
-    MLIRPass
-    MLIRTransforms
-    MLIRDialectConversion
-    MLIRParser
-    MLIRIR
-    MLIRSupport
-    LLVMSupport
-    pgx_logging
-)
-
-# Register functional conversion tests with CTest
-add_test(NAME FunctionalConversionsTest COMMAND test_functional_conversions)
+# NOTE: test_functional_conversions.cpp deleted - obsolete tests from Phase 3a
 
 # Type creation tests - validates basic type functionality
 add_executable(test_type_creation test_type_creation.cpp)
@@ -146,53 +122,9 @@ target_link_libraries(test_dsa_to_llvm
 # Register DSA to LLVM tests with CTest
 add_test(NAME DSAToLLVMTest COMMAND test_dsa_to_llvm)
 
-# RelAlg to DB conversion tests - Phase 4c-2 implementation (with DSA)
-add_executable(test_relalg_to_db test_relalg_to_db.cpp)
+# NOTE: test_relalg_to_db.cpp deleted - obsolete tests expecting old DB operations
 
-target_link_libraries(test_relalg_to_db
-    gtest 
-    gtest_main
-    MLIRRelAlgDialect
-    MLIRDBDialect
-    MLIRDSADialect
-    MLIRRelAlgToDBConversion
-    MLIRFuncDialect
-    MLIRArithDialect
-    MLIRPass
-    MLIRTransforms
-    MLIRDialectConversion
-    MLIRIR
-    MLIRSupport
-    LLVMSupport
-    pgx_logging
-)
-
-# Register RelAlg to DB tests with CTest
-add_test(NAME RelAlgToDBTest COMMAND test_relalg_to_db)
-
-# MaterializeOp Phase 4c-2 tests - Mixed DB+DSA operations
-add_executable(test_materialize_phase4c2 test_materialize_phase4c2.cpp)
-
-target_link_libraries(test_materialize_phase4c2
-    gtest 
-    gtest_main
-    MLIRRelAlgDialect
-    MLIRDBDialect
-    MLIRDSADialect
-    MLIRRelAlgToDBConversion
-    MLIRFuncDialect
-    MLIRArithDialect
-    MLIRPass
-    MLIRTransforms
-    MLIRDialectConversion
-    MLIRIR
-    MLIRSupport
-    LLVMSupport
-    pgx_logging
-)
-
-# Register MaterializeOp Phase 4c-2 tests with CTest
-add_test(NAME MaterializePhase4c2Test COMMAND test_materialize_phase4c2)
+# NOTE: test_materialize_phase4c2.cpp deleted - obsolete tests from Phase 4c-2
 
 # Translator infrastructure tests
 add_executable(test_translator_infrastructure test_translator_infrastructure_simple.cpp)
