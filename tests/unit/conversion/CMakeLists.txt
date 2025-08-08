@@ -146,7 +146,7 @@ target_link_libraries(test_dsa_to_llvm
 # Register DSA to LLVM tests with CTest
 add_test(NAME DSAToLLVMTest COMMAND test_dsa_to_llvm)
 
-# RelAlg to DB conversion tests - Phase 4c-1 implementation
+# RelAlg to DB conversion tests - Phase 4c-2 implementation (with DSA)
 add_executable(test_relalg_to_db test_relalg_to_db.cpp)
 
 target_link_libraries(test_relalg_to_db
@@ -154,6 +154,7 @@ target_link_libraries(test_relalg_to_db
     gtest_main
     MLIRRelAlgDialect
     MLIRDBDialect
+    MLIRDSADialect
     MLIRRelAlgToDBConversion
     MLIRFuncDialect
     MLIRArithDialect
@@ -168,3 +169,27 @@ target_link_libraries(test_relalg_to_db
 
 # Register RelAlg to DB tests with CTest
 add_test(NAME RelAlgToDBTest COMMAND test_relalg_to_db)
+
+# MaterializeOp Phase 4c-2 tests - Mixed DB+DSA operations
+add_executable(test_materialize_phase4c2 test_materialize_phase4c2.cpp)
+
+target_link_libraries(test_materialize_phase4c2
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRPass
+    MLIRTransforms
+    MLIRDialectConversion
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register MaterializeOp Phase 4c-2 tests with CTest
+add_test(NAME MaterializePhase4c2Test COMMAND test_materialize_phase4c2)

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
@@ -132,20 +133,19 @@ TEST_F(RelAlgToDBTest, GetColumnToDBGetColumn) {
     PGX_DEBUG("GetColumnToDBGetColumn test completed - Phase 4c-1 scope verified");
 }
 
-TEST_F(RelAlgToDBTest, MaterializeOpPassThrough) {
-    PGX_DEBUG("Running MaterializeOpPassThrough test");
+TEST_F(RelAlgToDBTest, MaterializeOpConversion_Phase4c2) {
+    PGX_DEBUG("Running MaterializeOpConversion_Phase4c2 test");
     
-    // For Phase 4c-1, MaterializeOp should not be converted
-    // However, mixed type scenarios (where MaterializeOp's input is converted)
-    // create complex type mismatches that will be handled in later phases
-    // For now, we test that MaterializeOp patterns are not registered
+    // For Phase 4c-2, MaterializeOp should be converted to DSA operations
+    // We need to load the DSA dialect for this test
+    context.loadDialect<pgx::mlir::dsa::DSADialect>();
     
     auto funcType = builder.getFunctionType({}, {});
     auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_materialize", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder.setInsertionPointToStart(entryBlock);
     
-    // Create a simple test with just BaseTableOp
+    // Create BaseTableOp first
     auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
     auto baseTableOp = builder.create<pgx::mlir::relalg::BaseTableOp>(
         UnknownLoc::get(&context),
@@ -154,24 +154,64 @@ TEST_F(RelAlgToDBTest, MaterializeOpPassThrough) {
         builder.getI64IntegerAttr(12345)
     );
     
+    // Create MaterializeOp
+    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    llvm::SmallVector<mlir::Attribute> columnAttrs;
+    columnAttrs.push_back(builder.getStringAttr("id"));
+    auto columnsArrayAttr = builder.getArrayAttr(columnAttrs);
+    
+    auto materializeOp = builder.create<pgx::mlir::relalg::MaterializeOp>(
+        UnknownLoc::get(&context),
+        tableType,
+        baseTableOp.getResult(),
+        columnsArrayAttr
+    );
+    
     // Create return
     builder.create<pgx::mlir::relalg::ReturnOp>(UnknownLoc::get(&context));
     
     // Run the pass
     runRelAlgToDBPass(funcOp);
     
-    // Verify BaseTableOp was converted
-    bool foundGetExternal = false;
-    funcOp.walk([&](pgx::db::GetExternalOp op) {
-        foundGetExternal = true;
+    // Verify MaterializeOp was converted
+    bool foundMaterialize = false;
+    funcOp.walk([&](pgx::mlir::relalg::MaterializeOp op) {
+        foundMaterialize = true;
+    });
+    EXPECT_FALSE(foundMaterialize) << "MaterializeOp should be converted in Phase 4c-2";
+    
+    // Verify DSA operations were created
+    bool foundCreateDS = false;
+    bool foundDSAppend = false;
+    bool foundNextRow = false;
+    bool foundFinalize = false;
+    
+    funcOp.walk([&](pgx::mlir::dsa::CreateDSOp op) {
+        foundCreateDS = true;
+        PGX_DEBUG("Found dsa.create_ds operation");
     });
     
-    EXPECT_TRUE(foundGetExternal) << "GetExternalOp should be created";
+    funcOp.walk([&](pgx::mlir::dsa::DSAppendOp op) {
+        foundDSAppend = true;
+        PGX_DEBUG("Found dsa.ds_append operation");
+    });
     
-    // Note: MaterializeOp conversion is deferred to Phase 4c-2
-    // when we have proper DSA operations to handle result materialization
+    funcOp.walk([&](pgx::mlir::dsa::NextRowOp op) {
+        foundNextRow = true;
+        PGX_DEBUG("Found dsa.next_row operation");
+    });
     
-    PGX_DEBUG("MaterializeOpPassThrough test completed - Phase 4c-1 scope verified");
+    funcOp.walk([&](pgx::mlir::dsa::FinalizeOp op) {
+        foundFinalize = true;
+        PGX_DEBUG("Found dsa.finalize operation");
+    });
+    
+    EXPECT_TRUE(foundCreateDS) << "dsa.create_ds should be created";
+    EXPECT_TRUE(foundDSAppend) << "dsa.ds_append should be created";
+    EXPECT_TRUE(foundNextRow) << "dsa.next_row should be created";
+    EXPECT_TRUE(foundFinalize) << "dsa.finalize should be created";
+    
+    PGX_DEBUG("MaterializeOpConversion_Phase4c2 test completed successfully");
 }
 
 TEST_F(RelAlgToDBTest, ReturnOpPassThrough) {
@@ -209,11 +249,13 @@ TEST_F(RelAlgToDBTest, ReturnOpPassThrough) {
     PGX_DEBUG("ReturnOpPassThrough test completed - Phase 4c-1 behavior verified");
 }
 
-TEST_F(RelAlgToDBTest, Phase4c1CompleteExample) {
-    PGX_DEBUG("Running Phase4c1CompleteExample test");
+TEST_F(RelAlgToDBTest, Phase4c2CompleteExample) {
+    PGX_DEBUG("Running Phase4c2CompleteExample test");
     
-    // Test a complete example showing Phase 4c-1 scope:
-    // BaseTableOp converts, all others pass through
+    // Test a complete example showing Phase 4c-2 scope:
+    // BaseTableOp converts to DB ops, MaterializeOp converts to DSA ops
+    context.loadDialect<pgx::mlir::dsa::DSADialect>();
+    
     auto funcType = builder.getFunctionType({}, {});
     auto funcOp = builder.create<func::FuncOp>(UnknownLoc::get(&context), "test_complete", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
@@ -246,7 +288,7 @@ TEST_F(RelAlgToDBTest, Phase4c1CompleteExample) {
     // Run the pass
     runRelAlgToDBPass(funcOp);
     
-    // Verify Phase 4c-1 behavior:
+    // Verify Phase 4c-2 behavior:
     // 1. BaseTableOp converted to db.get_external
     bool foundGetExternal = false;
     funcOp.walk([&](pgx::db::GetExternalOp op) {
@@ -264,19 +306,29 @@ TEST_F(RelAlgToDBTest, Phase4c1CompleteExample) {
     });
     EXPECT_EQ(baseTableCount, 0) << "No BaseTableOp should remain";
     
-    // 3. MaterializeOp passed through unchanged
+    // 3. MaterializeOp converted to DSA operations
     bool foundMaterialize = false;
     funcOp.walk([&](pgx::mlir::relalg::MaterializeOp op) {
         foundMaterialize = true;
     });
-    EXPECT_TRUE(foundMaterialize) << "MaterializeOp should pass through";
+    EXPECT_FALSE(foundMaterialize) << "MaterializeOp should be converted in Phase 4c-2";
     
-    // 4. ReturnOp passed through unchanged
+    // 4. DSA operations created
+    bool foundDSAOps = false;
+    funcOp.walk([&](pgx::mlir::dsa::CreateDSOp op) {
+        foundDSAOps = true;
+    });
+    funcOp.walk([&](pgx::mlir::dsa::FinalizeOp op) {
+        foundDSAOps = true;
+    });
+    EXPECT_TRUE(foundDSAOps) << "DSA operations should be created";
+    
+    // 5. ReturnOp passed through unchanged
     bool foundReturn = false;
     funcOp.walk([&](pgx::mlir::relalg::ReturnOp op) {
         foundReturn = true;
     });
     EXPECT_TRUE(foundReturn) << "ReturnOp should pass through";
     
-    PGX_DEBUG("Phase4c1CompleteExample test completed - all Phase 4c-1 requirements verified");
+    PGX_DEBUG("Phase4c2CompleteExample test completed - all Phase 4c-2 requirements verified");
 }
