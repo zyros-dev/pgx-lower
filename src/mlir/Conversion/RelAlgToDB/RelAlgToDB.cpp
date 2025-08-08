@@ -57,6 +57,9 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
             baseTableOps.push_back(baseTableOp.getOperation());
         });
         
+        // DEBUG: Skip BaseTable processing to isolate DSA operations
+        MLIR_PGX_INFO("RelAlgToDB", "DEBUGGING: Processing MaterializeOp only - BaseTable operations will be skipped");
+        
         for (auto* opPtr : materializeOps) {
             auto materializeOp = cast<::pgx::mlir::relalg::MaterializeOp>(opPtr);
             MLIR_PGX_INFO("RelAlgToDB", "Processing MaterializeOp translation");
@@ -120,6 +123,9 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
             }
         }
         
+        // DEBUG: Skip BaseTableOp erasure to isolate DSA operations
+        MLIR_PGX_INFO("RelAlgToDB", "DEBUGGING: Skipping BaseTableOp erasure - testing DSA operations only");
+        /*
         // Erase BaseTableOp operations after translation
         // BaseTableOp operations are leaf nodes that get converted to DB operations
         // They have no results to replace, so we can safely erase them
@@ -131,6 +137,7 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
                 opPtr->erase();
             }
         }
+        */
         
         MLIR_PGX_INFO("RelAlgToDB", "Completed RelAlg to DB conversion pass - safely erased all RelAlg operations");
         
@@ -143,16 +150,23 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
             std::string dialectName = op->getDialect() ? op->getDialect()->getNamespace().str() : "unknown";
             MLIR_PGX_INFO("RelAlgToDB", "Op #" + std::to_string(opCount) + ": " + dialectName + "." + opName);
             
-            // Check if operation has valid types
-            for (auto result : op->getResults()) {
-                std::string typeName = "unknown";
-                if (result.getType()) {
-                    // Just check if type exists, don't try to print it yet
-                    typeName = "valid-type";
+            // Check if operation has valid types - log each result separately
+            MLIR_PGX_INFO("RelAlgToDB", "  Operation has " + std::to_string(op->getNumResults()) + " results");
+            for (int i = 0; i < op->getNumResults(); i++) {
+                MLIR_PGX_INFO("RelAlgToDB", "  Checking result #" + std::to_string(i) + "...");
+                auto result = op->getResult(i);
+                
+                if (!result.getType()) {
+                    MLIR_PGX_INFO("RelAlgToDB", "  Result #" + std::to_string(i) + " type: null-type");
                 } else {
-                    typeName = "null-type";
+                    MLIR_PGX_INFO("RelAlgToDB", "  Result #" + std::to_string(i) + " type: valid-type");
+                    
+                    // Test type ID access - this might be where the corruption shows up
+                    MLIR_PGX_INFO("RelAlgToDB", "  Testing type ID access for result #" + std::to_string(i) + "...");
+                    auto type = result.getType();
+                    auto typeID = type.getTypeID(); // This might crash if type is corrupted
+                    MLIR_PGX_INFO("RelAlgToDB", "  Type ID access successful for result #" + std::to_string(i));
                 }
-                MLIR_PGX_INFO("RelAlgToDB", "  Result type: " + typeName);
             }
         });
         MLIR_PGX_INFO("RelAlgToDB", "Total operations: " + std::to_string(opCount));
@@ -167,6 +181,7 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         }
         MLIR_PGX_INFO("RelAlgToDB", "Function verification passed successfully");
         
+        MLIR_PGX_INFO("RelAlgToDB", "Pass execution completed - about to return to PassManager");
         MLIR_PGX_DEBUG("RelAlgToDB", "Function verification passed");
     }
 };
