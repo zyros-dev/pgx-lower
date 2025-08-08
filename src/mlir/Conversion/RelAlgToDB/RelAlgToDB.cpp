@@ -5,7 +5,6 @@
 
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -28,7 +27,6 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
 
     void getDependentDialects(DialectRegistry &registry) const override {
         registry.insert<::pgx::db::DBDialect>();
-        registry.insert<::pgx::mlir::dsa::DSADialect>();
         registry.insert<scf::SCFDialect>();
         registry.insert<arith::ArithDialect>();
         registry.insert<func::FuncDialect>();

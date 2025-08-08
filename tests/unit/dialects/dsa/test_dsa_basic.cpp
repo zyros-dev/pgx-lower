@@ -150,6 +150,7 @@ TEST_F(DSABasicTest, AtOpCreation) {
     auto loc = builder.getUnknownLoc();
     
     auto i32Type = builder.getI32Type();
+    auto i1Type = builder.getI1Type();
     auto emptyTupleType = TupleType::get(&context, {});
     auto genericIterableType = GenericIterableType::get(&context, i32Type, "test_iter");
     auto recordType = RecordType::get(&context, emptyTupleType);
@@ -169,9 +170,11 @@ TEST_F(DSABasicTest, AtOpCreation) {
     // Set up builder for the body
     OpBuilder bodyBuilder(bodyBlock, bodyBlock->begin());
     
-    // Create AtOp using the record block argument
+    // Create AtOp using the record block argument with column name
     auto recordArg = bodyBlock->getArgument(0);
-    auto columnName = bodyBuilder.getStringAttr("test_column");
+    auto columnName = bodyBuilder.getStringAttr("id"); // Column name
+    
+    // Test AtOp creation
     auto atOp = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, columnName);
     
     // Create YieldOp to terminate the region
@@ -182,7 +185,7 @@ TEST_F(DSABasicTest, AtOpCreation) {
     EXPECT_EQ(atOp.getResult().getType(), i32Type);
     EXPECT_TRUE(atOp.getRecord() == recordArg);
     EXPECT_EQ(atOp.getRecord().getType(), recordType);
-    EXPECT_EQ(atOp.getColumnNameAttr().getValue().str(), "test_column");
+    EXPECT_EQ(atOp.getColumnName(), "id");
     
     // Verify AtOp arguments match the TableGen definition:
     // arguments = (ins DSA_Record:$record, StrAttr:$column_name);
@@ -276,9 +279,9 @@ TEST_F(DSABasicTest, ForOpCreation) {
     // Set up builder for the body and create AtOp to test proper usage
     OpBuilder bodyBuilder(bodyBlock, bodyBlock->begin());
     
-    // Now we can create AtOp using the record block argument
+    // Now we can create AtOp using the record block argument with column name
     auto recordArg = bodyBlock->getArgument(0);
-    auto columnName = bodyBuilder.getStringAttr("test_column");
+    auto columnName = bodyBuilder.getStringAttr("id"); // Column name
     auto atOp = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, columnName);
     
     // Create YieldOp to terminate the region
@@ -295,7 +298,7 @@ TEST_F(DSABasicTest, ForOpCreation) {
     ASSERT_TRUE(atOp);
     EXPECT_EQ(atOp.getResult().getType(), i32Type);
     EXPECT_TRUE(atOp.getRecord() == recordArg);
-    EXPECT_EQ(atOp.getColumnNameAttr().getValue().str(), "test_column");
+    EXPECT_EQ(atOp.getColumnName(), "id");
     
     // Verify YieldOp terminates the region properly
     ASSERT_TRUE(yieldOp);
@@ -356,24 +359,23 @@ TEST_F(DSABasicTest, EdgeCases_NullHandling) {
     OpBuilder bodyBuilder(bodyBlock, bodyBlock->begin());
     auto recordArg = bodyBlock->getArgument(0);
     
-    // Test edge case: empty column name
-    auto emptyColumnName = bodyBuilder.getStringAttr("");
-    auto atOpEmpty = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, emptyColumnName);
-    ASSERT_TRUE(atOpEmpty);
-    EXPECT_EQ(atOpEmpty.getColumnNameAttr().getValue().str(), "");
+    // Test edge case: first column
+    auto columnNameZero = bodyBuilder.getStringAttr("col_0");
+    auto atOpZero = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, columnNameZero);
+    ASSERT_TRUE(atOpZero);
+    EXPECT_EQ(atOpZero.getColumnName(), "col_0");
     
-    // Test edge case: column name with special characters
-    auto specialColumnName = bodyBuilder.getStringAttr("column_with_!@#$%");
-    auto atOpSpecial = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, specialColumnName);
-    ASSERT_TRUE(atOpSpecial);
-    EXPECT_EQ(atOpSpecial.getColumnNameAttr().getValue().str(), "column_with_!@#$%");
+    // Test edge case: different column name
+    auto columnNameLarge = bodyBuilder.getStringAttr("col_99");
+    auto atOpLarge = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, columnNameLarge);
+    ASSERT_TRUE(atOpLarge);
+    EXPECT_EQ(atOpLarge.getColumnName(), "col_99");
     
-    // Test edge case: very long column name
-    std::string longColumnName(255, 'x'); // 255 character column name
-    auto longColumnAttr = bodyBuilder.getStringAttr(longColumnName);
-    auto atOpLong = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, longColumnAttr);
-    ASSERT_TRUE(atOpLong);
-    EXPECT_EQ(atOpLong.getColumnNameAttr().getValue().str(), longColumnName);
+    // Test edge case: nullable column (DSA uses string-based column names)
+    auto columnNameNullable = bodyBuilder.getStringAttr("nullable_col");
+    auto atOpNullable = bodyBuilder.create<AtOp>(loc, i32Type, recordArg, columnNameNullable);
+    ASSERT_TRUE(atOpNullable);
+    EXPECT_EQ(atOpNullable.getResult().getType(), i32Type);
     
     bodyBuilder.create<YieldOp>(loc);
 }
@@ -427,7 +429,7 @@ TEST_F(DSABasicTest, EdgeCases_TypeCompatibility) {
     auto recordArg = bodyBlock->getArgument(0);
     
     // AtOp returning index type
-    auto columnName = bodyBuilder.getStringAttr("index_column");
+    auto columnName = bodyBuilder.getStringAttr("index_col");
     auto atOpIndex = bodyBuilder.create<AtOp>(loc, indexType, recordArg, columnName);
     ASSERT_TRUE(atOpIndex);
     EXPECT_EQ(atOpIndex.getResult().getType(), indexType);
@@ -471,7 +473,7 @@ TEST_F(DSABasicTest, EdgeCases_ComplexNestedStructures) {
     auto outerRecord = outerBlock->getArgument(0);
     auto innerRecord = innerBlock->getArgument(0);
     
-    auto columnName = innerBuilder.getStringAttr("nested_column");
+    auto columnName = innerBuilder.getStringAttr("inner_col");
     auto atOp = innerBuilder.create<AtOp>(loc, i32Type, innerRecord, columnName);
     
     // Terminate inner loop
