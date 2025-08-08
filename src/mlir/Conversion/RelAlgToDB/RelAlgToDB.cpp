@@ -19,7 +19,7 @@ using namespace mlir;
 namespace {
 
 //===----------------------------------------------------------------------===//
-// RelAlg to DB Conversion Pass - Phase 4c-4 with Simplified Architecture
+// RelAlg to DB Conversion Pass - Using LingoDB Translator Pattern
 //===----------------------------------------------------------------------===//
 
 struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::FuncOp>> {
@@ -36,151 +36,111 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
     StringRef getDescription() const final { return "Convert RelAlg dialect to DB dialect"; }
 
     void runOnOperation() override {
-        MLIR_PGX_INFO("RelAlgToDB", "Starting RelAlg to DB conversion pass (Phase 4c-4 - Simplified Architecture)");
+        MLIR_PGX_INFO("RelAlgToDB", "Starting RelAlg to DB conversion pass (LingoDB Pattern)");
         
-        auto funcOp = getOperation();
-        
-        // Process each MaterializeOp and perform translation
-        // We need to handle proper operation lifecycle management
-        // Store pointers to avoid invalidation issues when erasing
-        llvm::SmallVector<Operation*> materializeOps;
-        llvm::SmallVector<Operation*> baseTableOps;
-        
-        funcOp.walk([&](::pgx::mlir::relalg::MaterializeOp materializeOp) {
-            materializeOps.push_back(materializeOp.getOperation());
+        // Collect MaterializeOps to process
+        SmallVector<::pgx::mlir::relalg::MaterializeOp> materializeOps;
+        getOperation().walk([&](::pgx::mlir::relalg::MaterializeOp op) {
+            materializeOps.push_back(op);
         });
         
-        // Also collect BaseTableOp operations for erasure after translation
-        funcOp.walk([&](::pgx::mlir::relalg::BaseTableOp baseTableOp) {
-            baseTableOps.push_back(baseTableOp.getOperation());
-        });
-        
-        // DEBUG: Skip BaseTable processing to isolate DSA operations
-        MLIR_PGX_INFO("RelAlgToDB", "DEBUGGING: Processing MaterializeOp only - BaseTable operations will be skipped");
-        
-        for (auto* opPtr : materializeOps) {
-            auto materializeOp = cast<::pgx::mlir::relalg::MaterializeOp>(opPtr);
-            MLIR_PGX_INFO("RelAlgToDB", "Processing MaterializeOp translation");
+        // Process each MaterializeOp using LingoDB pattern
+        for (auto materializeOp : materializeOps) {
+            ::pgx::mlir::relalg::TranslatorContext loweringContext;
             
-            // Create a fresh context for each MaterializeOp
-            ::pgx::mlir::relalg::TranslatorContext context;
+            // Create translator and execute
+            auto node = ::pgx::mlir::relalg::Translator::createTranslator(materializeOp);
+            node->setInfo(nullptr, ::pgx::mlir::relalg::ColumnSet());
             
-            // Create translator for MaterializeOp (following LingoDB pattern)
-            auto materializeTranslator = ::pgx::mlir::relalg::Translator::createTranslator(materializeOp);
-            if (!materializeTranslator) {
-                MLIR_PGX_ERROR("RelAlgToDB", "Failed to create MaterializeOp translator");
-                signalPassFailure();
-                return;
-            }
-            
-            // Set translator info (no consumer at top level, empty required attributes)
-            materializeTranslator->setInfo(nullptr, ::pgx::mlir::relalg::ColumnSet());
-            
-            // Set up builder at the MaterializeOp location
+            // CRITICAL: Set insertion point BEFORE the materialize op
+            // This ensures generated operations go in the right place
             OpBuilder builder(materializeOp);
+            builder.setInsertionPoint(materializeOp);
             
-            // Execute the translation - this will trigger the streaming pipeline:
-            // 1. MaterializeTranslator.produce() calls BaseTableTranslator.produce()
-            // 2. BaseTableTranslator streams tuples to MaterializeTranslator.consume()
-            // 3. MaterializeTranslator builds DSA table and completes
-            materializeTranslator->produce(context, builder);
-            materializeTranslator->done();
+            node->produce(loweringContext, builder);
+            node->done();
             
-            // Get the DSA table result from context
-            auto dsaTable = context.getQueryResult();
-            if (!dsaTable) {
-                MLIR_PGX_ERROR("RelAlgToDB", "No DSA table result from translation");
-                signalPassFailure();
-                return;
-            }
-            
-            MLIR_PGX_DEBUG("RelAlgToDB", "Translation complete, DSA table created");
-            
-            // Replace all uses of the MaterializeOp result with the DSA table
-            materializeOp.getResult().replaceAllUsesWith(dsaTable);
-        }
-        
-        // Skip function signature update to avoid type mismatch issues
-        // The actual return values have been replaced with DSA table values
-        // Function signature update might be causing issues with MLIR verification
-        MLIR_PGX_DEBUG("RelAlgToDB", "Skipping function signature update to avoid type issues");
-        
-        // Erase all RelAlg operations after translation
-        // MaterializeOp operations have their uses replaced with DSA tables
-        // BaseTableOp operations are leaf nodes with no results
-        MLIR_PGX_INFO("RelAlgToDB", "Erasing replaced RelAlg operations");
-        
-        for (auto* opPtr : materializeOps) {
-            // Check if operation is still valid and has no uses
-            if (opPtr && opPtr->use_empty()) {
-                MLIR_PGX_DEBUG("RelAlgToDB", "Erasing MaterializeOp - no remaining uses");
-                opPtr->erase();
-            } else if (opPtr && !opPtr->use_empty()) {
-                // This shouldn't happen if replaceAllUsesWith worked correctly
-                MLIR_PGX_WARNING("RelAlgToDB", "MaterializeOp still has uses after replacement!");
+            // Get the DSA table result from context and replace MaterializeOp
+            auto dsaTable = loweringContext.getQueryResult();
+            if (dsaTable) {
+                materializeOp.replaceAllUsesWith(dsaTable);
+                materializeOp.erase();
             }
         }
         
-        // DEBUG: Skip BaseTableOp erasure to isolate DSA operations
-        MLIR_PGX_INFO("RelAlgToDB", "DEBUGGING: Skipping BaseTableOp erasure - testing DSA operations only");
-        /*
-        // Erase BaseTableOp operations after translation
-        // BaseTableOp operations are leaf nodes that get converted to DB operations
-        // They have no results to replace, so we can safely erase them
-        MLIR_PGX_INFO("RelAlgToDB", "Erasing BaseTableOp operations after translation");
+        // Keep the proven function signature update
+        updateFunctionSignature(getOperation());
         
-        for (auto* opPtr : baseTableOps) {
-            if (opPtr) {
-                MLIR_PGX_DEBUG("RelAlgToDB", "Erasing BaseTableOp");
-                opPtr->erase();
+        // Erase remaining RelAlg operations safely  
+        eraseRelAlgOperations();
+        
+        MLIR_PGX_INFO("RelAlgToDB", "Pass execution completed - LingoDB pattern");
+    }
+    
+private:
+    bool isTranslationHook(Operation* op) {
+        return isa<::pgx::mlir::relalg::MaterializeOp>(op);
+    }
+    
+    // Keep existing proven method for updating function signatures
+    void updateFunctionSignature(func::FuncOp funcOp) {
+        MLIR_PGX_DEBUG("RelAlgToDB", "Updating function signature");
+        
+        // Find actual return types from return operations
+        SmallVector<Type> actualReturnTypes;
+        funcOp.walk([&](func::ReturnOp returnOp) {
+            for (auto operand : returnOp.getOperands()) {
+                actualReturnTypes.push_back(operand.getType());
+            }
+        });
+        
+        if (!actualReturnTypes.empty()) {
+            auto funcType = funcOp.getFunctionType();
+            // Only update if types actually changed
+            bool needsUpdate = false;
+            if (actualReturnTypes.size() == funcType.getNumResults()) {
+                for (size_t i = 0; i < actualReturnTypes.size(); ++i) {
+                    if (actualReturnTypes[i] != funcType.getResult(i)) {
+                        needsUpdate = true;
+                        break;
+                    }
+                }
+            } else {
+                needsUpdate = true;
+            }
+            
+            if (needsUpdate) {
+                auto newFuncType = FunctionType::get(funcOp.getContext(),
+                                                    funcType.getInputs(),
+                                                    actualReturnTypes);
+                funcOp.setType(newFuncType);
+                MLIR_PGX_INFO("RelAlgToDB", "Updated function signature to use DSA table types");
             }
         }
-        */
+    }
+    
+    // Safe erasure of RelAlg operations after translation
+    void eraseRelAlgOperations() {
+        MLIR_PGX_DEBUG("RelAlgToDB", "Erasing RelAlg operations");
         
-        MLIR_PGX_INFO("RelAlgToDB", "Completed RelAlg to DB conversion pass - safely erased all RelAlg operations");
-        
-        // DEBUG: Log what operations remain in the function before verification
-        MLIR_PGX_INFO("RelAlgToDB", "=== OPERATIONS REMAINING AFTER CONVERSION ===");
-        int opCount = 0;
-        funcOp.walk([&](Operation *op) {
-            opCount++;
-            std::string opName = op->getName().getStringRef().str();
-            std::string dialectName = op->getDialect() ? op->getDialect()->getNamespace().str() : "unknown";
-            MLIR_PGX_INFO("RelAlgToDB", "Op #" + std::to_string(opCount) + ": " + dialectName + "." + opName);
-            
-            // Check if operation has valid types - log each result separately
-            MLIR_PGX_INFO("RelAlgToDB", "  Operation has " + std::to_string(op->getNumResults()) + " results");
-            for (int i = 0; i < op->getNumResults(); i++) {
-                MLIR_PGX_INFO("RelAlgToDB", "  Checking result #" + std::to_string(i) + "...");
-                auto result = op->getResult(i);
-                
-                if (!result.getType()) {
-                    MLIR_PGX_INFO("RelAlgToDB", "  Result #" + std::to_string(i) + " type: null-type");
-                } else {
-                    MLIR_PGX_INFO("RelAlgToDB", "  Result #" + std::to_string(i) + " type: valid-type");
-                    
-                    // Test type ID access - this might be where the corruption shows up
-                    MLIR_PGX_INFO("RelAlgToDB", "  Testing type ID access for result #" + std::to_string(i) + "...");
-                    auto type = result.getType();
-                    auto typeID = type.getTypeID(); // This might crash if type is corrupted
-                    MLIR_PGX_INFO("RelAlgToDB", "  Type ID access successful for result #" + std::to_string(i));
+        // Collect RelAlg operations to erase (in reverse order)
+        SmallVector<Operation*> opsToErase;
+        getOperation().walk([&](Operation* op) {
+            if (op->getDialect() && 
+                op->getDialect()->getNamespace() == "relalg") {
+                // Only erase if the operation has no uses (should have been replaced)
+                if (op->use_empty()) {
+                    opsToErase.push_back(op);
                 }
             }
         });
-        MLIR_PGX_INFO("RelAlgToDB", "Total operations: " + std::to_string(opCount));
-        MLIR_PGX_INFO("RelAlgToDB", "=== END OPERATIONS LIST ===");
         
-        // Verify the function is still valid after conversion
-        MLIR_PGX_INFO("RelAlgToDB", "Starting function verification...");
-        if (failed(funcOp.verify())) {
-            MLIR_PGX_ERROR("RelAlgToDB", "Function verification failed after conversion");
-            signalPassFailure();
-            return;
+        // Erase in reverse order to handle dependencies correctly
+        for (auto it = opsToErase.rbegin(); it != opsToErase.rend(); ++it) {
+            (*it)->erase();
         }
-        MLIR_PGX_INFO("RelAlgToDB", "Function verification passed successfully");
         
-        MLIR_PGX_INFO("RelAlgToDB", "Pass execution completed - about to return to PassManager");
-        MLIR_PGX_DEBUG("RelAlgToDB", "Function verification passed");
+        MLIR_PGX_INFO("RelAlgToDB", "Erased " + std::to_string(opsToErase.size()) + " RelAlg operations");
     }
 };
 

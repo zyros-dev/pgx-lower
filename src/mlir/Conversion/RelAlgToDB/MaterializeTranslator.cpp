@@ -111,10 +111,8 @@ private:
         // Store in context for pass to retrieve
         context.setQueryResult(finalTable);
         
-        // Generate db.stream_results to output the materialized table
-        builder.create<::pgx::db::StreamResultsOp>(loc);
-        
-        MLIR_PGX_DEBUG("RelAlg", "Generated db.stream_results operation");
+        // Don't generate db.stream_results - the pass will handle value replacement
+        MLIR_PGX_DEBUG("RelAlg", "DSA table finalized and stored in context");
     }
     
 public:
