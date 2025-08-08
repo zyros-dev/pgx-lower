@@ -145,3 +145,26 @@ target_link_libraries(test_dsa_to_llvm
 
 # Register DSA to LLVM tests with CTest
 add_test(NAME DSAToLLVMTest COMMAND test_dsa_to_llvm)
+
+# RelAlg to DB conversion tests - Phase 4c-1 implementation
+add_executable(test_relalg_to_db test_relalg_to_db.cpp)
+
+target_link_libraries(test_relalg_to_db
+    gtest 
+    gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRPass
+    MLIRTransforms
+    MLIRDialectConversion
+    MLIRIR
+    MLIRSupport
+    LLVMSupport
+    pgx_logging
+)
+
+# Register RelAlg to DB tests with CTest
+add_test(NAME RelAlgToDBTest COMMAND test_relalg_to_db)
