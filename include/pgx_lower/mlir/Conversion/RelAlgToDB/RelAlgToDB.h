@@ -27,6 +27,15 @@ struct BaseTableToExternalSourcePattern : public OpConversionPattern<::pgx::mlir
                                   ConversionPatternRewriter &rewriter) const override;
 };
 
+/// Pattern to convert RelAlg MaterializeOp to mixed DB+DSA operations
+struct MaterializeToMixedOperationsPattern : public OpConversionPattern<::pgx::mlir::relalg::MaterializeOp> {
+    using OpConversionPattern<::pgx::mlir::relalg::MaterializeOp>::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(::pgx::mlir::relalg::MaterializeOp op,
+                                  OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
+};
+
 //===----------------------------------------------------------------------===//
 // Pass Creation and Registration
 //===----------------------------------------------------------------------===//

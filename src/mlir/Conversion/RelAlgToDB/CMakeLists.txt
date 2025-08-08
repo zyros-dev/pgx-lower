@@ -13,4 +13,5 @@ add_mlir_library(MLIRRelAlgToDBConversion
     MLIRArithDialect
     MLIRRelAlgDialect
     MLIRDBDialect
+    MLIRDSADialect
 )
