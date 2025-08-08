@@ -35,7 +35,8 @@ def DB_Dialect : Dialect {
         void registerTypes();
         
         public:
-            // Add any needed registry methods here
+            // Custom type parsing/printing temporarily disabled due to TableGen namespace issues
+            // TODO: Fix namespace resolution in generated header
     }];
 }
 
