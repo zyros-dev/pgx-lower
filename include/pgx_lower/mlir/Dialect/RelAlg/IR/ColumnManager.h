@@ -19,6 +19,8 @@ class ColumnDefAttr;
 
 // ColumnManager manages the creation and tracking of Column objects
 // It ensures columns are uniquely identified by scope and name
+// TODO: Change this architecture to a tuple manager at a later stage. It should be simple to do, but it isn't necessary
+// to us at this stage
 class ColumnManager {
 private:
     ::mlir::MLIRContext* context = nullptr;
