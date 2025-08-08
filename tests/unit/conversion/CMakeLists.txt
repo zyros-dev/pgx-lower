@@ -279,6 +279,7 @@ target_link_libraries(test_materialize_db_ops
     gtest_main
     MLIRRelAlgDialect
     MLIRDBDialect
+    MLIRDSADialect
     MLIRRelAlgToDBConversion
     MLIRFuncDialect
     MLIRArithDialect
