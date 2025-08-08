@@ -160,7 +160,7 @@ TEST_F(ConversionBasicsTest, TestDSAOperationsIndependent) {
     auto nextRowOp = builder->create<::pgx::mlir::dsa::NextRowOp>(
         builder->getUnknownLoc(), createDSOp.getResult());
     
-    auto tableType = ::pgx::mlir::dsa::TableType::get(&context);
+    auto tableType = ::pgx::mlir::dsa::TableType::get(&context, tupleType);
     auto finalizeOp = builder->create<::pgx::mlir::dsa::FinalizeOp>(
         builder->getUnknownLoc(), tableType, createDSOp.getResult());
     

@@ -144,7 +144,7 @@ TEST_F(DSAToLLVMConversionTest, DISABLED_ConvertFinalizeOp) {
         builder.getUnknownLoc(), tableBuilderType);
     
     // Create DSA Finalize operation
-    auto tableType = pgx::mlir::dsa::TableType::get(&context);
+    auto tableType = pgx::mlir::dsa::TableType::get(&context, tupleType);
     auto finalizeOp = builder.create<pgx::mlir::dsa::FinalizeOp>(
         builder.getUnknownLoc(), tableType, createDSOp.getResult());
     
@@ -199,7 +199,7 @@ TEST_F(DSAToLLVMConversionTest, DISABLED_ConvertCompleteFlow) {
         builder.getUnknownLoc(), createDSOp.getResult());
     
     // Finalize
-    auto tableType = pgx::mlir::dsa::TableType::get(&context);
+    auto tableType = pgx::mlir::dsa::TableType::get(&context, tupleType);
     auto finalizeOp = builder.create<pgx::mlir::dsa::FinalizeOp>(
         builder.getUnknownLoc(), tableType, createDSOp.getResult());
     
@@ -238,24 +238,24 @@ TEST_F(DSAToLLVMConversionTest, DISABLED_TypeConversion) {
     mlir::pgx_conversion::DSAToLLVMTypeConverter converter(&context);
     
     // Test TableType conversion
-    auto tableType = pgx::mlir::dsa::TableType::get(&context);
+    auto i32Type = builder.getI32Type();
+    auto tupleType = mlir::TupleType::get(&context, {i32Type});
+    auto tableType = pgx::mlir::dsa::TableType::get(&context, tupleType);
     auto convertedTableType = converter.convertType(tableType);
-    EXPECT_TRUE(convertedTableType.isa<mlir::LLVM::LLVMPointerType>())
+    EXPECT_TRUE(mlir::isa<mlir::LLVM::LLVMPointerType>(convertedTableType))
         << "TableType should convert to LLVM pointer";
     
     // Test TableBuilderType conversion
-    auto i32Type = builder.getI32Type();
-    auto tupleType = mlir::TupleType::get(&context, {i32Type});
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
     auto convertedBuilderType = converter.convertType(tableBuilderType);
-    EXPECT_TRUE(convertedBuilderType.isa<mlir::LLVM::LLVMPointerType>())
+    EXPECT_TRUE(mlir::isa<mlir::LLVM::LLVMPointerType>(convertedBuilderType))
         << "TableBuilderType should convert to LLVM pointer";
     
     // Test GenericIterableType conversion
     auto iterableType = pgx::mlir::dsa::GenericIterableType::get(
         &context, tupleType, "test_iterator");
     auto convertedIterableType = converter.convertType(iterableType);
-    EXPECT_TRUE(convertedIterableType.isa<mlir::LLVM::LLVMPointerType>())
+    EXPECT_TRUE(mlir::isa<mlir::LLVM::LLVMPointerType>(convertedIterableType))
         << "GenericIterableType should convert to LLVM pointer";
 }
 

@@ -116,7 +116,7 @@ TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     EXPECT_TRUE(nextRowOp != nullptr);
     
     // Test FinalizeOp
-    auto tableType = ::pgx::mlir::dsa::TableType::get(&context);
+    auto tableType = ::pgx::mlir::dsa::TableType::get(&context, tupleType);
     auto finalizeOp = builder->create<::pgx::mlir::dsa::FinalizeOp>(
         builder->getUnknownLoc(), tableType, createDSOp.getResult());
     

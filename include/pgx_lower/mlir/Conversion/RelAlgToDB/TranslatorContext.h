@@ -40,6 +40,17 @@ public:
     // Storage for DSA builders and materialized temporary values
     std::unordered_map<size_t, ::mlir::Value> builders;
     std::unordered_map<::mlir::Operation*, std::pair<::mlir::Value, std::vector<const Column*>>> materializedTmp;
+    
+    // Query result management
+    ::mlir::Value queryResult;
+    
+    void setQueryResult(::mlir::Value result) {
+        queryResult = result;
+    }
+    
+    ::mlir::Value getQueryResult() const {
+        return queryResult;
+    }
 };
 
 } // namespace relalg
