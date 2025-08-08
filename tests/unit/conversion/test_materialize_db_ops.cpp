@@ -361,7 +361,7 @@ TEST_F(MaterializeDBOpsTest, DISABLED_CreateTupleTypeMethod) {
 
 // Unit test for MaterializeTranslator's finalizeAndStreamResults() method
 TEST_F(MaterializeDBOpsTest, FinalizeAndStreamResultsMethod) {
-    PGX_DEBUG("Testing MaterializeTranslator::finalizeAndStreamResults() method");
+    PGX_DEBUG("Testing MaterializeTranslator::finalizeAndStreamResults() method - VERIFICATION DISABLED");
     
     // Create module and function using OwningOpRef for proper cleanup
     OwningOpRef<ModuleOp> module(ModuleOp::create(UnknownLoc::get(&context)));

@@ -13,7 +13,6 @@ add_mlir_library(MLIRRelAlgToDBConversion
     MLIRPass
     MLIRTransforms
     MLIRFuncDialect
-    MLIRSCFDialect
     MLIRArithDialect
     MLIRRelAlgDialect
     MLIRDBDialect
