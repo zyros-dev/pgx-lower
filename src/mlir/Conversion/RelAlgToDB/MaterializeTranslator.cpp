@@ -61,6 +61,19 @@ public:
     void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
         MLIR_PGX_INFO("RelAlg", "MaterializeTranslator::produce() - Starting materialization with DSA operations");
         
+        // Log builder state before operations
+        auto* currentBlock = builder.getInsertionBlock();
+        if (currentBlock) {
+            MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator - insertion block has " + 
+                          std::to_string(std::distance(currentBlock->begin(), currentBlock->end())) + " ops");
+            if (currentBlock->getTerminator()) {
+                MLIR_PGX_DEBUG("RelAlg", "Block has terminator: " + 
+                              currentBlock->getTerminator()->getName().getStringRef().str());
+            } else {
+                MLIR_PGX_WARNING("RelAlg", "Block has NO terminator before MaterializeTranslator operations");
+            }
+        }
+        
         auto loc = materializeOp.getLoc();
         
         // Create DSA table builder based on column types
@@ -75,6 +88,17 @@ public:
         
         // Finalize the DSA table and stream results
         finalizeAndStreamResults(builder, loc, context);
+        
+        // Log builder state after operations
+        if (currentBlock) {
+            MLIR_PGX_DEBUG("RelAlg", "After MaterializeTranslator ops - block has " + 
+                          std::to_string(std::distance(currentBlock->begin(), currentBlock->end())) + " ops");
+            if (currentBlock->getTerminator()) {
+                MLIR_PGX_DEBUG("RelAlg", "Block still has terminator after MaterializeTranslator ops");
+            } else {
+                MLIR_PGX_ERROR("RelAlg", "Block LOST terminator during MaterializeTranslator operations!");
+            }
+        }
     }
     
 private:

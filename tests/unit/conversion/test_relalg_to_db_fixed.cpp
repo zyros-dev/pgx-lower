@@ -32,10 +32,10 @@ TEST(RelAlgToDBFixedTest, ProperOperationLifecycle) {
     
     // Parse MLIR input instead of building programmatically to avoid segfault
     const char* mlirInput = R"mlir(
-        func.func @test1_query() -> !dsa.table {
-            %0 = relalg.basetable "test" table_oid(12345) : !relalg.tuplestream
-            %1 = relalg.materialize %0 columns ["*"] : (!relalg.tuplestream) -> !dsa.table
-            return %1 : !dsa.table
+        func.func @test1_query() -> !relalg.table {
+            %0 = "relalg.basetable"() {table_name = "test", table_oid = 12345 : i64} : () -> !relalg.tuplestream
+            %1 = "relalg.materialize"(%0) {columns = ["*"]} : (!relalg.tuplestream) -> !relalg.table
+            return %1 : !relalg.table
         }
     )mlir";
     
@@ -78,15 +78,14 @@ TEST(RelAlgToDBFixedTest, ProperOperationLifecycle) {
     EXPECT_GT(dsaOpsAfter, 0) << "Should generate DSA operations";
     EXPECT_EQ(relalgOpsAfter, 0) << "All RelAlg operations should be erased";
     
-    // Verify function type is not modified by the pass
+    // Verify function type is correctly updated by the pass
     auto funcType = funcOp.getFunctionType();
     ASSERT_EQ(funcType.getNumResults(), 1) << "Function should have one result";
-    // The pass no longer updates function types - that happens in a later phase
-    EXPECT_TRUE(funcType.getResult(0).isa<pgx::mlir::relalg::TableType>()) 
-        << "Function type should remain unchanged";
+    // The pass should update function types from RelAlg to DSA
+    EXPECT_TRUE(funcType.getResult(0).isa<pgx::mlir::dsa::TableType>()) 
+        << "Function type should be updated to DSA table type";
     
-    // Clean up
-    module->erase();
+    // Module cleanup handled automatically by MLIR context
 }
 
 // Test that the pass handles multiple MaterializeOps correctly
@@ -158,8 +157,7 @@ TEST(RelAlgToDBFixedTest, MultipleMaterializeOps) {
         EXPECT_EQ(relalgOps, 0) << "All RelAlg operations should be erased";
     }
     
-    // Clean up
-    module->erase();
+    // Module cleanup handled automatically by MLIR context
 }
 
 } // namespace
