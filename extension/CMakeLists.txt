@@ -10,6 +10,7 @@ add_postgresql_mixed_extension(
             ../src/execution/postgres/my_executor.cpp 
             ../src/execution/postgres/executor_c.cpp
             ../src/execution/mlir_runner.cpp 
+            ../src/execution/jit_execution_engine.cpp
             ../src/frontend/SQL/postgresql_ast_translator.cpp
             ../src/frontend/SQL/query_analyzer.cpp
             ../src/execution/error_handling.cpp
@@ -61,6 +62,8 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRLLVMDialect  # Required for DSA → LLVM conversion
     MLIRLLVMCommonConversion  # LLVM conversion infrastructure
     MLIRFuncToLLVM  # Function to LLVM conversion patterns
+    MLIRExecutionEngine  # JIT execution engine for Phase 4g-2a
+    MLIRTargetLLVMIRExport  # LLVM IR export functionality
     -Wl,--as-needed
 )
 
