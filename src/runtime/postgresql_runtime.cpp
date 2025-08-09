@@ -4,6 +4,15 @@
 #include <cstring>
 #include <cstdlib>
 
+// PostgreSQL headers for memory management
+extern "C" {
+#include "postgres.h"
+#include "utils/memutils.h"
+#include "executor/spi.h"
+#include "access/htup_details.h"
+#include "utils/builtins.h"
+}
+
 // PostgreSQL runtime functions for MLIR JIT execution
 // These functions are called from the generated MLIR code
 
@@ -12,14 +21,32 @@ extern "C" {
 // Memory allocation functions
 void* pgx_exec_alloc_state_raw(int64_t size) {
     RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Starting memory allocation for execution state, size: " + std::to_string(size));
-    void* result = malloc(size);
+    
+    if (size <= 0) {
+        ereport(ERROR,
+            (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+             errmsg("invalid allocation size: %ld", size)));
+    }
+    
+    MemoryContext oldcxt = MemoryContextSwitchTo(CurTransactionContext);
+    void* result = palloc(size);
+    MemoryContextSwitchTo(oldcxt);
+    
+    if (!result) {
+        ereport(ERROR,
+            (errcode(ERRCODE_OUT_OF_MEMORY),
+             errmsg("could not allocate %ld bytes", size)));
+    }
+    
     RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Memory allocation completed, ptr: " + std::to_string(reinterpret_cast<uintptr_t>(result)));
     return result;
 }
 
 void pgx_exec_free_state(void* state) {
     RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Freeing execution state, ptr: " + std::to_string(reinterpret_cast<uintptr_t>(state)));
-    free(state);
+    if (state) {
+        pfree(state);
+    }
 }
 
 // Tuple count tracking
@@ -39,8 +66,11 @@ int64_t pgx_exec_get_tuple_count(void* exec_context) {
 
 // Thread-local storage
 void* pgx_threadlocal_create(int64_t size) {
-    // Simple allocation for now - in real implementation would use thread-local storage
-    return malloc(size);
+    // PostgreSQL doesn't use threads - allocate in current memory context
+    MemoryContext oldcxt = MemoryContextSwitchTo(CurTransactionContext);
+    void* result = palloc(size);
+    MemoryContextSwitchTo(oldcxt);
+    return result;
 }
 
 void* pgx_threadlocal_get(void* tls) {
@@ -62,10 +92,12 @@ struct PostgreSQLDataSource {
 
 void* pgx_datasource_get(void* table_ref) {
     RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Creating data source for table_ref: " + std::to_string(reinterpret_cast<uintptr_t>(table_ref)));
-    auto* ds = new PostgreSQLDataSource();
+    MemoryContext oldcxt = MemoryContextSwitchTo(CurTransactionContext);
+    auto* ds = (PostgreSQLDataSource*)palloc(sizeof(PostgreSQLDataSource));
     ds->table_data = table_ref;
     ds->current_row = 0;
     ds->total_rows = 0; // Would be set from table metadata
+    MemoryContextSwitchTo(oldcxt);
     RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Data source created successfully");
     return ds;
 }
@@ -79,10 +111,12 @@ struct DataSourceIteration {
 
 void* pgx_datasource_iteration_init(void* datasource, int64_t start, int64_t end) {
     RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Initializing data source iteration, range: " + std::to_string(start) + " to " + std::to_string(end));
-    auto* iter = new DataSourceIteration();
+    MemoryContext oldcxt = MemoryContextSwitchTo(CurTransactionContext);
+    auto* iter = (DataSourceIteration*)palloc(sizeof(DataSourceIteration));
     iter->datasource = (PostgreSQLDataSource*)datasource;
     iter->start_row = start;
     iter->end_row = end;
+    MemoryContextSwitchTo(oldcxt);
     return iter;
 }
 
@@ -98,22 +132,24 @@ int8_t pgx_datasource_iteration_iterate(void* iteration, void** row_out) {
 }
 
 // Buffer operations
-struct Buffer {
+struct PGXBuffer {
     void* data;
     int64_t size;
     int64_t capacity;
 };
 
 void* pgx_buffer_create_zeroed(int64_t size) {
-    auto* buffer = new Buffer();
+    MemoryContext oldcxt = MemoryContextSwitchTo(CurTransactionContext);
+    auto* buffer = (PGXBuffer*)palloc(sizeof(PGXBuffer));
     buffer->size = size;
     buffer->capacity = size;
-    buffer->data = calloc(size, 1);
+    buffer->data = palloc0(size);  // palloc0 zeros the memory
+    MemoryContextSwitchTo(oldcxt);
     return buffer;
 }
 
 void* pgx_buffer_iterate(void* buffer, int64_t index) {
-    auto* buf = (Buffer*)buffer;
+    auto* buf = (PGXBuffer*)buffer;
     if (index < buf->size) {
         return ((char*)buf->data) + index;
     }
@@ -128,20 +164,37 @@ struct GrowingBuffer {
 };
 
 void* pgx_growing_buffer_create(int64_t initial_capacity) {
-    auto* buffer = new GrowingBuffer();
+    MemoryContext oldcxt = MemoryContextSwitchTo(CurTransactionContext);
+    auto* buffer = (GrowingBuffer*)palloc(sizeof(GrowingBuffer));
     buffer->size = 0;
     buffer->capacity = initial_capacity;
-    buffer->data = malloc(initial_capacity);
+    buffer->data = palloc(initial_capacity);
+    MemoryContextSwitchTo(oldcxt);
     return buffer;
 }
 
 void pgx_growing_buffer_insert(void* buffer, void* value, int64_t value_size) {
     auto* buf = (GrowingBuffer*)buffer;
-    // Simple append - in real implementation would handle growing
-    if (buf->size + value_size <= buf->capacity) {
-        memcpy(((char*)buf->data) + buf->size, value, value_size);
-        buf->size += value_size;
+    
+    // Handle growing if needed
+    if (buf->size + value_size > buf->capacity) {
+        // Double the capacity
+        int64_t new_capacity = buf->capacity * 2;
+        while (new_capacity < buf->size + value_size) {
+            new_capacity *= 2;
+        }
+        
+        MemoryContext oldcxt = MemoryContextSwitchTo(CurTransactionContext);
+        void* new_data = palloc(new_capacity);
+        memcpy(new_data, buf->data, buf->size);
+        pfree(buf->data);
+        buf->data = new_data;
+        buf->capacity = new_capacity;
+        MemoryContextSwitchTo(oldcxt);
     }
+    
+    memcpy(((char*)buf->data) + buf->size, value, value_size);
+    buf->size += value_size;
 }
 
 // PostgreSQL-specific tuple access functions
@@ -181,12 +234,28 @@ struct TableBuilder {
 
 void* pgx_runtime_create_table_builder(const char* schema) {
     RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Creating table builder with schema: " + std::string(schema));
-    auto* builder = new TableBuilder();
-    builder->schema = schema;
+    
+    if (!schema) {
+        ereport(ERROR,
+            (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+             errmsg("cannot create table builder with null schema")));
+    }
+    
+    MemoryContext oldcxt = MemoryContextSwitchTo(CurTransactionContext);
+    auto* builder = (TableBuilder*)palloc(sizeof(TableBuilder));
+    
+    if (!builder) {
+        ereport(ERROR,
+            (errcode(ERRCODE_OUT_OF_MEMORY),
+             errmsg("could not allocate table builder")));
+    }
+    
+    builder->schema = pstrdup(schema);  // PostgreSQL string duplication
     builder->rows = nullptr;
     builder->row_count = 0;
     builder->row_capacity = 0;
     builder->current_column = 0;
+    MemoryContextSwitchTo(oldcxt);
     return builder;
 }
 
