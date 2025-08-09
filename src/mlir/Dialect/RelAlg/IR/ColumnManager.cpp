@@ -22,6 +22,26 @@ std::shared_ptr<Column> ColumnManager::get(const std::string& scope, const std::
     return col;
 }
 
+// Get or create a column with a specific type
+std::shared_ptr<Column> ColumnManager::get(const std::string& scope, const std::string& attribute, ::mlir::Type type) {
+    auto key = std::make_pair(scope, attribute);
+    auto it = attributes.find(key);
+    if (it != attributes.end()) {
+        // Update type if not already set
+        if (!it->second->type) {
+            it->second->type = type;
+        }
+        return it->second;
+    }
+    
+    // Create new column with specified type
+    auto col = std::make_shared<Column>(type);
+    attributes[key] = col;
+    attributesRev[col.get()] = key;
+    MLIR_PGX_DEBUG("RelAlg", "Created new column with type: " + scope + "." + attribute);
+    return col;
+}
+
 // Get the (scope, name) pair for a column
 std::pair<std::string, std::string> ColumnManager::getName(const Column* attr) {
     auto it = attributesRev.find(attr);

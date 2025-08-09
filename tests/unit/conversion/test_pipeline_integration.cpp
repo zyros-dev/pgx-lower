@@ -41,7 +41,7 @@ protected:
 };
 
 // Test the complete pipeline for Test 1: SELECT * FROM test
-// DISABLED: Column resolution issue needs fixing first
+// NOTE: This test requires DBToStd pass which is not implemented yet
 TEST_F(PipelineIntegrationTest, DISABLED_Test1CompletePipeline) {
     PGX_DEBUG("Testing complete pipeline for Test 1: SELECT * FROM test");
     
@@ -227,7 +227,7 @@ TEST_F(PipelineIntegrationTest, ErrorHandlingInPipeline) {
 }
 
 // Test column projection through the pipeline
-// DISABLED: Column resolution issue needs fixing first
+// NOTE: This test requires DBToStd pass which is not implemented yet
 TEST_F(PipelineIntegrationTest, DISABLED_ColumnProjectionPipeline) {
     PGX_DEBUG("Testing column projection through pipeline");
     
@@ -289,7 +289,7 @@ TEST_F(PipelineIntegrationTest, DISABLED_ColumnProjectionPipeline) {
 }
 
 // Test performance characteristics of the pipeline  
-// DISABLED: Column resolution issue needs fixing first
+// NOTE: This test requires DBToStd pass which is not implemented yet
 TEST_F(PipelineIntegrationTest, DISABLED_PipelinePerformanceCharacteristics) {
     PGX_DEBUG("Testing pipeline performance characteristics");
     

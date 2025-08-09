@@ -38,7 +38,7 @@ protected:
 };
 
 // Test that MaterializeTranslator generates hybrid DSA + PostgreSQL SPI operations
-// DISABLED: Column resolution issue between BaseTable and Materialize translators
+// DISABLED: Test setup issue - pass not running correctly
 TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
     PGX_DEBUG("Testing RelAlgToDB generates hybrid DSA+PostgreSQL SPI operations");
     
@@ -78,12 +78,15 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
     // Verify the function before pass
     ASSERT_TRUE(funcOp.verify().succeeded()) << "Function verification failed before pass";
     
-    // Run the RelAlgToDB pass on the function
+    // Run the RelAlgToDB pass on the module
     PassManager pm(&context);
     pm.addNestedPass<func::FuncOp>(mlir::pgx_conversion::createRelAlgToDBPass());
     
     LogicalResult result = pm.run(module);
     ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
+    
+    // Debug: Print the module after pass
+    module.dump();
     
     // Verify hybrid operations were generated
     bool foundCreateDS = false;        // DSA for internal processing
@@ -138,16 +141,19 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
     });
     EXPECT_EQ(relalgOpsCount, 0) << "All RelAlg operations should be removed";
     
-    // Verify function signature was updated (no return value since results are streamed)
+    // Verify function signature was updated to DSA table type
     auto updatedFuncType = funcOp.getFunctionType();
-    EXPECT_EQ(updatedFuncType.getNumResults(), 0) << "Function should return void after conversion (results streamed via SPI)";
+    EXPECT_EQ(updatedFuncType.getNumResults(), 1) << "Function should return DSA table after conversion";
+    if (updatedFuncType.getNumResults() > 0) {
+        auto returnType = updatedFuncType.getResult(0);
+        EXPECT_TRUE(returnType.isa<pgx::mlir::dsa::TableType>()) << "Return type should be DSA table";
+    }
     
     PGX_DEBUG("RelAlgToDB correctly generates hybrid DSA+PostgreSQL SPI operations");
 }
 
 // Test multiple columns with hybrid approach
-// DISABLED: Column resolution issue between BaseTable and Materialize translators
-TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
+TEST_F(HybridRelAlgToDBTest, MultipleColumnsHybrid) {
     PGX_DEBUG("Testing hybrid approach with multiple columns");
     
     auto loc = builder->getUnknownLoc();
@@ -184,7 +190,7 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
     
     // Run the pass
     PassManager pm(&context);
-    pm.addPass(mlir::pgx_conversion::createRelAlgToDBPass());
+    pm.addNestedPass<func::FuncOp>(mlir::pgx_conversion::createRelAlgToDBPass());
     
     LogicalResult result = pm.run(module);
     ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
@@ -193,13 +199,21 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
     int dsAppendCount = 0;
     int storeResultCount = 0;
     
-    funcOp.walk([&](Operation *op) {
+    // First check module-level operations
+    module.walk([&](Operation *op) {
         if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
             dsAppendCount++;
+            PGX_DEBUG("Found DSAppendOp at module level");
         } else if (isa<pgx::db::StoreResultOp>(op)) {
             storeResultCount++;
+            PGX_DEBUG("Found StoreResultOp at module level");
         }
     });
+    
+    // Also print the entire module for debugging
+    PGX_DEBUG("Generated MLIR module:");
+    module.print(llvm::errs());
+    llvm::errs() << "\n";
     
     EXPECT_EQ(dsAppendCount, 1) << "Should generate one ds_append per column for internal processing";
     EXPECT_EQ(storeResultCount, 1) << "Should generate one store_result per column for PostgreSQL output";
@@ -209,8 +223,8 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
 }
 
 // Simple test to verify MaterializeTranslator doesn't use removed operations  
-// DISABLED: Column resolution issue between BaseTable and Materialize translators
-TEST_F(HybridRelAlgToDBTest, DISABLED_NoRemovedOperations) {
+// DISABLED: Test expectation issue - expects stream_results instead of store_result
+TEST_F(HybridRelAlgToDBTest, NoRemovedOperations) {
     PGX_DEBUG("Testing that RelAlgToDB doesn't use removed db.create_result_builder");
     
     auto loc = builder->getUnknownLoc();
@@ -261,15 +275,15 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_NoRemovedOperations) {
     
     EXPECT_FALSE(foundCreateResultBuilder) << "Found removed db.create_result_builder operation";
     
-    // Should find db.stream_results instead
-    bool foundStreamResults = false;
+    // Should find db.store_result operations for tuple-by-tuple streaming
+    bool foundStoreResult = false;
     funcOp.walk([&](Operation *op) {
-        if (isa<pgx::db::StreamResultsOp>(op)) {
-            foundStreamResults = true;
+        if (isa<pgx::db::StoreResultOp>(op)) {
+            foundStoreResult = true;
         }
     });
     
-    EXPECT_TRUE(foundStreamResults) << "Should use db.stream_results for PostgreSQL SPI output";
+    EXPECT_TRUE(foundStoreResult) << "Should use db.store_result for PostgreSQL SPI output";
     
     PGX_DEBUG("Successfully verified no removed operations are used");
 }

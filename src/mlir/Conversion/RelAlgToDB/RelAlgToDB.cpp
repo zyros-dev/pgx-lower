@@ -53,6 +53,7 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         
         getOperation().walk([&](Operation* op) {
             if (isTranslationHook(op)) {
+                MLIR_PGX_DEBUG("RelAlgToDB", "Processing translation hook for: " + op->getName().getStringRef().str());
                 auto node = ::pgx::mlir::relalg::Translator::createTranslator(op);
                 node->setInfo(nullptr, ::pgx::mlir::relalg::ColumnSet());
                 OpBuilder builder(op);

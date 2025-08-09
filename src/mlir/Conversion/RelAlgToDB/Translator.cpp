@@ -9,7 +9,7 @@ namespace relalg {
 
 // Factory method to create appropriate translator based on operation type
 std::unique_ptr<Translator> Translator::createTranslator(::mlir::Operation* op) {
-    MLIR_PGX_DEBUG("RelAlg", "Creating translator for operation: " + op->getName().getStringRef().str());
+    MLIR_PGX_INFO("RelAlg", "Creating translator for operation: " + op->getName().getStringRef().str());
     
     // Use TypeSwitch to dispatch to appropriate translator factory
     return ::llvm::TypeSwitch<::mlir::Operation*, std::unique_ptr<Translator>>(op)
