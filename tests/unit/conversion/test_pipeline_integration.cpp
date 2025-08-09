@@ -6,8 +6,9 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
-// #include "mlir/Conversion/DBToStd/DBToStd.h" // Not implemented yet
+#include "mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Conversion/DSAToLLVM/DSAToLLVM.h"
+#include "mlir/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -41,8 +42,8 @@ protected:
 };
 
 // Test the complete pipeline for Test 1: SELECT * FROM test
-// NOTE: This test requires DBToStd pass which is not implemented yet
-TEST_F(PipelineIntegrationTest, DISABLED_Test1CompletePipeline) {
+// Phase 4g-2c: Re-enabled with JIT execution support
+TEST_F(PipelineIntegrationTest, Test1CompletePipeline) {
     PGX_DEBUG("Testing complete pipeline for Test 1: SELECT * FROM test");
     
     // Create module and function
@@ -76,47 +77,28 @@ TEST_F(PipelineIntegrationTest, DISABLED_Test1CompletePipeline) {
     
     builder->create<func::ReturnOp>(loc, materializeOp.getResult());
     
-    // Phase 1: RelAlg → DB+DSA
-    PassManager pm1(&context);
-    pm1.addNestedPass<func::FuncOp>(pgx_conversion::createRelAlgToDBPass());
+    // Use the complete lowering pipeline instead of running passes separately
+    // This ensures proper type conversion between passes
+    PassManager pm(&context);
+    mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
     
-    ASSERT_TRUE(succeeded(pm1.run(module))) << "RelAlgToDB pass failed";
-    
-    // Verify mixed DB+DSA operations
-    int dbOps = 0, dsaOps = 0, relalgOps = 0;
+    // Check operations before lowering
+    int dbOpsBefore = 0, dsaOpsBefore = 0, relalgOpsBefore = 0;
     module.walk([&](Operation* op) {
         if (op->getDialect()) {
             auto ns = op->getDialect()->getNamespace();
-            if (ns == "db") dbOps++;
-            else if (ns == "dsa") dsaOps++;
-            else if (ns == "relalg") relalgOps++;
+            if (ns == "db") dbOpsBefore++;
+            else if (ns == "dsa") dsaOpsBefore++;
+            else if (ns == "relalg") relalgOpsBefore++;
         }
     });
     
-    EXPECT_GT(dbOps, 0) << "Should generate DB operations";
-    EXPECT_GT(dsaOps, 0) << "Should generate DSA operations";
-    EXPECT_EQ(relalgOps, 0) << "All RelAlg operations should be converted";
+    EXPECT_EQ(dbOpsBefore, 0) << "Should start with no DB operations";
+    EXPECT_EQ(dsaOpsBefore, 0) << "Should start with no DSA operations";
+    EXPECT_GT(relalgOpsBefore, 0) << "Should start with RelAlg operations";
     
-    // Phase 2: DB → Standard MLIR
-    // TODO: DBToStd pass not implemented yet
-    // PassManager pm2(&context);
-    // pm2.addPass(pgx_conversion::createDBToStdPass());
-    // ASSERT_TRUE(succeeded(pm2.run(module))) << "DBToStd pass failed";
-    
-    // For now, verify we have DB operations that would be lowered
-    int dbOpsBeforeLowering = 0;
-    module.walk([&](Operation* op) {
-        if (op->getDialect() && op->getDialect()->getNamespace() == "db") {
-            dbOpsBeforeLowering++;
-        }
-    });
-    EXPECT_GT(dbOpsBeforeLowering, 0) << "Should have DB operations to lower";
-    
-    // Phase 3: DSA → LLVM
-    PassManager pm3(&context);
-    pm3.addPass(pgx_conversion::createDSAToLLVMPass());
-    
-    ASSERT_TRUE(succeeded(pm3.run(module))) << "DSAToLLVM pass failed";
+    // Run the complete pipeline
+    ASSERT_TRUE(succeeded(pm.run(module))) << "Complete lowering pipeline failed";
     
     // Verify LLVM operations
     bool hasLLVMOps = false;
@@ -145,9 +127,15 @@ TEST_F(PipelineIntegrationTest, DISABLED_Test1CompletePipeline) {
         }
     });
     
-    // After DBToStd, some DB ops might remain (PostgreSQL SPI calls)
-    // After DSAToLLVM, no DSA ops should remain
+    // After all lowering passes:
+    // - All RelAlg ops should be gone
+    // - Some DB ops might remain (PostgreSQL SPI calls) 
+    // - All DSA ops should be lowered to LLVM
     EXPECT_EQ(finalDsaOps, 0) << "All DSA operations should be lowered to LLVM";
+    // DB operations that remain are intentional (SPI calls)
+    if (finalDbOps > 0) {
+        PGX_INFO("Remaining DB operations are PostgreSQL SPI calls");
+    }
     
     PGX_DEBUG("Complete pipeline test passed");
 }
@@ -218,7 +206,7 @@ TEST_F(PipelineIntegrationTest, ErrorHandlingInPipeline) {
     // Run all passes - should handle empty function gracefully
     PassManager pm(&context);
     pm.addNestedPass<func::FuncOp>(pgx_conversion::createRelAlgToDBPass());
-    // TODO: pm.addNestedPass<func::FuncOp>(pgx_conversion::createDBToStdPass());
+    pm.addNestedPass<func::FuncOp>(mlir::createDBToStdPass());
     pm.addPass(pgx_conversion::createDSAToLLVMPass());
     
     ASSERT_TRUE(succeeded(pm.run(module))) << "Pipeline should handle empty functions";
@@ -227,8 +215,8 @@ TEST_F(PipelineIntegrationTest, ErrorHandlingInPipeline) {
 }
 
 // Test column projection through the pipeline
-// NOTE: This test requires DBToStd pass which is not implemented yet
-TEST_F(PipelineIntegrationTest, DISABLED_ColumnProjectionPipeline) {
+// Phase 4g-2c: Re-enabled with DBToStd pass
+TEST_F(PipelineIntegrationTest, ColumnProjectionPipeline) {
     PGX_DEBUG("Testing column projection through pipeline");
     
     auto loc = builder->getUnknownLoc();
@@ -265,7 +253,7 @@ TEST_F(PipelineIntegrationTest, DISABLED_ColumnProjectionPipeline) {
     // Run complete pipeline
     PassManager pm(&context);
     pm.addNestedPass<func::FuncOp>(pgx_conversion::createRelAlgToDBPass());
-    // TODO: pm.addNestedPass<func::FuncOp>(pgx_conversion::createDBToStdPass());
+    pm.addNestedPass<func::FuncOp>(mlir::createDBToStdPass());
     pm.addPass(pgx_conversion::createDSAToLLVMPass());
     
     ASSERT_TRUE(succeeded(pm.run(module))) << "Pipeline failed for column projection";
@@ -289,8 +277,8 @@ TEST_F(PipelineIntegrationTest, DISABLED_ColumnProjectionPipeline) {
 }
 
 // Test performance characteristics of the pipeline  
-// NOTE: This test requires DBToStd pass which is not implemented yet
-TEST_F(PipelineIntegrationTest, DISABLED_PipelinePerformanceCharacteristics) {
+// Phase 4g-2c: Re-enabled with DBToStd pass
+TEST_F(PipelineIntegrationTest, PipelinePerformanceCharacteristics) {
     PGX_DEBUG("Testing pipeline performance characteristics");
     
     auto loc = builder->getUnknownLoc();
@@ -336,27 +324,21 @@ TEST_F(PipelineIntegrationTest, DISABLED_PipelinePerformanceCharacteristics) {
     
     auto initialCounts = countOps();
     
-    // Phase 1: RelAlg → DB+DSA
-    PassManager pm1(&context);
-    pm1.addPass(pgx_conversion::createRelAlgToDBPass());
-    ASSERT_TRUE(succeeded(pm1.run(module)));
+    // Use the complete lowering pipeline
+    PassManager pm(&context);
+    mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
     
-    auto afterRelAlgToDB = countOps();
-    
-    // Phase 2: DB → Standard MLIR
-    // TODO: DBToStd pass not implemented yet
-    // PassManager pm2(&context);
-    // pm2.addPass(pgx_conversion::createDBToStdPass());
-    // ASSERT_TRUE(succeeded(pm2.run(module)));
-    
-    auto afterDBToStd = countOps(); // Same as afterRelAlgToDB for now
-    
-    // Phase 3: DSA → LLVM
-    PassManager pm3(&context);
-    pm3.addPass(pgx_conversion::createDSAToLLVMPass());
-    ASSERT_TRUE(succeeded(pm3.run(module)));
+    // Run the complete pipeline
+    auto pipelineStart = std::chrono::high_resolution_clock::now();
+    ASSERT_TRUE(succeeded(pm.run(module))) << "Complete pipeline failed";
+    auto pipelineEnd = std::chrono::high_resolution_clock::now();
     
     auto finalCounts = countOps();
+    
+    // Measure pipeline execution time
+    auto pipelineDuration = std::chrono::duration_cast<std::chrono::microseconds>(
+        pipelineEnd - pipelineStart).count();
+    PGX_INFO("Complete pipeline executed in " + std::to_string(pipelineDuration) + " microseconds");
     
     // Verify reasonable operation counts (no explosion)
     int totalOps = 0;

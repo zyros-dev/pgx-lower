@@ -8,12 +8,21 @@
 // Add PostgreSQL integration when building as extension
 #ifdef POSTGRESQL_EXTENSION
 // Push/pop PostgreSQL macros to avoid conflicts
+// Save PostgreSQL macros that conflict with C++
 #pragma push_macro("_")
 #pragma push_macro("gettext")
 #pragma push_macro("dgettext") 
 #pragma push_macro("ngettext")
 #pragma push_macro("dngettext")
 #pragma push_macro("dcgettext")
+
+// Undefine conflicting macros before including PostgreSQL headers
+#undef _
+#undef gettext
+#undef dgettext
+#undef ngettext
+#undef dngettext
+#undef dcgettext
 
 extern "C" {
 #include "postgres.h"

@@ -20,6 +20,7 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/PassInstrumentation.h"
+#include "mlir/Transforms/Passes.h"
 
 // Include timing support
 #include <chrono>
@@ -147,10 +148,17 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) 
     PGX_DEBUG("Added Util → LLVM lowering pass");
     
     // DSA → LLVM lowering (data structure algorithms)
-    // TEMPORARILY DISABLED: DSAToLLVM pass causes server crash during pipeline execution
-    // For Test 1 validation, we only need to verify RelAlgToDB conversion works correctly
-    // pm.addPass(::mlir::pgx_conversion::createDSAToLLVMPass());
-    PGX_WARNING("DSA → LLVM pass temporarily disabled to test RelAlgToDB pipeline");
+    // Re-enabled for Phase 4g-2c JIT execution
+    pm.addPass(::mlir::pgx_conversion::createDSAToLLVMPass());
+    PGX_DEBUG("Added DSA → LLVM lowering pass");
+    
+    // Clean up any remaining unrealized conversion casts
+    // This is critical for resolving type materializations between passes
+    // Note: This pass is available in newer MLIR versions. For now, we'll rely on
+    // proper type conversion in each pass to avoid unrealized casts.
+    // TODO: Add custom reconciliation pass if needed
+    // pm.addPass(mlir::createReconcileUnrealizedCastsPass());
+    // PGX_DEBUG("Added reconcile unrealized casts pass");
     
     // TODO: JIT execution engine setup
     // TODO: Complete Standard MLIR → LLVM → JIT pipeline

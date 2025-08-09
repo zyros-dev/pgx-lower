@@ -611,3 +611,39 @@ target_link_libraries(test_util_to_llvm
 )
 add_test(NAME UtilToLLVMTest COMMAND test_util_to_llvm)
 
+# Type conversion debugging test
+add_executable(test_type_conversion_issue test_type_conversion_issue.cpp)
+target_link_libraries(test_type_conversion_issue
+    gtest gtest_main
+    MLIRPgxLowerPasses
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRUtilDialect
+    MLIRArithDialect
+    MLIRFuncDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME TypeConversionIssueTest COMMAND test_type_conversion_issue)
+
+# Circular type fix test - verifies the fix for circular type materialization bug
+add_executable(test_circular_type_fix test_circular_type_fix.cpp)
+target_link_libraries(test_circular_type_fix
+    gtest gtest_main
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRUtilDialect
+    MLIRDBToStd
+    MLIRDSAToStd
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    MLIRTransforms
+    pgx_logging
+)
+add_test(NAME CircularTypeFixTest COMMAND test_circular_type_fix)
+

@@ -104,13 +104,13 @@ TEST_F(DSAToStdTest, CreateDSTableBuilder) {
     EXPECT_TRUE(foundRuntimeCall) << "Expected runtime call to create_table_builder";
 }
 
-// Test conversion of dsa.ds_append with nullable value
+// Test conversion of dsa.ds_append with tuple (converted nullable value)
 TEST_F(DSAToStdTest, DSAppendNullable) {
     const char* mlir_input = R"mlir(
         module {
             func.func @test_ds_append_nullable(%builder: !dsa.table_builder<tuple<i64>>, 
-                                               %val: !db.nullable_i64) {
-                dsa.ds_append %builder : !dsa.table_builder<tuple<i64>>, %val : !db.nullable_i64
+                                               %val: tuple<i64, i1>) {
+                dsa.ds_append %builder : !dsa.table_builder<tuple<i64>>, %val : tuple<i64, i1>
                 return
             }
         }
@@ -121,20 +121,14 @@ TEST_F(DSAToStdTest, DSAppendNullable) {
     
     runDSAToStdPass(*module);
     
-    // Verify nullable handling
-    bool foundIsNull = false;
-    bool foundGetVal = false;
+    // Verify tuple handling
+    bool foundGetTuple = false;
     bool foundAppendCall = false;
     
     module->walk([&](mlir::Operation* op) {
-        if (auto isNullOp = dyn_cast<pgx::db::IsNullOp>(op)) {
-            PGX_DEBUG("Found db.is_null operation");
-            foundIsNull = true;
-        }
-        
-        if (auto getValOp = dyn_cast<pgx::db::NullableGetValOp>(op)) {
-            PGX_DEBUG("Found db.nullable_get_val operation");
-            foundGetVal = true;
+        if (op->getName().getStringRef() == "util.get_tuple") {
+            PGX_DEBUG("Found util.get_tuple operation");
+            foundGetTuple = true;
         }
         
         if (auto callOp = dyn_cast<mlir::func::CallOp>(op)) {
@@ -148,8 +142,7 @@ TEST_F(DSAToStdTest, DSAppendNullable) {
         }
     });
     
-    EXPECT_TRUE(foundIsNull) << "Expected db.is_null for nullable extraction";
-    EXPECT_TRUE(foundGetVal) << "Expected db.nullable_get_val for value extraction";
+    EXPECT_TRUE(foundGetTuple) << "Expected util.get_tuple for tuple extraction";
     EXPECT_TRUE(foundAppendCall) << "Expected runtime call to append_nullable_i64";
 }
 
@@ -195,10 +188,11 @@ TEST_F(DSAToStdTest, CompletePipeline) {
                 %builder = dsa.create_ds "id:int[64]" -> !dsa.table_builder<tuple<i64>>
                 
                 %c42_i64 = arith.constant 42 : i64
-                %nullable = "db.as_nullable"(%c42_i64) : (i64) -> !db.nullable_i64
+                %false = arith.constant false : i1
+                %nullable = util.pack %c42_i64, %false : (i64, i1) -> tuple<i64, i1>
                 
-                dsa.ds_append %builder : !dsa.table_builder<tuple<i64>>, %nullable : !db.nullable_i64
-                dsa.next_row %builder : <tuple<i64>>
+                dsa.ds_append %builder : !dsa.table_builder<tuple<i64>>, %nullable : tuple<i64, i1>
+                dsa.next_row %builder
                 
                 return
             }

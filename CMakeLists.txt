@@ -140,6 +140,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/execution/error_handling.cpp
         src/execution/mlir_runner.cpp
         src/execution/jit_execution_engine.cpp  # Phase 4g-2a JIT infrastructure
+        src/execution/jit_execution_wrapper.cpp  # Phase 4g-2c header isolation
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
         src/runtime/helpers.cpp
