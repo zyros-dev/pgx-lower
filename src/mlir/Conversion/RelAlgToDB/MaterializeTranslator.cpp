@@ -35,6 +35,18 @@ public:
         }
     }
     
+    void initializeWithContext(TranslatorContext& context) override {
+        MLIR_PGX_INFO("RelAlg", "MaterializeTranslator::initializeWithContext() - Initializing early");
+        
+        // Initialize child translators first so their columns are available
+        for (auto& child : children) {
+            child->initializeWithContext(context);
+        }
+        
+        // Now we can get columns from children through getAvailableColumns()
+        // This ensures column identity sharing with BaseTableTranslator
+    }
+    
     ColumnSet getAvailableColumns() override {
         // MaterializeOp doesn't produce columns for consumption - it materializes to a table
         return ColumnSet();
@@ -52,9 +64,17 @@ public:
             
             // Request all columns from child (empty set = all columns)
             children[0]->setInfo(this, ColumnSet());
+            
+            // Get available columns from child and set up orderedAttributes
+            // This ensures we use the same column identity as BaseTableTranslator
+            auto availableColumns = children[0]->getAvailableColumns();
+            orderedAttributes = OrderedAttributes();
+            for (const Column* col : availableColumns) {
+                orderedAttributes.insert(col);
+                MLIR_PGX_INFO("RelAlg", "MaterializeTranslator received column from child at address: " + 
+                              std::to_string(reinterpret_cast<uintptr_t>(col)));
+            }
         }
-        
-        // Note: Actual columns will be set up in produce() when we have access to ColumnManager
     }
     
     void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
@@ -63,29 +83,22 @@ public:
         
         auto loc = materializeOp.getLoc();
         
-        // CRITICAL FIX: Get the actual table name from the child BaseTableOp
+        // orderedAttributes should already be set up in setInfo() from child columns
         // This ensures column identity is shared between BaseTableTranslator and MaterializeTranslator
-        orderedAttributes = OrderedAttributes();  // Clear any existing columns
-        
-        // Get table name from child BaseTableOp
-        std::string tableName = "test";  // Default for Test 1
-        if (!children.empty() && children[0]->getOperation()) {
-            if (auto baseTableOp = ::mlir::dyn_cast<::pgx::mlir::relalg::BaseTableOp>(children[0]->getOperation())) {
-                tableName = baseTableOp.getTableName().str();
-                MLIR_PGX_INFO("RelAlg", "MaterializeTranslator found child table name: " + tableName);
+        if (orderedAttributes.getAttrs().empty()) {
+            MLIR_PGX_WARNING("RelAlg", "MaterializeTranslator has no columns from child - this shouldn't happen");
+            // Fallback: try to get columns from child again
+            if (!children.empty()) {
+                auto availableColumns = children[0]->getAvailableColumns();
+                for (const Column* col : availableColumns) {
+                    orderedAttributes.insert(col);
+                }
             }
         }
         
-        auto columnManager = context.getColumnManager();
-        if (columnManager) {
-            // For Test 1, we know we have "id" column of type i64
-            auto i64Type = ::mlir::IntegerType::get(builder.getContext(), 64);
-            auto sharedColumn = columnManager->get(tableName, "id", i64Type);
-            orderedAttributes.insert(sharedColumn.get());
-            MLIR_PGX_INFO("RelAlg", "MaterializeTranslator using shared column 'id' from table '" + 
-                          tableName + "' at address: " + 
-                          std::to_string(reinterpret_cast<uintptr_t>(sharedColumn.get())));
-        }
+        MLIR_PGX_INFO("RelAlg", "MaterializeTranslator using " + 
+                      std::to_string(orderedAttributes.getAttrs().size()) + 
+                      " columns from child translator");
         
         // Create schema description for internal DSA processing
         std::string schemaDescr = createSchemaDescription();

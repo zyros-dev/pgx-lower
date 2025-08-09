@@ -536,3 +536,39 @@ target_link_libraries(test_consumer_chain_fixed
 )
 add_test(NAME ConsumerChainFixedTest COMMAND test_consumer_chain_fixed)
 
+# Column Initialization Timing tests - Verify columns available before produce()
+add_executable(test_column_initialization_timing RelAlgToDB/test_column_initialization_timing.cpp)
+target_link_libraries(test_column_initialization_timing
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME ColumnInitializationTimingTest COMMAND test_column_initialization_timing)
+
+# MLIR Architecture Fixes tests - Verify fixes for architectural violations
+add_executable(test_mlir_architecture_fixes test_mlir_architecture_fixes.cpp)
+target_link_libraries(test_mlir_architecture_fixes
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME MLIRArchitectureFixesTest COMMAND test_mlir_architecture_fixes)
+
