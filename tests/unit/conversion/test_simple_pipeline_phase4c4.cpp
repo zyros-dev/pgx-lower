@@ -16,7 +16,7 @@
 #include <sstream>
 
 //===----------------------------------------------------------------------===//
-// Phase 4c-4: Simple Pipeline Test - Debugging segfault
+// Phase 4d: Simple Pipeline Test - Streaming validation
 //===----------------------------------------------------------------------===//
 
 namespace {

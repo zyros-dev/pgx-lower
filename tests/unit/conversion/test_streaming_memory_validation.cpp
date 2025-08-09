@@ -147,7 +147,7 @@ TEST_F(StreamingMemoryValidationTest, ConstantMemoryForLargeTable) {
         builder->getStringAttr("large_table_1000_rows"), // Simulate 1000 rows
         builder->getI64IntegerAttr(100000)); // Large table OID
     
-    // Note: In Phase 4c-4, BaseTableOp alone doesn't trigger translation.
+    // Note: In Phase 4d, BaseTableOp alone doesn't trigger translation.
     // Translation is initiated by MaterializeOp, not by BaseTableOp.
     // Without MaterializeOp, BaseTableOp remains as-is.
     // This test verifies memory characteristics at the MLIR structure level.
@@ -168,7 +168,7 @@ TEST_F(StreamingMemoryValidationTest, ConstantMemoryForLargeTable) {
     EXPECT_FALSE(hasBatchAllocations) << "Found batch memory allocations";
     
     // Note: This test only creates a BaseTableOp without MaterializeOp.
-    // In the Phase 4c-4 architecture, BaseTableOp alone doesn't generate any operations
+    // In the Phase 4d architecture, BaseTableOp alone doesn't generate any operations
     // because translation is triggered by MaterializeOp. This is correct behavior -
     // without materialization, there's no need for DB access or DSA result building.
     
@@ -261,7 +261,7 @@ TEST_F(StreamingMemoryValidationTest, ProducerConsumerDirectConnection) {
     translator->produce(translatorContext, *builder);
     
     // Note: Like the previous test, this only creates a BaseTableOp without MaterializeOp.
-    // BaseTableOp alone doesn't trigger translation in Phase 4c-4 architecture.
+    // BaseTableOp alone doesn't trigger translation in Phase 4d architecture.
     // This is the correct behavior - translation happens at MaterializeOp.
     
     // Verify that BaseTableOp remains untranslated

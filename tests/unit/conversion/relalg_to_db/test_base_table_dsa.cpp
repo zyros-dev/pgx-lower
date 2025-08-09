@@ -75,7 +75,7 @@ TEST_F(RelAlgToDBBaseTableDSATest, BaseTableGeneratesDSAStreamingPattern) {
     PGX_INFO("Module after conversion:");
     module->print(llvm::errs());
     
-    // Check that mixed DB+DSA operations were generated (Phase 4c-4)
+    // Check that mixed DB+DSA operations were generated (Phase 4d)
     bool foundGetExternal = false;
     bool foundIterateExternal = false;
     bool foundGetField = false;

@@ -74,7 +74,7 @@ TEST(RelAlgToDBFixedTest, ProperOperationLifecycle) {
         else if (dialectName == "relalg") relalgOpsAfter++;
     });
     
-    EXPECT_GT(dbOpsAfter, 0) << "Should generate DB operations for table access (Phase 4c-4)";
+    EXPECT_GT(dbOpsAfter, 0) << "Should generate DB operations for table access (Phase 4d)";
     EXPECT_GT(dsaOpsAfter, 0) << "Should generate DSA operations for result building";
     EXPECT_EQ(relalgOpsAfter, 0) << "All RelAlg operations should be erased";
     

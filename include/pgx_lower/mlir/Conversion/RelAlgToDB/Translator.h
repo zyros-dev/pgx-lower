@@ -13,8 +13,9 @@ namespace pgx {
 namespace mlir {
 namespace relalg {
 
-// Abstract base class for RelAlg operation translators
-// Implements the produce/consume pattern for streaming tuple processing
+// Abstract base class for RelAlg operation translators (Phase 4d)
+// Implements LingoDB produce/consume pattern for PostgreSQL streaming tuple processing
+// Enables constant memory usage with one-tuple-at-a-time PostgreSQL SPI integration
 class Translator {
 protected:
     // Child translators (for operations with relational inputs)
@@ -47,10 +48,10 @@ public:
     // getAvailableColumns() returns the columns this operation produces
     virtual ColumnSet getAvailableColumns() = 0;
     
-    // produce() initiates the translation, setting up the operation and calling children
+    // produce() initiates PostgreSQL table access and streaming tuple processing
     virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) = 0;
     
-    // consume() processes tuples from child translators
+    // consume() processes individual PostgreSQL tuples from child translators (streaming pattern)
     virtual void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) = 0;
     
     // done() performs any cleanup after translation is complete
@@ -69,7 +70,7 @@ public:
         return consumer;
     }
     
-    // Factory method to create appropriate translator for an operation
+    // Factory method to create PostgreSQL-compatible translator for RelAlg operation
     static std::unique_ptr<Translator> createTranslator(::mlir::Operation* op);
     
     // Operation access

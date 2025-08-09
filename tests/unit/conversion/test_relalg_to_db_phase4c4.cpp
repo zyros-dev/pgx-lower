@@ -16,7 +16,7 @@
 using namespace mlir;
 
 // Test the simplified RelAlgToDB pass architecture without ReturnOpTranslator
-TEST(RelAlgToDBPhase4c4Test, SimplifiedArchitectureNoSegfault) {
+TEST(RelAlgToDBPhase4c4Test, StreamingArchitectureValidation) {
     PGX_DEBUG("Testing simplified RelAlgToDB pass without ReturnOpTranslator");
     
     MLIRContext context;
@@ -114,11 +114,11 @@ TEST(RelAlgToDBPhase4c4Test, SimplifiedArchitectureNoSegfault) {
         }
     });
     
-    EXPECT_TRUE(hasDBOps) << "Should have DB operations for table access (Phase 4c-4)";
+    EXPECT_TRUE(hasDBOps) << "Should have DB operations for table access (Phase 4d)";
     EXPECT_TRUE(hasDSAOps) << "Should have DSA operations for result building";
     
     // Skip printing for now to avoid segfault - there may be an issue with DSA table type printing
-    // TODO: Fix DSA table type printing and re-enable this check
+    // TODO: Fix DSA table type printing and re-enable this check (Phase 4d)
     
     PGX_DEBUG("Skipping IR printing to avoid potential segfault with DSA table type");
     
@@ -126,7 +126,7 @@ TEST(RelAlgToDBPhase4c4Test, SimplifiedArchitectureNoSegfault) {
 }
 
 // Test that MaterializeOp is the only translation hook
-TEST(RelAlgToDBPhase4c4Test, OnlyMaterializeOpTranslated) {
+TEST(RelAlgToDBPhase4c4Test, MaterializeOpStreamingTranslation) {
     PGX_DEBUG("Testing that only MaterializeOp triggers translation");
     
     MLIRContext context;
@@ -194,7 +194,7 @@ TEST(RelAlgToDBPhase4c4Test, OnlyMaterializeOpTranslated) {
 }
 
 // Test edge case with multiple MaterializeOps
-TEST(RelAlgToDBPhase4c4Test, MultipleMaterializeOps) {
+TEST(RelAlgToDBPhase4c4Test, MultipleMaterializeOpsStreaming) {
     PGX_DEBUG("Testing multiple MaterializeOps in one function");
     
     MLIRContext context;
