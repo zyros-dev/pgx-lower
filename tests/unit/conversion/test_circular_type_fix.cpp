@@ -37,8 +37,8 @@ protected:
     MLIRContext context;
 };
 
-// Test that DSAToStd can handle unconverted DB nullable types
-// RE-ENABLED: Testing if circular type fix resolved the issue
+// Test that DSAToStd can handle unconverted DB nullable types  
+// RE-ENABLED: Testing if pre-4g-2c revert broke the circular type cycle
 TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     PGX_INFO("Testing DSAToStd with unconverted nullable type");
     

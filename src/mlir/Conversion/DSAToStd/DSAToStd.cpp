@@ -30,9 +30,6 @@
 
 namespace mlir {
 
-using mlir::TupleType;
-using mlir::UnrealizedConversionCastOp;
-
 namespace {
 
 //===----------------------------------------------------------------------===//
@@ -49,15 +46,11 @@ public:
             return pgx::mlir::util::RefType::get(context, i8Type);
         });
         
-        // Keep standard types as-is (including already-converted tuples)
+        // Keep standard types as-is
         addConversion([](Type type) { return type; });
         
-        // Explicitly handle tuple types to prevent materialization issues
+        // Handle tuple types (needed for table_builder<tuple<...>>)
         addConversion([](TupleType type) { return type; });
-        
-        // REMOVED: DB nullable type conversions that caused circular materialization
-        // DBToStd should handle all DB nullable types before DSAToStd runs
-        // DSAToStd only handles DSA operations with already-converted types
         
         // Add argument materialization for function boundaries
         addArgumentMaterialization([context](OpBuilder &builder, Type resultType,
@@ -86,10 +79,6 @@ public:
                     return builder.create<mlir::UnrealizedConversionCastOp>(loc, resultType, inputs).getResult(0);
                 }
             }
-            
-            // DB nullable types should not appear in DSAToStd pass
-            // They should be handled by DBToStd pass before DSAToStd runs
-            
             return Value();
         });
         
@@ -239,10 +228,6 @@ public:
         
         // Get the value to append from adaptor since it might be converted too
         auto value = adaptor.getVal();
-        if (!value) {
-            MLIR_PGX_ERROR("DSAToStd", "Null value in DSAppendOp adaptor");
-            return failure();
-        }
         auto valueType = value.getType();
         
         // Ensure the builder handle is properly typed for runtime calls
@@ -260,89 +245,32 @@ public:
         auto i8Type = IntegerType::get(rewriter.getContext(), 8);
         auto refType = pgx::mlir::util::RefType::get(rewriter.getContext(), i8Type);
         
-        // Handle both converted tuples and unconverted DB nullable types
-        bool handled = false;
-        
-        // Case 1: Handle converted nullable types as tuples (after DBToStd pass)
-        if (auto tupleType = valueType.dyn_cast<TupleType>()) {
-            MLIR_PGX_DEBUG("DSAToStd", "Handling tuple (converted nullable) value in ds_append");
+        // Handle nullable types
+        if (valueType.isa<pgx::db::NullableI64Type>()) {
+            MLIR_PGX_DEBUG("DSAToStd", "Handling nullable value in ds_append");
             
-            if (tupleType.size() == 2 && tupleType.getType(1).isInteger(1)) {
-                // This is a nullable type converted to tuple<T, i1>
-                // Extract the value and null flag from the tuple
-                auto elemType = tupleType.getType(0);
-                auto rawValue = rewriter.create<pgx::mlir::util::GetTupleOp>(
-                    loc, elemType, value, 0);
-                auto isNull = rewriter.create<pgx::mlir::util::GetTupleOp>(
-                    loc, rewriter.getI1Type(), value, 1);
-                
-                // Call the appropriate nullable append function based on element type
-                if (elemType.isInteger(64)) {
-                    auto appendFunc = getOrCreateRuntimeFunction(rewriter, module, loc,
-                        "pgx_runtime_append_nullable_i64", 
-                        {refType, rewriter.getI1Type(), rewriter.getI64Type()}, {});
-                    rewriter.create<func::CallOp>(loc, appendFunc.getName(), TypeRange(), 
-                        ValueRange({convertedHandle, isNull, rawValue}));
-                    handled = true;
-                } else {
-                    MLIR_PGX_ERROR("DSAToStd", "Unsupported tuple element type for ds_append");
-                    return failure();
-                }
-            } 
-            // ADDED: Handle regular tuples that match table schema
-            else if (tupleType.size() == 1 && tupleType.getType(0).isInteger(64)) {
-                // Single-element tuple<i64> - direct non-nullable append
-                MLIR_PGX_DEBUG("DSAToStd", "Handling single-element tuple<i64> as direct value");
-                auto rawValue = rewriter.create<pgx::mlir::util::GetTupleOp>(
-                    loc, tupleType.getType(0), value, 0);
-                auto appendFunc = getOrCreateRuntimeFunction(rewriter, module, loc,
-                    "pgx_runtime_append_i64_direct", 
-                    {refType, rewriter.getI64Type()}, {});
-                rewriter.create<func::CallOp>(loc, appendFunc.getName(), TypeRange(), 
-                    ValueRange({convertedHandle, rawValue}));
-                handled = true;
-            } else {
-                MLIR_PGX_ERROR("DSAToStd", "Unsupported tuple structure for ds_append");
-                return failure();
-            }
-        }
-        // Case 2: Handle unconverted DB nullable types (DBToStd might not have converted them)
-        else if (valueType.isa<pgx::db::NullableI64Type>()) {
-            MLIR_PGX_DEBUG("DSAToStd", "Handling unconverted NullableI64Type in ds_append");
-            
-            // Convert the nullable type to tuple first
-            auto i64Type = rewriter.getI64Type();
-            auto i1Type = rewriter.getI1Type();
-            auto tupleType = TupleType::get(rewriter.getContext(), {i64Type, i1Type});
-            
-            // Extract value and null flag from nullable type
-            auto extractedValue = rewriter.create<pgx::db::NullableGetValOp>(loc, i64Type, value);
-            auto isNullOp = rewriter.create<pgx::db::IsNullOp>(loc, i1Type, value);
+            // Extract null flag and raw value
+            auto isNull = rewriter.create<pgx::db::IsNullOp>(loc, rewriter.getI1Type(), value);
+            auto rawValue = rewriter.create<pgx::db::NullableGetValOp>(loc, rewriter.getI64Type(), value);
             
             // Call the nullable append function
             auto appendFunc = getOrCreateRuntimeFunction(rewriter, module, loc,
                 "pgx_runtime_append_nullable_i64", 
                 {refType, rewriter.getI1Type(), rewriter.getI64Type()}, {});
+            
+            
             rewriter.create<func::CallOp>(loc, appendFunc.getName(), TypeRange(), 
-                ValueRange{convertedHandle, isNullOp.getResult(), extractedValue.getResult()});
-            handled = true;
-        }
-        // Case 3: Direct value append (non-nullable)
-        else if (valueType.isInteger(64)) {
+                ValueRange({convertedHandle, isNull, rawValue}));
+            
+        } else if (valueType.isInteger(64)) {
             // Direct value append (non-nullable)
             auto appendFunc = getOrCreateRuntimeFunction(rewriter, module, loc,
                 "pgx_runtime_append_i64_direct", 
                 {refType, rewriter.getI64Type()}, {});
             rewriter.create<func::CallOp>(loc, appendFunc.getName(), TypeRange(), 
                 ValueRange({convertedHandle, value}));
-            handled = true;
-        }
-        
-        if (!handled) {
-            std::string typeStr;
-            llvm::raw_string_ostream os(typeStr);
-            valueType.print(os);
-            MLIR_PGX_ERROR("DSAToStd", "Unsupported value type for ds_append: " + os.str());
+        } else {
+            MLIR_PGX_ERROR("DSAToStd", "Unsupported value type for ds_append");
             return failure();
         }
         
