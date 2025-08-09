@@ -163,6 +163,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRDBToStdConversion         # New DB -> Standard conversion (Phase 4d)
         MLIRDSAToStdConversion        # DSA -> Standard conversion (Phase 4e-2)
         MLIRDSAToLLVMConversion       # DSA → LLVM conversion for data structure algorithms
+        UtilToLLVM                    # Util → LLVM conversion (Phase 4f)
         MLIRPgxLowerPasses            # Centralized pass pipeline infrastructure
         MLIRFuncDialect
         MLIRArithDialect

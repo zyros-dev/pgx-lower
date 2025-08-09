@@ -593,3 +593,21 @@ target_link_libraries(test_dsa_to_std
 )
 add_test(NAME DSAToStdTest COMMAND test_dsa_to_std)
 
+# Phase 4f: Util → LLVM conversion tests (utility operations to LLVM dialect)
+add_executable(test_util_to_llvm test_util_to_llvm.cpp)
+target_link_libraries(test_util_to_llvm
+    gtest gtest_main
+    MLIRUtilDialect
+    MLIRLLVMDialect
+    UtilToLLVM
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRLLVMCommonConversion
+    MLIRIR
+    MLIRParser
+    MLIRPass
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME UtilToLLVMTest COMMAND test_util_to_llvm)
+

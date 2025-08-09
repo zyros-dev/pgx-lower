@@ -22,6 +22,8 @@ add_subdirectory(../mlir/Conversion/DBToStd DBToStdConversion)
 add_subdirectory(../mlir/Conversion/DSAToStd DSAToStdConversion)
 # DSA → LLVM conversion (data structure algorithms)
 add_subdirectory(../mlir/Conversion/DSAToLLVM DSAToLLVMConversion)
+# Util → LLVM conversion (utility operations and types)
+add_subdirectory(../mlir/Conversion/UtilToLLVM UtilToLLVMConversion)
 
 # Add centralized pass pipeline infrastructure
 add_subdirectory(../mlir MLIRPasses)
