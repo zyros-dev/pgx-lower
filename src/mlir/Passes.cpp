@@ -4,6 +4,7 @@
 // Include all conversion passes
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/Conversion/DBToStd/DBToStd.h"
+#include "mlir/Conversion/DSAToStd/DSAToStd.h"
 #include "mlir/Conversion/DSAToLLVM/DSAToLLVM.h"
 
 // Include dialect headers for verification
@@ -132,6 +133,11 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) 
     // DB → Standard dialect conversion (PostgreSQL SPI integration)
     pm.addNestedPass<mlir::func::FuncOp>(createDBToStdPass());
     PGX_DEBUG("Added nested DB → Standard lowering pass");
+    
+    // DSA → Standard dialect conversion (data structure operations)
+    // Note: DSAToStd is a module-level pass, not a function-level pass
+    pm.addPass(createDSAToStdPass());
+    PGX_DEBUG("Added DSA → Standard lowering pass");
     
     // DSA → LLVM lowering (data structure algorithms)
     // TEMPORARILY DISABLED: DSAToLLVM pass causes server crash during pipeline execution
