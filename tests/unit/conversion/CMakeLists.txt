@@ -482,4 +482,57 @@ target_link_libraries(test_pipeline_integration
 )
 add_test(NAME PipelineIntegrationTest COMMAND test_pipeline_integration)
 
+# Phase 4e-1: Column Resolution Architecture Fix tests
+add_executable(test_column_resolution_fix test_column_resolution_fix.cpp)
+target_link_libraries(test_column_resolution_fix
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME ColumnResolutionFixTest COMMAND test_column_resolution_fix)
+
+# LingoDB Column Architecture tests - Verify column identity sharing
+add_executable(test_lingodb_column_architecture test_lingodb_column_architecture.cpp)
+target_link_libraries(test_lingodb_column_architecture
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME LingoDBColumnArchitectureTest COMMAND test_lingodb_column_architecture)
+
+# Consumer Chain Fix tests - Verify MaterializeTranslator::consume() execution
+add_executable(test_consumer_chain_fixed test_consumer_chain_fixed.cpp)
+target_link_libraries(test_consumer_chain_fixed
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME ConsumerChainFixedTest COMMAND test_consumer_chain_fixed)
 

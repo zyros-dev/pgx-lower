@@ -54,6 +54,9 @@ public:
     // Get or create a column identified by scope and attribute name
     std::shared_ptr<Column> get(const std::string& scope, const std::string& attribute);
     
+    // Get or create a column with a specific type
+    std::shared_ptr<Column> get(const std::string& scope, const std::string& attribute, ::mlir::Type type);
+    
     // TODO: Implement these methods when ColumnDefAttr and ColumnRefAttr are available
     /*
     // Create column definition attribute

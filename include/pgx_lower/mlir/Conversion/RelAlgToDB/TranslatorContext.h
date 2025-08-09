@@ -2,9 +2,11 @@
 #define PGX_LOWER_MLIR_CONVERSION_RELALGTODB_TRANSLATORCONTEXT_H
 
 #include "mlir/Dialect/RelAlg/IR/Column.h"
+#include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "mlir/IR/Value.h"
 #include <unordered_map>
+#include <memory>
 
 namespace pgx {
 namespace mlir {
@@ -15,9 +17,20 @@ class TranslatorContext {
 private:
     // Scoped symbol table for column attribute resolution
     llvm::ScopedHashTable<const Column*, ::mlir::Value> symbolTable;
+    
+    // Shared ColumnManager for ensuring column identity across translators
+    std::shared_ptr<ColumnManager> columnManager;
 
 public:
     using AttributeResolverScope = llvm::ScopedHashTableScope<const Column*, ::mlir::Value>;
+    
+    // Constructor initializes the shared column manager
+    TranslatorContext() : columnManager(std::make_shared<ColumnManager>()) {}
+    
+    // Get the shared column manager
+    std::shared_ptr<ColumnManager> getColumnManager() const {
+        return columnManager;
+    }
     
     // Column attribute resolution functions
     ::mlir::Value getValueForAttribute(const Column* attribute) const {

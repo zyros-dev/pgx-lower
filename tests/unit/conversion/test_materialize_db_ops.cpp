@@ -44,8 +44,7 @@ protected:
 };
 
 // Test that MaterializeOp generates hybrid DSA + PostgreSQL SPI operations
-// DISABLED: Column resolution issue between BaseTable and Materialize translators
-TEST_F(MaterializeDBOpsTest, DISABLED_MaterializeGeneratesHybridOps) {
+TEST_F(MaterializeDBOpsTest, MaterializeGeneratesHybridOps) {
     PGX_DEBUG("Testing MaterializeOp generates hybrid DSA + PostgreSQL SPI operations");
     
     // Create module and function
@@ -85,7 +84,7 @@ TEST_F(MaterializeDBOpsTest, DISABLED_MaterializeGeneratesHybridOps) {
     PassManager pm(&context);
     pm.addPass(mlir::pgx_conversion::createRelAlgToDBPass());
     
-    if (failed(pm.run(module))) {
+    if (failed(pm.run(func))) {
         FAIL() << "RelAlgToDB pass failed";
     }
     
