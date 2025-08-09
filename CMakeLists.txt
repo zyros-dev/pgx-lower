@@ -161,11 +161,14 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRRelAlgToDSAConversion
         MLIRRelAlgToDBConversion      # New RelAlg -> DB conversion
         MLIRDBToStdConversion         # New DB -> Standard conversion (Phase 4d)
+        MLIRDSAToStdConversion        # DSA -> Standard conversion (Phase 4e-2)
         MLIRDSAToLLVMConversion       # DSA → LLVM conversion for data structure algorithms
         MLIRPgxLowerPasses            # Centralized pass pipeline infrastructure
         MLIRFuncDialect
         MLIRArithDialect
         MLIRSCFDialect
+        MLIRMemRefDialect             # Needed for memref operations
+        MLIRIndexDialect              # Needed for index operations
         MLIRLLVMDialect               # Needed for DSA -> LLVM conversion
         MLIRLLVMCommonConversion      # LLVM conversion infrastructure
         MLIRFuncToLLVM                # Function to LLVM conversion patterns

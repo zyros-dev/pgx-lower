@@ -18,6 +18,8 @@ add_subdirectory(../mlir/Dialect/Util UtilDialect)
 add_subdirectory(../mlir/Conversion/RelAlgToDB RelAlgToDBConversion)
 # DB → Standard MLIR conversion (PostgreSQL SPI integration)
 add_subdirectory(../mlir/Conversion/DBToStd DBToStdConversion)
+# DSA → Standard MLIR conversion (data structure operations)
+add_subdirectory(../mlir/Conversion/DSAToStd DSAToStdConversion)
 # DSA → LLVM conversion (data structure algorithms)
 add_subdirectory(../mlir/Conversion/DSAToLLVM DSAToLLVMConversion)
 

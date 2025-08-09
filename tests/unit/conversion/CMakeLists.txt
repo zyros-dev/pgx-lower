@@ -572,3 +572,24 @@ target_link_libraries(test_mlir_architecture_fixes
 )
 add_test(NAME MLIRArchitectureFixesTest COMMAND test_mlir_architecture_fixes)
 
+# Phase 4e-2: DSA → Standard MLIR conversion tests (data structure operations)
+add_executable(test_dsa_to_std test_dsa_to_std.cpp)
+target_link_libraries(test_dsa_to_std
+    gtest gtest_main
+    MLIRDSADialect
+    MLIRDBDialect
+    MLIRUtilDialect
+    MLIRDSAToStd
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRMemRefDialect
+    MLIRSCFDialect
+    MLIRLLVMDialect
+    MLIRPass
+    MLIRIR
+    MLIRParser
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME DSAToStdTest COMMAND test_dsa_to_std)
+
