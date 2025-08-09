@@ -53,31 +53,47 @@ public:
         addConversion([](TupleType type) { return type; });
         
         // Add argument materialization for function boundaries
-        addArgumentMaterialization([](OpBuilder &builder, Type resultType,
+        addArgumentMaterialization([context](OpBuilder &builder, Type resultType,
                                      ValueRange inputs, Location loc) -> Value {
-            if (resultType.isa<pgx::mlir::dsa::TableBuilderType>()) {
-                MLIR_PGX_DEBUG("DSAToStd", "Materializing argument conversion to DSA type");
-                return builder.create<mlir::UnrealizedConversionCastOp>(loc, resultType, inputs).getResult(0);
+            // When converting function arguments from util.ref<i8> to DSA types
+            if (resultType.isa<pgx::mlir::dsa::TableBuilderType>() && !inputs.empty()) {
+                auto inputType = inputs[0].getType();
+                if (inputType.isa<pgx::mlir::util::RefType>()) {
+                    MLIR_PGX_DEBUG("DSAToStd", "Materializing argument conversion from util.ref to DSA type");
+                    return inputs[0]; // Direct use since it's already converted
+                }
             }
             return Value();
         });
         
         // Add source materialization (util.ref<i8> → DSA types)
-        addSourceMaterialization([](OpBuilder &builder, Type resultType,
+        addSourceMaterialization([context](OpBuilder &builder, Type resultType,
                                    ValueRange inputs, Location loc) -> Value {
-            if (resultType.isa<pgx::mlir::dsa::TableBuilderType>()) {
-                MLIR_PGX_DEBUG("DSAToStd", "Materializing source conversion to DSA type");
-                return builder.create<mlir::UnrealizedConversionCastOp>(loc, resultType, inputs).getResult(0);
+            // This handles the case where we need to convert back for uses expecting DSA types
+            if (resultType.isa<pgx::mlir::dsa::TableBuilderType>() && !inputs.empty()) {
+                auto inputType = inputs[0].getType();
+                auto i8Type = IntegerType::get(context, 8);
+                auto refType = pgx::mlir::util::RefType::get(context, i8Type);
+                if (inputType == refType) {
+                    MLIR_PGX_DEBUG("DSAToStd", "Materializing source conversion from util.ref to DSA type");
+                    return builder.create<mlir::UnrealizedConversionCastOp>(loc, resultType, inputs).getResult(0);
+                }
             }
             return Value();
         });
         
         // Add target materialization (DSA types → util.ref<i8>)
-        addTargetMaterialization([](OpBuilder &builder, Type resultType,
+        addTargetMaterialization([context](OpBuilder &builder, Type resultType,
                                   ValueRange inputs, Location loc) -> Value {
-            if (resultType.isa<pgx::mlir::util::RefType>()) {
-                MLIR_PGX_DEBUG("DSAToStd", "Materializing target conversion to util.ref");
-                return builder.create<mlir::UnrealizedConversionCastOp>(loc, resultType, inputs).getResult(0);
+            auto i8Type = IntegerType::get(context, 8);
+            auto expectedRefType = pgx::mlir::util::RefType::get(context, i8Type);
+            
+            if (resultType == expectedRefType && !inputs.empty()) {
+                auto inputType = inputs[0].getType();
+                if (inputType.isa<pgx::mlir::dsa::TableBuilderType>()) {
+                    MLIR_PGX_DEBUG("DSAToStd", "Materializing target conversion from DSA type to util.ref");
+                    return builder.create<mlir::UnrealizedConversionCastOp>(loc, resultType, inputs).getResult(0);
+                }
             }
             return Value();
         });
@@ -110,6 +126,7 @@ static func::FuncOp getOrCreateRuntimeFunction(
 //===----------------------------------------------------------------------===//
 // Conversion Patterns
 //===----------------------------------------------------------------------===//
+
 
 // Pattern for dsa.create_ds → runtime call
 class CreateDSToStdPattern : public OpConversionPattern<pgx::mlir::dsa::CreateDSOp> {
@@ -199,17 +216,29 @@ public:
         
         MLIR_PGX_DEBUG("DSAToStd", "Converting dsa.ds_append for TableBuilder");
         
-        // Get the converted builder handle (already util.ref<i8>)
+        // Get the converted builder handle (should be util.ref<i8>)
         auto builderHandle = adaptor.getDs();
         if (!builderHandle) {
             MLIR_PGX_ERROR("DSAToStd", "Null builder handle in adaptor");
             return failure();
         }
         
+        // The handle might still be DSA type if it's a function argument
+        // The type converter will handle the conversion through materialization
         
-        // Get the value to append
+        // Get the value to append from adaptor since it might be converted too
         auto value = adaptor.getVal();
         auto valueType = value.getType();
+        
+        // Ensure the builder handle is properly typed for runtime calls
+        Value convertedHandle = builderHandle;
+        if (!builderHandle.getType().isa<pgx::mlir::util::RefType>()) {
+            // Need to convert the handle
+            auto i8Type = IntegerType::get(rewriter.getContext(), 8);
+            auto refType = pgx::mlir::util::RefType::get(rewriter.getContext(), i8Type);
+            convertedHandle = rewriter.create<mlir::UnrealizedConversionCastOp>(
+                loc, refType, builderHandle).getResult(0);
+        }
         
         // Create function declarations for runtime append calls
         auto module = op->getParentOfType<ModuleOp>();
@@ -231,7 +260,7 @@ public:
             
             
             rewriter.create<func::CallOp>(loc, appendFunc.getName(), TypeRange(), 
-                ValueRange({builderHandle, isNull, rawValue}));
+                ValueRange({convertedHandle, isNull, rawValue}));
             
         } else if (valueType.isInteger(64)) {
             // Direct value append (non-nullable)
@@ -239,7 +268,7 @@ public:
                 "pgx_runtime_append_i64_direct", 
                 {refType, rewriter.getI64Type()}, {});
             rewriter.create<func::CallOp>(loc, appendFunc.getName(), TypeRange(), 
-                ValueRange({builderHandle, value}));
+                ValueRange({convertedHandle, value}));
         } else {
             MLIR_PGX_ERROR("DSAToStd", "Unsupported value type for ds_append");
             return failure();
@@ -267,8 +296,25 @@ public:
         
         MLIR_PGX_DEBUG("DSAToStd", "Converting dsa.next_row");
         
-        // Get the builder handle (already util.ref<i8>)
+        // Get the builder handle (should be util.ref<i8>)
         auto builderHandle = adaptor.getBuilder();
+        if (!builderHandle) {
+            MLIR_PGX_ERROR("DSAToStd", "Null builder handle in adaptor");
+            return failure();
+        }
+        
+        // The handle might still be DSA type if it's a function argument
+        // The type converter will handle the conversion through materialization
+        
+        // Ensure the builder handle is properly typed for runtime calls
+        Value convertedHandle = builderHandle;
+        if (!builderHandle.getType().isa<pgx::mlir::util::RefType>()) {
+            // Need to convert the handle
+            auto i8Type = IntegerType::get(rewriter.getContext(), 8);
+            auto refType = pgx::mlir::util::RefType::get(rewriter.getContext(), i8Type);
+            convertedHandle = rewriter.create<mlir::UnrealizedConversionCastOp>(
+                loc, refType, builderHandle).getResult(0);
+        }
         
         // Create function declaration for runtime next row
         auto module = op->getParentOfType<ModuleOp>();
@@ -280,7 +326,7 @@ public:
         
         // Call runtime function with the converted handle
         rewriter.create<func::CallOp>(loc, nextRowFunc.getName(), TypeRange(), 
-                                      ValueRange{builderHandle});
+                                      ValueRange{convertedHandle});
         
         // Erase the original operation
         rewriter.eraseOp(op);
@@ -345,11 +391,8 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
                    typeConverter.isLegal(op.getResultTypes());
         });
         
-        // Allow unrealized conversion casts for type materialization
-        target.addDynamicallyLegalOp<mlir::UnrealizedConversionCastOp>([&](mlir::UnrealizedConversionCastOp op) {
-            return typeConverter.isLegal(op.getOperandTypes()) && 
-                   typeConverter.isLegal(op.getResultTypes());
-        });
+        // Allow unrealized conversion casts temporarily during conversion
+        target.addLegalOp<mlir::UnrealizedConversionCastOp>();
         
         // Collect conversion patterns
         RewritePatternSet patterns(context);
@@ -368,8 +411,7 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
         populateReturnOpTypeConversionPattern(patterns, typeConverter);
         
         // Apply the conversion
-        // Note: Using partial conversion to handle cases where not all types are converted
-        // in a single pass (e.g., function arguments with DSA types)
+        // Using partial conversion to allow gradual type conversion through materialization
         if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
             MLIR_PGX_ERROR("DSAToStd", "Failed to convert DSA operations to Standard MLIR");
             signalPassFailure();
@@ -378,6 +420,7 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
         
         // Debug: Print module after conversion
         MLIR_PGX_DEBUG("DSAToStd", "Module after conversion");
+        
         
         MLIR_PGX_INFO("DSAToStd", "Successfully completed DSA to Standard conversion");
     }
