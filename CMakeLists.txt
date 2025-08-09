@@ -125,6 +125,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         "tests/unit/frontend/*.cpp"
         "tests/unit/conversion/*.cpp"
         "tests/unit/mlir/*.cpp"  # Added for pass pipeline tests
+        "tests/unit/execution/*.cpp"  # Added for JIT execution engine tests
     )
     # mlir_runner_test.cpp now included - minimal MLIR context and dialect loading implemented
     
@@ -138,6 +139,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/frontend/SQL/postgresql_ast_translator.cpp
         src/execution/error_handling.cpp
         src/execution/mlir_runner.cpp
+        src/execution/jit_execution_engine.cpp  # Phase 4g-2a JIT infrastructure
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
         src/runtime/helpers.cpp
@@ -173,6 +175,8 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRLLVMDialect               # Needed for DSA -> LLVM conversion
         MLIRLLVMCommonConversion      # LLVM conversion infrastructure
         MLIRFuncToLLVM                # Function to LLVM conversion patterns
+        MLIRExecutionEngine           # JIT execution engine for Phase 4g-2a
+        MLIRTargetLLVMIRExport        # LLVM IR export functionality
         MLIRPass
         MLIRTransforms
         MLIRParser
