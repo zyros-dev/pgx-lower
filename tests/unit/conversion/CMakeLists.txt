@@ -452,4 +452,24 @@ target_link_libraries(test_postgresql_spi_calls
 )
 add_test(NAME PostgreSQLSPICallsTest COMMAND test_postgresql_spi_calls)
 
+# DBToStd edge case tests - Validate robustness and error handling
+add_executable(test_dbtostd_edge_cases db_to_std/test_dbtostd_edge_cases.cpp)
+target_link_libraries(test_dbtostd_edge_cases
+    gtest gtest_main
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRFuncDialect
+    MLIRLLVMDialect
+    MLIRDBToStdConversion
+    MLIRDialectConversion
+    MLIRTransforms
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME DBToStdEdgeCasesTest COMMAND test_dbtostd_edge_cases)
+
 
