@@ -157,10 +157,11 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         MLIRRelAlgDialect
         MLIRDBDialect
         MLIRDSADialect
-        MLIRUtilDialect               # Phase 4b Util dialect for memory and tuples
+        MLIRUtilDialect               # Util dialect for memory management and tuples
         MLIRRelAlgToDSAConversion
         MLIRRelAlgToDBConversion      # New RelAlg -> DB conversion
-        MLIRDSAToLLVMConversion       # New DSA -> LLVM conversion (Phase 4a)
+        MLIRDBToStdConversion         # New DB -> Standard conversion (Phase 4d)
+        MLIRDSAToLLVMConversion       # DSA → LLVM conversion for data structure algorithms
         MLIRPgxLowerPasses            # Centralized pass pipeline infrastructure
         MLIRFuncDialect
         MLIRArithDialect

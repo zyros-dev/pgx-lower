@@ -20,7 +20,12 @@ using namespace mlir;
 namespace {
 
 //===----------------------------------------------------------------------===//
-// RelAlg to DB Conversion Pass - Using LingoDB Translator Pattern
+// RelAlg to DB+DSA Conversion Pass - PostgreSQL SPI Integration Architecture
+// 
+// Phase 4d Implementation: Streaming producer-consumer pattern that generates
+// mixed DB operations (for PostgreSQL table access via SPI) and DSA operations
+// (for result materialization). Follows LingoDB Translator pattern for
+// constant memory usage with one-tuple-at-a-time processing.
 //===----------------------------------------------------------------------===//
 
 struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::FuncOp>> {
@@ -35,10 +40,12 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
     }
 
     StringRef getArgument() const final { return "convert-relalg-to-db"; }
-    StringRef getDescription() const final { return "Convert RelAlg dialect to DB dialect"; }
+    StringRef getDescription() const final { 
+        return "Convert RelAlg operations to mixed DB+DSA operations with PostgreSQL SPI integration"; 
+    }
 
     void runOnOperation() override {
-        MLIR_PGX_INFO("RelAlgToDB", "Starting RelAlg to DB conversion pass (LingoDB Pattern)");
+        MLIR_PGX_INFO("RelAlgToDB", "Starting RelAlg to mixed DB+DSA conversion (PostgreSQL SPI streaming pattern)");
         
         ::pgx::mlir::relalg::TranslatorContext loweringContext;
         SmallVector<::pgx::mlir::relalg::MaterializeOp> processedOps;
@@ -80,7 +87,7 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         updateFunctionSignature(getOperation());
         eraseConsumedRelAlgOperations(consumedBaseTableOps);
         
-        MLIR_PGX_INFO("RelAlgToDB", "Pass execution completed - LingoDB pattern");
+        MLIR_PGX_INFO("RelAlgToDB", "Pass execution completed - PostgreSQL SPI streaming architecture");
     }
     
 private:

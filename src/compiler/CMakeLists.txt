@@ -13,16 +13,19 @@ add_subdirectory(../mlir/Dialect/DB DBDialect)
 add_subdirectory(../mlir/Dialect/DSA DSADialect)
 add_subdirectory(../mlir/Dialect/Util UtilDialect)
 
-# Add conversion passes - Following proper LingoDB pipeline: RelAlg → DB → DSA → LLVM
+# Add conversion passes - LingoDB-compliant parallel lowering architecture:
+# RelAlg → (DB + DSA + Util) then parallel lowering to Standard MLIR → LLVM
 add_subdirectory(../mlir/Conversion/RelAlgToDB RelAlgToDBConversion)
-# DSA to LLVM conversion - Phase 4a implementation
+# DB → Standard MLIR conversion (PostgreSQL SPI integration)
+add_subdirectory(../mlir/Conversion/DBToStd DBToStdConversion)
+# DSA → LLVM conversion (data structure algorithms)
 add_subdirectory(../mlir/Conversion/DSAToLLVM DSAToLLVMConversion)
 
 # Add centralized pass pipeline infrastructure
 add_subdirectory(../mlir MLIRPasses)
 
-# RelAlgToDSA bypass REMOVED - violated LingoDB architecture
-# Proper pipeline: RelAlg → DB → DSA
+# Architecture: RelAlg generates mixed (DB + DSA + Util) operations
+# Parallel lowering: DB → Standard, DSA → LLVM, Util → LLVM
 
-# NOTE: Remaining dialects and conversions will be rebuilt incrementally  
-# Architecture: RelAlg → DB → DSA → Standard MLIR
+# Current Focus: Test 1 (SELECT * FROM test) through complete pipeline
+# Architecture: PostgreSQL AST → RelAlg → (DB + DSA + Util) → Standard MLIR → LLVM IR → JIT
