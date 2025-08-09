@@ -3,6 +3,4 @@ add_subdirectory(RelAlgToDB)
 add_subdirectory(DBToStd)
 add_subdirectory(DSAToLLVM)
 add_subdirectory(DSAToStd)
-
-# Additional conversion passes for complete pipeline:
-# add_subdirectory(UtilToLLVM)   # Util → LLVM IR conversion
+add_subdirectory(UtilToLLVM)

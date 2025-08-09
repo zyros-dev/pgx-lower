@@ -6,11 +6,13 @@
 #include "mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
 #include "mlir/Conversion/DSAToLLVM/DSAToLLVM.h"
+#include "mlir/Conversion/UtilToLLVM/UtilToLLVM.h"
 
 // Include dialect headers for verification
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/DB/IR/DBDialect.h"
 #include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "mlir/Dialect/Util/IR/UtilDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
@@ -139,6 +141,11 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) 
     pm.addPass(createDSAToStdPass());
     PGX_DEBUG("Added DSA → Standard lowering pass");
     
+    // Util → LLVM lowering (utility operations and types)
+    // This pass must run after DSAToStd as it handles util.ref types
+    pm.addPass(pgx::mlir::createUtilToLLVMPass());
+    PGX_DEBUG("Added Util → LLVM lowering pass");
+    
     // DSA → LLVM lowering (data structure algorithms)
     // TEMPORARILY DISABLED: DSAToLLVM pass causes server crash during pipeline execution
     // For Test 1 validation, we only need to verify RelAlgToDB conversion works correctly
@@ -238,6 +245,12 @@ bool validateDialectRegistration() {
     auto dsaDialect = context.getOrLoadDialect<pgx::mlir::dsa::DSADialect>();
     if (!dsaDialect) {
         PGX_ERROR("Failed to load DSA dialect");
+        return false;
+    }
+    
+    auto utilDialect = context.getOrLoadDialect<pgx::mlir::util::UtilDialect>();
+    if (!utilDialect) {
+        PGX_ERROR("Failed to load Util dialect");
         return false;
     }
     
