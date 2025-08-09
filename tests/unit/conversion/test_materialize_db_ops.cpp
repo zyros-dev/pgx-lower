@@ -43,9 +43,10 @@ protected:
     }
 };
 
-// Test that MaterializeOp generates DSA table building operations
-TEST_F(MaterializeDBOpsTest, DISABLED_MaterializeGeneratesDSAOps) {
-    PGX_DEBUG("Testing MaterializeOp generates DSA table building operations");
+// Test that MaterializeOp generates hybrid DSA + PostgreSQL SPI operations
+// DISABLED: Column resolution issue between BaseTable and Materialize translators
+TEST_F(MaterializeDBOpsTest, DISABLED_MaterializeGeneratesHybridOps) {
+    PGX_DEBUG("Testing MaterializeOp generates hybrid DSA + PostgreSQL SPI operations");
     
     // Create module and function
     auto loc = builder->getUnknownLoc();
@@ -54,7 +55,7 @@ TEST_F(MaterializeDBOpsTest, DISABLED_MaterializeGeneratesDSAOps) {
     
     // Create function with expected signature after conversion
     auto funcType = builder->getFunctionType({}, {});
-    auto func = builder->create<func::FuncOp>(loc, "test_materialize_dsa", funcType);
+    auto func = builder->create<func::FuncOp>(loc, "test_materialize_hybrid", funcType);
     auto entryBlock = func.addEntryBlock();
     builder->setInsertionPointToStart(entryBlock);
     
@@ -88,11 +89,12 @@ TEST_F(MaterializeDBOpsTest, DISABLED_MaterializeGeneratesDSAOps) {
         FAIL() << "RelAlgToDB pass failed";
     }
     
-    // Verify DSA operations were generated
+    // Verify hybrid DSA + PostgreSQL SPI operations were generated
     bool foundCreateDS = false;
     bool foundDSAppend = false;
     bool foundNextRow = false;
-    bool foundFinalize = false;
+    bool foundStoreResult = false;
+    bool foundStreamResults = false;
     
     module.walk([&](Operation* op) {
         if (isa<pgx::mlir::dsa::CreateDSOp>(op)) {
@@ -104,20 +106,28 @@ TEST_F(MaterializeDBOpsTest, DISABLED_MaterializeGeneratesDSAOps) {
             foundDSAppend = true;
         } else if (isa<pgx::mlir::dsa::NextRowOp>(op)) {
             foundNextRow = true;
-        } else if (isa<pgx::mlir::dsa::FinalizeOp>(op)) {
-            foundFinalize = true;
-            // Verify it produces a Table
-            auto finalizeOp = cast<pgx::mlir::dsa::FinalizeOp>(op);
-            EXPECT_TRUE(finalizeOp.getRes().getType().isa<pgx::mlir::dsa::TableType>());
+        } else if (isa<pgx::db::StoreResultOp>(op)) {
+            foundStoreResult = true;
+        } else if (isa<pgx::db::StreamResultsOp>(op)) {
+            foundStreamResults = true;
         }
     });
     
-    EXPECT_TRUE(foundCreateDS) << "Should generate dsa.create_ds for table builder";
+    // Phase 4d-6: Updated expectations for hybrid architecture
+    EXPECT_TRUE(foundCreateDS) << "Should generate dsa.create_ds for internal table building";
     EXPECT_TRUE(foundDSAppend) << "Should generate dsa.ds_append for column values";
     EXPECT_TRUE(foundNextRow) << "Should generate dsa.next_row to finalize rows";
-    EXPECT_TRUE(foundFinalize) << "Should generate dsa.finalize to create table";
+    EXPECT_TRUE(foundStoreResult) << "Should generate db.store_result for PostgreSQL output";
+    EXPECT_TRUE(foundStreamResults) << "Should generate db.stream_results for result streaming";
     
-    PGX_DEBUG("MaterializeOp correctly generates DSA table building operations");
+    // Verify NO dsa.finalize in hybrid architecture
+    bool foundFinalize = false;
+    module.walk([&](pgx::mlir::dsa::FinalizeOp op) {
+        foundFinalize = true;
+    });
+    EXPECT_FALSE(foundFinalize) << "Should NOT generate dsa.finalize in hybrid architecture";
+    
+    PGX_DEBUG("MaterializeOp correctly generates hybrid operations");
 }
 
 // Test MaterializeOp with nullable types
