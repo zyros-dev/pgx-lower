@@ -143,6 +143,8 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
         src/runtime/helpers.cpp
+        # Note: PostgreSQL runtime files require full PostgreSQL runtime
+        # and cannot be easily compiled in unit test environment
         src/mlir/Passes.cpp  # Added for centralized pass pipeline
     )
     
@@ -151,6 +153,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         tests/unit/test_main.cpp
         tests/unit/test_helpers.cpp
         tests/unit/mocks/mlir_runner_mock.cpp
+        tests/unit/mocks/runtime_mocks.cpp  # Mock runtime functions for symbol registration
         ${UNIT_TEST_SOURCES}
         ${UNIT_TEST_ADDITIONAL_SOURCES}
     )
