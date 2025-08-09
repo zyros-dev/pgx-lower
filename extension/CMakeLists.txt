@@ -50,7 +50,10 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRDSADialect
     MLIRUtilDialect  # Util dialect for memory management and tuples
     MLIRRelAlgToDBConversion
+    MLIRDBToStdConversion          # DB → Standard MLIR
+    MLIRDSAToStdConversion         # DSA → Standard MLIR
     MLIRDSAToLLVMConversion  # DSA → LLVM conversion for data structure algorithms
+    UtilToLLVM                     # Util → LLVM conversion
     MLIRPgxLowerPasses  # Central pass registration
     # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt
     -Wl,--no-whole-archive
