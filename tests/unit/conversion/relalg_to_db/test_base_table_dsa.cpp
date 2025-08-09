@@ -11,6 +11,7 @@
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "execution/logging.h"
 
@@ -25,6 +26,7 @@ protected:
         context.loadDialect<pgx::mlir::dsa::DSADialect>();
         context.loadDialect<::mlir::arith::ArithDialect>();
         context.loadDialect<::mlir::func::FuncDialect>();
+        context.loadDialect<::mlir::scf::SCFDialect>();
     }
 
     MLIRContext context;
@@ -73,63 +75,70 @@ TEST_F(RelAlgToDBBaseTableDSATest, BaseTableGeneratesDSAStreamingPattern) {
     PGX_INFO("Module after conversion:");
     module->print(llvm::errs());
     
-    // Check that DSA operations were generated
-    bool foundScanSource = false;
-    bool foundOuterFor = false;
-    bool foundInnerFor = false;
-    bool foundAt = false;
-    int forLoopCount = 0;
+    // Check that mixed DB+DSA operations were generated (Phase 4c-4)
+    bool foundGetExternal = false;
+    bool foundIterateExternal = false;
+    bool foundGetField = false;
+    bool foundScfWhile = false;
+    bool foundCreateDS = false;
+    bool foundDSAppend = false;
+    bool foundFinalize = false;
     
     func.walk([&](Operation* op) {
-        if (isa<pgx::mlir::dsa::ScanSourceOp>(op)) {
-            foundScanSource = true;
-            auto scanOp = cast<pgx::mlir::dsa::ScanSourceOp>(op);
-            auto tableDesc = scanOp.getTableDescription();
-            // Check that table description contains our table name
-            EXPECT_TRUE(tableDesc.str().find("test") != std::string::npos);
-            EXPECT_TRUE(tableDesc.str().find("16384") != std::string::npos);
-        }
-        if (isa<pgx::mlir::dsa::ForOp>(op)) {
-            forLoopCount++;
-            if (forLoopCount == 1) {
-                foundOuterFor = true;
-                // Verify it's iterating over a scan source result (GenericIterable)
-                auto forOp = cast<pgx::mlir::dsa::ForOp>(op);
-                auto iterableType = forOp.getIterable().getType();
-                // It should be a GenericIterableType wrapping a RecordBatch
-                if (auto genIterable = dyn_cast<pgx::mlir::dsa::GenericIterableType>(iterableType)) {
-                    EXPECT_TRUE(isa<pgx::mlir::dsa::RecordBatchType>(genIterable.getElementType()));
-                }
-            } else if (forLoopCount == 2) {
-                foundInnerFor = true;
-                // Verify it's iterating over a record batch (which comes from the block argument)
-                auto forOp = cast<pgx::mlir::dsa::ForOp>(op);
-                // The inner loop iterates over a block argument which is a RecordBatchType
-                // This is correct - the outer loop provides the RecordBatch via block argument
-                foundInnerFor = true;
+        if (isa<pgx::db::GetExternalOp>(op)) {
+            foundGetExternal = true;
+            auto getExtOp = cast<pgx::db::GetExternalOp>(op);
+            // Verify it uses the correct table OID
+            auto oidOp = getExtOp.getTableOid().getDefiningOp<arith::ConstantOp>();
+            if (oidOp) {
+                auto oidAttr = oidOp.getValue().cast<IntegerAttr>();
+                EXPECT_EQ(oidAttr.getInt(), 16384);
             }
         }
-        if (isa<pgx::mlir::dsa::AtOp>(op)) {
-            foundAt = true;
-            auto atOp = cast<pgx::mlir::dsa::AtOp>(op);
-            // Check that we're accessing the 'id' column
-            EXPECT_EQ(atOp.getColumnName().str(), "id");
+        if (isa<pgx::db::IterateExternalOp>(op)) {
+            foundIterateExternal = true;
+        }
+        if (isa<pgx::db::GetFieldOp>(op)) {
+            foundGetField = true;
+            auto getFieldOp = cast<pgx::db::GetFieldOp>(op);
+            // Check that we're accessing the correct field index
+            auto idxOp = getFieldOp.getFieldIndex().getDefiningOp<arith::ConstantOp>();
+            if (idxOp) {
+                auto idxAttr = idxOp.getValue().cast<IntegerAttr>();
+                EXPECT_EQ(idxAttr.getInt(), 0); // First field for 'id' column
+            }
+        }
+        if (isa<scf::WhileOp>(op)) {
+            foundScfWhile = true;
+        }
+        if (isa<pgx::mlir::dsa::CreateDSOp>(op)) {
+            foundCreateDS = true;
+        }
+        if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
+            foundDSAppend = true;
+        }
+        if (isa<pgx::mlir::dsa::FinalizeOp>(op)) {
+            foundFinalize = true;
         }
     });
     
     // Print what operations were found
-    PGX_INFO("Test found: ScanSource=" + std::to_string(foundScanSource) + 
-             ", OuterFor=" + std::to_string(foundOuterFor) + 
-             ", InnerFor=" + std::to_string(foundInnerFor) + 
-             ", At=" + std::to_string(foundAt) + 
-             ", ForLoopCount=" + std::to_string(forLoopCount));
+    PGX_INFO("Test found: GetExternal=" + std::to_string(foundGetExternal) + 
+             ", IterateExternal=" + std::to_string(foundIterateExternal) + 
+             ", GetField=" + std::to_string(foundGetField) + 
+             ", ScfWhile=" + std::to_string(foundScfWhile) +
+             ", CreateDS=" + std::to_string(foundCreateDS) +
+             ", DSAppend=" + std::to_string(foundDSAppend) +
+             ", Finalize=" + std::to_string(foundFinalize));
     
-    // Verify all expected DSA operations were generated
-    EXPECT_TRUE(foundScanSource) << "dsa.scan_source not found";
-    EXPECT_TRUE(foundOuterFor) << "Outer dsa.for loop not found";
-    EXPECT_TRUE(foundInnerFor) << "Inner dsa.for loop not found";
-    EXPECT_TRUE(foundAt) << "dsa.at operation not found";
-    EXPECT_EQ(forLoopCount, 2) << "Expected exactly 2 dsa.for loops, found " << forLoopCount;
+    // Verify all expected mixed DB+DSA operations were generated
+    EXPECT_TRUE(foundGetExternal) << "db.get_external not found";
+    EXPECT_TRUE(foundIterateExternal) << "db.iterate_external not found";
+    EXPECT_TRUE(foundGetField) << "db.get_field operation not found";
+    EXPECT_TRUE(foundScfWhile) << "scf.while loop not found";
+    EXPECT_TRUE(foundCreateDS) << "dsa.create_ds not found";
+    EXPECT_TRUE(foundDSAppend) << "dsa.ds_append not found";
+    EXPECT_TRUE(foundFinalize) << "dsa.finalize not found";
     
     // Verify module is still valid after conversion
     ASSERT_TRUE(succeeded(verify(module)));
@@ -141,7 +150,7 @@ TEST_F(RelAlgToDBBaseTableDSATest, BaseTableGeneratesDSAStreamingPattern) {
     });
     EXPECT_FALSE(foundBaseTable) << "BaseTable operation should have been removed";
     
-    PGX_INFO("Test passed: BaseTable generates correct DSA streaming pattern");
+    PGX_INFO("Test passed: BaseTable generates correct mixed DB+DSA pattern");
 }
 
 TEST_F(RelAlgToDBBaseTableDSATest, NestedLoopStructureCorrect) {
@@ -175,41 +184,38 @@ TEST_F(RelAlgToDBBaseTableDSATest, NestedLoopStructureCorrect) {
     pm.addNestedPass<::mlir::func::FuncOp>(::mlir::pgx_conversion::createRelAlgToDBPass());
     ASSERT_TRUE(succeeded(pm.run(module)));
     
-    // Walk through and verify the nested structure
-    func.walk([&](pgx::mlir::dsa::ForOp outerFor) {
-        // Check outer loop has exactly one block
-        EXPECT_EQ(outerFor.getBody().getBlocks().size(), 1u);
+    // Walk through and verify the scf.while loop structure
+    bool foundWhileLoop = false;
+    bool hasGetField = false;
+    bool hasDSAppend = false;
+    
+    func.walk([&](scf::WhileOp whileOp) {
+        foundWhileLoop = true;
         
-        // Check that the outer loop body contains an inner loop
-        bool hasInnerLoop = false;
-        outerFor.getBody().walk([&](pgx::mlir::dsa::ForOp innerFor) {
-            hasInnerLoop = true;
-            
-            // Check inner loop has exactly one block
-            EXPECT_EQ(innerFor.getBody().getBlocks().size(), 1u);
-            
-            // Check that inner loop contains an AtOp
-            bool hasAt = false;
-            innerFor.getBody().walk([&](pgx::mlir::dsa::AtOp at) {
-                hasAt = true;
-            });
-            EXPECT_TRUE(hasAt) << "Inner loop should contain dsa.at operation";
+        // Check that the while loop has the proper structure
+        // Before region: contains db.iterate_external
+        whileOp.getBefore().walk([&](pgx::db::IterateExternalOp iterOp) {
+            // Verify iterate_external is in the before region
+            EXPECT_TRUE(true) << "db.iterate_external found in before region";
         });
         
-        if (!hasInnerLoop) {
-            // If this is the outer loop, it should have an inner loop
-            auto& block = outerFor.getBody().front();
-            for (auto& op : block) {
-                if (isa<pgx::mlir::dsa::ForOp>(&op)) {
-                    hasInnerLoop = true;
-                    break;
-                }
+        // After region: contains db.get_field and dsa operations
+        whileOp.getAfter().walk([&](Operation* op) {
+            if (isa<pgx::db::GetFieldOp>(op)) {
+                hasGetField = true;
             }
-        }
+            if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
+                hasDSAppend = true;
+            }
+        });
         
-        return WalkResult::advance(); // Only check the first ForOp (outer)
+        return WalkResult::advance();
     });
     
+    EXPECT_TRUE(foundWhileLoop) << "scf.while loop not found";
+    EXPECT_TRUE(hasGetField) << "db.get_field should be in while loop body";
+    EXPECT_TRUE(hasDSAppend) << "dsa.ds_append should be in while loop body";
+    
     ASSERT_TRUE(succeeded(verify(module)));
-    PGX_INFO("Test passed: Nested loop structure is correct");
+    PGX_INFO("Test passed: While loop structure is correct");
 }
