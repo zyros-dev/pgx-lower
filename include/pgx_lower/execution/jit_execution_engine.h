@@ -28,6 +28,13 @@ private:
     bool validateModuleForCompilation(mlir::ModuleOp module);
     void configureLLVMTargetMachine();
     
+    // Runtime function registration helpers
+    void registerDSARuntimeFunctions();
+    void registerPostgreSQLSPIFunctions();
+    void registerMemoryManagementFunctions();
+    void registerDataSourceFunctions();
+    void registerRuntimeSupportFunctions();
+    
 public:
     PostgreSQLJITExecutionEngine() = default;
     ~PostgreSQLJITExecutionEngine() = default;
@@ -71,6 +78,23 @@ public:
     void setOptimizationLevel(llvm::CodeGenOptLevel level) { 
         optimizationLevel = level; 
     }
+    
+    /**
+     * @brief Register PostgreSQL runtime functions with the JIT symbol table
+     * 
+     * This method registers all runtime functions needed for query execution:
+     * - DSA runtime functions (table builder, iteration)
+     * - PostgreSQL SPI functions (table access, tuple operations)
+     * - PostgreSQL memory management (palloc, pfree)
+     * - Utility functions (ereport, elog)
+     */
+    void registerPostgreSQLRuntimeFunctions();
+    
+    /**
+     * @brief Setup PostgreSQL memory contexts for JIT execution
+     * @return true if setup succeeded, false otherwise
+     */
+    bool setupMemoryContexts();
 };
 
 } // namespace execution
