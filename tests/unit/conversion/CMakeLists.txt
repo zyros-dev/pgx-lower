@@ -472,4 +472,22 @@ target_link_libraries(test_dbtostd_edge_cases
 )
 add_test(NAME DBToStdEdgeCasesTest COMMAND test_dbtostd_edge_cases)
 
+# Hybrid RelAlgToDB test - Verify DSA+PostgreSQL SPI architecture
+add_executable(test_hybrid_relalgto_db test_hybrid_relalgto_db.cpp)
+target_link_libraries(test_hybrid_relalgto_db
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME HybridRelAlgToDBTest COMMAND test_hybrid_relalgto_db)
+
 
