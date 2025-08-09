@@ -1,6 +1,7 @@
 #!/bin/bash
 #
-# Queued Build - Smart wrapper for common build operations
+# Queued Build - Smart wrapper for pgx-lower MLIR pipeline build operations
+# Architecture: PostgreSQL AST → RelAlg → DB → DSA → Standard MLIR → LLVM IR → JIT
 #
 
 export CLAUDE_AGENT_NAME="${CLAUDE_AGENT_NAME:-$(basename "$0")}"
@@ -9,13 +10,13 @@ show_usage() {
     echo "Usage: $0 <operation> [args...]"
     echo ""
     echo "Operations:"
-    echo "  utest           - Build and run unit tests"
-    echo "  ptest           - Build for PostgreSQL regression tests (no queue)"
-    echo "  build           - Build everything (make all)"
-    echo "  clean           - Clean build artifacts"
-    echo "  compile_commands - Generate compile_commands.json"
-    echo "  dialects        - Build just the dialects"
-    echo "  extension       - Build the PostgreSQL extension"
+    echo "  utest           - Build and run unit tests (MLIR dialects, lowering passes, streaming translators)"
+    echo "  ptest           - Build PostgreSQL extension for regression tests (Test 1: SELECT * FROM test)"
+    echo "  build           - Build complete MLIR pipeline (RelAlg, DB, DSA dialects + conversions)"
+    echo "  clean           - Clean all build artifacts and CMake cache"
+    echo "  compile_commands - Generate compile_commands.json for IDE support"
+    echo "  dialects        - Build MLIR dialects only (RelAlg, DB, DSA, Util)"
+    echo "  extension       - Build PostgreSQL extension with MLIR JIT compilation"
     echo ""
     echo "Examples:"
     echo "  $0 utest"
@@ -33,8 +34,8 @@ shift
 
 case "$operation" in
     utest)
-        echo "Building and running unit tests..."
-        # Use the correct Makefile target for unit tests
+        echo "Building and running unit tests (MLIR dialects + lowering passes)..."
+        # Build and test complete pipeline: RelAlg → DB → DSA → Standard MLIR
         /home/xzel/repos/pgx-lower/tools/build_queue.sh "make utest"
         exit_code=$?
         if [[ $exit_code -ne 0 ]]; then
@@ -43,11 +44,12 @@ case "$operation" in
         fi
         ;;
     ptest)
-        echo "Building for PostgreSQL tests (NOT queued - regression tests handle their own coordination)..."
+        echo "Building PostgreSQL extension for regression tests (NOT queued)..."
+        echo "Target: Test 1 'SELECT * FROM test' through complete MLIR → LLVM → JIT pipeline"
         make ptest "$@"
         ;;
     build)
-        echo "Building everything..."
+        echo "Building complete MLIR pipeline (all dialects + conversion passes)..."
         /home/xzel/repos/pgx-lower/tools/build_queue.sh make all "$@"
         exit_code=$?
         if [[ $exit_code -ne 0 ]]; then
@@ -74,7 +76,7 @@ case "$operation" in
         fi
         ;;
     dialects)
-        echo "Building dialects..."
+        echo "Building MLIR dialects (RelAlg, DB, DSA, Util)..."
         /home/xzel/repos/pgx-lower/tools/build_queue.sh make -C build src/dialects "$@"
         exit_code=$?
         if [[ $exit_code -ne 0 ]]; then
@@ -83,7 +85,7 @@ case "$operation" in
         fi
         ;;
     extension)
-        echo "Building PostgreSQL extension..."
+        echo "Building PostgreSQL extension with MLIR JIT compilation..."
         /home/xzel/repos/pgx-lower/tools/build_queue.sh make -C extension "$@"
         exit_code=$?
         if [[ $exit_code -ne 0 ]]; then

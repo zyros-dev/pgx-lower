@@ -24,7 +24,7 @@ protected:
 };
 
 TEST_F(TypeCorruptionTest, TestExactSequenceFromPhase4c4) {
-    // Reproduce the EXACT sequence from our failing phase4c4 tests
+    // Reproduce the EXACT sequence from our failing Phase 4d tests
     
     // 1. BaseTableTranslator creates i64 Column type (matching BaseTableTranslator.cpp:26)
     auto i64Type = IntegerType::get(&context, 64);

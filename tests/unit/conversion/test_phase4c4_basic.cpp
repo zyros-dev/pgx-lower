@@ -15,7 +15,8 @@
 #include "mlir/Pass/PassManager.h"
 
 //===----------------------------------------------------------------------===//
-// Phase 4c-4: Basic Pipeline Test
+// Phase 4d: Basic Pipeline Test  
+// Validates core streaming architecture with mixed DB+DSA operations
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -89,7 +90,7 @@ TEST_F(Phase4c4BasicTest, PassRunsSuccessfully) {
     EXPECT_GT(dsaOpCount, 0) << "Should generate DSA operations for result materialization";
     EXPECT_EQ(relalgOpCount, 0) << "All RelAlg operations should be erased";
     
-    std::cerr << "Phase 4c-4 Basic Test Results:\n";
+    std::cerr << "Phase 4d Basic Test Results:\n";
     std::cerr << "  DB operations generated: " << dbOpCount << "\n";
     std::cerr << "  DSA operations generated: " << dsaOpCount << "\n";
     std::cerr << "  RelAlg operations remaining: " << relalgOpCount << "\n";

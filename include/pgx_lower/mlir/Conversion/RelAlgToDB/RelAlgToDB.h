@@ -14,11 +14,12 @@ namespace pgx_conversion {
 // Pass Creation and Registration
 //===----------------------------------------------------------------------===//
 
-/// Create the RelAlg to DB conversion pass
-/// Phase 4c-0: Cleaned up for Translator pattern implementation
+/// Create the RelAlg to mixed DB+DSA conversion pass
+/// Phase 4d: PostgreSQL SPI integration with streaming producer-consumer pattern
+/// Generates mixed DB operations (PostgreSQL table access) and DSA operations (result materialization)
 std::unique_ptr<Pass> createRelAlgToDBPass();
 
-/// Register RelAlg to DB conversion passes
+/// Register RelAlg to mixed DB+DSA conversion passes (PostgreSQL SPI architecture)
 void registerRelAlgToDBConversionPasses();
 
 } // namespace pgx_conversion

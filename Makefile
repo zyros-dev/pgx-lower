@@ -1,4 +1,6 @@
 # pgx_lower Makefile
+# Build system for PostgreSQL JIT compilation via MLIR
+# Architecture: PostgreSQL AST → RelAlg → DB → DSA → Standard MLIR → LLVM IR → JIT
 
 .PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands clean-root
 
@@ -18,10 +20,11 @@ build:
 	@echo "Build completed!"
 
 build-ptest:
-	@echo "Building project for PostgreSQL tests..."
+	@echo "Building PostgreSQL extension for regression tests..."
+	@echo "Pipeline: AST → RelAlg → DB → DSA → Standard MLIR → LLVM"
 	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DBUILD_ONLY_EXTENSION=ON
 	cmake --build $(BUILD_DIR_PTEST)
-	@echo "PostgreSQL test build completed!"
+	@echo "PostgreSQL extension build completed!"
 
 build-utest:
 	@echo "Building project for unit tests..."
@@ -63,9 +66,9 @@ install-ptest: build-ptest
 	@echo "PostgreSQL test install completed!"
 
 ptest: install-ptest
-	@echo "Running PostgreSQL tests..."
+	@echo "Running PostgreSQL regression tests (Test 1: SELECT * FROM test)..."
 	cd $(BUILD_DIR_PTEST) && ctest --output-on-failure && cd -
-	@echo "PostgreSQL tests completed!"
+	@echo "PostgreSQL regression tests completed!"
 
 psql-start:
 	@echo "Starting PostgreSQL for debugging..."
@@ -87,7 +90,7 @@ rebuild-utest:
 	@echo "Unit test rebuild completed!"
 
 utest: build-utest
-	@echo "Running unit tests..."
+	@echo "Running unit tests (MLIR dialects, lowering passes, streaming translators)..."
 	cd $(BUILD_DIR_UTEST) && ./mlir_unit_test && cd -
 	@echo "Unit tests completed!"
 

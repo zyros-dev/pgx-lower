@@ -16,8 +16,9 @@
 #include <sstream>
 
 //===----------------------------------------------------------------------===//
-// Phase 4c-4: Complete Pipeline Integration Tests
+// Phase 4d: Complete Pipeline Integration Tests
 // Tests the full streaming pipeline: BaseTable → Materialize → Return
+// Validates mixed DB+DSA operation generation in parallel pattern
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -130,8 +131,8 @@ TEST_F(CompletePipelineTest, DISABLED_CompleteStreamingPipeline) {
         });
         
         EXPECT_EQ(relalgCount, 0) << "All RelAlg operations should be erased";
-        EXPECT_EQ(dbCount, 0) << "Should NOT have generated DB operations - LingoDB uses only DSA";
-        EXPECT_GT(dsaCount, 0) << "Should have generated DSA operations";
+        EXPECT_GT(dbCount, 0) << "Should have generated DB operations for PostgreSQL table access";
+        EXPECT_GT(dsaCount, 0) << "Should have generated DSA operations for result materialization";
         
     } catch (...) {
         FAIL() << "Exception during operation counting";
@@ -261,7 +262,7 @@ TEST_F(CompletePipelineTest, DISABLED_ExtensibilityValidation) {
     auto baseTableOp = builder.create<pgx::mlir::relalg::BaseTableOp>(
         builder.getUnknownLoc(), builder.getStringAttr("test"), 12345);
     
-    // TODO: In Tests 2-15, we would insert SelectionOp, ProjectionOp here
+    // TODO: In Tests 2-15, we would insert SelectionOp, ProjectionOp here (Phase 5)
     // The Translator pattern should make this easy to add
     
     auto materializeOp = builder.create<pgx::mlir::relalg::MaterializeOp>(

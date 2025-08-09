@@ -48,14 +48,14 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRRelAlgDialect
     MLIRDBDialect  
     MLIRDSADialect
-    MLIRUtilDialect  # Phase 4b Util dialect for memory and tuples
+    MLIRUtilDialect  # Util dialect for memory management and tuples
     MLIRRelAlgToDBConversion
-    MLIRDSAToLLVMConversion  # Phase 4a DSA -> LLVM conversion
+    MLIRDSAToLLVMConversion  # DSA → LLVM conversion for data structure algorithms
     MLIRPgxLowerPasses  # Central pass registration
     # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt
     -Wl,--no-whole-archive
     # Standard MLIR dialects required by our dialects
-    MLIRLLVMDialect  # Required for DSA -> LLVM conversion
+    MLIRLLVMDialect  # Required for DSA → LLVM conversion
     MLIRLLVMCommonConversion  # LLVM conversion infrastructure
     MLIRFuncToLLVM  # Function to LLVM conversion patterns
     -Wl,--as-needed

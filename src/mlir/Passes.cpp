@@ -3,6 +3,7 @@
 
 // Include all conversion passes
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
+#include "mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Conversion/DSAToLLVM/DSAToLLVM.h"
 
 // Include dialect headers for verification
@@ -98,7 +99,7 @@ void registerAllPgxLoweringPasses() {
 void createRelAlgToDBPipeline(mlir::PassManager& pm) {
     PGX_DEBUG("Creating RelAlg → DB lowering pipeline");
     
-    // Phase 3a: RelAlg → DB lowering (nested since it's anchored on func::FuncOp)
+    // RelAlg → DB lowering (generates mixed DB+DSA+Util operations)
     pm.addNestedPass<mlir::func::FuncOp>(::mlir::pgx_conversion::createRelAlgToDBPass());
     
     // Verification is handled by PassManager enableVerifier flag
@@ -128,15 +129,18 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) 
     pm.addNestedPass<mlir::func::FuncOp>(::mlir::pgx_conversion::createRelAlgToDBPass());
     PGX_DEBUG("Added nested RelAlg → DB lowering pass");
     
+    // DB → Standard dialect conversion (PostgreSQL SPI integration)
+    pm.addNestedPass<mlir::func::FuncOp>(createDBToStdPass());
+    PGX_DEBUG("Added nested DB → Standard lowering pass");
     
-    // Phase 4a - DSA → LLVM lowering (operates on module level)
+    // DSA → LLVM lowering (data structure algorithms)
     // TEMPORARILY DISABLED: DSAToLLVM pass causes server crash during pipeline execution
     // For Test 1 validation, we only need to verify RelAlgToDB conversion works correctly
     // pm.addPass(::mlir::pgx_conversion::createDSAToLLVMPass());
     PGX_WARNING("DSA → LLVM pass temporarily disabled to test RelAlgToDB pipeline");
     
-    // TODO: Phase 4b - JIT execution engine setup
-    // TODO: Phase 4c - Complete MLIR → LLVM → JIT pipeline
+    // TODO: JIT execution engine setup
+    // TODO: Complete Standard MLIR → LLVM → JIT pipeline
     
     // TODO: Optimization passes
     // pm.addPass(mlir::createCanonicalizerPass());
@@ -160,10 +164,10 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) 
 // Future Pipeline Extensions
 //===----------------------------------------------------------------------===//
 
-// TODO: Implement DSA → LLVM pipeline for Phase 4a
+// TODO: Implement complete DSA → LLVM pipeline
 // void createDSAToLLVMPipeline(mlir::PassManager& pm) {
 //     PGX_DEBUG("Creating DSA → LLVM lowering pipeline");
-//     // Phase 4a implementation
+//     // Data structure algorithm lowering implementation
 // }
 
 // TODO: Implement optimization pipeline

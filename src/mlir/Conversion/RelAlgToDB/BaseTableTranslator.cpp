@@ -37,7 +37,7 @@ public:
     }
     
     void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-        MLIR_PGX_INFO("RelAlg", "BaseTableTranslator::produce() - Beginning DB-based table scan for: " + 
+        MLIR_PGX_INFO("RelAlg", "BaseTableTranslator::produce() - Beginning PostgreSQL SPI table scan for: " + 
                       baseTableOp.getTableName().str());
         
         // Log builder state before operations
@@ -57,7 +57,7 @@ public:
         auto scope = context.createScope();
         auto loc = baseTableOp.getLoc();
         
-        // Create DB operations following the correct pipeline architecture
+        // Create DB operations for PostgreSQL SPI integration (Phase 4d architecture)
         createDBTableScan(context, builder, scope, loc);
         
         // Log builder state after operations
@@ -73,34 +73,37 @@ public:
     }
     
 private:
-    // Create the DB-based table scan following the correct architecture
+    // Create PostgreSQL SPI table scan operations (Phase 4d)
+    // Generates db.get_external → scf.while → db.iterate_external → db.get_field sequence
     void createDBTableScan(TranslatorContext& context, ::mlir::OpBuilder& builder,
                           TranslatorContext::AttributeResolverScope& scope, 
                           ::mlir::Location loc) {
-        MLIR_PGX_DEBUG("RelAlg", "Creating DB-based table scan for: " + 
+        MLIR_PGX_DEBUG("RelAlg", "Creating PostgreSQL SPI table scan operations for: " + 
                        baseTableOp.getTableName().str());
         
         // Get table OID from the BaseTableOp
         auto tableOid = builder.create<::mlir::arith::ConstantOp>(
             loc, builder.getI64IntegerAttr(baseTableOp.getTableOid()));
         
-        // Create DB operations for PostgreSQL table access
+        // Create db.get_external for PostgreSQL SPI table handle acquisition
+        // This will lower to func.call @pg_table_open in Phase 4d DBToStd pass
         auto externalSourceType = ::pgx::db::ExternalSourceType::get(builder.getContext());
         auto externalSource = builder.create<::pgx::db::GetExternalOp>(
             loc, externalSourceType, tableOid);
         
-        MLIR_PGX_DEBUG("RelAlg", "Created db.get_external for table OID: " + 
+        MLIR_PGX_DEBUG("RelAlg", "Created db.get_external for PostgreSQL table OID: " + 
                        std::to_string(baseTableOp.getTableOid()));
         
-        // Create DB-based tuple iteration
+        // Create PostgreSQL tuple iteration loop (streaming architecture)
         createTupleIterationLoop(context, builder, scope, loc, externalSource.getResult());
     }
     
-    // Create DB-based tuple iteration with proper PostgreSQL integration
+    // Create PostgreSQL SPI tuple iteration with streaming producer-consumer pattern
+    // Uses scf.while for iteration, db.iterate_external for tuple fetching (Phase 4d)
     void createTupleIterationLoop(TranslatorContext& context, ::mlir::OpBuilder& builder,
                                  TranslatorContext::AttributeResolverScope& scope,
                                  ::mlir::Location loc, ::mlir::Value tableHandle) {
-        MLIR_PGX_DEBUG("RelAlg", "Creating DB-based iteration loop for table: " + 
+        MLIR_PGX_DEBUG("RelAlg", "Creating PostgreSQL SPI iteration loop for table: " + 
                        baseTableOp.getTableName().str());
         
         // Create a while loop that iterates through PostgreSQL tuples
@@ -117,11 +120,12 @@ private:
             auto* beforeBlock = builder.createBlock(&beforeRegion);
             builder.setInsertionPointToStart(beforeBlock);
             
-            // Call db.iterate_external to check if there's a next tuple
+            // Call db.iterate_external to check for next PostgreSQL tuple
+            // This will lower to func.call @pg_get_next_tuple in DBToStd pass
             auto hasTuple = builder.create<::pgx::db::IterateExternalOp>(
                 loc, builder.getI1Type(), tableHandle);
             
-            MLIR_PGX_DEBUG("RelAlg", "Created db.iterate_external in while condition");
+            MLIR_PGX_DEBUG("RelAlg", "Created db.iterate_external for PostgreSQL SPI tuple iteration");
             
             // Yield the condition
             builder.create<::mlir::scf::ConditionOp>(loc, hasTuple.getResult(), ::mlir::ValueRange{});
@@ -133,7 +137,7 @@ private:
             auto* afterBlock = builder.createBlock(&afterRegion);
             builder.setInsertionPointToStart(afterBlock);
             
-            // Process the current tuple
+            // Process current PostgreSQL tuple and stream to consumer
             processTupleInLoop(context, builder, scope, loc, tableHandle);
             
             // Yield to continue the loop
@@ -143,14 +147,15 @@ private:
         // Set insertion point after the while loop
         builder.setInsertionPointAfter(whileOp);
         
-        MLIR_PGX_DEBUG("RelAlg", "Created scf.while loop for DB tuple iteration");
+        MLIR_PGX_DEBUG("RelAlg", "Created scf.while loop for PostgreSQL SPI tuple streaming");
     }
     
-    // Process a single tuple inside the loop - extract field values and call consumer
+    // Process single PostgreSQL tuple: extract fields via SPI and stream to consumer
+    // Phase 4d: db.get_field will lower to func.call @pg_extract_field
     void processTupleInLoop(TranslatorContext& context, ::mlir::OpBuilder& builder,
                            TranslatorContext::AttributeResolverScope& scope,
                            ::mlir::Location loc, ::mlir::Value tableHandle) {
-        // Extract field value using db.get_field operations
+        // Extract field value using db.get_field (PostgreSQL SPI integration)
         // For Test 1, extract the 'id' column (field index 0)
         auto fieldIndex = builder.create<::mlir::arith::ConstantIndexOp>(loc, 0);
         
@@ -158,6 +163,8 @@ private:
         auto typeOid = builder.create<::mlir::arith::ConstantOp>(
             loc, builder.getI32IntegerAttr(20));  // OID 20 = int8/bigint
         
+        // db.get_field extracts PostgreSQL tuple field via SPI
+        // Will lower to func.call @pg_extract_field in DBToStd pass
         auto fieldValue = builder.create<::pgx::db::GetFieldOp>(
             loc, 
             ::pgx::db::NullableI64Type::get(builder.getContext()),
@@ -165,21 +172,23 @@ private:
             fieldIndex.getResult(), 
             typeOid.getResult());
         
-        MLIR_PGX_DEBUG("RelAlg", "Extracted field value using db.get_field for column index 0 (id)");
+        MLIR_PGX_DEBUG("RelAlg", "Created db.get_field for PostgreSQL SPI field extraction (column 0: id)");
         
-        // For now, assume non-null values - extract the actual value
+        // Extract actual value from nullable wrapper (assumes non-null for Test 1)
+        // db.nullable_get_val will lower to llvm.extractvalue in DBToStd pass
         auto actualValue = builder.create<::pgx::db::NullableGetValOp>(
             loc, builder.getI64Type(), fieldValue.getResult());
         
         // Set the value in context for the id column
         context.setValueForAttribute(scope, &idColumn, actualValue.getResult());
         
-        // Call consumer for streaming (one tuple at a time) inside the loop
+        // Stream single tuple to consumer (streaming producer-consumer pattern)
+        // This implements constant memory usage - one tuple at a time processing
         if (consumer) {
-            MLIR_PGX_DEBUG("RelAlg", "Streaming tuple to consumer inside DB loop");
+            MLIR_PGX_DEBUG("RelAlg", "Streaming single PostgreSQL tuple to consumer (constant memory)");
             
-            // CRITICAL: The consumer is called inside the loop with the loop's builder
-            // This ensures operations are inserted in the correct location
+            // CRITICAL: Consumer called inside PostgreSQL iteration loop
+            // Enables streaming architecture with one-tuple-at-a-time processing
             consumer->consume(this, builder, context);
         }
     }
@@ -193,9 +202,9 @@ public:
     }
     
     void done() override {
-        MLIR_PGX_DEBUG("RelAlg", "BaseTableTranslator::done() - Completed DB-based table scan");
+        MLIR_PGX_DEBUG("RelAlg", "BaseTableTranslator::done() - Completed PostgreSQL SPI table scan");
         
-        // Don't erase the BaseTableOp here - let the pass handle it after updating uses
+        // Pass handles BaseTableOp cleanup after use replacement (Phase 4d pattern)
         // baseTableOp.erase();
     }
 };

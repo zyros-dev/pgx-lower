@@ -53,7 +53,7 @@ target_link_libraries(test_conversion_basics
 # Register basic conversion tests with CTest
 add_test(NAME ConversionBasicsTest COMMAND test_conversion_basics)
 
-# Phase 3a integration tests
+# RelAlg → DB conversion integration tests
 add_executable(test_phase3a_integration test_phase3a_integration.cpp)
 
 target_link_libraries(test_phase3a_integration
@@ -76,10 +76,10 @@ target_link_libraries(test_phase3a_integration
     pgx_logging
 )
 
-# Register Phase 3a integration tests with CTest
+# Register RelAlg → DB integration tests with CTest
 add_test(NAME Phase3AIntegrationTest COMMAND test_phase3a_integration)
 
-# NOTE: test_functional_conversions.cpp deleted - obsolete tests from Phase 3a
+# NOTE: test_functional_conversions.cpp deleted - obsolete conversion tests
 
 # Type creation tests - validates basic type functionality
 add_executable(test_type_creation test_type_creation.cpp)
@@ -99,7 +99,7 @@ target_link_libraries(test_type_creation
 # Register type creation tests with CTest
 add_test(NAME TypeCreationTest COMMAND test_type_creation)
 
-# DSA to LLVM conversion tests - Phase 4a implementation
+# Phase 4e: DSA → LLVM conversion tests (data structure algorithms in parallel lowering)
 add_executable(test_dsa_to_llvm test_dsa_to_llvm.cpp)
 
 target_link_libraries(test_dsa_to_llvm
@@ -124,7 +124,7 @@ add_test(NAME DSAToLLVMTest COMMAND test_dsa_to_llvm)
 
 # NOTE: test_relalg_to_db.cpp deleted - obsolete tests expecting old DB operations
 
-# NOTE: test_materialize_phase4c2.cpp deleted - obsolete tests from Phase 4c-2
+# NOTE: test_materialize_phase4c2.cpp deleted - obsolete tests from legacy Phase 4c-2
 
 # Translator infrastructure tests
 add_executable(test_translator_infrastructure test_translator_infrastructure_simple.cpp)
@@ -151,7 +151,7 @@ target_link_libraries(test_translator_infrastructure
 
 add_test(NAME TranslatorInfrastructureTest COMMAND test_translator_infrastructure)
 
-# BaseTable streaming tests - Phase 4c-2 implementation
+# BaseTable streaming tests (PostgreSQL table access with constant memory)
 add_executable(test_basetable_streaming test_basetable_streaming.cpp)
 
 target_link_libraries(test_basetable_streaming
@@ -177,7 +177,7 @@ target_link_libraries(test_basetable_streaming
 # Register BaseTable streaming tests with CTest
 add_test(NAME BaseTableStreamingTest COMMAND test_basetable_streaming)
 
-# Streaming memory validation tests - Phase 4c-2 memory efficiency
+# Streaming memory validation tests (constant memory usage verification)
 add_executable(test_streaming_memory_validation test_streaming_memory_validation.cpp)
 
 target_link_libraries(test_streaming_memory_validation
@@ -228,7 +228,7 @@ target_link_libraries(test_materialize_db_ops
 # Register MaterializeOp DB operations tests with CTest
 add_test(NAME MaterializeDBOpsTest COMMAND test_materialize_db_ops)
 
-# Phase 4c-4: Complete Pipeline Integration tests
+# Complete Pipeline Integration tests (RelAlg → DB → DSA streaming)
 add_executable(test_complete_pipeline_phase4c4 test_complete_pipeline_phase4c4.cpp)
 target_link_libraries(test_complete_pipeline_phase4c4
     gtest gtest_main
@@ -280,7 +280,7 @@ target_link_libraries(test_simple_pipeline_phase4c4
 )
 add_test(NAME SimplePipelinePhase4c4Test COMMAND test_simple_pipeline_phase4c4)
 
-# Phase 4c-4 Basic test
+# Complete pipeline basic functionality test
 add_executable(test_phase4c4_basic test_phase4c4_basic.cpp)
 target_link_libraries(test_phase4c4_basic
     gtest gtest_main
@@ -297,7 +297,7 @@ target_link_libraries(test_phase4c4_basic
 )
 add_test(NAME Phase4c4BasicTest COMMAND test_phase4c4_basic)
 
-# Phase 4c-4 Simplified architecture test (no segfault)
+# Complete pipeline simplified test (memory safety validation)
 add_executable(test_relalg_to_db_phase4c4 test_relalg_to_db_phase4c4.cpp)
 target_link_libraries(test_relalg_to_db_phase4c4
     gtest gtest_main
@@ -415,5 +415,41 @@ target_link_libraries(test_base_table_dsa
     pgx_logging
 )
 add_test(NAME BaseTableDSATest COMMAND test_base_table_dsa)
+
+# Phase 4d: DB → Standard MLIR conversion tests (PostgreSQL SPI integration)
+add_executable(test_db_to_std_basic db_to_std/test_db_to_std_basic.cpp)
+target_link_libraries(test_db_to_std_basic
+    gtest gtest_main
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRFuncDialect
+    MLIRLLVMDialect
+    MLIRDBToStdConversion
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME DBToStdBasicTest COMMAND test_db_to_std_basic)
+
+# Phase 4d: PostgreSQL SPI calls test - Validate SPI function call generation
+add_executable(test_postgresql_spi_calls db_to_std/test_postgresql_spi_calls.cpp)
+target_link_libraries(test_postgresql_spi_calls
+    gtest gtest_main
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRFuncDialect
+    MLIRLLVMDialect
+    MLIRDBToStdConversion
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME PostgreSQLSPICallsTest COMMAND test_postgresql_spi_calls)
 
 

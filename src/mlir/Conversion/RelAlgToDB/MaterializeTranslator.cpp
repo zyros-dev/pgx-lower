@@ -15,8 +15,8 @@ class MaterializeTranslator : public Translator {
 private:
     ::pgx::mlir::relalg::MaterializeOp materializeOp;
     OrderedAttributes orderedAttributes;
-    ::mlir::Value tableBuilder;  // DSA table builder for result materialization
-    ::mlir::Value finalTable;    // The finalized DSA table (result of this operation)
+    ::mlir::Value tableBuilder;  // DSA table builder for PostgreSQL result materialization
+    ::mlir::Value finalTable;    // The finalized DSA table (PostgreSQL query result)
     
 public:
     explicit MaterializeTranslator(::pgx::mlir::relalg::MaterializeOp op) 
@@ -59,7 +59,7 @@ public:
     }
     
     void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-        MLIR_PGX_INFO("RelAlg", "MaterializeTranslator::produce() - Starting materialization with DSA operations");
+        MLIR_PGX_INFO("RelAlg", "MaterializeTranslator::produce() - Starting PostgreSQL result materialization with DSA operations");
         
         // Log builder state before operations
         auto* currentBlock = builder.getInsertionBlock();
@@ -76,17 +76,18 @@ public:
         
         auto loc = materializeOp.getLoc();
         
-        // Create DSA table builder based on column types
+        // Create DSA table builder for PostgreSQL result collection (Phase 4d)
+        // DSA operations handle result materialization, DB operations handle PostgreSQL access
         auto tupleType = createTupleType(builder);
         auto tableBuilderType = ::pgx::mlir::dsa::TableBuilderType::get(builder.getContext(), tupleType);
         tableBuilder = builder.create<::pgx::mlir::dsa::CreateDSOp>(loc, tableBuilderType);
         
-        MLIR_PGX_DEBUG("RelAlg", "Created DSA table builder with tuple type");
+        MLIR_PGX_DEBUG("RelAlg", "Created DSA table builder for PostgreSQL result materialization");
         
-        // Process input relation - this will call consume() for each tuple
+        // Process input relation - triggers streaming consume() calls for each PostgreSQL tuple
         processInputRelation(context, builder);
         
-        // Finalize the DSA table and stream results
+        // Finalize DSA table (PostgreSQL result ready for return)
         finalizeAndStreamResults(builder, loc, context);
         
         // Log builder state after operations
@@ -103,78 +104,78 @@ public:
     
 private:
     
-    // Create tuple type from ordered attributes
+    // Create PostgreSQL result tuple type from ordered attributes
     ::mlir::TupleType createTupleType(::mlir::OpBuilder& builder) {
-        // Build the tuple type from ordered attribute types
-        // For Test 1, we expect one column (id: i32)
+        // Build the tuple type from PostgreSQL table column types
+        // For Test 1: single column (id: i32) from PostgreSQL table
         return orderedAttributes.getTupleType(builder.getContext());
     }
     
-    // Process input relation by calling child's produce
+    // Process PostgreSQL input relation via streaming producer-consumer pattern
     void processInputRelation(TranslatorContext& context, ::mlir::OpBuilder& builder) {
         if (!children.empty()) {
-            children[0]->setConsumer(this);
-            children[0]->produce(context, builder);
+            children[0]->setConsumer(this);  // Set this as consumer for streaming
+            children[0]->produce(context, builder);  // Triggers PostgreSQL tuple iteration
             children[0]->done();
         }
     }
     
-    // Finalize the DSA table and stream results
+    // Finalize PostgreSQL result DSA table (Phase 4d architecture)
     void finalizeAndStreamResults(::mlir::OpBuilder& builder, ::mlir::Location loc, 
                                   TranslatorContext& context) {
-        // Finalize the DSA table builder to create the final table
+        // Finalize DSA table builder - creates PostgreSQL query result table
         auto tupleType = createTupleType(builder);
         auto tableType = ::pgx::mlir::dsa::TableType::get(builder.getContext(), tupleType);
         auto table = builder.create<::pgx::mlir::dsa::FinalizeOp>(loc, tableType, tableBuilder);
         
-        MLIR_PGX_DEBUG("RelAlg", "Finalized DSA table");
+        MLIR_PGX_DEBUG("RelAlg", "Finalized DSA table containing PostgreSQL query results");
         
-        // Store the final table for direct value propagation
+        // Store PostgreSQL result table for pass value replacement
         finalTable = table.getResult();
         
-        // Store in context for pass to retrieve
+        // Store in context for RelAlgToDB pass to retrieve and replace MaterializeOp uses
         context.setQueryResult(finalTable);
         
-        // Don't generate db.stream_results - the pass will handle value replacement
-        MLIR_PGX_DEBUG("RelAlg", "DSA table finalized and stored in context");
+        // Pass handles MaterializeOp → DSA table replacement (no db.stream_results needed)
+        MLIR_PGX_DEBUG("RelAlg", "PostgreSQL DSA result table finalized and stored for pass replacement");
     }
     
 public:
     
     void consume(Translator* child, ::mlir::OpBuilder& builder, 
                 TranslatorContext& context) override {
-        MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator::consume() - Processing single tuple from child using DSA operations");
+        MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator::consume() - Processing single PostgreSQL tuple using DSA operations");
         
         auto loc = materializeOp.getLoc();
         
-        // Collect values for all columns in this tuple
+        // Collect PostgreSQL field values for current tuple materialization
         llvm::SmallVector<::mlir::Value> tupleValues;
         for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
             const Column* col = orderedAttributes.getAttrs()[i];
-            MLIR_PGX_DEBUG("RelAlg", "Resolving column " + std::to_string(i));
+            MLIR_PGX_DEBUG("RelAlg", "Resolving PostgreSQL column " + std::to_string(i));
             
             auto val = orderedAttributes.resolve(context, i);
             tupleValues.push_back(val);
             
-            MLIR_PGX_DEBUG("RelAlg", "Collected field " + std::to_string(i) + " for DSA append");
+            MLIR_PGX_DEBUG("RelAlg", "Collected PostgreSQL field " + std::to_string(i) + " for DSA materialization");
         }
         
-        // Append all values to the DSA table builder in one operation
+        // Append PostgreSQL field values to DSA result table (one tuple at a time)
         builder.create<::pgx::mlir::dsa::DSAppendOp>(loc, tableBuilder, tupleValues);
         
-        MLIR_PGX_DEBUG("RelAlg", "Appended tuple values to DSA table builder");
+        MLIR_PGX_DEBUG("RelAlg", "Appended PostgreSQL tuple values to DSA result builder");
         
-        // Finalize the current row in the builder
+        // Finalize current row in result builder (streaming pattern)
         builder.create<::pgx::mlir::dsa::NextRowOp>(loc, tableBuilder);
         
-        MLIR_PGX_DEBUG("RelAlg", "Finalized row in DSA table builder - ready for next tuple");
+        MLIR_PGX_DEBUG("RelAlg", "Finalized PostgreSQL row in DSA builder - ready for next streaming tuple");
     }
     
     void done() override {
-        MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator::done() - Completed DSA-based materialization");
+        MLIR_PGX_DEBUG("RelAlg", "MaterializeTranslator::done() - Completed PostgreSQL result materialization with DSA");
         
-        // Don't erase the MaterializeOp here - let the pass handle it after updating uses
-        // The pass will call replaceAllUsesWith and then erase the operation
+        // Pass handles MaterializeOp cleanup after DSA table replacement (Phase 4d pattern)
+        // The pass calls replaceAllUsesWith(DSA table) then erases MaterializeOp
     }
     
     // Get the finalized DSA table value

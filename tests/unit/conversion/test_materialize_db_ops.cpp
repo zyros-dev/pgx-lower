@@ -1,5 +1,5 @@
-// Test suite for Phase 4c-3: MaterializeTranslator DSA-based Result Materialization
-// In Phase 4c-3, the MaterializeTranslator uses DSA operations (create_ds, ds_append, 
+// Test suite for Phase 4d: MaterializeTranslator DSA-based Result Materialization
+// In Phase 4d, the MaterializeTranslator uses DSA operations (create_ds, ds_append, 
 // next_row, finalize) to materialize query results following the LingoDB architecture.
 // The RelAlgToDB pass now generates mixed DB+DSA operations as per the design document.
 
@@ -47,7 +47,7 @@ protected:
 
 // Test to verify MaterializeOp generates the correct DSA operation sequence
 TEST_F(MaterializeDBOpsTest, VerifyDSASequence) {
-    PGX_DEBUG("Testing MaterializeOp → DB+DSA operation sequence generation (Phase 4c-3)");
+    PGX_DEBUG("Testing MaterializeOp → DB+DSA operation sequence generation (Phase 4d)");
     
     // Create module and function using OwningOpRef for proper cleanup
     OwningOpRef<ModuleOp> module(ModuleOp::create(UnknownLoc::get(&context)));
@@ -90,7 +90,7 @@ TEST_F(MaterializeDBOpsTest, VerifyDSASequence) {
     LogicalResult result = pm.run(funcOp);
     ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
     
-    // Verify the correct mixed DB+DSA operation sequence (Phase 4c-4 pattern)
+    // Verify the correct mixed DB+DSA operation sequence (Phase 4d pattern)
     // BaseTable generates: db.get_external → scf.while loop → db.iterate_external → db.get_field
     // Materialize generates: dsa.create_ds → dsa.ds_append → dsa.next_row → dsa.finalize
     int getExternalCount = 0;
@@ -172,7 +172,7 @@ TEST_F(MaterializeDBOpsTest, VerifyDSASequence) {
 
 // Test to verify RelAlgToDB generates DSA operations following LingoDB pattern
 TEST_F(MaterializeDBOpsTest, VerifyDSAOperations) {
-    PGX_DEBUG("Testing RelAlgToDB generates mixed DB+DSA operations (Phase 4c-3)");
+    PGX_DEBUG("Testing RelAlgToDB generates mixed DB+DSA operations (Phase 4d)");
     
     // Create module and function using OwningOpRef for proper cleanup
     OwningOpRef<ModuleOp> module(ModuleOp::create(UnknownLoc::get(&context)));
@@ -218,7 +218,7 @@ TEST_F(MaterializeDBOpsTest, VerifyDSAOperations) {
     // Verify the module is valid after conversion
     ASSERT_TRUE(succeeded(funcOp.verify())) << "MLIR module verification failed after conversion";
     
-    // Verify we have BOTH DB and DSA operations (Phase 4c-3 architecture)
+    // Verify we have BOTH DB and DSA operations (Phase 4d architecture)
     bool hasDBOps = false;
     bool hasDSAOps = false;
     
@@ -257,11 +257,11 @@ TEST_F(MaterializeDBOpsTest, VerifyDSAOperations) {
     
     PGX_DEBUG("Operation walk completed successfully");
     
-    // In Phase 4c-4 pattern, we use mixed DB+DSA operations for PostgreSQL integration
+    // In Phase 4d pattern, we use mixed DB+DSA operations for PostgreSQL integration
     EXPECT_TRUE(hasDBOps) << "Should have DB operations for PostgreSQL table access";
     EXPECT_TRUE(hasDSAOps) << "Should have DSA operations for result building";
     
-    PGX_DEBUG("Mixed DB+DSA operations test completed - Phase 4c-3 architecture verified");
+    PGX_DEBUG("Mixed DB+DSA operations test completed - Phase 4d architecture verified");
 }
 
 // Test pass infrastructure
@@ -600,7 +600,7 @@ TEST_F(MaterializeDBOpsTest, ProducerConsumerIntegration) {
         else if (isa<scf::WhileOp>(op)) hasScfWhile = true;
     });
     
-    // DB operations for table access (Phase 4c-4)
+    // DB operations for table access (Phase 4d)
     EXPECT_TRUE(hasGetExternal) << "Producer should generate db.get_external";
     EXPECT_TRUE(hasIterateExternal) << "Producer should generate db.iterate_external";
     EXPECT_TRUE(hasGetField) << "Producer should generate db.get_field for field access";
