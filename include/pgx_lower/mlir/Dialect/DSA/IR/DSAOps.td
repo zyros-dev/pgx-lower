@@ -68,23 +68,7 @@ def DSA_Record : DSA_Collection<"Record", "record"> {
     let assemblyFormat = "`<` $rowType `>`";
 }
 
-def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
-    let summary = "table builder";
-    let description = [{
-        Stateful table builder with a fixed schema. Values to the last row can
-        be added using `ds_append` and once all columns are filled, the row can
-        be finalized using `next_row`. The final table can be created using
-        `finalize`.
-    }];
-    let parameters = (ins "::mlir::TupleType":$rowType);
-    let hasCustomAssemblyFormat = 1;
-}
 
-def DSA_Table : DSA_Type<"Table", "table"> {
-    let summary = "materialized table";
-    let parameters = (ins "::mlir::TupleType":$rowType);
-    let hasCustomAssemblyFormat = 1;
-}
 
 def DSA_Flag : DSA_Type<"Flag", "flag"> {
     let summary = "binary flag";
@@ -113,6 +97,24 @@ def DSA_JoinHashtable : DSA_Collection<"JoinHashtable", "join_ht"> {
     let summary = "join hashtable";
     let parameters = (ins "::mlir::TupleType":$keyType, "::mlir::TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
+}
+
+// Table types for result materialization following LingoDB patterns
+def DSA_Table : DSA_Type<"Table", "table"> {
+    let summary = "materialized table";
+    let assemblyFormat = "";
+}
+
+def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
+    let summary = "table builder";
+    let description = [{
+        Stateful table builder with a fixed schema. Values to the last row can
+        be added using `ds_append` and once all columns are filled, the row can
+        be finalized using `next_row`. The final table can be created using
+        `finalize`.
+    }];
+    let parameters = (ins "::mlir::TupleType":$rowType);
+    let assemblyFormat = "`<` $rowType `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -240,6 +242,69 @@ def GetFlagOp : DSA_Op<"getflag", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// Table Building Operations (Essential for MaterializeOp)
+//===----------------------------------------------------------------------===//
+
+def CreateDSOp : DSA_Op<"create_ds", [Pure]> {
+    let summary = "create data structure";
+    let description = [{
+        Create a Vector/JoinHashtable/AggregationHashTable/TableBuilder.
+        For TableBuilder, pass a string attribute with the schema description.
+    }];
+    let arguments = (ins Optional<AnyType>:$init_val, OptionalAttr<StrAttr>:$init_attr);
+    let results = (outs AnyType:$ds);
+    let assemblyFormat = "($init_attr^ `->`)? ($init_val^ `:` type($init_val) `->`)? type($ds) attr-dict";
+    let builders = [
+        OpBuilder<(ins "::mlir::Type":$t), [{
+            build($_builder, $_state, t, ::mlir::Value(), ::mlir::StringAttr());
+        }]>,
+        OpBuilder<(ins "::mlir::Type":$t, "::mlir::StringAttr":$attr), [{
+            build($_builder, $_state, t, ::mlir::Value(), attr);
+        }]>
+    ];
+}
+
+def DSAppendOp : DSA_Op<"ds_append", []> {
+    let summary = "append column to Vector or last table row in a TableBuilder";
+    let description = [{
+        Append a value to a data structure. For TableBuilder, appends to current row
+        with optional validity flag for null handling.
+    }];
+    let arguments = (ins AnyType:$ds, AnyType:$val, Optional<I1>:$valid);
+    let assemblyFormat = "$ds `:` type($ds) `,` $val `:` type($val) (`,` $valid^)? attr-dict";
+    let builders = [
+        OpBuilder<(ins "::mlir::Value":$v1, "::mlir::Value":$v2), [{
+            build($_builder, $_state, v1, v2, ::mlir::Value());
+        }]>
+    ];
+}
+
+def NextRowOp : DSA_Op<"next_row", []> {
+    let summary = "start next row in a table builder";
+    let description = [{
+        Finalize the current row in a TableBuilder and start a new one.
+    }];
+    let arguments = (ins DSA_TableBuilder:$builder);
+    let assemblyFormat = "$builder `:` type($builder) attr-dict";
+}
+
+def FinalizeOp : DSA_Op<"finalize", []> {
+    let summary = "finalize TableBuilder or JoinHashtable";  
+    let description = [{
+        Finalize a data structure construction. For TableBuilder, returns the
+        constructed Table.
+    }];
+    let arguments = (ins AnyType:$ht);
+    let results = (outs Optional<AnyType>:$res);
+    let assemblyFormat = "$ht `:` type($ht) (`->` type($res)^)? attr-dict";
+    let builders = [
+        OpBuilder<(ins "::mlir::Value":$v), [{
+            build($_builder, $_state, ::mlir::TypeRange(), v);
+        }]>
+    ];
+}
+
+//===----------------------------------------------------------------------===//
 // Hashtable Operations (Missing from LingoDB reference)
 //===----------------------------------------------------------------------===//
 
@@ -262,74 +327,6 @@ def LookupOp : DSA_Op<"lookup", [Pure]> {
     let arguments = (ins AnyType:$collection, AnyType:$key);
     let results = (outs DSA_GenericIterable:$iterable);
     let assemblyFormat = "$collection `:` type($collection) `,` $key `:` type($key) `->` type($iterable) attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// Result Building Operations
-//===----------------------------------------------------------------------===//
-
-def CreateDSOp : DSA_Op<"create_ds", [Pure]> {
-    let summary = "initialize result builder";
-    let description = [{
-        Initialize a result builder for constructing the final table.
-        
-        Example:
-        ```mlir
-        %builder = dsa.create_ds : !dsa.table_builder
-        ```
-    }];
-
-    let arguments = (ins);
-    let results = (outs DSA_TableBuilder:$result);
-    let assemblyFormat = "attr-dict `:` type($result)";
-}
-
-def DSAppendOp : DSA_Op<"ds_append", []> {
-    let summary = "append values to result";
-    let description = [{
-        Append values to the result builder.
-        
-        Example:
-        ```mlir
-        dsa.ds_append %builder, %value1, %value2 : !dsa.table_builder, i32, i32
-        ```
-    }];
-
-    let arguments = (ins DSA_TableBuilder:$builder, Variadic<AnyType>:$values);
-    let results = (outs);
-    let assemblyFormat = "$builder `,` $values attr-dict `:` type($builder) (`,` type($values)^)?";
-}
-
-def NextRowOp : DSA_Op<"next_row", []> {
-    let summary = "finalize row in builder";
-    let description = [{
-        Finalize the current row in the result builder and prepare for the next row.
-        
-        Example:
-        ```mlir
-        dsa.next_row %builder : !dsa.table_builder
-        ```
-    }];
-
-    let arguments = (ins DSA_TableBuilder:$builder);
-    let results = (outs);
-    let assemblyFormat = "$builder attr-dict `:` type($builder)";
-}
-
-def FinalizeOp : DSA_Op<"finalize", [Pure]> {
-    let summary = "convert builder to table";
-    let description = [{
-        Convert the result builder to a final materialized table.
-        
-        Example:
-        ```mlir
-        %table = dsa.finalize %builder : (!dsa.table_builder) -> !dsa.table
-        ```
-    }];
-
-    let arguments = (ins DSA_TableBuilder:$builder);
-    let results = (outs DSA_Table:$result);
-    let assemblyFormat = "$builder attr-dict `:` `(` type($builder) `)` `->` type($result)";
 }
 
 #endif // PGX_DIALECT_DSA_IR_OPS

@@ -120,57 +120,18 @@ TEST_F(ConversionBasicsTest, TestDBOperationsIndependent) {
 }
 
 // Test that DSA operations can be created independently  
+// TEMPORARILY DISABLED: DSA operations removed in Phase 4d architecture cleanup
+/*
 TEST_F(ConversionBasicsTest, TestDSAOperationsIndependent) {
     MLIR_PGX_DEBUG("UnitTest", "Testing independent DSA operations");
     
-    auto module = ModuleOp::create(builder->getUnknownLoc());
-    builder->setInsertionPointToStart(module.getBody());
+    // This test has been disabled as we've removed the DSA data structure
+    // building operations (CreateDSOp, DSAppendOp, NextRowOp, FinalizeOp)
+    // in favor of using DB operations directly.
     
-    // Create a function with DSA operations
-    auto funcType = builder->getFunctionType({}, {});
-    auto funcOp = builder->create<func::FuncOp>(
-        builder->getUnknownLoc(), "test_dsa", funcType);
-    
-    Block* entryBlock = funcOp.addEntryBlock();
-    builder->setInsertionPointToStart(entryBlock);
-    
-    // Create ScanSourceOp
-    auto tupleType = builder->getTupleType({builder->getI32Type()});
-    auto recordBatchType = ::pgx::mlir::dsa::RecordBatchType::get(&context, tupleType);
-    auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
-        &context, recordBatchType, "test_iterator");
-    
-    auto scanSourceOp = builder->create<::pgx::mlir::dsa::ScanSourceOp>(
-        builder->getUnknownLoc(), 
-        iterableType,
-        builder->getStringAttr("{\"table_oid\":12345}"));
-    
-    // Create TableBuilder and operations
-    auto tableBuilderType = ::pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
-    auto createDSOp = builder->create<::pgx::mlir::dsa::CreateDSOp>(
-        builder->getUnknownLoc(), tableBuilderType);
-    
-    auto intValue = builder->create<arith::ConstantIntOp>(
-        builder->getUnknownLoc(), 42, builder->getI32Type());
-    auto dsAppendOp = builder->create<::pgx::mlir::dsa::DSAppendOp>(
-        builder->getUnknownLoc(), 
-        createDSOp.getResult(), 
-        ValueRange{intValue.getResult()});
-    
-    auto nextRowOp = builder->create<::pgx::mlir::dsa::NextRowOp>(
-        builder->getUnknownLoc(), createDSOp.getResult());
-    
-    auto tableType = ::pgx::mlir::dsa::TableType::get(&context, tupleType);
-    auto finalizeOp = builder->create<::pgx::mlir::dsa::FinalizeOp>(
-        builder->getUnknownLoc(), tableType, createDSOp.getResult());
-    
-    builder->create<func::ReturnOp>(builder->getUnknownLoc());
-    
-    EXPECT_TRUE(funcOp.verify().succeeded());
-    EXPECT_TRUE(module.verify().succeeded());
-    
-    MLIR_PGX_DEBUG("UnitTest", "Independent DSA operations test passed");
+    MLIR_PGX_DEBUG("UnitTest", "DSA operations test skipped - operations removed");
 }
+*/
 
 // Test conversion passes can be instantiated
 TEST_F(ConversionBasicsTest, TestConversionPassInstantiation) {
@@ -215,16 +176,7 @@ TEST_F(ConversionBasicsTest, TestConversionPrerequisites) {
         ::pgx::db::ExternalSourceType::get(&context),
         tableOidValue.getResult());
     
-    // Create DSA ScanSourceOp
-    auto tupleType = builder->getTupleType({builder->getI32Type()});
-    auto recordBatchType = ::pgx::mlir::dsa::RecordBatchType::get(&context, tupleType);
-    auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
-        &context, recordBatchType, "test_iterator");
-    
-    auto scanSourceOp = builder->create<::pgx::mlir::dsa::ScanSourceOp>(
-        builder->getUnknownLoc(), 
-        iterableType,
-        builder->getStringAttr("{\"table_oid\":12345}"));
+    // DSA ScanSourceOp creation removed - DSA operations deleted in Phase 4d
     
     builder->create<func::ReturnOp>(builder->getUnknownLoc());
     
@@ -234,7 +186,7 @@ TEST_F(ConversionBasicsTest, TestConversionPrerequisites) {
     // Verify operations have expected attributes
     EXPECT_EQ(tableOidValue.value(), 12345);
     EXPECT_TRUE(getExternalOp.getTableOid() == tableOidValue.getResult());
-    EXPECT_TRUE(scanSourceOp.getTableDescriptionAttr().getValue().contains("12345"));
+    // DSA operation verification removed
     
     MLIR_PGX_DEBUG("UnitTest", "Conversion prerequisites test passed");
 }

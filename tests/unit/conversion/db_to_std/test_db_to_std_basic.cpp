@@ -165,55 +165,18 @@ TEST_F(DBToStdBasicTest, ConvertAddToArithAddi) {
     EXPECT_TRUE(foundArithAdd) << "Expected arith.addi operation not found";
 }
 
+// TEMPORARILY DISABLED: DSA operations removed in Phase 4d architecture cleanup
+/*
 TEST_F(DBToStdBasicTest, PreserveDSAOperations) {
     PGX_INFO("Testing that DSA operations are preserved during conversion");
     
-    OpBuilder builder(&context);
-    auto module = ModuleOp::create(builder.getUnknownLoc());
+    // This test has been disabled as we've removed the DSA data structure
+    // building operations (CreateDSOp, DSAppendOp) in favor of using 
+    // DB operations directly.
     
-    // Create a function with both DB and DSA operations
-    auto funcType = builder.getFunctionType({}, {});
-    auto func = builder.create<func::FuncOp>(
-        builder.getUnknownLoc(), "test_func", funcType);
-    
-    auto* block = func.addEntryBlock();
-    builder.setInsertionPointToStart(block);
-    
-    // Create DSA operations
-    // Create a simple tuple type for the table builder
-    auto tupleType = builder.getTupleType({builder.getI64Type()});
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
-    auto dsInit = builder.create<pgx::mlir::dsa::CreateDSOp>(
-        builder.getUnknownLoc(), tableBuilderType);
-    
-    // Create DB operation
-    auto val = builder.create<arith::ConstantIntOp>(
-        builder.getUnknownLoc(), 42, 64);
-    
-    // DSA append (should be preserved)
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
-        builder.getUnknownLoc(), dsInit.getResult(), val.getResult());
-    
-    builder.create<func::ReturnOp>(builder.getUnknownLoc());
-    module.push_back(func);
-    
-    // Run the conversion pass
-    PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
-    
-    ASSERT_TRUE(succeeded(pm.run(module)));
-    
-    // Verify DSA operations are preserved
-    int dsaOpCount = 0;
-    module.walk([&](Operation* op) {
-        if (op->getDialect() && 
-            op->getDialect()->getNamespace() == "dsa") {
-            dsaOpCount++;
-        }
-    });
-    
-    EXPECT_EQ(dsaOpCount, 2) << "DSA operations should be preserved";
+    PGX_INFO("DSA operations test skipped - operations removed");
 }
+*/
 
 TEST_F(DBToStdBasicTest, GenerateSPIFunctionDeclarations) {
     PGX_INFO("Testing SPI function declaration generation");

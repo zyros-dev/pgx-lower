@@ -8,53 +8,6 @@
 using namespace mlir;
 using namespace pgx::mlir::dsa;
 
-//===----------------------------------------------------------------------===//
-// TableBuilderType Custom Assembly Format
-//===----------------------------------------------------------------------===//
-
-Type TableBuilderType::parse(AsmParser &parser) {
-    // Parse format: !dsa.table_builder<TupleType>
-    if (parser.parseLess())
-        return {};
-    
-    TupleType rowType;
-    if (parser.parseType(rowType))
-        return {};
-    
-    if (parser.parseGreater())
-        return {};
-    
-    return TableBuilderType::get(parser.getContext(), rowType);
-}
-
-void TableBuilderType::print(AsmPrinter &printer) const {
-    // Simple safe printing to avoid infinite recursion
-    printer << "<table_builder>";
-}
-
-//===----------------------------------------------------------------------===//
-// TableType Custom Assembly Format
-//===----------------------------------------------------------------------===//
-
-Type TableType::parse(AsmParser &parser) {
-    // Parse format: !dsa.table<TupleType>
-    if (parser.parseLess())
-        return {};
-    
-    TupleType rowType;
-    if (parser.parseType(rowType))
-        return {};
-    
-    if (parser.parseGreater())
-        return {};
-    
-    return TableType::get(parser.getContext(), rowType);
-}
-
-void TableType::print(AsmPrinter &printer) const {
-    // Simple safe printing to avoid infinite recursion
-    printer << "<table>";
-}
 
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/DSA/IR/DSAOpsTypes.cpp.inc"

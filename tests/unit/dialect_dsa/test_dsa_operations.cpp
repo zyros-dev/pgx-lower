@@ -39,10 +39,14 @@ TEST_F(DSAOperationsTest, TestDSATypeCreation) {
     EXPECT_TRUE(recordType != nullptr);
     EXPECT_EQ(recordType.getRowType(), tupleType);
     
-    // Test TableBuilder type
+    // Test TableBuilderType (restored in Phase 4d-1)
     auto tableBuilderType = ::pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
     EXPECT_TRUE(tableBuilderType != nullptr);
     EXPECT_EQ(tableBuilderType.getRowType(), tupleType);
+    
+    // Test TableType
+    auto tableType = ::pgx::mlir::dsa::TableType::get(&context);
+    EXPECT_TRUE(tableType != nullptr);
     
     // Test GenericIterable type
     auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
@@ -78,50 +82,72 @@ TEST_F(DSAOperationsTest, TestScanSourceOp) {
     MLIR_PGX_DEBUG("UnitTest", "ScanSourceOp test passed");
 }
 
-// Test CreateDS and data structure building operations
+// Test CreateDS and data structure building operations (restored in Phase 4d-1)
 TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     MLIR_PGX_DEBUG("UnitTest", "Testing data structure building operations");
     
     auto module = ModuleOp::create(builder->getUnknownLoc());
     builder->setInsertionPointToStart(module.getBody());
     
-    // Create types
+    // Create table builder type
     auto tupleType = builder->getTupleType({builder->getI32Type(), builder->getF64Type()});
     auto tableBuilderType = ::pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
     
-    // Test CreateDSOp
+    // Create table builder with schema
     auto createDSOp = builder->create<::pgx::mlir::dsa::CreateDSOp>(
-        builder->getUnknownLoc(), tableBuilderType);
+        builder->getUnknownLoc(),
+        tableBuilderType,
+        builder->getStringAttr("id:int[32];value:float[64]")
+    );
     
     EXPECT_TRUE(createDSOp != nullptr);
-    EXPECT_EQ(createDSOp.getResult().getType(), tableBuilderType);
+    EXPECT_EQ(createDSOp.getDs().getType(), tableBuilderType);
     
-    // Test DSAppendOp with multiple values
-    auto intValue = builder->create<arith::ConstantIntOp>(
-        builder->getUnknownLoc(), 42, builder->getI32Type());
-    auto floatValue = builder->create<arith::ConstantOp>(
-        builder->getUnknownLoc(), builder->getF64FloatAttr(3.14));
+    // Test DSAppendOp
+    auto i32Val = builder->create<arith::ConstantIntOp>(builder->getUnknownLoc(), 42, 32);
+    auto f64Val = builder->create<arith::ConstantFloatOp>(
+        builder->getUnknownLoc(),
+        APFloat(3.14),
+        builder->getF64Type()
+    );
+    auto trueVal = builder->create<arith::ConstantIntOp>(builder->getUnknownLoc(), 1, 1);
     
-    auto dsAppendOp = builder->create<::pgx::mlir::dsa::DSAppendOp>(
-        builder->getUnknownLoc(), 
-        createDSOp.getResult(), 
-        ValueRange{intValue.getResult(), floatValue.getResult()});
+    auto appendOp1 = builder->create<::pgx::mlir::dsa::DSAppendOp>(
+        builder->getUnknownLoc(),
+        createDSOp.getDs(),
+        i32Val.getResult(),
+        trueVal.getResult()
+    );
     
-    EXPECT_TRUE(dsAppendOp != nullptr);
+    auto appendOp2 = builder->create<::pgx::mlir::dsa::DSAppendOp>(
+        builder->getUnknownLoc(),
+        createDSOp.getDs(),
+        f64Val.getResult(),
+        trueVal.getResult()
+    );
+    
+    EXPECT_TRUE(appendOp1 != nullptr);
+    EXPECT_TRUE(appendOp2 != nullptr);
     
     // Test NextRowOp
     auto nextRowOp = builder->create<::pgx::mlir::dsa::NextRowOp>(
-        builder->getUnknownLoc(), createDSOp.getResult());
+        builder->getUnknownLoc(),
+        createDSOp.getDs()
+    );
     
     EXPECT_TRUE(nextRowOp != nullptr);
     
     // Test FinalizeOp
-    auto tableType = ::pgx::mlir::dsa::TableType::get(&context, tupleType);
+    auto tableType = ::pgx::mlir::dsa::TableType::get(&context);
     auto finalizeOp = builder->create<::pgx::mlir::dsa::FinalizeOp>(
-        builder->getUnknownLoc(), tableType, createDSOp.getResult());
+        builder->getUnknownLoc(),
+        tableType,
+        createDSOp.getDs()
+    );
     
     EXPECT_TRUE(finalizeOp != nullptr);
-    EXPECT_EQ(finalizeOp.getResult().getType(), tableType);
+    EXPECT_TRUE(finalizeOp.getRes() != nullptr);
+    EXPECT_EQ(finalizeOp.getRes().getType(), tableType);
     
     MLIR_PGX_DEBUG("UnitTest", "Data structure building operations test passed");
 }
