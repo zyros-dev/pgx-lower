@@ -12,7 +12,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Dialect/DB/IR/DBDialect.h"
@@ -30,7 +30,7 @@ class DBToStdEdgeCaseTest : public ::testing::Test {
 protected:
     void SetUp() override {
         context.loadDialect<FuncDialect, ArithDialect, SCFDialect, 
-                           LLVM::LLVMDialect, pgx::db::DBDialect,
+                           memref::MemRefDialect, pgx::db::DBDialect,
                            pgx::mlir::dsa::DSADialect>();
     }
 
@@ -209,10 +209,14 @@ TEST_F(DBToStdEdgeCaseTest, ProperNullableTypeHandling) {
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
-    // Verify nullable_get_val is converted to extractvalue
-    bool foundExtractValue = false;
-    module.walk([&](LLVM::ExtractValueOp) { foundExtractValue = true; });
-    EXPECT_TRUE(foundExtractValue) << "nullable_get_val should convert to extractvalue";
+    // Verify nullable_get_val is converted to function call
+    bool foundExtractCall = false;
+    module.walk([&](func::CallOp callOp) { 
+        if (callOp.getCallee() == "extract_nullable_value") {
+            foundExtractCall = true;
+        }
+    });
+    EXPECT_TRUE(foundExtractCall) << "nullable_get_val should convert to extract_nullable_value call";
     
     PGX_INFO("Nullable type handling test passed");
 }

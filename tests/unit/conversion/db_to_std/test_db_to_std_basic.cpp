@@ -7,7 +7,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/DB/IR/DBDialect.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DB/IR/DBTypes.h"
@@ -29,7 +29,7 @@ protected:
         context.getOrLoadDialect<arith::ArithDialect>();
         context.getOrLoadDialect<scf::SCFDialect>();
         context.getOrLoadDialect<func::FuncDialect>();
-        context.getOrLoadDialect<LLVM::LLVMDialect>();
+        context.getOrLoadDialect<memref::MemRefDialect>();
     }
     
     MLIRContext context;
@@ -216,4 +216,65 @@ TEST_F(DBToStdBasicTest, GenerateSPIFunctionDeclarations) {
     
     auto pgExtractField = module.lookupSymbol<func::FuncOp>("pg_extract_field");
     ASSERT_TRUE(pgExtractField) << "pg_extract_field function declaration not found";
+}
+
+TEST_F(DBToStdBasicTest, ConvertStoreResultToSPICall) {
+    PGX_INFO("Testing db.store_result to pg_store_result conversion");
+    
+    OpBuilder builder(&context);
+    auto module = ModuleOp::create(builder.getUnknownLoc());
+    
+    // Create a function that accepts a nullable value as parameter
+    auto nullableType = pgx::db::NullableI32Type::get(&context);
+    auto funcType = builder.getFunctionType({nullableType}, {});
+    auto func = builder.create<func::FuncOp>(
+        builder.getUnknownLoc(), "test_func", funcType);
+    
+    auto* block = func.addEntryBlock();
+    builder.setInsertionPointToStart(block);
+    
+    // Get the function argument (nullable value)
+    auto nullableValue = block->getArgument(0);
+    
+    // Create field index
+    auto fieldIndex = builder.create<arith::ConstantIndexOp>(
+        builder.getUnknownLoc(), 0);
+    
+    // Create db.store_result operation
+    builder.create<pgx::db::StoreResultOp>(
+        builder.getUnknownLoc(), 
+        nullableValue, 
+        fieldIndex.getResult());
+    
+    builder.create<func::ReturnOp>(builder.getUnknownLoc());
+    module.push_back(func);
+    
+    // Run the conversion pass
+    PassManager pm(&context);
+    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    
+    ASSERT_TRUE(succeeded(pm.run(module)));
+    
+    // Verify the conversion
+    bool foundStoreCall = false;
+    module.walk([&](func::CallOp callOp) {
+        if (callOp.getCallee().starts_with("pg_store_result")) {
+            foundStoreCall = true;
+            EXPECT_EQ(callOp.getNumOperands(), 2);
+            // First operand should be a memref (to the nullable tuple)
+            auto memrefType = callOp.getOperand(0).getType().dyn_cast<MemRefType>();
+            EXPECT_TRUE(memrefType) << "Expected memref type for nullable value";
+            // Verify it's a memref to a tuple type
+            auto elementType = memrefType.getElementType().dyn_cast<TupleType>();
+            EXPECT_TRUE(elementType) << "Expected memref to tuple type";
+            // Second operand should be index type
+            EXPECT_TRUE(callOp.getOperand(1).getType().isIndex());
+        }
+    });
+    
+    EXPECT_TRUE(foundStoreCall) << "Expected pg_store_result SPI call not found";
+    
+    // Verify SPI function declaration exists (check for type-specific version)
+    auto pgStoreResult = module.lookupSymbol<func::FuncOp>("pg_store_result_i32");
+    ASSERT_TRUE(pgStoreResult) << "pg_store_result_i32 function declaration not found";
 }

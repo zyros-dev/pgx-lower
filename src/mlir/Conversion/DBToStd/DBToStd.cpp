@@ -20,10 +20,12 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "execution/logging.h"
 
 namespace mlir {
@@ -32,24 +34,26 @@ namespace mlir {
 // Type Converter
 //===----------------------------------------------------------------------===//
 
-// Phase 4d Type Converter: DB dialect types → PostgreSQL SPI compatible types
+// Phase 4d Type Converter: DB dialect types → Standard MLIR types
 class DBToStdTypeConverter : public TypeConverter {
 public:
   DBToStdTypeConverter() {
     // Pass through standard types (unchanged)
     addConversion([](Type type) { return type; });
     
-    // Convert db.external_source → !llvm.ptr<i8> (PostgreSQL table handle)
+    // Convert db.external_source → memref<?xi8> (opaque handle)
     addConversion([](pgx::db::ExternalSourceType type) {
-      return LLVM::LLVMPointerType::get(type.getContext());
+      auto ctx = type.getContext();
+      auto i8Type = IntegerType::get(ctx, 8);
+      return MemRefType::get({ShapedType::kDynamic}, i8Type);
     });
     
-    // Convert db.nullable<i64> → !llvm.struct<(i64, i1)> (PostgreSQL Datum representation)
+    // Convert db.nullable<i64> → tuple<i64, i1> (Standard MLIR tuple)
     addConversion([](pgx::db::NullableI64Type type) {
       auto ctx = type.getContext();
       auto i64Type = IntegerType::get(ctx, 64);
       auto i1Type = IntegerType::get(ctx, 1);
-      return LLVM::LLVMStructType::getLiteral(ctx, {i64Type, i1Type});
+      return TupleType::get(ctx, {i64Type, i1Type});
     });
     
     // Add other nullable type conversions as needed
@@ -57,21 +61,20 @@ public:
       auto ctx = type.getContext();
       auto i32Type = IntegerType::get(ctx, 32);
       auto i1Type = IntegerType::get(ctx, 1);
-      return LLVM::LLVMStructType::getLiteral(ctx, {i32Type, i1Type});
+      return TupleType::get(ctx, {i32Type, i1Type});
     });
     
     addConversion([](pgx::db::NullableF64Type type) {
       auto ctx = type.getContext();
       auto f64Type = mlir::Float64Type::get(ctx);
       auto i1Type = IntegerType::get(ctx, 1);
-      SmallVector<Type> structTypes = {f64Type, i1Type};
-      return LLVM::LLVMStructType::getLiteral(ctx, structTypes);
+      return TupleType::get(ctx, {f64Type, i1Type});
     });
     
     addConversion([](pgx::db::NullableBoolType type) {
       auto ctx = type.getContext();
       auto i1Type = IntegerType::get(ctx, 1);
-      return LLVM::LLVMStructType::getLiteral(ctx, {i1Type, i1Type});
+      return TupleType::get(ctx, {i1Type, i1Type});
     });
     
     // Add source materialization to handle existing operations with DB types
@@ -81,12 +84,12 @@ public:
       if (inputs.size() == 1) {
         auto input = inputs[0];
         
-        // Check if we're trying to materialize a DB nullable type from a struct
+        // Check if we're trying to materialize a DB nullable type from a tuple
         if (resultType.isa<pgx::db::NullableI64Type>() ||
             resultType.isa<pgx::db::NullableI32Type>() ||
             resultType.isa<pgx::db::NullableF64Type>() ||
             resultType.isa<pgx::db::NullableBoolType>()) {
-          // We can't really create a DB type from LLVM struct in this pass
+          // We can't really create a DB type from Standard MLIR tuple in this pass
           // This indicates a problem with the conversion order
           return Value();
         }
@@ -95,14 +98,15 @@ public:
       return Value();
     });
     
-    // Add comprehensive target materialization for DB → LLVM type conversions
+    // Add comprehensive target materialization for DB → Standard MLIR type conversions
     addTargetMaterialization([](OpBuilder &builder, Type resultType, 
                                ValueRange inputs, Location loc) -> Value {
-      // Handle nullable type materializations
-      if (auto structType = resultType.dyn_cast<LLVM::LLVMStructType>()) {
-        // For empty inputs, create an undefined value
+      // Handle nullable type materializations to tuples
+      if (auto tupleType = resultType.dyn_cast<TupleType>()) {
+        // For empty inputs, create a placeholder unrealized conversion cast
         if (inputs.empty()) {
-          return builder.create<LLVM::UndefOp>(loc, structType);
+          // This shouldn't happen in normal conversion flow
+          return Value();
         }
         
         // If single input and types match, return the input
@@ -110,21 +114,55 @@ public:
           return inputs[0];
         }
         
-        // Create an undefined value for type mismatches
+        // If we have a DB nullable type input, create an unrealized conversion cast
         if (inputs.size() == 1) {
-          // This handles the case where we need to materialize a struct type
-          // from a nullable type during conversion
-          return builder.create<LLVM::UndefOp>(loc, structType);
+          auto inputType = inputs[0].getType();
+          if (inputType.isa<pgx::db::NullableI64Type>() ||
+              inputType.isa<pgx::db::NullableI32Type>() ||
+              inputType.isa<pgx::db::NullableF64Type>() ||
+              inputType.isa<pgx::db::NullableBoolType>()) {
+            // Create unrealized conversion cast for proper type legalization
+            return builder.create<UnrealizedConversionCastOp>(
+                loc, resultType, inputs[0]).getResult(0);
+          }
         }
       }
       
-      // For pointer types
-      if (auto ptrType = resultType.dyn_cast<LLVM::LLVMPointerType>()) {
-        if (inputs.empty()) {
-          return builder.create<LLVM::ZeroOp>(loc, ptrType);
-        }
+      // For memref types (external source handles)
+      if (auto memrefType = resultType.dyn_cast<MemRefType>()) {
         if (inputs.size() == 1 && inputs[0].getType() == resultType) {
           return inputs[0];
+        }
+        
+        // If we have a DB external source type input, create unrealized conversion cast
+        if (inputs.size() == 1 && 
+            inputs[0].getType().isa<pgx::db::ExternalSourceType>()) {
+          return builder.create<UnrealizedConversionCastOp>(
+              loc, resultType, inputs[0]).getResult(0);
+        }
+      }
+      
+      return Value();
+    });
+    
+    // Add argument materialization for function arguments with DB types
+    addArgumentMaterialization([](OpBuilder &builder, Type resultType,
+                                  ValueRange inputs, Location loc) -> Value {
+      // This handles function arguments that have DB types
+      if (inputs.size() == 1) {
+        auto input = inputs[0];
+        
+        // If the input is already the correct type, return it
+        if (input.getType() == resultType) {
+          return input;
+        }
+        
+        // For DB nullable types, we need to let them through
+        if (resultType.isa<pgx::db::NullableI64Type>() ||
+            resultType.isa<pgx::db::NullableI32Type>() ||
+            resultType.isa<pgx::db::NullableF64Type>() ||
+            resultType.isa<pgx::db::NullableBoolType>()) {
+          return input;
         }
       }
       
@@ -154,12 +192,13 @@ public:
     auto loc = op.getLoc();
     
     // Create function type for pg_table_open
-    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-    auto funcType = rewriter.getFunctionType({rewriter.getI64Type()}, {ptrType});
+    auto i8Type = rewriter.getI8Type();
+    auto memrefType = MemRefType::get({ShapedType::kDynamic}, i8Type);
+    auto funcType = rewriter.getFunctionType({rewriter.getI64Type()}, {memrefType});
     
     // Create the function call
     auto callOp = rewriter.create<func::CallOp>(
-        loc, "pg_table_open", TypeRange{ptrType}, adaptor.getOperands());
+        loc, "pg_table_open", TypeRange{memrefType}, adaptor.getOperands());
     
     rewriter.replaceOp(op, callOp.getResults());
     
@@ -179,8 +218,9 @@ public:
     auto loc = op.getLoc();
     
     // Create function type for pg_get_next_tuple
-    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-    auto funcType = rewriter.getFunctionType({ptrType}, {rewriter.getI1Type()});
+    auto i8Type = rewriter.getI8Type();
+    auto memrefType = MemRefType::get({ShapedType::kDynamic}, i8Type);
+    auto funcType = rewriter.getFunctionType({memrefType}, {rewriter.getI1Type()});
     
     // Create the function call
     auto callOp = rewriter.create<func::CallOp>(
@@ -205,7 +245,8 @@ public:
     auto loc = op.getLoc();
     
     // Create function type for pg_extract_field
-    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+    auto i8Type = rewriter.getI8Type();
+    auto memrefType = MemRefType::get({ShapedType::kDynamic}, i8Type);
     auto indexType = rewriter.getIndexType();
     auto i32Type = rewriter.getI32Type();
     
@@ -216,7 +257,7 @@ public:
     }
     
     auto funcType = rewriter.getFunctionType(
-        {ptrType, indexType, i32Type}, {resultType});
+        {memrefType, indexType, i32Type}, {resultType});
     
     // Create the function call
     auto callOp = rewriter.create<func::CallOp>(
@@ -230,7 +271,7 @@ public:
   }
 };
 
-// Convert db.nullable_get_val → llvm.extractvalue (PostgreSQL Datum value extraction)
+// Convert db.nullable_get_val → func.call @extract_nullable_value (Standard MLIR helper)
 class NullableGetValOpConversion : public OpConversionPattern<pgx::db::NullableGetValOp> {
 public:
   using OpConversionPattern::OpConversionPattern;
@@ -240,27 +281,30 @@ public:
       ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     
-    // Get the operand - it should already be converted to struct type
+    // Get the operand - it should already be converted to tuple type
     auto operand = adaptor.getOperands()[0];
     
-    // Verify operand is a struct type
-    auto structType = operand.getType().dyn_cast<LLVM::LLVMStructType>();
-    if (!structType) {
-      // If not a struct, the type conversion failed
+    // Verify operand is a tuple type
+    auto tupleType = operand.getType().dyn_cast<TupleType>();
+    if (!tupleType) {
+      // If not a tuple, the type conversion failed
       return failure();
     }
     
     // Get the result type of the original operation
     auto resultType = op.getResult().getType();
     
-    // Extract the value field (index 0) from the struct
-    auto extractOp = rewriter.create<LLVM::ExtractValueOp>(
-        loc, resultType, operand, 
-        ArrayRef<int64_t>{0});
+    // Create a function call to extract the value from the tuple
+    // This helper function will be provided by the runtime
+    auto funcType = rewriter.getFunctionType({tupleType}, {resultType});
     
-    rewriter.replaceOp(op, extractOp.getResult());
+    auto callOp = rewriter.create<func::CallOp>(
+        loc, "extract_nullable_value", TypeRange{resultType}, 
+        ValueRange{operand});
     
-    MLIR_PGX_DEBUG("DBToStd", "Converted db.nullable_get_val to LLVM extractvalue (PostgreSQL Datum unwrapping)");
+    rewriter.replaceOp(op, callOp.getResults());
+    
+    MLIR_PGX_DEBUG("DBToStd", "Converted db.nullable_get_val to Standard MLIR function call");
     return success();
   }
 };
@@ -285,6 +329,71 @@ public:
   }
 };
 
+// Convert db.store_result → func.call @pg_store_result (PostgreSQL SPI result storage)
+class StoreResultOpConversion : public OpConversionPattern<pgx::db::StoreResultOp> {
+public:
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(
+      pgx::db::StoreResultOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    
+    // Verify the value is a tuple type (nullable representation)
+    auto tupleType = adaptor.getValue().getType().dyn_cast<TupleType>();
+    if (!tupleType) {
+      return failure();
+    }
+    
+    // Allocate memory for the nullable tuple value using memref
+    auto memrefType = MemRefType::get({1}, tupleType);
+    auto allocaOp = rewriter.create<memref::AllocaOp>(loc, memrefType);
+    
+    // Store the tuple value to the allocated memory
+    auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    rewriter.create<memref::StoreOp>(loc, adaptor.getValue(), allocaOp, ValueRange{zero});
+    
+    // Generate function name based on the tuple type
+    std::string funcName = "pg_store_result";
+    if (tupleType.size() == 2) {
+      auto firstType = tupleType.getType(0);
+      if (firstType.isInteger(32)) {
+        funcName += "_i32";
+      } else if (firstType.isInteger(64)) {
+        funcName += "_i64";
+      } else if (firstType.isa<Float64Type>()) {
+        funcName += "_f64";
+      }
+    }
+    
+    // Create or get the function declaration for this specific type
+    auto module = op->getParentOfType<ModuleOp>();
+    if (module && !module.lookupSymbol<func::FuncOp>(funcName)) {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToStart(module.getBody());
+      
+      auto funcType = rewriter.getFunctionType(
+          {memrefType, rewriter.getIndexType()}, {});
+      auto funcOp = rewriter.create<func::FuncOp>(loc, funcName, funcType);
+      funcOp.setVisibility(func::FuncOp::Visibility::Private);
+    }
+    
+    // Create the function call
+    auto funcType = rewriter.getFunctionType(
+        {memrefType, rewriter.getIndexType()}, {});
+    
+    rewriter.create<func::CallOp>(
+        loc, funcName, TypeRange{}, 
+        ValueRange{allocaOp.getResult(), adaptor.getFieldIndex()});
+    
+    rewriter.eraseOp(op);
+    
+    MLIR_PGX_DEBUG("DBToStd", "Converted db.store_result to PostgreSQL SPI " + funcName + " call");
+    return success();
+  }
+};
+
+
 
 //===----------------------------------------------------------------------===//
 // PostgreSQL SPI Function Declaration Generation (Phase 4d)
@@ -305,8 +414,9 @@ void generateSPIFunctionDeclarations(ModuleOp module) {
   
   // Declare pg_table_open - PostgreSQL SPI table access function
   if (!hasFunc("pg_table_open")) {
-    auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
-    auto tableOpenType = builder.getFunctionType({builder.getI64Type()}, {ptrType});
+    auto i8Type = builder.getI8Type();
+    auto memrefType = MemRefType::get({ShapedType::kDynamic}, i8Type);
+    auto tableOpenType = builder.getFunctionType({builder.getI64Type()}, {memrefType});
     auto funcOp = builder.create<func::FuncOp>(loc, "pg_table_open", tableOpenType);
     funcOp.setVisibility(func::FuncOp::Visibility::Private);
     MLIR_PGX_DEBUG("DBToStd", "Generated PostgreSQL SPI pg_table_open function declaration");
@@ -314,8 +424,9 @@ void generateSPIFunctionDeclarations(ModuleOp module) {
   
   // Declare pg_get_next_tuple - PostgreSQL SPI tuple iteration function
   if (!hasFunc("pg_get_next_tuple")) {
-    auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
-    auto getNextTupleType = builder.getFunctionType({ptrType}, {builder.getI1Type()});
+    auto i8Type = builder.getI8Type();
+    auto memrefType = MemRefType::get({ShapedType::kDynamic}, i8Type);
+    auto getNextTupleType = builder.getFunctionType({memrefType}, {builder.getI1Type()});
     auto funcOp = builder.create<func::FuncOp>(loc, "pg_get_next_tuple", getNextTupleType);
     funcOp.setVisibility(func::FuncOp::Visibility::Private);
     MLIR_PGX_DEBUG("DBToStd", "Generated PostgreSQL SPI pg_get_next_tuple function declaration");
@@ -323,19 +434,35 @@ void generateSPIFunctionDeclarations(ModuleOp module) {
   
   // Declare pg_extract_field - PostgreSQL SPI field extraction function
   if (!hasFunc("pg_extract_field")) {
-    auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+    auto i8Type = builder.getI8Type();
+    auto memrefType = MemRefType::get({ShapedType::kDynamic}, i8Type);
     auto indexType = builder.getIndexType();
     auto i32Type = builder.getI32Type();
     auto i64Type = builder.getI64Type();
     auto i1Type = builder.getI1Type();
-    auto structType = LLVM::LLVMStructType::getLiteral(
-        builder.getContext(), {i64Type, i1Type});
+    auto tupleType = TupleType::get(builder.getContext(), {i64Type, i1Type});
     
     auto extractFieldType = builder.getFunctionType(
-        {ptrType, indexType, i32Type}, {structType});
+        {memrefType, indexType, i32Type}, {tupleType});
     auto funcOp = builder.create<func::FuncOp>(loc, "pg_extract_field", extractFieldType);
     funcOp.setVisibility(func::FuncOp::Visibility::Private);
     MLIR_PGX_DEBUG("DBToStd", "Generated PostgreSQL SPI pg_extract_field function declaration");
+  }
+  
+  // Declare pg_store_result - PostgreSQL SPI result storage function
+  // Note: We don't create a specific declaration as it needs to handle multiple types
+  // The function will be declared during lowering with the specific type needed
+  
+  // Declare extract_nullable_value - Standard MLIR helper for tuple extraction
+  if (!hasFunc("extract_nullable_value")) {
+    auto i64Type = builder.getI64Type();
+    auto i1Type = builder.getI1Type();
+    auto tupleType = TupleType::get(builder.getContext(), {i64Type, i1Type});
+    
+    auto extractValueType = builder.getFunctionType({tupleType}, {i64Type});
+    auto funcOp = builder.create<func::FuncOp>(loc, "extract_nullable_value", extractValueType);
+    funcOp.setVisibility(func::FuncOp::Visibility::Private);
+    MLIR_PGX_DEBUG("DBToStd", "Generated Standard MLIR extract_nullable_value function declaration");
   }
 }
 
@@ -354,7 +481,7 @@ public:
   
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<arith::ArithDialect, scf::SCFDialect, 
-                    func::FuncDialect, LLVM::LLVMDialect>();
+                    func::FuncDialect, memref::MemRefDialect>();
   }
   
   void runOnOperation() override {
@@ -379,7 +506,7 @@ public:
     target.addLegalDialect<arith::ArithDialect>();
     target.addLegalDialect<scf::SCFDialect>();
     target.addLegalDialect<func::FuncDialect>();
-    target.addLegalDialect<LLVM::LLVMDialect>();
+    target.addLegalDialect<memref::MemRefDialect>();
     target.addLegalDialect<pgx::mlir::dsa::DSADialect>(); // Keep DSA operations legal
     
     // Mark DB dialect operations as illegal
@@ -428,6 +555,7 @@ void populateDBToStdConversionPatterns(DBToStdTypeConverter &typeConverter,
   patterns.add<GetFieldOpConversion>(typeConverter, context);
   patterns.add<NullableGetValOpConversion>(typeConverter, context);
   patterns.add<AddOpConversion>(typeConverter, context);
+  patterns.add<StoreResultOpConversion>(typeConverter, context);
   // TODO: Add additional DB operation conversions when needed for Tests 2-15 (WHERE clauses, JOINs)
 }
 

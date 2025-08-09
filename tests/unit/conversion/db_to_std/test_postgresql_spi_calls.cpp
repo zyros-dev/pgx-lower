@@ -7,7 +7,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/DB/IR/DBDialect.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DB/IR/DBTypes.h"
@@ -29,7 +29,7 @@ protected:
         context.getOrLoadDialect<arith::ArithDialect>();
         context.getOrLoadDialect<scf::SCFDialect>();
         context.getOrLoadDialect<func::FuncDialect>();
-        context.getOrLoadDialect<LLVM::LLVMDialect>();
+        context.getOrLoadDialect<memref::MemRefDialect>();
     }
     
     MLIRContext context;
@@ -84,14 +84,14 @@ TEST_F(PostgreSQLSPICallTest, GetFieldToExtractFieldConversion) {
             foundExtractFieldCall = true;
             EXPECT_EQ(callOp.getNumOperands(), 3);
             
-            // Verify return type is struct<(i64, i1)>
+            // Verify return type is tuple<i64, i1>
             auto resultType = callOp.getResult(0).getType();
-            ASSERT_TRUE(resultType.isa<LLVM::LLVMStructType>());
+            ASSERT_TRUE(resultType.isa<TupleType>());
             
-            auto structType = resultType.cast<LLVM::LLVMStructType>();
-            EXPECT_EQ(structType.getBody().size(), 2);
-            EXPECT_TRUE(structType.getBody()[0].isInteger(64));
-            EXPECT_TRUE(structType.getBody()[1].isInteger(1));
+            auto tupleType = resultType.cast<TupleType>();
+            EXPECT_EQ(tupleType.size(), 2);
+            EXPECT_TRUE(tupleType.getType(0).isInteger(64));
+            EXPECT_TRUE(tupleType.getType(1).isInteger(1));
         }
     });
     
