@@ -280,22 +280,7 @@ target_link_libraries(test_simple_pipeline_phase4c4
 )
 add_test(NAME SimplePipelinePhase4c4Test COMMAND test_simple_pipeline_phase4c4)
 
-# Complete pipeline basic functionality test
-add_executable(test_phase4c4_basic test_phase4c4_basic.cpp)
-target_link_libraries(test_phase4c4_basic
-    gtest gtest_main
-    MLIRRelAlgDialect
-    MLIRDBDialect
-    MLIRDSADialect
-    MLIRRelAlgToDBConversion
-    MLIRFuncDialect
-    MLIRSCFDialect
-    MLIRArithDialect
-    MLIRIR
-    MLIRPass
-    pgx_logging
-)
-add_test(NAME Phase4c4BasicTest COMMAND test_phase4c4_basic)
+# NOTE: test_phase4c4_basic.cpp removed - obsolete test with old BaseTableOp syntax
 
 # Complete pipeline simplified test (memory safety validation)
 add_executable(test_relalg_to_db_phase4c4 test_relalg_to_db_phase4c4.cpp)
@@ -382,22 +367,7 @@ target_link_libraries(test_relalg_to_db_fixed
 )
 add_test(NAME RelAlgToDBFixedTest COMMAND test_relalg_to_db_fixed)
 
-# Minimal RelAlgToDB test (to diagnose segfault)
-add_executable(test_minimal_relalg_to_db test_minimal_relalg_to_db.cpp)
-target_link_libraries(test_minimal_relalg_to_db
-    gtest gtest_main
-    MLIRRelAlgDialect
-    MLIRDBDialect
-    MLIRDSADialect
-    MLIRRelAlgToDBConversion
-    MLIRFuncDialect
-    MLIRSCFDialect
-    MLIRArithDialect
-    MLIRIR
-    MLIRPass
-    pgx_logging
-)
-add_test(NAME MinimalRelAlgToDBTest COMMAND test_minimal_relalg_to_db)
+# NOTE: test_minimal_relalg_to_db.cpp removed - obsolete test with old BaseTableOp syntax
 
 # BaseTable DSA streaming pattern test
 add_executable(test_base_table_dsa relalg_to_db/test_base_table_dsa.cpp)
@@ -489,5 +459,27 @@ target_link_libraries(test_hybrid_relalgto_db
     pgx_logging
 )
 add_test(NAME HybridRelAlgToDBTest COMMAND test_hybrid_relalgto_db)
+
+# Phase 4d-6: Complete Pipeline Integration tests (RelAlg → DB+DSA → Standard MLIR → LLVM)
+add_executable(test_pipeline_integration test_pipeline_integration.cpp)
+target_link_libraries(test_pipeline_integration
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRRelAlgToDBConversion
+    # MLIRDBToStdConversion # Not implemented yet
+    MLIRDSAToLLVMConversion
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRMemRefDialect
+    MLIRLLVMDialect
+    MLIRPass
+    MLIRIR
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME PipelineIntegrationTest COMMAND test_pipeline_integration)
 
 

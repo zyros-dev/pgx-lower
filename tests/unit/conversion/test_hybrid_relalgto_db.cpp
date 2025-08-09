@@ -38,6 +38,7 @@ protected:
 };
 
 // Test that MaterializeTranslator generates hybrid DSA + PostgreSQL SPI operations
+// DISABLED: Column resolution issue between BaseTable and Materialize translators
 TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
     PGX_DEBUG("Testing RelAlgToDB generates hybrid DSA+PostgreSQL SPI operations");
     
@@ -145,6 +146,7 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
 }
 
 // Test multiple columns with hybrid approach
+// DISABLED: Column resolution issue between BaseTable and Materialize translators
 TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
     PGX_DEBUG("Testing hybrid approach with multiple columns");
     
@@ -206,7 +208,8 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
     PGX_DEBUG("Multiple column hybrid test passed");
 }
 
-// Simple test to verify MaterializeTranslator doesn't use removed operations
+// Simple test to verify MaterializeTranslator doesn't use removed operations  
+// DISABLED: Column resolution issue between BaseTable and Materialize translators
 TEST_F(HybridRelAlgToDBTest, DISABLED_NoRemovedOperations) {
     PGX_DEBUG("Testing that RelAlgToDB doesn't use removed db.create_result_builder");
     

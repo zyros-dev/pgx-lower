@@ -94,9 +94,14 @@ TEST_F(RelAlgToDBFixesTest, BaseTableOpWithoutMaterialize) {
     PGX_DEBUG("BaseTableOp erasure test passed");
 }
 
-// Test 3: MaterializeOp with valid termination
+// Test 3: MaterializeOp with valid termination (updated for hybrid architecture)
+// DISABLED: Column resolution issue between BaseTable and Materialize translators
 TEST_F(RelAlgToDBFixesTest, DISABLED_MaterializeOpWithTermination) {
     PGX_DEBUG("Testing MaterializeOp generates properly terminated MLIR");
+    
+    // Create module for proper pass application
+    auto module = builder.create<ModuleOp>(builder.getUnknownLoc());
+    builder.setInsertionPointToStart(module.getBody());
     
     // Create function with MaterializeOp
     auto funcType = builder.getFunctionType({}, {});
@@ -124,14 +129,14 @@ TEST_F(RelAlgToDBFixesTest, DISABLED_MaterializeOpWithTermination) {
         columnsAttr
     );
     
-    // Return the materialized result
-    builder.create<func::ReturnOp>(builder.getUnknownLoc(), materializeOp.getResult());
+    // Add proper termination
+    builder.create<func::ReturnOp>(builder.getUnknownLoc());
     
-    // Run the pass
+    // Run the pass on module (not just function)
     PassManager pm(&context);
     pm.addPass(pgx_conversion::createRelAlgToDBPass());
     
-    auto result = pm.run(funcOp);
+    auto result = pm.run(module);
     ASSERT_TRUE(succeeded(result)) << "Pass should succeed without terminator errors";
     
     // Verify no RelAlg operations remain
@@ -143,14 +148,24 @@ TEST_F(RelAlgToDBFixesTest, DISABLED_MaterializeOpWithTermination) {
     });
     EXPECT_EQ(relalgCount, 0) << "All RelAlg operations should be converted";
     
-    // Verify DSA operations were created
+    // Verify both DSA and DB operations were created (hybrid architecture)
     int dsaCount = 0;
+    int dbCount = 0;
     funcOp.walk([&](Operation* op) {
-        if (op->getDialect() && op->getDialect()->getNamespace() == "dsa") {
-            dsaCount++;
+        if (op->getDialect()) {
+            if (op->getDialect()->getNamespace() == "dsa") {
+                dsaCount++;
+            } else if (op->getDialect()->getNamespace() == "db") {
+                dbCount++;
+            }
         }
     });
-    EXPECT_GT(dsaCount, 0) << "DSA operations should be created";
+    EXPECT_GT(dsaCount, 0) << "DSA operations should be created for internal processing";
+    EXPECT_GT(dbCount, 0) << "DB operations should be created for PostgreSQL output";
+    
+    // Verify function signature changed (no return value in hybrid architecture)
+    auto updatedFuncType = funcOp.getFunctionType();
+    EXPECT_EQ(updatedFuncType.getNumResults(), 0) << "Function should return void after conversion";
     
     PGX_DEBUG("MaterializeOp termination test passed");
 }
