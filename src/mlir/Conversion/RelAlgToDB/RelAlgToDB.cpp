@@ -75,11 +75,23 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
         });
         
         // Process MaterializeOps after walk to avoid iterator invalidation
+        // With PostgreSQL SPI integration, MaterializeOp doesn't produce a DSA table
+        // Instead, it streams results directly to PostgreSQL via StoreResultOp + StreamResultsOp
         for (auto materializeOp : processedOps) {
-            auto dsaTable = loweringContext.getQueryResult();
-            if (dsaTable) {
-                MLIR_PGX_DEBUG("RelAlgToDB", "Replacing MaterializeOp with DSA table");
-                materializeOp.replaceAllUsesWith(dsaTable);
+            // MaterializeOp has been fully replaced by DB/DSA operations that stream to PostgreSQL
+            // No DSA table is stored in context - results go directly through SPI
+            if (materializeOp->use_empty()) {
+                MLIR_PGX_DEBUG("RelAlgToDB", "Erasing MaterializeOp after PostgreSQL SPI streaming");
+                materializeOp.erase();
+            } else {
+                // If MaterializeOp has uses, replace with a dummy value since results are streamed
+                // This shouldn't happen in practice as MaterializeOp is terminal
+                MLIR_PGX_WARNING("RelAlgToDB", "MaterializeOp has unexpected uses after SPI streaming");
+                OpBuilder builder(materializeOp);
+                // Create a dummy i1 constant as replacement
+                auto dummyOp = builder.create<::mlir::arith::ConstantIntOp>(
+                    materializeOp.getLoc(), 0, 1);
+                materializeOp.replaceAllUsesWith(dummyOp.getResult());
                 materializeOp.erase();
             }
         }

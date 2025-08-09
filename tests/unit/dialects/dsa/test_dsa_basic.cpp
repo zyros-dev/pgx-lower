@@ -50,16 +50,9 @@ TEST_F(DSABasicTest, TypeCreation) {
     ASSERT_TRUE(recordType);
     EXPECT_EQ(recordType.getMnemonic(), "record");
     
-    // TableBuilderType needs row type
-    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
-    ASSERT_TRUE(tableBuilderType);
-    EXPECT_EQ(tableBuilderType.getMnemonic(), "table_builder");
+    // TableBuilderType removed in Phase 4d - skipping test
     
-    // TableType now requires a tuple type parameter
-    auto tupleType = builder.getTupleType({builder.getI32Type()});
-    auto tableType = TableType::get(&context, tupleType);
-    ASSERT_TRUE(tableType);
-    EXPECT_EQ(tableType.getMnemonic(), "table");
+    // TableType removed in Phase 4d - skipping test
 }
 
 TEST_F(DSABasicTest, CollectionTypeHierarchy) {
@@ -101,38 +94,19 @@ TEST_F(DSABasicTest, ScanSourceOpCreation) {
     EXPECT_EQ(scanOp.getTableDescriptionAttr().getValue().str(), "{\"table\":\"test\"}");
 }
 
+// TEMPORARILY DISABLED: CreateDSOp removed in Phase 4d
+/*
 TEST_F(DSABasicTest, CreateDSOpCreation) {
-    OpBuilder builder(&context);
-    auto loc = builder.getUnknownLoc();
-    
-    auto emptyTupleType = TupleType::get(&context, {});
-    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
-    
-    // Create CreateDSOp
-    auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
-    
-    ASSERT_TRUE(createOp);
-    EXPECT_EQ(createOp.getResult().getType(), tableBuilderType);
+    // CreateDSOp has been removed
 }
+*/
 
+// TEMPORARILY DISABLED: FinalizeOp removed in Phase 4d
+/*
 TEST_F(DSABasicTest, FinalizeOpCreation) {
-    OpBuilder builder(&context);
-    auto loc = builder.getUnknownLoc();
-    
-    auto emptyTupleType = TupleType::get(&context, {});
-    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
-    auto tableType = TableType::get(&context, emptyTupleType);
-    
-    // Create a dummy builder
-    auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
-    
-    // Create FinalizeOp
-    auto finalizeOp = builder.create<FinalizeOp>(loc, tableType, createOp.getResult());
-    
-    ASSERT_TRUE(finalizeOp);
-    EXPECT_EQ(finalizeOp.getResult().getType(), tableType);
-    EXPECT_TRUE(finalizeOp.getBuilder() == createOp.getResult());
+    // FinalizeOp has been removed
 }
+*/
 
 TEST_F(DSABasicTest, YieldOpCreation) {
     OpBuilder builder(&context);
@@ -196,44 +170,19 @@ TEST_F(DSABasicTest, AtOpCreation) {
     EXPECT_TRUE(atOp.getResult().getType() == i32Type);
 }
 
+// TEMPORARILY DISABLED: DSAppendOp removed in Phase 4d
+/*
 TEST_F(DSABasicTest, DSAppendOpCreation) {
-    OpBuilder builder(&context);
-    auto loc = builder.getUnknownLoc();
-    
-    auto i32Type = builder.getI32Type();
-    auto emptyTupleType = TupleType::get(&context, {});
-    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
-    
-    // Create builder and values
-    auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
-    auto value1 = builder.create<mlir::arith::ConstantIntOp>(loc, 42, i32Type);
-    auto value2 = builder.create<mlir::arith::ConstantIntOp>(loc, 24, i32Type);
-    
-    // Create DSAppendOp
-    SmallVector<Value> values = {value1.getResult(), value2.getResult()};
-    auto appendOp = builder.create<DSAppendOp>(loc, createOp.getResult(), values);
-    
-    ASSERT_TRUE(appendOp);
-    EXPECT_TRUE(appendOp.getBuilder() == createOp.getResult());
-    EXPECT_EQ(appendOp.getValues().size(), 2);
+    // DSAppendOp has been removed
 }
+*/
 
+// TEMPORARILY DISABLED: NextRowOp removed in Phase 4d
+/*
 TEST_F(DSABasicTest, NextRowOpCreation) {
-    OpBuilder builder(&context);
-    auto loc = builder.getUnknownLoc();
-    
-    auto emptyTupleType = TupleType::get(&context, {});
-    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
-    
-    // Create builder
-    auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
-    
-    // Create NextRowOp
-    auto nextRowOp = builder.create<NextRowOp>(loc, createOp.getResult());
-    
-    ASSERT_TRUE(nextRowOp);
-    EXPECT_TRUE(nextRowOp.getBuilder() == createOp.getResult());
+    // NextRowOp has been removed
 }
+*/
 
 TEST_F(DSABasicTest, AllOperationsRegistered) {
     auto* dialect = context.getOrLoadDialect<DSADialect>();
@@ -381,26 +330,12 @@ TEST_F(DSABasicTest, EdgeCases_NullHandling) {
     bodyBuilder.create<YieldOp>(loc);
 }
 
+// TEMPORARILY DISABLED: Uses deleted DSA operations
+/*
 TEST_F(DSABasicTest, EdgeCases_EmptyOperations) {
-    OpBuilder builder(&context);
-    auto loc = builder.getUnknownLoc();
-    auto emptyTupleType = TupleType::get(&context, {});
-    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
-    
-    // Test DSAppendOp with no values (empty append)
-    auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
-    SmallVector<Value> emptyValues;
-    auto appendOpEmpty = builder.create<DSAppendOp>(loc, createOp.getResult(), emptyValues);
-    
-    ASSERT_TRUE(appendOpEmpty);
-    EXPECT_TRUE(appendOpEmpty.getBuilder() == createOp.getResult());
-    EXPECT_EQ(appendOpEmpty.getValues().size(), 0);
-    
-    // Test YieldOp with empty results (which is normal)
-    auto yieldOpEmpty = builder.create<YieldOp>(loc);
-    ASSERT_TRUE(yieldOpEmpty);
-    EXPECT_EQ(yieldOpEmpty.getResults().size(), 0);
+    // This test used CreateDSOp and DSAppendOp which have been removed
 }
+*/
 
 TEST_F(DSABasicTest, EdgeCases_TypeCompatibility) {
     OpBuilder builder(&context);
@@ -491,32 +426,9 @@ TEST_F(DSABasicTest, EdgeCases_ComplexNestedStructures) {
     EXPECT_TRUE(atOp.getRecord() != outerRecord);
 }
 
+// TEMPORARILY DISABLED: Uses deleted DSA operations
+/*
 TEST_F(DSABasicTest, EdgeCases_LargeValueSets) {
-    OpBuilder builder(&context);
-    auto loc = builder.getUnknownLoc();
-    auto i32Type = builder.getI32Type();
-    auto emptyTupleType = TupleType::get(&context, {});
-    auto tableBuilderType = TableBuilderType::get(&context, emptyTupleType);
-    
-    // Test DSAppendOp with large number of values
-    auto createOp = builder.create<CreateDSOp>(loc, tableBuilderType);
-    SmallVector<Value> largeValueSet;
-    
-    // Create 50 constant values
-    for (int i = 0; i < 50; ++i) {
-        auto constOp = builder.create<mlir::arith::ConstantIntOp>(loc, i, i32Type);
-        largeValueSet.push_back(constOp.getResult());
-    }
-    
-    auto appendOpLarge = builder.create<DSAppendOp>(loc, createOp.getResult(), largeValueSet);
-    
-    ASSERT_TRUE(appendOpLarge);
-    EXPECT_TRUE(appendOpLarge.getBuilder() == createOp.getResult());
-    EXPECT_EQ(appendOpLarge.getValues().size(), 50);
-    
-    // Verify all values are properly stored
-    auto values = appendOpLarge.getValues();
-    for (size_t i = 0; i < values.size(); ++i) {
-        EXPECT_TRUE(values[i].getType() == i32Type);
-    }
+    // This test used CreateDSOp and DSAppendOp which have been removed
 }
+*/

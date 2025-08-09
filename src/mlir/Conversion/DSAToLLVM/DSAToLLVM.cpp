@@ -31,17 +31,6 @@ mlir::pgx_conversion::DSAToLLVMTypeConverter::DSAToLLVMTypeConverter(MLIRContext
     : LLVMTypeConverter(ctx) {
     MLIR_PGX_DEBUG("DSAToLLVM", "Initializing DSAToLLVMTypeConverter");
     
-    // Convert DSA TableType to opaque pointer (runtime handle)
-    addConversion([&](::pgx::mlir::dsa::TableType type) -> Type {
-        MLIR_PGX_DEBUG("DSAToLLVM", "Converting DSA TableType to LLVM pointer");
-        return LLVM::LLVMPointerType::get(ctx);
-    });
-    
-    // Convert DSA TableBuilderType to opaque pointer (runtime handle)
-    addConversion([&](::pgx::mlir::dsa::TableBuilderType type) -> Type {
-        MLIR_PGX_DEBUG("DSAToLLVM", "Converting DSA TableBuilderType to LLVM pointer");
-        return LLVM::LLVMPointerType::get(ctx);
-    });
     
     // Convert DSA GenericIterableType to opaque pointer (runtime handle)
     addConversion([&](::pgx::mlir::dsa::GenericIterableType type) -> Type {
@@ -65,53 +54,22 @@ mlir::pgx_conversion::DSAToLLVMTypeConverter::DSAToLLVMTypeConverter(MLIRContext
         MLIR_PGX_DEBUG("DSAToLLVM", "Converting DSA RecordBatchType to LLVM pointer");
         return LLVM::LLVMPointerType::get(ctx);
     });
+    
+    // Convert DSA TableBuilderType to opaque pointer (runtime handle)
+    addConversion([&](::pgx::mlir::dsa::TableBuilderType type) -> Type {
+        MLIR_PGX_DEBUG("DSAToLLVM", "Converting DSA TableBuilderType to LLVM pointer");
+        return LLVM::LLVMPointerType::get(ctx);
+    });
+    
+    // Convert DSA TableType to opaque pointer (runtime handle)
+    addConversion([&](::pgx::mlir::dsa::TableType type) -> Type {
+        MLIR_PGX_DEBUG("DSAToLLVM", "Converting DSA TableType to LLVM pointer");
+        return LLVM::LLVMPointerType::get(ctx);
+    });
 }
 
 namespace {
 
-//===----------------------------------------------------------------------===//
-// CreateDSOp Lowering Pattern Implementation
-//===----------------------------------------------------------------------===//
-
-class CreateDSToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::CreateDSOp> {
-public:
-    using OpConversionPattern<::pgx::mlir::dsa::CreateDSOp>::OpConversionPattern;
-    
-    LogicalResult matchAndRewrite(::pgx::mlir::dsa::CreateDSOp op, OpAdaptor adaptor, 
-                                  ConversionPatternRewriter &rewriter) const override {
-        MLIR_PGX_DEBUG("DSAToLLVM", "Converting CreateDSOp to LLVM runtime call");
-        
-        auto loc = op.getLoc();
-        auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-        
-        // Get the tuple type from the table builder
-        auto tableBuilderType = op.getResult().getType().cast<::pgx::mlir::dsa::TableBuilderType>();
-        auto tupleType = tableBuilderType.getRowType();
-        
-        // For Test 1: single i32 column
-        // Create type descriptor for runtime
-        auto i32Type = rewriter.getI32Type();
-        auto typeDescriptor = rewriter.create<LLVM::ConstantOp>(
-            loc, i32Type, rewriter.getI32IntegerAttr(1) // 1 column
-        );
-        
-        // Call runtime function: pgx_dsa_create_table_builder(num_columns) -> ptr
-        auto funcOp = LLVM::lookupOrCreateFn(
-            op->getParentOfType<ModuleOp>(),
-            "pgx_dsa_create_table_builder",
-            {i32Type}, // num_columns
-            ptrType    // returns opaque pointer
-        );
-        
-        auto callOp = rewriter.create<LLVM::CallOp>(
-            loc, funcOp.value(), ValueRange{typeDescriptor}
-        );
-        
-        rewriter.replaceOp(op, callOp.getResult());
-        MLIR_PGX_DEBUG("DSAToLLVM", "Successfully converted CreateDSOp to runtime call");
-        return success();
-    }
-};
 
 //===----------------------------------------------------------------------===//
 // ScanSourceOp Lowering Pattern Implementation
@@ -165,15 +123,19 @@ public:
         );
         
         // Call runtime function: pgx_dsa_scan_source(table_desc) -> iterator
-        auto funcOp = LLVM::lookupOrCreateFn(
+        auto funcOpOrError = LLVM::lookupOrCreateFn(
             moduleOp,
             "pgx_dsa_scan_source",
             {ptrType}, // table description string
             ptrType    // returns opaque iterator pointer
         );
         
+        if (failed(funcOpOrError)) {
+            return failure();
+        }
+        
         auto callOp = rewriter.create<LLVM::CallOp>(
-            loc, funcOp.value(), ValueRange{globalPtr}
+            loc, TypeRange{ptrType}, SymbolRefAttr::get(*funcOpOrError), ValueRange{globalPtr}
         );
         
         rewriter.replaceOp(op, callOp.getResult());
@@ -182,114 +144,6 @@ public:
     }
 };
 
-//===----------------------------------------------------------------------===//
-// FinalizeOp Lowering Pattern Implementation
-//===----------------------------------------------------------------------===//
-
-class FinalizeToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::FinalizeOp> {
-public:
-    using OpConversionPattern<::pgx::mlir::dsa::FinalizeOp>::OpConversionPattern;
-    
-    LogicalResult matchAndRewrite(::pgx::mlir::dsa::FinalizeOp op, OpAdaptor adaptor,
-                                  ConversionPatternRewriter &rewriter) const override {
-        MLIR_PGX_DEBUG("DSAToLLVM", "Converting FinalizeOp to LLVM runtime call");
-        
-        auto loc = op.getLoc();
-        auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-        
-        // Call runtime function: pgx_dsa_finalize_table(builder) -> table
-        auto funcOp = LLVM::lookupOrCreateFn(
-            op->getParentOfType<ModuleOp>(),
-            "pgx_dsa_finalize_table",
-            {ptrType}, // table builder
-            ptrType    // returns opaque table pointer
-        );
-        
-        auto callOp = rewriter.create<LLVM::CallOp>(
-            loc, funcOp.value(), ValueRange{adaptor.getBuilder()}
-        );
-        
-        rewriter.replaceOp(op, callOp.getResult());
-        MLIR_PGX_DEBUG("DSAToLLVM", "Successfully converted FinalizeOp to runtime call");
-        return success();
-    }
-};
-
-//===----------------------------------------------------------------------===//
-// DSAppendOp Lowering Pattern Implementation
-//===----------------------------------------------------------------------===//
-
-class DSAppendToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::DSAppendOp> {
-public:
-    using OpConversionPattern<::pgx::mlir::dsa::DSAppendOp>::OpConversionPattern;
-    
-    LogicalResult matchAndRewrite(::pgx::mlir::dsa::DSAppendOp op, OpAdaptor adaptor,
-                                  ConversionPatternRewriter &rewriter) const override {
-        MLIR_PGX_DEBUG("DSAToLLVM", "Converting DSAppendOp to LLVM runtime call");
-        
-        auto loc = op.getLoc();
-        auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-        
-        // For each value, call append function
-        // For Test 1, we expect a single i32 value
-        for (auto [idx, value] : llvm::enumerate(adaptor.getValues())) {
-            auto valueType = value.getType();
-            
-            // Call runtime function: pgx_dsa_append_i32(builder, col_idx, value)
-            auto funcOp = LLVM::lookupOrCreateFn(
-                op->getParentOfType<ModuleOp>(),
-                "pgx_dsa_append_i32",
-                {ptrType, rewriter.getI32Type(), rewriter.getI32Type()}, // builder, col_idx, value
-                LLVM::LLVMVoidType::get(rewriter.getContext())
-            );
-            
-            auto colIdx = rewriter.create<LLVM::ConstantOp>(
-                loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(idx)
-            );
-            
-            rewriter.create<LLVM::CallOp>(
-                loc, funcOp.value(), ValueRange{adaptor.getBuilder(), colIdx, value}
-            );
-        }
-        
-        rewriter.eraseOp(op);
-        MLIR_PGX_DEBUG("DSAToLLVM", "Successfully converted DSAppendOp to runtime calls");
-        return success();
-    }
-};
-
-//===----------------------------------------------------------------------===//
-// NextRowOp Lowering Pattern Implementation
-//===----------------------------------------------------------------------===//
-
-class NextRowToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::NextRowOp> {
-public:
-    using OpConversionPattern<::pgx::mlir::dsa::NextRowOp>::OpConversionPattern;
-    
-    LogicalResult matchAndRewrite(::pgx::mlir::dsa::NextRowOp op, OpAdaptor adaptor,
-                                  ConversionPatternRewriter &rewriter) const override {
-        MLIR_PGX_DEBUG("DSAToLLVM", "Converting NextRowOp to LLVM runtime call");
-        
-        auto loc = op.getLoc();
-        auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-        
-        // Call runtime function: pgx_dsa_next_row(builder)
-        auto funcOp = LLVM::lookupOrCreateFn(
-            op->getParentOfType<ModuleOp>(),
-            "pgx_dsa_next_row",
-            {ptrType}, // table builder
-            LLVM::LLVMVoidType::get(rewriter.getContext())
-        );
-        
-        rewriter.create<LLVM::CallOp>(
-            loc, funcOp.value(), ValueRange{adaptor.getBuilder()}
-        );
-        
-        rewriter.eraseOp(op);
-        MLIR_PGX_DEBUG("DSAToLLVM", "Successfully converted NextRowOp to runtime call");
-        return success();
-    }
-};
 
 //===----------------------------------------------------------------------===//
 // ForOp Lowering Pattern Implementation
@@ -335,6 +189,256 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+// CreateDSOp Lowering Pattern Implementation
+//===----------------------------------------------------------------------===//
+
+class CreateDSToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::CreateDSOp> {
+public:
+    using OpConversionPattern<::pgx::mlir::dsa::CreateDSOp>::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(::pgx::mlir::dsa::CreateDSOp op, OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override {
+        MLIR_PGX_DEBUG("DSAToLLVM", "Converting CreateDSOp to LLVM runtime call");
+        
+        auto loc = op.getLoc();
+        auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+        
+        // Check if this is creating a TableBuilder
+        if (op.getType().isa<::pgx::mlir::dsa::TableBuilderType>()) {
+            // Get schema description if provided
+            StringRef schemaDesc;
+            if (auto attr = op.getInitAttr()) {
+                schemaDesc = *attr;
+            }
+            
+            // Call runtime function to create table builder
+            auto funcOpOrError = LLVM::lookupOrCreateFn(
+                op->getParentOfType<ModuleOp>(), "pgx_runtime_create_table_builder",
+                {ptrType}, ptrType, /*isVarArg=*/false
+            );
+            
+            if (failed(funcOpOrError)) {
+                return failure();
+            }
+            
+            // Create schema string as global if provided
+            Value schemaPtr;
+            if (!schemaDesc.empty()) {
+                std::string schemaStr = schemaDesc.str();
+                schemaStr.push_back('\0');
+                
+                auto strType = LLVM::LLVMArrayType::get(
+                    rewriter.getI8Type(), schemaStr.size()
+                );
+                
+                static int schemaCounter = 0;
+                std::string globalName = "schema_desc_" + std::to_string(schemaCounter++);
+                
+                auto moduleOp = op->getParentOfType<ModuleOp>();
+                auto currentInsertionPoint = rewriter.saveInsertionPoint();
+                rewriter.setInsertionPointToStart(moduleOp.getBody());
+                
+                auto globalOp = rewriter.create<LLVM::GlobalOp>(
+                    moduleOp.getLoc(), strType, /*isConstant=*/true,
+                    LLVM::Linkage::Private, globalName,
+                    rewriter.getStringAttr(schemaStr)
+                );
+                
+                rewriter.restoreInsertionPoint(currentInsertionPoint);
+                
+                schemaPtr = rewriter.create<LLVM::AddressOfOp>(
+                    loc, LLVM::LLVMPointerType::get(rewriter.getContext()), globalOp.getSymNameAttr()
+                );
+            } else {
+                // Pass null if no schema
+                schemaPtr = rewriter.create<LLVM::ZeroOp>(loc, ptrType);
+            }
+            
+            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, TypeRange{ptrType}, SymbolRefAttr::get(*funcOpOrError), ValueRange{schemaPtr});
+            
+            MLIR_PGX_DEBUG("DSAToLLVM", "Created table builder via runtime call");
+            return success();
+        }
+        
+        // For other data structures, return failure for now
+        return failure();
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// DSAppendOp Lowering Pattern Implementation
+//===----------------------------------------------------------------------===//
+
+class DSAppendToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::DSAppendOp> {
+public:
+    using OpConversionPattern<::pgx::mlir::dsa::DSAppendOp>::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(::pgx::mlir::dsa::DSAppendOp op, OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override {
+        MLIR_PGX_DEBUG("DSAToLLVM", "Converting DSAppendOp to LLVM runtime call");
+        
+        auto loc = op.getLoc();
+        auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+        auto i1Type = rewriter.getI1Type();
+        
+        // Convert value to appropriate LLVM type
+        auto convertedValue = adaptor.getVal();
+        auto convertedDs = adaptor.getDs();
+        
+        // Determine runtime function based on value type
+        std::string funcName = "pgx_runtime_table_append_";
+        Type valueType = op.getVal().getType();
+        
+        if (valueType.isInteger(32)) {
+            funcName += "i32";
+        } else if (valueType.isInteger(64)) {
+            funcName += "i64";
+        } else {
+            // For now, use generic append
+            funcName = "pgx_runtime_table_append_generic";
+        }
+        
+        // Create runtime call with or without validity flag
+        if (op.getValid()) {
+            auto funcOpOrError = LLVM::lookupOrCreateFn(
+                op->getParentOfType<ModuleOp>(), funcName,
+                {ptrType, convertedValue.getType(), i1Type}, 
+                LLVM::LLVMVoidType::get(rewriter.getContext()),
+                /*isVarArg=*/false
+            );
+            
+            if (failed(funcOpOrError)) {
+                return failure();
+            }
+            
+            rewriter.create<LLVM::CallOp>(
+                loc, TypeRange{}, SymbolRefAttr::get(*funcOpOrError), 
+                ValueRange{convertedDs, convertedValue, adaptor.getValid()}
+            );
+        } else {
+            // Without validity flag, pass true (valid)
+            auto funcOpOrError = LLVM::lookupOrCreateFn(
+                op->getParentOfType<ModuleOp>(), funcName,
+                {ptrType, convertedValue.getType(), i1Type}, 
+                LLVM::LLVMVoidType::get(rewriter.getContext()),
+                /*isVarArg=*/false
+            );
+            
+            if (failed(funcOpOrError)) {
+                return failure();
+            }
+            
+            auto trueVal = rewriter.create<LLVM::ConstantOp>(
+                loc, i1Type, rewriter.getBoolAttr(true)
+            );
+            
+            rewriter.create<LLVM::CallOp>(
+                loc, TypeRange{}, SymbolRefAttr::get(*funcOpOrError), 
+                ValueRange{convertedDs, convertedValue, trueVal}
+            );
+        }
+        
+        rewriter.eraseOp(op);
+        MLIR_PGX_DEBUG("DSAToLLVM", "Appended value to table builder");
+        return success();
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// NextRowOp Lowering Pattern Implementation
+//===----------------------------------------------------------------------===//
+
+class NextRowToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::NextRowOp> {
+public:
+    using OpConversionPattern<::pgx::mlir::dsa::NextRowOp>::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(::pgx::mlir::dsa::NextRowOp op, OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override {
+        MLIR_PGX_DEBUG("DSAToLLVM", "Converting NextRowOp to LLVM runtime call");
+        
+        auto loc = op.getLoc();
+        auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+        
+        // Call runtime function to finalize current row
+        auto funcOpOrError = LLVM::lookupOrCreateFn(
+            op->getParentOfType<ModuleOp>(), "pgx_runtime_table_next_row",
+            {ptrType}, LLVM::LLVMVoidType::get(rewriter.getContext()),
+            /*isVarArg=*/false
+        );
+        
+        if (failed(funcOpOrError)) {
+            return failure();
+        }
+        
+        rewriter.create<LLVM::CallOp>(loc, TypeRange{}, SymbolRefAttr::get(*funcOpOrError), ValueRange{adaptor.getBuilder()});
+        rewriter.eraseOp(op);
+        
+        MLIR_PGX_DEBUG("DSAToLLVM", "Finalized row in table builder");
+        return success();
+    }
+};
+
+//===----------------------------------------------------------------------===//
+// FinalizeOp Lowering Pattern Implementation
+//===----------------------------------------------------------------------===//
+
+class FinalizeToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::FinalizeOp> {
+public:
+    using OpConversionPattern<::pgx::mlir::dsa::FinalizeOp>::OpConversionPattern;
+    
+    LogicalResult matchAndRewrite(::pgx::mlir::dsa::FinalizeOp op, OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override {
+        MLIR_PGX_DEBUG("DSAToLLVM", "Converting FinalizeOp to LLVM runtime call");
+        
+        auto loc = op.getLoc();
+        auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+        
+        MLIR_PGX_DEBUG("DSAToLLVM", "Checking if FinalizeOp produces result");
+        // Check if this produces a result (table)
+        if (op.getRes()) {
+            MLIR_PGX_DEBUG("DSAToLLVM", "FinalizeOp produces a result");
+            // Call runtime function to finalize table builder
+            auto funcOpOrError = LLVM::lookupOrCreateFn(
+                op->getParentOfType<ModuleOp>(), "pgx_runtime_table_finalize",
+                {ptrType}, ptrType,
+                /*isVarArg=*/false
+            );
+            
+            if (failed(funcOpOrError)) {
+                MLIR_PGX_ERROR("DSAToLLVM", "Failed to lookup/create pgx_runtime_table_finalize");
+                return failure();
+            }
+            
+            MLIR_PGX_DEBUG("DSAToLLVM", "Creating LLVM CallOp for table finalize");
+            auto callOp = rewriter.create<LLVM::CallOp>(
+                loc, TypeRange{ptrType}, SymbolRefAttr::get(*funcOpOrError), ValueRange{adaptor.getHt()}
+            );
+            
+            MLIR_PGX_DEBUG("DSAToLLVM", "Replacing FinalizeOp with CallOp");
+            rewriter.replaceOp(op, callOp.getResult());
+            MLIR_PGX_DEBUG("DSAToLLVM", "Finalized table builder to table");
+        } else {
+            // No result version
+            auto funcOpOrError = LLVM::lookupOrCreateFn(
+                op->getParentOfType<ModuleOp>(), "pgx_runtime_finalize_void",
+                {ptrType}, LLVM::LLVMVoidType::get(rewriter.getContext()),
+                /*isVarArg=*/false
+            );
+            
+            if (failed(funcOpOrError)) {
+                return failure();
+            }
+            
+            rewriter.create<LLVM::CallOp>(loc, TypeRange{}, SymbolRefAttr::get(*funcOpOrError), ValueRange{adaptor.getHt()});
+            rewriter.eraseOp(op);
+            MLIR_PGX_DEBUG("DSAToLLVM", "Finalized data structure (void)");
+        }
+        
+        return success();
+    }
+};
+
+//===----------------------------------------------------------------------===//
 // DSA to LLVM Conversion Pass
 //===----------------------------------------------------------------------===//
 
@@ -375,13 +479,15 @@ struct DSAToLLVMPass : public PassWrapper<DSAToLLVMPass, OperationPass<ModuleOp>
         RewritePatternSet patterns(&getContext());
         
         // Add DSA→LLVM conversion patterns
-        patterns.add<CreateDSToLLVMPattern>(typeConverter, &getContext());
         patterns.add<ScanSourceToLLVMPattern>(typeConverter, &getContext());
-        patterns.add<FinalizeToLLVMPattern>(typeConverter, &getContext());
-        patterns.add<DSAppendToLLVMPattern>(typeConverter, &getContext());
-        patterns.add<NextRowToLLVMPattern>(typeConverter, &getContext());
         patterns.add<ForOpToLLVMPattern>(typeConverter, &getContext());
         patterns.add<YieldOpToLLVMPattern>(typeConverter, &getContext());
+        
+        // Add table building patterns
+        patterns.add<CreateDSToLLVMPattern>(typeConverter, &getContext());
+        patterns.add<DSAppendToLLVMPattern>(typeConverter, &getContext());
+        patterns.add<NextRowToLLVMPattern>(typeConverter, &getContext());
+        patterns.add<FinalizeToLLVMPattern>(typeConverter, &getContext());
         
         // Don't convert functions in this pass - focus only on DSA operations
         
