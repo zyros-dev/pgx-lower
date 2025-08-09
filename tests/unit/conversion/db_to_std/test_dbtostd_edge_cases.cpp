@@ -18,6 +18,8 @@
 #include "mlir/Dialect/DB/IR/DBDialect.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "mlir/Dialect/Util/IR/UtilDialect.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 #include "mlir/Conversion/DBToStd/DBToStd.h"
 #include "execution/logging.h"
 
@@ -31,7 +33,8 @@ protected:
     void SetUp() override {
         context.loadDialect<FuncDialect, ArithDialect, SCFDialect, 
                            memref::MemRefDialect, pgx::db::DBDialect,
-                           pgx::mlir::dsa::DSADialect>();
+                           pgx::mlir::dsa::DSADialect, 
+                           pgx::mlir::util::UtilDialect>();
     }
 
     MLIRContext context;
@@ -209,14 +212,18 @@ TEST_F(DBToStdEdgeCaseTest, ProperNullableTypeHandling) {
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
-    // Verify nullable_get_val is converted to function call
-    bool foundExtractCall = false;
-    module.walk([&](func::CallOp callOp) { 
-        if (callOp.getCallee() == "extract_nullable_value") {
-            foundExtractCall = true;
+    // Verify nullable_get_val is converted to util.get_tuple
+    bool foundGetTuple = false;
+    module.walk([&](Operation* op) { 
+        if (op->getName().getStringRef() == "util.get_tuple") {
+            foundGetTuple = true;
+            // Verify it's extracting from index 0 (the value)
+            if (auto getTupleOp = dyn_cast<pgx::mlir::util::GetTupleOp>(op)) {
+                EXPECT_EQ(getTupleOp.getIndex(), 0) << "Should extract value at index 0";
+            }
         }
     });
-    EXPECT_TRUE(foundExtractCall) << "nullable_get_val should convert to extract_nullable_value call";
+    EXPECT_TRUE(foundGetTuple) << "nullable_get_val should convert to util.get_tuple";
     
     PGX_INFO("Nullable type handling test passed");
 }

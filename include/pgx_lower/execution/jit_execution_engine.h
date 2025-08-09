@@ -95,6 +95,14 @@ public:
      * @return true if setup succeeded, false otherwise
      */
     bool setupMemoryContexts();
+    
+    /**
+     * @brief Execute the compiled query using JIT
+     * @param estate PostgreSQL execution state
+     * @param dest PostgreSQL destination receiver for results
+     * @return true if execution succeeded, false otherwise
+     */
+    bool executeCompiledQuery(void* estate, void* dest);
 };
 
 } // namespace execution

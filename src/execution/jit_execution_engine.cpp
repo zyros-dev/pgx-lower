@@ -586,5 +586,70 @@ bool PostgreSQLJITExecutionEngine::setupMemoryContexts() {
 #endif
 }
 
+bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest) {
+    PGX_DEBUG("Executing JIT compiled query");
+    
+    if (!initialized || !engine) {
+        PGX_ERROR("Cannot execute query - JIT engine not initialized");
+        return false;
+    }
+    
+    if (!estate || !dest) {
+        PGX_ERROR("Cannot execute query - null estate or dest receiver");
+        return false;
+    }
+    
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
+    // Look up the compiled query function
+    // The function should be named "compiled_query" or "main" depending on the lowering
+    auto queryFuncResult = engine->lookup("compiled_query");
+    if (!queryFuncResult) {
+        PGX_WARNING("Failed to find 'compiled_query' function, trying 'main'");
+        queryFuncResult = engine->lookup("main");
+        
+        if (!queryFuncResult) {
+            PGX_ERROR("Failed to lookup compiled query function - neither 'compiled_query' nor 'main' found");
+            return false;
+        }
+    }
+    
+    // Get the function pointer
+    auto funcPtr = queryFuncResult.get();
+    if (!funcPtr) {
+        PGX_ERROR("Failed to get function pointer from JIT lookup result");
+        return false;
+    }
+    
+    PGX_INFO("Found JIT compiled query function, preparing for execution");
+    
+    // Cast to the expected function signature
+    // The function signature should match what the MLIR lowering produces
+    // For Test 1, this is likely: int compiled_query(void* estate, void* dest)
+    typedef int (*QueryFunctionType)(void*, void*);
+    auto compiledQuery = reinterpret_cast<QueryFunctionType>(funcPtr);
+    
+    // Execute the compiled query
+    PGX_INFO("Executing JIT compiled query for Test 1");
+    
+    try {
+        int result = compiledQuery(estate, dest);
+        
+        auto endTime = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
+        PGX_INFO("JIT query execution completed in " + std::to_string(duration / 1000.0) + " ms with result: " + std::to_string(result));
+        
+        // Return true if execution succeeded (result == 0)
+        return (result == 0);
+        
+    } catch (const std::exception& e) {
+        PGX_ERROR("Exception during JIT query execution: " + std::string(e.what()));
+        return false;
+    } catch (...) {
+        PGX_ERROR("Unknown exception during JIT query execution");
+        return false;
+    }
+}
+
 } // namespace execution
 } // namespace pgx_lower

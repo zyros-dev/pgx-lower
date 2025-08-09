@@ -5,7 +5,7 @@
 #include <vector>
 #include "runtime/helpers.h"
 #include "execution/postgres/my_executor.h"
-#include "execution/mlir_runner.h"
+// Removed mlir_runner.h include to avoid DestReceiver conflicts
 #include "frontend/SQL/query_analyzer.h"
 #include "execution/error_handling.h"
 #include "execution/logging.h"

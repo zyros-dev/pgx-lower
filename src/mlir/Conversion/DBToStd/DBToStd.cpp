@@ -20,12 +20,16 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Util/IR/UtilDialect.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinDialect.h"
 #include "execution/logging.h"
 
 namespace mlir {
@@ -114,16 +118,16 @@ public:
           return inputs[0];
         }
         
-        // If we have a DB nullable type input, create an unrealized conversion cast
+        // If we have a DB nullable type input, we should not materialize here
+        // The conversion patterns should handle the actual conversion
         if (inputs.size() == 1) {
           auto inputType = inputs[0].getType();
           if (inputType.isa<pgx::db::NullableI64Type>() ||
               inputType.isa<pgx::db::NullableI32Type>() ||
               inputType.isa<pgx::db::NullableF64Type>() ||
               inputType.isa<pgx::db::NullableBoolType>()) {
-            // Create unrealized conversion cast for proper type legalization
-            return builder.create<UnrealizedConversionCastOp>(
-                loc, resultType, inputs[0]).getResult(0);
+            // Return empty to force the conversion pattern to handle it
+            return Value();
           }
         }
       }
@@ -134,11 +138,10 @@ public:
           return inputs[0];
         }
         
-        // If we have a DB external source type input, create unrealized conversion cast
+        // If we have a DB external source type input, let conversion pattern handle it
         if (inputs.size() == 1 && 
             inputs[0].getType().isa<pgx::db::ExternalSourceType>()) {
-          return builder.create<UnrealizedConversionCastOp>(
-              loc, resultType, inputs[0]).getResult(0);
+          return Value();
         }
       }
       
@@ -271,7 +274,7 @@ public:
   }
 };
 
-// Convert db.nullable_get_val → func.call @extract_nullable_value (Standard MLIR helper)
+// Convert db.nullable_get_val → util.get_tuple (extract value from nullable tuple)
 class NullableGetValOpConversion : public OpConversionPattern<pgx::db::NullableGetValOp> {
 public:
   using OpConversionPattern::OpConversionPattern;
@@ -291,20 +294,14 @@ public:
       return failure();
     }
     
-    // Get the result type of the original operation
-    auto resultType = op.getResult().getType();
+    // For nullable types, the tuple is structured as <value, is_null>
+    // Extract the value (index 0) from the tuple
+    auto valueOp = rewriter.create<pgx::mlir::util::GetTupleOp>(
+        loc, tupleType.getType(0), operand, 0);
     
-    // Create a function call to extract the value from the tuple
-    // This helper function will be provided by the runtime
-    auto funcType = rewriter.getFunctionType({tupleType}, {resultType});
+    rewriter.replaceOp(op, valueOp.getResult());
     
-    auto callOp = rewriter.create<func::CallOp>(
-        loc, "extract_nullable_value", TypeRange{resultType}, 
-        ValueRange{operand});
-    
-    rewriter.replaceOp(op, callOp.getResults());
-    
-    MLIR_PGX_DEBUG("DBToStd", "Converted db.nullable_get_val to Standard MLIR function call");
+    MLIR_PGX_DEBUG("DBToStd", "Converted db.nullable_get_val to util.get_tuple");
     return success();
   }
 };
@@ -329,6 +326,40 @@ public:
   }
 };
 
+// Convert db.as_nullable → create tuple<value, false> (Standard MLIR tuple with non-null flag)
+class AsNullableOpConversion : public OpConversionPattern<pgx::db::AsNullableOp> {
+public:
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(
+      pgx::db::AsNullableOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    
+    // Get the input value
+    auto inputValue = adaptor.getValue();
+    
+    // Create a non-null flag (false means not null, true means null)
+    auto falseFlag = rewriter.create<arith::ConstantOp>(
+        loc, rewriter.getI1Type(), rewriter.getBoolAttr(false));
+    
+    // Get the converted tuple type for the nullable result
+    auto resultType = typeConverter->convertType(op.getResult().getType());
+    if (!resultType) {
+      return failure();
+    }
+    
+    // Create the tuple value using util.pack operation
+    auto packOp = rewriter.create<pgx::mlir::util::PackOp>(
+        loc, resultType, ValueRange{inputValue, falseFlag.getResult()});
+    
+    rewriter.replaceOp(op, packOp.getResult());
+    
+    MLIR_PGX_DEBUG("DBToStd", "Converted db.as_nullable to Standard MLIR tuple");
+    return success();
+  }
+};
+
 // Convert db.store_result → func.call @pg_store_result (PostgreSQL SPI result storage)
 class StoreResultOpConversion : public OpConversionPattern<pgx::db::StoreResultOp> {
 public:
@@ -339,8 +370,15 @@ public:
       ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     
-    // Verify the value is a tuple type (nullable representation)
-    auto tupleType = adaptor.getValue().getType().dyn_cast<TupleType>();
+    // Get the converted type for the nullable value
+    auto originalType = op.getValue().getType();
+    auto convertedType = typeConverter->convertType(originalType);
+    if (!convertedType) {
+      return failure();
+    }
+    
+    // It should be a tuple type after conversion
+    auto tupleType = convertedType.dyn_cast<TupleType>();
     if (!tupleType) {
       return failure();
     }
@@ -389,6 +427,30 @@ public:
     rewriter.eraseOp(op);
     
     MLIR_PGX_DEBUG("DBToStd", "Converted db.store_result to PostgreSQL SPI " + funcName + " call");
+    return success();
+  }
+};
+
+// Convert db.stream_results → func.call @pg_stream_results (PostgreSQL SPI result streaming)
+class StreamResultsOpConversion : public OpConversionPattern<pgx::db::StreamResultsOp> {
+public:
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(
+      pgx::db::StreamResultsOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    
+    // Create function type for pg_stream_results
+    auto funcType = rewriter.getFunctionType({}, {});
+    
+    // Create the function call
+    rewriter.create<func::CallOp>(
+        loc, "pg_stream_results", TypeRange{}, ValueRange{});
+    
+    rewriter.eraseOp(op);
+    
+    MLIR_PGX_DEBUG("DBToStd", "Converted db.stream_results to PostgreSQL SPI pg_stream_results call");
     return success();
   }
 };
@@ -464,6 +526,14 @@ void generateSPIFunctionDeclarations(ModuleOp module) {
     funcOp.setVisibility(func::FuncOp::Visibility::Private);
     MLIR_PGX_DEBUG("DBToStd", "Generated Standard MLIR extract_nullable_value function declaration");
   }
+  
+  // Declare pg_stream_results - PostgreSQL SPI result streaming function
+  if (!hasFunc("pg_stream_results")) {
+    auto streamResultsType = builder.getFunctionType({}, {});
+    auto funcOp = builder.create<func::FuncOp>(loc, "pg_stream_results", streamResultsType);
+    funcOp.setVisibility(func::FuncOp::Visibility::Private);
+    MLIR_PGX_DEBUG("DBToStd", "Generated PostgreSQL SPI pg_stream_results function declaration");
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -481,7 +551,8 @@ public:
   
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<arith::ArithDialect, scf::SCFDialect, 
-                    func::FuncDialect, memref::MemRefDialect>();
+                    func::FuncDialect, memref::MemRefDialect,
+                    pgx::mlir::util::UtilDialect>();
   }
   
   void runOnOperation() override {
@@ -497,6 +568,16 @@ public:
     
     PGX_INFO("Starting DBToStd conversion pass");
     
+    // Debug: Count DB operations before conversion
+    int dbOpsBefore = 0;
+    func.walk([&](Operation* op) {
+      if (op->getDialect() && op->getDialect()->getNamespace() == "db") {
+        dbOpsBefore++;
+        PGX_DEBUG("Found DB operation: " + op->getName().getStringRef().str());
+      }
+    });
+    PGX_DEBUG("Found " + std::to_string(dbOpsBefore) + " DB operations before conversion");
+    
     // Generate SPI function declarations (the function itself checks for duplicates)
     if (module) {
       generateSPIFunctionDeclarations(module);
@@ -508,6 +589,8 @@ public:
     target.addLegalDialect<func::FuncDialect>();
     target.addLegalDialect<memref::MemRefDialect>();
     target.addLegalDialect<pgx::mlir::dsa::DSADialect>(); // Keep DSA operations legal
+    target.addLegalDialect<pgx::mlir::util::UtilDialect>(); // Allow util operations for tuple handling
+    target.addLegalDialect<BuiltinDialect>(); // Allow builtin.unrealized_conversion_cast
     
     // Mark DB dialect operations as illegal
     target.addIllegalDialect<pgx::db::DBDialect>();
@@ -518,7 +601,14 @@ public:
     // Add conversion patterns
     populateDBToStdConversionPatterns(typeConverter, patterns);
     
-    // The target materialization in the type converter handles the rest
+    // Add function signature conversion to handle nullable arguments
+    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(patterns, typeConverter);
+    
+    // Mark functions with converted signatures as legal
+    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+      return typeConverter.isSignatureLegal(op.getFunctionType()) &&
+             typeConverter.isLegal(&op.getBody());
+    });
     
     if (failed(applyPartialConversion(func, target, std::move(patterns)))) {
       // Check if failure is due to no applicable patterns (acceptable edge case)
@@ -535,7 +625,17 @@ public:
         return; // Don't signal failure for functions with no DB operations
       }
       
-      PGX_ERROR("DBToStd conversion failed on function: " + func.getName().str());
+      // Debug: Count remaining DB operations after failed conversion
+      int dbOpsAfter = 0;
+      func.walk([&](Operation* op) {
+        if (op->getDialect() && op->getDialect()->getNamespace() == "db") {
+          dbOpsAfter++;
+          PGX_ERROR("Unconverted DB operation: " + op->getName().getStringRef().str());
+        }
+      });
+      
+      PGX_ERROR("DBToStd conversion failed on function: " + func.getName().str() + 
+                " - " + std::to_string(dbOpsAfter) + " DB operations remain unconverted");
       signalPassFailure();
       return;
     }
@@ -555,7 +655,9 @@ void populateDBToStdConversionPatterns(DBToStdTypeConverter &typeConverter,
   patterns.add<GetFieldOpConversion>(typeConverter, context);
   patterns.add<NullableGetValOpConversion>(typeConverter, context);
   patterns.add<AddOpConversion>(typeConverter, context);
+  patterns.add<AsNullableOpConversion>(typeConverter, context);
   patterns.add<StoreResultOpConversion>(typeConverter, context);
+  patterns.add<StreamResultsOpConversion>(typeConverter, context);
   // TODO: Add additional DB operation conversions when needed for Tests 2-15 (WHERE clauses, JOINs)
 }
 
