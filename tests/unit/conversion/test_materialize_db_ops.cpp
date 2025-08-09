@@ -90,30 +90,35 @@ TEST_F(MaterializeDBOpsTest, VerifyDSASequence) {
     LogicalResult result = pm.run(funcOp);
     ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
     
-    // Verify the correct DSA operation sequence (LingoDB pattern)
-    // BaseTable generates: dsa.scan_source → nested dsa.for loops → dsa.at for field access
+    // Verify the correct mixed DB+DSA operation sequence (Phase 4c-4 pattern)
+    // BaseTable generates: db.get_external → scf.while loop → db.iterate_external → db.get_field
     // Materialize generates: dsa.create_ds → dsa.ds_append → dsa.next_row → dsa.finalize
-    int scanSourceCount = 0;
-    int forLoopCount = 0;
-    int atOpCount = 0;
+    int getExternalCount = 0;
+    int iterateExternalCount = 0;
+    int getFieldCount = 0;
+    int scfWhileCount = 0;
     int createDsCount = 0;
     int dsAppendCount = 0;
     int nextRowCount = 0;
     int finalizeCount = 0;
-    int yieldCount = 0;
+    int scfYieldCount = 0;
     
     funcOp.walk([&](Operation *op) {
-        if (isa<pgx::mlir::dsa::ScanSourceOp>(op)) {
-            scanSourceCount++;
-            PGX_DEBUG("Found dsa.scan_source");
+        if (isa<pgx::db::GetExternalOp>(op)) {
+            getExternalCount++;
+            PGX_DEBUG("Found db.get_external");
         }
-        else if (isa<pgx::mlir::dsa::ForOp>(op)) {
-            forLoopCount++;
-            PGX_DEBUG("Found dsa.for loop");
+        else if (isa<pgx::db::IterateExternalOp>(op)) {
+            iterateExternalCount++;
+            PGX_DEBUG("Found db.iterate_external");
         }
-        else if (isa<pgx::mlir::dsa::AtOp>(op)) {
-            atOpCount++;
-            PGX_DEBUG("Found dsa.at");
+        else if (isa<pgx::db::GetFieldOp>(op)) {
+            getFieldCount++;
+            PGX_DEBUG("Found db.get_field");
+        }
+        else if (isa<scf::WhileOp>(op)) {
+            scfWhileCount++;
+            PGX_DEBUG("Found scf.while loop");
         }
         else if (isa<pgx::mlir::dsa::CreateDSOp>(op)) {
             createDsCount++;
@@ -131,21 +136,22 @@ TEST_F(MaterializeDBOpsTest, VerifyDSASequence) {
             finalizeCount++;
             PGX_DEBUG("Found dsa.finalize");
         }
-        else if (isa<pgx::mlir::dsa::YieldOp>(op)) {
-            yieldCount++;
-            PGX_DEBUG("Found dsa.yield");
+        else if (isa<scf::YieldOp>(op)) {
+            scfYieldCount++;
+            PGX_DEBUG("Found scf.yield");
         }
     });
     
-    // Verify the DSA streaming pattern
-    EXPECT_EQ(scanSourceCount, 1) << "Should have exactly one dsa.scan_source";
-    EXPECT_GE(forLoopCount, 2) << "Should have at least 2 dsa.for loops (nested for batch/record)";
-    EXPECT_GE(atOpCount, 1) << "Should have at least one dsa.at for field access";
+    // Verify the mixed DB+DSA pattern
+    EXPECT_EQ(getExternalCount, 1) << "Should have exactly one db.get_external";
+    EXPECT_EQ(scfWhileCount, 1) << "Should have exactly one scf.while loop";
+    EXPECT_GE(iterateExternalCount, 1) << "Should have at least one db.iterate_external";
+    EXPECT_GE(getFieldCount, 1) << "Should have at least one db.get_field for field access";
     EXPECT_EQ(createDsCount, 1) << "Should have exactly one dsa.create_ds";
     EXPECT_GE(dsAppendCount, 1) << "Should have at least one dsa.ds_append (one per consume call)";
     EXPECT_GE(nextRowCount, 1) << "Should have at least one dsa.next_row (one per consume call)";
     EXPECT_EQ(finalizeCount, 1) << "Should have exactly one dsa.finalize";
-    EXPECT_GE(yieldCount, 2) << "Should have at least 2 dsa.yield terminators (for nested loops)";
+    EXPECT_GE(scfYieldCount, 1) << "Should have at least one scf.yield terminator";
     
     // Verify MaterializeOp was removed
     int materializeCount = 0;
@@ -251,9 +257,9 @@ TEST_F(MaterializeDBOpsTest, VerifyDSAOperations) {
     
     PGX_DEBUG("Operation walk completed successfully");
     
-    // In LingoDB pattern, we only use DSA operations (no DB operations)
-    EXPECT_FALSE(hasDBOps) << "Should NOT have DB operations - LingoDB uses only DSA";
-    EXPECT_TRUE(hasDSAOps) << "Should have DSA operations throughout";
+    // In Phase 4c-4 pattern, we use mixed DB+DSA operations for PostgreSQL integration
+    EXPECT_TRUE(hasDBOps) << "Should have DB operations for PostgreSQL table access";
+    EXPECT_TRUE(hasDSAOps) << "Should have DSA operations for result building";
     
     PGX_DEBUG("Mixed DB+DSA operations test completed - Phase 4c-3 architecture verified");
 }
@@ -481,7 +487,7 @@ TEST_F(MaterializeDBOpsTest, ConsumeMethodAndTableBuilderLifecycle) {
     int nextRowCount = 0;
     int finalizeCount = 0;
     
-    // Track if DSA operations are inside the DSA for loops
+    // Track if DSA operations are inside the scf.while loop
     bool appendInLoop = false;
     bool nextRowInLoop = false;
     
@@ -489,21 +495,21 @@ TEST_F(MaterializeDBOpsTest, ConsumeMethodAndTableBuilderLifecycle) {
         if (isa<pgx::mlir::dsa::CreateDSOp>(op)) {
             createDsCount++;
             // Verify create_ds is outside the loops
-            bool inLoop = op->getParentOfType<pgx::mlir::dsa::ForOp>() != nullptr;
+            bool inLoop = op->getParentOfType<scf::WhileOp>() != nullptr;
             EXPECT_FALSE(inLoop) << "create_ds should be outside the loops";
         }
         else if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
             dsAppendCount++;
-            appendInLoop = op->getParentOfType<pgx::mlir::dsa::ForOp>() != nullptr;
+            appendInLoop = op->getParentOfType<scf::WhileOp>() != nullptr;
         }
         else if (isa<pgx::mlir::dsa::NextRowOp>(op)) {
             nextRowCount++;
-            nextRowInLoop = op->getParentOfType<pgx::mlir::dsa::ForOp>() != nullptr;
+            nextRowInLoop = op->getParentOfType<scf::WhileOp>() != nullptr;
         }
         else if (isa<pgx::mlir::dsa::FinalizeOp>(op)) {
             finalizeCount++;
             // Verify finalize is outside the loops
-            bool inLoop = op->getParentOfType<pgx::mlir::dsa::ForOp>() != nullptr;
+            bool inLoop = op->getParentOfType<scf::WhileOp>() != nullptr;
             EXPECT_FALSE(inLoop) << "finalize should be outside the loops";
         }
     });
@@ -515,8 +521,8 @@ TEST_F(MaterializeDBOpsTest, ConsumeMethodAndTableBuilderLifecycle) {
     EXPECT_EQ(finalizeCount, 1) << "Should have exactly one finalize";
     
     // Verify loop placement
-    EXPECT_TRUE(appendInLoop) << "ds_append should be inside the DSA for loops";
-    EXPECT_TRUE(nextRowInLoop) << "next_row should be inside the DSA for loops";
+    EXPECT_TRUE(appendInLoop) << "ds_append should be inside the scf.while loop";
+    EXPECT_TRUE(nextRowInLoop) << "next_row should be inside the scf.while loop";
     
     PGX_DEBUG("consume() method and table builder lifecycle test completed");
 }
@@ -566,41 +572,45 @@ TEST_F(MaterializeDBOpsTest, ProducerConsumerIntegration) {
     LogicalResult result = pm.run(funcOp);
     ASSERT_TRUE(succeeded(result)) << "RelAlgToDB pass failed";
     
-    // Verify the complete DSA producer-consumer flow exists
-    bool hasScanSource = false;
-    bool hasForLoops = false;
-    bool hasAtOp = false;
+    // Verify the complete mixed DB+DSA producer-consumer flow exists
     bool hasCreateDs = false;
     bool hasDsAppend = false;
     bool hasNextRow = false;
     bool hasFinalize = false;
     bool hasYield = false;
-    int forLoopCount = 0;
     
     funcOp.walk([&](Operation *op) {
-        if (isa<pgx::mlir::dsa::ScanSourceOp>(op)) hasScanSource = true;
-        else if (isa<pgx::mlir::dsa::ForOp>(op)) {
-            hasForLoops = true;
-            forLoopCount++;
-        }
-        else if (isa<pgx::mlir::dsa::AtOp>(op)) hasAtOp = true;
-        else if (isa<pgx::mlir::dsa::CreateDSOp>(op)) hasCreateDs = true;
+        if (isa<pgx::mlir::dsa::CreateDSOp>(op)) hasCreateDs = true;
         else if (isa<pgx::mlir::dsa::DSAppendOp>(op)) hasDsAppend = true;
         else if (isa<pgx::mlir::dsa::NextRowOp>(op)) hasNextRow = true;
         else if (isa<pgx::mlir::dsa::FinalizeOp>(op)) hasFinalize = true;
-        else if (isa<pgx::mlir::dsa::YieldOp>(op)) hasYield = true;
+        else if (isa<scf::YieldOp>(op)) hasYield = true;
     });
     
-    // Verify all components of the DSA flow exist
-    EXPECT_TRUE(hasScanSource) << "Producer should generate dsa.scan_source";
-    EXPECT_TRUE(hasForLoops) << "Producer should generate dsa.for loops";
-    EXPECT_GE(forLoopCount, 2) << "Should have nested dsa.for loops";
-    EXPECT_TRUE(hasAtOp) << "Producer should generate dsa.at for field access";
+    // Verify all components of the mixed DB+DSA flow exist
+    bool hasGetExternal = false;
+    bool hasIterateExternal = false;
+    bool hasGetField = false;
+    bool hasScfWhile = false;
+    
+    funcOp.walk([&](Operation *op) {
+        if (isa<pgx::db::GetExternalOp>(op)) hasGetExternal = true;
+        else if (isa<pgx::db::IterateExternalOp>(op)) hasIterateExternal = true;
+        else if (isa<pgx::db::GetFieldOp>(op)) hasGetField = true;
+        else if (isa<scf::WhileOp>(op)) hasScfWhile = true;
+    });
+    
+    // DB operations for table access (Phase 4c-4)
+    EXPECT_TRUE(hasGetExternal) << "Producer should generate db.get_external";
+    EXPECT_TRUE(hasIterateExternal) << "Producer should generate db.iterate_external";
+    EXPECT_TRUE(hasGetField) << "Producer should generate db.get_field for field access";
+    EXPECT_TRUE(hasScfWhile) << "Producer should generate scf.while loop";
+    
+    // DSA operations for result building
     EXPECT_TRUE(hasCreateDs) << "Consumer should generate dsa.create_ds";
     EXPECT_TRUE(hasDsAppend) << "Consumer should generate dsa.ds_append";
     EXPECT_TRUE(hasNextRow) << "Consumer should generate dsa.next_row";
     EXPECT_TRUE(hasFinalize) << "Consumer should generate dsa.finalize";
-    EXPECT_TRUE(hasYield) << "Should have dsa.yield terminators";
     
     // Verify no RelAlg operations remain (except return which is structural)
     int relalgCount = 0;
@@ -795,7 +805,7 @@ TEST_F(MaterializeDBOpsTest, StreamingBehaviorValidation) {
     int nextRowOutsideLoopCount = 0;
     
     funcOp.walk([&](Operation *op) {
-        bool inLoop = op->getParentOfType<pgx::mlir::dsa::ForOp>() != nullptr;
+        bool inLoop = op->getParentOfType<scf::WhileOp>() != nullptr;
         
         if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
             if (inLoop) appendInLoopCount++;
@@ -807,9 +817,9 @@ TEST_F(MaterializeDBOpsTest, StreamingBehaviorValidation) {
         }
     });
     
-    // All append/next_row operations should be inside the DSA for loops for streaming
-    EXPECT_GT(appendInLoopCount, 0) << "Should have ds_append inside DSA for loops for streaming";
-    EXPECT_GT(nextRowInLoopCount, 0) << "Should have next_row inside DSA for loops for streaming";
+    // All append/next_row operations should be inside the scf.while loop for streaming
+    EXPECT_GT(appendInLoopCount, 0) << "Should have ds_append inside scf.while loop for streaming";
+    EXPECT_GT(nextRowInLoopCount, 0) << "Should have next_row inside scf.while loop for streaming";
     EXPECT_EQ(appendOutsideLoopCount, 0) << "No ds_append should be outside loops";
     EXPECT_EQ(nextRowOutsideLoopCount, 0) << "No next_row should be outside loops";
     
@@ -820,12 +830,12 @@ TEST_F(MaterializeDBOpsTest, StreamingBehaviorValidation) {
     funcOp.walk([&](Operation *op) {
         if (isa<pgx::mlir::dsa::CreateDSOp>(op)) {
             createDsCount++;
-            bool inLoop = op->getParentOfType<pgx::mlir::dsa::ForOp>() != nullptr;
+            bool inLoop = op->getParentOfType<scf::WhileOp>() != nullptr;
             EXPECT_FALSE(inLoop) << "create_ds must be outside loops for efficiency";
         }
         else if (isa<pgx::mlir::dsa::FinalizeOp>(op)) {
             finalizeCount++;
-            bool inLoop = op->getParentOfType<pgx::mlir::dsa::ForOp>() != nullptr;
+            bool inLoop = op->getParentOfType<scf::WhileOp>() != nullptr;
             EXPECT_FALSE(inLoop) << "finalize must be outside loops for efficiency";
         }
     });

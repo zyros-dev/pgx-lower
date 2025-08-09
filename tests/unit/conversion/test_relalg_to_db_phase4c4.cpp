@@ -11,6 +11,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "execution/logging.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 using namespace mlir;
 
@@ -26,7 +27,9 @@ TEST(RelAlgToDBPhase4c4Test, SimplifiedArchitectureNoSegfault) {
     context.loadDialect<pgx::db::DBDialect>();
     context.loadDialect<pgx::mlir::dsa::DSADialect>();
     context.loadDialect<func::FuncDialect>();
+    context.loadDialect<scf::SCFDialect>();
     context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<scf::SCFDialect>();
     
     // Create module and function
     auto module = ModuleOp::create(UnknownLoc::get(&context));
@@ -111,8 +114,8 @@ TEST(RelAlgToDBPhase4c4Test, SimplifiedArchitectureNoSegfault) {
         }
     });
     
-    EXPECT_FALSE(hasDBOps) << "Should NOT have DB operations - LingoDB uses only DSA";
-    EXPECT_TRUE(hasDSAOps) << "Should have DSA operations throughout";
+    EXPECT_TRUE(hasDBOps) << "Should have DB operations for table access (Phase 4c-4)";
+    EXPECT_TRUE(hasDSAOps) << "Should have DSA operations for result building";
     
     // Skip printing for now to avoid segfault - there may be an issue with DSA table type printing
     // TODO: Fix DSA table type printing and re-enable this check
@@ -134,6 +137,7 @@ TEST(RelAlgToDBPhase4c4Test, OnlyMaterializeOpTranslated) {
     context.loadDialect<pgx::db::DBDialect>();
     context.loadDialect<pgx::mlir::dsa::DSADialect>();
     context.loadDialect<func::FuncDialect>();
+    context.loadDialect<scf::SCFDialect>();
     
     // Create module and function with no MaterializeOp
     auto module = ModuleOp::create(UnknownLoc::get(&context));
@@ -201,7 +205,9 @@ TEST(RelAlgToDBPhase4c4Test, MultipleMaterializeOps) {
     context.loadDialect<pgx::db::DBDialect>();
     context.loadDialect<pgx::mlir::dsa::DSADialect>();
     context.loadDialect<func::FuncDialect>();
+    context.loadDialect<scf::SCFDialect>();
     context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<scf::SCFDialect>();
     
     // Create module and function
     auto module = ModuleOp::create(UnknownLoc::get(&context));
