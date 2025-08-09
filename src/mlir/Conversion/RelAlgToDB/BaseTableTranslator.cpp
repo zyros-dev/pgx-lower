@@ -8,6 +8,7 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/Support/raw_ostream.h"
 #include <sstream>
 
 namespace pgx {
@@ -18,8 +19,8 @@ class BaseTableTranslator : public Translator {
 private:
     ::pgx::mlir::relalg::BaseTableOp baseTableOp;
     ColumnSet availableColumns;
-    // Store shared column pointer from ColumnManager
-    const Column* idColumn;
+    // Store shared column pointer from ColumnManager (FIXED: use shared_ptr for safety)
+    std::shared_ptr<Column> idColumn;
     
 public:
     explicit BaseTableTranslator(::pgx::mlir::relalg::BaseTableOp op) 
@@ -30,14 +31,35 @@ public:
                        op.getTableName().str());
     }
     
+    void initializeWithContext(TranslatorContext& context) override {
+        MLIR_PGX_INFO("RelAlg", "BaseTableTranslator::initializeWithContext() - Initializing columns early");
+        
+        // Initialize shared column from ColumnManager immediately
+        // This ensures getAvailableColumns() works before produce() is called
+        auto columnManager = context.getColumnManager();
+        if (columnManager) {
+            // Use ColumnManager to get shared column identity with i64 type
+            auto i64Type = ::mlir::IntegerType::get(baseTableOp.getContext(), 64);
+            idColumn = columnManager->get(baseTableOp.getTableName().str(), "id", i64Type);
+            availableColumns.insert(idColumn.get());
+            
+            // Log Column pointer for debugging column identity sharing
+            MLIR_PGX_INFO("RelAlg", "BaseTableTranslator initialized shared column 'id' from table '" + 
+                          baseTableOp.getTableName().str() + "' at address: " + 
+                          std::to_string(reinterpret_cast<uintptr_t>(idColumn.get())));
+        } else {
+            MLIR_PGX_ERROR("RelAlg", "BaseTableTranslator: No ColumnManager available in context!");
+        }
+    }
+    
     void setInfo(Translator* consumer, const ColumnSet& requiredAttributes) override {
         MLIR_PGX_INFO("RelAlg", "BaseTableTranslator::setInfo() called");
         MLIR_PGX_INFO("RelAlg", "BaseTableTranslator address: " + std::to_string(reinterpret_cast<uintptr_t>(this)));
         MLIR_PGX_INFO("RelAlg", "Consumer address being set: " + std::to_string(reinterpret_cast<uintptr_t>(consumer)));
         Translator::setInfo(consumer, requiredAttributes);
         
-        // Note: Columns will be initialized in produce() when TranslatorContext is available
-        // This ensures we use the shared column from ColumnManager
+        // Columns are already initialized in initializeWithContext()
+        // This follows LingoDB pattern where columns are available before produce()
     }
     
     ColumnSet getAvailableColumns() override {
@@ -50,22 +72,16 @@ public:
         MLIR_PGX_DEBUG("RelAlg", "BaseTableTranslator consumer is " + 
                        (consumer ? "set" : "NOT SET"));
         
-        // Initialize shared column from ColumnManager
+        // Columns should already be initialized in initializeWithContext()
+        // Verify they are available
         if (!idColumn) {
+            MLIR_PGX_ERROR("RelAlg", "BaseTableTranslator: Columns not initialized! This should not happen.");
+            // Fallback initialization (should not be needed)
             auto columnManager = context.getColumnManager();
             if (columnManager) {
-                // Use ColumnManager to get shared column identity with i64 type
                 auto i64Type = ::mlir::IntegerType::get(builder.getContext(), 64);
-                auto sharedColumn = columnManager->get(baseTableOp.getTableName().str(), "id", i64Type);
-                idColumn = sharedColumn.get();
-                availableColumns.insert(idColumn);
-                
-                // Log Column pointer for debugging column identity sharing
-                MLIR_PGX_INFO("RelAlg", "BaseTableTranslator got shared column 'id' from table '" + 
-                              baseTableOp.getTableName().str() + "' at address: " + 
-                              std::to_string(reinterpret_cast<uintptr_t>(idColumn)));
-            } else {
-                MLIR_PGX_ERROR("RelAlg", "BaseTableTranslator: No ColumnManager available!");
+                idColumn = columnManager->get(baseTableOp.getTableName().str(), "id", i64Type);
+                availableColumns.insert(idColumn.get());
             }
         }
         
@@ -179,7 +195,7 @@ private:
         MLIR_PGX_DEBUG("RelAlg", "Created scf.while loop for PostgreSQL SPI tuple streaming");
     }
     
-    // Process single PostgreSQL tuple: extract fields via SPI and stream to consumer
+    // Process single PostgreSQL tuple: extract fields via SPI and prepare for consumer
     // Phase 4d: db.get_field will lower to func.call @pg_extract_field
     void processTupleInLoop(TranslatorContext& context, ::mlir::OpBuilder& builder,
                            TranslatorContext::AttributeResolverScope& scope,
@@ -208,25 +224,42 @@ private:
         auto actualValue = builder.create<::pgx::db::NullableGetValOp>(
             loc, builder.getI64Type(), fieldValue.getResult());
         
+        // Verify type compatibility between Column and MLIR Value
+        if (idColumn) {
+            auto columnType = idColumn->type;
+            auto valueType = actualValue.getType();
+            if (columnType != valueType) {
+                std::string columnTypeStr;
+                std::string valueTypeStr;
+                llvm::raw_string_ostream colOS(columnTypeStr);
+                llvm::raw_string_ostream valOS(valueTypeStr);
+                columnType.print(colOS);
+                valueType.print(valOS);
+                MLIR_PGX_ERROR("RelAlg", "Type mismatch: Column type " + 
+                              colOS.str() + " != Value type " + 
+                              valOS.str());
+            }
+        }
+        
         // Set the value in context for the id column
-        context.setValueForAttribute(scope, idColumn, actualValue.getResult());
+        context.setValueForAttribute(scope, idColumn.get(), actualValue.getResult());
         
         // Log column pointer and value for debugging
         MLIR_PGX_DEBUG("RelAlg", "BaseTableTranslator setting value for column at address: " + 
-                       std::to_string(reinterpret_cast<uintptr_t>(idColumn)));
+                       std::to_string(reinterpret_cast<uintptr_t>(idColumn.get())));
         
-        // Stream single tuple to consumer (streaming producer-consumer pattern)
-        // This implements constant memory usage - one tuple at a time processing
+        // FIXED: Build consumer operations properly within MLIR region structure
+        // The consumer operations are built inline, not called as a function
         if (consumer) {
-            MLIR_PGX_DEBUG("RelAlg", "Streaming single PostgreSQL tuple to consumer (constant memory)");
+            MLIR_PGX_DEBUG("RelAlg", "Building consumer operations within loop body");
             MLIR_PGX_DEBUG("RelAlg", "Consumer type: " + std::string(consumer->getOperation()->getName().getStringRef().str()));
             MLIR_PGX_DEBUG("RelAlg", "Consumer address: " + std::to_string(reinterpret_cast<uintptr_t>(consumer)));
             
-            // CRITICAL: Consumer called inside PostgreSQL iteration loop
-            // Enables streaming architecture with one-tuple-at-a-time processing
-            MLIR_PGX_INFO("RelAlg", "BaseTableTranslator calling consumer->consume() NOW");
+            // Build consumer operations inline within the loop body
+            // This follows proper MLIR single-assignment and region structure
+            MLIR_PGX_INFO("RelAlg", "BaseTableTranslator building consumer operations inline");
             consumer->consume(this, builder, context);
-            MLIR_PGX_INFO("RelAlg", "BaseTableTranslator consumer->consume() returned");
+            MLIR_PGX_INFO("RelAlg", "BaseTableTranslator consumer operations built");
         } else {
             MLIR_PGX_WARNING("RelAlg", "BaseTableTranslator has no consumer set - data not being processed");
         }

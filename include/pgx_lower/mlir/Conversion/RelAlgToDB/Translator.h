@@ -38,6 +38,13 @@ public:
     
     // Core translation methods
     
+    // initializeWithContext() allows early access to TranslatorContext for column setup
+    // This is called before setInfo() for translators that need early column initialization
+    virtual void initializeWithContext(TranslatorContext& context) {
+        // Default implementation does nothing
+        // Override in translators that need early column initialization (e.g., BaseTableTranslator)
+    }
+    
     // setInfo() is called before produce to set consumer and required columns
     virtual void setInfo(Translator* consumer, const ColumnSet& requiredAttributes) {
         this->consumer = consumer;

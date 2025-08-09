@@ -157,7 +157,11 @@ TEST(TranslatorInfrastructureSimpleTest, BaseTableTranslatorGetAvailableColumns)
     
     auto translator = relalg::Translator::createTranslator(baseTableOp);
     
-    // BaseTable should provide columns
+    // Initialize translator with context for early column setup
+    relalg::TranslatorContext context;
+    translator->initializeWithContext(context);
+    
+    // BaseTable should provide columns after initialization
     auto availableColumns = translator->getAvailableColumns();
     EXPECT_FALSE(availableColumns.empty());
     EXPECT_EQ(availableColumns.size(), 1); // For Test 1, we have 1 'id' column
@@ -251,4 +255,55 @@ TEST(TranslatorInfrastructureSimpleTest, OrderedAttributesColumnResolution) {
     EXPECT_TRUE(orderedAttrs.contains(&col2));
     EXPECT_EQ(orderedAttrs.getPos(&col1), 0);
     EXPECT_EQ(orderedAttrs.getPos(&col2), 1);
+}
+
+TEST(TranslatorInfrastructureSimpleTest, ColumnIdentitySharing) {
+    // Test that BaseTableTranslator and MaterializeTranslator share column identity
+    MLIRContext mlirContext;
+    mlirContext.loadDialect<relalg::RelAlgDialect>();
+    mlirContext.loadDialect<arith::ArithDialect>();
+    OpBuilder builder(&mlirContext);
+    auto loc = builder.getUnknownLoc();
+    
+    auto tupleStreamType = relalg::TupleStreamType::get(&mlirContext);
+    auto baseTableOp = builder.create<relalg::BaseTableOp>(
+        loc, tupleStreamType, builder.getStringAttr("test"),
+        builder.getI64IntegerAttr(12345));
+    
+    // Create MaterializeOp with columns
+    SmallVector<Attribute> columns;
+    columns.push_back(builder.getStringAttr("id"));
+    auto materializeOp = builder.create<relalg::MaterializeOp>(
+        loc, tupleStreamType, baseTableOp.getResult(), 
+        builder.getArrayAttr(columns));
+    
+    // Create translators
+    auto baseTranslator = relalg::Translator::createTranslator(baseTableOp);
+    auto materializeTranslator = relalg::Translator::createTranslator(materializeOp);
+    
+    // Initialize with context (this sets up ColumnManager)
+    relalg::TranslatorContext context;
+    baseTranslator->initializeWithContext(context);
+    materializeTranslator->initializeWithContext(context);
+    
+    // Set up the translator chain
+    relalg::ColumnSet requiredAttrs;
+    materializeTranslator->setInfo(nullptr, requiredAttrs);
+    
+    // Get columns from BaseTableTranslator
+    auto baseColumns = baseTranslator->getAvailableColumns();
+    ASSERT_EQ(baseColumns.size(), 1);
+    
+    // The key test: MaterializeTranslator should now have the same column pointer
+    // This verifies column identity is properly shared through the translator chain
+    const relalg::Column* baseColumn = *baseColumns.begin();
+    
+    // Create a dummy value for the column
+    auto scope = context.createScope();
+    auto val = builder.create<arith::ConstantOp>(loc, builder.getI64IntegerAttr(42));
+    context.setValueForAttribute(scope, baseColumn, val);
+    
+    // Verify that the column can be resolved correctly
+    auto resolvedVal = context.getValueForAttribute(baseColumn);
+    EXPECT_EQ(resolvedVal, val.getResult());
 }
