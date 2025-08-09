@@ -128,7 +128,7 @@ class DB_Op<string mnemonic, list<Trait> traits = []> : Op<DB_Dialect, mnemonic,
 }
 
 //===----------------------------------------------------------------------===//
-// PostgreSQL-specific Operations (6 total)
+// PostgreSQL-specific Operations (7 total)
 //===----------------------------------------------------------------------===//
 
 def GetExternalOp : DB_Op<"get_external", [Pure]> {
