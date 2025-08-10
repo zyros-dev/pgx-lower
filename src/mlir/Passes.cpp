@@ -134,8 +134,9 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) 
     PGX_DEBUG("Added nested RelAlg → DB lowering pass");
     
     // DB → Standard dialect conversion (PostgreSQL SPI integration)
-    pm.addNestedPass<mlir::func::FuncOp>(createDBToStdPass());
-    PGX_DEBUG("Added nested DB → Standard lowering pass");
+    // Note: DBToStd is now a module-level pass (following LingoDB pattern)
+    pm.addPass(createDBToStdPass());
+    PGX_DEBUG("Added DB → Standard lowering pass (module-level)");
     
     // DSA → Standard dialect conversion (data structure operations)
     // Note: DSAToStd is a module-level pass, not a function-level pass

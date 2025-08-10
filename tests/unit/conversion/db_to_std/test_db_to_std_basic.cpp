@@ -60,7 +60,7 @@ TEST_F(DBToStdBasicTest, ConvertGetExternalToSPICall) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
@@ -107,7 +107,7 @@ TEST_F(DBToStdBasicTest, ConvertIterateExternalToSPICall) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
@@ -151,7 +151,7 @@ TEST_F(DBToStdBasicTest, ConvertAddToArithAddi) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
@@ -203,7 +203,7 @@ TEST_F(DBToStdBasicTest, GenerateSPIFunctionDeclarations) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
@@ -251,7 +251,7 @@ TEST_F(DBToStdBasicTest, ConvertStoreResultToSPICall) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     

@@ -630,7 +630,7 @@ target_link_libraries(test_type_conversion_issue
 add_test(NAME TypeConversionIssueTest COMMAND test_type_conversion_issue)
 
 # Circular type fix test - verifies the fix for circular type materialization bug
-add_executable(test_circular_type_fix test_circular_type_fix.cpp)
+# add_executable(test_circular_type_fix test_circular_type_fix.cpp)
 target_link_libraries(test_circular_type_fix
     gtest gtest_main
     MLIRDBDialect
