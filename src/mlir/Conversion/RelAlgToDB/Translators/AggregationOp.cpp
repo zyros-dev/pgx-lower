@@ -2,10 +2,11 @@
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/DSA/IR/DSAOps.h>
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "llvm/ADT/TypeSwitch.h"
+#include "core/logging.h"
 
 class AggregationTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::AggregationOp aggregationOp;
@@ -24,6 +25,18 @@ class AggregationTranslator : public pgx::mlir::relalg::Translator {
 
    public:
    AggregationTranslator(pgx::mlir::relalg::AggregationOp aggregationOp) : pgx::mlir::relalg::Translator(aggregationOp), aggregationOp(aggregationOp) {
+   }
+   
+   virtual pgx::mlir::relalg::ColumnSet getAvailableColumns() override {
+      pgx::mlir::relalg::ColumnSet available;
+      // Aggregation produces groupby columns and computed columns
+      for (auto& col : aggregationOp.getGroupByCols()) {
+         available.insert(col.cast<::mlir::Attribute>().cast<pgx::mlir::relalg::ColumnRefAttr>().getColumn());
+      }
+      for (auto& col : aggregationOp.getComputedCols()) {
+         available.insert(&col.cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn());
+      }
+      return available;
    }
 
    ::mlir::Value compareKeys(::mlir::OpBuilder& rewriter, ::mlir::Value left, ::mlir::Value right,::mlir::Location loc) {

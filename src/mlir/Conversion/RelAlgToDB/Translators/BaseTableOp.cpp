@@ -3,6 +3,7 @@
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "core/logging.h"
 
 namespace pgx::mlir::relalg {
 
@@ -14,6 +15,18 @@ class BaseTableTranslator : public Translator {
    BaseTableTranslator(BaseTableOp baseTableOp) : Translator(baseTableOp), baseTableOp(baseTableOp) {}
    virtual void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) override {
       assert(false && "should not happen");
+   }
+   
+   virtual ColumnSet getAvailableColumns() override {
+      ColumnSet available;
+      for (auto namedAttr : baseTableOp.getColumnsAttr().getValue()) {
+         auto attr = namedAttr.getValue();
+         auto attrDef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
+         if (attrDef) {
+            available.insert(&attrDef.getColumn());
+         }
+      }
+      return available;
    }
    virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();

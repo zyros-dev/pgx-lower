@@ -2,8 +2,9 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "core/logging.h"
 
 namespace pgx::mlir::relalg {
 
@@ -12,6 +13,14 @@ class SelectionTranslator : public Translator {
 
    public:
    SelectionTranslator(SelectionOp selectionOp) : Translator(selectionOp), selectionOp(selectionOp) {}
+   
+   virtual ColumnSet getAvailableColumns() override {
+      // Selection doesn't change available columns - pass through from child
+      if (!children.empty()) {
+         return children[0]->getAvailableColumns();
+      }
+      return ColumnSet();
+   }
 
    virtual void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) override {
       auto scope = context.createScope();
