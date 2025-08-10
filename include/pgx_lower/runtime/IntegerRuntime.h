@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_INTEGERRUNTIME_H
-#define LINGODB_RUNTIME_INTEGERRUNTIME_H
+#ifndef PGX_LOWER_RUNTIME_INTEGERRUNTIME_H
+#define PGX_LOWER_RUNTIME_INTEGERRUNTIME_H
 #include "runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 struct IntegerRuntime {
@@ -11,4 +11,4 @@ struct IntegerRuntime {
    static int64_t randomInRange(int64_t from, int64_t to);
 };
 } // namespace pgx_lower::compiler::runtime
-#endif // LINGODB_RUNTIME_INTEGERRUNTIME_H
+#endif // PGX_LOWER_RUNTIME_INTEGERRUNTIME_H

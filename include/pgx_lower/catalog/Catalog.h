@@ -12,8 +12,8 @@ class CatalogEntry {
    public:
    enum class CatalogEntryType : uint8_t {
       INVALID_ENTRY = 0,
-      LINGODB_TABLE_ENTRY = 1,
-      LINGODB_HASH_INDEX_ENTRY = 2,
+      PGX_LOWER_TABLE_ENTRY = 1,
+      PGX_LOWER_HASH_INDEX_ENTRY = 2,
    };
 
    protected:

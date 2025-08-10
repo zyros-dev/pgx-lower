@@ -30,7 +30,8 @@ mlir::ResultRange pgx::mlir::util::FunctionHelper::call(OpBuilder& builder, ::ml
    if (!funcOp) {
       OpBuilder::InsertionGuard insertionGuard(builder);
       builder.setInsertionPointToStart(fnHelper.parentModule.getBody());
-      funcOp = builder.create<::mlir::func::FuncOp>(fnHelper.parentModule.getLoc(), function.getMangledName(), builder.getFunctionType(function.getParameterTypes()(builder.getContext()), function.getResultTypes()(builder.getContext())), builder.getStringAttr("private"));
+      funcOp = builder.create<::mlir::func::FuncOp>(fnHelper.parentModule.getLoc(), function.getMangledName(), builder.getFunctionType(function.getParameterTypes()(builder.getContext()), function.getResultTypes()(builder.getContext())));
+      funcOp.setVisibility(::mlir::func::FuncOp::Visibility::Private);
       if (function.isNoSideEffects()) {
          funcOp->setAttr("const", builder.getUnitAttr());
       }

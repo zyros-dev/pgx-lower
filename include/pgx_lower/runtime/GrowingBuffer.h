@@ -2,7 +2,7 @@
 #define PGX_LOWER_RUNTIME_GROWINGBUFFER_H
 #include "ExecutionContext.h"
 #include "ThreadLocal.h"
-#include "lingodb/runtime/Buffer.h"
+#include "runtime/Buffer.h"
 namespace pgx_lower::compiler::runtime {
 
 class GrowingBuffer;

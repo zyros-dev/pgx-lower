@@ -9,13 +9,13 @@ include "mlir/Interfaces/LoopLikeInterface.td"
 
 def Util_Dialect : Dialect {
 let name = "util";
-let cppNamespace = "::mlir::util";
+let cppNamespace = "::pgx::mlir::util";
 let extraClassDeclaration = [{
 private:
 void registerTypes();
-std::shared_ptr<FunctionHelper> functionHelper;
+std::shared_ptr<pgx::mlir::util::FunctionHelper> functionHelper;
 public:
-FunctionHelper& getFunctionHelper(){
+pgx::mlir::util::FunctionHelper& getFunctionHelper(){
     return *functionHelper;
 }
 }];

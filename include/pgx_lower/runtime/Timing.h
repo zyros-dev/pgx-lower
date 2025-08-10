@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_TIMING_H
-#define LINGODB_RUNTIME_TIMING_H
+#ifndef PGX_LOWER_RUNTIME_TIMING_H
+#define PGX_LOWER_RUNTIME_TIMING_H
 #include <cstdint>
 namespace pgx_lower::compiler::runtime {
 class Timing {
@@ -10,4 +10,4 @@ class Timing {
    static void stop(uint64_t start);
 };
 } // end namespace pgx_lower::compiler::runtime
-#endif //LINGODB_RUNTIME_TIMING_H
+#endif //PGX_LOWER_RUNTIME_TIMING_H
