@@ -37,7 +37,7 @@ class QueryGraph {
       NodeSet right;
       NodeSet left;
       double selectivity = 1;
-      llvm::Optional<size_t> createdNode;
+      std::optional<size_t> createdNode;
       std::optional<std::pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>> equality;
 
       [[nodiscard]] bool connects(const NodeSet& s1, const NodeSet& s2) const {
@@ -121,7 +121,7 @@ class QueryGraph {
       }
       return {};
    }
-   void addJoinEdge(NodeSet left, NodeSet right, Operator op, llvm::Optional<size_t> createdNode) {
+   void addJoinEdge(NodeSet left, NodeSet right, Operator op, std::optional<size_t> createdNode) {
       assert(left.valid());
       assert(right.valid());
 
@@ -290,7 +290,7 @@ class QueryGraph {
       bool isEq;
       Predicate(pgx::mlir::relalg::ColumnSet left, pgx::mlir::relalg::ColumnSet right, bool isEq) : left(left), right(right), isEq(isEq) {}
    };
-   std::vector<Predicate> analyzePred(mlir::Block* block, pgx::mlir::relalg::ColumnSet availableLeft, pgx::mlir::relalg::ColumnSet availableRight) {
+   std::vector<Predicate> analyzePred(::mlir::Block* block, pgx::mlir::relalg::ColumnSet availableLeft, pgx::mlir::relalg::ColumnSet availableRight) {
       llvm::DenseMap<mlir::Value, pgx::mlir::relalg::ColumnSet> required;
       std::vector<Predicate> predicates;
       block->walk([&](mlir::Operation* op) {

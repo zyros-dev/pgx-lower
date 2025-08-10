@@ -2,6 +2,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Pass/Pass.h"
 
 #include <iostream>
 
@@ -85,7 +86,7 @@ class WrapWithNullCheck : public mlir::RewritePattern {
          };
          
          // LLVM 20: Use the correct API to create IfOp
-         auto ifOp = rewriter.create<mlir::scf::IfOp>(op->getLoc(), op->getResultTypes(), isAnyNull, thenBuilder, elseBuilder);
+         auto ifOp = rewriter.create<mlir::scf::IfOp>(op->getLoc(), isAnyNull, thenBuilder, elseBuilder);
          rewriter.replaceOp(op, ifOp.getResults());
       }
    }

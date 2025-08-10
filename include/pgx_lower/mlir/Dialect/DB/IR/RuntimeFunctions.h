@@ -31,8 +31,8 @@ struct RuntimeFunction {
    static inline auto dateInterval = [](::mlir::Type t) { return getBaseType(t).isa<pgx::mlir::db::IntervalType>(); };
    static inline auto noReturnType = [](::mlir::Type t,::mlir::TypeRange){return !t;};
    static ResTypeMatcher matchesArgument(size_t argIdx = 0) {
-      return [](::mlir::Type resType, ::mlir::TypeRange types) {
-         return resType == types[0];
+      return [argIdx](::mlir::Type resType, ::mlir::TypeRange types) {
+         return resType == types[argIdx];
       };
    }
    std::function<bool(::mlir::TypeRange types, ::mlir::Type resType)> verifyFn;

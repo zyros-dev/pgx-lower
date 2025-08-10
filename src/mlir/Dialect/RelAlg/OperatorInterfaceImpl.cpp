@@ -295,34 +295,34 @@ bool pgx::mlir::relalg::detail::isJoin(::mlir::Operation* op) {
 void pgx::mlir::relalg::detail::addPredicate(::mlir::Operation* op, std::function<::mlir::Value(::mlir::Value, ::mlir::OpBuilder&)> predicateProducer) {
    auto lambdaOperator = ::mlir::dyn_cast_or_null<PredicateOperator>(op);
    auto* terminator = lambdaOperator.getPredicateBlock().getTerminator();
-   mlir::OpBuilder builder(terminator);
+   ::mlir::OpBuilder builder(terminator);
    auto additionalPred = predicateProducer(lambdaOperator.getPredicateArgument(), builder);
    if (terminator->getNumOperands() > 0) {
-      mlir::Value oldValue = terminator->getOperand(0);
+      ::mlir::Value oldValue = terminator->getOperand(0);
       bool nullable = oldValue.getType().isa<pgx::mlir::db::NullableType>() || additionalPred.getType().isa<pgx::mlir::db::NullableType>();
-      mlir::Type restype = builder.getI1Type();
+      ::mlir::Type restype = builder.getI1Type();
       if (nullable) {
          restype = pgx::mlir::db::NullableType::get(builder.getContext(), restype);
       }
-      mlir::Value anded = builder.create<pgx::mlir::db::AndOp>(op->getLoc(), restype, mlir::ValueRange({oldValue, additionalPred}));
+      ::mlir::Value anded = builder.create<pgx::mlir::db::AndOp>(op->getLoc(), restype, ::mlir::ValueRange({oldValue, additionalPred}));
       builder.create<pgx::mlir::relalg::ReturnOp>(op->getLoc(), anded);
    } else {
       builder.create<pgx::mlir::relalg::ReturnOp>(op->getLoc(), additionalPred);
    }
    terminator->erase();
 }
-void pgx::mlir::relalg::detail::initPredicate(mlir::Operation* op) {
+void pgx::mlir::relalg::detail::initPredicate(::mlir::Operation* op) {
    auto* context = op->getContext();
-   mlir::Type tupleType = pgx::mlir::relalg::TupleType::get(context);
-   auto* block = new mlir::Block;
+   ::mlir::Type tupleType = pgx::mlir::relalg::TupleType::get(context);
+   auto* block = new ::mlir::Block;
    op->getRegion(0).push_back(block);
    block->addArgument(tupleType, op->getLoc());
-   mlir::OpBuilder builder(context);
+   ::mlir::OpBuilder builder(context);
    builder.setInsertionPointToStart(block);
    builder.create<pgx::mlir::relalg::ReturnOp>(op->getLoc());
 }
 
-static void addRequirements(mlir::Operation* op, mlir::Operation* includeChildren, mlir::Operation* excludeChildren, llvm::SmallVector<mlir::Operation*, 8>& extracted, llvm::SmallPtrSet<mlir::Operation*, 8>& alreadyPresent, mlir::IRMapping& mapping) {
+static void addRequirements(::mlir::Operation* op, ::mlir::Operation* includeChildren, ::mlir::Operation* excludeChildren, llvm::SmallVector<::mlir::Operation*, 8>& extracted, llvm::SmallPtrSet<::mlir::Operation*, 8>& alreadyPresent, ::mlir::IRMapping& mapping) {
    if (!op)
       return;
    if (alreadyPresent.contains(op))
@@ -349,11 +349,11 @@ static void addRequirements(mlir::Operation* op, mlir::Operation* includeChildre
       extracted.push_back(op);
    }
 }
-void pgx::mlir::relalg::detail::inlineOpIntoBlock(mlir::Operation* vop, mlir::Operation* includeChildren, mlir::Operation* excludeChildren, mlir::Block* newBlock, mlir::IRMapping& mapping, mlir::Operation* first) {
-   llvm::SmallVector<mlir::Operation*, 8> extracted;
-   llvm::SmallPtrSet<mlir::Operation*, 8> alreadyPresent;
+void pgx::mlir::relalg::detail::inlineOpIntoBlock(::mlir::Operation* vop, ::mlir::Operation* includeChildren, ::mlir::Operation* excludeChildren, ::mlir::Block* newBlock, ::mlir::IRMapping& mapping, ::mlir::Operation* first) {
+   llvm::SmallVector<::mlir::Operation*, 8> extracted;
+   llvm::SmallPtrSet<::mlir::Operation*, 8> alreadyPresent;
    addRequirements(vop, includeChildren, excludeChildren, extracted, alreadyPresent, mapping);
-   mlir::OpBuilder builder(vop->getContext());
+   ::mlir::OpBuilder builder(vop->getContext());
    builder.setInsertionPointToStart(newBlock);
    first = first ? first : (newBlock->empty() ? nullptr : &newBlock->front());
    for (auto* op : extracted) {

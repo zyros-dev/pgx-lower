@@ -15,7 +15,8 @@ class Pushdown : public mlir::PassWrapper<Pushdown, mlir::OperationPass<mlir::fu
       UnaryOperator topushUnary = mlir::dyn_cast_or_null<UnaryOperator>(topush.getOperation());
       pgx::mlir::relalg::ColumnSet usedAttributes = topush.getUsedColumns();
       auto res = ::llvm::TypeSwitch<mlir::Operation*, Operator>(curr.getOperation())
-                    .Case<UnaryOperator>([&](UnaryOperator unaryOperator) {
+                    .Case<UnaryOperator>([&](mlir::Operation* op) {
+                       UnaryOperator unaryOperator = mlir::cast<UnaryOperator>(op);
                        Operator asOp = mlir::dyn_cast_or_null<Operator>(unaryOperator.getOperation());
                        auto child = mlir::dyn_cast_or_null<Operator>(unaryOperator.child());
                        auto availableChild = child.getAvailableColumns();
@@ -27,7 +28,8 @@ class Pushdown : public mlir::PassWrapper<Pushdown, mlir::OperationPass<mlir::fu
                        topush.setChildren({asOp});
                        return topush;
                     })
-                    .Case<BinaryOperator>([&](BinaryOperator binop) {
+                    .Case<BinaryOperator>([&](mlir::Operation* op) {
+                       BinaryOperator binop = mlir::cast<BinaryOperator>(op);
                        Operator asOp = mlir::dyn_cast_or_null<Operator>(binop.getOperation());
                        auto left = mlir::dyn_cast_or_null<Operator>(binop.leftChild());
                        auto right = mlir::dyn_cast_or_null<Operator>(binop.rightChild());
@@ -48,7 +50,8 @@ class Pushdown : public mlir::PassWrapper<Pushdown, mlir::OperationPass<mlir::fu
                        asOp.setChildren({left, right});
                        return asOp;
                     })
-                    .Default([&](Operator others) {
+                    .Default([&](mlir::Operation* op) {
+                       Operator others = mlir::cast<Operator>(op);
                        topush.setChildren({others});
                        return topush;
                     });
