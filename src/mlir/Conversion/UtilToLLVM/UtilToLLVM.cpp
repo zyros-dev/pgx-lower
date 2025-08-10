@@ -34,14 +34,14 @@ static LLVM::LLVMStructType convertTuple(TupleType tupleType, const TypeConverte
 //===----------------------------------------------------------------------===//
 
 // Pattern: util.alloc → palloc call
-class AllocOpLowering : public OpConversionPattern<util::AllocOp> {
+class AllocOpLowering : public OpConversionPattern<pgx::mlir::util::AllocOp> {
 public:
-    using OpConversionPattern<util::AllocOp>::OpConversionPattern;
+    using OpConversionPattern<pgx::mlir::util::AllocOp>::OpConversionPattern;
     
-    LogicalResult matchAndRewrite(util::AllocOp allocOp, OpAdaptor adaptor,
+    LogicalResult matchAndRewrite(pgx::mlir::util::AllocOp allocOp, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const override {
         auto loc = allocOp->getLoc();
-        auto refType = allocOp.getType().cast<util::RefType>();
+        auto refType = allocOp.getType().cast<pgx::mlir::util::RefType>();
         auto elemType = refType.getElementType();
         
         MLIR_PGX_DEBUG("UtilToLLVM", "Lowering util.alloc for type");
@@ -56,9 +56,9 @@ public:
         // Get size of the element type
         Value sizeBytes;
         auto llvmElemType = typeConverter->convertType(elemType);
-        if (llvmElemType.isa<IntegerType>()) {
+        if (llvmElemType.isa<mlir::IntegerType>()) {
             // For integer types, calculate size based on bit width
-            auto intType = llvmElemType.cast<IntegerType>();
+            auto intType = llvmElemType.cast<mlir::IntegerType>();
             unsigned bitWidth = intType.getWidth();
             unsigned byteSize = (bitWidth + 7) / 8;
             sizeBytes = rewriter.create<LLVM::ConstantOp>(loc, i64Type, 
@@ -70,7 +70,7 @@ public:
             auto structType = llvmElemType.cast<LLVM::LLVMStructType>();
             unsigned totalSize = 0;
             for (auto fieldType : structType.getBody()) {
-                if (auto intType = fieldType.dyn_cast<IntegerType>()) {
+                if (auto intType = fieldType.dyn_cast<mlir::IntegerType>()) {
                     totalSize += (intType.getWidth() + 7) / 8;
                 } else {
                     // Default to 8 bytes for unknown types
@@ -108,11 +108,11 @@ public:
 };
 
 // Pattern: util.pack → LLVM struct construction
-class PackOpLowering : public OpConversionPattern<util::PackOp> {
+class PackOpLowering : public OpConversionPattern<pgx::mlir::util::PackOp> {
 public:
-    using OpConversionPattern<util::PackOp>::OpConversionPattern;
+    using OpConversionPattern<pgx::mlir::util::PackOp>::OpConversionPattern;
     
-    LogicalResult matchAndRewrite(util::PackOp packOp, OpAdaptor adaptor,
+    LogicalResult matchAndRewrite(pgx::mlir::util::PackOp packOp, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const override {
         auto tupleType = packOp.getType().cast<TupleType>();
         auto structType = convertTuple(tupleType, *getTypeConverter());
@@ -134,11 +134,11 @@ public:
 };
 
 // Pattern: util.get_tuple → LLVM extractvalue
-class GetTupleOpLowering : public OpConversionPattern<util::GetTupleOp> {
+class GetTupleOpLowering : public OpConversionPattern<pgx::mlir::util::GetTupleOp> {
 public:
-    using OpConversionPattern<util::GetTupleOp>::OpConversionPattern;
+    using OpConversionPattern<pgx::mlir::util::GetTupleOp>::OpConversionPattern;
     
-    LogicalResult matchAndRewrite(util::GetTupleOp getTupleOp, OpAdaptor adaptor,
+    LogicalResult matchAndRewrite(pgx::mlir::util::GetTupleOp getTupleOp, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const override {
         auto resType = typeConverter->convertType(getTupleOp.getType());
         
@@ -177,7 +177,7 @@ struct UtilToLLVMLoweringPass : public PassWrapper<UtilToLLVMLoweringPass, Opera
             return convertTuple(tupleType, typeConverter);
         });
         
-        typeConverter.addConversion([&](util::RefType refType) -> Type {
+        typeConverter.addConversion([&](pgx::mlir::util::RefType refType) -> Type {
             MLIR_PGX_DEBUG("UtilToLLVM", "Converting util.ref type to LLVM pointer");
             auto context = refType.getContext();
             return LLVM::LLVMPointerType::get(context);
@@ -193,7 +193,7 @@ struct UtilToLLVMLoweringPass : public PassWrapper<UtilToLLVMLoweringPass, Opera
         target.addLegalOp<ModuleOp>();
         
         // Mark Util operations as illegal
-        target.addIllegalDialect<util::UtilDialect>();
+        target.addIllegalDialect<pgx::mlir::util::UtilDialect>();
         
         // Apply conversion
         if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
@@ -219,8 +219,9 @@ struct UtilToLLVMLoweringPass : public PassWrapper<UtilToLLVMLoweringPass, Opera
 
 void pgx::mlir::populateUtilToLLVMConversionPatterns(LLVMTypeConverter &typeConverter,
                                                       RewritePatternSet &patterns) {
-    patterns.add<AllocOpLowering, PackOpLowering, GetTupleOpLowering>(
-        typeConverter, patterns.getContext());
+    patterns.add<AllocOpLowering>(typeConverter, patterns.getContext());
+    patterns.add<PackOpLowering>(typeConverter, patterns.getContext());
+    patterns.add<GetTupleOpLowering>(typeConverter, patterns.getContext());
     
     MLIR_PGX_DEBUG("UtilToLLVM", "Registered Util to LLVM conversion patterns");
 }
