@@ -43,7 +43,7 @@ def DSA_Collection : Type<CPred<"$_self.isa<::pgx::mlir::dsa::CollectionType>()"
 
 def DSA_GenericIterable : DSA_Collection<"GenericIterable","iterable"> {
     let summary = "generic iterable";
-    let parameters = (ins "Type":$elementType,"std::string":$iteratorName);
+    let parameters = (ins "::mlir::Type":$elementType,"std::string":$iteratorName);
     let hasCustomAssemblyFormat=1;
 }
 
@@ -72,33 +72,33 @@ def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
         `finalize`.
     }];
 
-    let parameters = (ins "TupleType":$rowType);
+    let parameters = (ins "::mlir::TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 
 def DSA_Vector : DSA_Collection<"Vector","vector"> {
     let summary = "vector";
-    let parameters = (ins "Type":$elementType);
+    let parameters = (ins "::mlir::Type":$elementType);
     let assemblyFormat = "`<` $elementType `>`";
 }
 def DSA_Record: DSA_Collection<"Record","record"> {
     let summary = "record";
-    let parameters = (ins "TupleType":$rowType);
+    let parameters = (ins "::mlir::TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 def DSA_RecordBatch: DSA_Collection<"RecordBatch","record_batch"> {
     let summary = "record_batch";
-    let parameters = (ins "TupleType":$rowType);
+    let parameters = (ins "::mlir::TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 def DSA_AggregationHashtable : DSA_Collection<"AggregationHashtable","aggr_ht"> {
     let summary = "aggregation hashtable";
-    let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
+    let parameters = (ins "::mlir::TupleType":$keyType,"::mlir::TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 def DSA_JoinHashtable : DSA_Collection<"JoinHashtable","join_ht"> {
     let summary = "join hashtable";
-    let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
+    let parameters = (ins "::mlir::TupleType":$keyType,"::mlir::TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 

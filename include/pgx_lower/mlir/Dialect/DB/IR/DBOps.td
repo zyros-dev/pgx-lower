@@ -47,11 +47,11 @@ class DB_Type<string name, string typeMnemonic> : TypeDef<DB_Dialect, name> {
 def NullableType : DB_Type<"Nullable","nullable"> {
     let summary = "nullable";
 
-    let parameters = (ins "Type":$type);
+    let parameters = (ins "::mlir::Type":$type);
     let assemblyFormat = " `<` $type `>`";
 
     let builders = [
-        TypeBuilderWithInferredContext<(ins "Type":$type), [{
+        TypeBuilderWithInferredContext<(ins "::mlir::Type":$type), [{
             return $_get(type.getContext(), type);
         }]>
     ];

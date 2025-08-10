@@ -7,8 +7,8 @@
 
 #include <llvm/ADT/TypeSwitch.h>
 
-mlir::Type pgx::mlir::dsa::CollectionType::getElementType() const {
-   return ::llvm::TypeSwitch<::pgx::mlir::dsa::CollectionType, Type>(*this)
+::mlir::Type pgx::mlir::dsa::CollectionType::getElementType() const {
+   return ::llvm::TypeSwitch<::pgx::mlir::dsa::CollectionType, ::mlir::Type>(*this)
       .Case<::pgx::mlir::dsa::GenericIterableType>([&](::pgx::mlir::dsa::GenericIterableType t) {
          return t.getElementType();
       })
@@ -16,18 +16,18 @@ mlir::Type pgx::mlir::dsa::CollectionType::getElementType() const {
          return t.getElementType();
       })
       .Case<::pgx::mlir::dsa::JoinHashtableType>([&](::pgx::mlir::dsa::JoinHashtableType t) {
-         return TupleType::get(getContext(), {t.getKeyType(), t.getValType()});
+         return ::mlir::TupleType::get(getContext(), {t.getKeyType(), t.getValType()});
       })
       .Case<::pgx::mlir::dsa::AggregationHashtableType>([&](::pgx::mlir::dsa::AggregationHashtableType t) {
-         return TupleType::get(t.getContext(), {t.getKeyType(), t.getValType()});
+         return ::mlir::TupleType::get(t.getContext(), {t.getKeyType(), t.getValType()});
       })
       .Case<pgx::mlir::dsa::RecordBatchType>([&](pgx::mlir::dsa::RecordBatchType t) {
          return pgx::mlir::dsa::RecordType::get(t.getContext(), t.getRowType());
       })
-      .Default([](::mlir::Type) { return Type(); });
+      .Default([](::mlir::Type) { return ::mlir::Type(); });
 }
-bool pgx::mlir::dsa::CollectionType::classof(Type t) {
-   return ::llvm::TypeSwitch<Type, bool>(t)
+bool pgx::mlir::dsa::CollectionType::classof(::mlir::Type t) {
+   return ::llvm::TypeSwitch<::mlir::Type, bool>(t)
       .Case<::pgx::mlir::dsa::GenericIterableType>([&](::pgx::mlir::dsa::GenericIterableType t) { return true; })
       .Case<::pgx::mlir::dsa::VectorType>([&](::pgx::mlir::dsa::VectorType t) {
          return true;
@@ -44,15 +44,15 @@ bool pgx::mlir::dsa::CollectionType::classof(Type t) {
       .Default([](::mlir::Type) { return false; });
 }
 
-::mlir::Type pgx::mlir::dsa::GenericIterableType::parse(mlir::AsmParser& parser) {
-   Type type;
-   StringRef parserName;
+::mlir::Type pgx::mlir::dsa::GenericIterableType::parse(::mlir::AsmParser& parser) {
+   ::mlir::Type type;
+   ::llvm::StringRef parserName;
    if (parser.parseLess() || parser.parseType(type) || parser.parseComma(), parser.parseKeyword(&parserName) || parser.parseGreater()) {
-      return mlir::Type();
+      return ::mlir::Type();
    }
    return pgx::mlir::dsa::GenericIterableType::get(parser.getBuilder().getContext(), type, parserName.str());
 }
-void pgx::mlir::dsa::GenericIterableType::print(mlir::AsmPrinter& p) const {
+void pgx::mlir::dsa::GenericIterableType::print(::mlir::AsmPrinter& p) const {
    p << "<" << getElementType() << "," << getIteratorName() << ">";
 }
 
