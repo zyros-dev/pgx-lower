@@ -1,4 +1,4 @@
-#include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include <mlir/Conversion/RelAlgToDB/JoinTranslator.h>
 using namespace pgx::mlir::relalg;
 JoinTranslator::JoinTranslator(std::shared_ptr<JoinImpl> joinImpl) : Translator({joinImpl->builderChild, joinImpl->lookupChild}), joinOp(joinImpl->joinOp), impl(joinImpl) {
