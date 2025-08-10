@@ -275,23 +275,22 @@ void ConstantOp::setInherentAttr(Properties &prop,
     }
 }
 
-// RuntimeCall Properties API
-std::optional<::mlir::Attribute> RuntimeCall::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                            const Properties &prop,
-                                                            llvm::StringRef name) {
-    if (name == "fn") {
-        return prop.fn;
-    }
-    return std::nullopt;
+// RuntimeCall Properties API - removed, now generated in DBOps.cpp.inc
+
+// CmpOp methods
+bool pgx::mlir::db::CmpOp::isEqualityPred() { 
+    return getPredicate() == pgx::mlir::db::DBCmpPredicate::eq; 
 }
 
-void RuntimeCall::setInherentAttr(Properties &prop,
-                                 llvm::StringRef name,
-                                 ::mlir::Attribute value) {
-    if (name == "fn") {
-        prop.fn = value.cast<::mlir::StringAttr>();
-    }
+bool pgx::mlir::db::CmpOp::isLessPred(bool eq) { 
+    return getPredicate() == (eq ? pgx::mlir::db::DBCmpPredicate::lte : pgx::mlir::db::DBCmpPredicate::lt); 
 }
+
+bool pgx::mlir::db::CmpOp::isGreaterPred(bool eq) { 
+    return getPredicate() == (eq ? pgx::mlir::db::DBCmpPredicate::gte : pgx::mlir::db::DBCmpPredicate::gt); 
+}
+
+// getLeft and getRight are now using the generated methods from tablegen
 
 // CmpOp Properties API
 std::optional<::mlir::Attribute> CmpOp::getInherentAttr(::mlir::MLIRContext *ctx,

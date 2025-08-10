@@ -109,12 +109,12 @@ class QueryGraph {
    }
    static std::optional<std::pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>> analyzePredicate(PredicateOperator selection) {
       auto returnOp = ::mlir::cast<pgx::mlir::relalg::ReturnOp>(selection.getPredicateBlock().getTerminator());
-      if (returnOp.results().empty()) return {};
-      ::mlir::Value v = returnOp.results()[0];
+      if (returnOp.getResults().empty()) return {};
+      ::mlir::Value v = returnOp.getResults()[0];
       if (auto cmpOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(v.getDefiningOp())) {
          if (!cmpOp.isEqualityPred()) return {};
-         if (auto leftColref = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.left().getDefiningOp())) {
-            if (auto rightColref = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.right().getDefiningOp())) {
+         if (auto leftColref = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.getLeft().getDefiningOp())) {
+            if (auto rightColref = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.getRight().getDefiningOp())) {
                return std::make_pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>(&leftColref.attr().getColumn(), &rightColref.attr().getColumn());
             }
          }
@@ -138,7 +138,7 @@ class QueryGraph {
       e.right = right;
       e.createdNode = createdNode;
       if (createdNode) {
-         pseudoNodeOwner[createdNode.getValue()] = edgeid;
+         pseudoNodeOwner[createdNode.value()] = edgeid;
       }
       for (auto n : left) {
          if (n >= nodes.size()) {
@@ -291,12 +291,12 @@ class QueryGraph {
       Predicate(pgx::mlir::relalg::ColumnSet left, pgx::mlir::relalg::ColumnSet right, bool isEq) : left(left), right(right), isEq(isEq) {}
    };
    std::vector<Predicate> analyzePred(::mlir::Block* block, pgx::mlir::relalg::ColumnSet availableLeft, pgx::mlir::relalg::ColumnSet availableRight) {
-      llvm::DenseMap<mlir::Value, pgx::mlir::relalg::ColumnSet> required;
+      llvm::DenseMap<::mlir::Value, pgx::mlir::relalg::ColumnSet> required;
       std::vector<Predicate> predicates;
-      block->walk([&](mlir::Operation* op) {
-         if (auto getAttr = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
-            required.insert({getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.attr())});
-         } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
+      block->walk([&](::mlir::Operation* op) {
+         if (auto getAttr = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
+            required.insert(std::make_pair(getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.attr())));
+         } else if (auto cmpOp = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
             if (cmpOp.isEqualityPred()) {
                auto leftAttributes = required[cmpOp.getLeft()];
                auto rightAttributes = required[cmpOp.getRight()];
@@ -322,7 +322,7 @@ class QueryGraph {
                }
             }
             for (auto result : op->getResults()) {
-               required.insert({result, attributes});
+               required.insert(std::make_pair(result, attributes));
             }
          }
       });
@@ -336,7 +336,7 @@ class QueryGraph {
       return a;
    }
    void addPredicates(std::vector<Predicate>& predicates, Operator op, pgx::mlir::relalg::ColumnSet availableLeft, pgx::mlir::relalg::ColumnSet availableRight) {
-      if (auto predicateOp = mlir::dyn_cast_or_null<PredicateOperator>(op.getOperation())) {
+      if (auto predicateOp = ::mlir::dyn_cast_or_null<PredicateOperator>(op.getOperation())) {
          auto newPredicates = analyzePred(&predicateOp.getPredicateBlock(), availableLeft, availableRight);
          predicates.insert(predicates.end(), newPredicates.begin(), newPredicates.end());
       }

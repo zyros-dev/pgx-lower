@@ -157,7 +157,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
             auto children = currentJoinOp.getChildren();
             OpBuilder builder(currentJoinOp);
             mlir::IRMapping mapping;
-            auto newsel = builder.create<relalg::SelectionOp>(currentJoinOp->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), children[1].asRelation());
+            auto newsel = builder.create<pgx::mlir::relalg::SelectionOp>(currentJoinOp->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), children[1].asRelation());
             newsel.initPredicate();
             mapping.map(currentJoinOp.getPredicateArgument(), newsel.getPredicateArgument());
             builder.setInsertionPointToStart(&newsel.getPredicate().front());
@@ -177,14 +177,14 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
 
       auto* terminator = currentMap.getPredicate().front().getTerminator();
       if (auto returnOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(terminator)) {
-         assert(returnOp.results().size() == currentMap.computed_cols().size());
-         auto computedValRange = returnOp.results();
+         assert(returnOp.getResults().size() == currentMap.getComputedCols().size());
+         auto computedValRange = returnOp.getResults();
          for(size_t i=0;i<computedValRange.size();i++){
             OpBuilder builder(currentMap);
             mlir::IRMapping mapping;
-            auto currentAttr=currentMap.computed_cols()[i].cast<pgx::mlir::relalg::ColumnDefAttr>();
+            auto currentAttr=currentMap.getComputedCols()[i].cast<pgx::mlir::relalg::ColumnDefAttr>();
             mlir::Value currentVal=computedValRange[i];
-            auto newmap = builder.create<pgx::mlir::relalg::MapOp>(currentMap->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), tree,builder.getArrayAttr({currentAttr}));
+            auto newmap = builder.create<pgx::mlir::relalg::MapOp>(currentMap->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), tree, builder.getArrayAttr(llvm::ArrayRef<mlir::Attribute>{currentAttr}));
             tree = newmap;
             newmap.getPredicate().push_back(new Block);
             newmap.getPredicate().addArgument(pgx::mlir::relalg::TupleType::get(builder.getContext()),currentMap->getLoc());

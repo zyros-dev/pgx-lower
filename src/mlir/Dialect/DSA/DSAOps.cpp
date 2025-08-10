@@ -28,22 +28,22 @@ static void printInitializationList(OpAsmPrinter& p,
 void pgx::mlir::dsa::ForOp::print(OpAsmPrinter& p) {
    pgx::mlir::dsa::ForOp& op = *this;
    p << " " << op.getInductionVar() << " in "
-     << op.collection() << " : " << op.collection().getType() << " ";
-   if (op.until()) {
-      p << "until " << op.until() << " ";
+     << op.getCollection() << " : " << op.getCollection().getType() << " ";
+   if (op.getUntil()) {
+      p << "until " << op.getUntil() << " ";
    }
    printInitializationList(p, op.getRegionIterArgs(), op.getIterOperands(),
                            " iter_args");
    if (!op.getIterOperands().empty())
       p << " -> (" << op.getIterOperands().getTypes() << ')';
-   p.printRegion(op.region(),
+   p.printRegion(op.getRegion(),
                  /*printEntryBlockArgs=*/false,
                  /*printBlockTerminators=*/op.hasIterOperands());
    p.printOptionalAttrDict(op->getAttrs(), {"operand_segment_sizes"});
 }
 
 //adapted from scf::ForOp
-ParseResult dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
+ParseResult pgx::mlir::dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
    auto& builder = parser.getBuilder();
    OpAsmParser::UnresolvedOperand collection;
    OpAsmParser::Argument inductionVariable;
@@ -136,12 +136,12 @@ ParseResult pgx::mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::O
    return success();
 }
 
-void dsa::SortOp::print(OpAsmPrinter& p) {
-   dsa::SortOp& op = *this;
+void pgx::mlir::dsa::SortOp::print(OpAsmPrinter& p) {
+   pgx::mlir::dsa::SortOp& op = *this;
    p << " " << op.toSort() << ":" << op.toSort().getType() << " ";
    p << "(";
    bool first = true;
-   for (auto arg : op.region().front().getArguments()) {
+   for (auto arg : op.getRegion().front().getArguments()) {
       if (first) {
          first = false;
       } else {
@@ -150,7 +150,7 @@ void dsa::SortOp::print(OpAsmPrinter& p) {
       p << arg;
    }
    p << ")";
-   p.printRegion(op.region(), false, true);
+   p.printRegion(op.getRegion(), false, true);
 }
 
 ParseResult pgx::mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, OperationState& result) {
@@ -208,8 +208,8 @@ ParseResult pgx::mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, Operatio
    return success();
 }
 
-void dsa::HashtableInsert::print(OpAsmPrinter& p) {
-   dsa::HashtableInsert& op = *this;
+void pgx::mlir::dsa::HashtableInsert::print(OpAsmPrinter& p) {
+   pgx::mlir::dsa::HashtableInsert& op = *this;
    p << " " << op.ht() << " : " << op.ht().getType() << ", " << op.key() << " : " << op.key().getType();
    if (op.val()) {
       p << ", " << op.val() << " : " << op.val().getType();

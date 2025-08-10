@@ -24,6 +24,10 @@ using ::mlir::StringAttr;
 using ::mlir::BoolAttr;
 using ::mlir::ArrayAttr;
 using ::mlir::DictionaryAttr;
+using ::mlir::Value;
+using ::mlir::Type;
+using ::mlir::Block;
+using ::mlir::Operation;
 } // namespace pgx::mlir
 
 #define GET_OP_CLASSES

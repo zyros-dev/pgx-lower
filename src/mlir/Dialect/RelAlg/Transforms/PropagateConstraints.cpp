@@ -1,4 +1,5 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
@@ -72,7 +73,7 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
          for (auto* x : toMap) {
             auto* newCol = colManager.get(scope, colManager.getName(x).second).get();
             newCol->type = x->type;
-            mapping.insert({x, newCol});
+            mapping.insert(std::make_pair(x, newCol));
             computedCols.push_back(colManager.createDef(newCol));
             values.push_back(rewriter.create<pgx::mlir::relalg::AggrFuncOp>(aggr->getLoc(), x->type, pgx::mlir::relalg::AggrFunc::any, aggr.getAggrFunc().getArgument(0), colManager.createRef(x)));
          }
@@ -110,13 +111,13 @@ class ReduceAggrKeys : public mlir::PassWrapper<ReduceAggrKeys, mlir::OperationP
 };
 static std::optional<std::pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>> analyzePredicate(PredicateOperator selection) {
    auto returnOp = mlir::cast<pgx::mlir::relalg::ReturnOp>(selection.getPredicateBlock().getTerminator());
-   if (returnOp.results().empty()) return {};
-   mlir::Value v = returnOp.results()[0];
+   if (returnOp.getResults().empty()) return {};
+   mlir::Value v = returnOp.getResults()[0];
    if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(v.getDefiningOp())) {
       if (!cmpOp.isEqualityPred()) return {};
-      if (auto leftColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.left().getDefiningOp())) {
-         if (auto rightColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.right().getDefiningOp())) {
-            return std::make_pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>(&leftColref.attr().getColumn(), &rightColref.attr().getColumn());
+      if (auto leftColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.getLeft().getDefiningOp())) {
+         if (auto rightColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.getRight().getDefiningOp())) {
+            return std::make_pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>(&leftColref.getAttr().getColumn(), &rightColref.getAttr().getColumn());
          }
       }
    }
@@ -160,12 +161,12 @@ class ExpandTransitiveEqualities : public mlir::PassWrapper<ExpandTransitiveEqua
          }
 
          if (auto cp = mlir::dyn_cast<pgx::mlir::relalg::CrossProductOp>(op.getOperation())) {
-            merge(localEqualities, equalities[cp.left().getDefiningOp()], additionalPredicates);
-            merge(localEqualities, equalities[cp.right().getDefiningOp()], additionalPredicates);
+            merge(localEqualities, equalities[cp.getLeft().getDefiningOp()], additionalPredicates);
+            merge(localEqualities, equalities[cp.getRight().getDefiningOp()], additionalPredicates);
          }
          if (auto ij = mlir::dyn_cast<pgx::mlir::relalg::InnerJoinOp>(op.getOperation())) {
-            merge(localEqualities, equalities[ij.left().getDefiningOp()], additionalPredicates);
-            merge(localEqualities, equalities[ij.right().getDefiningOp()], additionalPredicates);
+            merge(localEqualities, equalities[ij.getLeft().getDefiningOp()], additionalPredicates);
+            merge(localEqualities, equalities[ij.getRight().getDefiningOp()], additionalPredicates);
          }
 
          if (auto sel = mlir::dyn_cast<pgx::mlir::relalg::SelectionOp>(op.getOperation())) {
@@ -195,7 +196,7 @@ class ExpandTransitiveEqualities : public mlir::PassWrapper<ExpandTransitiveEqua
                predBuilder.create<pgx::mlir::relalg::ReturnOp>(builder.getUnknownLoc(), compared);
 
                auto sel = builder.create<pgx::mlir::relalg::SelectionOp>(loc, pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), current);
-               sel.predicate().push_back(block);
+               sel.getPredicate().push_back(block);
                current.replaceAllUsesExcept(sel.asRelation(), sel.getOperation());
                current = sel.asRelation();
             }

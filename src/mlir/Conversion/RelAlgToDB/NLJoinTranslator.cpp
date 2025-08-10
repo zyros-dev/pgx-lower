@@ -1,4 +1,4 @@
-#include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
+#include "mlir/Conversion/RelAlgToDB/NLJoinTranslator.h"
 #include <mlir/Dialect/DSA/IR/DSAOps.h>
 using namespace pgx::mlir::relalg;
 void NLJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) {
