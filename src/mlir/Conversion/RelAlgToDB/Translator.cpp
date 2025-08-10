@@ -1,77 +1,84 @@
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "execution/logging.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "llvm/Support/ErrorHandling.h"
+#include <mlir/Conversion/RelAlgToDB/HashJoinTranslator.h>
+#include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
 
-namespace pgx {
-namespace mlir {
-namespace relalg {
+using namespace mlir::relalg;
+std::vector<mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(mlir::Block* dest, mlir::Operation* op, mlir::function_ref<mlir::Block*(mlir::Operation*)> getBlockFn, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
+   // Splice the operations of the 'source' block into the 'dest' block and erase
+   // it.
+   llvm::iplist<mlir::Operation> translated;
+   std::vector<mlir::Operation*> toErase;
+   auto* cloned = op->clone();
+   mlir::Block* source = getBlockFn(cloned);
+   auto* terminator = source->getTerminator();
 
-// Factory method to create appropriate translator based on operation type
-std::unique_ptr<Translator> Translator::createTranslator(::mlir::Operation* op) {
-    MLIR_PGX_INFO("RelAlg", "Creating translator for operation: " + op->getName().getStringRef().str());
-    
-    // Use TypeSwitch to dispatch to appropriate translator factory
-    return ::llvm::TypeSwitch<::mlir::Operation*, std::unique_ptr<Translator>>(op)
-        .Case<::pgx::mlir::relalg::BaseTableOp>([&](auto x) { 
-            return createBaseTableTranslator(x); 
-        })
-        .Case<::pgx::mlir::relalg::MaterializeOp>([&](auto x) { 
-            return createMaterializeTranslator(x); 
-        })
-        .Default([&](auto x) {
-            // For now, use dummy translator for unimplemented operations
-            MLIR_PGX_WARNING("RelAlg", "No specific translator for operation: " + x->getName().getStringRef().str() + ", using DummyTranslator");
-            return createDummyTranslator(x);
-        });
+   source->walk([&](mlir::relalg::GetColumnOp getColumnOp) {
+      getColumnOp.replaceAllUsesWith(context.getValueForAttribute(&getColumnOp.attr().getColumn()));
+      toErase.push_back(getColumnOp.getOperation());
+   });
+   /*for (auto addColumnOp : source->getOps<mlir::relalg::AddColumnOp>()) {
+      context.setValueForAttribute(scope, &addColumnOp.attr().getColumn(), addColumnOp.val());
+      toErase.push_back(addColumnOp.getOperation());
+   }*/
+
+   dest->getOperations().splice(dest->end(), source->getOperations());
+   for (auto* op : toErase) {
+      op->dropAllUses();
+      op->erase();
+   }
+   auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(terminator);
+   std::vector<Value> res(returnOp.results().begin(), returnOp.results().end());
+   terminator->erase();
+   return res;
 }
 
-// Dummy translator for testing infrastructure
-class DummyTranslator : public Translator {
-public:
-    explicit DummyTranslator(::mlir::Operation* op) : Translator(op) {
-        MLIR_PGX_DEBUG("RelAlg", "Created DummyTranslator for operation: " + op->getName().getStringRef().str());
-    }
-    
-    ColumnSet getAvailableColumns() override {
-        // Dummy translator doesn't produce any columns
-        return ColumnSet();
-    }
-    
-    void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-        MLIR_PGX_DEBUG("RelAlg", "DummyTranslator::produce() called");
-        
-        // For operations with children, process them
-        if (!children.empty()) {
-            produceChildren(context, builder);
-        }
-        
-        // For leaf operations or after children are processed
-        if (consumer) {
-            consumer->consume(this, builder, context);
-        }
-    }
-    
-    void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) override {
-        MLIR_PGX_DEBUG("RelAlg", "DummyTranslator::consume() called from child");
-        
-        // Pass through to parent consumer if exists
-        if (consumer) {
-            consumer->consume(this, builder, context);
-        }
-    }
-    
-    void done() override {
-        MLIR_PGX_DEBUG("RelAlg", "DummyTranslator::done() called");
-        // No-op for dummy translator
-    }
+void Translator::propagateInfo() {
+   for (auto& c : children) {
+      auto available = c->getAvailableColumns();
+      mlir::relalg::ColumnSet toPropagate = requiredAttributes.intersect(available);
+      c->setInfo(this, toPropagate);
+   }
+}
+mlir::relalg::Translator::Translator(Operator op) : op(op) {
+   for (auto child : op.getChildren()) {
+      children.push_back(mlir::relalg::Translator::createTranslator(child.getOperation()));
+   }
+}
+
+mlir::relalg::Translator::Translator(mlir::ValueRange potentialChildren) : op() {
+   for (auto child : potentialChildren) {
+      if (child.getType().isa<mlir::relalg::TupleStreamType>()) {
+         children.push_back(mlir::relalg::Translator::createTranslator(child.getDefiningOp()));
+      }
+   }
+}
+
+void Translator::setInfo(mlir::relalg::Translator* consumer, mlir::relalg::ColumnSet requiredAttributes) {
+   this->consumer = consumer;
+   this->requiredAttributes = requiredAttributes;
+   if (op) {
+      this->requiredAttributes.insert(op.getUsedColumns());
+      propagateInfo();
+   }
+}
+mlir::relalg::ColumnSet Translator::getAvailableColumns() {
+   return op.getAvailableColumns();
 };
 
-// Factory function for DummyTranslator
-std::unique_ptr<Translator> createDummyTranslator(::mlir::Operation* op) {
-    return std::make_unique<DummyTranslator>(op);
+std::unique_ptr<mlir::relalg::Translator> Translator::createTranslator(mlir::Operation* operation) {
+   return ::llvm::TypeSwitch<mlir::Operation*, std::unique_ptr<mlir::relalg::Translator>>(operation)
+      .Case<BaseTableOp>([&](auto x) { return createBaseTableTranslator(x); })
+      .Case<ConstRelationOp>([&](auto x) { return createConstRelTranslator(x); })
+      .Case<MaterializeOp>([&](auto x) { return createMaterializeTranslator(x); })
+      .Case<SelectionOp>([&](auto x) { return createSelectionTranslator(x); })
+      .Case<MapOp>([&](auto x) { return createMapTranslator(x); })
+      .Case<CrossProductOp, InnerJoinOp, SemiJoinOp, AntiSemiJoinOp, OuterJoinOp, SingleJoinOp, MarkJoinOp, CollectionJoinOp>([&](mlir::Operation* op) { return createJoinTranslator(op); })
+      .Case<SortOp>([&](auto x) { return createSortTranslator(x); })
+      .Case<AggregationOp>([&](auto x) { return createAggregationTranslator(x); })
+      .Case<RenamingOp>([&](auto x) { return createRenamingTranslator(x); })
+      .Case<ProjectionOp>([&](auto x) { return createProjectionTranslator(x); })
+      .Case<LimitOp>([&](auto x) { return createLimitTranslator(x); })
+      .Case<TmpOp>([&](auto x) { return createTmpTranslator(x); })
+      .Case<UnionOp, IntersectOp, ExceptOp>([&](auto x) { return createSetOpTranslator(x); })
+      .Default([](auto x) { assert(false&&"should not happen"); return std::unique_ptr<Translator>(); });
 }
-
-} // namespace relalg
-} // namespace mlir
-} // namespace pgx
