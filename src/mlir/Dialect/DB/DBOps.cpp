@@ -9,11 +9,12 @@
 #include <llvm/Support/Debug.h>
 #include <queue>
 using namespace mlir;
-bool pgx::mlir::db::CmpOp::isEqualityPred() { return predicate() == pgx::mlir::db::DBCmpPredicate::eq; }
-bool pgx::mlir::db::CmpOp::isLessPred(bool eq) { return predicate() == (eq ? pgx::mlir::db::DBCmpPredicate::lte : pgx::mlir::db::DBCmpPredicate::lt); }
-bool pgx::mlir::db::CmpOp::isGreaterPred(bool eq) { return predicate() == (eq ? pgx::mlir::db::DBCmpPredicate::gte : pgx::mlir::db::DBCmpPredicate::gt); }
-mlir::Value pgx::mlir::db::CmpOp::getLeft() { return left(); }
-mlir::Value pgx::mlir::db::CmpOp::getRight() { return right(); }
+// These implementations are provided by the interface, commenting out to avoid redefinition
+// bool pgx::mlir::db::CmpOp::isEqualityPred() { return getPredicate() == pgx::mlir::db::DBCmpPredicate::eq; }
+// bool pgx::mlir::db::CmpOp::isLessPred(bool eq) { return getPredicate() == (eq ? pgx::mlir::db::DBCmpPredicate::lte : pgx::mlir::db::DBCmpPredicate::lt); }
+// bool pgx::mlir::db::CmpOp::isGreaterPred(bool eq) { return getPredicate() == (eq ? pgx::mlir::db::DBCmpPredicate::gte : pgx::mlir::db::DBCmpPredicate::gt); }
+// mlir::Value pgx::mlir::db::CmpOp::getLeft() { return getLeft(); }
+// mlir::Value pgx::mlir::db::CmpOp::getRight() { return getRight(); }
 static Type wrapNullableType(MLIRContext* context, Type type, ValueRange values) {
    if (llvm::any_of(values, [](Value v) { return v.getType().isa<pgx::mlir::db::NullableType>(); })) {
       return pgx::mlir::db::NullableType::get(type);
@@ -37,7 +38,7 @@ int getIntegerWidth(mlir::Type type, bool isUnSigned) {
    }
    return 0;
 }
-LogicalResult inferReturnType(MLIRContext* context, Optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
@@ -53,7 +54,7 @@ LogicalResult inferReturnType(MLIRContext* context, Optional<Location> location,
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
    return success();
 }
-LogicalResult inferMulReturnType(MLIRContext* context, Optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+LogicalResult inferMulReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
@@ -67,7 +68,7 @@ LogicalResult inferMulReturnType(MLIRContext* context, Optional<Location> locati
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
    return success();
 }
-LogicalResult inferDivReturnType(MLIRContext* context, Optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+LogicalResult inferDivReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
@@ -83,7 +84,7 @@ LogicalResult inferDivReturnType(MLIRContext* context, Optional<Location> locati
 ::mlir::LogicalResult pgx::mlir::db::RuntimeCall::verify() {
    pgx::mlir::db::RuntimeCall& runtimeCall=*this;
    auto reg = runtimeCall.getContext()->getLoadedDialect<pgx::mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
-   if (!reg->verify(runtimeCall.fn().str(), runtimeCall.args().getTypes(), runtimeCall.getNumResults() == 1 ? runtimeCall.getResultTypes()[0] : mlir::Type())) {
+   if (!reg->verify(runtimeCall.getFn().str(), runtimeCall.getArgs().getTypes(), runtimeCall.getNumResults() == 1 ? runtimeCall.getResultTypes()[0] : mlir::Type())) {
       runtimeCall->emitError("could not find matching runtime function");
       return failure();
    }
@@ -91,14 +92,14 @@ LogicalResult inferDivReturnType(MLIRContext* context, Optional<Location> locati
 }
 bool pgx::mlir::db::RuntimeCall::supportsInvalidValues() {
    auto reg = getContext()->getLoadedDialect<pgx::mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
-   if (auto* fn = reg->lookup(this->fn().str())) {
+   if (auto* fn = reg->lookup(this->getFn().str())) {
       return fn->nullHandleType == RuntimeFunction::HandlesInvalidVaues;
    }
    return false;
 }
 bool pgx::mlir::db::RuntimeCall::needsNullWrap() {
    auto reg = getContext()->getLoadedDialect<pgx::mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
-   if (auto* fn = reg->lookup(this->fn().str())) {
+   if (auto* fn = reg->lookup(this->getFn().str())) {
       return fn->nullHandleType != RuntimeFunction::HandlesNulls;
    }
    return false;

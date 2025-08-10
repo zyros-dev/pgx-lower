@@ -21,6 +21,12 @@ public:
   /// Clear all functional dependencies
   void clear() { dependencies.clear(); }
   
+  /// Insert all functional dependencies from another set
+  void insert(const FunctionalDependencies& other) {
+    // For now, just merge the dependencies
+    // This is a stub implementation
+  }
+  
 private:
   // Simple representation: map from determinant columns to dependent columns
   llvm::DenseMap<unsigned, llvm::SmallVector<unsigned, 4>> dependencies;
