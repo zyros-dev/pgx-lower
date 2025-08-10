@@ -83,10 +83,10 @@ TEST_F(DSAToLLVMConversionTest, ConvertCreateDS) {
     EXPECT_TRUE(foundLLVMCall) << "CreateDS should be converted to LLVM call";
 }
 
-// PHASE 4d-5: ScanSourceOp test removed - not used by Test 1
+// PHASE 4d-5: ScanSource test removed - not used by Test 1
 // The hybrid RelAlgToDB architecture does not generate dsa.scan_source
 
-// PHASE 4d-5: FinalizeOp test removed - not used by Test 1
+// PHASE 4d-5: Finalize test removed - not used by Test 1
 // The hybrid architecture outputs results directly to PostgreSQL via SPI
 
 // Test the operations actually used by Test 1

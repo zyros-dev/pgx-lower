@@ -126,7 +126,7 @@ TEST_F(ConversionBasicsTest, TestDSAOperationsIndependent) {
     MLIR_PGX_DEBUG("UnitTest", "Testing independent DSA operations");
     
     // This test has been disabled as we've removed the DSA data structure
-    // building operations (CreateDS, Append, NextRow, FinalizeOp)
+    // building operations (CreateDS, Append, NextRow, Finalize)
     // in favor of using DB operations directly.
     
     MLIR_PGX_DEBUG("UnitTest", "DSA operations test skipped - operations removed");
@@ -176,7 +176,7 @@ TEST_F(ConversionBasicsTest, TestConversionPrerequisites) {
         ::pgx::db::ExternalSourceType::get(&context),
         tableOidValue.getResult());
     
-    // DSA ScanSourceOp creation removed - DSA operations deleted in Phase 4d
+    // DSA ScanSource creation removed - DSA operations deleted in Phase 4d
     
     builder->create<func::ReturnOp>(builder->getUnknownLoc());
     

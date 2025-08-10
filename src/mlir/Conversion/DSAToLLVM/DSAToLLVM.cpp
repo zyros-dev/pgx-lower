@@ -311,7 +311,7 @@ public:
     }
 };
 
-// FinalizeOp pattern removed in Phase 4d-5
+// Finalize pattern removed in Phase 4d-5
 // Not used in hybrid architecture - results go directly to PostgreSQL via SPI
 
 //===----------------------------------------------------------------------===//

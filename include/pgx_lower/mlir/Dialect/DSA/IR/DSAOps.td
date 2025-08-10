@@ -155,6 +155,7 @@ def DSA_HashtableInsert : DSA_Op<"ht_insert"> {
 
     let arguments = (ins AnyType:$ht, AnyType:$key, Optional<AnyType>: $val);
     let regions = (region AnyRegion:$hash, AnyRegion:$equal, AnyRegion:$reduce);
+    let assemblyFormat = "$ht `,` $key (`,` $val^)? attr-dict `:` type($ht) `,` type($key) (`,` type($val)^)? $hash $equal $reduce";
 }
 
 def DSA_Finalize : DSA_Op<"finalize"> {
@@ -179,6 +180,13 @@ def DSA_Append : DSA_Op<"ds_append"> {
 }
 
 
+def DSA_At : DSA_Op<"at", [Pure]> {
+    let summary = "access column in a record";
+    let arguments = (ins DSA_Record:$collection,I32Attr:$pos);
+    let results = (outs AnyType:$val,Optional<I1>:$valid);
+    let assemblyFormat = "$collection  `[` $pos `]` `:` type($collection) `->` type($val) (`,` type($valid)^)? attr-dict";
+}
+
 def DSA_ScanSource : DSA_Op<"scan_source"> {
     let arguments = (ins StrAttr:$descr);
     let results = (outs DSA_GenericIterable:$iterable);
@@ -193,6 +201,7 @@ def DSA_SortOp : DSA_Op<"sort", [IsolatedFromAbove]> {
 
     let arguments = (ins DSA_Vector:$toSort);
     let regions = (region SizedRegion<1>:$region);
+    let assemblyFormat = "$toSort attr-dict `:` type($toSort) $region";
 }
 
 def ForOp : DSA_Op<"for", [
@@ -233,6 +242,7 @@ def ForOp : DSA_Op<"for", [
             return getOperation()->getNumOperands() - getNumControlOperands();
         }
     }];
+    let assemblyFormat = "$collection (`,` $until^)? (`(` $initArgs^ `:` type($initArgs) `)`)? attr-dict `:` type($collection) (`->` type($results)^)? $region";
 }
 
 def YieldOp : DSA_Op<"yield", [Pure, ReturnLike, Terminator]> {

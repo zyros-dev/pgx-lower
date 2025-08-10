@@ -121,7 +121,7 @@ TEST_F(MaterializeDBOpsTest, MaterializeGeneratesHybridOps) {
     
     // Verify NO dsa.finalize in hybrid architecture
     bool foundFinalize = false;
-    module.walk([&](pgx::mlir::dsa::FinalizeOp op) {
+    module.walk([&](pgx::mlir::dsa::Finalize op) {
         foundFinalize = true;
     });
     EXPECT_FALSE(foundFinalize) << "Should NOT generate dsa.finalize in hybrid architecture";
