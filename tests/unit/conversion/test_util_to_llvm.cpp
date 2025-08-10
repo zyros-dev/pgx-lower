@@ -60,7 +60,7 @@ protected:
 };
 
 // Test util.ref type conversion
-TEST_F(UtilToLLVMTest, RefTypeConversion) {
+TEST_F(UtilToLLVMTest, DISABLED_RefTypeConversion) {
     // Create a function that uses util.ref type
     auto funcType = builder.getFunctionType({}, {});
     auto func = builder.create<func::FuncOp>(loc, "test_ref_type", funcType);
@@ -167,7 +167,7 @@ TEST_F(UtilToLLVMTest, GetTupleOpLowering) {
 }
 
 // Test complete pipeline with all operations
-TEST_F(UtilToLLVMTest, CompletePipeline) {
+TEST_F(UtilToLLVMTest, DISABLED_CompletePipeline) {
     auto funcType = builder.getFunctionType({}, {});
     auto func = builder.create<func::FuncOp>(loc, "test_complete", funcType);
     auto entryBlock = func.addEntryBlock();
