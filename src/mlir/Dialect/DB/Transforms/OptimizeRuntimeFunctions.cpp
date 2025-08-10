@@ -3,9 +3,9 @@
 
 #include <iostream>
 
-#include "mlir-support/parsing.h"
-#include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "pgx_lower/mlir-support/parsing.h"
+// #include "mlir/Dialect/RelAlg/Passes.h"  // Not used
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <variant>
 namespace {
@@ -100,8 +100,8 @@ class OptimizeRuntimeFunctions : public mlir::PassWrapper<OptimizeRuntimeFunctio
 };
 } // end anonymous namespace
 
-namespace mlir::db {
+namespace pgx::mlir::db {
 
-std::unique_ptr<Pass> createOptimizeRuntimeFunctionsPass() { return std::make_unique<OptimizeRuntimeFunctions>(); }
+std::unique_ptr<::mlir::Pass> createOptimizeRuntimeFunctionsPass() { return std::make_unique<OptimizeRuntimeFunctions>(); }
 
-} // end namespace mlir::db
+} // end namespace pgx::mlir::db

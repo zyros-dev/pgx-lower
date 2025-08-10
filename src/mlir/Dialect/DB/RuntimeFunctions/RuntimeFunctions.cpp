@@ -1,11 +1,11 @@
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DB/IR/RuntimeFunctions.h"
 #include "mlir/Dialect/DB/Passes.h"
 #include "runtime-defs/DateRuntime.h"
 #include "runtime-defs/DumpRuntime.h"
 #include "runtime-defs/StringRuntime.h"
 
-mlir::db::RuntimeFunction* mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
+pgx::mlir::db::RuntimeFunction* pgx::mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
    return registeredFunctions[name].get();
 }
 static mlir::Value dateAddImpl(mlir::OpBuilder& rewriter, mlir::ValueRange loweredArguments, mlir::TypeRange originalArgumentTypes, mlir::Type resType, mlir::TypeConverter* typeConverter,mlir::Location loc) {
@@ -180,7 +180,7 @@ static mlir::Value dumpValuesImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lo
    }
    return mlir::Value();
 }
-std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegistry::getBuiltinRegistry(mlir::MLIRContext* context) {
+std::shared_ptr<pgx::mlir::db::RuntimeFunctionRegistry> pgx::mlir::db::RuntimeFunctionRegistry::getBuiltinRegistry(mlir::MLIRContext* context) {
    auto builtinRegistry = std::make_shared<RuntimeFunctionRegistry>(context);
    builtinRegistry->add("DumpValue").handlesNulls().matchesTypes({RuntimeFunction::anyType}, RuntimeFunction::noReturnType).implementedAs(dumpValuesImpl);
    auto resTypeIsI64 = [](mlir::Type t, mlir::TypeRange) { return t.isInteger(64); };

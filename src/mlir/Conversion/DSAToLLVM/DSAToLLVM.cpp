@@ -55,30 +55,36 @@ mlir::pgx_conversion::DSAToLLVMTypeConverter::DSAToLLVMTypeConverter(MLIRContext
     // MaterializeTranslator generates DSA operations with nullable types
     
     // Convert DB nullable types to LLVM struct {value, isNull}
-    addConversion([&](::pgx::db::NullableI32Type type) -> Type {
-        auto i32Type = IntegerType::get(ctx, 32);
+    addConversion([&](::pgx::mlir::db::NullableType type) -> Type {
+        Type innerType = type.getType();
         auto i1Type = IntegerType::get(ctx, 1);
-        SmallVector<Type, 2> structTypes = {i32Type, i1Type};
-        return LLVM::LLVMStructType::getLiteral(ctx, structTypes);
-    });
-    
-    addConversion([&](::pgx::db::NullableI64Type type) -> Type {
-        auto i64Type = IntegerType::get(ctx, 64);
-        auto i1Type = IntegerType::get(ctx, 1);
-        SmallVector<Type, 2> structTypes = {i64Type, i1Type};
-        return LLVM::LLVMStructType::getLiteral(ctx, structTypes);
-    });
-    
-    addConversion([&](::pgx::db::NullableF64Type type) -> Type {
-        auto f64Type = Float64Type::get(ctx);
-        auto i1Type = IntegerType::get(ctx, 1);
-        SmallVector<Type, 2> structTypes = {f64Type, i1Type};
-        return LLVM::LLVMStructType::getLiteral(ctx, structTypes);
-    });
-    
-    addConversion([&](::pgx::db::NullableBoolType type) -> Type {
-        auto i1Type = IntegerType::get(ctx, 1);
-        SmallVector<Type, 2> structTypes = {i1Type, i1Type};
+        
+        // Handle specific inner types correctly
+        if (innerType.isInteger(32)) {
+            auto i32Type = IntegerType::get(ctx, 32);
+            SmallVector<Type, 2> structTypes = {i32Type, i1Type};
+            return LLVM::LLVMStructType::getLiteral(ctx, structTypes);
+        } else if (innerType.isInteger(64)) {
+            auto i64Type = IntegerType::get(ctx, 64);
+            SmallVector<Type, 2> structTypes = {i64Type, i1Type};
+            return LLVM::LLVMStructType::getLiteral(ctx, structTypes);
+        } else if (innerType.isInteger(1)) {
+            SmallVector<Type, 2> structTypes = {i1Type, i1Type};
+            return LLVM::LLVMStructType::getLiteral(ctx, structTypes);
+        } else if (auto floatType = innerType.dyn_cast<FloatType>()) {
+            if (floatType.isF64()) {
+                auto f64Type = Float64Type::get(ctx);
+                SmallVector<Type, 2> structTypes = {f64Type, i1Type};
+                return LLVM::LLVMStructType::getLiteral(ctx, structTypes);
+            }
+        }
+        
+        // Fallback for other types
+        Type llvmInnerType = convertType(innerType);
+        if (!llvmInnerType) 
+            llvmInnerType = innerType;
+            
+        SmallVector<Type, 2> structTypes = {llvmInnerType, i1Type};
         return LLVM::LLVMStructType::getLiteral(ctx, structTypes);
     });
     
@@ -214,14 +220,24 @@ public:
         Type valueType = op.getVal().getType();
         std::string funcName;
         
-        if (valueType.isa<::pgx::db::NullableI32Type>()) {
-            funcName = "pgx_runtime_append_nullable_i32";
-        } else if (valueType.isa<::pgx::db::NullableI64Type>()) {
-            funcName = "pgx_runtime_append_nullable_i64";
-        } else if (valueType.isa<::pgx::db::NullableF64Type>()) {
-            funcName = "pgx_runtime_append_nullable_f64";
-        } else if (valueType.isa<::pgx::db::NullableBoolType>()) {
-            funcName = "pgx_runtime_append_nullable_bool";
+        if (auto nullableType = valueType.dyn_cast<::pgx::mlir::db::NullableType>()) {
+            Type innerType = nullableType.getType();
+            if (innerType.isInteger(32)) {
+                funcName = "pgx_runtime_append_nullable_i32";
+            } else if (innerType.isInteger(64)) {
+                funcName = "pgx_runtime_append_nullable_i64";
+            } else if (innerType.isF64()) {
+                funcName = "pgx_runtime_append_nullable_f64";
+            } else if (innerType.isInteger(1)) {
+                funcName = "pgx_runtime_append_nullable_bool";
+            } else {
+                // For Test 1, we expect only standard nullable types
+                std::string typeStr;
+                llvm::raw_string_ostream os(typeStr);
+                innerType.print(os);
+                op->emitError("DSAToLLVM: Unsupported nullable inner type for dsa.ds_append: ") << typeStr;
+                return failure();
+            }
         } else {
             // For Test 1, we expect only nullable types from MaterializeTranslator
             std::string typeStr;

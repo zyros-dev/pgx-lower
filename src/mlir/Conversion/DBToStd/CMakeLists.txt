@@ -5,9 +5,9 @@ add_mlir_conversion_library(MLIRDBToArrowStd
         ../../../mlir/Conversion/DBToArrowStd
 
         DEPENDS
-        dump-rt-defs
-        string-rt-defs
-        date-rt-defs
+        # dump-rt-defs
+        # string-rt-defs
+        # date-rt-defs
         LINK_COMPONENTS
         Core
 

@@ -132,8 +132,8 @@ private:
         
         // Create db.get_external for PostgreSQL SPI table handle acquisition
         // This will lower to func.call @pg_table_open in Phase 4d DBToStd pass
-        auto externalSourceType = ::pgx::db::ExternalSourceType::get(builder.getContext());
-        auto externalSource = builder.create<::pgx::db::GetExternalOp>(
+        auto externalSourceType = ::pgx::mlir::db::ExternalSourceType::get(builder.getContext());
+        auto externalSource = builder.create<::pgx::mlir::db::GetExternalOp>(
             loc, externalSourceType, tableOid);
         
         MLIR_PGX_DEBUG("RelAlg", "Created db.get_external for PostgreSQL table OID: " + 
@@ -167,7 +167,7 @@ private:
             
             // Call db.iterate_external to check for next PostgreSQL tuple
             // This will lower to func.call @pg_get_next_tuple in DBToStd pass
-            auto hasTuple = builder.create<::pgx::db::IterateExternalOp>(
+            auto hasTuple = builder.create<::pgx::mlir::db::IterateExternalOp>(
                 loc, builder.getI1Type(), tableHandle);
             
             MLIR_PGX_DEBUG("RelAlg", "Created db.iterate_external for PostgreSQL SPI tuple iteration");
@@ -210,9 +210,9 @@ private:
         
         // db.get_field extracts PostgreSQL tuple field via SPI
         // Will lower to func.call @pg_extract_field in DBToStd pass
-        auto fieldValue = builder.create<::pgx::db::GetFieldOp>(
+        auto fieldValue = builder.create<::pgx::mlir::db::GetFieldOp>(
             loc, 
-            ::pgx::db::NullableI64Type::get(builder.getContext()),
+            ::pgx::mlir::db::NullableI64Type::get(builder.getContext()),
             tableHandle, 
             fieldIndex.getResult(), 
             typeOid.getResult());
@@ -221,7 +221,7 @@ private:
         
         // Extract actual value from nullable wrapper (assumes non-null for Test 1)
         // db.nullable_get_val will lower to llvm.extractvalue in DBToStd pass
-        auto actualValue = builder.create<::pgx::db::NullableGetValOp>(
+        auto actualValue = builder.create<::pgx::mlir::db::NullableGetValOp>(
             loc, builder.getI64Type(), fieldValue.getResult());
         
         // Verify type compatibility between Column and MLIR Value

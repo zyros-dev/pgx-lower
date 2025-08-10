@@ -2,8 +2,8 @@
 #define MLIR_DIALECT_DB_IR_RUNTIMEFUNCTIONS_H
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/util/FunctionHelper.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Util/IR/FunctionHelper.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 #include "mlir/IR/Builders.h"
 #include <memory>
 #include <string>

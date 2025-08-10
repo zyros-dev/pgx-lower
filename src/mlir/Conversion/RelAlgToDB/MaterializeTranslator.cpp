@@ -123,7 +123,7 @@ public:
         
         // Stream results to PostgreSQL using SPI
         // This replaces the DSA table finalization and context storage
-        builder.create<::pgx::db::StreamResultsOp>(loc);
+        builder.create<::pgx::mlir::db::StreamResultsOp>(loc);
         
         MLIR_PGX_INFO("RelAlg", "Completed result materialization with PostgreSQL SPI output");
     }
@@ -159,13 +159,17 @@ private:
     
     // Convert MLIR type to Arrow-style description
     std::string typeToArrowDescription(::mlir::Type type) {
-        // Handle nullable types - check each specific nullable type
-        if (type.isa<::pgx::db::NullableI32Type>()) {
-            return "int[32]";
-        } else if (type.isa<::pgx::db::NullableI64Type>()) {
-            return "int[64]";
-        } else if (type.isa<::pgx::db::NullableF64Type>()) {
-            return "float[64]";
+        // Handle nullable types - check the generic nullable type and its inner type
+        if (auto nullableType = type.dyn_cast<::pgx::mlir::db::NullableType>()) {
+            ::mlir::Type innerType = nullableType.getType();
+            if (innerType.isInteger(32)) {
+                return "int[32]";
+            } else if (innerType.isInteger(64)) {
+                return "int[64]";
+            } else if (innerType.isF64()) {
+                return "float[64]";
+            }
+            // Fallback for other nullable inner types
         }
         
         // Convert to Arrow format
@@ -204,24 +208,25 @@ private:
                     ::mlir::Type nullableType;
                     if (columnType.isInteger(32)) {
                         dummyVal = builder.create<::mlir::arith::ConstantIntOp>(loc, 0, 32);
-                        nullableType = ::pgx::db::NullableI32Type::get(builder.getContext());
+                        nullableType = ::pgx::mlir::db::NullableType::get(builder.getContext(), columnType);
                     } else if (columnType.isInteger(64)) {
                         dummyVal = builder.create<::mlir::arith::ConstantIntOp>(loc, 0, 64);
-                        nullableType = ::pgx::db::NullableI64Type::get(builder.getContext());
+                        nullableType = ::pgx::mlir::db::NullableType::get(builder.getContext(), columnType);
                     } else {
                         // Default to i64 for Test 1
+                        ::mlir::Type i64Type = builder.getIntegerType(64);
                         dummyVal = builder.create<::mlir::arith::ConstantIntOp>(loc, 0, 64);
-                        nullableType = ::pgx::db::NullableI64Type::get(builder.getContext());
+                        nullableType = ::pgx::mlir::db::NullableType::get(builder.getContext(), i64Type);
                     }
                     
-                    auto nullableVal = builder.create<::pgx::db::AsNullableOp>(loc, nullableType, dummyVal);
+                    auto nullableVal = builder.create<::pgx::mlir::db::AsNullableOp>(loc, nullableType, dummyVal);
                     
                     // Use DSA for internal processing
                     builder.create<::pgx::mlir::dsa::Append>(loc, tableBuilder, nullableVal);
                     
                     // Store in PostgreSQL result set
                     auto fieldIndex = builder.create<::mlir::arith::ConstantIndexOp>(loc, i);
-                    builder.create<::pgx::db::StoreResultOp>(loc, nullableVal, fieldIndex);
+                    builder.create<::pgx::mlir::db::StoreResultOp>(loc, nullableVal, fieldIndex);
                     
                     MLIR_PGX_DEBUG("RelAlg", "Generated dummy operations for unit test with proper type");
                 }
@@ -280,10 +285,7 @@ public:
             ::mlir::Value valid;
             
             // Handle nullable types with proper null checking
-            if (val.getType().isa<::pgx::db::NullableI32Type>() || 
-                val.getType().isa<::pgx::db::NullableI64Type>() ||
-                val.getType().isa<::pgx::db::NullableF64Type>() ||
-                val.getType().isa<::pgx::db::NullableBoolType>()) {
+            if (val.getType().isa<::pgx::mlir::db::NullableType>()) {
                 // Already nullable, can be stored directly
                 // Valid flag handled by nullable type itself
             } else {
@@ -291,19 +293,20 @@ public:
                 // Use the appropriate nullable type based on the input type
                 ::mlir::Type nullableType;
                 if (val.getType().isInteger(32)) {
-                    nullableType = ::pgx::db::NullableI32Type::get(builder.getContext());
+                    nullableType = ::pgx::mlir::db::NullableType::get(builder.getContext(), val.getType());
                 } else if (val.getType().isInteger(64)) {
-                    nullableType = ::pgx::db::NullableI64Type::get(builder.getContext());
+                    nullableType = ::pgx::mlir::db::NullableType::get(builder.getContext(), val.getType());
                 } else if (val.getType().isa<::mlir::Float64Type>()) {
-                    nullableType = ::pgx::db::NullableF64Type::get(builder.getContext());
+                    nullableType = ::pgx::mlir::db::NullableType::get(builder.getContext(), val.getType());
                 } else if (val.getType().isInteger(1)) {
-                    nullableType = ::pgx::db::NullableBoolType::get(builder.getContext());
+                    nullableType = ::pgx::mlir::db::NullableType::get(builder.getContext(), val.getType());
                 } else {
                     // Default to i64 for unknown types (should not happen in practice)
-                    nullableType = ::pgx::db::NullableI64Type::get(builder.getContext());
+                    ::mlir::Type i64Type = builder.getIntegerType(64);
+                    nullableType = ::pgx::mlir::db::NullableType::get(builder.getContext(), i64Type);
                     MLIR_PGX_WARNING("RelAlg", "Unknown type in MaterializeTranslator::consume, defaulting to NullableI64");
                 }
-                val = builder.create<::pgx::db::AsNullableOp>(loc, nullableType, val);
+                val = builder.create<::pgx::mlir::db::AsNullableOp>(loc, nullableType, val);
             }
             
             // Use DSA operations for internal data processing
@@ -316,7 +319,7 @@ public:
             // This ensures results go through PostgreSQL memory context properly
             auto fieldIndex = builder.create<::mlir::arith::ConstantIndexOp>(loc, i);
             MLIR_PGX_INFO("RelAlg", "Creating StoreResultOp for column " + std::to_string(i));
-            auto storeOp = builder.create<::pgx::db::StoreResultOp>(loc, val, fieldIndex);
+            auto storeOp = builder.create<::pgx::mlir::db::StoreResultOp>(loc, val, fieldIndex);
             MLIR_PGX_INFO("RelAlg", "StoreResultOp created successfully");
             
             MLIR_PGX_DEBUG("RelAlg", "Processed column " + std::to_string(i) + 
