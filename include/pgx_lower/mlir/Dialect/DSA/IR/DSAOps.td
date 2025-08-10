@@ -1,15 +1,14 @@
-#ifndef PGX_DIALECT_DSA_IR_OPS
-#define PGX_DIALECT_DSA_IR_OPS
+#ifndef OPS
+#define OPS
 
 include "mlir/IR/OpBase.td"
-include "mlir/IR/EnumAttr.td" 
+include "mlir/IR/EnumAttr.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
-include "mlir/IR/SymbolInterfaces.td"
-include "mlir/IR/BuiltinTypes.td"
-include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/Interfaces/LoopLikeInterface.td"
+include "mlir/Dialect/DSA/IR/DSAInterfaces.td"
+include "mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // DSA dialect definition.
@@ -17,16 +16,12 @@ include "mlir/IR/BuiltinAttributeInterfaces.td"
 
 def DSA_Dialect : Dialect {
     let name = "dsa";
-    let summary = "A dialect for Data Structure Abstraction in pgx-lower";
-    let cppNamespace = "::pgx::mlir::dsa";
+    let cppNamespace = "::mlir::dsa";
     let extraClassDeclaration = [{
         private:
         void registerTypes();
 
         public:
-            // Type parsing and printing methods for DSA dialect custom types
-            ::mlir::Type parseType(::mlir::DialectAsmParser &parser) const override;
-            void printType(::mlir::Type type, ::mlir::DialectAsmPrinter &printer) const override;
 
     }];
 }
@@ -40,11 +35,11 @@ class DSA_Type<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name> {
     let mnemonic = typeMnemonic;
 }
 
-class DSA_Collection<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name> {
+class DSA_Collection<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name,[],"::mlir::dsa::CollectionType"> {
     let mnemonic = typeMnemonic;
 }
 
-def DSA_Collection : Type<CPred<"$_self.getDialect().getNamespace() == \"dsa\"">,"DSA dialect collection">;
+def DSA_Collection : Type<CPred<"$_self.isa<::mlir::dsa::CollectionType>()">,"DSA dialect collection">;
 
 def DSA_GenericIterable : DSA_Collection<"GenericIterable","iterable"> {
     let summary = "generic iterable";
@@ -77,7 +72,7 @@ def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
         `finalize`.
     }];
 
-    let parameters = (ins "::mlir::TupleType":$rowType);
+    let parameters = (ins "TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 
@@ -88,22 +83,22 @@ def DSA_Vector : DSA_Collection<"Vector","vector"> {
 }
 def DSA_Record: DSA_Collection<"Record","record"> {
     let summary = "record";
-    let parameters = (ins "::mlir::TupleType":$rowType);
+    let parameters = (ins "TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 def DSA_RecordBatch: DSA_Collection<"RecordBatch","record_batch"> {
     let summary = "record_batch";
-    let parameters = (ins "::mlir::TupleType":$rowType);
+    let parameters = (ins "TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 def DSA_AggregationHashtable : DSA_Collection<"AggregationHashtable","aggr_ht"> {
     let summary = "aggregation hashtable";
-    let parameters = (ins "::mlir::TupleType":$keyType,"::mlir::TupleType":$valType);
+    let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 def DSA_JoinHashtable : DSA_Collection<"JoinHashtable","join_ht"> {
     let summary = "join hashtable";
-    let parameters = (ins "::mlir::TupleType":$keyType,"::mlir::TupleType":$valType);
+    let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 
@@ -130,20 +125,28 @@ def DSA_CreateDS : DSA_Op<"create_ds"> {
         Create a Vector/JoinHashtable/AggregationHashTable/TableBuilder.
     }];
 
-    let arguments = (ins Optional<AnyType>:$init_val, OptionalAttr<AnyAttr>:$init_attr);
+    let arguments = (ins Optional<AnyType>:$init_val,OptionalAttr<AnyAttr>:$init_attr);
     let results = (outs AnyType:$ds);
     let assemblyFormat = " ( `(` $init_attr^ `)` `->`)? ( $init_val^ `:` type($init_val) `->`)? type($ds) attr-dict";
     let builders = [
-        OpBuilder<(ins "::mlir::Type":$t), [{
-            build($_builder, $_state, t, ::mlir::Value());
+        OpBuilder<(ins "mlir::Type":$t), [{
+            build($_builder, $_state, t, mlir::Value());
         }]>,
-        OpBuilder<(ins "::mlir::Type":$t,"::mlir::Value":$v), [{
-            build($_builder, $_state, t,v, ::mlir::Attribute());
+        OpBuilder<(ins "mlir::Type":$t,"mlir::Value":$v), [{
+            build($_builder, $_state, t,v, mlir::Attribute());
         }]>,
-        OpBuilder<(ins "::mlir::Type":$t,"::mlir::Attribute":$attr), [{
-            build($_builder, $_state, t,::mlir::Value(),attr);
+        OpBuilder<(ins "mlir::Type":$t,"mlir::Attribute":$attr), [{
+            build($_builder, $_state, t,mlir::Value(),attr);
         }]>
     ];
+}
+
+def DSA_At : DSA_Op<"at", [NoSideEffect]> {
+    let summary = "access column in a record";
+
+    let arguments = (ins DSA_Record:$collection,I32Attr:$pos);
+    let results = (outs AnyType:$val,Optional<I1>:$valid);
+    let assemblyFormat = "$collection  `[` $pos `]` `:` type($collection) `->` type($val) (`,` type($valid)^)? attr-dict";
 }
 
 def DSA_NextRow : DSA_Op<"next_row"> {
@@ -158,7 +161,6 @@ def DSA_HashtableInsert : DSA_Op<"ht_insert"> {
 
     let arguments = (ins AnyType:$ht, AnyType:$key, Optional<AnyType>: $val);
     let regions = (region AnyRegion:$hash, AnyRegion:$equal, AnyRegion:$reduce);
-    let assemblyFormat = "$ht `,` $key (`,` $val^)? attr-dict `:` type($ht) `,` type($key) (`,` type($val)^)? $hash $equal $reduce";
 }
 
 def DSA_Finalize : DSA_Op<"finalize"> {
@@ -167,8 +169,8 @@ def DSA_Finalize : DSA_Op<"finalize"> {
     let arguments = (ins AnyType:$ht);
     let results = (outs Optional<AnyType>:$res);
     let assemblyFormat = "$ht `:` type($ht)  (`->` type($res)^)? attr-dict";
-    let builders = [OpBuilder<(ins "::mlir::Value":$v), [{
-        build($_builder, $_state, ::mlir::TypeRange(),v);
+    let builders = [OpBuilder<(ins "mlir::Value":$v), [{
+        build($_builder, $_state, mlir::TypeRange(),v);
     }]>];
 }
 
@@ -177,24 +179,26 @@ def DSA_Append : DSA_Op<"ds_append"> {
 
     let arguments = (ins AnyType:$ds, AnyType:$val,Optional<I1>:$valid);
     let assemblyFormat = "$ds `:` type($ds) `,` $val `:` type($val) ( `,` $valid^ )? attr-dict";
-        let builders = [OpBuilder<(ins "::mlir::Value":$v1, "::mlir::Value":$v2), [{
-        build($_builder, $_state, v1,v2, ::mlir::Value());
+        let builders = [OpBuilder<(ins "mlir::Value":$v1, "mlir::Value":$v2), [{
+        build($_builder, $_state, v1,v2, mlir::Value());
     }]>];
 }
 
-
-def DSA_At : DSA_Op<"at", [Pure]> {
-    let summary = "access column in a record";
-    let arguments = (ins DSA_Record:$collection,I32Attr:$pos);
-    let results = (outs AnyType:$val,Optional<I1>:$valid);
-    let assemblyFormat = "$collection  `[` $pos `]` `:` type($collection) `->` type($val) (`,` type($valid)^)? attr-dict";
-}
 
 def DSA_ScanSource : DSA_Op<"scan_source"> {
     let arguments = (ins StrAttr:$descr);
     let results = (outs DSA_GenericIterable:$iterable);
     let assemblyFormat = "$descr `:` type($iterable) attr-dict";
 }
+
+def DSA_Lookup : DSA_Op<"lookup", [NoSideEffect]> {
+    let summary = "lookup in a hash table";
+
+    let arguments = (ins DSA_Collection:$collection,AnyType:$key);
+    let results = (outs DSA_GenericIterable:$iterable);
+    let assemblyFormat = "$collection `:` type($collection) `,` $key `:` type($key) `->` type($iterable) attr-dict";
+}
+
 
 def DSA_SortOp : DSA_Op<"sort", [IsolatedFromAbove]> {
     let summary = "sort vector";
@@ -204,14 +208,10 @@ def DSA_SortOp : DSA_Op<"sort", [IsolatedFromAbove]> {
 
     let arguments = (ins DSA_Vector:$toSort);
     let regions = (region SizedRegion<1>:$region);
-    let assemblyFormat = "$toSort attr-dict `:` type($toSort) $region";
 }
 
-def ForOp : DSA_Op<"for", [
-    AttrSizedOperandSegments,
-    SingleBlockImplicitTerminator<"pgx::mlir::dsa::YieldOp">,
-    RecursiveMemoryEffects
-]> {
+def ForOp : DSA_Op<"for", [SingleBlockImplicitTerminator<"dsa::YieldOp">,
+                           RecursiveSideEffects, AttrSizedOperandSegments]> {
     let summary = "iterate over collection";
     let description = [{
         Iterate over all elements of a collection. The iteration can be interrupted when the optionally specified flag becomes set.
@@ -222,11 +222,11 @@ def ForOp : DSA_Op<"for", [
     let regions = (region SizedRegion<1>:$region);
 
     let extraClassDeclaration = [{
-        ::mlir::Value getInductionVar() { return getBody()->getArgument(0); }
-        ::mlir::Block::BlockArgListType getRegionIterArgs() {
+        Value getInductionVar() { return getBody()->getArgument(0); }
+        Block::BlockArgListType getRegionIterArgs() {
             return getBody()->getArguments().drop_front();
         }
-        ::mlir::Operation::operand_range getIterOperands() {
+        Operation::operand_range getIterOperands() {
             return getOperands().drop_front(getNumControlOperands());
         }
 
@@ -235,7 +235,7 @@ def ForOp : DSA_Op<"for", [
             return getBody()->getNumArguments() - 1;
         }
         /// Number of operands controlling the loop: lb, ub, step
-        unsigned getNumControlOperands() { return getUntil() ? 2 : 1; }
+        unsigned getNumControlOperands() { return until()?2:1; }
         /// Does the operation hold operands for loop-carried values
         bool hasIterOperands() {
             return getOperation()->getNumOperands() > getNumControlOperands();
@@ -245,18 +245,13 @@ def ForOp : DSA_Op<"for", [
             return getOperation()->getNumOperands() - getNumControlOperands();
         }
     }];
-    let assemblyFormat = "$collection (`,` $until^)? (`(` $initArgs^ `:` type($initArgs) `)`)? attr-dict `:` type($collection) (`->` type($results)^)? $region";
 }
 
-def YieldOp : DSA_Op<"yield", [Pure, ReturnLike, Terminator]> {
-    let summary = "loop terminator";
-    let description = [{
-        Terminator for DSA loop operations. Yields control back to the loop.
-    }];
-
+def YieldOp : DSA_Op<"yield", [NoSideEffect, Terminator,
+                               ParentOneOf<["ForOp","SortOp","HashtableInsert"]>]> {
     let arguments = (ins Variadic<AnyType>:$results);
     let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
-    let assemblyFormat = "attr-dict ($results^ `:` type($results))?";
+    let assemblyFormat = [{  attr-dict ($results^ `:` type($results))? }];
 }
 
 def CondSkipOp : DSA_Op<"cond_skip", [ParentOneOf<["ForOp"]>]> {
@@ -271,4 +266,4 @@ def FreeOp : DSA_Op<"free"> {
     let assemblyFormat = "$val `:` type($val) attr-dict";
 }
 
-#endif // PGX_DIALECT_DSA_IR_OPS
+#endif// OPS

@@ -1,9 +1,9 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DB/IR/RuntimeFunctions.h"
 #include "mlir/Dialect/DB/Passes.h"
-#include "runtime-defs/DateRuntime.h"
-#include "runtime-defs/DumpRuntime.h"
-#include "runtime-defs/StringRuntime.h"
+#include "runtime/DateRuntime.h"
+#include "runtime/DumpRuntime.h"
+#include "runtime/StringRuntime.h"
 
 pgx::mlir::db::RuntimeFunction* pgx::mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
    return registeredFunctions[name].get();

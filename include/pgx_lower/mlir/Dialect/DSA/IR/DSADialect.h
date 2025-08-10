@@ -1,9 +1,10 @@
-#ifndef PGX_DIALECT_DSA_IR_DSADIALECT_H
-#define PGX_DIALECT_DSA_IR_DSADIALECT_H
+#ifndef MLIR_DIALECT_DSA_IR_DSADIALECT_H
+#define MLIR_DIALECT_DSA_IR_DSADIALECT_H
 
 #include "mlir/IR/Dialect.h"
-#include "mlir/IR/OpDefinition.h"
-
+namespace mlir::dsa {
+class RuntimeFunctionRegistry;
+} // end namespace mlir::dsa
 #include "mlir/Dialect/DSA/IR/DSAOpsDialect.h.inc"
 
-#endif // PGX_DIALECT_DSA_IR_DSADIALECT_H
+#endif // MLIR_DIALECT_DSA_IR_DSADIALECT_H
