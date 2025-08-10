@@ -58,7 +58,7 @@ void NLJoinTranslator::consume(pgx::mlir::relalg::Translator* child, ::mlir::OpB
 void NLJoinTranslator::produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) {
    auto leftAttributes = this->requiredAttributes.intersect(children[0]->getAvailableColumns());
    orderedAttributesLeft = pgx::mlir::relalg::OrderedAttributes::fromColumns(leftAttributes);
-   tupleType = orderedAttributesLeft.getTupleType(op.getContext(), impl->markable ? std::vector<::mlir::Type>({::mlir::IntegerType::get(op->getContext(), 64)}) : std::vector<::mlir::Type>());
+   tupleType = orderedAttributesLeft.getTupleType(op->getContext(), impl->markable ? std::vector<::mlir::Type>({::mlir::IntegerType::get(op->getContext(), 64)}) : std::vector<::mlir::Type>());
    vector = builder.create<pgx::mlir::dsa::CreateDS>(loc, pgx::mlir::dsa::VectorType::get(builder.getContext(), tupleType));
    children[0]->produce(context, builder);
    children[1]->produce(context, builder);

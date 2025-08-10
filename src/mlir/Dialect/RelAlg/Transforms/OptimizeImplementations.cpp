@@ -52,7 +52,7 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
                auto left = mlir::cast<Operator>(binOp.leftChild());
                auto right = mlir::cast<Operator>(binOp.rightChild());
                if (hashImplPossible(&predicateOperator.getPredicateBlock(), left.getAvailableColumns(), right.getAvailableColumns())) {
-                  op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "hash"));
+                  op->setAttr("impl", mlir::StringAttr::get(op->getContext(), "hash"));
                }
             })
             .Case<pgx::mlir::relalg::SemiJoinOp, pgx::mlir::relalg::AntiSemiJoinOp, pgx::mlir::relalg::OuterJoinOp>([&](PredicateOperator predicateOperator) {
@@ -74,25 +74,25 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
                         rowsRight = rIAttr.getInt();
                      }
                      if (rowsLeft < rowsRight) {
-                        op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "markhash"));
+                        op->setAttr("impl", mlir::StringAttr::get(op->getContext(), "markhash"));
                      } else {
-                        op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "hash"));
+                        op->setAttr("impl", mlir::StringAttr::get(op->getContext(), "hash"));
                      }
                   } else {
-                     op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "hash"));
+                     op->setAttr("impl", mlir::StringAttr::get(op->getContext(), "hash"));
                   }
                }
             })
             .Case<pgx::mlir::relalg::SingleJoinOp>([&](pgx::mlir::relalg::SingleJoinOp op) {
                if (auto returnOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(op.getPredicateBlock().getTerminator())) {
                   if (returnOp.getResults().empty()) {
-                     op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "constant"));
+                     op->setAttr("impl", mlir::StringAttr::get(op->getContext(), "constant"));
                   }
                }
                auto left = mlir::cast<Operator>(op.leftChild());
                auto right = mlir::cast<Operator>(op.rightChild());
                if (hashImplPossible(&op.getPredicateBlock(), left.getAvailableColumns(), right.getAvailableColumns())) {
-                  op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "hash"));
+                  op->setAttr("impl", mlir::StringAttr::get(op->getContext(), "hash"));
                }
             })
 

@@ -6,12 +6,13 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Pass/Pass.h"
 #include <iostream>
 #include <memory>
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 class Translator {
@@ -19,7 +20,7 @@ class Translator {
    Translator* consumer;
    Operator op;
    std::vector<std::unique_ptr<Translator>> children;
-   mlir::relalg::ColumnSet requiredAttributes;
+   pgx::mlir::relalg::ColumnSet requiredAttributes;
 
    std::vector<mlir::Value> mergeRelationalBlock(mlir::Block* dest, mlir::Operation* op, mlir::function_ref<mlir::Block*(mlir::Operation*)> getBlockFn, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope);
 
@@ -28,8 +29,8 @@ class Translator {
    Translator(mlir::ValueRange children);
    Translator(Operator op);
 
-   virtual void setInfo(mlir::relalg::Translator* consumer, mlir::relalg::ColumnSet requiredAttributes);
-   virtual mlir::relalg::ColumnSet getAvailableColumns();
+   virtual void setInfo(mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes);
+   virtual pgx::mlir::relalg::ColumnSet getAvailableColumns();
    virtual void consume(Translator* child, mlir::OpBuilder& builder, TranslatorContext& context) = 0;
    virtual void produce(TranslatorContext& context, mlir::OpBuilder& builder) = 0;
    virtual void done() {}
@@ -54,5 +55,6 @@ class Translator {
 };
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx
 
 #endif // MLIR_CONVERSION_RELALGTODB_TRANSLATOR_H

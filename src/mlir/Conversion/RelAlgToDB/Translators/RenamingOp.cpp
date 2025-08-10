@@ -2,7 +2,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
-#include "core/logging.h"
+#include "execution/logging.h"
 
 class RenamingTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::RenamingOp renamingOp;
