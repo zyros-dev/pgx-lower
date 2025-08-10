@@ -30,7 +30,7 @@ pgx::mlir::relalg::ColumnManager& getColumnManager(::mlir::OpAsmParser& parser) 
       if (!parsedSpec)
          return parser.emitError(loc, "invalid ")
             << "type attribute specification: \"" << attrStr << '"';
-      spec = parsedSpec.getValue();
+      spec = parsedSpec.value();
    }
    return success();
 }
@@ -171,11 +171,11 @@ static ParseResult parseCustDef(OpAsmParser& parser, pgx::mlir::relalg::ColumnDe
 }
 static void printCustDef(OpAsmPrinter& p, mlir::Operation* op, pgx::mlir::relalg::ColumnDefAttr attr) {
    p<<attr.getName();
-   std::vector<mlir::NamedAttribute> relAttrDefProps;
+   std::vector<::mlir::NamedAttribute> relAttrDefProps;
    MLIRContext* context = attr.getContext();
    const pgx::mlir::relalg::Column& relationalAttribute = attr.getColumn();
-   relAttrDefProps.push_back({mlir::StringAttr::get(context, "type"), mlir::TypeAttr::get(relationalAttribute.type)});
-   p << "(" << mlir::DictionaryAttr::get(context, relAttrDefProps) << ")";
+   relAttrDefProps.push_back({::mlir::StringAttr::get(context, "type"), ::mlir::TypeAttr::get(relationalAttribute.type)});
+   p << "(" << ::mlir::DictionaryAttr::get(context, relAttrDefProps) << ")";
    Attribute fromExisting = attr.getFromExisting();
    if (fromExisting) {
       ArrayAttr fromExistingArr = fromExisting.dyn_cast_or_null<ArrayAttr>();
@@ -237,7 +237,7 @@ static void printCustAttrMapping(OpAsmPrinter& p, mlir::Operation* op, Attribute
    p << " mapping: {";
    auto first = true;
    for (auto attr : mapping.dyn_cast_or_null<ArrayAttr>()) {
-      auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>(attr);
       if (first) {
          first = false;
       } else {
@@ -254,7 +254,7 @@ static void printCustAttrMapping(OpAsmPrinter& p, mlir::Operation* op, Attribute
 ParseResult pgx::mlir::relalg::BaseTableOp::parse(OpAsmParser& parser, OperationState& result) {
    if (parser.parseOptionalAttrDict(result.attributes)) return failure();
    if (parser.parseKeyword("columns") || parser.parseColon() || parser.parseLBrace()) return failure();
-   std::vector<mlir::NamedAttribute> columns;
+   std::vector<::mlir::NamedAttribute> columns;
    while (true) {
       if (!parser.parseOptionalRBrace()) { break; }
       StringRef colName;
@@ -264,7 +264,7 @@ ParseResult pgx::mlir::relalg::BaseTableOp::parse(OpAsmParser& parser, Operation
       if (parseCustDef(parser, attrDefAttr)) {
          return failure();
       }
-      columns.push_back({StringAttr::get(parser.getBuilder().getContext(), colName), attrDefAttr});
+      columns.push_back({::mlir::StringAttr::get(parser.getBuilder().getContext(), colName), attrDefAttr});
       if (!parser.parseOptionalComma()) { continue; }
       if (parser.parseRBrace()) { return failure(); }
       break;
@@ -279,17 +279,17 @@ ParseResult pgx::mlir::relalg::BaseTableOp::parse(OpAsmParser& parser, Operation
    } else {
       result.addAttribute("meta", pgx::mlir::relalg::TableMetaDataAttr::get(parser.getContext(), std::make_shared<runtime::TableMetaData>()));
    }
-   result.addAttribute("columns", mlir::DictionaryAttr::get(parser.getBuilder().getContext(), columns));
+   result.addAttribute("columns", ::mlir::DictionaryAttr::get(parser.getBuilder().getContext(), columns));
    return parser.addTypeToList(pgx::mlir::relalg::TupleStreamType::get(parser.getBuilder().getContext()), result.types);
 }
 void pgx::mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    p << " ";
-   std::vector<mlir::NamedAttribute> colsToPrint;
+   std::vector<::mlir::NamedAttribute> colsToPrint;
    for (auto attr : this->getOperation()->getAttrs()) {
       if (attr.getName().str() == "meta") {
          if (auto metaAttr = attr.getValue().dyn_cast_or_null<pgx::mlir::relalg::TableMetaDataAttr>()) {
             if (metaAttr.getMeta()->isPresent()) {
-               colsToPrint.push_back(mlir::NamedAttribute(mlir::StringAttr::get(getContext(), "meta"), mlir::StringAttr::get(getContext(), metaAttr.getMeta()->serialize())));
+               colsToPrint.push_back(::mlir::NamedAttribute(::mlir::StringAttr::get(getContext(), "meta"), ::mlir::StringAttr::get(getContext(), metaAttr.getMeta()->serialize())));
             }
          }
       } else {
@@ -299,10 +299,10 @@ void pgx::mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    p.printOptionalAttrDict(colsToPrint, /*elidedAttrs=*/{"sym_name", "columns"});
    p << " columns: {";
    auto first = true;
-   for (auto mapping : columns()) {
+   for (auto mapping : getColumns()) {
       auto columnName = mapping.getName();
       auto attr = mapping.getValue();
-      auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>(attr);
       if (first) {
          first = false;
       } else {

@@ -108,13 +108,13 @@ class QueryGraph {
       return numNodes - pseudoNodes;
    }
    static std::optional<std::pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>> analyzePredicate(PredicateOperator selection) {
-      auto returnOp = mlir::cast<pgx::mlir::relalg::ReturnOp>(selection.getPredicateBlock().getTerminator());
+      auto returnOp = ::mlir::cast<pgx::mlir::relalg::ReturnOp>(selection.getPredicateBlock().getTerminator());
       if (returnOp.results().empty()) return {};
-      mlir::Value v = returnOp.results()[0];
-      if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(v.getDefiningOp())) {
+      ::mlir::Value v = returnOp.results()[0];
+      if (auto cmpOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(v.getDefiningOp())) {
          if (!cmpOp.isEqualityPred()) return {};
-         if (auto leftColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.left().getDefiningOp())) {
-            if (auto rightColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.right().getDefiningOp())) {
+         if (auto leftColref = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.left().getDefiningOp())) {
+            if (auto rightColref = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.right().getDefiningOp())) {
                return std::make_pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>(&leftColref.attr().getColumn(), &rightColref.attr().getColumn());
             }
          }
@@ -130,8 +130,8 @@ class QueryGraph {
       JoinEdge& e = joins.back();
       if (op) {
          e.op = op;
-         if (mlir::isa<pgx::mlir::relalg::SelectionOp, pgx::mlir::relalg::InnerJoinOp>(op)) {
-            e.equality = analyzePredicate(mlir::cast<PredicateOperator>(e.op.getOperation()));
+         if (::mlir::isa<pgx::mlir::relalg::SelectionOp, pgx::mlir::relalg::InnerJoinOp>(op)) {
+            e.equality = analyzePredicate(::mlir::cast<PredicateOperator>(e.op.getOperation()));
          }
       }
       e.left = left;

@@ -366,8 +366,8 @@ void pgx::mlir::relalg::detail::inlineOpIntoBlock(::mlir::Operation* vop, ::mlir
       }
    }
 }
-void pgx::mlir::relalg::detail::moveSubTreeBefore(mlir::Operation* op, mlir::Operation* before) {
-   auto tree = mlir::dyn_cast_or_null<Operator>(op);
+void pgx::mlir::relalg::detail::moveSubTreeBefore(::mlir::Operation* op, ::mlir::Operation* before) {
+   auto tree = ::mlir::dyn_cast_or_null<Operator>(op);
    tree->moveBefore(before);
    for (auto child : tree.getChildren()) {
       moveSubTreeBefore(child, tree);

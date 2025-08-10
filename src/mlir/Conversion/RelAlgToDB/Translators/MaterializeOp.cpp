@@ -74,11 +74,11 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
       std::string descr = "";
       auto tupleType = orderedAttributes.getTupleType(builder.getContext());
-      for (size_t i = 0; i < materializeOp.columns().size(); i++) {
+      for (size_t i = 0; i < materializeOp.getColumns().size(); i++) {
          if (!descr.empty()) {
             descr += ";";
          }
-         descr += materializeOp.columns()[i].cast<mlir::StringAttr>().str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
+         descr += materializeOp.getColumns()[i].cast<mlir::StringAttr>().str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
       }
       tableBuilder = builder.create<pgx::mlir::dsa::CreateDS>(materializeOp.getLoc(), pgx::mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
       children[0]->produce(context, builder);

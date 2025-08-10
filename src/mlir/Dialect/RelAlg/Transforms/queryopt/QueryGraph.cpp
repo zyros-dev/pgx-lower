@@ -176,7 +176,7 @@ std::optional<double> estimateUsingSample(pgx::mlir::relalg::QueryGraph::Node& n
    if (n.additionalPredicates.empty()) return {};
    if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       std::unordered_map<const pgx::mlir::relalg::Column*, std::string> mapping;
-      for (auto c : baseTableOp.columns()) {
+      for (auto c : baseTableOp.getColumns()) {
          mapping[&c.getValue().cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn()] = c.getName().str();
       }
       auto meta = baseTableOp.meta().getMeta();
@@ -204,7 +204,7 @@ pgx::mlir::relalg::ColumnSet pgx::mlir::relalg::QueryGraph::getPKey(pgx::mlir::r
       auto meta = baseTableOp.meta().getMeta();
       pgx::mlir::relalg::ColumnSet attributes;
       std::unordered_map<std::string, const pgx::mlir::relalg::Column*> mapping;
-      for (auto c : baseTableOp.columns()) {
+      for (auto c : baseTableOp.getColumns()) {
          mapping[c.getName().str()] = &c.getValue().cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn();
       }
       for (auto c : meta->getPrimaryKey()) {
