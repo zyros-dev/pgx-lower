@@ -1,8 +1,8 @@
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/util/UtilOps.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/DialectConversion.h"
 
 #include "runtime-defs/Hashtable.h"
@@ -84,7 +84,7 @@ class HtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::HashtableIns
       std::function<Value(OpBuilder&, Value, Value)> reduceFnBuilder = insertOp.reduce().empty() ? std::function<Value(OpBuilder&, Value, Value)>() : [&insertOp](OpBuilder& rewriter, Value left, Value right) {
          Block* sortLambda = &insertOp.reduce().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         mlir::BlockAndValueMapping mapping;
+         mlir::IRMapping mapping;
          mapping.map(sortLambda->getArgument(0), left);
          mapping.map(sortLambda->getArgument(1), right);
 
@@ -98,7 +98,7 @@ class HtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::HashtableIns
       std::function<Value(OpBuilder&, Value, Value)> equalFnBuilder = insertOp.equal().empty() ? std::function<Value(OpBuilder&, Value, Value)>() : [&insertOp](OpBuilder& rewriter, Value left, Value right) {
          Block* sortLambda = &insertOp.equal().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         mlir::BlockAndValueMapping mapping;
+         mlir::IRMapping mapping;
          mapping.map(sortLambda->getArgument(0), left);
          mapping.map(sortLambda->getArgument(1), right);
 
@@ -120,7 +120,7 @@ class HtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::HashtableIns
          {
             Block* sortLambda = &insertOp.hash().front();
             auto* sortLambdaTerminator = sortLambda->getTerminator();
-            mlir::BlockAndValueMapping mapping;
+            mlir::IRMapping mapping;
             mapping.map(sortLambda->getArgument(0), adaptor.key());
 
             for (auto& op : sortLambda->getOperations()) {
@@ -283,7 +283,7 @@ class LazyJHtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::Hashtab
       {
          Block* sortLambda = &insertOp.hash().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         mlir::BlockAndValueMapping mapping;
+         mlir::IRMapping mapping;
          mapping.map(sortLambda->getArgument(0), adaptor.key());
 
          for (auto& op : sortLambda->getOperations()) {

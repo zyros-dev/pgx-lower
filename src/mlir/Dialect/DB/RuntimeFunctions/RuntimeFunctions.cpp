@@ -5,7 +5,7 @@
 #include "runtime/DumpRuntime.h"
 #include "runtime/StringRuntime.h"
 
-pgx::pgx::mlir::db::RuntimeFunction* pgx::pgx::mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
+pgx::mlir::db::RuntimeFunction* pgx::mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
    return registeredFunctions[name].get();
 }
 static mlir::Value dateAddImpl(mlir::OpBuilder& rewriter, mlir::ValueRange loweredArguments, mlir::TypeRange originalArgumentTypes, mlir::Type resType, mlir::TypeConverter* typeConverter,mlir::Location loc) {
@@ -180,7 +180,7 @@ static mlir::Value dumpValuesImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lo
    }
    return mlir::Value();
 }
-std::shared_ptr<pgx::pgx::mlir::db::RuntimeFunctionRegistry> pgx::pgx::mlir::db::RuntimeFunctionRegistry::getBuiltinRegistry(mlir::MLIRContext* context) {
+std::shared_ptr<pgx::mlir::db::RuntimeFunctionRegistry> pgx::mlir::db::RuntimeFunctionRegistry::getBuiltinRegistry(mlir::MLIRContext* context) {
    auto builtinRegistry = std::make_shared<RuntimeFunctionRegistry>(context);
    builtinRegistry->add("DumpValue").handlesNulls().matchesTypes({RuntimeFunction::anyType}, RuntimeFunction::noReturnType).implementedAs(dumpValuesImpl);
    auto resTypeIsI64 = [](mlir::Type t, mlir::TypeRange) { return t.isInteger(64); };

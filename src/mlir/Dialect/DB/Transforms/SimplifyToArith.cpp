@@ -83,8 +83,8 @@ class SimplifyToArith : public mlir::PassWrapper<SimplifyToArith, mlir::Operatio
 };
 } // end anonymous namespace
 
-namespace pgx::pgx::mlir::db {
+namespace pgx::mlir::db {
 
 std::unique_ptr<::mlir::Pass> createSimplifyToArithPass() { return std::make_unique<SimplifyToArith>(); }
 
-} // end namespace pgx::pgx::mlir::db
+} // end namespace pgx::mlir::db

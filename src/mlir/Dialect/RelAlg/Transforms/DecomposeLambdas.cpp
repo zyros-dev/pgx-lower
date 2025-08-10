@@ -1,7 +1,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <unordered_set>
 
@@ -62,7 +62,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
          }
          if (availableInAll) {
             mlir::OpBuilder builder(currentSel);
-            mlir::BlockAndValueMapping mapping;
+            mlir::IRMapping mapping;
             auto newsel = builder.create<pgx::mlir::relalg::SelectionOp>(currentSel->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), tree);
             tree = newsel;
             newsel.initPredicate();
@@ -102,7 +102,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
             deriveRestrictionsFromOr(orOp,tree);
          }
          OpBuilder builder(currentSel);
-         mlir::BlockAndValueMapping mapping;
+         mlir::IRMapping mapping;
          auto newsel = builder.create<relalg::SelectionOp>(currentSel->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), tree);
          tree = newsel;
          newsel.initPredicate();
@@ -156,7 +156,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
          if (required[v].isSubsetOf(availableRight)) {
             auto children = currentJoinOp.getChildren();
             OpBuilder builder(currentJoinOp);
-            mlir::BlockAndValueMapping mapping;
+            mlir::IRMapping mapping;
             auto newsel = builder.create<relalg::SelectionOp>(currentJoinOp->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), children[1].asRelation());
             newsel.initPredicate();
             mapping.map(currentJoinOp.getPredicateArgument(), newsel.getPredicateArgument());
@@ -181,7 +181,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
          auto computedValRange = returnOp.results();
          for(size_t i=0;i<computedValRange.size();i++){
             OpBuilder builder(currentMap);
-            mlir::BlockAndValueMapping mapping;
+            mlir::IRMapping mapping;
             auto currentAttr=currentMap.computed_cols()[i].cast<pgx::mlir::relalg::ColumnDefAttr>();
             mlir::Value currentVal=computedValRange[i];
             auto newmap = builder.create<relalg::MapOp>(currentMap->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), tree,builder.getArrayAttr({currentAttr}));

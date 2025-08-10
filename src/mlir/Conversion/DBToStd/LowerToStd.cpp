@@ -553,57 +553,57 @@ class NullOpLowering : public OpConversionPattern<pgx::mlir::db::NullOp> {
 };
 
 class ConstantLowering : public OpConversionPattern<pgx::mlir::db::ConstantOp> {
-   static std::tuple<arrow::Type::type, uint32_t, uint32_t> convertTypeToArrow(mlir::Type type) {
-      arrow::Type::type typeConstant = arrow::Type::type::NA;
+   static std::tuple<support::DataType, uint32_t, uint32_t> convertTypeToDataType(mlir::Type type) {
+      support::DataType typeConstant = support::DataType::NA;
       uint32_t param1 = 0, param2 = 0;
       if (isIntegerType(type, 1)) {
-         typeConstant = arrow::Type::type::BOOL;
+         typeConstant = support::DataType::BOOL;
       } else if (auto intWidth = getIntegerWidth(type, false)) {
          switch (intWidth) {
-            case 8: typeConstant = arrow::Type::type::INT8; break;
-            case 16: typeConstant = arrow::Type::type::INT16; break;
-            case 32: typeConstant = arrow::Type::type::INT32; break;
-            case 64: typeConstant = arrow::Type::type::INT64; break;
+            case 8: typeConstant = support::DataType::INT8; break;
+            case 16: typeConstant = support::DataType::INT16; break;
+            case 32: typeConstant = support::DataType::INT32; break;
+            case 64: typeConstant = support::DataType::INT64; break;
          }
       } else if (auto uIntWidth = getIntegerWidth(type, true)) {
          switch (uIntWidth) {
-            case 8: typeConstant = arrow::Type::type::UINT8; break;
-            case 16: typeConstant = arrow::Type::type::UINT16; break;
-            case 32: typeConstant = arrow::Type::type::UINT32; break;
-            case 64: typeConstant = arrow::Type::type::UINT64; break;
+            case 8: typeConstant = support::DataType::UINT8; break;
+            case 16: typeConstant = support::DataType::UINT16; break;
+            case 32: typeConstant = support::DataType::UINT32; break;
+            case 64: typeConstant = support::DataType::UINT64; break;
          }
       } else if (auto decimalType = type.dyn_cast_or_null<pgx::mlir::db::DecimalType>()) {
-         typeConstant = arrow::Type::type::DECIMAL128;
+         typeConstant = support::DataType::DECIMAL128;
          param1 = decimalType.getP();
          param2 = decimalType.getS();
       } else if (auto floatType = type.dyn_cast_or_null<mlir::FloatType>()) {
          switch (floatType.getWidth()) {
-            case 16: typeConstant = arrow::Type::type::HALF_FLOAT; break;
-            case 32: typeConstant = arrow::Type::type::FLOAT; break;
-            case 64: typeConstant = arrow::Type::type::DOUBLE; break;
+            case 16: typeConstant = support::DataType::HALF_FLOAT; break;
+            case 32: typeConstant = support::DataType::FLOAT; break;
+            case 64: typeConstant = support::DataType::DOUBLE; break;
          }
       } else if (auto stringType = type.dyn_cast_or_null<pgx::mlir::db::StringType>()) {
-         typeConstant = arrow::Type::type::STRING;
+         typeConstant = support::DataType::STRING;
       } else if (auto dateType = type.dyn_cast_or_null<pgx::mlir::db::DateType>()) {
          if (dateType.getUnit() == pgx::mlir::db::DateUnitAttr::day) {
-            typeConstant = arrow::Type::type::DATE32;
+            typeConstant = support::DataType::DATE32;
          } else {
-            typeConstant = arrow::Type::type::DATE64;
+            typeConstant = support::DataType::DATE64;
          }
       } else if (auto charType = type.dyn_cast_or_null<pgx::mlir::db::CharType>()) {
-         typeConstant = arrow::Type::type::FIXED_SIZE_BINARY;
+         typeConstant = support::DataType::FIXED_SIZE_BINARY;
          param1 = charType.getBytes();
       } else if (auto intervalType = type.dyn_cast_or_null<pgx::mlir::db::IntervalType>()) {
          if (intervalType.getUnit() == pgx::mlir::db::IntervalUnitAttr::months) {
-            typeConstant = arrow::Type::type::INTERVAL_MONTHS;
+            typeConstant = support::DataType::INTERVAL_MONTHS;
          } else {
-            typeConstant = arrow::Type::type::INTERVAL_DAY_TIME;
+            typeConstant = support::DataType::INTERVAL_DAY_TIME;
          }
       } else if (auto timestampType = type.dyn_cast_or_null<pgx::mlir::db::TimestampType>()) {
-         typeConstant = arrow::Type::type::TIMESTAMP;
+         typeConstant = support::DataType::TIMESTAMP;
          param1 = static_cast<uint32_t>(timestampType.getUnit());
       }
-      assert(typeConstant != arrow::Type::type::NA);
+      assert(typeConstant != support::DataType::NA);
       return {typeConstant, param1, param2};
    }
 
@@ -612,7 +612,7 @@ class ConstantLowering : public OpConversionPattern<pgx::mlir::db::ConstantOp> {
    LogicalResult matchAndRewrite(pgx::mlir::db::ConstantOp constantOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto type = constantOp.getType();
       auto stdType = typeConverter->convertType(type);
-      auto [arrowType, param1, param2] = convertTypeToArrow(type);
+      auto [dataType, param1, param2] = convertTypeToDataType(type);
       std::variant<int64_t, double, std::string> parseArg;
       if (auto integerAttr = constantOp.value().dyn_cast_or_null<IntegerAttr>()) {
          parseArg = integerAttr.getInt();
@@ -623,7 +623,7 @@ class ConstantLowering : public OpConversionPattern<pgx::mlir::db::ConstantOp> {
       } else {
          return failure();
       }
-      auto parseResult = support::parse(parseArg, arrowType, param1, param2);
+      auto parseResult = support::parse(parseArg, dataType, param1, param2);
       if (auto intType = stdType.dyn_cast_or_null<IntegerType>()) {
          if (auto decimalType = type.dyn_cast_or_null<pgx::mlir::db::DecimalType>()) {
             auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());

@@ -100,8 +100,8 @@ class OptimizeRuntimeFunctions : public mlir::PassWrapper<OptimizeRuntimeFunctio
 };
 } // end anonymous namespace
 
-namespace pgx::pgx::mlir::db {
+namespace pgx::mlir::db {
 
 std::unique_ptr<::mlir::Pass> createOptimizeRuntimeFunctionsPass() { return std::make_unique<OptimizeRuntimeFunctions>(); }
 
-} // end namespace pgx::pgx::mlir::db
+} // end namespace pgx::mlir::db
