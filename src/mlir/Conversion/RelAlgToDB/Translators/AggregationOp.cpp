@@ -1,11 +1,11 @@
 #include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
 #include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/DSA/IR/DSAOps.h>
+#include <pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h>
 
 class AggregationTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::AggregationOp aggregationOp;
@@ -153,7 +153,7 @@ class AggregationTranslator : public pgx::mlir::relalg::Translator {
          mlir::Value computedVal = terminator.results()[i];
          if (auto aggrFn = mlir::dyn_cast_or_null<pgx::mlir::relalg::AggrFuncOp>(computedVal.getDefiningOp())) {
             auto loc = aggrFn->getLoc();
-            auto* attr = &aggrFn.attr().getColumn();
+            auto* attr = &aggrFn.getAttr().getColumn();
             auto attrIsNullable = attr->type.isa<pgx::mlir::db::NullableType>();
             size_t currValIdx = val.insert(attr);
             mlir::Type resultingType = destAttr->type;

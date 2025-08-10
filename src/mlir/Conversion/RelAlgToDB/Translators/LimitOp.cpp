@@ -1,7 +1,7 @@
 #include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
 

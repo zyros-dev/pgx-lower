@@ -128,9 +128,9 @@ class ImplicitToExplicitJoins : public mlir::PassWrapper<ImplicitToExplicitJoins
                predicateOperator.addPredicate([&](Value tuple, OpBuilder& builder) {
                   mlir::IRMapping mapping;
                   mapping.map(surroundingOperator.getLambdaArgument(), predicateOperator.getPredicateArgument());
-                  pgx::mlir::relalg::detail::inlineOpIntoBlock(inop.val().getDefiningOp(), surroundingOperator.getOperation(), predicateOperator.getOperation(), &predicateOperator.getPredicateBlock(), mapping);
-                  auto val = mapping.lookup(inop.val());
-                  auto otherVal = builder.create<relalg::GetColumnOp>(inop->getLoc(), searchInAttr.getColumn().type, searchInAttr, tuple);
+                  pgx::mlir::relalg::detail::inlineOpIntoBlock(inop.getVal().getDefiningOp(), surroundingOperator.getOperation(), predicateOperator.getOperation(), &predicateOperator.getPredicateBlock(), mapping);
+                  auto val = mapping.lookup(inop.getVal());
+                  auto otherVal = builder.create<pgx::mlir::relalg::GetColumnOp>(inop->getLoc(), searchInAttr.getColumn().type, searchInAttr, tuple);
                   Value predicate = builder.create<pgx::mlir::db::CmpOp>(inop->getLoc(), pgx::mlir::db::DBCmpPredicate::eq, val, otherVal);
                   return predicate;
                });

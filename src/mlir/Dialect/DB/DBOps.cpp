@@ -136,7 +136,7 @@ LogicalResult pgx::mlir::db::OrOp::canonicalize(pgx::mlir::db::OrOp orOp, mlir::
          return failure();
       }
    }
-   size_t totalAnds = orOp.vals().size();
+   size_t totalAnds = orOp.getVals().size();
    llvm::SmallPtrSet<mlir::Value, 4> extracted;
    std::vector<mlir::Value> newOrOperands;
    for (auto val : orOp.getVals()) {
@@ -149,7 +149,7 @@ LogicalResult pgx::mlir::db::OrOp::canonicalize(pgx::mlir::db::OrOp orOp, mlir::
                keep.push_back(andOperand);
             }
          }
-         if (keep.size() != andOp.vals().size()) {
+         if (keep.size() != andOp.getVals().size()) {
             if (keep.size()) {
                newOrOperands.push_back(rewriter.create<pgx::mlir::db::AndOp>(andOp->getLoc(), keep));
             }

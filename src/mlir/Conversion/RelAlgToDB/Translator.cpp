@@ -13,11 +13,11 @@ std::vector<mlir::Value> pgx::mlir::relalg::Translator::mergeRelationalBlock(mli
    auto* terminator = source->getTerminator();
 
    source->walk([&](pgx::mlir::relalg::GetColumnOp getColumnOp) {
-      getColumnOp.replaceAllUsesWith(context.getValueForAttribute(&getColumnOp.attr().getColumn()));
+      getColumnOp.replaceAllUsesWith(context.getValueForAttribute(&getColumnOp.getAttr().getColumn()));
       toErase.push_back(getColumnOp.getOperation());
    });
    /*for (auto addColumnOp : source->getOps<pgx::mlir::relalg::AddColumnOp>()) {
-      context.setValueForAttribute(scope, &addColumnOp.attr().getColumn(), addColumnOp.val());
+      context.setValueForAttribute(scope, &addColumnOp.getAttr().getColumn(), addColumnOp.val());
       toErase.push_back(addColumnOp.getOperation());
    }*/
 

@@ -11,7 +11,7 @@ static NodeSet getNodeSetFromClass(llvm::EquivalenceClasses<size_t>& classes, si
    return res;
 }
 
-size_t countCreatingOperators(Operator op, llvm::SmallPtrSet<mlir::Operation*, 12>& alreadyOptimized) {
+size_t countCreatingOperators(Operator op, llvm::SmallPtrSet<::mlir::Operation*, 12>& alreadyOptimized) {
    size_t res = 0;
    auto children = op.getChildren();
    auto used = op.getUsedColumns();
@@ -40,11 +40,11 @@ void pgx::mlir::relalg::QueryGraphBuilder::populateQueryGraph(Operator op) {
    for (auto child : children) {
       populateQueryGraph(child);
    }
-   if (mlir::isa<pgx::mlir::relalg::CrossProductOp>(op.getOperation())) {
+   if (::mlir::isa<pgx::mlir::relalg::CrossProductOp>(op.getOperation())) {
       //do not construct crossproducts in the querygraph
-   } else if (mlir::isa<pgx::mlir::relalg::SelectionOp>(op.getOperation()) || mlir::isa<pgx::mlir::relalg::InnerJoinOp>(op.getOperation())) {
+   } else if (::mlir::isa<pgx::mlir::relalg::SelectionOp>(op.getOperation()) || ::mlir::isa<pgx::mlir::relalg::InnerJoinOp>(op.getOperation())) {
       NodeSet ses = calcSES(op);
-      if (!ses.any() && mlir::isa<pgx::mlir::relalg::SelectionOp>(op.getOperation())) {
+      if (!ses.any() && ::mlir::isa<pgx::mlir::relalg::SelectionOp>(op.getOperation())) {
          ses = calcT(op);
       }
       if (ses.count() == 1) {
@@ -66,7 +66,7 @@ void pgx::mlir::relalg::QueryGraphBuilder::populateQueryGraph(Operator op) {
       NodeSet leftTes = (leftT & tes).any() ? (leftT & tes) : leftT;
       NodeSet rightTes = (rightT & tes).any() ? (rightT & tes) : rightT;
 
-      llvm::Optional<size_t> createdNode;
+      std::optional<size_t> createdNode;
       if (!created.empty()) {
          size_t newNode = qg.addPseudoNode();
          for (const auto* attr : op.getCreatedColumns()) {
@@ -115,7 +115,7 @@ void QueryGraphBuilder::ensureConnected() {
          NodeSet left = getNodeSetFromClass(alreadyConnected, best1, numNodes);
          NodeSet right = getNodeSetFromClass(alreadyConnected, best2, numNodes);
          //construct cross-product
-         qg.addJoinEdge(left, right, Operator(), llvm::Optional<size_t>());
+         qg.addJoinEdge(left, right, Operator(), std::optional<size_t>());
       }
 
       size_t newSet = *alreadyConnected.unionSets(best1, best2);
@@ -128,12 +128,12 @@ NodeSet QueryGraphBuilder::calcTES(Operator op) {
    } else {
       NodeSet tes = calcSES(op);
       auto children = op.getChildren();
-      if (auto b = mlir::dyn_cast_or_null<BinaryOperator>(op.getOperation())) {
-         auto bLeft = mlir::cast<Operator>(b.getOperation()).getChildren()[0];
-         auto bRight = mlir::cast<Operator>(b.getOperation()).getChildren()[1];
+      if (auto b = ::mlir::dyn_cast_or_null<BinaryOperator>(op.getOperation())) {
+         auto bLeft = ::mlir::cast<Operator>(b.getOperation()).getChildren()[0];
+         auto bRight = ::mlir::cast<Operator>(b.getOperation()).getChildren()[1];
 
          for (auto subOp : bLeft.getAllSubOperators()) {
-            if (auto a = mlir::dyn_cast_or_null<BinaryOperator>(subOp.getOperation())) {
+            if (auto a = ::mlir::dyn_cast_or_null<BinaryOperator>(subOp.getOperation())) {
                auto aLeft = subOp.getChildren()[0];
                auto aRight = subOp.getChildren()[1];
                if (!a.isAssoc(b)) {
@@ -145,7 +145,7 @@ NodeSet QueryGraphBuilder::calcTES(Operator op) {
             }
          }
          for (auto subOp : bRight.getAllSubOperators()) {
-            if (auto a = mlir::dyn_cast_or_null<BinaryOperator>(subOp.getOperation())) {
+            if (auto a = ::mlir::dyn_cast_or_null<BinaryOperator>(subOp.getOperation())) {
                auto aLeft = subOp.getChildren()[0];
                auto aRight = subOp.getChildren()[1];
                if (!b.isAssoc(a)) {
@@ -169,7 +169,7 @@ NodeSet QueryGraphBuilder::calcSES(Operator op) const {
    return res;
 }
 
-QueryGraphBuilder::QueryGraphBuilder(Operator root, llvm::SmallPtrSet<mlir::Operation*, 12>& alreadyOptimized) : root(root),
+QueryGraphBuilder::QueryGraphBuilder(Operator root, llvm::SmallPtrSet<::mlir::Operation*, 12>& alreadyOptimized) : root(root),
                                                                                                                  alreadyOptimized(alreadyOptimized),
                                                                                                                  numNodes(countCreatingOperators(root, alreadyOptimized)),
                                                                                                                  qg(numNodes) {}

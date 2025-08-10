@@ -124,7 +124,7 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(mlir::Value val, std::unorder
       auto parseResult = support::parse(parseArg, typeConstant, param1);
       return support::eval::createLiteral(parseResult, std::make_tuple(typeConstant, param1, param2));
    } else if (auto attrRefOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
-      return support::eval::createAttrRef(mapping.at(&attrRefOp.attr().getColumn()));
+      return support::eval::createAttrRef(mapping.at(&attrRefOp.getAttr().getColumn()));
    } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
       auto left = cmpOp.getLeft();
       auto right = cmpOp.getRight();

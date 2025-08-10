@@ -138,7 +138,7 @@ ParseResult pgx::mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::O
 
 void pgx::mlir::dsa::SortOp::print(OpAsmPrinter& p) {
    pgx::mlir::dsa::SortOp& op = *this;
-   p << " " << op.toSort() << ":" << op.toSort().getType() << " ";
+   p << " " << op.getToSort() << ":" << op.getToSort().getType() << " ";
    p << "(";
    bool first = true;
    for (auto arg : op.getRegion().front().getArguments()) {
@@ -210,14 +210,14 @@ ParseResult pgx::mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, Operatio
 
 void pgx::mlir::dsa::HashtableInsert::print(OpAsmPrinter& p) {
    pgx::mlir::dsa::HashtableInsert& op = *this;
-   p << " " << op.ht() << " : " << op.ht().getType() << ", " << op.key() << " : " << op.key().getType();
-   if (op.val()) {
-      p << ", " << op.val() << " : " << op.val().getType();
+   p << " " << op.getHt() << " : " << op.getHt().getType() << ", " << op.getKey() << " : " << op.getKey().getType();
+   if (op.getVal()) {
+      p << ", " << op.getVal() << " : " << op.getVal().getType();
    }
-   if (!op.hash().empty()) {
+   if (!op.getHash().empty()) {
       p << " hash: (";
       bool first = true;
-      for (auto arg : op.hash().front().getArguments()) {
+      for (auto arg : op.getHash().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -226,12 +226,12 @@ void pgx::mlir::dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.hash(), false, true);
+      p.printRegion(op.getHash(), false, true);
    }
-   if (!op.equal().empty()) {
+   if (!op.getEqual().empty()) {
       p << " eq: (";
       bool first = true;
-      for (auto arg : op.equal().front().getArguments()) {
+      for (auto arg : op.getEqual().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -240,12 +240,12 @@ void pgx::mlir::dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.equal(), false, true);
+      p.printRegion(op.getEqual(), false, true);
    }
-   if (!op.reduce().empty()) {
+   if (!op.getReduce().empty()) {
       p << " reduce: (";
       bool first = true;
-      for (auto arg : op.reduce().front().getArguments()) {
+      for (auto arg : op.getReduce().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -254,7 +254,7 @@ void pgx::mlir::dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.reduce(), false, true);
+      p.printRegion(op.getReduce(), false, true);
    }
 }
 
