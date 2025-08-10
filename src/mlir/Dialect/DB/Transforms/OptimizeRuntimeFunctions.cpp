@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-// #include "pgx_lower/mlir-support/parsing.h"  // Not used
+// #include "mlir-support/parsing.h"  // Not used
 // #include "mlir/Dialect/RelAlg/Passes.h"  // Not used
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
