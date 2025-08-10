@@ -4,7 +4,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/SCF.h"
 
-#include "mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 
 #include "mlir/Conversion/DSAToStd/CollectionIteration.h"
 #include <mlir/IR/Builders.h>

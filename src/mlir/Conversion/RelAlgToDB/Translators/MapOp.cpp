@@ -1,6 +1,6 @@
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 
 class MapTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::MapOp mapOp;

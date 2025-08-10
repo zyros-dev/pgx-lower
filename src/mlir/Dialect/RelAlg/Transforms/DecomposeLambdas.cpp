@@ -14,7 +14,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
       auto *op = v.getDefiningOp();
       if (!op) return true;
       if (auto refOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
-         auto scope = refOp.attr().getName().getRootReference().str();
+         auto scope = refOp.getAttr().getName().getRootReference().str();
          if (str.empty() || str == scope) {
             str = scope;
             return true;
@@ -45,7 +45,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
 
       std::vector<std::unordered_map<std::string, std::vector<mlir::Value>>> restrictions;
       std::unordered_set<std::string> availableScopes;
-      for (auto v : orOp.vals()) {
+      for (auto v : orOp.getOperands()) {
          if (auto andOp = dyn_cast_or_null<pgx::mlir::db::AndOp>(v.getDefiningOp())) {
             restrictions.push_back(deriveRestrictionsFromOrAnd(andOp));
             for (const auto& p : restrictions[restrictions.size() - 1]) {
@@ -67,7 +67,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
             tree = newsel;
             newsel.initPredicate();
             mapping.map(currentSel.getPredicateArgument(), newsel.getPredicateArgument());
-            builder.setInsertionPointToStart(&newsel.predicate().front());
+            builder.setInsertionPointToStart(&newsel.getPredicate().front());
             auto* terminator = newsel.getLambdaBlock().getTerminator();
 
             std::vector<mlir::Value> c2;
@@ -93,7 +93,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
       auto currentSel = mlir::dyn_cast_or_null<pgx::mlir::relalg::SelectionOp>(v.getDefiningOp()->getParentOp());
       using namespace mlir;
       if (auto andop = dyn_cast_or_null<pgx::mlir::db::AndOp>(v.getDefiningOp())) {
-         for (auto operand : andop.vals()) {
+         for (auto operand : andop.getOperands()) {
             decomposeSelection(operand, tree);
          }
       } else {
@@ -103,11 +103,11 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
          }
          OpBuilder builder(currentSel);
          mlir::IRMapping mapping;
-         auto newsel = builder.create<relalg::SelectionOp>(currentSel->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), tree);
+         auto newsel = builder.create<pgx::mlir::relalg::SelectionOp>(currentSel->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), tree);
          tree = newsel;
          newsel.initPredicate();
          mapping.map(currentSel.getPredicateArgument(), newsel.getPredicateArgument());
-         builder.setInsertionPointToStart(&newsel.predicate().front());
+         builder.setInsertionPointToStart(&newsel.getPredicate().front());
          pgx::mlir::relalg::detail::inlineOpIntoBlock(v.getDefiningOp(), v.getDefiningOp()->getParentOp(), newsel.getOperation(), &newsel.getPredicateBlock(), mapping);
          builder.create<pgx::mlir::relalg::ReturnOp>(currentSel->getLoc(), mapping.lookup(v));
          auto* terminator = newsel.getLambdaBlock().getTerminator();
@@ -140,7 +140,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
       using namespace mlir;
       if (auto andop = dyn_cast_or_null<pgx::mlir::db::AndOp>(v.getDefiningOp())) {
          std::vector<Value> vals;
-         for (auto operand : andop.vals()) {
+         for (auto operand : andop.getOperands()) {
             auto val = decomposeOuterJoin(operand, availableLeft, availableRight, required);
             if (val) {
                vals.push_back(val);
@@ -160,7 +160,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
             auto newsel = builder.create<relalg::SelectionOp>(currentJoinOp->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), children[1].asRelation());
             newsel.initPredicate();
             mapping.map(currentJoinOp.getPredicateArgument(), newsel.getPredicateArgument());
-            builder.setInsertionPointToStart(&newsel.predicate().front());
+            builder.setInsertionPointToStart(&newsel.getPredicate().front());
             pgx::mlir::relalg::detail::inlineOpIntoBlock(v.getDefiningOp(), v.getDefiningOp()->getParentOp(), newsel.getOperation(), &newsel.getPredicateBlock(), mapping);
             builder.create<pgx::mlir::relalg::ReturnOp>(currentJoinOp->getLoc(), mapping.lookup(v));
             auto* terminator = newsel.getLambdaBlock().getTerminator();
@@ -175,7 +175,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
    void decomposeMap(pgx::mlir::relalg::MapOp currentMap, mlir::Value& tree) {
       using namespace mlir;
 
-      auto* terminator = currentMap.predicate().front().getTerminator();
+      auto* terminator = currentMap.getPredicate().front().getTerminator();
       if (auto returnOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(terminator)) {
          assert(returnOp.results().size() == currentMap.computed_cols().size());
          auto computedValRange = returnOp.results();
@@ -184,15 +184,15 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
             mlir::IRMapping mapping;
             auto currentAttr=currentMap.computed_cols()[i].cast<pgx::mlir::relalg::ColumnDefAttr>();
             mlir::Value currentVal=computedValRange[i];
-            auto newmap = builder.create<relalg::MapOp>(currentMap->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), tree,builder.getArrayAttr({currentAttr}));
+            auto newmap = builder.create<pgx::mlir::relalg::MapOp>(currentMap->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), tree,builder.getArrayAttr({currentAttr}));
             tree = newmap;
-            newmap.predicate().push_back(new Block);
-            newmap.predicate().addArgument(pgx::mlir::relalg::TupleType::get(builder.getContext()),currentMap->getLoc());
-            builder.setInsertionPointToStart(&newmap.predicate().front());
-            auto ret1 = builder.create<relalg::ReturnOp>(currentMap->getLoc());
+            newmap.getPredicate().push_back(new Block);
+            newmap.getPredicate().addArgument(pgx::mlir::relalg::TupleType::get(builder.getContext()),currentMap->getLoc());
+            builder.setInsertionPointToStart(&newmap.getPredicate().front());
+            auto ret1 = builder.create<pgx::mlir::relalg::ReturnOp>(currentMap->getLoc());
             mapping.map(currentMap.getLambdaArgument(), newmap.getLambdaArgument());
             pgx::mlir::relalg::detail::inlineOpIntoBlock(currentVal.getDefiningOp(), currentVal.getDefiningOp()->getParentOp(), newmap.getOperation(), &newmap.getLambdaBlock(), mapping);
-            builder.create<relalg::ReturnOp>(currentMap->getLoc(), mapping.lookup(currentVal));
+            builder.create<pgx::mlir::relalg::ReturnOp>(currentMap->getLoc(), mapping.lookup(currentVal));
             ret1->remove();
             ret1->dropAllReferences();
             ret1->destroy();
@@ -202,13 +202,13 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
    void runOnOperation() override {
       getOperation().walk([&](pgx::mlir::relalg::SelectionOp op) {
          auto* terminator = op.getRegion().front().getTerminator();
-         mlir::Value val = op.rel();
+         mlir::Value val = op.getRel();
          decomposeSelection(terminator->getOperand(0), val);
          op.replaceAllUsesWith(val);
          op->erase();
       });
       getOperation().walk([&](pgx::mlir::relalg::MapOp op) {
-         mlir::Value val = op.rel();
+         mlir::Value val = op.getRel();
          decomposeMap(op, val);
          op.replaceAllUsesWith(val);
          op->erase();

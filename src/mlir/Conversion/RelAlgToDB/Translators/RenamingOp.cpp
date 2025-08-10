@@ -1,7 +1,7 @@
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 
 class RenamingTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::RenamingOp renamingOp;

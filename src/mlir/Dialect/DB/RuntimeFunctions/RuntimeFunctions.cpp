@@ -13,7 +13,7 @@ static mlir::Value dateAddImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lower
    if (originalArgumentTypes[1].cast<pgx::mlir::db::IntervalType>().getUnit() == pgx::mlir::db::IntervalUnitAttr::daytime) {
       return rewriter.create<mlir::arith::AddIOp>(loc, loweredArguments);
    } else {
-      return rt::DateRuntime::addMonths(rewriter, loc)(loweredArguments)[0];
+      return pgx_lower::compiler::runtime::DateRuntime::addMonths(rewriter, loc)(loweredArguments)[0];
    }
 }
 static mlir::Value absIntImpl(mlir::OpBuilder& rewriter, mlir::ValueRange loweredArguments, mlir::TypeRange originalArgumentTypes, mlir::Type resType, mlir::TypeConverter* typeConverter,mlir::Location loc) {
@@ -29,7 +29,7 @@ static mlir::Value dateSubImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lower
    if (originalArgumentTypes[1].cast<pgx::mlir::db::IntervalType>().getUnit() == pgx::mlir::db::IntervalUnitAttr::daytime) {
       return rewriter.create<mlir::arith::SubIOp>(loc, loweredArguments);
    } else {
-      return rt::DateRuntime::subtractMonths(rewriter, loc)(loweredArguments)[0];
+      return pgx_lower::compiler::runtime::DateRuntime::subtractMonths(rewriter, loc)(loweredArguments)[0];
    }
 }
 static mlir::Value matchPart(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value lastMatchEnd, std::string pattern, mlir::Value str, mlir::Value end) {
@@ -41,10 +41,10 @@ static mlir::Value matchPart(mlir::OpBuilder& builder, mlir::Location loc, mlir:
    }
    mlir::Value needleValue = builder.create<pgx::mlir::util::CreateConstVarLen>(loc, pgx::mlir::util::VarLen32Type::get(builder.getContext()), pattern);
    if (lastMatchEnd) {
-      mlir::Value matchEnd = rt::StringRuntime::findMatch(builder, loc)(mlir::ValueRange{str, needleValue, lastMatchEnd, end})[0];
+      mlir::Value matchEnd = pgx_lower::compiler::runtime::StringRuntime::findMatch(builder, loc)(mlir::ValueRange{str, needleValue, lastMatchEnd, end})[0];
       return builder.create<mlir::arith::IndexCastOp>(loc, builder.getIndexType(), matchEnd);
    } else {
-      mlir::Value startsWithPattern = rt::StringRuntime::startsWith(builder, loc)(mlir::ValueRange{str, needleValue})[0];
+      mlir::Value startsWithPattern = pgx_lower::compiler::runtime::StringRuntime::startsWith(builder, loc)(mlir::ValueRange{str, needleValue})[0];
       mlir::Value patternLen = builder.create<mlir::arith::ConstantIndexOp>(loc, pattern.size());
       mlir::Value invalidPos = builder.create<mlir::arith::ConstantIndexOp>(loc, 0x8000000000000000);
 
@@ -89,7 +89,7 @@ static mlir::Value constLikeImpl(mlir::OpBuilder& rewriter, mlir::ValueRange low
       }
       if (!currentSubPattern.empty()) {
          mlir::Value needleValue = rewriter.create<pgx::mlir::util::CreateConstVarLen>(loc, pgx::mlir::util::VarLen32Type::get(rewriter.getContext()), currentSubPattern);
-         mlir::Value endsWith = rt::StringRuntime::endsWith(rewriter, loc)({str, needleValue})[0];
+         mlir::Value endsWith = pgx_lower::compiler::runtime::StringRuntime::endsWith(rewriter, loc)({str, needleValue})[0];
          if (lastMatchEnd) {
             mlir::Value patternLength = rewriter.create<mlir::arith::ConstantIndexOp>(loc, currentSubPattern.size());
             lastMatchEnd = rewriter.create<mlir::arith::AddIOp>(loc, lastMatchEnd, patternLength);
@@ -185,16 +185,16 @@ std::shared_ptr<pgx::mlir::db::RuntimeFunctionRegistry> pgx::mlir::db::RuntimeFu
    builtinRegistry->add("DumpValue").handlesNulls().matchesTypes({RuntimeFunction::anyType}, RuntimeFunction::noReturnType).implementedAs(dumpValuesImpl);
    auto resTypeIsI64 = [](mlir::Type t, mlir::TypeRange) { return t.isInteger(64); };
    auto resTypeIsBool = [](mlir::Type t, mlir::TypeRange) { return t.isInteger(1); };
-   builtinRegistry->add("Substring").implementedAs(rt::StringRuntime::substr).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::matchesArgument());
-   builtinRegistry->add("Like").implementedAs(rt::StringRuntime::like).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool);
+   builtinRegistry->add("Substring").implementedAs(pgx_lower::compiler::runtime::StringRuntime::substr).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::matchesArgument(0));
+   builtinRegistry->add("Like").implementedAs(pgx_lower::compiler::runtime::StringRuntime::like).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool);
    builtinRegistry->add("ConstLike").matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool).implementedAs(constLikeImpl).needsWrapping();
 
    builtinRegistry->add("ExtractFromDate").matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::dateLike}, resTypeIsI64);
-   builtinRegistry->add("ExtractYearFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractYear);
-   builtinRegistry->add("ExtractMonthFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractMonth);
-   builtinRegistry->add("ExtractDayFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractDay);
-   builtinRegistry->add("DateAdd").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument()).implementedAs(dateAddImpl);
-   builtinRegistry->add("AbsInt").handlesInvalid().matchesTypes({RuntimeFunction::intLike}, RuntimeFunction::matchesArgument()).implementedAs(absIntImpl);
-   builtinRegistry->add("DateSubtract").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument()).implementedAs(dateSubImpl);
+   builtinRegistry->add("ExtractYearFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(pgx_lower::compiler::runtime::DateRuntime::extractYear);
+   builtinRegistry->add("ExtractMonthFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(pgx_lower::compiler::runtime::DateRuntime::extractMonth);
+   builtinRegistry->add("ExtractDayFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(pgx_lower::compiler::runtime::DateRuntime::extractDay);
+   builtinRegistry->add("DateAdd").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument(0)).implementedAs(dateAddImpl);
+   builtinRegistry->add("AbsInt").handlesInvalid().matchesTypes({RuntimeFunction::intLike}, RuntimeFunction::matchesArgument(0)).implementedAs(absIntImpl);
+   builtinRegistry->add("DateSubtract").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument(0)).implementedAs(dateSubImpl);
    return builtinRegistry;
 }

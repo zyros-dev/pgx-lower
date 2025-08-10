@@ -3,7 +3,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 class ConstRelTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::ConstRelationOp constRelationOp;
 

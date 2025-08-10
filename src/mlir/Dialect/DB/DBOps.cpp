@@ -251,6 +251,89 @@ LogicalResult pgx::mlir::db::AndOp::canonicalize(pgx::mlir::db::AndOp andOp, mli
    }
    return failure();
 }
+namespace pgx::mlir::db {
+
+// Properties API implementations for LLVM 20 compatibility
+// These are required for operations with attributes
+
+// ConstantOp Properties API
+std::optional<::mlir::Attribute> ConstantOp::getInherentAttr(::mlir::MLIRContext *ctx,
+                                                           const Properties &prop,
+                                                           llvm::StringRef name) {
+    if (name == "value") {
+        return prop.value;
+    }
+    return std::nullopt;
+}
+
+void ConstantOp::setInherentAttr(Properties &prop,
+                                llvm::StringRef name,
+                                ::mlir::Attribute value) {
+    if (name == "value") {
+        prop.value = value;
+    }
+}
+
+// RuntimeCall Properties API
+std::optional<::mlir::Attribute> RuntimeCall::getInherentAttr(::mlir::MLIRContext *ctx,
+                                                            const Properties &prop,
+                                                            llvm::StringRef name) {
+    if (name == "fn") {
+        return prop.fn;
+    }
+    return std::nullopt;
+}
+
+void RuntimeCall::setInherentAttr(Properties &prop,
+                                 llvm::StringRef name,
+                                 ::mlir::Attribute value) {
+    if (name == "fn") {
+        prop.fn = value.cast<::mlir::StringAttr>();
+    }
+}
+
+// CmpOp Properties API
+std::optional<::mlir::Attribute> CmpOp::getInherentAttr(::mlir::MLIRContext *ctx,
+                                                      const Properties &prop,
+                                                      llvm::StringRef name) {
+    if (name == "predicate") {
+        return prop.predicate;
+    }
+    return std::nullopt;
+}
+
+void CmpOp::setInherentAttr(Properties &prop,
+                           llvm::StringRef name,
+                           ::mlir::Attribute value) {
+    if (name == "predicate") {
+        prop.predicate = value.cast<::mlir::IntegerAttr>();
+    }
+}
+
+// BetweenOp Properties API
+std::optional<::mlir::Attribute> BetweenOp::getInherentAttr(::mlir::MLIRContext *ctx,
+                                                          const Properties &prop,
+                                                          llvm::StringRef name) {
+    if (name == "lowerInclusive") {
+        return prop.lowerInclusive;
+    } else if (name == "upperInclusive") {
+        return prop.upperInclusive;
+    }
+    return std::nullopt;
+}
+
+void BetweenOp::setInherentAttr(Properties &prop,
+                               llvm::StringRef name,
+                               ::mlir::Attribute value) {
+    if (name == "lowerInclusive") {
+        prop.lowerInclusive = value.cast<::mlir::BoolAttr>();
+    } else if (name == "upperInclusive") {
+        prop.upperInclusive = value.cast<::mlir::BoolAttr>();
+    }
+}
+
+} // namespace pgx::mlir::db
+
 #define GET_OP_CLASSES
 #include "mlir/Dialect/DB/IR/DBOps.cpp.inc"
 #include "mlir/Dialect/DB/IR/DBOpsInterfaces.cpp.inc"

@@ -22,7 +22,7 @@ static ColumnSet collectColumns(operator_list operators, std::function<ColumnSet
    ColumnSet collected;
    for (auto op : operators) {
       auto res = fn(op);
-      collected.insert(res);
+      collected.insertAll(res);
    }
    return collected;
 }
@@ -37,7 +37,7 @@ ColumnSet pgx::mlir::relalg::detail::getAvailableColumns(mlir::Operation* op) {
    Operator asOperator = mlir::dyn_cast_or_null<Operator>(op);
    auto collected = collectColumns(getChildOperators(op), [](Operator op) { return op.getAvailableColumns(); });
    auto selfCreated = asOperator.getCreatedColumns();
-   collected.insert(selfCreated);
+   collected.insertAll(selfCreated);
    return collected;
 }
 FunctionalDependencies pgx::mlir::relalg::detail::getFDs(mlir::Operation* op) {
@@ -51,7 +51,7 @@ ColumnSet pgx::mlir::relalg::detail::getFreeColumns(mlir::Operation* op) {
    auto available = collectColumns(getChildOperators(op), [](Operator op) { return op.getAvailableColumns(); });
    auto collectedFree = collectColumns(getChildOperators(op), [](Operator op) { return op.getFreeColumns(); });
    auto used = mlir::cast<Operator>(op).getUsedColumns();
-   collectedFree.insert(used);
+   collectedFree.insertAll(used);
    collectedFree.remove(available);
    return collectedFree;
 }
