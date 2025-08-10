@@ -1,4 +1,5 @@
 add_mlir_dialect_library(MLIRRelAlg
+        PARTIAL_SOURCES_INTENDED
         RelAlgDialect.cpp
         RelAlgOps.cpp
         RelAlgOpsEnums.cpp
@@ -12,6 +13,7 @@ add_mlir_dialect_library(MLIRRelAlg
         Transforms/PropagateConstraints.cpp
         Transforms/IntroduceTmp.cpp
         ColumnManager.cpp
+        ColumnSet.cpp
         Transforms/Unnesting.cpp
         Transforms/Pushdown.cpp
         Transforms/ImplicitToExplicitJoins.cpp

@@ -9,10 +9,10 @@ add_mlir_library(MLIRPgxLowerPasses
     MLIRIR
     MLIRPass
     MLIRTransforms
-    MLIRRelAlgDialect
+    MLIRRelAlg
     MLIRDB
-    MLIRDSADialect
-    MLIRRelAlgToDBConversion
+    MLIRDSA
+    MLIRRelAlgToDB
     MLIRFuncDialect
     MLIRArithDialect
     MLIRLLVMDialect

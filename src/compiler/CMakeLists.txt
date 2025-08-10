@@ -11,7 +11,7 @@
 add_subdirectory(../mlir/Dialect/RelAlg RelAlgDialect)
 add_subdirectory(../mlir/Dialect/DB DBDialect)
 add_subdirectory(../mlir/Dialect/DSA DSADialect)
-add_subdirectory(../mlir/Dialect/Util UtilDialect)
+add_subdirectory(../mlir/Dialect/util UtilDialect)
 
 # Add conversion passes - LingoDB-compliant parallel lowering architecture:
 # RelAlg → (DB + DSA + Util) then parallel lowering to Standard MLIR → LLVM

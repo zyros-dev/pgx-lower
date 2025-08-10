@@ -108,7 +108,8 @@ add_library(runtime_funcs_ptr INTERFACE)
 add_subdirectory(include/pgx_lower/mlir/Dialect/RelAlg/IR)
 add_subdirectory(include/pgx_lower/mlir/Dialect/DB/IR)
 add_subdirectory(include/pgx_lower/mlir/Dialect/DSA/IR)
-add_subdirectory(include/pgx_lower/mlir/Dialect/Util/IR)
+# Add include directory for util dialect
+add_subdirectory(include/pgx_lower/mlir/Dialect/util)
 
 # Add compiler library (includes dialects)
 add_subdirectory(src/compiler)
