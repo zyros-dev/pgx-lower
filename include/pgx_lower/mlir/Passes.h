@@ -2,6 +2,8 @@
 #define MLIR_PASSES_H
 
 #include "mlir/Pass/PassManager.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Support/LogicalResult.h"
 #include <memory>
 
 namespace mlir {
@@ -29,12 +31,27 @@ void registerAllPgxLoweringPasses();
 void createRelAlgToDBPipeline(mlir::PassManager& pm);
 
 
-/// Create the complete lowering pipeline from RelAlg to DSA
-/// This is the main pipeline for Test 1 execution
+/// DEPRECATED: Single PassManager approach - use runCompleteLoweringPipeline instead
+/// This function is maintained for backwards compatibility but is not recommended
 /// 
 /// @param pm The pass manager to populate with passes
 /// @param enableVerifier Whether to enable MLIR verification between passes
 void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier = true);
+
+/// LingoDB-Compliant Multi-PassManager Pipeline (RECOMMENDED)
+/// Runs the complete lowering pipeline using 3 separate PassManager instances
+/// following LingoDB's proven architecture pattern
+/// 
+/// Pipeline phases:
+/// 1. RelAlg → Mixed DB+DSA+Util (Function-Scoped with Nested Pass)
+/// 2. DB → Standard MLIR + PostgreSQL SPI (Module-Scoped)
+/// 3. DSA+Util → Standard MLIR/LLVM (Module-Scoped)
+/// 
+/// @param module The MLIR module to transform
+/// @param context The MLIR context
+/// @param enableVerifier Whether to enable MLIR verification between passes
+/// @return LogicalResult success() if all phases succeed, failure() otherwise
+LogicalResult runCompleteLoweringPipeline(mlir::ModuleOp module, mlir::MLIRContext* context, bool enableVerifier = true);
 
 //===----------------------------------------------------------------------===//
 // Future Pipeline Extensions (Phase 4+)
