@@ -6,9 +6,9 @@
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/SCF/SCF.h"
-#include "pgx_lower/mlir/Dialect/Util/IR/UtilDialect.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Util/IR/UtilDialect.h"
 
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"

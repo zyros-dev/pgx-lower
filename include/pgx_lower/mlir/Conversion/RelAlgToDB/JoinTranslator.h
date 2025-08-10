@@ -9,16 +9,25 @@ namespace pgx::mlir::relalg {
 class JoinImpl {
    public:
    BinaryOperator joinOp;
-   Translator* builderChild;
-   Translator* lookupChild;
-   Translator* translator;
+   mlir::Value builderChild;
+   mlir::Value lookupChild;
+   JoinTranslator* translator;
+   mlir::Location loc;
+   bool markable;
+   mlir::Value matchFoundFlag;
+   bool stopOnFlag = true;
    
-   JoinImpl(BinaryOperator joinOp) : joinOp(joinOp) {}
+   JoinImpl(BinaryOperator joinOp, mlir::Value builderChild, mlir::Value lookupChild, bool markable = false) 
+       : joinOp(joinOp), builderChild(builderChild), lookupChild(lookupChild), 
+         loc(joinOp->getLoc()), markable(markable) {}
    
-   virtual void after(TranslatorContext& context, mlir::OpBuilder& builder) = 0;
-   virtual void build(mlir::OpBuilder& builder, TranslatorContext& context) = 0;
-   virtual void probe(mlir::OpBuilder& builder, TranslatorContext& context) = 0;
-   virtual void addAdditionalRequiredColumns() = 0;
+   virtual mlir::Value getFlag() { return stopOnFlag ? matchFoundFlag : mlir::Value(); }
+   virtual void addAdditionalRequiredColumns() {}
+   virtual void handleLookup(mlir::Value matched, mlir::Value markerBefore, TranslatorContext& context, mlir::OpBuilder& builder) = 0;
+   virtual void beforeLookup(TranslatorContext& context, mlir::OpBuilder& builder) {}
+   virtual void afterLookup(TranslatorContext& context, mlir::OpBuilder& builder) {}
+   virtual void handleScanned(mlir::Value marker, TranslatorContext& context, mlir::OpBuilder& builder) {}
+   virtual void after(TranslatorContext& context, mlir::OpBuilder& builder) {}
    
    virtual ~JoinImpl() = default;
 };
@@ -34,8 +43,18 @@ class JoinTranslator : public Translator {
    JoinTranslator(std::shared_ptr<JoinImpl> joinImpl);
    
    void addJoinRequiredColumns();
+   void handleMappingNull(mlir::OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope);
+   void handleMapping(mlir::OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope);
+   void handlePotentialMatch(mlir::OpBuilder& builder, TranslatorContext& context, mlir::Value matches, 
+                           mlir::function_ref<void(mlir::OpBuilder&, TranslatorContext& context, TranslatorContext::AttributeResolverScope&)> onMatch = nullptr);
    
    virtual void scanHT(TranslatorContext& context, mlir::OpBuilder& builder) = 0;
+   void forwardConsume(mlir::OpBuilder& builder, TranslatorContext& context) {
+      consumer->consume(this, builder, context);
+   }
+   
+   virtual mlir::Value evaluatePredicate(TranslatorContext& context, mlir::OpBuilder& builder, TranslatorContext::AttributeResolverScope& scope);
+   std::vector<size_t> customLookupBuilders;
    
    virtual ~JoinTranslator() = default;
 };

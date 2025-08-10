@@ -1,21 +1,22 @@
 
-#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
-#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
 
-#include "pgx_lower/mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 
-#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <llvm/ADT/TypeSwitch.h>
 #include <list>
 #include <unordered_map>
 
 namespace {
-using pgx::mlir::relalg::Operator;
-using pgx::mlir::relalg::BinaryOperator;
-using pgx::mlir::relalg::PredicateOperator;
+// Operator types are generated in the global namespace from TableGen
+using ::Operator;
+using ::BinaryOperator;
+using ::PredicateOperator;
 
 class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-unnesting"; }
