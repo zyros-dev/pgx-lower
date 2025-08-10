@@ -12,7 +12,7 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
 
    virtual void consume(pgx::mlir::relalg::Translator* child, mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
       auto scope = context.createScope();
-      for(mlir::Attribute attr:renamingOp.columns()){
+      for(mlir::Attribute attr:renamingOp.getColumns()){
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
          mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
          auto relationRefAttr = from.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>();
@@ -24,7 +24,7 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
       consumer->consume(this, builder, context);
    }
    virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      for(mlir::Attribute attr:renamingOp.columns()){
+      for(mlir::Attribute attr:renamingOp.getColumns()){
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
          mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
          auto relationRefAttr = from.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>();

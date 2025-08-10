@@ -28,7 +28,7 @@ class WrapAggrFuncPattern : public mlir::RewritePattern {
       llvm::SmallVector<mlir::Attribute> defVec = {def};
       auto aggrOp = rewriter.create<pgx::mlir::relalg::AggregationOp>(op->getLoc(), pgx::mlir::relalg::TupleStreamType::get(getContext()), aggrFuncOp.getRel(), rewriter.getArrayAttr(emptyVec), rewriter.getArrayAttr(defVec));
       auto* block = new mlir::Block;
-      aggrOp.aggr_func().push_back(block);
+      aggrOp.getAggrFunc().push_back(block);
       {
          mlir::OpBuilder::InsertionGuard insertionGuard(rewriter);
          rewriter.setInsertionPointToStart(block);
@@ -70,7 +70,7 @@ class WrapCountRowsPattern : public mlir::RewritePattern {
       llvm::SmallVector<mlir::Attribute> defVec = {def};
       auto aggrOp = rewriter.create<pgx::mlir::relalg::AggregationOp>(op->getLoc(), pgx::mlir::relalg::TupleStreamType::get(getContext()), aggrFuncOp.getRel(), rewriter.getArrayAttr(emptyVec), rewriter.getArrayAttr(defVec));
       auto* block = new mlir::Block;
-      aggrOp.aggr_func().push_back(block);
+      aggrOp.getAggrFunc().push_back(block);
       {
          mlir::OpBuilder::InsertionGuard insertionGuard(rewriter);
          rewriter.setInsertionPointToStart(block);

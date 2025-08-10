@@ -12,6 +12,9 @@
 #include <unordered_map>
 
 namespace {
+using pgx::mlir::relalg::Operator;
+using pgx::mlir::relalg::BinaryOperator;
+using pgx::mlir::relalg::PredicateOperator;
 
 class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-unnesting"; }
@@ -19,7 +22,7 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
    Operator getFirstOfTree(Operator tree) {
       Operator currFirst = tree;
       for (auto child : tree.getChildren()) {
-         mlir::Operation* otherFirst = getFirstOfTree(child);
+         Operator otherFirst = getFirstOfTree(child);
          if (otherFirst->isBeforeInBlock(currFirst)) {
             currFirst = otherFirst;
          }
@@ -119,13 +122,13 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
    }
    void handleJoin(mlir::Location loc,BinaryOperator join, Operator newLeft, Operator newRight, bool joinDependent, bool renameRight, pgx::mlir::relalg::ColumnSet& dependentAttributes) {
       using namespace mlir;
-      auto relType = relalg::TupleStreamType::get(&getContext());
+      auto relType = pgx::mlir::relalg::TupleStreamType::get(&getContext());
       auto& attributeManager = getContext().getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager();
       Operator joinAsOperator = mlir::dyn_cast_or_null<Operator>(join.getOperation());
       mlir::OpBuilder builder(join.getOperation());
       if (joinDependent) {
          Operator toRename = renameRight ? newRight : newLeft;
-         std::unordered_map<const relalg::Column*, const relalg::Column*> renamed;
+         std::unordered_map<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*> renamed;
          std::string scope = attributeManager.getUniqueScope("renaming");
          std::vector<Attribute> renamingDefsAsAttr;
          size_t i = 0;
@@ -135,17 +138,17 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
             def.getColumn().type = attr->type;
             renamed.insert({attr, &def.getColumn()});
          }
-         Operator renamingop = builder.create<relalg::RenamingOp>(loc, relType, toRename->getResult(0), builder.getArrayAttr(renamingDefsAsAttr));
+         Operator renamingop = builder.create<pgx::mlir::relalg::RenamingOp>(loc, relType, toRename->getResult(0), builder.getArrayAttr(renamingDefsAsAttr));
          for (const auto* attr : dependentAttributes) {
             mlir::dyn_cast_or_null<PredicateOperator>(join.getOperation()).addPredicate([&](Value tuple, OpBuilder& builder) {
                auto attrefDependent = attributeManager.createRef(renamed[attr]);
-               Value valLeft = builder.create<relalg::GetColumnOp>(loc, attr->type, attributeManager.createRef(attr), tuple);
-               Value valRight = builder.create<relalg::GetColumnOp>(loc, attr->type, attrefDependent, tuple);
-               Value cmpEq = builder.create<db::CmpOp>(loc, db::DBCmpPredicate::eq, valLeft, valRight);
+               Value valLeft = builder.create<pgx::mlir::relalg::GetColumnOp>(loc, attr->type, attributeManager.createRef(attr), tuple);
+               Value valRight = builder.create<pgx::mlir::relalg::GetColumnOp>(loc, attr->type, attrefDependent, tuple);
+               Value cmpEq = builder.create<pgx::mlir::db::CmpOp>(loc, pgx::mlir::db::DBCmpPredicate::eq, valLeft, valRight);
                if (valLeft.getType().isa<pgx::mlir::db::NullableType>() && valRight.getType().isa<pgx::mlir::db::NullableType>()) {
-                  Value nullLeft = builder.create<db::IsNullOp>(loc, valLeft);
-                  Value nullRight = builder.create<db::IsNullOp>(loc, valRight);
-                  Value bothNull = builder.create<db::AndOp>(loc, ValueRange{nullLeft, nullRight});
+                  Value nullLeft = builder.create<pgx::mlir::db::IsNullOp>(loc, valLeft);
+                  Value nullRight = builder.create<pgx::mlir::db::IsNullOp>(loc, valRight);
+                  Value bothNull = builder.create<pgx::mlir::db::AndOp>(loc, ValueRange{nullLeft, nullRight});
                   Value eqOrBothNull = builder.create<db::OrOp>(loc, ValueRange{cmpEq, bothNull});
                   return eqOrBothNull;
                } else {

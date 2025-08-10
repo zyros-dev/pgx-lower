@@ -106,14 +106,14 @@ bool pgx::mlir::db::RuntimeCall::needsNullWrap() {
 }
 
 bool pgx::mlir::db::CmpOp::supportsInvalidValues() {
-   auto type = getBaseType(left().getType());
-   if (type.isa<db::StringType>()) {
+   auto type = getBaseType(getLeft().getType());
+   if (type.isa<pgx::mlir::db::StringType>()) {
       return false;
    }
    return true;
 }
 bool pgx::mlir::db::CastOp::supportsInvalidValues() {
-   if (getBaseType(getResult().getType()).isa<db::StringType>() || getBaseType(val().getType()).isa<db::StringType>()) {
+   if (getBaseType(getResult().getType()).isa<pgx::mlir::db::StringType>() || getBaseType(getVal().getType()).isa<pgx::mlir::db::StringType>()) {
       return false;
    }
    return true;
@@ -122,11 +122,11 @@ bool pgx::mlir::db::CastOp::supportsInvalidValues() {
 
 LogicalResult pgx::mlir::db::OrOp::canonicalize(pgx::mlir::db::OrOp orOp, mlir::PatternRewriter& rewriter) {
    llvm::SmallDenseMap<mlir::Value, size_t> usage;
-   for (auto val : orOp.vals()) {
+   for (auto val : orOp.getVals()) {
       if (!val.getDefiningOp()) return failure();
-      if (auto andOp = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
+      if (auto andOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
          llvm::SmallPtrSet<mlir::Value, 4> alreadyUsed;
-         for (auto andOperand : andOp.vals()) {
+         for (auto andOperand : andOp.getVals()) {
             if (!alreadyUsed.contains(andOperand)) {
                usage[andOperand]++;
                alreadyUsed.insert(andOperand);
@@ -139,10 +139,10 @@ LogicalResult pgx::mlir::db::OrOp::canonicalize(pgx::mlir::db::OrOp orOp, mlir::
    size_t totalAnds = orOp.vals().size();
    llvm::SmallPtrSet<mlir::Value, 4> extracted;
    std::vector<mlir::Value> newOrOperands;
-   for (auto val : orOp.vals()) {
-      if (auto andOp = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
+   for (auto val : orOp.getVals()) {
+      if (auto andOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
          std::vector<mlir::Value> keep;
-         for (auto andOperand : andOp.vals()) {
+         for (auto andOperand : andOp.getVals()) {
             if (usage[andOperand] == totalAnds) {
                extracted.insert(andOperand);
             } else {
@@ -183,13 +183,13 @@ LogicalResult pgx::mlir::db::AndOp::canonicalize(pgx::mlir::db::AndOp andOp, mli
       auto current = queue.front();
       queue.pop();
       if (auto* definingOp = current.getDefiningOp()) {
-         if (auto nestedAnd = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(definingOp)) {
-            for (auto v : nestedAnd.vals()) {
+         if (auto nestedAnd = ::mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(definingOp)) {
+            for (auto v : nestedAnd.getVals()) {
                queue.push(v);
             }
-         } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(definingOp)) {
-            cmps[cmpOp.left()].push_back(cmpOp);
-            cmps[cmpOp.right()].push_back(cmpOp);
+         } else if (auto cmpOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(definingOp)) {
+            cmps[cmpOp.getLeft()].push_back(cmpOp);
+            cmps[cmpOp.getRight()].push_back(cmpOp);
             rawValues.insert(current);
          } else {
             rawValues.insert(current);
@@ -203,39 +203,39 @@ LogicalResult pgx::mlir::db::AndOp::canonicalize(pgx::mlir::db::AndOp andOp, mli
       pgx::mlir::db::CmpOp lowerCmp, upperCmp;
       mlir::Value current = m.getFirst();
       if (auto* definingOp = current.getDefiningOp()) {
-         if (mlir::isa<pgx::mlir::db::ConstantOp>(definingOp)) {
+         if (::mlir::isa<pgx::mlir::db::ConstantOp>(definingOp)) {
             continue;
          }
       }
       for (auto cmp : m.second) {
          if (!rawValues.contains(cmp)) continue;
-         switch (cmp.predicate()) {
+         switch (cmp.getPredicate()) {
             case DBCmpPredicate::lt:
             case DBCmpPredicate::lte:
-               if (cmp.left() == current) {
-                  upper = cmp.right();
+               if (cmp.getLeft() == current) {
+                  upper = cmp.getRight();
                   upperCmp = cmp;
                } else {
-                  lower = cmp.left();
+                  lower = cmp.getLeft();
                   lowerCmp = cmp;
                }
                break;
             case DBCmpPredicate::gt:
             case DBCmpPredicate::gte:
-               if (cmp.left() == current) {
-                  lower = cmp.right();
+               if (cmp.getLeft() == current) {
+                  lower = cmp.getRight();
                   lowerCmp = cmp;
                } else {
-                  upper = cmp.left();
+                  upper = cmp.getLeft();
                   upperCmp = cmp;
                }
                break;
             default: break;
          }
       }
-      if (lower && upper && lower.getDefiningOp() && upper.getDefiningOp() && mlir::isa<pgx::mlir::db::ConstantOp>(lower.getDefiningOp()) && mlir::isa<pgx::mlir::db::ConstantOp>(upper.getDefiningOp())) {
-         auto lowerInclusive = lowerCmp.predicate() == DBCmpPredicate::gte || lowerCmp.predicate() == DBCmpPredicate::lte;
-         auto upperInclusive = upperCmp.predicate() == DBCmpPredicate::gte || upperCmp.predicate() == DBCmpPredicate::lte;
+      if (lower && upper && lower.getDefiningOp() && upper.getDefiningOp() && ::mlir::isa<pgx::mlir::db::ConstantOp>(lower.getDefiningOp()) && ::mlir::isa<pgx::mlir::db::ConstantOp>(upper.getDefiningOp())) {
+         auto lowerInclusive = lowerCmp.getPredicate() == DBCmpPredicate::gte || lowerCmp.getPredicate() == DBCmpPredicate::lte;
+         auto upperInclusive = upperCmp.getPredicate() == DBCmpPredicate::gte || upperCmp.getPredicate() == DBCmpPredicate::lte;
          mlir::Value between = rewriter.create<pgx::mlir::db::BetweenOp>(lowerCmp->getLoc(), current, lower, upper, lowerInclusive, upperInclusive);
          rawValues.erase(lowerCmp);
          rawValues.erase(upperCmp);
@@ -246,7 +246,7 @@ LogicalResult pgx::mlir::db::AndOp::canonicalize(pgx::mlir::db::AndOp andOp, mli
       rewriter.replaceOp(andOp,*rawValues.begin());
       return success();
    }
-   if (rawValues.size() != andOp.vals().size()) {
+   if (rawValues.size() != andOp.getVals().size()) {
       rewriter.replaceOpWithNewOp<pgx::mlir::db::AndOp>(andOp, std::vector<mlir::Value>(rawValues.begin(), rawValues.end()));
       return success();
    }
@@ -307,7 +307,7 @@ void CmpOp::setInherentAttr(Properties &prop,
                            llvm::StringRef name,
                            ::mlir::Attribute value) {
     if (name == "predicate") {
-        prop.predicate = value.cast<::mlir::IntegerAttr>();
+        prop.predicate = value.cast<pgx::mlir::db::DBCmpPredicateAttr>();
     }
 }
 
