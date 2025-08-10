@@ -18,6 +18,12 @@
 namespace pgx {
 namespace utility {
 
+/// Logs the module IR structure as plaintext for debugging.
+/// 
+/// @param module The MLIR module to print
+/// @param label Descriptive label for the debug output
+void logModuleIR(::mlir::ModuleOp module, const std::string& label);
+
 /// Detects circular IR structures that cause infinite walk() loops.
 /// Uses manual traversal with proper path tracking instead of walk().
 /// 
