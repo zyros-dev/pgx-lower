@@ -3,7 +3,7 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -201,7 +201,7 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
       for (auto selOp : selectionOps) {
          auto higherTerminator = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator());
          Value higherPredVal = higherTerminator.results()[0];
-         mlir::BlockAndValueMapping mapping;
+         mlir::IRMapping mapping;
          mapping.map(selOp.getPredicateArgument(), lower.getPredicateArgument());
          pgx::mlir::relalg::detail::inlineOpIntoBlock(higherPredVal.getDefiningOp(), higherPredVal.getDefiningOp()->getParentOp(), lower.getOperation(), &lower.getPredicateBlock(), mapping);
          nullable |= higherPredVal.getType().isa<pgx::mlir::db::NullableType>();

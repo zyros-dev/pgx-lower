@@ -2,7 +2,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/OpImplementation.h"
 #include <functional>
 #include <unordered_set>
@@ -321,7 +321,7 @@ void pgx::mlir::relalg::detail::initPredicate(mlir::Operation* op) {
    builder.create<pgx::mlir::relalg::ReturnOp>(op->getLoc());
 }
 
-static void addRequirements(mlir::Operation* op, mlir::Operation* includeChildren, mlir::Operation* excludeChildren, llvm::SmallVector<mlir::Operation*, 8>& extracted, llvm::SmallPtrSet<mlir::Operation*, 8>& alreadyPresent, mlir::BlockAndValueMapping& mapping) {
+static void addRequirements(mlir::Operation* op, mlir::Operation* includeChildren, mlir::Operation* excludeChildren, llvm::SmallVector<mlir::Operation*, 8>& extracted, llvm::SmallPtrSet<mlir::Operation*, 8>& alreadyPresent, mlir::IRMapping& mapping) {
    if (!op)
       return;
    if (alreadyPresent.contains(op))
@@ -348,7 +348,7 @@ static void addRequirements(mlir::Operation* op, mlir::Operation* includeChildre
       extracted.push_back(op);
    }
 }
-void pgx::mlir::relalg::detail::inlineOpIntoBlock(mlir::Operation* vop, mlir::Operation* includeChildren, mlir::Operation* excludeChildren, mlir::Block* newBlock, mlir::BlockAndValueMapping& mapping, mlir::Operation* first) {
+void pgx::mlir::relalg::detail::inlineOpIntoBlock(mlir::Operation* vop, mlir::Operation* includeChildren, mlir::Operation* excludeChildren, mlir::Block* newBlock, mlir::IRMapping& mapping, mlir::Operation* first) {
    llvm::SmallVector<mlir::Operation*, 8> extracted;
    llvm::SmallPtrSet<mlir::Operation*, 8> alreadyPresent;
    addRequirements(vop, includeChildren, excludeChildren, extracted, alreadyPresent, mapping);

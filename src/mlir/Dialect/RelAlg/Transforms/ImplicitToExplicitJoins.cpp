@@ -3,7 +3,7 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
@@ -126,7 +126,7 @@ class ImplicitToExplicitJoins : public mlir::PassWrapper<ImplicitToExplicitJoins
             auto searchInAttr = attributeManager.createRef(attr);
             handleScalarBoolOp(inop->getLoc(), surroundingOperator, op, relOperator, [&](PredicateOperator predicateOperator) {
                predicateOperator.addPredicate([&](Value tuple, OpBuilder& builder) {
-                  mlir::BlockAndValueMapping mapping;
+                  mlir::IRMapping mapping;
                   mapping.map(surroundingOperator.getLambdaArgument(), predicateOperator.getPredicateArgument());
                   pgx::mlir::relalg::detail::inlineOpIntoBlock(inop.val().getDefiningOp(), surroundingOperator.getOperation(), predicateOperator.getOperation(), &predicateOperator.getPredicateBlock(), mapping);
                   auto val = mapping.lookup(inop.val());

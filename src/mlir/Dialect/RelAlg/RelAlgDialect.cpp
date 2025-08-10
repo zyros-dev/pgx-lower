@@ -3,7 +3,7 @@
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
 
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DB/IR/DBDialect.h"
 #include "mlir/Dialect/DSA/IR/DSADialect.h"
 
@@ -14,11 +14,11 @@ using namespace pgx::mlir::relalg;
 
 struct RelalgInlinerInterface : public DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
-   bool isLegalToInline(Operation*, Region*, bool, BlockAndValueMapping&) const final override {
+   bool isLegalToInline(Operation*, Region*, bool, IRMapping&) const final override {
       return true;
    }
    virtual bool isLegalToInline(Region* dest, Region* src, bool wouldBeCloned,
-                                BlockAndValueMapping& valueMapping) const override {
+                                IRMapping& valueMapping) const override {
       return true;
    }
 };
@@ -123,7 +123,7 @@ void RelAlgDialect::initialize() {
    columnManager.setContext(getContext());
    getContext()->loadDialect<pgx::mlir::db::DBDialect>();
    getContext()->loadDialect<pgx::mlir::dsa::DSADialect>();
-   getContext()->loadDialect<mlir::arith::ArithmeticDialect>();
+   getContext()->loadDialect<mlir::arith::ArithDialect>();
    mlir::arith::CmpIOp::attachInterface<ArithCmpFCmpInterface>(*getContext());
 }
 

@@ -5,7 +5,7 @@
 #include "mlir/Dialect/util/UtilOps.h"
 #include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
 #include <mlir/Dialect/DSA/IR/DSAOps.h>
-#include <mlir/IR/BlockAndValueMapping.h>
+#include <mlir/IR/IRMapping.h>
 
 class SimpleInnerJoinImpl : public pgx::mlir::relalg::JoinImpl {
    public:
