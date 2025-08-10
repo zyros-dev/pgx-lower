@@ -9,19 +9,19 @@
 #include <llvm/Support/Debug.h>
 #include <queue>
 using namespace mlir;
-bool mlir::db::CmpOp::isEqualityPred() { return predicate() == mlir::db::DBCmpPredicate::eq; }
-bool mlir::db::CmpOp::isLessPred(bool eq) { return predicate() == (eq ? mlir::db::DBCmpPredicate::lte : mlir::db::DBCmpPredicate::lt); }
-bool mlir::db::CmpOp::isGreaterPred(bool eq) { return predicate() == (eq ? mlir::db::DBCmpPredicate::gte : mlir::db::DBCmpPredicate::gt); }
-mlir::Value mlir::db::CmpOp::getLeft() { return left(); }
-mlir::Value mlir::db::CmpOp::getRight() { return right(); }
+bool pgx::mlir::db::CmpOp::isEqualityPred() { return predicate() == pgx::mlir::db::DBCmpPredicate::eq; }
+bool pgx::mlir::db::CmpOp::isLessPred(bool eq) { return predicate() == (eq ? pgx::mlir::db::DBCmpPredicate::lte : pgx::mlir::db::DBCmpPredicate::lt); }
+bool pgx::mlir::db::CmpOp::isGreaterPred(bool eq) { return predicate() == (eq ? pgx::mlir::db::DBCmpPredicate::gte : pgx::mlir::db::DBCmpPredicate::gt); }
+mlir::Value pgx::mlir::db::CmpOp::getLeft() { return left(); }
+mlir::Value pgx::mlir::db::CmpOp::getRight() { return right(); }
 static Type wrapNullableType(MLIRContext* context, Type type, ValueRange values) {
-   if (llvm::any_of(values, [](Value v) { return v.getType().isa<mlir::db::NullableType>(); })) {
-      return mlir::db::NullableType::get(type);
+   if (llvm::any_of(values, [](Value v) { return v.getType().isa<pgx::mlir::db::NullableType>(); })) {
+      return pgx::mlir::db::NullableType::get(type);
    }
    return type;
 }
 mlir::Type getBaseType(mlir::Type t) {
-   if (auto nullableT = t.dyn_cast_or_null<mlir::db::NullableType>()) {
+   if (auto nullableT = t.dyn_cast_or_null<pgx::mlir::db::NullableType>()) {
       return nullableT.getType();
    }
    return t;
@@ -41,14 +41,14 @@ LogicalResult inferReturnType(MLIRContext* context, Optional<Location> location,
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
-   if(baseTypeLeft.isa<mlir::db::DecimalType>()){
-      auto a = baseTypeLeft.dyn_cast<mlir::db::DecimalType>();
-      auto b = baseTypeRight.dyn_cast<mlir::db::DecimalType>();
+   if(baseTypeLeft.isa<pgx::mlir::db::DecimalType>()){
+      auto a = baseTypeLeft.dyn_cast<pgx::mlir::db::DecimalType>();
+      auto b = baseTypeRight.dyn_cast<pgx::mlir::db::DecimalType>();
       auto hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
       auto maxs = std::max(a.getS(), b.getS());
       // Addition is super-type of both, with larger precision for carry.
       // TODO: actually add carry precision (+1).
-      baseType = mlir::db::DecimalType::get(a.getContext(), hidig + maxs, maxs);
+      baseType = pgx::mlir::db::DecimalType::get(a.getContext(), hidig + maxs, maxs);
    }
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
    return success();
@@ -57,12 +57,12 @@ LogicalResult inferMulReturnType(MLIRContext* context, Optional<Location> locati
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
-   if(baseTypeLeft.isa<mlir::db::DecimalType>()){
-      auto a = baseTypeLeft.dyn_cast<mlir::db::DecimalType>();
-      auto b = baseTypeRight.dyn_cast<mlir::db::DecimalType>();
+   if(baseTypeLeft.isa<pgx::mlir::db::DecimalType>()){
+      auto a = baseTypeLeft.dyn_cast<pgx::mlir::db::DecimalType>();
+      auto b = baseTypeRight.dyn_cast<pgx::mlir::db::DecimalType>();
       auto sump = a.getP() + b.getP();
       auto sums = a.getS() + b.getS();
-      baseType = mlir::db::DecimalType::get(a.getContext(), sump, sums);
+      baseType = pgx::mlir::db::DecimalType::get(a.getContext(), sump, sums);
    }
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
    return success();
@@ -71,47 +71,47 @@ LogicalResult inferDivReturnType(MLIRContext* context, Optional<Location> locati
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
-   if(baseTypeLeft.isa<mlir::db::DecimalType>()){
-      auto leftDecType=baseTypeLeft.dyn_cast<mlir::db::DecimalType>();
-      auto rightDecType=baseTypeRight.dyn_cast<mlir::db::DecimalType>();
-      baseType=mlir::db::DecimalType::get(baseType.getContext(),std::max(leftDecType.getP(),rightDecType.getP()),std::max(leftDecType.getS(),rightDecType.getS()));
+   if(baseTypeLeft.isa<pgx::mlir::db::DecimalType>()){
+      auto leftDecType=baseTypeLeft.dyn_cast<pgx::mlir::db::DecimalType>();
+      auto rightDecType=baseTypeRight.dyn_cast<pgx::mlir::db::DecimalType>();
+      baseType=pgx::mlir::db::DecimalType::get(baseType.getContext(),std::max(leftDecType.getP(),rightDecType.getP()),std::max(leftDecType.getS(),rightDecType.getS()));
    }
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
    return success();
 }
 
-::mlir::LogicalResult mlir::db::RuntimeCall::verify() {
-   mlir::db::RuntimeCall& runtimeCall=*this;
-   auto reg = runtimeCall.getContext()->getLoadedDialect<mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
+::mlir::LogicalResult pgx::mlir::db::RuntimeCall::verify() {
+   pgx::mlir::db::RuntimeCall& runtimeCall=*this;
+   auto reg = runtimeCall.getContext()->getLoadedDialect<pgx::mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
    if (!reg->verify(runtimeCall.fn().str(), runtimeCall.args().getTypes(), runtimeCall.getNumResults() == 1 ? runtimeCall.getResultTypes()[0] : mlir::Type())) {
       runtimeCall->emitError("could not find matching runtime function");
       return failure();
    }
    return success();
 }
-bool mlir::db::RuntimeCall::supportsInvalidValues() {
-   auto reg = getContext()->getLoadedDialect<mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
+bool pgx::mlir::db::RuntimeCall::supportsInvalidValues() {
+   auto reg = getContext()->getLoadedDialect<pgx::mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
    if (auto* fn = reg->lookup(this->fn().str())) {
       return fn->nullHandleType == RuntimeFunction::HandlesInvalidVaues;
    }
    return false;
 }
-bool mlir::db::RuntimeCall::needsNullWrap() {
-   auto reg = getContext()->getLoadedDialect<mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
+bool pgx::mlir::db::RuntimeCall::needsNullWrap() {
+   auto reg = getContext()->getLoadedDialect<pgx::mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
    if (auto* fn = reg->lookup(this->fn().str())) {
       return fn->nullHandleType != RuntimeFunction::HandlesNulls;
    }
    return false;
 }
 
-bool mlir::db::CmpOp::supportsInvalidValues() {
+bool pgx::mlir::db::CmpOp::supportsInvalidValues() {
    auto type = getBaseType(left().getType());
    if (type.isa<db::StringType>()) {
       return false;
    }
    return true;
 }
-bool mlir::db::CastOp::supportsInvalidValues() {
+bool pgx::mlir::db::CastOp::supportsInvalidValues() {
    if (getBaseType(getResult().getType()).isa<db::StringType>() || getBaseType(val().getType()).isa<db::StringType>()) {
       return false;
    }
@@ -119,11 +119,11 @@ bool mlir::db::CastOp::supportsInvalidValues() {
 }
 
 
-LogicalResult mlir::db::OrOp::canonicalize(mlir::db::OrOp orOp, mlir::PatternRewriter& rewriter) {
+LogicalResult pgx::mlir::db::OrOp::canonicalize(pgx::mlir::db::OrOp orOp, mlir::PatternRewriter& rewriter) {
    llvm::SmallDenseMap<mlir::Value, size_t> usage;
    for (auto val : orOp.vals()) {
       if (!val.getDefiningOp()) return failure();
-      if (auto andOp = mlir::dyn_cast_or_null<mlir::db::AndOp>(val.getDefiningOp())) {
+      if (auto andOp = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
          llvm::SmallPtrSet<mlir::Value, 4> alreadyUsed;
          for (auto andOperand : andOp.vals()) {
             if (!alreadyUsed.contains(andOperand)) {
@@ -139,7 +139,7 @@ LogicalResult mlir::db::OrOp::canonicalize(mlir::db::OrOp orOp, mlir::PatternRew
    llvm::SmallPtrSet<mlir::Value, 4> extracted;
    std::vector<mlir::Value> newOrOperands;
    for (auto val : orOp.vals()) {
-      if (auto andOp = mlir::dyn_cast_or_null<mlir::db::AndOp>(val.getDefiningOp())) {
+      if (auto andOp = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
          std::vector<mlir::Value> keep;
          for (auto andOperand : andOp.vals()) {
             if (usage[andOperand] == totalAnds) {
@@ -150,7 +150,7 @@ LogicalResult mlir::db::OrOp::canonicalize(mlir::db::OrOp orOp, mlir::PatternRew
          }
          if (keep.size() != andOp.vals().size()) {
             if (keep.size()) {
-               newOrOperands.push_back(rewriter.create<mlir::db::AndOp>(andOp->getLoc(), keep));
+               newOrOperands.push_back(rewriter.create<pgx::mlir::db::AndOp>(andOp->getLoc(), keep));
             }
          } else {
             newOrOperands.push_back(andOp);
@@ -163,30 +163,30 @@ LogicalResult mlir::db::OrOp::canonicalize(mlir::db::OrOp orOp, mlir::PatternRew
       if (newOrOperands.size() == 1) {
          extractedAsVec.push_back(newOrOperands[0]);
       } else if (newOrOperands.size() > 1) {
-         Value newOrOp = rewriter.create<mlir::db::OrOp>(orOp->getLoc(), newOrOperands);
+         Value newOrOp = rewriter.create<pgx::mlir::db::OrOp>(orOp->getLoc(), newOrOperands);
          extractedAsVec.push_back(newOrOp);
       }
-      rewriter.replaceOpWithNewOp<mlir::db::AndOp>(orOp, extractedAsVec);
+      rewriter.replaceOpWithNewOp<pgx::mlir::db::AndOp>(orOp, extractedAsVec);
       return success();
    } else if (newOrOperands.size() == 1) {
       rewriter.replaceOp(orOp, newOrOperands[0]);
    }
    return failure();
 }
-LogicalResult mlir::db::AndOp::canonicalize(mlir::db::AndOp andOp, mlir::PatternRewriter& rewriter) {
+LogicalResult pgx::mlir::db::AndOp::canonicalize(pgx::mlir::db::AndOp andOp, mlir::PatternRewriter& rewriter) {
    llvm::DenseSet<mlir::Value> rawValues;
-   llvm::DenseMap<mlir::Value, std::vector<mlir::db::CmpOp>> cmps;
+   llvm::DenseMap<mlir::Value, std::vector<pgx::mlir::db::CmpOp>> cmps;
    std::queue<mlir::Value> queue;
    queue.push(andOp);
    while (!queue.empty()) {
       auto current = queue.front();
       queue.pop();
       if (auto* definingOp = current.getDefiningOp()) {
-         if (auto nestedAnd = mlir::dyn_cast_or_null<mlir::db::AndOp>(definingOp)) {
+         if (auto nestedAnd = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(definingOp)) {
             for (auto v : nestedAnd.vals()) {
                queue.push(v);
             }
-         } else if (auto cmpOp = mlir::dyn_cast_or_null<mlir::db::CmpOp>(definingOp)) {
+         } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(definingOp)) {
             cmps[cmpOp.left()].push_back(cmpOp);
             cmps[cmpOp.right()].push_back(cmpOp);
             rawValues.insert(current);
@@ -199,10 +199,10 @@ LogicalResult mlir::db::AndOp::canonicalize(mlir::db::AndOp andOp, mlir::Pattern
    }
    for (auto m : cmps) {
       mlir::Value lower, upper;
-      mlir::db::CmpOp lowerCmp, upperCmp;
+      pgx::mlir::db::CmpOp lowerCmp, upperCmp;
       mlir::Value current = m.getFirst();
       if (auto* definingOp = current.getDefiningOp()) {
-         if (mlir::isa<mlir::db::ConstantOp>(definingOp)) {
+         if (mlir::isa<pgx::mlir::db::ConstantOp>(definingOp)) {
             continue;
          }
       }
@@ -232,10 +232,10 @@ LogicalResult mlir::db::AndOp::canonicalize(mlir::db::AndOp andOp, mlir::Pattern
             default: break;
          }
       }
-      if (lower && upper && lower.getDefiningOp() && upper.getDefiningOp() && mlir::isa<mlir::db::ConstantOp>(lower.getDefiningOp()) && mlir::isa<mlir::db::ConstantOp>(upper.getDefiningOp())) {
+      if (lower && upper && lower.getDefiningOp() && upper.getDefiningOp() && mlir::isa<pgx::mlir::db::ConstantOp>(lower.getDefiningOp()) && mlir::isa<pgx::mlir::db::ConstantOp>(upper.getDefiningOp())) {
          auto lowerInclusive = lowerCmp.predicate() == DBCmpPredicate::gte || lowerCmp.predicate() == DBCmpPredicate::lte;
          auto upperInclusive = upperCmp.predicate() == DBCmpPredicate::gte || upperCmp.predicate() == DBCmpPredicate::lte;
-         mlir::Value between = rewriter.create<mlir::db::BetweenOp>(lowerCmp->getLoc(), current, lower, upper, lowerInclusive, upperInclusive);
+         mlir::Value between = rewriter.create<pgx::mlir::db::BetweenOp>(lowerCmp->getLoc(), current, lower, upper, lowerInclusive, upperInclusive);
          rawValues.erase(lowerCmp);
          rawValues.erase(upperCmp);
          rawValues.insert(between);
@@ -246,7 +246,7 @@ LogicalResult mlir::db::AndOp::canonicalize(mlir::db::AndOp andOp, mlir::Pattern
       return success();
    }
    if (rawValues.size() != andOp.vals().size()) {
-      rewriter.replaceOpWithNewOp<mlir::db::AndOp>(andOp, std::vector<mlir::Value>(rawValues.begin(), rawValues.end()));
+      rewriter.replaceOpWithNewOp<pgx::mlir::db::AndOp>(andOp, std::vector<mlir::Value>(rawValues.begin(), rawValues.end()));
       return success();
    }
    return failure();

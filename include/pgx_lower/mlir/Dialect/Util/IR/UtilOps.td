@@ -13,9 +13,9 @@ let cppNamespace = "::pgx::mlir::util";
 let extraClassDeclaration = [{
 private:
 void registerTypes();
-std::shared_ptr<::mlir::util::FunctionHelper> functionHelper;
+std::shared_ptr<::pgx::mlir::util::FunctionHelper> functionHelper;
 public:
-::mlir::util::FunctionHelper& getFunctionHelper(){
+::pgx::mlir::util::FunctionHelper& getFunctionHelper(){
     return *functionHelper;
 }
 }];
@@ -138,9 +138,9 @@ let results=(outs AnyType:$val);
 let assemblyFormat = "$ref `[` $idx `]` `:`type($ref) `->` type($val) attr-dict";
 let builders = [
         OpBuilder<(ins "Value":$ref, "Value":$idx), [{
-    build($_builder, $_state, ref.getType().cast<mlir::util::RefType>().getElementType(), ref, idx);
+    build($_builder, $_state, ref.getType().cast<pgx::mlir::util::RefType>().getElementType(), ref, idx);
 }]>,OpBuilder<(ins "Value":$ref), [{
-        build($_builder, $_state, ref.getType().cast<mlir::util::RefType>().getElementType(), ref, mlir::Value());
+        build($_builder, $_state, ref.getType().cast<pgx::mlir::util::RefType>().getElementType(), ref, mlir::Value());
     }]>
 ];
 }

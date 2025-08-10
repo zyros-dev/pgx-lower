@@ -9,7 +9,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <variant>
 namespace {
-mlir::arith::CmpIPredicateAttr convertToCmpIPred(mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
+mlir::arith::CmpIPredicateAttr convertToCmpIPred(mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
    switch (p.getValue()) {
       case db::DBCmpPredicate::eq:
@@ -27,7 +27,7 @@ mlir::arith::CmpIPredicateAttr convertToCmpIPred(mlir::OpBuilder, ::mlir::db::DB
    }
    return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sge);
 }
-mlir::arith::CmpFPredicateAttr convertToCmpFPred(mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
+mlir::arith::CmpFPredicateAttr convertToCmpFPred(mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
    switch (p.getValue()) {
       case db::DBCmpPredicate::eq:
@@ -83,8 +83,8 @@ class SimplifyToArith : public mlir::PassWrapper<SimplifyToArith, mlir::Operatio
 };
 } // end anonymous namespace
 
-namespace pgx::mlir::db {
+namespace pgx::pgx::mlir::db {
 
 std::unique_ptr<::mlir::Pass> createSimplifyToArithPass() { return std::make_unique<SimplifyToArith>(); }
 
-} // end namespace pgx::mlir::db
+} // end namespace pgx::pgx::mlir::db

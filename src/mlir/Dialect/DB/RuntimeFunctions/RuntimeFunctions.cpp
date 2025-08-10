@@ -5,12 +5,12 @@
 #include "runtime/DumpRuntime.h"
 #include "runtime/StringRuntime.h"
 
-pgx::mlir::db::RuntimeFunction* pgx::mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
+pgx::pgx::mlir::db::RuntimeFunction* pgx::pgx::mlir::db::RuntimeFunctionRegistry::lookup(std::string name) {
    return registeredFunctions[name].get();
 }
 static mlir::Value dateAddImpl(mlir::OpBuilder& rewriter, mlir::ValueRange loweredArguments, mlir::TypeRange originalArgumentTypes, mlir::Type resType, mlir::TypeConverter* typeConverter,mlir::Location loc) {
    using namespace mlir;
-   if (originalArgumentTypes[1].cast<mlir::db::IntervalType>().getUnit() == mlir::db::IntervalUnitAttr::daytime) {
+   if (originalArgumentTypes[1].cast<pgx::mlir::db::IntervalType>().getUnit() == pgx::mlir::db::IntervalUnitAttr::daytime) {
       return rewriter.create<mlir::arith::AddIOp>(loc, loweredArguments);
    } else {
       return rt::DateRuntime::addMonths(rewriter, loc)(loweredArguments)[0];
@@ -26,7 +26,7 @@ static mlir::Value absIntImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lowere
 }
 static mlir::Value dateSubImpl(mlir::OpBuilder& rewriter, mlir::ValueRange loweredArguments, mlir::TypeRange originalArgumentTypes, mlir::Type resType, mlir::TypeConverter* typeConverter,mlir::Location loc) {
    using namespace mlir;
-   if (originalArgumentTypes[1].cast<mlir::db::IntervalType>().getUnit() == mlir::db::IntervalUnitAttr::daytime) {
+   if (originalArgumentTypes[1].cast<pgx::mlir::db::IntervalType>().getUnit() == pgx::mlir::db::IntervalUnitAttr::daytime) {
       return rewriter.create<mlir::arith::SubIOp>(loc, loweredArguments);
    } else {
       return rt::DateRuntime::subtractMonths(rewriter, loc)(loweredArguments)[0];
@@ -39,7 +39,7 @@ static mlir::Value matchPart(mlir::OpBuilder& builder, mlir::Location loc, mlir:
       }
       return lastMatchEnd;
    }
-   mlir::Value needleValue = builder.create<mlir::util::CreateConstVarLen>(loc, mlir::util::VarLen32Type::get(builder.getContext()), pattern);
+   mlir::Value needleValue = builder.create<pgx::mlir::util::CreateConstVarLen>(loc, pgx::mlir::util::VarLen32Type::get(builder.getContext()), pattern);
    if (lastMatchEnd) {
       mlir::Value matchEnd = rt::StringRuntime::findMatch(builder, loc)(mlir::ValueRange{str, needleValue, lastMatchEnd, end})[0];
       return builder.create<mlir::arith::IndexCastOp>(loc, builder.getIndexType(), matchEnd);
@@ -57,7 +57,7 @@ static mlir::Value constLikeImpl(mlir::OpBuilder& rewriter, mlir::ValueRange low
    using namespace mlir;
    mlir::Value str = loweredArguments[0];
    mlir::Value patternValue = loweredArguments[1];
-   if (auto constStrOp = mlir::dyn_cast_or_null<mlir::util::CreateConstVarLen>(patternValue.getDefiningOp())) {
+   if (auto constStrOp = mlir::dyn_cast_or_null<pgx::mlir::util::CreateConstVarLen>(patternValue.getDefiningOp())) {
       auto pattern = constStrOp.str().str();
       size_t pos = 0;
       std::string currentSubPattern;
@@ -88,7 +88,7 @@ static mlir::Value constLikeImpl(mlir::OpBuilder& rewriter, mlir::ValueRange low
          }
       }
       if (!currentSubPattern.empty()) {
-         mlir::Value needleValue = rewriter.create<mlir::util::CreateConstVarLen>(loc, mlir::util::VarLen32Type::get(rewriter.getContext()), currentSubPattern);
+         mlir::Value needleValue = rewriter.create<pgx::mlir::util::CreateConstVarLen>(loc, pgx::mlir::util::VarLen32Type::get(rewriter.getContext()), currentSubPattern);
          mlir::Value endsWith = rt::StringRuntime::endsWith(rewriter, loc)({str, needleValue})[0];
          if (lastMatchEnd) {
             mlir::Value patternLength = rewriter.create<mlir::arith::ConstantIndexOp>(loc, currentSubPattern.size());
@@ -110,14 +110,14 @@ static mlir::Value dumpValuesImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lo
    using namespace mlir;
    auto i128Type = IntegerType::get(rewriter.getContext(), 128);
    auto i64Type = IntegerType::get(rewriter.getContext(), 64);
-   auto nullableType = originalArgumentTypes[0].dyn_cast_or_null<mlir::db::NullableType>();
+   auto nullableType = originalArgumentTypes[0].dyn_cast_or_null<pgx::mlir::db::NullableType>();
    auto baseType = getBaseType(originalArgumentTypes[0]);
 
    auto f64Type = FloatType::getF64(rewriter.getContext());
    Value isNull;
    Value val;
    if (nullableType) {
-      auto unPackOp = rewriter.create<mlir::util::UnPackOp>(loc, loweredArguments[0]);
+      auto unPackOp = rewriter.create<pgx::mlir::util::UnPackOp>(loc, loweredArguments[0]);
       isNull = unPackOp.vals()[0];
       val = unPackOp.vals()[1];
    } else {
@@ -138,7 +138,7 @@ static mlir::Value dumpValuesImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lo
          val = rewriter.create<arith::ExtUIOp>(loc, i64Type, val);
       }
       rt::DumpRuntime::dumpUInt(rewriter, loc)({isNull, val});
-   } else if (auto decType = baseType.dyn_cast_or_null<mlir::db::DecimalType>()) {
+   } else if (auto decType = baseType.dyn_cast_or_null<pgx::mlir::db::DecimalType>()) {
       if (typeConverter->convertType(decType).cast<mlir::IntegerType>().getWidth() < 128) {
          auto converted = rewriter.create<arith::ExtSIOp>(loc, rewriter.getIntegerType(128), val);
          val = converted;
@@ -149,17 +149,17 @@ static mlir::Value dumpValuesImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lo
       Value high = rewriter.create<arith::ShRUIOp>(loc, i128Type, val, shift);
       high = rewriter.create<arith::TruncIOp>(loc, i64Type, high);
       rt::DumpRuntime::dumpDecimal(rewriter, loc)({isNull, low, high, scale});
-   } else if (auto dateType = baseType.dyn_cast_or_null<mlir::db::DateType>()) {
+   } else if (auto dateType = baseType.dyn_cast_or_null<pgx::mlir::db::DateType>()) {
       rt::DumpRuntime::dumpDate(rewriter, loc)({isNull, val});
-   } else if (auto timestampType = baseType.dyn_cast_or_null<mlir::db::TimestampType>()) {
+   } else if (auto timestampType = baseType.dyn_cast_or_null<pgx::mlir::db::TimestampType>()) {
       switch (timestampType.getUnit()) {
-         case mlir::db::TimeUnitAttr::second: rt::DumpRuntime::dumpTimestampSecond(rewriter, loc)({isNull, val}); break;
-         case mlir::db::TimeUnitAttr::millisecond: rt::DumpRuntime::dumpTimestampMilliSecond(rewriter, loc)({isNull, val}); break;
-         case mlir::db::TimeUnitAttr::microsecond: rt::DumpRuntime::dumpTimestampMicroSecond(rewriter, loc)({isNull, val}); break;
-         case mlir::db::TimeUnitAttr::nanosecond: rt::DumpRuntime::dumpTimestampNanoSecond(rewriter, loc)({isNull, val}); break;
+         case pgx::mlir::db::TimeUnitAttr::second: rt::DumpRuntime::dumpTimestampSecond(rewriter, loc)({isNull, val}); break;
+         case pgx::mlir::db::TimeUnitAttr::millisecond: rt::DumpRuntime::dumpTimestampMilliSecond(rewriter, loc)({isNull, val}); break;
+         case pgx::mlir::db::TimeUnitAttr::microsecond: rt::DumpRuntime::dumpTimestampMicroSecond(rewriter, loc)({isNull, val}); break;
+         case pgx::mlir::db::TimeUnitAttr::nanosecond: rt::DumpRuntime::dumpTimestampNanoSecond(rewriter, loc)({isNull, val}); break;
       }
-   } else if (auto intervalType = baseType.dyn_cast_or_null<mlir::db::IntervalType>()) {
-      if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
+   } else if (auto intervalType = baseType.dyn_cast_or_null<pgx::mlir::db::IntervalType>()) {
+      if (intervalType.getUnit() == pgx::mlir::db::IntervalUnitAttr::months) {
          rt::DumpRuntime::dumpIntervalMonths(rewriter, loc)({isNull, val});
       } else {
          rt::DumpRuntime::dumpIntervalDaytime(rewriter, loc)({isNull, val});
@@ -169,9 +169,9 @@ static mlir::Value dumpValuesImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lo
          val = rewriter.create<arith::ExtFOp>(loc, f64Type, val);
       }
       rt::DumpRuntime::dumpFloat(rewriter, loc)({isNull, val});
-   } else if (baseType.isa<mlir::db::StringType>()) {
+   } else if (baseType.isa<pgx::mlir::db::StringType>()) {
       rt::DumpRuntime::dumpString(rewriter, loc)({isNull, val});
-   } else if (auto charType = baseType.dyn_cast_or_null<mlir::db::CharType>()) {
+   } else if (auto charType = baseType.dyn_cast_or_null<pgx::mlir::db::CharType>()) {
       Value numBytes = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64IntegerAttr(charType.getBytes()));
       if (charType.getBytes() < 8) {
          val = rewriter.create<arith::ExtSIOp>(loc, i64Type, val);
@@ -180,7 +180,7 @@ static mlir::Value dumpValuesImpl(mlir::OpBuilder& rewriter, mlir::ValueRange lo
    }
    return mlir::Value();
 }
-std::shared_ptr<pgx::mlir::db::RuntimeFunctionRegistry> pgx::mlir::db::RuntimeFunctionRegistry::getBuiltinRegistry(mlir::MLIRContext* context) {
+std::shared_ptr<pgx::pgx::mlir::db::RuntimeFunctionRegistry> pgx::pgx::mlir::db::RuntimeFunctionRegistry::getBuiltinRegistry(mlir::MLIRContext* context) {
    auto builtinRegistry = std::make_shared<RuntimeFunctionRegistry>(context);
    builtinRegistry->add("DumpValue").handlesNulls().matchesTypes({RuntimeFunction::anyType}, RuntimeFunction::noReturnType).implementedAs(dumpValuesImpl);
    auto resTypeIsI64 = [](mlir::Type t, mlir::TypeRange) { return t.isInteger(64); };

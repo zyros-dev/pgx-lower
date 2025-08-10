@@ -17,6 +17,6 @@ void pgx::mlir::util::UtilDialect::initialize() {
       >();
    addInterfaces<UtilInlinerInterface>();
    registerTypes();
-   functionHelper = std::make_shared<::mlir::util::FunctionHelper>();
+   functionHelper = std::make_shared<::pgx::mlir::util::FunctionHelper>();
 }
 #include "mlir/Dialect/Util/IR/UtilOpsDialect.cpp.inc"

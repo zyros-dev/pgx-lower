@@ -11,16 +11,16 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
    virtual llvm::StringRef getArgument() const override { return "relalg-optimize-implementations"; }
 
    public:
-   bool hashImplPossible(mlir::Block* block, mlir::relalg::ColumnSet availableLeft, mlir::relalg::ColumnSet availableRight) { //todo: does not work always
-      llvm::DenseMap<mlir::Value, mlir::relalg::ColumnSet> required;
-      mlir::relalg::ColumnSet leftKeys, rightKeys;
+   bool hashImplPossible(mlir::Block* block, pgx::mlir::relalg::ColumnSet availableLeft, pgx::mlir::relalg::ColumnSet availableRight) { //todo: does not work always
+      llvm::DenseMap<mlir::Value, pgx::mlir::relalg::ColumnSet> required;
+      pgx::mlir::relalg::ColumnSet leftKeys, rightKeys;
       std::vector<mlir::Type> types;
       bool res = false;
       block->walk([&](mlir::Operation* op) {
-         if (auto getAttr = mlir::dyn_cast_or_null<mlir::relalg::GetColumnOp>(op)) {
-            required.insert({getAttr.getResult(), mlir::relalg::ColumnSet::from(getAttr.attr())});
-         } else if (auto cmpOp = mlir::dyn_cast_or_null<mlir::relalg::CmpOpInterface>(op)) {
-            if (cmpOp.isEqualityPred() && mlir::relalg::HashJoinUtils::isAndedResult(op)) {
+         if (auto getAttr = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
+            required.insert({getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.attr())});
+         } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
+            if (cmpOp.isEqualityPred() && pgx::mlir::relalg::HashJoinUtils::isAndedResult(op)) {
                auto leftAttributes = required[cmpOp.getLeft()];
                auto rightAttributes = required[cmpOp.getRight()];
                if (leftAttributes.isSubsetOf(availableLeft) && rightAttributes.isSubsetOf(availableRight)) {
@@ -30,7 +30,7 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
                }
             }
          } else {
-            mlir::relalg::ColumnSet attributes;
+            pgx::mlir::relalg::ColumnSet attributes;
             for (auto operand : op->getOperands()) {
                if (required.count(operand)) {
                   attributes.insert(required[operand]);
@@ -46,7 +46,7 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
    void runOnOperation() override {
       getOperation().walk([&](Operator op) {
          ::llvm::TypeSwitch<mlir::Operation*, void>(op.getOperation())
-            .Case<mlir::relalg::InnerJoinOp, mlir::relalg::MarkJoinOp,mlir::relalg::CollectionJoinOp>([&](PredicateOperator predicateOperator) {
+            .Case<pgx::mlir::relalg::InnerJoinOp, pgx::mlir::relalg::MarkJoinOp,pgx::mlir::relalg::CollectionJoinOp>([&](PredicateOperator predicateOperator) {
                auto binOp = mlir::cast<BinaryOperator>(predicateOperator.getOperation());
                auto left = mlir::cast<Operator>(binOp.leftChild());
                auto right = mlir::cast<Operator>(binOp.rightChild());
@@ -54,7 +54,7 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
                   op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "hash"));
                }
             })
-            .Case<mlir::relalg::SemiJoinOp, mlir::relalg::AntiSemiJoinOp, mlir::relalg::OuterJoinOp>([&](PredicateOperator predicateOperator) {
+            .Case<pgx::mlir::relalg::SemiJoinOp, pgx::mlir::relalg::AntiSemiJoinOp, pgx::mlir::relalg::OuterJoinOp>([&](PredicateOperator predicateOperator) {
                auto binOp = mlir::cast<BinaryOperator>(predicateOperator.getOperation());
                auto left = mlir::cast<Operator>(binOp.leftChild());
                auto right = mlir::cast<Operator>(binOp.rightChild());
@@ -82,8 +82,8 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
                   }
                }
             })
-            .Case<mlir::relalg::SingleJoinOp>([&](mlir::relalg::SingleJoinOp op) {
-               if (auto returnOp = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(op.getPredicateBlock().getTerminator())) {
+            .Case<pgx::mlir::relalg::SingleJoinOp>([&](pgx::mlir::relalg::SingleJoinOp op) {
+               if (auto returnOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(op.getPredicateBlock().getTerminator())) {
                   if (returnOp.results().empty()) {
                      op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "constant"));
                   }
@@ -95,8 +95,8 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
                }
             })
 
-            .Case<mlir::relalg::OuterJoinOp>([&](mlir::relalg::OuterJoinOp op) {})
-            .Case<mlir::relalg::FullOuterJoinOp>([&](mlir::relalg::FullOuterJoinOp op) {})
+            .Case<pgx::mlir::relalg::OuterJoinOp>([&](pgx::mlir::relalg::OuterJoinOp op) {})
+            .Case<pgx::mlir::relalg::FullOuterJoinOp>([&](pgx::mlir::relalg::FullOuterJoinOp op) {})
 
             .Default([&](auto x) {
             });

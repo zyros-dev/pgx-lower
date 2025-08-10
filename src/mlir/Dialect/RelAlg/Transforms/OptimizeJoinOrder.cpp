@@ -16,12 +16,12 @@ class OptimizeJoinOrder : public mlir::PassWrapper<OptimizeJoinOrder, mlir::Oper
 
    bool isUnsupportedOp(mlir::Operation* op) {
       return ::llvm::TypeSwitch<mlir::Operation*, bool>(op)
-         .Case<mlir::relalg::CrossProductOp, mlir::relalg::SelectionOp>(
+         .Case<pgx::mlir::relalg::CrossProductOp, pgx::mlir::relalg::SelectionOp>(
             [&](mlir::Operation* op) {
                return false;
             })
          .Case<BinaryOperator>([&](mlir::Operation* op) {
-            if (mlir::relalg::detail::isJoin(op)) {
+            if (pgx::mlir::relalg::detail::isJoin(op)) {
                Operator asOperator = mlir::cast<Operator>(op);
                auto subOps = asOperator.getAllSubOperators();
                auto used = asOperator.getUsedColumns();
@@ -65,18 +65,18 @@ class OptimizeJoinOrder : public mlir::PassWrapper<OptimizeJoinOrder, mlir::Oper
          return op;
       } else {
          //generate querygraph
-         mlir::relalg::QueryGraphBuilder queryGraphBuilder(op, alreadyOptimized);
+         pgx::mlir::relalg::QueryGraphBuilder queryGraphBuilder(op, alreadyOptimized);
          queryGraphBuilder.generate();
-         mlir::relalg::QueryGraph& queryGraph = queryGraphBuilder.getQueryGraph();
+         pgx::mlir::relalg::QueryGraph& queryGraph = queryGraphBuilder.getQueryGraph();
          queryGraph.estimate();
          //queryGraph.dump();
          //enumerates possible plans and find best one
-         std::shared_ptr<mlir::relalg::Plan> solution;
-         mlir::relalg::DPHyp solver(queryGraph);
+         std::shared_ptr<pgx::mlir::relalg::Plan> solution;
+         pgx::mlir::relalg::DPHyp solver(queryGraph);
          if (solver.countSubGraphs(1000) < 1000) {
             solution = solver.solve();
          } else {
-            mlir::relalg::GOO fallBackSolver(queryGraph);
+            pgx::mlir::relalg::GOO fallBackSolver(queryGraph);
             solution = fallBackSolver.solve();
          }
          if (!solution) {

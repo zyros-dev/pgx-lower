@@ -22,7 +22,7 @@ struct AnyMatcher : public Matcher {
 };
 std::optional<std::string> getConstantString(mlir::Value v) {
    if (auto* defOp = v.getDefiningOp()) {
-      if (auto constOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(defOp)) {
+      if (auto constOp = mlir::dyn_cast_or_null<pgx::mlir::db::ConstantOp>(defOp)) {
          if (auto strAttr = constOp.getValue().dyn_cast<mlir::StringAttr>()) {
             return strAttr.str();
          }
@@ -56,9 +56,9 @@ class ReplaceFnWithFn : public mlir::RewritePattern {
    std::vector<std::shared_ptr<Matcher>> matchers;
 
    public:
-   ReplaceFnWithFn(mlir::MLIRContext* context, std::string funcName, std::vector<std::shared_ptr<Matcher>> matchers, std::string newFuncName) : RewritePattern(mlir::db::RuntimeCall::getOperationName(), mlir::PatternBenefit(1), context), funcName(funcName), newFuncName(newFuncName), matchers(matchers) {}
+   ReplaceFnWithFn(mlir::MLIRContext* context, std::string funcName, std::vector<std::shared_ptr<Matcher>> matchers, std::string newFuncName) : RewritePattern(pgx::mlir::db::RuntimeCall::getOperationName(), mlir::PatternBenefit(1), context), funcName(funcName), newFuncName(newFuncName), matchers(matchers) {}
    mlir::LogicalResult match(mlir::Operation* op) const override {
-      auto runtimeCall = mlir::cast<mlir::db::RuntimeCall>(op);
+      auto runtimeCall = mlir::cast<pgx::mlir::db::RuntimeCall>(op);
       if (runtimeCall.fn().str() != funcName) { return mlir::failure(); }
       if (runtimeCall.args().size() != matchers.size()) { return mlir::failure(); }
       for (size_t i = 0; i < runtimeCall.args().size(); ++i) {
@@ -69,14 +69,14 @@ class ReplaceFnWithFn : public mlir::RewritePattern {
 
    void rewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
       std::vector<mlir::Value> values;
-      auto runtimeCall = mlir::cast<mlir::db::RuntimeCall>(op);
+      auto runtimeCall = mlir::cast<pgx::mlir::db::RuntimeCall>(op);
       for (size_t i = 0; i < runtimeCall.args().size(); ++i) {
          if (matchers[i]->skip()) {
             continue;
          }
          values.push_back(runtimeCall.args()[i]);
       }
-      rewriter.replaceOpWithNewOp<mlir::db::RuntimeCall>(op, op->getResultTypes(), newFuncName, mlir::ValueRange{values});
+      rewriter.replaceOpWithNewOp<pgx::mlir::db::RuntimeCall>(op, op->getResultTypes(), newFuncName, mlir::ValueRange{values});
    }
 };
 //Pattern that optimizes the join order
@@ -100,8 +100,8 @@ class OptimizeRuntimeFunctions : public mlir::PassWrapper<OptimizeRuntimeFunctio
 };
 } // end anonymous namespace
 
-namespace pgx::mlir::db {
+namespace pgx::pgx::mlir::db {
 
 std::unique_ptr<::mlir::Pass> createOptimizeRuntimeFunctionsPass() { return std::make_unique<OptimizeRuntimeFunctions>(); }
 
-} // end namespace pgx::mlir::db
+} // end namespace pgx::pgx::mlir::db
