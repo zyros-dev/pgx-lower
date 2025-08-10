@@ -35,7 +35,7 @@ void createLowerRelAlgPipeline(mlir::OpPassManager& pm) {
 
 // DB → Standard MLIR + PostgreSQL SPI Pipeline
 void createLowerDBPipeline(mlir::OpPassManager& pm) {
-    pm.addPass(createDBToStdPass());
+    pm.addPass(mlir::db::createLowerToStdPass());
     pm.addPass(mlir::createCanonicalizerPass());
 }
 

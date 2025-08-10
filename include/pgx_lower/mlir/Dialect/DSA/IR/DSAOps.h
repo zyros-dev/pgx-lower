@@ -1,34 +1,22 @@
-#ifndef PGX_DIALECT_DSA_IR_DSAOPS_H
-#define PGX_DIALECT_DSA_IR_DSAOPS_H
+#ifndef MLIR_DIALECT_DSA_IR_DSAOPS_H
+#define MLIR_DIALECT_DSA_IR_DSAOPS_H
 
-#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
-#include "mlir/IR/Value.h"
-#include "mlir/IR/Block.h"
-#include "mlir/IR/Operation.h"
-#include "mlir/IR/Attributes.h"
-#include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
-#include "mlir/Interfaces/ControlFlowInterfaces.h"
-#include "mlir/Bytecode/BytecodeOpInterface.h"
-#include <optional>
 
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "mlir/Dialect/DSA/IR/DSACollectionType.h"
+#include "mlir/Dialect/DSA/IR/DSAOpsEnums.h"
+#include "mlir/Dialect/DSA/IR/DSAOpsInterfaces.h"
+#include "mlir/Dialect/DSA/IR/DSATypes.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
 
-// Add proper namespace imports for Properties system
-namespace pgx {
-namespace mlir {
-using ::mlir::Attribute;
-using ::mlir::Type;
-using ::mlir::Value;
-} // namespace mlir
-} // namespace pgx
-
-#define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/DSA/IR/DSAOpsTypes.h.inc"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Builders.h"
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/DSA/IR/DSAOps.h.inc"
-
-#endif // PGX_DIALECT_DSA_IR_DSAOPS_H
+mlir::Type getBaseType(mlir::Type t);
+bool isIntegerType(mlir::Type, unsigned int width);
+int getIntegerWidth(mlir::Type, bool isUnSigned);
+#endif // MLIR_DIALECT_DSA_IR_DSAOPS_H

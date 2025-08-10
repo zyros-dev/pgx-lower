@@ -1,24 +1,10 @@
-#ifndef PGX_LOWER_MLIR_DIALECT_RELALG_IR_COLUMN_H
-#define PGX_LOWER_MLIR_DIALECT_RELALG_IR_COLUMN_H
-
+#ifndef MLIR_DIALECT_RELALG_IR_COLUMN_H
+#define MLIR_DIALECT_RELALG_IR_COLUMN_H
 #include <mlir/IR/Types.h>
-#include <string>
-
-namespace pgx {
-namespace mlir {
-namespace relalg {
-
-// Column represents a single column in a relation with its type information
-// This matches the LingoDB pattern where Column contains just the type
+namespace mlir::relalg {
 struct Column {
-    ::mlir::Type type;
-    
-    Column() = default;
-    explicit Column(::mlir::Type t) : type(t) {}
+  mlir::Type type;
 };
+} // namespace mlir::relalg
 
-} // namespace relalg
-} // namespace mlir
-} // namespace pgx
-
-#endif // PGX_LOWER_MLIR_DIALECT_RELALG_IR_COLUMN_H
+#endif // MLIR_DIALECT_RELALG_IR_COLUMN_H
