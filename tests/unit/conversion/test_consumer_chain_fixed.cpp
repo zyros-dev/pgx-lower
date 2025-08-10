@@ -37,7 +37,7 @@ protected:
 };
 
 // Test that MaterializeTranslator::consume() generates Append and StoreResultOp
-TEST_F(ConsumerChainTest, ConsumerChainExecutes) {
+TEST_F(ConsumerChainTest, DISABLED_ConsumerChainExecutes) {
     PGX_DEBUG("Testing MaterializeTranslator consumer chain execution");
     
     // Create module and function

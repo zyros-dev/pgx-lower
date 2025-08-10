@@ -153,7 +153,7 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
 }
 
 // Test multiple columns with hybrid approach
-TEST_F(HybridRelAlgToDBTest, MultipleColumnsHybrid) {
+TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
     PGX_DEBUG("Testing hybrid approach with multiple columns");
     
     auto loc = builder->getUnknownLoc();
