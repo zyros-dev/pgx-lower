@@ -124,7 +124,7 @@ public:
         
         // Insert each value
         unsigned pos = 0;
-        for (auto val : adaptor.getValues()) {
+        for (auto val : adaptor.getVals()) {
             result = rewriter.create<LLVM::InsertValueOp>(packOp->getLoc(), result, val, pos++);
         }
         
@@ -142,7 +142,7 @@ public:
                                   ConversionPatternRewriter &rewriter) const override {
         auto resType = typeConverter->convertType(getTupleOp.getType());
         
-        auto index = getTupleOp.getIndex();
+        auto index = getTupleOp.getOffset();
         MLIR_PGX_DEBUG("UtilToLLVM", "Lowering util.get_tuple");
         
         rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(

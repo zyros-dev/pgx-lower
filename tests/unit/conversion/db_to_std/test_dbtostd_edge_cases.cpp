@@ -219,7 +219,7 @@ TEST_F(DBToStdEdgeCaseTest, ProperNullableTypeHandling) {
             foundGetTuple = true;
             // Verify it's extracting from index 0 (the value)
             if (auto getTupleOp = dyn_cast<pgx::mlir::util::GetTupleOp>(op)) {
-                EXPECT_EQ(getTupleOp.getIndex(), 0) << "Should extract value at index 0";
+                EXPECT_EQ(getTupleOp.getOffset(), 0) << "Should extract value at index 0";
             }
         }
     });
