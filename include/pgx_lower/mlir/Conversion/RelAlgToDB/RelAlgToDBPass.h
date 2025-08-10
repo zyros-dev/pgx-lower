@@ -1,12 +1,15 @@
-#ifndef PGX_LOWER_MLIR_CONVERSION_RELALGTODB_RELALGTODBPASS_H
-#define PGX_LOWER_MLIR_CONVERSION_RELALGTODB_RELALGTODBPASS_H
+#ifndef MLIR_CONVERSION_RELALGTODB_RELALGTODBPASS_H
+#define MLIR_CONVERSION_RELALGTODB_RELALGTODBPASS_H
 
 #include "mlir/Pass/Pass.h"
+#include <memory>
 
-namespace pgx::mlir::relalg {
+namespace mlir {
+    namespace relalg {
+        std::unique_ptr<Pass> createLowerToDBPass();
+        void registerRelAlgConversionPasses();
+        void createLowerRelAlgPipeline(mlir::OpPassManager& pm);
+    }// end namespace relalg
+}// end namespace mlir
 
-std::unique_ptr<::mlir::Pass> createRelAlgToDBPass();
-
-} // namespace pgx::mlir::relalg
-
-#endif // PGX_LOWER_MLIR_CONVERSION_RELALGTODB_RELALGTODBPASS_H
+#endif // MLIR_CONVERSION_RELALGTODB_RELALGTODBPASS_H

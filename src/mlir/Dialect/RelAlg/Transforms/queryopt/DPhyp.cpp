@@ -50,7 +50,7 @@ void pgx::mlir::relalg::DPHyp::emitCsg(NodeSet s1) {
 static std::shared_ptr<pgx::mlir::relalg::Plan> createInitialPlan(pgx::mlir::relalg::QueryGraph::Node& n) {
    std::string description = std::to_string(n.id);
    if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(n.op.getOperation())) {
-      description = baseTableOp.getTableIdentifier().str();
+      description = baseTableOp.table_identifier().str();
    }
    auto currPlan = std::make_shared<pgx::mlir::relalg::Plan>(n.op, std::vector<std::shared_ptr<pgx::mlir::relalg::Plan>>({}), std::vector<Operator>({n.additionalPredicates}), n.rows * n.selectivity);
    currPlan->setDescription(description);

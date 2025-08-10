@@ -1,129 +1,86 @@
-#ifndef PGX_LOWER_MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H
-#define PGX_LOWER_MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H
-
+#ifndef MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H
+#define MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H
 #include "mlir/Conversion/RelAlgToDB/TranslatorContext.h"
 #include "mlir/Dialect/RelAlg/ColumnSet.h"
-#include "mlir/Dialect/RelAlg/IR/Column.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/Value.h"
-#include <vector>
 
-namespace pgx {
 namespace mlir {
 namespace relalg {
-
-// OrderedAttributes maintains an ordered list of columns with their types
-// Used to manage column resolution and tuple type construction
 class OrderedAttributes {
-private:
-    std::vector<::mlir::Type> types;
-    std::vector<const Column*> attrs;
+   std::vector<Type> types;
+   std::vector<const pgx::mlir::relalg::Column*> attrs;
 
-public:
-    // Constructors
-    OrderedAttributes() = default;
-    
-    // Create from a ColumnSet (converts to ordered)
-    static OrderedAttributes fromColumns(const ColumnSet& columnSet) {
-        OrderedAttributes res;
-        for (auto* attr : columnSet) {
-            res.insert(attr);
-        }
-        return res;
-    }
-    
-    // Create from a vector of columns
-    static OrderedAttributes fromVec(const std::vector<const Column*>& vec) {
-        OrderedAttributes res;
-        for (auto* attr : vec) {
-            res.insert(attr);
-        }
-        return res;
-    }
-    
-    // Create from an ArrayAttr containing ColumnRefAttr/ColumnDefAttr
-    static OrderedAttributes fromRefArr(::mlir::ArrayAttr arrayAttr) {
-        OrderedAttributes res;
-        for (auto attr : arrayAttr) {
-            if (auto attrRef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>()) {
-                res.insert(&attrRef.getColumn());
-            }
-            if (auto attrDef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>()) {
-                res.insert(&attrDef.getColumn());
-            }
-        }
-        return res;
-    }
-    
-    // Resolve a column at a specific position to its corresponding value
-    ::mlir::Value resolve(TranslatorContext& context, size_t pos) {
-        assert(pos < attrs.size() && "Position out of bounds");
-        auto val = context.getUnsafeValueForAttribute(attrs[pos]);
-        assert(val && "Column value not found in context - translator didn't set value");
-        return val;
-    }
-    
-    // Insert a new column with its type
-    size_t insert(const Column* attr, ::mlir::Type alternativeType = {}) {
-        attrs.push_back(attr);
-        if (attr && attr->type) {
-            types.push_back(attr->type);
-        } else {
-            assert(alternativeType && "Must provide type when column has no type");
-            types.push_back(alternativeType);
-        }
-        return attrs.size() - 1;
-    }
-    
-    // Get tuple type representing all columns
-    ::mlir::TupleType getTupleType(::mlir::MLIRContext* ctxt, 
-                                   const std::vector<::mlir::Type>& additional = {}) {
-        std::vector<::mlir::Type> allTypes(additional);
-        allTypes.insert(allTypes.end(), types.begin(), types.end());
-        return ::mlir::TupleType::get(ctxt, allTypes);
-    }
-    
-    // Set values for all columns in the context
-    void setValuesForColumns(TranslatorContext& context, 
-                           TranslatorContext::AttributeResolverScope& scope, 
-                           ::mlir::ValueRange values) {
-        assert(values.size() == attrs.size() && "Value count mismatch");
-        for (size_t i = 0; i < attrs.size(); i++) {
-            if (attrs[i]) {
-                context.setValueForAttribute(scope, attrs[i], values[i]);
-            }
-        }
-    }
-    
-    // Getters
-    const std::vector<const Column*>& getAttrs() const {
-        return attrs;
-    }
-    
-    const std::vector<::mlir::Type>& getTypes() const {
-        return types;
-    }
-    
-    size_t size() const {
-        return attrs.size();
-    }
-    
-    // Get position of a specific column
-    size_t getPos(const Column* attr) const {
-        auto it = std::find(attrs.begin(), attrs.end(), attr);
-        return it != attrs.end() ? std::distance(attrs.begin(), it) : size();
-    }
-    
-    // Check if contains a column
-    bool contains(const Column* attr) const {
-        return std::find(attrs.begin(), attrs.end(), attr) != attrs.end();
-    }
+   public:
+   static OrderedAttributes fromRefArr(ArrayAttr arrayAttr) {
+      OrderedAttributes res;
+      for (auto attr : arrayAttr) {
+         if (auto attrRef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>()) {
+            res.insert(&attrRef.getColumn());
+         }
+         if (auto attrDef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>()) {
+            res.insert(&attrDef.getColumn());
+         }
+      }
+      return res;
+   }
+   static OrderedAttributes fromColumns(pgx::mlir::relalg::ColumnSet attrs) {
+      OrderedAttributes res;
+      for (auto* attr : attrs) {
+         res.insert(attr);
+      }
+      return res;
+   }
+   static OrderedAttributes fromVec(std::vector<const pgx::mlir::relalg::Column*> vec) {
+      OrderedAttributes res;
+      for (auto* attr : vec) {
+         res.insert(attr);
+      }
+      return res;
+   }
+   mlir::Value resolve(TranslatorContext& context, size_t pos) {
+      return context.getValueForAttribute(attrs[pos]);
+   }
+   mlir::Value pack(TranslatorContext& context, OpBuilder& builder, Location loc, std::vector<Value> additional = {}) {
+      std::vector<Value> values(additional);
+      for (size_t i = 0; i < attrs.size(); i++) {
+         values.push_back(resolve(context, i));
+      }
+      if (values.size() == 0) {
+         return builder.create<pgx::mlir::util::UndefOp>(loc, mlir::TupleType::get(builder.getContext()));
+      }
+      return builder.create<pgx::mlir::util::PackOp>(loc, values);
+   }
+
+   size_t insert(const pgx::mlir::relalg::Column* attr, Type alternativeType = {}) {
+      attrs.push_back(attr);
+      if (attr) {
+         types.push_back(attr->type);
+      } else {
+         types.push_back(alternativeType);
+      }
+      return attrs.size() - 1;
+   }
+   mlir::TupleType getTupleType(mlir::MLIRContext* ctxt, std::vector<Type> additional = {}) {
+      std::vector<Type> tps(additional);
+      tps.insert(tps.end(), types.begin(), types.end());
+      return mlir::TupleType::get(ctxt, tps);
+   }
+   void setValuesForColumns(TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope, ValueRange values) {
+      for (size_t i = 0; i < attrs.size(); i++) {
+         if (attrs[i]) {
+            context.setValueForAttribute(scope, attrs[i], values[i]);
+         }
+      }
+   }
+   const std::vector<const pgx::mlir::relalg::Column*>& getAttrs() const {
+      return attrs;
+   }
+   size_t getPos(const pgx::mlir::relalg::Column* attr) {
+      return std::find(attrs.begin(), attrs.end(), attr) - attrs.begin();
+   }
 };
-
-} // namespace relalg
-} // namespace mlir
-} // namespace pgx
-
-#endif // PGX_LOWER_MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H
+} // end namespace relalg
+} // end namespace mlir
+#endif // MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H

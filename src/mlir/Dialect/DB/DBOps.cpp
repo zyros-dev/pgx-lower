@@ -9,12 +9,11 @@
 #include <llvm/Support/Debug.h>
 #include <queue>
 using namespace mlir;
-// These implementations are provided by the interface, commenting out to avoid redefinition
-// bool pgx::mlir::db::CmpOp::isEqualityPred() { return getPredicate() == pgx::mlir::db::DBCmpPredicate::eq; }
-// bool pgx::mlir::db::CmpOp::isLessPred(bool eq) { return getPredicate() == (eq ? pgx::mlir::db::DBCmpPredicate::lte : pgx::mlir::db::DBCmpPredicate::lt); }
-// bool pgx::mlir::db::CmpOp::isGreaterPred(bool eq) { return getPredicate() == (eq ? pgx::mlir::db::DBCmpPredicate::gte : pgx::mlir::db::DBCmpPredicate::gt); }
-// mlir::Value pgx::mlir::db::CmpOp::getLeft() { return getLeft(); }
-// mlir::Value pgx::mlir::db::CmpOp::getRight() { return getRight(); }
+bool pgx::mlir::db::CmpOp::isEqualityPred() { return predicate() == pgx::mlir::db::DBCmpPredicate::eq; }
+bool pgx::mlir::db::CmpOp::isLessPred(bool eq) { return predicate() == (eq ? pgx::mlir::db::DBCmpPredicate::lte : pgx::mlir::db::DBCmpPredicate::lt); }
+bool pgx::mlir::db::CmpOp::isGreaterPred(bool eq) { return predicate() == (eq ? pgx::mlir::db::DBCmpPredicate::gte : pgx::mlir::db::DBCmpPredicate::gt); }
+mlir::Value pgx::mlir::db::CmpOp::getLeft() { return left(); }
+mlir::Value pgx::mlir::db::CmpOp::getRight() { return right(); }
 static Type wrapNullableType(MLIRContext* context, Type type, ValueRange values) {
    if (llvm::any_of(values, [](Value v) { return v.getType().isa<pgx::mlir::db::NullableType>(); })) {
       return pgx::mlir::db::NullableType::get(type);
@@ -38,7 +37,7 @@ int getIntegerWidth(mlir::Type type, bool isUnSigned) {
    }
    return 0;
 }
-LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+LogicalResult inferReturnType(MLIRContext* context, Optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
@@ -54,7 +53,7 @@ LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> loca
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
    return success();
 }
-LogicalResult inferMulReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+LogicalResult inferMulReturnType(MLIRContext* context, Optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
@@ -68,7 +67,7 @@ LogicalResult inferMulReturnType(MLIRContext* context, std::optional<Location> l
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
    return success();
 }
-LogicalResult inferDivReturnType(MLIRContext* context, std::optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
+LogicalResult inferDivReturnType(MLIRContext* context, Optional<Location> location, ValueRange operands, SmallVectorImpl<Type>& inferredReturnTypes) {
    Type baseTypeLeft = getBaseType(operands[0].getType());
    Type baseTypeRight = getBaseType(operands[1].getType());
    Type baseType=baseTypeLeft;
@@ -84,7 +83,7 @@ LogicalResult inferDivReturnType(MLIRContext* context, std::optional<Location> l
 ::mlir::LogicalResult pgx::mlir::db::RuntimeCall::verify() {
    pgx::mlir::db::RuntimeCall& runtimeCall=*this;
    auto reg = runtimeCall.getContext()->getLoadedDialect<pgx::mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
-   if (!reg->verify(runtimeCall.getFn().str(), runtimeCall.getArgs().getTypes(), runtimeCall.getNumResults() == 1 ? runtimeCall.getResultTypes()[0] : mlir::Type())) {
+   if (!reg->verify(runtimeCall.fn().str(), runtimeCall.args().getTypes(), runtimeCall.getNumResults() == 1 ? runtimeCall.getResultTypes()[0] : mlir::Type())) {
       runtimeCall->emitError("could not find matching runtime function");
       return failure();
    }
@@ -92,28 +91,28 @@ LogicalResult inferDivReturnType(MLIRContext* context, std::optional<Location> l
 }
 bool pgx::mlir::db::RuntimeCall::supportsInvalidValues() {
    auto reg = getContext()->getLoadedDialect<pgx::mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
-   if (auto* fn = reg->lookup(this->getFn().str())) {
+   if (auto* fn = reg->lookup(this->fn().str())) {
       return fn->nullHandleType == RuntimeFunction::HandlesInvalidVaues;
    }
    return false;
 }
 bool pgx::mlir::db::RuntimeCall::needsNullWrap() {
    auto reg = getContext()->getLoadedDialect<pgx::mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
-   if (auto* fn = reg->lookup(this->getFn().str())) {
+   if (auto* fn = reg->lookup(this->fn().str())) {
       return fn->nullHandleType != RuntimeFunction::HandlesNulls;
    }
    return false;
 }
 
 bool pgx::mlir::db::CmpOp::supportsInvalidValues() {
-   auto type = getBaseType(getLeft().getType());
-   if (type.isa<pgx::mlir::db::StringType>()) {
+   auto type = getBaseType(left().getType());
+   if (type.isa<db::StringType>()) {
       return false;
    }
    return true;
 }
 bool pgx::mlir::db::CastOp::supportsInvalidValues() {
-   if (getBaseType(getResult().getType()).isa<pgx::mlir::db::StringType>() || getBaseType(getVal().getType()).isa<pgx::mlir::db::StringType>()) {
+   if (getBaseType(getResult().getType()).isa<db::StringType>() || getBaseType(val().getType()).isa<db::StringType>()) {
       return false;
    }
    return true;
@@ -122,11 +121,11 @@ bool pgx::mlir::db::CastOp::supportsInvalidValues() {
 
 LogicalResult pgx::mlir::db::OrOp::canonicalize(pgx::mlir::db::OrOp orOp, mlir::PatternRewriter& rewriter) {
    llvm::SmallDenseMap<mlir::Value, size_t> usage;
-   for (auto val : orOp.getVals()) {
+   for (auto val : orOp.vals()) {
       if (!val.getDefiningOp()) return failure();
-      if (auto andOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
+      if (auto andOp = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
          llvm::SmallPtrSet<mlir::Value, 4> alreadyUsed;
-         for (auto andOperand : andOp.getVals()) {
+         for (auto andOperand : andOp.vals()) {
             if (!alreadyUsed.contains(andOperand)) {
                usage[andOperand]++;
                alreadyUsed.insert(andOperand);
@@ -136,20 +135,20 @@ LogicalResult pgx::mlir::db::OrOp::canonicalize(pgx::mlir::db::OrOp orOp, mlir::
          return failure();
       }
    }
-   size_t totalAnds = orOp.getVals().size();
+   size_t totalAnds = orOp.vals().size();
    llvm::SmallPtrSet<mlir::Value, 4> extracted;
    std::vector<mlir::Value> newOrOperands;
-   for (auto val : orOp.getVals()) {
-      if (auto andOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
+   for (auto val : orOp.vals()) {
+      if (auto andOp = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(val.getDefiningOp())) {
          std::vector<mlir::Value> keep;
-         for (auto andOperand : andOp.getVals()) {
+         for (auto andOperand : andOp.vals()) {
             if (usage[andOperand] == totalAnds) {
                extracted.insert(andOperand);
             } else {
                keep.push_back(andOperand);
             }
          }
-         if (keep.size() != andOp.getVals().size()) {
+         if (keep.size() != andOp.vals().size()) {
             if (keep.size()) {
                newOrOperands.push_back(rewriter.create<pgx::mlir::db::AndOp>(andOp->getLoc(), keep));
             }
@@ -183,13 +182,13 @@ LogicalResult pgx::mlir::db::AndOp::canonicalize(pgx::mlir::db::AndOp andOp, mli
       auto current = queue.front();
       queue.pop();
       if (auto* definingOp = current.getDefiningOp()) {
-         if (auto nestedAnd = ::mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(definingOp)) {
-            for (auto v : nestedAnd.getVals()) {
+         if (auto nestedAnd = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(definingOp)) {
+            for (auto v : nestedAnd.vals()) {
                queue.push(v);
             }
-         } else if (auto cmpOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(definingOp)) {
-            cmps[cmpOp.getLeft()].push_back(cmpOp);
-            cmps[cmpOp.getRight()].push_back(cmpOp);
+         } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(definingOp)) {
+            cmps[cmpOp.left()].push_back(cmpOp);
+            cmps[cmpOp.right()].push_back(cmpOp);
             rawValues.insert(current);
          } else {
             rawValues.insert(current);
@@ -203,39 +202,39 @@ LogicalResult pgx::mlir::db::AndOp::canonicalize(pgx::mlir::db::AndOp andOp, mli
       pgx::mlir::db::CmpOp lowerCmp, upperCmp;
       mlir::Value current = m.getFirst();
       if (auto* definingOp = current.getDefiningOp()) {
-         if (::mlir::isa<pgx::mlir::db::ConstantOp>(definingOp)) {
+         if (mlir::isa<pgx::mlir::db::ConstantOp>(definingOp)) {
             continue;
          }
       }
       for (auto cmp : m.second) {
          if (!rawValues.contains(cmp)) continue;
-         switch (cmp.getPredicate()) {
+         switch (cmp.predicate()) {
             case DBCmpPredicate::lt:
             case DBCmpPredicate::lte:
-               if (cmp.getLeft() == current) {
-                  upper = cmp.getRight();
+               if (cmp.left() == current) {
+                  upper = cmp.right();
                   upperCmp = cmp;
                } else {
-                  lower = cmp.getLeft();
+                  lower = cmp.left();
                   lowerCmp = cmp;
                }
                break;
             case DBCmpPredicate::gt:
             case DBCmpPredicate::gte:
-               if (cmp.getLeft() == current) {
-                  lower = cmp.getRight();
+               if (cmp.left() == current) {
+                  lower = cmp.right();
                   lowerCmp = cmp;
                } else {
-                  upper = cmp.getLeft();
+                  upper = cmp.left();
                   upperCmp = cmp;
                }
                break;
             default: break;
          }
       }
-      if (lower && upper && lower.getDefiningOp() && upper.getDefiningOp() && ::mlir::isa<pgx::mlir::db::ConstantOp>(lower.getDefiningOp()) && ::mlir::isa<pgx::mlir::db::ConstantOp>(upper.getDefiningOp())) {
-         auto lowerInclusive = lowerCmp.getPredicate() == DBCmpPredicate::gte || lowerCmp.getPredicate() == DBCmpPredicate::lte;
-         auto upperInclusive = upperCmp.getPredicate() == DBCmpPredicate::gte || upperCmp.getPredicate() == DBCmpPredicate::lte;
+      if (lower && upper && lower.getDefiningOp() && upper.getDefiningOp() && mlir::isa<pgx::mlir::db::ConstantOp>(lower.getDefiningOp()) && mlir::isa<pgx::mlir::db::ConstantOp>(upper.getDefiningOp())) {
+         auto lowerInclusive = lowerCmp.predicate() == DBCmpPredicate::gte || lowerCmp.predicate() == DBCmpPredicate::lte;
+         auto upperInclusive = upperCmp.predicate() == DBCmpPredicate::gte || upperCmp.predicate() == DBCmpPredicate::lte;
          mlir::Value between = rewriter.create<pgx::mlir::db::BetweenOp>(lowerCmp->getLoc(), current, lower, upper, lowerInclusive, upperInclusive);
          rawValues.erase(lowerCmp);
          rawValues.erase(upperCmp);
@@ -246,94 +245,12 @@ LogicalResult pgx::mlir::db::AndOp::canonicalize(pgx::mlir::db::AndOp andOp, mli
       rewriter.replaceOp(andOp,*rawValues.begin());
       return success();
    }
-   if (rawValues.size() != andOp.getVals().size()) {
+   if (rawValues.size() != andOp.vals().size()) {
       rewriter.replaceOpWithNewOp<pgx::mlir::db::AndOp>(andOp, std::vector<mlir::Value>(rawValues.begin(), rawValues.end()));
       return success();
    }
    return failure();
 }
-namespace pgx::mlir::db {
-
-// Properties API implementations for LLVM 20 compatibility
-// These are required for operations with attributes
-
-// ConstantOp Properties API - now generated by TableGen
-// std::optional<::mlir::Attribute> ConstantOp::getInherentAttr(::mlir::MLIRContext *ctx,
-//                                                            const Properties &prop,
-//                                                            llvm::StringRef name) {
-//     if (name == "value") {
-//         return prop.value;
-//     }
-//     return std::nullopt;
-// }
-//
-// void ConstantOp::setInherentAttr(Properties &prop,
-//                                 llvm::StringRef name,
-//                                 ::mlir::Attribute value) {
-//     if (name == "value") {
-//         prop.value = value;
-//     }
-// }
-
-// RuntimeCall Properties API - removed, now generated in DBOps.cpp.inc
-
-// CmpOp methods
-bool pgx::mlir::db::CmpOp::isEqualityPred() { 
-    return getPredicate() == pgx::mlir::db::DBCmpPredicate::eq; 
-}
-
-bool pgx::mlir::db::CmpOp::isLessPred(bool eq) { 
-    return getPredicate() == (eq ? pgx::mlir::db::DBCmpPredicate::lte : pgx::mlir::db::DBCmpPredicate::lt); 
-}
-
-bool pgx::mlir::db::CmpOp::isGreaterPred(bool eq) { 
-    return getPredicate() == (eq ? pgx::mlir::db::DBCmpPredicate::gte : pgx::mlir::db::DBCmpPredicate::gt); 
-}
-
-// getLeft and getRight are now using the generated methods from tablegen
-
-// CmpOp Properties API - now generated by TableGen
-// std::optional<::mlir::Attribute> CmpOp::getInherentAttr(::mlir::MLIRContext *ctx,
-//                                                       const Properties &prop,
-//                                                       llvm::StringRef name) {
-//     if (name == "predicate") {
-//         return prop.predicate;
-//     }
-//     return std::nullopt;
-// }
-//
-// void CmpOp::setInherentAttr(Properties &prop,
-//                            llvm::StringRef name,
-//                            ::mlir::Attribute value) {
-//     if (name == "predicate") {
-//         prop.predicate = value.cast<pgx::mlir::db::DBCmpPredicateAttr>();
-//     }
-// }
-
-// BetweenOp Properties API - now generated by TableGen
-// std::optional<::mlir::Attribute> BetweenOp::getInherentAttr(::mlir::MLIRContext *ctx,
-//                                                           const Properties &prop,
-//                                                           llvm::StringRef name) {
-//     if (name == "lowerInclusive") {
-//         return prop.lowerInclusive;
-//     } else if (name == "upperInclusive") {
-//         return prop.upperInclusive;
-//     }
-//     return std::nullopt;
-// }
-//
-// void BetweenOp::setInherentAttr(Properties &prop,
-//                                llvm::StringRef name,
-//                                ::mlir::Attribute value) {
-//     if (name == "lowerInclusive") {
-//         prop.lowerInclusive = value.cast<::mlir::BoolAttr>();
-//     } else if (name == "upperInclusive") {
-//         prop.upperInclusive = value.cast<::mlir::BoolAttr>();
-//     }
-// }
-
-} // namespace pgx::mlir::db
-
 #define GET_OP_CLASSES
 #include "mlir/Dialect/DB/IR/DBOps.cpp.inc"
 #include "mlir/Dialect/DB/IR/DBOpsInterfaces.cpp.inc"

@@ -1,8 +1,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <iostream>
@@ -52,34 +51,34 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
       : RewritePattern(pgx::mlir::relalg::AggregationOp::getOperationName(), 1, context) {}
    mlir::LogicalResult matchAndRewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
       auto aggr = mlir::cast<pgx::mlir::relalg::AggregationOp>(op);
-      if (auto child = mlir::dyn_cast_or_null<Operator>(aggr.getRel().getDefiningOp())) {
+      if (auto child = mlir::dyn_cast_or_null<Operator>(aggr.rel().getDefiningOp())) {
          auto fds = child.getFDs();
-         auto keys = pgx::mlir::relalg::ColumnSet::fromArrayAttr(aggr.getGroupByCols());
+         auto keys = pgx::mlir::relalg::ColumnSet::fromArrayAttr(aggr.group_by_cols());
          auto reducedKeys = fds.reduce(keys);
          if (reducedKeys.size() == keys.size()) {
             return mlir::failure();
          }
          auto toMap = keys;
          toMap.remove(reducedKeys);
-         aggr.setGroupByColsAttr(reducedKeys.asRefArrayAttr(aggr->getContext()));
+         aggr.group_by_colsAttr(reducedKeys.asRefArrayAttr(aggr->getContext()));
          auto& colManager = getContext()->getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager();
          auto scope = colManager.getUniqueScope("aggr");
          std::unordered_map<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*> mapping;
-         std::vector<mlir::Attribute> computedCols(aggr.getComputedCols().begin(), aggr.getComputedCols().end());
-         auto* terminator = aggr.getAggrFunc().begin()->getTerminator();
+         std::vector<mlir::Attribute> computedCols(aggr.computed_cols().begin(), aggr.computed_cols().end());
+         auto* terminator = aggr.aggr_func().begin()->getTerminator();
          rewriter.setInsertionPoint(terminator);
          auto returnArgs = mlir::cast<pgx::mlir::relalg::ReturnOp>(terminator)->getOperands();
          std::vector<mlir::Value> values(returnArgs.begin(), returnArgs.end());
          for (auto* x : toMap) {
             auto* newCol = colManager.get(scope, colManager.getName(x).second).get();
             newCol->type = x->type;
-            mapping.insert(std::make_pair(x, newCol));
+            mapping.insert({x, newCol});
             computedCols.push_back(colManager.createDef(newCol));
-            values.push_back(rewriter.create<pgx::mlir::relalg::AggrFuncOp>(aggr->getLoc(), x->type, pgx::mlir::relalg::AggrFunc::any, aggr.getAggrFunc().getArgument(0), colManager.createRef(x)));
+            values.push_back(rewriter.create<pgx::mlir::relalg::AggrFuncOp>(aggr->getLoc(), x->type, pgx::mlir::relalg::AggrFunc::any, aggr.aggr_func().getArgument(0), colManager.createRef(x)));
          }
          rewriter.create<pgx::mlir::relalg::ReturnOp>(aggr->getLoc(), values);
          rewriter.eraseOp(terminator);
-         aggr.setComputedColsAttr(mlir::ArrayAttr::get(aggr.getContext(), computedCols));
+         aggr.computed_colsAttr(mlir::ArrayAttr::get(aggr.getContext(), computedCols));
          replaceUsagesAfter(aggr.getOperation(), [&](pgx::mlir::relalg::ColumnRefAttr attr) {
             if (mapping.count(&attr.getColumn())) {
                return colManager.createRef(mapping.at(&attr.getColumn()));
@@ -111,13 +110,13 @@ class ReduceAggrKeys : public mlir::PassWrapper<ReduceAggrKeys, mlir::OperationP
 };
 static std::optional<std::pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>> analyzePredicate(PredicateOperator selection) {
    auto returnOp = mlir::cast<pgx::mlir::relalg::ReturnOp>(selection.getPredicateBlock().getTerminator());
-   if (returnOp.getResults().empty()) return {};
-   mlir::Value v = returnOp.getResults()[0];
+   if (returnOp.results().empty()) return {};
+   mlir::Value v = returnOp.results()[0];
    if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::db::CmpOp>(v.getDefiningOp())) {
       if (!cmpOp.isEqualityPred()) return {};
-      if (auto leftColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.getLeft().getDefiningOp())) {
-         if (auto rightColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.getRight().getDefiningOp())) {
-            return std::make_pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>(&leftColref.getAttr().getColumn(), &rightColref.getAttr().getColumn());
+      if (auto leftColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.left().getDefiningOp())) {
+         if (auto rightColref = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(cmpOp.right().getDefiningOp())) {
+            return std::make_pair<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>(&leftColref.attr().getColumn(), &rightColref.attr().getColumn());
          }
       }
    }
@@ -161,12 +160,12 @@ class ExpandTransitiveEqualities : public mlir::PassWrapper<ExpandTransitiveEqua
          }
 
          if (auto cp = mlir::dyn_cast<pgx::mlir::relalg::CrossProductOp>(op.getOperation())) {
-            merge(localEqualities, equalities[cp.getLeft().getDefiningOp()], additionalPredicates);
-            merge(localEqualities, equalities[cp.getRight().getDefiningOp()], additionalPredicates);
+            merge(localEqualities, equalities[cp.left().getDefiningOp()], additionalPredicates);
+            merge(localEqualities, equalities[cp.right().getDefiningOp()], additionalPredicates);
          }
          if (auto ij = mlir::dyn_cast<pgx::mlir::relalg::InnerJoinOp>(op.getOperation())) {
-            merge(localEqualities, equalities[ij.getLeft().getDefiningOp()], additionalPredicates);
-            merge(localEqualities, equalities[ij.getRight().getDefiningOp()], additionalPredicates);
+            merge(localEqualities, equalities[ij.left().getDefiningOp()], additionalPredicates);
+            merge(localEqualities, equalities[ij.right().getDefiningOp()], additionalPredicates);
          }
 
          if (auto sel = mlir::dyn_cast<pgx::mlir::relalg::SelectionOp>(op.getOperation())) {
@@ -196,7 +195,7 @@ class ExpandTransitiveEqualities : public mlir::PassWrapper<ExpandTransitiveEqua
                predBuilder.create<pgx::mlir::relalg::ReturnOp>(builder.getUnknownLoc(), compared);
 
                auto sel = builder.create<pgx::mlir::relalg::SelectionOp>(loc, pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), current);
-               sel.getPredicate().push_back(block);
+               sel.predicate().push_back(block);
                current.replaceAllUsesExcept(sel.asRelation(), sel.getOperation());
                current = sel.asRelation();
             }

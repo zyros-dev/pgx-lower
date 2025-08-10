@@ -9,11 +9,11 @@
 
 namespace pgx::mlir::dsa {
 
-class CollectionType : public ::mlir::Type {
+class CollectionType : public mlir::Type {
    public:
    using Type::Type;
-   ::mlir::Type getElementType() const;
-   static bool classof(::mlir::Type);
+   Type getElementType() const;
+   static bool classof(Type);
 };
 } // namespace pgx::mlir::dsa
 

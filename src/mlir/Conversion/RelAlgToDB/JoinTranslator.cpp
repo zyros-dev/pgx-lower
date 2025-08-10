@@ -1,7 +1,6 @@
-#include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Conversion/RelAlgToDB/JoinTranslator.h"
-namespace pgx::mlir::relalg {
-
+#include "mlir/Dialect/SCF/SCF.h"
+#include <mlir/Conversion/RelAlgToDB/JoinTranslator.h>
+using namespace pgx::mlir::relalg;
 JoinTranslator::JoinTranslator(std::shared_ptr<JoinImpl> joinImpl) : Translator({joinImpl->builderChild, joinImpl->lookupChild}), joinOp(joinImpl->joinOp), impl(joinImpl) {
    this->builderChild = children[0].get();
    this->lookupChild = children[1].get();
@@ -10,21 +9,21 @@ JoinTranslator::JoinTranslator(std::shared_ptr<JoinImpl> joinImpl) : Translator(
 }
 void JoinTranslator::addJoinRequiredColumns() {
    this->requiredAttributes.insert(joinOp.getUsedColumns());
-   if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<::mlir::ArrayAttr>()) {
-      for (::mlir::Attribute attr : joinOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
+   if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<mlir::ArrayAttr>()) {
+      for (mlir::Attribute attr : joinOp->getAttr("mapping").cast<mlir::ArrayAttr>()) {
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
-            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<::mlir::ArrayAttr>();
+            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>();
             const auto* refAttr = *pgx::mlir::relalg::ColumnSet::fromArrayAttr(fromExisting).begin();
             this->requiredAttributes.insert(refAttr);
          }
       }
    }
 }
-void JoinTranslator::handleMappingNull(::mlir::OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
-   if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<::mlir::ArrayAttr>()) {
-      for (::mlir::Attribute attr : joinOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
+void JoinTranslator::handleMappingNull(OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
+   if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<mlir::ArrayAttr>()) {
+      for (mlir::Attribute attr : joinOp->getAttr("mapping").cast<mlir::ArrayAttr>()) {
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
@@ -35,12 +34,12 @@ void JoinTranslator::handleMappingNull(::mlir::OpBuilder& builder, TranslatorCon
    }
 }
 void JoinTranslator::handleMapping(OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
-   if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<::mlir::ArrayAttr>()) {
-      for (::mlir::Attribute attr : joinOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
+   if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<mlir::ArrayAttr>()) {
+      for (mlir::Attribute attr : joinOp->getAttr("mapping").cast<mlir::ArrayAttr>()) {
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
-            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<::mlir::ArrayAttr>();
+            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>();
             const auto* refAttr = *pgx::mlir::relalg::ColumnSet::fromArrayAttr(fromExisting).begin();
             auto value = context.getValueForAttribute(refAttr);
             if (refAttr->type != defAttr->type) {
@@ -81,8 +80,3 @@ mlir::Value JoinTranslator::evaluatePredicate(TranslatorContext& context, mlir::
       return builder.create<pgx::mlir::db::ConstantOp>(joinOp.getLoc(), builder.getI1Type(), builder.getIntegerAttr(builder.getI64Type(), 1));
    }
 }
-
-pgx::mlir::relalg::ColumnSet JoinTranslator::getAvailableColumns() {
-   return op.getAvailableColumns();
-}
-} // namespace pgx::mlir::relalg

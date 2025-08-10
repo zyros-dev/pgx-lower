@@ -124,7 +124,7 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(mlir::Value val, std::unorder
       auto parseResult = support::parse(parseArg, typeConstant, param1);
       return support::eval::createLiteral(parseResult, std::make_tuple(typeConstant, param1, param2));
    } else if (auto attrRefOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
-      return support::eval::createAttrRef(mapping.at(&attrRefOp.getAttr().getColumn()));
+      return support::eval::createAttrRef(mapping.at(&attrRefOp.attr().getColumn()));
    } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
       auto left = cmpOp.getLeft();
       auto right = cmpOp.getRight();
@@ -176,7 +176,7 @@ std::optional<double> estimateUsingSample(pgx::mlir::relalg::QueryGraph::Node& n
    if (n.additionalPredicates.empty()) return {};
    if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       std::unordered_map<const pgx::mlir::relalg::Column*, std::string> mapping;
-      for (auto c : baseTableOp.getColumns()) {
+      for (auto c : baseTableOp.columns()) {
          mapping[&c.getValue().cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn()] = c.getName().str();
       }
       auto meta = baseTableOp.meta().getMeta();
@@ -204,7 +204,7 @@ pgx::mlir::relalg::ColumnSet pgx::mlir::relalg::QueryGraph::getPKey(pgx::mlir::r
       auto meta = baseTableOp.meta().getMeta();
       pgx::mlir::relalg::ColumnSet attributes;
       std::unordered_map<std::string, const pgx::mlir::relalg::Column*> mapping;
-      for (auto c : baseTableOp.getColumns()) {
+      for (auto c : baseTableOp.columns()) {
          mapping[c.getName().str()] = &c.getValue().cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn();
       }
       for (auto c : meta->getPrimaryKey()) {
@@ -218,7 +218,7 @@ pgx::mlir::relalg::ColumnSet pgx::mlir::relalg::QueryGraph::getPKey(pgx::mlir::r
 double getRows(pgx::mlir::relalg::QueryGraph::Node& n) {
    if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       auto numRows = baseTableOp.meta().getMeta()->getNumRows();
-      baseTableOp->setAttr("rows", mlir::FloatAttr::get(mlir::FloatType::getF64(n.op->getContext()), numRows));
+      baseTableOp->setAttr("rows", mlir::FloatAttr::get(mlir::FloatType::getF64(n.op.getContext()), numRows));
       return numRows == 0 ? 1 : numRows;
    }
    return 1;

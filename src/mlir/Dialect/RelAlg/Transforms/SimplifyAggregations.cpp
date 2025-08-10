@@ -1,9 +1,8 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
@@ -24,11 +23,9 @@ class WrapAggrFuncPattern : public mlir::RewritePattern {
 
       auto def = attributeManager.createDef(scopeName, attributeName);
       def.getColumn().type = aggrFuncOp.getType();
-      llvm::SmallVector<mlir::Attribute> emptyVec;
-      llvm::SmallVector<mlir::Attribute> defVec = {def};
-      auto aggrOp = rewriter.create<pgx::mlir::relalg::AggregationOp>(op->getLoc(), pgx::mlir::relalg::TupleStreamType::get(getContext()), aggrFuncOp.getRel(), rewriter.getArrayAttr(emptyVec), rewriter.getArrayAttr(defVec));
+      auto aggrOp = rewriter.create<pgx::mlir::relalg::AggregationOp>(op->getLoc(), pgx::mlir::relalg::TupleStreamType::get(getContext()), aggrFuncOp.rel(), rewriter.getArrayAttr({}), rewriter.getArrayAttr({def}));
       auto* block = new mlir::Block;
-      aggrOp.getAggrFunc().push_back(block);
+      aggrOp.aggr_func().push_back(block);
       {
          mlir::OpBuilder::InsertionGuard insertionGuard(rewriter);
          rewriter.setInsertionPointToStart(block);
@@ -37,8 +34,8 @@ class WrapAggrFuncPattern : public mlir::RewritePattern {
          block->addArgument(tplType, op->getLoc());
 
          auto relArgument = block->getArgument(0);
-         auto val = rewriter.create<pgx::mlir::relalg::AggrFuncOp>(op->getLoc(), aggrFuncOp.getType(), aggrFuncOp.getFn(), relArgument, aggrFuncOp.getAttr());
-         rewriter.create<pgx::mlir::relalg::ReturnOp>(op->getLoc(), mlir::ValueRange{val});
+         auto val = rewriter.create<pgx::mlir::relalg::AggrFuncOp>(op->getLoc(), aggrFuncOp.getType(), aggrFuncOp.fn(), relArgument, aggrFuncOp.attr());
+         rewriter.create<pgx::mlir::relalg::ReturnOp>(op->getLoc(), mlir::ValueRange({val}));
       }
       auto nullableType = aggrFuncOp.getType().dyn_cast_or_null<pgx::mlir::db::NullableType>();
       mlir::Value getScalarOp = rewriter.replaceOpWithNewOp<pgx::mlir::relalg::GetScalarOp>(op, nullableType, attributeManager.createRef(&def.getColumn()), aggrOp.asRelation());
@@ -66,11 +63,9 @@ class WrapCountRowsPattern : public mlir::RewritePattern {
 
       auto def = attributeManager.createDef(scopeName, attributeName);
       def.getColumn().type = aggrFuncOp.getType();
-      llvm::SmallVector<mlir::Attribute> emptyVec;
-      llvm::SmallVector<mlir::Attribute> defVec = {def};
-      auto aggrOp = rewriter.create<pgx::mlir::relalg::AggregationOp>(op->getLoc(), pgx::mlir::relalg::TupleStreamType::get(getContext()), aggrFuncOp.getRel(), rewriter.getArrayAttr(emptyVec), rewriter.getArrayAttr(defVec));
+      auto aggrOp = rewriter.create<pgx::mlir::relalg::AggregationOp>(op->getLoc(), pgx::mlir::relalg::TupleStreamType::get(getContext()), aggrFuncOp.rel(), rewriter.getArrayAttr({}), rewriter.getArrayAttr({def}));
       auto* block = new mlir::Block;
-      aggrOp.getAggrFunc().push_back(block);
+      aggrOp.aggr_func().push_back(block);
       {
          mlir::OpBuilder::InsertionGuard insertionGuard(rewriter);
          rewriter.setInsertionPointToStart(block);
@@ -80,7 +75,7 @@ class WrapCountRowsPattern : public mlir::RewritePattern {
 
          auto relArgument = block->getArgument(0);
          auto val = rewriter.create<pgx::mlir::relalg::CountRowsOp>(op->getLoc(), aggrFuncOp.getType(), relArgument);
-         rewriter.create<pgx::mlir::relalg::ReturnOp>(op->getLoc(), mlir::ValueRange{val});
+         rewriter.create<pgx::mlir::relalg::ReturnOp>(op->getLoc(), mlir::ValueRange({val}));
       }
       mlir::Type nullableType = aggrFuncOp.getType();
       if (!nullableType.isa<pgx::mlir::db::NullableType>()) {
@@ -111,15 +106,15 @@ class SimplifyAggregations : public mlir::PassWrapper<SimplifyAggregations, mlir
       //handle distinct ones
       getOperation()
          .walk([&](pgx::mlir::relalg::AggregationOp aggregationOp) {
-            mlir::Value arg = aggregationOp.getAggrFunc().front().getArgument(0);
+            mlir::Value arg = aggregationOp.aggr_func().front().getArgument(0);
             std::vector<mlir::Operation*> users(arg.getUsers().begin(), arg.getUsers().end());
             if (users.size() == 1) {
                if (auto projectionOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::ProjectionOp>(users[0])) {
-                  if (projectionOp.getSetSemantic() == pgx::mlir::relalg::SetSemantic::distinct) {
+                  if (projectionOp.set_semantic() == pgx::mlir::relalg::SetSemantic::distinct) {
                      mlir::OpBuilder builder(aggregationOp);
-                     auto cols = pgx::mlir::relalg::ColumnSet::fromArrayAttr(aggregationOp.getGroupByCols());
-                     cols.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(projectionOp.getCols()));
-                     auto newProj = builder.create<pgx::mlir::relalg::ProjectionOp>(projectionOp->getLoc(), pgx::mlir::relalg::TupleStreamType::get(&getContext()), pgx::mlir::relalg::SetSemantic::distinct, aggregationOp.getRel(), cols.asRefArrayAttr(&getContext()));
+                     auto cols = pgx::mlir::relalg::ColumnSet::fromArrayAttr(aggregationOp.group_by_cols());
+                     cols.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(projectionOp.cols()));
+                     auto newProj = builder.create<pgx::mlir::relalg::ProjectionOp>(projectionOp->getLoc(), pgx::mlir::relalg::TupleStreamType::get(&getContext()), pgx::mlir::relalg::SetSemantic::distinct, aggregationOp.rel(), cols.asRefArrayAttr(&getContext()));
                      aggregationOp.setOperand(newProj);
                      projectionOp.replaceAllUsesWith(arg);
                      projectionOp->remove();

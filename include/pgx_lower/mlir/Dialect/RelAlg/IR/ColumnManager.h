@@ -8,19 +8,19 @@
 namespace pgx::mlir::relalg {
 class ColumnManager {
    public:
-   void setContext(::mlir::MLIRContext* context);
-   std::shared_ptr<Column> get(::llvm::StringRef scope, ::llvm::StringRef attribute);
-   ColumnDefAttr createDef(::mlir::SymbolRefAttr name, ::mlir::Attribute fromExisting = ::mlir::Attribute());
-   ColumnDefAttr createDef(::llvm::StringRef scope, ::llvm::StringRef name, ::mlir::Attribute fromExisting = ::mlir::Attribute());
+   void setContext(MLIRContext* context);
+   std::shared_ptr<Column> get(StringRef scope, StringRef attribute);
+   ColumnDefAttr createDef(SymbolRefAttr name, Attribute fromExisting = Attribute());
+   ColumnDefAttr createDef(StringRef scope, StringRef name, Attribute fromExisting = Attribute());
    ColumnDefAttr createDef(const Column* attr);
 
-   ColumnRefAttr createRef(::mlir::SymbolRefAttr name);
+   ColumnRefAttr createRef(SymbolRefAttr name);
    ColumnRefAttr createRef(const Column* attr);
 
-   ColumnRefAttr createRef(::llvm::StringRef scope, ::llvm::StringRef name);
+   ColumnRefAttr createRef(StringRef scope, StringRef name);
    std::pair<std::string, std::string> getName(const Column* attr);
 
-   std::string getUniqueScope(::llvm::StringRef base) {
+   std::string getUniqueScope(StringRef base) {
       if (scopeUnifier.count(std::string(base))) {
          scopeUnifier[std::string(base)] += 1;
          return std::string(base) + std::to_string(scopeUnifier[std::string(base)]);
@@ -31,7 +31,7 @@ class ColumnManager {
    }
 
    private:
-   ::mlir::MLIRContext* context;
+   MLIRContext* context;
    struct HashPair {
       template <class T1, class T2>
       size_t operator()(const std::pair<T1, T2>& p) const {

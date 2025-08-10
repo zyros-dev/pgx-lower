@@ -9,6 +9,7 @@ add_library(runtime OBJECT
         Hash.cpp
         DateRuntime.cpp
         ExecutionContext.cpp
-        MetaData.cpp MetaDataOnlyDatabase.cpp)
+        Database.cpp MetaData.cpp ArrowDirDatabase.cpp ExternalArrowDatabase.cpp MetaDataOnlyDatabase.cpp)
+target_link_libraries(runtime PUBLIC arrow_shared)
 target_link_options(runtime PUBLIC -export-dynamic)
 

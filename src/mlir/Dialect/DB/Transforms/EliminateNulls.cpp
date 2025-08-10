@@ -1,13 +1,12 @@
-#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Pass/Pass.h"
+#include "mlir/Dialect/SCF/SCF.h"
 
 #include <iostream>
 
-// #include "mlir/Dialect/RelAlg/Passes.h"  // Not used
-#include "mlir/IR/IRMapping.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
@@ -44,7 +43,7 @@ class WrapWithNullCheck : public mlir::RewritePattern {
 
       auto supInvVal = mlir::dyn_cast_or_null<pgx::mlir::db::SupportsInvalidValues>(op);
       if (supInvVal && supInvVal.supportsInvalidValues()) {
-         mlir::IRMapping mapping;
+         mlir::BlockAndValueMapping mapping;
          for (auto operand : op->getOperands()) {
             if (operand.getType().isa<pgx::mlir::db::NullableType>()) {
                mapping.map(operand, rewriter.create<pgx::mlir::db::NullableGetVal>(op->getLoc(), operand));
@@ -59,35 +58,31 @@ class WrapWithNullCheck : public mlir::RewritePattern {
          }
          return;
       } else {
-         // LLVM 20 API: Create IfOp with builders using the new API
-         auto thenBuilder = [&](mlir::OpBuilder& b, mlir::Location loc) {
-            if(op->getNumResults()==1){
-               mlir::Value nullResult=b.create<pgx::mlir::db::NullOp>(op->getLoc(),op->getResultTypes()[0]);
-               b.create<mlir::scf::YieldOp>(loc,nullResult);
-            }else{
-               b.create<mlir::scf::YieldOp>(loc);
-            }
-         };
-         auto elseBuilder = [&](mlir::OpBuilder& b, mlir::Location loc) {
-            mlir::IRMapping mapping;
-            for (auto operand : op->getOperands()) {
-               if (operand.getType().isa<pgx::mlir::db::NullableType>()) {
-                  mapping.map(operand,b.create<pgx::mlir::db::NullableGetVal>(op->getLoc(),operand));
+         rewriter.replaceOpWithNewOp<mlir::scf::IfOp>(
+            op, op->getResultTypes(), isAnyNull, [&](mlir::OpBuilder& b, mlir::Location loc) {
+               if(op->getNumResults()==1){
+                  mlir::Value nullResult=b.create<pgx::mlir::db::NullOp>(op->getLoc(),op->getResultTypes()[0]);
+                  b.create<mlir::scf::YieldOp>(loc,nullResult);
+               }else{
+                  b.create<mlir::scf::YieldOp>(loc);
+               }
+            }, [&](mlir::OpBuilder& b, mlir::Location loc) {
+               mlir::BlockAndValueMapping mapping;
+               for (auto operand : op->getOperands()) {
+                  if (operand.getType().isa<pgx::mlir::db::NullableType>()) {
+                     mapping.map(operand,b.create<pgx::mlir::db::NullableGetVal>(op->getLoc(),operand));
+                  }
+               }
+               auto *cloned=b.clone(*op,mapping);
+               if(op->getNumResults()==1){
+                  cloned->getResult(0).setType(getBaseType(cloned->getResult(0).getType()));
+                  mlir::Value nullResult=b.create<pgx::mlir::db::AsNullableOp>(op->getLoc(),op->getResultTypes()[0],cloned->getResult(0));
+                  b.create<mlir::scf::YieldOp>(loc,nullResult);
+               }else{
+                  b.create<mlir::scf::YieldOp>(loc);
                }
             }
-            auto *cloned=b.clone(*op,mapping);
-            if(op->getNumResults()==1){
-               cloned->getResult(0).setType(getBaseType(cloned->getResult(0).getType()));
-               mlir::Value nullResult=b.create<pgx::mlir::db::AsNullableOp>(op->getLoc(),op->getResultTypes()[0],cloned->getResult(0));
-               b.create<mlir::scf::YieldOp>(loc,nullResult);
-            }else{
-               b.create<mlir::scf::YieldOp>(loc);
-            }
-         };
-         
-         // LLVM 20: Use the correct API to create IfOp
-         auto ifOp = rewriter.create<mlir::scf::IfOp>(op->getLoc(), isAnyNull, thenBuilder, elseBuilder);
-         rewriter.replaceOp(op, ifOp.getResults());
+         );
       }
    }
 };
@@ -119,6 +114,6 @@ class EliminateNulls : public mlir::PassWrapper<EliminateNulls, mlir::OperationP
 
 namespace pgx::mlir::db {
 
-std::unique_ptr<::mlir::Pass> createEliminateNullsPass() { return std::make_unique<EliminateNulls>(); }
+std::unique_ptr<Pass> createEliminateNullsPass() { return std::make_unique<EliminateNulls>(); }
 
 } // end namespace pgx::mlir::db

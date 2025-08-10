@@ -9,45 +9,44 @@ namespace pgx::mlir::relalg {
 
 class JoinTranslator;
 struct JoinImpl {
-   virtual ::mlir::Value getFlag() { return stopOnFlag ? matchFoundFlag : ::mlir::Value(); }
+   virtual mlir::Value getFlag() { return stopOnFlag ? matchFoundFlag : Value(); }
    virtual void addAdditionalRequiredColumns() {}
-   virtual void handleLookup(::mlir::Value matched, ::mlir::Value markerBefore, TranslatorContext& context, ::mlir::OpBuilder& builder) = 0;
-   virtual void beforeLookup(TranslatorContext& context, ::mlir::OpBuilder& builder) {}
-   virtual void afterLookup(TranslatorContext& context, ::mlir::OpBuilder& builder) {}
-   virtual void handleScanned(::mlir::Value marker, TranslatorContext& context, ::mlir::OpBuilder& builder) {}
-   virtual void after(TranslatorContext& context, ::mlir::OpBuilder& builder) {}
+   virtual void handleLookup(Value matched, Value markerBefore, TranslatorContext& context, mlir::OpBuilder& builder) = 0;
+   virtual void beforeLookup(TranslatorContext& context, mlir::OpBuilder& builder) {}
+   virtual void afterLookup(TranslatorContext& context, mlir::OpBuilder& builder) {}
+   virtual void handleScanned(Value marker, TranslatorContext& context, mlir::OpBuilder& builder) {}
+   virtual void after(TranslatorContext& context, mlir::OpBuilder& builder) {}
 
-   ::mlir::Value matchFoundFlag;
+   mlir::Value matchFoundFlag;
    bool stopOnFlag = true;
    JoinTranslator* translator;
-   ::mlir::Location loc;
+   mlir::Location loc;
    Operator joinOp;
-   ::mlir::Value builderChild, lookupChild;
+   Value builderChild, lookupChild;
    bool markable;
-   JoinImpl(Operator joinOp, ::mlir::Value builderChild, ::mlir::Value lookupChild, bool markable = false) : loc(joinOp->getLoc()), joinOp(joinOp), builderChild(builderChild), lookupChild(lookupChild), markable(markable) {
+   JoinImpl(Operator joinOp, Value builderChild, Value lookupChild, bool markable = false) : loc(joinOp->getLoc()), joinOp(joinOp), builderChild(builderChild), lookupChild(lookupChild), markable(markable) {
    }
 };
 class JoinTranslator : public Translator {
    protected:
    Operator joinOp;
-   Translator* builderChild;
-   Translator* lookupChild;
+   pgx::mlir::relalg::Translator* builderChild;
+   pgx::mlir::relalg::Translator* lookupChild;
    std::shared_ptr<JoinImpl> impl;
 
    public:
    JoinTranslator(std::shared_ptr<JoinImpl> joinImpl);
    void addJoinRequiredColumns();
-   void handleMappingNull(::mlir::OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope);
-   void handleMapping(::mlir::OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope);
-   void handlePotentialMatch(::mlir::OpBuilder& builder, TranslatorContext& context, ::mlir::Value matches, ::mlir::function_ref<void(::mlir::OpBuilder&, TranslatorContext& context, TranslatorContext::AttributeResolverScope&)> onMatch = nullptr);
+   void handleMappingNull(OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope);
+   void handleMapping(OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope);
+   void handlePotentialMatch(OpBuilder& builder, TranslatorContext& context, Value matches, mlir::function_ref<void(OpBuilder&, TranslatorContext& context, TranslatorContext::AttributeResolverScope&)> onMatch = nullptr);
 
-   virtual void scanHT(TranslatorContext& context, ::mlir::OpBuilder& builder) = 0;
-   void forwardConsume(::mlir::OpBuilder& builder, TranslatorContext& context) {
+   virtual void scanHT(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) = 0;
+   void forwardConsume(mlir::OpBuilder& builder, TranslatorContext& context) {
       consumer->consume(this, builder, context);
    }
 
-   virtual ::mlir::Value evaluatePredicate(TranslatorContext& context, ::mlir::OpBuilder& builder, TranslatorContext::AttributeResolverScope& scope);
-   virtual ColumnSet getAvailableColumns() override;
+   virtual Value evaluatePredicate(TranslatorContext& context, mlir::OpBuilder& builder, TranslatorContext::AttributeResolverScope& scope);
    std::vector<size_t> customLookupBuilders;
 };
 } // end namespace pgx::mlir::relalg

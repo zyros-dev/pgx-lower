@@ -157,7 +157,7 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/runtime/helpers.cpp
         # Note: PostgreSQL runtime files require full PostgreSQL runtime
         # and cannot be easily compiled in unit test environment
-        src/mlir/Passes.cpp  # Added for centralized pass pipeline
+            # Added for centralized pass pipeline
     )
     
     

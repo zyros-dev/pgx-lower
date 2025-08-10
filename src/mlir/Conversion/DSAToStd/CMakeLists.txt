@@ -23,9 +23,8 @@ add_mlir_conversion_library(MLIRDSAToStd
         LINK_COMPONENTS
         Core
 
-        LINK_LIBS PUBLIC
-        MLIRSupport
+        LINK_LIBS mlir-support PUBLIC
         MLIRIR
-        MLIRDSADialect
+        MLIRDSA
         MLIRSCFTransforms
         )

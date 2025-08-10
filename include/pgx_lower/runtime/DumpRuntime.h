@@ -1,8 +1,8 @@
-#ifndef LINGODB_RUNTIME_DUMPRUNTIME_H
-#define LINGODB_RUNTIME_DUMPRUNTIME_H
+#ifndef RUNTIME_DUMPRUNTIME_H
+#define RUNTIME_DUMPRUNTIME_H
 #include "runtime/helpers.h"
 #include <cstdint>
-namespace pgx_lower::compiler::runtime {
+namespace runtime {
 struct DumpRuntime {
    static void dumpIndex(uint64_t val);
    static void dumpInt(bool null, int64_t val);
@@ -20,5 +20,5 @@ struct DumpRuntime {
    static void dumpString(bool null, runtime::VarLen32 string);
    static void dumpChar(bool null, uint64_t val, size_t bytes);
 };
-} // namespace pgx_lower::compiler::runtime
-#endif // LINGODB_RUNTIME_DUMPRUNTIME_H
+} // namespace runtime
+#endif // RUNTIME_DUMPRUNTIME_H

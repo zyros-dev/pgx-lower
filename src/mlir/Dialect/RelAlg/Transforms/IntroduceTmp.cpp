@@ -1,7 +1,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
@@ -16,7 +16,7 @@ class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<
          }
          return cols;
       } else if (auto matOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::MaterializeOp>(op)) {
-         return pgx::mlir::relalg::ColumnSet::fromArrayAttr(matOp.getCols());
+         return pgx::mlir::relalg::ColumnSet::fromArrayAttr(matOp.cols());
       }
       return {};
    }

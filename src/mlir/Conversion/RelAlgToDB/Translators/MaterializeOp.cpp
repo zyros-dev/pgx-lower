@@ -3,16 +3,14 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
-
-namespace pgx::mlir::relalg {
+#include "mlir/Dialect/util/UtilOps.h"
 
 class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::MaterializeOp materializeOp;
-   ::mlir::Value tableBuilder;
-   ::mlir::Value table;
+   mlir::Value tableBuilder;
+   mlir::Value table;
    pgx::mlir::relalg::OrderedAttributes orderedAttributes;
-   std::string arrowDescrFromType(::mlir::Type type) {
+   std::string arrowDescrFromType(mlir::Type type) {
       if (isIntegerType(type, 1)) {
          return "bool";
       } else if (auto intWidth = getIntegerWidth(type, false)) {
@@ -48,22 +46,22 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    }
 
    public:
-   MaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) : pgx::mlir::relalg::Translator(materializeOp.getRel()), materializeOp(materializeOp) {
-      orderedAttributes = pgx::mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.getCols());
+   MaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) : pgx::mlir::relalg::Translator(materializeOp.rel()), materializeOp(materializeOp) {
+      orderedAttributes = pgx::mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.cols());
    }
    virtual void setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) override {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
-      this->requiredAttributes.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.getCols()));
+      this->requiredAttributes.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.cols()));
       propagateInfo();
    }
    virtual pgx::mlir::relalg::ColumnSet getAvailableColumns() override {
       return {};
    }
-   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(pgx::mlir::relalg::Translator* child, mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
       for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
          auto val = orderedAttributes.resolve(context, i);
-         ::mlir::Value valid;
+         mlir::Value valid;
          if (val.getType().isa<pgx::mlir::db::NullableType>()) {
             valid = builder.create<pgx::mlir::db::IsNullOp>(materializeOp->getLoc(), val);
             valid = builder.create<pgx::mlir::db::NotOp>(materializeOp->getLoc(), valid);
@@ -73,18 +71,18 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
       }
       builder.create<pgx::mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
    }
-   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
       std::string descr = "";
       auto tupleType = orderedAttributes.getTupleType(builder.getContext());
-      for (size_t i = 0; i < materializeOp.getColumns().size(); i++) {
+      for (size_t i = 0; i < materializeOp.columns().size(); i++) {
          if (!descr.empty()) {
             descr += ";";
          }
-         descr += materializeOp.getColumns()[i].cast<mlir::StringAttr>().str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
+         descr += materializeOp.columns()[i].cast<mlir::StringAttr>().str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
       }
       tableBuilder = builder.create<pgx::mlir::dsa::CreateDS>(materializeOp.getLoc(), pgx::mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
       children[0]->produce(context, builder);
-      table = builder.create<pgx::mlir::dsa::Finalize>(materializeOp.getLoc(), pgx::mlir::dsa::TableType::get(builder.getContext()), tableBuilder).getRes();
+      table = builder.create<pgx::mlir::dsa::Finalize>(materializeOp.getLoc(), pgx::mlir::dsa::TableType::get(builder.getContext()), tableBuilder).res();
    }
    virtual void done() override {
       materializeOp.replaceAllUsesWith(table);
@@ -92,9 +90,6 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    virtual ~MaterializeTranslator() {}
 };
 
-} // namespace pgx::mlir::relalg
-
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createMaterializeTranslator(::mlir::Operation* op) {
-   auto materializeOp = ::mlir::cast<pgx::mlir::relalg::MaterializeOp>(op);
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createMaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) {
    return std::make_unique<MaterializeTranslator>(materializeOp);
 }

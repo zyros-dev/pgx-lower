@@ -3,7 +3,7 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
@@ -15,8 +15,7 @@ class Pushdown : public mlir::PassWrapper<Pushdown, mlir::OperationPass<mlir::fu
       UnaryOperator topushUnary = mlir::dyn_cast_or_null<UnaryOperator>(topush.getOperation());
       pgx::mlir::relalg::ColumnSet usedAttributes = topush.getUsedColumns();
       auto res = ::llvm::TypeSwitch<mlir::Operation*, Operator>(curr.getOperation())
-                    .Case<UnaryOperator>([&](mlir::Operation* op) {
-                       UnaryOperator unaryOperator = mlir::cast<UnaryOperator>(op);
+                    .Case<UnaryOperator>([&](UnaryOperator unaryOperator) {
                        Operator asOp = mlir::dyn_cast_or_null<Operator>(unaryOperator.getOperation());
                        auto child = mlir::dyn_cast_or_null<Operator>(unaryOperator.child());
                        auto availableChild = child.getAvailableColumns();
@@ -28,8 +27,7 @@ class Pushdown : public mlir::PassWrapper<Pushdown, mlir::OperationPass<mlir::fu
                        topush.setChildren({asOp});
                        return topush;
                     })
-                    .Case<BinaryOperator>([&](mlir::Operation* op) {
-                       BinaryOperator binop = mlir::cast<BinaryOperator>(op);
+                    .Case<BinaryOperator>([&](BinaryOperator binop) {
                        Operator asOp = mlir::dyn_cast_or_null<Operator>(binop.getOperation());
                        auto left = mlir::dyn_cast_or_null<Operator>(binop.leftChild());
                        auto right = mlir::dyn_cast_or_null<Operator>(binop.rightChild());
@@ -50,8 +48,7 @@ class Pushdown : public mlir::PassWrapper<Pushdown, mlir::OperationPass<mlir::fu
                        asOp.setChildren({left, right});
                        return asOp;
                     })
-                    .Default([&](mlir::Operation* op) {
-                       Operator others = mlir::cast<Operator>(op);
+                    .Default([&](Operator others) {
                        topush.setChildren({others});
                        return topush;
                     });

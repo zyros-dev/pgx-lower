@@ -30,7 +30,7 @@ pgx::mlir::relalg::ColumnManager& getColumnManager(::mlir::OpAsmParser& parser) 
       if (!parsedSpec)
          return parser.emitError(loc, "invalid ")
             << "type attribute specification: \"" << attrStr << '"';
-      spec = parsedSpec.value();
+      spec = parsedSpec.getValue();
    }
    return success();
 }
@@ -171,11 +171,11 @@ static ParseResult parseCustDef(OpAsmParser& parser, pgx::mlir::relalg::ColumnDe
 }
 static void printCustDef(OpAsmPrinter& p, mlir::Operation* op, pgx::mlir::relalg::ColumnDefAttr attr) {
    p<<attr.getName();
-   std::vector<::mlir::NamedAttribute> relAttrDefProps;
+   std::vector<mlir::NamedAttribute> relAttrDefProps;
    MLIRContext* context = attr.getContext();
    const pgx::mlir::relalg::Column& relationalAttribute = attr.getColumn();
-   relAttrDefProps.push_back({::mlir::StringAttr::get(context, "type"), ::mlir::TypeAttr::get(relationalAttribute.type)});
-   p << "(" << ::mlir::DictionaryAttr::get(context, relAttrDefProps) << ")";
+   relAttrDefProps.push_back({mlir::StringAttr::get(context, "type"), mlir::TypeAttr::get(relationalAttribute.type)});
+   p << "(" << mlir::DictionaryAttr::get(context, relAttrDefProps) << ")";
    Attribute fromExisting = attr.getFromExisting();
    if (fromExisting) {
       ArrayAttr fromExistingArr = fromExisting.dyn_cast_or_null<ArrayAttr>();
@@ -237,7 +237,7 @@ static void printCustAttrMapping(OpAsmPrinter& p, mlir::Operation* op, Attribute
    p << " mapping: {";
    auto first = true;
    for (auto attr : mapping.dyn_cast_or_null<ArrayAttr>()) {
-      auto relationDefAttr = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>(attr);
+      auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
       if (first) {
          first = false;
       } else {
@@ -254,7 +254,7 @@ static void printCustAttrMapping(OpAsmPrinter& p, mlir::Operation* op, Attribute
 ParseResult pgx::mlir::relalg::BaseTableOp::parse(OpAsmParser& parser, OperationState& result) {
    if (parser.parseOptionalAttrDict(result.attributes)) return failure();
    if (parser.parseKeyword("columns") || parser.parseColon() || parser.parseLBrace()) return failure();
-   std::vector<::mlir::NamedAttribute> columns;
+   std::vector<mlir::NamedAttribute> columns;
    while (true) {
       if (!parser.parseOptionalRBrace()) { break; }
       StringRef colName;
@@ -264,7 +264,7 @@ ParseResult pgx::mlir::relalg::BaseTableOp::parse(OpAsmParser& parser, Operation
       if (parseCustDef(parser, attrDefAttr)) {
          return failure();
       }
-      columns.push_back({::mlir::StringAttr::get(parser.getBuilder().getContext(), colName), attrDefAttr});
+      columns.push_back({StringAttr::get(parser.getBuilder().getContext(), colName), attrDefAttr});
       if (!parser.parseOptionalComma()) { continue; }
       if (parser.parseRBrace()) { return failure(); }
       break;
@@ -279,17 +279,17 @@ ParseResult pgx::mlir::relalg::BaseTableOp::parse(OpAsmParser& parser, Operation
    } else {
       result.addAttribute("meta", pgx::mlir::relalg::TableMetaDataAttr::get(parser.getContext(), std::make_shared<runtime::TableMetaData>()));
    }
-   result.addAttribute("columns", ::mlir::DictionaryAttr::get(parser.getBuilder().getContext(), columns));
+   result.addAttribute("columns", mlir::DictionaryAttr::get(parser.getBuilder().getContext(), columns));
    return parser.addTypeToList(pgx::mlir::relalg::TupleStreamType::get(parser.getBuilder().getContext()), result.types);
 }
 void pgx::mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    p << " ";
-   std::vector<::mlir::NamedAttribute> colsToPrint;
+   std::vector<mlir::NamedAttribute> colsToPrint;
    for (auto attr : this->getOperation()->getAttrs()) {
       if (attr.getName().str() == "meta") {
          if (auto metaAttr = attr.getValue().dyn_cast_or_null<pgx::mlir::relalg::TableMetaDataAttr>()) {
             if (metaAttr.getMeta()->isPresent()) {
-               colsToPrint.push_back(::mlir::NamedAttribute(::mlir::StringAttr::get(getContext(), "meta"), ::mlir::StringAttr::get(getContext(), metaAttr.getMeta()->serialize())));
+               colsToPrint.push_back(mlir::NamedAttribute(mlir::StringAttr::get(getContext(), "meta"), mlir::StringAttr::get(getContext(), metaAttr.getMeta()->serialize())));
             }
          }
       } else {
@@ -299,10 +299,10 @@ void pgx::mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    p.printOptionalAttrDict(colsToPrint, /*elidedAttrs=*/{"sym_name", "columns"});
    p << " columns: {";
    auto first = true;
-   for (auto mapping : getColumns()) {
+   for (auto mapping : columns()) {
       auto columnName = mapping.getName();
       auto attr = mapping.getValue();
-      auto relationDefAttr = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>(attr);
+      auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
       if (first) {
          first = false;
       } else {
@@ -319,261 +319,6 @@ void pgx::mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
 
 
 
-
-namespace pgx::mlir::relalg {
-
-// Properties API implementations for LLVM 20 compatibility
-// These are required for operations with attributes
-
-// ConstRelationOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> ConstRelationOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                                const Properties &prop,
-                                                                llvm::StringRef name) {
-    if (name == "columns") {
-        return prop.columns;
-    } else if (name == "values") {
-        return prop.values;
-    }
-    return std::nullopt;
-}
-
-void ConstRelationOp::setInherentAttr(Properties &prop,
-                                     llvm::StringRef name,
-                                     ::mlir::Attribute value) {
-    if (name == "columns") {
-        prop.columns = value.cast<::mlir::ArrayAttr>();
-    } else if (name == "values") {
-        prop.values = value.cast<::mlir::ArrayAttr>();
-    }
-}
-*/
-
-// BaseTableOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> BaseTableOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                            const Properties &prop,
-                                                            llvm::StringRef name) {
-    if (name == "table_identifier") {
-        return prop.table_identifier;
-    } else if (name == "meta") {
-        return prop.meta;
-    } else if (name == "columns") {
-        return prop.columns;
-    }
-    return std::nullopt;
-}
-
-void BaseTableOp::setInherentAttr(Properties &prop,
-                                 llvm::StringRef name,
-                                 ::mlir::Attribute value) {
-    if (name == "table_identifier") {
-        prop.table_identifier = value.cast<::mlir::StringAttr>();
-    } else if (name == "meta") {
-        prop.meta = value.cast<TableMetaDataAttr>();
-    } else if (name == "columns") {
-        prop.columns = value.cast<::mlir::DictionaryAttr>();
-    }
-}
-*/
-
-// MapOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> MapOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                      const Properties &prop,
-                                                      llvm::StringRef name) {
-    if (name == "computed_cols") {
-        return prop.computed_cols;
-    }
-    return std::nullopt;
-}
-
-void MapOp::setInherentAttr(Properties &prop,
-                           llvm::StringRef name,
-                           ::mlir::Attribute value) {
-    if (name == "computed_cols") {
-        prop.computed_cols = value.cast<::mlir::ArrayAttr>();
-    }
-}
-*/
-
-// LimitOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> LimitOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                        const Properties &prop,
-                                                        llvm::StringRef name) {
-    if (name == "rows") {
-        return prop.rows;
-    }
-    return std::nullopt;
-}
-
-void LimitOp::setInherentAttr(Properties &prop,
-                             llvm::StringRef name,
-                             ::mlir::Attribute value) {
-    if (name == "rows") {
-        prop.rows = value.cast<::mlir::IntegerAttr>();
-    }
-}
-*/
-
-// UnionOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> UnionOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                        const Properties &prop,
-                                                        llvm::StringRef name) {
-    if (name == "set_semantic") {
-        return prop.set_semantic;
-    }
-    return std::nullopt;
-}
-
-void UnionOp::setInherentAttr(Properties &prop,
-                             llvm::StringRef name,
-                             ::mlir::Attribute value) {
-    if (name == "set_semantic") {
-        prop.set_semantic = value.cast<::mlir::IntegerAttr>();
-    }
-}
-*/
-
-// AggregationOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> AggregationOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                               const Properties &prop,
-                                                               llvm::StringRef name) {
-    if (name == "group_by_cols") {
-        return prop.group_by_cols;
-    } else if (name == "computed_cols") {
-        return prop.computed_cols;
-    }
-    return std::nullopt;
-}
-
-void AggregationOp::setInherentAttr(Properties &prop,
-                                   llvm::StringRef name,
-                                   ::mlir::Attribute value) {
-    if (name == "group_by_cols") {
-        prop.group_by_cols = value.cast<::mlir::ArrayAttr>();
-    } else if (name == "computed_cols") {
-        prop.computed_cols = value.cast<::mlir::ArrayAttr>();
-    }
-}
-*/
-
-// AggrFuncOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> AggrFuncOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                            const Properties &prop,
-                                                            llvm::StringRef name) {
-    if (name == "fn") {
-        return prop.fn;
-    } else if (name == "attr") {
-        return prop.attr;
-    }
-    return std::nullopt;
-}
-
-void AggrFuncOp::setInherentAttr(Properties &prop,
-                                llvm::StringRef name,
-                                ::mlir::Attribute value) {
-    if (name == "fn") {
-        prop.fn = value.cast<::mlir::IntegerAttr>();
-    } else if (name == "attr") {
-        prop.attr = value.cast<ColumnRefAttr>();
-    }
-}
-*/
-
-// ProjectionOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> ProjectionOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                              const Properties &prop,
-                                                              llvm::StringRef name) {
-    if (name == "set_semantic") {
-        return prop.set_semantic;
-    } else if (name == "cols") {
-        return prop.cols;
-    }
-    return std::nullopt;
-}
-
-void ProjectionOp::setInherentAttr(Properties &prop,
-                                  llvm::StringRef name,
-                                  ::mlir::Attribute value) {
-    if (name == "set_semantic") {
-        prop.set_semantic = value.cast<::mlir::IntegerAttr>();
-    } else if (name == "cols") {
-        prop.cols = value.cast<::mlir::ArrayAttr>();
-    }
-}
-*/
-
-// RenamingOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> RenamingOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                            const Properties &prop,
-                                                            llvm::StringRef name) {
-    if (name == "columns") {
-        return prop.columns;
-    }
-    return std::nullopt;
-}
-
-void RenamingOp::setInherentAttr(Properties &prop,
-                                llvm::StringRef name,
-                                ::mlir::Attribute value) {
-    if (name == "columns") {
-        prop.columns = value.cast<::mlir::ArrayAttr>();
-    }
-}
-*/
-
-// SortOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> SortOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                        const Properties &prop,
-                                                        llvm::StringRef name) {
-    if (name == "sortspecs") {
-        return prop.sortspecs;
-    }
-    return std::nullopt;
-}
-
-void SortOp::setInherentAttr(Properties &prop,
-                            llvm::StringRef name,
-                            ::mlir::Attribute value) {
-    if (name == "sortspecs") {
-        prop.sortspecs = value.cast<::mlir::ArrayAttr>();
-    }
-}
-*/
-
-// TopKOp Properties API - now generated by TableGen
-/*
-std::optional<::mlir::Attribute> TopKOp::getInherentAttr(::mlir::MLIRContext *ctx,
-                                                        const Properties &prop,
-                                                        llvm::StringRef name) {
-    if (name == "rows") {
-        return prop.rows;
-    } else if (name == "sortspecs") {
-        return prop.sortspecs;
-    }
-    return std::nullopt;
-}
-
-void TopKOp::setInherentAttr(Properties &prop,
-                            llvm::StringRef name,
-                            ::mlir::Attribute value) {
-    if (name == "rows") {
-        prop.rows = value.cast<::mlir::IntegerAttr>();
-    } else if (name == "sortspecs") {
-        prop.sortspecs = value.cast<::mlir::ArrayAttr>();
-    }
-}
-*/
-
-} // namespace pgx::mlir::relalg
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"

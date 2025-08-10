@@ -1,137 +1,101 @@
-#ifndef PGX_LOWER_MLIR_DIALECT_RELALG_COLUMNSET_H
-#define PGX_LOWER_MLIR_DIALECT_RELALG_COLUMNSET_H
 
-#include "mlir/Dialect/RelAlg/IR/Column.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include <unordered_set>
-#include <vector>
-
-namespace pgx {
-namespace mlir {
-namespace relalg {
-
-// Forward declarations
-class RelAlgDialect;
-
-// ColumnSet represents a set of columns, typically used to track required/available columns
+#ifndef MLIR_DIALECT_RELALG_COLUMNSET_H
+#define MLIR_DIALECT_RELALG_COLUMNSET_H
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/Support/Debug.h>
+#include <mlir/Dialect/RelAlg/IR/Column.h>
+#include <mlir/Dialect/RelAlg/IR/RelAlgDialect.h>
+namespace pgx::mlir::relalg {
 class ColumnSet {
-private:
-    std::unordered_set<const Column*> columns;
-    
-public:
-    // Constructors
-    ColumnSet() = default;
-    ColumnSet(std::initializer_list<const Column*> cols) : columns(cols) {}
-    
-    // Insert a column
-    void insert(const Column* col) {
-        if (col) columns.insert(col);
-    }
-    
-    // Insert another ColumnSet
-    ColumnSet& insert(const ColumnSet& other) {
-        for (const auto* col : other.columns) {
-            columns.insert(col);
-        }
-        return *this;
-    }
-    
-    // Remove a column
-    void erase(const Column* col) {
-        columns.erase(col);
-    }
-    
-    // Remove columns from another set
-    void remove(const ColumnSet& other) {
-        for (const auto* col : other.columns) {
-            columns.erase(col);
-        }
-    }
-    
-    // Check if a column is in the set
-    bool contains(const Column* col) const {
-        return columns.find(col) != columns.end();
-    }
-    
-    // Check if empty
-    bool empty() const {
-        return columns.empty();
-    }
-    
-    // Get size
-    size_t size() const {
-        return columns.size();
-    }
-    
-    // Clear all columns
-    void clear() {
-        columns.clear();
-    }
-    
-    // Set operations
-    void insertAll(const ColumnSet& other) {
-        for (const auto* col : other.columns) {
-            columns.insert(col);
-        }
-    }
-    
-    // Intersection
-    ColumnSet intersect(const ColumnSet& other) const {
-        ColumnSet result;
-        for (const auto* col : columns) {
-            if (other.contains(col)) {
-                result.insert(col);
-            }
-        }
-        return result;
-    }
-    
-    // Check if sets have common elements
-    bool intersects(const ColumnSet& other) const {
-        for (const auto* col : columns) {
-            if (other.contains(col)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    // Check if this set is a subset of another
-    bool isSubsetOf(const ColumnSet& other) const {
-        for (const auto* col : columns) {
-            if (!other.contains(col)) {
-                return false;
-            }
-        }
-        return true;
-    }
-    
-    // Iteration support
-    auto begin() const { return columns.begin(); }
-    auto end() const { return columns.end(); }
-    
-    // Convert to vector for ordered access
-    std::vector<const Column*> toVector() const {
-        return std::vector<const Column*>(columns.begin(), columns.end());
-    }
-    
-    // Convert to MLIR ArrayAttr
-    ::mlir::ArrayAttr asRefArrayAttr(::mlir::MLIRContext* context);
-    
-    // Create from MLIR ArrayAttr
-    static ColumnSet fromArrayAttr(::mlir::ArrayAttr arrayAttr);
-    
-    // Create from single column reference
-    static ColumnSet from(ColumnRefAttr attrRef) {
-        ColumnSet res;
-        res.insert(&attrRef.getColumn());
-        return res;
-    }
+   using attribute_set = llvm::SmallPtrSet<const pgx::mlir::relalg::Column*, 8>;
+   attribute_set attributes;
+
+   public:
+   ColumnSet intersect(const ColumnSet& other) const {
+      ColumnSet result;
+      for (const auto* x : attributes) {
+         if (other.attributes.contains(x)) {
+            result.insert(x);
+         }
+      }
+      return result;
+   }
+   bool empty() const {
+      return attributes.empty();
+   }
+   size_t size() const {
+      return attributes.size();
+   }
+   void insert(const pgx::mlir::relalg::Column* attr) {
+      attributes.insert(attr);
+   }
+   bool contains(const pgx::mlir::relalg::Column* attr) const {
+      return attributes.contains(attr);
+   }
+   ColumnSet& insert(const ColumnSet& other) {
+      attributes.insert(other.attributes.begin(), other.attributes.end());
+      return *this;
+   }
+   void remove(const ColumnSet& other) {
+      for (const auto* elem : other.attributes) {
+         attributes.erase(elem);
+      }
+   }
+   bool intersects(const ColumnSet& others) const {
+      for (const auto* x : attributes) {
+         if (others.attributes.contains(x)) {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   bool isSubsetOf(const ColumnSet& others) const {
+      for (const auto* x : attributes) {
+         if (!others.attributes.contains(x)) {
+            return false;
+         }
+      }
+      return true;
+   }
+   [[nodiscard]] auto begin() const {
+      return attributes.begin();
+   }
+   [[nodiscard]] auto end() const {
+      return attributes.end();
+   }
+   void dump(MLIRContext* context) {
+      auto& attributeManager = context->getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager();
+      for (const auto* x : attributes) {
+         auto [scope, name] = attributeManager.getName(x);
+         llvm::dbgs() << x << "(" << scope << "," << name << "),";
+      }
+   }
+   ArrayAttr asRefArrayAttr(MLIRContext* context) {
+      auto& attributeManager = context->getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager();
+
+      std::vector<Attribute> refAttrs;
+      for (const auto* attr : attributes) {
+         refAttrs.push_back(attributeManager.createRef(attr));
+      }
+      return ArrayAttr::get(context, refAttrs);
+   }
+   static ColumnSet fromArrayAttr(ArrayAttr arrayAttr) {
+      ColumnSet res;
+      for (const auto attr : arrayAttr) {
+         if (auto attrRef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>()) {
+            res.insert(&attrRef.getColumn());
+         } else if (auto attrDef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>()) {
+            res.insert(&attrDef.getColumn());
+         }
+      }
+      return res;
+   }
+   static ColumnSet from(pgx::mlir::relalg::ColumnRefAttr attrRef) {
+      ColumnSet res;
+      res.insert(&attrRef.getColumn());
+      return res;
+   }
 };
-
-} // namespace relalg
-} // namespace mlir
-} // namespace pgx
-
-#endif // PGX_LOWER_MLIR_DIALECT_RELALG_COLUMNSET_H
+} // namespace pgx::mlir::relalg
+#endif // MLIR_DIALECT_RELALG_COLUMNSET_H

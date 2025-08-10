@@ -1,12 +1,11 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Pass/Pass.h"
 
 #include <iostream>
 
-// #include "mlir-support/parsing.h"  // Not used
-// #include "mlir/Dialect/RelAlg/Passes.h"  // Not used
-#include "mlir/IR/IRMapping.h"
+#include "mlir-support/parsing.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <variant>
 namespace {
@@ -60,10 +59,10 @@ class ReplaceFnWithFn : public mlir::RewritePattern {
    ReplaceFnWithFn(mlir::MLIRContext* context, std::string funcName, std::vector<std::shared_ptr<Matcher>> matchers, std::string newFuncName) : RewritePattern(pgx::mlir::db::RuntimeCall::getOperationName(), mlir::PatternBenefit(1), context), funcName(funcName), newFuncName(newFuncName), matchers(matchers) {}
    mlir::LogicalResult match(mlir::Operation* op) const override {
       auto runtimeCall = mlir::cast<pgx::mlir::db::RuntimeCall>(op);
-      if (runtimeCall.getFn().str() != funcName) { return mlir::failure(); }
-      if (runtimeCall.getArgs().size() != matchers.size()) { return mlir::failure(); }
-      for (size_t i = 0; i < runtimeCall.getArgs().size(); ++i) {
-         if (!matchers[i]->matches(runtimeCall.getArgs()[i])) { return mlir::failure(); }
+      if (runtimeCall.fn().str() != funcName) { return mlir::failure(); }
+      if (runtimeCall.args().size() != matchers.size()) { return mlir::failure(); }
+      for (size_t i = 0; i < runtimeCall.args().size(); ++i) {
+         if (!matchers[i]->matches(runtimeCall.args()[i])) { return mlir::failure(); }
       }
       return mlir::success();
    }
@@ -71,11 +70,11 @@ class ReplaceFnWithFn : public mlir::RewritePattern {
    void rewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
       std::vector<mlir::Value> values;
       auto runtimeCall = mlir::cast<pgx::mlir::db::RuntimeCall>(op);
-      for (size_t i = 0; i < runtimeCall.getArgs().size(); ++i) {
+      for (size_t i = 0; i < runtimeCall.args().size(); ++i) {
          if (matchers[i]->skip()) {
             continue;
          }
-         values.push_back(runtimeCall.getArgs()[i]);
+         values.push_back(runtimeCall.args()[i]);
       }
       rewriter.replaceOpWithNewOp<pgx::mlir::db::RuntimeCall>(op, op->getResultTypes(), newFuncName, mlir::ValueRange{values});
    }
@@ -103,6 +102,6 @@ class OptimizeRuntimeFunctions : public mlir::PassWrapper<OptimizeRuntimeFunctio
 
 namespace pgx::mlir::db {
 
-std::unique_ptr<::mlir::Pass> createOptimizeRuntimeFunctionsPass() { return std::make_unique<OptimizeRuntimeFunctions>(); }
+std::unique_ptr<Pass> createOptimizeRuntimeFunctionsPass() { return std::make_unique<OptimizeRuntimeFunctions>(); }
 
 } // end namespace pgx::mlir::db

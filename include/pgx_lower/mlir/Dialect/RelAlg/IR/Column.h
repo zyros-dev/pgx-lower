@@ -3,7 +3,7 @@
 #include <mlir/IR/Types.h>
 namespace pgx::mlir::relalg {
 struct Column {
-  ::mlir::Type type;
+  mlir::Type type;
 };
 } // namespace pgx::mlir::relalg
 

@@ -4,7 +4,7 @@
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/DSA/IR/DSADialect.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
@@ -13,10 +13,10 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/SCF/Transforms.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "mlir/Dialect/util/UtilDialect.h"
+#include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include <mlir/IR/BuiltinTypes.h>
@@ -55,7 +55,7 @@ struct DSAToStdLoweringPass
 
    DSAToStdLoweringPass() {}
    void getDependentDialects(DialectRegistry& registry) const override {
-      registry.insert<LLVM::LLVMDialect, pgx::mlir::dsa::DSADialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect>();
+      registry.insert<LLVM::LLVMDialect, pgx::mlir::dsa::DSADialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithmeticDialect>();
    }
    void runOnOperation() final;
 };

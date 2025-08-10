@@ -1,7 +1,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "runtime/Database.h"
 namespace {
@@ -12,7 +12,7 @@ class AttachMetaData : public mlir::PassWrapper<AttachMetaData, mlir::OperationP
    AttachMetaData(runtime::Database& db):db(db){}
    void runOnOperation() override {
       getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
-         op.setMetaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),db.getTableMetaData(op.getTableIdentifier().str())));
+         op.metaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),db.getTableMetaData(op.table_identifier().str())));
       });
    }
 };
@@ -23,7 +23,7 @@ class DetachMetaData : public mlir::PassWrapper<DetachMetaData, mlir::OperationP
    void runOnOperation() override {
       getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
          getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
-            op.setMetaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),std::make_shared<runtime::TableMetaData>()));
+            op.metaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),std::make_shared<runtime::TableMetaData>()));
          });
       });
    }
