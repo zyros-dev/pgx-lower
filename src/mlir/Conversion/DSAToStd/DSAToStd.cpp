@@ -27,6 +27,8 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Dialect/Func/Transforms/FuncConversions.h"
+#include "mlir/IR/Visitors.h"
+#include "llvm/ADT/DenseSet.h"
 
 namespace mlir {
 
@@ -279,6 +281,42 @@ public:
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
+// Detect circular IR structures before walk to avoid infinite loops
+static bool hasCircularIR(ModuleOp module) {
+    llvm::DenseSet<Operation*> visited;
+    llvm::DenseSet<Operation*> recursionStack;
+    
+    bool foundCycle = false;
+    module.walk([&](Operation* op) -> WalkResult {
+        if (!op) return WalkResult::advance();
+        
+        // If we've seen this op in current recursion path - cycle detected
+        if (recursionStack.contains(op)) {
+            MLIR_PGX_ERROR("DSAToStd", "Circular IR detected at operation: " + 
+                          op->getName().getStringRef().str());
+            foundCycle = true;
+            return WalkResult::interrupt();
+        }
+        
+        // If already fully processed, skip
+        if (visited.contains(op)) {
+            return WalkResult::advance();
+        }
+        
+        // Add to recursion stack
+        recursionStack.insert(op);
+        
+        // Process operation (walk will handle recursion)
+        // Remove from recursion stack when done
+        visited.insert(op);
+        recursionStack.erase(op);
+        
+        return WalkResult::advance();
+    });
+    
+    return foundCycle;
+}
+
 struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(DSAToStdPass)
 
@@ -297,8 +335,16 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
         MLIR_PGX_INFO("DSAToStd", "Starting DSA to Standard conversion pass");
         
         auto module = getOperation();
-        MLIR_PGX_INFO("DSAToStd", "Got the operation!");
         auto *context = &getContext();
+        
+        // CRITICAL: Check for circular IR before walk to avoid infinite loops
+        if (hasCircularIR(module)) {
+            MLIR_PGX_ERROR("DSAToStd", "Circular IR structure detected - failing pass");
+            signalPassFailure();
+            return;
+        }
+        
+        MLIR_PGX_INFO("DSAToStd", "Got the operation!");
         MLIR_PGX_INFO("DSAToStd", "Got context successfully!");
         
         // Manual operation replacement approach to avoid pattern rewriter issues
