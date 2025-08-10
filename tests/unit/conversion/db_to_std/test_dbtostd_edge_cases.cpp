@@ -60,7 +60,7 @@ TEST_F(DBToStdEdgeCaseTest, EmptyFunctionHandling) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     // Should succeed on empty function
     ASSERT_TRUE(succeeded(pm.run(module)));
@@ -96,7 +96,7 @@ TEST_F(DBToStdEdgeCaseTest, NonDBOperationsOnly) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     // Should succeed and preserve arithmetic operations
     ASSERT_TRUE(succeeded(pm.run(module)));
@@ -142,7 +142,7 @@ TEST_F(DBToStdEdgeCaseTest, MixedOperations) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
@@ -208,7 +208,7 @@ TEST_F(DBToStdEdgeCaseTest, ProperNullableTypeHandling) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     

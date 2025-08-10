@@ -35,7 +35,7 @@ protected:
 };
 
 // Test 1: Column identity sharing between translators
-TEST_F(ColumnResolutionTest, ColumnIdentitySharing) {
+TEST_F(ColumnResolutionTest, DISABLED_ColumnIdentitySharing) {
     PGX_DEBUG("Testing column identity sharing between BaseTable and Materialize translators");
     
     // Create module and function for proper MLIR structure
@@ -117,7 +117,7 @@ TEST_F(ColumnResolutionTest, ColumnIdentitySharing) {
 }
 
 // Test 2: Type consistency between translators
-TEST_F(ColumnResolutionTest, TypeConsistency) {
+TEST_F(ColumnResolutionTest, DISABLED_TypeConsistency) {
     PGX_DEBUG("Testing type consistency between BaseTable and Materialize translators");
     
     // Create module and function

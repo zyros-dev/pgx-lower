@@ -540,7 +540,7 @@ void generateSPIFunctionDeclarations(ModuleOp module) {
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
-class DBToStdPass : public PassWrapper<DBToStdPass, OperationPass<func::FuncOp>> {
+class DBToStdPass : public PassWrapper<DBToStdPass, OperationPass<ModuleOp>> {
 public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(DBToStdPass)
   
@@ -556,89 +556,90 @@ public:
   }
   
   void runOnOperation() override {
-    auto func = getOperation();
-    
-    // Handle empty functions gracefully
-    if (func.getBody().empty() || func.getBody().front().empty()) {
-      MLIR_PGX_DEBUG("DBToStd", "Skipping empty function: " + func.getName().str());
-      return;
-    }
-    
-    auto module = func->getParentOfType<ModuleOp>();
+    auto module = getOperation();
     
     PGX_INFO("Starting DBToStd conversion pass");
     
-    // Debug: Count DB operations before conversion
-    int dbOpsBefore = 0;
-    func.walk([&](Operation* op) {
-      if (op->getDialect() && op->getDialect()->getNamespace() == "db") {
-        dbOpsBefore++;
-        PGX_DEBUG("Found DB operation: " + op->getName().getStringRef().str());
-      }
-    });
-    PGX_DEBUG("Found " + std::to_string(dbOpsBefore) + " DB operations before conversion");
+    // Generate SPI function declarations at module level
+    generateSPIFunctionDeclarations(module);
     
-    // Generate SPI function declarations (the function itself checks for duplicates)
-    if (module) {
-      generateSPIFunctionDeclarations(module);
-    }
-    
-    ConversionTarget target(getContext());
-    target.addLegalDialect<arith::ArithDialect>();
-    target.addLegalDialect<scf::SCFDialect>();
-    target.addLegalDialect<func::FuncDialect>();
-    target.addLegalDialect<memref::MemRefDialect>();
-    target.addLegalDialect<pgx::mlir::dsa::DSADialect>(); // Keep DSA operations legal
-    target.addLegalDialect<pgx::mlir::util::UtilDialect>(); // Allow util operations for tuple handling
-    target.addLegalDialect<BuiltinDialect>(); // Allow builtin.unrealized_conversion_cast
-    
-    // Mark DB dialect operations as illegal
-    target.addIllegalDialect<pgx::db::DBDialect>();
-    
-    DBToStdTypeConverter typeConverter;
-    RewritePatternSet patterns(&getContext());
-    
-    // Add conversion patterns
-    populateDBToStdConversionPatterns(typeConverter, patterns);
-    
-    // Add function signature conversion to handle nullable arguments
-    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(patterns, typeConverter);
-    
-    // Mark functions with converted signatures as legal
-    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return typeConverter.isSignatureLegal(op.getFunctionType()) &&
-             typeConverter.isLegal(&op.getBody());
-    });
-    
-    if (failed(applyPartialConversion(func, target, std::move(patterns)))) {
-      // Check if failure is due to no applicable patterns (acceptable edge case)
-      // Count non-terminator operations
-      size_t opCount = 0;
-      for (auto &op : func.getBody().front().getOperations()) {
-        if (!op.hasTrait<OpTrait::IsTerminator>()) {
-          opCount++;
-        }
+    // Process each function in the module
+    module.walk([&](func::FuncOp func) {
+      // Handle empty functions gracefully
+      if (func.getBody().empty() || func.getBody().front().empty()) {
+        MLIR_PGX_DEBUG("DBToStd", "Skipping empty function: " + func.getName().str());
+        return;
       }
       
-      if (opCount == 0) {
-        MLIR_PGX_DEBUG("DBToStd", "No DB operations to convert in function: " + func.getName().str() + " - skipping");
-        return; // Don't signal failure for functions with no DB operations
-      }
-      
-      // Debug: Count remaining DB operations after failed conversion
-      int dbOpsAfter = 0;
+      // Debug: Count DB operations before conversion
+      int dbOpsBefore = 0;
       func.walk([&](Operation* op) {
         if (op->getDialect() && op->getDialect()->getNamespace() == "db") {
-          dbOpsAfter++;
-          PGX_ERROR("Unconverted DB operation: " + op->getName().getStringRef().str());
+          dbOpsBefore++;
+          PGX_DEBUG("Found DB operation: " + op->getName().getStringRef().str());
         }
       });
+      PGX_DEBUG("Found " + std::to_string(dbOpsBefore) + " DB operations before conversion in function: " + func.getName().str());
       
-      PGX_ERROR("DBToStd conversion failed on function: " + func.getName().str() + 
-                " - " + std::to_string(dbOpsAfter) + " DB operations remain unconverted");
-      signalPassFailure();
-      return;
-    }
+      ConversionTarget target(getContext());
+      target.addLegalDialect<arith::ArithDialect>();
+      target.addLegalDialect<scf::SCFDialect>();
+      target.addLegalDialect<func::FuncDialect>();
+      target.addLegalDialect<memref::MemRefDialect>();
+      target.addLegalDialect<pgx::mlir::dsa::DSADialect>(); // Keep DSA operations legal
+      target.addLegalDialect<pgx::mlir::util::UtilDialect>(); // Allow util operations for tuple handling
+      target.addLegalDialect<BuiltinDialect>(); // Allow builtin.unrealized_conversion_cast
+      
+      // Mark DB dialect operations as illegal
+      target.addIllegalDialect<pgx::db::DBDialect>();
+      
+      DBToStdTypeConverter typeConverter;
+      RewritePatternSet patterns(&getContext());
+      
+      // Add conversion patterns
+      populateDBToStdConversionPatterns(typeConverter, patterns);
+      
+      // Add function signature conversion to handle nullable arguments
+      populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(patterns, typeConverter);
+      
+      // Mark functions with converted signatures as legal
+      target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+        return typeConverter.isSignatureLegal(op.getFunctionType()) &&
+               typeConverter.isLegal(&op.getBody());
+      });
+      
+      if (failed(applyPartialConversion(func, target, std::move(patterns)))) {
+        // Check if failure is due to no applicable patterns (acceptable edge case)
+        // Count non-terminator operations
+        size_t opCount = 0;
+        for (auto &op : func.getBody().front().getOperations()) {
+          if (!op.hasTrait<OpTrait::IsTerminator>()) {
+            opCount++;
+          }
+        }
+        
+        if (opCount == 0) {
+          MLIR_PGX_DEBUG("DBToStd", "No DB operations to convert in function: " + func.getName().str() + " - skipping");
+          return; // Don't signal failure for functions with no DB operations
+        }
+        
+        // Debug: Count remaining DB operations after failed conversion
+        int dbOpsAfter = 0;
+        func.walk([&](Operation* op) {
+          if (op->getDialect() && op->getDialect()->getNamespace() == "db") {
+            dbOpsAfter++;
+            PGX_ERROR("Unconverted DB operation: " + op->getName().getStringRef().str());
+          }
+        });
+        
+        PGX_ERROR("DBToStd conversion failed on function: " + func.getName().str() + 
+                  " - " + std::to_string(dbOpsAfter) + " DB operations remain unconverted");
+        signalPassFailure();
+        return;
+      }
+      
+      MLIR_PGX_DEBUG("DBToStd", "Successfully converted function: " + func.getName().str());
+    });
     
     PGX_INFO("DBToStd conversion completed successfully");
   }

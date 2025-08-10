@@ -73,7 +73,7 @@ TEST_F(PostgreSQLSPICallTest, GetFieldToExtractFieldConversion) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
@@ -145,7 +145,7 @@ TEST_F(PostgreSQLSPICallTest, NullableGetValToExtractValue) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
@@ -225,7 +225,7 @@ TEST_F(PostgreSQLSPICallTest, NullableTypeConversionPipeline) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     
@@ -337,7 +337,7 @@ TEST_F(PostgreSQLSPICallTest, CompleteIterationLoop) {
     
     // Run the conversion pass
     PassManager pm(&context);
-    pm.addNestedPass<func::FuncOp>(createDBToStdPass());
+    pm.addPass(createDBToStdPass());
     
     ASSERT_TRUE(succeeded(pm.run(module)));
     

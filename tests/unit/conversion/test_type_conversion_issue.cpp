@@ -75,7 +75,7 @@ TEST_F(TypeConversionIssueTest, AsNullableToAppendPattern) {
     // Run only DBToStd pass first
     {
         PassManager pm(&context);
-        pm.addNestedPass<func::FuncOp>(::mlir::createDBToStdPass());
+        pm.addPass(::mlir::createDBToStdPass());
         
         ASSERT_TRUE(succeeded(pm.run(module)));
         

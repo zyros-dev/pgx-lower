@@ -206,7 +206,7 @@ TEST_F(PipelineIntegrationTest, ErrorHandlingInPipeline) {
     // Run all passes - should handle empty function gracefully
     PassManager pm(&context);
     pm.addNestedPass<func::FuncOp>(pgx_conversion::createRelAlgToDBPass());
-    pm.addNestedPass<func::FuncOp>(mlir::createDBToStdPass());
+    pm.addPass(mlir::createDBToStdPass());
     pm.addPass(pgx_conversion::createDSAToLLVMPass());
     
     ASSERT_TRUE(succeeded(pm.run(module))) << "Pipeline should handle empty functions";
@@ -253,7 +253,7 @@ TEST_F(PipelineIntegrationTest, ColumnProjectionPipeline) {
     // Run complete pipeline
     PassManager pm(&context);
     pm.addNestedPass<func::FuncOp>(pgx_conversion::createRelAlgToDBPass());
-    pm.addNestedPass<func::FuncOp>(mlir::createDBToStdPass());
+    pm.addPass(mlir::createDBToStdPass());
     pm.addPass(pgx_conversion::createDSAToLLVMPass());
     
     ASSERT_TRUE(succeeded(pm.run(module))) << "Pipeline failed for column projection";
