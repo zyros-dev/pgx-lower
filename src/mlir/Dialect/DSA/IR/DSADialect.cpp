@@ -5,6 +5,14 @@
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+// Forward declare DSA types
+namespace pgx { namespace mlir { namespace dsa {
+    class TableBuilderType;
+    class VectorType;
+    class TableType;
+    class FlagType;
+}}}
+
 using namespace mlir;
 using namespace pgx::mlir::dsa;
 
@@ -34,6 +42,71 @@ void DSADialect::initialize() {
     addInterfaces<DSAInlinerInterface>();
     
     PGX_DEBUG("DSA dialect initialization complete");
+}
+
+//===----------------------------------------------------------------------===//
+// DSA Dialect Type Parsing and Printing
+//===----------------------------------------------------------------------===//
+
+::mlir::Type DSADialect::parseType(::mlir::DialectAsmParser &parser) const {
+    PGX_DEBUG("DSADialect::parseType() called");
+    
+    llvm::StringRef mnemonic;
+    if (parser.parseKeyword(&mnemonic)) {
+        return {};
+    }
+    
+    // Parse DSA types by their mnemonic
+    if (mnemonic == "table_builder") {
+        if (parser.parseLess()) return {};
+        mlir::Type rowType;
+        if (parser.parseType(rowType)) return {};
+        if (parser.parseGreater()) return {};
+        auto tupleType = rowType.dyn_cast<::mlir::TupleType>();
+        if (!tupleType) {
+            parser.emitError(parser.getNameLoc(), "table_builder requires tuple type");
+            return {};
+        }
+        return pgx::mlir::dsa::TableBuilderType::get(parser.getContext(), tupleType);
+    }
+    if (mnemonic == "vector") {
+        if (parser.parseLess()) return {};
+        mlir::Type elementType;
+        if (parser.parseType(elementType)) return {};
+        if (parser.parseGreater()) return {};
+        return pgx::mlir::dsa::VectorType::get(parser.getContext(), elementType);
+    }
+    // Handle simple types
+    if (mnemonic == "table") return pgx::mlir::dsa::TableType::get(parser.getContext());
+    if (mnemonic == "flag") return pgx::mlir::dsa::FlagType::get(parser.getContext());
+    
+    parser.emitError(parser.getNameLoc(), "unknown DSA type: ") << mnemonic;
+    return {};
+}
+
+void DSADialect::printType(::mlir::Type type, ::mlir::DialectAsmPrinter &printer) const {
+    PGX_DEBUG("DSADialect::printType() called");
+    
+    // Print DSA types by their mnemonic
+    if (auto tableBuilder = type.dyn_cast<pgx::mlir::dsa::TableBuilderType>()) {
+        printer << "table_builder<" << tableBuilder.getRowType() << ">";
+        return;
+    }
+    if (auto vector = type.dyn_cast<pgx::mlir::dsa::VectorType>()) {
+        printer << "vector<" << vector.getElementType() << ">";
+        return;
+    }
+    if (type.isa<pgx::mlir::dsa::TableType>()) {
+        printer << "table";
+        return;
+    }
+    if (type.isa<pgx::mlir::dsa::FlagType>()) {
+        printer << "flag";
+        return;
+    }
+    
+    PGX_ERROR("Failed to print unknown DSA type");
+    printer << "<unknown DSA type>";
 }
 
 #include "mlir/Dialect/DSA/IR/DSAOpsDialect.cpp.inc"
