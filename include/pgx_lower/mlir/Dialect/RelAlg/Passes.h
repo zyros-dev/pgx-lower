@@ -6,6 +6,7 @@
 namespace runtime {
 class Database;
 } // end namespace runtime
+namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createExtractNestedOperatorsPass();
@@ -30,5 +31,6 @@ void createQueryOptPipeline(mlir::OpPassManager& pm, runtime::Database* db);
 
 } // namespace relalg
 } // end namespace mlir
+} // end namespace pgx
 
 #endif // MLIR_DIALECT_RELALG_PASSES_H

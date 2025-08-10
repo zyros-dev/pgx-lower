@@ -30,9 +30,11 @@ class DetachMetaData : public ::mlir::PassWrapper<DetachMetaData, ::mlir::Operat
 };
 } // end anonymous namespace
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createAttachMetaDataPass(runtime::Database& db) { return std::make_unique<AttachMetaData>(db); }
 std::unique_ptr<Pass> createDetachMetaDataPass() { return std::make_unique<DetachMetaData>(); }
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx

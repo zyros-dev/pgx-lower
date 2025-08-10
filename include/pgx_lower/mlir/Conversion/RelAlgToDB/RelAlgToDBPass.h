@@ -4,6 +4,7 @@
 #include "mlir/Pass/Pass.h"
 #include <memory>
 
+namespace pgx {
 namespace mlir {
     namespace relalg {
         std::unique_ptr<Pass> createLowerToDBPass();
@@ -11,5 +12,6 @@ namespace mlir {
         void createLowerRelAlgPipeline(mlir::OpPassManager& pm);
     }// end namespace relalg
 }// end namespace mlir
+}// end namespace pgx
 
 #endif // MLIR_CONVERSION_RELALGTODB_RELALGTODBPASS_H

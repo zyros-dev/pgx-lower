@@ -131,8 +131,10 @@ class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::
 };
 } // end anonymous namespace
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createOptimizeJoinOrderPass() { return std::make_unique<OptimizeJoinOrder>(); }
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx

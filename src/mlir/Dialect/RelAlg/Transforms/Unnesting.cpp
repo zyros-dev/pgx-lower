@@ -274,8 +274,10 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
 };
 } // end anonymous namespace
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createUnnestingPass() { return std::make_unique<Unnesting>(); }
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx

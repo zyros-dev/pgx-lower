@@ -12,6 +12,7 @@
 #include <iostream>
 #include <memory>
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 class Translator {
@@ -54,5 +55,6 @@ class Translator {
 };
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx
 
 #endif // MLIR_CONVERSION_RELALGTODB_TRANSLATOR_H

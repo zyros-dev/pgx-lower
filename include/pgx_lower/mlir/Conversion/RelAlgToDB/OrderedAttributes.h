@@ -6,6 +6,7 @@
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/Value.h"
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 class OrderedAttributes {
@@ -83,4 +84,5 @@ class OrderedAttributes {
 };
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx
 #endif // MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H

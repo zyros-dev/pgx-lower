@@ -207,6 +207,7 @@ class ExpandTransitiveEqualities : public ::mlir::PassWrapper<ExpandTransitiveEq
 };
 } // end anonymous namespace
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createReduceGroupByKeysPass() { return std::make_unique<ReduceAggrKeys>(); }
@@ -214,3 +215,4 @@ std::unique_ptr<Pass> createExpandTransitiveEqualities() { return std::make_uniq
 
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx

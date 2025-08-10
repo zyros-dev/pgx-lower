@@ -6,6 +6,7 @@
 
 #include <memory>
 
+namespace pgx {
 namespace mlir {
 namespace dsa {
 void populateScalarToStdPatterns(::mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
@@ -17,5 +18,6 @@ std::unique_ptr<Pass> createLowerToStdPass();
 
 } // end namespace dsa
 } // end namespace mlir
+} // end namespace pgx
 
 #endif // MLIR_CONVERSION_DSATOSTD_DSATOSTD_H

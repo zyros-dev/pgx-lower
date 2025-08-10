@@ -73,8 +73,10 @@ class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::ml
 };
 } // end anonymous namespace
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createPushdownPass() { return std::make_unique<Pushdown>(); }
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx
