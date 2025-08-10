@@ -136,12 +136,12 @@ public:
 };
 
 // Pattern for dsa.ds_append → runtime calls
-class DSAppendToStdPattern : public OpRewritePattern<pgx::mlir::dsa::DSAppendOp> {
+class DSAppendToStdPattern : public OpRewritePattern<pgx::mlir::dsa::Append> {
 public:
-    using OpRewritePattern<pgx::mlir::dsa::DSAppendOp>::OpRewritePattern;
+    using OpRewritePattern<pgx::mlir::dsa::Append>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(
-        pgx::mlir::dsa::DSAppendOp op,
+        pgx::mlir::dsa::Append op,
         PatternRewriter &rewriter) const override {
         
         MLIR_PGX_INFO("DSAToStd", "DSAppendPattern: Starting matchAndRewrite");
@@ -180,7 +180,7 @@ public:
         if (!builderHandle.getType().isa<pgx::mlir::util::RefType>()) {
             // Need to convert the handle
             auto i8Type = IntegerType::get(rewriter.getContext(), 8);
-            auto refType = pgx::mlir::util::RefType::get(rewriter.getContext(), i8Type);
+            auto refType = ::pgx::mlir::util::RefType::get(rewriter.getContext(), i8Type);
             convertedHandle = rewriter.create<mlir::UnrealizedConversionCastOp>(
                 loc, refType, builderHandle).getResult(0);
         }
@@ -228,12 +228,12 @@ public:
 };
 
 // Pattern for dsa.next_row → runtime call
-class NextRowToStdPattern : public OpRewritePattern<pgx::mlir::dsa::NextRowOp> {
+class NextRowToStdPattern : public OpRewritePattern<pgx::mlir::dsa::NextRow> {
 public:
-    using OpRewritePattern<pgx::mlir::dsa::NextRowOp>::OpRewritePattern;
+    using OpRewritePattern<pgx::mlir::dsa::NextRow>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(
-        pgx::mlir::dsa::NextRowOp op,
+        pgx::mlir::dsa::NextRow op,
         PatternRewriter &rewriter) const override {
         
         auto loc = op.getLoc();
@@ -252,7 +252,7 @@ public:
         if (!builderHandle.getType().isa<pgx::mlir::util::RefType>()) {
             // Need to convert the handle
             auto i8Type = IntegerType::get(rewriter.getContext(), 8);
-            auto refType = pgx::mlir::util::RefType::get(rewriter.getContext(), i8Type);
+            auto refType = ::pgx::mlir::util::RefType::get(rewriter.getContext(), i8Type);
             convertedHandle = rewriter.create<mlir::UnrealizedConversionCastOp>(
                 loc, refType, builderHandle).getResult(0);
         }
@@ -362,8 +362,8 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
             }
             // Commented out to avoid potential output-related hang
             // MLIR_PGX_DEBUG("DSAToStd", "Walking operation: " + op->getName().getStringRef().str());
-            if (isa<pgx::mlir::dsa::CreateDS, pgx::mlir::dsa::DSAppendOp, 
-                    pgx::mlir::dsa::NextRowOp>(op)) {
+            if (isa<pgx::mlir::dsa::CreateDS, pgx::mlir::dsa::Append, 
+                    pgx::mlir::dsa::NextRow>(op)) {
                 MLIR_PGX_INFO("DSAToStd", "Found DSA operation to convert: " + op->getName().getStringRef().str());
                 opsToReplace.push_back(op);
             }
@@ -382,7 +382,7 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
                 // Get the schema attribute
                 auto schemaAttr = createOp.getInitAttr();
                 if (!schemaAttr) {
-                    MLIR_PGX_ERROR("DSAToStd", "CreateDSOp missing schema attribute");
+                    MLIR_PGX_ERROR("DSAToStd", "CreateDS missing schema attribute");
                     signalPassFailure();
                     return;
                 }
@@ -424,7 +424,7 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
                 createOp.getResult().replaceAllUsesWith(callOp.getResult(0));
                 createOp.erase();
                 
-            } else if (auto appendOp = dyn_cast<pgx::mlir::dsa::DSAppendOp>(op)) {
+            } else if (auto appendOp = dyn_cast<pgx::mlir::dsa::Append>(op)) {
                 MLIR_PGX_DEBUG("DSAToStd", "Converting dsa.ds_append");
                 
                 auto builderHandle = appendOp.getDs();
@@ -433,7 +433,7 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
                 
                 // Ensure the builder handle is properly typed for runtime calls
                 Value convertedHandle = builderHandle;
-                if (!builderHandle.getType().isa<pgx::mlir::util::RefType>()) {
+                if (!builderHandle.getType().isa<::pgx::mlir::util::RefType>()) {
                     // Need to convert the handle
                     auto i8Type = IntegerType::get(context, 8);
                     auto refType = pgx::mlir::util::RefType::get(context, i8Type);
@@ -477,14 +477,14 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
                 // Erase the original operation
                 appendOp.erase();
                 
-            } else if (auto nextRowOp = dyn_cast<pgx::mlir::dsa::NextRowOp>(op)) {
+            } else if (auto nextRowOp = dyn_cast<pgx::mlir::dsa::NextRow>(op)) {
                 MLIR_PGX_DEBUG("DSAToStd", "Converting dsa.next_row");
                 
                 auto builderHandle = nextRowOp.getBuilder();
                 
                 // Ensure the builder handle is properly typed for runtime calls
                 Value convertedHandle = builderHandle;
-                if (!builderHandle.getType().isa<pgx::mlir::util::RefType>()) {
+                if (!builderHandle.getType().isa<::pgx::mlir::util::RefType>()) {
                     // Need to convert the handle
                     auto i8Type = IntegerType::get(context, 8);
                     auto refType = pgx::mlir::util::RefType::get(context, i8Type);

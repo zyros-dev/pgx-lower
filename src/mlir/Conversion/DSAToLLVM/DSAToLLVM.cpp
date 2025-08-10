@@ -122,7 +122,9 @@ public:
         // Get schema description (always provided by MaterializeTranslator)
         StringRef schemaDesc;
         if (auto attr = op.getInitAttr()) {
-            schemaDesc = *attr;
+            if (auto strAttr = attr->dyn_cast<StringAttr>()) {
+                schemaDesc = strAttr.getValue();
+            }
         }
         
         // Create runtime call to allocate table builder
@@ -191,11 +193,11 @@ public:
 // DSAppendOp Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-class DSAppendToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::DSAppendOp> {
+class DSAppendToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::Append> {
 public:
-    using OpConversionPattern<::pgx::mlir::dsa::DSAppendOp>::OpConversionPattern;
+    using OpConversionPattern<::pgx::mlir::dsa::Append>::OpConversionPattern;
     
-    LogicalResult matchAndRewrite(::pgx::mlir::dsa::DSAppendOp op, OpAdaptor adaptor,
+    LogicalResult matchAndRewrite(::pgx::mlir::dsa::Append op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const override {
         MLIR_PGX_DEBUG("DSAToLLVM", "Converting DSAppendOp to LLVM runtime call");
         
@@ -265,16 +267,16 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// NextRowOp Lowering Pattern Implementation
+// NextRow Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-class NextRowToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::NextRowOp> {
+class NextRowToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::NextRow> {
 public:
-    using OpConversionPattern<::pgx::mlir::dsa::NextRowOp>::OpConversionPattern;
+    using OpConversionPattern<::pgx::mlir::dsa::NextRow>::OpConversionPattern;
     
-    LogicalResult matchAndRewrite(::pgx::mlir::dsa::NextRowOp op, OpAdaptor adaptor,
+    LogicalResult matchAndRewrite(::pgx::mlir::dsa::NextRow op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const override {
-        MLIR_PGX_DEBUG("DSAToLLVM", "Converting NextRowOp to LLVM runtime call");
+        MLIR_PGX_DEBUG("DSAToLLVM", "Converting NextRow to LLVM runtime call");
         
         auto loc = op.getLoc();
         auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
