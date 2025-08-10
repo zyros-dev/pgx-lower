@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_CONCURRENTMAP_H
-#define LINGODB_RUNTIME_CONCURRENTMAP_H
+#ifndef PGX_LOWER_RUNTIME_CONCURRENTMAP_H
+#define PGX_LOWER_RUNTIME_CONCURRENTMAP_H
 #include <mutex>
 #include <unordered_map>
 
@@ -46,4 +46,4 @@ class ConcurrentMap {
    }
 };
 } // namespace pgx_lower::compiler::runtime
-#endif // LINGODB_RUNTIME_CONCURRENTMAP_H
+#endif // PGX_LOWER_RUNTIME_CONCURRENTMAP_H

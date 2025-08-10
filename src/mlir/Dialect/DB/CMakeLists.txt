@@ -1,9 +1,9 @@
 set(LLVM_TARGET_DEFINITIONS Transforms/EliminateNulls.td)
 mlir_tablegen(EliminateNulls.inc -gen-rewriters)
 add_public_tablegen_target(MLIRDBEliminateNullsIncGen)
-set(LLVM_TARGET_DEFINITIONS Transforms/SimplifyToArith.td)
-mlir_tablegen(SimplifyToArith.inc -gen-rewriters)
-add_public_tablegen_target(MLIRDBSimplifyToArithIncGen)
+#set(LLVM_TARGET_DEFINITIONS Transforms/SimplifyToArith.td)
+#mlir_tablegen(SimplifyToArith.inc -gen-rewriters)
+#add_public_tablegen_target(#MLIRDBSimplifyToArithIncGen)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 gen_rt_def(dump-rt-defs "DumpRuntime.h")
@@ -29,7 +29,7 @@ add_mlir_dialect_library(MLIRDB
         date-rt-defs
         MLIRDBOpsIncGen
         MLIRDBEliminateNullsIncGen
-        MLIRDBSimplifyToArithIncGen
+        #MLIRDBSimplifyToArithIncGen
         LINK_LIBS PUBLIC
         MLIRIR
         MLIRFuncTransforms

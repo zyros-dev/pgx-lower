@@ -1,5 +1,5 @@
-#ifndef LINGODB_RUNTIME_FLOATRUNTIME_H
-#define LINGODB_RUNTIME_FLOATRUNTIME_H
+#ifndef PGX_LOWER_RUNTIME_FLOATRUNTIME_H
+#define PGX_LOWER_RUNTIME_FLOATRUNTIME_H
 #include "runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 struct FloatRuntime {
@@ -14,4 +14,4 @@ struct FloatRuntime {
 };
 
 } // namespace pgx_lower::compiler::runtime
-#endif // LINGODB_RUNTIME_FLOATRUNTIME_H
+#endif // PGX_LOWER_RUNTIME_FLOATRUNTIME_H

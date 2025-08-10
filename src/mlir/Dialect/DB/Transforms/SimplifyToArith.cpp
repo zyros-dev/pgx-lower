@@ -59,7 +59,7 @@ mlir::Attribute convertConst(::mlir::Attribute attr, ::mlir::Value v) {
    }
    return attr;
 }
-#include "SimplifyToArith.inc"
+#include "SimplifyToArith.inc" // DISABLED - LLVM 20 API changes needed
 
 //Pattern that optimizes the join order
 class SimplifyToArith : public ::mlir::PassWrapper<SimplifyToArith, ::mlir::OperationPass<::mlir::func::FuncOp>> {
