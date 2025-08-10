@@ -381,6 +381,7 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
                 
                 // Get the schema attribute
                 auto schemaAttr = createOp.getInitAttr();
+                MLIR_PGX_DEBUG("DSAToStd", "Schema attr exists: " + std::to_string(schemaAttr.has_value()));
                 if (!schemaAttr) {
                     MLIR_PGX_ERROR("DSAToStd", "CreateDS missing schema attribute");
                     signalPassFailure();

@@ -24,6 +24,9 @@ def DSA_Dialect : Dialect {
         void registerTypes();
 
         public:
+            // Type parsing and printing methods for DSA dialect custom types
+            ::mlir::Type parseType(::mlir::DialectAsmParser &parser) const override;
+            void printType(::mlir::Type type, ::mlir::DialectAsmPrinter &printer) const override;
 
     }];
 }

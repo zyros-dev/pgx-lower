@@ -57,9 +57,9 @@ protected:
 TEST_F(DSAToStdTest, CreateDSTableBuilder) {
     const char* mlir_input = R"mlir(
         module {
-            func.func @test_create_table_builder() -> !dsa.table_builder<tuple<i64>> {
-                %builder = dsa.create_ds "id:int[64]" -> !dsa.table_builder<tuple<i64>>
-                return %builder : !dsa.table_builder<tuple<i64>>
+            func.func @test_create_table_builder() {
+                dsa.create_ds ("id:int[64]") -> !dsa.table_builder<tuple<i64>>
+                return
             }
         }
     )mlir";
@@ -151,7 +151,7 @@ TEST_F(DSAToStdTest, NextRow) {
     const char* mlir_input = R"mlir(
         module {
             func.func @test_next_row(%builder: !dsa.table_builder<tuple<i64>>) {
-                dsa.next_row %builder : <tuple<i64>>
+                dsa.next_row %builder : !dsa.table_builder<tuple<i64>>
                 return
             }
         }
@@ -183,21 +183,18 @@ TEST_F(DSAToStdTest, NextRow) {
 // Test complete pipeline with dsa operations
 TEST_F(DSAToStdTest, CompletePipeline) {
     const char* mlir_input = R"mlir(
-        module {
-            func.func @test_complete_pipeline() {
-                %builder = dsa.create_ds "id:int[64]" -> !dsa.table_builder<tuple<i64>>
-                
-                %c42_i64 = arith.constant 42 : i64
-                %false = arith.constant false : i1
-                %nullable = util.pack %c42_i64, %false : (i64, i1) -> tuple<i64, i1>
-                
-                dsa.ds_append %builder : !dsa.table_builder<tuple<i64>>, %nullable : tuple<i64, i1>
-                dsa.next_row %builder
-                
-                return
-            }
-        }
-    )mlir";
+module {
+  func.func @test_complete_pipeline() {
+    %builder = dsa.create_ds ("id:int[64]") -> !dsa.table_builder<tuple<i64>>
+    %c42_i64 = arith.constant 42 : i64
+    %false = arith.constant false : i1
+    %nullable = util.pack %c42_i64, %false : (i64, i1) -> tuple<i64, i1>
+    dsa.ds_append %builder : !dsa.table_builder<tuple<i64>>, %nullable : tuple<i64, i1>
+    dsa.next_row %builder : !dsa.table_builder<tuple<i64>>
+    return
+  }
+}
+)mlir";
     
     auto module = mlir::parseSourceString<mlir::ModuleOp>(mlir_input, &context);
     ASSERT_TRUE(module);
