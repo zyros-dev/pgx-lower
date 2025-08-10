@@ -1,492 +1,352 @@
-#ifndef PGX_DIALECT_DB_IR_OPS
-#define PGX_DIALECT_DB_IR_OPS
+#ifndef OPS
+#define OPS
 
 include "mlir/IR/OpBase.td"
-include "mlir/IR/EnumAttr.td" 
+include "mlir/IR/EnumAttr.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
-include "mlir/IR/SymbolInterfaces.td"
-include "mlir/IR/BuiltinTypes.td"
-include "mlir/IR/BuiltinAttributeInterfaces.td"
-include "mlir/Bytecode/BytecodeOpInterface.td"
+include "mlir/Interfaces/LoopLikeInterface.td"
+include "mlir/Dialect/DB/IR/DBInterfaces.td"
+include "mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // DB dialect definition.
 //===----------------------------------------------------------------------===//
 
 def DB_Dialect : Dialect {
-    let name = "db";
-    let summary = "A dialect for Database operations in pgx-lower";
+    let summary = "Imperative Database Dialect";
     let description = [{
-        The DB dialect provides operations for PostgreSQL integration,
-        handling table access, tuple iteration, field extraction, and result streaming.
-        It serves as the interface between MLIR operations and PostgreSQL runtime.
+        Imperative database dialect, defining abstract/non-trivial types and high-level operations which more closely resemble SQL semantics, e.g. by supporting `NULL` values.
+
+        Supported types are integers (`i32`/`i64`), floats, bools (`i1`), `Date`, `Timestamp`, `Interval`, `Decimal`, `Char` (fixed-size buffers), and `String` (variable-length buffers). Nullable types are supported using `nullable<...>`; plain `NULL` values can be represented using `nullable<none>`.
     }];
-    let cppNamespace = "::pgx::db";
-    
-    // TEMPORARY: Disable properties system for MLIR v20 compatibility
-    // TODO: Remove this workaround and fix resulting compilation errors
-    let usePropertiesForAttributes = 0;
-    
+
+    let name = "db";
+    let cppNamespace = "pgx::mlir::db";
     let extraClassDeclaration = [{
         private:
         void registerTypes();
-        
+        std::shared_ptr<mlir::db::RuntimeFunctionRegistry> runtimeFunctionRegistry;
+
         public:
-            // Type parsing and printing methods for DB dialect custom types
-            ::mlir::Type parseType(::mlir::DialectAsmParser &parser) const override;
-            void printType(::mlir::Type type, ::mlir::DialectAsmPrinter &printer) const override;
+            std::shared_ptr<mlir::db::RuntimeFunctionRegistry> getRuntimeFunctionRegistry(){
+                return runtimeFunctionRegistry;
+            }
     }];
 }
 
-//===----------------------------------------------------------------------===//
-// Types
-//===----------------------------------------------------------------------===//
+class DB_Op<string mnemonic, list<Trait> traits = []> : Op<DB_Dialect, mnemonic, traits>{
+}
+
 
 class DB_Type<string name, string typeMnemonic> : TypeDef<DB_Dialect, name> {
     let mnemonic = typeMnemonic;
 }
 
-// Fixed nullable types for common SQL types
-def DB_NullableI32 : DB_Type<"NullableI32", "nullable_i32"> {
-    let summary = "nullable 32-bit integer for SQL semantics";
+def NullableType : DB_Type<"Nullable","nullable"> {
+    let summary = "nullable";
+
+    let parameters = (ins "Type":$type);
+    let assemblyFormat = " `<` $type `>`";
+
+    let builders = [
+        TypeBuilderWithInferredContext<(ins "Type":$type), [{
+            return $_get(type.getContext(), type);
+        }]>
+    ];
+    // XXX: remove builder that takes context parameter
+    // let skipDefaultBuilders = 1;
+}
+
+
+def DB_CharType : DB_Type<"Char","char"> {
+    let summary = "char";
     let description = [{
-        A nullable 32-bit integer type that can represent either an integer value
-        or SQL NULL. This provides proper SQL NULL semantics for integer operations.
+        Fixed-size array of chars.
+    }];
+
+    let parameters = (ins "unsigned":$bytes);
+    let assemblyFormat="`<` $bytes `>` ";
+}
+
+def DB_DateUnit_DAY  : I64EnumAttrCase<"day", 0>;
+def DB_DateUnit_MS : I64EnumAttrCase<"millisecond", 1>;
+def DB_DateUnitAttr : I64EnumAttr<"DateUnitAttr", "",
+        [DB_DateUnit_DAY,DB_DateUnit_MS]> {
+    let cppNamespace = "::mlir::db";
+}
+def DB_DateType : DB_Type<"Date","date"> {
+    let summary = "date";
+    let parameters = (ins "DateUnitAttr":$unit);
+    let assemblyFormat="`<` $unit  `>` ";
+}
+
+def DB_IntervalUnit_MONTH  : I64EnumAttrCase<"months", 0>;
+def DB_IntervalUnit_DAYTIME : I64EnumAttrCase<"daytime", 1>;
+def DB_IntervalUnitAttr : I64EnumAttr<"IntervalUnitAttr", "",
+        [DB_IntervalUnit_MONTH,DB_IntervalUnit_DAYTIME]> {
+    let cppNamespace = "::mlir::db";
+}
+def DB_IntervalType : DB_Type<"Interval","interval"> {
+    let summary = "interval";
+    let parameters = (ins "IntervalUnitAttr":$unit);
+    let assemblyFormat="`<` $unit  `>` ";
+}
+
+def DB_TimeUnit_S : I64EnumAttrCase<"second", 0>;
+def DB_TimeUnit_MS : I64EnumAttrCase<"millisecond", 1>;
+def DB_TimeUnit_MUS : I64EnumAttrCase<"microsecond", 2>;
+def DB_TimeUnit_NS : I64EnumAttrCase<"nanosecond", 3>;
+def DB_TimeUnitAttr : I64EnumAttr<"TimeUnitAttr", "",
+        [DB_TimeUnit_S,DB_TimeUnit_MS,DB_TimeUnit_MUS,DB_TimeUnit_NS]> {
+    let cppNamespace = "::mlir::db";
+}
+def DB_TimestampType : DB_Type<"Timestamp","timestamp"> {
+    let summary = "timestamp";
+    let parameters = (ins "TimeUnitAttr":$unit);
+    let assemblyFormat="`<` $unit`>` ";
+}
+
+def DB_DecimalType : DB_Type<"Decimal","decimal"> {
+    let summary = "decimal";
+    let description = [{
+        Decimal type with `p` digits in total and `s` digits after the decimal point.
+    }];
+
+    let parameters = (ins "int":$p,"int":$s);
+    let assemblyFormat="`<` $p `,` $s  `>` ";
+}
+
+def DB_StringType : DB_Type<"String","string"> {
+    let summary = "string";
+    let description = [{
+        Variable-length string.
     }];
 }
 
-def DB_NullableI64 : DB_Type<"NullableI64", "nullable_i64"> {
-    let summary = "nullable 64-bit integer for SQL semantics";  
-    let description = [{
-        A nullable 64-bit integer type that can represent either an integer value
-        or SQL NULL. This provides proper SQL NULL semantics for integer operations.
-    }];
-}
+def AnyBool: AnyTypeOf<[I1,NullableType]>;
+def NullableDBType: AnyTypeOf<[AnyType,NullableType]>;
 
-def DB_NullableF64 : DB_Type<"NullableF64", "nullable_f64"> {
-    let summary = "nullable 64-bit float for SQL semantics";
-    let description = [{
-        A nullable double-precision float type that can represent either a float value
-        or SQL NULL. This provides proper SQL NULL semantics for float operations.
-    }];
-}
+def DB_ConstantOp : DB_Op<"constant", [NoSideEffect]> {
+    let summary = "Create constant value";
 
-def DB_NullableBool : DB_Type<"NullableBool", "nullable_bool"> {
-    let summary = "nullable boolean for SQL semantics";
-    let description = [{
-        A nullable boolean type that can represent true, false, or SQL NULL.
-        This provides proper SQL three-valued logic semantics.
-    }];
-}
-
-// Simple NULL marker type for creating NULL literals
-def DB_SqlNull : DB_Type<"SqlNull", "sql_null"> {
-    let summary = "SQL NULL literal type";
-    let description = [{
-        Type representing SQL NULL literals. Used by the NullOp operation
-        to create NULL values that can be cast to nullable<T> types.
-    }];
-}
-
-def DB_ExternalSource : DB_Type<"ExternalSource", "external_source"> {
-    let summary = "PostgreSQL table handle";
-    let description = [{
-        Opaque handle representing a PostgreSQL table being scanned.
-        Contains internal state for tuple iteration and field access.
-    }];
-}
-
-//===----------------------------------------------------------------------===//
-// Type Constraints
-//===----------------------------------------------------------------------===//
-
-// Core type constraints  
-def DB_SqlNullType : AnyTypeOf<[DB_SqlNull]>;
-def DB_NullableTypes : AnyTypeOf<[DB_NullableI32, DB_NullableI64, DB_NullableF64, DB_NullableBool]>;
-
-// SQL data type constraints
-def DB_SQLInteger : AnyTypeOf<[I8, I16, I32, I64]>;
-def DB_SQLFloat : AnyTypeOf<[F32, F64]>; 
-def DB_SQLNumeric : AnyTypeOf<[DB_SQLInteger, DB_SQLFloat]>;
-def DB_SQLBasic : AnyTypeOf<[DB_SQLNumeric, I1]>;
-
-// Nullable type constraints for SQL operations 
-def DB_NullableInteger : AnyTypeOf<[DB_SQLInteger, DB_NullableI32, DB_NullableI64]>;
-def DB_NullableFloat : AnyTypeOf<[DB_SQLFloat, DB_NullableF64]>;
-def DB_NullableNumeric : AnyTypeOf<[DB_SQLNumeric, DB_NullableI32, DB_NullableI64, DB_NullableF64]>;
-def DB_NullableLogical : AnyTypeOf<[I1, DB_NullableBool]>;
-def DB_NullableValue : AnyTypeOf<[DB_SQLBasic, DB_NullableTypes, DB_SqlNull]>;
-
-//===----------------------------------------------------------------------===//
-// Base DB operation definition.
-//===----------------------------------------------------------------------===//
-
-class DB_Op<string mnemonic, list<Trait> traits = []> : Op<DB_Dialect, mnemonic, traits> {
-}
-
-//===----------------------------------------------------------------------===//
-// PostgreSQL-specific Operations (7 total)
-//===----------------------------------------------------------------------===//
-
-def GetExternalOp : DB_Op<"get_external", [Pure]> {
-    let summary = "initialize PostgreSQL table access";
-    let description = [{
-        Initialize access to a PostgreSQL table by opening the table relation
-        and setting up scanning infrastructure. Returns an opaque handle for
-        subsequent operations.
-        
-        Example:
-        ```mlir
-        %handle = db.get_external %table_oid : i64 -> !db.external_source
-        ```
-    }];
-    
-    let arguments = (ins I64:$table_oid);
-    let results = (outs DB_ExternalSource:$handle);
-}
-
-def IterateExternalOp : DB_Op<"iterate_external", []> {
-    let summary = "get next tuple from PostgreSQL table";
-    let description = [{
-        Advance the table scan to the next tuple. Returns true if a tuple
-        is available, false if end of table reached.
-        
-        Example:
-        ```mlir
-        %has_tuple = db.iterate_external %handle : !db.external_source -> i1
-        ```
-    }];
-    
-    let arguments = (ins DB_ExternalSource:$handle);
-    let results = (outs I1:$has_tuple);
-}
-
-def GetFieldOp : DB_Op<"get_field", []> {
-    let summary = "extract field value from current tuple with null handling";
-    let description = [{
-        Extract a field value from the current tuple with proper SQL null handling.
-        Returns a nullable value that can represent either the actual field value
-        or NULL if the field is null in the database.
-        
-        Example:
-        ```mlir
-        %value = db.get_field %handle, %field_index, %type_oid : 
-            !db.external_source, index, i32 -> !db.nullable<i32>
-        ```
-    }];
-    
-    let arguments = (ins 
-        DB_ExternalSource:$handle,
-        Index:$field_index, 
-        I32:$type_oid
-    );
-    let results = (outs DB_NullableValue:$value);
-}
-
-def StoreResultOp : DB_Op<"store_result", []> {
-    let summary = "store computed value for result tuple";
-    let description = [{
-        Store a computed value in the result tuple being constructed.
-        Handles conversion from MLIR types to PostgreSQL Datums.
-        Supports nullable values with proper NULL handling.
-        
-        Example:
-        ```mlir
-        db.store_result %value, %field_index : !db.nullable<i32>, index
-        ```
-    }];
-    
-    let arguments = (ins 
-        DB_NullableValue:$value,
-        Index:$field_index
-    );
-    let results = (outs);
-}
-
-def StreamResultsOp : DB_Op<"stream_results", []> {
-    let summary = "output accumulated results to PostgreSQL";
-    let description = [{
-        Finalize and output the accumulated result tuples to PostgreSQL.
-        This triggers the actual data transmission back to the client.
-        
-        Example:
-        ```mlir
-        db.stream_results
-        ```
-    }];
-    
-    let arguments = (ins);
-    let results = (outs);
-}
-
-def GetColumnOp : DB_Op<"get_column", [Pure]> {
-    let summary = "get column value for RelAlg compatibility";
-    let description = [{
-        Extract a column value for compatibility with RelAlg lowering patterns.
-        This operation provides an interface compatible with RelAlg GetColumnOp
-        while working with the PostgreSQL runtime system.
-        
-        Example:
-        ```mlir
-        %value = db.get_column %handle, %column_attr : 
-            !db.external_source, !relalg.columnref -> !db.nullable<i32>
-        ```
-    }];
-    
-    let arguments = (ins 
-        DB_ExternalSource:$handle,
-        AnyAttr:$column_attr
-    );
-    let results = (outs DB_NullableValue:$result);
-}
-
-//===----------------------------------------------------------------------===//
-// Arithmetic Operations (5 total) - Reused from LingoDB
-//===----------------------------------------------------------------------===//
-
-def AddOp : DB_Op<"add", [Pure, Commutative]> {
-    let summary = "addition operation with null handling";
-    let description = [{
-        Performs addition of two values with SQL null semantics.
-        If either operand is null, the result is null.
-        Supports nullable numeric types.
-    }];
-    
-    let arguments = (ins DB_NullableNumeric:$lhs, DB_NullableNumeric:$rhs);
-    let results = (outs DB_NullableNumeric:$result);
-}
-
-def SubOp : DB_Op<"sub", [Pure]> {
-    let summary = "subtraction operation with null handling";
-    let description = [{
-        Performs subtraction of two values with SQL null semantics.
-        If either operand is null, the result is null.
-        Supports nullable numeric types.
-    }];
-    
-    let arguments = (ins DB_NullableNumeric:$lhs, DB_NullableNumeric:$rhs);
-    let results = (outs DB_NullableNumeric:$result);
-}
-
-def MulOp : DB_Op<"mul", [Pure, Commutative]> {
-    let summary = "multiplication operation with null handling";
-    let description = [{
-        Performs multiplication of two values with SQL null semantics.
-        If either operand is null, the result is null.
-        Supports nullable numeric types.
-    }];
-    
-    let arguments = (ins DB_NullableNumeric:$lhs, DB_NullableNumeric:$rhs);
-    let results = (outs DB_NullableNumeric:$result);
-}
-
-def DivOp : DB_Op<"div", [Pure]> {
-    let summary = "division operation with null handling";
-    let description = [{
-        Performs division of two values with SQL null semantics.
-        If either operand is null, the result is null.
-        Division by zero behavior follows PostgreSQL semantics.
-        Supports nullable numeric types.
-    }];
-    
-    let arguments = (ins DB_NullableNumeric:$lhs, DB_NullableNumeric:$rhs);
-    let results = (outs DB_NullableNumeric:$result);
-}
-
-def ModOp : DB_Op<"mod", [Pure]> {
-    let summary = "modulo operation with null handling";
-    let description = [{
-        Performs modulo operation with SQL null semantics.
-        If either operand is null, the result is null.
-        Supports nullable numeric types.
-    }];
-    
-    let arguments = (ins DB_NullableNumeric:$lhs, DB_NullableNumeric:$rhs);
-    let results = (outs DB_NullableNumeric:$result);
-}
-
-//===----------------------------------------------------------------------===//
-// Logical Operations (3 total) - Reused from LingoDB
-//===----------------------------------------------------------------------===//
-
-def AndOp : DB_Op<"and", [Pure, Commutative]> {
-    let summary = "logical AND with three-valued logic";
-    let description = [{
-        Performs logical AND with SQL three-valued logic (true, false, null).
-        Follows SQL standard null propagation rules.
-        Supports nullable boolean types.
-    }];
-    
-    let arguments = (ins DB_NullableLogical:$lhs, DB_NullableLogical:$rhs);
-    let results = (outs DB_NullableLogical:$result);
-}
-
-def OrOp : DB_Op<"or", [Pure, Commutative]> {
-    let summary = "logical OR with three-valued logic";
-    let description = [{
-        Performs logical OR with SQL three-valued logic (true, false, null).
-        Follows SQL standard null propagation rules.
-        Supports nullable boolean types.
-    }];
-    
-    let arguments = (ins DB_NullableLogical:$lhs, DB_NullableLogical:$rhs);
-    let results = (outs DB_NullableLogical:$result);
-}
-
-def NotOp : DB_Op<"not", [Pure]> {
-    let summary = "logical NOT with three-valued logic";
-    let description = [{
-        Performs logical NOT with SQL three-valued logic.
-        NOT NULL = NULL in SQL semantics.
-        Supports nullable boolean types.
-    }];
-    
-    let arguments = (ins DB_NullableLogical:$operand);
-    let results = (outs DB_NullableLogical:$result);
-}
-
-//===----------------------------------------------------------------------===//
-// Comparison Operations (1 total) - Reused from LingoDB  
-//===----------------------------------------------------------------------===//
-
-// Enum for comparison predicates
-def DB_CmpPredicate : I32EnumAttr<"CmpPredicate",
-    "Comparison predicate", [
-        I32EnumAttrCase<"eq", 0, "eq">,
-        I32EnumAttrCase<"ne", 1, "ne">, 
-        I32EnumAttrCase<"lt", 2, "lt">,
-        I32EnumAttrCase<"le", 3, "le">,
-        I32EnumAttrCase<"gt", 4, "gt">,
-        I32EnumAttrCase<"ge", 5, "ge">
-    ]> {
-    let cppNamespace = "::pgx::db";
-    let genSpecializedAttr = 0;
-}
-
-def CompareOp : DB_Op<"compare", [Pure]> {
-    let summary = "comparison operation with null handling";
-    let description = [{
-        Performs comparison between two values with SQL null semantics.
-        Any comparison involving null returns null (unknown).
-        Supports nullable types with proper SQL three-valued logic.
-    }];
-    
-    let arguments = (ins 
-        I32Attr:$predicate,
-        DB_NullableValue:$lhs, 
-        DB_NullableValue:$rhs
-    );
-    let results = (outs DB_NullableLogical:$result);
-}
-
-//===----------------------------------------------------------------------===//
-// Nullable Operations (4 total) - Reused from LingoDB
-//===----------------------------------------------------------------------===//
-
-def NullOp : DB_Op<"null", [Pure]> {
-    let summary = "create SQL NULL value";
-    let description = [{
-        Creates a SQL NULL marker value for use in SQL three-valued logic.
-        
-        Example:
-        ```mlir
-        %null = db.null : !db.sql_null
-        ```
-    }];
-    
-    let arguments = (ins);
-    let results = (outs DB_SqlNull:$result);
-}
-
-def AsNullableOp : DB_Op<"as_nullable", [Pure]> {
-    let summary = "convert value to nullable type";
-    let description = [{
-        Converts a non-nullable value to a nullable type for SQL semantics.
-        The result is a nullable version of the input type that can represent
-        either the original value or NULL.
-        
-        Example:
-        ```mlir
-        %nullable_val = db.as_nullable %input : i32 -> !db.nullable<i32>
-        ```
-    }];
-    
-    let arguments = (ins DB_SQLBasic:$value);
-    let results = (outs DB_NullableValue:$result);
-}
-
-def IsNullOp : DB_Op<"isnull", [Pure]> {
-    let summary = "test if nullable value is null";
-    let description = [{
-        Tests whether a nullable value represents SQL NULL.
-        Returns true if the value is NULL, false if it contains a value.
-        
-        Example:
-        ```mlir
-        %is_null = db.isnull %value : !db.nullable<i32> -> i1
-        ```
-    }];
-    
-    let arguments = (ins DB_NullableValue:$value);
-    let results = (outs I1:$result);
-}
-
-def NullableGetValOp : DB_Op<"nullable_get_val", [Pure]> {
-    let summary = "extract value from nullable type";
-    let description = [{
-        Extracts the underlying value from a nullable type.
-        Behavior is undefined if the nullable value is NULL.
-        Must be guarded by IsNullOp check in safe code.
-        
-        Example:
-        ```mlir
-        %result = db.nullable_get_val %value : !db.nullable<i32> -> i32
-        ```
-    }];
-    
-    let arguments = (ins DB_NullableValue:$value);
-    let results = (outs DB_SQLBasic:$result);
-}
-
-//===----------------------------------------------------------------------===//
-// Utility Operations (2 total) - Reused from LingoDB
-//===----------------------------------------------------------------------===//
-
-def ConstantOp : DB_Op<"constant", [Pure]> {
-    let summary = "create constant value";
-    let description = [{
-        Creates a constant value of the specified type.
-        Can create both nullable and non-nullable constants.
-        
-        Example:
-        ```mlir
-        %const = db.constant 42 : i32
-        %nullable_const = db.constant 42 : !db.nullable<i32>
-        ```
-    }];
-    
     let arguments = (ins AnyAttr:$value);
-    let results = (outs DB_NullableValue:$result);
-}
+    let results = (outs AnyType:$result);
+    let assemblyFormat = "`(` $value `)` `:` type($result) attr-dict";
 
-def CastOp : DB_Op<"cast", [Pure]> {
-    let summary = "cast value to different type";
-    let description = [{
-        Performs type casting with SQL semantics.
-        Handles nullable values appropriately - NULL remains NULL.
-        Supports casting between nullable and non-nullable types.
-        
-        Example:
-        ```mlir
-        %cast = db.cast %value : !db.nullable<i32> to !db.nullable<i64>
-        ```
+    let extraClassDeclaration = [{
+        Attribute getValue() { return (*this)->getAttr("value"); }
     }];
-    
-    let arguments = (ins DB_NullableValue:$input);
-    let results = (outs DB_NullableValue:$result);
 }
 
-#endif // PGX_DIALECT_DB_IR_OPS
+def DB_NullOp : DB_Op<"null", [NoSideEffect]> {
+    let summary = "Create null value";
+
+    let results = (outs NullableType:$res);
+    let assemblyFormat = "`:` type($res) attr-dict";
+}
+
+def DB_DeriveTruth : DB_Op<"derive_truth", [NoSideEffect]> {
+    let summary = "Get whether a value is true-ish";
+
+    let arguments  = (ins AnyType:$val);
+    let results = (outs I1:$res);
+    let assemblyFormat = "$val `:` type($val) attr-dict";
+}
+
+def DB_AsNullableOp : DB_Op<"as_nullable", [NoSideEffect]> {
+    let summary = "Convert to nullable type";
+
+    let arguments = (ins AnyType: $val,Optional<I1>: $null);
+    let results = (outs NullableType : $res);
+    let assemblyFormat = "$val `:` type($val) ( `,` $null^ )?  `->` type($res) attr-dict";
+}
+
+def DB_IsNullOp : DB_Op<"isnull", [NoSideEffect]> {
+    let summary = "Indicate whether a nullable value is null";
+
+    let arguments = (ins NullableType:$val);
+    let results = (outs I1:$result);
+    let assemblyFormat = "$val `:` type($val) attr-dict";
+}
+
+def DB_NullableGetVal : DB_Op<"nullable_get_val", [NoSideEffect,DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    let summary = "Get value of nullable type";
+
+    let arguments = (ins NullableType: $val);
+    let results = (outs AnyType : $res);
+    let assemblyFormat = "$val `:` type($val)  attr-dict";
+    let extraClassDefinition = [{
+        LogicalResult $cppClass::inferReturnTypes(
+                MLIRContext* context, Optional<Location> location,
+                ValueRange operands, DictionaryAttr attributes,
+                RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
+            inferredReturnTypes.assign({operands[0].getType().cast<mlir::db::NullableType>().getType()});
+            return success();
+        }
+    }];
+}
+
+def DB_RuntimeCall : DB_Op<"runtime_call", [DB_MayNeedNullWrap,DB_MaySupportInvalidValues]> {
+    let summary = "Call runtime function";
+
+    let arguments = (ins StrAttr:$fn,Variadic<AnyType>: $args);
+    let results = (outs Optional<AnyType>:$res);
+    let assemblyFormat = "$fn  `(` $args `)` `:`  functional-type($args,$res)  attr-dict";
+
+    let hasVerifier=1;
+}
+
+def DB_Hash : DB_Op<"hash", [NoSideEffect]> {
+    let summary = "Compute hash";
+
+    let arguments = (ins AnyType: $val);
+    let results = (outs  Index : $hash);
+    let assemblyFormat = "$val `:` type($val) attr-dict";
+}
+
+class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
+        Op<DB_Dialect, mnemonic,
+            !listconcat(traits, [NoSideEffect,DeclareOpInterfaceMethods<InferTypeOpInterface>,DB_NeedsNullWrap,DB_SupportsInvalidValues])>,Arguments<(ins NullableDBType:$left, NullableDBType:$right)> {
+    let results = (outs AnyType:$result);
+    let extraClassDefinition = [{
+        LogicalResult $cppClass::inferReturnTypes(
+        MLIRContext* context, Optional<Location> location, ValueRange operands,
+        DictionaryAttr attributes, RegionRange regions,
+        SmallVectorImpl<Type>& inferredReturnTypes) {
+            return inferReturnType(context,location,operands,inferredReturnTypes);
+        }
+    }];
+    let assemblyFormat = "$left `:` type($left) `,` $right `:` type($right) attr-dict";
+}
+
+def DB_AddOp : DB_BinaryOp<"add"> {
+    let summary = "Add int/float/decimal";
+}
+def DB_SubOp : DB_BinaryOp<"sub"> {
+    let summary = "Subtract int/float/decimal";
+}
+def DB_MulOp : DB_BinaryOp<"mul"> {
+    let summary = "Multiply int/float/decimal";
+
+  let extraClassDefinition = [{
+    LogicalResult $cppClass::inferReturnTypes(
+   MLIRContext* context, Optional<Location> location, ValueRange operands,
+   DictionaryAttr attributes, RegionRange regions,
+   SmallVectorImpl<Type>& inferredReturnTypes) {
+         return inferMulReturnType(context,location,operands,inferredReturnTypes);
+    }
+  }];
+}
+def DB_DivOp : DB_BinaryOp<"div"> {
+    let summary = "Divide int/float/decimal";
+
+  let extraClassDefinition = [{
+    LogicalResult $cppClass::inferReturnTypes(
+   MLIRContext* context, Optional<Location> location, ValueRange operands,
+   DictionaryAttr attributes, RegionRange regions,
+   SmallVectorImpl<Type>& inferredReturnTypes) {
+         return inferDivReturnType(context,location,operands,inferredReturnTypes);
+    }
+  }];
+}
+def DB_ModOp : DB_BinaryOp<"mod"> {
+    let summary = "Remainder of int/float/decimal";
+
+  let extraClassDefinition = [{
+    LogicalResult $cppClass::inferReturnTypes(
+   MLIRContext* context, Optional<Location> location, ValueRange operands,
+   DictionaryAttr attributes, RegionRange regions,
+   SmallVectorImpl<Type>& inferredReturnTypes) {
+         return inferDivReturnType(context,location,operands,inferredReturnTypes);
+    }
+  }];
+}
+
+class DB_LogicalOp<string mnemonic, list<Trait> traits = []> :
+        Op<DB_Dialect, mnemonic,
+            !listconcat(traits, [NoSideEffect,DeclareOpInterfaceMethods<InferTypeOpInterface>])> {
+    let results = (outs AnyBool:$res);
+    let extraClassDefinition = [{
+        LogicalResult $cppClass::inferReturnTypes(MLIRContext* context, Optional<Location>, ValueRange operands,
+                DictionaryAttr, RegionRange, SmallVectorImpl<Type>& inferredReturnTypes) {
+            mlir::Type i1 = IntegerType::get(context, 1);
+            inferredReturnTypes.assign({wrapNullableType(context, i1, operands)});
+            return success();
+        }
+    }];
+}
+
+def DB_CMP_P_EQ  : I64EnumAttrCase<"eq", 0>;
+def DB_CMP_P_NEQ  : I64EnumAttrCase<"neq", 1>;
+def DB_CMP_P_LT : I64EnumAttrCase<"lt", 2>;
+def DB_CMP_P_LTE : I64EnumAttrCase<"lte", 3>;
+def DB_CMP_P_GT : I64EnumAttrCase<"gt", 4>;
+def DB_CMP_P_GTE : I64EnumAttrCase<"gte", 5>;
+def DB_CmpPredicateAttr : I64EnumAttr<"DBCmpPredicate", "",
+        [DB_CMP_P_EQ, DB_CMP_P_NEQ, DB_CMP_P_LT, DB_CMP_P_LTE, DB_CMP_P_GT,DB_CMP_P_GTE]> {
+    let cppNamespace = "::mlir::db";
+}
+
+def DB_CmpOp : DB_LogicalOp<"compare",
+        [DeclareOpInterfaceMethods<Relalg_CmpOpInterface>,DB_NeedsNullWrap,DB_MaySupportInvalidValues]> {
+    let summary = "Compare int/Decimal/String";
+
+    let arguments = (ins DB_CmpPredicateAttr:$predicate, NullableDBType:$left, NullableDBType:$right);
+    let assemblyFormat = "$predicate $left `:` type($left) `,` $right `:` type($right) attr-dict";
+}
+
+def DB_BetweenOp : DB_LogicalOp<"between",[DB_NeedsNullWrap]> {
+    let summary = "whether value is between `lower` and `upper`";
+    let description = [{
+        Determine whether a value is in a given range. This is preferred over (and also internally derived from) two comparisons to simplify optimizations depending on information about a value range.
+    }];
+
+    let arguments = (ins NullableDBType:$val, NullableDBType:$lower, NullableDBType:$upper, I1Attr:$lowerInclusive, I1Attr:$upperInclusive);
+    let assemblyFormat = "$val `:` type ($val) `between` $lower `:` type($lower) `,` $upper `:` type($upper) `,` `lowerInclusive` `:` $lowerInclusive `,` `upperInclusive` `:` $upperInclusive attr-dict";
+}
+
+def DB_OneOfOp : DB_LogicalOp<"oneof",[DB_NeedsNullWrap]> {
+    let summary = "whether `val` is included in `vals`";
+    let description = [{
+        Determine whether `val` is included in `vals`; similar to `IN` in SQL.
+    }];
+
+    let arguments = (ins NullableDBType:$val,Variadic<NullableDBType>:$vals );
+    let assemblyFormat = "$val `:` type ($val) `?` $vals `:` type ($vals) attr-dict";
+}
+
+def AndOp : DB_LogicalOp<"and"> {
+    let summary = "Logical And";
+
+    let arguments = (ins Variadic<AnyBool>: $vals);
+    let hasCanonicalizeMethod = 1;
+    let assemblyFormat = "$vals `:` type($vals) attr-dict";
+}
+
+def OrOp : DB_LogicalOp<"or"> {
+    let summary = "Logical Or";
+
+    let arguments = (ins Variadic<AnyType>: $vals);
+    let hasCanonicalizeMethod = 1;
+    let assemblyFormat = "$vals `:` type($vals) attr-dict";
+}
+
+def NotOp : DB_Op<"not", [NoSideEffect,SameOperandsAndResultType,DB_NeedsNullWrap,DB_SupportsInvalidValues]> {
+    let summary = "Logical Not";
+
+    let arguments = (ins AnyBool: $val);
+    let results = (outs AnyBool : $res);
+    let assemblyFormat = "$val `:` type($val) attr-dict";
+}
+
+def CastOp : DB_Op<"cast",[DB_NeedsNullWrap,DB_MaySupportInvalidValues]> {
+    let summary = "Cast value to different type";
+
+    let arguments = (ins NullableDBType:$val);
+    let results = (outs NullableDBType:$res);
+    let assemblyFormat = "$val `:` type($val) `->` type($res) attr-dict";
+}
+
+#endif// OPS
