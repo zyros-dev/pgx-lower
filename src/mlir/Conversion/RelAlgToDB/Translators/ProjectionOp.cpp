@@ -97,7 +97,7 @@ class DistinctProjectionTranslator : public pgx::mlir::relalg::Translator {
    }
    virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
-      key = pgx::mlir::relalg::OrderedAttributes::fromRefArr(projectionOp.cols());
+      key = pgx::mlir::relalg::OrderedAttributes::fromRefArr(projectionOp.getCols());
       valTupleType = mlir::TupleType::get(builder.getContext(), {});
       auto keyTupleType = key.getTupleType(builder.getContext());
       mlir::Value emptyTuple = builder.create<pgx::mlir::util::UndefOp>(projectionOp.getLoc(), mlir::TupleType::get(builder.getContext()));

@@ -47,24 +47,29 @@ class LowerToDBPass : public mlir::PassWrapper<LowerToDBPass, mlir::OperationPas
 };
 } // end anonymous namespace
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createLowerToDBPass() { return std::make_unique<LowerToDBPass>(); }
+std::unique_ptr<::mlir::Pass> createRelAlgToDBPass() { return std::make_unique<LowerToDBPass>(); }
+
+// Forward declaration
+void createLowerRelAlgPipeline(::mlir::OpPassManager& pm);
 
 void registerRelAlgConversionPasses(){
    ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-      return pgx::mlir::relalg::createLowerToDBPass();
+      return pgx::mlir::relalg::createRelAlgToDBPass();
    });
 
-   mlir::PassPipelineRegistration<EmptyPipelineOptions>(
+   ::mlir::PassPipelineRegistration<EmptyPipelineOptions>(
       "lower-relalg",
       "",
       createLowerRelAlgPipeline);
 }
-void createLowerRelAlgPipeline(mlir::OpPassManager& pm){
-   pm.addNestedPass<mlir::func::FuncOp>(pgx::mlir::relalg::createLowerToDBPass());
-   pm.addPass(mlir::createCanonicalizerPass());
+void createLowerRelAlgPipeline(::mlir::OpPassManager& pm){
+   pm.addNestedPass<::mlir::func::FuncOp>(pgx::mlir::relalg::createRelAlgToDBPass());
+   pm.addPass(::mlir::createCanonicalizerPass());
 }
 
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx

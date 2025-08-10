@@ -12,9 +12,9 @@ class MapTranslator : public pgx::mlir::relalg::Translator {
       auto scope = context.createScope();
       auto computedCols = mergeRelationalBlock(
          builder.getInsertionBlock(), op, [](auto x) { return &x->getRegion(0).front(); }, context, scope);
-      assert(computedCols.size() == mapOp.computed_cols().size());
+      assert(computedCols.size() == mapOp.getComputedCols().size());
       for (size_t i = 0; i < computedCols.size(); i++) {
-         context.setValueForAttribute(scope, &mapOp.computed_cols()[i].cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn(), computedCols[i]);
+         context.setValueForAttribute(scope, &mapOp.getComputedCols()[i].cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn(), computedCols[i]);
       }
       consumer->consume(this, builder, context);
    }
@@ -25,6 +25,7 @@ class MapTranslator : public pgx::mlir::relalg::Translator {
    virtual ~MapTranslator() {}
 };
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createMapTranslator(pgx::mlir::relalg::MapOp mapOp) {
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createMapTranslator(::mlir::Operation* op) {
+   auto mapOp = ::mlir::cast<pgx::mlir::relalg::MapOp>(op);
    return std::make_unique<MapTranslator>(mapOp);
 }

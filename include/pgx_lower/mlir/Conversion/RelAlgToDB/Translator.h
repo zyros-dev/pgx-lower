@@ -101,12 +101,20 @@ protected:
             }
         }
     }
+    
+    // Helper method to merge relational blocks
+    std::vector<::mlir::Value> mergeRelationalBlock(::mlir::Block* dest, ::mlir::Operation* op, 
+                                                    ::mlir::function_ref<::mlir::Block*(::mlir::Operation*)> getBlockFn, 
+                                                    TranslatorContext& context, 
+                                                    TranslatorContext::AttributeResolverScope& scope);
 };
 
 // Factory functions for specific translators (to be implemented)
 std::unique_ptr<Translator> createBaseTableTranslator(::mlir::Operation* op);
 std::unique_ptr<Translator> createMaterializeTranslator(::mlir::Operation* op);
 std::unique_ptr<Translator> createDummyTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createMapTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createJoinTranslator(::mlir::Operation* op);
 
 } // namespace relalg
 } // namespace mlir

@@ -30,7 +30,7 @@ class CollectionJoinImpl : public pgx::mlir::relalg::JoinImpl {
 
    public:
    CollectionJoinImpl(pgx::mlir::relalg::CollectionJoinOp collectionJoinOp) : pgx::mlir::relalg::JoinImpl(collectionJoinOp, collectionJoinOp.right(), collectionJoinOp.left()) {
-      cols = pgx::mlir::relalg::OrderedAttributes::fromRefArr(collectionJoinOp.cols());
+      cols = pgx::mlir::relalg::OrderedAttributes::fromRefArr(collectionJoinOp.getCols());
    }
    virtual void addAdditionalRequiredColumns() override {
       for (const auto* attr : cols.getAttrs()) {
@@ -39,7 +39,7 @@ class CollectionJoinImpl : public pgx::mlir::relalg::JoinImpl {
    }
    virtual void handleLookup(mlir::Value matched, mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
       builder.create<mlir::scf::IfOp>(
-         loc, mlir::TypeRange{}, matched, [&](mlir::OpBuilder& builder, mlir::Location loc) {
+         loc, matched, [&](mlir::OpBuilder& builder, mlir::Location loc) {
             mlir::Value packed = cols.pack(context,builder,loc);
             builder.create<pgx::mlir::dsa::Append>(loc, vector, packed);
             builder.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{}); }, [&](mlir::OpBuilder& builder, mlir::Location loc) { builder.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{}); });
@@ -154,7 +154,7 @@ class ReversedSemiJoinImpl : public pgx::mlir::relalg::JoinImpl {
 
    virtual void handleLookup(mlir::Value matched, mlir::Value markerPtr, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
       builder.create<mlir::scf::IfOp>(
-         loc, mlir::TypeRange{}, matched, [&](mlir::OpBuilder& builder1, mlir::Location) {
+         loc, matched, [&](mlir::OpBuilder& builder1, mlir::Location) {
             auto const1 = builder1.create<mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
             auto markerBefore = builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, mlir::ValueRange{});
             {
@@ -178,7 +178,7 @@ class ReversedAntiSemiJoinImpl : public pgx::mlir::relalg::JoinImpl {
 
    virtual void handleLookup(mlir::Value matched, mlir::Value markerPtr, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
       builder.create<mlir::scf::IfOp>(
-         loc, mlir::TypeRange{}, matched, [&](mlir::OpBuilder& builder1, mlir::Location loc) {
+         loc, matched, [&](mlir::OpBuilder& builder1, mlir::Location loc) {
             auto const1 = builder1.create<mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
             builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, mlir::ValueRange{});
             builder1.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{}); });
@@ -212,7 +212,7 @@ class ConstantSingleJoinTranslator : public pgx::mlir::relalg::Translator {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
       this->requiredAttributes.insert(joinOp.getUsedColumns());
-      for (mlir::Attribute attr : joinOp.mapping()) {
+      for (mlir::Attribute attr : joinOp.getMapping()) {
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
@@ -261,6 +261,10 @@ class ConstantSingleJoinTranslator : public pgx::mlir::relalg::Translator {
       children[1]->produce(context, builder);
       children[0]->produce(context, builder);
    }
+   
+   virtual pgx::mlir::relalg::ColumnSet getAvailableColumns() override {
+      return joinOp.getAvailableColumns();
+   }
 
    virtual ~ConstantSingleJoinTranslator() {}
 };
@@ -274,7 +278,7 @@ std::unique_ptr<pgx::mlir::relalg::Translator> createConstSingleJoinTranslator(p
 
 class MarkJoinImpl : public pgx::mlir::relalg::JoinImpl {
    public:
-   MarkJoinImpl(pgx::mlir::relalg::MarkJoinOp innerJoinOp) : pgx::mlir::relalg::JoinImpl(innerJoinOp, innerJoinOp.right(), innerJoinOp.left()) {
+   MarkJoinImpl(pgx::mlir::relalg::MarkJoinOp innerJoinOp) : pgx::mlir::relalg::JoinImpl(innerJoinOp, innerJoinOp.getRight(), innerJoinOp.getLeft()) {
    }
 
    virtual void handleLookup(mlir::Value matched, mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
@@ -287,7 +291,7 @@ class MarkJoinImpl : public pgx::mlir::relalg::JoinImpl {
    void afterLookup(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
       mlir::Value matchFound = builder.create<pgx::mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
-      context.setValueForAttribute(scope, &cast<pgx::mlir::relalg::MarkJoinOp>(joinOp).markattr().getColumn(), matchFound);
+      context.setValueForAttribute(scope, &cast<pgx::mlir::relalg::MarkJoinOp>(joinOp).getMarkattr().getColumn(), matchFound);
       translator->forwardConsume(builder, context);
    }
    virtual ~MarkJoinImpl() {}
@@ -296,7 +300,7 @@ class MarkJoinImpl : public pgx::mlir::relalg::JoinImpl {
 std::shared_ptr<pgx::mlir::relalg::JoinImpl> createMarkJoinImpl(pgx::mlir::relalg::MarkJoinOp joinOp) {
    return std::make_shared<MarkJoinImpl>(joinOp);
 }
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createJoinTranslator(mlir::Operation* joinOp) {
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createJoinTranslator(mlir::Operation* joinOp) {
    bool reversed = false;
    bool hash = false;
    bool constant = false;

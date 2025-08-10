@@ -5,7 +5,7 @@
 
 namespace pgx::mlir::relalg {
 
-std::unique_ptr<mlir::Pass> createRelAlgToDBPass();
+std::unique_ptr<::mlir::Pass> createRelAlgToDBPass();
 
 } // namespace pgx::mlir::relalg
 
