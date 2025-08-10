@@ -60,7 +60,7 @@ void registerRelAlgConversionPasses(){
       return pgx::mlir::relalg::createRelAlgToDBPass();
    });
 
-   ::mlir::PassPipelineRegistration<EmptyPipelineOptions>(
+   ::mlir::PassPipelineRegistration<::mlir::EmptyPipelineOptions>(
       "lower-relalg",
       "",
       createLowerRelAlgPipeline);

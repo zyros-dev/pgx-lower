@@ -10,7 +10,7 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
    public:
    RenamingTranslator(pgx::mlir::relalg::RenamingOp renamingOp) : pgx::mlir::relalg::Translator(renamingOp), renamingOp(renamingOp) {}
 
-   virtual void consume(pgx::mlir::relalg::Translator* child, mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
       auto scope = context.createScope();
       for(mlir::Attribute attr:renamingOp.getColumns()){
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
@@ -23,7 +23,7 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
       }
       consumer->consume(this, builder, context);
    }
-   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       for(mlir::Attribute attr:renamingOp.getColumns()){
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
          mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
@@ -38,6 +38,7 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
    virtual ~RenamingTranslator() {}
 };
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createRenamingTranslator(pgx::mlir::relalg::RenamingOp renamingOp) {
-  return std::make_unique<RenamingTranslator>(renamingOp);
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createRenamingTranslator(::mlir::Operation* op) {
+  auto renamingOp = ::mlir::cast<pgx::mlir::relalg::RenamingOp>(op);
+   return std::make_unique<RenamingTranslator>(renamingOp);
 }

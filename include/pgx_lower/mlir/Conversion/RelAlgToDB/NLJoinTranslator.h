@@ -11,14 +11,14 @@ namespace pgx::mlir::relalg {
 
 class NLJoinTranslator : public JoinTranslator {
    OrderedAttributes orderedAttributesLeft;
-   mlir::TupleType tupleTypeLeft;
-   mlir::Value vector;
-   mlir::Location loc;
+   ::mlir::TupleType tupleTypeLeft;
+   ::mlir::Value vector;
+   ::mlir::Location loc;
    
    public:
    NLJoinTranslator(std::shared_ptr<JoinImpl> impl);
    
-   virtual void setInfo(Translator* consumer, ColumnSet requiredAttributes) override;
+   virtual void setInfo(Translator* consumer, const ColumnSet& requiredAttributes) override;
    virtual void build(::mlir::OpBuilder& builder, TranslatorContext& context);
    virtual void scanHT(TranslatorContext& context, ::mlir::OpBuilder& builder) override;
    virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override;

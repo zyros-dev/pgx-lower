@@ -80,3 +80,7 @@ mlir::Value JoinTranslator::evaluatePredicate(TranslatorContext& context, mlir::
       return builder.create<pgx::mlir::db::ConstantOp>(joinOp.getLoc(), builder.getI1Type(), builder.getIntegerAttr(builder.getI64Type(), 1));
    }
 }
+
+pgx::mlir::relalg::ColumnSet JoinTranslator::getAvailableColumns() {
+   return op.getAvailableColumns();
+}

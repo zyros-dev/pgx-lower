@@ -12,7 +12,7 @@ class SimpleInnerJoinImpl : public pgx::mlir::relalg::JoinImpl {
    SimpleInnerJoinImpl(pgx::mlir::relalg::InnerJoinOp crossProductOp) : pgx::mlir::relalg::JoinImpl(crossProductOp, crossProductOp.left(), crossProductOp.right()) {}
    SimpleInnerJoinImpl(pgx::mlir::relalg::CrossProductOp crossProductOp) : pgx::mlir::relalg::JoinImpl(crossProductOp, crossProductOp.left(), crossProductOp.right()) {}
 
-   virtual void handleLookup(mlir::Value matched, mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void handleLookup(::mlir::Value matched, ::mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       translator->handlePotentialMatch(builder, context, matched);
    }
    virtual ~SimpleInnerJoinImpl() {}
@@ -26,7 +26,7 @@ std::shared_ptr<pgx::mlir::relalg::JoinImpl> createInnerJoinImpl(pgx::mlir::rela
 
 class CollectionJoinImpl : public pgx::mlir::relalg::JoinImpl {
    pgx::mlir::relalg::OrderedAttributes cols;
-   mlir::Value vector;
+   ::mlir::Value vector;
 
    public:
    CollectionJoinImpl(pgx::mlir::relalg::CollectionJoinOp collectionJoinOp) : pgx::mlir::relalg::JoinImpl(collectionJoinOp, collectionJoinOp.right(), collectionJoinOp.left()) {
@@ -37,18 +37,18 @@ class CollectionJoinImpl : public pgx::mlir::relalg::JoinImpl {
          translator->requiredAttributes.insert(attr);
       }
    }
-   virtual void handleLookup(mlir::Value matched, mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      builder.create<mlir::scf::IfOp>(
-         loc, matched, [&](mlir::OpBuilder& builder, mlir::Location loc) {
-            mlir::Value packed = cols.pack(context,builder,loc);
+   virtual void handleLookup(::mlir::Value matched, ::mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      builder.create<::mlir::scf::IfOp>(
+         loc, matched, [&](::mlir::OpBuilder& builder, ::mlir::Location loc) {
+            ::mlir::Value packed = cols.pack(context,builder,loc);
             builder.create<pgx::mlir::dsa::Append>(loc, vector, packed);
-            builder.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{}); }, [&](mlir::OpBuilder& builder, mlir::Location loc) { builder.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{}); });
+            builder.create<::mlir::scf::YieldOp>(loc, ::mlir::ValueRange{}); }, [&](::mlir::OpBuilder& builder, ::mlir::Location loc) { builder.create<::mlir::scf::YieldOp>(loc, ::mlir::ValueRange{}); });
    }
 
-   void beforeLookup(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   void beforeLookup(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       vector = builder.create<pgx::mlir::dsa::CreateDS>(joinOp.getLoc(), pgx::mlir::dsa::VectorType::get(builder.getContext(), cols.getTupleType(builder.getContext())));
    }
-   void afterLookup(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   void afterLookup(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
       context.setValueForAttribute(scope, &cast<pgx::mlir::relalg::CollectionJoinOp>(joinOp).collAttr().getColumn(), vector);
       translator->forwardConsume(builder, context);
@@ -68,21 +68,21 @@ class OuterJoinTranslator : public pgx::mlir::relalg::JoinImpl {
    OuterJoinTranslator(pgx::mlir::relalg::SingleJoinOp innerJoinOp) : pgx::mlir::relalg::JoinImpl(innerJoinOp, innerJoinOp.right(), innerJoinOp.left()) {
       this->stopOnFlag = false;
    }
-   virtual void handleLookup(mlir::Value matched, mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      translator->handlePotentialMatch(builder, context, matched, [&](mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context, pgx::mlir::relalg::TranslatorContext::AttributeResolverScope& scope) {
+   virtual void handleLookup(::mlir::Value matched, ::mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      translator->handlePotentialMatch(builder, context, matched, [&](::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context, pgx::mlir::relalg::TranslatorContext::AttributeResolverScope& scope) {
          translator->handleMapping(builder, context, scope);
          auto trueVal = builder.create<pgx::mlir::db::ConstantOp>(loc, builder.getI1Type(), builder.getIntegerAttr(builder.getI64Type(), 1));
          builder.create<pgx::mlir::dsa::SetFlag>(loc, matchFoundFlag, trueVal);
       });
    }
 
-   void beforeLookup(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   void beforeLookup(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       matchFoundFlag = builder.create<pgx::mlir::dsa::CreateFlag>(loc, pgx::mlir::dsa::FlagType::get(builder.getContext()));
    }
-   void afterLookup(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      mlir::Value matchFound = builder.create<pgx::mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
-      mlir::Value noMatchFound = builder.create<pgx::mlir::db::NotOp>(loc, builder.getI1Type(), matchFound);
-      translator->handlePotentialMatch(builder, context, noMatchFound, [&](mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context, pgx::mlir::relalg::TranslatorContext::AttributeResolverScope& scope) {
+   void afterLookup(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      ::mlir::Value matchFound = builder.create<pgx::mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
+      ::mlir::Value noMatchFound = builder.create<pgx::mlir::db::NotOp>(loc, builder.getI1Type(), matchFound);
+      translator->handlePotentialMatch(builder, context, noMatchFound, [&](::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context, pgx::mlir::relalg::TranslatorContext::AttributeResolverScope& scope) {
          translator->handleMappingNull(builder, context, scope);
       });
    }
@@ -95,21 +95,21 @@ class ReversedOuterJoinImpl : public pgx::mlir::relalg::JoinImpl {
    ReversedOuterJoinImpl(pgx::mlir::relalg::OuterJoinOp innerJoinOp) : pgx::mlir::relalg::JoinImpl(innerJoinOp, innerJoinOp.left(), innerJoinOp.right(), true) {
    }
 
-   virtual void handleLookup(mlir::Value matched, mlir::Value markerPtr, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      translator->handlePotentialMatch(builder, context, matched, [&](mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context, pgx::mlir::relalg::TranslatorContext::AttributeResolverScope& scope) {
-         auto const1 = builder.create<mlir::arith::ConstantOp>(loc, builder.getIntegerType(64), builder.getI64IntegerAttr(1));
-         builder.create<mlir::memref::AtomicRMWOp>(loc, builder.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, mlir::ValueRange{});
+   virtual void handleLookup(::mlir::Value matched, ::mlir::Value markerPtr, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      translator->handlePotentialMatch(builder, context, matched, [&](::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context, pgx::mlir::relalg::TranslatorContext::AttributeResolverScope& scope) {
+         auto const1 = builder.create<::mlir::arith::ConstantOp>(loc, builder.getIntegerType(64), builder.getI64IntegerAttr(1));
+         builder.create<mlir::memref::AtomicRMWOp>(loc, builder.getIntegerType(64), ::mlir::arith::AtomicRMWKind::assign, const1, markerPtr, ::mlir::ValueRange{});
          translator->handleMapping(builder, context, scope);
       });
    }
-   virtual void after(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void after(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       translator->scanHT(context, builder);
    }
-   void handleScanned(mlir::Value marker, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   void handleScanned(::mlir::Value marker, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
-      auto zero = builder.create<mlir::arith::ConstantOp>(loc, marker.getType(), builder.getIntegerAttr(marker.getType(), 0));
-      auto isZero = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, marker, zero);
-      translator->handlePotentialMatch(builder, context, isZero, [&](mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context, pgx::mlir::relalg::TranslatorContext::AttributeResolverScope& scope) {
+      auto zero = builder.create<::mlir::arith::ConstantOp>(loc, marker.getType(), builder.getIntegerAttr(marker.getType(), 0));
+      auto isZero = builder.create<::mlir::arith::CmpIOp>(loc, ::mlir::arith::CmpIPredicate::eq, marker, zero);
+      translator->handlePotentialMatch(builder, context, isZero, [&](::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context, pgx::mlir::relalg::TranslatorContext::AttributeResolverScope& scope) {
          translator->handleMappingNull(builder, context, scope);
       });
    }
@@ -130,16 +130,16 @@ class SemiJoinImpl : public pgx::mlir::relalg::JoinImpl {
    SemiJoinImpl(pgx::mlir::relalg::AntiSemiJoinOp innerJoinOp) : pgx::mlir::relalg::JoinImpl(innerJoinOp, innerJoinOp.right(), innerJoinOp.left()) {
       doAnti = true;
    }
-   virtual void handleLookup(mlir::Value matched, mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void handleLookup(::mlir::Value matched, ::mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       builder.create<pgx::mlir::dsa::SetFlag>(loc, matchFoundFlag, matched);
    }
 
-   void beforeLookup(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   void beforeLookup(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       matchFoundFlag = builder.create<pgx::mlir::dsa::CreateFlag>(loc, pgx::mlir::dsa::FlagType::get(builder.getContext()));
    }
-   void afterLookup(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      mlir::Value matchFound = builder.create<pgx::mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
-      mlir::Value emit = matchFound;
+   void afterLookup(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      ::mlir::Value matchFound = builder.create<pgx::mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
+      ::mlir::Value emit = matchFound;
       if (doAnti) {
          emit = builder.create<pgx::mlir::db::NotOp>(loc, builder.getI1Type(), matchFound);
       }
@@ -152,17 +152,17 @@ class ReversedSemiJoinImpl : public pgx::mlir::relalg::JoinImpl {
    ReversedSemiJoinImpl(pgx::mlir::relalg::SemiJoinOp innerJoinOp) : pgx::mlir::relalg::JoinImpl(innerJoinOp, innerJoinOp.left(), innerJoinOp.right(), true) {
    }
 
-   virtual void handleLookup(mlir::Value matched, mlir::Value markerPtr, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      builder.create<mlir::scf::IfOp>(
-         loc, matched, [&](mlir::OpBuilder& builder1, mlir::Location) {
-            auto const1 = builder1.create<mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
-            auto markerBefore = builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, mlir::ValueRange{});
+   virtual void handleLookup(::mlir::Value matched, ::mlir::Value markerPtr, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      builder.create<::mlir::scf::IfOp>(
+         loc, matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
+            auto const1 = builder1.create<::mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
+            auto markerBefore = builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), ::mlir::arith::AtomicRMWKind::assign, const1, markerPtr, ::mlir::ValueRange{});
             {
-               auto zero = builder1.create<mlir::arith::ConstantOp>(loc, markerBefore.getType(), builder1.getIntegerAttr(markerBefore.getType(), 0));
-               auto isZero = builder1.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, markerBefore, zero);
+               auto zero = builder1.create<::mlir::arith::ConstantOp>(loc, markerBefore.getType(), builder1.getIntegerAttr(markerBefore.getType(), 0));
+               auto isZero = builder1.create<::mlir::arith::CmpIOp>(loc, ::mlir::arith::CmpIPredicate::eq, markerBefore, zero);
                translator->handlePotentialMatch(builder,context,isZero);
             }
-            builder1.create<mlir::scf::YieldOp>(loc); });
+            builder1.create<::mlir::scf::YieldOp>(loc); });
    }
 
    virtual ~ReversedSemiJoinImpl() {}
@@ -176,19 +176,19 @@ class ReversedAntiSemiJoinImpl : public pgx::mlir::relalg::JoinImpl {
    public:
    ReversedAntiSemiJoinImpl(pgx::mlir::relalg::AntiSemiJoinOp innerJoinOp) : pgx::mlir::relalg::JoinImpl(innerJoinOp, innerJoinOp.left(), innerJoinOp.right(), true) {}
 
-   virtual void handleLookup(mlir::Value matched, mlir::Value markerPtr, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      builder.create<mlir::scf::IfOp>(
-         loc, matched, [&](mlir::OpBuilder& builder1, mlir::Location loc) {
-            auto const1 = builder1.create<mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
-            builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, mlir::ValueRange{});
-            builder1.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{}); });
+   virtual void handleLookup(::mlir::Value matched, ::mlir::Value markerPtr, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      builder.create<::mlir::scf::IfOp>(
+         loc, matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location loc) {
+            auto const1 = builder1.create<::mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
+            builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), ::mlir::arith::AtomicRMWKind::assign, const1, markerPtr, ::mlir::ValueRange{});
+            builder1.create<::mlir::scf::YieldOp>(loc, ::mlir::ValueRange{}); });
    }
-   virtual void after(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void after(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       translator->scanHT(context, builder);
    }
-   void handleScanned(mlir::Value marker, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      auto zero = builder.create<mlir::arith::ConstantOp>(loc, marker.getType(), builder.getIntegerAttr(marker.getType(), 0));
-      auto isZero = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, marker, zero);
+   void handleScanned(::mlir::Value marker, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      auto zero = builder.create<::mlir::arith::ConstantOp>(loc, marker.getType(), builder.getIntegerAttr(marker.getType(), 0));
+      auto isZero = builder.create<::mlir::arith::CmpIOp>(loc, ::mlir::arith::CmpIPredicate::eq, marker, zero);
       translator->handlePotentialMatch(builder, context, isZero);
    }
 
@@ -203,12 +203,12 @@ class ConstantSingleJoinTranslator : public pgx::mlir::relalg::Translator {
    std::vector<const pgx::mlir::relalg::Column*> cols;
    std::vector<const pgx::mlir::relalg::Column*> origAttrs;
    std::vector<mlir::Type> types;
-   mlir::Value singleValPtr;
+   ::mlir::Value singleValPtr;
 
    public:
    ConstantSingleJoinTranslator(pgx::mlir::relalg::SingleJoinOp singleJoinOp) : pgx::mlir::relalg::Translator(singleJoinOp), joinOp(singleJoinOp) {
    }
-   virtual void setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) override {
+   virtual void setInfo(pgx::mlir::relalg::Translator* consumer, const pgx::mlir::relalg::ColumnSet& requiredAttributes) override {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
       this->requiredAttributes.insert(joinOp.getUsedColumns());
@@ -227,10 +227,10 @@ class ConstantSingleJoinTranslator : public pgx::mlir::relalg::Translator {
       propagateInfo();
    }
 
-   virtual void consume(pgx::mlir::relalg::Translator* child, mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
       auto scope = context.createScope();
       if (child == this->children[0].get()) {
-         mlir::Value singleVal = builder.create<pgx::mlir::util::LoadOp>(joinOp->getLoc(), singleValPtr.getType().cast<pgx::mlir::util::RefType>().getElementType(), singleValPtr, mlir::Value());
+         ::mlir::Value singleVal = builder.create<pgx::mlir::util::LoadOp>(joinOp->getLoc(), singleValPtr.getType().cast<pgx::mlir::util::RefType>().getElementType(), singleValPtr, mlir::Value());
          auto unpacked = builder.create<pgx::mlir::util::UnPackOp>(joinOp->getLoc(), singleVal);
          for (size_t i = 0; i < cols.size(); i++) {
             context.setValueForAttribute(scope, cols[i], unpacked.getResult(i));
@@ -239,23 +239,23 @@ class ConstantSingleJoinTranslator : public pgx::mlir::relalg::Translator {
       } else if (child == this->children[1].get()) {
          std::vector<mlir::Value> values;
          for (size_t i = 0; i < origAttrs.size(); i++) {
-            mlir::Value value = context.getValueForAttribute(origAttrs[i]);
+            ::mlir::Value value = context.getValueForAttribute(origAttrs[i]);
             if (origAttrs[i]->type != cols[i]->type) {
-               mlir::Value tmp = builder.create<pgx::mlir::db::AsNullableOp>(op->getLoc(), cols[i]->type, value);
+               ::mlir::Value tmp = builder.create<pgx::mlir::db::AsNullableOp>(op->getLoc(), cols[i]->type, value);
                value = tmp;
             }
             values.push_back(value);
          }
-         mlir::Value singleVal = builder.create<pgx::mlir::util::PackOp>(joinOp->getLoc(), values);
+         ::mlir::Value singleVal = builder.create<pgx::mlir::util::PackOp>(joinOp->getLoc(), values);
          builder.create<pgx::mlir::util::StoreOp>(joinOp->getLoc(), singleVal, singleValPtr, mlir::Value());
       }
    }
-   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       std::vector<mlir::Value> values;
       for (auto type : types) {
          values.push_back(builder.create<pgx::mlir::db::NullOp>(joinOp.getLoc(), type));
       }
-      mlir::Value singleVal = builder.create<pgx::mlir::util::PackOp>(joinOp->getLoc(), values);
+      ::mlir::Value singleVal = builder.create<pgx::mlir::util::PackOp>(joinOp->getLoc(), values);
       singleValPtr = builder.create<pgx::mlir::util::AllocaOp>(joinOp->getLoc(), pgx::mlir::util::RefType::get(builder.getContext(), singleVal.getType()), mlir::Value());
       builder.create<pgx::mlir::util::StoreOp>(joinOp->getLoc(), singleVal, singleValPtr, mlir::Value());
       children[1]->produce(context, builder);
@@ -273,6 +273,7 @@ std::shared_ptr<pgx::mlir::relalg::JoinImpl> createSingleJoinImpl(pgx::mlir::rel
    return std::make_shared<OuterJoinTranslator>(joinOp);
 }
 std::unique_ptr<pgx::mlir::relalg::Translator> createConstSingleJoinTranslator(pgx::mlir::relalg::SingleJoinOp joinOp) {
+   auto joinOp = ::mlir::cast<pgx::mlir::relalg::ConstantSingleJoinOp>(op);
    return std::make_unique<ConstantSingleJoinTranslator>(joinOp);
 }
 
@@ -281,16 +282,16 @@ class MarkJoinImpl : public pgx::mlir::relalg::JoinImpl {
    MarkJoinImpl(pgx::mlir::relalg::MarkJoinOp innerJoinOp) : pgx::mlir::relalg::JoinImpl(innerJoinOp, innerJoinOp.getRight(), innerJoinOp.getLeft()) {
    }
 
-   virtual void handleLookup(mlir::Value matched, mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void handleLookup(::mlir::Value matched, ::mlir::Value /*marker*/, pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       builder.create<pgx::mlir::dsa::SetFlag>(loc, matchFoundFlag, matched);
    }
 
-   void beforeLookup(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   void beforeLookup(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       matchFoundFlag = builder.create<pgx::mlir::dsa::CreateFlag>(loc, pgx::mlir::dsa::FlagType::get(builder.getContext()));
    }
-   void afterLookup(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   void afterLookup(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
-      mlir::Value matchFound = builder.create<pgx::mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
+      ::mlir::Value matchFound = builder.create<pgx::mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
       context.setValueForAttribute(scope, &cast<pgx::mlir::relalg::MarkJoinOp>(joinOp).getMarkattr().getColumn(), matchFound);
       translator->forwardConsume(builder, context);
    }
@@ -319,7 +320,7 @@ std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createJoinTran
       }
    }
    if (constant) {
-      return createConstSingleJoinTranslator(mlir::cast<SingleJoinOp>(joinOp));
+      return createConstSingleJoinTranslator(::mlir::cast<SingleJoinOp>(joinOp));
    }
    auto joinImpl = ::llvm::TypeSwitch<mlir::Operation*, std::shared_ptr<pgx::mlir::relalg::JoinImpl>>(joinOp)
                       .Case<CrossProductOp>([&](auto x) { return createCrossProductImpl(x); })

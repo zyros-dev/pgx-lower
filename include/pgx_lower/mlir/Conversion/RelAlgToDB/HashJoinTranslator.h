@@ -38,7 +38,7 @@ class HashJoinTranslator : public JoinTranslator {
    
    HashJoinTranslator(std::shared_ptr<JoinImpl> impl);
    
-   virtual void setInfo(Translator* consumer, ColumnSet requiredAttributes) override;
+   virtual void setInfo(Translator* consumer, const ColumnSet& requiredAttributes) override;
    virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override;
    
    void unpackValues(TranslatorContext::AttributeResolverScope& scope, ::mlir::OpBuilder& builder, 
