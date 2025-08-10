@@ -2,6 +2,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "core/logging.h"
 
 class RenamingTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::RenamingOp renamingOp;
@@ -33,6 +34,22 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
          saved.push_back({attrptr,val});
       }
       children[0]->produce(context, builder);
+   }
+   
+   virtual pgx::mlir::relalg::ColumnSet getAvailableColumns() override {
+      pgx::mlir::relalg::ColumnSet available;
+      if (!children.empty()) {
+         available = children[0]->getAvailableColumns();
+      }
+      // Remove renamed columns and add new ones
+      for(mlir::Attribute attr:renamingOp.getColumns()){
+         auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
+         mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
+         auto relationRefAttr = from.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>();
+         available.remove(&relationRefAttr.getColumn());
+         available.insert(&relationDefAttr.getColumn());
+      }
+      return available;
    }
 
    virtual ~RenamingTranslator() {}

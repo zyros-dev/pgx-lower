@@ -3,8 +3,9 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "core/logging.h"
 
 class SortTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::SortOp sortOp;
@@ -13,6 +14,14 @@ class SortTranslator : public pgx::mlir::relalg::Translator {
 
    public:
    SortTranslator(pgx::mlir::relalg::SortOp sortOp) : pgx::mlir::relalg::Translator(sortOp), sortOp(sortOp) {
+   }
+   
+   virtual pgx::mlir::relalg::ColumnSet getAvailableColumns() override {
+      // Sort doesn't change available columns - pass through from child
+      if (!children.empty()) {
+         return children[0]->getAvailableColumns();
+      }
+      return pgx::mlir::relalg::ColumnSet();
    }
    virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
       ::mlir::Value packed = orderedAttributes.pack(context, builder, sortOp->getLoc());
