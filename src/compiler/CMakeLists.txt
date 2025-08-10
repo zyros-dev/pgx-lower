@@ -20,8 +20,8 @@ add_subdirectory(../mlir/Conversion/RelAlgToDB RelAlgToDBConversion)
 add_subdirectory(../mlir/Conversion/DBToStd DBToStdConversion)
 # DSA → Standard MLIR conversion (data structure operations)
 add_subdirectory(../mlir/Conversion/DSAToStd DSAToStdConversion)
-# DSA → LLVM conversion (data structure algorithms)
-add_subdirectory(../mlir/Conversion/DSAToLLVM DSAToLLVMConversion)
+# DSA → LLVM conversion (data structure algorithms) - TODO: Import from LingoDB
+# add_subdirectory(../mlir/Conversion/DSAToLLVM DSAToLLVMConversion)
 # Util → LLVM conversion (utility operations and types)
 add_subdirectory(../mlir/Conversion/UtilToLLVM UtilToLLVMConversion)
 
