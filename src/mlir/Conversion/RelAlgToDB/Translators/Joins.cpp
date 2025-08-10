@@ -1,10 +1,10 @@
 #include "mlir/Conversion/RelAlgToDB/HashJoinTranslator.h"
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
-#include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
-#include <mlir/Dialect/DSA/IR/DSAOps.h>
+#include <pgx_lower/mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
+#include <pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h>
 #include <mlir/IR/IRMapping.h>
 
 class SimpleInnerJoinImpl : public pgx::mlir::relalg::JoinImpl {

@@ -1,12 +1,12 @@
 
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
 
-#include "mlir/Dialect/RelAlg/Passes.h"
+#include "pgx_lower/mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <llvm/ADT/TypeSwitch.h>
 #include <list>
@@ -150,7 +150,7 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
                   Value nullLeft = builder.create<pgx::mlir::db::IsNullOp>(loc, valLeft);
                   Value nullRight = builder.create<pgx::mlir::db::IsNullOp>(loc, valRight);
                   Value bothNull = builder.create<pgx::mlir::db::AndOp>(loc, ValueRange{nullLeft, nullRight});
-                  Value eqOrBothNull = builder.create<db::OrOp>(loc, ValueRange{cmpEq, bothNull});
+                  Value eqOrBothNull = builder.create<pgx::mlir::db::OrOp>(loc, ValueRange{cmpEq, bothNull});
                   return eqOrBothNull;
                } else {
                   return cmpEq;
@@ -208,14 +208,14 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
       builder.setInsertionPointToEnd(&lower.getPredicateBlock());
       std::vector<mlir::Value> values;
       bool nullable = false;
-      if(!lowerTerminator.results().empty()) {
-         Value lowerPredVal = lowerTerminator.results()[0];
+      if(!lowerTerminator.getResults().empty()) {
+         Value lowerPredVal = lowerTerminator.getResults()[0];
          nullable|=lowerPredVal.getType().isa<pgx::mlir::db::NullableType>();
          values.push_back(lowerPredVal);
       }
       for (auto selOp : selectionOps) {
          auto higherTerminator = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator());
-         Value higherPredVal = higherTerminator.results()[0];
+         Value higherPredVal = higherTerminator.getResults()[0];
          mlir::IRMapping mapping;
          mapping.map(selOp.getPredicateArgument(), lower.getPredicateArgument());
          pgx::mlir::relalg::detail::inlineOpIntoBlock(higherPredVal.getDefiningOp(), higherPredVal.getDefiningOp()->getParentOp(), lower.getOperation(), &lower.getPredicateBlock(), mapping);
@@ -248,7 +248,7 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
          }
          combine(binaryOperator->getLoc(),selectionOps, predicateOperator);
          for (auto selOp : selectionOps) {
-            selOp.replaceAllUsesWith(selOp.rel());
+            selOp.replaceAllUsesWith(selOp.getRel());
             selOp->erase();
          }
          return true;
@@ -267,7 +267,7 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
          if (!dependentLeft.empty() && !dependentRight.empty()) {
             return;
          }
-         if (trySimpleUnnesting(binaryOperator.getOperation())) {
+         if (trySimpleUnnesting(binaryOperator)) {
             if (!pgx::mlir::relalg::detail::isDependentJoin(binaryOperator.getOperation())) return;
          }
          pgx::mlir::relalg::ColumnSet dependentAttributes = dependentLeft;
@@ -278,7 +278,7 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
          OpBuilder builder(binaryOperator.getOperation());
          providerChild.moveSubTreeBefore(getFirstOfTree(dependentChild));
          builder.setInsertionPointAfter(providerChild);
-         auto proj = builder.create<relalg::ProjectionOp>(binaryOperator->getLoc(), relalg::TupleStreamType::get(&getContext()), relalg::SetSemantic::distinct, providerChild.asRelation(), dependentAttributes.asRefArrayAttr(&getContext()));
+         auto proj = builder.create<pgx::mlir::relalg::ProjectionOp>(binaryOperator->getLoc(), pgx::mlir::relalg::TupleStreamType::get(&getContext()), pgx::mlir::relalg::SetSemantic::distinct, providerChild.asRelation(), dependentAttributes.asRefArrayAttr(&getContext()));
          Operator d = mlir::dyn_cast_or_null<Operator>(proj.getOperation());
          Operator unnestedChild = pushDependJoinDown(binaryOperator->getLoc(),d, dependentChild);
          Operator newLeft = leftProvides ? providerChild : unnestedChild;

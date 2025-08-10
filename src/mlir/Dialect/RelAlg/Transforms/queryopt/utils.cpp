@@ -93,8 +93,8 @@ Operator Plan::realizePlanRec() {
    Operator firstNode{};
    Operator lastNode{};
    for (auto op : additionalOps) {
-      op->setAttr("cost", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), cost));
-      op->setAttr("rows", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), rows));
+      op->setAttr("cost", ::mlir::FloatAttr::get(::mlir::FloatType::getFloat64Type(op.getContext()), cost));
+      op->setAttr("rows", ::mlir::FloatAttr::get(::mlir::FloatType::getFloat64Type(op.getContext()), rows));
       if (lastNode) {
          lastNode.setChildren({op});
       }
@@ -111,21 +111,21 @@ Operator Plan::realizePlanRec() {
    auto currop = op;
    if (!isLeaf) {
       if (currop) {
-         if (mlir::isa<pgx::mlir::relalg::SelectionOp>(currop.getOperation()) && children.size() == 2) {
-            auto selop = mlir::dyn_cast_or_null<pgx::mlir::relalg::SelectionOp>(currop.getOperation());
-            mlir::OpBuilder builder(currop.getOperation());
+         if (::mlir::isa<pgx::mlir::relalg::SelectionOp>(currop.getOperation()) && children.size() == 2) {
+            auto selop = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::SelectionOp>(currop.getOperation());
+            ::mlir::OpBuilder builder(currop.getOperation());
             auto x = builder.create<pgx::mlir::relalg::InnerJoinOp>(selop.getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), children[0]->getResult(0), children[1]->getResult(0));
-            x.predicate().push_back(new mlir::Block);
+            x.getPredicate().push_back(new ::mlir::Block);
             x.getLambdaBlock().addArgument(pgx::mlir::relalg::TupleType::get(builder.getContext()), selop->getLoc());
             selop.getLambdaArgument().replaceAllUsesWith(x.getLambdaArgument());
             x.getLambdaBlock().getOperations().splice(x.getLambdaBlock().end(), selop.getLambdaBlock().getOperations());
             //selop.replaceAllUsesWith(x.getOperation());
             currop = x;
-         } else if (mlir::isa<pgx::mlir::relalg::InnerJoinOp>(currop.getOperation()) && children.size() == 1) {
+         } else if (::mlir::isa<pgx::mlir::relalg::InnerJoinOp>(currop.getOperation()) && children.size() == 1) {
             assert(false && "need to implement Join -> Selection transition");
          }
-         currop->setAttr("cost", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), cost));
-         currop->setAttr("rows", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), rows));
+         currop->setAttr("cost", ::mlir::FloatAttr::get(::mlir::FloatType::getFloat64Type(op.getContext()), cost));
+         currop->setAttr("rows", ::mlir::FloatAttr::get(::mlir::FloatType::getFloat64Type(op.getContext()), rows));
       } else if (!currop && children.size() == 2) {
          ::mlir::OpBuilder builder(children[0].getOperation());
          currop = builder.create<pgx::mlir::relalg::CrossProductOp>(children[0].getOperation()->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), children[0]->getResult(0), children[1]->getResult(0));

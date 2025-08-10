@@ -1,5 +1,5 @@
-#include <mlir/Conversion/RelAlgToDB/HashJoinTranslator.h>
-#include <mlir/Dialect/DSA/IR/DSAOps.h>
+#include "mlir/Conversion/RelAlgToDB/HashJoinTranslator.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 
 using namespace pgx::mlir::relalg;
 void HashJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) {
