@@ -1,6 +1,8 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 
 #include <iostream>
 
@@ -12,17 +14,17 @@ namespace {
 mlir::arith::CmpIPredicateAttr convertToCmpIPred(mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
    switch (p.getValue()) {
-      case db::DBCmpPredicate::eq:
+      case pgx::mlir::db::DBCmpPredicate::eq:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::eq);
-      case db::DBCmpPredicate::neq:
+      case pgx::mlir::db::DBCmpPredicate::neq:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::ne);
-      case db::DBCmpPredicate::lt:
+      case pgx::mlir::db::DBCmpPredicate::lt:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::slt);
-      case db::DBCmpPredicate::gt:
+      case pgx::mlir::db::DBCmpPredicate::gt:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sgt);
-      case db::DBCmpPredicate::lte:
+      case pgx::mlir::db::DBCmpPredicate::lte:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sle);
-      case db::DBCmpPredicate::gte:
+      case pgx::mlir::db::DBCmpPredicate::gte:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sge);
    }
    return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sge);
@@ -30,17 +32,17 @@ mlir::arith::CmpIPredicateAttr convertToCmpIPred(mlir::OpBuilder, ::pgx::mlir::d
 mlir::arith::CmpFPredicateAttr convertToCmpFPred(mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
    switch (p.getValue()) {
-      case db::DBCmpPredicate::eq:
+      case pgx::mlir::db::DBCmpPredicate::eq:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OEQ);
-      case db::DBCmpPredicate::neq:
+      case pgx::mlir::db::DBCmpPredicate::neq:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::ONE);
-      case db::DBCmpPredicate::lt:
+      case pgx::mlir::db::DBCmpPredicate::lt:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OLT);
-      case db::DBCmpPredicate::gt:
+      case pgx::mlir::db::DBCmpPredicate::gt:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OGT);
-      case db::DBCmpPredicate::lte:
+      case pgx::mlir::db::DBCmpPredicate::lte:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OLE);
-      case db::DBCmpPredicate::gte:
+      case pgx::mlir::db::DBCmpPredicate::gte:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OGE);
    }
    return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OGE);

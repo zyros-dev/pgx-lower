@@ -51,21 +51,21 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
       : RewritePattern(pgx::mlir::relalg::AggregationOp::getOperationName(), 1, context) {}
    mlir::LogicalResult matchAndRewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
       auto aggr = mlir::cast<pgx::mlir::relalg::AggregationOp>(op);
-      if (auto child = mlir::dyn_cast_or_null<Operator>(aggr.rel().getDefiningOp())) {
+      if (auto child = mlir::dyn_cast_or_null<Operator>(aggr.getRel().getDefiningOp())) {
          auto fds = child.getFDs();
-         auto keys = pgx::mlir::relalg::ColumnSet::fromArrayAttr(aggr.group_by_cols());
+         auto keys = pgx::mlir::relalg::ColumnSet::fromArrayAttr(aggr.getGroupByCols());
          auto reducedKeys = fds.reduce(keys);
          if (reducedKeys.size() == keys.size()) {
             return mlir::failure();
          }
          auto toMap = keys;
          toMap.remove(reducedKeys);
-         aggr.group_by_colsAttr(reducedKeys.asRefArrayAttr(aggr->getContext()));
+         aggr.setGroupByColsAttr(reducedKeys.asRefArrayAttr(aggr->getContext()));
          auto& colManager = getContext()->getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager();
          auto scope = colManager.getUniqueScope("aggr");
          std::unordered_map<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*> mapping;
-         std::vector<mlir::Attribute> computedCols(aggr.computed_cols().begin(), aggr.computed_cols().end());
-         auto* terminator = aggr.aggr_func().begin()->getTerminator();
+         std::vector<mlir::Attribute> computedCols(aggr.getComputedCols().begin(), aggr.getComputedCols().end());
+         auto* terminator = aggr.getAggrFunc().begin()->getTerminator();
          rewriter.setInsertionPoint(terminator);
          auto returnArgs = mlir::cast<pgx::mlir::relalg::ReturnOp>(terminator)->getOperands();
          std::vector<mlir::Value> values(returnArgs.begin(), returnArgs.end());
@@ -74,11 +74,11 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
             newCol->type = x->type;
             mapping.insert({x, newCol});
             computedCols.push_back(colManager.createDef(newCol));
-            values.push_back(rewriter.create<pgx::mlir::relalg::AggrFuncOp>(aggr->getLoc(), x->type, pgx::mlir::relalg::AggrFunc::any, aggr.aggr_func().getArgument(0), colManager.createRef(x)));
+            values.push_back(rewriter.create<pgx::mlir::relalg::AggrFuncOp>(aggr->getLoc(), x->type, pgx::mlir::relalg::AggrFunc::any, aggr.getAggrFunc().getArgument(0), colManager.createRef(x)));
          }
          rewriter.create<pgx::mlir::relalg::ReturnOp>(aggr->getLoc(), values);
          rewriter.eraseOp(terminator);
-         aggr.computed_colsAttr(mlir::ArrayAttr::get(aggr.getContext(), computedCols));
+         aggr.setComputedColsAttr(mlir::ArrayAttr::get(aggr.getContext(), computedCols));
          replaceUsagesAfter(aggr.getOperation(), [&](pgx::mlir::relalg::ColumnRefAttr attr) {
             if (mapping.count(&attr.getColumn())) {
                return colManager.createRef(mapping.at(&attr.getColumn()));

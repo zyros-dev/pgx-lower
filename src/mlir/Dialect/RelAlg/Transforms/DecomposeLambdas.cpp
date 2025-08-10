@@ -120,7 +120,7 @@ class DecomposeLambdas : public mlir::PassWrapper<DecomposeLambdas, mlir::Operat
       std::vector<mlir::Type> types;
       block->walk([&](mlir::Operation* op) {
          if (auto getAttr = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
-            required.insert({getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.attr())});
+            required.insert({getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.getAttr())});
          } else {
             pgx::mlir::relalg::ColumnSet attributes;
             for (auto operand : op->getOperands()) {

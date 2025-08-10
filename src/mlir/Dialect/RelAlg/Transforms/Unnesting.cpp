@@ -42,10 +42,12 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
       mlir::OpBuilder builder(&getContext());
       builder.setInsertionPointAfter(op.getOperation());
       return ::llvm::TypeSwitch<mlir::Operation*, Operator>(op.getOperation())
-         .Case<pgx::mlir::relalg::BaseTableOp, pgx::mlir::relalg::ConstRelationOp>([&](Operator baserelation) {
+         .Case<pgx::mlir::relalg::BaseTableOp, pgx::mlir::relalg::ConstRelationOp>([&](mlir::Operation* opPtr) {
+            Operator baserelation = mlir::cast<Operator>(opPtr);
             return builder.create<CrossProductOp>(loc, relType, baserelation.asRelation(), d.asRelation()).getOperation();
          })
-         .Case<CrossProductOp>([&](Operator cp) {
+         .Case<CrossProductOp>([&](mlir::Operation* opPtr) {
+            Operator cp = mlir::cast<Operator>(opPtr);
             llvm::SmallVector<Operator, 4> newChildren;
             bool pushedDownAny = false;
             for (auto childOp : cp.getChildren()) {
@@ -62,17 +64,20 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
             cp.setChildren(newChildren);
             return cp;
          })
-         .Case<AggregationOp>([&](AggregationOp projection) {
+         .Case<AggregationOp>([&](mlir::Operation* opPtr) {
+            AggregationOp projection = mlir::cast<AggregationOp>(opPtr);
             handleChildren(loc,d, projection);
-            projection->setAttr("group_by_cols", ColumnSet::fromArrayAttr(projection.group_by_cols()).insert(availableD).asRefArrayAttr(&getContext()));
+            projection->setAttr("group_by_cols", ColumnSet::fromArrayAttr(projection.getGroupByCols()).insert(availableD).asRefArrayAttr(&getContext()));
             return projection;
          })
-         .Case<ProjectionOp>([&](ProjectionOp projection) {
+         .Case<ProjectionOp>([&](mlir::Operation* opPtr) {
+            ProjectionOp projection = mlir::cast<ProjectionOp>(opPtr);
             handleChildren(loc,d, projection);
-            projection->setAttr("cols", ColumnSet::fromArrayAttr(projection.cols()).insert(availableD).asRefArrayAttr(&getContext()));
+            projection->setAttr("cols", ColumnSet::fromArrayAttr(projection.getCols()).insert(availableD).asRefArrayAttr(&getContext()));
             return projection;
          })
-         .Case<BinaryOperator>([&](BinaryOperator join) {
+         .Case<BinaryOperator>([&](mlir::Operation* opPtr) {
+            BinaryOperator join = mlir::cast<BinaryOperator>(opPtr);
             if (pgx::mlir::relalg::detail::isJoin(join.getOperation())) {
                auto left = mlir::dyn_cast_or_null<Operator>(join.leftChild());
                auto right = mlir::dyn_cast_or_null<Operator>(join.rightChild());
@@ -106,7 +111,8 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
                return mlir::dyn_cast_or_null<Operator>(join.getOperation());
             }
          })
-         .Default([&](Operator others) {
+         .Default([&](mlir::Operation* opPtr) {
+            Operator others = mlir::cast<Operator>(opPtr);
             handleChildren(loc,d, others);
             return others;
          });
@@ -161,14 +167,17 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
          return true;
       }
       return ::llvm::TypeSwitch<mlir::Operation*, bool>(op.getOperation())
-         .Case<pgx::mlir::relalg::BaseTableOp, pgx::mlir::relalg::ConstRelationOp>([&](Operator baserelation) {
+         .Case<pgx::mlir::relalg::BaseTableOp, pgx::mlir::relalg::ConstRelationOp>([&](mlir::Operation* opPtr) {
+            Operator baserelation = mlir::cast<Operator>(opPtr);
             return true;
          })
-         .Case<pgx::mlir::relalg::CrossProductOp>([&](Operator cp) {
+         .Case<pgx::mlir::relalg::CrossProductOp>([&](mlir::Operation* opPtr) {
+            Operator cp = mlir::cast<Operator>(opPtr);
             auto subOps = cp.getAllSubOperators();
             return collectSimpleDependencies(subOps[0], attributes, selectionOps) && collectSimpleDependencies(subOps[1], attributes, selectionOps);
          })
-         .Case<pgx::mlir::relalg::SelectionOp>([&](pgx::mlir::relalg::SelectionOp sel) {
+         .Case<pgx::mlir::relalg::SelectionOp>([&](mlir::Operation* opPtr) {
+            pgx::mlir::relalg::SelectionOp sel = mlir::cast<pgx::mlir::relalg::SelectionOp>(opPtr);
             auto x = sel.getUsedColumns();
             x.remove(sel.getAvailableColumns());
             if (x.isSubsetOf(attributes)) {
@@ -176,10 +185,12 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
             }
             return collectSimpleDependencies(sel.getChildren()[0], attributes, selectionOps);
          })
-         .Case<BinaryOperator>([&](BinaryOperator join) {
+         .Case<BinaryOperator>([&](mlir::Operation* opPtr) {
+            BinaryOperator join = mlir::cast<BinaryOperator>(opPtr);
             return false;
          })
-         .Default([&](Operator others) {
+         .Default([&](mlir::Operation* opPtr) {
+            Operator others = mlir::cast<Operator>(opPtr);
             return false;
          });
    }

@@ -123,8 +123,9 @@ void RelAlgDialect::initialize() {
    columnManager.setContext(getContext());
    getContext()->loadDialect<pgx::mlir::db::DBDialect>();
    getContext()->loadDialect<pgx::mlir::dsa::DSADialect>();
-   getContext()->loadDialect<mlir::arith::ArithDialect>();
-   mlir::arith::CmpIOp::attachInterface<ArithCmpFCmpInterface>(*getContext());
+   getContext()->loadDialect<::mlir::arith::ArithDialect>();
+   ::mlir::arith::CmpIOp::attachInterface<ArithCmpICmpInterface>(*getContext());
+   ::mlir::arith::CmpFOp::attachInterface<ArithCmpFCmpInterface>(*getContext());
 }
 
 ::mlir::Attribute pgx::mlir::relalg::TableMetaDataAttr::parse(::mlir::AsmParser& parser, ::mlir::Type type) {

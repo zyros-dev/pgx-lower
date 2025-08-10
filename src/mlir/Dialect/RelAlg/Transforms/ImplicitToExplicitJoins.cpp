@@ -43,9 +43,9 @@ class ImplicitToExplicitJoins : public mlir::PassWrapper<ImplicitToExplicitJoins
       if (directSelection) {
          PredicateOperator semijoin;
          if (negated) {
-            semijoin = builder.create<relalg::AntiSemiJoinOp>(loc, relType, treeVal, relOperator.asRelation());
+            semijoin = builder.create<pgx::mlir::relalg::AntiSemiJoinOp>(loc, relType, treeVal, relOperator.asRelation());
          } else {
-            semijoin = builder.create<relalg::SemiJoinOp>(loc, relType, treeVal, relOperator.asRelation());
+            semijoin = builder.create<pgx::mlir::relalg::SemiJoinOp>(loc, relType, treeVal, relOperator.asRelation());
          }
          semijoin.initPredicate();
          apply(semijoin);
@@ -55,15 +55,15 @@ class ImplicitToExplicitJoins : public mlir::PassWrapper<ImplicitToExplicitJoins
       } else {
          std::string scopeName = attributeManager.getUniqueScope("markjoin");
          std::string attributeName = "markattr";
-         relalg::ColumnDefAttr markAttrDef = attributeManager.createDef(scopeName, attributeName);
+         pgx::mlir::relalg::ColumnDefAttr markAttrDef = attributeManager.createDef(scopeName, attributeName);
          auto& ra = markAttrDef.getColumn();
          ra.type = builder.getI1Type();
-         PredicateOperator markJoin = builder.create<relalg::MarkJoinOp>(loc, relType, markAttrDef, treeVal, relOperator.asRelation());
+         PredicateOperator markJoin = builder.create<pgx::mlir::relalg::MarkJoinOp>(loc, relType, markAttrDef, treeVal, relOperator.asRelation());
          markJoin.initPredicate();
          apply(markJoin);
-         relalg::ColumnRefAttr markAttrRef = attributeManager.createRef(scopeName, attributeName);
+         pgx::mlir::relalg::ColumnRefAttr markAttrRef = attributeManager.createRef(scopeName, attributeName);
          builder.setInsertionPoint(op);
-         auto replacement = builder.create<relalg::GetColumnOp>(loc, builder.getI1Type(), markAttrRef, surroundingOperator.getLambdaRegion().getArgument(0));
+         auto replacement = builder.create<pgx::mlir::relalg::GetColumnOp>(loc, builder.getI1Type(), markAttrRef, surroundingOperator.getLambdaRegion().getArgument(0));
          op->replaceAllUsesWith(replacement);
          op->erase();
          surroundingOperator->setOperand(0, markJoin->getResult(0));
@@ -82,7 +82,7 @@ class ImplicitToExplicitJoins : public mlir::PassWrapper<ImplicitToExplicitJoins
             OpBuilder builder(surroundingOperator);
             std::string scopeName = attributeManager.getUniqueScope("singlejoin");
             std::string attributeName = "sjattr";
-            auto before = getscalarop.attr();
+            auto before = getscalarop.getAttr();
             auto fromExisting = ArrayAttr::get(&getContext(), {before});
 
             auto newAttrType = getscalarop.getType();
@@ -93,10 +93,10 @@ class ImplicitToExplicitJoins : public mlir::PassWrapper<ImplicitToExplicitJoins
             newDef.getColumn().type = newAttrType;
 
             auto mapping = ArrayAttr::get(&getContext(), {newDef});
-            auto singleJoin = builder.create<relalg::SingleJoinOp>(getscalarop->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), treeVal, getscalarop.rel(), mapping);
+            auto singleJoin = builder.create<pgx::mlir::relalg::SingleJoinOp>(getscalarop->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), treeVal, getscalarop.getRel(), mapping);
             singleJoin.initPredicate();
             builder.setInsertionPoint(getscalarop);
-            mlir::Value replacement = builder.create<relalg::GetColumnOp>(getscalarop->getLoc(), newAttrType, attributeManager.createRef(scopeName, attributeName), surroundingOperator.getLambdaRegion().getArgument(0));
+            mlir::Value replacement = builder.create<pgx::mlir::relalg::GetColumnOp>(getscalarop->getLoc(), newAttrType, attributeManager.createRef(scopeName, attributeName), surroundingOperator.getLambdaRegion().getArgument(0));
             getscalarop.replaceAllUsesWith(replacement);
             getscalarop->erase();
             treeVal = singleJoin;
@@ -105,22 +105,22 @@ class ImplicitToExplicitJoins : public mlir::PassWrapper<ImplicitToExplicitJoins
             OpBuilder builder(surroundingOperator);
             std::string scopeName = attributeManager.getUniqueScope("collectionjoin");
             std::string attributeName = "collattr";
-            auto fromAttrs = getlistop.cols();
+            auto fromAttrs = getlistop.getCols();
 
             auto newDef = attributeManager.createDef(scopeName, attributeName);
             newDef.getColumn().type = getlistop.getType();
-            auto collectionJoin = builder.create<relalg::CollectionJoinOp>(getlistop->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), fromAttrs, newDef, treeVal, getlistop.rel());
+            auto collectionJoin = builder.create<pgx::mlir::relalg::CollectionJoinOp>(getlistop->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), fromAttrs, newDef, treeVal, getlistop.getRel());
             collectionJoin.initPredicate();
             builder.setInsertionPoint(getlistop);
-            Operation* replacement = builder.create<relalg::GetColumnOp>(getlistop->getLoc(), getlistop.getType(), attributeManager.createRef(scopeName, attributeName), surroundingOperator.getLambdaRegion().getArgument(0));
+            Operation* replacement = builder.create<pgx::mlir::relalg::GetColumnOp>(getlistop->getLoc(), getlistop.getType(), attributeManager.createRef(scopeName, attributeName), surroundingOperator.getLambdaRegion().getArgument(0));
             getlistop.replaceAllUsesWith(replacement);
             getlistop->erase();
             treeVal = collectionJoin;
             surroundingOperator->setOperand(0, treeVal);
          } else if (auto existsop = mlir::dyn_cast_or_null<pgx::mlir::relalg::ExistsOp>(op)) {
-            handleScalarBoolOp(existsop->getLoc(), surroundingOperator, op, existsop.rel().getDefiningOp(), [](auto) {});
+            handleScalarBoolOp(existsop->getLoc(), surroundingOperator, op, existsop.getRel().getDefiningOp(), [](auto) {});
          } else if (auto inop = mlir::dyn_cast_or_null<pgx::mlir::relalg::InOp>(op)) {
-            Operator relOperator = inop.rel().getDefiningOp();
+            Operator relOperator = inop.getRel().getDefiningOp();
             //get attribute of relation to search in
             const auto* attr = *relOperator.getAvailableColumns().begin();
             auto searchInAttr = attributeManager.createRef(attr);

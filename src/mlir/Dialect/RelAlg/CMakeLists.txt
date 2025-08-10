@@ -21,7 +21,7 @@ add_mlir_dialect_library(MLIRRelAlgDialect
         Transforms/queryopt/QueryGraphBuilder.cpp
         Transforms/queryopt/DPhyp.cpp
         Transforms/queryopt/GOO.cpp
-        Transforms/queryopt/QueryGraph.cpp
+        # Transforms/queryopt/QueryGraph.cpp # Temporarily disabled - Arrow dependency
         Passes.cpp
         ADDITIONAL_HEADER_DIRS
         ../../include/mlir/Dialect/RelAlg

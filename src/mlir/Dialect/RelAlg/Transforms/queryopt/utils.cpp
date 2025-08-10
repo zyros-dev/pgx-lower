@@ -127,7 +127,7 @@ Operator Plan::realizePlanRec() {
          currop->setAttr("cost", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), cost));
          currop->setAttr("rows", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), rows));
       } else if (!currop && children.size() == 2) {
-         mlir::OpBuilder builder(children[0].getOperation());
+         ::mlir::OpBuilder builder(children[0].getOperation());
          currop = builder.create<pgx::mlir::relalg::CrossProductOp>(children[0].getOperation()->getLoc(), pgx::mlir::relalg::TupleStreamType::get(builder.getContext()), children[0]->getResult(0), children[1]->getResult(0));
          //currop->setAttr("cost",mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()),cost));
          //currop->setAttr("rows",mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()),rows));
@@ -169,7 +169,7 @@ std::shared_ptr<Plan> Plan::joinPlans(NodeSet s1, NodeSet s2, std::shared_ptr<Pl
 
    struct HashOp {
       size_t operator()(const Operator& op) const {
-         return (size_t) op.operator mlir::Operation*();
+         return (size_t) op.operator ::mlir::Operation*();
       }
    };
    std::unordered_set<Operator, HashOp> predicates;
@@ -188,7 +188,7 @@ std::shared_ptr<Plan> Plan::joinPlans(NodeSet s1, NodeSet s2, std::shared_ptr<Pl
          if (!edge.op) {
             //special case: forced cross product
             //do nothing
-         } else if (!mlir::isa<pgx::mlir::relalg::SelectionOp>(edge.op.getOperation()) && !mlir::isa<pgx::mlir::relalg::InnerJoinOp>(edge.op.getOperation())) {
+         } else if (!::mlir::isa<pgx::mlir::relalg::SelectionOp>(edge.op.getOperation()) && !::mlir::isa<pgx::mlir::relalg::InnerJoinOp>(edge.op.getOperation())) {
             specialJoin = edge.op;
             if (!edge.left.isSubsetOf(s1)) {
                std::swap(s1, s2);
@@ -209,7 +209,7 @@ std::shared_ptr<Plan> Plan::joinPlans(NodeSet s1, NodeSet s2, std::shared_ptr<Pl
             equivalentColumns.unionSets(edge.equality->first, edge.equality->second);
          }
          if (edge.createdNode) {
-            s |= NodeSet::single(queryGraph.numNodes, edge.createdNode.getValue());
+            s |= NodeSet::single(queryGraph.numNodes, edge.createdNode.value());
          }
       }
    }
