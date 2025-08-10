@@ -39,18 +39,34 @@ namespace {
 class DSAToStdTypeConverter : public TypeConverter {
 public:
     DSAToStdTypeConverter(MLIRContext *context) {
+        MLIR_PGX_INFO("DSAToStd", "TypeConverter constructor started");
+        
+        // CRITICAL: DB nullable types → tuple (BREAKS CIRCULAR DEPENDENCY)
+        addConversion([context](pgx::db::NullableI64Type type) -> Type {
+            MLIR_PGX_INFO("DSAToStd", "Converting DB NullableI64Type to tuple<i64, i1>");
+            auto i64Type = IntegerType::get(context, 64);
+            auto i1Type = IntegerType::get(context, 1);
+            return TupleType::get(context, {i64Type, i1Type});
+        });
+        
         // DSA TableBuilder → opaque pointer (util.ref<i8>)
         addConversion([context](pgx::mlir::dsa::TableBuilderType type) -> Type {
-            MLIR_PGX_DEBUG("DSAToStd", "Converting TableBuilder type to util.ref<i8>");
+            MLIR_PGX_INFO("DSAToStd", "Converting TableBuilder type to util.ref<i8>");
             auto i8Type = IntegerType::get(context, 8);
             return pgx::mlir::util::RefType::get(context, i8Type);
         });
         
         // Keep standard types as-is
-        addConversion([](Type type) { return type; });
+        addConversion([](Type type) {
+            MLIR_PGX_INFO("DSAToStd", "Catch-all conversion triggered");
+            return type;
+        });
         
         // Handle tuple types (needed for table_builder<tuple<...>>)
-        addConversion([](TupleType type) { return type; });
+        addConversion([](TupleType type) {
+            MLIR_PGX_INFO("DSAToStd", "Converting TupleType (keeping as-is)");
+            return type;
+        });
         
         // // Add argument materialization for function boundaries
         // addArgumentMaterialization([context](OpBuilder &builder, Type resultType,
@@ -373,7 +389,8 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
         
 
         // Set up type converter
-        DSAToStdTypeConverter typeConverter(context);
+        TypeConverter typeConverter; // Use basic TypeConverter with no conversions
+        MLIR_PGX_INFO("DSAToStd", "Using basic TypeConverter (no custom conversions)");
         MLIR_PGX_INFO("DSAToStd", "debug 1");
 
         // Set up conversion target
@@ -431,9 +448,9 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
         // populateCallOpTypeConversionPattern(patterns, typeConverter);
         MLIR_PGX_INFO("DSAToStd", "debug 9");
 
-        // Add return op conversion pattern
-        MLIR_PGX_INFO("DSAToStd", "debug 9.5 - adding populateReturnOpTypeConversionPattern");
-        populateReturnOpTypeConversionPattern(patterns, typeConverter);
+        // Add return op conversion pattern  
+        MLIR_PGX_INFO("DSAToStd", "debug 9.5 - SKIPPING populateReturnOpTypeConversionPattern to break circular dependency");
+        // populateReturnOpTypeConversionPattern(patterns, typeConverter);
         MLIR_PGX_INFO("DSAToStd", "debug 10");
 
         // Apply the conversion with strict error handling
@@ -444,8 +461,11 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
         // Skip audit - it was causing infinite loops
         MLIR_PGX_INFO("DSAToStd", "Skipping operation audit due to IR structure issues");
         
-        // Enable MLIR conversion debugging
-        llvm::DebugFlag = true;
+        // Skip MLIR debug flag - might be causing issues
+        // llvm::DebugFlag = true;
+        
+        // DEBUG: Don't dump IR - it causes infinite loops due to circular refs
+        MLIR_PGX_INFO("DSAToStd", "About to run conversion (skipping IR dump due to circular refs)");
         
         auto result = applyFullConversion(module, target, std::move(patterns));
         MLIR_PGX_INFO("DSAToStd", "applyFullConversion returned!");
