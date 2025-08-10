@@ -65,13 +65,18 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     auto func = builder.create<func::FuncOp>(
         builder.getUnknownLoc(), "test_unconverted", funcType);
     
-    module.push_back(func);
-    ASSERT_TRUE(validateIR(module, "After adding function")) << "Module with function should be valid";
-    
+    // Add entry block and temporary return BEFORE adding to module (required for verification)
     auto* block = func.addEntryBlock();
     builder.setInsertionPointToStart(block);
+    auto tempReturn = builder.create<func::ReturnOp>(builder.getUnknownLoc());
     
-    ASSERT_TRUE(validateIR(module, "After adding entry block")) << "Function with entry block should be valid";
+    module.push_back(func);
+    ASSERT_TRUE(validateIR(module, "After adding complete function")) << "Module with complete function should be valid";
+    
+    // Remove temporary return so we can add our operations
+    tempReturn.erase();
+    
+    ASSERT_TRUE(validateIR(module, "After removing temp return")) << "Function ready for operations should be valid";
     
     // Create table builder
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
@@ -106,6 +111,48 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     builder.create<func::ReturnOp>(builder.getUnknownLoc());
     
     ASSERT_TRUE(validateIR(module, "Complete IR before conversion")) << "Complete IR should be valid";
+    
+    // DEBUG: Test if the created IR is valid by walking it with depth limit
+    PGX_INFO("Testing IR validity with bounded walk...");
+    int walkDepth = 0;
+    const int maxDepth = 100;
+    bool hitDepthLimit = false;
+    
+    module.walk([&](Operation *op) -> WalkResult {
+        walkDepth++;
+        if (walkDepth > maxDepth) {
+            PGX_ERROR("Walk depth exceeded " + std::to_string(maxDepth) + " - circular IR detected!");
+            hitDepthLimit = true;
+            return WalkResult::interrupt();
+        }
+        
+        // Log every operation to see the circular pattern
+        std::string opInfo = "Depth " + std::to_string(walkDepth) + ": " + op->getName().getStringRef().str();
+        if (op->getNumResults() > 0) {
+            opInfo += " (results: " + std::to_string(op->getNumResults()) + ")";
+        }
+        if (op->getNumOperands() > 0) {
+            opInfo += " (operands: " + std::to_string(op->getNumOperands()) + ")";
+        }
+        if (op->getNumRegions() > 0) {
+            opInfo += " (regions: " + std::to_string(op->getNumRegions()) + ")";
+        }
+        
+        PGX_INFO(opInfo);
+        
+        return WalkResult::advance();
+    });
+    
+    PGX_INFO("Walk completed at depth: " + std::to_string(walkDepth));
+    
+    if (hitDepthLimit) {
+        FAIL() << "Test IR has circular references - depth exceeded " << maxDepth;
+        return;
+    }
+    
+    // Try a simple dump with timeout protection
+    PGX_INFO("Testing module dump...");
+    // module.dump(); // Skip this for now since it causes infinite loops
     
     // Run only DSAToStd pass (without DBToStd)
     PassManager pm(&context);
