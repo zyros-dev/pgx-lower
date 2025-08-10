@@ -12,11 +12,18 @@ class LLVMTypeConverter;
 
 namespace pgx {
 namespace mlir {
+namespace util {
 
+/// Create the Util to LLVM conversion pass
+std::unique_ptr<::mlir::Pass> createUtilToLLVMPass();
+
+/// Populate Util to LLVM conversion patterns
 void populateUtilToLLVMConversionPatterns(::mlir::LLVMTypeConverter& typeConverter, ::mlir::RewritePatternSet& patterns);
 
+/// Populate Util type conversion patterns  
 void populateUtilTypeConversionPatterns(::mlir::TypeConverter& typeConverter, ::mlir::RewritePatternSet& patterns);
 
+} // namespace util
 } // namespace mlir
 } // namespace pgx
 

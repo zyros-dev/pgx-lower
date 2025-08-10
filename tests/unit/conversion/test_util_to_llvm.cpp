@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "mlir/Conversion/UtilToLLVM/UtilToLLVM.h"
+#include "mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Dialect/Util/IR/UtilDialect.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
 #include "mlir/Dialect/Util/IR/UtilTypes.h"
@@ -43,7 +43,7 @@ protected:
     
     bool applyUtilToLLVMConversion() {
         PassManager pm(&context);
-        pm.addPass(createUtilToLLVMPass());
+        pm.addPass(pgx::mlir::util::createUtilToLLVMPass());
         
         if (failed(pm.run(module))) {
             PGX_ERROR("UtilToLLVM pass failed");
