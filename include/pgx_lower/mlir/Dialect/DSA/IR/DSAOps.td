@@ -37,11 +37,11 @@ class DSA_Type<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name> {
     let mnemonic = typeMnemonic;
 }
 
-class DSA_Collection<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name,[],"::mlir::dsa::CollectionType"> {
+class DSA_Collection<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name> {
     let mnemonic = typeMnemonic;
 }
 
-def DSA_Collection : Type<CPred<"$_self.isa<::mlir::dsa::CollectionType>()">,"DSA dialect collection">;
+def DSA_Collection : Type<CPred<"$_self.getDialect().getNamespace() == \"dsa\"">,"DSA dialect collection">;
 
 def DSA_GenericIterable : DSA_Collection<"GenericIterable","iterable"> {
     let summary = "generic iterable";
@@ -74,7 +74,7 @@ def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
         `finalize`.
     }];
 
-    let parameters = (ins "TupleType":$rowType);
+    let parameters = (ins "::mlir::TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 
@@ -85,22 +85,22 @@ def DSA_Vector : DSA_Collection<"Vector","vector"> {
 }
 def DSA_Record: DSA_Collection<"Record","record"> {
     let summary = "record";
-    let parameters = (ins "TupleType":$rowType);
+    let parameters = (ins "::mlir::TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 def DSA_RecordBatch: DSA_Collection<"RecordBatch","record_batch"> {
     let summary = "record_batch";
-    let parameters = (ins "TupleType":$rowType);
+    let parameters = (ins "::mlir::TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 def DSA_AggregationHashtable : DSA_Collection<"AggregationHashtable","aggr_ht"> {
     let summary = "aggregation hashtable";
-    let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
+    let parameters = (ins "::mlir::TupleType":$keyType,"::mlir::TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 def DSA_JoinHashtable : DSA_Collection<"JoinHashtable","join_ht"> {
     let summary = "join hashtable";
-    let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
+    let parameters = (ins "::mlir::TupleType":$keyType,"::mlir::TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 
@@ -131,14 +131,14 @@ def DSA_CreateDS : DSA_Op<"create_ds"> {
     let results = (outs AnyType:$ds);
     let assemblyFormat = " ( `(` $init_attr^ `)` `->`)? ( $init_val^ `:` type($init_val) `->`)? type($ds) attr-dict";
     let builders = [
-        OpBuilder<(ins "mlir::Type":$t), [{
-            build($_builder, $_state, t, mlir::Value());
+        OpBuilder<(ins "::mlir::Type":$t), [{
+            build($_builder, $_state, t, ::mlir::Value());
         }]>,
-        OpBuilder<(ins "mlir::Type":$t,"mlir::Value":$v), [{
-            build($_builder, $_state, t,v, mlir::Attribute());
+        OpBuilder<(ins "::mlir::Type":$t,"::mlir::Value":$v), [{
+            build($_builder, $_state, t,v, ::mlir::Attribute());
         }]>,
-        OpBuilder<(ins "mlir::Type":$t,"mlir::Attribute":$attr), [{
-            build($_builder, $_state, t,mlir::Value(),attr);
+        OpBuilder<(ins "::mlir::Type":$t,"::mlir::Attribute":$attr), [{
+            build($_builder, $_state, t,::mlir::Value(),attr);
         }]>
     ];
 }
@@ -163,8 +163,8 @@ def DSA_Finalize : DSA_Op<"finalize"> {
     let arguments = (ins AnyType:$ht);
     let results = (outs Optional<AnyType>:$res);
     let assemblyFormat = "$ht `:` type($ht)  (`->` type($res)^)? attr-dict";
-    let builders = [OpBuilder<(ins "mlir::Value":$v), [{
-        build($_builder, $_state, mlir::TypeRange(),v);
+    let builders = [OpBuilder<(ins "::mlir::Value":$v), [{
+        build($_builder, $_state, ::mlir::TypeRange(),v);
     }]>];
 }
 
@@ -173,8 +173,8 @@ def DSA_Append : DSA_Op<"ds_append"> {
 
     let arguments = (ins AnyType:$ds, AnyType:$val,Optional<I1>:$valid);
     let assemblyFormat = "$ds `:` type($ds) `,` $val `:` type($val) ( `,` $valid^ )? attr-dict";
-        let builders = [OpBuilder<(ins "mlir::Value":$v1, "mlir::Value":$v2), [{
-        build($_builder, $_state, v1,v2, mlir::Value());
+        let builders = [OpBuilder<(ins "::mlir::Value":$v1, "::mlir::Value":$v2), [{
+        build($_builder, $_state, v1,v2, ::mlir::Value());
     }]>];
 }
 
