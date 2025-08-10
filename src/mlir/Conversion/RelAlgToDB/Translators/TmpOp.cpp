@@ -5,52 +5,54 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
 
-class TmpTranslator : public pgx::mlir::relalg::Translator {
-   pgx::mlir::relalg::TmpOp tmpOp;
+namespace pgx::mlir::relalg {
+
+class TmpTranslator : public Translator {
+   TmpOp tmpOp;
    bool materialize;
-   pgx::mlir::relalg::OrderedAttributes attributes;
+   OrderedAttributes attributes;
    size_t userCount;
    size_t producedCount;
    ::mlir::Value vector;
 
    public:
-   TmpTranslator(pgx::mlir::relalg::TmpOp tmpOp) : pgx::mlir::relalg::Translator(tmpOp), tmpOp(tmpOp) {
+   TmpTranslator(TmpOp tmpOp) : Translator(tmpOp), tmpOp(tmpOp) {
       std::vector<mlir::Operation*> users(tmpOp->getUsers().begin(), tmpOp->getUsers().end());
       userCount = users.size();
       producedCount = 0;
    }
-   virtual void setInfo(pgx::mlir::relalg::Translator* consumer, const pgx::mlir::relalg::ColumnSet& requiredAttributes) override {
+   virtual void setInfo(Translator* consumer, const ColumnSet& requiredAttributes) override {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
-      this->requiredAttributes.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(tmpOp.cols()));
+      this->requiredAttributes.insert(ColumnSet::fromArrayAttr(tmpOp.cols()));
       propagateInfo();
       for (const auto* attr : this->requiredAttributes) {
          attributes.insert(attr);
       }
    }
 
-   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) override {
       if (materialize) {
          ::mlir::Value packed = attributes.pack(context, builder, tmpOp->getLoc());
          builder.create<pgx::mlir::dsa::Append>(tmpOp->getLoc(), vector, packed);
       }
    }
 
-   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+   virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
 
       materialize = !context.materializedTmp.count(tmpOp.getOperation());
       producedCount++;
       if (materialize) {
          auto tupleType = attributes.getTupleType(builder.getContext());
-         std::unordered_map<const pgx::mlir::relalg::Column*, size_t> attributePos;
+         std::unordered_map<const Column*, size_t> attributePos;
          vector=builder.create<pgx::mlir::dsa::CreateDS>(tmpOp.getLoc(), pgx::mlir::dsa::VectorType::get(builder.getContext(), tupleType));
 
          children[0]->produce(context, builder);
          context.materializedTmp[tmpOp.getOperation()] = {vector, attributes.getAttrs()};
       }
       auto [vector, attributes_] = context.materializedTmp[tmpOp.getOperation()];
-      auto attributes=pgx::mlir::relalg::OrderedAttributes::fromVec(attributes_);
+      auto attributes=OrderedAttributes::fromVec(attributes_);
       auto tupleType = attributes.getTupleType(builder.getContext());
       auto forOp2 = builder.create<pgx::mlir::dsa::ForOp>(tmpOp->getLoc(), ::mlir::TypeRange{}, vector, mlir::Value(), ::mlir::ValueRange{});
       ::mlir::Block* block2 = new ::mlir::Block;
@@ -71,7 +73,8 @@ class TmpTranslator : public pgx::mlir::relalg::Translator {
    virtual ~TmpTranslator() {}
 };
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createTmpTranslator(::mlir::Operation* op) {
-   auto tmpOp = ::mlir::cast<pgx::mlir::relalg::TmpOp>(op);
+} // namespace pgx::mlir::relalg
+
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createTmpTranslator(TmpOp tmpOp) {
    return std::make_unique<TmpTranslator>(tmpOp);
 }

@@ -1,8 +1,8 @@
 #include "mlir/Conversion/RelAlgToDB/NLJoinTranslator.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
-namespace mlir::relalg {
+namespace pgx::mlir::relalg {
 
-void NLJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, const pgx::mlir::relalg::ColumnSet& requiredAttributes) {
+void NLJoinTranslator::setInfo(Translator* consumer, ColumnSet requiredAttributes) {
    this->consumer = consumer;
    this->requiredAttributes = requiredAttributes;
    addJoinRequiredColumns();
@@ -10,12 +10,12 @@ void NLJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, const pg
    propagateInfo();
 }
 
-void NLJoinTranslator::build(::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) {
+void NLJoinTranslator::build(::mlir::OpBuilder& builder, TranslatorContext& context) {
    auto const0 = builder.create<::mlir::arith::ConstantOp>(loc, builder.getIntegerType(64), builder.getI64IntegerAttr(0));
    mlir::Value packed = orderedAttributesLeft.pack(context, builder, op->getLoc(), impl->markable ? std::vector<::mlir::Value>{const0} : std::vector<::mlir::Value>());
    builder.create<pgx::mlir::dsa::Append>(loc, vector, packed);
 }
-void NLJoinTranslator::scanHT(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) {
+void NLJoinTranslator::scanHT(TranslatorContext& context, ::mlir::OpBuilder& builder) {
    auto scope = context.createScope();
    {
       auto forOp2 = builder.create<pgx::mlir::dsa::ForOp>(loc, ::mlir::TypeRange{}, vector, ::mlir::Value(), ::mlir::ValueRange{});
@@ -31,7 +31,7 @@ void NLJoinTranslator::scanHT(pgx::mlir::relalg::TranslatorContext& context, ::m
    }
 }
 
-void NLJoinTranslator::probe(::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) {
+void NLJoinTranslator::probe(::mlir::OpBuilder& builder, TranslatorContext& context) {
    auto scope = context.createScope();
    impl->beforeLookup(context, builder);
    {
@@ -49,16 +49,16 @@ void NLJoinTranslator::probe(::mlir::OpBuilder& builder, pgx::mlir::relalg::Tran
    }
    impl->afterLookup(context, builder);
 }
-void NLJoinTranslator::consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) {
+void NLJoinTranslator::consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) {
    if (child == this->children[0].get()) {
       build(builder, context);
    } else if (child == this->children[1].get()) {
       probe(builder, context);
    }
 }
-void NLJoinTranslator::produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) {
+void NLJoinTranslator::produce(TranslatorContext& context, ::mlir::OpBuilder& builder) {
    auto leftAttributes = this->requiredAttributes.intersect(children[0]->getAvailableColumns());
-   orderedAttributesLeft = pgx::mlir::relalg::OrderedAttributes::fromColumns(leftAttributes);
+   orderedAttributesLeft = OrderedAttributes::fromColumns(leftAttributes);
    tupleType = orderedAttributesLeft.getTupleType(op->getContext(), impl->markable ? std::vector<::mlir::Type>({::mlir::IntegerType::get(op->getContext(), 64)}) : std::vector<::mlir::Type>());
    vector = builder.create<pgx::mlir::dsa::CreateDS>(loc, pgx::mlir::dsa::VectorType::get(builder.getContext(), tupleType));
    children[0]->produce(context, builder);

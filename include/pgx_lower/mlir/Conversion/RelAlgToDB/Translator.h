@@ -29,7 +29,7 @@ class Translator {
    Translator(::mlir::ValueRange children);
    Translator(Operator op);
 
-   virtual void setInfo(mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes);
+   virtual void setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes);
    virtual pgx::mlir::relalg::ColumnSet getAvailableColumns();
    virtual void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) = 0;
    virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) = 0;

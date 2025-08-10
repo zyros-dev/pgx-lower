@@ -5,6 +5,8 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
 
+namespace pgx::mlir::relalg {
+
 class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::MaterializeOp materializeOp;
    ::mlir::Value tableBuilder;
@@ -49,7 +51,7 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    MaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) : pgx::mlir::relalg::Translator(materializeOp.getRel()), materializeOp(materializeOp) {
       orderedAttributes = pgx::mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.getCols());
    }
-   virtual void setInfo(pgx::mlir::relalg::Translator* consumer, const pgx::mlir::relalg::ColumnSet& requiredAttributes) override {
+   virtual void setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) override {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
       this->requiredAttributes.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.getCols()));
@@ -89,6 +91,8 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    }
    virtual ~MaterializeTranslator() {}
 };
+
+} // namespace pgx::mlir::relalg
 
 std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createMaterializeTranslator(::mlir::Operation* op) {
    auto materializeOp = ::mlir::cast<pgx::mlir::relalg::MaterializeOp>(op);
