@@ -593,6 +593,23 @@ target_link_libraries(test_dsa_to_std
 )
 add_test(NAME DSAToStdTest COMMAND test_dsa_to_std)
 
+# DSA CreateTableBuilder specific test
+add_executable(test_dsa_create_table_builder test_dsa_create_table_builder.cpp)
+target_link_libraries(test_dsa_create_table_builder
+    gtest gtest_main
+    MLIRDSADialect
+    MLIRUtilDialect
+    MLIRDSAToStd
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRPass
+    MLIRIR
+    MLIRParser
+    MLIRSupport
+    pgx_logging
+)
+add_test(NAME DSACreateTableBuilderTest COMMAND test_dsa_create_table_builder)
+
 # Phase 4f: Util → LLVM conversion tests (utility operations to LLVM dialect)
 add_executable(test_util_to_llvm test_util_to_llvm.cpp)
 target_link_libraries(test_util_to_llvm
