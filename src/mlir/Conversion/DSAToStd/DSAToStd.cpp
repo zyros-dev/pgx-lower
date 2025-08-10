@@ -68,12 +68,12 @@ static func::FuncOp getOrCreateRuntimeFunction(
 
 
 // Pattern for dsa.create_ds → runtime call
-class CreateDSToStdPattern : public OpRewritePattern<pgx::mlir::dsa::CreateDSOp> {
+class CreateDSToStdPattern : public OpRewritePattern<pgx::mlir::dsa::CreateDS> {
 public:
-    using OpRewritePattern<pgx::mlir::dsa::CreateDSOp>::OpRewritePattern;
+    using OpRewritePattern<pgx::mlir::dsa::CreateDS>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(
-        pgx::mlir::dsa::CreateDSOp op,
+        pgx::mlir::dsa::CreateDS op,
         PatternRewriter &rewriter) const override {
         
         MLIR_PGX_DEBUG("DSAToStd", "CreateDSToStdPattern::matchAndRewrite called");
@@ -362,7 +362,7 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
             }
             // Commented out to avoid potential output-related hang
             // MLIR_PGX_DEBUG("DSAToStd", "Walking operation: " + op->getName().getStringRef().str());
-            if (isa<pgx::mlir::dsa::CreateDSOp, pgx::mlir::dsa::DSAppendOp, 
+            if (isa<pgx::mlir::dsa::CreateDS, pgx::mlir::dsa::DSAppendOp, 
                     pgx::mlir::dsa::NextRowOp>(op)) {
                 MLIR_PGX_INFO("DSAToStd", "Found DSA operation to convert: " + op->getName().getStringRef().str());
                 opsToReplace.push_back(op);
@@ -376,7 +376,7 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
         for (auto* op : opsToReplace) {
             OpBuilder builder(op);
             
-            if (auto createOp = dyn_cast<pgx::mlir::dsa::CreateDSOp>(op)) {
+            if (auto createOp = dyn_cast<pgx::mlir::dsa::CreateDS>(op)) {
                 MLIR_PGX_DEBUG("DSAToStd", "Converting dsa.create_ds");
                 
                 // Get the schema attribute

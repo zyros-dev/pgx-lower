@@ -99,23 +99,23 @@ namespace {
 // - dsa.finalize (hybrid architecture outputs directly to PostgreSQL)
 
 //===----------------------------------------------------------------------===//
-// CreateDSOp Lowering Pattern Implementation
+// CreateDS Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
-class CreateDSToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::CreateDSOp> {
+class CreateDSToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::CreateDS> {
 public:
-    using OpConversionPattern<::pgx::mlir::dsa::CreateDSOp>::OpConversionPattern;
+    using OpConversionPattern<::pgx::mlir::dsa::CreateDS>::OpConversionPattern;
     
-    LogicalResult matchAndRewrite(::pgx::mlir::dsa::CreateDSOp op, OpAdaptor adaptor,
+    LogicalResult matchAndRewrite(::pgx::mlir::dsa::CreateDS op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const override {
-        MLIR_PGX_DEBUG("DSAToLLVM", "Converting CreateDSOp to LLVM runtime call");
+        MLIR_PGX_DEBUG("DSAToLLVM", "Converting CreateDS to LLVM runtime call");
         
         auto loc = op.getLoc();
         auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
         
         // PHASE 4d-5: Simplified for Test 1 - only TableBuilder type is used
         if (!op.getType().isa<::pgx::mlir::dsa::TableBuilderType>()) {
-            MLIR_PGX_ERROR("DSAToLLVM", "CreateDSOp for non-TableBuilder type not supported in Test 1");
+            MLIR_PGX_ERROR("DSAToLLVM", "CreateDS for non-TableBuilder type not supported in Test 1");
             return failure();
         }
         
@@ -173,7 +173,7 @@ public:
         } else {
             // No schema - pass null pointer
             schemaPtr = rewriter.create<LLVM::ZeroOp>(loc, ptrType);
-            MLIR_PGX_WARNING("DSAToLLVM", "CreateDSOp without schema description");
+            MLIR_PGX_WARNING("DSAToLLVM", "CreateDS without schema description");
         }
         
         // Replace with runtime call
