@@ -28,13 +28,13 @@ class SelectionTranslator : public Translator {
       ::mlir::Value matched = mergeRelationalBlock(
          builder.getInsertionBlock(), selectionOp, [](auto x) { return &x->getRegion(0).front(); }, context, scope)[0];
       auto* parentOp = builder.getBlock()->getParentOp();
-      if (mlir::isa_and_nonnull<pgx::mlir::dsa::ForOp>(parentOp)) {
+      if (::mlir::isa_and_nonnull<pgx::mlir::dsa::ForOp>(parentOp)) {
          std::vector<std::pair<int, mlir::Value>> conditions;
-         if (auto andOp = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(matched.getDefiningOp())) {
+         if (auto andOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(matched.getDefiningOp())) {
             for (auto c : andOp.getOperands()) {
                int p = 1000;
                if (auto* defOp = c.getDefiningOp()) {
-                  if (auto betweenOp = mlir::dyn_cast_or_null<pgx::mlir::db::BetweenOp>(defOp)) {
+                  if (auto betweenOp = ::mlir::dyn_cast_or_null<pgx::mlir::db::BetweenOp>(defOp)) {
                      auto t = betweenOp.val().getType();
                      p = ::llvm::TypeSwitch<mlir::Type, int>(t)
                             .Case<::mlir::IntegerType>([&](::mlir::IntegerType t) { return 1; })
@@ -44,7 +44,7 @@ class SelectionTranslator : public Translator {
                             .Case<::pgx::mlir::db::StringType>([&](::pgx::mlir::db::StringType t) { return 10; })
                             .Default([](::mlir::Type) { return 100; });
                      p -= 1;
-                  } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(defOp)) {
+                  } else if (auto cmpOp = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(defOp)) {
                      auto t = cmpOp.getLeft().getType();
                      p = ::llvm::TypeSwitch<mlir::Type, int>(t)
                             .Case<::mlir::IntegerType>([&](::mlir::IntegerType t) { return 1; })
@@ -69,10 +69,13 @@ class SelectionTranslator : public Translator {
          consumer->consume(this, builder, context);
       } else {
          matched = builder.create<pgx::mlir::db::DeriveTruth>(selectionOp.getLoc(), matched);
-         builder.create<::mlir::scf::IfOp>(
-            selectionOp->getLoc(), matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
-               consumer->consume(this, builder1, context);
-               builder1.create<::mlir::scf::YieldOp>(selectionOp->getLoc()); });
+         auto ifOp = builder.create<::mlir::scf::IfOp>(selectionOp->getLoc(), matched, /*withElseRegion=*/false);
+         {
+            ::mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            consumer->consume(this, builder, context);
+            builder.create<::mlir::scf::YieldOp>(selectionOp->getLoc());
+         }
       }
    }
    virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
@@ -84,7 +87,6 @@ class SelectionTranslator : public Translator {
 
 } // namespace pgx::mlir::relalg
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createSelectionTranslator(::mlir::Operation* op) {
-   auto selectionOp = ::mlir::cast<pgx::mlir::relalg::SelectionOp>(op);
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createSelectionTranslator(SelectionOp selectionOp) {
    return std::make_unique<SelectionTranslator>(selectionOp);
 }

@@ -96,6 +96,6 @@ class BaseTableTranslator : public Translator {
 
 } // namespace pgx::mlir::relalg
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createBaseTableTranslator(pgx::mlir::relalg::BaseTableOp baseTableOp) {
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createBaseTableTranslator(BaseTableOp baseTableOp) {
    return std::make_unique<BaseTableTranslator>(baseTableOp);
 }

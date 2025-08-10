@@ -5,7 +5,6 @@
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
-#include "mlir/Conversion/DSAToLLVM/DSAToLLVM.h"
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
 
 // Include dialect headers for verification
@@ -35,7 +34,7 @@ void createLowerRelAlgPipeline(mlir::OpPassManager& pm) {
 
 // DB → Standard MLIR + PostgreSQL SPI Pipeline
 void createLowerDBPipeline(mlir::OpPassManager& pm) {
-    pm.addPass(pgx::mlir::db::createLowerToStdPass());
+    pm.addPass(::mlir::db::createLowerToStdPass());
     pm.addPass(mlir::createCanonicalizerPass());
 }
 
@@ -53,8 +52,7 @@ void createLowerDSAUtilPipeline(mlir::OpPassManager& pm) {
 void registerAllPgxLoweringPasses() {
     // Register conversion passes
     ::mlir::pgx_conversion::registerRelAlgToDBConversionPasses();
-    ::mlir::pgx_conversion::registerDSAToLLVMConversionPasses();
-    
+
     // Register pipeline as command-line options for mlir-opt
     mlir::PassPipelineRegistration<>(
         "lower-relalg-to-mixed",

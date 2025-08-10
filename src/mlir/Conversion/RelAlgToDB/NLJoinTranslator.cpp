@@ -1,6 +1,7 @@
 #include "mlir/Conversion/RelAlgToDB/NLJoinTranslator.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
-using namespace pgx::mlir::relalg;
+namespace mlir::relalg {
+
 void NLJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, const pgx::mlir::relalg::ColumnSet& requiredAttributes) {
    this->consumer = consumer;
    this->requiredAttributes = requiredAttributes;
@@ -65,3 +66,5 @@ void NLJoinTranslator::produce(pgx::mlir::relalg::TranslatorContext& context, ::
    impl->after(context, builder);
    builder.create<pgx::mlir::dsa::FreeOp>(loc, vector);
 }
+
+} // namespace mlir::relalg
