@@ -1,20 +1,31 @@
-# RelAlgToDB Conversion CMakeLists.txt
-# Implements first stage of LingoDB pipeline: RelAlg -> DB using Translator pattern
+add_mlir_conversion_library(MLIRRelAlgToDB
+        Translator.cpp
+        JoinTranslator.cpp
+        NLJoinTranslator.cpp
+        HashJoinTranslator.cpp
+        LowerToDB.cpp
+        Translators/BaseTableOp.cpp
+        Translators/AggregationOp.cpp
+        Translators/ConstRelationOp.cpp
+        Translators/MapOp.cpp
+        Translators/MaterializeOp.cpp
+        Translators/SelectionOp.cpp
+        Translators/SortOp.cpp
+        Translators/Joins.cpp
+        Translators/SetOps.cpp
+        Translators/RenamingOp.cpp
+        Translators/ProjectionOp.cpp
+        Translators/LimitOp.cpp
+        Translators/TmpOp.cpp
+        ADDITIONAL_HEADER_DIRS
+        ../../../mlir/Conversion/RelAlgToDB
 
-add_mlir_library(MLIRRelAlgToDBConversion
-    RelAlgToDB.cpp
-    Translator.cpp
-    TranslatorContext.cpp
-    BaseTableTranslator.cpp
-    MaterializeTranslator.cpp
+        DEPENDS
 
-    LINK_LIBS PUBLIC
-    MLIRIR
-    MLIRPass
-    MLIRTransforms
-    MLIRFuncDialect
-    MLIRArithDialect
-    MLIRRelAlgDialect
-    MLIRDB
-    MLIRDSADialect
-)
+        LINK_COMPONENTS
+        Core
+
+        LINK_LIBS mlir-support PUBLIC
+        MLIRIR
+        MLIRDB
+        )
