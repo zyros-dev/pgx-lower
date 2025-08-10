@@ -258,6 +258,49 @@ void dsa::HashtableInsert::print(OpAsmPrinter& p) {
    }
 }
 
+namespace pgx::mlir::dsa {
+
+// Properties API implementations for LLVM 20 compatibility
+// These are required for operations with attributes
+
+// At operation Properties API
+std::optional<::mlir::Attribute> At::getInherentAttr(::mlir::MLIRContext *ctx, 
+                                                     const Properties &prop, 
+                                                     llvm::StringRef name) {
+    if (name == "pos") {
+        return prop.pos;
+    }
+    return std::nullopt;
+}
+
+void At::setInherentAttr(Properties &prop, 
+                        llvm::StringRef name, 
+                        ::mlir::Attribute value) {
+    if (name == "pos") {
+        prop.pos = value.cast<::mlir::IntegerAttr>();
+    }
+}
+
+// CreateDS operation Properties API (has optional attribute)
+std::optional<::mlir::Attribute> CreateDS::getInherentAttr(::mlir::MLIRContext *ctx,
+                                                           const Properties &prop,
+                                                           llvm::StringRef name) {
+    if (name == "init_attr") {
+        return prop.init_attr;
+    }
+    return std::nullopt;
+}
+
+void CreateDS::setInherentAttr(Properties &prop,
+                              llvm::StringRef name,
+                              ::mlir::Attribute value) {
+    if (name == "init_attr") {
+        prop.init_attr = value;
+    }
+}
+
+} // namespace pgx::mlir::dsa
+
 #define GET_OP_CLASSES
 #include "mlir/Dialect/DSA/IR/DSAOps.cpp.inc"
 #include "mlir/Dialect/DSA/IR/DSAOpsInterfaces.cpp.inc"

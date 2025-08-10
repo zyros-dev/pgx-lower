@@ -3,7 +3,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/SCF.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/DSA/IR/DSAOps.h>
 

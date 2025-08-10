@@ -20,7 +20,7 @@
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/SCF/Transforms.h"
 #include "mlir/Dialect/util/UtilDialect.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"

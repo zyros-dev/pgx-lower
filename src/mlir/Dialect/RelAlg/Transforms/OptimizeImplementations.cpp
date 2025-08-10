@@ -1,5 +1,4 @@
 #include "llvm/ADT/TypeSwitch.h"
-#include "mlir/Conversion/RelAlgToDB/HashJoinTranslator.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
@@ -18,9 +17,11 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
       bool res = false;
       block->walk([&](mlir::Operation* op) {
          if (auto getAttr = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
-            required.insert({getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.attr())});
+            pgx::mlir::relalg::ColumnSet attrSet;
+            attrSet.insert(&getAttr.getAttr().getColumn());
+            required.insert({getAttr.getResult(), attrSet});
          } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
-            if (cmpOp.isEqualityPred() && pgx::mlir::relalg::HashJoinUtils::isAndedResult(op)) {
+            if (cmpOp.isEqualityPred() /*&& pgx::mlir::relalg::HashJoinUtils::isAndedResult(op)*/) {
                auto leftAttributes = required[cmpOp.getLeft()];
                auto rightAttributes = required[cmpOp.getRight()];
                if (leftAttributes.isSubsetOf(availableLeft) && rightAttributes.isSubsetOf(availableRight)) {
@@ -33,7 +34,7 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
             pgx::mlir::relalg::ColumnSet attributes;
             for (auto operand : op->getOperands()) {
                if (required.count(operand)) {
-                  attributes.insert(required[operand]);
+                  attributes.insertAll(required[operand]);
                }
             }
             for (auto result : op->getResults()) {
@@ -84,7 +85,7 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
             })
             .Case<pgx::mlir::relalg::SingleJoinOp>([&](pgx::mlir::relalg::SingleJoinOp op) {
                if (auto returnOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(op.getPredicateBlock().getTerminator())) {
-                  if (returnOp.results().empty()) {
+                  if (returnOp.getResults().empty()) {
                      op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "constant"));
                   }
                }

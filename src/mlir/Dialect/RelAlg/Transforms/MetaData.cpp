@@ -12,7 +12,7 @@ class AttachMetaData : public mlir::PassWrapper<AttachMetaData, mlir::OperationP
    AttachMetaData(runtime::Database& db):db(db){}
    void runOnOperation() override {
       getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
-         op.metaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),db.getTableMetaData(op.table_identifier().str())));
+         op.setMetaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),db.getTableMetaData(op.getTableIdentifier().str())));
       });
    }
 };
@@ -23,7 +23,7 @@ class DetachMetaData : public mlir::PassWrapper<DetachMetaData, mlir::OperationP
    void runOnOperation() override {
       getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
          getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
-            op.metaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),std::make_shared<runtime::TableMetaData>()));
+            op.setMetaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),std::make_shared<runtime::TableMetaData>()));
          });
       });
    }

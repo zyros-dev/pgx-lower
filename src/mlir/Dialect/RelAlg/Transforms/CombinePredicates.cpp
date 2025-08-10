@@ -14,8 +14,8 @@ class CombinePredicates : public mlir::PassWrapper<CombinePredicates, mlir::Oper
       auto higherTerminator = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(higher.getPredicateBlock().getTerminator());
       auto lowerTerminator = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(lower.getPredicateBlock().getTerminator());
 
-      Value higherPredVal = higherTerminator.results()[0];
-      Value lowerPredVal = lowerTerminator.results()[0];
+      Value higherPredVal = higherTerminator.getResults()[0];
+      Value lowerPredVal = lowerTerminator.getResults()[0];
 
       OpBuilder builder(lower);
       mlir::IRMapping mapping;
@@ -34,10 +34,10 @@ class CombinePredicates : public mlir::PassWrapper<CombinePredicates, mlir::Oper
 
    void runOnOperation() override {
       getOperation().walk([&](pgx::mlir::relalg::SelectionOp op) {
-         mlir::Value lower = op.rel();
+         mlir::Value lower = op.getRel();
          bool canCombine = mlir::isa<pgx::mlir::relalg::SelectionOp>(lower.getDefiningOp()) || mlir::isa<pgx::mlir::relalg::InnerJoinOp>(lower.getDefiningOp());
          if (canCombine) {
-            combine(op, lower.getDefiningOp());
+            combine(op, mlir::cast<PredicateOperator>(lower.getDefiningOp()));
             op.replaceAllUsesWith(lower);
             op->erase();
          }

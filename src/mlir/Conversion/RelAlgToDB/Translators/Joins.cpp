@@ -2,7 +2,7 @@
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/SCF.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
 #include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
 #include <mlir/Dialect/DSA/IR/DSAOps.h>
 #include <mlir/IR/IRMapping.h>

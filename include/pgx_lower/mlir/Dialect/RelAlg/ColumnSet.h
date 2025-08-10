@@ -56,6 +56,16 @@ public:
         }
     }
     
+    // Check if this set is a subset of another
+    bool isSubsetOf(const ColumnSet& other) const {
+        for (const auto* col : columns) {
+            if (!other.contains(col)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
     // Iteration support
     auto begin() const { return columns.begin(); }
     auto end() const { return columns.end(); }

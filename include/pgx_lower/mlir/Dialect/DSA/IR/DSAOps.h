@@ -14,6 +14,18 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 
+// LLVM 20 compatibility: The generated code uses unqualified mlir:: types
+// within the pgx::mlir namespace, which causes lookup issues
+namespace pgx::mlir {
+using ::mlir::Attribute;
+using ::mlir::MLIRContext;
+using ::mlir::IntegerAttr;
+using ::mlir::StringAttr;
+using ::mlir::BoolAttr;
+using ::mlir::ArrayAttr;
+using ::mlir::DictionaryAttr;
+} // namespace pgx::mlir
+
 #define GET_OP_CLASSES
 #include "mlir/Dialect/DSA/IR/DSAOps.h.inc"
 mlir::Type getBaseType(mlir::Type t);
