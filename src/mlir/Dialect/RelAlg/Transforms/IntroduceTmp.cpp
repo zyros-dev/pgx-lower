@@ -16,7 +16,7 @@ class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<
          }
          return cols;
       } else if (auto matOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::MaterializeOp>(op)) {
-         return pgx::mlir::relalg::ColumnSet::fromArrayAttr(matOp.cols());
+         return pgx::mlir::relalg::ColumnSet::fromArrayAttr(matOp.getCols());
       }
       return {};
    }

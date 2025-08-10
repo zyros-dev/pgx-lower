@@ -26,41 +26,41 @@ static ColumnSet collectColumns(operator_list operators, std::function<ColumnSet
    }
    return collected;
 }
-ColumnSet pgx::mlir::relalg::detail::getUsedColumns(mlir::Operation* op) {
+ColumnSet pgx::mlir::relalg::detail::getUsedColumns(::mlir::Operation* op) {
    ColumnSet creations;
    op->walk([&](GetColumnOp attrOp) {
-      creations.insert(&attrOp.attr().getColumn());
+      creations.insert(&attrOp.getAttr().getColumn());
    });
    return creations;
 }
-ColumnSet pgx::mlir::relalg::detail::getAvailableColumns(mlir::Operation* op) {
-   Operator asOperator = mlir::dyn_cast_or_null<Operator>(op);
+ColumnSet pgx::mlir::relalg::detail::getAvailableColumns(::mlir::Operation* op) {
+   Operator asOperator = ::mlir::dyn_cast_or_null<Operator>(op);
    auto collected = collectColumns(getChildOperators(op), [](Operator op) { return op.getAvailableColumns(); });
    auto selfCreated = asOperator.getCreatedColumns();
    collected.insertAll(selfCreated);
    return collected;
 }
-FunctionalDependencies pgx::mlir::relalg::detail::getFDs(mlir::Operation* op) {
+FunctionalDependencies pgx::mlir::relalg::detail::getFDs(::mlir::Operation* op) {
    FunctionalDependencies dependencies;
    for (auto child : getChildOperators(op)) {
       dependencies.insert(child.getFDs());
    }
    return dependencies;
 }
-ColumnSet pgx::mlir::relalg::detail::getFreeColumns(mlir::Operation* op) {
+ColumnSet pgx::mlir::relalg::detail::getFreeColumns(::mlir::Operation* op) {
    auto available = collectColumns(getChildOperators(op), [](Operator op) { return op.getAvailableColumns(); });
    auto collectedFree = collectColumns(getChildOperators(op), [](Operator op) { return op.getFreeColumns(); });
-   auto used = mlir::cast<Operator>(op).getUsedColumns();
+   auto used = ::mlir::cast<Operator>(op).getUsedColumns();
    collectedFree.insertAll(used);
    collectedFree.remove(available);
    return collectedFree;
 }
 
-bool pgx::mlir::relalg::detail::isDependentJoin(mlir::Operation* op) {
-   if (auto join = mlir::dyn_cast_or_null<BinaryOperator>(op)) {
+bool pgx::mlir::relalg::detail::isDependentJoin(::mlir::Operation* op) {
+   if (auto join = ::mlir::dyn_cast_or_null<BinaryOperator>(op)) {
       if (isJoin(op)) {
-         auto left = mlir::dyn_cast_or_null<Operator>(join.leftChild());
-         auto right = mlir::dyn_cast_or_null<Operator>(join.rightChild());
+         auto left = ::mlir::dyn_cast_or_null<Operator>(join.leftChild());
+         auto right = ::mlir::dyn_cast_or_null<Operator>(join.rightChild());
          auto availableLeft = left.getAvailableColumns();
          auto availableRight = right.getAvailableColumns();
          return left.getFreeColumns().intersects(availableRight) || right.getFreeColumns().intersects(availableLeft);
@@ -68,58 +68,58 @@ bool pgx::mlir::relalg::detail::isDependentJoin(mlir::Operation* op) {
    }
    return false;
 }
-pgx::mlir::relalg::detail::BinaryOperatorType pgx::mlir::relalg::detail::getBinaryOperatorType(Operation* op) {
-   return ::llvm::TypeSwitch<mlir::Operation*, BinaryOperatorType>(op)
-      .Case<pgx::mlir::relalg::UnionOp>([&](mlir::Operation* op) { return BinaryOperatorType::Union; })
-      .Case<pgx::mlir::relalg::IntersectOp>([&](mlir::Operation* op) { return BinaryOperatorType::Intersection; })
-      .Case<pgx::mlir::relalg::ExceptOp>([&](mlir::Operation* op) { return BinaryOperatorType::Except; })
-      .Case<pgx::mlir::relalg::CrossProductOp>([&](mlir::Operation* op) { return BinaryOperatorType::CP; })
-      .Case<pgx::mlir::relalg::InnerJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::InnerJoin; })
-      .Case<pgx::mlir::relalg::SemiJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::SemiJoin; })
-      .Case<pgx::mlir::relalg::AntiSemiJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::AntiSemiJoin; })
-      .Case<pgx::mlir::relalg::SingleJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::OuterJoin; })
-      .Case<pgx::mlir::relalg::MarkJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::MarkJoin; })
-      .Case<pgx::mlir::relalg::CollectionJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::CollectionJoin; })
+pgx::mlir::relalg::detail::BinaryOperatorType pgx::mlir::relalg::detail::getBinaryOperatorType(::mlir::Operation* op) {
+   return ::llvm::TypeSwitch<::mlir::Operation*, BinaryOperatorType>(op)
+      .Case<pgx::mlir::relalg::UnionOp>([&](::mlir::Operation* op) { return BinaryOperatorType::Union; })
+      .Case<pgx::mlir::relalg::IntersectOp>([&](::mlir::Operation* op) { return BinaryOperatorType::Intersection; })
+      .Case<pgx::mlir::relalg::ExceptOp>([&](::mlir::Operation* op) { return BinaryOperatorType::Except; })
+      .Case<pgx::mlir::relalg::CrossProductOp>([&](::mlir::Operation* op) { return BinaryOperatorType::CP; })
+      .Case<pgx::mlir::relalg::InnerJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::InnerJoin; })
+      .Case<pgx::mlir::relalg::SemiJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::SemiJoin; })
+      .Case<pgx::mlir::relalg::AntiSemiJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::AntiSemiJoin; })
+      .Case<pgx::mlir::relalg::SingleJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::OuterJoin; })
+      .Case<pgx::mlir::relalg::MarkJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::MarkJoin; })
+      .Case<pgx::mlir::relalg::CollectionJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::CollectionJoin; })
       .Case<pgx::mlir::relalg::OuterJoinOp>([&](pgx::mlir::relalg::OuterJoinOp op) { return BinaryOperatorType::OuterJoin; })
       .Case<pgx::mlir::relalg::FullOuterJoinOp>([&](pgx::mlir::relalg::FullOuterJoinOp op) { return BinaryOperatorType::FullOuterJoin; })
       .Default([&](auto x) {
          return BinaryOperatorType::None;
       });
 }
-pgx::mlir::relalg::detail::UnaryOperatorType pgx::mlir::relalg::detail::getUnaryOperatorType(Operation* op) {
-   return ::llvm::TypeSwitch<mlir::Operation*, UnaryOperatorType>(op)
-      .Case<pgx::mlir::relalg::SelectionOp>([&](mlir::Operation* op) { return UnaryOperatorType::Selection; })
-      .Case<pgx::mlir::relalg::MapOp>([&](mlir::Operation* op) { return UnaryOperatorType::Map; })
-      .Case<pgx::mlir::relalg::ProjectionOp>([&](pgx::mlir::relalg::ProjectionOp op) { return op.set_semantic() == pgx::mlir::relalg::SetSemantic::distinct ? UnaryOperatorType::DistinctProjection : UnaryOperatorType::Projection; })
-      .Case<pgx::mlir::relalg::AggregationOp>([&](mlir::Operation* op) { return UnaryOperatorType::Aggregation; })
+pgx::mlir::relalg::detail::UnaryOperatorType pgx::mlir::relalg::detail::getUnaryOperatorType(::mlir::Operation* op) {
+   return ::llvm::TypeSwitch<::mlir::Operation*, UnaryOperatorType>(op)
+      .Case<pgx::mlir::relalg::SelectionOp>([&](::mlir::Operation* op) { return UnaryOperatorType::Selection; })
+      .Case<pgx::mlir::relalg::MapOp>([&](::mlir::Operation* op) { return UnaryOperatorType::Map; })
+      .Case<pgx::mlir::relalg::ProjectionOp>([&](pgx::mlir::relalg::ProjectionOp op) { return op.getSetSemantic() == pgx::mlir::relalg::SetSemantic::distinct ? UnaryOperatorType::DistinctProjection : UnaryOperatorType::Projection; })
+      .Case<pgx::mlir::relalg::AggregationOp>([&](::mlir::Operation* op) { return UnaryOperatorType::Aggregation; })
       .Default([&](auto x) {
          return UnaryOperatorType::None;
       });
 }
 ColumnSet MapOp::getCreatedColumns() {
-   return ColumnSet::fromArrayAttr(computed_cols());
+   return ColumnSet::fromArrayAttr(getComputedCols());
 }
 ColumnSet AggregationOp::getCreatedColumns() {
-   return ColumnSet::fromArrayAttr(computed_cols());
+   return ColumnSet::fromArrayAttr(getComputedCols());
 }
 ColumnSet AggregationOp::getUsedColumns() {
    auto used = pgx::mlir::relalg::detail::getUsedColumns(getOperation());
-   used.insert(ColumnSet::fromArrayAttr(group_by_cols()));
+   used.insert(ColumnSet::fromArrayAttr(getGroupByCols()));
    getOperation()->walk([&](pgx::mlir::relalg::AggrFuncOp aggrFn) {
-      used.insert(&aggrFn.attr().getColumn());
+      used.insert(&aggrFn.getAttr().getColumn());
    });
    return used;
 }
 ColumnSet SortOp::getUsedColumns() {
    ColumnSet used;
-   for (Attribute a : sortspecs()) {
+   for (Attribute a : getSortspecs()) {
       used.insert(&a.dyn_cast_or_null<pgx::mlir::relalg::SortSpecificationAttr>().getAttr().getColumn());
    }
    return used;
 }
 
 ColumnSet ConstRelationOp::getCreatedColumns() {
-   return ColumnSet::fromArrayAttr(columns());
+   return ColumnSet::fromArrayAttr(getColumns());
 }
 ColumnSet AntiSemiJoinOp::getAvailableColumns() {
    return pgx::mlir::relalg::detail::getAvailableColumns(leftChild());
@@ -129,14 +129,14 @@ ColumnSet SemiJoinOp::getAvailableColumns() {
 }
 ColumnSet MarkJoinOp::getAvailableColumns() {
    auto available = pgx::mlir::relalg::detail::getAvailableColumns(leftChild());
-   available.insert(&markattr().getColumn());
+   available.insert(&getMarkattr().getColumn());
    return available;
 }
 ColumnSet RenamingOp::getCreatedColumns() {
    ColumnSet created;
 
-   for (Attribute attr : columns()) {
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+   for (Attribute attr : getColumns()) {
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       created.insert(&relationDefAttr.getColumn());
    }
    return created;
@@ -144,8 +144,8 @@ ColumnSet RenamingOp::getCreatedColumns() {
 ColumnSet RenamingOp::getUsedColumns() {
    ColumnSet used;
 
-   for (Attribute attr : columns()) {
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+   for (Attribute attr : getColumns()) {
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       used.insert(ColumnSet::fromArrayAttr(fromExisting));
    }
@@ -158,18 +158,18 @@ ColumnSet RenamingOp::getAvailableColumns() {
    availablePreviously.insert(created);
    return availablePreviously;
 }
-ColumnSet pgx::mlir::relalg::detail::getSetOpCreatedColumns(mlir::Operation* op) {
+ColumnSet pgx::mlir::relalg::detail::getSetOpCreatedColumns(::mlir::Operation* op) {
    ColumnSet created;
    for (mlir::Attribute attr : op->getAttr("mapping").cast<mlir::ArrayAttr>()) {
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       created.insert(&relationDefAttr.getColumn());
    }
    return created;
 }
-ColumnSet pgx::mlir::relalg::detail::getSetOpUsedColumns(mlir::Operation* op) {
+ColumnSet pgx::mlir::relalg::detail::getSetOpUsedColumns(::mlir::Operation* op) {
    ColumnSet used;
    for (Attribute attr : op->getAttr("mapping").cast<mlir::ArrayAttr>()) {
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       used.insert(ColumnSet::fromArrayAttr(fromExisting));
    }
@@ -178,8 +178,8 @@ ColumnSet pgx::mlir::relalg::detail::getSetOpUsedColumns(mlir::Operation* op) {
 ColumnSet OuterJoinOp::getCreatedColumns() {
    ColumnSet created;
 
-   for (Attribute attr : mapping()) {
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+   for (Attribute attr : getMapping()) {
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       created.insert(&relationDefAttr.getColumn());
    }
    return created;
@@ -190,8 +190,8 @@ ColumnSet OuterJoinOp::getUsedColumns() {
 ColumnSet OuterJoinOp::getAvailableColumns() {
    ColumnSet renamed;
 
-   for (Attribute attr : mapping()) {
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+   for (Attribute attr : getMapping()) {
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       renamed.insert(ColumnSet::fromArrayAttr(fromExisting));
    }
@@ -204,8 +204,8 @@ ColumnSet OuterJoinOp::getAvailableColumns() {
 ColumnSet SingleJoinOp::getCreatedColumns() {
    ColumnSet created;
 
-   for (Attribute attr : mapping()) {
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+   for (Attribute attr : getMapping()) {
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       created.insert(&relationDefAttr.getColumn());
    }
    return created;
@@ -216,8 +216,8 @@ ColumnSet SingleJoinOp::getUsedColumns() {
 ColumnSet SingleJoinOp::getAvailableColumns() {
    ColumnSet renamed;
 
-   for (Attribute attr : mapping()) {
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+   for (Attribute attr : getMapping()) {
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       renamed.insert(ColumnSet::fromArrayAttr(fromExisting));
    }
@@ -229,7 +229,7 @@ ColumnSet SingleJoinOp::getAvailableColumns() {
 }
 ColumnSet CollectionJoinOp::getCreatedColumns() {
    ColumnSet created;
-   created.insert(&collAttr().getColumn());
+   created.insert(&getCollAttr().getColumn());
    return created;
 }
 ColumnSet CollectionJoinOp::getUsedColumns() {
@@ -243,56 +243,57 @@ ColumnSet CollectionJoinOp::getAvailableColumns() {
 }
 ColumnSet MarkJoinOp::getCreatedColumns() {
    ColumnSet created;
-   created.insert(&markattr().getColumn());
+   created.insert(&getMarkattr().getColumn());
    return created;
 }
 
 ColumnSet BaseTableOp::getCreatedColumns() {
    ColumnSet creations;
-   for (auto mapping : columns()) {
+   for (auto mapping : getColumns()) {
       auto attr = mapping.getValue();
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       creations.insert(&relationDefAttr.getColumn());
    }
    return creations;
 }
 pgx::mlir::relalg::FunctionalDependencies BaseTableOp::getFDs() {
    FunctionalDependencies dependencies;
-   auto metaData = meta().getMeta();
+   auto metaData = getMeta().getMeta();
    if (!metaData->isPresent()) return dependencies;
    if (metaData->getPrimaryKey().empty()) return dependencies;
    auto right = getAvailableColumns();
    std::unordered_set<std::string> pks(metaData->getPrimaryKey().begin(), metaData->getPrimaryKey().end());
    ColumnSet pk;
-   for (auto mapping : columns()) {
+   for (auto mapping : getColumns()) {
       auto attr = mapping.getValue();
-      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+      auto relationDefAttr = ::mlir::dyn_cast_or_null<ColumnDefAttr>(attr);
       if (pks.contains(mapping.getName().str())) {
          pk.insert(&relationDefAttr.getColumn());
       }
    }
    right.remove(pk);
-   dependencies.insert(pk, right);
+   // TODO: Implement functional dependency tracking with pk->right
+   // dependencies.insert(pk, right);
    return dependencies;
 }
 ColumnSet pgx::mlir::relalg::AggregationOp::getAvailableColumns() {
    ColumnSet available = getCreatedColumns();
-   available.insert(ColumnSet::fromArrayAttr(group_by_cols()));
+   available.insert(ColumnSet::fromArrayAttr(getGroupByCols()));
    return available;
 }
 ColumnSet pgx::mlir::relalg::ProjectionOp::getAvailableColumns() {
-   return ColumnSet::fromArrayAttr(cols());
+   return ColumnSet::fromArrayAttr(getCols());
 }
 ColumnSet pgx::mlir::relalg::ProjectionOp::getUsedColumns() {
-   return set_semantic() == SetSemantic::distinct ? ColumnSet::fromArrayAttr(cols()) : ColumnSet();
+   return getSetSemantic() == SetSemantic::distinct ? ColumnSet::fromArrayAttr(getCols()) : ColumnSet();
 }
-bool pgx::mlir::relalg::detail::isJoin(Operation* op) {
+bool pgx::mlir::relalg::detail::isJoin(::mlir::Operation* op) {
    auto opType = getBinaryOperatorType(op);
    return BinaryOperatorType::InnerJoin <= opType && opType <= BinaryOperatorType::CollectionJoin;
 }
 
-void pgx::mlir::relalg::detail::addPredicate(mlir::Operation* op, std::function<mlir::Value(mlir::Value, mlir::OpBuilder&)> predicateProducer) {
-   auto lambdaOperator = mlir::dyn_cast_or_null<PredicateOperator>(op);
+void pgx::mlir::relalg::detail::addPredicate(::mlir::Operation* op, std::function<::mlir::Value(::mlir::Value, ::mlir::OpBuilder&)> predicateProducer) {
+   auto lambdaOperator = ::mlir::dyn_cast_or_null<PredicateOperator>(op);
    auto* terminator = lambdaOperator.getPredicateBlock().getTerminator();
    mlir::OpBuilder builder(terminator);
    auto additionalPred = predicateProducer(lambdaOperator.getPredicateArgument(), builder);
