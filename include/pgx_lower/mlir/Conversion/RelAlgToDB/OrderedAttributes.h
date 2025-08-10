@@ -39,10 +39,10 @@ class OrderedAttributes {
       }
       return res;
    }
-   mlir::Value resolve(TranslatorContext& context, size_t pos) {
+   ::mlir::Value resolve(TranslatorContext& context, size_t pos) {
       return context.getValueForAttribute(attrs[pos]);
    }
-   mlir::Value pack(TranslatorContext& context, OpBuilder& builder, Location loc, std::vector<Value> additional = {}) {
+   ::mlir::Value pack(TranslatorContext& context, OpBuilder& builder, Location loc, std::vector<Value> additional = {}) {
       std::vector<Value> values(additional);
       for (size_t i = 0; i < attrs.size(); i++) {
          values.push_back(resolve(context, i));
@@ -62,7 +62,7 @@ class OrderedAttributes {
       }
       return attrs.size() - 1;
    }
-   mlir::TupleType getTupleType(mlir::MLIRContext* ctxt, std::vector<Type> additional = {}) {
+   mlir::TupleType getTupleType(::mlir::MLIRContext* ctxt, std::vector<Type> additional = {}) {
       std::vector<Type> tps(additional);
       tps.insert(tps.end(), types.begin(), types.end());
       return mlir::TupleType::get(ctxt, tps);

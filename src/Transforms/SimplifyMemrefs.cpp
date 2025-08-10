@@ -11,15 +11,15 @@
 namespace {
 class FoldLoadGlobal : public mlir::RewritePattern {
    public:
-   FoldLoadGlobal(mlir::MLIRContext* context)
+   FoldLoadGlobal(::mlir::MLIRContext* context)
       : RewritePattern(mlir::memref::LoadOp::getOperationName(), 1, context) {}
-   mlir::LogicalResult matchAndRewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
+   ::mlir::LogicalResult matchAndRewrite(::mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
       mlir::memref::LoadOp loadOp = mlir::cast<mlir::memref::LoadOp>(op);
       std::vector<size_t> indices;
       for (auto i : loadOp.getIndices()) {
          if (auto *idxDefiningOp = i.getDefiningOp()) {
             if (auto constantOp = mlir::dyn_cast_or_null<mlir::arith::ConstantOp>(idxDefiningOp)) {
-               if (auto integerAttr = constantOp.getValue().dyn_cast_or_null<mlir::IntegerAttr>()) {
+               if (auto integerAttr = constantOp.value().dyn_cast_or_null<::mlir::IntegerAttr>()) {
                   indices.push_back(integerAttr.getInt());
                   continue;
                }
@@ -34,13 +34,13 @@ class FoldLoadGlobal : public mlir::RewritePattern {
                if (auto globalOp = mlir::dyn_cast_or_null<mlir::memref::GlobalOp>(resolvedOp)) {
                   if (!globalOp.constant()) return mlir::failure();
                   if (globalOp.isExternal()) return mlir::failure();
-                  if (!globalOp.initial_value().hasValue()) return mlir::failure();
-                  auto initialValue = globalOp.initial_value().getValue();
+                  if (!globalOp.initial_value().has_value()) return mlir::failure();
+                  auto initialValue = globalOp.initial_value().value();
                   if (auto denseAttr = initialValue.dyn_cast_or_null<mlir::DenseIntOrFPElementsAttr>()) {
                      auto it = denseAttr.getValues<float>();
                      auto res = it[indices[0]];
                      std::cout << res << std::endl;
-                     mlir::Value resConstant = rewriter.create<mlir::arith::ConstantOp>(loadOp->getLoc(), loadOp.getType(), rewriter.getF32FloatAttr(res));
+                     ::mlir::Value resConstant = rewriter.create<mlir::arith::ConstantOp>(loadOp->getLoc(), loadOp.getType(), rewriter.getF32FloatAttr(res));
                      rewriter.replaceOp(loadOp, resConstant);
                      return mlir::success();
                   }
@@ -53,18 +53,18 @@ class FoldLoadGlobal : public mlir::RewritePattern {
 };
 class FoldLocalLoadStores : public mlir::RewritePattern {
    public:
-   FoldLocalLoadStores(mlir::MLIRContext* context)
+   FoldLocalLoadStores(::mlir::MLIRContext* context)
       : RewritePattern(mlir::memref::LoadOp::getOperationName(), 1, context) {}
-   mlir::LogicalResult matchAndRewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
+   ::mlir::LogicalResult matchAndRewrite(::mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
       mlir::memref::LoadOp loadOp = mlir::cast<mlir::memref::LoadOp>(op);
       if (auto *memrefDefiningOp = loadOp.memref().getDefiningOp()) {
-         std::vector<mlir::Operation*> sameBlockUsers;
+         std::vector<::mlir::Operation*> sameBlockUsers;
          for (auto *u : memrefDefiningOp->getUsers()) {
             if (u->getBlock() == loadOp->getBlock() && u->isBeforeInBlock(loadOp) && !mlir::isa<mlir::memref::LoadOp>(u)) {
                sameBlockUsers.push_back(u);
             }
          }
-         std::sort(sameBlockUsers.begin(), sameBlockUsers.end(), [](mlir::Operation* a, mlir::Operation* b) { return a->isBeforeInBlock(b); });
+         std::sort(sameBlockUsers.begin(), sameBlockUsers.end(), [](::mlir::Operation* a, ::mlir::Operation* b) { return a->isBeforeInBlock(b); });
          auto *lastUser = sameBlockUsers.back();
          if (auto storeOp = mlir::dyn_cast_or_null<mlir::memref::StoreOp>(lastUser)) {
             if (storeOp.indices() == loadOp.indices()) {
@@ -76,7 +76,7 @@ class FoldLocalLoadStores : public mlir::RewritePattern {
       return mlir::failure();
    }
 };
-class SimplifyMemrefs : public mlir::PassWrapper<SimplifyMemrefs, mlir::OperationPass<mlir::func::FuncOp>> {
+class SimplifyMemrefs : public ::mlir::PassWrapper<SimplifyMemrefs, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "simplify-memrefs"; }
 
    public:

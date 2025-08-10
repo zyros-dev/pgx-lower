@@ -9,18 +9,18 @@
 
 namespace {
 
-class OptimizeJoinOrder : public mlir::PassWrapper<OptimizeJoinOrder, mlir::OperationPass<mlir::func::FuncOp>> {
+class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-optimize-join-order"; }
 
-   llvm::SmallPtrSet<mlir::Operation*, 12> alreadyOptimized;
+   llvm::SmallPtrSet<::mlir::Operation*, 12> alreadyOptimized;
 
-   bool isUnsupportedOp(mlir::Operation* op) {
-      return ::llvm::TypeSwitch<mlir::Operation*, bool>(op)
+   bool isUnsupportedOp(::mlir::Operation* op) {
+      return ::llvm::TypeSwitch<::mlir::Operation*, bool>(op)
          .Case<pgx::mlir::relalg::CrossProductOp, pgx::mlir::relalg::SelectionOp>(
-            [&](mlir::Operation* op) {
+            [&](::mlir::Operation* op) {
                return false;
             })
-         .Case<BinaryOperator>([&](mlir::Operation* op) {
+         .Case<BinaryOperator>([&](::mlir::Operation* op) {
             if (pgx::mlir::relalg::detail::isJoin(op)) {
                Operator asOperator = mlir::cast<Operator>(op);
                auto subOps = asOperator.getAllSubOperators();
@@ -35,7 +35,7 @@ class OptimizeJoinOrder : public mlir::PassWrapper<OptimizeJoinOrder, mlir::Oper
          });
    }
 
-   bool isOptimizationRoot(mlir::Operation* op) {
+   bool isOptimizationRoot(::mlir::Operation* op) {
       //reason one: used by multiple parent operators (DAG)
       auto users = op->getUsers();
       if (!users.empty() && ++users.begin() != users.end()) {
@@ -87,7 +87,7 @@ class OptimizeJoinOrder : public mlir::PassWrapper<OptimizeJoinOrder, mlir::Oper
          //now: realize found plan
          //first: collect all operators that are reachable now
          llvm::SmallVector<Operator, 4> before = op.getAllSubOperators();
-         llvm::SmallPtrSet<mlir::Operation*, 8> prevUsers{op->user_begin(), op->user_end()};
+         llvm::SmallPtrSet<::mlir::Operation*, 8> prevUsers{op->user_begin(), op->user_end()};
          //realize plan
          Operator realized = solution->realizePlan();
          //second: collect all operators that are reachable now
@@ -100,7 +100,7 @@ class OptimizeJoinOrder : public mlir::PassWrapper<OptimizeJoinOrder, mlir::Oper
             });
          }
          //cleanup: make sure that all operators that are not reachable any more are cleaned up
-         llvm::SmallPtrSet<mlir::Operation*, 8> afterHt;
+         llvm::SmallPtrSet<::mlir::Operation*, 8> afterHt;
          for (auto op : after) {
             afterHt.insert(op.getOperation());
          }

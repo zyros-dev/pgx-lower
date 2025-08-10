@@ -13,15 +13,15 @@
 #include "mlir/IR/SymbolTable.h"
 
 namespace pgx::mlir::relalg::detail {
-void replaceUsages(mlir::Operation* op,std::function<pgx::mlir::relalg::ColumnRefAttr(pgx::mlir::relalg::ColumnRefAttr)> fn);
-ColumnSet getUsedColumns(mlir::Operation* op);
-ColumnSet getAvailableColumns(mlir::Operation* op);
-ColumnSet getFreeColumns(mlir::Operation* op);
-ColumnSet getSetOpCreatedColumns(mlir::Operation* op);
-ColumnSet getSetOpUsedColumns(mlir::Operation* op);
-FunctionalDependencies getFDs(mlir::Operation* op);
-bool isDependentJoin(mlir::Operation* op);
-void moveSubTreeBefore(mlir::Operation* tree, mlir::Operation* before);
+void replaceUsages(::mlir::Operation* op,std::function<pgx::mlir::relalg::ColumnRefAttr(pgx::mlir::relalg::ColumnRefAttr)> fn);
+ColumnSet getUsedColumns(::mlir::Operation* op);
+ColumnSet getAvailableColumns(::mlir::Operation* op);
+ColumnSet getFreeColumns(::mlir::Operation* op);
+ColumnSet getSetOpCreatedColumns(::mlir::Operation* op);
+ColumnSet getSetOpUsedColumns(::mlir::Operation* op);
+FunctionalDependencies getFDs(::mlir::Operation* op);
+bool isDependentJoin(::mlir::Operation* op);
+void moveSubTreeBefore(::mlir::Operation* tree, ::mlir::Operation* before);
 
 enum class BinaryOperatorType : unsigned char {
    None = 0,
@@ -207,10 +207,10 @@ UnaryOperatorType getUnaryOperatorType(Operation* op);
 
 bool isJoin(Operation* op);
 
-void addPredicate(mlir::Operation* op, std::function<mlir::Value(mlir::Value, mlir::OpBuilder& builder)> predicateProducer);
-void initPredicate(mlir::Operation* op);
+void addPredicate(::mlir::Operation* op, std::function<::mlir::Value(::mlir::Value, ::mlir::OpBuilder& builder)> predicateProducer);
+void initPredicate(::mlir::Operation* op);
 
-void inlineOpIntoBlock(mlir::Operation* vop, mlir::Operation* includeChildren, mlir::Operation* excludeChildren, mlir::Block* newBlock, mlir::BlockAndValueMapping& mapping, mlir::Operation* first = nullptr);
+void inlineOpIntoBlock(::mlir::Operation* vop, ::mlir::Operation* includeChildren, ::mlir::Operation* excludeChildren, ::mlir::Block* newBlock, ::mlir::BlockAndValueMapping& mapping, ::mlir::Operation* first = nullptr);
 } // namespace pgx::mlir::relalg::detail
 class Operator;
 #define GET_OP_CLASSES

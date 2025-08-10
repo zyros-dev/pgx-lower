@@ -66,7 +66,7 @@ namespace mlir_runner {
 // MlirRunner class implementation for Phase 4g-2c requirements
 class MlirRunner {
 public:
-    bool executeQuery(mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
+    bool executeQuery(::mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
         PGX_INFO("MlirRunner::executeQuery - Phase 4g-2c JIT execution enabled");
         
         // Create module handle for isolated JIT execution
@@ -115,7 +115,7 @@ public:
 
 // Initialize MLIR context and load dialects
 // This resolves TypeID symbol linking issues by registering dialect TypeIDs
-static bool initialize_mlir_context(mlir::MLIRContext& context) {
+static bool initialize_mlir_context(::mlir::MLIRContext& context) {
     try {
         // First validate library loading before proceeding
         if (!mlir::pgx_lower::validateLibraryLoading()) {
@@ -168,7 +168,7 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
     
     try {
         // Create MLIR context and load dialects
-        mlir::MLIRContext context;
+        ::mlir::MLIRContext context;
         if (!initialize_mlir_context(context)) {
             auto error = pgx_lower::ErrorManager::postgresqlError("Failed to initialize MLIR context and dialects");
             pgx_lower::ErrorManager::reportError(error);
@@ -192,7 +192,7 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
         
         // Phase 3c: Use centralized pass pipeline for RelAlg→DB→DSA lowering
         PGX_INFO("Configuring centralized lowering pipeline");
-        mlir::PassManager pm(&context);
+        ::mlir::PassManager pm(&context);
         
         // Use centralized pipeline configuration with verification enabled
         mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
@@ -239,7 +239,7 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
     
     try {
         // Create MLIR context and load dialects
-        mlir::MLIRContext context;
+        ::mlir::MLIRContext context;
         if (!initialize_mlir_context(context)) {
             auto error = pgx_lower::ErrorManager::postgresqlError("Failed to initialize MLIR context and dialects");
             pgx_lower::ErrorManager::reportError(error);
@@ -265,7 +265,7 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         PGX_INFO("Initial RelAlg MLIR module verified successfully");
         
         PGX_INFO("Configuring centralized lowering pipeline");
-        mlir::PassManager pm(&context);
+        ::mlir::PassManager pm(&context);
         
         mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
         
@@ -317,7 +317,7 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
 }
 
 // Setup MLIR context for JIT compilation
-static bool setupMLIRContextForJIT(mlir::MLIRContext& context) {
+static bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
     if (!initialize_mlir_context(context)) {
         auto error = pgx_lower::ErrorManager::postgresqlError("Failed to initialize MLIR context and dialects");
         pgx_lower::ErrorManager::reportError(error);
@@ -334,9 +334,9 @@ static bool setupMLIRContextForJIT(mlir::MLIRContext& context) {
 }
 
 // Run complete lowering pipeline including LLVM conversion
-static bool runCompleteLoweringPipeline(mlir::ModuleOp module) {
+static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
-    mlir::PassManager pm(&context);
+    ::mlir::PassManager pm(&context);
     
     // Configure complete lowering pipeline with Standard→LLVM conversion
     mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
@@ -365,7 +365,7 @@ static bool runCompleteLoweringPipeline(mlir::ModuleOp module) {
 }
 
 // Execute JIT compiled module with destination receiver
-static bool executeJITWithDestReceiver(mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
+static bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
     // Create module handle for isolated JIT execution
     auto moduleHandle = pgx_jit_create_module_handle(&module);
     if (!moduleHandle) {
@@ -420,7 +420,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
     
     try {
         // Create and setup MLIR context
-        mlir::MLIRContext context;
+        ::mlir::MLIRContext context;
         if (!setupMLIRContextForJIT(context)) {
             return false;
         }

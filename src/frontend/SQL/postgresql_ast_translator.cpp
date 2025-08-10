@@ -43,16 +43,16 @@ namespace postgresql_ast {
 // Translation context for managing state
 struct TranslationContext {
     PlannedStmt* currentStmt = nullptr;
-    mlir::OpBuilder* builder = nullptr;
-    std::unordered_map<Oid, mlir::Type> typeCache;
+    ::mlir::OpBuilder* builder = nullptr;
+    std::unordered_map<Oid, ::mlir::Type> typeCache;
 };
 
 // Simple PostgreSQL type mapper
 class PostgreSQLTypeMapper {
 public:
-    explicit PostgreSQLTypeMapper(mlir::MLIRContext& context) : context_(context) {}
+    explicit PostgreSQLTypeMapper(::mlir::MLIRContext& context) : context_(context) {}
     
-    mlir::Type mapPostgreSQLType(Oid typeOid) {
+    ::mlir::Type mapPostgreSQLType(Oid typeOid) {
         switch (typeOid) {
             case INT4OID:
                 return mlir::IntegerType::get(&context_, 32);
@@ -73,16 +73,16 @@ public:
     }
     
 private:
-    mlir::MLIRContext& context_;
+    ::mlir::MLIRContext& context_;
 };
 
-PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context) 
+PostgreSQLASTTranslator::PostgreSQLASTTranslator(::mlir::MLIRContext& context) 
     : context_(context), builder_(nullptr), currentModule_(nullptr), 
       currentTupleHandle_(nullptr), currentPlannedStmt_(nullptr), contextNeedsRecreation_(false) {
     PGX_DEBUG("PostgreSQLASTTranslator initialized with minimal implementation");
 }
 
-auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<mlir::ModuleOp> {
+auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
     PGX_INFO("Starting PostgreSQL AST translation for PlannedStmt");
     
     if (!plannedStmt) {
@@ -91,8 +91,8 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     }
     
     // Create MLIR module and builder context
-    auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
-    mlir::OpBuilder builder(&context_);
+    auto module = ::mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
+    ::mlir::OpBuilder builder(&context_);
     builder.setInsertionPointToStart(module.getBody());
     
     // Create translation context
@@ -114,10 +114,10 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     }
     
     PGX_INFO("PostgreSQL AST translation completed successfully");
-    return std::make_unique<mlir::ModuleOp>(module);
+    return std::make_unique<::mlir::ModuleOp>(module);
 }
 
-auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& context) -> mlir::Operation* {
+auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& context) -> ::mlir::Operation* {
     if (!plan) {
         PGX_ERROR("Plan node is null");
         return nullptr;
@@ -134,7 +134,7 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& 
     }
 }
 
-auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationContext& context) -> mlir::Operation* {
+auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationContext& context) -> ::mlir::Operation* {
     if (!seqScan || !context.builder || !context.currentStmt) {
         PGX_ERROR("Invalid SeqScan parameters");
         return nullptr;
@@ -173,7 +173,7 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     return baseTableOp;
 }
 
-auto PostgreSQLASTTranslator::createQueryFunction(mlir::OpBuilder& builder, TranslationContext& context) -> mlir::func::FuncOp {
+auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context) -> ::mlir::func::FuncOp {
     PGX_DEBUG("Creating query function using func::FuncOp pattern");
     
     // Get RelAlg Table type for return value - MaterializeOp produces !relalg.table
@@ -181,7 +181,7 @@ auto PostgreSQLASTTranslator::createQueryFunction(mlir::OpBuilder& builder, Tran
     
     // Create func::FuncOp following LingoDB's pattern: func.func @query() -> !relalg.table
     auto queryFuncType = builder.getFunctionType({}, {relAlgTableType});
-    auto queryFunc = builder.create<mlir::func::FuncOp>(
+    auto queryFunc = builder.create<::mlir::func::FuncOp>(
         builder.getUnknownLoc(), "query", queryFuncType);
     
     // Create function body
@@ -191,7 +191,7 @@ auto PostgreSQLASTTranslator::createQueryFunction(mlir::OpBuilder& builder, Tran
     return queryFunc;
 }
 
-auto PostgreSQLASTTranslator::generateRelAlgOperations(mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, TranslationContext& context) -> bool {
+auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, TranslationContext& context) -> bool {
     PGX_DEBUG("Generating RelAlg operations inside function body");
     
     // Safety check for mock PlannedStmt in unit tests
@@ -213,7 +213,7 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(mlir::func::FuncOp queryF
     // Materialize tuple stream to table using MaterializeOp
     // For SELECT *, we need to specify which columns to materialize
     // TODO Phase 4: Extract actual column list from SELECT statement
-    llvm::SmallVector<mlir::Attribute> columnAttrs;
+    llvm::SmallVector<::mlir::Attribute> columnAttrs;
     columnAttrs.push_back(context.builder->getStringAttr("*"));  // Placeholder for SELECT *
     auto columnsArrayAttr = context.builder->getArrayAttr(columnAttrs);
     
@@ -228,7 +228,7 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(mlir::func::FuncOp queryF
     return true;
 }
 
-auto createPostgreSQLASTTranslator(mlir::MLIRContext& context) 
+auto createPostgreSQLASTTranslator(::mlir::MLIRContext& context) 
     -> std::unique_ptr<PostgreSQLASTTranslator> {
     return std::make_unique<PostgreSQLASTTranslator>(context);
 }

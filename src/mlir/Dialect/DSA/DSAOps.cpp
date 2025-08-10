@@ -28,9 +28,9 @@ static void printInitializationList(OpAsmPrinter& p,
 void pgx::mlir::dsa::ForOp::print(OpAsmPrinter& p) {
    pgx::mlir::dsa::ForOp& op = *this;
    p << " " << op.getInductionVar() << " in "
-     << op.collection() << " : " << op.collection().getType() << " ";
-   if (op.until()) {
-      p << "until " << op.until() << " ";
+     << op.getCollection() << " : " << op.getCollection().getType() << " ";
+   if (op.getUntil()) {
+      p << "until " << op.getUntil() << " ";
    }
    printInitializationList(p, op.getRegionIterArgs(), op.getIterOperands(),
                            " iter_args");
@@ -211,8 +211,8 @@ ParseResult pgx::mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, Operatio
 void dsa::HashtableInsert::print(OpAsmPrinter& p) {
    dsa::HashtableInsert& op = *this;
    p << " " << op.ht() << " : " << op.ht().getType() << ", " << op.key() << " : " << op.key().getType();
-   if (op.val()) {
-      p << ", " << op.val() << " : " << op.val().getType();
+   if (op.getVal()) {
+      p << ", " << op.getVal() << " : " << op.getVal().getType();
    }
    if (!op.hash().empty()) {
       p << " hash: (";

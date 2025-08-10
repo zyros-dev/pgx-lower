@@ -12,18 +12,18 @@ namespace {
 
 struct Matcher {
    public:
-   virtual bool matches(mlir::Value) = 0;
+   virtual bool matches(::mlir::Value) = 0;
    virtual bool skip() { return false; }
    virtual ~Matcher() {}
 };
 struct AnyMatcher : public Matcher {
-   bool matches(mlir::Value) override { return true; }
+   bool matches(::mlir::Value) override { return true; }
    virtual ~AnyMatcher() {}
 };
-std::optional<std::string> getConstantString(mlir::Value v) {
+std::optional<std::string> getConstantString(::mlir::Value v) {
    if (auto* defOp = v.getDefiningOp()) {
       if (auto constOp = mlir::dyn_cast_or_null<pgx::mlir::db::ConstantOp>(defOp)) {
-         if (auto strAttr = constOp.getValue().dyn_cast<mlir::StringAttr>()) {
+         if (auto strAttr = constOp.value().dyn_cast<::mlir::StringAttr>()) {
             return strAttr.str();
          }
       }
@@ -32,7 +32,7 @@ std::optional<std::string> getConstantString(mlir::Value v) {
 }
 struct ConstStringMatcher : public Matcher {
    ConstStringMatcher() {}
-   bool matches(mlir::Value v) override {
+   bool matches(::mlir::Value v) override {
       return getConstantString(v).has_value();
    }
    virtual ~ConstStringMatcher() {}
@@ -40,7 +40,7 @@ struct ConstStringMatcher : public Matcher {
 struct StringConstMatcher : public Matcher {
    std::string toMatch;
    StringConstMatcher(std::string toMatch) : toMatch(toMatch) {}
-   bool matches(mlir::Value v) override {
+   bool matches(::mlir::Value v) override {
       auto constStr = getConstantString(v);
       if (!constStr.has_value()) return false;
       return constStr.value() == toMatch;
@@ -56,8 +56,8 @@ class ReplaceFnWithFn : public mlir::RewritePattern {
    std::vector<std::shared_ptr<Matcher>> matchers;
 
    public:
-   ReplaceFnWithFn(mlir::MLIRContext* context, std::string funcName, std::vector<std::shared_ptr<Matcher>> matchers, std::string newFuncName) : RewritePattern(pgx::mlir::db::RuntimeCall::getOperationName(), mlir::PatternBenefit(1), context), funcName(funcName), newFuncName(newFuncName), matchers(matchers) {}
-   mlir::LogicalResult match(mlir::Operation* op) const override {
+   ReplaceFnWithFn(::mlir::MLIRContext* context, std::string funcName, std::vector<std::shared_ptr<Matcher>> matchers, std::string newFuncName) : RewritePattern(pgx::mlir::db::RuntimeCall::getOperationName(), mlir::PatternBenefit(1), context), funcName(funcName), newFuncName(newFuncName), matchers(matchers) {}
+   ::mlir::LogicalResult match(::mlir::Operation* op) const override {
       auto runtimeCall = mlir::cast<pgx::mlir::db::RuntimeCall>(op);
       if (runtimeCall.fn().str() != funcName) { return mlir::failure(); }
       if (runtimeCall.args().size() != matchers.size()) { return mlir::failure(); }
@@ -67,8 +67,8 @@ class ReplaceFnWithFn : public mlir::RewritePattern {
       return mlir::success();
    }
 
-   void rewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
-      std::vector<mlir::Value> values;
+   void rewrite(::mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
+      std::vector<::mlir::Value> values;
       auto runtimeCall = mlir::cast<pgx::mlir::db::RuntimeCall>(op);
       for (size_t i = 0; i < runtimeCall.args().size(); ++i) {
          if (matchers[i]->skip()) {
@@ -76,11 +76,11 @@ class ReplaceFnWithFn : public mlir::RewritePattern {
          }
          values.push_back(runtimeCall.args()[i]);
       }
-      rewriter.replaceOpWithNewOp<pgx::mlir::db::RuntimeCall>(op, op->getResultTypes(), newFuncName, mlir::ValueRange{values});
+      rewriter.replaceOpWithNewOp<pgx::mlir::db::RuntimeCall>(op, op->getResultTypes(), newFuncName, ::mlir::ValueRange{values});
    }
 };
 //Pattern that optimizes the join order
-class OptimizeRuntimeFunctions : public mlir::PassWrapper<OptimizeRuntimeFunctions, mlir::OperationPass<mlir::ModuleOp>> {
+class OptimizeRuntimeFunctions : public ::mlir::PassWrapper<OptimizeRuntimeFunctions, ::mlir::OperationPass<::mlir::ModuleOp>> {
    virtual llvm::StringRef getArgument() const override { return "db-optimize-runtime-functions"; }
 
    public:

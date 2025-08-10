@@ -8,11 +8,11 @@
 
 namespace pgx_lower::compiler::runtime {
 
-std::vector<mlir::Value> RuntimeCallGenerator::operator()(const std::vector<mlir::Value>& args) {
+std::vector<::mlir::Value> RuntimeCallGenerator::operator()(const std::vector<::mlir::Value>& args) {
     RUNTIME_PGX_DEBUG("MLIRHelpers", "Generating runtime call with " + std::to_string(args.size()) + " arguments");
     
     // Stub implementation - creates dummy return values
-    std::vector<mlir::Value> results;
+    std::vector<::mlir::Value> results;
     
     // Most runtime functions return a pointer
     auto ptrType = mlir::LLVM::LLVMPointerType::get(builder.getContext());

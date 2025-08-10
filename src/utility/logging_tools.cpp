@@ -9,11 +9,11 @@
 namespace pgx_lower {
 namespace utility {
 
-void logMLIRModuleVerbose(mlir::ModuleOp module, const std::string& context) {
+void logMLIRModuleVerbose(::mlir::ModuleOp module, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== VERBOSE MLIR MODULE DUMP: " + context + " ===");
     
     // Walk all operations and print them individually to get full operation content
-    module.walk([&](mlir::Operation* op) {
+    module.walk([&](::mlir::Operation* op) {
         std::string opStr;
         llvm::raw_string_ostream opStream(opStr);
         
@@ -42,7 +42,7 @@ void logMLIRModuleVerbose(mlir::ModuleOp module, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== END VERBOSE MLIR MODULE DUMP: " + context + " ===");
 }
 
-void logMLIRModuleFullyExpanded(mlir::ModuleOp module, const std::string& context) {
+void logMLIRModuleFullyExpanded(::mlir::ModuleOp module, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== FULLY EXPANDED MLIR MODULE DUMP: " + context + " ===");
     
     std::string moduleStr;
@@ -72,7 +72,7 @@ void logMLIRModuleFullyExpanded(mlir::ModuleOp module, const std::string& contex
     MLIR_PGX_INFO("MLIR", "=== END FULLY EXPANDED MLIR MODULE DUMP: " + context + " ===");
 }
 
-void logMLIRModuleCompact(mlir::ModuleOp module, const std::string& context) {
+void logMLIRModuleCompact(::mlir::ModuleOp module, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== COMPACT MLIR MODULE DUMP: " + context + " ===");
     
     std::string moduleStr;
@@ -93,7 +93,7 @@ void logMLIRModuleCompact(mlir::ModuleOp module, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== END COMPACT MLIR MODULE DUMP: " + context + " ===");
 }
 
-void logMLIROperation(mlir::Operation* op, const std::string& context) {
+void logMLIROperation(::mlir::Operation* op, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== MLIR OPERATION DUMP: " + context + " ===");
     
     std::string opStr;
@@ -114,7 +114,7 @@ void logMLIROperation(mlir::Operation* op, const std::string& context) {
     MLIR_PGX_INFO("MLIR", "=== END MLIR OPERATION DUMP: " + context + " ===");
 }
 
-void logMLIROperationHierarchy(mlir::Operation* op, const std::string& context, int depth) {
+void logMLIROperationHierarchy(::mlir::Operation* op, const std::string& context, int depth) {
     std::string indent(depth * 2, ' ');
     std::string prefix = "HIERARCHY_D" + std::to_string(depth) + ": " + indent;
     

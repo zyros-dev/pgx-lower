@@ -3,7 +3,7 @@
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/Transforms/DialectConversion.h"
-#include <mlir/Dialect/SCF/SCF.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 
 
 using namespace mlir;
@@ -32,7 +32,7 @@ class SetFlagLowering : public OpConversionPattern<pgx::mlir::dsa::SetFlag> {
    public:
    using OpConversionPattern<pgx::mlir::dsa::SetFlag>::OpConversionPattern;
    LogicalResult matchAndRewrite(pgx::mlir::dsa::SetFlag op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      rewriter.create<util::StoreOp>(op->getLoc(), adaptor.val(), adaptor.flag(), Value());
+      rewriter.create<util::StoreOp>(op->getLoc(), adaptor.getVal(), adaptor.flag(), Value());
       rewriter.eraseOp(op);
       return success();
    }

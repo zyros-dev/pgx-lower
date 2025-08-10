@@ -12,7 +12,7 @@ namespace {
 #include "CustomCanonicalization.inc"
 
 //Pattern that optimizes the join order
-class SimplifyArithmetics : public mlir::PassWrapper<SimplifyArithmetics, mlir::OperationPass<mlir::func::FuncOp>> {
+class SimplifyArithmetics : public ::mlir::PassWrapper<SimplifyArithmetics, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "simplify-arithmetics"; }
 
    public:

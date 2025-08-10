@@ -8,7 +8,7 @@
 #include <unordered_set>
 using namespace pgx::mlir::relalg;
 using operator_list = llvm::SmallVector<Operator, 4>;
-static operator_list getChildOperators(mlir::Operation* parent) {
+static operator_list getChildOperators(::mlir::Operation* parent) {
    operator_list children;
    for (auto operand : parent->getOperands()) {
       if (auto childOperator = mlir::dyn_cast_or_null<Operator>(operand.getDefiningOp())) {
@@ -26,28 +26,28 @@ static ColumnSet collectColumns(operator_list operators, std::function<ColumnSet
    }
    return collected;
 }
-ColumnSet pgx::mlir::relalg::detail::getUsedColumns(mlir::Operation* op) {
+ColumnSet pgx::mlir::relalg::detail::getUsedColumns(::mlir::Operation* op) {
    ColumnSet creations;
    op->walk([&](GetColumnOp attrOp) {
-      creations.insert(&attrOp.attr().getColumn());
+      creations.insert(&attrOp.getAttr().getColumn());
    });
    return creations;
 }
-ColumnSet pgx::mlir::relalg::detail::getAvailableColumns(mlir::Operation* op) {
+ColumnSet pgx::mlir::relalg::detail::getAvailableColumns(::mlir::Operation* op) {
    Operator asOperator = mlir::dyn_cast_or_null<Operator>(op);
    auto collected = collectColumns(getChildOperators(op), [](Operator op) { return op.getAvailableColumns(); });
    auto selfCreated = asOperator.getCreatedColumns();
    collected.insert(selfCreated);
    return collected;
 }
-FunctionalDependencies pgx::mlir::relalg::detail::getFDs(mlir::Operation* op) {
+FunctionalDependencies pgx::mlir::relalg::detail::getFDs(::mlir::Operation* op) {
    FunctionalDependencies dependencies;
    for (auto child : getChildOperators(op)) {
       dependencies.insert(child.getFDs());
    }
    return dependencies;
 }
-ColumnSet pgx::mlir::relalg::detail::getFreeColumns(mlir::Operation* op) {
+ColumnSet pgx::mlir::relalg::detail::getFreeColumns(::mlir::Operation* op) {
    auto available = collectColumns(getChildOperators(op), [](Operator op) { return op.getAvailableColumns(); });
    auto collectedFree = collectColumns(getChildOperators(op), [](Operator op) { return op.getFreeColumns(); });
    auto used = mlir::cast<Operator>(op).getUsedColumns();
@@ -56,7 +56,7 @@ ColumnSet pgx::mlir::relalg::detail::getFreeColumns(mlir::Operation* op) {
    return collectedFree;
 }
 
-bool pgx::mlir::relalg::detail::isDependentJoin(mlir::Operation* op) {
+bool pgx::mlir::relalg::detail::isDependentJoin(::mlir::Operation* op) {
    if (auto join = mlir::dyn_cast_or_null<BinaryOperator>(op)) {
       if (isJoin(op)) {
          auto left = mlir::dyn_cast_or_null<Operator>(join.leftChild());
@@ -69,17 +69,17 @@ bool pgx::mlir::relalg::detail::isDependentJoin(mlir::Operation* op) {
    return false;
 }
 pgx::mlir::relalg::detail::BinaryOperatorType pgx::mlir::relalg::detail::getBinaryOperatorType(Operation* op) {
-   return ::llvm::TypeSwitch<mlir::Operation*, BinaryOperatorType>(op)
-      .Case<pgx::mlir::relalg::UnionOp>([&](mlir::Operation* op) { return BinaryOperatorType::Union; })
-      .Case<pgx::mlir::relalg::IntersectOp>([&](mlir::Operation* op) { return BinaryOperatorType::Intersection; })
-      .Case<pgx::mlir::relalg::ExceptOp>([&](mlir::Operation* op) { return BinaryOperatorType::Except; })
-      .Case<pgx::mlir::relalg::CrossProductOp>([&](mlir::Operation* op) { return BinaryOperatorType::CP; })
-      .Case<pgx::mlir::relalg::InnerJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::InnerJoin; })
-      .Case<pgx::mlir::relalg::SemiJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::SemiJoin; })
-      .Case<pgx::mlir::relalg::AntiSemiJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::AntiSemiJoin; })
-      .Case<pgx::mlir::relalg::SingleJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::OuterJoin; })
-      .Case<pgx::mlir::relalg::MarkJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::MarkJoin; })
-      .Case<pgx::mlir::relalg::CollectionJoinOp>([&](mlir::Operation* op) { return BinaryOperatorType::CollectionJoin; })
+   return ::llvm::TypeSwitch<::mlir::Operation*, BinaryOperatorType>(op)
+      .Case<pgx::mlir::relalg::UnionOp>([&](::mlir::Operation* op) { return BinaryOperatorType::Union; })
+      .Case<pgx::mlir::relalg::IntersectOp>([&](::mlir::Operation* op) { return BinaryOperatorType::Intersection; })
+      .Case<pgx::mlir::relalg::ExceptOp>([&](::mlir::Operation* op) { return BinaryOperatorType::Except; })
+      .Case<pgx::mlir::relalg::CrossProductOp>([&](::mlir::Operation* op) { return BinaryOperatorType::CP; })
+      .Case<pgx::mlir::relalg::InnerJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::InnerJoin; })
+      .Case<pgx::mlir::relalg::SemiJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::SemiJoin; })
+      .Case<pgx::mlir::relalg::AntiSemiJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::AntiSemiJoin; })
+      .Case<pgx::mlir::relalg::SingleJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::OuterJoin; })
+      .Case<pgx::mlir::relalg::MarkJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::MarkJoin; })
+      .Case<pgx::mlir::relalg::CollectionJoinOp>([&](::mlir::Operation* op) { return BinaryOperatorType::CollectionJoin; })
       .Case<pgx::mlir::relalg::OuterJoinOp>([&](pgx::mlir::relalg::OuterJoinOp op) { return BinaryOperatorType::OuterJoin; })
       .Case<pgx::mlir::relalg::FullOuterJoinOp>([&](pgx::mlir::relalg::FullOuterJoinOp op) { return BinaryOperatorType::FullOuterJoin; })
       .Default([&](auto x) {
@@ -87,11 +87,11 @@ pgx::mlir::relalg::detail::BinaryOperatorType pgx::mlir::relalg::detail::getBina
       });
 }
 pgx::mlir::relalg::detail::UnaryOperatorType pgx::mlir::relalg::detail::getUnaryOperatorType(Operation* op) {
-   return ::llvm::TypeSwitch<mlir::Operation*, UnaryOperatorType>(op)
-      .Case<pgx::mlir::relalg::SelectionOp>([&](mlir::Operation* op) { return UnaryOperatorType::Selection; })
-      .Case<pgx::mlir::relalg::MapOp>([&](mlir::Operation* op) { return UnaryOperatorType::Map; })
+   return ::llvm::TypeSwitch<::mlir::Operation*, UnaryOperatorType>(op)
+      .Case<pgx::mlir::relalg::SelectionOp>([&](::mlir::Operation* op) { return UnaryOperatorType::Selection; })
+      .Case<pgx::mlir::relalg::MapOp>([&](::mlir::Operation* op) { return UnaryOperatorType::Map; })
       .Case<pgx::mlir::relalg::ProjectionOp>([&](pgx::mlir::relalg::ProjectionOp op) { return op.set_semantic() == pgx::mlir::relalg::SetSemantic::distinct ? UnaryOperatorType::DistinctProjection : UnaryOperatorType::Projection; })
-      .Case<pgx::mlir::relalg::AggregationOp>([&](mlir::Operation* op) { return UnaryOperatorType::Aggregation; })
+      .Case<pgx::mlir::relalg::AggregationOp>([&](::mlir::Operation* op) { return UnaryOperatorType::Aggregation; })
       .Default([&](auto x) {
          return UnaryOperatorType::None;
       });
@@ -106,7 +106,7 @@ ColumnSet AggregationOp::getUsedColumns() {
    auto used = pgx::mlir::relalg::detail::getUsedColumns(getOperation());
    used.insert(ColumnSet::fromArrayAttr(group_by_cols()));
    getOperation()->walk([&](pgx::mlir::relalg::AggrFuncOp aggrFn) {
-      used.insert(&aggrFn.attr().getColumn());
+      used.insert(&aggrFn.getAttr().getColumn());
    });
    return used;
 }
@@ -158,17 +158,17 @@ ColumnSet RenamingOp::getAvailableColumns() {
    availablePreviously.insert(created);
    return availablePreviously;
 }
-ColumnSet pgx::mlir::relalg::detail::getSetOpCreatedColumns(mlir::Operation* op) {
+ColumnSet pgx::mlir::relalg::detail::getSetOpCreatedColumns(::mlir::Operation* op) {
    ColumnSet created;
-   for (mlir::Attribute attr : op->getAttr("mapping").cast<mlir::ArrayAttr>()) {
+   for (::mlir::Attribute attr : op->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       created.insert(&relationDefAttr.getColumn());
    }
    return created;
 }
-ColumnSet pgx::mlir::relalg::detail::getSetOpUsedColumns(mlir::Operation* op) {
+ColumnSet pgx::mlir::relalg::detail::getSetOpUsedColumns(::mlir::Operation* op) {
    ColumnSet used;
-   for (Attribute attr : op->getAttr("mapping").cast<mlir::ArrayAttr>()) {
+   for (Attribute attr : op->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       used.insert(ColumnSet::fromArrayAttr(fromExisting));
@@ -250,7 +250,7 @@ ColumnSet MarkJoinOp::getCreatedColumns() {
 ColumnSet BaseTableOp::getCreatedColumns() {
    ColumnSet creations;
    for (auto mapping : columns()) {
-      auto attr = mapping.getValue();
+      auto attr = mapping.value();
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       creations.insert(&relationDefAttr.getColumn());
    }
@@ -265,7 +265,7 @@ pgx::mlir::relalg::FunctionalDependencies BaseTableOp::getFDs() {
    std::unordered_set<std::string> pks(metaData->getPrimaryKey().begin(), metaData->getPrimaryKey().end());
    ColumnSet pk;
    for (auto mapping : columns()) {
-      auto attr = mapping.getValue();
+      auto attr = mapping.value();
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       if (pks.contains(mapping.getName().str())) {
          pk.insert(&relationDefAttr.getColumn());
@@ -291,37 +291,37 @@ bool pgx::mlir::relalg::detail::isJoin(Operation* op) {
    return BinaryOperatorType::InnerJoin <= opType && opType <= BinaryOperatorType::CollectionJoin;
 }
 
-void pgx::mlir::relalg::detail::addPredicate(mlir::Operation* op, std::function<mlir::Value(mlir::Value, mlir::OpBuilder&)> predicateProducer) {
+void pgx::mlir::relalg::detail::addPredicate(::mlir::Operation* op, std::function<::mlir::Value(::mlir::Value, ::mlir::OpBuilder&)> predicateProducer) {
    auto lambdaOperator = mlir::dyn_cast_or_null<PredicateOperator>(op);
    auto* terminator = lambdaOperator.getPredicateBlock().getTerminator();
-   mlir::OpBuilder builder(terminator);
+   ::mlir::OpBuilder builder(terminator);
    auto additionalPred = predicateProducer(lambdaOperator.getPredicateArgument(), builder);
    if (terminator->getNumOperands() > 0) {
-      mlir::Value oldValue = terminator->getOperand(0);
+      ::mlir::Value oldValue = terminator->getOperand(0);
       bool nullable = oldValue.getType().isa<pgx::mlir::db::NullableType>() || additionalPred.getType().isa<pgx::mlir::db::NullableType>();
-      mlir::Type restype = builder.getI1Type();
+      ::mlir::Type restype = builder.getI1Type();
       if (nullable) {
          restype = pgx::mlir::db::NullableType::get(builder.getContext(), restype);
       }
-      mlir::Value anded = builder.create<pgx::mlir::db::AndOp>(op->getLoc(), restype, mlir::ValueRange({oldValue, additionalPred}));
+      ::mlir::Value anded = builder.create<pgx::mlir::db::AndOp>(op->getLoc(), restype, ::mlir::ValueRange({oldValue, additionalPred}));
       builder.create<pgx::mlir::relalg::ReturnOp>(op->getLoc(), anded);
    } else {
       builder.create<pgx::mlir::relalg::ReturnOp>(op->getLoc(), additionalPred);
    }
    terminator->erase();
 }
-void pgx::mlir::relalg::detail::initPredicate(mlir::Operation* op) {
+void pgx::mlir::relalg::detail::initPredicate(::mlir::Operation* op) {
    auto* context = op->getContext();
-   mlir::Type tupleType = pgx::mlir::relalg::TupleType::get(context);
-   auto* block = new mlir::Block;
+   ::mlir::Type tupleType = pgx::mlir::relalg::TupleType::get(context);
+   auto* block = new ::mlir::Block;
    op->getRegion(0).push_back(block);
    block->addArgument(tupleType, op->getLoc());
-   mlir::OpBuilder builder(context);
+   ::mlir::OpBuilder builder(context);
    builder.setInsertionPointToStart(block);
    builder.create<pgx::mlir::relalg::ReturnOp>(op->getLoc());
 }
 
-static void addRequirements(mlir::Operation* op, mlir::Operation* includeChildren, mlir::Operation* excludeChildren, llvm::SmallVector<mlir::Operation*, 8>& extracted, llvm::SmallPtrSet<mlir::Operation*, 8>& alreadyPresent, mlir::BlockAndValueMapping& mapping) {
+static void addRequirements(::mlir::Operation* op, ::mlir::Operation* includeChildren, ::mlir::Operation* excludeChildren, llvm::SmallVector<::mlir::Operation*, 8>& extracted, llvm::SmallPtrSet<::mlir::Operation*, 8>& alreadyPresent, ::mlir::BlockAndValueMapping& mapping) {
    if (!op)
       return;
    if (alreadyPresent.contains(op))
@@ -333,7 +333,7 @@ static void addRequirements(mlir::Operation* op, mlir::Operation* includeChildre
          addRequirements(operand.getDefiningOp(), includeChildren, excludeChildren, extracted, alreadyPresent, mapping);
       }
    }
-   op->walk([&](mlir::Operation* op2) {
+   op->walk([&](::mlir::Operation* op2) {
       for (auto operand : op2->getOperands()) {
          if (!mapping.contains(operand)) {
             auto* definingOp = operand.getDefiningOp();
@@ -348,11 +348,11 @@ static void addRequirements(mlir::Operation* op, mlir::Operation* includeChildre
       extracted.push_back(op);
    }
 }
-void pgx::mlir::relalg::detail::inlineOpIntoBlock(mlir::Operation* vop, mlir::Operation* includeChildren, mlir::Operation* excludeChildren, mlir::Block* newBlock, mlir::BlockAndValueMapping& mapping, mlir::Operation* first) {
-   llvm::SmallVector<mlir::Operation*, 8> extracted;
-   llvm::SmallPtrSet<mlir::Operation*, 8> alreadyPresent;
+void pgx::mlir::relalg::detail::inlineOpIntoBlock(::mlir::Operation* vop, ::mlir::Operation* includeChildren, ::mlir::Operation* excludeChildren, ::mlir::Block* newBlock, ::mlir::BlockAndValueMapping& mapping, ::mlir::Operation* first) {
+   llvm::SmallVector<::mlir::Operation*, 8> extracted;
+   llvm::SmallPtrSet<::mlir::Operation*, 8> alreadyPresent;
    addRequirements(vop, includeChildren, excludeChildren, extracted, alreadyPresent, mapping);
-   mlir::OpBuilder builder(vop->getContext());
+   ::mlir::OpBuilder builder(vop->getContext());
    builder.setInsertionPointToStart(newBlock);
    first = first ? first : (newBlock->empty() ? nullptr : &newBlock->front());
    for (auto* op : extracted) {
@@ -365,7 +365,7 @@ void pgx::mlir::relalg::detail::inlineOpIntoBlock(mlir::Operation* vop, mlir::Op
       }
    }
 }
-void pgx::mlir::relalg::detail::moveSubTreeBefore(mlir::Operation* op, mlir::Operation* before) {
+void pgx::mlir::relalg::detail::moveSubTreeBefore(::mlir::Operation* op, ::mlir::Operation* before) {
    auto tree = mlir::dyn_cast_or_null<Operator>(op);
    tree->moveBefore(before);
    for (auto child : tree.getChildren()) {

@@ -106,7 +106,7 @@ void PostgreSQLJITExecutionEngine::configureLLVMTargetMachine() {
     PGX_DEBUG("LLVM target machine configured successfully");
 }
 
-bool PostgreSQLJITExecutionEngine::validateModuleForCompilation(mlir::ModuleOp module) {
+bool PostgreSQLJITExecutionEngine::validateModuleForCompilation(::mlir::ModuleOp module) {
     PGX_DEBUG("Validating MLIR module for compilation");
     
     if (!module) {
@@ -121,7 +121,7 @@ bool PostgreSQLJITExecutionEngine::validateModuleForCompilation(mlir::ModuleOp m
     }
     
     // Check for main function (required for execution)
-    auto mainFunc = module.lookupSymbol<mlir::func::FuncOp>("main");
+    auto mainFunc = module.lookupSymbol<::mlir::func::FuncOp>("main");
     if (!mainFunc) {
         PGX_WARNING("Module does not contain 'main' function - execution may not be possible");
     } else {
@@ -144,7 +144,7 @@ bool PostgreSQLJITExecutionEngine::setupJITOptimizationPipeline() {
     return true;
 }
 
-bool PostgreSQLJITExecutionEngine::compileToLLVMIR(mlir::ModuleOp module) {
+bool PostgreSQLJITExecutionEngine::compileToLLVMIR(::mlir::ModuleOp module) {
     PGX_DEBUG("Compiling MLIR module to LLVM IR");
     
     auto startTime = std::chrono::high_resolution_clock::now();
@@ -164,7 +164,7 @@ bool PostgreSQLJITExecutionEngine::compileToLLVMIR(mlir::ModuleOp module) {
     return true;
 }
 
-bool PostgreSQLJITExecutionEngine::initialize(mlir::ModuleOp module) {
+bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
     PGX_DEBUG("Initializing PostgreSQL JIT execution engine");
     
     if (initialized) {
@@ -188,9 +188,9 @@ bool PostgreSQLJITExecutionEngine::initialize(mlir::ModuleOp module) {
     auto startTime = std::chrono::high_resolution_clock::now();
     
     // Define the module translation function (MLIR -> LLVM IR)
-    auto moduleTranslation = [](mlir::Operation* op, llvm::LLVMContext& context) 
+    auto moduleTranslation = [](::mlir::Operation* op, llvm::LLVMContext& context) 
         -> std::unique_ptr<llvm::Module> {
-        auto module = mlir::cast<mlir::ModuleOp>(op);
+        auto module = mlir::cast<::mlir::ModuleOp>(op);
         PGX_DEBUG("Translating MLIR module to LLVM IR");
         
         // Perform the translation

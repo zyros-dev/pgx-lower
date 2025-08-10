@@ -14,8 +14,8 @@ struct FieldParser<pgx::mlir::db::DateUnitAttr> {
       llvm::StringRef str;
       if (parser.parseKeyword(&str)) return failure();
       auto parsed = pgx::mlir::db::symbolizeDateUnitAttr(str);
-      if (parsed.hasValue()) {
-         return parsed.getValue();
+      if (parsed.has_value()) {
+         return parsed.value();
       }
       return failure();
    }
@@ -27,8 +27,8 @@ struct FieldParser<pgx::mlir::db::IntervalUnitAttr> {
       llvm::StringRef str;
       if (parser.parseKeyword(&str)) return failure();
       auto parsed = pgx::mlir::db::symbolizeIntervalUnitAttr(str);
-      if (parsed.hasValue()) {
-         return parsed.getValue();
+      if (parsed.has_value()) {
+         return parsed.value();
       }
       return failure();
    }
@@ -40,8 +40,8 @@ struct FieldParser<pgx::mlir::db::TimeUnitAttr> {
       llvm::StringRef str;
       if (parser.parseKeyword(&str)) return failure();
       auto parsed = pgx::mlir::db::symbolizeTimeUnitAttr(str);
-      if (parsed.hasValue()) {
-         return parsed.getValue();
+      if (parsed.has_value()) {
+         return parsed.value();
       }
       return failure();
    }

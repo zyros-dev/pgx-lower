@@ -6,8 +6,8 @@ namespace pgx::mlir::util {
 class FunctionSpec {
    std::string name;
    std::string mangledName;
-   std::function<std::vector<mlir::Type>(mlir::MLIRContext*)> parameterTypes;
-   std::function<std::vector<mlir::Type>(mlir::MLIRContext*)> resultTypes;
+   std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)> parameterTypes;
+   std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)> resultTypes;
    bool noSideEffects;
 
    public:
@@ -17,15 +17,15 @@ class FunctionSpec {
    const std::string& getMangledName() const {
       return mangledName;
    }
-   const std::function<std::vector<mlir::Type>(mlir::MLIRContext*)>& getParameterTypes() const {
+   const std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)>& getParameterTypes() const {
       return parameterTypes;
    }
-   const std::function<std::vector<mlir::Type>(mlir::MLIRContext*)>& getResultTypes() const {
+   const std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)>& getResultTypes() const {
       return resultTypes;
    }
-   FunctionSpec(const std::string& name, const std::string& mangledName, const std::function<std::vector<mlir::Type>(mlir::MLIRContext*)>& parameterTypes, const std::function<std::vector<mlir::Type>(mlir::MLIRContext*)>& resultTypes, bool noSideEffects);
+   FunctionSpec(const std::string& name, const std::string& mangledName, const std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)>& parameterTypes, const std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)>& resultTypes, bool noSideEffects);
 
-   std::function<mlir::ResultRange(mlir::ValueRange)> operator()(mlir::OpBuilder& builder, mlir::Location loc) const;
+   std::function<mlir::ResultRange(::mlir::ValueRange)> operator()(::mlir::OpBuilder& builder, ::mlir::Location loc) const;
    bool isNoSideEffects() const {
       return noSideEffects;
    }
@@ -38,7 +38,7 @@ class FunctionHelper {
    void setParentModule(const ModuleOp& parentModule);
 
    public:
-   static mlir::ResultRange call(OpBuilder& builder, mlir::Location loc, const FunctionSpec& function, ValueRange values);
+   static mlir::ResultRange call(OpBuilder& builder, ::mlir::Location loc, const FunctionSpec& function, ValueRange values);
 };
 } // namespace pgx::mlir::util
 

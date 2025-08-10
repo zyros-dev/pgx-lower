@@ -13,13 +13,13 @@ static thread_local std::string last_error_message;
 
 // Opaque handle structures
 struct ModuleHandle {
-    mlir::ModuleOp module;
-    ModuleHandle(mlir::ModuleOp m) : module(m) {}
+    ::mlir::ModuleOp module;
+    ModuleHandle(::mlir::ModuleOp m) : module(m) {}
 };
 
 struct ExecutionHandle {
     std::unique_ptr<pgx_lower::execution::PostgreSQLJITExecutionEngine> engine;
-    mlir::ModuleOp module;
+    ::mlir::ModuleOp module;
     
     ExecutionHandle() : engine(std::make_unique<pgx_lower::execution::PostgreSQLJITExecutionEngine>()) {}
 };
@@ -128,7 +128,7 @@ extern "C" ModuleHandle* pgx_jit_create_module_handle(void* mlir_module_ptr) {
     }
     
     try {
-        auto module = static_cast<mlir::ModuleOp*>(mlir_module_ptr);
+        auto module = static_cast<::mlir::ModuleOp*>(mlir_module_ptr);
         return new ModuleHandle(*module);
     } catch (...) {
         last_error_message = "Failed to create module handle";

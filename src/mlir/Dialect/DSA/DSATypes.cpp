@@ -48,7 +48,7 @@ bool pgx::mlir::dsa::CollectionType::classof(Type t) {
    Type type;
    StringRef parserName;
    if (parser.parseLess() || parser.parseType(type) || parser.parseComma(), parser.parseKeyword(&parserName) || parser.parseGreater()) {
-      return mlir::Type();
+      return ::mlir::Type();
    }
    return pgx::mlir::dsa::GenericIterableType::get(parser.getBuilder().getContext(), type, parserName.str());
 }

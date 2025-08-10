@@ -7,30 +7,30 @@
 namespace mlir {
 namespace relalg {
 class TranslatorContext {
-   llvm::ScopedHashTable<const pgx::mlir::relalg::Column*, mlir::Value> symbolTable;
+   llvm::ScopedHashTable<const pgx::mlir::relalg::Column*, ::mlir::Value> symbolTable;
 
    public:
-   using AttributeResolverScope = llvm::ScopedHashTableScope<const pgx::mlir::relalg::Column*, mlir::Value>;
+   using AttributeResolverScope = llvm::ScopedHashTableScope<const pgx::mlir::relalg::Column*, ::mlir::Value>;
 
-   mlir::Value getValueForAttribute(const pgx::mlir::relalg::Column* attribute) const {
+   ::mlir::Value getValueForAttribute(const pgx::mlir::relalg::Column* attribute) const {
       if (!symbolTable.lookup(attribute)) {
          assert(symbolTable.count(attribute));
       }
 
       return symbolTable.lookup(attribute);
    }
-   mlir::Value getUnsafeValueForAttribute(const pgx::mlir::relalg::Column* attribute) const {
+   ::mlir::Value getUnsafeValueForAttribute(const pgx::mlir::relalg::Column* attribute) const {
       return symbolTable.lookup(attribute);
    }
-   void setValueForAttribute(AttributeResolverScope& scope, const pgx::mlir::relalg::Column* iu, mlir::Value v) {
+   void setValueForAttribute(AttributeResolverScope& scope, const pgx::mlir::relalg::Column* iu, ::mlir::Value v) {
       symbolTable.insertIntoScope(&scope, iu, v);
    }
    AttributeResolverScope createScope() {
       return AttributeResolverScope(symbolTable);
    }
-   std::unordered_map<size_t, mlir::Value> builders;
+   std::unordered_map<size_t, ::mlir::Value> builders;
 
-   std::unordered_map<mlir::Operation*, std::pair<mlir::Value, std::vector<const pgx::mlir::relalg::Column*>>> materializedTmp;
+   std::unordered_map<::mlir::Operation*, std::pair<::mlir::Value, std::vector<const pgx::mlir::relalg::Column*>>> materializedTmp;
 };
 } // end namespace relalg
 } // end namespace mlir

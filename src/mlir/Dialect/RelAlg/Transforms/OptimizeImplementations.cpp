@@ -7,18 +7,18 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
-class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations, mlir::OperationPass<mlir::func::FuncOp>> {
+class OptimizeImplementations : public ::mlir::PassWrapper<OptimizeImplementations, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-optimize-implementations"; }
 
    public:
-   bool hashImplPossible(mlir::Block* block, pgx::mlir::relalg::ColumnSet availableLeft, pgx::mlir::relalg::ColumnSet availableRight) { //todo: does not work always
-      llvm::DenseMap<mlir::Value, pgx::mlir::relalg::ColumnSet> required;
+   bool hashImplPossible(::mlir::Block* block, pgx::mlir::relalg::ColumnSet availableLeft, pgx::mlir::relalg::ColumnSet availableRight) { //todo: does not work always
+      llvm::DenseMap<::mlir::Value, pgx::mlir::relalg::ColumnSet> required;
       pgx::mlir::relalg::ColumnSet leftKeys, rightKeys;
-      std::vector<mlir::Type> types;
+      std::vector<::mlir::Type> types;
       bool res = false;
-      block->walk([&](mlir::Operation* op) {
+      block->walk([&](::mlir::Operation* op) {
          if (auto getAttr = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
-            required.insert({getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.attr())});
+            required.insert({getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.getAttr())});
          } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
             if (cmpOp.isEqualityPred() && pgx::mlir::relalg::HashJoinUtils::isAndedResult(op)) {
                auto leftAttributes = required[cmpOp.getLeft()];
@@ -45,13 +45,13 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
    }
    void runOnOperation() override {
       getOperation().walk([&](Operator op) {
-         ::llvm::TypeSwitch<mlir::Operation*, void>(op.getOperation())
+         ::llvm::TypeSwitch<::mlir::Operation*, void>(op.getOperation())
             .Case<pgx::mlir::relalg::InnerJoinOp, pgx::mlir::relalg::MarkJoinOp,pgx::mlir::relalg::CollectionJoinOp>([&](PredicateOperator predicateOperator) {
                auto binOp = mlir::cast<BinaryOperator>(predicateOperator.getOperation());
                auto left = mlir::cast<Operator>(binOp.leftChild());
                auto right = mlir::cast<Operator>(binOp.rightChild());
                if (hashImplPossible(&predicateOperator.getPredicateBlock(), left.getAvailableColumns(), right.getAvailableColumns())) {
-                  op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "hash"));
+                  op->setAttr("impl", ::mlir::StringAttr::get(op.getContext(), "hash"));
                }
             })
             .Case<pgx::mlir::relalg::SemiJoinOp, pgx::mlir::relalg::AntiSemiJoinOp, pgx::mlir::relalg::OuterJoinOp>([&](PredicateOperator predicateOperator) {
@@ -62,36 +62,36 @@ class OptimizeImplementations : public mlir::PassWrapper<OptimizeImplementations
                   if (left->hasAttr("rows") && right->hasAttr("rows")) {
                      double rowsLeft = 0;
                      double rowsRight = 0;
-                     if (auto lDAttr = left->getAttr("rows").dyn_cast_or_null<mlir::FloatAttr>()) {
+                     if (auto lDAttr = left->getAttr("rows").dyn_cast_or_null<::mlir::FloatAttr>()) {
                         rowsLeft = lDAttr.getValueAsDouble();
-                     } else if (auto lIAttr = left->getAttr("rows").dyn_cast_or_null<mlir::IntegerAttr>()) {
+                     } else if (auto lIAttr = left->getAttr("rows").dyn_cast_or_null<::mlir::IntegerAttr>()) {
                         rowsLeft = lIAttr.getInt();
                      }
-                     if (auto rDAttr = right->getAttr("rows").dyn_cast_or_null<mlir::FloatAttr>()) {
+                     if (auto rDAttr = right->getAttr("rows").dyn_cast_or_null<::mlir::FloatAttr>()) {
                         rowsRight = rDAttr.getValueAsDouble();
-                     } else if (auto rIAttr = right->getAttr("rows").dyn_cast_or_null<mlir::IntegerAttr>()) {
+                     } else if (auto rIAttr = right->getAttr("rows").dyn_cast_or_null<::mlir::IntegerAttr>()) {
                         rowsRight = rIAttr.getInt();
                      }
                      if (rowsLeft < rowsRight) {
-                        op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "markhash"));
+                        op->setAttr("impl", ::mlir::StringAttr::get(op.getContext(), "markhash"));
                      } else {
-                        op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "hash"));
+                        op->setAttr("impl", ::mlir::StringAttr::get(op.getContext(), "hash"));
                      }
                   } else {
-                     op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "hash"));
+                     op->setAttr("impl", ::mlir::StringAttr::get(op.getContext(), "hash"));
                   }
                }
             })
             .Case<pgx::mlir::relalg::SingleJoinOp>([&](pgx::mlir::relalg::SingleJoinOp op) {
                if (auto returnOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(op.getPredicateBlock().getTerminator())) {
                   if (returnOp.results().empty()) {
-                     op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "constant"));
+                     op->setAttr("impl", ::mlir::StringAttr::get(op.getContext(), "constant"));
                   }
                }
                auto left = mlir::cast<Operator>(op.leftChild());
                auto right = mlir::cast<Operator>(op.rightChild());
                if (hashImplPossible(&op.getPredicateBlock(), left.getAvailableColumns(), right.getAvailableColumns())) {
-                  op->setAttr("impl", mlir::StringAttr::get(op.getContext(), "hash"));
+                  op->setAttr("impl", ::mlir::StringAttr::get(op.getContext(), "hash"));
                }
             })
 
