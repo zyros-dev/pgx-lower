@@ -127,7 +127,7 @@ def DSA_CreateDS : DSA_Op<"create_ds"> {
         Create a Vector/JoinHashtable/AggregationHashTable/TableBuilder.
     }];
 
-    let arguments = (ins Optional<AnyType>:$init_val,OptionalAttr<AnyAttr>:$init_attr);
+    let arguments = (ins Optional<AnyType>:$init_val, OptionalAttr<AnyAttr>:$init_attr);
     let results = (outs AnyType:$ds);
     let assemblyFormat = " ( `(` $init_attr^ `)` `->`)? ( $init_val^ `:` type($init_val) `->`)? type($ds) attr-dict";
     let builders = [
@@ -210,11 +210,11 @@ def ForOp : DSA_Op<"for", [
     let regions = (region SizedRegion<1>:$region);
 
     let extraClassDeclaration = [{
-        Value getInductionVar() { return getBody()->getArgument(0); }
-        Block::BlockArgListType getRegionIterArgs() {
+        ::mlir::Value getInductionVar() { return getBody()->getArgument(0); }
+        ::mlir::Block::BlockArgListType getRegionIterArgs() {
             return getBody()->getArguments().drop_front();
         }
-        Operation::operand_range getIterOperands() {
+        ::mlir::Operation::operand_range getIterOperands() {
             return getOperands().drop_front(getNumControlOperands());
         }
 
@@ -223,7 +223,7 @@ def ForOp : DSA_Op<"for", [
             return getBody()->getNumArguments() - 1;
         }
         /// Number of operands controlling the loop: lb, ub, step
-        unsigned getNumControlOperands() { return until()?2:1; }
+        unsigned getNumControlOperands() { return getUntil() ? 2 : 1; }
         /// Does the operation hold operands for loop-carried values
         bool hasIterOperands() {
             return getOperation()->getNumOperands() > getNumControlOperands();

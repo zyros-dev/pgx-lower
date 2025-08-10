@@ -11,7 +11,7 @@ TEST_F(DSATypePrintingTest, PlaceholderTest) {
     
     // This test file previously tested DSA type printing:
     // - TableBuilderType, TableType
-    // - CreateDSOp, FinalizeOp
+    // - CreateDS, FinalizeOp
     // 
     // These types and operations have been removed in favor of using DB operations directly.
     // The tests will need to be rewritten when the new architecture is implemented.

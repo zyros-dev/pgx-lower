@@ -36,7 +36,7 @@ protected:
     std::unique_ptr<OpBuilder> builder;
 };
 
-// Test that MaterializeTranslator::consume() generates DSAppendOp and StoreResultOp
+// Test that MaterializeTranslator::consume() generates Append and StoreResultOp
 TEST_F(ConsumerChainTest, ConsumerChainExecutes) {
     PGX_DEBUG("Testing MaterializeTranslator consumer chain execution");
     
@@ -96,17 +96,17 @@ TEST_F(ConsumerChainTest, ConsumerChainExecutes) {
     int storeResultCount = 0;
     
     module.walk([&](Operation *op) {
-        if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
+        if (isa<pgx::mlir::dsa::Append>(op)) {
             foundDSAppend = true;
             dsAppendCount++;
-            PGX_DEBUG("Found DSAppendOp - consumer chain executed!");
+            PGX_DEBUG("Found Append - consumer chain executed!");
         } else if (isa<pgx::db::StoreResultOp>(op)) {
             foundStoreResult = true;
             storeResultCount++;
             PGX_DEBUG("Found StoreResultOp - consumer chain executed!");
-        } else if (isa<pgx::mlir::dsa::NextRowOp>(op)) {
+        } else if (isa<pgx::mlir::dsa::NextRow>(op)) {
             foundNextRow = true;
-            PGX_DEBUG("Found NextRowOp - consumer chain executed!");
+            PGX_DEBUG("Found NextRow - consumer chain executed!");
         }
     });
     
@@ -169,9 +169,9 @@ TEST_F(ConsumerChainTest, ConsumerChainInLoop) {
     module.walk([&](scf::WhileOp whileOp) {
         foundWhileOp = true;
         
-        // Check if DSAppendOp and StoreResultOp are inside the loop
+        // Check if Append and StoreResultOp are inside the loop
         whileOp.getAfter().walk([&](Operation *op) {
-            if (isa<pgx::mlir::dsa::DSAppendOp>(op) || 
+            if (isa<pgx::mlir::dsa::Append>(op) || 
                 isa<pgx::db::StoreResultOp>(op)) {
                 operationsInLoop = true;
             }

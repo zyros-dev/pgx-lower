@@ -83,7 +83,7 @@ public:
         
         // Only handle TableBuilder for now (Test 1 requirement)
         if (!resultType.isa<pgx::mlir::dsa::TableBuilderType>()) {
-            MLIR_PGX_DEBUG("DSAToStd", "CreateDSOp: not a TableBuilder, skipping");
+            MLIR_PGX_DEBUG("DSAToStd", "CreateDS: not a TableBuilder, skipping");
             return failure();
         }
         
@@ -106,10 +106,10 @@ public:
             
             auto strType = LLVM::LLVMArrayType::get(
                 IntegerType::get(rewriter.getContext(), 8),
-                schemaAttr->size() + 1);
+                schemaAttr->cast<StringAttr>().getValue().size() + 1);
             globalOp = rewriter.create<LLVM::GlobalOp>(
                 loc, strType, true, LLVM::Linkage::Private,
-                globalName, rewriter.getStringAttr(schemaAttr->str() + '\0'));
+                globalName, rewriter.getStringAttr(schemaAttr->cast<StringAttr>().getValue().str() + '\0'));
         }
         
         // Get pointer to the schema string
@@ -153,7 +153,7 @@ public:
         
         // Only handle TableBuilder for now
         if (!dsType.isa<pgx::mlir::dsa::TableBuilderType>()) {
-            MLIR_PGX_DEBUG("DSAToStd", "DSAppendOp: not a TableBuilder, skipping");
+            MLIR_PGX_DEBUG("DSAToStd", "Append: not a TableBuilder, skipping");
             return failure();
         }
         
@@ -396,10 +396,10 @@ struct DSAToStdPass : public PassWrapper<DSAToStdPass, OperationPass<ModuleOp>> 
                     
                     auto strType = LLVM::LLVMArrayType::get(
                         IntegerType::get(context, 8),
-                        schemaAttr->size() + 1);
+                        schemaAttr->cast<StringAttr>().getValue().size() + 1);
                     globalOp = builder.create<LLVM::GlobalOp>(
                         op->getLoc(), strType, true, LLVM::Linkage::Private,
-                        globalName, builder.getStringAttr(schemaAttr->str() + '\0'));
+                        globalName, builder.getStringAttr(schemaAttr->cast<StringAttr>().getValue().str() + '\0'));
                 }
                 
                 // Reset builder insertion point

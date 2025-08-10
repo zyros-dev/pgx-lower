@@ -58,7 +58,7 @@ TEST_F(MinimalHangReproTest, EmptyDSAOperation) {
     // Create ONLY DSA operation - no DB types involved
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -97,7 +97,7 @@ TEST_F(MinimalHangReproTest, DSAWithArithOperand) {
     // Create DSA table builder
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -105,7 +105,7 @@ TEST_F(MinimalHangReproTest, DSAWithArithOperand) {
     auto value = builder.create<arith::ConstantIntOp>(
         builder.getUnknownLoc(), 42, 64);
     
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         value.getResult());  // Direct arith value - no DB nullable
@@ -144,7 +144,7 @@ TEST_F(MinimalHangReproTest, DSAWithDBNullableOperand) {
     // Create DSA table builder
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -157,8 +157,8 @@ TEST_F(MinimalHangReproTest, DSAWithDBNullableOperand) {
         value.getResult());
     
     // THIS IS THE EXACT COMBINATION THAT TRIGGERS INFINITE LOOP:
-    // DSA operation (DSAppendOp) with DB nullable operand
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    // DSA operation (Append) with DB nullable operand
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),      // DSA TableBuilder type
         asNullableOp.getResult());   // DB NullableI64Type - CIRCULAR DEPENDENCY!
@@ -207,7 +207,7 @@ TEST_F(MinimalHangReproTest, DSAWithPreConvertedTuple) {
     // Create DSA table builder
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -223,7 +223,7 @@ TEST_F(MinimalHangReproTest, DSAWithPreConvertedTuple) {
         ValueRange{value.getResult(), falseVal.getResult()});
     
     // Use pre-converted tuple instead of DB nullable
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),      // DSA TableBuilder type
         packOp.getResult());         // Tuple type - no circular dependency

@@ -51,7 +51,7 @@ TEST_F(TypeConversionIssueTest, AsNullableToAppendPattern) {
     // 1. Create table builder
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -64,7 +64,7 @@ TEST_F(TypeConversionIssueTest, AsNullableToAppendPattern) {
         value.getResult());
     
     // 3. Append the nullable value
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         asNullableOp.getResult());

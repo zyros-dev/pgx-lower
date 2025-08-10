@@ -30,7 +30,7 @@ protected:
 TEST_F(TypeCorruptionTest, PlaceholderTest) {
     // This test file previously tested DSA type operations:
     // - TableBuilderType, TableType
-    // - CreateDSOp, FinalizeOp
+    // - CreateDS, FinalizeOp
     // 
     // These operations have been removed in favor of using DB operations directly.
     // The tests will need to be rewritten when the new architecture is implemented.

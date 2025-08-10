@@ -126,7 +126,7 @@ TEST_F(ConversionBasicsTest, TestDSAOperationsIndependent) {
     MLIR_PGX_DEBUG("UnitTest", "Testing independent DSA operations");
     
     // This test has been disabled as we've removed the DSA data structure
-    // building operations (CreateDSOp, DSAppendOp, NextRowOp, FinalizeOp)
+    // building operations (CreateDS, Append, NextRow, FinalizeOp)
     // in favor of using DB operations directly.
     
     MLIR_PGX_DEBUG("UnitTest", "DSA operations test skipped - operations removed");

@@ -10,7 +10,7 @@ TEST_F(MaterializeOnlyDisabledTest, PlaceholderTest) {
     PGX_DEBUG("test_materialize_only.cpp disabled - DSA operations have been removed");
     
     // This test file previously tested DSA-specific operations:
-    // - CreateDSOp, DSAppendOp, NextRowOp, FinalizeOp
+    // - CreateDS, Append, NextRow, FinalizeOp
     // - TableBuilderType, TableType
     // 
     // These operations have been removed in favor of using DB operations directly.

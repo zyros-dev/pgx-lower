@@ -97,14 +97,14 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
     bool foundFinalize = false;        // Should NOT have finalize anymore
     
     funcOp.walk([&](Operation *op) {
-        if (isa<pgx::mlir::dsa::CreateDSOp>(op)) {
+        if (isa<pgx::mlir::dsa::CreateDS>(op)) {
             foundCreateDS = true;
-            auto createOp = cast<pgx::mlir::dsa::CreateDSOp>(op);
+            auto createOp = cast<pgx::mlir::dsa::CreateDS>(op);
             EXPECT_TRUE(createOp.getDs().getType().isa<pgx::mlir::dsa::TableBuilderType>())
                 << "CreateDS should create a TableBuilder for internal processing";
-        } else if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
+        } else if (isa<pgx::mlir::dsa::Append>(op)) {
             foundDSAppend = true;
-        } else if (isa<pgx::mlir::dsa::NextRowOp>(op)) {
+        } else if (isa<pgx::mlir::dsa::NextRow>(op)) {
             foundNextRow = true;
         } else if (isa<pgx::db::StoreResultOp>(op)) {
             foundStoreResult = true;
@@ -201,9 +201,9 @@ TEST_F(HybridRelAlgToDBTest, MultipleColumnsHybrid) {
     
     // First check module-level operations
     module.walk([&](Operation *op) {
-        if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
+        if (isa<pgx::mlir::dsa::Append>(op)) {
             dsAppendCount++;
-            PGX_DEBUG("Found DSAppendOp at module level");
+            PGX_DEBUG("Found Append at module level");
         } else if (isa<pgx::db::StoreResultOp>(op)) {
             storeResultCount++;
             PGX_DEBUG("Found StoreResultOp at module level");

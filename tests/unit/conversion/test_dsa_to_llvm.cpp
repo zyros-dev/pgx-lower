@@ -43,8 +43,8 @@ protected:
     }
 };
 
-// Test CreateDSOp conversion - essential for Test 1
-TEST_F(DSAToLLVMConversionTest, ConvertCreateDSOp) {
+// Test CreateDS conversion - essential for Test 1
+TEST_F(DSAToLLVMConversionTest, ConvertCreateDS) {
     // Create a function containing CreateDS operation
     auto funcType = builder.getFunctionType({}, {});
     auto func = builder.create<mlir::func::FuncOp>(
@@ -59,7 +59,7 @@ TEST_F(DSAToLLVMConversionTest, ConvertCreateDSOp) {
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
     
     auto schemaAttr = builder.getStringAttr("id:int[32]");
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, schemaAttr);
     
     // Return from function
@@ -71,7 +71,7 @@ TEST_F(DSAToLLVMConversionTest, ConvertCreateDSOp) {
     
     ASSERT_TRUE(mlir::succeeded(pm.run(module)));
     
-    // Verify conversion: CreateDSOp should be replaced with LLVM call
+    // Verify conversion: CreateDS should be replaced with LLVM call
     bool foundLLVMCall = false;
     module.walk([&](mlir::LLVM::CallOp callOp) {
         auto callee = callOp.getCalleeAttr();
@@ -80,7 +80,7 @@ TEST_F(DSAToLLVMConversionTest, ConvertCreateDSOp) {
         }
     });
     
-    EXPECT_TRUE(foundLLVMCall) << "CreateDSOp should be converted to LLVM call";
+    EXPECT_TRUE(foundLLVMCall) << "CreateDS should be converted to LLVM call";
 }
 
 // PHASE 4d-5: ScanSourceOp test removed - not used by Test 1
@@ -106,7 +106,7 @@ TEST_F(DSAToLLVMConversionTest, DISABLED_ConvertTest1Operations) {
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
     
     auto schemaAttr = builder.getStringAttr("id:int[64]");
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, schemaAttr);
     
     // Create a value of nullable type (simulate what MaterializeTranslator produces)
@@ -119,11 +119,11 @@ TEST_F(DSAToLLVMConversionTest, DISABLED_ConvertTest1Operations) {
     auto nullableArg = currentBlock->addArgument(nullableI64Type, builder.getUnknownLoc());
     
     // Append the nullable value (without explicit validity - handled by nullable type)
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(), createDSOp.getDs(), nullableArg);
     
     // Complete row
-    builder.create<pgx::mlir::dsa::NextRowOp>(
+    builder.create<pgx::mlir::dsa::NextRow>(
         builder.getUnknownLoc(), createDSOp.getDs());
     
     // No finalize - results go directly to PostgreSQL

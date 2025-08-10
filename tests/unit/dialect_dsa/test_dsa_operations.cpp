@@ -94,7 +94,7 @@ TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     auto tableBuilderType = ::pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
     
     // Create table builder with schema
-    auto createDSOp = builder->create<::pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder->create<::pgx::mlir::dsa::CreateDS>(
         builder->getUnknownLoc(),
         tableBuilderType,
         builder->getStringAttr("id:int[32];value:float[64]")
@@ -103,7 +103,7 @@ TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     EXPECT_TRUE(createDSOp != nullptr);
     EXPECT_EQ(createDSOp.getDs().getType(), tableBuilderType);
     
-    // Test DSAppendOp
+    // Test Append
     auto i32Val = builder->create<arith::ConstantIntOp>(builder->getUnknownLoc(), 42, 32);
     auto f64Val = builder->create<arith::ConstantFloatOp>(
         builder->getUnknownLoc(),
@@ -112,14 +112,14 @@ TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     );
     auto trueVal = builder->create<arith::ConstantIntOp>(builder->getUnknownLoc(), 1, 1);
     
-    auto appendOp1 = builder->create<::pgx::mlir::dsa::DSAppendOp>(
+    auto appendOp1 = builder->create<::pgx::mlir::dsa::Append>(
         builder->getUnknownLoc(),
         createDSOp.getDs(),
         i32Val.getResult(),
         trueVal.getResult()
     );
     
-    auto appendOp2 = builder->create<::pgx::mlir::dsa::DSAppendOp>(
+    auto appendOp2 = builder->create<::pgx::mlir::dsa::Append>(
         builder->getUnknownLoc(),
         createDSOp.getDs(),
         f64Val.getResult(),
@@ -129,8 +129,8 @@ TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     EXPECT_TRUE(appendOp1 != nullptr);
     EXPECT_TRUE(appendOp2 != nullptr);
     
-    // Test NextRowOp
-    auto nextRowOp = builder->create<::pgx::mlir::dsa::NextRowOp>(
+    // Test NextRow
+    auto nextRowOp = builder->create<::pgx::mlir::dsa::NextRow>(
         builder->getUnknownLoc(),
         createDSOp.getDs()
     );

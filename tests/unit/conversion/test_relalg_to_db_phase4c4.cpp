@@ -90,14 +90,14 @@ TEST_F(RelAlgToDBPhase4c4Test, DISABLED_GeneratesDSAOperations) {
     bool foundFinalize = false;
     
     funcOp.walk([&](Operation *op) {
-        if (isa<pgx::mlir::dsa::CreateDSOp>(op)) {
+        if (isa<pgx::mlir::dsa::CreateDS>(op)) {
             foundCreateDS = true;
-            auto createOp = cast<pgx::mlir::dsa::CreateDSOp>(op);
+            auto createOp = cast<pgx::mlir::dsa::CreateDS>(op);
             EXPECT_TRUE(createOp.getDs().getType().isa<pgx::mlir::dsa::TableBuilderType>())
                 << "CreateDS should create a TableBuilder";
-        } else if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
+        } else if (isa<pgx::mlir::dsa::Append>(op)) {
             foundDSAppend = true;
-        } else if (isa<pgx::mlir::dsa::NextRowOp>(op)) {
+        } else if (isa<pgx::mlir::dsa::NextRow>(op)) {
             foundNextRow = true;
         } else if (isa<pgx::mlir::dsa::FinalizeOp>(op)) {
             foundFinalize = true;
@@ -175,7 +175,7 @@ TEST_F(RelAlgToDBPhase4c4Test, DISABLED_MultipleColumns) {
     
     // Count DSAppend operations - should be 3 (one per column)
     int appendCount = 0;
-    funcOp.walk([&](pgx::mlir::dsa::DSAppendOp op) {
+    funcOp.walk([&](pgx::mlir::dsa::Append op) {
         appendCount++;
     });
     

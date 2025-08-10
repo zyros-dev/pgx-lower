@@ -96,14 +96,14 @@ TEST_F(MaterializeDBOpsTest, MaterializeGeneratesHybridOps) {
     bool foundStreamResults = false;
     
     module.walk([&](Operation* op) {
-        if (isa<pgx::mlir::dsa::CreateDSOp>(op)) {
+        if (isa<pgx::mlir::dsa::CreateDS>(op)) {
             foundCreateDS = true;
             // Verify it creates a TableBuilder
-            auto createOp = cast<pgx::mlir::dsa::CreateDSOp>(op);
+            auto createOp = cast<pgx::mlir::dsa::CreateDS>(op);
             EXPECT_TRUE(createOp.getDs().getType().isa<pgx::mlir::dsa::TableBuilderType>());
-        } else if (isa<pgx::mlir::dsa::DSAppendOp>(op)) {
+        } else if (isa<pgx::mlir::dsa::Append>(op)) {
             foundDSAppend = true;
-        } else if (isa<pgx::mlir::dsa::NextRowOp>(op)) {
+        } else if (isa<pgx::mlir::dsa::NextRow>(op)) {
             foundNextRow = true;
         } else if (isa<pgx::db::StoreResultOp>(op)) {
             foundStoreResult = true;

@@ -10,7 +10,7 @@ TEST_F(SegfaultDebugDisabledTest, PlaceholderTest) {
     PGX_DEBUG("test_segfault_debug.cpp disabled - DSA operations have been removed");
     
     // This test file previously tested DSA-specific operations:
-    // - CreateDSOp, DSAppendOp, NextRowOp, FinalizeOp
+    // - CreateDS, Append, NextRow, FinalizeOp
     // - TableBuilderType, TableType
     // 
     // These operations have been removed in favor of using DB operations directly.
