@@ -68,14 +68,6 @@ def DB_CharType : DB_Type<"Char","char"> {
 
     let parameters = (ins "unsigned":$bytes);
     let assemblyFormat="`<` $bytes `>` ";
-    
-    // LLVM 20 workaround: Skip broken TableGen builders
-    let skipDefaultBuilders = 1;
-    let builders = [
-        TypeBuilderWithInferredContext<(ins "unsigned":$bytes), [{
-            return $_get($_ctxt, bytes);
-        }]>
-    ];
 }
 
 def DB_DateUnit_DAY  : I64EnumAttrCase<"day", 0>;
@@ -88,14 +80,6 @@ def DB_DateType : DB_Type<"Date","date"> {
     let summary = "date";
     let parameters = (ins "DateUnitAttr":$unit);
     let assemblyFormat="`<` $unit  `>` ";
-    
-    // LLVM 20 workaround: Skip broken TableGen builders
-    let skipDefaultBuilders = 1;
-    let builders = [
-        TypeBuilderWithInferredContext<(ins "DateUnitAttr":$unit), [{
-            return $_get($_ctxt, unit);
-        }]>
-    ];
 }
 
 def DB_IntervalUnit_MONTH  : I64EnumAttrCase<"months", 0>;
@@ -108,14 +92,6 @@ def DB_IntervalType : DB_Type<"Interval","interval"> {
     let summary = "interval";
     let parameters = (ins "IntervalUnitAttr":$unit);
     let assemblyFormat="`<` $unit  `>` ";
-    
-    // LLVM 20 workaround: Skip broken TableGen builders
-    let skipDefaultBuilders = 1;
-    let builders = [
-        TypeBuilderWithInferredContext<(ins "IntervalUnitAttr":$unit), [{
-            return $_get($_ctxt, unit);
-        }]>
-    ];
 }
 
 def DB_TimeUnit_S : I64EnumAttrCase<"second", 0>;
@@ -130,14 +106,6 @@ def DB_TimestampType : DB_Type<"Timestamp","timestamp"> {
     let summary = "timestamp";
     let parameters = (ins "TimeUnitAttr":$unit);
     let assemblyFormat="`<` $unit`>` ";
-    
-    // LLVM 20 workaround: Skip broken TableGen builders
-    let skipDefaultBuilders = 1;
-    let builders = [
-        TypeBuilderWithInferredContext<(ins "TimeUnitAttr":$unit), [{
-            return $_get($_ctxt, unit);
-        }]>
-    ];
 }
 
 def DB_DecimalType : DB_Type<"Decimal","decimal"> {
@@ -148,14 +116,6 @@ def DB_DecimalType : DB_Type<"Decimal","decimal"> {
 
     let parameters = (ins "int":$p,"int":$s);
     let assemblyFormat="`<` $p `,` $s  `>` ";
-    
-    // LLVM 20 workaround: Skip broken TableGen builders
-    let skipDefaultBuilders = 1;
-    let builders = [
-        TypeBuilderWithInferredContext<(ins "int":$p, "int":$s), [{
-            return $_get($_ctxt, p, s);
-        }]>
-    ];
 }
 
 def DB_StringType : DB_Type<"String","string"> {
