@@ -6,6 +6,7 @@
 
 #include <memory>
 
+namespace pgx {
 namespace mlir {
 namespace db {
 
@@ -15,5 +16,6 @@ void createLowerDBPipeline(mlir::OpPassManager& pm);
 
 } // end namespace db
 } // end namespace mlir
+} // end namespace pgx
 
 #endif // MLIR_CONVERSION_DBTOSTD_DBTOSTD_H

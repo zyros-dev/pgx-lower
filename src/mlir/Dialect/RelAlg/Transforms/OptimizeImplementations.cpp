@@ -105,8 +105,10 @@ class OptimizeImplementations : public ::mlir::PassWrapper<OptimizeImplementatio
 };
 } // end anonymous namespace
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createOptimizeImplementationsPass() { return std::make_unique<OptimizeImplementations>(); }
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx

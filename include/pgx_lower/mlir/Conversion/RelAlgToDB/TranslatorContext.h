@@ -4,6 +4,7 @@
 
 #include "mlir/Dialect/RelAlg/IR/Column.h"
 #include "mlir/IR/Value.h"
+namespace pgx {
 namespace mlir {
 namespace relalg {
 class TranslatorContext {
@@ -34,5 +35,6 @@ class TranslatorContext {
 };
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx
 
 #endif // MLIR_CONVERSION_RELALGTODB_TRANSLATORCONTEXT_H

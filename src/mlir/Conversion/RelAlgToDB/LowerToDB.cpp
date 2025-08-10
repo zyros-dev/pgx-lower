@@ -47,6 +47,7 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
 };
 } // end anonymous namespace
 
+namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createLowerToDBPass() { return std::make_unique<LowerToDBPass>(); }
@@ -68,3 +69,4 @@ void createLowerRelAlgPipeline(mlir::OpPassManager& pm){
 
 } // end namespace relalg
 } // end namespace mlir
+} // end namespace pgx
