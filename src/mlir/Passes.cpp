@@ -1,5 +1,7 @@
 #include "mlir/Passes.h"
 #include "execution/logging.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/IR/Verifier.h"
 
 // Include all conversion passes
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
@@ -112,74 +114,198 @@ void createRelAlgToDBPipeline(mlir::PassManager& pm) {
 }
 
 
-void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) {
-    auto pipelineStart = std::chrono::high_resolution_clock::now();
-    PGX_INFO("Creating complete lowering pipeline for Test 1");
+// DEPRECATED: Single PassManager approach
+// Replaced with LingoDB-compliant multi-PassManager architecture
+void createCompleteLoweringPipeline_DEPRECATED(mlir::PassManager& pm, bool enableVerifier) {
+    // This function is deprecated and should not be used
+    // Use runCompleteLoweringPipeline() instead for LingoDB compliance
+    PGX_ERROR("createCompleteLoweringPipeline is deprecated - use runCompleteLoweringPipeline");
+}
+
+//===----------------------------------------------------------------------===//
+// LingoDB-Compliant Multi-PassManager Pipeline
+//===----------------------------------------------------------------------===//
+
+// Phase 1: RelAlg → Mixed DB+DSA+Util (Function-Scoped with Nested Pass)
+static LogicalResult runPhase1_RelAlgToMixed(mlir::ModuleOp module, mlir::MLIRContext* context, bool enableVerifier) {
+    auto phaseStart = std::chrono::high_resolution_clock::now();
+    PGX_INFO("Phase 1: RelAlg → Mixed DB+DSA+Util lowering");
     
-    // Enable verifier based on configuration
-    pm.enableVerifier(enableVerifier);
+    mlir::PassManager pm1(context);
+    pm1.enableVerifier(enableVerifier);
     
-    // Add timing instrumentation for performance monitoring
-    // TEMPORARY: Disabled custom PassManager instrumentation to avoid segfault during cleanup
-    // The PgxPassTimingInstrumentation is architecturally correct but triggers MLIR context 
-    // cleanup bugs when printing diagnostics for DSA types. This is a known MLIR issue
-    // that occurs when custom instrumentation interacts with dialect type printing during
-    // PassManager destruction. Re-enable once MLIR cleanup bug is resolved.
-    // pm.addInstrumentation(std::make_unique<PgxPassTimingInstrumentation>());
-    PGX_DEBUG("Skipped pass timing instrumentation (temporarily disabled to avoid MLIR cleanup segfault)");
+    // Use LingoDB's nested pass pattern
+    createRelAlgToDBPipeline(pm1);
     
-    // Since our passes are anchored on func::FuncOp, we need to nest them properly
-    // Create a nested pass manager for function passes
-    pm.addNestedPass<mlir::func::FuncOp>(::mlir::pgx_conversion::createRelAlgToDBPass());
-    PGX_DEBUG("Added nested RelAlg → DB lowering pass");
-    
-    // DB → Standard dialect conversion (PostgreSQL SPI integration)
-    // Note: DBToStd is now a module-level pass (following LingoDB pattern)
-    pm.addPass(createDBToStdPass());
-    PGX_DEBUG("Added DB → Standard lowering pass (module-level)");
-    
-    // DSA → Standard dialect conversion (data structure operations)
-    // Note: DSAToStd is a module-level pass, not a function-level pass
-    pm.addPass(createDSAToStdPass());
-    PGX_DEBUG("Added DSA → Standard lowering pass");
-    
-    // Util → LLVM lowering (utility operations and types)
-    // This pass must run after DSAToStd as it handles util.ref types
-    pm.addPass(pgx::mlir::createUtilToLLVMPass());
-    PGX_DEBUG("Added Util → LLVM lowering pass");
-    
-    // DSA → LLVM lowering (data structure algorithms)
-    // Re-enabled for Phase 4g-2c JIT execution
-    pm.addPass(::mlir::pgx_conversion::createDSAToLLVMPass());
-    PGX_DEBUG("Added DSA → LLVM lowering pass");
-    
-    // Clean up any remaining unrealized conversion casts
-    // This is critical for resolving type materializations between passes
-    // Note: This pass is available in newer MLIR versions. For now, we'll rely on
-    // proper type conversion in each pass to avoid unrealized casts.
-    // TODO: Add custom reconciliation pass if needed
-    // pm.addPass(mlir::createReconcileUnrealizedCastsPass());
-    // PGX_DEBUG("Added reconcile unrealized casts pass");
-    
-    // TODO: JIT execution engine setup
-    // TODO: Complete Standard MLIR → LLVM → JIT pipeline
-    
-    // TODO: Optimization passes
-    // pm.addPass(mlir::createCanonicalizerPass());
-    // pm.addPass(mlir::createCSEPass());
-    
-    auto pipelineEnd = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        pipelineEnd - pipelineStart);
-    
-    std::stringstream ss;
-    ss << "Pipeline configuration completed in " << duration.count() << " microseconds";
-    if (enableVerifier) {
-        ss << " with verification enabled";
-    } else {
-        ss << " with verification disabled";
+    if (mlir::failed(pm1.run(module))) {
+        PGX_ERROR("Phase 1 failed: RelAlg → Mixed DB+DSA+Util lowering");
+        return failure();
     }
-    PGX_INFO(ss.str());
+    
+    auto phaseEnd = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(phaseEnd - phaseStart);
+    PGX_INFO("Phase 1 completed in " + std::to_string(duration.count() / 1000.0) + " ms");
+    
+    return success();
+}
+
+// Phase 2: DB → Standard MLIR + PostgreSQL SPI (Module-Scoped)
+static LogicalResult runPhase2_DBToStandard(mlir::ModuleOp module, mlir::MLIRContext* context, bool enableVerifier) {
+    auto phaseStart = std::chrono::high_resolution_clock::now();
+    PGX_INFO("Phase 2: DB → Standard MLIR + PostgreSQL SPI lowering");
+    
+    // Count DB operations before conversion for diagnostics
+    int dbOpsCount = 0;
+    module.walk([&](Operation* op) {
+        if (op->getDialect() && op->getDialect()->getNamespace() == "db") {
+            dbOpsCount++;
+        }
+    });
+    
+    if (dbOpsCount > 0) {
+        PGX_DEBUG("Phase 2: Found " + std::to_string(dbOpsCount) + " DB operations to convert");
+    } else {
+        PGX_DEBUG("Phase 2: No DB operations found - skipping conversion");
+    }
+    
+    mlir::PassManager pm2(context);
+    pm2.enableVerifier(enableVerifier);
+    
+    // DB operations to PostgreSQL SPI calls + Standard MLIR
+    pm2.addPass(createDBToStdPass());
+    
+    auto passResult = pm2.run(module);
+    if (mlir::failed(passResult)) {
+        // Enhanced error reporting for PostgreSQL SPI failures
+        int remainingDbOps = 0;
+        module.walk([&](Operation* op) {
+            if (op->getDialect() && op->getDialect()->getNamespace() == "db") {
+                remainingDbOps++;
+                PGX_DEBUG("Unconverted DB operation: " + op->getName().getStringRef().str());
+            }
+        });
+        
+        if (remainingDbOps > 0) {
+            PGX_ERROR("Phase 2 failed: " + std::to_string(remainingDbOps) + " DB operations could not be converted to PostgreSQL SPI calls");
+        } else {
+            PGX_ERROR("Phase 2 failed: DB → Standard MLIR lowering failed for unknown reason");
+        }
+        
+        PGX_ERROR("Possible causes: Missing PostgreSQL SPI function declarations, type conversion failures, or unsupported DB operations");
+        return failure();
+    }
+    
+    // Verify PostgreSQL SPI functions were generated
+    bool hasSPIFunctions = false;
+    module.walk([&](mlir::func::FuncOp func) {
+        auto funcName = func.getName().str();
+        if (funcName.find("pg_") == 0) {
+            hasSPIFunctions = true;
+            PGX_DEBUG("Generated PostgreSQL SPI function: " + funcName);
+        }
+    });
+    
+    if (dbOpsCount > 0 && !hasSPIFunctions) {
+        PGX_WARNING("Phase 2: DB operations were converted but no PostgreSQL SPI functions were generated");
+    }
+    
+    auto phaseEnd = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(phaseEnd - phaseStart);
+    PGX_INFO("Phase 2 completed in " + std::to_string(duration.count() / 1000.0) + " ms");
+    
+    return success();
+}
+
+// Phase 3: DSA+Util → Standard MLIR/LLVM (Module-Scoped)
+static LogicalResult runPhase3_DSAUtilToLLVM(mlir::ModuleOp module, mlir::MLIRContext* context, bool enableVerifier) {
+    auto phaseStart = std::chrono::high_resolution_clock::now();
+    PGX_INFO("Phase 3: DSA+Util → Standard MLIR/LLVM lowering");
+    
+    mlir::PassManager pm3(context);
+    pm3.enableVerifier(enableVerifier);
+    
+    // DSA operations to Standard MLIR
+    pm3.addPass(createDSAToStdPass());
+    
+    // Util operations directly to LLVM (LingoDB pattern)
+    pm3.addPass(pgx::mlir::createUtilToLLVMPass());
+    
+    // Add canonicalization (LingoDB pattern)
+    pm3.addPass(mlir::createCanonicalizerPass());
+    
+    if (mlir::failed(pm3.run(module))) {
+        PGX_ERROR("Phase 3 failed: DSA+Util → Standard MLIR/LLVM lowering");
+        return failure();
+    }
+    
+    auto phaseEnd = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(phaseEnd - phaseStart);
+    PGX_INFO("Phase 3 completed in " + std::to_string(duration.count() / 1000.0) + " ms");
+    
+    return success();
+}
+
+LogicalResult runCompleteLoweringPipeline(mlir::ModuleOp module, mlir::MLIRContext* context, bool enableVerifier) {
+    // Input validation with detailed error reporting
+    if (!module) {
+        PGX_ERROR("Pipeline failure: Null module provided");
+        return failure();
+    }
+    
+    if (!context) {
+        PGX_ERROR("Pipeline failure: Null MLIR context provided");
+        return failure();
+    }
+    
+    // Verify module is valid before starting pipeline
+    if (failed(mlir::verify(module))) {
+        PGX_ERROR("Pipeline failure: Invalid MLIR module provided - failed verification");
+        return failure();
+    }
+    
+    PGX_INFO("Starting LingoDB-compliant multi-phase lowering pipeline for Test 1");
+    auto pipelineStart = std::chrono::high_resolution_clock::now();
+
+    // Execute each phase with comprehensive error handling
+    if (failed(runPhase1_RelAlgToMixed(module, context, enableVerifier))) {
+        PGX_ERROR("Pipeline terminated: Phase 1 (RelAlg→Mixed) failed");
+        return failure();
+    }
+    
+    if (failed(runPhase2_DBToStandard(module, context, enableVerifier))) {
+        PGX_ERROR("Pipeline terminated: Phase 2 (DB→Standard) failed - PostgreSQL SPI integration issue");
+        return failure();
+    }
+    
+    if (failed(runPhase3_DSAUtilToLLVM(module, context, enableVerifier))) {
+        PGX_ERROR("Pipeline terminated: Phase 3 (DSA+Util→LLVM) failed");
+        return failure();
+    }
+
+    // Final verification to ensure pipeline produced valid MLIR
+    if (enableVerifier && failed(mlir::verify(module))) {
+        PGX_ERROR("Pipeline completed but produced invalid MLIR - verification failed");
+        return failure();
+    }
+
+    auto pipelineEnd = std::chrono::high_resolution_clock::now();
+    auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(pipelineEnd - pipelineStart);
+    PGX_INFO("Complete lowering pipeline finished successfully in " + std::to_string(totalDuration.count() / 1000.0) + " ms");
+    
+    return success();
+}
+
+// Legacy function for backwards compatibility - redirects to new multi-PassManager approach
+void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier) {
+    PGX_WARNING("createCompleteLoweringPipeline is deprecated - update callers to use runCompleteLoweringPipeline");
+    
+    // For backwards compatibility, configure the single PassManager with our phases
+    // This is not optimal but maintains API compatibility
+    createRelAlgToDBPipeline(pm);
+    pm.addPass(createDBToStdPass());
+    pm.addPass(createDSAToStdPass());
+    pm.addPass(pgx::mlir::createUtilToLLVMPass());
+    pm.addPass(mlir::createCanonicalizerPass());
 }
 
 //===----------------------------------------------------------------------===//
