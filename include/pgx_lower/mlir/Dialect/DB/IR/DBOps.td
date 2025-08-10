@@ -220,7 +220,7 @@ def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethod
                 MLIRContext* context, Optional<Location> location,
                 ValueRange operands, DictionaryAttr attributes,
                 RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
-            inferredReturnTypes.assign({operands[0].getType().cast<mlir::db::NullableType>().getType()});
+            inferredReturnTypes.assign({operands[0].getType().cast<pgx::mlir::db::NullableType>().getType()});
             return success();
         }
     }];

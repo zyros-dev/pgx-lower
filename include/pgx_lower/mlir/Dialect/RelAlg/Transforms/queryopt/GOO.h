@@ -6,7 +6,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <bitset>
 #include <memory>
-namespace mlir::relalg {
+namespace pgx::mlir::relalg {
 class GOO {
    QueryGraph& queryGraph;
 
@@ -15,6 +15,6 @@ class GOO {
 
    std::shared_ptr<Plan> solve();
 };
-} // namespace mlir::relalg
+} // namespace pgx::mlir::relalg
 
 #endif // MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_GOO_H

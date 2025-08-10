@@ -9,7 +9,7 @@
 #include <string>
 #include <unordered_map>
 #include <variant>
-namespace mlir::db {
+namespace pgx::mlir::db {
 
 struct RuntimeFunction {
    enum NullHandleType {
@@ -26,9 +26,9 @@ struct RuntimeFunction {
    using ResTypeMatcher = std::function<bool(mlir::Type, mlir::TypeRange)>;
    static inline auto anyType = [](mlir::Type) { return true; };
    static inline auto intLike = [](mlir::Type t) { return getBaseType(t).isIntOrIndex(); };
-   static inline auto stringLike = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::StringType,mlir::db::CharType>(); };
-   static inline auto dateLike = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::DateType>(); };
-   static inline auto dateInterval = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::IntervalType>(); };
+   static inline auto stringLike = [](mlir::Type t) { return getBaseType(t).isa<pgx::mlir::db::StringType,pgx::mlir::db::CharType>(); };
+   static inline auto dateLike = [](mlir::Type t) { return getBaseType(t).isa<pgx::mlir::db::DateType>(); };
+   static inline auto dateInterval = [](mlir::Type t) { return getBaseType(t).isa<pgx::mlir::db::IntervalType>(); };
    static inline auto noReturnType = [](mlir::Type t,mlir::TypeRange){return !t;};
    static ResTypeMatcher matchesArgument(size_t argIdx = 0) {
       return [](mlir::Type resType, mlir::TypeRange types) {
@@ -37,10 +37,10 @@ struct RuntimeFunction {
    }
    std::function<bool(mlir::TypeRange types, mlir::Type resType)> verifyFn;
    using loweringFnT = std::function<mlir::Value(mlir::OpBuilder& builder, mlir::ValueRange loweredArguments, mlir::TypeRange originalArgumentTypes, mlir::Type resType, mlir::TypeConverter*,mlir::Location)>;
-   std::variant<loweringFnT, mlir::util::FunctionSpec> implementation;
+   std::variant<loweringFnT, pgx::mlir::util::FunctionSpec> implementation;
 
    //builder functions
-   RuntimeFunction& implementedAs(mlir::util::FunctionSpec function) {
+   RuntimeFunction& implementedAs(pgx::mlir::util::FunctionSpec function) {
       implementation = function;
       nullHandleType = NeedsWrapping;
       return *this;
@@ -108,6 +108,6 @@ class RuntimeFunctionRegistry {
       return *registeredFunctions[name];
    }
 };
-} // end namespace mlir::db
+} // end namespace pgx::mlir::db
 
 #endif // MLIR_DIALECT_DB_IR_RUNTIMEFUNCTIONS_H

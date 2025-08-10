@@ -3,7 +3,7 @@
 #include "QueryGraph.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
-namespace mlir::relalg {
+namespace pgx::mlir::relalg {
 class QueryGraphBuilder {
 
    Operator root;
@@ -61,5 +61,5 @@ class QueryGraphBuilder {
       return qg;
    }
 };
-} // namespace mlir::relalg
+} // namespace pgx::mlir::relalg
 #endif // MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_QUERYGRAPHBUILDER_H

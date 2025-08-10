@@ -4,7 +4,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 
-namespace mlir::relalg {
+namespace pgx::mlir::relalg {
 
 // Forward declarations
 class ColumnSet;
@@ -26,6 +26,6 @@ private:
   llvm::DenseMap<unsigned, llvm::SmallVector<unsigned, 4>> dependencies;
 };
 
-} // namespace mlir::relalg
+} // namespace pgx::mlir::relalg
 
 #endif // MLIR_DIALECT_RELALG_FUNCTIONALDEPENDENCIES_H

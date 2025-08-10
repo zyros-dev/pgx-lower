@@ -14,16 +14,16 @@
 using namespace mlir;
 namespace {
 
-class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
+class SortOpLowering : public OpConversionPattern<pgx::mlir::dsa::SortOp> {
    public:
-   using OpConversionPattern<mlir::dsa::SortOp>::OpConversionPattern;
-   LogicalResult matchAndRewrite(mlir::dsa::SortOp sortOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+   using OpConversionPattern<pgx::mlir::dsa::SortOp>::OpConversionPattern;
+   LogicalResult matchAndRewrite(pgx::mlir::dsa::SortOp sortOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       static size_t id = 0;
 
-      auto ptrType = mlir::util::RefType::get(getContext(), IntegerType::get(getContext(), 8));
+      auto ptrType = pgx::mlir::util::RefType::get(getContext(), IntegerType::get(getContext(), 8));
 
       ModuleOp parentModule = sortOp->getParentOfType<ModuleOp>();
-      Type elementType = sortOp.toSort().getType().cast<mlir::dsa::VectorType>().getElementType();
+      Type elementType = sortOp.toSort().getType().cast<pgx::mlir::dsa::VectorType>().getElementType();
       mlir::func::FuncOp funcOp;
       {
          OpBuilder::InsertionGuard insertionGuard(rewriter);
@@ -44,7 +44,7 @@ class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
          Block* sortLambda = &sortOp.region().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
          rewriter.mergeBlockBefore(sortLambda, terminator, {tupleLeft, tupleRight});
-         mlir::dsa::YieldOp yieldOp = mlir::cast<mlir::dsa::YieldOp>(terminator->getPrevNode());
+         pgx::mlir::dsa::YieldOp yieldOp = mlir::cast<pgx::mlir::dsa::YieldOp>(terminator->getPrevNode());
          Value x = yieldOp.results()[0];
          rewriter.create<mlir::func::ReturnOp>(sortOp.getLoc(), x);
          rewriter.eraseOp(sortLambdaTerminator);
@@ -58,9 +58,9 @@ class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
       return success();
    }
 };
-class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
+class ForOpLowering : public OpConversionPattern<pgx::mlir::dsa::ForOp> {
    public:
-   using OpConversionPattern<mlir::dsa::ForOp>::OpConversionPattern;
+   using OpConversionPattern<pgx::mlir::dsa::ForOp>::OpConversionPattern;
    std::vector<Value> remap(std::vector<Value> values, ConversionPatternRewriter& builder) const {
       for (size_t i = 0; i < values.size(); i++) {
          values[i] = builder.getRemappedValue(values[i]);
@@ -68,25 +68,25 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
       return values;
    }
 
-   LogicalResult matchAndRewrite(mlir::dsa::ForOp forOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+   LogicalResult matchAndRewrite(pgx::mlir::dsa::ForOp forOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       std::vector<Type> argumentTypes;
       std::vector<Location> argumentLocs;
       for (auto t : forOp.region().getArgumentTypes()) {
          argumentTypes.push_back(t);
          argumentLocs.push_back(forOp->getLoc());
       }
-      auto collectionType = forOp.collection().getType().dyn_cast_or_null<mlir::dsa::CollectionType>();
-      auto iterator = mlir::dsa::CollectionIterationImpl::getImpl(collectionType, adaptor.collection());
+      auto collectionType = forOp.collection().getType().dyn_cast_or_null<pgx::mlir::dsa::CollectionType>();
+      auto iterator = pgx::mlir::dsa::CollectionIterationImpl::getImpl(collectionType, adaptor.collection());
 
       ModuleOp parentModule = forOp->getParentOfType<ModuleOp>();
       bool containsCondSkip = false;
       for (auto& op : forOp.region().front().getOperations()) {
-         containsCondSkip |= mlir::isa<mlir::dsa::CondSkipOp>(&op);
+         containsCondSkip |= mlir::isa<pgx::mlir::dsa::CondSkipOp>(&op);
       }
 
       using fn_t = std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)>;
       fn_t fn1 = [&](std::function<Value(OpBuilder & b)> getElem, ValueRange iterargs, OpBuilder builder) {
-         auto yieldOp = cast<mlir::dsa::YieldOp>(forOp.getBody()->getTerminator());
+         auto yieldOp = cast<pgx::mlir::dsa::YieldOp>(forOp.getBody()->getTerminator());
          std::vector<Type> resTypes;
          std::vector<Location> locs;
          for (auto t : yieldOp.results()) {
@@ -123,7 +123,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
             builder.create<mlir::scf::YieldOp>(forOp->getLoc(), end->getArguments());
             std::vector<Operation*> toErase;
             for (auto it = execRegionBlock->getOperations().rbegin(); it != execRegionBlock->getOperations().rend(); it++) {
-               if (auto op = mlir::dyn_cast_or_null<mlir::dsa::CondSkipOp>(&*it)) {
+               if (auto op = mlir::dyn_cast_or_null<pgx::mlir::dsa::CondSkipOp>(&*it)) {
                   toErase.push_back(op.getOperation());
                   builder.setInsertionPointAfter(op);
                   llvm::SmallVector<mlir::Value> remappedArgs;
@@ -146,7 +146,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          return results;
       };
       fn_t fn2 = [&](std::function<Value(OpBuilder & b)> getElem, ValueRange iterargs, OpBuilder builder) {
-         auto yieldOp = cast<mlir::dsa::YieldOp>(forOp.getBody()->getTerminator());
+         auto yieldOp = cast<pgx::mlir::dsa::YieldOp>(forOp.getBody()->getTerminator());
          std::vector<Type> resTypes;
          std::vector<Location> locs;
          for (auto t : yieldOp.results()) {
@@ -174,7 +174,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          forOp.region().push_back(new Block());
          forOp.region().front().addArguments(argumentTypes, argumentLocs);
          rewriter.setInsertionPointToStart(&forOp.region().front());
-         rewriter.create<mlir::dsa::YieldOp>(forOp.getLoc());
+         rewriter.create<pgx::mlir::dsa::YieldOp>(forOp.getLoc());
       }
 
       rewriter.replaceOp(forOp, results);
@@ -182,27 +182,27 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
    }
 };
 
-class LookupOpLowering  : public OpConversionPattern<mlir::dsa::Lookup> {
+class LookupOpLowering  : public OpConversionPattern<pgx::mlir::dsa::Lookup> {
    public:
-   using OpConversionPattern<mlir::dsa::Lookup>::OpConversionPattern;
-   LogicalResult matchAndRewrite(mlir::dsa::Lookup op, OpAdaptor lookupAdaptor, ConversionPatternRewriter& rewriter) const override {
+   using OpConversionPattern<pgx::mlir::dsa::Lookup>::OpConversionPattern;
+   LogicalResult matchAndRewrite(pgx::mlir::dsa::Lookup op, OpAdaptor lookupAdaptor, ConversionPatternRewriter& rewriter) const override {
       auto loc = op->getLoc();
-      auto loaded = rewriter.create<util::LoadOp>(loc, lookupAdaptor.collection().getType().cast<mlir::util::RefType>().getElementType(), lookupAdaptor.collection(), Value());
-      auto unpacked = rewriter.create<mlir::util::UnPackOp>(loc, loaded);
+      auto loaded = rewriter.create<util::LoadOp>(loc, lookupAdaptor.collection().getType().cast<pgx::mlir::util::RefType>().getElementType(), lookupAdaptor.collection(), Value());
+      auto unpacked = rewriter.create<pgx::mlir::util::UnPackOp>(loc, loaded);
       Value ht = unpacked.getResult(0);
       Value htMask = unpacked.getResult(1);
       Value buckedPos = rewriter.create<arith::AndIOp>(loc, htMask, lookupAdaptor.key());
-      Value ptr = rewriter.create<util::LoadOp>(loc, typeConverter->convertType(ht.getType()).cast<mlir::util::RefType>().getElementType(), ht, buckedPos);
+      Value ptr = rewriter.create<util::LoadOp>(loc, typeConverter->convertType(ht.getType()).cast<pgx::mlir::util::RefType>().getElementType(), ht, buckedPos);
       //optimization
-      ptr = rewriter.create<mlir::util::FilterTaggedPtr>(loc, ptr.getType(), ptr, lookupAdaptor.key());
-      Value packed = rewriter.create<mlir::util::PackOp>(loc, ValueRange{ptr, lookupAdaptor.key()});
+      ptr = rewriter.create<pgx::mlir::util::FilterTaggedPtr>(loc, ptr.getType(), ptr, lookupAdaptor.key());
+      Value packed = rewriter.create<pgx::mlir::util::PackOp>(loc, ValueRange{ptr, lookupAdaptor.key()});
       rewriter.replaceOp(op, packed);
       return success();
    }
 };
-class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
+class AtLowering  : public OpConversionPattern<pgx::mlir::dsa::At> {
    public:
-   using OpConversionPattern<mlir::dsa::At>::OpConversionPattern;
+   using OpConversionPattern<pgx::mlir::dsa::At>::OpConversionPattern;
    static Value getBit(OpBuilder builder, Location loc, Value bits, Value pos) {
       auto i1Type = IntegerType::get(builder.getContext(), 1);
       auto i8Type = IntegerType::get(builder.getContext(), 8);
@@ -214,7 +214,7 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
 
       Value div8 = builder.create<arith::ShRUIOp>(loc, indexType, pos, const3);
       Value rem8 = builder.create<arith::AndIOp>(loc, indexType, pos, const7);
-      Value loadedByte = builder.create<mlir::util::LoadOp>(loc, i8Type, bits, div8);
+      Value loadedByte = builder.create<pgx::mlir::util::LoadOp>(loc, i8Type, bits, div8);
       Value rem8AsByte = builder.create<arith::IndexCastOp>(loc, i8Type, rem8);
       Value shifted = builder.create<arith::ShRUIOp>(loc, i8Type, loadedByte, rem8AsByte);
       Value res1 = shifted;
@@ -225,7 +225,7 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
    }
 
    public:
-   LogicalResult matchAndRewrite(mlir::dsa::At atOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+   LogicalResult matchAndRewrite(pgx::mlir::dsa::At atOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto loc = atOp->getLoc();
       auto baseType = getBaseType(atOp.getType(0));
       mlir::Value index;
@@ -241,17 +241,17 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
          if (auto* definingOp = adaptor.collection().getDefiningOp()) {
             rewriter.setInsertionPointAfter(definingOp);
          }
-         auto unpacked = rewriter.create<mlir::util::UnPackOp>(loc, adaptor.collection());
+         auto unpacked = rewriter.create<pgx::mlir::util::UnPackOp>(loc, adaptor.collection());
          index = unpacked.getResult(0);
          auto info = unpacked.getResult(1);
          size_t column = atOp.pos();
          size_t baseOffset = 1 + column * 5;
-         columnOffset = rewriter.create<mlir::util::GetTupleOp>(loc, rewriter.getIndexType(), info, baseOffset);
-         validityBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + 2), info, baseOffset + 2);
-         originalValueBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + 3), info, baseOffset + 3);
-         valueBuffer = rewriter.create<mlir::util::ArrayElementPtrOp>(loc, originalValueBuffer.getType(), originalValueBuffer, columnOffset);
-         varLenBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + 4), info, baseOffset + 4);
-         nullMultiplier = rewriter.create<mlir::util::GetTupleOp>(loc, rewriter.getIndexType(), info, baseOffset + 1);
+         columnOffset = rewriter.create<pgx::mlir::util::GetTupleOp>(loc, rewriter.getIndexType(), info, baseOffset);
+         validityBuffer = rewriter.create<pgx::mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + 2), info, baseOffset + 2);
+         originalValueBuffer = rewriter.create<pgx::mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + 3), info, baseOffset + 3);
+         valueBuffer = rewriter.create<pgx::mlir::util::ArrayElementPtrOp>(loc, originalValueBuffer.getType(), originalValueBuffer, columnOffset);
+         varLenBuffer = rewriter.create<pgx::mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + 4), info, baseOffset + 4);
+         nullMultiplier = rewriter.create<pgx::mlir::util::GetTupleOp>(loc, rewriter.getIndexType(), info, baseOffset + 1);
       }
       Value val;
       auto* context = rewriter.getContext();
@@ -265,7 +265,7 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
          Value len = rewriter.create<arith::SubIOp>(loc, rewriter.getI32Type(), pos2, pos1);
          Value pos1AsIndex = rewriter.create<arith::IndexCastOp>(loc, indexType, pos1);
          Value ptr = rewriter.create<util::ArrayElementPtrOp>(loc, util::RefType::get(context, rewriter.getI8Type()), varLenBuffer, pos1AsIndex);
-         val = rewriter.create<mlir::util::CreateVarLen>(loc, mlir::util::VarLen32Type::get(rewriter.getContext()), ptr, len);
+         val = rewriter.create<pgx::mlir::util::CreateVarLen>(loc, pgx::mlir::util::VarLen32Type::get(rewriter.getContext()), ptr, len);
       } else if (isIntegerType(baseType, 1)) {
          Value realPos = rewriter.create<arith::AddIOp>(loc, indexType, columnOffset, index);
          val = getBit(rewriter, loc, originalValueBuffer, realPos);
@@ -300,7 +300,7 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
 };
 } // namespace
 
-void mlir::dsa::populateCollectionsToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
+void pgx::mlir::dsa::populateCollectionsToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
    auto* context = patterns.getContext();
 
    patterns.insert<SortOpLowering>(typeConverter, context);
@@ -310,26 +310,26 @@ void mlir::dsa::populateCollectionsToStdPatterns(mlir::TypeConverter& typeConver
    patterns.insert<AtLowering>(typeConverter, context);
 
    auto indexType = IndexType::get(context);
-   auto i8ptrType = mlir::util::RefType::get(context, IntegerType::get(context, 8));
-   auto i8PtrType = mlir::util::RefType::get(context, IntegerType::get(context, 8));
+   auto i8ptrType = pgx::mlir::util::RefType::get(context, IntegerType::get(context, 8));
+   auto i8PtrType = pgx::mlir::util::RefType::get(context, IntegerType::get(context, 8));
 
 
-   typeConverter.addConversion([&typeConverter, indexType, i8PtrType, context](mlir::dsa::JoinHashtableType joinHashtableType) {
+   typeConverter.addConversion([&typeConverter, indexType, i8PtrType, context](pgx::mlir::dsa::JoinHashtableType joinHashtableType) {
       Type kvType = typeConverter.convertType(TupleType::get(context, {joinHashtableType.getKeyType(), joinHashtableType.getValType()}));
       Type entryType = TupleType::get(context, {i8PtrType, kvType});
 
-      auto vecType = mlir::util::RefType::get(context, entryType);
-      auto htType = util::RefType::get(context, mlir::util::RefType::get(context, entryType));
+      auto vecType = pgx::mlir::util::RefType::get(context, entryType);
+      auto htType = util::RefType::get(context, pgx::mlir::util::RefType::get(context, entryType));
       return (Type) util::RefType::get(context, TupleType::get(context, {htType, indexType, indexType, indexType, vecType}));
    });
 
 
-   typeConverter.addConversion([context, i8ptrType, indexType](mlir::dsa::RecordBatchType recordBatchType) {
+   typeConverter.addConversion([context, i8ptrType, indexType](pgx::mlir::dsa::RecordBatchType recordBatchType) {
       std::vector<Type> types;
       types.push_back(indexType);
       if (auto tupleT = recordBatchType.getRowType().dyn_cast_or_null<TupleType>()) {
          for (auto t : tupleT.getTypes()) {
-            if (t.isa<mlir::util::VarLen32Type>()) {
+            if (t.isa<pgx::mlir::util::VarLen32Type>()) {
                t = mlir::IntegerType::get(context, 32);
             } else if (t == mlir::IntegerType::get(context, 1)) {
                t = mlir::IntegerType::get(context, 8);
@@ -338,30 +338,30 @@ void mlir::dsa::populateCollectionsToStdPatterns(mlir::TypeConverter& typeConver
             types.push_back(indexType);
             types.push_back(indexType);
             types.push_back(i8ptrType);
-            types.push_back(mlir::util::RefType::get(context, t));
+            types.push_back(pgx::mlir::util::RefType::get(context, t));
             types.push_back(i8ptrType);
          }
       }
       return (Type) TupleType::get(context, types);
    });
-   typeConverter.addConversion([context, &typeConverter, indexType](mlir::dsa::RecordType recordType) {
-      return (Type) TupleType::get(context, {indexType, typeConverter.convertType(mlir::dsa::RecordBatchType::get(context, recordType.getRowType()))});
+   typeConverter.addConversion([context, &typeConverter, indexType](pgx::mlir::dsa::RecordType recordType) {
+      return (Type) TupleType::get(context, {indexType, typeConverter.convertType(pgx::mlir::dsa::RecordBatchType::get(context, recordType.getRowType()))});
    });
 
-   typeConverter.addConversion([&typeConverter, context, i8ptrType, indexType](mlir::dsa::GenericIterableType genericIterableType) {
+   typeConverter.addConversion([&typeConverter, context, i8ptrType, indexType](pgx::mlir::dsa::GenericIterableType genericIterableType) {
       Type elementType = genericIterableType.getElementType();
       Type nestedElementType = elementType;
-      if (auto nested = elementType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
+      if (auto nested = elementType.dyn_cast_or_null<pgx::mlir::dsa::GenericIterableType>()) {
          nestedElementType = nested.getElementType();
       }
       if (genericIterableType.getIteratorName() == "table_chunk_iterator") {
          return (Type) i8ptrType;
       } else if (genericIterableType.getIteratorName() == "join_ht_iterator") {
-         auto ptrType = mlir::util::RefType::get(context, typeConverter.convertType(TupleType::get(context, {i8ptrType, genericIterableType.getElementType()})));
+         auto ptrType = pgx::mlir::util::RefType::get(context, typeConverter.convertType(TupleType::get(context, {i8ptrType, genericIterableType.getElementType()})));
          return (Type) TupleType::get(context, {ptrType, indexType});
       } else if (genericIterableType.getIteratorName() == "join_ht_mod_iterator") {
          auto types = genericIterableType.getElementType().cast<mlir::TupleType>().getTypes();
-         auto ptrType = mlir::util::RefType::get(context, typeConverter.convertType(TupleType::get(context, {i8ptrType, types[0]})));
+         auto ptrType = pgx::mlir::util::RefType::get(context, typeConverter.convertType(TupleType::get(context, {i8ptrType, types[0]})));
          return (Type) TupleType::get(context, {ptrType, indexType});
       }
       return Type();

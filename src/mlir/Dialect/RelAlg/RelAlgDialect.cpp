@@ -10,7 +10,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace mlir::relalg;
+using namespace pgx::mlir::relalg;
 
 struct RelalgInlinerInterface : public DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
@@ -121,30 +121,30 @@ void RelAlgDialect::initialize() {
       >();
    addInterfaces<RelalgInlinerInterface>();
    columnManager.setContext(getContext());
-   getContext()->loadDialect<mlir::db::DBDialect>();
-   getContext()->loadDialect<mlir::dsa::DSADialect>();
+   getContext()->loadDialect<pgx::mlir::db::DBDialect>();
+   getContext()->loadDialect<pgx::mlir::dsa::DSADialect>();
    getContext()->loadDialect<mlir::arith::ArithmeticDialect>();
    mlir::arith::CmpIOp::attachInterface<ArithCmpFCmpInterface>(*getContext());
 }
 
-::mlir::Attribute mlir::relalg::TableMetaDataAttr::parse(::mlir::AsmParser& parser, ::mlir::Type type) {
+::mlir::Attribute pgx::mlir::relalg::TableMetaDataAttr::parse(::mlir::AsmParser& parser, ::mlir::Type type) {
    StringAttr attr;
    if (parser.parseLess() || parser.parseAttribute(attr) || parser.parseGreater()) return Attribute();
-   return mlir::relalg::TableMetaDataAttr::get(parser.getContext(), runtime::TableMetaData::deserialize(attr.str()));
+   return pgx::mlir::relalg::TableMetaDataAttr::get(parser.getContext(), runtime::TableMetaData::deserialize(attr.str()));
 }
-void mlir::relalg::TableMetaDataAttr::print(::mlir::AsmPrinter& printer) const {
+void pgx::mlir::relalg::TableMetaDataAttr::print(::mlir::AsmPrinter& printer) const {
    printer << "<";
    printer.printAttribute(StringAttr::get(getContext(), getMeta()->serialize()));
    printer << ">";
 }
-void mlir::relalg::ColumnDefAttr::print(::mlir::AsmPrinter& printer) const {
+void pgx::mlir::relalg::ColumnDefAttr::print(::mlir::AsmPrinter& printer) const {
    printer << "<" << getName()<<","<<getColumn().type;
    if (auto fromexisting = getFromExisting()) {
       printer << "," << fromexisting;
    }
    printer << ">";
 }
-::mlir::Attribute mlir::relalg::ColumnDefAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
+::mlir::Attribute pgx::mlir::relalg::ColumnDefAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
    mlir::SymbolRefAttr sym;
    mlir::Type t;
    mlir::ArrayAttr fromExisting;
@@ -155,22 +155,22 @@ void mlir::relalg::ColumnDefAttr::print(::mlir::AsmPrinter& printer) const {
       }
    }
    if (parser.parseGreater()) return Attribute();
-   auto columnDef= parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createDef(sym, fromExisting);
+   auto columnDef= parser.getContext()->getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager().createDef(sym, fromExisting);
    columnDef.getColumn().type=t;
    return columnDef;
 }
-void mlir::relalg::ColumnRefAttr::print(::mlir::AsmPrinter& printer) const {
+void pgx::mlir::relalg::ColumnRefAttr::print(::mlir::AsmPrinter& printer) const {
    printer << "<" << getName() << ">";
 }
-::mlir::Attribute mlir::relalg::ColumnRefAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
+::mlir::Attribute pgx::mlir::relalg::ColumnRefAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
    mlir::SymbolRefAttr sym;
    if (parser.parseLess() || parser.parseAttribute(sym) || parser.parseGreater()) return Attribute();
-   return parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
+   return parser.getContext()->getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
 }
-void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) const {
+void pgx::mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) const {
    printer << "<" << getAttr().getName() << "," << stringifyEnum(getSortSpec()) << ">";
 }
-::mlir::Attribute mlir::relalg::SortSpecificationAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
+::mlir::Attribute pgx::mlir::relalg::SortSpecificationAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
    mlir::SymbolRefAttr sym;
    std::string sortSpecDescr;
    if (parser.parseLess() || parser.parseAttribute(sym) || parser.parseComma() || parser.parseKeywordOrString(&sortSpecDescr) || parser.parseGreater()) {
@@ -180,7 +180,7 @@ void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) con
    if (!sortSpec.hasValue()) {
       return {};
    }
-   auto columnRefAttr = parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
-   return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.getValue());
+   auto columnRefAttr = parser.getContext()->getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
+   return pgx::mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.getValue());
 }
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.cpp.inc"

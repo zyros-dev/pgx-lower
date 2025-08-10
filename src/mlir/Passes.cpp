@@ -35,7 +35,7 @@ void createLowerRelAlgPipeline(mlir::OpPassManager& pm) {
 
 // DB → Standard MLIR + PostgreSQL SPI Pipeline
 void createLowerDBPipeline(mlir::OpPassManager& pm) {
-    pm.addPass(mlir::db::createLowerToStdPass());
+    pm.addPass(pgx::mlir::db::createLowerToStdPass());
     pm.addPass(mlir::createCanonicalizerPass());
 }
 
@@ -81,7 +81,7 @@ bool optimize(mlir::ModuleOp module, mlir::MLIRContext* context) {
     pm.enableVerifier(true);
     
     // Query optimization (future: implement when needed)
-    // mlir::relalg::createQueryOptPipeline(pm, db);
+    // pgx::mlir::relalg::createQueryOptPipeline(pm, db);
     
     return mlir::succeeded(pm.run(module));
 }

@@ -4,7 +4,7 @@
 #include "mlir/IR/DialectImplementation.h"
 #include <mlir/Transforms/InliningUtils.h>
 using namespace mlir;
-using namespace mlir::db;
+using namespace pgx::mlir::db;
 struct DBInlinerInterface : public DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
    bool isLegalToInline(Operation*, Region*, bool, BlockAndValueMapping&) const final override {
@@ -21,6 +21,6 @@ void DBDialect::initialize() {
       >();
    addInterfaces<DBInlinerInterface>();
    registerTypes();
-   runtimeFunctionRegistry = mlir::db::RuntimeFunctionRegistry::getBuiltinRegistry(getContext());
+   runtimeFunctionRegistry = pgx::mlir::db::RuntimeFunctionRegistry::getBuiltinRegistry(getContext());
 }
 #include "mlir/Dialect/DB/IR/DBOpsDialect.cpp.inc"

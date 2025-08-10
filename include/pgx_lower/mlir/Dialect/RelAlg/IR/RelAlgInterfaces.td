@@ -2,7 +2,7 @@
 #define Interfaces
 include "mlir/IR/OpBase.td"
 def Relalg_CmpOpInterface : OpInterface<"CmpOpInterface"> {
-  let cppNamespace = "::mlir::relalg";
+  let cppNamespace = "::pgx::mlir::relalg";
 
   let methods = [
     InterfaceMethod<
@@ -39,27 +39,27 @@ def Operator : OpInterface<"Operator"> {
 let methods = [
 InterfaceMethod<
         "get all columns that are used directly by this operator",
-        "mlir::relalg::ColumnSet", "getUsedColumns",(ins ),"", /*defaultImplementation=*/[{
-    return mlir::relalg::detail::getUsedColumns(this->getOperation());
+        "pgx::mlir::relalg::ColumnSet", "getUsedColumns",(ins ),"", /*defaultImplementation=*/[{
+    return pgx::mlir::relalg::detail::getUsedColumns(this->getOperation());
 }]
 >,
 InterfaceMethod<
         "get all columns that are available after this operator",
-        "mlir::relalg::ColumnSet", "getAvailableColumns",(ins ),"", /*defaultImplementation=*/[{
-return mlir::relalg::detail::getAvailableColumns(this->getOperation());
+        "pgx::mlir::relalg::ColumnSet", "getAvailableColumns",(ins ),"", /*defaultImplementation=*/[{
+return pgx::mlir::relalg::detail::getAvailableColumns(this->getOperation());
 }]
 >,
 InterfaceMethod<
         "get all functional dependencies that hold after this operator",
-        "mlir::relalg::FunctionalDependencies", "getFDs",(ins ),"", /*defaultImplementation=*/[{
-return mlir::relalg::detail::getFDs(this->getOperation());
+        "pgx::mlir::relalg::FunctionalDependencies", "getFDs",(ins ),"", /*defaultImplementation=*/[{
+return pgx::mlir::relalg::detail::getFDs(this->getOperation());
 }]
 >,
 
 InterfaceMethod<
         "",
         "void", "moveSubTreeBefore",(ins "Operator":$before),"", /*defaultImplementation=*/[{
-mlir::relalg::detail::moveSubTreeBefore(this->getOperation(),before);
+pgx::mlir::relalg::detail::moveSubTreeBefore(this->getOperation(),before);
 }]
 >,
 InterfaceMethod<
@@ -69,7 +69,7 @@ InterfaceMethod<
     auto op=this->getOperation();
     for (auto operand : op->getOperands()) {
         mlir::Type t=operand.getType();
-        bool isreltype=t.isa<mlir::relalg::TupleStreamType>();
+        bool isreltype=t.isa<pgx::mlir::relalg::TupleStreamType>();
         auto childOp=operand.getDefiningOp();
         if (isreltype&&childOp) {
             auto childOperator=mlir::dyn_cast_or_null<Operator>(childOp);
@@ -102,7 +102,7 @@ InterfaceMethod<
     size_t j=0;
     for (auto operand : op->getOperands()) {
         mlir::Type t=operand.getType();
-        bool isreltype=t.isa<mlir::relalg::TupleStreamType>();
+        bool isreltype=t.isa<pgx::mlir::relalg::TupleStreamType>();
         auto childOp=operand.getDefiningOp();
         if (isreltype&&childOp) {
             op->setOperand(i,children[j].asRelation());
@@ -120,14 +120,14 @@ return this->getOperation()->getResult(0);
 >,
 InterfaceMethod<
         "get all 'free' columns",
-        "mlir::relalg::ColumnSet", "getFreeColumns",(ins ),"", /*defaultImplementation=*/[{
-return mlir::relalg::detail::getFreeColumns(this->getOperation());
+        "pgx::mlir::relalg::ColumnSet", "getFreeColumns",(ins ),"", /*defaultImplementation=*/[{
+return pgx::mlir::relalg::detail::getFreeColumns(this->getOperation());
 }]
 >,
 InterfaceMethod<
         "get all columns that are created by this operator",
-        "mlir::relalg::ColumnSet", "getCreatedColumns",(ins ),"", /*defaultImplementation=*/[{
-return mlir::relalg::ColumnSet();
+        "pgx::mlir::relalg::ColumnSet", "getCreatedColumns",(ins ),"", /*defaultImplementation=*/[{
+return pgx::mlir::relalg::ColumnSet();
 }]
 >
 ];
@@ -143,19 +143,19 @@ return this->getOperation()->getOperand(0).getDefiningOp();
 InterfaceMethod<
         "assoc",
         "bool", "isAssoc",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return mlir::relalg::detail::assoc.contains(mlir::relalg::detail::getBinaryOperatorType(this->getOperation()), mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+return pgx::mlir::relalg::detail::assoc.contains(pgx::mlir::relalg::detail::getBinaryOperatorType(this->getOperation()), pgx::mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
 }]
 >,
 InterfaceMethod<
 "assoc",
 "bool", "isLAsscom",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return mlir::relalg::detail::lAsscom.contains(mlir::relalg::detail::getBinaryOperatorType(this->getOperation()), mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+return pgx::mlir::relalg::detail::lAsscom.contains(pgx::mlir::relalg::detail::getBinaryOperatorType(this->getOperation()), pgx::mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
 }]
 >,
 InterfaceMethod<
 "assoc",
 "bool", "isRAsscom",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return mlir::relalg::detail::rAsscom.contains(mlir::relalg::detail::getBinaryOperatorType(this->getOperation()), mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+return pgx::mlir::relalg::detail::rAsscom.contains(pgx::mlir::relalg::detail::getBinaryOperatorType(this->getOperation()), pgx::mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
 }]
 >,
 InterfaceMethod<
@@ -177,19 +177,19 @@ return this->getOperation()->getOperand(0).getDefiningOp();
 InterfaceMethod<
 "assoc",
 "bool", "reorderable",(ins "UnaryOperator":$binop),"", /*defaultImplementation=*/[{
-return mlir::relalg::detail::reorderable.contains(mlir::relalg::detail::getUnaryOperatorType(this->getOperation()), mlir::relalg::detail::getUnaryOperatorType(binop.getOperation()));
+return pgx::mlir::relalg::detail::reorderable.contains(pgx::mlir::relalg::detail::getUnaryOperatorType(this->getOperation()), pgx::mlir::relalg::detail::getUnaryOperatorType(binop.getOperation()));
 }]
 >,
 InterfaceMethod<
 "assoc",
 "bool", "lPushable",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return mlir::relalg::detail::lPushable.contains(mlir::relalg::detail::getUnaryOperatorType(this->getOperation()), mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+return pgx::mlir::relalg::detail::lPushable.contains(pgx::mlir::relalg::detail::getUnaryOperatorType(this->getOperation()), pgx::mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
 }]
 >,
 InterfaceMethod<
 "assoc",
 "bool", "rPushable",(ins "BinaryOperator":$binop),"", /*defaultImplementation=*/[{
-return mlir::relalg::detail::rPushable.contains(mlir::relalg::detail::getUnaryOperatorType(this->getOperation()), mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
+return pgx::mlir::relalg::detail::rPushable.contains(pgx::mlir::relalg::detail::getUnaryOperatorType(this->getOperation()), pgx::mlir::relalg::detail::getBinaryOperatorType(binop.getOperation()));
 }]
 >
 ];
@@ -236,7 +236,7 @@ InterfaceMethod<
         "",
         "void", "addPredicate",(ins "std::function<mlir::Value(mlir::Value, mlir::OpBuilder& builder)>":$producer),""
         , /*op=*/[{
-mlir::relalg::detail::addPredicate(this->getOperation(),producer);
+pgx::mlir::relalg::detail::addPredicate(this->getOperation(),producer);
 }]>,
 InterfaceMethod<
         "",
@@ -249,7 +249,7 @@ InterfaceMethod<
         "",
         "void", "initPredicate",(ins ),""
         , /*op=*/[{
-mlir::relalg::detail::initPredicate(this->getOperation());
+pgx::mlir::relalg::detail::initPredicate(this->getOperation());
 }]
 >];
 }

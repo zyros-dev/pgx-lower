@@ -5,7 +5,7 @@
 #include "mlir/IR/OpDefinition.h"
 
 // Forward declaration
-namespace mlir::util {
+namespace pgx::mlir::util {
     class FunctionHelper;
 }
 
