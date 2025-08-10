@@ -647,3 +647,20 @@ target_link_libraries(test_circular_type_fix
 )
 add_test(NAME CircularTypeFixTest COMMAND test_circular_type_fix)
 
+# Minimal hang reproduction test - isolates exact infinite loop trigger pattern
+add_executable(test_minimal_hang_repro minimal_hang_repro.cpp)
+target_link_libraries(test_minimal_hang_repro
+    gtest gtest_main
+    MLIRDBDialect
+    MLIRDSADialect
+    MLIRUtilDialect
+    MLIRDSAToStd
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRPass
+    MLIRTransforms
+    pgx_logging
+)
+add_test(NAME MinimalHangReproTest COMMAND test_minimal_hang_repro)
+
