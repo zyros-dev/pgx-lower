@@ -22,6 +22,7 @@
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/IR/Verifier.h"
 #include "execution/logging.h"
 
 using namespace mlir;
@@ -34,11 +35,21 @@ protected:
                            pgx::mlir::util::UtilDialect>();
     }
 
+    // Helper to validate IR using MLIR's built-in verification
+    bool validateIR(ModuleOp module, const std::string& stepName) {
+        PGX_INFO("=== Validating: " + stepName + " ===");
+        bool isValid = mlir::verify(module).succeeded();
+        if (isValid) {
+            PGX_INFO("✓ IR validation passed: " + stepName);
+        } else {
+            PGX_ERROR("✗ IR validation FAILED: " + stepName + " (see stderr for details)");
+        }
+        return isValid;
+    }
+
     MLIRContext context;
 };
 
-// Test that DSAToStd can handle unconverted DB nullable types  
-// RE-ENABLED: Testing if pre-4g-2c revert broke the circular type cycle
 TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     PGX_INFO("Testing DSAToStd with unconverted nullable type");
     
@@ -46,13 +57,21 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     auto module = ModuleOp::create(builder.getUnknownLoc());
     builder.setInsertionPointToStart(module.getBody());
     
+    // Validate empty module
+    ASSERT_TRUE(validateIR(module, "Empty module")) << "Empty module should be valid";
+    
     // Create function with DSA operations and unconverted nullable types
     auto funcType = builder.getFunctionType({}, {});
     auto func = builder.create<func::FuncOp>(
         builder.getUnknownLoc(), "test_unconverted", funcType);
     
+    module.push_back(func);
+    ASSERT_TRUE(validateIR(module, "After adding function")) << "Module with function should be valid";
+    
     auto* block = func.addEntryBlock();
     builder.setInsertionPointToStart(block);
+    
+    ASSERT_TRUE(validateIR(module, "After adding entry block")) << "Function with entry block should be valid";
     
     // Create table builder
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
@@ -61,13 +80,20 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
+    ASSERT_TRUE(validateIR(module, "After CreateDSOp")) << "Module should be valid after CreateDSOp";
+    
     // Create a nullable value directly (simulating DBToStd not converting it)
     auto value = builder.create<arith::ConstantIntOp>(
         builder.getUnknownLoc(), 42, 64);
+    
+    ASSERT_TRUE(validateIR(module, "After arith constant")) << "Module should be valid after constant";
+    
     auto asNullableOp = builder.create<pgx::db::AsNullableOp>(
         builder.getUnknownLoc(), 
         pgx::db::NullableI64Type::get(&context),
         value.getResult());
+    
+    ASSERT_TRUE(validateIR(module, "After AsNullableOp")) << "Module should be valid after AsNullableOp";
     
     // Append the nullable value
     builder.create<pgx::mlir::dsa::DSAppendOp>(
@@ -75,8 +101,11 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
         createDSOp.getResult(),
         asNullableOp.getResult());
     
+    ASSERT_TRUE(validateIR(module, "After DSAppendOp")) << "Module should be valid after DSAppendOp";
+    
     builder.create<func::ReturnOp>(builder.getUnknownLoc());
-    module.push_back(func);
+    
+    ASSERT_TRUE(validateIR(module, "Complete IR before conversion")) << "Complete IR should be valid";
     
     // Run only DSAToStd pass (without DBToStd)
     PassManager pm(&context);
@@ -226,4 +255,79 @@ TEST_F(CircularTypeFixTest, CompletePipelineNoCircular) {
     EXPECT_FALSE(hasDSAOps) << "All DSA operations should be converted";
     
     PGX_INFO("Pipeline test passed - no circular materialization!");
+}
+
+// Test that validates IR construction step by step before conversion
+TEST_F(CircularTypeFixTest, ValidateIRConstruction) {
+    PGX_INFO("Testing step-by-step IR construction with validation");
+    
+    OpBuilder builder(&context);
+    auto module = ModuleOp::create(builder.getUnknownLoc());
+    builder.setInsertionPointToStart(module.getBody());
+    
+    // Step 1: Validate empty module
+    ASSERT_TRUE(validateIR(module, "Empty module")) << "Empty module should be valid";
+    
+    // Step 2: Create and validate function
+    auto funcType = builder.getFunctionType({}, {});
+    auto func = builder.create<func::FuncOp>(
+        builder.getUnknownLoc(), "test_step_by_step", funcType);
+    module.push_back(func);
+    
+    ASSERT_TRUE(validateIR(module, "Module with empty function")) 
+        << "Module with empty function should be valid";
+    
+    // Step 3: Add entry block and validate
+    auto* block = func.addEntryBlock();
+    builder.setInsertionPointToStart(block);
+    
+    ASSERT_TRUE(validateIR(module, "Function with entry block")) 
+        << "Function with entry block should be valid";
+    
+    // Step 4: Create DSA table builder
+    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+        &context, TupleType::get(&context, {builder.getI64Type()}));
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+        builder.getUnknownLoc(), tableBuilderType, 
+        builder.getStringAttr("id:int[64]"));
+    
+    ASSERT_TRUE(validateIR(module, "After DSA CreateDSOp")) 
+        << "Module should be valid after CreateDSOp";
+    
+    // Step 5: Create arith constant
+    auto value = builder.create<arith::ConstantIntOp>(
+        builder.getUnknownLoc(), 42, 64);
+    
+    ASSERT_TRUE(validateIR(module, "After arith constant")) 
+        << "Module should be valid after arith constant";
+    
+    // Step 6: Create DB nullable value
+    auto asNullableOp = builder.create<pgx::db::AsNullableOp>(
+        builder.getUnknownLoc(), 
+        pgx::db::NullableI64Type::get(&context),
+        value.getResult());
+    
+    ASSERT_TRUE(validateIR(module, "After DB AsNullableOp")) 
+        << "Module should be valid after AsNullableOp";
+    
+    // Step 7: Create DSA append operation
+    builder.create<pgx::mlir::dsa::DSAppendOp>(
+        builder.getUnknownLoc(),
+        createDSOp.getResult(),
+        asNullableOp.getResult());
+    
+    ASSERT_TRUE(validateIR(module, "After DSA DSAppendOp")) 
+        << "Module should be valid after DSAppendOp";
+    
+    // Step 8: Add return and final validation
+    builder.create<func::ReturnOp>(builder.getUnknownLoc());
+    
+    ASSERT_TRUE(validateIR(module, "Complete IR before conversion")) 
+        << "Complete IR should be valid before conversion passes";
+    
+    PGX_INFO("✓ All IR construction steps validated successfully");
+    
+    // Optional: Print the IR to see what we built
+    PGX_INFO("=== Generated IR ===");
+    module.print(llvm::errs());
 }
