@@ -61,12 +61,12 @@ class BaseTableTranslator : public Translator {
 
       auto chunkIterator = builder.create<pgx::mlir::dsa::ScanSource>(baseTableOp->getLoc(), chunkIterable, builder.getStringAttr(scanDescription));
 
-      auto forOp = builder.create<pgx::mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange{}, chunkIterator, ::mlir::Value(), ::mlir::ValueRange{});
+      auto forOp = builder.create<pgx::mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange(), chunkIterator, ::mlir::Value(), ::mlir::ValueRange{});
       ::mlir::Block* block = new ::mlir::Block;
       block->addArgument(recordBatch, baseTableOp->getLoc());
       forOp.getBodyRegion().push_back(block);
       ::mlir::OpBuilder builder1(forOp.getBodyRegion());
-      auto forOp2 = builder1.create<pgx::mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange{}, forOp.getInductionVar(), ::mlir::Value(), ::mlir::ValueRange{});
+      auto forOp2 = builder1.create<pgx::mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange(), forOp.getInductionVar(), ::mlir::Value(), ::mlir::ValueRange{});
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(recordBatch.getElementType(), baseTableOp->getLoc());
       forOp2.getBodyRegion().push_back(block2);

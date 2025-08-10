@@ -34,7 +34,7 @@ protected:
         
         // Register all required dialects
         context.loadDialect<pgx::mlir::dsa::DSADialect>();
-        context.loadDialect<pgx::db::DBDialect>();
+        context.loadDialect<pgx::mlir::db::DBDialect>();
         context.loadDialect<pgx::mlir::util::UtilDialect>();
         context.loadDialect<func::FuncDialect>();
         context.loadDialect<arith::ArithDialect>();

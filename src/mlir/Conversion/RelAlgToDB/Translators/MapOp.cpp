@@ -9,12 +9,12 @@ class MapTranslator : public Translator {
    pgx::mlir::relalg::MapOp mapOp;
 
    public:
-   MapTranslator(pgx::mlir::relalg::MapOp mapOp) : pgx::mlir::relalg::Translator(mapOp), mapOp(mapOp) {}
+   MapTranslator(pgx::mlir::relalg::MapOp mapOp) : Translator(mapOp), mapOp(mapOp) {}
 
-   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder,TranslatorContext& context) override {
       auto scope = context.createScope();
       auto computedCols = mergeRelationalBlock(
-         builder.getInsertionBlock(), op.getOperation(), [](auto x) { return &x->getRegion(0).front(); }, context, scope);
+         builder.getInsertionBlock(), this->op.getOperation(), [](auto x) { return &x->getRegion(0).front(); }, context, scope);
       assert(computedCols.size() == mapOp.getComputedCols().size());
       for (size_t i = 0; i < computedCols.size(); i++) {
          context.setValueForAttribute(scope, &mapOp.getComputedCols()[i].cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn(), computedCols[i]);
@@ -32,7 +32,7 @@ class MapTranslator : public Translator {
          available = children[0]->getAvailableColumns();
       }
       for (auto computedCol : mapOp.getComputedCols()) {
-         available.insert(&computedCol.cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn());
+         available.insert(&computedCol.cast<ColumnDefAttr>().getColumn());
       }
       return available;
    }
