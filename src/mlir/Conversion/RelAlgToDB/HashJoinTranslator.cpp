@@ -1,5 +1,5 @@
 #include "mlir/Conversion/RelAlgToDB/HashJoinTranslator.h"
-#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
 
 using namespace pgx::mlir::relalg;
 void HashJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) {
@@ -25,7 +25,7 @@ void HashJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, pgx::m
    }
    this->orderedValues = pgx::mlir::relalg::OrderedAttributes::fromColumns(leftValues);
    keyTupleType = orderedKeys.getTupleType(op.getContext());
-   valTupleType = orderedValues.getTupleType(op.getContext(), impl->markable ? std::vector<Type>({mlir::IntegerType::get(op->getContext(), 64)}) : std::vector<Type>());
+   valTupleType = orderedValues.getTupleType(op.getContext(), impl->markable ? std::vector<mlir::Type>({mlir::IntegerType::get(op->getContext(), 64)}) : std::vector<mlir::Type>());
    entryType = mlir::TupleType::get(op.getContext(), {keyTupleType, valTupleType});
 }
 void HashJoinTranslator::produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) {
@@ -74,8 +74,8 @@ void HashJoinTranslator::consume(pgx::mlir::relalg::Translator* child, mlir::OpB
    if (child == builderChild) {
       auto inlinedKeys = pgx::mlir::relalg::HashJoinUtils::inlineKeys(&joinOp->getRegion(0).front(), leftKeys, rightKeys, builder.getInsertionBlock(), builder.getInsertionPoint(), context);
       mlir::Value packedKey = builder.create<pgx::mlir::util::PackOp>(loc, inlinedKeys);
-      auto const0 = builder.create<mlir::arith::ConstantOp>(loc, builder.getIntegerType(64), builder.getI64IntegerAttr(0));
-      mlir::Value packedValues = orderedValues.pack(context, builder, loc, impl->markable ? std::vector<Value>{const0} : std::vector<Value>());
+      auto const0 = builder.create<mlir::arith::ConstantOp>(loc, builder.getI64Type(), builder.getI64IntegerAttr(0));
+      mlir::Value packedValues = orderedValues.pack(context, builder, loc, impl->markable ? std::vector<mlir::Value>{const0} : std::vector<mlir::Value>());
       auto insertOp = builder.create<pgx::mlir::dsa::HashtableInsert>(loc, joinHashtable, packedKey, packedValues);
       {
          mlir::Block* aggrBuilderBlock = new mlir::Block;
@@ -87,8 +87,8 @@ void HashJoinTranslator::consume(pgx::mlir::relalg::Translator* child, mlir::OpB
          builder.create<pgx::mlir::dsa::YieldOp>(loc, hashed);
       }
    } else if (child == this->children[1].get()) {
-      mlir::TupleType entryAndValuePtrType = mlir::TupleType::get(ctxt, TypeRange{entryType, util::RefType::get(ctxt, valTupleType)});
-      Type iteratorType = impl->markable ? entryAndValuePtrType : entryType;
+      mlir::TupleType entryAndValuePtrType = mlir::TupleType::get(ctxt, mlir::TypeRange{entryType, pgx::mlir::util::RefType::get(ctxt, valTupleType)});
+      mlir::Type iteratorType = impl->markable ? entryAndValuePtrType : entryType;
       auto packedKey = builder.create<pgx::mlir::util::PackOp>(loc, pgx::mlir::relalg::HashJoinUtils::inlineKeys(&joinOp->getRegion(0).front(), rightKeys, leftKeys, builder.getInsertionBlock(), builder.getInsertionPoint(), context));
       mlir::Type htIterable = pgx::mlir::dsa::GenericIterableType::get(ctxt, iteratorType, impl->markable ? "join_ht_mod_iterator" : "join_ht_iterator");
       impl->beforeLookup(context, builder);
@@ -101,8 +101,8 @@ void HashJoinTranslator::consume(pgx::mlir::relalg::Translator* child, mlir::OpB
          forOp2.getBodyRegion().push_back(block2);
          mlir::OpBuilder builder2(forOp2.getBodyRegion());
 
-         Value entry = forOp2.getInductionVar();
-         Value valuePtr;
+         mlir::Value entry = forOp2.getInductionVar();
+         mlir::Value valuePtr;
          if (impl->markable) {
             auto separated = builder2.create<pgx::mlir::util::UnPackOp>(loc, forOp2.getInductionVar()).getResults();
             entry = separated[0];
@@ -110,14 +110,14 @@ void HashJoinTranslator::consume(pgx::mlir::relalg::Translator* child, mlir::OpB
          }
          auto unpacked = builder2.create<pgx::mlir::util::UnPackOp>(loc, entry).getResults();
          unpackKeys(scope, builder2, unpacked[0], context);
-         Value markerVal;
+         mlir::Value markerVal;
          unpackValues(scope, builder2, unpacked[1], context, markerVal);
          {
             mlir::Value matched = evaluatePredicate(context, builder2, scope);
-            Value marker;
+            mlir::Value marker;
             if (impl->markable) {
-               Value castedRef = builder2.create<util::GenericMemrefCastOp>(loc, util::RefType::get(ctxt, builder.getI64Type()), valuePtr);
-               marker = builder2.create<util::ToMemrefOp>(loc, MemRefType::get({}, builder.getIntegerType(64)), castedRef);
+               mlir::Value castedRef = builder2.create<pgx::mlir::util::GenericMemrefCastOp>(loc, pgx::mlir::util::RefType::get(ctxt, builder2.getI64Type()), valuePtr);
+               marker = builder2.create<pgx::mlir::util::ToMemrefOp>(loc, mlir::MemRefType::get({}, builder2.getIntegerType(64)), castedRef);
             }
             impl->handleLookup(matched, marker, context, builder2);
          }

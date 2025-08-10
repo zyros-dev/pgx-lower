@@ -179,7 +179,7 @@ def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethod
         LogicalResult $cppClass::inferReturnTypes(
                 MLIRContext* context, std::optional<Location> location,
                 ValueRange operands, DictionaryAttr attributes,
-                RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
+                OpaqueProperties properties, RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
             inferredReturnTypes.assign({operands[0].getType().cast<pgx::mlir::db::NullableType>().getType()});
             return success();
         }
@@ -211,7 +211,7 @@ class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
     let extraClassDefinition = [{
         LogicalResult $cppClass::inferReturnTypes(
         MLIRContext* context, std::optional<Location> location, ValueRange operands,
-        DictionaryAttr attributes, RegionRange regions,
+        DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
         SmallVectorImpl<Type>& inferredReturnTypes) {
             return inferReturnType(context,location,operands,inferredReturnTypes);
         }
@@ -231,7 +231,7 @@ def DB_MulOp : DB_BinaryOp<"mul"> {
   let extraClassDefinition = [{
     LogicalResult $cppClass::inferReturnTypes(
    MLIRContext* context, std::optional<Location> location, ValueRange operands,
-   DictionaryAttr attributes, RegionRange regions,
+   DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
    SmallVectorImpl<Type>& inferredReturnTypes) {
          return inferMulReturnType(context,location,operands,inferredReturnTypes);
     }
@@ -243,7 +243,7 @@ def DB_DivOp : DB_BinaryOp<"div"> {
   let extraClassDefinition = [{
     LogicalResult $cppClass::inferReturnTypes(
    MLIRContext* context, std::optional<Location> location, ValueRange operands,
-   DictionaryAttr attributes, RegionRange regions,
+   DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
    SmallVectorImpl<Type>& inferredReturnTypes) {
          return inferDivReturnType(context,location,operands,inferredReturnTypes);
     }
@@ -255,7 +255,7 @@ def DB_ModOp : DB_BinaryOp<"mod"> {
   let extraClassDefinition = [{
     LogicalResult $cppClass::inferReturnTypes(
    MLIRContext* context, std::optional<Location> location, ValueRange operands,
-   DictionaryAttr attributes, RegionRange regions,
+   DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
    SmallVectorImpl<Type>& inferredReturnTypes) {
          return inferDivReturnType(context,location,operands,inferredReturnTypes);
     }
@@ -268,7 +268,7 @@ class DB_LogicalOp<string mnemonic, list<Trait> traits = []> :
     let results = (outs AnyBool:$res);
     let extraClassDefinition = [{
         LogicalResult $cppClass::inferReturnTypes(MLIRContext* context, std::optional<Location>, ValueRange operands,
-                DictionaryAttr, RegionRange, SmallVectorImpl<Type>& inferredReturnTypes) {
+                DictionaryAttr, OpaqueProperties, RegionRange, SmallVectorImpl<Type>& inferredReturnTypes) {
             mlir::Type i1 = IntegerType::get(context, 1);
             inferredReturnTypes.assign({wrapNullableType(context, i1, operands)});
             return success();

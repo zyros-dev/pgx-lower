@@ -3,8 +3,8 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
-#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include "mlir/Dialect/Util/IR/UtilOps.h"
 #include "mlir/IR/IRMapping.h"

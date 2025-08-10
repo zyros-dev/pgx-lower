@@ -1,8 +1,8 @@
 #include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
-#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 class SetOpTranslator : public pgx::mlir::relalg::Translator {
    Operator unionOp;
    std::unordered_map<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*> leftMapping;
