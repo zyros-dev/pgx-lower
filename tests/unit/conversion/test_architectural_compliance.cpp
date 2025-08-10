@@ -131,7 +131,7 @@ TEST_F(ArchitecturalComplianceTest, TestDSAOperationCreation) {
     Block* entryBlock = funcOp.addEntryBlock();
     builder->setInsertionPointToStart(entryBlock);
     
-    // Test ScanSourceOp creation with current API
+    // Test ScanSource creation with current API
     auto tupleType = builder->getTupleType({builder->getI32Type()});
     auto recordBatchType = ::pgx::mlir::dsa::RecordBatchType::get(&context, tupleType);
     auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(

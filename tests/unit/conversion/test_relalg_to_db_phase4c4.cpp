@@ -99,9 +99,9 @@ TEST_F(RelAlgToDBPhase4c4Test, DISABLED_GeneratesDSAOperations) {
             foundDSAppend = true;
         } else if (isa<pgx::mlir::dsa::NextRow>(op)) {
             foundNextRow = true;
-        } else if (isa<pgx::mlir::dsa::FinalizeOp>(op)) {
+        } else if (isa<pgx::mlir::dsa::Finalize>(op)) {
             foundFinalize = true;
-            auto finalizeOp = cast<pgx::mlir::dsa::FinalizeOp>(op);
+            auto finalizeOp = cast<pgx::mlir::dsa::Finalize>(op);
             EXPECT_TRUE(finalizeOp.getRes().getType().isa<pgx::mlir::dsa::TableType>())
                 << "Finalize should produce a Table";
         }

@@ -10,7 +10,7 @@ TEST_F(SimplePipelinePhase4c4DisabledTest, PlaceholderTest) {
     PGX_DEBUG("test_simple_pipeline_phase4c4.cpp disabled - DSA operations have been removed");
     
     // This test file previously tested DSA-specific operations:
-    // - CreateDS, Append, NextRow, FinalizeOp
+    // - CreateDS, Append, NextRow, Finalize
     // - TableBuilderType, TableType
     // 
     // These operations have been removed in favor of using DB operations directly.

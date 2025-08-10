@@ -77,7 +77,7 @@ LogicalResult mlir::pgx_conversion::MaterializeToMixedOperationsPattern::matchAn
     
     // Step 5: Finalize the table
     auto tableType = ::pgx::mlir::dsa::TableType::get(context);
-    auto finalTable = rewriter.create<::pgx::mlir::dsa::FinalizeOp>(loc, tableType, tableBuilder.getResult());
+    auto finalTable = rewriter.create<::pgx::mlir::dsa::Finalize>(loc, tableType, tableBuilder.getResult());
     
     // Replace MaterializeOp with the finalized table
     // Note: Type conversion is needed here - DSA table to RelAlg table

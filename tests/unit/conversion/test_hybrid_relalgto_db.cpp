@@ -110,7 +110,7 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
             foundStoreResult = true;
         } else if (isa<pgx::db::StreamResultsOp>(op)) {
             foundStreamResults = true;
-        } else if (isa<pgx::mlir::dsa::FinalizeOp>(op)) {
+        } else if (isa<pgx::mlir::dsa::Finalize>(op)) {
             foundFinalize = true;  // Should NOT find this in hybrid approach
         }
     });
