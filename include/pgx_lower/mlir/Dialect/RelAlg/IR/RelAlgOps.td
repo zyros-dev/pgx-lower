@@ -63,7 +63,7 @@ def TableMetaDataAttr : RelAlg_Attr<"TableMetaData"> {
 
 def ColumnDefAttr : RelAlg_Attr<"ColumnDef"> {
     let mnemonic = "columndef";
-    let parameters = (ins "SymbolRefAttr":$name,"std::shared_ptr<Column>":$columnPtr,"Attribute":$fromExisting);
+    let parameters = (ins "::mlir::SymbolRefAttr":$name,"std::shared_ptr<Column>":$columnPtr,"::mlir::Attribute":$fromExisting);
     let extraClassDeclaration = [{
         Column &getColumn() const { return *getColumnPtr();  }
     }];
@@ -71,7 +71,7 @@ def ColumnDefAttr : RelAlg_Attr<"ColumnDef"> {
 }
 def ColumnRefAttr : RelAlg_Attr<"ColumnRef"> {
     let mnemonic = "columnref";
-    let parameters = (ins "SymbolRefAttr":$name,"std::shared_ptr<Column>":$columnPtr);
+    let parameters = (ins "::mlir::SymbolRefAttr":$name,"std::shared_ptr<Column>":$columnPtr);
     let extraClassDeclaration = [{
         Column &getColumn() const { return *getColumnPtr();  }
     }];
