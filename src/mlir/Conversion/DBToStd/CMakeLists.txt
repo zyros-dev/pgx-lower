@@ -1,14 +1,18 @@
-add_mlir_conversion_library(MLIRDBToStdConversion
-  DBToStd.cpp
-  
-  LINK_LIBS PUBLIC
-  MLIRArithDialect
-  MLIRSCFDialect  
-  MLIRFuncDialect
-  MLIRLLVMDialect
-  MLIRDBDialect
-  MLIRDSADialect
-  MLIRTransformUtils
-  MLIRPass
-  MLIRSupport
-)
+add_mlir_conversion_library(MLIRDBToArrowStd
+        LowerToStd.cpp
+
+        ADDITIONAL_HEADER_DIRS
+        ../../../mlir/Conversion/DBToArrowStd
+
+        DEPENDS
+        dump-rt-defs
+        string-rt-defs
+        date-rt-defs
+        LINK_COMPONENTS
+        Core
+
+        LINK_LIBS mlir-support PUBLIC
+        MLIRIR
+        MLIRDB
+        MLIRSCFTransforms
+        )
