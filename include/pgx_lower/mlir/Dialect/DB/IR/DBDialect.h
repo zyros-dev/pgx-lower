@@ -1,10 +1,18 @@
-#ifndef MLIR_DIALECT_DB_IR_DBDIALECT_H
-#define MLIR_DIALECT_DB_IR_DBDIALECT_H
+#ifndef PGX_DIALECT_DB_IR_DBDIALECT_H
+#define PGX_DIALECT_DB_IR_DBDIALECT_H
 
 #include "mlir/IR/Dialect.h"
-namespace mlir::db {
-class RuntimeFunctionRegistry;
-} // end namespace mlir::db
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/Types.h"
+
+// Forward declare the implementation classes to resolve namespace issues
+namespace mlir {
+class Type;
+class DialectAsmParser;
+class DialectAsmPrinter;
+}
+
 #include "mlir/Dialect/DB/IR/DBOpsDialect.h.inc"
 
-#endif // MLIR_DIALECT_DB_IR_DBDIALECT_H
+#endif // PGX_DIALECT_DB_IR_DBDIALECT_H
