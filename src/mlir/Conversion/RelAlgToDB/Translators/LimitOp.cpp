@@ -16,12 +16,15 @@ class LimitTranslator : public pgx::mlir::relalg::Translator {
       auto one = builder.create<::mlir::arith::ConstantIntOp>(limitOp.getLoc(), 1, 64);
       ::mlir::Value loadedCounter = builder.create<pgx::mlir::util::LoadOp>(limitOp.getLoc(), builder.getI64Type(), counter, mlir::Value());
       ::mlir::Value addedCounter = builder.create<::mlir::arith::AddIOp>(limitOp.getLoc(), loadedCounter, one);
-      ::mlir::Value upper = builder.create<::mlir::arith::ConstantIntOp>(limitOp.getLoc(), limitOp.rows(), 64);
+      ::mlir::Value upper = builder.create<::mlir::arith::ConstantIntOp>(limitOp.getLoc(), limitOp.getRows(), 64);
       ::mlir::Value considerTuple = builder.create<::mlir::arith::CmpIOp>(limitOp.getLoc(), ::mlir::arith::CmpIPredicate::ule, addedCounter, upper);
-      builder.create<::mlir::scf::IfOp>(
-         limitOp->getLoc(), ::mlir::TypeRange{}, considerTuple, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
-            consumer->consume(this, builder1, context);
-            builder1.create<::mlir::scf::YieldOp>(limitOp->getLoc()); });
+      auto ifOp = builder.create<::mlir::scf::IfOp>(limitOp->getLoc(), ::mlir::TypeRange{}, considerTuple, /*withElseRegion=*/false);
+      {
+         ::mlir::OpBuilder::InsertionGuard guard(builder);
+         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+         consumer->consume(this, builder, context);
+         builder.create<::mlir::scf::YieldOp>(limitOp->getLoc());
+      }
       builder.create<pgx::mlir::util::StoreOp>(limitOp.getLoc(), addedCounter, counter, mlir::Value());
    }
 
@@ -36,7 +39,6 @@ class LimitTranslator : public pgx::mlir::relalg::Translator {
    virtual ~LimitTranslator() {}
 };
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createLimitTranslator(::mlir::Operation* op) {
-   auto limitOp = ::mlir::cast<pgx::mlir::relalg::LimitOp>(op);
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createLimitTranslator(LimitOp limitOp) {
    return std::make_unique<LimitTranslator>(limitOp);
 }

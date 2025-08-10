@@ -46,7 +46,7 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
          mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
          auto relationRefAttr = from.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>();
-         available.remove(&relationRefAttr.getColumn());
+         available.erase(&relationRefAttr.getColumn());
          available.insert(&relationDefAttr.getColumn());
       }
       return available;
@@ -55,7 +55,7 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
    virtual ~RenamingTranslator() {}
 };
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createRenamingTranslator(::mlir::Operation* op) {
-  auto renamingOp = ::mlir::cast<pgx::mlir::relalg::RenamingOp>(op);
-   return std::make_unique<RenamingTranslator>(renamingOp);
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createRenamingTranslator(RenamingOp op) {
+  // op is already a RenamingOp
+   return std::make_unique<RenamingTranslator>(op);
 }

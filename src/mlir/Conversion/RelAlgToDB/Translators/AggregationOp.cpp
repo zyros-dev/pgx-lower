@@ -54,15 +54,19 @@ class AggregationTranslator : public pgx::mlir::relalg::Translator {
             ::mlir::Value isNull2 = rewriter.create<pgx::mlir::db::IsNullOp>(loc, rewriter.getI1Type(), rightUnpacked->getResult(i));
             ::mlir::Value anyNull = rewriter.create<::mlir::arith::OrIOp>(loc, isNull1, isNull2);
             ::mlir::Value bothNull = rewriter.create<::mlir::arith::AndIOp>(loc, isNull1, isNull2);
-            compared = rewriter.create<::mlir::scf::IfOp>(
-                                  loc, rewriter.getI1Type(), anyNull, [&](::mlir::OpBuilder& b, ::mlir::Location loc) { b.create<::mlir::scf::YieldOp>(loc, bothNull); },
-                                  [&](::mlir::OpBuilder& b, ::mlir::Location loc) {
-                                     ::mlir::Value left = rewriter.create<pgx::mlir::db::NullableGetVal>(loc, leftUnpacked->getResult(i));
-                                     ::mlir::Value right = rewriter.create<pgx::mlir::db::NullableGetVal>(loc, rightUnpacked->getResult(i));
-                                     ::mlir::Value cmpRes = rewriter.create<pgx::mlir::db::CmpOp>(loc, pgx::mlir::db::DBCmpPredicate::eq, left, right);
-                                     b.create<::mlir::scf::YieldOp>(loc, cmpRes);
-                                  })
-                          .getResult(0);
+            auto ifOp = rewriter.create<::mlir::scf::IfOp>(loc, rewriter.getI1Type(), anyNull, /*withElseRegion=*/true);
+            {
+               ::mlir::OpBuilder::InsertionGuard guard(rewriter);
+               rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
+               rewriter.create<::mlir::scf::YieldOp>(loc, bothNull);
+               
+               rewriter.setInsertionPointToStart(&ifOp.getElseRegion().front());
+               ::mlir::Value left = rewriter.create<pgx::mlir::db::NullableGetVal>(loc, leftUnpacked->getResult(i));
+               ::mlir::Value right = rewriter.create<pgx::mlir::db::NullableGetVal>(loc, rightUnpacked->getResult(i));
+               ::mlir::Value cmpRes = rewriter.create<pgx::mlir::db::CmpOp>(loc, pgx::mlir::db::DBCmpPredicate::eq, left, right);
+               rewriter.create<::mlir::scf::YieldOp>(loc, cmpRes);
+            }
+            compared = ifOp.getResult(0);
          } else {
             compared = rewriter.create<pgx::mlir::db::CmpOp>(loc, pgx::mlir::db::DBCmpPredicate::eq, leftUnpacked->getResult(i), rightUnpacked.getResult(i));
          }

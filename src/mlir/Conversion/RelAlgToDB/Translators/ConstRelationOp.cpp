@@ -21,7 +21,7 @@ class ConstRelTranslator : public Translator {
    virtual ColumnSet getAvailableColumns() override {
       ColumnSet available;
       for (auto columnRef : constRelationOp.getColumns()) {
-         available.insert(columnRef.cast<::mlir::Attribute>().cast<pgx::mlir::relalg::ColumnRefAttr>().getColumn());
+         available.insert(&columnRef.cast<::mlir::Attribute>().cast<pgx::mlir::relalg::ColumnRefAttr>().getColumn());
       }
       return available;
    }
@@ -36,7 +36,7 @@ class ConstRelTranslator : public Translator {
          std::vector<::mlir::Value> values;
          size_t i = 0;
          for (auto entryAttr : row.getValue()) {
-            if (tupleType.getType(i).isa<pgx::mlir::db::NullableType>() && entryAttr.isa<mlir::UnitAttr>()) {
+            if (tupleType.getType(i).isa<pgx::mlir::db::NullableType>() && entryAttr.isa<::mlir::UnitAttr>()) {
                auto entryVal = builder.create<pgx::mlir::db::NullOp>(constRelationOp->getLoc(), tupleType.getType(i));
                values.push_back(entryVal);
                i++;
@@ -70,7 +70,7 @@ class ConstRelTranslator : public Translator {
 
 } // namespace pgx::mlir::relalg
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createConstRelTranslator(::mlir::Operation* op) {
-   auto constRelationOp = ::mlir::cast<pgx::mlir::relalg::ConstRelationOp>(op);
-   return std::make_unique<ConstRelTranslator>(constRelationOp);
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createConstRelTranslator(ConstRelationOp op) {
+   // op is already a ConstRelationOp
+   return std::make_unique<ConstRelTranslator>(op);
 }

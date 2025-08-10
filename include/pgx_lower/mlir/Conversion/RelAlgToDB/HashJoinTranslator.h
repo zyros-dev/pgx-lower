@@ -14,19 +14,19 @@
 namespace mlir::relalg {
 class HashJoinUtils {
    public:
-   static std::tuple<mlir::relalg::ColumnSet, pgx::mlir::relalg::ColumnSet, std::vector<mlir::Type>, std::vector<ColumnSet>, std::vector<bool>> analyzeHJPred(mlir::Block* block, pgx::mlir::relalg::ColumnSet availableLeft, pgx::mlir::relalg::ColumnSet availableRight) {
-      llvm::DenseMap<mlir::Value, pgx::mlir::relalg::ColumnSet> required;
-      llvm::DenseSet<mlir::Value> pureAttribute;
+   static std::tuple<pgx::pgx::mlir::relalg::ColumnSet, pgx::pgx::mlir::relalg::ColumnSet, std::vector<::mlir::Type>, std::vector<pgx::pgx::mlir::relalg::ColumnSet>, std::vector<bool>> analyzeHJPred(::::mlir::Block* block, pgx::pgx::mlir::relalg::ColumnSet availableLeft, pgx::pgx::mlir::relalg::ColumnSet availableRight) {
+      llvm::DenseMap<mlir::Value, pgx::pgx::mlir::relalg::ColumnSet> required;
+      llvm::DenseSet<::mlir::Value> pureAttribute;
 
-      pgx::mlir::relalg::ColumnSet leftKeys, rightKeys;
-      std::vector<ColumnSet> leftKeyAttributes;
+      pgx::pgx::mlir::relalg::ColumnSet leftKeys, rightKeys;
+      std::vector<pgx::pgx::mlir::relalg::ColumnSet> leftKeyAttributes;
       std::vector<bool> canSave;
-      std::vector<mlir::Type> types;
-      block->walk([&](mlir::Operation* op) {
-         if (auto getAttr = mlir::dyn_cast_or_null<mlir::relalg::GetColumnOp>(op)) {
-            required.insert({getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.attr())});
+      std::vector<::mlir::Type> types;
+      block->walk([&](::mlir::Operation* op) {
+         if (auto getAttr = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
+            required.insert({getAttr.getResult(), pgx::pgx::mlir::relalg::ColumnSet::from(getAttr.attr())});
             pureAttribute.insert(getAttr.getResult());
-         } else if (auto cmpOp = mlir::dyn_cast_or_null<mlir::relalg::CmpOpInterface>(op)) {
+         } else if (auto cmpOp = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
             if (cmpOp.isEqualityPred() && isAndedResult(op)) {
                auto leftAttributes = required[cmpOp.getLeft()];
                auto rightAttributes = required[cmpOp.getRight()];
@@ -46,7 +46,7 @@ class HashJoinUtils {
                }
             }
          } else {
-            pgx::mlir::relalg::ColumnSet attributes;
+            pgx::pgx::mlir::relalg::ColumnSet attributes;
             for (auto operand : op->getOperands()) {
                if (required.count(operand)) {
                   attributes.insert(required[operand]);
@@ -60,11 +60,11 @@ class HashJoinUtils {
       return {leftKeys, rightKeys, types, leftKeyAttributes, canSave};
    }
 
-   static bool isAndedResult(mlir::Operation* op, bool first = true) {
-      if (mlir::isa<mlir::relalg::ReturnOp>(op)) {
+   static bool isAndedResult(::mlir::Operation* op, bool first = true) {
+      if (::mlir::isa<pgx::mlir::relalg::ReturnOp>(op)) {
          return true;
       }
-      if (mlir::isa<mlir::db::AndOp>(op) || first) {
+      if (::mlir::isa<mlir::db::AndOp>(op) || first) {
          for (auto* user : op->getUsers()) {
             if (!isAndedResult(user, false)) return false;
          }
@@ -73,21 +73,21 @@ class HashJoinUtils {
          return false;
       }
    }
-   static std::vector<mlir::Value> inlineKeys(mlir::Block* block, pgx::mlir::relalg::ColumnSet keyAttributes,mlir::relalg::ColumnSet otherAttributes, mlir::Block* newBlock, mlir::Block::iterator insertionPoint, mlir::relalg::TranslatorContext& context) {
-      llvm::DenseMap<mlir::Value, pgx::mlir::relalg::ColumnSet> required;
-      mlir::IRMapping mapping;
-      std::vector<mlir::Value> keys;
-      block->walk([&](mlir::Operation* op) {
-         if (auto getAttr = mlir::dyn_cast_or_null<mlir::relalg::GetColumnOp>(op)) {
-            required.insert({getAttr.getResult(), pgx::mlir::relalg::ColumnSet::from(getAttr.attr())});
-            if (keyAttributes.intersects(mlir::relalg::ColumnSet::from(getAttr.attr()))) {
+   static std::vector<::mlir::Value> inlineKeys(::mlir::Block* block, pgx::pgx::mlir::relalg::ColumnSet keyAttributes,pgx::mlir::relalg::ColumnSet otherAttributes, ::mlir::Block* newBlock, ::mlir::Block::iterator insertionPoint, pgx::mlir::relalg::TranslatorContext& context) {
+      llvm::DenseMap<mlir::Value, pgx::pgx::mlir::relalg::ColumnSet> required;
+      ::mlir::IRMapping mapping;
+      std::vector<::mlir::Value> keys;
+      block->walk([&](::mlir::Operation* op) {
+         if (auto getAttr = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
+            required.insert({getAttr.getResult(), pgx::pgx::mlir::relalg::ColumnSet::from(getAttr.attr())});
+            if (keyAttributes.intersects(pgx::mlir::relalg::ColumnSet::from(getAttr.attr()))) {
                mapping.map(getAttr.getResult(), context.getValueForAttribute(&getAttr.attr().getColumn()));
             }
-         } else if (auto cmpOp = mlir::dyn_cast_or_null<mlir::relalg::CmpOpInterface>(op)) {
+         } else if (auto cmpOp = ::mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
             if (cmpOp.isEqualityPred() && isAndedResult(op)) {
                auto leftAttributes = required[cmpOp.getLeft()];
                auto rightAttributes = required[cmpOp.getRight()];
-               mlir::Value keyVal;
+               ::mlir::Value keyVal;
                if (leftAttributes.isSubsetOf(keyAttributes)&&rightAttributes.isSubsetOf(otherAttributes)) {
                   keyVal = cmpOp.getLeft();
                } else if (rightAttributes.isSubsetOf(keyAttributes)&&leftAttributes.isSubsetOf(otherAttributes)) {
@@ -108,7 +108,7 @@ class HashJoinUtils {
                }
             }
          } else {
-            pgx::mlir::relalg::ColumnSet attributes;
+            pgx::pgx::mlir::relalg::ColumnSet attributes;
             for (auto operand : op->getOperands()) {
                if (required.count(operand)) {
                   attributes.insert(required[operand]);
@@ -126,23 +126,23 @@ class HashJoinUtils {
 class HashJoinTranslator : public mlir::relalg::JoinTranslator {
    public:
    mlir::Location loc;
-   pgx::mlir::relalg::ColumnSet leftKeys, rightKeys;
+   pgx::pgx::mlir::relalg::ColumnSet leftKeys, rightKeys;
    mlir::relalg::OrderedAttributes orderedKeys;
    mlir::relalg::OrderedAttributes orderedValues;
    mlir::TupleType keyTupleType, valTupleType, entryType;
-   mlir::Value joinHashtable;
+   ::mlir::Value joinHashtable;
 
    HashJoinTranslator(std::shared_ptr<JoinImpl> impl) : JoinTranslator(impl), loc(joinOp.getLoc()) {}
 
    public:
-   virtual void setInfo(mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) override;
-   virtual void produce(mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override;
+   virtual void setInfo(mlir::relalg::Translator* consumer, pgx::pgx::mlir::relalg::ColumnSet requiredAttributes) override;
+   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override;
 
    void unpackValues(TranslatorContext::AttributeResolverScope& scope, OpBuilder& builder, Value packed, TranslatorContext& context, Value& marker);
    void unpackKeys(TranslatorContext::AttributeResolverScope& scope, OpBuilder& builder, Value packed, TranslatorContext& context);
 
    virtual void scanHT(TranslatorContext& context, mlir::OpBuilder& builder) override;
-   virtual void consume(mlir::relalg::Translator* child, mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override;
+   virtual void consume(mlir::relalg::Translator* child, mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override;
 
    virtual ~HashJoinTranslator() {}
 };

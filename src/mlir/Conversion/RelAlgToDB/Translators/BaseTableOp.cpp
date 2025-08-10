@@ -55,7 +55,7 @@ class BaseTableTranslator : public Translator {
       }
       scanDescription += "] }";
 
-      auto tupleType = mlir::TupleType::get(builder.getContext(), types);
+      auto tupleType = ::mlir::TupleType::get(builder.getContext(), types);
       auto recordBatch = pgx::mlir::dsa::RecordBatchType::get(builder.getContext(), tupleType);
       ::mlir::Type chunkIterable = pgx::mlir::dsa::GenericIterableType::get(builder.getContext(), recordBatch, "table_chunk_iterator");
 
@@ -96,7 +96,6 @@ class BaseTableTranslator : public Translator {
 
 } // namespace pgx::mlir::relalg
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createBaseTableTranslator(::mlir::Operation* op) {
-   auto baseTableOp = ::mlir::cast<pgx::mlir::relalg::BaseTableOp>(op);
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createBaseTableTranslator(BaseTableOp baseTableOp) {
    return std::make_unique<BaseTableTranslator>(baseTableOp);
 }
