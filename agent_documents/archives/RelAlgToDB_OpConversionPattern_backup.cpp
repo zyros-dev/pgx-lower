@@ -47,7 +47,7 @@ LogicalResult mlir::pgx_conversion::MaterializeToMixedOperationsPattern::matchAn
     // Phase 4c-2: Generate mixed DB+DSA operations for result materialization
     // Step 1: Create DSA table builder
     auto builderType = ::pgx::mlir::dsa::TableBuilderType::get(context, mlirTupleType);
-    auto tableBuilder = rewriter.create<::pgx::mlir::dsa::CreateDSOp>(loc, builderType);
+    auto tableBuilder = rewriter.create<::pgx::mlir::dsa::CreateDS>(loc, builderType);
     
     MLIR_PGX_INFO("RelAlgToDB", "Created DSA table builder for MaterializeOp");
     
@@ -70,10 +70,10 @@ LogicalResult mlir::pgx_conversion::MaterializeToMixedOperationsPattern::matchAn
     }
     
     // Step 3: Append values to table builder
-    rewriter.create<::pgx::mlir::dsa::DSAppendOp>(loc, tableBuilder.getResult(), values);
+    rewriter.create<::pgx::mlir::dsa::Append>(loc, tableBuilder.getResult(), values);
     
     // Step 4: Finalize the row
-    rewriter.create<::pgx::mlir::dsa::NextRowOp>(loc, tableBuilder.getResult());
+    rewriter.create<::pgx::mlir::dsa::NextRow>(loc, tableBuilder.getResult());
     
     // Step 5: Finalize the table
     auto tableType = ::pgx::mlir::dsa::TableType::get(context);

@@ -106,15 +106,15 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
         &context, TupleType::get(&context, {builder.getI64Type()}));
     PGX_INFO("DSA TableBuilderType created");
     
-    PGX_INFO("About to create DSA CreateDSOp...");
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    PGX_INFO("About to create DSA CreateDS...");
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
-    PGX_INFO("DSA CreateDSOp created");
+    PGX_INFO("DSA CreateDS created");
     
-    PGX_INFO("About to validate after DSA CreateDSOp...");
-    ASSERT_TRUE(validateIR(module, "After DSA CreateDSOp")) << "Module should be valid after CreateDSOp";
-    PGX_INFO("Validation after DSA CreateDSOp passed!");
+    PGX_INFO("About to validate after DSA CreateDS...");
+    ASSERT_TRUE(validateIR(module, "After DSA CreateDS")) << "Module should be valid after CreateDS";
+    PGX_INFO("Validation after DSA CreateDS passed!");
     
     // Continue with the EXACT original test sequence that was hanging
     // This will test if the issue is really fixed
@@ -125,8 +125,8 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     
     // ALL operations must be in the same function block for proper scoping
     // Create a NEW createDSOp inside the function block
-    PGX_INFO("Creating new DSA CreateDSOp inside function block...");
-    auto funcCreateDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    PGX_INFO("Creating new DSA CreateDS inside function block...");
+    auto funcCreateDS = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -142,9 +142,9 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     
     // Append the nullable value using the function-scoped createDSOp
     PGX_INFO("Creating DSA append operation...");
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(),
-        funcCreateDSOp.getResult(),
+        funcCreateDS.getResult(),
         asNullableOp.getResult());
     PGX_INFO("DSA append created");
     
@@ -176,7 +176,7 @@ TEST_F(CircularTypeFixTest, AlreadyConvertedTupleType) {
     // Create table builder
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -192,7 +192,7 @@ TEST_F(CircularTypeFixTest, AlreadyConvertedTupleType) {
         ValueRange{value.getResult(), falseVal.getResult()});
     
     // Append the tuple value
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         packOp.getResult());
@@ -236,7 +236,7 @@ TEST_F(CircularTypeFixTest, CompletePipelineNoCircular) {
     // Create table builder
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -249,7 +249,7 @@ TEST_F(CircularTypeFixTest, CompletePipelineNoCircular) {
         value.getResult());
     
     // Append the nullable value
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         asNullableOp.getResult());
@@ -318,12 +318,12 @@ TEST_F(CircularTypeFixTest, ValidateIRConstruction) {
     // Step 4: Create DSA table builder
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
-    ASSERT_TRUE(validateIR(module, "After DSA CreateDSOp")) 
-        << "Module should be valid after CreateDSOp";
+    ASSERT_TRUE(validateIR(module, "After DSA CreateDS")) 
+        << "Module should be valid after CreateDS";
     
     // Step 5: Create arith constant
     auto value = builder.create<arith::ConstantIntOp>(
@@ -342,13 +342,13 @@ TEST_F(CircularTypeFixTest, ValidateIRConstruction) {
         << "Module should be valid after AsNullableOp";
     
     // Step 7: Create DSA append operation
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         asNullableOp.getResult());
     
-    ASSERT_TRUE(validateIR(module, "After DSA DSAppendOp")) 
-        << "Module should be valid after DSAppendOp";
+    ASSERT_TRUE(validateIR(module, "After DSA Append")) 
+        << "Module should be valid after Append";
     
     // Step 8: Add return and final validation
     builder.create<func::ReturnOp>(builder.getUnknownLoc());

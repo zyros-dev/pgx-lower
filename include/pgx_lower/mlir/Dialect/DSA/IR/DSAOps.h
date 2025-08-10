@@ -16,6 +16,15 @@
 
 #include "mlir/Dialect/DSA/IR/DSADialect.h"
 
+// Add proper namespace imports for Properties system
+namespace pgx {
+namespace mlir {
+using ::mlir::Attribute;
+using ::mlir::Type;
+using ::mlir::Value;
+} // namespace mlir
+} // namespace pgx
+
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/DSA/IR/DSAOpsTypes.h.inc"
 

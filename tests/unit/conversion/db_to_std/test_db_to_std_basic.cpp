@@ -171,7 +171,7 @@ TEST_F(DBToStdBasicTest, PreserveDSAOperations) {
     PGX_INFO("Testing that DSA operations are preserved during conversion");
     
     // This test has been disabled as we've removed the DSA data structure
-    // building operations (CreateDSOp, DSAppendOp) in favor of using 
+    // building operations (CreateDS, Append) in favor of using 
     // DB operations directly.
     
     PGX_INFO("DSA operations test skipped - operations removed");

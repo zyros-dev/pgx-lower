@@ -137,7 +137,7 @@ TEST_F(ArchitecturalComplianceTest, TestDSAOperationCreation) {
     auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
         &context, recordBatchType, "test_iterator");
     
-    auto scanSourceOp = builder->create<::pgx::mlir::dsa::ScanSourceOp>(
+    auto scanSourceOp = builder->create<::pgx::mlir::dsa::ScanSource>(
         builder->getUnknownLoc(), 
         iterableType,
         builder->getStringAttr("{\"table_oid\":12345}"));

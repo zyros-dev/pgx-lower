@@ -41,7 +41,7 @@ TEST_F(RelAlgToDBBaseTableDSATest, PlaceholderTest) {
     
     // This test file previously tested DSA-specific patterns in BaseTable lowering:
     // - Mixed DB+DSA operation generation
-    // - DSA table builder lifecycle (CreateDSOp, DSAppendOp, FinalizeOp)
+    // - DSA table builder lifecycle (CreateDS, Append, FinalizeOp)
     // - Nested loop structure with DSA operations
     // 
     // These patterns have been removed in favor of using DB operations directly.

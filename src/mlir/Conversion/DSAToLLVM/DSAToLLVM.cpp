@@ -190,7 +190,7 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// DSAppendOp Lowering Pattern Implementation
+// Append Lowering Pattern Implementation
 //===----------------------------------------------------------------------===//
 
 class DSAppendToLLVMPattern : public OpConversionPattern<::pgx::mlir::dsa::Append> {
@@ -199,7 +199,7 @@ public:
     
     LogicalResult matchAndRewrite(::pgx::mlir::dsa::Append op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const override {
-        MLIR_PGX_DEBUG("DSAToLLVM", "Converting DSAppendOp to LLVM runtime call");
+        MLIR_PGX_DEBUG("DSAToLLVM", "Converting Append to LLVM runtime call");
         
         auto loc = op.getLoc();
         auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
@@ -227,7 +227,7 @@ public:
             std::string typeStr;
             llvm::raw_string_ostream os(typeStr);
             valueType.print(os);
-            MLIR_PGX_ERROR("DSAToLLVM", "Unexpected value type in DSAppendOp: " + typeStr);
+            MLIR_PGX_ERROR("DSAToLLVM", "Unexpected value type in Append: " + typeStr);
             return failure();
         }
         
@@ -281,7 +281,7 @@ public:
         auto loc = op.getLoc();
         auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
         
-        // PHASE 4d-5: NextRowOp completes a row in the internal DSA table builder
+        // PHASE 4d-5: NextRow completes a row in the internal DSA table builder
         // This is used for organizing data internally, while actual results
         // are streamed to PostgreSQL via db.store_result operations
         

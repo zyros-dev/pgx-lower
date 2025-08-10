@@ -279,7 +279,7 @@ TEST_F(PostgreSQLSPICallTest, CompleteIterationLoop) {
     // Create a simple tuple type for the table builder
     auto tupleType = builder.getTupleType({builder.getI64Type()});
     auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
-    auto dsInit = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto dsInit = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType);
     
     // Get external table
@@ -325,7 +325,7 @@ TEST_F(PostgreSQLSPICallTest, CompleteIterationLoop) {
         getFieldOp.getResult());
     
     // Append to DSA
-    builder.create<pgx::mlir::dsa::DSAppendOp>(
+    builder.create<pgx::mlir::dsa::Append>(
         builder.getUnknownLoc(), dsInit.getResult(), getValOp.getResult());
     
     builder.create<scf::YieldOp>(builder.getUnknownLoc(), ValueRange{});

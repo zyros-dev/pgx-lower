@@ -110,7 +110,7 @@ public:
             builder.getContext(), 
             orderedAttributes.getTupleType(builder.getContext())
         );
-        tableBuilder = builder.create<::pgx::mlir::dsa::CreateDSOp>(
+        tableBuilder = builder.create<::pgx::mlir::dsa::CreateDS>(
             loc, tableBuilderType, builder.getStringAttr(schemaDescr)
         );
         
@@ -217,7 +217,7 @@ private:
                     auto nullableVal = builder.create<::pgx::db::AsNullableOp>(loc, nullableType, dummyVal);
                     
                     // Use DSA for internal processing
-                    builder.create<::pgx::mlir::dsa::DSAppendOp>(loc, tableBuilder, nullableVal);
+                    builder.create<::pgx::mlir::dsa::Append>(loc, tableBuilder, nullableVal);
                     
                     // Store in PostgreSQL result set
                     auto fieldIndex = builder.create<::mlir::arith::ConstantIndexOp>(loc, i);
@@ -226,7 +226,7 @@ private:
                     MLIR_PGX_DEBUG("RelAlg", "Generated dummy operations for unit test with proper type");
                 }
                 // Complete the DSA row
-                builder.create<::pgx::mlir::dsa::NextRowOp>(loc, tableBuilder);
+                builder.create<::pgx::mlir::dsa::NextRow>(loc, tableBuilder);
             }
         }
     }
@@ -252,7 +252,7 @@ public:
                 builder.getContext(), 
                 orderedAttributes.getTupleType(builder.getContext())
             );
-            tableBuilder = builder.create<::pgx::mlir::dsa::CreateDSOp>(
+            tableBuilder = builder.create<::pgx::mlir::dsa::CreateDS>(
                 loc, tableBuilderType, builder.getStringAttr(schemaDescr)
             );
         }
@@ -308,9 +308,9 @@ public:
             
             // Use DSA operations for internal data processing
             // This maintains LingoDB compliance for data structure handling
-            MLIR_PGX_INFO("RelAlg", "Creating DSAppendOp for column " + std::to_string(i));
-            auto appendOp = builder.create<::pgx::mlir::dsa::DSAppendOp>(loc, tableBuilder, val);
-            MLIR_PGX_INFO("RelAlg", "DSAppendOp created successfully");
+            MLIR_PGX_INFO("RelAlg", "Creating Append for column " + std::to_string(i));
+            auto appendOp = builder.create<::pgx::mlir::dsa::Append>(loc, tableBuilder, val);
+            MLIR_PGX_INFO("RelAlg", "Append created successfully");
             
             // CRITICAL: Also output to PostgreSQL result set using SPI
             // This ensures results go through PostgreSQL memory context properly
@@ -324,7 +324,7 @@ public:
         }
         
         // Finalize the DSA row for internal processing
-        builder.create<::pgx::mlir::dsa::NextRowOp>(loc, tableBuilder);
+        builder.create<::pgx::mlir::dsa::NextRow>(loc, tableBuilder);
         
         MLIR_PGX_DEBUG("RelAlg", "Finalized row in both DSA and PostgreSQL result set");
     }

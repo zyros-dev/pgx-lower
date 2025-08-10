@@ -36,14 +36,14 @@ int main() {
         &context, TupleType::get(&context, {builder.getI64Type()}));
     
     std::cout << "TableBuilderType created successfully" << std::endl;
-    std::cout << "About to create CreateDSOp..." << std::endl;
+    std::cout << "About to create CreateDS..." << std::endl;
     
     // Create DSA operation (this is where the circular reference might be created)
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDSOp>(
+    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
-    std::cout << "CreateDSOp created successfully" << std::endl;
+    std::cout << "CreateDS created successfully" << std::endl;
     
     // Add simple return
     builder.create<func::ReturnOp>(builder.getUnknownLoc());

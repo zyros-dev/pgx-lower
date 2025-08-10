@@ -10,7 +10,7 @@ TEST_F(RelalgToDbFixedDisabledTest, PlaceholderTest) {
     PGX_DEBUG("test_relalg_to_db_fixed.cpp disabled - DSA operations have been removed");
     
     // This test file previously tested DSA-specific operations:
-    // - CreateDSOp, DSAppendOp, NextRowOp, FinalizeOp
+    // - CreateDS, Append, NextRow, FinalizeOp
     // - TableBuilderType, TableType
     // 
     // These operations have been removed in favor of using DB operations directly.

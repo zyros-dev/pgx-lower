@@ -94,10 +94,10 @@ TEST_F(DSABasicTest, ScanSourceOpCreation) {
     EXPECT_EQ(scanOp.getTableDescriptionAttr().getValue().str(), "{\"table\":\"test\"}");
 }
 
-// TEMPORARILY DISABLED: CreateDSOp removed in Phase 4d
+// TEMPORARILY DISABLED: CreateDS removed in Phase 4d
 /*
-TEST_F(DSABasicTest, CreateDSOpCreation) {
-    // CreateDSOp has been removed
+TEST_F(DSABasicTest, CreateDSCreation) {
+    // CreateDS has been removed
 }
 */
 
@@ -170,17 +170,17 @@ TEST_F(DSABasicTest, AtOpCreation) {
     EXPECT_TRUE(atOp.getResult().getType() == i32Type);
 }
 
-// TEMPORARILY DISABLED: DSAppendOp removed in Phase 4d
+// TEMPORARILY DISABLED: Append removed in Phase 4d
 /*
-TEST_F(DSABasicTest, DSAppendOpCreation) {
-    // DSAppendOp has been removed
+TEST_F(DSABasicTest, AppendCreation) {
+    // Append has been removed
 }
 */
 
-// TEMPORARILY DISABLED: NextRowOp removed in Phase 4d
+// TEMPORARILY DISABLED: NextRow removed in Phase 4d
 /*
-TEST_F(DSABasicTest, NextRowOpCreation) {
-    // NextRowOp has been removed
+TEST_F(DSABasicTest, NextRowCreation) {
+    // NextRow has been removed
 }
 */
 
@@ -333,7 +333,7 @@ TEST_F(DSABasicTest, EdgeCases_NullHandling) {
 // TEMPORARILY DISABLED: Uses deleted DSA operations
 /*
 TEST_F(DSABasicTest, EdgeCases_EmptyOperations) {
-    // This test used CreateDSOp and DSAppendOp which have been removed
+    // This test used CreateDS and Append which have been removed
 }
 */
 
@@ -429,6 +429,6 @@ TEST_F(DSABasicTest, EdgeCases_ComplexNestedStructures) {
 // TEMPORARILY DISABLED: Uses deleted DSA operations
 /*
 TEST_F(DSABasicTest, EdgeCases_LargeValueSets) {
-    // This test used CreateDSOp and DSAppendOp which have been removed
+    // This test used CreateDS and Append which have been removed
 }
 */
