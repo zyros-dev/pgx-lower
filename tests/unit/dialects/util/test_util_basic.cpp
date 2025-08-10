@@ -72,7 +72,7 @@ TEST_F(UtilDialectTest, AllocOpCreation) {
     // Create alloc op for ref<i32>
     auto i32Type = builder.getI32Type();
     auto refType = RefType::get(&context, i32Type);
-    auto allocOp = builder.create<AllocOp>(loc, refType);
+    auto allocOp = builder.create<AllocOp>(loc, refType, mlir::Value());
     
     ASSERT_TRUE(allocOp);
     EXPECT_EQ(allocOp.getResult().getType(), refType);
@@ -240,7 +240,7 @@ TEST_F(UtilDialectTest, RefOfTupleType) {
     auto refTupleType = RefType::get(&context, tupleType);
     
     // Allocate ref<tuple<i32, i64>>
-    auto allocOp = builder.create<AllocOp>(loc, refTupleType);
+    auto allocOp = builder.create<AllocOp>(loc, refTupleType, mlir::Value());
     
     ASSERT_TRUE(allocOp);
     EXPECT_EQ(allocOp.getResult().getType(), refTupleType);
@@ -258,7 +258,7 @@ TEST_F(UtilDialectTest, ModuleVerification) {
     
     // Allocate memory
     auto refType = RefType::get(&context, builder.getI32Type());
-    auto allocOp = builder.create<AllocOp>(loc, refType);
+    auto allocOp = builder.create<AllocOp>(loc, refType, mlir::Value());
     
     // Create and manipulate tuples
     auto val1 = builder.create<arith::ConstantIntOp>(loc, 42, 32);

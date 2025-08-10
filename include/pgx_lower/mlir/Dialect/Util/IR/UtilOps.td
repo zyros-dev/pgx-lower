@@ -13,9 +13,9 @@ let cppNamespace = "::pgx::mlir::util";
 let extraClassDeclaration = [{
 private:
 void registerTypes();
-std::shared_ptr<FunctionHelper> functionHelper;
+std::shared_ptr<::mlir::util::FunctionHelper> functionHelper;
 public:
-FunctionHelper& getFunctionHelper(){
+::mlir::util::FunctionHelper& getFunctionHelper(){
     return *functionHelper;
 }
 }];

@@ -27,13 +27,13 @@ void pgx::mlir::util::RefType::print(::mlir::AsmPrinter& printer) const {
 }
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/util/UtilOpsTypes.cpp.inc"
+#include "mlir/Dialect/Util/IR/UtilOpsTypes.cpp.inc"
 
 namespace pgx::mlir::util {
 void UtilDialect::registerTypes() {
    addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/Util/UtilOpsTypes.cpp.inc"
+#include "mlir/Dialect/Util/IR/UtilOpsTypes.cpp.inc"
       >();
 }
 
