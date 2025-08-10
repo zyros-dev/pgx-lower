@@ -1,6 +1,7 @@
 # Util to LLVM conversion pass
 add_mlir_dialect_library(UtilToLLVM
-    UtilToLLVM.cpp
+        LowerToLLVM.cpp
+        UtilTypeConversion.cpp
 
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include/pgx_lower/mlir/Conversion/UtilToLLVM
