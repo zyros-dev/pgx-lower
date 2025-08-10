@@ -1,12 +1,12 @@
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include <iostream>
 
-#include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+// #include "mlir/Dialect/RelAlg/Passes.h"  // Not used
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
@@ -43,7 +43,7 @@ class WrapWithNullCheck : public mlir::RewritePattern {
 
       auto supInvVal = mlir::dyn_cast_or_null<mlir::db::SupportsInvalidValues>(op);
       if (supInvVal && supInvVal.supportsInvalidValues()) {
-         mlir::BlockAndValueMapping mapping;
+         mlir::IRMapping mapping;
          for (auto operand : op->getOperands()) {
             if (operand.getType().isa<mlir::db::NullableType>()) {
                mapping.map(operand, rewriter.create<mlir::db::NullableGetVal>(op->getLoc(), operand));
@@ -67,7 +67,7 @@ class WrapWithNullCheck : public mlir::RewritePattern {
                   b.create<mlir::scf::YieldOp>(loc);
                }
             }, [&](mlir::OpBuilder& b, mlir::Location loc) {
-               mlir::BlockAndValueMapping mapping;
+               mlir::IRMapping mapping;
                for (auto operand : op->getOperands()) {
                   if (operand.getType().isa<mlir::db::NullableType>()) {
                      mapping.map(operand,b.create<mlir::db::NullableGetVal>(op->getLoc(),operand));
@@ -112,8 +112,8 @@ class EliminateNulls : public mlir::PassWrapper<EliminateNulls, mlir::OperationP
 };
 } // end anonymous namespace
 
-namespace mlir::db {
+namespace pgx::mlir::db {
 
-std::unique_ptr<Pass> createEliminateNullsPass() { return std::make_unique<EliminateNulls>(); }
+std::unique_ptr<::mlir::Pass> createEliminateNullsPass() { return std::make_unique<EliminateNulls>(); }
 
-} // end namespace mlir::db
+} // end namespace pgx::mlir::db

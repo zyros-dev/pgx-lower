@@ -1,11 +1,11 @@
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 #include <iostream>
 
-#include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+// #include "mlir/Dialect/RelAlg/Passes.h"  // Not used
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <variant>
 namespace {
@@ -83,8 +83,8 @@ class SimplifyToArith : public mlir::PassWrapper<SimplifyToArith, mlir::Operatio
 };
 } // end anonymous namespace
 
-namespace mlir::db {
+namespace pgx::mlir::db {
 
-std::unique_ptr<Pass> createSimplifyToArithPass() { return std::make_unique<SimplifyToArith>(); }
+std::unique_ptr<::mlir::Pass> createSimplifyToArithPass() { return std::make_unique<SimplifyToArith>(); }
 
-} // end namespace mlir::db
+} // end namespace pgx::mlir::db

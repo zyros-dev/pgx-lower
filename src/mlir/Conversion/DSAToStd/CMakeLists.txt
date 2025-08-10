@@ -10,7 +10,7 @@ add_mlir_conversion_library(MLIRDSAToStdConversion
   MLIRIndexDialect
   MLIRLLVMDialect
   MLIRDSADialect
-  MLIRDBDialect
+  MLIRDB
   MLIRUtilDialect
   MLIRTransformUtils
   MLIRPass

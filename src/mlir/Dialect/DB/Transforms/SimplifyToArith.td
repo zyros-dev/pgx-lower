@@ -1,4 +1,4 @@
-include "pgx_lower/mlir/Dialect/DB/IR/DBOps.td"
+include "mlir/Dialect/DB/IR/DBOps.td"
 include "mlir/Dialect/Arith/IR/ArithOps.td"
 include "mlir/IR/PatternBase.td"
 

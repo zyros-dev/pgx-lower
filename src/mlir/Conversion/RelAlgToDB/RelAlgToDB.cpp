@@ -32,7 +32,7 @@ struct RelAlgToDBPass : public PassWrapper<RelAlgToDBPass, OperationPass<func::F
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(RelAlgToDBPass)
 
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<::pgx::db::DBDialect>();
+        registry.insert<::pgx::mlir::db::DBDialect>();
         registry.insert<arith::ArithDialect>();
         registry.insert<func::FuncDialect>();
         registry.insert<scf::SCFDialect>();
