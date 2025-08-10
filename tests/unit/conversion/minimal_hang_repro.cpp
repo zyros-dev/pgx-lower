@@ -21,6 +21,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/Pass.h"
 #include "execution/logging.h"
+#include "utility/ir_debug_utils.h"
 
 using namespace mlir;
 
@@ -35,6 +36,8 @@ protected:
 
     MLIRContext context;
 };
+
+// Circular IR detection moved to utility/ir_debug_utils.h
 
 // Test 1: Just empty DSA operation (should work)
 TEST_F(MinimalHangReproTest, EmptyDSAOperation) {
@@ -66,7 +69,9 @@ TEST_F(MinimalHangReproTest, EmptyDSAOperation) {
     // Run DSAToStd pass with timeout protection
     PassManager pm(&context);
     pm.addPass(::mlir::createDSAToStdPass());
-    
+
+    PGX_INFO("Validating tested IR is not circular");
+    ASSERT_FALSE(pgx::utility::hasCircularIR(module));
     PGX_INFO("Running DSAToStd on JUST CreateDS operation...");
     ASSERT_TRUE(succeeded(pm.run(module))) << "Empty DSA operation should convert without hanging";
     PGX_INFO("✓ Empty DSA operation converted successfully");
@@ -111,6 +116,8 @@ TEST_F(MinimalHangReproTest, DSAWithArithOperand) {
     PassManager pm(&context);
     pm.addPass(::mlir::createDSAToStdPass());
     
+    PGX_INFO("Validating tested IR is not circular");
+    ASSERT_FALSE(pgx::utility::hasCircularIR(module));
     PGX_INFO("Running DSAToStd on DSA + arith operand...");
     ASSERT_TRUE(succeeded(pm.run(module))) << "DSA with arith operand should convert without hanging";
     PGX_INFO("✓ DSA with arith operand converted successfully");
@@ -156,7 +163,10 @@ TEST_F(MinimalHangReproTest, DSAWithDBNullableOperand) {
     
     builder.create<func::ReturnOp>(builder.getUnknownLoc());
     module.push_back(func);
-    
+
+    PGX_INFO("Validating tested IR is not circular");
+    ASSERT_FALSE(pgx::utility::hasCircularIR(module));
+
     PGX_INFO("=== Generated IR before conversion ===");
     module.print(llvm::errs());
     
@@ -222,6 +232,8 @@ TEST_F(MinimalHangReproTest, DSAWithPreConvertedTuple) {
     PassManager pm(&context);
     pm.addPass(::mlir::createDSAToStdPass());
     
+    PGX_INFO("Validating tested IR is not circular");
+    ASSERT_FALSE(pgx::utility::hasCircularIR(module));
     PGX_INFO("Running DSAToStd on DSA + pre-converted tuple...");
     ASSERT_TRUE(succeeded(pm.run(module))) << "DSA with pre-converted tuple should work";
     PGX_INFO("✓ DSA with pre-converted tuple converted successfully");
