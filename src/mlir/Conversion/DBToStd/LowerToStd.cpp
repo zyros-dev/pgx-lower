@@ -119,14 +119,14 @@ class AtLowering : public OpConversionPattern<pgx::mlir::dsa::At> {
       }
       llvm::SmallVector<mlir::Type> types;
       types.push_back(arrowPhysicalType);
-      if (atOp.valid()) {
+      if (atOp.getValid()) {
          types.push_back(rewriter.getI1Type());
       }
       std::vector<mlir::Value> values;
-      auto newAtOp = rewriter.create<pgx::mlir::dsa::At>(loc, types, adaptor.collection(), atOp.pos());
-      values.push_back(newAtOp.val());
-      if (atOp.valid()) {
-         values.push_back(newAtOp.valid());
+      auto newAtOp = rewriter.create<pgx::mlir::dsa::At>(loc, types, adaptor.collection(), atOp.getPos());
+      values.push_back(newAtOp.getVal());
+      if (atOp.getValid()) {
+         values.push_back(newAtOp.getValid());
       }
       if (t.isa<pgx::mlir::db::DateType, pgx::mlir::db::TimestampType>()) {
          if (values[0].getType() != rewriter.getI64Type()) {
@@ -168,7 +168,7 @@ class AppendTBLowering : public ConversionPattern {
       if (!appendOp.ds().getType().isa<pgx::mlir::dsa::TableBuilderType>()) {
          return mlir::failure();
       }
-      auto t = appendOp.val().getType();
+      auto t = appendOp.getVal().getType();
       if (typeConverter->isLegal(t)) {
          rewriter.startRootUpdate(op);
          appendOp->setOperands(operands);
@@ -219,7 +219,7 @@ class StringCastOpLowering : public OpConversionPattern<pgx::mlir::db::CastOp> {
    using OpConversionPattern<pgx::mlir::db::CastOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(pgx::mlir::db::CastOp castOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto loc = castOp->getLoc();
-      auto scalarSourceType = castOp.val().getType();
+      auto scalarSourceType = castOp.getVal().getType();
       auto scalarTargetType = castOp.getType();
       auto convertedTargetType = typeConverter->convertType(scalarTargetType);
       if (!scalarSourceType.isa<pgx::mlir::db::StringType>() && !scalarTargetType.isa<pgx::mlir::db::StringType>()) return failure();
@@ -351,17 +351,17 @@ class AndOpLowering : public OpConversionPattern<pgx::mlir::db::AndOp> {
       Value isNull;
       auto loc = andOp->getLoc();
 
-      for (size_t i = 0; i < adaptor.vals().size(); i++) {
-         auto currType = andOp.vals()[i].getType();
+      for (size_t i = 0; i < adaptor.getVals().size(); i++) {
+         auto currType = andOp.getVals()[i].getType();
          bool currNullable = currType.isa<pgx::mlir::db::NullableType>();
          Value currNull;
          Value currVal;
          if (currNullable) {
-            auto unPackOp = rewriter.create<pgx::mlir::util::UnPackOp>(loc, adaptor.vals()[i]);
-            currNull = unPackOp.vals()[0];
-            currVal = unPackOp.vals()[1];
+            auto unPackOp = rewriter.create<pgx::mlir::util::UnPackOp>(loc, adaptor.getVals()[i]);
+            currNull = unPackOp.getVals()[0];
+            currVal = unPackOp.getVals()[1];
          } else {
-            currVal = adaptor.vals()[i];
+            currVal = adaptor.getVals()[i];
          }
          if (i == 0) {
             if (currNullable) {
@@ -404,17 +404,17 @@ class OrOpLowering : public OpConversionPattern<pgx::mlir::db::OrOp> {
       auto loc = orOp->getLoc();
       Value falseValue = rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getI1Type(), 0));
 
-      for (size_t i = 0; i < adaptor.vals().size(); i++) {
-         auto currType = orOp.vals()[i].getType();
+      for (size_t i = 0; i < adaptor.getVals().size(); i++) {
+         auto currType = orOp.getVals()[i].getType();
          bool currNullable = currType.isa<pgx::mlir::db::NullableType>();
          Value currNull;
          Value currVal;
          if (currNullable) {
-            auto unPackOp = rewriter.create<pgx::mlir::util::UnPackOp>(loc, adaptor.vals()[i]);
-            currNull = unPackOp.vals()[0];
-            currVal = unPackOp.vals()[1];
+            auto unPackOp = rewriter.create<pgx::mlir::util::UnPackOp>(loc, adaptor.getVals()[i]);
+            currNull = unPackOp.getVals()[0];
+            currVal = unPackOp.getVals()[1];
          } else {
-            currVal = adaptor.vals()[i];
+            currVal = adaptor.getVals()[i];
          }
          if (i == 0) {
             if (currNullable) {
@@ -509,11 +509,11 @@ class IsNullOpLowering : public OpConversionPattern<pgx::mlir::db::IsNullOp> {
    public:
    using OpConversionPattern<pgx::mlir::db::IsNullOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(pgx::mlir::db::IsNullOp isNullOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      if (isNullOp.val().getType().isa<pgx::mlir::db::NullableType>()) {
-         auto unPackOp = rewriter.create<pgx::mlir::util::UnPackOp>(isNullOp->getLoc(), adaptor.val());
-         rewriter.replaceOp(isNullOp, unPackOp.vals()[0]);
+      if (isNullOp.getVal().getType().isa<pgx::mlir::db::NullableType>()) {
+         auto unPackOp = rewriter.create<pgx::mlir::util::UnPackOp>(isNullOp->getLoc(), adaptor.getVal());
+         rewriter.replaceOp(isNullOp, unPackOp.getVals()[0]);
       } else {
-         rewriter.replaceOp(isNullOp, adaptor.val());
+         rewriter.replaceOp(isNullOp, adaptor.getVal());
       }
       return success();
    }
@@ -800,7 +800,7 @@ class BetweenLowering : public OpConversionPattern<pgx::mlir::db::BetweenOp> {
       auto isGteLower = rewriter.create<pgx::mlir::db::CmpOp>(betweenOp->getLoc(), betweenOp.lowerInclusive() ? pgx::mlir::db::DBCmpPredicate::gte : pgx::mlir::db::DBCmpPredicate::gt, betweenOp.val(), betweenOp.lower());
       auto isLteUpper = rewriter.create<pgx::mlir::db::CmpOp>(betweenOp->getLoc(), betweenOp.upperInclusive() ? pgx::mlir::db::DBCmpPredicate::lte : pgx::mlir::db::DBCmpPredicate::lt, betweenOp.val(), betweenOp.upper());
       auto isInRange = rewriter.create<pgx::mlir::db::AndOp>(betweenOp->getLoc(), ValueRange({isGteLower, isLteUpper}));
-      rewriter.replaceOp(betweenOp, isInRange.res());
+      rewriter.replaceOp(betweenOp, isInRange.getRes());
       return success();
    }
 };
@@ -813,7 +813,7 @@ class OneOfLowering : public OpConversionPattern<pgx::mlir::db::OneOfOp> {
          compared.push_back(rewriter.create<pgx::mlir::db::CmpOp>(oneOfOp->getLoc(), pgx::mlir::db::DBCmpPredicate::eq, oneOfOp.val(), ele));
       }
       auto isInRange = rewriter.create<pgx::mlir::db::OrOp>(oneOfOp->getLoc(), compared);
-      rewriter.replaceOp(oneOfOp, isInRange.res());
+      rewriter.replaceOp(oneOfOp, isInRange.getRes());
       return success();
    }
 };

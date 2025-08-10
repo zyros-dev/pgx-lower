@@ -22,7 +22,7 @@ class BaseTableTranslator : public pgx::mlir::relalg::Translator {
       std::string tableName = baseTableOp->getAttr("table_identifier").cast<mlir::StringAttr>().str();
       std::string scanDescription = R"({ "table": ")" + tableName + R"(", "columns": [ )";
       bool first = true;
-      for (auto namedAttr : baseTableOp.columnsAttr().getValue()) {
+      for (auto namedAttr : baseTableOp.getColumnsAttr().getValue()) {
          auto identifier = namedAttr.getName();
          auto attr = namedAttr.getValue();
          auto attrDef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();

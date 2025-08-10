@@ -148,8 +148,8 @@ class AggregationTranslator : public pgx::mlir::relalg::Translator {
       auto counterType = builder.getI64Type();
       pgx::mlir::relalg::ReturnOp terminator = mlir::cast<pgx::mlir::relalg::ReturnOp>(aggregationOp.aggr_func().front().getTerminator());
 
-      for (size_t i = 0; i < aggregationOp.computed_cols().size(); i++) {
-         auto* destAttr = &aggregationOp.computed_cols()[i].cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn();
+      for (size_t i = 0; i < aggregationOp.getComputedCols().size(); i++) {
+         auto* destAttr = &aggregationOp.getComputedCols()[i].cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn();
          mlir::Value computedVal = terminator.results()[i];
          if (auto aggrFn = mlir::dyn_cast_or_null<pgx::mlir::relalg::AggrFuncOp>(computedVal.getDefiningOp())) {
             auto loc = aggrFn->getLoc();

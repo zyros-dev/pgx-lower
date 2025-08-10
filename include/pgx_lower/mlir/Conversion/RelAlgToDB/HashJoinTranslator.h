@@ -39,15 +39,15 @@ class HashJoinTranslator : public JoinTranslator {
    HashJoinTranslator(std::shared_ptr<JoinImpl> impl);
    
    virtual void setInfo(Translator* consumer, ColumnSet requiredAttributes) override;
-   virtual void produce(TranslatorContext& context, mlir::OpBuilder& builder) override;
+   virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override;
    
-   void unpackValues(TranslatorContext::AttributeResolverScope& scope, mlir::OpBuilder& builder, 
-                     mlir::Value packed, TranslatorContext& context, mlir::Value& marker);
-   void unpackKeys(TranslatorContext::AttributeResolverScope& scope, mlir::OpBuilder& builder, 
-                   mlir::Value packed, TranslatorContext& context);
+   void unpackValues(TranslatorContext::AttributeResolverScope& scope, ::mlir::OpBuilder& builder, 
+                     ::mlir::Value packed, TranslatorContext& context, ::mlir::Value& marker);
+   void unpackKeys(TranslatorContext::AttributeResolverScope& scope, ::mlir::OpBuilder& builder, 
+                   ::mlir::Value packed, TranslatorContext& context);
    
-   virtual void scanHT(TranslatorContext& context, mlir::OpBuilder& builder) override;
-   virtual void consume(Translator* child, mlir::OpBuilder& builder, TranslatorContext& context) override;
+   virtual void scanHT(TranslatorContext& context, ::mlir::OpBuilder& builder) override;
+   virtual void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) override;
    
    virtual ~HashJoinTranslator() = default;
 };

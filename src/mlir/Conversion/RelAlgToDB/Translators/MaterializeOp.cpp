@@ -46,13 +46,13 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    }
 
    public:
-   MaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) : pgx::mlir::relalg::Translator(materializeOp.rel()), materializeOp(materializeOp) {
-      orderedAttributes = pgx::mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.cols());
+   MaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) : pgx::mlir::relalg::Translator(materializeOp.getRel()), materializeOp(materializeOp) {
+      orderedAttributes = pgx::mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.getCols());
    }
    virtual void setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) override {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
-      this->requiredAttributes.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.cols()));
+      this->requiredAttributes.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.getCols()));
       propagateInfo();
    }
    virtual pgx::mlir::relalg::ColumnSet getAvailableColumns() override {
@@ -82,7 +82,7 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
       }
       tableBuilder = builder.create<pgx::mlir::dsa::CreateDS>(materializeOp.getLoc(), pgx::mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
       children[0]->produce(context, builder);
-      table = builder.create<pgx::mlir::dsa::Finalize>(materializeOp.getLoc(), pgx::mlir::dsa::TableType::get(builder.getContext()), tableBuilder).res();
+      table = builder.create<pgx::mlir::dsa::Finalize>(materializeOp.getLoc(), pgx::mlir::dsa::TableType::get(builder.getContext()), tableBuilder).getRes();
    }
    virtual void done() override {
       materializeOp.replaceAllUsesWith(table);

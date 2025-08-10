@@ -19,7 +19,7 @@ class ConstRelTranslator : public pgx::mlir::relalg::Translator {
       pgx::mlir::relalg::OrderedAttributes attributes = pgx::mlir::relalg::OrderedAttributes::fromRefArr(constRelationOp.getColumns());
       auto tupleType = attributes.getTupleType(builder.getContext());
       mlir::Value vector = builder.create<pgx::mlir::dsa::CreateDS>(constRelationOp.getLoc(), pgx::mlir::dsa::VectorType::get(builder.getContext(), tupleType));
-      for (auto rowAttr : constRelationOp.valuesAttr()) {
+      for (auto rowAttr : constRelationOp.getValuesAttr()) {
          auto row = rowAttr.cast<ArrayAttr>();
          std::vector<Value> values;
          size_t i = 0;

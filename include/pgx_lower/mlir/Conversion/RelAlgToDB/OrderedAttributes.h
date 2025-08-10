@@ -4,6 +4,8 @@
 #include "mlir/Conversion/RelAlgToDB/TranslatorContext.h"
 #include "mlir/Dialect/RelAlg/ColumnSet.h"
 #include "mlir/Dialect/RelAlg/IR/Column.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Value.h"
 #include <vector>
@@ -37,6 +39,20 @@ public:
         OrderedAttributes res;
         for (auto* attr : vec) {
             res.insert(attr);
+        }
+        return res;
+    }
+    
+    // Create from an ArrayAttr containing ColumnRefAttr/ColumnDefAttr
+    static OrderedAttributes fromRefArr(::mlir::ArrayAttr arrayAttr) {
+        OrderedAttributes res;
+        for (auto attr : arrayAttr) {
+            if (auto attrRef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>()) {
+                res.insert(&attrRef.getColumn());
+            }
+            if (auto attrDef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>()) {
+                res.insert(&attrDef.getColumn());
+            }
         }
         return res;
     }

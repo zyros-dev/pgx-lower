@@ -19,10 +19,10 @@ class NLJoinTranslator : public JoinTranslator {
    NLJoinTranslator(std::shared_ptr<JoinImpl> impl);
    
    virtual void setInfo(Translator* consumer, ColumnSet requiredAttributes) override;
-   virtual void build(mlir::OpBuilder& builder, TranslatorContext& context);
-   virtual void scanHT(TranslatorContext& context, mlir::OpBuilder& builder) override;
-   virtual void produce(TranslatorContext& context, mlir::OpBuilder& builder) override;
-   virtual void consume(Translator* child, mlir::OpBuilder& builder, TranslatorContext& context) override;
+   virtual void build(::mlir::OpBuilder& builder, TranslatorContext& context);
+   virtual void scanHT(TranslatorContext& context, ::mlir::OpBuilder& builder) override;
+   virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override;
+   virtual void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) override;
    
    virtual ~NLJoinTranslator() = default;
 };
