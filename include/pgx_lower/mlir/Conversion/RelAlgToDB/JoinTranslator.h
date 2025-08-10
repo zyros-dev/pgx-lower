@@ -59,6 +59,8 @@ class JoinTranslator : public Translator {
    virtual ::mlir::Value evaluatePredicate(TranslatorContext& context, ::mlir::OpBuilder& builder, TranslatorContext::AttributeResolverScope& scope);
    std::vector<size_t> customLookupBuilders;
    
+   virtual ColumnSet getAvailableColumns() override;
+   
    virtual ~JoinTranslator() = default;
 };
 

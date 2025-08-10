@@ -111,10 +111,19 @@ protected:
 
 // Factory functions for specific translators (to be implemented)
 std::unique_ptr<Translator> createBaseTableTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createConstRelTranslator(::mlir::Operation* op);
 std::unique_ptr<Translator> createMaterializeTranslator(::mlir::Operation* op);
-std::unique_ptr<Translator> createDummyTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createSelectionTranslator(::mlir::Operation* op);
 std::unique_ptr<Translator> createMapTranslator(::mlir::Operation* op);
 std::unique_ptr<Translator> createJoinTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createSortTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createAggregationTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createRenamingTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createProjectionTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createLimitTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createTmpTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createSetOpTranslator(::mlir::Operation* op);
+std::unique_ptr<Translator> createDummyTranslator(::mlir::Operation* op);
 
 } // namespace relalg
 } // namespace mlir

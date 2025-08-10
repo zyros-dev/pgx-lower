@@ -2,7 +2,7 @@
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 
 using namespace pgx::mlir::relalg;
-void HashJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) {
+void HashJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, const pgx::mlir::relalg::ColumnSet& requiredAttributes) {
    this->consumer = consumer;
    this->requiredAttributes = requiredAttributes;
    addJoinRequiredColumns();

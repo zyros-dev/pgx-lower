@@ -4,20 +4,22 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
 
-class BaseTableTranslator : public pgx::mlir::relalg::Translator {
+namespace pgx::mlir::relalg {
+
+class BaseTableTranslator : public Translator {
    static bool registered;
-   pgx::mlir::relalg::BaseTableOp baseTableOp;
+   BaseTableOp baseTableOp;
 
    public:
-   BaseTableTranslator(pgx::mlir::relalg::BaseTableOp baseTableOp) : pgx::mlir::relalg::Translator(baseTableOp), baseTableOp(baseTableOp) {}
-   virtual void consume(pgx::mlir::relalg::Translator* child, mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   BaseTableTranslator(BaseTableOp baseTableOp) : Translator(baseTableOp), baseTableOp(baseTableOp) {}
+   virtual void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) override {
       assert(false && "should not happen");
    }
-   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
       using namespace mlir;
-      std::vector<mlir::Type> types;
-      std::vector<const pgx::mlir::relalg::Column*> cols;
+      std::vector<::mlir::Type> types;
+      std::vector<const Column*> cols;
       std::vector<mlir::Attribute> columnNames;
       std::string tableName = baseTableOp->getAttr("table_identifier").cast<mlir::StringAttr>().str();
       std::string scanDescription = R"({ "table": ")" + tableName + R"(", "columns": [ )";
@@ -42,34 +44,34 @@ class BaseTableTranslator : public pgx::mlir::relalg::Translator {
 
       auto tupleType = mlir::TupleType::get(builder.getContext(), types);
       auto recordBatch = pgx::mlir::dsa::RecordBatchType::get(builder.getContext(), tupleType);
-      mlir::Type chunkIterable = pgx::mlir::dsa::GenericIterableType::get(builder.getContext(), recordBatch, "table_chunk_iterator");
+      ::mlir::Type chunkIterable = pgx::mlir::dsa::GenericIterableType::get(builder.getContext(), recordBatch, "table_chunk_iterator");
 
       auto chunkIterator = builder.create<pgx::mlir::dsa::ScanSource>(baseTableOp->getLoc(), chunkIterable, builder.getStringAttr(scanDescription));
 
-      auto forOp = builder.create<pgx::mlir::dsa::ForOp>(baseTableOp->getLoc(), mlir::TypeRange{}, chunkIterator, mlir::Value(), mlir::ValueRange{});
-      mlir::Block* block = new mlir::Block;
+      auto forOp = builder.create<pgx::mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange{}, chunkIterator, ::mlir::Value(), ::mlir::ValueRange{});
+      ::mlir::Block* block = new ::mlir::Block;
       block->addArgument(recordBatch, baseTableOp->getLoc());
       forOp.getBodyRegion().push_back(block);
-      mlir::OpBuilder builder1(forOp.getBodyRegion());
-      auto forOp2 = builder1.create<pgx::mlir::dsa::ForOp>(baseTableOp->getLoc(), mlir::TypeRange{}, forOp.getInductionVar(), mlir::Value(), mlir::ValueRange{});
-      mlir::Block* block2 = new mlir::Block;
+      ::mlir::OpBuilder builder1(forOp.getBodyRegion());
+      auto forOp2 = builder1.create<pgx::mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange{}, forOp.getInductionVar(), ::mlir::Value(), ::mlir::ValueRange{});
+      ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(recordBatch.getElementType(), baseTableOp->getLoc());
       forOp2.getBodyRegion().push_back(block2);
-      mlir::OpBuilder builder2(forOp2.getBodyRegion());
+      ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
       size_t i = 0;
       for (const auto* attr : cols) {
-         std::vector<mlir::Type> types;
+         std::vector<::mlir::Type> types;
          types.push_back(getBaseType(attr->type));
          if (attr->type.isa<pgx::mlir::db::NullableType>()) {
             types.push_back(builder.getI1Type());
          }
          auto atOp = builder2.create<pgx::mlir::dsa::At>(baseTableOp->getLoc(), types, forOp2.getInductionVar(), i++);
          if (attr->type.isa<pgx::mlir::db::NullableType>()) {
-            mlir::Value isNull = builder2.create<pgx::mlir::db::NotOp>(baseTableOp->getLoc(), atOp.valid());
-            mlir::Value val = builder2.create<pgx::mlir::db::AsNullableOp>(baseTableOp->getLoc(), attr->type, atOp.val(), isNull);
+            ::mlir::Value isNull = builder2.create<pgx::mlir::db::NotOp>(baseTableOp->getLoc(), atOp.getResult(1));
+            ::mlir::Value val = builder2.create<pgx::mlir::db::AsNullableOp>(baseTableOp->getLoc(), attr->type, atOp.getResult(0), isNull);
             context.setValueForAttribute(scope, attr, val);
          } else {
-            context.setValueForAttribute(scope, attr, atOp.val());
+            context.setValueForAttribute(scope, attr, atOp.getResult(0));
          }
       }
       consumer->consume(this, builder2, context);
@@ -79,6 +81,9 @@ class BaseTableTranslator : public pgx::mlir::relalg::Translator {
    virtual ~BaseTableTranslator() {}
 };
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createBaseTableTranslator(pgx::mlir::relalg::BaseTableOp baseTableOp) {
+} // namespace pgx::mlir::relalg
+
+std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::createBaseTableTranslator(::mlir::Operation* op) {
+   auto baseTableOp = ::mlir::cast<pgx::mlir::relalg::BaseTableOp>(op);
    return std::make_unique<BaseTableTranslator>(baseTableOp);
 }

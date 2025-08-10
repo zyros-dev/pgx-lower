@@ -1084,7 +1084,7 @@ void pgx::mlir::db::registerDBConversionPasses() {
    ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
       return pgx::mlir::db::createLowerToStdPass();
    });
-   mlir::PassPipelineRegistration<EmptyPipelineOptions>(
+   ::mlir::PassPipelineRegistration<::mlir::EmptyPipelineOptions>(
       "lower-db",
       "",
       createLowerDBPipeline);
