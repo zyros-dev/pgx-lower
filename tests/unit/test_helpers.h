@@ -2,6 +2,10 @@
 
 #include <vector>
 #include <cstdint>
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Operation.h"
+#include "execution/logging.h"
+#include <gtest/gtest.h>
 
 // Mock tuple scan context for testing
 struct MockTupleScanContext {
