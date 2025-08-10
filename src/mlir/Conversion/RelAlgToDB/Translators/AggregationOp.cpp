@@ -6,7 +6,7 @@
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "core/logging.h"
+#include "execution/logging.h"
 
 class AggregationTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::AggregationOp aggregationOp;

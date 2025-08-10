@@ -29,7 +29,7 @@ class SetOpTranslator : public pgx::mlir::relalg::Translator {
          leftMapping[&columnDef.getColumn()] = &leftRef.getColumn();
          rightMapping[&columnDef.getColumn()] = &rightRef.getColumn();
       }
-      tupleType = orderedAttributes.getTupleType(unionOp.getContext());
+      tupleType = orderedAttributes.getTupleType(unionop->getContext());
    }
    ::mlir::Value pack(std::unordered_map<const pgx::mlir::relalg::Column*, const pgx::mlir::relalg::Column*>& mapping, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) {
       std::vector<mlir::Value> values;

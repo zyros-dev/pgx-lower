@@ -24,9 +24,9 @@ void HashJoinTranslator::setInfo(pgx::mlir::relalg::Translator* consumer, const 
       }
    }
    this->orderedValues = pgx::mlir::relalg::OrderedAttributes::fromColumns(leftValues);
-   keyTupleType = orderedKeys.getTupleType(op.getContext());
-   valTupleType = orderedValues.getTupleType(op.getContext(), impl->markable ? std::vector<mlir::Type>({mlir::IntegerType::get(op->getContext(), 64)}) : std::vector<mlir::Type>());
-   entryType = mlir::TupleType::get(op.getContext(), {keyTupleType, valTupleType});
+   keyTupleType = orderedKeys.getTupleType(op->getContext());
+   valTupleType = orderedValues.getTupleType(op->getContext(), impl->markable ? std::vector<mlir::Type>({mlir::IntegerType::get(op->getContext(), 64)}) : std::vector<mlir::Type>());
+   entryType = mlir::TupleType::get(op->getContext(), {keyTupleType, valTupleType});
 }
 void HashJoinTranslator::produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) {
    joinHashtable = builder.create<pgx::mlir::dsa::CreateDS>(loc, pgx::mlir::dsa::JoinHashtableType::get(builder.getContext(), keyTupleType, valTupleType));

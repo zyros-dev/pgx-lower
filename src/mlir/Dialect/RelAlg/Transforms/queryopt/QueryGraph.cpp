@@ -218,7 +218,7 @@ pgx::mlir::relalg::ColumnSet pgx::mlir::relalg::QueryGraph::getPKey(pgx::mlir::r
 double getRows(pgx::mlir::relalg::QueryGraph::Node& n) {
    if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       auto numRows = baseTableOp.meta().getMeta()->getNumRows();
-      baseTableOp->setAttr("rows", mlir::FloatAttr::get(mlir::FloatType::getF64(n.op.getContext()), numRows));
+      baseTableOp->setAttr("rows", mlir::FloatAttr::get(mlir::FloatType::getF64(n.op->getContext()), numRows));
       return numRows == 0 ? 1 : numRows;
    }
    return 1;

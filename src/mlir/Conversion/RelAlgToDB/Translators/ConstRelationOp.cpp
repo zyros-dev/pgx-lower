@@ -4,7 +4,7 @@
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
-#include "core/logging.h"
+#include "execution/logging.h"
 
 namespace pgx::mlir::relalg {
 

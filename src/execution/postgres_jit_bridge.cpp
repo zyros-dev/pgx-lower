@@ -1,7 +1,7 @@
 // PostgreSQL JIT Bridge - Isolates PostgreSQL headers from LLVM/MLIR headers
 // This avoids macro conflicts with LLVM code
 
-#include "core/logging.h"
+#include "execution/logging.h"
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {

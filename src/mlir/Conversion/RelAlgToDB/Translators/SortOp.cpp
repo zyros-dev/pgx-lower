@@ -5,7 +5,7 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "core/logging.h"
+#include "execution/logging.h"
 
 class SortTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::SortOp sortOp;
