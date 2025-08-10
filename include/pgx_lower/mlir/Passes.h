@@ -28,7 +28,7 @@ void registerAllPgxLoweringPasses();
 /// 2. DB → DSA lowering (Phase 3b)
 /// 
 /// @param pm The pass manager to populate with passes
-void createRelAlgToDBPipeline(mlir::PassManager& pm);
+void createRelAlgToDBPipeline(::mlir::PassManager& pm);
 
 
 /// DEPRECATED: Single PassManager approach - use runCompleteLoweringPipeline instead
@@ -36,7 +36,7 @@ void createRelAlgToDBPipeline(mlir::PassManager& pm);
 /// 
 /// @param pm The pass manager to populate with passes
 /// @param enableVerifier Whether to enable MLIR verification between passes
-void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier = true);
+void createCompleteLoweringPipeline(::mlir::PassManager& pm, bool enableVerifier = true);
 
 /// LingoDB-Compliant Multi-PassManager Pipeline (RECOMMENDED)
 /// Runs the complete lowering pipeline using 3 separate PassManager instances
@@ -51,17 +51,17 @@ void createCompleteLoweringPipeline(mlir::PassManager& pm, bool enableVerifier =
 /// @param context The MLIR context
 /// @param enableVerifier Whether to enable MLIR verification between passes
 /// @return LogicalResult success() if all phases succeed, failure() otherwise
-LogicalResult runCompleteLoweringPipeline(mlir::ModuleOp module, mlir::MLIRContext* context, bool enableVerifier = true);
+LogicalResult runCompleteLoweringPipeline(::mlir::ModuleOp module, ::mlir::MLIRContext* context, bool enableVerifier = true);
 
 //===----------------------------------------------------------------------===//
 // Future Pipeline Extensions (Phase 4+)
 //===----------------------------------------------------------------------===//
 
 // TODO: Add DSA → LLVM pipeline configuration (Phase 4)
-// void createDSAToLLVMPipeline(mlir::PassManager& pm);
+// void createDSAToLLVMPipeline(::mlir::PassManager& pm);
 
 // TODO: Add optimization pipeline configuration
-// void createOptimizationPipeline(mlir::PassManager& pm);
+// void createOptimizationPipeline(::mlir::PassManager& pm);
 
 //===----------------------------------------------------------------------===//
 // Library Validation Functions

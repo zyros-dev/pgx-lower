@@ -102,9 +102,6 @@ INCLUDE_UPDATES=(
     "s|mlir/Dialect/SCF/SCF\.h|mlir/Dialect/SCF/IR/SCF.h|g"
     "s|mlir/Dialect/Arith/Arith\.h|mlir/Dialect/Arith/IR/Arith.h|g"
     "s|mlir/Dialect/MemRef/MemRef\.h|mlir/Dialect/MemRef/IR/MemRef.h|g"
-    "s|mlir/Dialect/util/UtilOps\.h|mlir/Dialect/Util/IR/UtilOps.h|g"
-    "s|mlir/Dialect/util/UtilDialect\.h|mlir/Dialect/Util/IR/UtilDialect.h|g"
-    "s|mlir/Dialect/util/UtilTypes\.h|mlir/Dialect/Util/IR/UtilTypes.h|g"
 )
 
 find ./src ./include -type f \( -name "*.cpp" -o -name "*.h" -o -name "*.hpp" \) | while read -r file; do

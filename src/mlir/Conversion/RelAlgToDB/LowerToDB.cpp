@@ -7,14 +7,14 @@
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/util/UtilDialect.h"
 
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 namespace {
 
-class LowerToDBPass : public mlir::PassWrapper<LowerToDBPass, mlir::OperationPass<mlir::func::FuncOp>> {
+class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-to-db"; }
 
    void getDependentDialects(mlir::DialectRegistry& registry) const override {
@@ -22,10 +22,10 @@ class LowerToDBPass : public mlir::PassWrapper<LowerToDBPass, mlir::OperationPas
       registry.insert<mlir::memref::MemRefDialect>();
       registry.insert<mlir::scf::SCFDialect>();
    }
-   bool isTranslationHook(mlir::Operation* op) {
-      return ::llvm::TypeSwitch<mlir::Operation*, bool>(op)
+   bool isTranslationHook(::mlir::Operation* op) {
+      return ::llvm::TypeSwitch<::mlir::Operation*, bool>(op)
 
-         .Case<pgx::mlir::relalg::MaterializeOp>([&](mlir::Operation* op) {
+         .Case<pgx::mlir::relalg::MaterializeOp>([&](::mlir::Operation* op) {
             return true;
          })
          .Default([&](auto x) {
@@ -34,11 +34,11 @@ class LowerToDBPass : public mlir::PassWrapper<LowerToDBPass, mlir::OperationPas
    }
    void runOnOperation() override {
       pgx::mlir::relalg::TranslatorContext loweringContext;
-      getOperation().walk([&](mlir::Operation* op) {
+      getOperation().walk([&](::mlir::Operation* op) {
          if (isTranslationHook(op)) {
             auto node = pgx::mlir::relalg::Translator::createTranslator(op);
             node->setInfo(nullptr, {});
-            mlir::OpBuilder builder(op);
+            ::mlir::OpBuilder builder(op);
             node->produce(loweringContext, builder);
             node->done();
          }
@@ -56,13 +56,13 @@ void registerRelAlgConversionPasses(){
       return pgx::mlir::relalg::createLowerToDBPass();
    });
 
-   mlir::PassPipelineRegistration<EmptyPipelineOptions>(
+   ::mlir::PassPipelineRegistration<EmptyPipelineOptions>(
       "lower-relalg",
       "",
       createLowerRelAlgPipeline);
 }
 void createLowerRelAlgPipeline(mlir::OpPassManager& pm){
-   pm.addNestedPass<mlir::func::FuncOp>(pgx::mlir::relalg::createLowerToDBPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(pgx::mlir::relalg::createLowerToDBPass());
    pm.addPass(mlir::createCanonicalizerPass());
 }
 

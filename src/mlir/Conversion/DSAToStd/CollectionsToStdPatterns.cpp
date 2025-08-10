@@ -4,7 +4,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/BlockAndValueMapping.h"
@@ -24,11 +24,11 @@ class SortOpLowering : public OpConversionPattern<pgx::mlir::dsa::SortOp> {
 
       ModuleOp parentModule = sortOp->getParentOfType<ModuleOp>();
       Type elementType = sortOp.toSort().getType().cast<pgx::mlir::dsa::VectorType>().getElementType();
-      mlir::func::FuncOp funcOp;
+      ::mlir::func::FuncOp funcOp;
       {
          OpBuilder::InsertionGuard insertionGuard(rewriter);
          rewriter.setInsertionPointToStart(parentModule.getBody());
-         funcOp = rewriter.create<mlir::func::FuncOp>(parentModule.getLoc(), "dsa_sort_compare" + std::to_string(id++), rewriter.getFunctionType(TypeRange({ptrType, ptrType}), TypeRange(rewriter.getI1Type())));
+         funcOp = rewriter.create<::mlir::func::FuncOp>(parentModule.getLoc(), "dsa_sort_compare" + std::to_string(id++), rewriter.getFunctionType(TypeRange({ptrType, ptrType}), TypeRange(rewriter.getI1Type())));
          auto* funcBody = new Block;
          funcBody->addArguments(TypeRange({ptrType, ptrType}), {parentModule->getLoc(), parentModule->getLoc()});
          funcOp.getBody().push_back(funcBody);
@@ -75,8 +75,8 @@ class ForOpLowering : public OpConversionPattern<pgx::mlir::dsa::ForOp> {
          argumentTypes.push_back(t);
          argumentLocs.push_back(forOp->getLoc());
       }
-      auto collectionType = forOp.collection().getType().dyn_cast_or_null<pgx::mlir::dsa::CollectionType>();
-      auto iterator = pgx::mlir::dsa::CollectionIterationImpl::getImpl(collectionType, adaptor.collection());
+      auto collectionType = forOp.getCollection().getType().dyn_cast_or_null<pgx::mlir::dsa::CollectionType>();
+      auto iterator = pgx::mlir::dsa::CollectionIterationImpl::getImpl(collectionType, adaptor.getCollection());
 
       ModuleOp parentModule = forOp->getParentOfType<ModuleOp>();
       bool containsCondSkip = false;
@@ -126,7 +126,7 @@ class ForOpLowering : public OpConversionPattern<pgx::mlir::dsa::ForOp> {
                if (auto op = mlir::dyn_cast_or_null<pgx::mlir::dsa::CondSkipOp>(&*it)) {
                   toErase.push_back(op.getOperation());
                   builder.setInsertionPointAfter(op);
-                  llvm::SmallVector<mlir::Value> remappedArgs;
+                  llvm::SmallVector<::mlir::Value> remappedArgs;
                   assert(rewriter.getRemappedValues(op.args(), remappedArgs).succeeded());
                   Block* after = rewriter.splitBlock(builder.getBlock(), builder.getInsertionPoint());
                   builder.setInsertionPointAfter(op);
@@ -167,7 +167,7 @@ class ForOpLowering : public OpConversionPattern<pgx::mlir::dsa::ForOp> {
          return results;
       };
 
-      std::vector<Value> results = iterator->implementLoop(forOp->getLoc(), adaptor.initArgs(), forOp.until(), *typeConverter, rewriter, parentModule, containsCondSkip ? fn1 : fn2);
+      std::vector<Value> results = iterator->implementLoop(forOp->getLoc(), adaptor.initArgs(), forOp.getUntil(), *typeConverter, rewriter, parentModule, containsCondSkip ? fn1 : fn2);
       {
          OpBuilder::InsertionGuard insertionGuard(rewriter);
 
@@ -187,7 +187,7 @@ class LookupOpLowering  : public OpConversionPattern<pgx::mlir::dsa::Lookup> {
    using OpConversionPattern<pgx::mlir::dsa::Lookup>::OpConversionPattern;
    LogicalResult matchAndRewrite(pgx::mlir::dsa::Lookup op, OpAdaptor lookupAdaptor, ConversionPatternRewriter& rewriter) const override {
       auto loc = op->getLoc();
-      auto loaded = rewriter.create<util::LoadOp>(loc, lookupAdaptor.collection().getType().cast<pgx::mlir::util::RefType>().getElementType(), lookupAdaptor.collection(), Value());
+      auto loaded = rewriter.create<util::LoadOp>(loc, lookupAdaptor.getCollection().getType().cast<pgx::mlir::util::RefType>().getElementType(), lookupAdaptor.getCollection(), Value());
       auto unpacked = rewriter.create<pgx::mlir::util::UnPackOp>(loc, loaded);
       Value ht = unpacked.getResult(0);
       Value htMask = unpacked.getResult(1);
@@ -228,20 +228,20 @@ class AtLowering  : public OpConversionPattern<pgx::mlir::dsa::At> {
    LogicalResult matchAndRewrite(pgx::mlir::dsa::At atOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto loc = atOp->getLoc();
       auto baseType = getBaseType(atOp.getType(0));
-      mlir::Value index;
-      mlir::Value columnOffset;
+      ::mlir::Value index;
+      ::mlir::Value columnOffset;
       auto indexType = rewriter.getIndexType();
-      mlir::Value originalValueBuffer;
-      mlir::Value valueBuffer;
-      mlir::Value validityBuffer;
-      mlir::Value varLenBuffer;
-      mlir::Value nullMultiplier;
+      ::mlir::Value originalValueBuffer;
+      ::mlir::Value valueBuffer;
+      ::mlir::Value validityBuffer;
+      ::mlir::Value varLenBuffer;
+      ::mlir::Value nullMultiplier;
       {
-         mlir::OpBuilder::InsertionGuard guard(rewriter);
-         if (auto* definingOp = adaptor.collection().getDefiningOp()) {
+         ::mlir::OpBuilder::InsertionGuard guard(rewriter);
+         if (auto* definingOp = adaptor.getCollection().getDefiningOp()) {
             rewriter.setInsertionPointAfter(definingOp);
          }
-         auto unpacked = rewriter.create<pgx::mlir::util::UnPackOp>(loc, adaptor.collection());
+         auto unpacked = rewriter.create<pgx::mlir::util::UnPackOp>(loc, adaptor.getCollection());
          index = unpacked.getResult(0);
          auto info = unpacked.getResult(1);
          size_t column = atOp.pos();
@@ -291,7 +291,7 @@ class AtLowering  : public OpConversionPattern<pgx::mlir::dsa::At> {
          Value realPos = rewriter.create<arith::AddIOp>(loc, indexType, columnOffset, index);
          realPos = rewriter.create<arith::MulIOp>(loc, indexType, nullMultiplier, index);
          Value isValid = getBit(rewriter, loc, validityBuffer, realPos);
-         rewriter.replaceOp(atOp, mlir::ValueRange{val, isValid});
+         rewriter.replaceOp(atOp, ::mlir::ValueRange{val, isValid});
       } else {
          rewriter.replaceOp(atOp, val);
       }
@@ -300,7 +300,7 @@ class AtLowering  : public OpConversionPattern<pgx::mlir::dsa::At> {
 };
 } // namespace
 
-void pgx::mlir::dsa::populateCollectionsToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
+void pgx::mlir::dsa::populateCollectionsToStdPatterns(::mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
    auto* context = patterns.getContext();
 
    patterns.insert<SortOpLowering>(typeConverter, context);

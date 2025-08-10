@@ -5,10 +5,10 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
-class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<mlir::func::FuncOp>> {
+class IntroduceTmp : public ::mlir::PassWrapper<IntroduceTmp, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-introduce-tmp"; }
    public:
-   pgx::mlir::relalg::ColumnSet getUsed(mlir::Operation* op) {
+   pgx::mlir::relalg::ColumnSet getUsed(::mlir::Operation* op) {
       if (auto asOperator = mlir::dyn_cast_or_null<Operator>(op)) {
          auto cols = asOperator.getUsedColumns();
          for (auto *user : asOperator.asRelation().getUsers()) {
@@ -16,7 +16,7 @@ class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<
          }
          return cols;
       } else if (auto matOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::MaterializeOp>(op)) {
-         return pgx::mlir::relalg::ColumnSet::fromArrayAttr(matOp.cols());
+         return pgx::mlir::relalg::ColumnSet::fromArrayAttr(matOp.getCols());
       }
       return {};
    }
@@ -24,7 +24,7 @@ class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<
       getOperation().walk([&](Operator op) {
          auto users = op->getUsers();
          if (!users.empty() && ++users.begin() != users.end()) {
-            mlir::OpBuilder builder(&getContext());
+            ::mlir::OpBuilder builder(&getContext());
             builder.setInsertionPointAfter(op.getOperation());
             pgx::mlir::relalg::ColumnSet usedAttributes;
             for (auto *user : users) {

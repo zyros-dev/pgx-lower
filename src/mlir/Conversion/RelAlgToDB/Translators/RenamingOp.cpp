@@ -5,16 +5,16 @@
 
 class RenamingTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::RenamingOp renamingOp;
-   std::vector<std::pair<pgx::mlir::relalg::Column*, mlir::Value>> saved;
+   std::vector<std::pair<pgx::mlir::relalg::Column*, ::mlir::Value>> saved;
 
    public:
    RenamingTranslator(pgx::mlir::relalg::RenamingOp renamingOp) : pgx::mlir::relalg::Translator(renamingOp), renamingOp(renamingOp) {}
 
-   virtual void consume(pgx::mlir::relalg::Translator* child, mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
       auto scope = context.createScope();
-      for(mlir::Attribute attr:renamingOp.columns()){
+      for(::mlir::Attribute attr:renamingOp.getColumns()){
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
-         mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
+         ::mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<::mlir::ArrayAttr>()[0];
          auto relationRefAttr = from.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>();
          context.setValueForAttribute(scope,&relationDefAttr.getColumn(),context.getValueForAttribute(&relationRefAttr.getColumn()));
       }
@@ -23,10 +23,10 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
       }
       consumer->consume(this, builder, context);
    }
-   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
-      for(mlir::Attribute attr:renamingOp.columns()){
+   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      for(::mlir::Attribute attr:renamingOp.getColumns()){
          auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
-         mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
+         ::mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<::mlir::ArrayAttr>()[0];
          auto relationRefAttr = from.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>();
          auto *attrptr=&relationRefAttr.getColumn();
          auto val=context.getUnsafeValueForAttribute(attrptr);

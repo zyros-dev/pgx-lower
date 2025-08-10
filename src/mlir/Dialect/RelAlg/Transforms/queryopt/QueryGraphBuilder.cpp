@@ -11,7 +11,7 @@ static NodeSet getNodeSetFromClass(llvm::EquivalenceClasses<size_t>& classes, si
    return res;
 }
 
-size_t countCreatingOperators(Operator op, llvm::SmallPtrSet<mlir::Operation*, 12>& alreadyOptimized) {
+size_t countCreatingOperators(Operator op, llvm::SmallPtrSet<::mlir::Operation*, 12>& alreadyOptimized) {
    size_t res = 0;
    auto children = op.getChildren();
    auto used = op.getUsedColumns();
@@ -66,7 +66,7 @@ void pgx::mlir::relalg::QueryGraphBuilder::populateQueryGraph(Operator op) {
       NodeSet leftTes = (leftT & tes).any() ? (leftT & tes) : leftT;
       NodeSet rightTes = (rightT & tes).any() ? (rightT & tes) : rightT;
 
-      llvm::Optional<size_t> createdNode;
+      llvm::std::optional<size_t> createdNode;
       if (!created.empty()) {
          size_t newNode = qg.addPseudoNode();
          for (const auto* attr : op.getCreatedColumns()) {
@@ -115,7 +115,7 @@ void QueryGraphBuilder::ensureConnected() {
          NodeSet left = getNodeSetFromClass(alreadyConnected, best1, numNodes);
          NodeSet right = getNodeSetFromClass(alreadyConnected, best2, numNodes);
          //construct cross-product
-         qg.addJoinEdge(left, right, Operator(), llvm::Optional<size_t>());
+         qg.addJoinEdge(left, right, Operator(), llvm::std::optional<size_t>());
       }
 
       size_t newSet = *alreadyConnected.unionSets(best1, best2);
@@ -169,7 +169,7 @@ NodeSet QueryGraphBuilder::calcSES(Operator op) const {
    return res;
 }
 
-QueryGraphBuilder::QueryGraphBuilder(Operator root, llvm::SmallPtrSet<mlir::Operation*, 12>& alreadyOptimized) : root(root),
+QueryGraphBuilder::QueryGraphBuilder(Operator root, llvm::SmallPtrSet<::mlir::Operation*, 12>& alreadyOptimized) : root(root),
                                                                                                                  alreadyOptimized(alreadyOptimized),
                                                                                                                  numNodes(countCreatingOperators(root, alreadyOptimized)),
                                                                                                                  qg(numNodes) {}

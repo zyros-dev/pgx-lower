@@ -11,13 +11,13 @@ using namespace mlir;
 ::mlir::LogicalResult pgx::mlir::util::UnPackOp::verify() {
    pgx::mlir::util::UnPackOp& unPackOp = *this;
    if (auto tupleType = unPackOp.tuple().getType().dyn_cast_or_null<mlir::TupleType>()) {
-      if (tupleType.getTypes().size() != unPackOp.vals().size()) {
+      if (tupleType.getTypes().size() != unPackOp.getVals().size()) {
          unPackOp.emitOpError("must unpack exactly as much as entries in tuple");
          unPackOp.dump();
          return failure();
       }
       for (size_t i = 0; i < tupleType.getTypes().size(); i++) {
-         if (tupleType.getTypes()[i] != unPackOp.vals()[i].getType()) {
+         if (tupleType.getTypes()[i] != unPackOp.getVals()[i].getType()) {
             unPackOp.emitOpError("types must match during unpacking");
             unPackOp.dump();
             return failure();
@@ -32,13 +32,13 @@ using namespace mlir;
 ::mlir::LogicalResult pgx::mlir::util::PackOp::verify() {
    pgx::mlir::util::PackOp& packOp = *this;
    if (auto tupleType = packOp.tuple().getType().dyn_cast_or_null<mlir::TupleType>()) {
-      if (tupleType.getTypes().size() != packOp.vals().size()) {
+      if (tupleType.getTypes().size() != packOp.getVals().size()) {
          packOp.emitOpError("must unpack exactly as much as entries in tuple");
          packOp.dump();
          return failure();
       }
       for (size_t i = 0; i < tupleType.getTypes().size(); i++) {
-         if (tupleType.getTypes()[i] != packOp.vals()[i].getType()) {
+         if (tupleType.getTypes()[i] != packOp.getVals()[i].getType()) {
             packOp.emitOpError("types must match during unpacking");
             packOp.dump();
             return failure();
@@ -55,7 +55,7 @@ LogicalResult pgx::mlir::util::UnPackOp::canonicalize(pgx::mlir::util::UnPackOp 
    auto tuple = unPackOp.tuple();
    if (auto* tupleCreationOp = tuple.getDefiningOp()) {
       if (auto packOp = mlir::dyn_cast_or_null<pgx::mlir::util::PackOp>(tupleCreationOp)) {
-         rewriter.replaceOp(unPackOp.getOperation(), packOp.vals());
+         rewriter.replaceOp(unPackOp.getOperation(), packOp.getVals());
          return success();
       }
    }
@@ -76,13 +76,13 @@ LogicalResult pgx::mlir::util::GetTupleOp::canonicalize(pgx::mlir::util::GetTupl
          return success();
       }
       if (auto selOp = mlir::dyn_cast_or_null<mlir::arith::SelectOp>(tupleCreationOp)) {
-         auto sel1 = rewriter.create<pgx::mlir::util::GetTupleOp>(op.getLoc(), op.val().getType(), selOp.getTrueValue(), op.offset());
-         auto sel2 = rewriter.create<pgx::mlir::util::GetTupleOp>(op.getLoc(), op.val().getType(), selOp.getFalseValue(), op.offset());
+         auto sel1 = rewriter.create<pgx::mlir::util::GetTupleOp>(op.getLoc(), op.getVal().getType(), selOp.getTrueValue(), op.offset());
+         auto sel2 = rewriter.create<pgx::mlir::util::GetTupleOp>(op.getLoc(), op.getVal().getType(), selOp.getFalseValue(), op.offset());
          rewriter.replaceOpWithNewOp<mlir::arith::SelectOp>(op, selOp.getCondition(), sel1, sel2);
          return success();
       }
       if (auto loadOp = mlir::dyn_cast_or_null<pgx::mlir::util::LoadOp>(tupleCreationOp)) {
-         mlir::OpBuilder::InsertionGuard guard(rewriter);
+         ::mlir::OpBuilder::InsertionGuard guard(rewriter);
          rewriter.setInsertionPoint(loadOp);
          auto base = loadOp.ref();
          if (auto idx = loadOp.idx()) {
@@ -101,14 +101,14 @@ LogicalResult pgx::mlir::util::GetTupleOp::canonicalize(pgx::mlir::util::GetTupl
 }
 
 LogicalResult pgx::mlir::util::StoreOp::canonicalize(pgx::mlir::util::StoreOp op, mlir::PatternRewriter& rewriter) {
-   if (auto ty = op.val().getType().dyn_cast_or_null<mlir::TupleType>()) {
+   if (auto ty = op.getVal().getType().dyn_cast_or_null<mlir::TupleType>()) {
       auto base = op.ref();
       if (auto idx = op.idx()) {
          base = rewriter.create<pgx::mlir::util::ArrayElementPtrOp>(op.getLoc(), base.getType(), base, idx);
       }
       for (size_t i = 0; i < ty.size(); i++) {
          auto elemRefTy = pgx::mlir::util::RefType::get(ty.getType(i));
-         auto gt = rewriter.create<pgx::mlir::util::GetTupleOp>(op.getLoc(), ty.getType(i), op.val(), i);
+         auto gt = rewriter.create<pgx::mlir::util::GetTupleOp>(op.getLoc(), ty.getType(i), op.getVal(), i);
          auto tep = rewriter.create<pgx::mlir::util::TupleElementPtrOp>(op.getLoc(), elemRefTy, base, i);
          rewriter.create<pgx::mlir::util::StoreOp>(op.getLoc(), gt, tep, Value());
       }

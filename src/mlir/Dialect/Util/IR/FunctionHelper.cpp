@@ -4,9 +4,9 @@
 #include "mlir/Dialect/Util/IR/UtilDialect.h"
 #include "mlir/Dialect/Util/IR/UtilOps.h"
 #include "mlir/Dialect/Util/IR/UtilTypes.h"
-static mlir::Value convertValue(mlir::OpBuilder& builder, mlir::Value v, mlir::Type t,mlir::Location loc) {
+static ::mlir::Value convertValue(::mlir::OpBuilder& builder, ::mlir::Value v, ::mlir::Type t,::mlir::Location loc) {
    if (v.getType() == t) return v;
-   mlir::Type currentType = v.getType();
+   ::mlir::Type currentType = v.getType();
    if (currentType.isIndex() || t.isIndex()) {
       return builder.create<mlir::arith::IndexCastOp>(loc, t, v);
    }
@@ -37,9 +37,9 @@ static mlir::Value convertValue(mlir::OpBuilder& builder, mlir::Value v, mlir::T
       }
    }
    assert(values.size() == funcOp.getFunctionType().getNumInputs());
-   std::vector<mlir::Value> convertedValues;
+   std::vector<::mlir::Value> convertedValues;
    for (size_t i = 0; i < funcOp.getFunctionType().getNumInputs(); i++) {
-      mlir::Value converted = convertValue(builder, values[i], funcOp.getFunctionType().getInput(i),loc);
+      ::mlir::Value converted = convertValue(builder, values[i], funcOp.getFunctionType().getInput(i),loc);
       convertedValues.push_back(converted);
       assert(converted.getType() == funcOp.getFunctionType().getInput(i));
    }

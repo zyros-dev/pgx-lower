@@ -13,23 +13,23 @@ namespace pgx_lower::compiler::runtime {
 
 class PostgreSQLTable {
 public:
-    static mlir::Value createEmpty(mlir::OpBuilder& builder, mlir::Location loc);
-    static mlir::Value addColumn(mlir::OpBuilder& builder, mlir::Location loc, 
-                                mlir::Value table, mlir::Value columnName, mlir::Value column);
+    static ::mlir::Value createEmpty(::mlir::OpBuilder& builder, ::mlir::Location loc);
+    static ::mlir::Value addColumn(::mlir::OpBuilder& builder, ::mlir::Location loc, 
+                                ::mlir::Value table, ::mlir::Value columnName, ::mlir::Value column);
 };
 
 class PostgreSQLColumnBuilder {
 public:
-    static mlir::Value create(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value typeDescr);
-    static mlir::Value addBool(mlir::OpBuilder& builder, mlir::Location loc, 
-                              mlir::Value builder, mlir::Value isValid, mlir::Value val);
-    static mlir::Value addFixedSized(mlir::OpBuilder& builder, mlir::Location loc,
-                                    mlir::Value builder, mlir::Value isValid, mlir::Value val);
-    static mlir::Value addBinary(mlir::OpBuilder& builder, mlir::Location loc,
-                                mlir::Value builder, mlir::Value isValid, mlir::Value val);
-    static mlir::Value merge(mlir::OpBuilder& builder, mlir::Location loc,
-                            mlir::Value left, mlir::Value right);
-    static mlir::Value finish(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value builder);
+    static ::mlir::Value create(::mlir::OpBuilder& builder, ::mlir::Location loc, ::mlir::Value typeDescr);
+    static ::mlir::Value addBool(::mlir::OpBuilder& builder, ::mlir::Location loc, 
+                              ::mlir::Value builder, ::mlir::Value isValid, ::mlir::Value val);
+    static ::mlir::Value addFixedSized(::mlir::OpBuilder& builder, ::mlir::Location loc,
+                                    ::mlir::Value builder, ::mlir::Value isValid, ::mlir::Value val);
+    static ::mlir::Value addBinary(::mlir::OpBuilder& builder, ::mlir::Location loc,
+                                ::mlir::Value builder, ::mlir::Value isValid, ::mlir::Value val);
+    static ::mlir::Value merge(::mlir::OpBuilder& builder, ::mlir::Location loc,
+                            ::mlir::Value left, ::mlir::Value right);
+    static ::mlir::Value finish(::mlir::OpBuilder& builder, ::mlir::Location loc, ::mlir::Value builder);
 };
 
 // Temporary aliases to make existing code work

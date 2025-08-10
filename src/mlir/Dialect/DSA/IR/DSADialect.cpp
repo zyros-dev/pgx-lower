@@ -59,7 +59,7 @@ void DSADialect::initialize() {
     // Parse DSA types by their mnemonic
     if (mnemonic == "table_builder") {
         if (parser.parseLess()) return {};
-        mlir::Type rowType;
+        ::mlir::Type rowType;
         if (parser.parseType(rowType)) return {};
         if (parser.parseGreater()) return {};
         auto tupleType = rowType.dyn_cast<::mlir::TupleType>();
@@ -71,7 +71,7 @@ void DSADialect::initialize() {
     }
     if (mnemonic == "vector") {
         if (parser.parseLess()) return {};
-        mlir::Type elementType;
+        ::mlir::Type elementType;
         if (parser.parseType(elementType)) return {};
         if (parser.parseGreater()) return {};
         return pgx::mlir::dsa::VectorType::get(parser.getContext(), elementType);

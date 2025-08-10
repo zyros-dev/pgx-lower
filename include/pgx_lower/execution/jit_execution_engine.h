@@ -25,7 +25,7 @@ private:
     llvm::CodeGenOptLevel optimizationLevel = llvm::CodeGenOptLevel::Default;
     
     // Module validation and preparation
-    bool validateModuleForCompilation(mlir::ModuleOp module);
+    bool validateModuleForCompilation(::mlir::ModuleOp module);
     void configureLLVMTargetMachine();
     
     // Runtime function registration helpers
@@ -50,7 +50,7 @@ public:
      * @param module The MLIR module to compile
      * @return true if initialization succeeded, false otherwise
      */
-    bool initialize(mlir::ModuleOp module);
+    bool initialize(::mlir::ModuleOp module);
     
     /**
      * @brief Setup JIT optimization pipeline configuration
@@ -63,7 +63,7 @@ public:
      * @param module The MLIR module to compile
      * @return true if compilation succeeded, false otherwise
      */
-    bool compileToLLVMIR(mlir::ModuleOp module);
+    bool compileToLLVMIR(::mlir::ModuleOp module);
     
     /**
      * @brief Check if the engine is initialized and ready

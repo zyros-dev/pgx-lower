@@ -7,10 +7,10 @@
 
 class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    pgx::mlir::relalg::MaterializeOp materializeOp;
-   mlir::Value tableBuilder;
-   mlir::Value table;
+   ::mlir::Value tableBuilder;
+   ::mlir::Value table;
    pgx::mlir::relalg::OrderedAttributes orderedAttributes;
-   std::string arrowDescrFromType(mlir::Type type) {
+   std::string arrowDescrFromType(::mlir::Type type) {
       if (isIntegerType(type, 1)) {
          return "bool";
       } else if (auto intWidth = getIntegerWidth(type, false)) {
@@ -21,7 +21,7 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
          // TODO: actually handle cases where 128 bits are insufficient.
          auto prec = std::min(decimalType.getP(), 38);
          return "decimal[" + std::to_string(prec) + "," + std::to_string(decimalType.getS()) + "]";
-      } else if (auto floatType = type.dyn_cast_or_null<mlir::FloatType>()) {
+      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
          return "float[" + std::to_string(floatType.getWidth()) + "]";
       } else if (auto stringType = type.dyn_cast_or_null<pgx::mlir::db::StringType>()) {
          return "string";
@@ -46,22 +46,22 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    }
 
    public:
-   MaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) : pgx::mlir::relalg::Translator(materializeOp.rel()), materializeOp(materializeOp) {
-      orderedAttributes = pgx::mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.cols());
+   MaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) : pgx::mlir::relalg::Translator(materializeOp.getRel()), materializeOp(materializeOp) {
+      orderedAttributes = pgx::mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.getCols());
    }
    virtual void setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) override {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
-      this->requiredAttributes.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.cols()));
+      this->requiredAttributes.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.getCols()));
       propagateInfo();
    }
    virtual pgx::mlir::relalg::ColumnSet getAvailableColumns() override {
       return {};
    }
-   virtual void consume(pgx::mlir::relalg::Translator* child, mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
       for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
          auto val = orderedAttributes.resolve(context, i);
-         mlir::Value valid;
+         ::mlir::Value valid;
          if (val.getType().isa<pgx::mlir::db::NullableType>()) {
             valid = builder.create<pgx::mlir::db::IsNullOp>(materializeOp->getLoc(), val);
             valid = builder.create<pgx::mlir::db::NotOp>(materializeOp->getLoc(), valid);
@@ -71,14 +71,14 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
       }
       builder.create<pgx::mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
    }
-   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       std::string descr = "";
       auto tupleType = orderedAttributes.getTupleType(builder.getContext());
-      for (size_t i = 0; i < materializeOp.columns().size(); i++) {
+      for (size_t i = 0; i < materializeOp.getColumns().size(); i++) {
          if (!descr.empty()) {
             descr += ";";
          }
-         descr += materializeOp.columns()[i].cast<mlir::StringAttr>().str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
+         descr += materializeOp.getColumns()[i].cast<::mlir::StringAttr>().str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
       }
       tableBuilder = builder.create<pgx::mlir::dsa::CreateDS>(materializeOp.getLoc(), pgx::mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
       children[0]->produce(context, builder);

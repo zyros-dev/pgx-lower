@@ -8,10 +8,10 @@
 
 namespace mlir {
 namespace dsa {
-void populateScalarToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
-void populateBuilderToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
-void populateDSAToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
-void populateCollectionsToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateScalarToStdPatterns(::mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateBuilderToStdPatterns(::mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateDSAToStdPatterns(::mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateCollectionsToStdPatterns(::mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
 
 std::unique_ptr<Pass> createLowerToStdPass();
 

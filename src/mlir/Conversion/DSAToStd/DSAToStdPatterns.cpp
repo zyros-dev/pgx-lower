@@ -1,6 +1,6 @@
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -49,22 +49,22 @@ class CreateDsLowering : public OpConversionPattern<pgx::mlir::dsa::CreateDS> {
          auto elementType = typeConverter->convertType(vecType.getElementType());
          auto typeSize = rewriter.create<pgx::mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
          auto ptr = rt::Vector::create(rewriter, loc)({typeSize, initialCapacity})[0];
-         mlir::Value createdVector = rewriter.create<pgx::mlir::util::GenericMemrefCastOp>(loc, getLoweredVectorType(rewriter.getContext(), elementType), ptr);
+         ::mlir::Value createdVector = rewriter.create<pgx::mlir::util::GenericMemrefCastOp>(loc, getLoweredVectorType(rewriter.getContext(), elementType), ptr);
          rewriter.replaceOp(createOp, createdVector);
          return success();
       } else if (auto aggrHtType = createOp.ds().getType().dyn_cast<pgx::mlir::dsa::AggregationHashtableType>()) {
          TupleType keyType = aggrHtType.getKeyType();
          TupleType aggrType = aggrHtType.getValType();
          if (keyType.getTypes().empty()) {
-            mlir::Value ref = rewriter.create<pgx::mlir::util::AllocOp>(loc, typeConverter->convertType(createOp.ds().getType()), mlir::Value());
-            rewriter.create<pgx::mlir::util::StoreOp>(loc, adaptor.init_val(), ref, mlir::Value());
+            ::mlir::Value ref = rewriter.create<pgx::mlir::util::AllocOp>(loc, typeConverter->convertType(createOp.ds().getType()), ::mlir::Value());
+            rewriter.create<pgx::mlir::util::StoreOp>(loc, adaptor.init_val(), ref, ::mlir::Value());
             rewriter.replaceOp(createOp, ref);
             return success();
          } else {
             auto typeSize = rewriter.create<pgx::mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), getHashtableEntryType(rewriter.getContext(), keyType, aggrType));
             Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 4);
             auto ptr = rt::Hashtable::create(rewriter, loc)({typeSize, initialCapacity})[0];
-            mlir::Value casted = rewriter.create<pgx::mlir::util::GenericMemrefCastOp>(loc, getHashtableType(rewriter.getContext(), keyType, aggrType), ptr);
+            ::mlir::Value casted = rewriter.create<pgx::mlir::util::GenericMemrefCastOp>(loc, getHashtableType(rewriter.getContext(), keyType, aggrType), ptr);
             Value initValAddress = rewriter.create<util::TupleElementPtrOp>(loc, pgx::mlir::util::RefType::get(rewriter.getContext(), adaptor.init_val().getType()), casted, 5);
             rewriter.create<pgx::mlir::util::StoreOp>(loc, adaptor.init_val(), initValAddress, Value());
             rewriter.replaceOp(createOp, casted);
@@ -84,7 +84,7 @@ class HtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::HashtableIns
       std::function<Value(OpBuilder&, Value, Value)> reduceFnBuilder = insertOp.reduce().empty() ? std::function<Value(OpBuilder&, Value, Value)>() : [&insertOp](OpBuilder& rewriter, Value left, Value right) {
          Block* sortLambda = &insertOp.reduce().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         mlir::BlockAndValueMapping mapping;
+         ::mlir::BlockAndValueMapping mapping;
          mapping.map(sortLambda->getArgument(0), left);
          mapping.map(sortLambda->getArgument(1), right);
 
@@ -98,7 +98,7 @@ class HtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::HashtableIns
       std::function<Value(OpBuilder&, Value, Value)> equalFnBuilder = insertOp.equal().empty() ? std::function<Value(OpBuilder&, Value, Value)>() : [&insertOp](OpBuilder& rewriter, Value left, Value right) {
          Block* sortLambda = &insertOp.equal().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         mlir::BlockAndValueMapping mapping;
+         ::mlir::BlockAndValueMapping mapping;
          mapping.map(sortLambda->getArgument(0), left);
          mapping.map(sortLambda->getArgument(1), right);
 
@@ -111,16 +111,16 @@ class HtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::HashtableIns
       };
       auto loc = insertOp->getLoc();
       if (insertOp.ht().getType().cast<pgx::mlir::dsa::AggregationHashtableType>().getKeyType() == mlir::TupleType::get(getContext())) {
-         auto loaded = rewriter.create<pgx::mlir::util::LoadOp>(loc, adaptor.ht().getType().cast<pgx::mlir::util::RefType>().getElementType(), adaptor.ht(), mlir::Value());
-         auto newAggr = reduceFnBuilder(rewriter, loaded, adaptor.val());
-         rewriter.create<pgx::mlir::util::StoreOp>(loc, newAggr, adaptor.ht(), mlir::Value());
+         auto loaded = rewriter.create<pgx::mlir::util::LoadOp>(loc, adaptor.ht().getType().cast<pgx::mlir::util::RefType>().getElementType(), adaptor.ht(), ::mlir::Value());
+         auto newAggr = reduceFnBuilder(rewriter, loaded, adaptor.getVal());
+         rewriter.create<pgx::mlir::util::StoreOp>(loc, newAggr, adaptor.ht(), ::mlir::Value());
          rewriter.eraseOp(insertOp);
       } else {
          Value hashed;
          {
             Block* sortLambda = &insertOp.hash().front();
             auto* sortLambdaTerminator = sortLambda->getTerminator();
-            mlir::BlockAndValueMapping mapping;
+            ::mlir::BlockAndValueMapping mapping;
             mapping.map(sortLambda->getArgument(0), adaptor.key());
 
             for (auto& op : sortLambda->getOperations()) {
@@ -213,7 +213,7 @@ class HtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::HashtableIns
                               if(reduceFnBuilder) {
                                  Value entryAggrAddress = rewriter.create<util::TupleElementPtrOp>(loc, aggrPtrType, kvAddress, 1);
                                  Value entryAggr = rewriter.create<util::LoadOp>(loc, aggrType, entryAggrAddress);
-                                 Value newAggr = reduceFnBuilder(b, entryAggr, adaptor.val());
+                                 Value newAggr = reduceFnBuilder(b, entryAggr, adaptor.getVal());
                                  b.create<util::StoreOp>(loc, newAggr, entryAggrAddress, Value());
                               }
                               b.create<scf::YieldOp>(loc, ValueRange{falseValue,ptr});
@@ -233,7 +233,7 @@ class HtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::HashtableIns
                   b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) {
                   Value initValAddress = rewriter.create<util::TupleElementPtrOp>(loc, pgx::mlir::util::RefType::get(rewriter.getContext(), aggrType), adaptor.ht(), 5);
                   Value initialVal = b.create<util::LoadOp>(loc, aggrType, initValAddress);
-                  Value newAggr = reduceFnBuilder ? reduceFnBuilder(b,initialVal, adaptor.val()): initialVal;
+                  Value newAggr = reduceFnBuilder ? reduceFnBuilder(b,initialVal, adaptor.getVal()): initialVal;
                   Value newKVPair = b.create<util::PackOp>(loc,ValueRange({adaptor.key(), newAggr}));
                   Value invalidNext  = b.create<util::InvalidRefOp>(loc,i8PtrType);
                   //       %newEntry = ...
@@ -283,7 +283,7 @@ class LazyJHtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::Hashtab
       {
          Block* sortLambda = &insertOp.hash().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         mlir::BlockAndValueMapping mapping;
+         ::mlir::BlockAndValueMapping mapping;
          mapping.map(sortLambda->getArgument(0), adaptor.key());
 
          for (auto& op : sortLambda->getOperations()) {
@@ -293,14 +293,14 @@ class LazyJHtInsertLowering : public OpConversionPattern<pgx::mlir::dsa::Hashtab
          }
          hashed = mapping.lookup(cast<pgx::mlir::dsa::YieldOp>(sortLambdaTerminator).results()[0]);
       }
-      mlir::Value val = adaptor.val();
+      ::mlir::Value val = adaptor.getVal();
       auto loc = insertOp->getLoc();
 
       if (!val) {
          val = rewriter.create<pgx::mlir::util::UndefOp>(loc, mlir::TupleType::get(getContext()));
       }
-      auto entry = rewriter.create<pgx::mlir::util::PackOp>(loc, mlir::ValueRange({adaptor.key(), val}));
-      auto bucket = rewriter.create<pgx::mlir::util::PackOp>(loc, mlir::ValueRange({hashed, entry}));
+      auto entry = rewriter.create<pgx::mlir::util::PackOp>(loc, ::mlir::ValueRange({adaptor.key(), val}));
+      auto bucket = rewriter.create<pgx::mlir::util::PackOp>(loc, ::mlir::ValueRange({hashed, entry}));
       auto idxType = rewriter.getIndexType();
       auto idxPtrType = util::RefType::get(rewriter.getContext(), idxType);
       auto valuesType = pgx::mlir::util::RefType::get(rewriter.getContext(), bucket.getType());
@@ -346,7 +346,7 @@ class FinalizeTBLowering : public OpConversionPattern<pgx::mlir::dsa::Finalize> 
       if (!finalizeOp.ht().getType().isa<pgx::mlir::dsa::TableBuilderType>()) {
          return failure();
       }
-      mlir::Value res = rt::TableBuilder::build(rewriter, finalizeOp->getLoc())(adaptor.ht())[0];
+      ::mlir::Value res = rt::TableBuilder::build(rewriter, finalizeOp->getLoc())(adaptor.ht())[0];
       rewriter.replaceOp(finalizeOp, res);
       return success();
    }
@@ -359,7 +359,7 @@ class DSAppendLowering : public OpConversionPattern<pgx::mlir::dsa::Append> {
          return failure();
       }
       Value builderVal = adaptor.ds();
-      Value v = adaptor.val();
+      Value v = adaptor.getVal();
       auto convertedElementType = typeConverter->convertType(appendOp.ds().getType().cast<pgx::mlir::dsa::VectorType>().getElementType());
       auto loc = appendOp->getLoc();
       auto idxType = rewriter.getIndexType();
@@ -396,13 +396,13 @@ class TBAppendLowering : public OpConversionPattern<pgx::mlir::dsa::Append> {
          return failure();
       }
       Value builderVal = adaptor.ds();
-      Value val = adaptor.val();
-      Value isValid = adaptor.valid();
+      Value val = adaptor.getVal();
+      Value isValid = adaptor.getValid();
       auto loc = appendOp->getLoc();
       if (!isValid) {
          isValid = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, 1);
       }
-      mlir::Type type = getBaseType(val.getType());
+      ::mlir::Type type = getBaseType(val.getType());
       if (isIntegerType(type, 1)) {
          rt::TableBuilder::addBool(rewriter, loc)({builderVal, isValid, val});
       } else if (auto intWidth = getIntegerWidth(type, false)) {
@@ -419,7 +419,7 @@ class TBAppendLowering : public OpConversionPattern<pgx::mlir::dsa::Append> {
             }
 
          }
-      } else if (auto floatType = type.dyn_cast_or_null<mlir::FloatType>()) {
+      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
          switch (floatType.getWidth()) {
             case 32: rt::TableBuilder::addFloat32(rewriter, loc)({builderVal, isValid, val}); break;
             case 64: rt::TableBuilder::addFloat64(rewriter, loc)({builderVal, isValid, val}); break;
@@ -448,7 +448,7 @@ class CreateTableBuilderLowering : public OpConversionPattern<pgx::mlir::dsa::Cr
          return failure();
       }
       auto loc = createOp->getLoc();
-      mlir::Value schema = rewriter.create<pgx::mlir::util::CreateConstVarLen>(loc, pgx::mlir::util::VarLen32Type::get(getContext()), createOp.init_attr().getValue().cast<StringAttr>().str());
+      ::mlir::Value schema = rewriter.create<pgx::mlir::util::CreateConstVarLen>(loc, pgx::mlir::util::VarLen32Type::get(getContext()), createOp.init_attr().value().cast<StringAttr>().str());
       Value tableBuilder = rt::TableBuilder::create(rewriter, loc)({schema})[0];
       rewriter.replaceOp(createOp, tableBuilder);
       return success();
@@ -458,17 +458,17 @@ class FreeLowering : public OpConversionPattern<pgx::mlir::dsa::FreeOp> {
    public:
    using OpConversionPattern<pgx::mlir::dsa::FreeOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(pgx::mlir::dsa::FreeOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      if (auto aggrHtType = op.val().getType().dyn_cast<pgx::mlir::dsa::AggregationHashtableType>()) {
+      if (auto aggrHtType = op.getVal().getType().dyn_cast<pgx::mlir::dsa::AggregationHashtableType>()) {
          if (aggrHtType.getKeyType().getTypes().empty()) {
          } else {
-            rt::Hashtable::destroy(rewriter, op->getLoc())(ValueRange{adaptor.val()});
+            rt::Hashtable::destroy(rewriter, op->getLoc())(ValueRange{adaptor.getVal()});
          }
       }
-      if (op.val().getType().isa<pgx::mlir::dsa::JoinHashtableType>()) {
-         rt::LazyJoinHashtable::destroy(rewriter, op->getLoc())(ValueRange{adaptor.val()});
+      if (op.getVal().getType().isa<pgx::mlir::dsa::JoinHashtableType>()) {
+         rt::LazyJoinHashtable::destroy(rewriter, op->getLoc())(ValueRange{adaptor.getVal()});
       }
-      if (op.val().getType().isa<pgx::mlir::dsa::VectorType>()) {
-         rt::Vector::destroy(rewriter, op->getLoc())(ValueRange{adaptor.val()});
+      if (op.getVal().getType().isa<pgx::mlir::dsa::VectorType>()) {
+         rt::Vector::destroy(rewriter, op->getLoc())(ValueRange{adaptor.getVal()});
       }
       rewriter.eraseOp(op);
       return success();
@@ -477,7 +477,7 @@ class FreeLowering : public OpConversionPattern<pgx::mlir::dsa::FreeOp> {
 
 } // end namespace
 namespace pgx::mlir::dsa {
-void populateDSAToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
+void populateDSAToStdPatterns(::mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
    patterns.insert<CreateDsLowering, HtInsertLowering, FinalizeLowering, DSAppendLowering, LazyJHtInsertLowering, FreeLowering>(typeConverter, patterns.getContext());
    patterns.insert<CreateTableBuilderLowering, TBAppendLowering, FinalizeTBLowering, NextRowLowering>(typeConverter, patterns.getContext());
    typeConverter.addConversion([&typeConverter](pgx::mlir::dsa::VectorType vectorType) {

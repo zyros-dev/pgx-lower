@@ -4,13 +4,13 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
-class ExtractNestedOperators : public mlir::PassWrapper<ExtractNestedOperators, mlir::OperationPass<mlir::func::FuncOp>> {
+class ExtractNestedOperators : public ::mlir::PassWrapper<ExtractNestedOperators, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    public:
    virtual llvm::StringRef getArgument() const override { return "relalg-extract-nested-operators"; }
 
-   void sanitizeOp(mlir::BlockAndValueMapping& mapping, mlir::Operation* op) const {
+   void sanitizeOp(::mlir::BlockAndValueMapping& mapping, ::mlir::Operation* op) const {
       for (size_t i = 0; i < op->getNumOperands(); i++) {
-         mlir::Value v = op->getOperand(i);
+         ::mlir::Value v = op->getOperand(i);
          if (mapping.contains(v)) {
             op->setOperand(i, mapping.lookup(v));
             continue;
@@ -20,7 +20,7 @@ class ExtractNestedOperators : public mlir::PassWrapper<ExtractNestedOperators, 
    void runOnOperation() override {
       getOperation().walk([&](Operator innerOperator) {
          if (auto o = mlir::dyn_cast_or_null<TupleLamdaOperator>(innerOperator->getParentOp())) {
-            mlir::BlockAndValueMapping mapping;
+            ::mlir::BlockAndValueMapping mapping;
             TupleLamdaOperator toMoveBefore;
             while (o) {
                if (auto innerLambda = mlir::dyn_cast_or_null<TupleLamdaOperator>(innerOperator.getOperation())) {
@@ -29,7 +29,7 @@ class ExtractNestedOperators : public mlir::PassWrapper<ExtractNestedOperators, 
                toMoveBefore = o;
                o = mlir::dyn_cast_or_null<TupleLamdaOperator>(o->getParentOp());
             }
-            innerOperator->walk([&](mlir::Operation* op) {
+            innerOperator->walk([&](::mlir::Operation* op) {
                if (!mlir::isa<Operator>(op)) {
                   pgx::mlir::relalg::detail::inlineOpIntoBlock(op, toMoveBefore, innerOperator, op->getBlock(), mapping);
                   sanitizeOp(mapping, op);

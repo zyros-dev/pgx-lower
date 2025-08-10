@@ -6,7 +6,7 @@
 
 struct UtilInlinerInterface : public mlir::DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
-   bool isLegalToInline(mlir::Operation*, mlir::Region*, bool, mlir::IRMapping&) const final override {
+   bool isLegalToInline(::mlir::Operation*, mlir::Region*, bool, mlir::IRMapping&) const final override {
       return true;
    }
 };

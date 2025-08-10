@@ -9,9 +9,9 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <variant>
 namespace {
-mlir::arith::CmpIPredicateAttr convertToCmpIPred(mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
+mlir::arith::CmpIPredicateAttr convertToCmpIPred(::mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
-   switch (p.getValue()) {
+   switch (p.value()) {
       case db::DBCmpPredicate::eq:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::eq);
       case db::DBCmpPredicate::neq:
@@ -27,9 +27,9 @@ mlir::arith::CmpIPredicateAttr convertToCmpIPred(mlir::OpBuilder, ::pgx::mlir::d
    }
    return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sge);
 }
-mlir::arith::CmpFPredicateAttr convertToCmpFPred(mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
+mlir::arith::CmpFPredicateAttr convertToCmpFPred(::mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
-   switch (p.getValue()) {
+   switch (p.value()) {
       case db::DBCmpPredicate::eq:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OEQ);
       case db::DBCmpPredicate::neq:
@@ -45,7 +45,7 @@ mlir::arith::CmpFPredicateAttr convertToCmpFPred(mlir::OpBuilder, ::pgx::mlir::d
    }
    return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OGE);
 }
-mlir::Attribute convertConst(mlir::Attribute attr, mlir::Value v) {
+mlir::Attribute convertConst(::mlir::Attribute attr, ::mlir::Value v) {
    using namespace mlir;
    std::variant<int64_t, double, std::string> parseArg;
    if (auto integerAttr = attr.dyn_cast_or_null<IntegerAttr>()) {
@@ -53,7 +53,7 @@ mlir::Attribute convertConst(mlir::Attribute attr, mlir::Value v) {
          return IntegerAttr::get(v.getType(), integerAttr.getInt());
       }
    } else if (auto floatAttr = attr.dyn_cast_or_null<FloatAttr>()) {
-      if (v.getType().isa<mlir::FloatType>()) {
+      if (v.getType().isa<::mlir::FloatType>()) {
          return FloatAttr::get(v.getType(), floatAttr.getValueAsDouble());
       }
    }
@@ -62,7 +62,7 @@ mlir::Attribute convertConst(mlir::Attribute attr, mlir::Value v) {
 #include "SimplifyToArith.inc"
 
 //Pattern that optimizes the join order
-class SimplifyToArith : public mlir::PassWrapper<SimplifyToArith, mlir::OperationPass<mlir::func::FuncOp>> {
+class SimplifyToArith : public ::mlir::PassWrapper<SimplifyToArith, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "db-simplify-to-arith"; }
 
    public:
