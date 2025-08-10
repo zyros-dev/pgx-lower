@@ -1,22 +1,21 @@
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
-#include "execution/logging.h"
+#include "mlir/Dialect/util/UtilOps.h"
 
-class RenamingTranslator : public pgx::mlir::relalg::Translator {
-   pgx::mlir::relalg::RenamingOp renamingOp;
-   std::vector<std::pair<pgx::mlir::relalg::Column*, mlir::Value>> saved;
+class RenamingTranslator : public mlir::relalg::Translator {
+   mlir::relalg::RenamingOp renamingOp;
+   std::vector<std::pair<mlir::relalg::Column*, mlir::Value>> saved;
 
    public:
-   RenamingTranslator(pgx::mlir::relalg::RenamingOp renamingOp) : pgx::mlir::relalg::Translator(renamingOp), renamingOp(renamingOp) {}
+   RenamingTranslator(mlir::relalg::RenamingOp renamingOp) : mlir::relalg::Translator(renamingOp), renamingOp(renamingOp) {}
 
-   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(mlir::relalg::Translator* child, mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       auto scope = context.createScope();
-      for(mlir::Attribute attr:renamingOp.getColumns()){
-         auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
+      for(mlir::Attribute attr:renamingOp.columns()){
+         auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
-         auto relationRefAttr = from.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>();
+         auto relationRefAttr = from.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>();
          context.setValueForAttribute(scope,&relationDefAttr.getColumn(),context.getValueForAttribute(&relationRefAttr.getColumn()));
       }
       for(auto s:saved){
@@ -24,38 +23,21 @@ class RenamingTranslator : public pgx::mlir::relalg::Translator {
       }
       consumer->consume(this, builder, context);
    }
-   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      for(mlir::Attribute attr:renamingOp.getColumns()){
-         auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
+   virtual void produce(mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+      for(mlir::Attribute attr:renamingOp.columns()){
+         auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
-         auto relationRefAttr = from.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>();
+         auto relationRefAttr = from.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>();
          auto *attrptr=&relationRefAttr.getColumn();
          auto val=context.getUnsafeValueForAttribute(attrptr);
          saved.push_back({attrptr,val});
       }
       children[0]->produce(context, builder);
    }
-   
-   virtual pgx::mlir::relalg::ColumnSet getAvailableColumns() override {
-      pgx::mlir::relalg::ColumnSet available;
-      if (!children.empty()) {
-         available = children[0]->getAvailableColumns();
-      }
-      // Remove renamed columns and add new ones
-      for(mlir::Attribute attr:renamingOp.getColumns()){
-         auto relationDefAttr = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>();
-         mlir::Attribute from=relationDefAttr.getFromExisting().dyn_cast_or_null<mlir::ArrayAttr>()[0];
-         auto relationRefAttr = from.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>();
-         available.erase(&relationRefAttr.getColumn());
-         available.insert(&relationDefAttr.getColumn());
-      }
-      return available;
-   }
 
    virtual ~RenamingTranslator() {}
 };
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createRenamingTranslator(RenamingOp op) {
-  // op is already a RenamingOp
-   return std::make_unique<RenamingTranslator>(op);
+std::unique_ptr<mlir::relalg::Translator> mlir::relalg::Translator::createRenamingTranslator(mlir::relalg::RenamingOp renamingOp) {
+  return std::make_unique<RenamingTranslator>(renamingOp);
 }

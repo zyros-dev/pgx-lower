@@ -1,28 +1,37 @@
-#ifndef PGX_LOWER_RUNTIME_DATASOURCEITERATION_H
-#define PGX_LOWER_RUNTIME_DATASOURCEITERATION_H
-#include "ArrowTable.h"
-#include "ArrowView.h"
+#ifndef RUNTIME_DATASOURCEITERATION_H
+#define RUNTIME_DATASOURCEITERATION_H
 #include "runtime/ExecutionContext.h"
 #include "runtime/helpers.h"
-namespace pgx_lower::compiler::runtime {
+namespace runtime {
 class DataSource {
    public:
-   virtual void iterate(bool parallel, std::vector<std::string> members, const std::function<void(BatchView*)>& cb) = 0;
+   virtual std::shared_ptr<arrow::RecordBatch> getNext() = 0;
    virtual ~DataSource() {}
-   static DataSource* get(runtime::VarLen32 description);
-   //static DataSource* getFromTable(ArrowTable* arrowTable, runtime::VarLen32 mappingVal,runtime::VarLen32 columnArray);
 };
 class DataSourceIteration {
    std::shared_ptr<arrow::RecordBatch> currChunk;
-   DataSource* dataSource;
-   std::vector<std::string> members;
+   std::shared_ptr<DataSource> dataSource;
+   std::vector<size_t> colIds;
 
    public:
-   DataSourceIteration(DataSource* dataSource, const std::vector<std::string>& members);
+   DataSourceIteration(const std::shared_ptr<DataSource>& dataSource, const std::vector<size_t>& colIds);
 
-   static DataSourceIteration* init(DataSource* dataSource, runtime::VarLen32 members);
+   struct ColumnInfo {
+      size_t offset;
+      size_t validMultiplier;
+      uint8_t* validBuffer;
+      uint8_t* dataBuffer;
+      uint8_t* varLenBuffer;
+   };
+   struct RecordBatchInfo {
+      size_t numRows;
+      ColumnInfo columnInfo[];
+   };
+   static DataSourceIteration* start(ExecutionContext* executionContext, runtime::VarLen32 description);
+   bool isValid();
+   void next();
+   void access(RecordBatchInfo* info);
    static void end(DataSourceIteration*);
-   void iterate(bool parallel, void (*forEachChunk)(BatchView*, void*), void*);
 };
-} // end namespace pgx_lower::compiler::runtime
-#endif // PGX_LOWER_RUNTIME_DATASOURCEITERATION_H
+} // end namespace runtime
+#endif // RUNTIME_DATASOURCEITERATION_H

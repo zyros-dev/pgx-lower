@@ -1,48 +1,46 @@
-#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Pass/Pass.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 
 #include <iostream>
 
-// #include "mlir/Dialect/RelAlg/Passes.h"  // Not used
-#include "mlir/IR/IRMapping.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <variant>
 namespace {
-mlir::arith::CmpIPredicateAttr convertToCmpIPred(mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
+mlir::arith::CmpIPredicateAttr convertToCmpIPred(mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
    switch (p.getValue()) {
-      case pgx::mlir::db::DBCmpPredicate::eq:
+      case db::DBCmpPredicate::eq:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::eq);
-      case pgx::mlir::db::DBCmpPredicate::neq:
+      case db::DBCmpPredicate::neq:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::ne);
-      case pgx::mlir::db::DBCmpPredicate::lt:
+      case db::DBCmpPredicate::lt:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::slt);
-      case pgx::mlir::db::DBCmpPredicate::gt:
+      case db::DBCmpPredicate::gt:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sgt);
-      case pgx::mlir::db::DBCmpPredicate::lte:
+      case db::DBCmpPredicate::lte:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sle);
-      case pgx::mlir::db::DBCmpPredicate::gte:
+      case db::DBCmpPredicate::gte:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sge);
    }
    return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sge);
 }
-mlir::arith::CmpFPredicateAttr convertToCmpFPred(mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
+mlir::arith::CmpFPredicateAttr convertToCmpFPred(mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
    switch (p.getValue()) {
-      case pgx::mlir::db::DBCmpPredicate::eq:
+      case db::DBCmpPredicate::eq:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OEQ);
-      case pgx::mlir::db::DBCmpPredicate::neq:
+      case db::DBCmpPredicate::neq:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::ONE);
-      case pgx::mlir::db::DBCmpPredicate::lt:
+      case db::DBCmpPredicate::lt:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OLT);
-      case pgx::mlir::db::DBCmpPredicate::gt:
+      case db::DBCmpPredicate::gt:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OGT);
-      case pgx::mlir::db::DBCmpPredicate::lte:
+      case db::DBCmpPredicate::lte:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OLE);
-      case pgx::mlir::db::DBCmpPredicate::gte:
+      case db::DBCmpPredicate::gte:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OGE);
    }
    return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OGE);
@@ -85,8 +83,8 @@ class SimplifyToArith : public mlir::PassWrapper<SimplifyToArith, mlir::Operatio
 };
 } // end anonymous namespace
 
-namespace pgx::mlir::db {
+namespace mlir::db {
 
-std::unique_ptr<::mlir::Pass> createSimplifyToArithPass() { return std::make_unique<SimplifyToArith>(); }
+std::unique_ptr<Pass> createSimplifyToArithPass() { return std::make_unique<SimplifyToArith>(); }
 
-} // end namespace pgx::mlir::db
+} // end namespace mlir::db

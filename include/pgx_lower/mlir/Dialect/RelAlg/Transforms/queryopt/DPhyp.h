@@ -8,7 +8,7 @@
 #include <bitset>
 #include <memory>
 
-namespace pgx::mlir::relalg {
+namespace mlir::relalg {
 class DPHyp {
    std::unordered_map<NodeSet, std::shared_ptr<Plan>, HashNodeSet> dpTable;
    QueryGraph& queryGraph;
@@ -28,6 +28,6 @@ class DPHyp {
    void countSubGraphsRec(NodeSet s1, NodeSet x, size_t& count, size_t maxCount);
    size_t countSubGraphs(size_t maxCount);
 };
-} // namespace pgx::mlir::relalg
+} // namespace mlir::relalg
 
 #endif // MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_DPHYP_H

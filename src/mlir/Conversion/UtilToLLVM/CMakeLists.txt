@@ -1,22 +1,16 @@
-# Util to LLVM conversion pass
-add_mlir_dialect_library(UtilToLLVM
+add_mlir_conversion_library(MLIRUtilToLLVM
         LowerToLLVM.cpp
         UtilTypeConversion.cpp
 
-    ADDITIONAL_HEADER_DIRS
-    ${PROJECT_SOURCE_DIR}/include/pgx_lower/mlir/Conversion/UtilToLLVM
+        ADDITIONAL_HEADER_DIRS
+        ../../../mlir/Conversion/UtilToLLVM
 
-    DEPENDS
-    MLIRUtilOpsIncGen
+        DEPENDS
 
-    LINK_LIBS PUBLIC
-    MLIRIR
-    MLIRPass
-    MLIRTransforms
-    MLIRUtilDialect
-    MLIRLLVMDialect
-    MLIRArithDialect
-    MLIRFuncDialect
-    MLIRLLVMCommonConversion
-    MLIRTransformUtils
-)
+        LINK_COMPONENTS
+        Core
+
+        LINK_LIBS PUBLIC
+        MLIRIR
+        MLIRUtil
+        )

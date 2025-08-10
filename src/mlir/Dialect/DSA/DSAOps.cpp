@@ -8,14 +8,6 @@
 #include <llvm/Support/Debug.h>
 #include <queue>
 using namespace mlir;
-namespace pgx::mlir {
-    using ::mlir::TypeRange;
-    using ::mlir::ValueRange;
-    using ::mlir::Type;
-    using ::mlir::Value;
-    using ::mlir::OpBuilder;
-    using ::mlir::MemRefType;
-}
 
 static void printInitializationList(OpAsmPrinter& p,
                                     Block::BlockArgListType blocksArgs,
@@ -33,30 +25,30 @@ static void printInitializationList(OpAsmPrinter& p,
    p << ")";
 }
 //adapted from scf::ForOp
-void pgx::mlir::dsa::ForOp::print(OpAsmPrinter& p) {
-   pgx::mlir::dsa::ForOp& op = *this;
+void mlir::dsa::ForOp::print(OpAsmPrinter& p) {
+   mlir::dsa::ForOp& op = *this;
    p << " " << op.getInductionVar() << " in "
-     << op.getCollection() << " : " << op.getCollection().getType() << " ";
-   if (op.getUntil()) {
-      p << "until " << op.getUntil() << " ";
+     << op.collection() << " : " << op.collection().getType() << " ";
+   if (op.until()) {
+      p << "until " << op.until() << " ";
    }
    printInitializationList(p, op.getRegionIterArgs(), op.getIterOperands(),
                            " iter_args");
    if (!op.getIterOperands().empty())
       p << " -> (" << op.getIterOperands().getTypes() << ')';
-   p.printRegion(op.getRegion(),
+   p.printRegion(op.region(),
                  /*printEntryBlockArgs=*/false,
                  /*printBlockTerminators=*/op.hasIterOperands());
    p.printOptionalAttrDict(op->getAttrs(), {"operand_segment_sizes"});
 }
 
 //adapted from scf::ForOp
-ParseResult pgx::mlir::dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
+ParseResult dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
    auto& builder = parser.getBuilder();
    OpAsmParser::UnresolvedOperand collection;
    OpAsmParser::Argument inductionVariable;
    Type collType;
-   pgx::mlir::dsa::CollectionType collectionType;
+   mlir::dsa::CollectionType collectionType;
    // Parse the induction variable followed by '='.
    if (parser.parseArgument(inductionVariable) || parser.parseKeyword("in"))
       return failure();
@@ -66,7 +58,7 @@ ParseResult pgx::mlir::dsa::ForOp::parse(OpAsmParser& parser, OperationState& re
        parser.parseColonType(collType))
       return failure();
 
-   if (!(collectionType = collType.dyn_cast_or_null<pgx::mlir::dsa::CollectionType>())) {
+   if (!(collectionType = collType.dyn_cast_or_null<mlir::dsa::CollectionType>())) {
       return failure();
    }
    parser.resolveOperand(collection, collectionType, result.operands);
@@ -79,7 +71,7 @@ ParseResult pgx::mlir::dsa::ForOp::parse(OpAsmParser& parser, OperationState& re
    bool hasUntil = false;
    if (succeeded(parser.parseOptionalKeyword("until"))) {
       OpAsmParser::UnresolvedOperand until;
-      if (parser.parseOperand(until) || parser.resolveOperand(until, pgx::mlir::dsa::FlagType::get(parser.getBuilder().getContext()), result.operands)) {
+      if (parser.parseOperand(until) || parser.resolveOperand(until, mlir::dsa::FlagType::get(parser.getBuilder().getContext()), result.operands)) {
          return failure();
       }
       hasUntil = true;
@@ -116,7 +108,7 @@ ParseResult pgx::mlir::dsa::ForOp::parse(OpAsmParser& parser, OperationState& re
    if (parser.parseRegion(*body, regionArgs))
       return failure();
 
-   pgx::mlir::dsa::ForOp::ensureTerminator(*body, builder, result.location);
+   mlir::dsa::ForOp::ensureTerminator(*body, builder, result.location);
    result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({1, (hasUntil ? 1 : 0), static_cast<int32_t>(iterArgs)}));
 
    // Parse the optional attribute list.
@@ -126,7 +118,7 @@ ParseResult pgx::mlir::dsa::ForOp::parse(OpAsmParser& parser, OperationState& re
    return success();
 }
 
-ParseResult pgx::mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::OperationState& result) {
+ParseResult mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::OperationState& result) {
    OpAsmParser::UnresolvedOperand toSort;
    dsa::VectorType vecType;
    if (parser.parseOperand(toSort) || parser.parseColonType(vecType)) {
@@ -144,12 +136,12 @@ ParseResult pgx::mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::O
    return success();
 }
 
-void pgx::mlir::dsa::SortOp::print(OpAsmPrinter& p) {
-   pgx::mlir::dsa::SortOp& op = *this;
-   p << " " << op.getToSort() << ":" << op.getToSort().getType() << " ";
+void dsa::SortOp::print(OpAsmPrinter& p) {
+   dsa::SortOp& op = *this;
+   p << " " << op.toSort() << ":" << op.toSort().getType() << " ";
    p << "(";
    bool first = true;
-   for (auto arg : op.getRegion().front().getArguments()) {
+   for (auto arg : op.region().front().getArguments()) {
       if (first) {
          first = false;
       } else {
@@ -158,10 +150,10 @@ void pgx::mlir::dsa::SortOp::print(OpAsmPrinter& p) {
       p << arg;
    }
    p << ")";
-   p.printRegion(op.getRegion(), false, true);
+   p.printRegion(op.region(), false, true);
 }
 
-ParseResult pgx::mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, OperationState& result) {
+ParseResult mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, OperationState& result) {
    OpAsmParser::UnresolvedOperand ht, key, val;
    Type htType;
    Type keyType;
@@ -216,16 +208,16 @@ ParseResult pgx::mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, Operatio
    return success();
 }
 
-void pgx::mlir::dsa::HashtableInsert::print(OpAsmPrinter& p) {
-   pgx::mlir::dsa::HashtableInsert& op = *this;
-   p << " " << op.getHt() << " : " << op.getHt().getType() << ", " << op.getKey() << " : " << op.getKey().getType();
-   if (op.getVal()) {
-      p << ", " << op.getVal() << " : " << op.getVal().getType();
+void dsa::HashtableInsert::print(OpAsmPrinter& p) {
+   dsa::HashtableInsert& op = *this;
+   p << " " << op.ht() << " : " << op.ht().getType() << ", " << op.key() << " : " << op.key().getType();
+   if (op.val()) {
+      p << ", " << op.val() << " : " << op.val().getType();
    }
-   if (!op.getHash().empty()) {
+   if (!op.hash().empty()) {
       p << " hash: (";
       bool first = true;
-      for (auto arg : op.getHash().front().getArguments()) {
+      for (auto arg : op.hash().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -234,12 +226,12 @@ void pgx::mlir::dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.getHash(), false, true);
+      p.printRegion(op.hash(), false, true);
    }
-   if (!op.getEqual().empty()) {
+   if (!op.equal().empty()) {
       p << " eq: (";
       bool first = true;
-      for (auto arg : op.getEqual().front().getArguments()) {
+      for (auto arg : op.equal().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -248,12 +240,12 @@ void pgx::mlir::dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.getEqual(), false, true);
+      p.printRegion(op.equal(), false, true);
    }
-   if (!op.getReduce().empty()) {
+   if (!op.reduce().empty()) {
       p << " reduce: (";
       bool first = true;
-      for (auto arg : op.getReduce().front().getArguments()) {
+      for (auto arg : op.reduce().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -262,52 +254,9 @@ void pgx::mlir::dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.getReduce(), false, true);
+      p.printRegion(op.reduce(), false, true);
    }
 }
-
-// namespace pgx::mlir::dsa {
-//
-// // Properties API implementations for LLVM 20 compatibility
-// // These are required for operations with attributes
-//
-// // At operation Properties API
-// std::optional<::mlir::Attribute> At::getInherentAttr(::mlir::MLIRContext *ctx, 
-//                                                      const Properties &prop, 
-//                                                      llvm::StringRef name) {
-//     if (name == "pos") {
-//         return prop.pos;
-//     }
-//     return std::nullopt;
-// }
-//
-// void At::setInherentAttr(Properties &prop, 
-//                         llvm::StringRef name, 
-//                         ::mlir::Attribute value) {
-//     if (name == "pos") {
-//         prop.pos = value.cast<::mlir::IntegerAttr>();
-//     }
-// }
-//
-// // CreateDS operation Properties API (has optional attribute)
-// std::optional<::mlir::Attribute> CreateDS::getInherentAttr(::mlir::MLIRContext *ctx,
-//                                                            const Properties &prop,
-//                                                            llvm::StringRef name) {
-//     if (name == "init_attr") {
-//         return prop.init_attr;
-//     }
-//     return std::nullopt;
-// }
-//
-// void CreateDS::setInherentAttr(Properties &prop,
-//                               llvm::StringRef name,
-//                               ::mlir::Attribute value) {
-//     if (name == "init_attr") {
-//         prop.init_attr = value;
-//     }
-// }
-//
-// } // namespace pgx::mlir::dsa
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/DSA/IR/DSAOps.cpp.inc"

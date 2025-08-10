@@ -1,4 +1,4 @@
-add_mlir_dialect_library(MLIRRelAlgDialect
+add_mlir_dialect_library(MLIRRelAlg
         RelAlgDialect.cpp
         RelAlgOps.cpp
         RelAlgOpsEnums.cpp
@@ -12,7 +12,6 @@ add_mlir_dialect_library(MLIRRelAlgDialect
         Transforms/PropagateConstraints.cpp
         Transforms/IntroduceTmp.cpp
         ColumnManager.cpp
-        ColumnSet.cpp
         Transforms/Unnesting.cpp
         Transforms/Pushdown.cpp
         Transforms/ImplicitToExplicitJoins.cpp
@@ -21,7 +20,7 @@ add_mlir_dialect_library(MLIRRelAlgDialect
         Transforms/queryopt/QueryGraphBuilder.cpp
         Transforms/queryopt/DPhyp.cpp
         Transforms/queryopt/GOO.cpp
-        # Transforms/queryopt/QueryGraph.cpp # Temporarily disabled - Arrow dependency
+        Transforms/queryopt/QueryGraph.cpp
         Passes.cpp
         ADDITIONAL_HEADER_DIRS
         ../../include/mlir/Dialect/RelAlg
@@ -30,7 +29,6 @@ add_mlir_dialect_library(MLIRRelAlgDialect
         MLIRRelAlgOpsIncGen
         MLIRDBOpsIncGen
 
-        LINK_LIBS PUBLIC
-        MLIRSupport
+        LINK_LIBS mlir-support PUBLIC
         MLIRIR
         )

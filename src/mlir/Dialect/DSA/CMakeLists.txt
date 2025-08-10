@@ -1,5 +1,5 @@
 
-add_mlir_dialect_library(MLIRDSADialect
+add_mlir_dialect_library(MLIRDSA
         DSADialect.cpp
         DSAOps.cpp
         DSAOpsEnums.cpp
@@ -12,5 +12,5 @@ add_mlir_dialect_library(MLIRDSADialect
         LINK_LIBS PUBLIC
         MLIRIR
         MLIRFuncTransforms
-        MLIRSupport
+        MLIRUtil
         )
