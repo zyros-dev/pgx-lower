@@ -1,4 +1,4 @@
-add_mlir_dialect_library(MLIRRelAlg
+add_mlir_dialect_library(MLIRRelAlgDialect
         RelAlgDialect.cpp
         RelAlgOps.cpp
         RelAlgOpsEnums.cpp
@@ -29,6 +29,7 @@ add_mlir_dialect_library(MLIRRelAlg
         MLIRRelAlgOpsIncGen
         MLIRDBOpsIncGen
 
-        LINK_LIBS mlir-support PUBLIC
+        LINK_LIBS PUBLIC
+        MLIRSupport
         MLIRIR
         )

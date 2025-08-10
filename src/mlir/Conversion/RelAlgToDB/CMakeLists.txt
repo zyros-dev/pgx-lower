@@ -1,4 +1,4 @@
-add_mlir_conversion_library(MLIRRelAlgToDB
+add_mlir_conversion_library(MLIRRelAlgToDBConversion
         Translator.cpp
         JoinTranslator.cpp
         NLJoinTranslator.cpp
@@ -25,7 +25,8 @@ add_mlir_conversion_library(MLIRRelAlgToDB
         LINK_COMPONENTS
         Core
 
-        LINK_LIBS mlir-support PUBLIC
+        LINK_LIBS PUBLIC
+        MLIRSupport
         MLIRIR
         MLIRDB
         )
