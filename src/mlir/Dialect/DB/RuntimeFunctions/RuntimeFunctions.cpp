@@ -1,4 +1,4 @@
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DB/IR/RuntimeFunctions.h"
 #include "mlir/Dialect/DB/Passes.h"
 #include "runtime-defs/DateRuntime.h"

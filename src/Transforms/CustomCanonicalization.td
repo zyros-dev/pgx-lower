@@ -1,4 +1,4 @@
-include "mlir/Dialect/Arithmetic/IR/ArithmeticOps.td"
+include "mlir/Dialect/Arith/IR/ArithmeticOps.td"
 //include "mlir/Dialect/DB/IR/DBOps.td"
 include "mlir/IR/PatternBase.td"
 

@@ -1,6 +1,6 @@
 #include "mlir/Conversion/DSAToStd/CollectionIteration.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"

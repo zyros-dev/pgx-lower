@@ -1,5 +1,5 @@
 #include "mlir/Dialect/util/UtilOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/util/UtilDialect.h"
 
 #include "mlir/IR/OpImplementation.h"
