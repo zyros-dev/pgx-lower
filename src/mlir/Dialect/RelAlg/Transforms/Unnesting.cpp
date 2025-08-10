@@ -37,12 +37,12 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
    Operator pushDependJoinDown(mlir::Location loc,Operator d, Operator op) {
       auto availableD = d.getAvailableColumns();
 
-      using namespace mlir::relalg;
+      using namespace pgx::mlir::relalg;
       auto relType = TupleStreamType::get(&getContext());
       mlir::OpBuilder builder(&getContext());
       builder.setInsertionPointAfter(op.getOperation());
       return ::llvm::TypeSwitch<mlir::Operation*, Operator>(op.getOperation())
-         .Case<mlir::relalg::BaseTableOp, mlir::relalg::ConstRelationOp>([&](Operator baserelation) {
+         .Case<pgx::mlir::relalg::BaseTableOp, pgx::mlir::relalg::ConstRelationOp>([&](Operator baserelation) {
             return builder.create<CrossProductOp>(loc, relType, baserelation.asRelation(), d.asRelation()).getOperation();
          })
          .Case<CrossProductOp>([&](Operator cp) {
@@ -73,7 +73,7 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
             return projection;
          })
          .Case<BinaryOperator>([&](BinaryOperator join) {
-            if (mlir::relalg::detail::isJoin(join.getOperation())) {
+            if (pgx::mlir::relalg::detail::isJoin(join.getOperation())) {
                auto left = mlir::dyn_cast_or_null<Operator>(join.leftChild());
                auto right = mlir::dyn_cast_or_null<Operator>(join.rightChild());
                auto freeRight = right.getFreeColumns();
@@ -111,10 +111,10 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
             return others;
          });
    }
-   void handleJoin(mlir::Location loc,BinaryOperator join, Operator newLeft, Operator newRight, bool joinDependent, bool renameRight, mlir::relalg::ColumnSet& dependentAttributes) {
+   void handleJoin(mlir::Location loc,BinaryOperator join, Operator newLeft, Operator newRight, bool joinDependent, bool renameRight, pgx::mlir::relalg::ColumnSet& dependentAttributes) {
       using namespace mlir;
       auto relType = relalg::TupleStreamType::get(&getContext());
-      auto& attributeManager = getContext().getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+      auto& attributeManager = getContext().getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager();
       Operator joinAsOperator = mlir::dyn_cast_or_null<Operator>(join.getOperation());
       mlir::OpBuilder builder(join.getOperation());
       if (joinDependent) {
@@ -136,7 +136,7 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
                Value valLeft = builder.create<relalg::GetColumnOp>(loc, attr->type, attributeManager.createRef(attr), tuple);
                Value valRight = builder.create<relalg::GetColumnOp>(loc, attr->type, attrefDependent, tuple);
                Value cmpEq = builder.create<db::CmpOp>(loc, db::DBCmpPredicate::eq, valLeft, valRight);
-               if (valLeft.getType().isa<mlir::db::NullableType>() && valRight.getType().isa<mlir::db::NullableType>()) {
+               if (valLeft.getType().isa<pgx::mlir::db::NullableType>() && valRight.getType().isa<pgx::mlir::db::NullableType>()) {
                   Value nullLeft = builder.create<db::IsNullOp>(loc, valLeft);
                   Value nullRight = builder.create<db::IsNullOp>(loc, valRight);
                   Value bothNull = builder.create<db::AndOp>(loc, ValueRange{nullLeft, nullRight});
@@ -156,19 +156,19 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
       }
       joinAsOperator.setChildren({newLeft, newRight});
    }
-   bool collectSimpleDependencies(Operator op, mlir::relalg::ColumnSet& attributes, std::vector<mlir::relalg::SelectionOp>& selectionOps) {
+   bool collectSimpleDependencies(Operator op, pgx::mlir::relalg::ColumnSet& attributes, std::vector<pgx::mlir::relalg::SelectionOp>& selectionOps) {
       if (!op.getFreeColumns().intersects(attributes)) {
          return true;
       }
       return ::llvm::TypeSwitch<mlir::Operation*, bool>(op.getOperation())
-         .Case<mlir::relalg::BaseTableOp, mlir::relalg::ConstRelationOp>([&](Operator baserelation) {
+         .Case<pgx::mlir::relalg::BaseTableOp, pgx::mlir::relalg::ConstRelationOp>([&](Operator baserelation) {
             return true;
          })
-         .Case<mlir::relalg::CrossProductOp>([&](Operator cp) {
+         .Case<pgx::mlir::relalg::CrossProductOp>([&](Operator cp) {
             auto subOps = cp.getAllSubOperators();
             return collectSimpleDependencies(subOps[0], attributes, selectionOps) && collectSimpleDependencies(subOps[1], attributes, selectionOps);
          })
-         .Case<mlir::relalg::SelectionOp>([&](mlir::relalg::SelectionOp sel) {
+         .Case<pgx::mlir::relalg::SelectionOp>([&](pgx::mlir::relalg::SelectionOp sel) {
             auto x = sel.getUsedColumns();
             x.remove(sel.getAvailableColumns());
             if (x.isSubsetOf(attributes)) {
@@ -183,9 +183,9 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
             return false;
          });
    }
-   void combine(mlir::Location loc,std::vector<mlir::relalg::SelectionOp> selectionOps, PredicateOperator lower) {
+   void combine(mlir::Location loc,std::vector<pgx::mlir::relalg::SelectionOp> selectionOps, PredicateOperator lower) {
       using namespace mlir;
-      auto lowerTerminator = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(lower.getPredicateBlock().getTerminator());
+      auto lowerTerminator = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(lower.getPredicateBlock().getTerminator());
 
 
       OpBuilder builder(lower);
@@ -195,24 +195,24 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
       bool nullable = false;
       if(!lowerTerminator.results().empty()) {
          Value lowerPredVal = lowerTerminator.results()[0];
-         nullable|=lowerPredVal.getType().isa<mlir::db::NullableType>();
+         nullable|=lowerPredVal.getType().isa<pgx::mlir::db::NullableType>();
          values.push_back(lowerPredVal);
       }
       for (auto selOp : selectionOps) {
-         auto higherTerminator = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator());
+         auto higherTerminator = mlir::dyn_cast_or_null<pgx::mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator());
          Value higherPredVal = higherTerminator.results()[0];
          mlir::BlockAndValueMapping mapping;
          mapping.map(selOp.getPredicateArgument(), lower.getPredicateArgument());
-         mlir::relalg::detail::inlineOpIntoBlock(higherPredVal.getDefiningOp(), higherPredVal.getDefiningOp()->getParentOp(), lower.getOperation(), &lower.getPredicateBlock(), mapping);
-         nullable |= higherPredVal.getType().isa<mlir::db::NullableType>();
+         pgx::mlir::relalg::detail::inlineOpIntoBlock(higherPredVal.getDefiningOp(), higherPredVal.getDefiningOp()->getParentOp(), lower.getOperation(), &lower.getPredicateBlock(), mapping);
+         nullable |= higherPredVal.getType().isa<pgx::mlir::db::NullableType>();
          values.push_back(mapping.lookup(higherPredVal));
       }
       mlir::Type resType=builder.getI1Type();
       if(nullable){
-         resType=mlir::db::NullableType::get(builder.getContext(),resType);
+         resType=pgx::mlir::db::NullableType::get(builder.getContext(),resType);
       }
-      mlir::Value combined = builder.create<mlir::db::AndOp>(loc, resType, values);
-      builder.create<mlir::relalg::ReturnOp>(loc, combined);
+      mlir::Value combined = builder.create<pgx::mlir::db::AndOp>(loc, resType, values);
+      builder.create<pgx::mlir::relalg::ReturnOp>(loc, combined);
       lowerTerminator->erase();
    }
    bool trySimpleUnnesting(BinaryOperator binaryOperator) {
@@ -221,13 +221,13 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
          auto right = mlir::dyn_cast_or_null<Operator>(binaryOperator.rightChild());
          auto dependentLeft = left.getFreeColumns().intersect(right.getAvailableColumns());
          auto dependentRight = right.getFreeColumns().intersect(left.getAvailableColumns());
-         mlir::relalg::ColumnSet dependentAttributes = dependentLeft;
+         pgx::mlir::relalg::ColumnSet dependentAttributes = dependentLeft;
          dependentAttributes.insert(dependentRight);
          bool leftProvides = dependentLeft.empty();
          Operator providerChild = leftProvides ? left : right;
          Operator dependentChild = leftProvides ? right : left;
-         mlir::relalg::ColumnSet providedAttrs = providerChild.getAvailableColumns();
-         std::vector<mlir::relalg::SelectionOp> selectionOps;
+         pgx::mlir::relalg::ColumnSet providedAttrs = providerChild.getAvailableColumns();
+         std::vector<pgx::mlir::relalg::SelectionOp> selectionOps;
          if (!collectSimpleDependencies(dependentChild, providedAttrs, selectionOps)) {
             return false;
          }
@@ -243,8 +243,8 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
    void runOnOperation() override {
       using namespace mlir;
       getOperation()->walk([&](BinaryOperator binaryOperator) {
-         if (!mlir::relalg::detail::isJoin(binaryOperator.getOperation())) return;
-         if (!mlir::relalg::detail::isDependentJoin(binaryOperator.getOperation())) return;
+         if (!pgx::mlir::relalg::detail::isJoin(binaryOperator.getOperation())) return;
+         if (!pgx::mlir::relalg::detail::isDependentJoin(binaryOperator.getOperation())) return;
          auto left = mlir::dyn_cast_or_null<Operator>(binaryOperator.leftChild());
          auto right = mlir::dyn_cast_or_null<Operator>(binaryOperator.rightChild());
          auto dependentLeft = left.getFreeColumns().intersect(right.getAvailableColumns());
@@ -253,9 +253,9 @@ class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::
             return;
          }
          if (trySimpleUnnesting(binaryOperator.getOperation())) {
-            if (!mlir::relalg::detail::isDependentJoin(binaryOperator.getOperation())) return;
+            if (!pgx::mlir::relalg::detail::isDependentJoin(binaryOperator.getOperation())) return;
          }
-         mlir::relalg::ColumnSet dependentAttributes = dependentLeft;
+         pgx::mlir::relalg::ColumnSet dependentAttributes = dependentLeft;
          dependentAttributes.insert(dependentRight);
          bool leftProvides = dependentLeft.empty();
          Operator providerChild = leftProvides ? left : right;

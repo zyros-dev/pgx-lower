@@ -8,7 +8,7 @@
 #include <iterator>
 #include <mlir/Dialect/RelAlg/IR/RelAlgOps.h>
 
-namespace mlir::relalg {
+namespace pgx::mlir::relalg {
 class QueryGraph;
 class NodeSet {
    public:
@@ -143,5 +143,5 @@ class Plan {
 
    static std::shared_ptr<Plan> joinPlans(NodeSet leftProblem, NodeSet rightProblem, std::shared_ptr<Plan> leftPlan, std::shared_ptr<Plan> rightPlan, QueryGraph& queryPlan, NodeSet& combinedProblem);
 };
-} // namespace mlir::relalg
+} // namespace pgx::mlir::relalg
 #endif // MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_UTILS_H

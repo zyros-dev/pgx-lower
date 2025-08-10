@@ -13,7 +13,7 @@ class Pushdown : public mlir::PassWrapper<Pushdown, mlir::OperationPass<mlir::fu
 
    Operator pushdown(Operator topush, Operator curr) {
       UnaryOperator topushUnary = mlir::dyn_cast_or_null<UnaryOperator>(topush.getOperation());
-      mlir::relalg::ColumnSet usedAttributes = topush.getUsedColumns();
+      pgx::mlir::relalg::ColumnSet usedAttributes = topush.getUsedColumns();
       auto res = ::llvm::TypeSwitch<mlir::Operation*, Operator>(curr.getOperation())
                     .Case<UnaryOperator>([&](UnaryOperator unaryOperator) {
                        Operator asOp = mlir::dyn_cast_or_null<Operator>(unaryOperator.getOperation());
@@ -57,7 +57,7 @@ class Pushdown : public mlir::PassWrapper<Pushdown, mlir::OperationPass<mlir::fu
 
    void runOnOperation() override {
       using namespace mlir;
-      getOperation()->walk([&](mlir::relalg::SelectionOp sel) {
+      getOperation()->walk([&](pgx::mlir::relalg::SelectionOp sel) {
          SmallPtrSet<mlir::Operation*, 4> users;
          for (auto* u : sel->getUsers()) {
             users.insert(u);

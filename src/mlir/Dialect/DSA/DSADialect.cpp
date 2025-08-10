@@ -3,7 +3,7 @@
 #include "mlir/IR/DialectImplementation.h"
 #include <mlir/Transforms/InliningUtils.h>
 using namespace mlir;
-using namespace mlir::dsa;
+using namespace pgx::mlir::dsa;
 struct DSAInlinerInterface : public DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
    bool isLegalToInline(Operation*, Region*, bool, BlockAndValueMapping&) const final override {

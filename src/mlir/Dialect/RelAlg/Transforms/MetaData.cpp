@@ -11,8 +11,8 @@ class AttachMetaData : public mlir::PassWrapper<AttachMetaData, mlir::OperationP
    public:
    AttachMetaData(runtime::Database& db):db(db){}
    void runOnOperation() override {
-      getOperation().walk([&](mlir::relalg::BaseTableOp op) {
-         op.metaAttr(mlir::relalg::TableMetaDataAttr::get(&getContext(),db.getTableMetaData(op.table_identifier().str())));
+      getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
+         op.metaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),db.getTableMetaData(op.table_identifier().str())));
       });
    }
 };
@@ -21,9 +21,9 @@ class DetachMetaData : public mlir::PassWrapper<DetachMetaData, mlir::OperationP
 
    public:
    void runOnOperation() override {
-      getOperation().walk([&](mlir::relalg::BaseTableOp op) {
-         getOperation().walk([&](mlir::relalg::BaseTableOp op) {
-            op.metaAttr(mlir::relalg::TableMetaDataAttr::get(&getContext(),std::make_shared<runtime::TableMetaData>()));
+      getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
+         getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
+            op.metaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),std::make_shared<runtime::TableMetaData>()));
          });
       });
    }

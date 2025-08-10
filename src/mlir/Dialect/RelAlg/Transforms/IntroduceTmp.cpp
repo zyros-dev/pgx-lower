@@ -8,15 +8,15 @@ namespace {
 class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-introduce-tmp"; }
    public:
-   mlir::relalg::ColumnSet getUsed(mlir::Operation* op) {
+   pgx::mlir::relalg::ColumnSet getUsed(mlir::Operation* op) {
       if (auto asOperator = mlir::dyn_cast_or_null<Operator>(op)) {
          auto cols = asOperator.getUsedColumns();
          for (auto *user : asOperator.asRelation().getUsers()) {
             cols.insert(getUsed(user));
          }
          return cols;
-      } else if (auto matOp = mlir::dyn_cast_or_null<mlir::relalg::MaterializeOp>(op)) {
-         return mlir::relalg::ColumnSet::fromArrayAttr(matOp.cols());
+      } else if (auto matOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::MaterializeOp>(op)) {
+         return pgx::mlir::relalg::ColumnSet::fromArrayAttr(matOp.cols());
       }
       return {};
    }
@@ -26,12 +26,12 @@ class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<
          if (!users.empty() && ++users.begin() != users.end()) {
             mlir::OpBuilder builder(&getContext());
             builder.setInsertionPointAfter(op.getOperation());
-            mlir::relalg::ColumnSet usedAttributes;
+            pgx::mlir::relalg::ColumnSet usedAttributes;
             for (auto *user : users) {
                usedAttributes.insert(getUsed(user));
             }
             usedAttributes=usedAttributes.intersect(op.getAvailableColumns());
-            auto tmp = builder.create<mlir::relalg::TmpOp>(op->getLoc(), op.asRelation().getType(), op.asRelation(), usedAttributes.asRefArrayAttr(&getContext()));
+            auto tmp = builder.create<pgx::mlir::relalg::TmpOp>(op->getLoc(), op.asRelation().getType(), op.asRelation(), usedAttributes.asRefArrayAttr(&getContext()));
 
             op.asRelation().replaceUsesWithIf(tmp.getResult(), [&](mlir::OpOperand& operand) { return operand.getOwner() != tmp.getOperation(); });
          }

@@ -9,7 +9,7 @@ struct UtilInlinerInterface : public mlir::DialectInlinerInterface {
       return true;
    }
 };
-void mlir::util::UtilDialect::initialize() {
+void pgx::mlir::util::UtilDialect::initialize() {
    addOperations<
 #define GET_OP_LIST
 #include "mlir/Dialect/util/UtilOps.cpp.inc"
