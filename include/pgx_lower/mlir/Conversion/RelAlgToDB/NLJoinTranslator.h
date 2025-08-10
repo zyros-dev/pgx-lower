@@ -1,32 +1,29 @@
-#ifndef PGX_LOWER_MLIR_CONVERSION_RELALGTODB_NLJOINTRANSLATOR_H
-#define PGX_LOWER_MLIR_CONVERSION_RELALGTODB_NLJOINTRANSLATOR_H
-
-#include "mlir/Conversion/RelAlgToDB/JoinTranslator.h"
+#ifndef MLIR_CONVERSION_RELALGTODB_NLJOINTRANSLATOR_H
+#define MLIR_CONVERSION_RELALGTODB_NLJOINTRANSLATOR_H
+#include "JoinTranslator.h"
 #include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include <mlir/Dialect/DB/IR/DBOps.h>
 
-namespace pgx::mlir::relalg {
+namespace mlir::relalg {
+class NLJoinTranslator : public mlir::relalg::JoinTranslator {
+   Value vector;
+   mlir::relalg::OrderedAttributes orderedAttributesLeft;
+   mlir::TupleType tupleType;
 
-class NLJoinTranslator : public JoinTranslator {
-   OrderedAttributes orderedAttributesLeft;
-   ::mlir::TupleType tupleTypeLeft;
-   ::mlir::Value vector;
-   ::mlir::Location loc;
-   
+   protected:
+   mlir::Location loc;
+
    public:
-   NLJoinTranslator(std::shared_ptr<JoinImpl> impl);
-   
-   virtual void setInfo(Translator* consumer, const ColumnSet& requiredAttributes) override;
-   virtual void build(::mlir::OpBuilder& builder, TranslatorContext& context);
-   virtual void scanHT(TranslatorContext& context, ::mlir::OpBuilder& builder) override;
-   virtual void produce(TranslatorContext& context, ::mlir::OpBuilder& builder) override;
-   virtual void consume(Translator* child, ::mlir::OpBuilder& builder, TranslatorContext& context) override;
-   
-   virtual ~NLJoinTranslator() = default;
+   NLJoinTranslator(std::shared_ptr<JoinImpl> impl) : JoinTranslator(impl), loc(joinOp.getLoc()) {}
+
+   virtual void setInfo(mlir::relalg::Translator* consumer, mlir::relalg::ColumnSet requiredAttributes) override;
+
+   void build(mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context);
+   virtual void scanHT(mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override;
+
+   void probe(mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context);
+   virtual void consume(mlir::relalg::Translator* child, mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override;
+   virtual void produce(mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override;
 };
-
-} // namespace pgx::mlir::relalg
-
-#endif // PGX_LOWER_MLIR_CONVERSION_RELALGTODB_NLJOINTRANSLATOR_H
+} // end namespace mlir::relalg
+#endif // MLIR_CONVERSION_RELALGTODB_NLJOINTRANSLATOR_H
