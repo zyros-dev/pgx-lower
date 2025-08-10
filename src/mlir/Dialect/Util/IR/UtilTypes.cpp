@@ -1,31 +1,40 @@
-#include "mlir/Dialect/Util/IR/UtilTypes.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "execution/logging.h"
-
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/DialectImplementation.h"
-#include "mlir/IR/TypeSupport.h"
 #include "llvm/ADT/TypeSwitch.h"
 
-using namespace mlir;
-using namespace pgx::mlir::util;
+#include "mlir/Dialect/Util/IR/UtilDialect.h"
+#include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "mlir/Dialect/Util/IR/UtilTypes.h"
+#include "mlir/IR/DialectImplementation.h"
+#include <unordered_set>
 
-//===----------------------------------------------------------------------===//
-// TableGen'd type definitions
-//===----------------------------------------------------------------------===//
+using namespace mlir;
+
+
+void pgx::mlir::util::RefType::print(::mlir::AsmPrinter& printer) const {
+   printer << "<";
+   printer << getElementType() << ">";
+}
+::mlir::Type pgx::mlir::util::RefType::parse(::mlir::AsmParser& parser) {
+   Type elementType;
+   if (parser.parseLess()) {
+      return Type();
+   }
+
+   if (parser.parseType(elementType) || parser.parseGreater()) {
+      return Type();
+      return Type();
+   }
+   return pgx::mlir::util::RefType::get(parser.getContext(), elementType);
+}
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/Util/IR/UtilOpsTypes.cpp.inc"
+#include "mlir/Dialect/util/UtilOpsTypes.cpp.inc"
 
-namespace pgx {
-namespace mlir {
-namespace util {
+namespace pgx::mlir::util {
 void UtilDialect::registerTypes() {
-    addTypes<
+   addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/Util/IR/UtilOpsTypes.cpp.inc"
-    >();
+#include "mlir/Dialect/Util/UtilOpsTypes.cpp.inc"
+      >();
 }
-} // namespace util
-} // namespace mlir
-} // namespace pgx
+
+} // namespace pgx::mlir::util
