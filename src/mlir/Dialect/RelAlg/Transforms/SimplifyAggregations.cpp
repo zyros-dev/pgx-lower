@@ -2,6 +2,7 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
 #include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
@@ -25,7 +26,7 @@ class WrapAggrFuncPattern : public mlir::RewritePattern {
       def.getColumn().type = aggrFuncOp.getType();
       auto aggrOp = rewriter.create<mlir::relalg::AggregationOp>(op->getLoc(), mlir::relalg::TupleStreamType::get(getContext()), aggrFuncOp.getRel(), rewriter.getArrayAttr({}), rewriter.getArrayAttr({def}));
       auto* block = new ::mlir::Block;
-      aggrOp.aggr_func().push_back(block);
+      aggrOp.getAggrFunc().push_back(block);
       {
          ::mlir::OpBuilder::InsertionGuard insertionGuard(rewriter);
          rewriter.setInsertionPointToStart(block);
@@ -65,7 +66,7 @@ class WrapCountRowsPattern : public mlir::RewritePattern {
       def.getColumn().type = aggrFuncOp.getType();
       auto aggrOp = rewriter.create<mlir::relalg::AggregationOp>(op->getLoc(), mlir::relalg::TupleStreamType::get(getContext()), aggrFuncOp.getRel(), rewriter.getArrayAttr({}), rewriter.getArrayAttr({def}));
       auto* block = new ::mlir::Block;
-      aggrOp.aggr_func().push_back(block);
+      aggrOp.getAggrFunc().push_back(block);
       {
          ::mlir::OpBuilder::InsertionGuard insertionGuard(rewriter);
          rewriter.setInsertionPointToStart(block);
@@ -131,7 +132,7 @@ class SimplifyAggregations : public ::mlir::PassWrapper<SimplifyAggregations, ::
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createSimplifyAggregationsPass() { return std::make_unique<SimplifyAggregations>(); }
+std::unique_ptr<mlir::Pass> createSimplifyAggregationsPass() { return std::make_unique<SimplifyAggregations>(); }
 } // end namespace relalg
 } // end namespace mlir
 
