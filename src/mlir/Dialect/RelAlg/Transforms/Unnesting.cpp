@@ -20,8 +20,8 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
    Operator getFirstOfTree(Operator tree) {
       Operator currFirst = tree;
       for (auto child : tree.getChildren()) {
-         ::mlir::Operation* otherFirst = getFirstOfTree(child);
-         if (otherFirst->isBeforeInBlock(currFirst)) {
+         Operator otherFirst = getFirstOfTree(child);
+         if (otherFirst->isBeforeInBlock(currFirst.getOperation())) {
             currFirst = otherFirst;
          }
       }
@@ -253,7 +253,7 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
          if (!dependentLeft.empty() && !dependentRight.empty()) {
             return;
          }
-         if (trySimpleUnnesting(binaryOperator.getOperation())) {
+         if (trySimpleUnnesting(binaryOperator)) {
             if (!mlir::relalg::detail::isDependentJoin(binaryOperator.getOperation())) return;
          }
          mlir::relalg::ColumnSet dependentAttributes = dependentLeft;

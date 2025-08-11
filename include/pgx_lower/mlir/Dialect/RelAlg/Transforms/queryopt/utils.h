@@ -113,7 +113,7 @@ class NodeSet {
 };
 struct HashNodeSet {
    size_t operator()(const NodeSet& bitset) const {
-      return bitset.getHash();
+      return bitset.hash();
    }
 };
 class Plan {

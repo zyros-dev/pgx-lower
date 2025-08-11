@@ -122,8 +122,8 @@ class QueryGraph {
       return {};
    }
    void addJoinEdge(NodeSet left, NodeSet right, Operator op, std::optional<size_t> createdNode) {
-      assert(left.getValid());
-      assert(right.getValid());
+      assert(left.valid());
+      assert(right.valid());
 
       size_t edgeid = joins.size();
       joins.emplace_back();
@@ -138,7 +138,7 @@ class QueryGraph {
       e.right = right;
       e.createdNode = createdNode;
       if (createdNode) {
-         pseudoNodeOwner[createdNode.getValue()] = edgeid;
+         pseudoNodeOwner[createdNode.value()] = edgeid;
       }
       for (auto n : left) {
          if (n >= nodes.size()) {
