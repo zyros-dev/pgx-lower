@@ -3,6 +3,10 @@
 echo "=== Rolling back src, include, tests directories and CMakeLists.txt ==="
 git restore ./src ./include ./tests CMakeLists.txt
 
+echo "=== Removing untracked files and directories ==="
+# Remove any untracked files/directories that were created
+git clean -fd ./src ./include ./tests ./tools/build-tools ./include/runtime ./include/runtime-defs
+
 echo "✅ Git tree reset complete"
 sleep 1
 
@@ -136,17 +140,8 @@ echo "Fixing FloatType API..."
 # getFloat64 is wrong - LLVM 20 uses getF64
 sed -i 's/getFloat64/getF64/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 
-# Fix 10: Disable SimplifyToArith pass temporarily (LLVM 20 API incompatible)
-echo "Disabling SimplifyToArith pass temporarily (LLVM 20 API changes)..."
-# Comment out SimplifyToArith in CMakeLists.txt to avoid build errors
-sed -i 's/^set(LLVM_TARGET_DEFINITIONS Transforms\/SimplifyToArith.td)/#set(LLVM_TARGET_DEFINITIONS Transforms\/SimplifyToArith.td)/g' ./src/mlir/Dialect/DB/CMakeLists.txt
-sed -i 's/^mlir_tablegen(SimplifyToArith.inc -gen-rewriters)/#mlir_tablegen(SimplifyToArith.inc -gen-rewriters)/g' ./src/mlir/Dialect/DB/CMakeLists.txt
-sed -i 's/^add_public_tablegen_target(MLIRDBSimplifyToArithIncGen)/#add_public_tablegen_target(MLIRDBSimplifyToArithIncGen)/g' ./src/mlir/Dialect/DB/CMakeLists.txt
-sed -i 's/MLIRDBSimplifyToArithIncGen/#MLIRDBSimplifyToArithIncGen/g' ./src/mlir/Dialect/DB/CMakeLists.txt
-# Also comment out the SimplifyToArith.cpp from the build
-sed -i 's|Transforms/SimplifyToArith.cpp|#Transforms/SimplifyToArith.cpp|g' ./src/mlir/Dialect/DB/CMakeLists.txt
 
-# Fix 11: Fix broken header includes
+# Fix 10: Fix broken header includes
 echo "Fixing broken header includes..."
 # RelAlg/Passes.h appears to have a broken namespace - add missing content
 echo '#pragma once
@@ -164,28 +159,28 @@ namespace db {
 } // end namespace db' > ./include/pgx_lower/mlir/Dialect/DB/Passes.h
 echo '} // end namespace mlir' >> ./include/pgx_lower/mlir/Dialect/DB/Passes.h
 
-# Fix 12: Fix PassWrapper missing include  
+# Fix 11: Fix PassWrapper missing include  
 echo "Adding Pass include to transform files..."
 sed -i '1i#include "mlir/Pass/Pass.h"' ./src/mlir/Dialect/DB/Transforms/EliminateNulls.cpp
 sed -i '1i#include "mlir/Pass/Pass.h"' ./src/mlir/Dialect/DB/Transforms/OptimizeRuntimeFunctions.cpp
 
-# Fix 13: Fix ConstantOp accessor for LLVM 20
+# Fix 12: Fix ConstantOp accessor for LLVM 20
 echo "Fixing ConstantOp accessor methods (getValue() for ConstantOp)..."
 # ConstantOp still uses getValue() not value()
 sed -i 's/constOp\.value()/constOp.getValue()/g' ./src/mlir/Dialect/DB/Transforms/OptimizeRuntimeFunctions.cpp
 
-# Fix 14: Fix CreateConstVarLen accessor
+# Fix 13: Fix CreateConstVarLen accessor
 echo "Fixing CreateConstVarLen accessor method..."
 # CreateConstVarLen uses getStr() not str()
 sed -i 's/constStrOp\.str()/constStrOp.getStr()/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 
-# Fix 15: Fix runtime namespaces with proper prefixes
+# Fix 14: Fix runtime namespaces with proper prefixes
 echo "Fixing runtime namespaces with mlir::util:: prefix..."
 sed -i 's/DateRuntime::/mlir::util::DateRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 sed -i 's/StringRuntime::/mlir::util::StringRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 sed -i 's/DumpRuntime::/mlir::util::DumpRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 
-# Fix 16: Fix logging header properly (was getting corrupted)
+# Fix 15: Fix logging header properly (was getting corrupted)
 echo "Restoring and fixing logging header..."
 # First restore from git
 git checkout HEAD -- ./include/pgx_lower/execution/logging.h
@@ -196,7 +191,7 @@ if ! grep -q "namespace lower" ./include/pgx_lower/execution/logging.h; then
     sed -i '/} \/\/ namespace pgx/i } \/\/ namespace lower' ./include/pgx_lower/execution/logging.h
 fi
 
-# Fix 17: Add missing runtime includes
+# Fix 16: Add missing runtime includes
 echo "Adding missing runtime includes..."
 # Runtime functions are in the util dialect
 sed -i '1a#include "mlir/Dialect/util/FunctionHelper.h"' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
@@ -207,13 +202,13 @@ if [ -f "./lingo-db/runtime-defs/DateRuntime.h" ]; then
     cp ./lingo-db/runtime-defs/*.h ./include/runtime-defs/
 fi
 
-# Fix 18: Update Pass classes to use new LLVM 20 API
+# Fix 17: Update Pass classes to use new LLVM 20 API
 echo "Updating Pass classes for LLVM 20..."
 # PassWrapper is deprecated in LLVM 20, use OperationPass directly
 sed -i 's/::mlir::PassWrapper<\([^,]*\), \(.*\)>/\2/g' ./src/mlir/Dialect/DB/Transforms/EliminateNulls.cpp
 sed -i 's/::mlir::PassWrapper<\([^,]*\), \(.*\)>/\2/g' ./src/mlir/Dialect/DB/Transforms/OptimizeRuntimeFunctions.cpp
 
-# Fix 19: Add required Pass methods and constructor for LLVM 20
+# Fix 18: Add required Pass methods and constructor for LLVM 20
 echo "Adding required Pass methods and constructor..."
 # Add getName() method after getArgument()
 sed -i '/virtual llvm::StringRef getArgument() const override/a\   virtual llvm::StringRef getName() const override { return getArgument(); }' ./src/mlir/Dialect/DB/Transforms/EliminateNulls.cpp
@@ -227,20 +222,17 @@ sed -i '/virtual llvm::StringRef getName() const override/a\   std::unique_ptr<P
 sed -i '/std::unique_ptr<Pass> clonePass() const override/a\public:\n   EliminateNulls() : ::mlir::OperationPass<::mlir::ModuleOp>(::mlir::TypeID::get<EliminateNulls>()) {}' ./src/mlir/Dialect/DB/Transforms/EliminateNulls.cpp
 sed -i '/std::unique_ptr<Pass> clonePass() const override/a\public:\n   OptimizeRuntimeFunctions() : ::mlir::OperationPass<::mlir::ModuleOp>(::mlir::TypeID::get<OptimizeRuntimeFunctions>()) {}' ./src/mlir/Dialect/DB/Transforms/OptimizeRuntimeFunctions.cpp
 
-# Fix 20: Fix FloatType API for LLVM 20
+# Fix 19: Fix FloatType API for LLVM 20
 echo "Fixing FloatType API..."
 # LLVM 20 doesn't have static getF64() - use builder.getF64Type() instead
 sed -i 's/FloatType::getF64(rewriter\.getContext())/rewriter.getF64Type()/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 
-# Fix 21: Remove mlir:: prefix from runtime classes (they might be in global namespace)
+# Fix 20: Remove mlir:: prefix from runtime classes (they might be in global namespace)
 echo "Trying runtime classes without namespace..."
 sed -i 's/mlir::db::DateRuntime::/DateRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 sed -i 's/mlir::db::StringRuntime::/StringRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 sed -i 's/mlir::db::DumpRuntime::/DumpRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 
-# Fix 22: Comment out EliminateNulls.cpp temporarily (SCF IfOp lambda API removed in LLVM 20)
-echo "Disabling EliminateNulls.cpp temporarily (SCF IfOp API changes)..."
-sed -i 's|Transforms/EliminateNulls.cpp|#Transforms/EliminateNulls.cpp|g' ./src/mlir/Dialect/DB/CMakeLists.txt
 
 # No need to comment out tools/build-tools - we're providing it
 echo "tools/build-tools copied from LingoDB"
