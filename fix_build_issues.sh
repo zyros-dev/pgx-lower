@@ -1,10 +1,11 @@
 #!/bin/bash
 
+# DO NOT EDIT THIS SECTION - Claude is not allowed to modify these git commands
 echo "=== Rolling back src, include, tests directories and CMakeLists.txt ==="
-git restore ./src ./include ./tests ./tools
+git restore ./src ./include ./tests CMakeLists.txt ./tools
 
 echo "=== Removing untracked files and directories ==="
-# Remove any untracked files/directories that were created
+# DO NOT EDIT THIS SECTION - Claude is not allowed to modify these git commands
 git clean -fd ./src ./include ./tests ./tools/build-tools ./include/runtime ./include/runtime-defs ./test_runtime_generation
 
 echo "✅ Git tree reset complete"
@@ -12,6 +13,41 @@ sleep 1
 
 echo "🔧 Ensuring write permissions..."
 chmod -R u+w ./include ./src ./tools ./tests
+
+#● Looking at the build error and the script, let me categorize the fixes into three groups:
+#
+#  1. FULLY FIXED ✅
+#
+#  - Runtime header generation system - Complete setup with LingoDB integration
+#  - TableGen file copying - All .td files and headers properly copied
+#  - LLVM 20 API migrations:
+#    - Optional → std::optional conversions
+#    - PassWrapper → OperationPass migration
+#    - NoSideEffect → Pure trait updates
+#    - FloatType API changes
+#    - dyn_cast → dyn_cast_or_null
+#  - Namespace fixes - All pgx:: and runtime namespace issues resolved
+#  - Include path fixes - Header paths properly updated for project structure
+#  - Arrow dependency stubbing - Removed problematic arrow references
+#
+#  2. PARTIALLY FIXED ⚠️
+#
+#  - TableGen target naming: Fixed in source CMakeLists.txt (DB, DSA) but missed RelAlg dependencies
+#  - CMakeLists.txt target dependencies: Updated most but RelAlg still references old MLIRDBOpsIncGen
+#
+#  3. COMPLETELY WRONG ❌
+#
+#  None identified - all approaches are technically sound, just incomplete coverage.
+#
+#  Root Issue: The script updates TableGen target names in the IR CMakeLists.txt files (MLIRDBOpsIncGen → PGXLowerDBOpsIncGen) but doesn't update cross-dialect
+#  dependencies. RelAlg dialect's CMakeLists.txt still depends on the old MLIRDBOpsIncGen target name.
+#
+#  Fix Needed: Add a line to update cross-dialect dependencies:
+#  sed -i 's/MLIRDBOpsIncGen/PGXLowerDBOpsIncGen/g' ./src/mlir/Dialect/RelAlg/CMakeLists.txt
+#
+#  The script is 95% correct - just missing one dependency update that prevents CMake configuration.
+
+
 
 # ======================================================================================================================
 #                                        SOLVE RUNTIME HEADER GENERATION
@@ -31,6 +67,13 @@ mkdir -p ./tools/build-tools
 chmod -R u+w ./tools/build-tools
 cp ./lingo-db/tools/build-tools/runtime-header-tool.cpp ./tools/build-tools/
 cp ./lingo-db/tools/build-tools/CMakeLists.txt ./tools/build-tools/
+
+# Step 2b: Fix Clang namespace issues in runtime-header-tool.cpp
+echo "Fixing Clang namespace issues in runtime-header-tool.cpp..."
+# Add clang:: prefix to type names that are missing it
+sed -i 's/<PointerType>/<clang::PointerType>/g' ./tools/build-tools/runtime-header-tool.cpp
+sed -i 's/<ParenType>/<clang::ParenType>/g' ./tools/build-tools/runtime-header-tool.cpp
+sed -i 's/<FunctionProtoType>/<clang::FunctionProtoType>/g' ./tools/build-tools/runtime-header-tool.cpp
 
 # Step 3: Fix the gen_rt_def function to use $<TARGET_FILE:runtime-header-tool>
 echo "Fixing gen_rt_def function to use correct tool path..."
@@ -85,7 +128,86 @@ echo "Setting up runtime-defs generation..."
 # Make sure the directory exists
 mkdir -p ./include/runtime-defs
 
+# Step 12: Create DB dialect header directory structure and copy headers
+# WARNING: The git restore at the beginning will delete these files!
+# We need to copy them AFTER git restore, which happens at the start
+echo "Creating DB dialect header directory structure..."
+echo "⚠️  NOTE: git restore deleted these files - re-copying now..."
+mkdir -p ./include/pgx_lower/mlir/Dialect/DB/IR
+mkdir -p ./include/pgx_lower/mlir/Dialect/DSA/IR
+mkdir -p ./include/pgx_lower/mlir/Conversion/DBToStd
+
+# Clean directories first to remove any build artifacts
+echo "Cleaning dialect directories..."
+rm -rf ./include/pgx_lower/mlir/Dialect/DB/IR/*
+rm -rf ./include/pgx_lower/mlir/Dialect/DSA/IR/*
+
+# Copy DB dialect headers from LingoDB
+echo "Copying DB dialect headers from LingoDB..."
+if [ -d "./lingo-db/include/mlir/Dialect/DB/IR" ]; then
+    cp ./lingo-db/include/mlir/Dialect/DB/IR/*.h ./include/pgx_lower/mlir/Dialect/DB/IR/ 2>/dev/null || true
+fi
+
+# Copy DSA dialect headers from LingoDB
+echo "Copying DSA dialect headers from LingoDB..."
+if [ -d "./lingo-db/include/mlir/Dialect/DSA/IR" ]; then
+    cp ./lingo-db/include/mlir/Dialect/DSA/IR/*.h ./include/pgx_lower/mlir/Dialect/DSA/IR/ 2>/dev/null || true
+fi
+
+# Copy specific missing headers
+echo "Copying specific missing headers..."
+cp ./lingo-db/include/mlir/Dialect/DSA/IR/DSACollectionType.h ./include/pgx_lower/mlir/Dialect/DSA/IR/ 2>/dev/null || true
+
+# Copy TableGen definition files
+echo "Copying TableGen definition files..."
+cp ./lingo-db/include/mlir/Dialect/DB/IR/DBOps.td ./include/pgx_lower/mlir/Dialect/DB/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/DB/IR/DBInterfaces.td ./include/pgx_lower/mlir/Dialect/DB/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/DSA/IR/DSAOps.td ./include/pgx_lower/mlir/Dialect/DSA/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/DSA/IR/DSAInterfaces.td ./include/pgx_lower/mlir/Dialect/DSA/IR/ 2>/dev/null || true
+
+# Copy CMakeLists.txt files for TableGen generation
+echo "Copying CMakeLists.txt files for TableGen..."
+cp ./lingo-db/include/mlir/Dialect/DB/IR/CMakeLists.txt ./include/pgx_lower/mlir/Dialect/DB/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/DSA/IR/CMakeLists.txt ./include/pgx_lower/mlir/Dialect/DSA/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/RelAlg/IR/CMakeLists.txt ./include/pgx_lower/mlir/Dialect/RelAlg/IR/ 2>/dev/null || true
+
+# Fix include paths in dialect headers
+echo "Fixing include paths in dialect headers..."
+# Fix DB dialect headers - regular .h files should use pgx_lower prefix
+find ./include/pgx_lower/mlir/Dialect/DB/IR -name "*.h" -exec sed -i 's|"mlir/Dialect/DB/IR/\([^"]*\)\.h"|"pgx_lower/mlir/Dialect/DB/IR/\1.h"|g' {} \;
+# Fix DSA dialect headers - regular .h files should use pgx_lower prefix  
+find ./include/pgx_lower/mlir/Dialect/DSA/IR -name "*.h" -exec sed -i 's|"mlir/Dialect/DSA/IR/\([^"]*\)\.h"|"pgx_lower/mlir/Dialect/DSA/IR/\1.h"|g' {} \;
+
+# But .inc files are generated by TableGen and should NOT use pgx_lower prefix
+echo "Fixing TableGen include paths..."
+# Fix DB .inc includes
+find ./include/pgx_lower/mlir/Dialect/DB/IR -name "*.h" -exec sed -i 's|"pgx_lower/mlir/Dialect/DB/IR/\([^"]*\)\.h\.inc"|"mlir/Dialect/DB/IR/\1.h.inc"|g' {} \;
+find ./include/pgx_lower/mlir/Dialect/DB/IR -name "*.h" -exec sed -i 's|"pgx_lower/mlir/Dialect/DB/IR/\([^"]*\)\.cpp\.inc"|"mlir/Dialect/DB/IR/\1.cpp.inc"|g' {} \;
+# Fix DSA .inc includes
+find ./include/pgx_lower/mlir/Dialect/DSA/IR -name "*.h" -exec sed -i 's|"pgx_lower/mlir/Dialect/DSA/IR/\([^"]*\)\.h\.inc"|"mlir/Dialect/DSA/IR/\1.h.inc"|g' {} \;
+find ./include/pgx_lower/mlir/Dialect/DSA/IR -name "*.h" -exec sed -i 's|"pgx_lower/mlir/Dialect/DSA/IR/\([^"]*\)\.cpp\.inc"|"mlir/Dialect/DSA/IR/\1.cpp.inc"|g' {} \;
+
 echo "✅ Runtime header generation setup complete"
+
+# Clean build directory to ensure fresh build
+echo "🧹 Cleaning build directory..."
+rm -rf ./build-utest
+
+# Fix CMakeLists.txt - uncomment header directories for TableGen
+echo "🔧 Enabling TableGen subdirectories in CMakeLists.txt..."
+sed -i 's|^# add_subdirectory(include/pgx_lower/mlir/Dialect/RelAlg/IR)|add_subdirectory(include/pgx_lower/mlir/Dialect/RelAlg/IR)|' CMakeLists.txt
+sed -i 's|^# add_subdirectory(include/pgx_lower/mlir/Dialect/DB/IR)|add_subdirectory(include/pgx_lower/mlir/Dialect/DB/IR)|' CMakeLists.txt
+sed -i 's|^# add_subdirectory(include/pgx_lower/mlir/Dialect/DSA/IR)|add_subdirectory(include/pgx_lower/mlir/Dialect/DSA/IR)|' CMakeLists.txt
+
+# Remove any TableGen rules that were incorrectly added to source CMakeLists.txt files
+echo "🧹 Cleaning up source CMakeLists.txt files..."
+# Remove TableGen rules from DB CMakeLists.txt (keep existing EliminateNulls.td)
+sed -i '/^set(LLVM_TARGET_DEFINITIONS.*DBOps\.td)/,/^add_public_tablegen_target(MLIRDBOpsIncGen)/d' ./src/mlir/Dialect/DB/CMakeLists.txt 2>/dev/null || true
+# Remove from DSA
+sed -i '/^set(LLVM_TARGET_DEFINITIONS.*DSAOps\.td)/,/^add_public_tablegen_target(MLIRDSAOpsIncGen)/d' ./src/mlir/Dialect/DSA/CMakeLists.txt 2>/dev/null || true
+# Remove from RelAlg  
+sed -i '/^set(LLVM_TARGET_DEFINITIONS.*RelAlgOps\.td)/,/^add_public_tablegen_target(MLIRRelAlgOpsIncGen)/d' ./src/mlir/Dialect/RelAlg/CMakeLists.txt 2>/dev/null || true
+
 
 
 # ======================================================================================================================
@@ -149,6 +271,8 @@ find ./src -name "*.cpp" -exec sed -i 's/\.dyn_cast</.dyn_cast_or_null</g' {} \;
 
 # Fix 5: Fix include paths for Util dialect
 echo "Fixing include paths..."
+# Fix incorrect include paths in test files
+find ./tests -name "*.cpp" -exec sed -i 's|mlir/Dialect/Util/IR/UtilOps.h|pgx_lower/mlir/Dialect/util/UtilOps.h|g' {} \;
 find ./tests -name "*.cpp" -exec sed -i 's|mlir/Dialect/Util/IR/UtilDialect.h|pgx_lower/mlir/Dialect/util/UtilDialect.h|g' {} \;
 
 # Fix 6: Fix Arrow dependencies in headers
@@ -194,6 +318,23 @@ namespace db {
 } // end namespace db' > ./include/pgx_lower/mlir/Dialect/DB/Passes.h
 echo '} // end namespace mlir' >> ./include/pgx_lower/mlir/Dialect/DB/Passes.h
 
+# Fix DBToStd.h - add missing namespace and pass creation function
+echo '#pragma once
+
+#include <memory>
+
+namespace mlir {
+class Pass;
+
+namespace db {
+
+// DBToStd conversion pass
+std::unique_ptr<Pass> createLowerToStdPass();
+void registerDBToStdConversion();
+
+} // end namespace db
+} // end namespace mlir' > ./include/pgx_lower/mlir/Conversion/DBToStd/DBToStd.h
+
 # Fix 11: Fix PassWrapper missing include  
 echo "Adding Pass include to transform files..."
 sed -i '1i#include "mlir/Pass/Pass.h"' ./src/mlir/Dialect/DB/Transforms/EliminateNulls.cpp
@@ -215,16 +356,12 @@ sed -i 's/DateRuntime::/mlir::util::DateRuntime::/g' ./src/mlir/Dialect/DB/Runti
 sed -i 's/StringRuntime::/mlir::util::StringRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 sed -i 's/DumpRuntime::/mlir::util::DumpRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 
-# Fix 15: Fix logging header properly (was getting corrupted)
-echo "Restoring and fixing logging header..."
-# First restore from git
-git checkout HEAD -- ./include/pgx_lower/execution/logging.h
-# Then check if namespace fix is needed
-if ! grep -q "namespace lower" ./include/pgx_lower/execution/logging.h; then
-    # Add namespace lower wrapper around existing content
-    sed -i '/namespace pgx {/a namespace lower {' ./include/pgx_lower/execution/logging.h
-    sed -i '/} \/\/ namespace pgx/i } \/\/ namespace lower' ./include/pgx_lower/execution/logging.h
-fi
+# Fix 15: Fix logging header properly
+echo "Fixing logging header namespace issues..."
+# The macros incorrectly use pgx:: prefix but the functions are in global namespace
+# Remove the pgx:: prefix from all the logging macros
+sed -i 's/pgx::get_logger()/get_logger()/g' ./include/pgx_lower/execution/logging.h
+sed -i 's/pgx::LogLevel::/LogLevel::/g' ./include/pgx_lower/execution/logging.h
 
 # Fix 16: Add missing runtime includes
 echo "Adding missing runtime includes..."
@@ -236,6 +373,26 @@ if [ -f "./lingo-db/runtime-defs/DateRuntime.h" ]; then
     mkdir -p ./include/runtime-defs
     cp ./lingo-db/runtime-defs/*.h ./include/runtime-defs/
 fi
+
+# Fix 16b: Fix test file namespaces
+echo "Fixing test file namespaces..."
+# Tests are using pgx::mlir::db:: instead of mlir::db::
+find ./tests -name "*.cpp" -exec sed -i 's/pgx::mlir::db::/mlir::db::/g' {} \;
+find ./tests -name "*.cpp" -exec sed -i 's/pgx::mlir::dsa::/mlir::dsa::/g' {} \;
+find ./tests -name "*.cpp" -exec sed -i 's/pgx::mlir::util::/mlir::util::/g' {} \;
+find ./tests -name "*.cpp" -exec sed -i 's/pgx::mlir::relalg::/mlir::relalg::/g' {} \;
+
+# Fix 16c: Fix dialect headers in tests
+echo "Fixing dialect header includes in tests..."
+# DB dialect headers
+find ./tests -name "*.cpp" -exec sed -i 's|"mlir/Dialect/DB/IR/DBDialect.h"|"pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"|g' {} \;
+find ./tests -name "*.cpp" -exec sed -i 's|"mlir/Dialect/DB/IR/DBOps.h"|"pgx_lower/mlir/Dialect/DB/IR/DBOps.h"|g' {} \;
+find ./tests -name "*.cpp" -exec sed -i 's|"mlir/Dialect/DB/IR/DBTypes.h"|"pgx_lower/mlir/Dialect/DB/IR/DBTypes.h"|g' {} \;
+# DSA dialect headers
+find ./tests -name "*.cpp" -exec sed -i 's|"mlir/Dialect/DSA/IR/DSADialect.h"|"pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"|g' {} \;
+find ./tests -name "*.cpp" -exec sed -i 's|"mlir/Dialect/DSA/IR/DSAOps.h"|"pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"|g' {} \;
+# Conversion headers
+find ./tests -name "*.cpp" -exec sed -i 's|"mlir/Conversion/DBToStd/DBToStd.h"|"pgx_lower/mlir/Conversion/DBToStd/DBToStd.h"|g' {} \;
 
 # Fix 17: Update Pass classes to use new LLVM 20 API
 echo "Updating Pass classes for LLVM 20..."
@@ -275,25 +432,95 @@ echo "tools/build-tools copied from LingoDB"
 # Don't comment out gen_rt_def calls - we now provide the function
 echo "gen_rt_def function added to CMakeLists.txt - no need to comment out calls"
 
+# Fix 21: Update TableGen target names in source CMakeLists.txt files
+echo "Updating TableGen target names in source CMakeLists.txt..."
+# Update DB dialect CMakeLists.txt
+sed -i 's/MLIRDBOpsIncGen/PGXLowerDBOpsIncGen/g' ./src/mlir/Dialect/DB/CMakeLists.txt
+# Update DSA dialect CMakeLists.txt
+sed -i 's/MLIRDSAOpsIncGen/PGXLowerDSAOpsIncGen/g' ./src/mlir/Dialect/DSA/CMakeLists.txt
+# Update RelAlg dialect CMakeLists.txt
+sed -i 's/MLIRRelAlgOpsIncGen/PGXLowerRelAlgOpsIncGen/g' ./src/mlir/Dialect/RelAlg/CMakeLists.txt
+
+# Fix 22: Update TableGen files for LLVM 20 - NoSideEffect -> Pure
+echo "Fixing TableGen files for LLVM 20 API changes..."
+# NoSideEffect trait was renamed to Pure in LLVM 20
+sed -i 's/NoSideEffect/Pure/g' ./include/pgx_lower/mlir/Dialect/DB/IR/DBOps.td
+sed -i 's/NoSideEffect/Pure/g' ./include/pgx_lower/mlir/Dialect/DSA/IR/DSAOps.td
+sed -i 's/NoSideEffect/Pure/g' ./include/pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOps.td
+
 echo "✅ Targeted fixes complete"
+
+# ======================================================================================================================
+#                                        RE-COPY CRITICAL FILES (git restore deleted them!)
+# ======================================================================================================================
+
+echo "🔄 Re-copying critical TableGen files that git restore deleted..."
+
+# Re-create directories
+mkdir -p ./include/pgx_lower/mlir/Dialect/DB/IR
+mkdir -p ./include/pgx_lower/mlir/Dialect/DSA/IR
+mkdir -p ./include/pgx_lower/mlir/Dialect/RelAlg/IR
+
+# Re-copy TableGen definition files
+echo "Re-copying TableGen .td files..."
+cp ./lingo-db/include/mlir/Dialect/DB/IR/DBOps.td ./include/pgx_lower/mlir/Dialect/DB/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/DB/IR/DBInterfaces.td ./include/pgx_lower/mlir/Dialect/DB/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/DSA/IR/DSAOps.td ./include/pgx_lower/mlir/Dialect/DSA/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/DSA/IR/DSAInterfaces.td ./include/pgx_lower/mlir/Dialect/DSA/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/RelAlg/IR/RelAlgOps.td ./include/pgx_lower/mlir/Dialect/RelAlg/IR/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td ./include/pgx_lower/mlir/Dialect/RelAlg/IR/ 2>/dev/null || true
+
+# Re-copy CMakeLists.txt files for TableGen
+echo "Re-copying CMakeLists.txt files..."
+# Ensure directories have write permissions first
+chmod -R u+w ./include/pgx_lower/mlir/Dialect/ 2>/dev/null || true
+cp ./lingo-db/include/mlir/Dialect/DB/IR/CMakeLists.txt ./include/pgx_lower/mlir/Dialect/DB/IR/
+cp ./lingo-db/include/mlir/Dialect/DSA/IR/CMakeLists.txt ./include/pgx_lower/mlir/Dialect/DSA/IR/
+cp ./lingo-db/include/mlir/Dialect/RelAlg/IR/CMakeLists.txt ./include/pgx_lower/mlir/Dialect/RelAlg/IR/
+
+# Fix paths in CMakeLists.txt files to use our project structure
+echo "Fixing paths in CMakeLists.txt files..."
+sed -i 's|MLIRDBOpsIncGen|PGXLowerDBOpsIncGen|g' ./include/pgx_lower/mlir/Dialect/DB/IR/CMakeLists.txt
+sed -i 's|MLIRDSAOpsIncGen|PGXLowerDSAOpsIncGen|g' ./include/pgx_lower/mlir/Dialect/DSA/IR/CMakeLists.txt
+sed -i 's|MLIRRelAlgOpsIncGen|PGXLowerRelAlgOpsIncGen|g' ./include/pgx_lower/mlir/Dialect/RelAlg/IR/CMakeLists.txt
+
+echo "✅ Critical files re-copied successfully"
 
 # ======================================================================================================================
 #                                        END MESSAGE
 # ======================================================================================================================
 
-echo "Don't remove these from the file!! And do not edit them! DO NOT EDIT!!!"
-echo "Claude launch a reviewer to evaluate this file really quickly after you run it!"
-echo "Then after that, claude, go run \`make utest | head -2000\` and make sure none of the problems above this are in there,
-and summarise the problems you do see. Specify what types of files you see problems, and how many cycles you've seen this problem in"
-echo "Remember, you are only allowed to edit fix_build_issues.sh!"
 echo ""
-echo "EXAMPLE RESPONSE:"
+echo "=============================================================================="
+echo "                        INSTRUCTIONS FOR CLAUDE. DO NOT EDIT THIS IN THE FILE"
+echo "=============================================================================="
+echo ""
+echo "1. Launch a reviewer to evaluate this script after running"
+echo ""
+echo "2. Run: make utest | head -2000"
+echo "   - Check that none of the problems fixed above appear in the output"
+echo "   - Summarize any NEW problems you see"
+echo ""
+echo "3. For each problem, specify:"
+echo "   - What types of files have the problem"
+echo "   - How many cycles you've seen this problem"
+echo "   - What you're going to change in fix_build_issues.sh to fix it"
+echo ""
+echo "4. Rules:"
+echo "   - Never say 'already have a solution' - if it's in the error list, it needs fixing!"
+echo "   - If an issue survives multiple cycles, launch research teams"
+echo "   - You can ONLY edit fix_build_issues.sh"
+echo "   - You CAN run git restore/clean commands to debug"
+echo ""
+echo "5. Example response format:"
 echo "## Test Summary - Remaining Issues After Targeted Fixes"
 echo ""
 echo "**File Types with Problems:**"
-echo "- **DB Dialect**: 2 files (SimplifyToArith.cpp, OptimizeRuntimeFunctions.cpp)"
-echo "- **DSA Dialect**: 0 files (fixed)"  
+echo "- **Dialects**: 2 files (SimplifyToArith.cpp, OptimizeRuntimeFunctions.cpp)"
+echo "- **Lowerings**: 0 files (fixed)"
+echo "- **Postgres files**: 0 files (fixed)"
 echo "- **Unit Tests**: 0 files (include paths fixed)"
+echo "- **Others**: 0 files (fixed)"
 echo ""
 echo "**Error Categories:**"
 echo ""
@@ -302,6 +529,7 @@ echo "- **Issue**: DBCmpToCmpI, DBAddToAddI patterns not generated"
 echo "- **Errors**: \`'DBCmpToCmpI' was not declared in this scope\`"
 echo "- **Root Cause**: TableGen .td file not generating expected patterns"
 echo "- **Proposed solution**: Copy SimplifyToArith.td from LingoDB or disable pass"
+echo "- **Researchers needed**: Yes/no: why"
 echo "- **Seen in cycles**: 1"
 echo ""
 echo "### **2. Arrow Type References (OptimizeRuntimeFunctions.cpp)** - Cycle 1"
@@ -309,6 +537,7 @@ echo "- **Issue**: \`arrow::Type\` references in parsing.h header"
 echo "- **Errors**: \`'arrow::Type' has not been declared\`"
 echo "- **Root Cause**: Arrow dependency not properly removed"
 echo "- **Proposed solution**: Remove arrow dependencies from parsing.h or stub them"
+echo "- **Researchers needed**: Yes/no: why"
 echo "- **Seen in cycles**: 1"
 echo ""
 echo "**Next Steps**: Copy SimplifyToArith.td from LingoDB, remove Arrow dependencies from headers"
