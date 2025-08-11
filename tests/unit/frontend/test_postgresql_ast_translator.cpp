@@ -39,7 +39,7 @@ protected:
     void SetUp() override {
         // Initialize MLIR context and load dialects
         context = std::make_unique<MLIRContext>();
-        context->getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+        context->getOrLoadDialect<mlir::relalg::RelAlgDialect>();
         context->getOrLoadDialect<func::FuncDialect>();
         
         // Create translator
@@ -151,7 +151,7 @@ TEST_F(PostgreSQLASTTranslatorTest, PostgreSQLTypeMapping) {
 
 TEST_F(PostgreSQLASTTranslatorTest, MLIRContextSetup) {
     // Verify that MLIR context is properly set up with required dialects
-    auto* relalgDialect = context->getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+    auto* relalgDialect = context->getOrLoadDialect<mlir::relalg::RelAlgDialect>();
     auto* funcDialect = context->getOrLoadDialect<mlir::func::FuncDialect>();
     EXPECT_TRUE(relalgDialect != nullptr);
     EXPECT_TRUE(funcDialect != nullptr);
@@ -159,13 +159,13 @@ TEST_F(PostgreSQLASTTranslatorTest, MLIRContextSetup) {
 
 // Test the RelAlg dialect operations are available
 TEST_F(PostgreSQLASTTranslatorTest, RelAlgDialectAvailability) {
-    auto* relalgDialect = context->getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+    auto* relalgDialect = context->getOrLoadDialect<mlir::relalg::RelAlgDialect>();
     ASSERT_TRUE(relalgDialect);
     EXPECT_EQ(relalgDialect->getNamespace(), "relalg");
     
     // Test that we can create types
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(context.get());
-    auto tableType = pgx::mlir::relalg::TableType::get(context.get());
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(context.get());
+    auto tableType = mlir::relalg::TableType::get(context.get());
     
     EXPECT_TRUE(tupleStreamType);
     EXPECT_TRUE(tableType);

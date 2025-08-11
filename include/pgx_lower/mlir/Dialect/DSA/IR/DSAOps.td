@@ -43,7 +43,7 @@ def DSA_Collection : Type<CPred<"$_self.isa<::mlir::dsa::CollectionType>()">,"DS
 
 def DSA_GenericIterable : DSA_Collection<"GenericIterable","iterable"> {
     let summary = "generic iterable";
-    let parameters = (ins "::mlir::Type":$elementType,"std::string":$iteratorName);
+    let parameters = (ins "Type":$elementType,"std::string":$iteratorName);
     let hasCustomAssemblyFormat=1;
 }
 
@@ -72,33 +72,33 @@ def DSA_TableBuilder : DSA_Type<"TableBuilder", "table_builder"> {
         `finalize`.
     }];
 
-    let parameters = (ins "::mlir::TupleType":$rowType);
+    let parameters = (ins "TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 
 def DSA_Vector : DSA_Collection<"Vector","vector"> {
     let summary = "vector";
-    let parameters = (ins "::mlir::Type":$elementType);
+    let parameters = (ins "Type":$elementType);
     let assemblyFormat = "`<` $elementType `>`";
 }
 def DSA_Record: DSA_Collection<"Record","record"> {
     let summary = "record";
-    let parameters = (ins "::mlir::TupleType":$rowType);
+    let parameters = (ins "TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 def DSA_RecordBatch: DSA_Collection<"RecordBatch","record_batch"> {
     let summary = "record_batch";
-    let parameters = (ins "::mlir::TupleType":$rowType);
+    let parameters = (ins "TupleType":$rowType);
     let assemblyFormat = "`<` $rowType `>`";
 }
 def DSA_AggregationHashtable : DSA_Collection<"AggregationHashtable","aggr_ht"> {
     let summary = "aggregation hashtable";
-    let parameters = (ins "::mlir::TupleType":$keyType,"::mlir::TupleType":$valType);
+    let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 def DSA_JoinHashtable : DSA_Collection<"JoinHashtable","join_ht"> {
     let summary = "join hashtable";
-    let parameters = (ins "::mlir::TupleType":$keyType,"::mlir::TupleType":$valType);
+    let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 
@@ -211,7 +211,7 @@ def DSA_SortOp : DSA_Op<"sort", [IsolatedFromAbove]> {
 }
 
 def ForOp : DSA_Op<"for", [SingleBlockImplicitTerminator<"dsa::YieldOp">,
-                           RecursiveMemoryEffects, AttrSizedOperandSegments]> {
+                           RecursiveSideEffects, AttrSizedOperandSegments]> {
     let summary = "iterate over collection";
     let description = [{
         Iterate over all elements of a collection. The iteration can be interrupted when the optionally specified flag becomes set.
@@ -235,7 +235,7 @@ def ForOp : DSA_Op<"for", [SingleBlockImplicitTerminator<"dsa::YieldOp">,
             return getBody()->getNumArguments() - 1;
         }
         /// Number of operands controlling the loop: lb, ub, step
-        unsigned getNumControlOperands() { return getUntil()?2:1; }
+        unsigned getNumControlOperands() { return until()?2:1; }
         /// Does the operation hold operands for loop-carried values
         bool hasIterOperands() {
             return getOperation()->getNumOperands() > getNumControlOperands();

@@ -37,7 +37,7 @@ class WrapAggrFuncPattern : public mlir::RewritePattern {
          auto val = rewriter.create<mlir::relalg::AggrFuncOp>(op->getLoc(), aggrFuncOp.getType(), aggrFuncOp.getFn(), relArgument, aggrFuncOp.getAttr());
          rewriter.create<mlir::relalg::ReturnOp>(op->getLoc(), ::mlir::ValueRange({val}));
       }
-      auto nullableType = aggrFuncOp.getType().dyn_cast<mlir::db::NullableType>();
+      auto nullableType = aggrFuncOp.getType().dyn_cast_or_null<mlir::db::NullableType>();
       ::mlir::Value getScalarOp = rewriter.replaceOpWithNewOp<mlir::relalg::GetScalarOp>(op, nullableType, attributeManager.createRef(&def.getColumn()), aggrOp.asRelation());
       ::mlir::Value res = getScalarOp;
       if (!nullableType) {

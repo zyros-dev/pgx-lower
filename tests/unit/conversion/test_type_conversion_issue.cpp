@@ -5,13 +5,13 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
-#include "mlir/Conversion/DBToStd/DBToStd.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/util/UtilDialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilOps.h"
+#include "pgx_lower/mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/Pass.h"
@@ -23,8 +23,8 @@ class TypeConversionIssueTest : public ::testing::Test {
 protected:
     void SetUp() override {
         context.loadDialect<func::FuncDialect, arith::ArithDialect,
-                           pgx::db::DBDialect, pgx::mlir::dsa::DSADialect,
-                           pgx::mlir::util::UtilDialect>();
+                           pgx::db::DBDialect, mlir::dsa::DSADialect,
+                           mlir::util::UtilDialect>();
     }
 
     MLIRContext context;
@@ -49,9 +49,9 @@ TEST_F(TypeConversionIssueTest, DISABLED_AsNullableToAppendPattern) {
     
     // Create the pattern that's failing:
     // 1. Create table builder
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -64,7 +64,7 @@ TEST_F(TypeConversionIssueTest, DISABLED_AsNullableToAppendPattern) {
         value.getResult());
     
     // 3. Append the nullable value
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         asNullableOp.getResult());
@@ -81,7 +81,7 @@ TEST_F(TypeConversionIssueTest, DISABLED_AsNullableToAppendPattern) {
         
         // Check what happened to as_nullable
         bool foundPack = false;
-        module.walk([&](pgx::mlir::util::PackOp op) {
+        module.walk([&](mlir::util::PackOp op) {
             foundPack = true;
             PGX_DEBUG("Found util.pack operation after DBToStd");
         });

@@ -28,7 +28,7 @@ add_mlir_dialect_library(MLIRDB
         dump-rt-defs
         string-rt-defs
         date-rt-defs
-        MLIRDBOpsIncGen
+        PGXLowerDBOpsIncGen
         MLIRDBEliminateNullsIncGen
         #MLIRDBSimplifyToArithIncGen
         LINK_LIBS PUBLIC

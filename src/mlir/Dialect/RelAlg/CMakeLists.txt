@@ -28,7 +28,7 @@ add_mlir_dialect_library(MLIRRelAlg
         ../../include/mlir/Dialect/RelAlg
 
         DEPENDS
-        MLIRRelAlgOpsIncGen
+        PGXLowerRelAlgOpsIncGen
         MLIRDBOpsIncGen
 
         LINK_LIBS mlir-support PUBLIC

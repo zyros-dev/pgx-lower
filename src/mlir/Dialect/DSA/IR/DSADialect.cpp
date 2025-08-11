@@ -62,7 +62,7 @@ void DSADialect::initialize() {
         ::mlir::Type rowType;
         if (parser.parseType(rowType)) return {};
         if (parser.parseGreater()) return {};
-        auto tupleType = rowType.dyn_cast<::mlir::TupleType>();
+        auto tupleType = rowType.dyn_cast_or_null<::mlir::TupleType>();
         if (!tupleType) {
             parser.emitError(parser.getNameLoc(), "table_builder requires tuple type");
             return {};
@@ -88,11 +88,11 @@ void DSADialect::printType(::mlir::Type type, ::mlir::DialectAsmPrinter &printer
     PGX_DEBUG("DSADialect::printType() called");
     
     // Print DSA types by their mnemonic
-    if (auto tableBuilder = type.dyn_cast<mlir::dsa::TableBuilderType>()) {
+    if (auto tableBuilder = type.dyn_cast_or_null<mlir::dsa::TableBuilderType>()) {
         printer << "table_builder<" << tableBuilder.getRowType() << ">";
         return;
     }
-    if (auto vector = type.dyn_cast<mlir::dsa::VectorType>()) {
+    if (auto vector = type.dyn_cast_or_null<mlir::dsa::VectorType>()) {
         printer << "vector<" << vector.getElementType() << ">";
         return;
     }

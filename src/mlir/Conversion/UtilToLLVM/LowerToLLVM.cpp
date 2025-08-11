@@ -30,7 +30,7 @@ class PackOpLowering : public OpConversionPattern<mlir::util::PackOp> {
    public:
    using OpConversionPattern<mlir::util::PackOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::util::PackOp packOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      auto tupleType = packOp.getTuple().getType().dyn_cast<TupleType>();
+      auto tupleType = packOp.getTuple().getType().dyn_cast_or_null<TupleType>();
       auto structType = convertTuple(tupleType, *typeConverter);
       Value tpl = rewriter.create<LLVM::UndefOp>(packOp->getLoc(), structType);
       unsigned pos = 0;

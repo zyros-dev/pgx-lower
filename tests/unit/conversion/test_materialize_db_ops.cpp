@@ -3,8 +3,8 @@
 
 #include <gtest/gtest.h>
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
@@ -27,9 +27,9 @@ protected:
     
     void SetUp() override {
         // Load required dialects
-        context.loadDialect<pgx::mlir::relalg::RelAlgDialect>();
+        context.loadDialect<mlir::relalg::RelAlgDialect>();
         context.loadDialect<pgx::db::DBDialect>();
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
         context.loadDialect<func::FuncDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<scf::SCFDialect>();
@@ -59,8 +59,8 @@ TEST_F(MaterializeDBOpsTest, MaterializeGeneratesHybridOps) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto tableOp = builder->create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto tableOp = builder->create<mlir::relalg::BaseTableOp>(
         loc,
         tupleStreamType,
         builder->getStringAttr("test_table"),
@@ -68,9 +68,9 @@ TEST_F(MaterializeDBOpsTest, MaterializeGeneratesHybridOps) {
     );
     
     // Create MaterializeOp  
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = mlir::relalg::TableType::get(&context);
     auto columnsAttr = builder->getArrayAttr({builder->getStringAttr("id")});
-    auto materializeOp = builder->create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder->create<mlir::relalg::MaterializeOp>(
         loc,
         tableType,
         tableOp.getResult(),
@@ -96,14 +96,14 @@ TEST_F(MaterializeDBOpsTest, MaterializeGeneratesHybridOps) {
     bool foundStreamResults = false;
     
     module.walk([&](Operation* op) {
-        if (isa<pgx::mlir::dsa::CreateDS>(op)) {
+        if (isa<mlir::dsa::CreateDS>(op)) {
             foundCreateDS = true;
             // Verify it creates a TableBuilder
-            auto createOp = cast<pgx::mlir::dsa::CreateDS>(op);
-            EXPECT_TRUE(createOp.getDs().getType().isa<pgx::mlir::dsa::TableBuilderType>());
-        } else if (isa<pgx::mlir::dsa::Append>(op)) {
+            auto createOp = cast<mlir::dsa::CreateDS>(op);
+            EXPECT_TRUE(createOp.getDs().getType().isa<mlir::dsa::TableBuilderType>());
+        } else if (isa<mlir::dsa::Append>(op)) {
             foundDSAppend = true;
-        } else if (isa<pgx::mlir::dsa::NextRow>(op)) {
+        } else if (isa<mlir::dsa::NextRow>(op)) {
             foundNextRow = true;
         } else if (isa<pgx::db::StoreResultOp>(op)) {
             foundStoreResult = true;
@@ -121,7 +121,7 @@ TEST_F(MaterializeDBOpsTest, MaterializeGeneratesHybridOps) {
     
     // Verify NO dsa.finalize in hybrid architecture
     bool foundFinalize = false;
-    module.walk([&](pgx::mlir::dsa::Finalize op) {
+    module.walk([&](mlir::dsa::Finalize op) {
         foundFinalize = true;
     });
     EXPECT_FALSE(foundFinalize) << "Should NOT generate dsa.finalize in hybrid architecture";

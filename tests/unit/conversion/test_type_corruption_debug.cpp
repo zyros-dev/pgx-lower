@@ -6,10 +6,10 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/util/UtilDialect.h"
 
 using namespace mlir;
 using namespace pgx::mlir::dsa;
@@ -17,10 +17,10 @@ using namespace pgx::mlir::dsa;
 class TypeCorruptionTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        context.loadDialect<pgx::mlir::relalg::RelAlgDialect>();
+        context.loadDialect<mlir::relalg::RelAlgDialect>();
         context.loadDialect<pgx::db::DBDialect>();
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
-        context.loadDialect<pgx::mlir::util::UtilDialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::util::UtilDialect>();
     }
     
     mlir::MLIRContext context;

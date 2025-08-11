@@ -1,3 +1,4 @@
+#include "mlir/Pass/Pass.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
@@ -23,7 +24,7 @@ struct AnyMatcher : public Matcher {
 std::optional<std::string> getConstantString(::mlir::Value v) {
    if (auto* defOp = v.getDefiningOp()) {
       if (auto constOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(defOp)) {
-         if (auto strAttr = constOp.getValue().dyn_cast<::mlir::StringAttr>()) {
+         if (auto strAttr = constOp.getValue().dyn_cast_or_null<::mlir::StringAttr>()) {
             return strAttr.str();
          }
       }
@@ -43,7 +44,7 @@ struct StringConstMatcher : public Matcher {
    bool matches(::mlir::Value v) override {
       auto constStr = getConstantString(v);
       if (!constStr.has_value()) return false;
-      return constStr.getValue() == toMatch;
+      return constStr.value() == toMatch;
    }
    bool skip() override {
       return true;
@@ -80,8 +81,12 @@ class ReplaceFnWithFn : public mlir::RewritePattern {
    }
 };
 //Pattern that optimizes the join order
-class OptimizeRuntimeFunctions : public ::mlir::PassWrapper<OptimizeRuntimeFunctions, ::mlir::OperationPass<::mlir::ModuleOp>> {
+class OptimizeRuntimeFunctions : public ::mlir::OperationPass<::mlir::ModuleOp> {
    virtual llvm::StringRef getArgument() const override { return "db-optimize-runtime-functions"; }
+   virtual llvm::StringRef getName() const override { return getArgument(); }
+   std::unique_ptr<Pass> clonePass() const override { return std::make_unique<OptimizeRuntimeFunctions>(*this); }
+public:
+   OptimizeRuntimeFunctions() : ::mlir::OperationPass<::mlir::ModuleOp>(::mlir::TypeID::get<OptimizeRuntimeFunctions>()) {}
 
    public:
    void runOnOperation() override {

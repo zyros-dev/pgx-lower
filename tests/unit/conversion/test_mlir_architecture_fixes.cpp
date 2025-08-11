@@ -6,9 +6,9 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -22,10 +22,10 @@ TEST(MLIRArchitectureFixesTest, ColumnIdentitySharingWithSharedPtr) {
     PGX_INFO("Testing column identity sharing with shared_ptr safety");
     
     mlir::MLIRContext context;
-    context.getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+    context.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
     
     // Create a ColumnManager
-    auto columnManager = std::make_shared<pgx::mlir::relalg::ColumnManager>();
+    auto columnManager = std::make_shared<mlir::relalg::ColumnManager>();
     
     // Get shared column reference
     auto i64Type = mlir::IntegerType::get(&context, 64);
@@ -52,7 +52,7 @@ TEST(MLIRArchitectureFixesTest, ColumnValueTypeVerification) {
     PGX_INFO("Testing type verification between Column and MLIR Value");
     
     mlir::MLIRContext context;
-    context.getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+    context.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
     context.getOrLoadDialect<mlir::arith::ArithDialect>();
     
     mlir::OpBuilder builder(&context);
@@ -61,7 +61,7 @@ TEST(MLIRArchitectureFixesTest, ColumnValueTypeVerification) {
     auto i32Type = mlir::IntegerType::get(&context, 32);
     
     // Create a column with i64 type
-    auto columnManager = std::make_shared<pgx::mlir::relalg::ColumnManager>();
+    auto columnManager = std::make_shared<mlir::relalg::ColumnManager>();
     auto column = columnManager->get("test_table", "id", i64Type);
     
     // Create values with different types
@@ -84,17 +84,17 @@ TEST(MLIRArchitectureFixesTest, BaseTableTranslatorSharedPtrUsage) {
     PGX_INFO("Testing BaseTableTranslator shared_ptr column storage");
     
     mlir::MLIRContext context;
-    context.getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+    context.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
     
     // Create a ColumnManager  
-    auto columnManager = std::make_shared<pgx::mlir::relalg::ColumnManager>();
+    auto columnManager = std::make_shared<mlir::relalg::ColumnManager>();
     
     // Create columns that would be used by BaseTableTranslator
     auto i64Type = mlir::IntegerType::get(&context, 64);
     auto column1 = columnManager->get("test", "id", i64Type);
     
     // Verify that columns can be stored as shared_ptr
-    std::shared_ptr<pgx::mlir::relalg::Column> storedColumn = column1;
+    std::shared_ptr<mlir::relalg::Column> storedColumn = column1;
     EXPECT_EQ(storedColumn.get(), column1.get()) << "Shared ptr storage should preserve column identity";
     
     // Verify reference counting works correctly
@@ -113,10 +113,10 @@ TEST(MLIRArchitectureFixesTest, TranslatorContextScoping) {
     PGX_INFO("Testing TranslatorContext proper scoping");
     
     mlir::MLIRContext context;
-    context.getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+    context.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
     context.getOrLoadDialect<mlir::arith::ArithDialect>();
     
-    pgx::mlir::relalg::TranslatorContext translatorContext;
+    mlir::relalg::TranslatorContext translatorContext;
     
     // Get column manager
     auto columnManager = translatorContext.getColumnManager();
@@ -155,9 +155,9 @@ TEST(MLIRArchitectureFixesTest, MixedOperationGeneration) {
     
     mlir::MLIRContext context;
     // Register all needed dialects
-    context.getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+    context.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
     context.getOrLoadDialect<pgx::db::DBDialect>();
-    context.getOrLoadDialect<pgx::mlir::dsa::DSADialect>();
+    context.getOrLoadDialect<mlir::dsa::DSADialect>();
     context.getOrLoadDialect<mlir::scf::SCFDialect>();
     context.getOrLoadDialect<mlir::arith::ArithDialect>();
     

@@ -113,7 +113,7 @@ ColumnSet AggregationOp::getUsedColumns() {
 ColumnSet SortOp::getUsedColumns() {
    ColumnSet used;
    for (Attribute a : sortspecs()) {
-      used.insert(&a.dyn_cast<mlir::relalg::SortSpecificationAttr>().getAttr().getColumn());
+      used.insert(&a.dyn_cast_or_null<mlir::relalg::SortSpecificationAttr>().getAttr().getColumn());
    }
    return used;
 }
@@ -136,7 +136,7 @@ ColumnSet RenamingOp::getCreatedColumns() {
    ColumnSet created;
 
    for (Attribute attr : columns()) {
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       created.insert(&relationDefAttr.getColumn());
    }
    return created;
@@ -145,8 +145,8 @@ ColumnSet RenamingOp::getUsedColumns() {
    ColumnSet used;
 
    for (Attribute attr : columns()) {
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
-      auto fromExisting = relationDefAttr.getFromExisting().dyn_cast<ArrayAttr>();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+      auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       used.insert(ColumnSet::fromArrayAttr(fromExisting));
    }
    return used;
@@ -161,7 +161,7 @@ ColumnSet RenamingOp::getAvailableColumns() {
 ColumnSet mlir::relalg::detail::getSetOpCreatedColumns(::mlir::Operation* op) {
    ColumnSet created;
    for (::mlir::Attribute attr : op->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       created.insert(&relationDefAttr.getColumn());
    }
    return created;
@@ -169,8 +169,8 @@ ColumnSet mlir::relalg::detail::getSetOpCreatedColumns(::mlir::Operation* op) {
 ColumnSet mlir::relalg::detail::getSetOpUsedColumns(::mlir::Operation* op) {
    ColumnSet used;
    for (Attribute attr : op->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
-      auto fromExisting = relationDefAttr.getFromExisting().dyn_cast<ArrayAttr>();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+      auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       used.insert(ColumnSet::fromArrayAttr(fromExisting));
    }
    return used;
@@ -179,7 +179,7 @@ ColumnSet OuterJoinOp::getCreatedColumns() {
    ColumnSet created;
 
    for (Attribute attr : mapping()) {
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       created.insert(&relationDefAttr.getColumn());
    }
    return created;
@@ -191,8 +191,8 @@ ColumnSet OuterJoinOp::getAvailableColumns() {
    ColumnSet renamed;
 
    for (Attribute attr : mapping()) {
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
-      auto fromExisting = relationDefAttr.getFromExisting().dyn_cast<ArrayAttr>();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+      auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       renamed.insert(ColumnSet::fromArrayAttr(fromExisting));
    }
    auto availablePreviously = collectColumns(getChildOperators(*this), [](Operator op) { return op.getAvailableColumns(); });
@@ -205,7 +205,7 @@ ColumnSet SingleJoinOp::getCreatedColumns() {
    ColumnSet created;
 
    for (Attribute attr : mapping()) {
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       created.insert(&relationDefAttr.getColumn());
    }
    return created;
@@ -217,8 +217,8 @@ ColumnSet SingleJoinOp::getAvailableColumns() {
    ColumnSet renamed;
 
    for (Attribute attr : mapping()) {
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
-      auto fromExisting = relationDefAttr.getFromExisting().dyn_cast<ArrayAttr>();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
+      auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       renamed.insert(ColumnSet::fromArrayAttr(fromExisting));
    }
    auto availablePreviously = collectColumns(getChildOperators(*this), [](Operator op) { return op.getAvailableColumns(); });
@@ -250,8 +250,8 @@ ColumnSet MarkJoinOp::getCreatedColumns() {
 ColumnSet BaseTableOp::getCreatedColumns() {
    ColumnSet creations;
    for (auto mapping : columns()) {
-      auto attr = mapping.getValue();
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
+      auto attr = mapping.value();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       creations.insert(&relationDefAttr.getColumn());
    }
    return creations;
@@ -265,8 +265,8 @@ mlir::relalg::FunctionalDependencies BaseTableOp::getFDs() {
    std::unordered_set<std::string> pks(metaData->getPrimaryKey().begin(), metaData->getPrimaryKey().end());
    ColumnSet pk;
    for (auto mapping : columns()) {
-      auto attr = mapping.getValue();
-      auto relationDefAttr = attr.dyn_cast<ColumnDefAttr>();
+      auto attr = mapping.value();
+      auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       if (pks.contains(mapping.getName().str())) {
          pk.insert(&relationDefAttr.getColumn());
       }

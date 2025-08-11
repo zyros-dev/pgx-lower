@@ -114,7 +114,7 @@ class AtLowering : public OpConversionPattern<mlir::dsa::At> {
       ::mlir::Type arrowPhysicalType = typeConverter->convertType(t);
       if (t.isa<mlir::db::DecimalType>()) {
          arrowPhysicalType = mlir::IntegerType::get(context, 128);
-      } else if (auto dateType = t.dyn_cast<mlir::db::DateType>()) {
+      } else if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
          arrowPhysicalType = dateType.getUnit() == mlir::db::DateUnitAttr::day ? mlir::IntegerType::get(context, 32) : mlir::IntegerType::get(context, 64);
       }
       llvm::SmallVector<::mlir::Type> types;
@@ -133,9 +133,9 @@ class AtLowering : public OpConversionPattern<mlir::dsa::At> {
             values[0] = rewriter.create<mlir::arith::ExtUIOp>(loc, rewriter.getI64Type(), values[0]);
          }
          size_t multiplier = 1;
-         if (auto dateType = t.dyn_cast<mlir::db::DateType>()) {
+         if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
             multiplier = dateType.getUnit() == mlir::db::DateUnitAttr::day ? 86400000000000 : 1000000;
-         } else if (auto timeStampType = t.dyn_cast<mlir::db::TimestampType>()) {
+         } else if (auto timeStampType = t.dyn_cast_or_null<mlir::db::TimestampType>()) {
             switch (timeStampType.getUnit()) {
                case mlir::db::TimeUnitAttr::second: multiplier = 1000000000; break;
                case mlir::db::TimeUnitAttr::millisecond: multiplier = 1000000; break;
@@ -147,7 +147,7 @@ class AtLowering : public OpConversionPattern<mlir::dsa::At> {
             ::mlir::Value multiplierConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, multiplier, 64);
             values[0] = rewriter.create<mlir::arith::MulIOp>(loc, values[0], multiplierConst);
          }
-      } else if (auto decimalType = t.dyn_cast<db::DecimalType>()) {
+      } else if (auto decimalType = t.dyn_cast_or_null<db::DecimalType>()) {
          if (typeConverter->convertType(decimalType).cast<mlir::IntegerType>().getWidth() != 128) {
             values[0] = rewriter.create<arith::TruncIOp>(loc, typeConverter->convertType(decimalType), values[0]);
          }
@@ -179,16 +179,16 @@ class AppendTBLowering : public ConversionPattern {
       ::mlir::Type arrowPhysicalType = typeConverter->convertType(t);
       if (t.isa<mlir::db::DecimalType>()) {
          arrowPhysicalType = mlir::IntegerType::get(context, 128);
-      } else if (auto dateType = t.dyn_cast<mlir::db::DateType>()) {
+      } else if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
          arrowPhysicalType = dateType.getUnit() == mlir::db::DateUnitAttr::day ? mlir::IntegerType::get(context, 32) : mlir::IntegerType::get(context, 64);
       }
 
       ::mlir::Value val = adaptor.getVal();
       if (t.isa<mlir::db::DateType, mlir::db::TimestampType>()) {
          size_t multiplier = 1;
-         if (auto dateType = t.dyn_cast<mlir::db::DateType>()) {
+         if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
             multiplier = dateType.getUnit() == mlir::db::DateUnitAttr::day ? 86400000000000 : 1000000;
-         } else if (auto timeStampType = t.dyn_cast<mlir::db::TimestampType>()) {
+         } else if (auto timeStampType = t.dyn_cast_or_null<mlir::db::TimestampType>()) {
             switch (timeStampType.getUnit()) {
                case mlir::db::TimeUnitAttr::second: multiplier = 1000000000; break;
                case mlir::db::TimeUnitAttr::millisecond: multiplier = 1000000; break;
@@ -203,7 +203,7 @@ class AppendTBLowering : public ConversionPattern {
          if (arrowPhysicalType != rewriter.getI64Type()) {
             val = rewriter.create<mlir::arith::TruncIOp>(loc, arrowPhysicalType, val);
          }
-      } else if (auto decimalType = t.dyn_cast<db::DecimalType>()) {
+      } else if (auto decimalType = t.dyn_cast_or_null<db::DecimalType>()) {
          if (typeConverter->convertType(decimalType).cast<mlir::IntegerType>().getWidth() != 128) {
             val = rewriter.create<arith::ExtSIOp>(loc, rewriter.getIntegerType(128), val);
          }
@@ -228,15 +228,15 @@ class StringCastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
       Value result;
       if (scalarSourceType == scalarTargetType) {
          //nothing to do here
-      } else if (auto stringType = scalarSourceType.dyn_cast<db::StringType>()) {
+      } else if (auto stringType = scalarSourceType.dyn_cast_or_null<db::StringType>()) {
          if (auto intWidth = getIntegerWidth(scalarTargetType, false)) {
             result = rt::StringRuntime::toInt(rewriter, loc)({valueToCast})[0];
             if (intWidth < 64) {
                result = rewriter.create<arith::TruncIOp>(loc, convertedTargetType, result);
             }
-         } else if (auto floatType = scalarTargetType.dyn_cast<FloatType>()) {
+         } else if (auto floatType = scalarTargetType.dyn_cast_or_null<FloatType>()) {
             result = floatType.getWidth() == 32 ? rt::StringRuntime::toFloat32(rewriter, loc)({valueToCast})[0] : rt::StringRuntime::toFloat64(rewriter, loc)({valueToCast})[0];
-         } else if (auto decimalType = scalarTargetType.dyn_cast<db::DecimalType>()) {
+         } else if (auto decimalType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
             auto scale = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(decimalType.getS()));
             result = rt::StringRuntime::toDecimal(rewriter, loc)({valueToCast, scale})[0];
             if (typeConverter->convertType(decimalType).cast<mlir::IntegerType>().getWidth() < 128) {
@@ -246,12 +246,12 @@ class StringCastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
          }
       } else if (auto intWidth = getIntegerWidth(scalarSourceType, false)) {
          result = rt::StringRuntime::fromInt(rewriter, loc)({valueToCast})[0];
-      } else if (auto floatType = scalarSourceType.dyn_cast<FloatType>()) {
+      } else if (auto floatType = scalarSourceType.dyn_cast_or_null<FloatType>()) {
          result = floatType.getWidth() == 32 ? rt::StringRuntime::fromFloat32(rewriter, loc)({valueToCast})[0] : rt::StringRuntime::fromFloat64(rewriter, loc)({valueToCast})[0];
-      } else if (auto decimalSourceType = scalarSourceType.dyn_cast<db::DecimalType>()) {
+      } else if (auto decimalSourceType = scalarSourceType.dyn_cast_or_null<db::DecimalType>()) {
          auto scale = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(decimalSourceType.getS()));
          result = rt::StringRuntime::fromDecimal(rewriter, loc)({valueToCast, scale})[0];
-      } else if (auto charType = scalarSourceType.dyn_cast<db::CharType>()) {
+      } else if (auto charType = scalarSourceType.dyn_cast_or_null<db::CharType>()) {
          auto bytes = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(charType.getBytes()));
          result = rt::StringRuntime::fromChar(rewriter, loc)({valueToCast, bytes})[0];
       }
@@ -572,34 +572,34 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
             case 32: typeConstant = arrow::Type::type::UINT32; break;
             case 64: typeConstant = arrow::Type::type::UINT64; break;
          }
-      } else if (auto decimalType = type.dyn_cast<mlir::db::DecimalType>()) {
+      } else if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
          typeConstant = arrow::Type::type::DECIMAL128;
          param1 = decimalType.getP();
          param2 = decimalType.getS();
-      } else if (auto floatType = type.dyn_cast<::mlir::FloatType>()) {
+      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
          switch (floatType.getWidth()) {
             case 16: typeConstant = arrow::Type::type::HALF_FLOAT; break;
             case 32: typeConstant = arrow::Type::type::FLOAT; break;
             case 64: typeConstant = arrow::Type::type::DOUBLE; break;
          }
-      } else if (auto stringType = type.dyn_cast<mlir::db::StringType>()) {
+      } else if (auto stringType = type.dyn_cast_or_null<mlir::db::StringType>()) {
          typeConstant = arrow::Type::type::STRING;
-      } else if (auto dateType = type.dyn_cast<mlir::db::DateType>()) {
+      } else if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
          if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
             typeConstant = arrow::Type::type::DATE32;
          } else {
             typeConstant = arrow::Type::type::DATE64;
          }
-      } else if (auto charType = type.dyn_cast<mlir::db::CharType>()) {
+      } else if (auto charType = type.dyn_cast_or_null<mlir::db::CharType>()) {
          typeConstant = arrow::Type::type::FIXED_SIZE_BINARY;
          param1 = charType.getBytes();
-      } else if (auto intervalType = type.dyn_cast<mlir::db::IntervalType>()) {
+      } else if (auto intervalType = type.dyn_cast_or_null<mlir::db::IntervalType>()) {
          if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
             typeConstant = arrow::Type::type::INTERVAL_MONTHS;
          } else {
             typeConstant = arrow::Type::type::INTERVAL_DAY_TIME;
          }
-      } else if (auto timestampType = type.dyn_cast<mlir::db::TimestampType>()) {
+      } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
          typeConstant = arrow::Type::type::TIMESTAMP;
          param1 = static_cast<uint32_t>(timestampType.getUnit());
       }
@@ -614,18 +614,18 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
       auto stdType = typeConverter->convertType(type);
       auto [arrowType, param1, param2] = convertTypeToArrow(type);
       std::variant<int64_t, double, std::string> parseArg;
-      if (auto integerAttr = constantOp.getValue().dyn_cast<IntegerAttr>()) {
+      if (auto integerAttr = constantOp.value().dyn_cast_or_null<IntegerAttr>()) {
          parseArg = integerAttr.getInt();
-      } else if (auto floatAttr = constantOp.getValue().dyn_cast<FloatAttr>()) {
+      } else if (auto floatAttr = constantOp.value().dyn_cast_or_null<FloatAttr>()) {
          parseArg = floatAttr.getValueAsDouble();
-      } else if (auto stringAttr = constantOp.getValue().dyn_cast<StringAttr>()) {
+      } else if (auto stringAttr = constantOp.value().dyn_cast_or_null<StringAttr>()) {
          parseArg = stringAttr.str();
       } else {
          return failure();
       }
       auto parseResult = support::parse(parseArg, arrowType, param1, param2);
-      if (auto intType = stdType.dyn_cast<IntegerType>()) {
-         if (auto decimalType = type.dyn_cast<mlir::db::DecimalType>()) {
+      if (auto intType = stdType.dyn_cast_or_null<IntegerType>()) {
+         if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
             auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());
             std::vector<uint64_t> parts = {low, high};
             rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, APInt(stdType.cast<mlir::IntegerType>().getWidth(), parts)));
@@ -634,7 +634,7 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
             rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, std::get<int64_t>(parseResult)));
             return success();
          }
-      } else if (auto floatType = stdType.dyn_cast<FloatType>()) {
+      } else if (auto floatType = stdType.dyn_cast_or_null<FloatType>()) {
          rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getFloatAttr(stdType, std::get<double>(parseResult)));
          return success();
       } else if (type.isa<mlir::db::StringType>()) {
@@ -735,7 +735,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             value = rewriter.create<arith::SIToFPOp>(loc, convertedTargetType, value);
             rewriter.replaceOp(op, value);
             return success();
-         } else if (auto decimalTargetType = scalarTargetType.dyn_cast<db::DecimalType>()) {
+         } else if (auto decimalTargetType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
             int decimalWidth = typeConverter->convertType(decimalTargetType).cast<mlir::IntegerType>().getWidth();
             if (sourceIntWidth < decimalWidth) {
                value = rewriter.create<arith::ExtSIOp>(loc, convertedTargetType, value);
@@ -750,18 +750,18 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             }
             return success();
          }
-      } else if (auto floatType = scalarSourceType.dyn_cast<FloatType>()) {
+      } else if (auto floatType = scalarSourceType.dyn_cast_or_null<FloatType>()) {
          if (getIntegerWidth(scalarTargetType, false)) {
             value = rewriter.replaceOpWithNewOp<arith::FPToSIOp>(op, convertedTargetType, value);
             return success();
-         } else if (auto decimalTargetType = scalarTargetType.dyn_cast<db::DecimalType>()) {
+         } else if (auto decimalTargetType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
             auto multiplier = rewriter.create<arith::ConstantOp>(loc, convertedSourceType, FloatAttr::get(convertedSourceType, powf(10, decimalTargetType.getS())));
             value = rewriter.create<arith::MulFOp>(loc, convertedSourceType, value, multiplier);
             rewriter.replaceOpWithNewOp<arith::FPToSIOp>(op, convertedTargetType, value);
             return success();
          }
-      } else if (auto decimalSourceType = scalarSourceType.dyn_cast<db::DecimalType>()) {
-         if (auto decimalTargetType = scalarTargetType.dyn_cast<db::DecimalType>()) {
+      } else if (auto decimalSourceType = scalarSourceType.dyn_cast_or_null<db::DecimalType>()) {
+         if (auto decimalTargetType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
             auto sourceScale = decimalSourceType.getS();
             auto targetScale = decimalTargetType.getS();
             size_t decimalWidth = convertedSourceType.cast<mlir::IntegerType>().getWidth();
@@ -830,7 +830,7 @@ class HashLowering : public ConversionPattern {
       return builder.create<mlir::util::Hash64>(loc, builder.getIndexType(), asIndex);
    }
    Value hashImpl(OpBuilder& builder, Location loc, Value v, Value totalHash, Type originalType) const {
-      if (auto intType = v.getType().dyn_cast<mlir::IntegerType>()) {
+      if (auto intType = v.getType().dyn_cast_or_null<mlir::IntegerType>()) {
          if (intType.getWidth() == 128) {
             auto i64Type = IntegerType::get(builder.getContext(), 64);
             auto i128Type = IntegerType::get(builder.getContext(), 128);
@@ -847,13 +847,13 @@ class HashLowering : public ConversionPattern {
             return combineHashes(builder, loc, hashInteger(builder, loc, v), totalHash);
          }
 
-      } else if (auto floatType = v.getType().dyn_cast<::mlir::FloatType>()) {
+      } else if (auto floatType = v.getType().dyn_cast_or_null<::mlir::FloatType>()) {
          assert(false && "can not hash float values");
-      } else if (auto varLenType = v.getType().dyn_cast<mlir::util::VarLen32Type>()) {
+      } else if (auto varLenType = v.getType().dyn_cast_or_null<mlir::util::VarLen32Type>()) {
          auto hash = builder.create<mlir::util::HashVarLen>(loc, builder.getIndexType(), v);
          return combineHashes(builder, loc, hash, totalHash);
-      } else if (auto tupleType = v.getType().dyn_cast<mlir::TupleType>()) {
-         if (auto originalTupleType = originalType.dyn_cast<mlir::TupleType>()) {
+      } else if (auto tupleType = v.getType().dyn_cast_or_null<mlir::TupleType>()) {
+         if (auto originalTupleType = originalType.dyn_cast_or_null<mlir::TupleType>()) {
             auto unpacked = builder.create<util::UnPackOp>(loc, v);
             size_t i = 0;
             for (auto v : unpacked->getResults()) {
@@ -953,7 +953,7 @@ void DBToStdLoweringPass::runOnOperation() {
       return isLegal;
    });
    target.addDynamicallyLegalOp<mlir::func::ConstantOp>([&](mlir::func::ConstantOp op) {
-      if (auto functionType = op.getType().dyn_cast<mlir::FunctionType>()) {
+      if (auto functionType = op.getType().dyn_cast_or_null<mlir::FunctionType>()) {
          auto isLegal = !hasDBType(typeConverter, functionType.getInputs()) &&
             !hasDBType(typeConverter, functionType.getResults());
          return isLegal;
@@ -979,7 +979,7 @@ void DBToStdLoweringPass::runOnOperation() {
          ::mlir::Type arrowPhysicalType = typeConverter.convertType(t);
          if (t.isa<mlir::db::DecimalType>()) {
             arrowPhysicalType = mlir::IntegerType::get(t.getContext(), 128);
-         } else if (auto dateType = t.dyn_cast<mlir::db::DateType>()) {
+         } else if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
             arrowPhysicalType = dateType.getUnit() == mlir::db::DateUnitAttr::day ? mlir::IntegerType::get(t.getContext(), 32) : mlir::IntegerType::get(t.getContext(), 64);
          }
          types.push_back(arrowPhysicalType);

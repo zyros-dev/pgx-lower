@@ -2,13 +2,13 @@
 
 #include "gtest/gtest.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DB/IR/DBTypes.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBTypes.h"
+#include "pgx_lower/mlir/Dialect/util/UtilDialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilOps.h"
 #include "mlir/Dialect/Util/IR/UtilTypes.h"
 #include "execution/logging.h"
 
@@ -33,9 +33,9 @@ protected:
         PGX_DEBUG("Setting up DSAToStd test");
         
         // Register all required dialects
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
-        context.loadDialect<pgx::mlir::db::DBDialect>();
-        context.loadDialect<pgx::mlir::util::UtilDialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::db::DBDialect>();
+        context.loadDialect<mlir::util::UtilDialect>();
         context.loadDialect<func::FuncDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<memref::MemRefDialect>();
@@ -94,7 +94,7 @@ TEST_F(DSAToStdTest, CreateDSTableBuilder) {
                 // Verify the result type is util.ref<i8>
                 EXPECT_EQ(callOp.getNumResults(), 1);
                 auto resultType = callOp.getResult(0).getType();
-                EXPECT_TRUE(resultType.isa<pgx::mlir::util::RefType>());
+                EXPECT_TRUE(resultType.isa<mlir::util::RefType>());
             }
         }
     });

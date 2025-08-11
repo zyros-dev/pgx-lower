@@ -58,7 +58,7 @@ ParseResult dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
        parser.parseColonType(collType))
       return failure();
 
-   if (!(collectionType = collType.dyn_cast<mlir::dsa::CollectionType>())) {
+   if (!(collectionType = collType.dyn_cast_or_null<mlir::dsa::CollectionType>())) {
       return failure();
    }
    parser.resolveOperand(collection, collectionType, result.operands);
@@ -242,10 +242,10 @@ void dsa::HashtableInsert::print(OpAsmPrinter& p) {
       p << ")";
       p.printRegion(op.getEqual(), false, true);
    }
-   if (!op.reduce().empty()) {
+   if (!op.getReduce().empty()) {
       p << " reduce: (";
       bool first = true;
-      for (auto arg : op.reduce().front().getArguments()) {
+      for (auto arg : op.getReduce().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -254,7 +254,7 @@ void dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.reduce(), false, true);
+      p.printRegion(op.getReduce(), false, true);
    }
 }
 

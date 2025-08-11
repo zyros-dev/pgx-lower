@@ -10,8 +10,8 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
 #include "mlir/Conversion/RelAlgToDB/TranslatorContext.h"
 
@@ -114,9 +114,9 @@ protected:
         context->loadDialect<::mlir::func::FuncDialect>();
         context->loadDialect<::mlir::scf::SCFDialect>();
         context->loadDialect<::mlir::arith::ArithDialect>();
-        context->loadDialect<::pgx::mlir::relalg::RelAlgDialect>();
+        context->loadDialect<::mlir::relalg::RelAlgDialect>();
         context->loadDialect<::pgx::db::DBDialect>();
-        context->loadDialect<::pgx::mlir::dsa::DSADialect>();
+        context->loadDialect<::mlir::dsa::DSADialect>();
         
         // Create module and builder
         module = ::mlir::ModuleOp::create(::mlir::UnknownLoc::get(context.get()));
@@ -140,8 +140,8 @@ TEST_F(StreamingMemoryValidationTest, ConstantMemoryForLargeTable) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp simulating a large table
-    auto tableType = ::pgx::mlir::relalg::TupleStreamType::get(context.get());
-    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
+    auto tableType = ::mlir::relalg::TupleStreamType::get(context.get());
+    auto baseTableOp = builder->create<::mlir::relalg::BaseTableOp>(
         loc,
         tableType,
         builder->getStringAttr("large_table_1000_rows"), // Simulate 1000 rows
@@ -200,8 +200,8 @@ TEST_F(StreamingMemoryValidationTest, NoIntermediateBuffering) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp
-    auto tableType = ::pgx::mlir::relalg::TupleStreamType::get(context.get());
-    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
+    auto tableType = ::mlir::relalg::TupleStreamType::get(context.get());
+    auto baseTableOp = builder->create<::mlir::relalg::BaseTableOp>(
         loc,
         tableType,
         builder->getStringAttr("test_table"),
@@ -244,8 +244,8 @@ TEST_F(StreamingMemoryValidationTest, ProducerConsumerDirectConnection) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp
-    auto tableType = ::pgx::mlir::relalg::TupleStreamType::get(context.get());
-    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
+    auto tableType = ::mlir::relalg::TupleStreamType::get(context.get());
+    auto baseTableOp = builder->create<::mlir::relalg::BaseTableOp>(
         loc,
         tableType,
         builder->getStringAttr("test"),
@@ -267,7 +267,7 @@ TEST_F(StreamingMemoryValidationTest, ProducerConsumerDirectConnection) {
     // Verify that BaseTableOp remains untranslated
     bool hasBaseTable = false;
     func.walk([&](::mlir::Operation* op) {
-        if (::mlir::isa<::pgx::mlir::relalg::BaseTableOp>(op)) {
+        if (::mlir::isa<::mlir::relalg::BaseTableOp>(op)) {
             hasBaseTable = true;
         }
     });

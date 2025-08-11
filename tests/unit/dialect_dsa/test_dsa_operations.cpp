@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
@@ -13,7 +13,7 @@ using namespace mlir;
 class DSAOperationsTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        context.getOrLoadDialect<::pgx::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<::mlir::dsa::DSADialect>();
         context.getOrLoadDialect<arith::ArithDialect>();
         context.getOrLoadDialect<func::FuncDialect>();
         builder = std::make_unique<OpBuilder>(&context);
@@ -29,27 +29,27 @@ TEST_F(DSAOperationsTest, TestDSATypeCreation) {
     
     // Test RecordBatch type
     auto tupleType = builder->getTupleType({builder->getI32Type(), builder->getF64Type()});
-    auto recordBatchType = ::pgx::mlir::dsa::RecordBatchType::get(&context, tupleType);
+    auto recordBatchType = ::mlir::dsa::RecordBatchType::get(&context, tupleType);
     
     EXPECT_TRUE(recordBatchType != nullptr);
     EXPECT_EQ(recordBatchType.getRowType(), tupleType);
     
     // Test Record type  
-    auto recordType = ::pgx::mlir::dsa::RecordType::get(&context, tupleType);
+    auto recordType = ::mlir::dsa::RecordType::get(&context, tupleType);
     EXPECT_TRUE(recordType != nullptr);
     EXPECT_EQ(recordType.getRowType(), tupleType);
     
     // Test TableBuilderType (restored in Phase 4d-1)
-    auto tableBuilderType = ::pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
+    auto tableBuilderType = ::mlir::dsa::TableBuilderType::get(&context, tupleType);
     EXPECT_TRUE(tableBuilderType != nullptr);
     EXPECT_EQ(tableBuilderType.getRowType(), tupleType);
     
     // Test TableType
-    auto tableType = ::pgx::mlir::dsa::TableType::get(&context);
+    auto tableType = ::mlir::dsa::TableType::get(&context);
     EXPECT_TRUE(tableType != nullptr);
     
     // Test GenericIterable type
-    auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
+    auto iterableType = ::mlir::dsa::GenericIterableType::get(
         &context, recordBatchType, "test_iterator");
     EXPECT_TRUE(iterableType != nullptr);
     
@@ -65,12 +65,12 @@ TEST_F(DSAOperationsTest, TestScanSource) {
     
     // Create types
     auto tupleType = builder->getTupleType({builder->getI32Type()});
-    auto recordBatchType = ::pgx::mlir::dsa::RecordBatchType::get(&context, tupleType);
-    auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
+    auto recordBatchType = ::mlir::dsa::RecordBatchType::get(&context, tupleType);
+    auto iterableType = ::mlir::dsa::GenericIterableType::get(
         &context, recordBatchType, "table_iterator");
     
     // Create ScanSource
-    auto scanSourceOp = builder->create<::pgx::mlir::dsa::ScanSource>(
+    auto scanSourceOp = builder->create<::mlir::dsa::ScanSource>(
         builder->getUnknownLoc(), 
         iterableType,
         builder->getStringAttr("{\"table_oid\":12345}"));
@@ -91,10 +91,10 @@ TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     
     // Create table builder type
     auto tupleType = builder->getTupleType({builder->getI32Type(), builder->getF64Type()});
-    auto tableBuilderType = ::pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
+    auto tableBuilderType = ::mlir::dsa::TableBuilderType::get(&context, tupleType);
     
     // Create table builder with schema
-    auto createDSOp = builder->create<::pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder->create<::mlir::dsa::CreateDS>(
         builder->getUnknownLoc(),
         tableBuilderType,
         builder->getStringAttr("id:int[32];value:float[64]")
@@ -112,14 +112,14 @@ TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     );
     auto trueVal = builder->create<arith::ConstantIntOp>(builder->getUnknownLoc(), 1, 1);
     
-    auto appendOp1 = builder->create<::pgx::mlir::dsa::Append>(
+    auto appendOp1 = builder->create<::mlir::dsa::Append>(
         builder->getUnknownLoc(),
         createDSOp.getDs(),
         i32Val.getResult(),
         trueVal.getResult()
     );
     
-    auto appendOp2 = builder->create<::pgx::mlir::dsa::Append>(
+    auto appendOp2 = builder->create<::mlir::dsa::Append>(
         builder->getUnknownLoc(),
         createDSOp.getDs(),
         f64Val.getResult(),
@@ -130,7 +130,7 @@ TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     EXPECT_TRUE(appendOp2 != nullptr);
     
     // Test NextRow
-    auto nextRowOp = builder->create<::pgx::mlir::dsa::NextRow>(
+    auto nextRowOp = builder->create<::mlir::dsa::NextRow>(
         builder->getUnknownLoc(),
         createDSOp.getDs()
     );
@@ -138,8 +138,8 @@ TEST_F(DSAOperationsTest, TestDataStructureBuilding) {
     EXPECT_TRUE(nextRowOp != nullptr);
     
     // Test Finalize
-    auto tableType = ::pgx::mlir::dsa::TableType::get(&context);
-    auto finalizeOp = builder->create<::pgx::mlir::dsa::Finalize>(
+    auto tableType = ::mlir::dsa::TableType::get(&context);
+    auto finalizeOp = builder->create<::mlir::dsa::Finalize>(
         builder->getUnknownLoc(),
         tableType,
         createDSOp.getDs()
@@ -161,7 +161,7 @@ TEST_F(DSAOperationsTest, TestAtOpFieldExtraction) {
     
     // Create record type
     auto tupleType = builder->getTupleType({builder->getI32Type(), builder->getF64Type()});
-    auto recordType = ::pgx::mlir::dsa::RecordType::get(&context, tupleType);
+    auto recordType = ::mlir::dsa::RecordType::get(&context, tupleType);
     
     // Create a mock record value (in real code this would come from ForOp)
     auto funcType = builder->getFunctionType({recordType}, {});
@@ -174,7 +174,7 @@ TEST_F(DSAOperationsTest, TestAtOpFieldExtraction) {
     Value recordArg = entryBlock->getArgument(0);
     
     // Test At for column extraction using position-based access
-    auto atOp = builder->create<::pgx::mlir::dsa::At>(
+    auto atOp = builder->create<::mlir::dsa::At>(
         builder->getUnknownLoc(), 
         builder->getI32Type(),
         recordArg, 
@@ -204,17 +204,17 @@ TEST_F(DSAOperationsTest, TestForOpCreation) {
     
     // Create input iterable
     auto tupleType = builder->getTupleType({builder->getI32Type()});
-    auto recordBatchType = ::pgx::mlir::dsa::RecordBatchType::get(&context, tupleType);
-    auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
+    auto recordBatchType = ::mlir::dsa::RecordBatchType::get(&context, tupleType);
+    auto iterableType = ::mlir::dsa::GenericIterableType::get(
         &context, recordBatchType, "table_iterator");
     
-    auto scanSourceOp = builder->create<::pgx::mlir::dsa::ScanSource>(
+    auto scanSourceOp = builder->create<::mlir::dsa::ScanSource>(
         builder->getUnknownLoc(), 
         iterableType,
         builder->getStringAttr("{\"table_oid\":12345}"));
     
     // Create ForOp with correct API
-    auto forOp = builder->create<::pgx::mlir::dsa::ForOp>(
+    auto forOp = builder->create<::mlir::dsa::ForOp>(
         builder->getUnknownLoc(), 
         TypeRange{}, 
         scanSourceOp.getResult(), 
@@ -228,7 +228,7 @@ TEST_F(DSAOperationsTest, TestForOpCreation) {
     builder->setInsertionPointToStart(forBlock);
     
     // Add YieldOp to complete the ForOp body
-    builder->create<::pgx::mlir::dsa::YieldOp>(builder->getUnknownLoc(), ValueRange{});
+    builder->create<::mlir::dsa::YieldOp>(builder->getUnknownLoc(), ValueRange{});
     
     builder->setInsertionPointAfter(forOp);
     builder->create<func::ReturnOp>(builder->getUnknownLoc());
@@ -255,8 +255,8 @@ TEST_F(DSAOperationsTest, TestFlagOperations) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Test CreateFlag
-    auto flagType = ::pgx::mlir::dsa::FlagType::get(&context);
-    auto createFlagOp = builder->create<::pgx::mlir::dsa::CreateFlag>(
+    auto flagType = ::mlir::dsa::FlagType::get(&context);
+    auto createFlagOp = builder->create<::mlir::dsa::CreateFlag>(
         builder->getUnknownLoc(), flagType);
     
     EXPECT_TRUE(createFlagOp != nullptr);
@@ -265,7 +265,7 @@ TEST_F(DSAOperationsTest, TestFlagOperations) {
     // Test SetFlag
     auto constTrue = builder->create<arith::ConstantIntOp>(
         builder->getUnknownLoc(), 1, builder->getI1Type());
-    auto setFlagOp = builder->create<::pgx::mlir::dsa::SetFlag>(
+    auto setFlagOp = builder->create<::mlir::dsa::SetFlag>(
         builder->getUnknownLoc(), 
         createFlagOp.getFlag(), 
         constTrue.getResult());
@@ -273,7 +273,7 @@ TEST_F(DSAOperationsTest, TestFlagOperations) {
     EXPECT_TRUE(setFlagOp != nullptr);
     
     // Test GetFlag
-    auto getFlagOp = builder->create<::pgx::mlir::dsa::GetFlag>(
+    auto getFlagOp = builder->create<::mlir::dsa::GetFlag>(
         builder->getUnknownLoc(), 
         builder->getI1Type(), 
         createFlagOp.getFlag());

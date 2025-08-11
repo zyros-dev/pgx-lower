@@ -17,29 +17,29 @@ class MaterializeTranslator : public mlir::relalg::Translator {
          return "int[" + std::to_string(intWidth) + "]";
       } else if (auto uIntWidth = getIntegerWidth(type, true)) {
          return "uint[" + std::to_string(uIntWidth) + "]";
-      } else if (auto decimalType = type.dyn_cast<mlir::db::DecimalType>()) {
+      } else if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
          // TODO: actually handle cases where 128 bits are insufficient.
          auto prec = std::min(decimalType.getP(), 38);
          return "decimal[" + std::to_string(prec) + "," + std::to_string(decimalType.getS()) + "]";
-      } else if (auto floatType = type.dyn_cast<::mlir::FloatType>()) {
+      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
          return "float[" + std::to_string(floatType.getWidth()) + "]";
-      } else if (auto stringType = type.dyn_cast<mlir::db::StringType>()) {
+      } else if (auto stringType = type.dyn_cast_or_null<mlir::db::StringType>()) {
          return "string";
-      } else if (auto dateType = type.dyn_cast<mlir::db::DateType>()) {
+      } else if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
          if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
             return "date[32]";
          } else {
             return "date[64]";
          }
-      } else if (auto charType = type.dyn_cast<mlir::db::CharType>()) {
+      } else if (auto charType = type.dyn_cast_or_null<mlir::db::CharType>()) {
          return "fixed_sized[" + std::to_string(charType.getBytes()) + "]";
-      } else if (auto intervalType = type.dyn_cast<mlir::db::IntervalType>()) {
+      } else if (auto intervalType = type.dyn_cast_or_null<mlir::db::IntervalType>()) {
          if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
             return "interval_months";
          } else {
             return "interval_daytime";
          }
-      } else if (auto timestampType = type.dyn_cast<mlir::db::TimestampType>()) {
+      } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
          return "timestamp[" + std::to_string(static_cast<uint32_t>(timestampType.getUnit())) + "]";
       }
       return "";

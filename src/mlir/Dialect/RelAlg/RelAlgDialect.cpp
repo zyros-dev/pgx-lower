@@ -181,6 +181,6 @@ void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) con
       return {};
    }
    auto columnRefAttr = parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
-   return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.getValue());
+   return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.value());
 }
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.cpp.inc"

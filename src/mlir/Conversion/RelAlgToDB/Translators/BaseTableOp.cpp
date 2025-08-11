@@ -22,10 +22,10 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       std::string tableName = baseTableOp->getAttr("table_identifier").cast<::mlir::StringAttr>().str();
       std::string scanDescription = R"({ "table": ")" + tableName + R"(", "columns": [ )";
       bool first = true;
-      for (auto namedAttr : baseTableOp.columnsAttr().getValue()) {
+      for (auto namedAttr : baseTableOp.columnsAttr().value()) {
          auto identifier = namedAttr.getName();
-         auto attr = namedAttr.getValue();
-         auto attrDef = attr.dyn_cast<mlir::relalg::ColumnDefAttr>();
+         auto attr = namedAttr.value();
+         auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          if (requiredAttributes.contains(&attrDef.getColumn())) {
             if (!first) {
                scanDescription += ",";

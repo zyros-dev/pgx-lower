@@ -63,7 +63,7 @@ TEST_F(MLIRRunnerTest, DialectLoadingTest) {
     
     // Load each dialect individually to verify TypeID registration
     EXPECT_NO_THROW({
-        auto* relalg_dialect = context.getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+        auto* relalg_dialect = context.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
         EXPECT_NE(relalg_dialect, nullptr);
     });
     
@@ -73,7 +73,7 @@ TEST_F(MLIRRunnerTest, DialectLoadingTest) {
     });
     
     EXPECT_NO_THROW({
-        auto* dsa_dialect = context.getOrLoadDialect<pgx::mlir::dsa::DSADialect>();
+        auto* dsa_dialect = context.getOrLoadDialect<mlir::dsa::DSADialect>();
         EXPECT_NE(dsa_dialect, nullptr);
     });
 }

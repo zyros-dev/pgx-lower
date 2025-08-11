@@ -3,8 +3,8 @@
 
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -19,9 +19,9 @@ using namespace mlir;
 class Phase3AIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        context.getOrLoadDialect<::pgx::mlir::relalg::RelAlgDialect>();
+        context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
         context.getOrLoadDialect<::pgx::db::DBDialect>();
-        context.getOrLoadDialect<::pgx::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<::mlir::dsa::DSADialect>();
         context.getOrLoadDialect<func::FuncDialect>();
         context.getOrLoadDialect<arith::ArithDialect>();
         context.getOrLoadDialect<scf::SCFDialect>();

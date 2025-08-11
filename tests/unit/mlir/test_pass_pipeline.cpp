@@ -11,8 +11,8 @@
 
 // Dialect includes for testing
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
@@ -28,9 +28,9 @@ protected:
         context = std::make_unique<mlir::MLIRContext>();
         context->getOrLoadDialect<mlir::func::FuncDialect>();
         context->getOrLoadDialect<mlir::arith::ArithDialect>();
-        context->getOrLoadDialect<pgx::mlir::relalg::RelAlgDialect>();
+        context->getOrLoadDialect<mlir::relalg::RelAlgDialect>();
         context->getOrLoadDialect<pgx::db::DBDialect>();
-        context->getOrLoadDialect<pgx::mlir::dsa::DSADialect>();
+        context->getOrLoadDialect<mlir::dsa::DSADialect>();
         
         // Register all passes
         mlir::pgx_lower::registerAllPgxLoweringPasses();

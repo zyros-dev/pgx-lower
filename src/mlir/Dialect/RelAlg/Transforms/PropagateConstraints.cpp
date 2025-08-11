@@ -12,16 +12,16 @@
 namespace {
 using ReplaceFnT = std::function<mlir::relalg::ColumnRefAttr(mlir::relalg::ColumnRefAttr)>;
 mlir::Attribute updateAttribute(::mlir::Attribute attr, ReplaceFnT replaceFn) {
-   if (auto colRefAttr = attr.dyn_cast<mlir::relalg::ColumnRefAttr>()) {
+   if (auto colRefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>()) {
       return replaceFn(colRefAttr);
    }
-   if (auto colDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>()) {
+   if (auto colDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>()) {
       return mlir::relalg::ColumnDefAttr::get(attr.getContext(), colDefAttr.getName(), colDefAttr.getColumnPtr(), updateAttribute(colDefAttr.getFromExisting(), replaceFn));
    }
-   if (auto sortSpec = attr.dyn_cast<mlir::relalg::SortSpecificationAttr>()) {
+   if (auto sortSpec = attr.dyn_cast_or_null<mlir::relalg::SortSpecificationAttr>()) {
       return mlir::relalg::SortSpecificationAttr::get(attr.getContext(), replaceFn(sortSpec.getAttr()), sortSpec.getSortSpec());
    }
-   if (auto arrayAttr = attr.dyn_cast<::mlir::ArrayAttr>()) {
+   if (auto arrayAttr = attr.dyn_cast_or_null<::mlir::ArrayAttr>()) {
       std::vector<::mlir::Attribute> attributes;
       for (auto elem : arrayAttr) {
          attributes.push_back(updateAttribute(elem, replaceFn));
@@ -32,7 +32,7 @@ mlir::Attribute updateAttribute(::mlir::Attribute attr, ReplaceFnT replaceFn) {
 }
 void replaceUsages(::mlir::Operation* op, ReplaceFnT replaceFn) {
    for (auto attr : op->getAttrs()) {
-      op->setAttr(attr.getName(), updateAttribute(attr.getValue(), replaceFn));
+      op->setAttr(attr.getName(), updateAttribute(attr.value(), replaceFn));
    }
 }
 
@@ -172,7 +172,7 @@ class ExpandTransitiveEqualities : public ::mlir::PassWrapper<ExpandTransitiveEq
             auto res = analyzePredicate(sel);
             if (res) {
                llvm::EquivalenceClasses<const mlir::relalg::Column*> selPred;
-               selPred.unionSets(res.getValue().first, res.getValue().second);
+               selPred.unionSets(res.value().first, res.value().second);
                merge(localEqualities, selPred, additionalPredicates);
             }
          }

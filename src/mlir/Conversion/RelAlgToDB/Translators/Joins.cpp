@@ -213,10 +213,10 @@ class ConstantSingleJoinTranslator : public mlir::relalg::Translator {
       this->requiredAttributes = requiredAttributes;
       this->requiredAttributes.insert(joinOp.getUsedColumns());
       for (::mlir::Attribute attr : joinOp.mapping()) {
-         auto relationDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>();
+         auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
-            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast<::mlir::ArrayAttr>();
+            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<::mlir::ArrayAttr>();
             const auto* refAttr = *mlir::relalg::ColumnSet::fromArrayAttr(fromExisting).begin();
             this->requiredAttributes.insert(refAttr);
             origAttrs.push_back(refAttr);
@@ -301,15 +301,15 @@ std::unique_ptr<mlir::relalg::Translator> mlir::relalg::Translator::createJoinTr
    bool hash = false;
    bool constant = false;
    if (joinOp->hasAttr("impl")) {
-      if (auto impl = joinOp->getAttr("impl").dyn_cast<::mlir::StringAttr>()) {
-         if (impl.getValue() == "hash") {
+      if (auto impl = joinOp->getAttr("impl").dyn_cast_or_null<::mlir::StringAttr>()) {
+         if (impl.value() == "hash") {
             hash = true;
          }
-         if (impl.getValue() == "markhash") {
+         if (impl.value() == "markhash") {
             hash = true;
             reversed = true;
          }
-         if (impl.getValue() == "constant") {
+         if (impl.value() == "constant") {
             constant = true;
          }
       }

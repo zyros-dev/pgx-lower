@@ -62,14 +62,14 @@ class OptimizeImplementations : public ::mlir::PassWrapper<OptimizeImplementatio
                   if (left->hasAttr("rows") && right->hasAttr("rows")) {
                      double rowsLeft = 0;
                      double rowsRight = 0;
-                     if (auto lDAttr = left->getAttr("rows").dyn_cast<::mlir::FloatAttr>()) {
+                     if (auto lDAttr = left->getAttr("rows").dyn_cast_or_null<::mlir::FloatAttr>()) {
                         rowsLeft = lDAttr.getValueAsDouble();
-                     } else if (auto lIAttr = left->getAttr("rows").dyn_cast<::mlir::IntegerAttr>()) {
+                     } else if (auto lIAttr = left->getAttr("rows").dyn_cast_or_null<::mlir::IntegerAttr>()) {
                         rowsLeft = lIAttr.getInt();
                      }
-                     if (auto rDAttr = right->getAttr("rows").dyn_cast<::mlir::FloatAttr>()) {
+                     if (auto rDAttr = right->getAttr("rows").dyn_cast_or_null<::mlir::FloatAttr>()) {
                         rowsRight = rDAttr.getValueAsDouble();
-                     } else if (auto rIAttr = right->getAttr("rows").dyn_cast<::mlir::IntegerAttr>()) {
+                     } else if (auto rIAttr = right->getAttr("rows").dyn_cast_or_null<::mlir::IntegerAttr>()) {
                         rowsRight = rIAttr.getInt();
                      }
                      if (rowsLeft < rowsRight) {

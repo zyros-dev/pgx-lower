@@ -1,9 +1,9 @@
 #ifndef MLIR_DIALECT_DSA_IR_DSATYPES_H
 #define MLIR_DIALECT_DSA_IR_DSATYPES_H
 
-#include "mlir/Dialect/DSA/IR/DSACollectionType.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSACollectionType.h"
 
-#include "mlir/Dialect/DSA/IR/DSAOpsEnums.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOpsEnums.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
 
