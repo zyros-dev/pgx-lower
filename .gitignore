@@ -46,7 +46,6 @@ compile_commands.json
 
 # CMake build directories
 build/
-build-*/
 cmake-build-*/
 _deps/
 fast_output.txt
@@ -62,7 +61,10 @@ extension/results/
 
 .cursorignore
 
-build*
+build-debug
+build-release
+runtime-header-tool
+build-utest
 .idea*
 .idea
 llm_documentation
