@@ -44,7 +44,7 @@ class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
          auto terminator = rewriter.create<mlir::func::ReturnOp>(sortOp.getLoc());
          Block* sortLambda = &sortOp.getRegion().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         rewriter.moveBlockBefore(sortLambda, terminator);
+         rewriter.moveBlockBefore(sortLambda, terminator.getOperation()->getBlock());
          sortLambda->getArgument(0).replaceAllUsesWith(tupleLeft);
          sortLambda->getArgument(1).replaceAllUsesWith(tupleRight);
          mlir::dsa::YieldOp yieldOp = mlir::cast<mlir::dsa::YieldOp>(terminator->getPrevNode());
@@ -110,7 +110,8 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
 
             auto term = builder.create<mlir::scf::YieldOp>(forOp->getLoc());
             builder.setInsertionPoint(term);
-            rewriter.moveBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
+            rewriter.moveBlockBefore(forOp.getBody(), builder.getInsertionBlock());
+            forOp.getBody()->getArguments().front().replaceAllUsesWith(values[0]);
 
             std::vector<Value> results(yieldOp.getResults().begin(), yieldOp.getResults().end());
             rewriter.eraseOp(yieldOp);
@@ -161,7 +162,11 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          values.insert(values.end(), iterargs.begin(), iterargs.end());
          auto term = builder.create<mlir::scf::YieldOp>(forOp->getLoc());
          builder.setInsertionPoint(term);
-         rewriter.moveBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
+         rewriter.moveBlockBefore(forOp.getBody(), builder.getInsertionBlock());
+         auto args = forOp.getBody()->getArguments();
+         for (size_t i = 0; i < args.size() && i < values.size(); ++i) {
+            args[i].replaceAllUsesWith(values[i]);
+         }
 
          std::vector<Value> results(yieldOp.getResults().begin(), yieldOp.getResults().end());
          rewriter.eraseOp(yieldOp);
