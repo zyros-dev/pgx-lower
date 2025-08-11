@@ -11,7 +11,7 @@
 namespace {
 mlir::arith::CmpIPredicateAttr convertToCmpIPred(::mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
-   switch (p.value()) {
+   switch (p.getValue()) {
       case db::DBCmpPredicate::eq:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::eq);
       case db::DBCmpPredicate::neq:
@@ -29,7 +29,7 @@ mlir::arith::CmpIPredicateAttr convertToCmpIPred(::mlir::OpBuilder, ::mlir::db::
 }
 mlir::arith::CmpFPredicateAttr convertToCmpFPred(::mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
-   switch (p.value()) {
+   switch (p.getValue()) {
       case db::DBCmpPredicate::eq:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OEQ);
       case db::DBCmpPredicate::neq:
@@ -59,7 +59,84 @@ mlir::Attribute convertConst(::mlir::Attribute attr, ::mlir::Value v) {
    }
    return attr;
 }
-// #include "SimplifyToArith.inc" // DISABLED - LLVM 20 API changes needed // DISABLED - LLVM 20 API changes needed
+// Pattern implementations
+struct DBCmpToCmpI : public ::mlir::OpRewritePattern<::mlir::db::CmpOp> {
+   using OpRewritePattern<::mlir::db::CmpOp>::OpRewritePattern;
+   
+   ::mlir::LogicalResult matchAndRewrite(::mlir::db::CmpOp op, 
+                                         ::mlir::PatternRewriter &rewriter) const override {
+      if (!op.getLeft().getType().isIntOrIndex() || !op.getRight().getType().isIntOrIndex()) {
+         return ::mlir::failure();
+      }
+      
+      auto pred = convertToCmpIPred(rewriter, op.getPredicateAttr());
+      rewriter.replaceOpWithNewOp<::mlir::arith::CmpIOp>(op, pred, op.getLeft(), op.getRight());
+      return ::mlir::success();
+   }
+};
+
+struct DBCmpToCmpF : public ::mlir::OpRewritePattern<::mlir::db::CmpOp> {
+   using OpRewritePattern<::mlir::db::CmpOp>::OpRewritePattern;
+   
+   ::mlir::LogicalResult matchAndRewrite(::mlir::db::CmpOp op, 
+                                         ::mlir::PatternRewriter &rewriter) const override {
+      if (!op.getLeft().getType().isa<::mlir::FloatType>() || !op.getRight().getType().isa<::mlir::FloatType>()) {
+         return ::mlir::failure();
+      }
+      
+      auto pred = convertToCmpFPred(rewriter, op.getPredicateAttr());
+      rewriter.replaceOpWithNewOp<::mlir::arith::CmpFOp>(op, pred, op.getLeft(), op.getRight());
+      return ::mlir::success();
+   }
+};
+
+struct DBAddToAddI : public ::mlir::OpRewritePattern<::mlir::db::AddOp> {
+   using OpRewritePattern<::mlir::db::AddOp>::OpRewritePattern;
+   
+   ::mlir::LogicalResult matchAndRewrite(::mlir::db::AddOp op, 
+                                         ::mlir::PatternRewriter &rewriter) const override {
+      if (!op.getType().isIntOrIndex()) {
+         return ::mlir::failure();
+      }
+      
+      rewriter.replaceOpWithNewOp<::mlir::arith::AddIOp>(op, op.getLeft(), op.getRight());
+      return ::mlir::success();
+   }
+};
+
+struct DBAddToAddF : public ::mlir::OpRewritePattern<::mlir::db::AddOp> {
+   using OpRewritePattern<::mlir::db::AddOp>::OpRewritePattern;
+   
+   ::mlir::LogicalResult matchAndRewrite(::mlir::db::AddOp op, 
+                                         ::mlir::PatternRewriter &rewriter) const override {
+      if (!op.getType().isa<::mlir::FloatType>()) {
+         return ::mlir::failure();
+      }
+      
+      rewriter.replaceOpWithNewOp<::mlir::arith::AddFOp>(op, op.getLeft(), op.getRight());
+      return ::mlir::success();
+   }
+};
+
+struct DBConstToConst : public ::mlir::OpRewritePattern<::mlir::db::ConstantOp> {
+   using OpRewritePattern<::mlir::db::ConstantOp>::OpRewritePattern;
+   
+   ::mlir::LogicalResult matchAndRewrite(::mlir::db::ConstantOp op, 
+                                         ::mlir::PatternRewriter &rewriter) const override {
+      auto convertedAttr = convertConst(op.getValueAttr(), op.getResult());
+      if (!convertedAttr) {
+         return ::mlir::failure();
+      }
+      
+      auto typedAttr = convertedAttr.dyn_cast<::mlir::TypedAttr>();
+      if (!typedAttr) {
+         return ::mlir::failure();
+      }
+      
+      rewriter.replaceOpWithNewOp<::mlir::arith::ConstantOp>(op, op.getType(), typedAttr);
+      return ::mlir::success();
+   }
+};
 
 //Pattern that optimizes the join order
 class SimplifyToArith : public ::mlir::PassWrapper<SimplifyToArith, ::mlir::OperationPass<::mlir::func::FuncOp>> {

@@ -59,7 +59,7 @@ class SelectionTranslator : public mlir::relalg::Translator {
       } else {
          matched = builder.create<mlir::db::DeriveTruth>(selectionOp.getLoc(), matched);
          builder.create<mlir::scf::IfOp>(
-            selectionOp->getLoc(), ::mlir::TypeRange{}, matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
+            selectionOp->getLoc(), matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
                consumer->consume(this, builder1, context);
                builder1.create<mlir::scf::YieldOp>(selectionOp->getLoc()); });
       }

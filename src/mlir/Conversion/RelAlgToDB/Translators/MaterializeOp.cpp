@@ -82,7 +82,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       }
       tableBuilder = builder.create<mlir::dsa::CreateDS>(materializeOp.getLoc(), mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
       children[0]->produce(context, builder);
-      table = builder.create<mlir::dsa::Finalize>(materializeOp.getLoc(), mlir::dsa::TableType::get(builder.getContext()), tableBuilder).res();
+      table = builder.create<mlir::dsa::Finalize>(materializeOp.getLoc(), mlir::dsa::TableType::get(builder.getContext()), tableBuilder).getRes();
    }
    virtual void done() override {
       materializeOp.replaceAllUsesWith(table);

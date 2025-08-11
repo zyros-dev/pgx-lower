@@ -16,12 +16,16 @@ class LimitTranslator : public mlir::relalg::Translator {
       auto one = builder.create<mlir::arith::ConstantIntOp>(limitOp.getLoc(), 1, 64);
       ::mlir::Value loadedCounter = builder.create<mlir::util::LoadOp>(limitOp.getLoc(), builder.getI64Type(), counter, ::mlir::Value());
       ::mlir::Value addedCounter = builder.create<mlir::arith::AddIOp>(limitOp.getLoc(), loadedCounter, one);
-      ::mlir::Value upper = builder.create<mlir::arith::ConstantIntOp>(limitOp.getLoc(), limitOp.rows(), 64);
+      ::mlir::Value upper = builder.create<mlir::arith::ConstantIntOp>(limitOp.getLoc(), limitOp.getRows(), 64);
       ::mlir::Value considerTuple = builder.create<mlir::arith::CmpIOp>(limitOp.getLoc(), mlir::arith::CmpIPredicate::ule, addedCounter, upper);
-      builder.create<mlir::scf::IfOp>(
-         limitOp->getLoc(), ::mlir::TypeRange{}, considerTuple, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
-            consumer->consume(this, builder1, context);
-            builder1.create<mlir::scf::YieldOp>(limitOp->getLoc()); });
+      auto ifOp = builder.create<mlir::scf::IfOp>(
+         limitOp->getLoc(), considerTuple,
+         [&](mlir::OpBuilder& b, mlir::Location loc) {
+            // Then branch
+            consumer->consume(this, b, context);
+            b.create<mlir::scf::YieldOp>(loc);
+         }
+      );
       builder.create<mlir::util::StoreOp>(limitOp.getLoc(), addedCounter, counter, ::mlir::Value());
    }
 

@@ -41,15 +41,21 @@ class AggregationTranslator : public mlir::relalg::Translator {
             ::mlir::Value isNull2 = rewriter.create<mlir::db::IsNullOp>(loc, rewriter.getI1Type(), rightUnpacked->getResult(i));
             ::mlir::Value anyNull = rewriter.create<mlir::arith::OrIOp>(loc, isNull1, isNull2);
             ::mlir::Value bothNull = rewriter.create<mlir::arith::AndIOp>(loc, isNull1, isNull2);
-            compared = rewriter.create<mlir::scf::IfOp>(
-                                  loc, rewriter.getI1Type(), anyNull, [&](::mlir::OpBuilder& b, ::mlir::Location loc) { b.create<mlir::scf::YieldOp>(loc, bothNull); },
-                                  [&](::mlir::OpBuilder& b, ::mlir::Location loc) {
-                                     ::mlir::Value left = rewriter.create<mlir::db::NullableGetVal>(loc, leftUnpacked->getResult(i));
-                                     ::mlir::Value right = rewriter.create<mlir::db::NullableGetVal>(loc, rightUnpacked->getResult(i));
-                                     ::mlir::Value cmpRes = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, left, right);
-                                     b.create<mlir::scf::YieldOp>(loc, cmpRes);
-                                  })
-                          .getResult(0);
+            auto ifOp = rewriter.create<mlir::scf::IfOp>(
+               loc, mlir::TypeRange{rewriter.getI1Type()}, anyNull,
+               [&](mlir::OpBuilder& b, mlir::Location loc) {
+                  // Then branch
+                  b.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{bothNull});
+               },
+               [&](mlir::OpBuilder& b, mlir::Location loc) {
+                  // Else branch
+                  ::mlir::Value left = b.create<mlir::db::NullableGetVal>(loc, leftUnpacked->getResult(i));
+                  ::mlir::Value right = b.create<mlir::db::NullableGetVal>(loc, rightUnpacked->getResult(i));
+                  ::mlir::Value cmpRes = b.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, left, right);
+                  b.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{cmpRes});
+               }
+            );
+            compared = ifOp.getResult(0);
          } else {
             compared = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, leftUnpacked->getResult(i), rightUnpacked.getResult(i));
          }
@@ -94,7 +100,7 @@ class AggregationTranslator : public mlir::relalg::Translator {
          }
       }
       ::mlir::Block* aggrBuilderBlock = new ::mlir::Block;
-      reduceOp.reduce().push_back(aggrBuilderBlock);
+      reduceOp.getReduce().push_back(aggrBuilderBlock);
       aggrBuilderBlock->addArguments({aggrTupleType, valTupleType}, {aggregationOp->getLoc(), aggregationOp->getLoc()});
       ::mlir::OpBuilder builder2(builder.getContext());
       builder2.setInsertionPointToStart(aggrBuilderBlock);
@@ -143,7 +149,7 @@ class AggregationTranslator : public mlir::relalg::Translator {
       return maxValAttr;
    }
    void analyze(::mlir::OpBuilder& builder) {
-      key = mlir::relalg::OrderedAttributes::fromRefArr(aggregationOp.setGroupByColsAttr());
+      key = mlir::relalg::OrderedAttributes::fromRefArr(aggregationOp.getGroupByCols());
 
       auto counterType = builder.getI64Type();
       mlir::relalg::ReturnOp terminator = mlir::cast<mlir::relalg::ReturnOp>(aggregationOp.getAggrFunc().front().getTerminator());
@@ -356,7 +362,7 @@ class AggregationTranslator : public mlir::relalg::Translator {
          ::mlir::Block* block2 = new ::mlir::Block;
          block2->addArgument(iterEntryType, aggregationOp->getLoc());
          forOp2.getBodyRegion().push_back(block2);
-         ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+         ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
          auto unpacked = builder2.create<mlir::util::UnPackOp>(aggregationOp->getLoc(), forOp2.getInductionVar()).getResults();
          ::mlir::ValueRange unpackedKey;
          if (!keyTupleType.getTypes().empty()) {

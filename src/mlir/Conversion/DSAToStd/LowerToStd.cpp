@@ -14,14 +14,14 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/SCF/Transforms.h"
+#include "mlir/Transforms/Passes.h"
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include <mlir/IR/BuiltinTypes.h>
 
-#include "runtime/DataSourceIteration.h"
+#include "runtime-defs/DataSourceIteration.h"
 using namespace mlir;
 
 namespace {
@@ -36,11 +36,12 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
       if (!funcOp) {
          ::mlir::OpBuilder::InsertionGuard guard(rewriter);
          rewriter.setInsertionPointToStart(parentModule.getBody());
-         funcOp = rewriter.create<::mlir::func::FuncOp>(op->getLoc(), "rt_get_execution_context", rewriter.getFunctionType({}, {mlir::util::RefType::get(getContext(), rewriter.getI8Type())}), rewriter.getStringAttr("private"));
+         auto funcType = rewriter.getFunctionType({}, {mlir::util::RefType::get(getContext(), rewriter.getI8Type())});
+         funcOp = rewriter.create<::mlir::func::FuncOp>(op->getLoc(), "rt_get_execution_context", funcType);
       }
 
       ::mlir::Value executionContext = rewriter.create<mlir::func::CallOp>(op->getLoc(), funcOp, ::mlir::ValueRange{}).getResult(0);
-      ::mlir::Value description = rewriter.create<mlir::util::CreateConstVarLen>(op->getLoc(), mlir::util::VarLen32Type::get(rewriter.getContext()), op.descrAttr());
+      ::mlir::Value description = rewriter.create<mlir::util::CreateConstVarLen>(op->getLoc(), mlir::util::VarLen32Type::get(rewriter.getContext()), op.getDescrAttr());
       auto rawPtr = rt::DataSourceIteration::start(rewriter, op->getLoc())({executionContext, description})[0];
       rewriter.replaceOp(op, rawPtr);
       return success();
@@ -59,7 +60,7 @@ struct DSAToStdLoweringPass
    }
    void runOnOperation() final;
 };
-static TupleType convertTuple(TupleType tupleType, TypeConverter& typeConverter) {
+static TupleType convertTuple(TupleType tupleType, const TypeConverter& typeConverter) {
    std::vector<Type> types;
    for (auto t : tupleType.getTypes()) {
       Type converted = typeConverter.convertType(t);
@@ -69,13 +70,13 @@ static TupleType convertTuple(TupleType tupleType, TypeConverter& typeConverter)
    return TupleType::get(tupleType.getContext(), TypeRange(types));
 }
 } // end anonymous namespace
-static bool hasDSAType(TypeConverter& converter, TypeRange types) {
+static bool hasDSAType(const TypeConverter& converter, TypeRange types) {
    return llvm::any_of(types, [&converter](::mlir::Type t) { auto converted = converter.convertType(t);return converted&&converted!=t; });
 }
 template <class Op>
 class SimpleTypeConversionPattern : public ConversionPattern {
    public:
-   explicit SimpleTypeConversionPattern(TypeConverter& typeConverter, MLIRContext* context)
+   explicit SimpleTypeConversionPattern(const TypeConverter& typeConverter, MLIRContext* context)
       : ConversionPattern(typeConverter, Op::getOperationName(), 1, context) {}
 
    LogicalResult
@@ -151,7 +152,7 @@ void DSAToStdLoweringPass::runOnOperation() {
    mlir::dsa::populateDSAToStdPatterns(typeConverter, patterns);
    mlir::dsa::populateCollectionsToStdPatterns(typeConverter, patterns);
    mlir::util::populateUtilTypeConversionPatterns(typeConverter, patterns);
-   mlir::scf::populateSCFStructuralTypeConversionsAndLegality(typeConverter, patterns, target);
+   // LLVM 20 removed this function - SCF structural conversions are now automatic
    patterns.insert<SimpleTypeConversionPattern<mlir::func::ConstantOp>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::arith::SelectOp>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::CondSkipOp>>(typeConverter, &getContext());

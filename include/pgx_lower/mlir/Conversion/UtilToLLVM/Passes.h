@@ -10,7 +10,7 @@
 namespace mlir {
 namespace util {
 void populateUtilToLLVMConversionPatterns(LLVMTypeConverter& typeConverter, RewritePatternSet& patterns);
-void populateUtilTypeConversionPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns);
+void populateUtilTypeConversionPatterns(const TypeConverter& typeConverter, RewritePatternSet& patterns);
 } // end namespace util
 } // end namespace mlir
 

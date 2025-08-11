@@ -67,15 +67,21 @@ class SetOpTranslator : public mlir::relalg::Translator {
             ::mlir::Value isNull2 = rewriter.create<mlir::db::IsNullOp>(loc, rewriter.getI1Type(), rightUnpacked->getResult(i));
             ::mlir::Value anyNull = rewriter.create<mlir::arith::OrIOp>(loc, isNull1, isNull2);
             ::mlir::Value bothNull = rewriter.create<mlir::arith::AndIOp>(loc, isNull1, isNull2);
-            compared = rewriter.create<mlir::scf::IfOp>(
-                                  loc, rewriter.getI1Type(), anyNull, [&](::mlir::OpBuilder& b, ::mlir::Location loc) { b.create<mlir::scf::YieldOp>(loc, bothNull); },
-                                  [&](::mlir::OpBuilder& b, ::mlir::Location loc) {
-                                     ::mlir::Value left = rewriter.create<mlir::db::NullableGetVal>(loc, leftUnpacked->getResult(i));
-                                     ::mlir::Value right = rewriter.create<mlir::db::NullableGetVal>(loc, rightUnpacked->getResult(i));
-                                     ::mlir::Value cmpRes = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, left, right);
-                                     b.create<mlir::scf::YieldOp>(loc, cmpRes);
-                                  })
-                          .getResult(0);
+            auto ifOp = rewriter.create<mlir::scf::IfOp>(
+               loc, mlir::TypeRange{rewriter.getI1Type()}, anyNull,
+               [&](mlir::OpBuilder& b, mlir::Location loc) {
+                  // Then branch
+                  b.create<mlir::scf::YieldOp>(loc, bothNull);
+               },
+               [&](mlir::OpBuilder& b, mlir::Location loc) {
+                  // Else branch
+                  ::mlir::Value left = b.create<mlir::db::NullableGetVal>(loc, leftUnpacked->getResult(i));
+                  ::mlir::Value right = b.create<mlir::db::NullableGetVal>(loc, rightUnpacked->getResult(i));
+                  ::mlir::Value cmpRes = b.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, left, right);
+                  b.create<mlir::scf::YieldOp>(loc, cmpRes);
+               }
+            );
+            compared = ifOp.getResult(0);
          } else {
             compared = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, leftUnpacked->getResult(i), rightUnpacked.getResult(i));
          }
@@ -111,7 +117,7 @@ class UnionAllTranslator : public SetOpTranslator {
          ::mlir::Block* block2 = new ::mlir::Block;
          block2->addArgument(tupleType, unionOp->getLoc());
          forOp2.getBodyRegion().push_back(block2);
-         ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+         ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
          auto unpacked = builder2.create<mlir::util::UnPackOp>(unionOp->getLoc(), forOp2.getInductionVar());
          orderedAttributes.setValuesForColumns(context, scope, unpacked.getResults());
          consumer->consume(this, builder2, context);
@@ -171,7 +177,7 @@ class UnionDistinctTranslator : public SetOpTranslator {
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(entryType, unionOp->getLoc());
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+      ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       auto unpacked = builder2.create<mlir::util::UnPackOp>(unionOp->getLoc(), forOp2.getInductionVar()).getResults();
       auto unpackedKey = builder2.create<mlir::util::UnPackOp>(unionOp->getLoc(), unpacked[0]).getResults();
       orderedAttributes.setValuesForColumns(context, scope, unpackedKey);
@@ -223,7 +229,7 @@ class CountingSetTranslator : public SetOpTranslator {
       }
       {
          ::mlir::Block* aggrBuilderBlock = new ::mlir::Block;
-         reduceOp.reduce().push_back(aggrBuilderBlock);
+         reduceOp.getReduce().push_back(aggrBuilderBlock);
          aggrBuilderBlock->addArguments({aggrTupleType, emptyVals.getType()}, {loc, loc});
          ::mlir::OpBuilder::InsertionGuard guard(builder);
          builder.setInsertionPointToStart(aggrBuilderBlock);
@@ -253,7 +259,7 @@ class CountingSetTranslator : public SetOpTranslator {
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(entryType, loc);
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+      ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       auto unpacked = builder2.create<mlir::util::UnPackOp>(loc, forOp2.getInductionVar()).getResults();
       auto unpackedKey = builder2.create<mlir::util::UnPackOp>(loc, unpacked[0]).getResults();
       orderedAttributes.setValuesForColumns(context, scope, unpackedKey);
@@ -264,10 +270,14 @@ class CountingSetTranslator : public SetOpTranslator {
             ::mlir::Value leftNonZero = builder2.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, unpackedVal[0], zeroI64);
             ::mlir::Value rightZero = builder2.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, unpackedVal[1], zeroI64);
             ::mlir::Value outputTuple = builder2.create<mlir::arith::AndIOp>(loc, leftNonZero, rightZero);
-            builder2.create<mlir::scf::IfOp>(
-               loc, ::mlir::TypeRange{}, outputTuple, [&](::mlir::OpBuilder& b, ::mlir::Location) {
-               consumer->consume(this, b, context);
-               b.create<mlir::scf::YieldOp>(loc); });
+            auto ifOp2 = builder2.create<mlir::scf::IfOp>(
+               loc, outputTuple,
+               [&](mlir::OpBuilder& b, mlir::Location loc) {
+                  // Then branch
+                  consumer->consume(this, b, context);
+                  b.create<mlir::scf::YieldOp>(loc);
+               }
+            );
          } else {
             ::mlir::Value remaining = builder2.create<mlir::arith::SubIOp>(loc, unpackedVal[0], unpackedVal[1]);
             ::mlir::Value ltZ = builder2.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, remaining, zeroI64);
@@ -286,10 +296,14 @@ class CountingSetTranslator : public SetOpTranslator {
             ::mlir::Value leftNonZero = builder2.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, unpackedVal[0], zeroI64);
             ::mlir::Value rightNonZero = builder2.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, unpackedVal[1], zeroI64);
             ::mlir::Value outputTuple = builder2.create<mlir::arith::AndIOp>(loc, leftNonZero, rightNonZero);
-            builder2.create<mlir::scf::IfOp>(
-               loc, ::mlir::TypeRange{}, outputTuple, [&](::mlir::OpBuilder& b, ::mlir::Location) {
+            auto ifOp = builder2.create<mlir::scf::IfOp>(
+               loc, outputTuple,
+               [&](mlir::OpBuilder& b, mlir::Location loc) {
+                  // Then branch
                   consumer->consume(this, b, context);
-                  b.create<mlir::scf::YieldOp>(loc); });
+                  b.create<mlir::scf::YieldOp>(loc);
+               }
+            );
          } else {
 
             ::mlir::Value lGtR = builder2.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, unpackedVal[0], unpackedVal[1]);

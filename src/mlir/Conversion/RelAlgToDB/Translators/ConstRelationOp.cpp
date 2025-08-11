@@ -19,7 +19,7 @@ class ConstRelTranslator : public mlir::relalg::Translator {
       mlir::relalg::OrderedAttributes attributes = mlir::relalg::OrderedAttributes::fromRefArr(constRelationOp.getColumns());
       auto tupleType = attributes.getTupleType(builder.getContext());
       ::mlir::Value vector = builder.create<mlir::dsa::CreateDS>(constRelationOp.getLoc(), mlir::dsa::VectorType::get(builder.getContext(), tupleType));
-      for (auto rowAttr : constRelationOp.valuesAttr()) {
+      for (auto rowAttr : constRelationOp.getValuesAttr()) {
          auto row = rowAttr.cast<ArrayAttr>();
          std::vector<Value> values;
          size_t i = 0;
@@ -45,7 +45,7 @@ class ConstRelTranslator : public mlir::relalg::Translator {
          ::mlir::Block* block2 = new ::mlir::Block;
          block2->addArgument(tupleType, constRelationOp->getLoc());
          forOp2.getBodyRegion().push_back(block2);
-         ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+         ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
          auto unpacked = builder2.create<mlir::util::UnPackOp>(constRelationOp->getLoc(), forOp2.getInductionVar());
          attributes.setValuesForColumns(context, scope, unpacked.getResults());
          consumer->consume(this, builder2, context);

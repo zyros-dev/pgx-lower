@@ -38,11 +38,15 @@ class CollectionJoinImpl : public mlir::relalg::JoinImpl {
       }
    }
    virtual void handleLookup(::mlir::Value matched, ::mlir::Value /*marker*/, mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      builder.create<mlir::scf::IfOp>(
-         loc, ::mlir::TypeRange{}, matched, [&](::mlir::OpBuilder& builder, ::mlir::Location loc) {
-            ::mlir::Value packed = cols.pack(context,builder,loc);
-            builder.create<mlir::dsa::Append>(loc, vector, packed);
-            builder.create<mlir::scf::YieldOp>(loc, ::mlir::ValueRange{}); }, [&](::mlir::OpBuilder& builder, ::mlir::Location loc) { builder.create<mlir::scf::YieldOp>(loc, ::mlir::ValueRange{}); });
+      auto ifOp = builder.create<mlir::scf::IfOp>(
+         loc, matched,
+         [&](mlir::OpBuilder& b, mlir::Location loc) {
+            // Then branch
+            ::mlir::Value packed = cols.pack(context, b, loc);
+            b.create<mlir::dsa::Append>(loc, vector, packed);
+            b.create<mlir::scf::YieldOp>(loc);
+         }
+      );
    }
 
    void beforeLookup(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
@@ -153,16 +157,20 @@ class ReversedSemiJoinImpl : public mlir::relalg::JoinImpl {
    }
 
    virtual void handleLookup(::mlir::Value matched, ::mlir::Value markerPtr, mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      builder.create<mlir::scf::IfOp>(
-         loc, ::mlir::TypeRange{}, matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
-            auto const1 = builder1.create<mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
-            auto markerBefore = builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, ::mlir::ValueRange{});
+      auto ifOp = builder.create<mlir::scf::IfOp>(
+         loc, matched,
+         [&](mlir::OpBuilder& b, mlir::Location loc) {
+            // Then branch
+            auto const1 = b.create<mlir::arith::ConstantOp>(loc, b.getIntegerType(64), b.getI64IntegerAttr(1));
+            auto markerBefore = b.create<mlir::memref::AtomicRMWOp>(loc, b.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, ::mlir::ValueRange{});
             {
-               auto zero = builder1.create<mlir::arith::ConstantOp>(loc, markerBefore.getType(), builder1.getIntegerAttr(markerBefore.getType(), 0));
-               auto isZero = builder1.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, markerBefore, zero);
-               translator->handlePotentialMatch(builder,context,isZero);
+               auto zero = b.create<mlir::arith::ConstantOp>(loc, markerBefore.getType(), b.getIntegerAttr(markerBefore.getType(), 0));
+               auto isZero = b.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, markerBefore, zero);
+               translator->handlePotentialMatch(b, context, isZero);
             }
-            builder1.create<mlir::scf::YieldOp>(loc); });
+            b.create<mlir::scf::YieldOp>(loc);
+         }
+      );
    }
 
    virtual ~ReversedSemiJoinImpl() {}
@@ -177,11 +185,15 @@ class ReversedAntiSemiJoinImpl : public mlir::relalg::JoinImpl {
    ReversedAntiSemiJoinImpl(mlir::relalg::AntiSemiJoinOp innerJoinOp) : mlir::relalg::JoinImpl(innerJoinOp, innerJoinOp.getLeft(), innerJoinOp.getRight(), true) {}
 
    virtual void handleLookup(::mlir::Value matched, ::mlir::Value markerPtr, mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      builder.create<mlir::scf::IfOp>(
-         loc, ::mlir::TypeRange{}, matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location loc) {
-            auto const1 = builder1.create<mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
-            builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, ::mlir::ValueRange{});
-            builder1.create<mlir::scf::YieldOp>(loc, ::mlir::ValueRange{}); });
+      auto ifOp = builder.create<mlir::scf::IfOp>(
+         loc, matched,
+         [&](mlir::OpBuilder& b, mlir::Location loc) {
+            // Then branch
+            auto const1 = b.create<mlir::arith::ConstantOp>(loc, b.getIntegerType(64), b.getI64IntegerAttr(1));
+            b.create<mlir::memref::AtomicRMWOp>(loc, b.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, ::mlir::ValueRange{});
+            b.create<mlir::scf::YieldOp>(loc);
+         }
+      );
    }
    virtual void after(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       translator->scanHT(context, builder);

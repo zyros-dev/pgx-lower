@@ -24,7 +24,7 @@ struct AnyMatcher : public Matcher {
 std::optional<std::string> getConstantString(::mlir::Value v) {
    if (auto* defOp = v.getDefiningOp()) {
       if (auto constOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(defOp)) {
-         if (auto strAttr = constOp.getValue().dyn_cast_or_null<::mlir::StringAttr>()) {
+         if (auto strAttr = constOp.getConstantValue().dyn_cast_or_null<::mlir::StringAttr>()) {
             return strAttr.str();
          }
       }

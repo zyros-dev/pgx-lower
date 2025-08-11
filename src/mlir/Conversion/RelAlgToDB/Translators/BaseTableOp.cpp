@@ -22,7 +22,7 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       std::string tableName = cast<::mlir::StringAttr>(baseTableOp->getAttr("table_identifier")).str();
       std::string scanDescription = R"({ "table": ")" + tableName + R"(", "columns": [ )";
       bool first = true;
-      for (auto namedAttr : baseTableOp.columnsAttr().getValue()) {
+      for (auto namedAttr : baseTableOp.getColumnsAttr()) {
          auto identifier = namedAttr.getName();
          auto attr = namedAttr.getValue();
          auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
@@ -50,12 +50,12 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       ::mlir::Block* block = new ::mlir::Block;
       block->addArgument(recordBatch, baseTableOp->getLoc());
       forOp.getBodyRegion().push_back(block);
-      ::mlir::OpBuilder builder1(forOp.getBodyRegion());
+      ::mlir::OpBuilder builder1 = OpBuilder::atBlockBegin(&forOp.getBodyRegion().front());
       auto forOp2 = builder1.create<mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange{}, forOp.getInductionVar(), ::mlir::Value(), ::mlir::ValueRange{});
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(recordBatch.getElementType(), baseTableOp->getLoc());
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+      ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       size_t i = 0;
       for (const auto* attr : cols) {
          std::vector<::mlir::Type> types;

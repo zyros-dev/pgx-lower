@@ -1,3 +1,4 @@
+#include <optional>
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/DSA/IR/DSATypes.h"
 
@@ -11,7 +12,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Transforms/DialectConversion.h>
 
-#include "runtime/DataSourceIteration.h"
+#include "runtime-defs/DataSourceIteration.h"
 using namespace mlir;
 
 class WhileIterator {
@@ -22,8 +23,8 @@ class WhileIterator {
    WhileIterator(::mlir::MLIRContext* context) : context(context), loc(mlir::UnknownLoc::get(context)) {}
 
    public:
-   void setTypeConverter(TypeConverter* typeConverter) {
-      WhileIterator::typeConverter = typeConverter;
+   void setTypeConverter(const TypeConverter* typeConverter) {
+      WhileIterator::typeConverter = const_cast<TypeConverter*>(typeConverter);
    }
    void setLoc(::mlir::Location loc) {
       this->loc = loc;
@@ -62,8 +63,8 @@ class ForIterator {
    }
    virtual Value getElement(OpBuilder& builder, Value index) = 0;
    virtual ~ForIterator() {}
-   void setTypeConverter(TypeConverter* typeConverter) {
-      ForIterator::typeConverter = typeConverter;
+   void setTypeConverter(const TypeConverter* typeConverter) {
+      ForIterator::typeConverter = const_cast<TypeConverter*>(typeConverter);
    }
 };
 class TableIterator2 : public WhileIterator {
@@ -251,7 +252,7 @@ class WhileIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
    public:
    WhileIteratorIterationImpl(std::unique_ptr<WhileIterator> iterator) : iterator(std::move(iterator)) {
    }
-   virtual std::vector<Value> implementLoop(::mlir::Location loc, ::mlir::ValueRange iterArgs, Value flag, ::mlir::TypeConverter& typeConverter, ConversionPatternRewriter& builder, ModuleOp parentModule, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) override {
+   virtual std::vector<Value> implementLoop(::mlir::Location loc, ::mlir::ValueRange iterArgs, Value flag, const ::mlir::TypeConverter& typeConverter, ConversionPatternRewriter& builder, ModuleOp parentModule, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) override {
       auto insertionPoint = builder.saveInsertionPoint();
 
       iterator->setTypeConverter(&typeConverter);
@@ -312,19 +313,19 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
    public:
    ForIteratorIterationImpl(std::unique_ptr<ForIterator> iterator) : iterator(std::move(iterator)) {
    }
-   virtual std::vector<Value> implementLoop(::mlir::Location loc, ::mlir::ValueRange iterArgs, Value flag, ::mlir::TypeConverter& typeConverter, ConversionPatternRewriter& builder, ModuleOp parentModule, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) override {
+   virtual std::vector<Value> implementLoop(::mlir::Location loc, ::mlir::ValueRange iterArgs, Value flag, const ::mlir::TypeConverter& typeConverter, ConversionPatternRewriter& builder, ModuleOp parentModule, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) override {
       if (flag) {
          return implementLoopCondition(loc, iterArgs, flag, typeConverter, builder, bodyBuilder);
       } else {
          return implementLoopSimple(loc, iterArgs, typeConverter, builder, bodyBuilder);
       }
    }
-   std::vector<Value> implementLoopSimple(::mlir::Location loc, const ValueRange& iterArgs, TypeConverter& typeConverter, ConversionPatternRewriter& builder, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) {
+   std::vector<Value> implementLoopSimple(::mlir::Location loc, const ValueRange& iterArgs, const TypeConverter& typeConverter, ConversionPatternRewriter& builder, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) {
       auto insertionPoint = builder.saveInsertionPoint();
       iterator->setTypeConverter(&typeConverter);
       iterator->init(builder);
       iterator->setLoc(loc);
-      auto forOp = builder.create<scf::ForOp>(loc, iterator->lower(builder), iterator->upper(builder), iterator->step(builder), iterArgs.size() ? iterArgs : llvm::None);
+      auto forOp = builder.create<scf::ForOp>(loc, iterator->lower(builder), iterator->upper(builder), iterator->step(builder), iterArgs.size() ? iterArgs : std::nullopt);
       if (iterArgs.size()) {
          builder.setInsertionPointToStart(forOp.getBody());
          builder.create<scf::YieldOp>(loc);
@@ -343,7 +344,7 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
       builder.restoreInsertionPoint(insertionPoint);
       return std::vector<Value>(forOp.getResults().begin(), forOp.getResults().end());
    }
-   std::vector<Value> implementLoopCondition(::mlir::Location loc, const ValueRange& iterArgs, Value flag, TypeConverter& typeConverter, ConversionPatternRewriter& builder, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) {
+   std::vector<Value> implementLoopCondition(::mlir::Location loc, const ValueRange& iterArgs, Value flag, const TypeConverter& typeConverter, ConversionPatternRewriter& builder, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) {
       auto insertionPoint = builder.saveInsertionPoint();
 
       iterator->setTypeConverter(&typeConverter);

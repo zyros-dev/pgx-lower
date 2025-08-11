@@ -21,7 +21,7 @@ void NLJoinTranslator::scanHT(mlir::relalg::TranslatorContext& context, ::mlir::
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(tupleType, loc);
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+      ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       auto unpacked = builder2.create<mlir::util::UnPackOp>(loc, forOp2.getInductionVar());
       orderedAttributesLeft.setValuesForColumns(context, scope, unpacked.getResults());
       Value marker = impl->markable ? unpacked.getResult(unpacked.getNumResults() - 1) : Value();
@@ -38,7 +38,7 @@ void NLJoinTranslator::probe(::mlir::OpBuilder& builder, mlir::relalg::Translato
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(tupleType, loc);
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+      ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       auto unpacked = builder2.create<mlir::util::UnPackOp>(loc, forOp2.getInductionVar());
       orderedAttributesLeft.setValuesForColumns(context, scope, unpacked.getResults());
       Value markerLeft = impl->markable ? unpacked.getResult(unpacked.getNumResults() - 1) : Value();
