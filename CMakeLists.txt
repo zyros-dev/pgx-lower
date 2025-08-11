@@ -85,17 +85,18 @@ enable_testing()
 add_custom_target(build_includes)
 set(runtime_funcs_ptr_libs "")
 
-# Add tools for runtime header generation - TODO: Fix for LLVM 20
-# add_subdirectory(tools/build-tools)
+# Add tools for runtime header generation
+# add_subdirectory(tools/build-tools)  # Skip building - use existing binary
 
-# Create stub gen_rt_def function since tools are disabled
+# Stub gen_rt_def function - runtime tool has symbol errors
 function(gen_rt_def target_name header_file)
-    # Create dummy target for now - TODO: implement proper runtime header generation
-    add_custom_target(${target_name}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/include/compiler/runtime
-        COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/include/compiler/runtime/${header_file}
-        COMMENT "Stubbing runtime header ${header_file}"
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/include/runtime-defs
+        COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file}
+        COMMENT "Stubbing runtime header ${header_file} (tool has symbol errors)"
     )
+    add_custom_target(${target_name} ALL DEPENDS ${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file})
 endfunction()
 
 # Skip runtime header generation for now - we'll use manual wrappers

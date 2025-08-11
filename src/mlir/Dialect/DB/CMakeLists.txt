@@ -5,6 +5,7 @@ add_public_tablegen_target(MLIRDBEliminateNullsIncGen)
 #mlir_tablegen(SimplifyToArith.inc -gen-rewriters)
 #add_public_tablegen_target(#MLIRDBSimplifyToArithIncGen)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_BINARY_DIR}/include)
 
 gen_rt_def(dump-rt-defs "DumpRuntime.h")
 gen_rt_def(string-rt-defs "StringRuntime.h")
