@@ -1,7 +1,7 @@
 #!/bin/bash
 
-echo "=== Rolling back src and include directories ==="
-git checkout HEAD -- ./src ./include
+echo "=== Rolling back src, include, tests directories and CMakeLists.txt ==="
+git restore ./src ./include ./tests CMakeLists.txt
 
 echo "✅ Git tree reset complete"
 sleep 1
@@ -22,6 +22,48 @@ cp ./lingo-db/lib/DB/DBOps.cpp ./src/mlir/Dialect/DB/DBOps.cpp
 # Copy DBTypes.cpp from LingoDB, then remove ALL conflicting definitions
 echo "Copying DBTypes.cpp from LingoDB..."
 cp ./lingo-db/lib/DB/DBTypes.cpp ./src/mlir/Dialect/DB/DBTypes.cpp
+
+# Copy runtime headers from LingoDB that are needed for runtime-defs generation
+echo "Copying runtime headers from LingoDB..."
+mkdir -p ./include/runtime
+cp ./lingo-db/include/runtime/DateRuntime.h ./include/runtime/
+cp ./lingo-db/include/runtime/StringRuntime.h ./include/runtime/
+cp ./lingo-db/include/runtime/DumpRuntime.h ./include/runtime/
+# Copy helpers.h as it's likely needed by the runtime headers
+cp ./lingo-db/include/runtime/helpers.h ./include/runtime/
+
+# Copy the build-tools CMakeLists.txt from LingoDB
+echo "Copying build-tools CMakeLists.txt from LingoDB..."
+mkdir -p ./tools/build-tools
+chmod -R u+w ./tools/build-tools
+cp ./lingo-db/tools/build-tools/CMakeLists.txt ./tools/build-tools/
+cp ./lingo-db/tools/build-tools/runtime-header-tool.cpp ./tools/build-tools/
+
+# Add Clang CMake modules to the CMake module path
+echo "Adding Clang CMake modules to CMakeLists.txt..."
+# Find the line with MLIR cmake modules and add Clang after it
+sed -i '/list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")/a\
+# Add Clang CMake modules for runtime-header-tool\
+list(APPEND CMAKE_MODULE_PATH "/usr/lib/llvm-20/lib/cmake/clang")' CMakeLists.txt
+
+# Add include(AddClang) after include(AddLLVM)
+sed -i '/include(AddLLVM)/a\
+include(AddClang)\
+set("CLANG_VERSION" ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH})' CMakeLists.txt
+
+# Remove the old add_subdirectory for tools/build-tools and add it earlier
+sed -i '/^#add_subdirectory(tools\/build-tools)/d' CMakeLists.txt
+sed -i '/^add_subdirectory(tools\/build-tools)/d' CMakeLists.txt
+
+# Add tools/build-tools right after the build_includes target, before any dialect directories
+sed -i '/^add_custom_target(build_includes)/a\
+\
+# Add tools for runtime header generation (must be before dialects)\
+add_subdirectory(tools/build-tools)' CMakeLists.txt
+
+# Remove duplicate gen_rt_def function definitions that may exist
+sed -i '/^# Stub gen_rt_def function/,/^endfunction()/d' CMakeLists.txt
+sed -i '/^function(gen_rt_def target_name header_file)/,/^endfunction()/d' CMakeLists.txt
 
 # ======================================================================================================================
 #                                        TARGETED FIXES
@@ -187,15 +229,24 @@ sed -i '/std::unique_ptr<Pass> clonePass() const override/a\public:\n   Optimize
 
 # Fix 20: Fix FloatType API for LLVM 20
 echo "Fixing FloatType API..."
-# Use the correct static method name - getF64Type not getF64
-sed -i 's/FloatType::getFloat<64>/FloatType::getF64Type/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
-sed -i 's/FloatType::getF64/FloatType::getF64Type/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
+# LLVM 20 doesn't have static getF64() - use builder.getF64Type() instead
+sed -i 's/FloatType::getF64(rewriter\.getContext())/rewriter.getF64Type()/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 
 # Fix 21: Remove mlir:: prefix from runtime classes (they might be in global namespace)
 echo "Trying runtime classes without namespace..."
 sed -i 's/mlir::db::DateRuntime::/DateRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 sed -i 's/mlir::db::StringRuntime::/StringRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
 sed -i 's/mlir::db::DumpRuntime::/DumpRuntime::/g' ./src/mlir/Dialect/DB/RuntimeFunctions/RuntimeFunctions.cpp
+
+# Fix 22: Comment out EliminateNulls.cpp temporarily (SCF IfOp lambda API removed in LLVM 20)
+echo "Disabling EliminateNulls.cpp temporarily (SCF IfOp API changes)..."
+sed -i 's|Transforms/EliminateNulls.cpp|#Transforms/EliminateNulls.cpp|g' ./src/mlir/Dialect/DB/CMakeLists.txt
+
+# No need to comment out tools/build-tools - we're providing it
+echo "tools/build-tools copied from LingoDB"
+
+# Don't comment out gen_rt_def calls - we now provide the function
+echo "gen_rt_def function added to CMakeLists.txt - no need to comment out calls"
 
 echo "✅ Targeted fixes complete"
 
