@@ -233,4 +233,4 @@ namespace relalg {
 std::unique_ptr<Pass> createDecomposeLambdasPass() { return std::make_unique<DecomposeLambdas>(); }
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx
+

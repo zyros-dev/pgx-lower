@@ -150,4 +150,4 @@ namespace relalg {
 std::unique_ptr<Pass> createImplicitToExplicitJoinsPass() { return std::make_unique<ImplicitToExplicitJoins>(); }
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx
+

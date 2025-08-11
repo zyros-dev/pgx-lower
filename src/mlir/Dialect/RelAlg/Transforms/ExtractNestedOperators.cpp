@@ -47,4 +47,3 @@ namespace relalg {
 std::unique_ptr<Pass> createExtractNestedOperatorsPass() { return std::make_unique<ExtractNestedOperators>(); }
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx

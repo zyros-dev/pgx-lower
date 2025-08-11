@@ -36,4 +36,4 @@ std::unique_ptr<Pass> createAttachMetaDataPass(runtime::Database& db) { return s
 std::unique_ptr<Pass> createDetachMetaDataPass() { return std::make_unique<DetachMetaData>(); }
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx
+
