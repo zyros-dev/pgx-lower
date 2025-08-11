@@ -11,8 +11,8 @@ static ::mlir::Value convertValue(::mlir::OpBuilder& builder, ::mlir::Value v, :
       return builder.create<mlir::arith::IndexCastOp>(loc, t, v);
    }
    if (currentType.isa<mlir::IntegerType>() && t.isa<mlir::IntegerType>()) {
-      auto targetWidth = t.cast<mlir::IntegerType>().getWidth();
-      auto sourceWidth = currentType.cast<mlir::IntegerType>().getWidth();
+      auto targetWidth = llvm::cast<mlir::IntegerType>(t).getWidth();
+      auto sourceWidth = llvm::cast<mlir::IntegerType>(currentType).getWidth();
       if (targetWidth > sourceWidth) {
          return builder.create<mlir::arith::ExtSIOp>(loc, t, v);
       } else {

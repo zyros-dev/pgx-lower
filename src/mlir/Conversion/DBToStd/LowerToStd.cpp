@@ -148,7 +148,7 @@ class AtLowering : public OpConversionPattern<mlir::dsa::At> {
             values[0] = rewriter.create<mlir::arith::MulIOp>(loc, values[0], multiplierConst);
          }
       } else if (auto decimalType = t.dyn_cast_or_null<db::DecimalType>()) {
-         if (typeConverter->convertType(decimalType).cast<mlir::IntegerType>().getWidth() != 128) {
+         if (llvm::cast<mlir::IntegerType>(typeConverter->convertType(decimalType)).getWidth() != 128) {
             values[0] = rewriter.create<arith::TruncIOp>(loc, typeConverter->convertType(decimalType), values[0]);
          }
       }
@@ -204,11 +204,11 @@ class AppendTBLowering : public ConversionPattern {
             val = rewriter.create<mlir::arith::TruncIOp>(loc, arrowPhysicalType, val);
          }
       } else if (auto decimalType = t.dyn_cast_or_null<db::DecimalType>()) {
-         if (typeConverter->convertType(decimalType).cast<mlir::IntegerType>().getWidth() != 128) {
+         if (llvm::cast<mlir::IntegerType>(typeConverter->convertType(decimalType)).getWidth() != 128) {
             val = rewriter.create<arith::ExtSIOp>(loc, rewriter.getIntegerType(128), val);
          }
       }
-      rewriter.create<mlir::dsa::Append>(loc, adaptor.ds(), val, adaptor.getValid());
+      rewriter.create<mlir::dsa::Append>(loc, adaptor.getDs(), val, adaptor.getValid());
 
       rewriter.eraseOp(op);
       return success();
@@ -239,7 +239,7 @@ class StringCastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
          } else if (auto decimalType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
             auto scale = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(decimalType.getS()));
             result = rt::StringRuntime::toDecimal(rewriter, loc)({valueToCast, scale})[0];
-            if (typeConverter->convertType(decimalType).cast<mlir::IntegerType>().getWidth() < 128) {
+            if (llvm::cast<mlir::IntegerType>(typeConverter->convertType(decimalType)).getWidth() < 128) {
                auto converted = rewriter.create<arith::TruncIOp>(loc, typeConverter->convertType(decimalType), result);
                result = converted;
             }
@@ -465,7 +465,7 @@ class BinOpLowering : public OpConversionPattern<OpClass> {
 mlir::Value getDecimalScaleMultiplierConstant(::mlir::OpBuilder& builder, int32_t s, ::mlir::Type stdType, ::mlir::Location loc) {
    auto [low, high] = support::getDecimalScaleMultiplier(s);
    std::vector<uint64_t> parts = {low, high};
-   auto multiplier = builder.create<arith::ConstantOp>(loc, stdType, builder.getIntegerAttr(stdType, APInt(stdType.template cast<mlir::IntegerType>().getWidth(), parts)));
+   auto multiplier = builder.create<arith::ConstantOp>(loc, stdType, builder.getIntegerAttr(stdType, APInt(llvm::cast<mlir::IntegerType>(stdType).getWidth(), parts)));
    return multiplier;
 }
 template <class DBOp, class Op>
@@ -531,7 +531,7 @@ class AsNullableOpLowering : public OpConversionPattern<mlir::db::AsNullableOp> 
    public:
    using OpConversionPattern<mlir::db::AsNullableOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::db::AsNullableOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      ::mlir::Value isNull = adaptor.null();
+      ::mlir::Value isNull = adaptor.getNull();
       if (!isNull) {
          isNull = rewriter.create<mlir::arith::ConstantOp>(op->getLoc(), rewriter.getI1Type(), rewriter.getIntegerAttr(rewriter.getI1Type(), 0));
       }
@@ -544,7 +544,7 @@ class NullOpLowering : public OpConversionPattern<mlir::db::NullOp> {
    public:
    using OpConversionPattern<mlir::db::NullOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::db::NullOp nullOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      auto tupleType = typeConverter->convertType(nullOp.getType()).cast<mlir::TupleType>();
+      auto tupleType = llvm::cast<mlir::TupleType>(typeConverter->convertType(nullOp.getType()));
       auto undefValue = rewriter.create<mlir::util::UndefOp>(nullOp->getLoc(), tupleType.getType(1));
       auto trueValue = rewriter.create<arith::ConstantOp>(nullOp->getLoc(), rewriter.getIntegerAttr(rewriter.getI1Type(), 1));
       rewriter.replaceOpWithNewOp<mlir::util::PackOp>(nullOp, tupleType, ValueRange({trueValue, undefValue}));
@@ -628,7 +628,7 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
          if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
             auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());
             std::vector<uint64_t> parts = {low, high};
-            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, APInt(stdType.cast<mlir::IntegerType>().getWidth(), parts)));
+            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, APInt(llvm::cast<mlir::IntegerType>(stdType).getWidth(), parts)));
             return success();
          } else {
             rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, std::get<int64_t>(parseResult)));
@@ -736,7 +736,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             rewriter.replaceOp(op, value);
             return success();
          } else if (auto decimalTargetType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
-            int decimalWidth = typeConverter->convertType(decimalTargetType).cast<mlir::IntegerType>().getWidth();
+            int decimalWidth = llvm::cast<mlir::IntegerType>(typeConverter->convertType(decimalTargetType)).getWidth();
             if (sourceIntWidth < decimalWidth) {
                value = rewriter.create<arith::ExtSIOp>(loc, convertedTargetType, value);
             }
@@ -764,7 +764,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
          if (auto decimalTargetType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
             auto sourceScale = decimalSourceType.getS();
             auto targetScale = decimalTargetType.getS();
-            size_t decimalWidth = convertedSourceType.cast<mlir::IntegerType>().getWidth();
+            size_t decimalWidth = llvm::cast<mlir::IntegerType>(convertedSourceType).getWidth();
             auto [low, high] = support::getDecimalScaleMultiplier(std::max(sourceScale, targetScale) - std::min(sourceScale, targetScale));
             std::vector<uint64_t> parts = {low, high};
             auto multiplier = rewriter.create<arith::ConstantOp>(loc, convertedTargetType, rewriter.getIntegerAttr(convertedTargetType, APInt(decimalWidth, parts)));
@@ -780,7 +780,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             rewriter.replaceOpWithNewOp<arith::DivFOp>(op, convertedTargetType, value, multiplier);
             return success();
          } else if (auto targetIntWidth = getIntegerWidth(scalarTargetType, false)) {
-            int decimalWidth = convertedSourceType.cast<mlir::IntegerType>().getWidth();
+            int decimalWidth = llvm::cast<mlir::IntegerType>(convertedSourceType).getWidth();
             auto multiplier = getDecimalScaleMultiplierConstant(rewriter, decimalSourceType.getS(), convertedSourceType, op->getLoc());
             value = rewriter.create<arith::DivSIOp>(loc, convertedSourceType, value, multiplier);
             if (targetIntWidth < decimalWidth) {
@@ -965,7 +965,7 @@ void DBToStdLoweringPass::runOnOperation() {
 
    target.addDynamicallyLegalOp<util::SizeOfOp>(
       [&typeConverter](util::SizeOfOp op) {
-         auto isLegal = !hasDBType(typeConverter, op.type());
+         auto isLegal = !hasDBType(typeConverter, op.getType());
          return isLegal;
       });
 
@@ -994,7 +994,7 @@ void DBToStdLoweringPass::runOnOperation() {
    });
    typeConverter.addConversion([&](mlir::dsa::GenericIterableType r) { return mlir::dsa::GenericIterableType::get(r.getContext(), typeConverter.convertType(r.getElementType()), r.getIteratorName()); });
    typeConverter.addConversion([&](mlir::dsa::VectorType r) { return mlir::dsa::VectorType::get(r.getContext(), typeConverter.convertType(r.getElementType())); });
-   typeConverter.addConversion([&](mlir::dsa::JoinHashtableType r) { return mlir::dsa::JoinHashtableType::get(r.getContext(), typeConverter.convertType(r.getKeyType()).cast<mlir::TupleType>(), typeConverter.convertType(r.getValType()).cast<mlir::TupleType>()); });
+   typeConverter.addConversion([&](mlir::dsa::JoinHashtableType r) { return mlir::dsa::JoinHashtableType::get(r.getContext(), llvm::cast<mlir::TupleType>(typeConverter.convertType(r.getKeyType())), llvm::cast<mlir::TupleType>(typeConverter.convertType(r.getValType()))); });
    typeConverter.addConversion([&](mlir::dsa::AggregationHashtableType r) { return mlir::dsa::AggregationHashtableType::get(r.getContext(), typeConverter.convertType(r.getKeyType()).cast<mlir::TupleType>(), typeConverter.convertType(r.getValType()).cast<mlir::TupleType>()); });
    typeConverter.addConversion([&](mlir::dsa::TableBuilderType r) { return mlir::dsa::TableBuilderType::get(r.getContext(), typeConverter.convertType(r.getRowType()).cast<mlir::TupleType>()); });
 

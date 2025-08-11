@@ -160,7 +160,7 @@ ColumnSet RenamingOp::getAvailableColumns() {
 }
 ColumnSet mlir::relalg::detail::getSetOpCreatedColumns(::mlir::Operation* op) {
    ColumnSet created;
-   for (::mlir::Attribute attr : op->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
+   for (::mlir::Attribute attr : llvm::cast<::mlir::ArrayAttr>(op->getAttr("mapping"))) {
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       created.insert(&relationDefAttr.getColumn());
    }
@@ -168,7 +168,7 @@ ColumnSet mlir::relalg::detail::getSetOpCreatedColumns(::mlir::Operation* op) {
 }
 ColumnSet mlir::relalg::detail::getSetOpUsedColumns(::mlir::Operation* op) {
    ColumnSet used;
-   for (Attribute attr : op->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
+   for (Attribute attr : llvm::cast<::mlir::ArrayAttr>(op->getAttr("mapping"))) {
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       used.insert(ColumnSet::fromArrayAttr(fromExisting));

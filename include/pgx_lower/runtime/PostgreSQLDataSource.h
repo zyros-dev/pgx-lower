@@ -2,6 +2,7 @@
 #define PGX_LOWER_RUNTIME_POSTGRESQLDATASOURCE_H
 
 #include "runtime/DataSourceIteration.h"
+#include "pgx_lower/runtime/ArrowView.h"
 #include "runtime/helpers.h"
 #include <string>
 #include <functional>

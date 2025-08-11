@@ -643,10 +643,10 @@ extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_sign
 }
 
 // Critical runtime function for DB dialect GetExternalOp lowering
-extern "C" void* DataSource_get(pgx_lower::compiler::runtime::VarLen32 description) {
+extern "C" void* DataSource_get(runtime::VarLen32 description) {
     try {
         // Call the PostgreSQL DataSource factory
-        auto* dataSource = pgx_lower::compiler::runtime::DataSource::get(description);
+        auto* dataSource = runtime::DataSource::get(description);
         return static_cast<void*>(dataSource);
     } catch (const std::exception& e) {
         PGX_ERROR("DataSource_get failed: " + std::string(e.what()));

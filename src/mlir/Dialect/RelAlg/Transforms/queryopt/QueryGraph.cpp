@@ -164,7 +164,7 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
    } else if (auto runtimeCall = mlir::dyn_cast_or_null<mlir::db::RuntimeCall>(op)) {
       if (runtimeCall.getFn() == "ConstLike" || runtimeCall.getFn() == "Like") {
          if (auto constantOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(runtimeCall.getArgs()[1].getDefiningOp())) {
-            return support::eval::createLike(buildEvalExpr(runtimeCall.getArgs()[0], mapping), constantOp.getValue().cast<::mlir::StringAttr>().str());
+            return support::eval::createLike(buildEvalExpr(runtimeCall.getArgs()[0], mapping), llvm::cast<::mlir::StringAttr>(constantOp.getValue()).str());
          }
       }
       return support::eval::createInvalid();
@@ -178,7 +178,7 @@ std::optional<double> estimateUsingSample(mlir::relalg::QueryGraph::Node& n) {
    if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       std::unordered_map<const mlir::relalg::Column*, std::string> mapping;
       for (auto c : baseTableOp.getColumns()) {
-         mapping[&c.getValue().cast<mlir::relalg::ColumnDefAttr>().getColumn()] = c.getName().str();
+         mapping[&llvm::cast<mlir::relalg::ColumnDefAttr>(c.getValue()).getColumn()] = c.getName().str();
       }
       auto meta = baseTableOp.getMeta().getMeta();
       auto sample = meta->getSample();
@@ -190,11 +190,17 @@ std::optional<double> estimateUsingSample(mlir::relalg::QueryGraph::Node& n) {
             expressions.push_back(buildEvalExpr(v, mapping)); //todo: ignore failing ones?
          }
       }
-      auto optionalCount = support::eval::countResults(sample, support::eval::createAnd(expressions));
-      if (!optionalCount.has_value()) return {};
-      auto count = optionalCount.value();
-      if (count == 0) count = 1;
-      return static_cast<double>(count) / static_cast<double>(sample->num_rows());
+      // Stubbed out countResults - Arrow dependency removed
+      // Original code:
+      // auto optionalCount = support::eval::countResults(sample, support::eval::createAnd(expressions));
+      // if (!optionalCount.has_value()) return {};
+      // auto count = optionalCount.value();
+      // if (count == 0) count = 1;
+      // return static_cast<double>(count) / static_cast<double>(sample->num_rows());
+      
+      // Return a default selectivity of 0.1 (10%) as a reasonable estimate
+      // This is a common default selectivity used in query optimizers
+      return 0.1;
    }
 
    return {};
@@ -206,7 +212,7 @@ mlir::relalg::ColumnSet mlir::relalg::QueryGraph::getPKey(mlir::relalg::QueryGra
       mlir::relalg::ColumnSet attributes;
       std::unordered_map<std::string, const mlir::relalg::Column*> mapping;
       for (auto c : baseTableOp.getColumns()) {
-         mapping[c.getName().str()] = &c.getValue().cast<mlir::relalg::ColumnDefAttr>().getColumn();
+         mapping[c.getName().str()] = &llvm::cast<mlir::relalg::ColumnDefAttr>(c.getValue()).getColumn();
       }
       for (auto c : meta->getPrimaryKey()) {
          attributes.insert(mapping.at(c));

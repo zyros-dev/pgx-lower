@@ -27,7 +27,7 @@ class FoldLoadGlobal : public mlir::RewritePattern {
          }
          return mlir::failure();
       }
-      if (auto *memrefDefiningOp = loadOp.memref().getDefiningOp()) {
+      if (auto *memrefDefiningOp = loadOp.getMemref().getDefiningOp()) {
          if (auto getGlobalOp = mlir::dyn_cast_or_null<mlir::memref::GetGlobalOp>(memrefDefiningOp)) {
             if (auto *symbolTableOp = mlir::SymbolTable::getNearestSymbolTable(op)) {
                auto *resolvedOp = mlir::SymbolTable::lookupSymbolIn(symbolTableOp, getGlobalOp.name());
@@ -57,7 +57,7 @@ class FoldLocalLoadStores : public mlir::RewritePattern {
       : RewritePattern(mlir::memref::LoadOp::getOperationName(), 1, context) {}
    ::mlir::LogicalResult matchAndRewrite(::mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
       mlir::memref::LoadOp loadOp = mlir::cast<mlir::memref::LoadOp>(op);
-      if (auto *memrefDefiningOp = loadOp.memref().getDefiningOp()) {
+      if (auto *memrefDefiningOp = loadOp.getMemref().getDefiningOp()) {
          std::vector<::mlir::Operation*> sameBlockUsers;
          for (auto *u : memrefDefiningOp->getUsers()) {
             if (u->getBlock() == loadOp->getBlock() && u->isBeforeInBlock(loadOp) && !mlir::isa<mlir::memref::LoadOp>(u)) {

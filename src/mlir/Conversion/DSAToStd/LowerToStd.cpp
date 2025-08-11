@@ -21,7 +21,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include <mlir/IR/BuiltinTypes.h>
 
-#include "runtime-defs/DataSourceIteration.h"
+#include "runtime/DataSourceIteration.h"
 using namespace mlir;
 
 namespace {
@@ -128,7 +128,7 @@ void DSAToStdLoweringPass::runOnOperation() {
 
    target.addDynamicallyLegalOp<util::SizeOfOp>(
       [&typeConverter](util::SizeOfOp op) {
-         auto isLegal = !hasDSAType(typeConverter, op.type());
+         auto isLegal = !hasDSAType(typeConverter, op.getType());
          return isLegal;
       });
 
