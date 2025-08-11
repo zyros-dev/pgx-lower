@@ -143,7 +143,7 @@ class AggregationTranslator : public mlir::relalg::Translator {
       return maxValAttr;
    }
    void analyze(::mlir::OpBuilder& builder) {
-      key = mlir::relalg::OrderedAttributes::fromRefArr(aggregationOp.group_by_colsAttr());
+      key = mlir::relalg::OrderedAttributes::fromRefArr(aggregationOp.setGroupByColsAttr());
 
       auto counterType = builder.getI64Type();
       mlir::relalg::ReturnOp terminator = mlir::cast<mlir::relalg::ReturnOp>(aggregationOp.getAggrFunc().front().getTerminator());

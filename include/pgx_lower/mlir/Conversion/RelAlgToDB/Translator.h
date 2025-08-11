@@ -54,6 +54,5 @@ class Translator {
 };
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx
 
 #endif // MLIR_CONVERSION_RELALGTODB_TRANSLATOR_H
