@@ -14,7 +14,7 @@ class MapTranslator : public mlir::relalg::Translator {
          builder.getInsertionBlock(), op, [](auto x) { return &x->getRegion(0).front(); }, context, scope);
       assert(computedCols.size() == mapOp.getComputedCols().size());
       for (size_t i = 0; i < computedCols.size(); i++) {
-         context.setValueForAttribute(scope, &mapOp.getComputedCols()[i].cast<mlir::relalg::ColumnDefAttr>().getColumn(), computedCols[i]);
+         context.setValueForAttribute(scope, &cast<mlir::relalg::ColumnDefAttr>(mapOp.getComputedCols()[i]).getColumn(), computedCols[i]);
       }
       consumer->consume(this, builder, context);
    }

@@ -448,7 +448,7 @@ class CreateTableBuilderLowering : public OpConversionPattern<mlir::dsa::CreateD
          return failure();
       }
       auto loc = createOp->getLoc();
-      ::mlir::Value schema = rewriter.create<mlir::util::CreateConstVarLen>(loc, mlir::util::VarLen32Type::get(getContext()), llvm::cast<StringAttr>(createOp.init_attr().value()).str());
+      ::mlir::Value schema = rewriter.create<mlir::util::CreateConstVarLen>(loc, mlir::util::VarLen32Type::get(getContext()), llvm::cast<StringAttr>(createOp.init_attr().getValue()).str());
       Value tableBuilder = rt::TableBuilder::create(rewriter, loc)({schema})[0];
       rewriter.replaceOp(createOp, tableBuilder);
       return success();

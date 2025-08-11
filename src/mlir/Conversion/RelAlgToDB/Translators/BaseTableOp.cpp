@@ -19,10 +19,10 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       std::vector<::mlir::Type> types;
       std::vector<const mlir::relalg::Column*> cols;
       std::vector<::mlir::Attribute> columnNames;
-      std::string tableName = baseTableOp->getAttr("table_identifier").cast<::mlir::StringAttr>().str();
+      std::string tableName = cast<::mlir::StringAttr>(baseTableOp->getAttr("table_identifier")).str();
       std::string scanDescription = R"({ "table": ")" + tableName + R"(", "columns": [ )";
       bool first = true;
-      for (auto namedAttr : baseTableOp.columnsAttr().value()) {
+      for (auto namedAttr : baseTableOp.columnsAttr().getValue()) {
          auto identifier = namedAttr.getName();
          auto attr = namedAttr.getValue();
          auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
@@ -60,11 +60,11 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       for (const auto* attr : cols) {
          std::vector<::mlir::Type> types;
          types.push_back(getBaseType(attr->type));
-         if (attr->type.isa<mlir::db::NullableType>()) {
+         if (isa<mlir::db::NullableType>(attr->type)) {
             types.push_back(builder.getI1Type());
          }
          auto atOp = builder2.create<mlir::dsa::At>(baseTableOp->getLoc(), types, forOp2.getInductionVar(), i++);
-         if (attr->type.isa<mlir::db::NullableType>()) {
+         if (isa<mlir::db::NullableType>(attr->type)) {
             ::mlir::Value isNull = builder2.create<mlir::db::NotOp>(baseTableOp->getLoc(), atOp.getValid());
             ::mlir::Value val = builder2.create<mlir::db::AsNullableOp>(baseTableOp->getLoc(), attr->type, atOp.getVal(), isNull);
             context.setValueForAttribute(scope, attr, val);

@@ -22,10 +22,10 @@ class SetOpTranslator : public mlir::relalg::Translator {
       this->requiredAttributes.insert(op.getUsedColumns());
       propagateInfo();
 
-      for (auto x : unionOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
-         auto columnDef = x.cast<mlir::relalg::ColumnDefAttr>();
-         auto leftRef = columnDef.getFromExisting().cast<::mlir::ArrayAttr>()[0].cast<mlir::relalg::ColumnRefAttr>();
-         auto rightRef = columnDef.getFromExisting().cast<::mlir::ArrayAttr>()[1].cast<mlir::relalg::ColumnRefAttr>();
+      for (auto x : cast<::mlir::ArrayAttr>(unionOp->getAttr("mapping"))) {
+         auto columnDef = cast<mlir::relalg::ColumnDefAttr>(x);
+         auto leftRef = cast<mlir::relalg::ColumnRefAttr>(cast<::mlir::ArrayAttr>(columnDef.getFromExisting())[0]);
+         auto rightRef = cast<mlir::relalg::ColumnRefAttr>(cast<::mlir::ArrayAttr>(columnDef.getFromExisting())[1]);
          leftMapping[&columnDef.getColumn()] = &leftRef.getColumn();
          rightMapping[&columnDef.getColumn()] = &rightRef.getColumn();
       }
