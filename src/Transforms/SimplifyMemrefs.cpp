@@ -19,7 +19,7 @@ class FoldLoadGlobal : public mlir::RewritePattern {
       for (auto i : loadOp.getIndices()) {
          if (auto *idxDefiningOp = i.getDefiningOp()) {
             if (auto constantOp = mlir::dyn_cast_or_null<mlir::arith::ConstantOp>(idxDefiningOp)) {
-               if (auto integerAttr = constantOp.value().dyn_cast_or_null<::mlir::IntegerAttr>()) {
+               if (auto integerAttr = constantOp.getValue().dyn_cast_or_null<::mlir::IntegerAttr>()) {
                   indices.push_back(integerAttr.getInt());
                   continue;
                }

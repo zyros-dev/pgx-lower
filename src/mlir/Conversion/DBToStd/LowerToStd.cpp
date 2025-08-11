@@ -614,11 +614,11 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
       auto stdType = typeConverter->convertType(type);
       auto [arrowType, param1, param2] = convertTypeToArrow(type);
       std::variant<int64_t, double, std::string> parseArg;
-      if (auto integerAttr = constantOp.value().dyn_cast_or_null<IntegerAttr>()) {
+      if (auto integerAttr = constantOp.getValue().dyn_cast_or_null<IntegerAttr>()) {
          parseArg = integerAttr.getInt();
-      } else if (auto floatAttr = constantOp.value().dyn_cast_or_null<FloatAttr>()) {
+      } else if (auto floatAttr = constantOp.getValue().dyn_cast_or_null<FloatAttr>()) {
          parseArg = floatAttr.getValueAsDouble();
-      } else if (auto stringAttr = constantOp.value().dyn_cast_or_null<StringAttr>()) {
+      } else if (auto stringAttr = constantOp.getValue().dyn_cast_or_null<StringAttr>()) {
          parseArg = stringAttr.str();
       } else {
          return failure();

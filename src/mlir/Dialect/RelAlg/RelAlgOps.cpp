@@ -153,7 +153,7 @@ static void printSortSpecs(OpAsmPrinter& p, ::mlir::Operation* op, ArrayAttr arr
 static ParseResult parseCustDef(OpAsmParser& parser, mlir::relalg::ColumnDefAttr& attr) {
    SymbolRefAttr attrSymbolAttr;
    if (parser.parseAttribute(attrSymbolAttr, parser.getBuilder().getType<::mlir::NoneType>())) { return failure(); }
-   std::string attrName(attrSymbolAttr.getLeafReference().value());
+   std::string attrName(attrSymbolAttr.getLeafReference().getValue());
    if (parser.parseLParen()) { return failure(); }
    DictionaryAttr dictAttr;
    if (parser.parseAttribute(dictAttr)) { return failure(); }
@@ -287,7 +287,7 @@ void mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    std::vector<::mlir::NamedAttribute> colsToPrint;
    for (auto attr : this->getOperation()->getAttrs()) {
       if (attr.getName().str() == "meta") {
-         if (auto metaAttr = attr.value().dyn_cast_or_null<mlir::relalg::TableMetaDataAttr>()) {
+         if (auto metaAttr = attr.getValue().dyn_cast_or_null<mlir::relalg::TableMetaDataAttr>()) {
             if (metaAttr.getMeta()->isPresent()) {
                colsToPrint.push_back(::mlir::NamedAttribute(::mlir::StringAttr::get(getContext(), "meta"), ::mlir::StringAttr::get(getContext(), metaAttr.getMeta()->serialize())));
             }
