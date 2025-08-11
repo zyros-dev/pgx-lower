@@ -1,6 +1,7 @@
 #ifndef MLIR_DIALECT_RELALG_IR_RELALGOPSINTERFACES_H
 #define MLIR_DIALECT_RELALG_IR_RELALGOPSINTERFACES_H
 
+#include <functional>
 #include "llvm/ADT/SmallPtrSet.h"
 
 #include "mlir/Dialect/RelAlg/ColumnSet.h"

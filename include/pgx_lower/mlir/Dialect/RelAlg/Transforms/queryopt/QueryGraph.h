@@ -1,6 +1,7 @@
 #ifndef MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_QUERYGRAPH_H
 #define MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_QUERYGRAPH_H
 
+#include <functional>
 #include "llvm/Support/Debug.h"
 #include <mlir/Dialect/DB/IR/DBOps.h>
 #include <mlir/Dialect/RelAlg/IR/RelAlgOps.h>

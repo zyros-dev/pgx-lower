@@ -1,5 +1,6 @@
 #ifndef MLIR_DIALECT_DB_IR_RUNTIMEFUNCTIONS_H
 #define MLIR_DIALECT_DB_IR_RUNTIMEFUNCTIONS_H
+#include <functional>
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/util/FunctionHelper.h"

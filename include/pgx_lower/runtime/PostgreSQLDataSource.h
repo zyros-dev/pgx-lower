@@ -4,6 +4,7 @@
 #include "runtime/DataSourceIteration.h"
 #include "runtime/helpers.h"
 #include <string>
+#include <functional>
 
 namespace pgx_lower::compiler::runtime {
 
