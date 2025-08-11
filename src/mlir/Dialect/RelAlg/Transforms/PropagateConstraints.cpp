@@ -33,7 +33,7 @@ mlir::Attribute updateAttribute(::mlir::Attribute attr, ReplaceFnT replaceFn) {
 }
 void replaceUsages(::mlir::Operation* op, ReplaceFnT replaceFn) {
    for (auto attr : op->getAttrs()) {
-      op->setAttr(attr.getName(), updateAttribute(attr.value(), replaceFn));
+      op->setAttr(attr.getName(), updateAttribute(attr.getValue(), replaceFn));
    }
 }
 
@@ -61,7 +61,7 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
          }
          auto toMap = keys;
          toMap.remove(reducedKeys);
-         aggr.group_by_colsAttr(reducedKeys.asRefArrayAttr(aggr->getContext()));
+         aggr.setGroupByColsAttr(reducedKeys.asRefArrayAttr(aggr->getContext()));
          auto& colManager = getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
          auto scope = colManager.getUniqueScope("aggr");
          std::unordered_map<const mlir::relalg::Column*, const mlir::relalg::Column*> mapping;
@@ -79,7 +79,7 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
          }
          rewriter.create<mlir::relalg::ReturnOp>(aggr->getLoc(), values);
          rewriter.eraseOp(terminator);
-         aggr.computed_colsAttr(::mlir::ArrayAttr::get(aggr.getContext(), computedCols));
+         aggr.setComputedColsAttr(::mlir::ArrayAttr::get(aggr.getContext(), computedCols));
          replaceUsagesAfter(aggr.getOperation(), [&](mlir::relalg::ColumnRefAttr attr) {
             if (mapping.count(&attr.getColumn())) {
                return colManager.createRef(mapping.at(&attr.getColumn()));

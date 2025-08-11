@@ -83,5 +83,4 @@ class OrderedAttributes {
 };
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx
 #endif // MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H

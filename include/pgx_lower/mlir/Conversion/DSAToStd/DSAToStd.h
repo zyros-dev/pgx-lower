@@ -17,6 +17,5 @@ std::unique_ptr<Pass> createLowerToStdPass();
 
 } // end namespace dsa
 } // end namespace mlir
-} // end namespace pgx
 
 #endif // MLIR_CONVERSION_DSATOSTD_DSATOSTD_H
