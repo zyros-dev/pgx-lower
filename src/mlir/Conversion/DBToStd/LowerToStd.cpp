@@ -18,7 +18,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/SCF/Transforms.h"
+// Removed SCF/Transforms.h - not needed for conversion patterns
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -800,7 +800,7 @@ class BetweenLowering : public OpConversionPattern<mlir::db::BetweenOp> {
       auto isGteLower = rewriter.create<mlir::db::CmpOp>(betweenOp->getLoc(), betweenOp.lowerInclusive() ? mlir::db::DBCmpPredicate::gte : mlir::db::DBCmpPredicate::gt, betweenOp.getVal(), betweenOp.getLower());
       auto isLteUpper = rewriter.create<mlir::db::CmpOp>(betweenOp->getLoc(), betweenOp.upperInclusive() ? mlir::db::DBCmpPredicate::lte : mlir::db::DBCmpPredicate::lt, betweenOp.getVal(), betweenOp.getUpper());
       auto isInRange = rewriter.create<mlir::db::AndOp>(betweenOp->getLoc(), ValueRange({isGteLower, isLteUpper}));
-      rewriter.replaceOp(betweenOp, isInRange.res());
+      rewriter.replaceOp(betweenOp, isInRange.getRes());
       return success();
    }
 };
@@ -813,7 +813,7 @@ class OneOfLowering : public OpConversionPattern<mlir::db::OneOfOp> {
          compared.push_back(rewriter.create<mlir::db::CmpOp>(oneOfOp->getLoc(), mlir::db::DBCmpPredicate::eq, oneOfOp.getVal(), ele));
       }
       auto isInRange = rewriter.create<mlir::db::OrOp>(oneOfOp->getLoc(), compared);
-      rewriter.replaceOp(oneOfOp, isInRange.res());
+      rewriter.replaceOp(oneOfOp, isInRange.getRes());
       return success();
    }
 };

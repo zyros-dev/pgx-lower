@@ -39,7 +39,7 @@ class CollectionJoinImpl : public mlir::relalg::JoinImpl {
    }
    virtual void handleLookup(::mlir::Value matched, ::mlir::Value /*marker*/, mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       builder.create<mlir::scf::IfOp>(
-         loc, ::mlir::TypeRange{}, matched, [&](::mlir::OpBuilder& builder, ::mlir::Location loc) {
+         loc, matched, [&](::mlir::OpBuilder& builder, ::mlir::Location loc) {
             ::mlir::Value packed = cols.pack(context,builder,loc);
             builder.create<mlir::dsa::Append>(loc, vector, packed);
             builder.create<mlir::scf::YieldOp>(loc, ::mlir::ValueRange{}); }, [&](::mlir::OpBuilder& builder, ::mlir::Location loc) { builder.create<mlir::scf::YieldOp>(loc, ::mlir::ValueRange{}); });
@@ -154,7 +154,7 @@ class ReversedSemiJoinImpl : public mlir::relalg::JoinImpl {
 
    virtual void handleLookup(::mlir::Value matched, ::mlir::Value markerPtr, mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       builder.create<mlir::scf::IfOp>(
-         loc, ::mlir::TypeRange{}, matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
+         loc, matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
             auto const1 = builder1.create<mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
             auto markerBefore = builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, ::mlir::ValueRange{});
             {
@@ -178,7 +178,7 @@ class ReversedAntiSemiJoinImpl : public mlir::relalg::JoinImpl {
 
    virtual void handleLookup(::mlir::Value matched, ::mlir::Value markerPtr, mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       builder.create<mlir::scf::IfOp>(
-         loc, ::mlir::TypeRange{}, matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location loc) {
+         loc, matched, [&](::mlir::OpBuilder& builder1, ::mlir::Location loc) {
             auto const1 = builder1.create<mlir::arith::ConstantOp>(loc, builder1.getIntegerType(64), builder1.getI64IntegerAttr(1));
             builder1.create<mlir::memref::AtomicRMWOp>(loc, builder1.getIntegerType(64), mlir::arith::AtomicRMWKind::assign, const1, markerPtr, ::mlir::ValueRange{});
             builder1.create<mlir::scf::YieldOp>(loc, ::mlir::ValueRange{}); });

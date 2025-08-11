@@ -19,7 +19,7 @@ class LimitTranslator : public mlir::relalg::Translator {
       ::mlir::Value upper = builder.create<mlir::arith::ConstantIntOp>(limitOp.getLoc(), limitOp.rows(), 64);
       ::mlir::Value considerTuple = builder.create<mlir::arith::CmpIOp>(limitOp.getLoc(), mlir::arith::CmpIPredicate::ule, addedCounter, upper);
       builder.create<mlir::scf::IfOp>(
-         limitOp->getLoc(), ::mlir::TypeRange{}, considerTuple, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
+         limitOp->getLoc(), considerTuple, [&](::mlir::OpBuilder& builder1, ::mlir::Location) {
             consumer->consume(this, builder1, context);
             builder1.create<mlir::scf::YieldOp>(limitOp->getLoc()); });
       builder.create<mlir::util::StoreOp>(limitOp.getLoc(), addedCounter, counter, ::mlir::Value());

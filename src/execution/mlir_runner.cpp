@@ -22,10 +22,13 @@
 #include "frontend/SQL/postgresql_ast_translator.h"
 
 // Conversion passes
-#include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
+#include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
+#include "mlir/Conversion/DBToStd/DBToStd.h"
+#include "mlir/Conversion/DSAToStd/DSAToStd.h"
 
 // Centralized pass pipeline
 #include "mlir/Transforms/Passes.h"
+#include "mlir/Passes.h"
 
 // PostgreSQL error handling (only include when not building unit tests)
 #ifndef BUILDING_UNIT_TESTS

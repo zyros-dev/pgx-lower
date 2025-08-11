@@ -79,6 +79,7 @@ include(PostgreSQLExtension)
 include_directories(
     ${CMAKE_SOURCE_DIR}/include/pgx_lower
     ${CMAKE_BINARY_DIR}/include/pgx_lower
+    ${CMAKE_BINARY_DIR}/include  # For runtime-defs headers
     ${PostgreSQL_INCLUDE_DIRS}
     ${PostgreSQL_SERVER_INCLUDE_DIRS}
 )
@@ -151,9 +152,9 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/utility/logging_tools.cpp
         src/utility/ir_debug_utils.cpp
         src/runtime/helpers.cpp
+        src/mlir/Passes.cpp  # Centralized pass pipeline
         # Note: PostgreSQL runtime files require full PostgreSQL runtime
         # and cannot be easily compiled in unit test environment
-            # Added for centralized pass pipeline
     )
     
     

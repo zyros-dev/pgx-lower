@@ -19,7 +19,7 @@ class ConstRelTranslator : public mlir::relalg::Translator {
       mlir::relalg::OrderedAttributes attributes = mlir::relalg::OrderedAttributes::fromRefArr(constRelationOp.getColumns());
       auto tupleType = attributes.getTupleType(builder.getContext());
       ::mlir::Value vector = builder.create<mlir::dsa::CreateDS>(constRelationOp.getLoc(), mlir::dsa::VectorType::get(builder.getContext(), tupleType));
-      for (auto rowAttr : constRelationOp.valuesAttr()) {
+      for (auto rowAttr : constRelationOp.getValuesAttr()) {
          auto row = rowAttr.cast<ArrayAttr>();
          std::vector<Value> values;
          size_t i = 0;

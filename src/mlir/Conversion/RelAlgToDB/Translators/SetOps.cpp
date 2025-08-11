@@ -223,7 +223,7 @@ class CountingSetTranslator : public SetOpTranslator {
       }
       {
          ::mlir::Block* aggrBuilderBlock = new ::mlir::Block;
-         reduceOp.reduce().push_back(aggrBuilderBlock);
+         reduceOp.getReduce().push_back(aggrBuilderBlock);
          aggrBuilderBlock->addArguments({aggrTupleType, emptyVals.getType()}, {loc, loc});
          ::mlir::OpBuilder::InsertionGuard guard(builder);
          builder.setInsertionPointToStart(aggrBuilderBlock);
@@ -265,7 +265,7 @@ class CountingSetTranslator : public SetOpTranslator {
             ::mlir::Value rightZero = builder2.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, unpackedVal[1], zeroI64);
             ::mlir::Value outputTuple = builder2.create<mlir::arith::AndIOp>(loc, leftNonZero, rightZero);
             builder2.create<mlir::scf::IfOp>(
-               loc, ::mlir::TypeRange{}, outputTuple, [&](::mlir::OpBuilder& b, ::mlir::Location) {
+               loc, outputTuple, [&](::mlir::OpBuilder& b, ::mlir::Location) {
                consumer->consume(this, b, context);
                b.create<mlir::scf::YieldOp>(loc); });
          } else {
@@ -287,7 +287,7 @@ class CountingSetTranslator : public SetOpTranslator {
             ::mlir::Value rightNonZero = builder2.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, unpackedVal[1], zeroI64);
             ::mlir::Value outputTuple = builder2.create<mlir::arith::AndIOp>(loc, leftNonZero, rightNonZero);
             builder2.create<mlir::scf::IfOp>(
-               loc, ::mlir::TypeRange{}, outputTuple, [&](::mlir::OpBuilder& b, ::mlir::Location) {
+               loc, outputTuple, [&](::mlir::OpBuilder& b, ::mlir::Location) {
                   consumer->consume(this, b, context);
                   b.create<mlir::scf::YieldOp>(loc); });
          } else {
