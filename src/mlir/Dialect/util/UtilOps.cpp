@@ -126,7 +126,7 @@ void mlir::util::LoadOp::getEffects(::mlir::SmallVectorImpl<::mlir::SideEffects:
 ::mlir::LogicalResult mlir::util::TupleElementPtrOp::verify() {
    mlir::util::TupleElementPtrOp& op = *this;
    auto resElementType = op.getType().getElementType();
-   auto ptrTupleType = op.getRef().getType().cast<mlir::util::RefType>().getElementType().cast<mlir::TupleType>();
+   auto ptrTupleType = llvm::cast<mlir::TupleType>(llvm::cast<mlir::util::RefType>(op.getRef().getType()).getElementType());
    auto ptrElementType = ptrTupleType.getTypes()[op.getIdx()];
    if (resElementType != ptrElementType) {
       op.emitOpError("Element types do not match");

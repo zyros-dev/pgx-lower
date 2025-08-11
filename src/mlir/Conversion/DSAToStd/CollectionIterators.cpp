@@ -11,7 +11,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Transforms/DialectConversion.h>
 
-#include "runtime-defs/DataSourceIteration.h"
+#include "runtime/DataSourceIteration.h"
 using namespace mlir;
 
 class WhileIterator {
@@ -114,7 +114,7 @@ class JoinHtLookupIterator : public WhileIterator {
    JoinHtLookupIterator(Value tableInfo, Type elementType, bool modifiable = false) : WhileIterator(tableInfo.getContext()), iteratorInfo(tableInfo), modifiable(modifiable) {
    }
    virtual Type iteratorType(OpBuilder& builder) override {
-      tupleType = iteratorInfo.getType().cast<mlir::TupleType>();
+      tupleType = llvm::cast<mlir::TupleType>(iteratorInfo.getType());
       ptrType = tupleType.getType(0);
       return ptrType;
    }
@@ -133,9 +133,9 @@ class JoinHtLookupIterator : public WhileIterator {
       return builder.create<mlir::util::FilterTaggedPtr>(loc, next.getType(), next, hash);
    }
    virtual Value iteratorGetCurrentElement(OpBuilder& builder, Value iterator) override {
-      auto bucketType = iterator.getType().cast<mlir::util::RefType>().getElementType();
-      auto elemType = bucketType.cast<TupleType>().getTypes()[1];
-      auto valType = elemType.cast<TupleType>().getTypes()[1];
+      auto bucketType = llvm::cast<mlir::util::RefType>(iterator.getType()).getElementType();
+      auto elemType = llvm::cast<TupleType>(bucketType).getTypes()[1];
+      auto valType = llvm::cast<TupleType>(elemType).getTypes()[1];
       Value elemAddress = builder.create<util::TupleElementPtrOp>(loc, util::RefType::get(builder.getContext(), elemType), iterator, 1);
       Value loadedValue = builder.create<util::LoadOp>(loc, elemType, elemAddress);
       if (modifiable) {
@@ -193,7 +193,7 @@ class RecordBatchIterator : public ForIterator {
    mlir::dsa::RecordBatchType recordBatchType;
 
    public:
-   RecordBatchIterator(Value recordBatch, Type recordBatchType) : ForIterator(recordBatch.getContext()), recordBatch(recordBatch), recordBatchType(recordBatchType.cast<mlir::dsa::RecordBatchType>()) {
+   RecordBatchIterator(Value recordBatch, Type recordBatchType) : ForIterator(recordBatch.getContext()), recordBatch(recordBatch), recordBatchType(llvm::cast<mlir::dsa::RecordBatchType>(recordBatchType)) {
    }
    virtual Value upper(OpBuilder& builder) override {
       return builder.create<mlir::util::GetTupleOp>(loc, builder.getIndexType(), recordBatch, 0);

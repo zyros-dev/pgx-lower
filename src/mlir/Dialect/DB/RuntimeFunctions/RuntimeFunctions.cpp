@@ -11,7 +11,7 @@ mlir::db::RuntimeFunction* mlir::db::RuntimeFunctionRegistry::lookup(std::string
 }
 static ::mlir::Value dateAddImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments, ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType, ::mlir::TypeConverter* typeConverter,::mlir::Location loc) {
    using namespace mlir;
-   if (originalArgumentTypes[1].cast<mlir::db::IntervalType>().getUnit() == mlir::db::IntervalUnitAttr::daytime) {
+   if (llvm::cast<mlir::db::IntervalType>(originalArgumentTypes[1]).getUnit() == mlir::db::IntervalUnitAttr::daytime) {
       return rewriter.create<mlir::arith::AddIOp>(loc, loweredArguments);
    } else {
       return mlir::util::DateRuntime::addMonths(rewriter, loc)(loweredArguments)[0];
@@ -27,7 +27,7 @@ static ::mlir::Value absIntImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange 
 }
 static ::mlir::Value dateSubImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments, ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType, ::mlir::TypeConverter* typeConverter,::mlir::Location loc) {
    using namespace mlir;
-   if (originalArgumentTypes[1].cast<mlir::db::IntervalType>().getUnit() == mlir::db::IntervalUnitAttr::daytime) {
+   if (llvm::cast<mlir::db::IntervalType>(originalArgumentTypes[1]).getUnit() == mlir::db::IntervalUnitAttr::daytime) {
       return rewriter.create<mlir::arith::SubIOp>(loc, loweredArguments);
    } else {
       return mlir::util::DateRuntime::subtractMonths(rewriter, loc)(loweredArguments)[0];
@@ -140,7 +140,7 @@ static ::mlir::Value dumpValuesImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRa
       }
       mlir::util::DumpRuntime::dumpUInt(rewriter, loc)({isNull, val});
    } else if (auto decType = baseType.dyn_cast_or_null<mlir::db::DecimalType>()) {
-      if (typeConverter->convertType(decType).cast<mlir::IntegerType>().getWidth() < 128) {
+      if (llvm::cast<mlir::IntegerType>(typeConverter->convertType(decType)).getWidth() < 128) {
          auto converted = rewriter.create<arith::ExtSIOp>(loc, rewriter.getIntegerType(128), val);
          val = converted;
       }

@@ -164,7 +164,7 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
    } else if (auto runtimeCall = mlir::dyn_cast_or_null<mlir::db::RuntimeCall>(op)) {
       if (runtimeCall.getFn() == "ConstLike" || runtimeCall.getFn() == "Like") {
          if (auto constantOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(runtimeCall.getArgs()[1].getDefiningOp())) {
-            return support::eval::createLike(buildEvalExpr(runtimeCall.getArgs()[0], mapping), constantOp.getValue().cast<::mlir::StringAttr>().str());
+            return support::eval::createLike(buildEvalExpr(runtimeCall.getArgs()[0], mapping), llvm::cast<::mlir::StringAttr>(constantOp.getValue()).str());
          }
       }
       return support::eval::createInvalid();
@@ -178,7 +178,7 @@ std::optional<double> estimateUsingSample(mlir::relalg::QueryGraph::Node& n) {
    if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       std::unordered_map<const mlir::relalg::Column*, std::string> mapping;
       for (auto c : baseTableOp.getColumns()) {
-         mapping[&c.getValue().cast<mlir::relalg::ColumnDefAttr>().getColumn()] = c.getName().str();
+         mapping[&llvm::cast<mlir::relalg::ColumnDefAttr>(c.getValue()).getColumn()] = c.getName().str();
       }
       auto meta = baseTableOp.getMeta().getMeta();
       auto sample = meta->getSample();
@@ -212,7 +212,7 @@ mlir::relalg::ColumnSet mlir::relalg::QueryGraph::getPKey(mlir::relalg::QueryGra
       mlir::relalg::ColumnSet attributes;
       std::unordered_map<std::string, const mlir::relalg::Column*> mapping;
       for (auto c : baseTableOp.getColumns()) {
-         mapping[c.getName().str()] = &c.getValue().cast<mlir::relalg::ColumnDefAttr>().getColumn();
+         mapping[c.getName().str()] = &llvm::cast<mlir::relalg::ColumnDefAttr>(c.getValue()).getColumn();
       }
       for (auto c : meta->getPrimaryKey()) {
          attributes.insert(mapping.at(c));

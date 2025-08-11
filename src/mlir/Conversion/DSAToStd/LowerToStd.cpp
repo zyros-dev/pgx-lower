@@ -21,7 +21,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include <mlir/IR/BuiltinTypes.h>
 
-#include "runtime-defs/DataSourceIteration.h"
+#include "runtime/DataSourceIteration.h"
 using namespace mlir;
 
 namespace {
