@@ -22,7 +22,7 @@
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 
 // Centralized pass pipeline
-#include "mlir/Passes.h"
+#include "mlir/Transforms/Passes.h"
 
 // PostgreSQL error handling (only include when not building unit tests)
 #ifndef BUILDING_UNIT_TESTS
