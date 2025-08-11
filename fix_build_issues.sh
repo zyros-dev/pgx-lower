@@ -18,71 +18,12 @@ chmod -R u+w ./include ./src ./tools ./tests
 #                                        FIXES
 # ======================================================================================================================
 # ----------------------------------------------------------------------------------------------------------------------
-#                                        FIX #1: CMAKE DEPENDENCY ERROR
-# SOLVES: CMake Error - The dependency target "MLIRDBOpsIncGen" of target "obj.MLIRRelAlg" does not exist
-# JUSTIFICATION: RelAlg CMakeLists.txt references MLIRDBOpsIncGen but should reference PGXLowerDBOpsIncGen
-# EDIT HISTORY: Added sed command to fix incorrect TableGen target reference
+#                                        FIX #1:
+# SOLVES:
+# JUSTIFICATION:
+# EDIT HISTORY:
 # ----------------------------------------------------------------------------------------------------------------------
 
-echo "🔧 Fixing CMake dependency error..."
-sed -i 's/MLIRDBOpsIncGen/PGXLowerDBOpsIncGen/g' src/mlir/Dialect/RelAlg/CMakeLists.txt
-
-# ----------------------------------------------------------------------------------------------------------------------
-#                                        FIX #2: TABLEGEN RECURSIVE SIDE EFFECTS ERROR
-# SOLVES: error: Variable not defined: 'RecursiveSideEffects' in DSAOps.td:214
-# JUSTIFICATION: RecursiveSideEffects trait doesn't exist in MLIR 20, need to replace with correct trait
-# EDIT HISTORY: Added sed command to replace RecursiveSideEffects with NoMemoryEffect trait and NoSideEffect
-# ----------------------------------------------------------------------------------------------------------------------
-
-echo "🔧 Fixing deprecated TableGen traits across all .td files..."
-find include -name "*.td" -exec sed -i 's/RecursiveSideEffects/NoMemoryEffect/g' {} \;
-find include -name "*.td" -exec sed -i 's/NoSideEffect/Pure/g' {} \;
-
-# ----------------------------------------------------------------------------------------------------------------------
-#                                        FIX #3: REMOVE PROBLEMATIC UNIT TESTS
-# SOLVES: Missing conversion headers and problematic unit test compilation errors
-# JUSTIFICATION: Unit tests reference non-existent conversion passes during major refactor
-# EDIT HISTORY: Remove ./tests/unit/ entirely and clean CMakeLists references
-# ----------------------------------------------------------------------------------------------------------------------
-
-echo "🔧 Removing problematic unit tests directory..."
-rm -rf ./tests/unit/
-
-echo "🔧 Deleting unit test block in CMakeLists.txt more carefully..."
-# Delete from add_mlir_unit_test to target_compile_definitions line
-sed -i '/add_mlir_unit_test/,/target_compile_definitions.*mlir_unit_test/d' CMakeLists.txt
-# Don't add extra endif() - there's already one left over
-
-# ----------------------------------------------------------------------------------------------------------------------
-#                                        FIX #4: DSA HEADER COMPILATION ISSUE  
-# SOLVES: DSACollectionType.h compilation errors (file exists but may have include issues)
-# JUSTIFICATION: Header file path was wrong
-# EDIT HISTORY: pgx_lower path was incorrect
-# ----------------------------------------------------------------------------------------------------------------------
-
-echo "🔧 Fixing all pgx_lower include paths globally..."
-find include -name "*.h" -exec sed -i 's/"pgx_lower\/mlir\/Dialect/"mlir\/Dialect/g' {} \;
-find tests -name "*.cpp" -exec sed -i 's/"pgx_lower\/mlir\/Dialect/"mlir\/Dialect/g' {} \;
-
-# ----------------------------------------------------------------------------------------------------------------------
-#                                        FIX #5: DSA FOROP UNTIL ACCESSOR METHOD
-# SOLVES: error: 'until' was not declared in this scope in DSAOps.h.inc:2364:45
-# JUSTIFICATION: DSA ForOp TableGen definition generates until()?2:1 but needs getUntil() accessor
-# EDIT HISTORY: Replace until() with getUntil() - unanimous researcher consensus
-# ----------------------------------------------------------------------------------------------------------------------
-
-echo "🔧 Fix #5: DSA ForOp until() accessor method..."
-sed -i 's/until()?2:1/getUntil()?2:1/g' include/pgx_lower/mlir/Dialect/DSA/IR/DSAOps.td
-
-# ----------------------------------------------------------------------------------------------------------------------
-#                                        FIX #6: UTIL PASSES HEADER EXTRA NAMESPACE BRACE
-# SOLVES: error: expected declaration before '}' token at Passes.h:16
-# JUSTIFICATION: Extra closing brace } // end namespace mlir at line 16 causes syntax error
-# EDIT HISTORY: Remove duplicate namespace closing brace - unanimous researcher consensus
-# ----------------------------------------------------------------------------------------------------------------------
-
-echo "🔧 Fix #6: Remove extra namespace brace in Util header..."
-sed -i '16d' include/pgx_lower/mlir/Conversion/UtilToLLVM/Passes.h
 
 # ======================================================================================================================
 #                                        END MESSAGE
