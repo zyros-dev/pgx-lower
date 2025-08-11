@@ -66,7 +66,7 @@ void mlir::relalg::QueryGraphBuilder::populateQueryGraph(Operator op) {
       NodeSet leftTes = (leftT & tes).any() ? (leftT & tes) : leftT;
       NodeSet rightTes = (rightT & tes).any() ? (rightT & tes) : rightT;
 
-      llvm::std::optional<size_t> createdNode;
+      std::optional<size_t> createdNode;
       if (!created.empty()) {
          size_t newNode = qg.addPseudoNode();
          for (const auto* attr : op.getCreatedColumns()) {
@@ -115,7 +115,7 @@ void QueryGraphBuilder::ensureConnected() {
          NodeSet left = getNodeSetFromClass(alreadyConnected, best1, numNodes);
          NodeSet right = getNodeSetFromClass(alreadyConnected, best2, numNodes);
          //construct cross-product
-         qg.addJoinEdge(left, right, Operator(), llvm::std::optional<size_t>());
+         qg.addJoinEdge(left, right, Operator(), std::optional<size_t>());
       }
 
       size_t newSet = *alreadyConnected.unionSets(best1, best2);
