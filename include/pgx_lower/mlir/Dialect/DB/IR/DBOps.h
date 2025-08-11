@@ -5,9 +5,9 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
-#include "pgx_lower/mlir/Dialect/DB/IR/DBOpsEnums.h"
-#include "pgx_lower/mlir/Dialect/DB/IR/DBOpsInterfaces.h"
-#include "pgx_lower/mlir/Dialect/DB/IR/DBTypes.h"
+#include "mlir/Dialect/DB/IR/DBOpsEnums.h"
+#include "mlir/Dialect/DB/IR/DBOpsInterfaces.h"
+#include "mlir/Dialect/DB/IR/DBTypes.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
