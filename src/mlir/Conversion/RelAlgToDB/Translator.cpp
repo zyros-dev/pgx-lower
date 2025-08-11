@@ -27,7 +27,7 @@ std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir
       op->erase();
    }
    auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(terminator);
-   std::vector<Value> res(returnOp.results().begin(), returnOp.results().end());
+   std::vector<Value> res(returnOp.getResults().begin(), returnOp.getResults().end());
    terminator->erase();
    return res;
 }

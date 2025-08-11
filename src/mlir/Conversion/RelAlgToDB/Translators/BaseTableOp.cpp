@@ -24,7 +24,7 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       bool first = true;
       for (auto namedAttr : baseTableOp.columnsAttr().value()) {
          auto identifier = namedAttr.getName();
-         auto attr = namedAttr.value();
+         auto attr = namedAttr.getValue();
          auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          if (requiredAttributes.contains(&attrDef.getColumn())) {
             if (!first) {

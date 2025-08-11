@@ -178,7 +178,7 @@ ColumnSet mlir::relalg::detail::getSetOpUsedColumns(::mlir::Operation* op) {
 ColumnSet OuterJoinOp::getCreatedColumns() {
    ColumnSet created;
 
-   for (Attribute attr : mapping()) {
+   for (Attribute attr : getMapping()) {
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       created.insert(&relationDefAttr.getColumn());
    }
@@ -190,7 +190,7 @@ ColumnSet OuterJoinOp::getUsedColumns() {
 ColumnSet OuterJoinOp::getAvailableColumns() {
    ColumnSet renamed;
 
-   for (Attribute attr : mapping()) {
+   for (Attribute attr : getMapping()) {
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       renamed.insert(ColumnSet::fromArrayAttr(fromExisting));
@@ -204,7 +204,7 @@ ColumnSet OuterJoinOp::getAvailableColumns() {
 ColumnSet SingleJoinOp::getCreatedColumns() {
    ColumnSet created;
 
-   for (Attribute attr : mapping()) {
+   for (Attribute attr : getMapping()) {
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       created.insert(&relationDefAttr.getColumn());
    }
@@ -216,7 +216,7 @@ ColumnSet SingleJoinOp::getUsedColumns() {
 ColumnSet SingleJoinOp::getAvailableColumns() {
    ColumnSet renamed;
 
-   for (Attribute attr : mapping()) {
+   for (Attribute attr : getMapping()) {
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<ArrayAttr>();
       renamed.insert(ColumnSet::fromArrayAttr(fromExisting));
@@ -229,7 +229,7 @@ ColumnSet SingleJoinOp::getAvailableColumns() {
 }
 ColumnSet CollectionJoinOp::getCreatedColumns() {
    ColumnSet created;
-   created.insert(&collAttr().getColumn());
+   created.insert(&getCollAttr().getColumn());
    return created;
 }
 ColumnSet CollectionJoinOp::getUsedColumns() {
@@ -243,14 +243,14 @@ ColumnSet CollectionJoinOp::getAvailableColumns() {
 }
 ColumnSet MarkJoinOp::getCreatedColumns() {
    ColumnSet created;
-   created.insert(&markattr().getColumn());
+   created.insert(&getMarkattr().getColumn());
    return created;
 }
 
 ColumnSet BaseTableOp::getCreatedColumns() {
    ColumnSet creations;
-   for (auto mapping : columns()) {
-      auto attr = mapping.value();
+   for (auto mapping : getColumns()) {
+      auto attr = mapping.getValue();
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       creations.insert(&relationDefAttr.getColumn());
    }
@@ -258,14 +258,14 @@ ColumnSet BaseTableOp::getCreatedColumns() {
 }
 mlir::relalg::FunctionalDependencies BaseTableOp::getFDs() {
    FunctionalDependencies dependencies;
-   auto metaData = meta().getMeta();
+   auto metaData = getMeta().getMeta();
    if (!metaData->isPresent()) return dependencies;
    if (metaData->getPrimaryKey().empty()) return dependencies;
    auto right = getAvailableColumns();
    std::unordered_set<std::string> pks(metaData->getPrimaryKey().begin(), metaData->getPrimaryKey().end());
    ColumnSet pk;
-   for (auto mapping : columns()) {
-      auto attr = mapping.value();
+   for (auto mapping : getColumns()) {
+      auto attr = mapping.getValue();
       auto relationDefAttr = attr.dyn_cast_or_null<ColumnDefAttr>();
       if (pks.contains(mapping.getName().str())) {
          pk.insert(&relationDefAttr.getColumn());
@@ -277,14 +277,14 @@ mlir::relalg::FunctionalDependencies BaseTableOp::getFDs() {
 }
 ColumnSet mlir::relalg::AggregationOp::getAvailableColumns() {
    ColumnSet available = getCreatedColumns();
-   available.insert(ColumnSet::fromArrayAttr(group_by_cols()));
+   available.insert(ColumnSet::fromArrayAttr(getGroupByCols()));
    return available;
 }
 ColumnSet mlir::relalg::ProjectionOp::getAvailableColumns() {
-   return ColumnSet::fromArrayAttr(cols());
+   return ColumnSet::fromArrayAttr(getCols());
 }
 ColumnSet mlir::relalg::ProjectionOp::getUsedColumns() {
-   return set_semantic() == SetSemantic::distinct ? ColumnSet::fromArrayAttr(cols()) : ColumnSet();
+   return getSetSemantic() == SetSemantic::distinct ? ColumnSet::fromArrayAttr(getCols()) : ColumnSet();
 }
 bool mlir::relalg::detail::isJoin(Operation* op) {
    auto opType = getBinaryOperatorType(op);

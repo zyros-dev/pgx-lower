@@ -50,7 +50,7 @@ class CollectionJoinImpl : public mlir::relalg::JoinImpl {
    }
    void afterLookup(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
-      context.setValueForAttribute(scope, &cast<mlir::relalg::CollectionJoinOp>(joinOp).collAttr().getColumn(), vector);
+      context.setValueForAttribute(scope, &cast<mlir::relalg::CollectionJoinOp>(joinOp).getCollAttr().getColumn(), vector);
       translator->forwardConsume(builder, context);
       builder.create<mlir::dsa::FreeOp>(loc, vector);
    }
@@ -212,7 +212,7 @@ class ConstantSingleJoinTranslator : public mlir::relalg::Translator {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
       this->requiredAttributes.insert(joinOp.getUsedColumns());
-      for (::mlir::Attribute attr : joinOp.mapping()) {
+      for (::mlir::Attribute attr : joinOp.getMapping()) {
          auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
@@ -287,7 +287,7 @@ class MarkJoinImpl : public mlir::relalg::JoinImpl {
    void afterLookup(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
       ::mlir::Value matchFound = builder.create<mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
-      context.setValueForAttribute(scope, &cast<mlir::relalg::MarkJoinOp>(joinOp).markattr().getColumn(), matchFound);
+      context.setValueForAttribute(scope, &cast<mlir::relalg::MarkJoinOp>(joinOp).getMarkattr().getColumn(), matchFound);
       translator->forwardConsume(builder, context);
    }
    virtual ~MarkJoinImpl() {}
@@ -302,14 +302,14 @@ std::unique_ptr<mlir::relalg::Translator> mlir::relalg::Translator::createJoinTr
    bool constant = false;
    if (joinOp->hasAttr("impl")) {
       if (auto impl = joinOp->getAttr("impl").dyn_cast_or_null<::mlir::StringAttr>()) {
-         if (impl.value() == "hash") {
+         if (impl.getValue() == "hash") {
             hash = true;
          }
-         if (impl.value() == "markhash") {
+         if (impl.getValue() == "markhash") {
             hash = true;
             reversed = true;
          }
-         if (impl.value() == "constant") {
+         if (impl.getValue() == "constant") {
             constant = true;
          }
       }

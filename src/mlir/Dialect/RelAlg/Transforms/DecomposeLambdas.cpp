@@ -178,12 +178,12 @@ class DecomposeLambdas : public ::mlir::PassWrapper<DecomposeLambdas, ::mlir::Op
 
       auto* terminator = currentMap.getPredicate().front().getTerminator();
       if (auto returnOp = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(terminator)) {
-         assert(returnOp.results().size() == currentMap.computed_cols().size());
-         auto computedValRange = returnOp.results();
+         assert(returnOp.getResults().size() == currentMap.getComputedCols().size());
+         auto computedValRange = returnOp.getResults();
          for(size_t i=0;i<computedValRange.size();i++){
             OpBuilder builder(currentMap);
             ::mlir::IRMapping mapping;
-            auto currentAttr=currentMap.computed_cols()[i].cast<mlir::relalg::ColumnDefAttr>();
+            auto currentAttr=currentMap.getComputedCols()[i].cast<mlir::relalg::ColumnDefAttr>();
             ::mlir::Value currentVal=computedValRange[i];
             auto newmap = builder.create<relalg::MapOp>(currentMap->getLoc(), mlir::relalg::TupleStreamType::get(builder.getContext()), tree,builder.getArrayAttr({currentAttr}));
             tree = newmap;

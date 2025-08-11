@@ -70,7 +70,7 @@ mlir::Value JoinTranslator::evaluatePredicate(TranslatorContext& context, ::mlir
    bool hasRealPredicate = false;
    if (joinOp->getNumRegions() == 1 && joinOp->getRegion(0).hasOneBlock()) {
       auto terminator = mlir::cast<mlir::relalg::ReturnOp>(joinOp->getRegion(0).front().getTerminator());
-      hasRealPredicate = !terminator.results().empty();
+      hasRealPredicate = !terminator.getResults().empty();
    }
    if (hasRealPredicate) {
       auto val = mergeRelationalBlock(

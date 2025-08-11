@@ -12,9 +12,9 @@ class MapTranslator : public mlir::relalg::Translator {
       auto scope = context.createScope();
       auto computedCols = mergeRelationalBlock(
          builder.getInsertionBlock(), op, [](auto x) { return &x->getRegion(0).front(); }, context, scope);
-      assert(computedCols.size() == mapOp.computed_cols().size());
+      assert(computedCols.size() == mapOp.getComputedCols().size());
       for (size_t i = 0; i < computedCols.size(); i++) {
-         context.setValueForAttribute(scope, &mapOp.computed_cols()[i].cast<mlir::relalg::ColumnDefAttr>().getColumn(), computedCols[i]);
+         context.setValueForAttribute(scope, &mapOp.getComputedCols()[i].cast<mlir::relalg::ColumnDefAttr>().getColumn(), computedCols[i]);
       }
       consumer->consume(this, builder, context);
    }
