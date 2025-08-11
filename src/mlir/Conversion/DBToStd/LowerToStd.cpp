@@ -208,7 +208,7 @@ class AppendTBLowering : public ConversionPattern {
             val = rewriter.create<arith::ExtSIOp>(loc, rewriter.getIntegerType(128), val);
          }
       }
-      rewriter.create<mlir::dsa::Append>(loc, adaptor.ds(), val, adaptor.getValid());
+      rewriter.create<mlir::dsa::Append>(loc, adaptor.getDs(), val, adaptor.getValid());
 
       rewriter.eraseOp(op);
       return success();
@@ -531,7 +531,7 @@ class AsNullableOpLowering : public OpConversionPattern<mlir::db::AsNullableOp> 
    public:
    using OpConversionPattern<mlir::db::AsNullableOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::db::AsNullableOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      ::mlir::Value isNull = adaptor.null();
+      ::mlir::Value isNull = adaptor.getNull();
       if (!isNull) {
          isNull = rewriter.create<mlir::arith::ConstantOp>(op->getLoc(), rewriter.getI1Type(), rewriter.getIntegerAttr(rewriter.getI1Type(), 0));
       }
@@ -965,7 +965,7 @@ void DBToStdLoweringPass::runOnOperation() {
 
    target.addDynamicallyLegalOp<util::SizeOfOp>(
       [&typeConverter](util::SizeOfOp op) {
-         auto isLegal = !hasDBType(typeConverter, op.type());
+         auto isLegal = !hasDBType(typeConverter, op.getType());
          return isLegal;
       });
 

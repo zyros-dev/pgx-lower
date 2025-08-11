@@ -167,7 +167,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          return results;
       };
 
-      std::vector<Value> results = iterator->implementLoop(forOp->getLoc(), adaptor.initArgs(), forOp.getUntil(), *typeConverter, rewriter, parentModule, containsCondSkip ? fn1 : fn2);
+      std::vector<Value> results = iterator->implementLoop(forOp->getLoc(), adaptor.getInitArgs(), forOp.getUntil(), *typeConverter, rewriter, parentModule, containsCondSkip ? fn1 : fn2);
       {
          OpBuilder::InsertionGuard insertionGuard(rewriter);
 

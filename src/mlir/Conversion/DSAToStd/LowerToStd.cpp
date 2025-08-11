@@ -128,7 +128,7 @@ void DSAToStdLoweringPass::runOnOperation() {
 
    target.addDynamicallyLegalOp<util::SizeOfOp>(
       [&typeConverter](util::SizeOfOp op) {
-         auto isLegal = !hasDSAType(typeConverter, op.type());
+         auto isLegal = !hasDSAType(typeConverter, op.getType());
          return isLegal;
       });
 
