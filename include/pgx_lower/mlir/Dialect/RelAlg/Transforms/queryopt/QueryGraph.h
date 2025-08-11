@@ -37,7 +37,7 @@ class QueryGraph {
       NodeSet right;
       NodeSet left;
       double selectivity = 1;
-      llvm::std::optional<size_t> createdNode;
+      std::optional<size_t> createdNode;
       std::optional<std::pair<const mlir::relalg::Column*, const mlir::relalg::Column*>> equality;
 
       [[nodiscard]] bool connects(const NodeSet& s1, const NodeSet& s2) const {
@@ -109,8 +109,8 @@ class QueryGraph {
    }
    static std::optional<std::pair<const mlir::relalg::Column*, const mlir::relalg::Column*>> analyzePredicate(PredicateOperator selection) {
       auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(selection.getPredicateBlock().getTerminator());
-      if (returnOp.results().empty()) return {};
-      ::mlir::Value v = returnOp.results()[0];
+      if (returnOp.getResults().empty()) return {};
+      ::mlir::Value v = returnOp.getResults()[0];
       if (auto cmpOp = mlir::dyn_cast_or_null<mlir::db::CmpOp>(v.getDefiningOp())) {
          if (!cmpOp.isEqualityPred()) return {};
          if (auto leftColref = mlir::dyn_cast_or_null<mlir::relalg::GetColumnOp>(cmpOp.getLeft().getDefiningOp())) {
@@ -121,7 +121,7 @@ class QueryGraph {
       }
       return {};
    }
-   void addJoinEdge(NodeSet left, NodeSet right, Operator op, llvm::std::optional<size_t> createdNode) {
+   void addJoinEdge(NodeSet left, NodeSet right, Operator op, std::optional<size_t> createdNode) {
       assert(left.getValid());
       assert(right.getValid());
 
