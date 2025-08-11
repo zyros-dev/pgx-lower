@@ -3,6 +3,7 @@
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 #include "runtime/Database.h"
 namespace {
 class AttachMetaData : public ::mlir::PassWrapper<AttachMetaData, ::mlir::OperationPass<::mlir::func::FuncOp>> {
@@ -32,8 +33,8 @@ class DetachMetaData : public ::mlir::PassWrapper<DetachMetaData, ::mlir::Operat
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createAttachMetaDataPass(runtime::Database& db) { return std::make_unique<AttachMetaData>(db); }
-std::unique_ptr<Pass> createDetachMetaDataPass() { return std::make_unique<DetachMetaData>(); }
+std::unique_ptr<mlir::Pass> createAttachMetaDataPass(runtime::Database& db) { return std::make_unique<AttachMetaData>(db); }
+std::unique_ptr<mlir::Pass> createDetachMetaDataPass() { return std::make_unique<DetachMetaData>(); }
 } // end namespace relalg
 } // end namespace mlir
 

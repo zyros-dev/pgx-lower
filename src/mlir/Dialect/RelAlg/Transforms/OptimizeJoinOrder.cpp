@@ -6,6 +6,7 @@
 #include "mlir/Dialect/RelAlg/Transforms/queryopt/DPhyp.h"
 #include "mlir/Dialect/RelAlg/Transforms/queryopt/GOO.h"
 #include "mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraphBuilder.h"
+#include "mlir/Pass/Pass.h"
 
 namespace {
 
@@ -133,7 +134,7 @@ class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createOptimizeJoinOrderPass() { return std::make_unique<OptimizeJoinOrder>(); }
+std::unique_ptr<mlir::Pass> createOptimizeJoinOrderPass() { return std::make_unique<OptimizeJoinOrder>(); }
 } // end namespace relalg
 } // end namespace mlir
 

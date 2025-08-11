@@ -3,6 +3,7 @@
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 #include <unordered_set>
 
 namespace {
@@ -230,7 +231,7 @@ class DecomposeLambdas : public ::mlir::PassWrapper<DecomposeLambdas, ::mlir::Op
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createDecomposeLambdasPass() { return std::make_unique<DecomposeLambdas>(); }
+std::unique_ptr<mlir::Pass> createDecomposeLambdasPass() { return std::make_unique<DecomposeLambdas>(); }
 } // end namespace relalg
 } // end namespace mlir
 

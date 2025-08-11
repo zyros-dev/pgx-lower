@@ -7,6 +7,7 @@
 
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 #include <llvm/ADT/TypeSwitch.h>
 #include <list>
 #include <unordered_map>
@@ -276,7 +277,7 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createUnnestingPass() { return std::make_unique<Unnesting>(); }
+std::unique_ptr<mlir::Pass> createUnnestingPass() { return std::make_unique<Unnesting>(); }
 } // end namespace relalg
 } // end namespace mlir
 

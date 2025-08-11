@@ -12,6 +12,7 @@
 
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
+#include "mlir/Pass/Pass.h"
 namespace {
 
 class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::OperationPass<::mlir::func::FuncOp>> {
@@ -49,7 +50,7 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createLowerToDBPass() { return std::make_unique<LowerToDBPass>(); }
+std::unique_ptr<mlir::Pass> createLowerToDBPass() { return std::make_unique<LowerToDBPass>(); }
 
 void registerRelAlgConversionPasses(){
    ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {

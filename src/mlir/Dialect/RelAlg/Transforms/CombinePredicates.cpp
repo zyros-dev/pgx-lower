@@ -3,6 +3,7 @@
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 
 namespace {
 class CombinePredicates : public ::mlir::PassWrapper<CombinePredicates, ::mlir::OperationPass<::mlir::func::FuncOp>> {
@@ -48,7 +49,7 @@ class CombinePredicates : public ::mlir::PassWrapper<CombinePredicates, ::mlir::
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createCombinePredicatesPass() { return std::make_unique<CombinePredicates>(); }
+std::unique_ptr<mlir::Pass> createCombinePredicatesPass() { return std::make_unique<CombinePredicates>(); }
 } // end namespace relalg
 } // end namespace mlir
 

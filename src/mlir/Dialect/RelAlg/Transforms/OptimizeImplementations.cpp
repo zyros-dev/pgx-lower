@@ -5,6 +5,7 @@
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 
 namespace {
 class OptimizeImplementations : public ::mlir::PassWrapper<OptimizeImplementations, ::mlir::OperationPass<::mlir::func::FuncOp>> {
@@ -107,7 +108,7 @@ class OptimizeImplementations : public ::mlir::PassWrapper<OptimizeImplementatio
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createOptimizeImplementationsPass() { return std::make_unique<OptimizeImplementations>(); }
+std::unique_ptr<mlir::Pass> createOptimizeImplementationsPass() { return std::make_unique<OptimizeImplementations>(); }
 } // end namespace relalg
 } // end namespace mlir
 

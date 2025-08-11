@@ -3,6 +3,7 @@
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 
 namespace {
 class IntroduceTmp : public ::mlir::PassWrapper<IntroduceTmp, ::mlir::OperationPass<::mlir::func::FuncOp>> {
@@ -42,7 +43,7 @@ class IntroduceTmp : public ::mlir::PassWrapper<IntroduceTmp, ::mlir::OperationP
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createIntroduceTmpPass() { return std::make_unique<IntroduceTmp>(); }
+std::unique_ptr<mlir::Pass> createIntroduceTmpPass() { return std::make_unique<IntroduceTmp>(); }
 } // end namespace relalg
 } // end namespace mlir
 
