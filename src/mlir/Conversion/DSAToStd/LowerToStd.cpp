@@ -55,7 +55,7 @@ struct DSAToStdLoweringPass
 
    DSAToStdLoweringPass() {}
    void getDependentDialects(DialectRegistry& registry) const override {
-      registry.insert<LLVM::LLVMDialect, mlir::dsa::DSADialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithmeticDialect>();
+      registry.insert<LLVM::LLVMDialect, mlir::dsa::DSADialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect>();
    }
    void runOnOperation() final;
 };
@@ -102,7 +102,7 @@ void DSAToStdLoweringPass::runOnOperation() {
 
    auto opIsWithoutDSATypes = [&](Operation* op) { return !hasDSAType(typeConverter, op->getOperandTypes()) && !hasDSAType(typeConverter, op->getResultTypes()); };
    target.addDynamicallyLegalDialect<scf::SCFDialect>(opIsWithoutDSATypes);
-   target.addDynamicallyLegalDialect<arith::ArithmeticDialect>(opIsWithoutDSATypes);
+   target.addDynamicallyLegalDialect<arith::ArithDialect>(opIsWithoutDSATypes);
 
    target.addLegalDialect<cf::ControlFlowDialect>();
 
