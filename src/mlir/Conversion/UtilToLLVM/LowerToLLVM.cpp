@@ -5,6 +5,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/FunctionCallUtils.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/util/UtilOps.h"
@@ -18,7 +19,7 @@ using namespace mlir;
 
 namespace {
 
-static mlir::LLVM::LLVMStructType convertTuple(TupleType tupleType, TypeConverter& typeConverter) {
+static mlir::LLVM::LLVMStructType convertTuple(TupleType tupleType, const TypeConverter& typeConverter) {
    std::vector<Type> types;
    for (auto t : tupleType.getTypes()) {
       types.push_back(typeConverter.convertType(t));
@@ -132,7 +133,7 @@ class InvalidRefOpLowering : public OpConversionPattern<mlir::util::InvalidRefOp
    public:
    using OpConversionPattern<mlir::util::InvalidRefOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::util::InvalidRefOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      rewriter.replaceOpWithNewOp<mlir::LLVM::ZeroOp>(op, typeConverter->convertType(op.getType()));
+      rewriter.replaceOpWithNewOp<mlir::LLVM::NullOp>(op, typeConverter->convertType(op.getType()));
       return success();
    }
 };

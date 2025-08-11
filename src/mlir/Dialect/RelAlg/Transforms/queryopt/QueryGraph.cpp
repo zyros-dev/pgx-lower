@@ -190,11 +190,17 @@ std::optional<double> estimateUsingSample(mlir::relalg::QueryGraph::Node& n) {
             expressions.push_back(buildEvalExpr(v, mapping)); //todo: ignore failing ones?
          }
       }
-      auto optionalCount = support::eval::countResults(sample, support::eval::createAnd(expressions));
-      if (!optionalCount.has_value()) return {};
-      auto count = optionalCount.value();
-      if (count == 0) count = 1;
-      return static_cast<double>(count) / static_cast<double>(sample->num_rows());
+      // Stubbed out countResults - Arrow dependency removed
+      // Original code:
+      // auto optionalCount = support::eval::countResults(sample, support::eval::createAnd(expressions));
+      // if (!optionalCount.has_value()) return {};
+      // auto count = optionalCount.value();
+      // if (count == 0) count = 1;
+      // return static_cast<double>(count) / static_cast<double>(sample->num_rows());
+      
+      // Return a default selectivity of 0.1 (10%) as a reasonable estimate
+      // This is a common default selectivity used in query optimizers
+      return 0.1;
    }
 
    return {};
