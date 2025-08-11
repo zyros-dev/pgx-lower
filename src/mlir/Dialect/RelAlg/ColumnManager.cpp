@@ -14,7 +14,7 @@ std::shared_ptr<Column> ColumnManager::get(StringRef scope, StringRef attribute)
 }
 ColumnDefAttr ColumnManager::createDef(SymbolRefAttr name, Attribute fromExisting) {
    assert(name.getNestedReferences().size() == 1);
-   auto attribute = get(name.getRootReference().value(), name.getLeafReference().value());
+   auto attribute = get(name.getRootReference().getValue(), name.getLeafReference().getValue());
    return mlir::relalg::ColumnDefAttr::get(context, name, attribute, fromExisting);
 }
 ColumnDefAttr ColumnManager::createDef(StringRef scope, StringRef name, Attribute fromExisting) {
@@ -25,7 +25,7 @@ ColumnDefAttr ColumnManager::createDef(StringRef scope, StringRef name, Attribut
 }
 ColumnRefAttr ColumnManager::createRef(SymbolRefAttr name) {
    assert(name.getNestedReferences().size() == 1);
-   auto attribute = get(name.getRootReference().value(), name.getLeafReference().value());
+   auto attribute = get(name.getRootReference().getValue(), name.getLeafReference().getValue());
    return relalg::ColumnRefAttr::get(context, name, attribute);
 }
 ColumnRefAttr ColumnManager::createRef(StringRef scope, StringRef name) {

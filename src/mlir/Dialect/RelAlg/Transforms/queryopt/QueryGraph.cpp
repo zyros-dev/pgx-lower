@@ -60,11 +60,11 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
    if (!op) return std::move(support::eval::createInvalid());
    if (auto constantOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(op)) {
       std::variant<int64_t, double, std::string> parseArg;
-      if (auto integerAttr = constantOp.value().dyn_cast_or_null<::mlir::IntegerAttr>()) {
+      if (auto integerAttr = constantOp.getValue().dyn_cast_or_null<::mlir::IntegerAttr>()) {
          parseArg = integerAttr.getInt();
-      } else if (auto floatAttr = constantOp.value().dyn_cast_or_null<::mlir::FloatAttr>()) {
+      } else if (auto floatAttr = constantOp.getValue().dyn_cast_or_null<::mlir::FloatAttr>()) {
          parseArg = floatAttr.getValueAsDouble();
-      } else if (auto stringAttr = constantOp.value().dyn_cast_or_null<::mlir::StringAttr>()) {
+      } else if (auto stringAttr = constantOp.getValue().dyn_cast_or_null<::mlir::StringAttr>()) {
          parseArg = stringAttr.str();
       } else {
          return support::eval::createInvalid();

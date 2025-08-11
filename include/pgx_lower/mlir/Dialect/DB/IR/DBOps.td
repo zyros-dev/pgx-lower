@@ -136,7 +136,7 @@ def DB_ConstantOp : DB_Op<"constant", [Pure]> {
     let assemblyFormat = "`(` $value `)` `:` type($result) attr-dict";
 
     let extraClassDeclaration = [{
-        Attribute getValue() { return (*this)->getAttr("value"); }
+        Attribute getConstantValue() { return (*this)->getAttr("value"); }
     }];
 }
 
