@@ -1,5 +1,6 @@
 #ifndef PGX_LOWER_RUNTIME_CONCURRENTMAP_H
 #define PGX_LOWER_RUNTIME_CONCURRENTMAP_H
+#include <functional>
 #include <mutex>
 #include <unordered_map>
 

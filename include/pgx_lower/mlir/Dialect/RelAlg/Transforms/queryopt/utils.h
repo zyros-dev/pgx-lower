@@ -1,5 +1,6 @@
 #ifndef MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_UTILS_H
 #define MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_UTILS_H
+#include <functional>
 #include <llvm/ADT/EquivalenceClasses.h>
 #include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/TypeSwitch.h>

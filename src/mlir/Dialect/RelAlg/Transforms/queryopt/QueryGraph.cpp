@@ -140,8 +140,8 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
       }
    } else if (auto betweenOp = mlir::dyn_cast_or_null<mlir::db::BetweenOp>(op)) {
       std::vector<std::unique_ptr<support::eval::expr>> expressions;
-      expressions.push_back(support::eval::createLt(buildEvalExpr(betweenOp.getVal(), mapping), buildEvalExpr(betweenOp.upper(), mapping)));
-      expressions.push_back(support::eval::createGt(buildEvalExpr(betweenOp.getVal(), mapping), buildEvalExpr(betweenOp.lower(), mapping)));
+      expressions.push_back(support::eval::createLt(buildEvalExpr(betweenOp.getVal(), mapping), buildEvalExpr(betweenOp.getUpper(), mapping)));
+      expressions.push_back(support::eval::createGt(buildEvalExpr(betweenOp.getVal(), mapping), buildEvalExpr(betweenOp.getLower(), mapping)));
       return support::eval::createAnd(expressions);
    } else if (auto oneOfOp = mlir::dyn_cast_or_null<mlir::db::OneOfOp>(op)) {
       std::vector<std::unique_ptr<support::eval::expr>> expressions;

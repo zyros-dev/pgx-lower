@@ -1,5 +1,6 @@
 #ifndef PGX_LOWER_RUNTIME_BUFFER_H
 #define PGX_LOWER_RUNTIME_BUFFER_H
+#include <functional>
 #include <stddef.h>
 
 #include "ExecutionContext.h"
