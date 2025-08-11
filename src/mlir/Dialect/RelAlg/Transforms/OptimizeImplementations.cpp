@@ -110,4 +110,4 @@ namespace relalg {
 std::unique_ptr<Pass> createOptimizeImplementationsPass() { return std::make_unique<OptimizeImplementations>(); }
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx
+

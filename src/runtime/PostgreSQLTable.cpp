@@ -24,4 +24,4 @@ PostgreSQLTable* PostgreSQLTable::merge(ThreadLocal* threadLocal) {
     return this;  // Stub: return self
 }
 
-} // end namespace pgx_lower::compiler::runtime
+_lower::compiler::runtime

@@ -78,4 +78,3 @@ namespace relalg {
 std::unique_ptr<Pass> createPushdownPass() { return std::make_unique<Pushdown>(); }
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx

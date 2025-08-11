@@ -51,4 +51,4 @@ namespace relalg {
 std::unique_ptr<Pass> createCombinePredicatesPass() { return std::make_unique<CombinePredicates>(); }
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx
+

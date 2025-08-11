@@ -45,4 +45,4 @@ namespace relalg {
 std::unique_ptr<Pass> createIntroduceTmpPass() { return std::make_unique<IntroduceTmp>(); }
 } // end namespace relalg
 } // end namespace mlir
-} // end namespace pgx
+
