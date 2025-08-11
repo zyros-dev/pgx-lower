@@ -13,6 +13,5 @@ void populateUtilToLLVMConversionPatterns(LLVMTypeConverter& typeConverter, Rewr
 void populateUtilTypeConversionPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns);
 } // end namespace util
 } // end namespace mlir
-} // end namespace mlir
 
 #endif // MLIR_CONVERSION_UTILTOLLVM_PASSES_H

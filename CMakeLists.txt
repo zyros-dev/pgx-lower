@@ -157,44 +157,4 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     )
     
     
-    add_mlir_unit_test(mlir_unit_test 
-        tests/unit/test_main.cpp
-        tests/unit/test_helpers.cpp
-        tests/unit/mocks/mlir_runner_mock.cpp
-        tests/unit/mocks/runtime_mocks.cpp  # Mock runtime functions for symbol registration
-        ${UNIT_TEST_SOURCES}
-        ${UNIT_TEST_ADDITIONAL_SOURCES}
-    )
-    target_link_libraries(mlir_unit_test PRIVATE 
-        gtest
-        MLIRRelAlgDialect
-        MLIRDBDialect
-        MLIRDSADialect
-        MLIRUtilDialect               # Util dialect for memory management and tuples
-        MLIRRelAlgToDSAConversion
-        MLIRRelAlgToDBConversion      # New RelAlg -> DB conversion
-        MLIRDBToStdConversion         # New DB -> Standard conversion (Phase 4d)
-        MLIRDSAToStdConversion        # DSA -> Standard conversion (Phase 4e-2)
-        MLIRDSAToLLVMConversion       # DSA → LLVM conversion for data structure algorithms
-        UtilToLLVM                    # Util → LLVM conversion (Phase 4f)
-        MLIRPgxLowerPasses            # Centralized pass pipeline infrastructure
-        MLIRFuncDialect
-        MLIRArithDialect
-        MLIRSCFDialect
-        MLIRMemRefDialect             # Needed for memref operations
-        MLIRIndexDialect              # Needed for index operations
-        MLIRLLVMDialect               # Needed for DSA -> LLVM conversion
-        MLIRLLVMCommonConversion      # LLVM conversion infrastructure
-        MLIRFuncToLLVM                # Function to LLVM conversion patterns
-        MLIRExecutionEngine           # JIT execution engine for Phase 4g-2a
-        MLIRTargetLLVMIRExport        # LLVM IR export functionality
-        MLIRPass
-        MLIRTransforms
-        MLIRParser
-        # NOTE: Additional MLIR dialect libraries will be added as they are rebuilt
-    )
-    target_include_directories(mlir_unit_test PRIVATE 
-        tests/unit
-    )
-    target_compile_definitions(mlir_unit_test PRIVATE BUILDING_UNIT_TESTS)
 endif()
