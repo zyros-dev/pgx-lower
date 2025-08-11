@@ -364,7 +364,7 @@ class AggregationTranslator : public mlir::relalg::Translator {
          ::mlir::Block* block2 = new ::mlir::Block;
          block2->addArgument(iterEntryType, aggregationOp->getLoc());
          forOp2.getBodyRegion().push_back(block2);
-         ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
+         ::mlir::OpBuilder builder2 = mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
          auto unpacked = builder2.create<mlir::util::UnPackOp>(aggregationOp->getLoc(), forOp2.getInductionVar()).getResults();
          ::mlir::ValueRange unpackedKey;
          if (!keyTupleType.getTypes().empty()) {

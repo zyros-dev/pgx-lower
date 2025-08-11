@@ -119,7 +119,7 @@ class UnionAllTranslator : public SetOpTranslator {
          ::mlir::Block* block2 = new ::mlir::Block;
          block2->addArgument(tupleType, unionOp->getLoc());
          forOp2.getBodyRegion().push_back(block2);
-         ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
+         ::mlir::OpBuilder builder2 = mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
          auto unpacked = builder2.create<mlir::util::UnPackOp>(unionOp->getLoc(), forOp2.getInductionVar());
          orderedAttributes.setValuesForColumns(context, scope, unpacked.getResults());
          consumer->consume(this, builder2, context);
@@ -179,7 +179,7 @@ class UnionDistinctTranslator : public SetOpTranslator {
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(entryType, unionOp->getLoc());
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
+      ::mlir::OpBuilder builder2 = mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       auto unpacked = builder2.create<mlir::util::UnPackOp>(unionOp->getLoc(), forOp2.getInductionVar()).getResults();
       auto unpackedKey = builder2.create<mlir::util::UnPackOp>(unionOp->getLoc(), unpacked[0]).getResults();
       orderedAttributes.setValuesForColumns(context, scope, unpackedKey);
@@ -261,7 +261,7 @@ class CountingSetTranslator : public SetOpTranslator {
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(entryType, loc);
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
+      ::mlir::OpBuilder builder2 = mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       auto unpacked = builder2.create<mlir::util::UnPackOp>(loc, forOp2.getInductionVar()).getResults();
       auto unpackedKey = builder2.create<mlir::util::UnPackOp>(loc, unpacked[0]).getResults();
       orderedAttributes.setValuesForColumns(context, scope, unpackedKey);

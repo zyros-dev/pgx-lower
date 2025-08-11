@@ -118,7 +118,7 @@ class DistinctProjectionTranslator : public mlir::relalg::Translator {
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(entryType, projectionOp->getLoc());
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2 = ::mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
+      ::mlir::OpBuilder builder2 = ::mlir::mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       auto unpacked = builder2.create<mlir::util::UnPackOp>(projectionOp->getLoc(), forOp2.getInductionVar()).getResults();
       auto unpackedKey = builder2.create<mlir::util::UnPackOp>(projectionOp->getLoc(), unpacked[0]).getResults();
       key.setValuesForColumns(context, scope, unpackedKey);
