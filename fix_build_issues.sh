@@ -1,17 +1,92 @@
 #!/bin/bash
 
 echo "=== Rolling back src, include, tests directories and CMakeLists.txt ==="
-git restore ./src ./include ./tests CMakeLists.txt
+git restore ./src ./include ./tests ./tools
 
 echo "=== Removing untracked files and directories ==="
 # Remove any untracked files/directories that were created
-git clean -fd ./src ./include ./tests ./tools/build-tools ./include/runtime ./include/runtime-defs
+git clean -fd ./src ./include ./tests ./tools/build-tools ./include/runtime ./include/runtime-defs ./test_runtime_generation
 
 echo "✅ Git tree reset complete"
 sleep 1
 
 echo "🔧 Ensuring write permissions..."
-chmod -R u+w ./include ./src
+chmod -R u+w ./include ./src ./tools ./tests
+
+# ======================================================================================================================
+#                                        SOLVE RUNTIME HEADER GENERATION
+# ======================================================================================================================
+
+echo "🔧 Setting up runtime header generation system..."
+
+# Step 1: Ensure tools/CMakeLists.txt includes build-tools
+echo "Adding build-tools to tools/CMakeLists.txt..."
+if ! grep -q "add_subdirectory(build-tools)" ./tools/CMakeLists.txt; then
+    echo "add_subdirectory(build-tools)" >> ./tools/CMakeLists.txt
+fi
+
+# Step 2: Copy runtime-header-tool source and CMakeLists.txt from LingoDB
+echo "Copying runtime-header-tool from LingoDB..."
+mkdir -p ./tools/build-tools
+chmod -R u+w ./tools/build-tools
+cp ./lingo-db/tools/build-tools/runtime-header-tool.cpp ./tools/build-tools/
+cp ./lingo-db/tools/build-tools/CMakeLists.txt ./tools/build-tools/
+
+# Step 3: Fix the gen_rt_def function to use $<TARGET_FILE:runtime-header-tool>
+echo "Fixing gen_rt_def function to use correct tool path..."
+sed -i 's|\${CMAKE_BINARY_DIR}/bin/runtime-header-tool|$<TARGET_FILE:runtime-header-tool>|g' ./tools/build-tools/CMakeLists.txt
+
+# Step 4: Remove stub gen_rt_def function from main CMakeLists.txt
+echo "Removing stub gen_rt_def function..."
+sed -i '/^# Stub gen_rt_def function/,/^endfunction()/d' CMakeLists.txt
+sed -i '/^function(gen_rt_def target_name header_file)/,/^endfunction()/d' CMakeLists.txt
+
+# Step 5: Add Clang CMake modules to the CMake module path
+echo "Adding Clang CMake modules to CMakeLists.txt..."
+# Find the line with MLIR cmake modules and add Clang after it
+if ! grep -q 'list(APPEND CMAKE_MODULE_PATH "/usr/lib/llvm-20/lib/cmake/clang")' CMakeLists.txt; then
+    sed -i '/list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")/a\
+# Add Clang CMake modules for runtime-header-tool\
+list(APPEND CMAKE_MODULE_PATH "/usr/lib/llvm-20/lib/cmake/clang")' CMakeLists.txt
+fi
+
+# Step 6: Add include(AddClang) after include(AddLLVM)
+if ! grep -q 'include(AddClang)' CMakeLists.txt; then
+    sed -i '/include(AddLLVM)/a\
+include(AddClang)\
+set("CLANG_VERSION" ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH})' CMakeLists.txt
+fi
+
+# Step 7: Fix the commented out add_subdirectory line
+echo "Enabling tools/build-tools in main CMakeLists.txt..."
+# Replace the commented line with uncommented version
+sed -i 's|^# add_subdirectory(tools/build-tools).*|add_subdirectory(tools/build-tools)|g' CMakeLists.txt
+
+# Step 9: Copy runtime headers from LingoDB that are needed for runtime-defs generation
+echo "Copying runtime headers from LingoDB..."
+mkdir -p ./include/runtime
+cp ./lingo-db/include/runtime/DateRuntime.h ./include/runtime/
+cp ./lingo-db/include/runtime/StringRuntime.h ./include/runtime/
+cp ./lingo-db/include/runtime/DumpRuntime.h ./include/runtime/
+cp ./lingo-db/include/runtime/helpers.h ./include/runtime/
+
+# Step 10: Copy additional runtime headers that might be needed
+echo "Copying additional runtime headers..."
+# Headers needed by DSAToStd conversion
+for header in TableBuilder.h DataSourceIteration.h Vector.h LazyJoinHashtable.h Hashtable.h HashMultiMap.h Buffer.h Heap.h; do
+    if [ -f "./lingo-db/include/runtime/$header" ]; then
+        cp "./lingo-db/include/runtime/$header" "./include/runtime/"
+    fi
+done
+
+# Step 11: Include runtime headers from correct namespace
+echo "Setting up runtime-defs generation..."
+# The runtime-header-tool will generate headers in build/include/runtime-defs/
+# Make sure the directory exists
+mkdir -p ./include/runtime-defs
+
+echo "✅ Runtime header generation setup complete"
+
 
 # ======================================================================================================================
 #                                        COPY IN LINGO DB FILES
@@ -27,47 +102,7 @@ cp ./lingo-db/lib/DB/DBOps.cpp ./src/mlir/Dialect/DB/DBOps.cpp
 echo "Copying DBTypes.cpp from LingoDB..."
 cp ./lingo-db/lib/DB/DBTypes.cpp ./src/mlir/Dialect/DB/DBTypes.cpp
 
-# Copy runtime headers from LingoDB that are needed for runtime-defs generation
-echo "Copying runtime headers from LingoDB..."
-mkdir -p ./include/runtime
-cp ./lingo-db/include/runtime/DateRuntime.h ./include/runtime/
-cp ./lingo-db/include/runtime/StringRuntime.h ./include/runtime/
-cp ./lingo-db/include/runtime/DumpRuntime.h ./include/runtime/
-# Copy helpers.h as it's likely needed by the runtime headers
-cp ./lingo-db/include/runtime/helpers.h ./include/runtime/
 
-# Copy the build-tools CMakeLists.txt from LingoDB
-echo "Copying build-tools CMakeLists.txt from LingoDB..."
-mkdir -p ./tools/build-tools
-chmod -R u+w ./tools/build-tools
-cp ./lingo-db/tools/build-tools/CMakeLists.txt ./tools/build-tools/
-cp ./lingo-db/tools/build-tools/runtime-header-tool.cpp ./tools/build-tools/
-
-# Add Clang CMake modules to the CMake module path
-echo "Adding Clang CMake modules to CMakeLists.txt..."
-# Find the line with MLIR cmake modules and add Clang after it
-sed -i '/list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")/a\
-# Add Clang CMake modules for runtime-header-tool\
-list(APPEND CMAKE_MODULE_PATH "/usr/lib/llvm-20/lib/cmake/clang")' CMakeLists.txt
-
-# Add include(AddClang) after include(AddLLVM)
-sed -i '/include(AddLLVM)/a\
-include(AddClang)\
-set("CLANG_VERSION" ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH})' CMakeLists.txt
-
-# Remove the old add_subdirectory for tools/build-tools and add it earlier
-sed -i '/^#add_subdirectory(tools\/build-tools)/d' CMakeLists.txt
-sed -i '/^add_subdirectory(tools\/build-tools)/d' CMakeLists.txt
-
-# Add tools/build-tools right after the build_includes target, before any dialect directories
-sed -i '/^add_custom_target(build_includes)/a\
-\
-# Add tools for runtime header generation (must be before dialects)\
-add_subdirectory(tools/build-tools)' CMakeLists.txt
-
-# Remove duplicate gen_rt_def function definitions that may exist
-sed -i '/^# Stub gen_rt_def function/,/^endfunction()/d' CMakeLists.txt
-sed -i '/^function(gen_rt_def target_name header_file)/,/^endfunction()/d' CMakeLists.txt
 
 # ======================================================================================================================
 #                                        TARGETED FIXES
