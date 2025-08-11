@@ -284,7 +284,9 @@ echo "✅ Targeted fixes complete"
 echo "Don't remove these from the file!! And do not edit them! DO NOT EDIT!!!"
 echo "Claude launch a reviewer to evaluate this file really quickly after you run it!"
 echo "Then after that, claude, go run \`make utest | head -2000\` and make sure none of the problems above this are in there,
-and summarise the problems you do see. Specify what types of files you see problems, and how many cycles you've seen this problem in"
+and summarise the problems you do see. Specify what types of files you see problems, and how many cycles you've seen
+this problem in, and what you're going to change inside of this script to fix it. e.g. never say 'already have a solution'
+because... its a problem on the list!"
 echo "Remember, you are only allowed to edit fix_build_issues.sh!"
 echo ""
 echo "EXAMPLE RESPONSE:"
