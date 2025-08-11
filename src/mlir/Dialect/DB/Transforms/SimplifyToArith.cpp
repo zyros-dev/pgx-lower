@@ -70,7 +70,7 @@ struct DBCmpToCmpI : public ::mlir::OpRewritePattern<::mlir::db::CmpOp> {
       }
       
       auto pred = convertToCmpIPred(rewriter, op.getPredicateAttr());
-      rewriter.replaceOpWithNewOp<::mlir::arith::CmpIOp>(op, pred.getValue(), op.getLeft(), op.getRight());
+      rewriter.replaceOpWithNewOp<::mlir::arith::CmpIOp>(op, pred, op.getLeft(), op.getRight());
       return ::mlir::success();
    }
 };
@@ -85,7 +85,7 @@ struct DBCmpToCmpF : public ::mlir::OpRewritePattern<::mlir::db::CmpOp> {
       }
       
       auto pred = convertToCmpFPred(rewriter, op.getPredicateAttr());
-      rewriter.replaceOpWithNewOp<::mlir::arith::CmpFOp>(op, pred.getValue(), op.getLeft(), op.getRight());
+      rewriter.replaceOpWithNewOp<::mlir::arith::CmpFOp>(op, pred, op.getLeft(), op.getRight());
       return ::mlir::success();
    }
 };
@@ -128,7 +128,12 @@ struct DBConstToConst : public ::mlir::OpRewritePattern<::mlir::db::ConstantOp> 
          return ::mlir::failure();
       }
       
-      rewriter.replaceOpWithNewOp<::mlir::arith::ConstantOp>(op, convertedAttr);
+      auto typedAttr = convertedAttr.dyn_cast<::mlir::TypedAttr>();
+      if (!typedAttr) {
+         return ::mlir::failure();
+      }
+      
+      rewriter.replaceOpWithNewOp<::mlir::arith::ConstantOp>(op, op.getType(), typedAttr);
       return ::mlir::success();
    }
 };

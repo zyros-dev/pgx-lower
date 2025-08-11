@@ -59,31 +59,40 @@ class WrapWithNullCheck : public mlir::RewritePattern {
          }
          return;
       } else {
-         rewriter.replaceOpWithNewOp<mlir::scf::IfOp>(
-            op, op->getResultTypes(), isAnyNull, [&](::mlir::OpBuilder& b, ::mlir::Location loc) {
-               if(op->getNumResults()==1){
-                  ::mlir::Value nullResult=b.create<mlir::db::NullOp>(op->getLoc(),op->getResultTypes()[0]);
-                  b.create<mlir::scf::YieldOp>(loc,nullResult);
-               }else{
-                  b.create<mlir::scf::YieldOp>(loc);
-               }
-            }, [&](::mlir::OpBuilder& b, ::mlir::Location loc) {
-               ::mlir::IRMapping mapping;
-               for (auto operand : op->getOperands()) {
-                  if (operand.getType().isa<mlir::db::NullableType>()) {
-                     mapping.map(operand,b.create<mlir::db::NullableGetVal>(op->getLoc(),operand));
-                  }
-               }
-               auto *cloned=b.clone(*op,mapping);
-               if(op->getNumResults()==1){
-                  cloned->getResult(0).setType(getBaseType(cloned->getResult(0).getType()));
-                  ::mlir::Value nullResult=b.create<mlir::db::AsNullableOp>(op->getLoc(),op->getResultTypes()[0],cloned->getResult(0));
-                  b.create<mlir::scf::YieldOp>(loc,nullResult);
-               }else{
-                  b.create<mlir::scf::YieldOp>(loc);
+         auto ifOp = rewriter.create<mlir::scf::IfOp>(op->getLoc(), op->getResultTypes(), isAnyNull, true);
+         {
+            // Then branch - handle null case
+            auto& thenRegion = ifOp.getThenRegion();
+            thenRegion.push_back(new mlir::Block());
+            rewriter.setInsertionPointToStart(&thenRegion.front());
+            if(op->getNumResults()==1){
+               ::mlir::Value nullResult = rewriter.create<mlir::db::NullOp>(op->getLoc(), op->getResultTypes()[0]);
+               rewriter.create<mlir::scf::YieldOp>(op->getLoc(), nullResult);
+            }else{
+               rewriter.create<mlir::scf::YieldOp>(op->getLoc());
+            }
+         }
+         {
+            // Else branch - normal processing
+            auto& elseRegion = ifOp.getElseRegion();
+            elseRegion.push_back(new mlir::Block());
+            rewriter.setInsertionPointToStart(&elseRegion.front());
+            ::mlir::IRMapping mapping;
+            for (auto operand : op->getOperands()) {
+               if (operand.getType().isa<mlir::db::NullableType>()) {
+                  mapping.map(operand, rewriter.create<mlir::db::NullableGetVal>(op->getLoc(), operand));
                }
             }
-         );
+            auto *cloned = rewriter.clone(*op, mapping);
+            if(op->getNumResults()==1){
+               cloned->getResult(0).setType(getBaseType(cloned->getResult(0).getType()));
+               ::mlir::Value nullResult = rewriter.create<mlir::db::AsNullableOp>(op->getLoc(), op->getResultTypes()[0], cloned->getResult(0));
+               rewriter.create<mlir::scf::YieldOp>(op->getLoc(), nullResult);
+            }else{
+               rewriter.create<mlir::scf::YieldOp>(op->getLoc());
+            }
+         }
+         rewriter.replaceOp(op, ifOp);
       }
    }
 };

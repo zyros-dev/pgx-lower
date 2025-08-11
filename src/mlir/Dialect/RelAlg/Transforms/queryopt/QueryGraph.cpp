@@ -194,7 +194,7 @@ std::optional<double> estimateUsingSample(mlir::relalg::QueryGraph::Node& n) {
       // Original code:
       // auto optionalCount = support::eval::countResults(sample, support::eval::createAnd(expressions));
       // if (!optionalCount.has_value()) return {};
-      // auto count = optionalCount.value();
+      // auto count = optionalCount.getValue();
       // if (count == 0) count = 1;
       // return static_cast<double>(count) / static_cast<double>(sample->num_rows());
       

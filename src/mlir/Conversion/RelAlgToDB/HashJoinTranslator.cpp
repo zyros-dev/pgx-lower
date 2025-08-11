@@ -59,7 +59,7 @@ void HashJoinTranslator::scanHT(TranslatorContext& context, ::mlir::OpBuilder& b
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(entryType, loc);
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+      ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       auto unpacked = builder2.create<mlir::util::UnPackOp>(loc, forOp2.getInductionVar()).getResults();
       unpackKeys(scope, builder2, unpacked[0], context);
       Value marker;
@@ -99,7 +99,7 @@ void HashJoinTranslator::consume(mlir::relalg::Translator* child, ::mlir::OpBuil
          ::mlir::Block* block2 = new ::mlir::Block;
          block2->addArgument(iteratorType, loc);
          forOp2.getBodyRegion().push_back(block2);
-         ::mlir::OpBuilder builder2(forOp2.getBodyRegion());
+         ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
 
          Value entry = forOp2.getInductionVar();
          Value valuePtr;

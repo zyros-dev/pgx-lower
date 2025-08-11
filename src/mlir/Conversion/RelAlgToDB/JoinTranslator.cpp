@@ -59,7 +59,7 @@ void JoinTranslator::handlePotentialMatch(OpBuilder& builder, TranslatorContext&
             onMatch(builder1,context,scope);
          }
          consumer->consume(this, builder1, context);
-         builder1.create<mlir::scf::YieldOp>(joinOp->getLoc(), ::mlir::ValueRange{}); });
+         builder1.create<mlir::scf::YieldOp>(joinOp->getLoc()); });
 }
 
 

@@ -28,7 +28,8 @@ class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
       {
          OpBuilder::InsertionGuard insertionGuard(rewriter);
          rewriter.setInsertionPointToStart(parentModule.getBody());
-         funcOp = rewriter.create<::mlir::func::FuncOp>(parentModule.getLoc(), "dsa_sort_compare" + std::to_string(id++), rewriter.getFunctionType(TypeRange({ptrType, ptrType}), TypeRange(rewriter.getI1Type())));
+         auto funcType = rewriter.getFunctionType(TypeRange({ptrType, ptrType}), TypeRange(rewriter.getI1Type()));
+         funcOp = rewriter.create<::mlir::func::FuncOp>(parentModule.getLoc(), "dsa_sort_compare" + std::to_string(id++), funcType);
          auto* funcBody = new Block;
          funcBody->addArguments(TypeRange({ptrType, ptrType}), {parentModule->getLoc(), parentModule->getLoc()});
          funcOp.getBody().push_back(funcBody);
@@ -43,7 +44,9 @@ class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
          auto terminator = rewriter.create<mlir::func::ReturnOp>(sortOp.getLoc());
          Block* sortLambda = &sortOp.getRegion().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         rewriter.mergeBlockBefore(sortLambda, terminator, {tupleLeft, tupleRight});
+         rewriter.moveBlockBefore(sortLambda, terminator);
+         sortLambda->getArgument(0).replaceAllUsesWith(tupleLeft);
+         sortLambda->getArgument(1).replaceAllUsesWith(tupleRight);
          mlir::dsa::YieldOp yieldOp = mlir::cast<mlir::dsa::YieldOp>(terminator->getPrevNode());
          Value x = yieldOp.getResults()[0];
          rewriter.create<mlir::func::ReturnOp>(sortOp.getLoc(), x);
@@ -107,7 +110,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
 
             auto term = builder.create<mlir::scf::YieldOp>(forOp->getLoc());
             builder.setInsertionPoint(term);
-            rewriter.mergeBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
+            rewriter.moveBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
 
             std::vector<Value> results(yieldOp.getResults().begin(), yieldOp.getResults().end());
             rewriter.eraseOp(yieldOp);
@@ -130,7 +133,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
                   assert(rewriter.getRemappedValues(op.getArgs(), remappedArgs).succeeded());
                   Block* after = rewriter.splitBlock(builder.getBlock(), builder.getInsertionPoint());
                   builder.setInsertionPointAfter(op);
-                  auto cond = rewriter.getRemappedValue(op.condition());
+                  auto cond = rewriter.getRemappedValue(op.getCondition());
                   builder.create<mlir::cf::CondBranchOp>(op->getLoc(), cond, end, remappedArgs, after, ValueRange());
                }
             }
@@ -158,7 +161,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          values.insert(values.end(), iterargs.begin(), iterargs.end());
          auto term = builder.create<mlir::scf::YieldOp>(forOp->getLoc());
          builder.setInsertionPoint(term);
-         rewriter.mergeBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
+         rewriter.moveBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
 
          std::vector<Value> results(yieldOp.getResults().begin(), yieldOp.getResults().end());
          rewriter.eraseOp(yieldOp);
@@ -244,7 +247,7 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
          auto unpacked = rewriter.create<mlir::util::UnPackOp>(loc, adaptor.getCollection());
          index = unpacked.getResult(0);
          auto info = unpacked.getResult(1);
-         size_t column = atOp.pos();
+         size_t column = atOp.getPos();
          size_t baseOffset = 1 + column * 5;
          columnOffset = rewriter.create<mlir::util::GetTupleOp>(loc, rewriter.getIndexType(), info, baseOffset);
          validityBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, llvm::cast<TupleType>(info.getType()).getType(baseOffset + 2), info, baseOffset + 2);
