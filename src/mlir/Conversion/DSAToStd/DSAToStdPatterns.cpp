@@ -93,7 +93,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                rewriter.clone(op, mapping);
             }
          }
-         return mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).results()[0]);
+         return mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).getResults()[0]);
       };
       std::function<Value(OpBuilder&, Value, Value)> equalFnBuilder = insertOp.getEqual().empty() ? std::function<Value(OpBuilder&, Value, Value)>() : [&insertOp](OpBuilder& rewriter, Value left, Value right) {
          Block* sortLambda = &insertOp.getEqual().front();
@@ -107,7 +107,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                rewriter.clone(op, mapping);
             }
          }
-         return mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).results()[0]);
+         return mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).getResults()[0]);
       };
       auto loc = insertOp->getLoc();
       if (insertOp.getHt().getType().cast<mlir::dsa::AggregationHashtableType>().getKeyType() == mlir::TupleType::get(getContext())) {
@@ -128,7 +128,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                   rewriter.clone(op, mapping);
                }
             }
-            hashed = mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).results()[0]);
+            hashed = mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).getResults()[0]);
          }
 
          auto keyType = adaptor.getKey().getType();
@@ -291,7 +291,7 @@ class LazyJHtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableIns
                rewriter.clone(op, mapping);
             }
          }
-         hashed = mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).results()[0]);
+         hashed = mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).getResults()[0]);
       }
       ::mlir::Value val = adaptor.getVal();
       auto loc = insertOp->getLoc();

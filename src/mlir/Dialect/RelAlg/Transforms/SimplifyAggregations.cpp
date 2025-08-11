@@ -107,13 +107,13 @@ class SimplifyAggregations : public ::mlir::PassWrapper<SimplifyAggregations, ::
       //handle distinct ones
       getOperation()
          .walk([&](mlir::relalg::AggregationOp aggregationOp) {
-            ::mlir::Value arg = aggregationOp.aggr_func().front().getArgument(0);
+            ::mlir::Value arg = aggregationOp.getAggrFunc().front().getArgument(0);
             std::vector<::mlir::Operation*> users(arg.getUsers().begin(), arg.getUsers().end());
             if (users.size() == 1) {
                if (auto projectionOp = mlir::dyn_cast_or_null<mlir::relalg::ProjectionOp>(users[0])) {
-                  if (projectionOp.set_semantic() == mlir::relalg::SetSemantic::distinct) {
+                  if (projectionOp.getSetSemantic() == mlir::relalg::SetSemantic::distinct) {
                      ::mlir::OpBuilder builder(aggregationOp);
-                     auto cols = mlir::relalg::ColumnSet::fromArrayAttr(aggregationOp.group_by_cols());
+                     auto cols = mlir::relalg::ColumnSet::fromArrayAttr(aggregationOp.getGroupByCols());
                      cols.insert(mlir::relalg::ColumnSet::fromArrayAttr(projectionOp.getCols()));
                      auto newProj = builder.create<mlir::relalg::ProjectionOp>(projectionOp->getLoc(), mlir::relalg::TupleStreamType::get(&getContext()), mlir::relalg::SetSemantic::distinct, aggregationOp.getRel(), cols.asRefArrayAttr(&getContext()));
                      aggregationOp.setOperand(newProj);

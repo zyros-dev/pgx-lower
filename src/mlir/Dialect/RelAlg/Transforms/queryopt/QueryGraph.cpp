@@ -163,7 +163,7 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
    } else if (auto runtimeCall = mlir::dyn_cast_or_null<mlir::db::RuntimeCall>(op)) {
       if (runtimeCall.getFn() == "ConstLike" || runtimeCall.getFn() == "Like") {
          if (auto constantOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(runtimeCall.getArgs()[1].getDefiningOp())) {
-            return support::eval::createLike(buildEvalExpr(runtimeCall.getArgs()[0], mapping), constantOp.value().cast<::mlir::StringAttr>().str());
+            return support::eval::createLike(buildEvalExpr(runtimeCall.getArgs()[0], mapping), constantOp.getValue().cast<::mlir::StringAttr>().str());
          }
       }
       return support::eval::createInvalid();
@@ -179,13 +179,13 @@ std::optional<double> estimateUsingSample(mlir::relalg::QueryGraph::Node& n) {
       for (auto c : baseTableOp.getColumns()) {
          mapping[&c.value().cast<mlir::relalg::ColumnDefAttr>().getColumn()] = c.getName().str();
       }
-      auto meta = baseTableOp.meta().getMeta();
+      auto meta = baseTableOp.getMeta().getMeta();
       auto sample = meta->getSample();
       if (!sample) return {};
       std::vector<std::unique_ptr<support::eval::expr>> expressions;
       for (auto pred : n.additionalPredicates) {
          if (auto selOp = mlir::dyn_cast_or_null<mlir::relalg::SelectionOp>(pred.getOperation())) {
-            auto v = mlir::cast<mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator()).results()[0];
+            auto v = mlir::cast<mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator()).getResults()[0];
             expressions.push_back(buildEvalExpr(v, mapping)); //todo: ignore failing ones?
          }
       }
@@ -201,7 +201,7 @@ std::optional<double> estimateUsingSample(mlir::relalg::QueryGraph::Node& n) {
 mlir::relalg::ColumnSet mlir::relalg::QueryGraph::getPKey(mlir::relalg::QueryGraph::Node& n) {
    if (!n.op) return {};
    if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
-      auto meta = baseTableOp.meta().getMeta();
+      auto meta = baseTableOp.getMeta().getMeta();
       mlir::relalg::ColumnSet attributes;
       std::unordered_map<std::string, const mlir::relalg::Column*> mapping;
       for (auto c : baseTableOp.getColumns()) {
@@ -217,7 +217,7 @@ mlir::relalg::ColumnSet mlir::relalg::QueryGraph::getPKey(mlir::relalg::QueryGra
 }
 double getRows(mlir::relalg::QueryGraph::Node& n) {
    if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
-      auto numRows = baseTableOp.meta().getMeta()->getNumRows();
+      auto numRows = baseTableOp.getMeta().getMeta()->getNumRows();
       baseTableOp->setAttr("rows", ::mlir::FloatAttr::get(::mlir::FloatType::getF64(n.op.getContext()), numRows));
       return numRows == 0 ? 1 : numRows;
    }

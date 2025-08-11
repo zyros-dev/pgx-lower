@@ -165,7 +165,7 @@ static ParseResult parseCustDef(OpAsmParser& parser, mlir::relalg::ColumnDefAttr
       }
    }
    attr = getColumnManager(parser).createDef(attrSymbolAttr, fromExisting);
-   auto propType = dictAttr.get("type").dyn_cast_or_null<TypeAttr>().value();
+   auto propType = dictAttr.get("type").dyn_cast_or_null<TypeAttr>().getValue();
    attr.getColumn().type = propType;
    return success();
 }
@@ -299,16 +299,16 @@ void mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    p.printOptionalAttrDict(colsToPrint, /*elidedAttrs=*/{"sym_name", "columns"});
    p << " columns: {";
    auto first = true;
-   for (auto mapping : columns()) {
+   for (auto mapping : getColumns()) {
       auto columnName = mapping.getName();
-      auto attr = mapping.value();
+      auto attr = mapping.getValue();
       auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
       if (first) {
          first = false;
       } else {
          p << ", ";
       }
-      p << columnName.value() << " => ";
+      p << columnName.getValue() << " => ";
       printCustDef(p, *this, relationDefAttr);
    }
    p << "}";

@@ -53,7 +53,7 @@ class SortTranslator : public mlir::relalg::Translator {
          auto unpackedLeft = builder2.create<mlir::util::UnPackOp>(sortOp->getLoc(), block2->getArgument(0));
          auto unpackedRight = builder2.create<mlir::util::UnPackOp>(sortOp->getLoc(), block2->getArgument(1));
          std::vector<std::pair<::mlir::Value, ::mlir::Value>> sortCriteria;
-         for (auto attr : sortOp.sortspecs()) {
+         for (auto attr : sortOp.getSortspecs()) {
             auto sortspecAttr = attr.cast<mlir::relalg::SortSpecificationAttr>();
             auto pos = orderedAttributes.getPos(&sortspecAttr.getAttr().getColumn());
             ::mlir::Value left = unpackedLeft.getResult(pos);

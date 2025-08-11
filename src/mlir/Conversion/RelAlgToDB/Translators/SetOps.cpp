@@ -192,8 +192,8 @@ class CountingSetTranslator : public SetOpTranslator {
    mlir::TupleType aggrTupleType;
 
    public:
-   CountingSetTranslator(mlir::relalg::IntersectOp intersectOp) : SetOpTranslator(intersectOp), loc(intersectOp->getLoc()), distinct(intersectOp.set_semantic() == mlir::relalg::SetSemantic::distinct), except(false) {}
-   CountingSetTranslator(mlir::relalg::ExceptOp exceptOp) : SetOpTranslator(exceptOp), loc(exceptOp->getLoc()), distinct(exceptOp.set_semantic() == mlir::relalg::SetSemantic::distinct), except(true) {}
+   CountingSetTranslator(mlir::relalg::IntersectOp intersectOp) : SetOpTranslator(intersectOp), loc(intersectOp->getLoc()), distinct(intersectOp.getSetSemantic() == mlir::relalg::SetSemantic::distinct), except(false) {}
+   CountingSetTranslator(mlir::relalg::ExceptOp exceptOp) : SetOpTranslator(exceptOp), loc(exceptOp->getLoc()), distinct(exceptOp.getSetSemantic() == mlir::relalg::SetSemantic::distinct), except(true) {}
 
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       size_t updateWhich = child == children[0].get() ? 0 : 1;
@@ -316,7 +316,7 @@ class CountingSetTranslator : public SetOpTranslator {
 
 std::unique_ptr<mlir::relalg::Translator> mlir::relalg::Translator::createSetOpTranslator(::mlir::Operation* setOp) {
    if (auto unionOp = mlir::dyn_cast<mlir::relalg::UnionOp>(setOp)) {
-      if (unionOp.set_semantic() == SetSemantic::all) {
+      if (unionOp.getSetSemantic() == SetSemantic::all) {
          return std::make_unique<UnionAllTranslator>(unionOp);
       } else {
          return std::make_unique<UnionDistinctTranslator>(unionOp);

@@ -85,7 +85,7 @@ class OptimizeImplementations : public ::mlir::PassWrapper<OptimizeImplementatio
             })
             .Case<mlir::relalg::SingleJoinOp>([&](mlir::relalg::SingleJoinOp op) {
                if (auto returnOp = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(op.getPredicateBlock().getTerminator())) {
-                  if (returnOp.results().empty()) {
+                  if (returnOp.getResults().empty()) {
                      op->setAttr("impl", ::mlir::StringAttr::get(op.getContext(), "constant"));
                   }
                }

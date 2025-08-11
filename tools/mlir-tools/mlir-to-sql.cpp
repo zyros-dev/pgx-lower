@@ -192,7 +192,7 @@ class ToSQL {
             auto attr = attributeName(op.attr().getColumn());
             std::string distinct = "";
             if (auto projop = mlir::dyn_cast_or_null<ProjectionOp>(op.rel().getDefiningOp())) {
-               if (projop.set_semantic() == SetSemantic::distinct) {
+               if (projop.getSetSemantic() == SetSemantic::distinct) {
                   distinct = "distinct ";
                }
             }
@@ -232,7 +232,7 @@ class ToSQL {
          })
          .Case<MaterializeOp>([&](MaterializeOp op) {
             std::vector<std::string> attrs;
-            for (auto attr : op.cols()) {
+            for (auto attr : op.getCols()) {
                attrs.push_back(attributeName(attr.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>().getColumn()));
             }
             output << "select ";
@@ -278,7 +278,7 @@ class ToSQL {
 
             auto opName = operatorName(op.getOperation());
             if (auto constRelOp = mlir::dyn_cast_or_null<mlir::relalg::ConstRelationOp>(op.getOperation())) {
-               output << opName << "(" << attributeName(constRelOp.columns()[0].dyn_cast_or_null<mlir::relalg::ColumnDefAttr>().getColumn()) << ")";
+               output << opName << "(" << attributeName(constRelOp.getColumns()[0].dyn_cast_or_null<mlir::relalg::ColumnDefAttr>().getColumn()) << ")";
                output << " as ( values ";
                auto first = true;
                for (auto val : constRelOp.values()) {
@@ -311,7 +311,7 @@ class ToSQL {
                   .Case<mlir::relalg::BaseTableOp>([&](mlir::relalg::BaseTableOp op) {
                      output << "select ";
                      auto first = true;
-                     for (auto mapping : op.columns()) {
+                     for (auto mapping : op.getColumns()) {
                         auto columnName = mapping.getName();
                         auto attr = mapping.getValue();
                         auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
@@ -335,7 +335,7 @@ class ToSQL {
                      std::vector<std::string> attrs;
                      auto first = true;
 
-                     for (auto attr : op.mapping()) {
+                     for (auto attr : op.getMapping()) {
                         if (first) {
                            first = false;
                         } else {
@@ -379,7 +379,7 @@ class ToSQL {
                      std::vector<std::string> attrs;
                      auto first = true;
 
-                     for (auto attr : op.mapping()) {
+                     for (auto attr : op.getMapping()) {
                         if (first) {
                            first = false;
                         } else {
@@ -431,7 +431,7 @@ class ToSQL {
                      if (returnop->getNumOperands() > 0) {
                         output << " where " << resolveVal(returnop.getOperand(0));
                      }
-                     output << ") as " << attributeName(op.markattr().getColumn()) << " from " << operatorName(op.left().getDefiningOp());
+                     output << ") as " << attributeName(op.getMarkattr().getColumn()) << " from " << operatorName(op.left().getDefiningOp());
                   })
                   .Case<mlir::relalg::AntiSemiJoinOp>([&](mlir::relalg::AntiSemiJoinOp op) {
                      output << " select * from " << operatorName(op.left().getDefiningOp()) << " where not exists(select * from " << operatorName(op.right().getDefiningOp()) << " ";
@@ -448,9 +448,9 @@ class ToSQL {
                      std::vector<std::pair<std::string, std::string>> mappings;
                      auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(op.getLambdaBlock().getTerminator());
                      size_t i = 0;
-                     for (auto col : op.computed_cols()) {
+                     for (auto col : op.getComputedCols()) {
                         auto attrName = attributeName(col.cast<mlir::relalg::ColumnDefAttr>().getColumn());
-                        auto attrVal = resolveVal(returnOp.results()[i++]);
+                        auto attrVal = resolveVal(returnOp.getResults()[i++]);
                         mappings.push_back({attrName, attrVal});
                      }
                      output << "select ";
@@ -469,14 +469,14 @@ class ToSQL {
                   .Case<mlir::relalg::AggregationOp>([&](mlir::relalg::AggregationOp op) {
                      std::vector<std::pair<std::string, std::string>> mappings;
                      std::vector<std::string> groupByAttrs;
-                     for (auto attr : op.group_by_cols()) {
+                     for (auto attr : op.getGroupByCols()) {
                         groupByAttrs.push_back(attributeName(attr.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>().getColumn()));
                      }
-                     auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(op.aggr_func().front().getTerminator());
+                     auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(op.getAggrFunc().front().getTerminator());
                      size_t i = 0;
-                     for (auto col : op.computed_cols()) {
+                     for (auto col : op.getComputedCols()) {
                         auto attrName = attributeName(col.cast<mlir::relalg::ColumnDefAttr>().getColumn());
-                        auto attrVal = resolveVal(returnOp.results()[i++]);
+                        auto attrVal = resolveVal(returnOp.getResults()[i++]);
                         mappings.push_back({attrName, attrVal});
                      }
                      output << "select ";
@@ -518,11 +518,11 @@ class ToSQL {
                         return;
                      }
                      std::vector<std::string> attrs;
-                     for (auto attr : op.cols()) {
+                     for (auto attr : op.getCols()) {
                         attrs.push_back(attributeName(attr.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>().getColumn()));
                      }
                      output << "select ";
-                     if (op.set_semantic() == mlir::relalg::SetSemantic::distinct) {
+                     if (op.getSetSemantic() == mlir::relalg::SetSemantic::distinct) {
                         output << "distinct ";
                      }
                      auto first = true;
@@ -542,7 +542,7 @@ class ToSQL {
                      output << "select ";
                      auto first = true;
 
-                     for (auto attr : op.columns()) {
+                     for (auto attr : op.getColumns()) {
                         if (first) {
                            first = false;
                         } else {
@@ -572,7 +572,7 @@ class ToSQL {
 
                   .Case<mlir::relalg::SortOp>([&](mlir::relalg::SortOp op) {
                      std::vector<std::string> orderByAttrs;
-                     for (auto attr : op.sortspecs()) {
+                     for (auto attr : op.getSortspecs()) {
                         auto sortspec = attr.dyn_cast_or_null<mlir::relalg::SortSpecificationAttr>();
                         auto sortspecifier = std::string(mlir::relalg::stringifySortSpec(sortspec.getSortSpec()));
                         orderByAttrs.push_back(attributeName(sortspec.getAttr().getColumn()) + " " + sortspecifier);

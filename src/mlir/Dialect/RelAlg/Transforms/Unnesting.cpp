@@ -65,7 +65,7 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
          })
          .Case<AggregationOp>([&](AggregationOp projection) {
             handleChildren(loc,d, projection);
-            projection->setAttr("group_by_cols", ColumnSet::fromArrayAttr(projection.group_by_cols()).insert(availableD).asRefArrayAttr(&getContext()));
+            projection->setAttr("group_by_cols", ColumnSet::fromArrayAttr(projection.getGroupByCols()).insert(availableD).asRefArrayAttr(&getContext()));
             return projection;
          })
          .Case<ProjectionOp>([&](ProjectionOp projection) {
@@ -194,14 +194,14 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
       builder.setInsertionPointToEnd(&lower.getPredicateBlock());
       std::vector<::mlir::Value> values;
       bool nullable = false;
-      if(!lowerTerminator.results().empty()) {
-         Value lowerPredVal = lowerTerminator.results()[0];
+      if(!lowerTerminator.getResults().empty()) {
+         Value lowerPredVal = lowerTerminator.getResults()[0];
          nullable|=lowerPredVal.getType().isa<mlir::db::NullableType>();
          values.push_back(lowerPredVal);
       }
       for (auto selOp : selectionOps) {
          auto higherTerminator = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator());
-         Value higherPredVal = higherTerminator.results()[0];
+         Value higherPredVal = higherTerminator.getResults()[0];
          ::mlir::IRMapping mapping;
          mapping.map(selOp.getPredicateArgument(), lower.getPredicateArgument());
          mlir::relalg::detail::inlineOpIntoBlock(higherPredVal.getDefiningOp(), higherPredVal.getDefiningOp()->getParentOp(), lower.getOperation(), &lower.getPredicateBlock(), mapping);

@@ -5,6 +5,7 @@
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 
 namespace {
 
@@ -147,7 +148,7 @@ class ImplicitToExplicitJoins : public ::mlir::PassWrapper<ImplicitToExplicitJoi
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createImplicitToExplicitJoinsPass() { return std::make_unique<ImplicitToExplicitJoins>(); }
+std::unique_ptr<mlir::Pass> createImplicitToExplicitJoinsPass() { return std::make_unique<ImplicitToExplicitJoins>(); }
 } // end namespace relalg
 } // end namespace mlir
 

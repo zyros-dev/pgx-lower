@@ -45,7 +45,7 @@ class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
          auto* sortLambdaTerminator = sortLambda->getTerminator();
          rewriter.mergeBlockBefore(sortLambda, terminator, {tupleLeft, tupleRight});
          mlir::dsa::YieldOp yieldOp = mlir::cast<mlir::dsa::YieldOp>(terminator->getPrevNode());
-         Value x = yieldOp.results()[0];
+         Value x = yieldOp.getResults()[0];
          rewriter.create<mlir::func::ReturnOp>(sortOp.getLoc(), x);
          rewriter.eraseOp(sortLambdaTerminator);
          rewriter.eraseOp(terminator);
@@ -89,7 +89,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          auto yieldOp = cast<mlir::dsa::YieldOp>(forOp.getBody()->getTerminator());
          std::vector<Type> resTypes;
          std::vector<Location> locs;
-         for (auto t : yieldOp.results()) {
+         for (auto t : yieldOp.getResults()) {
             resTypes.push_back(typeConverter->convertType(t.getType()));
             locs.push_back(forOp->getLoc());
          }
@@ -109,7 +109,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
             builder.setInsertionPoint(term);
             rewriter.mergeBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
 
-            std::vector<Value> results(yieldOp.results().begin(), yieldOp.results().end());
+            std::vector<Value> results(yieldOp.getResults().begin(), yieldOp.getResults().end());
             rewriter.eraseOp(yieldOp);
             auto term2 = builder.create<mlir::scf::YieldOp>(forOp->getLoc(), remap(results, rewriter));
 
@@ -149,7 +149,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          auto yieldOp = cast<mlir::dsa::YieldOp>(forOp.getBody()->getTerminator());
          std::vector<Type> resTypes;
          std::vector<Location> locs;
-         for (auto t : yieldOp.results()) {
+         for (auto t : yieldOp.getResults()) {
             resTypes.push_back(typeConverter->convertType(t.getType()));
             locs.push_back(forOp->getLoc());
          }
@@ -160,7 +160,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          builder.setInsertionPoint(term);
          rewriter.mergeBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
 
-         std::vector<Value> results(yieldOp.results().begin(), yieldOp.results().end());
+         std::vector<Value> results(yieldOp.getResults().begin(), yieldOp.getResults().end());
          rewriter.eraseOp(yieldOp);
          rewriter.eraseOp(term);
 

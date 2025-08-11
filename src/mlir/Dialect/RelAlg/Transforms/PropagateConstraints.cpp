@@ -54,7 +54,7 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
       auto aggr = mlir::cast<mlir::relalg::AggregationOp>(op);
       if (auto child = mlir::dyn_cast_or_null<Operator>(aggr.getRel().getDefiningOp())) {
          auto fds = child.getFDs();
-         auto keys = mlir::relalg::ColumnSet::fromArrayAttr(aggr.group_by_cols());
+         auto keys = mlir::relalg::ColumnSet::fromArrayAttr(aggr.getGroupByCols());
          auto reducedKeys = fds.reduce(keys);
          if (reducedKeys.size() == keys.size()) {
             return mlir::failure();
@@ -65,8 +65,8 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
          auto& colManager = getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
          auto scope = colManager.getUniqueScope("aggr");
          std::unordered_map<const mlir::relalg::Column*, const mlir::relalg::Column*> mapping;
-         std::vector<::mlir::Attribute> computedCols(aggr.computed_cols().begin(), aggr.computed_cols().end());
-         auto* terminator = aggr.aggr_func().begin()->getTerminator();
+         std::vector<::mlir::Attribute> computedCols(aggr.getComputedCols().begin(), aggr.getComputedCols().end());
+         auto* terminator = aggr.getAggrFunc().begin()->getTerminator();
          rewriter.setInsertionPoint(terminator);
          auto returnArgs = mlir::cast<mlir::relalg::ReturnOp>(terminator)->getOperands();
          std::vector<::mlir::Value> values(returnArgs.begin(), returnArgs.end());
@@ -75,7 +75,7 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
             newCol->type = x->type;
             mapping.insert({x, newCol});
             computedCols.push_back(colManager.createDef(newCol));
-            values.push_back(rewriter.create<mlir::relalg::AggrFuncOp>(aggr->getLoc(), x->type, mlir::relalg::AggrFunc::any, aggr.aggr_func().getArgument(0), colManager.createRef(x)));
+            values.push_back(rewriter.create<mlir::relalg::AggrFuncOp>(aggr->getLoc(), x->type, mlir::relalg::AggrFunc::any, aggr.getAggrFunc().getArgument(0), colManager.createRef(x)));
          }
          rewriter.create<mlir::relalg::ReturnOp>(aggr->getLoc(), values);
          rewriter.eraseOp(terminator);
@@ -111,8 +111,8 @@ class ReduceAggrKeys : public ::mlir::PassWrapper<ReduceAggrKeys, ::mlir::Operat
 };
 static std::optional<std::pair<const mlir::relalg::Column*, const mlir::relalg::Column*>> analyzePredicate(PredicateOperator selection) {
    auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(selection.getPredicateBlock().getTerminator());
-   if (returnOp.results().empty()) return {};
-   ::mlir::Value v = returnOp.results()[0];
+   if (returnOp.getResults().empty()) return {};
+   ::mlir::Value v = returnOp.getResults()[0];
    if (auto cmpOp = mlir::dyn_cast_or_null<mlir::db::CmpOp>(v.getDefiningOp())) {
       if (!cmpOp.isEqualityPred()) return {};
       if (auto leftColref = mlir::dyn_cast_or_null<mlir::relalg::GetColumnOp>(cmpOp.getLeft().getDefiningOp())) {

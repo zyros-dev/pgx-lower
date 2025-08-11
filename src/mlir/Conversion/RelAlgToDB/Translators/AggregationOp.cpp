@@ -146,11 +146,11 @@ class AggregationTranslator : public mlir::relalg::Translator {
       key = mlir::relalg::OrderedAttributes::fromRefArr(aggregationOp.group_by_colsAttr());
 
       auto counterType = builder.getI64Type();
-      mlir::relalg::ReturnOp terminator = mlir::cast<mlir::relalg::ReturnOp>(aggregationOp.aggr_func().front().getTerminator());
+      mlir::relalg::ReturnOp terminator = mlir::cast<mlir::relalg::ReturnOp>(aggregationOp.getAggrFunc().front().getTerminator());
 
-      for (size_t i = 0; i < aggregationOp.computed_cols().size(); i++) {
-         auto* destAttr = &aggregationOp.computed_cols()[i].cast<mlir::relalg::ColumnDefAttr>().getColumn();
-         ::mlir::Value computedVal = terminator.results()[i];
+      for (size_t i = 0; i < aggregationOp.getComputedCols().size(); i++) {
+         auto* destAttr = &aggregationOp.getComputedCols()[i].cast<mlir::relalg::ColumnDefAttr>().getColumn();
+         ::mlir::Value computedVal = terminator.getResults()[i];
          if (auto aggrFn = mlir::dyn_cast_or_null<mlir::relalg::AggrFuncOp>(computedVal.getDefiningOp())) {
             auto loc = aggrFn->getLoc();
             auto* attr = &aggrFn.getAttr().getColumn();
