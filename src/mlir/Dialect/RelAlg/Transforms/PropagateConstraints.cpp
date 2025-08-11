@@ -3,6 +3,7 @@
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 
 #include <iostream>
 #include <unordered_set>
@@ -209,8 +210,8 @@ class ExpandTransitiveEqualities : public ::mlir::PassWrapper<ExpandTransitiveEq
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createReduceGroupByKeysPass() { return std::make_unique<ReduceAggrKeys>(); }
-std::unique_ptr<Pass> createExpandTransitiveEqualities() { return std::make_unique<ExpandTransitiveEqualities>(); }
+std::unique_ptr<mlir::Pass> createReduceGroupByKeysPass() { return std::make_unique<ReduceAggrKeys>(); }
+std::unique_ptr<mlir::Pass> createExpandTransitiveEqualities() { return std::make_unique<ExpandTransitiveEqualities>(); }
 
 } // end namespace relalg
 } // end namespace mlir

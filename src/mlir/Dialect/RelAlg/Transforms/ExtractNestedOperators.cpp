@@ -2,6 +2,7 @@
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 
 namespace {
 class ExtractNestedOperators : public ::mlir::PassWrapper<ExtractNestedOperators, ::mlir::OperationPass<::mlir::func::FuncOp>> {
@@ -44,6 +45,6 @@ class ExtractNestedOperators : public ::mlir::PassWrapper<ExtractNestedOperators
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createExtractNestedOperatorsPass() { return std::make_unique<ExtractNestedOperators>(); }
+std::unique_ptr<mlir::Pass> createExtractNestedOperatorsPass() { return std::make_unique<ExtractNestedOperators>(); }
 } // end namespace relalg
 } // end namespace mlir
