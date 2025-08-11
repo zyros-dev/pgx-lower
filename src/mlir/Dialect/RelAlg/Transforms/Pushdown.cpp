@@ -5,6 +5,7 @@
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 
 namespace {
 
@@ -75,6 +76,6 @@ class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::ml
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createPushdownPass() { return std::make_unique<Pushdown>(); }
+std::unique_ptr<mlir::Pass> createPushdownPass() { return std::make_unique<Pushdown>(); }
 } // end namespace relalg
 } // end namespace mlir
