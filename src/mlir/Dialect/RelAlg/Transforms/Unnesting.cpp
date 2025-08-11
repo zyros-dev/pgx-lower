@@ -65,12 +65,12 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
          })
          .Case<AggregationOp>([&](AggregationOp projection) {
             handleChildren(loc,d, projection);
-            projection->setAttr("group_by_cols", ColumnSet::fromArrayAttr(projection.getGroupByCols()).insert(availableD).asRefArrayAttr(&getContext()));
+            projection.setGroupByColsAttr(ColumnSet::fromArrayAttr(projection.getGroupByCols()).insert(availableD).asRefArrayAttr(&getContext()));
             return projection;
          })
          .Case<ProjectionOp>([&](ProjectionOp projection) {
             handleChildren(loc,d, projection);
-            projection->setAttr("cols", ColumnSet::fromArrayAttr(projection.getCols()).insert(availableD).asRefArrayAttr(&getContext()));
+            projection.setColsAttr(ColumnSet::fromArrayAttr(projection.getCols()).insert(availableD).asRefArrayAttr(&getContext()));
             return projection;
          })
          .Case<BinaryOperator>([&](BinaryOperator join) {
@@ -107,9 +107,10 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
                return mlir::dyn_cast_or_null<Operator>(join.getOperation());
             }
          })
-         .Default([&](Operator others) {
-            handleChildren(loc,d, others);
-            return others;
+         .Default([&](auto others) {
+            auto othersOp = mlir::dyn_cast_or_null<Operator>(others);
+            handleChildren(loc,d, othersOp);
+            return othersOp;
          });
    }
    void handleJoin(::mlir::Location loc,BinaryOperator join, Operator newLeft, Operator newRight, bool joinDependent, bool renameRight, mlir::relalg::ColumnSet& dependentAttributes) {
@@ -180,7 +181,7 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
          .Case<BinaryOperator>([&](BinaryOperator join) {
             return false;
          })
-         .Default([&](Operator others) {
+         .Default([&](auto others) {
             return false;
          });
    }

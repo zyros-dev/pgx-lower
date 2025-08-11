@@ -1,4 +1,4 @@
-#include "compiler/runtime/helpers.h"
+#include "runtime/helpers.h"
 #include "execution/logging.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"

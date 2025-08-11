@@ -49,8 +49,9 @@ class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::ml
                        asOp.setChildren({left, right});
                        return asOp;
                     })
-                    .Default([&](Operator others) {
-                       topush.setChildren({others});
+                    .Default([&](auto others) {
+                       auto otherOp = mlir::dyn_cast_or_null<Operator>(others);
+                       topush.setChildren({otherOp});
                        return topush;
                     });
       return res;

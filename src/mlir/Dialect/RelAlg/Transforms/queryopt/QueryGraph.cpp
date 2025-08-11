@@ -59,70 +59,71 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
    auto* op = val.getDefiningOp();
    if (!op) return std::move(support::eval::createInvalid());
    if (auto constantOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(op)) {
-      std::variant<int64_t, double, std::string> parseArg;
-      if (auto integerAttr = constantOp.getValue().dyn_cast_or_null<::mlir::IntegerAttr>()) {
-         parseArg = integerAttr.getInt();
-      } else if (auto floatAttr = constantOp.getValue().dyn_cast_or_null<::mlir::FloatAttr>()) {
-         parseArg = floatAttr.getValueAsDouble();
-      } else if (auto stringAttr = constantOp.getValue().dyn_cast_or_null<::mlir::StringAttr>()) {
-         parseArg = stringAttr.str();
-      } else {
-         return support::eval::createInvalid();
-      }
-      auto type = constantOp.getType();
-      arrow::Type::type typeConstant = arrow::Type::type::NA;
-      uint32_t param1 = 0, param2 = 0;
-      if (isIntegerType(type, 1)) {
-         typeConstant = arrow::Type::type::BOOL;
-      } else if (auto intWidth = getIntegerWidth(type, false)) {
-         switch (intWidth) {
-            case 8: typeConstant = arrow::Type::type::INT8; break;
-            case 16: typeConstant = arrow::Type::type::INT16; break;
-            case 32: typeConstant = arrow::Type::type::INT32; break;
-            case 64: typeConstant = arrow::Type::type::INT64; break;
-         }
-      } else if (auto uIntWidth = getIntegerWidth(type, true)) {
-         switch (uIntWidth) {
-            case 8: typeConstant = arrow::Type::type::UINT8; break;
-            case 16: typeConstant = arrow::Type::type::UINT16; break;
-            case 32: typeConstant = arrow::Type::type::UINT32; break;
-            case 64: typeConstant = arrow::Type::type::UINT64; break;
-         }
-      } else if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
-         typeConstant = arrow::Type::type::DECIMAL128;
-         param1 = decimalType.getP();
-         param2 = decimalType.getS();
-      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
-         switch (floatType.getWidth()) {
-            case 16: typeConstant = arrow::Type::type::HALF_FLOAT; break;
-            case 32: typeConstant = arrow::Type::type::FLOAT; break;
-            case 64: typeConstant = arrow::Type::type::DOUBLE; break;
-         }
-      } else if (auto stringType = type.dyn_cast_or_null<mlir::db::StringType>()) {
-         typeConstant = arrow::Type::type::STRING;
-      } else if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
-         if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
-            typeConstant = arrow::Type::type::DATE32;
-         } else {
-            typeConstant = arrow::Type::type::DATE64;
-         }
-      } else if (auto charType = type.dyn_cast_or_null<mlir::db::CharType>()) {
-         typeConstant = arrow::Type::type::FIXED_SIZE_BINARY;
-         param1 = charType.getBytes();
-      } else if (auto intervalType = type.dyn_cast_or_null<mlir::db::IntervalType>()) {
-         if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
-            typeConstant = arrow::Type::type::INTERVAL_MONTHS;
-         } else {
-            typeConstant = arrow::Type::type::INTERVAL_DAY_TIME;
-         }
-      } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
-         typeConstant = arrow::Type::type::TIMESTAMP;
-         param1 = static_cast<uint32_t>(timestampType.getUnit());
-      }
-      assert(typeConstant != arrow::Type::type::NA);
-
-      auto parseResult = support::parse(parseArg, typeConstant, param1);
-      return support::eval::createLiteral(parseResult, std::make_tuple(typeConstant, param1, param2));
+    return support::eval::createInvalid();
+//      std::variant<int64_t, double, std::string> parseArg;
+//      if (auto integerAttr = constantOp.getValue().dyn_cast_or_null<::mlir::IntegerAttr>()) {
+//         parseArg = integerAttr.getInt();
+//      } else if (auto floatAttr = constantOp.getValue().dyn_cast_or_null<::mlir::FloatAttr>()) {
+//         parseArg = floatAttr.getValueAsDouble();
+//      } else if (auto stringAttr = constantOp.getValue().dyn_cast_or_null<::mlir::StringAttr>()) {
+//         parseArg = stringAttr.str();
+//      } else {
+//         return support::eval::createInvalid();
+//      }
+//      auto type = constantOp.getType();
+//      arrow::Type::type typeConstant = arrow::Type::type::NA;
+//      uint32_t param1 = 0, param2 = 0;
+//      if (isIntegerType(type, 1)) {
+//         typeConstant = arrow::Type::type::BOOL;
+//      } else if (auto intWidth = getIntegerWidth(type, false)) {
+//         switch (intWidth) {
+//            case 8: typeConstant = arrow::Type::type::INT8; break;
+//            case 16: typeConstant = arrow::Type::type::INT16; break;
+//            case 32: typeConstant = arrow::Type::type::INT32; break;
+//            case 64: typeConstant = arrow::Type::type::INT64; break;
+//         }
+//      } else if (auto uIntWidth = getIntegerWidth(type, true)) {
+//         switch (uIntWidth) {
+//            case 8: typeConstant = arrow::Type::type::UINT8; break;
+//            case 16: typeConstant = arrow::Type::type::UINT16; break;
+//            case 32: typeConstant = arrow::Type::type::UINT32; break;
+//            case 64: typeConstant = arrow::Type::type::UINT64; break;
+//         }
+//      } else if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
+//         typeConstant = arrow::Type::type::DECIMAL128;
+//         param1 = decimalType.getP();
+//         param2 = decimalType.getS();
+//      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
+//         switch (floatType.getWidth()) {
+//            case 16: typeConstant = arrow::Type::type::HALF_FLOAT; break;
+//            case 32: typeConstant = arrow::Type::type::FLOAT; break;
+//            case 64: typeConstant = arrow::Type::type::DOUBLE; break;
+//         }
+//      } else if (auto stringType = type.dyn_cast_or_null<mlir::db::StringType>()) {
+//         typeConstant = arrow::Type::type::STRING;
+//      } else if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
+//         if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
+//            typeConstant = arrow::Type::type::DATE32;
+//         } else {
+//            typeConstant = arrow::Type::type::DATE64;
+//         }
+//      } else if (auto charType = type.dyn_cast_or_null<mlir::db::CharType>()) {
+//         typeConstant = arrow::Type::type::FIXED_SIZE_BINARY;
+//         param1 = charType.getBytes();
+//      } else if (auto intervalType = type.dyn_cast_or_null<mlir::db::IntervalType>()) {
+//         if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
+//            typeConstant = arrow::Type::type::INTERVAL_MONTHS;
+//         } else {
+//            typeConstant = arrow::Type::type::INTERVAL_DAY_TIME;
+//         }
+//      } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
+//         typeConstant = arrow::Type::type::TIMESTAMP;
+//         param1 = static_cast<uint32_t>(timestampType.getUnit());
+//      }
+//      assert(typeConstant != arrow::Type::type::NA);
+//
+//      auto parseResult = support::parse(parseArg, typeConstant, param1);
+//      return support::eval::createLiteral(parseResult, std::make_tuple(typeConstant, param1, param2));
    } else if (auto attrRefOp = mlir::dyn_cast_or_null<mlir::relalg::GetColumnOp>(op)) {
       return support::eval::createAttrRef(mapping.at(&attrRefOp.getAttr().getColumn()));
    } else if (auto cmpOp = mlir::dyn_cast_or_null<mlir::relalg::CmpOpInterface>(op)) {
@@ -177,7 +178,7 @@ std::optional<double> estimateUsingSample(mlir::relalg::QueryGraph::Node& n) {
    if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       std::unordered_map<const mlir::relalg::Column*, std::string> mapping;
       for (auto c : baseTableOp.getColumns()) {
-         mapping[&c.value().cast<mlir::relalg::ColumnDefAttr>().getColumn()] = c.getName().str();
+         mapping[&c.getValue().cast<mlir::relalg::ColumnDefAttr>().getColumn()] = c.getName().str();
       }
       auto meta = baseTableOp.getMeta().getMeta();
       auto sample = meta->getSample();
@@ -205,7 +206,7 @@ mlir::relalg::ColumnSet mlir::relalg::QueryGraph::getPKey(mlir::relalg::QueryGra
       mlir::relalg::ColumnSet attributes;
       std::unordered_map<std::string, const mlir::relalg::Column*> mapping;
       for (auto c : baseTableOp.getColumns()) {
-         mapping[c.getName().str()] = &c.value().cast<mlir::relalg::ColumnDefAttr>().getColumn();
+         mapping[c.getName().str()] = &c.getValue().cast<mlir::relalg::ColumnDefAttr>().getColumn();
       }
       for (auto c : meta->getPrimaryKey()) {
          attributes.insert(mapping.at(c));
@@ -218,7 +219,8 @@ mlir::relalg::ColumnSet mlir::relalg::QueryGraph::getPKey(mlir::relalg::QueryGra
 double getRows(mlir::relalg::QueryGraph::Node& n) {
    if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       auto numRows = baseTableOp.getMeta().getMeta()->getNumRows();
-      baseTableOp->setAttr("rows", ::mlir::FloatAttr::get(::mlir::FloatType::getF64Type(n.op.getContext()), numRows));
+      ::mlir::OpBuilder builder(n.op.getContext());
+      baseTableOp->setAttr("rows", ::mlir::FloatAttr::get(builder.getF64Type(), numRows));
       return numRows == 0 ? 1 : numRows;
    }
    return 1;
