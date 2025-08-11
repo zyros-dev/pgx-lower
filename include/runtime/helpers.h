@@ -9,6 +9,14 @@
 #define EXPORT extern "C" __attribute__((visibility("default")))
 #define INLINE __attribute__((always_inline))
 #define NO_SIDE_EFFECTS __attribute__((annotate("rt-no-sideffect")))
+
+// Forward declarations for MLIR types
+namespace mlir {
+class Value;
+class OpBuilder;
+class Location;
+} // namespace mlir
+
 namespace runtime {
 
 struct MemoryHelper {
@@ -149,4 +157,23 @@ T* untag(T* ptr) {
    return reinterpret_cast<T*>(asInt & ptrMask);
 }
 } // end namespace runtime
+
+// pgx_lower compiler runtime namespace
+namespace pgx_lower::compiler::runtime {
+
+// RuntimeCallGenerator - generates runtime function calls during MLIR lowering
+class RuntimeCallGenerator {
+   ::mlir::OpBuilder& builder;
+   ::mlir::Location loc;
+
+public:
+   RuntimeCallGenerator(::mlir::OpBuilder& builder, ::mlir::Location loc) 
+       : builder(builder), loc(loc) {}
+
+   // Generate a runtime call with the given arguments
+   std::vector<::mlir::Value> operator()(const std::vector<::mlir::Value>& args);
+};
+
+} // end namespace pgx_lower::compiler::runtime
+
 #endif // RUNTIME_HELPERS_H

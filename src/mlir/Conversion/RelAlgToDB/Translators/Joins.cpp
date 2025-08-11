@@ -230,7 +230,7 @@ class ConstantSingleJoinTranslator : public mlir::relalg::Translator {
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       auto scope = context.createScope();
       if (child == this->children[0].get()) {
-         ::mlir::Value singleVal = builder.create<mlir::util::LoadOp>(joinOp->getLoc(), singleValPtr.getType().cast<mlir::util::RefType>().getElementType(), singleValPtr, ::mlir::Value());
+         ::mlir::Value singleVal = builder.create<mlir::util::LoadOp>(joinOp->getLoc(), cast<mlir::util::RefType>(singleValPtr.getType()).getElementType(), singleValPtr, ::mlir::Value());
          auto unpacked = builder.create<mlir::util::UnPackOp>(joinOp->getLoc(), singleVal);
          for (size_t i = 0; i < cols.size(); i++) {
             context.setValueForAttribute(scope, cols[i], unpacked.getResult(i));

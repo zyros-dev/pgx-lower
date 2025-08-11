@@ -23,7 +23,7 @@ class ConstRelTranslator : public mlir::relalg::Translator {
          auto row = rowAttr.cast<ArrayAttr>();
          std::vector<Value> values;
          size_t i = 0;
-         for (auto entryAttr : row.value()) {
+         for (auto entryAttr : row.getValue()) {
             if (tupleType.getType(i).isa<mlir::db::NullableType>() && entryAttr.isa<mlir::UnitAttr>()) {
                auto entryVal = builder.create<mlir::db::NullOp>(constRelationOp->getLoc(), tupleType.getType(i));
                values.push_back(entryVal);

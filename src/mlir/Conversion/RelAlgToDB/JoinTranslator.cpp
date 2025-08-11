@@ -9,8 +9,8 @@ JoinTranslator::JoinTranslator(std::shared_ptr<JoinImpl> joinImpl) : Translator(
 }
 void JoinTranslator::addJoinRequiredColumns() {
    this->requiredAttributes.insert(joinOp.getUsedColumns());
-   if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<::mlir::ArrayAttr>()) {
-      for (::mlir::Attribute attr : joinOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
+   if (joinOp->hasAttr("mapping") && isa<::mlir::ArrayAttr>(joinOp->getAttr("mapping"))) {
+      for (::mlir::Attribute attr : cast<::mlir::ArrayAttr>(joinOp->getAttr("mapping"))) {
          auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
@@ -22,8 +22,8 @@ void JoinTranslator::addJoinRequiredColumns() {
    }
 }
 void JoinTranslator::handleMappingNull(OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
-   if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<::mlir::ArrayAttr>()) {
-      for (::mlir::Attribute attr : joinOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
+   if (joinOp->hasAttr("mapping") && isa<::mlir::ArrayAttr>(joinOp->getAttr("mapping"))) {
+      for (::mlir::Attribute attr : cast<::mlir::ArrayAttr>(joinOp->getAttr("mapping"))) {
          auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
@@ -34,8 +34,8 @@ void JoinTranslator::handleMappingNull(OpBuilder& builder, TranslatorContext& co
    }
 }
 void JoinTranslator::handleMapping(OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
-   if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<::mlir::ArrayAttr>()) {
-      for (::mlir::Attribute attr : joinOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
+   if (joinOp->hasAttr("mapping") && isa<::mlir::ArrayAttr>(joinOp->getAttr("mapping"))) {
+      for (::mlir::Attribute attr : cast<::mlir::ArrayAttr>(joinOp->getAttr("mapping"))) {
          auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {

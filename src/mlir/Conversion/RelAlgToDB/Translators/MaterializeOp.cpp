@@ -62,7 +62,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
          auto val = orderedAttributes.resolve(context, i);
          ::mlir::Value valid;
-         if (val.getType().isa<mlir::db::NullableType>()) {
+         if (isa<mlir::db::NullableType>(val.getType())) {
             valid = builder.create<mlir::db::IsNullOp>(materializeOp->getLoc(), val);
             valid = builder.create<mlir::db::NotOp>(materializeOp->getLoc(), valid);
             val = builder.create<mlir::db::NullableGetVal>(materializeOp->getLoc(), getBaseType(val.getType()), val);
@@ -78,7 +78,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
          if (!descr.empty()) {
             descr += ";";
          }
-         descr += materializeOp.getColumns()[i].cast<::mlir::StringAttr>().str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
+         descr += cast<::mlir::StringAttr>(materializeOp.getColumns()[i]).str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
       }
       tableBuilder = builder.create<mlir::dsa::CreateDS>(materializeOp.getLoc(), mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
       children[0]->produce(context, builder);

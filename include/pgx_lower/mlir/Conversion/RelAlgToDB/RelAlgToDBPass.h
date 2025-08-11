@@ -11,6 +11,5 @@ namespace mlir {
         void createLowerRelAlgPipeline(mlir::OpPassManager& pm);
     }// end namespace relalg
 }// end namespace mlir
-}// end namespace pgx
 
 #endif // MLIR_CONVERSION_RELALGTODB_RELALGTODBPASS_H
