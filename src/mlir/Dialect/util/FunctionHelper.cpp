@@ -19,13 +19,13 @@ static ::mlir::Value convertValue(::mlir::OpBuilder& builder, ::mlir::Value v, :
          return builder.create<mlir::arith::TruncIOp>(loc, t, v);
       }
    }
-   if (t.isa<pgx::mlir::util::RefType>() && currentType.isa<pgx::mlir::util::RefType>()) {
-      return builder.create<pgx::mlir::util::GenericMemrefCastOp>(loc, t, v);
+   if (t.isa<mlir::util::RefType>() && currentType.isa<mlir::util::RefType>()) {
+      return builder.create<mlir::util::GenericMemrefCastOp>(loc, t, v);
    }
    return v; //todo
 }
-mlir::ResultRange pgx::mlir::util::FunctionHelper::call(OpBuilder& builder, ::mlir::Location loc, const FunctionSpec& function, ValueRange values) {
-   auto fnHelper = builder.getContext()->getLoadedDialect<pgx::mlir::util::UtilDialect>()->getFunctionHelper();
+mlir::ResultRange mlir::util::FunctionHelper::call(OpBuilder& builder, ::mlir::Location loc, const FunctionSpec& function, ValueRange values) {
+   auto fnHelper = builder.getContext()->getLoadedDialect<mlir::util::UtilDialect>()->getFunctionHelper();
    ::mlir::func::FuncOp funcOp = fnHelper.parentModule.lookupSymbol<::mlir::func::FuncOp>(function.getMangledName());
    if (!funcOp) {
       OpBuilder::InsertionGuard insertionGuard(builder);
@@ -46,12 +46,12 @@ mlir::ResultRange pgx::mlir::util::FunctionHelper::call(OpBuilder& builder, ::ml
    auto funcCall = builder.create<func::CallOp>(loc, funcOp, convertedValues);
    return funcCall.getResults();
 }
-void pgx::mlir::util::FunctionHelper::setParentModule(const ::mlir::ModuleOp& parentModule) {
+void mlir::util::FunctionHelper::setParentModule(const ::mlir::ModuleOp& parentModule) {
    FunctionHelper::parentModule = parentModule;
 }
 
-std::function<mlir::ResultRange(::mlir::ValueRange)> pgx::mlir::util::FunctionSpec::operator()(::mlir::OpBuilder& builder, ::mlir::Location loc) const {
-   std::function<mlir::ResultRange(::mlir::ValueRange)> fn = [&builder, loc, this](::mlir::ValueRange range) -> mlir::ResultRange { return pgx::mlir::util::FunctionHelper::call(builder, loc, *this, range); };
+std::function<mlir::ResultRange(::mlir::ValueRange)> mlir::util::FunctionSpec::operator()(::mlir::OpBuilder& builder, ::mlir::Location loc) const {
+   std::function<mlir::ResultRange(::mlir::ValueRange)> fn = [&builder, loc, this](::mlir::ValueRange range) -> mlir::ResultRange { return mlir::util::FunctionHelper::call(builder, loc, *this, range); };
    return fn;
 }
-pgx::mlir::util::FunctionSpec::FunctionSpec(const std::string& name, const std::string& mangledName, const std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)>& parameterTypes, const std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)>& resultTypes, bool noSideEffects) : name(name), mangledName(mangledName), parameterTypes(parameterTypes), resultTypes(resultTypes), noSideEffects(noSideEffects) {}
+mlir::util::FunctionSpec::FunctionSpec(const std::string& name, const std::string& mangledName, const std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)>& parameterTypes, const std::function<std::vector<::mlir::Type>(::mlir::MLIRContext*)>& resultTypes, bool noSideEffects) : name(name), mangledName(mangledName), parameterTypes(parameterTypes), resultTypes(resultTypes), noSideEffects(noSideEffects) {}

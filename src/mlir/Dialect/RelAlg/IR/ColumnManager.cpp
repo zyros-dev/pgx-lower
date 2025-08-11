@@ -2,7 +2,6 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "execution/logging.h"
 
-namespace pgx {
 namespace mlir {
 namespace relalg {
 
@@ -79,4 +78,3 @@ ColumnRefAttr ColumnManager::createRef(const std::string& scope, const std::stri
 
 } // namespace relalg
 } // namespace mlir
-} // namespace pgx

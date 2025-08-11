@@ -2,8 +2,8 @@
 #include <mlir/Conversion/RelAlgToDB/HashJoinTranslator.h>
 #include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
 
-using namespace pgx::mlir::relalg;
-std::vector<::mlir::Value> pgx::mlir::relalg::Translator::mergeRelationalBlock(::mlir::Block* dest, ::mlir::Operation* op, mlir::function_ref<::mlir::Block*(::mlir::Operation*)> getBlockFn, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
+using namespace ::mlir::relalg;
+std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir::Block* dest, ::mlir::Operation* op, mlir::function_ref<::mlir::Block*(::mlir::Operation*)> getBlockFn, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
    // Splice the operations of the 'source' block into the 'dest' block and erase
    // it.
    llvm::iplist<::mlir::Operation> translated;
@@ -12,11 +12,11 @@ std::vector<::mlir::Value> pgx::mlir::relalg::Translator::mergeRelationalBlock(:
    ::mlir::Block* source = getBlockFn(cloned);
    auto* terminator = source->getTerminator();
 
-   source->walk([&](pgx::mlir::relalg::GetColumnOp getColumnOp) {
+   source->walk([&](mlir::relalg::GetColumnOp getColumnOp) {
       getColumnOp.replaceAllUsesWith(context.getValueForAttribute(&getColumnOp.getAttr().getColumn()));
       toErase.push_back(getColumnOp.getOperation());
    });
-   /*for (auto addColumnOp : source->getOps<pgx::mlir::relalg::AddColumnOp>()) {
+   /*for (auto addColumnOp : source->getOps<mlir::relalg::AddColumnOp>()) {
       context.setValueForAttribute(scope, &addColumnOp.getAttr().getColumn(), addColumnOp.getVal());
       toErase.push_back(addColumnOp.getOperation());
    }*/
@@ -26,7 +26,7 @@ std::vector<::mlir::Value> pgx::mlir::relalg::Translator::mergeRelationalBlock(:
       op->dropAllUses();
       op->erase();
    }
-   auto returnOp = mlir::cast<pgx::mlir::relalg::ReturnOp>(terminator);
+   auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(terminator);
    std::vector<Value> res(returnOp.results().begin(), returnOp.results().end());
    terminator->erase();
    return res;
@@ -35,25 +35,25 @@ std::vector<::mlir::Value> pgx::mlir::relalg::Translator::mergeRelationalBlock(:
 void Translator::propagateInfo() {
    for (auto& c : children) {
       auto available = c->getAvailableColumns();
-      pgx::mlir::relalg::ColumnSet toPropagate = requiredAttributes.intersect(available);
+      mlir::relalg::ColumnSet toPropagate = requiredAttributes.intersect(available);
       c->setInfo(this, toPropagate);
    }
 }
-pgx::mlir::relalg::Translator::Translator(Operator op) : op(op) {
+mlir::relalg::Translator::Translator(Operator op) : op(op) {
    for (auto child : op.getChildren()) {
-      children.push_back(pgx::mlir::relalg::Translator::createTranslator(child.getOperation()));
+      children.push_back(mlir::relalg::Translator::createTranslator(child.getOperation()));
    }
 }
 
-pgx::mlir::relalg::Translator::Translator(::mlir::ValueRange potentialChildren) : op() {
+mlir::relalg::Translator::Translator(::mlir::ValueRange potentialChildren) : op() {
    for (auto child : potentialChildren) {
-      if (child.getType().isa<pgx::mlir::relalg::TupleStreamType>()) {
-         children.push_back(pgx::mlir::relalg::Translator::createTranslator(child.getDefiningOp()));
+      if (child.getType().isa<mlir::relalg::TupleStreamType>()) {
+         children.push_back(mlir::relalg::Translator::createTranslator(child.getDefiningOp()));
       }
    }
 }
 
-void Translator::setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) {
+void Translator::setInfo(mlir::relalg::Translator* consumer, mlir::relalg::ColumnSet requiredAttributes) {
    this->consumer = consumer;
    this->requiredAttributes = requiredAttributes;
    if (op) {
@@ -61,12 +61,12 @@ void Translator::setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::rel
       propagateInfo();
    }
 }
-pgx::mlir::relalg::ColumnSet Translator::getAvailableColumns() {
+mlir::relalg::ColumnSet Translator::getAvailableColumns() {
    return op.getAvailableColumns();
 };
 
-std::unique_ptr<pgx::mlir::relalg::Translator> Translator::createTranslator(::mlir::Operation* operation) {
-   return ::llvm::TypeSwitch<::mlir::Operation*, std::unique_ptr<pgx::mlir::relalg::Translator>>(operation)
+std::unique_ptr<mlir::relalg::Translator> Translator::createTranslator(::mlir::Operation* operation) {
+   return ::llvm::TypeSwitch<::mlir::Operation*, std::unique_ptr<mlir::relalg::Translator>>(operation)
       .Case<BaseTableOp>([&](auto x) { return createBaseTableTranslator(x); })
       .Case<ConstRelationOp>([&](auto x) { return createConstRelTranslator(x); })
       .Case<MaterializeOp>([&](auto x) { return createMaterializeTranslator(x); })

@@ -6,34 +6,33 @@
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/Value.h"
 
-namespace pgx {
 namespace mlir {
 namespace relalg {
 class OrderedAttributes {
    std::vector<Type> types;
-   std::vector<const pgx::mlir::relalg::Column*> attrs;
+   std::vector<const mlir::relalg::Column*> attrs;
 
    public:
    static OrderedAttributes fromRefArr(ArrayAttr arrayAttr) {
       OrderedAttributes res;
       for (auto attr : arrayAttr) {
-         if (auto attrRef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>()) {
+         if (auto attrRef = attr.dyn_cast<mlir::relalg::ColumnRefAttr>()) {
             res.insert(&attrRef.getColumn());
          }
-         if (auto attrDef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>()) {
+         if (auto attrDef = attr.dyn_cast<mlir::relalg::ColumnDefAttr>()) {
             res.insert(&attrDef.getColumn());
          }
       }
       return res;
    }
-   static OrderedAttributes fromColumns(pgx::mlir::relalg::ColumnSet attrs) {
+   static OrderedAttributes fromColumns(mlir::relalg::ColumnSet attrs) {
       OrderedAttributes res;
       for (auto* attr : attrs) {
          res.insert(attr);
       }
       return res;
    }
-   static OrderedAttributes fromVec(std::vector<const pgx::mlir::relalg::Column*> vec) {
+   static OrderedAttributes fromVec(std::vector<const mlir::relalg::Column*> vec) {
       OrderedAttributes res;
       for (auto* attr : vec) {
          res.insert(attr);
@@ -49,12 +48,12 @@ class OrderedAttributes {
          values.push_back(resolve(context, i));
       }
       if (values.size() == 0) {
-         return builder.create<pgx::mlir::util::UndefOp>(loc, mlir::TupleType::get(builder.getContext()));
+         return builder.create<mlir::util::UndefOp>(loc, mlir::TupleType::get(builder.getContext()));
       }
-      return builder.create<pgx::mlir::util::PackOp>(loc, values);
+      return builder.create<mlir::util::PackOp>(loc, values);
    }
 
-   size_t insert(const pgx::mlir::relalg::Column* attr, Type alternativeType = {}) {
+   size_t insert(const mlir::relalg::Column* attr, Type alternativeType = {}) {
       attrs.push_back(attr);
       if (attr) {
          types.push_back(attr->type);
@@ -75,10 +74,10 @@ class OrderedAttributes {
          }
       }
    }
-   const std::vector<const pgx::mlir::relalg::Column*>& getAttrs() const {
+   const std::vector<const mlir::relalg::Column*>& getAttrs() const {
       return attrs;
    }
-   size_t getPos(const pgx::mlir::relalg::Column* attr) {
+   size_t getPos(const mlir::relalg::Column* attr) {
       return std::find(attrs.begin(), attrs.end(), attr) - attrs.begin();
    }
 };

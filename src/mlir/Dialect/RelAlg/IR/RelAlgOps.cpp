@@ -7,7 +7,7 @@
 #include <functional>
 
 using namespace mlir;
-using namespace pgx::mlir::relalg;
+using namespace ::mlir::relalg;
 
 // BaseTableOp uses auto-generated parser/printer from assemblyFormat in TableGen
 
@@ -24,10 +24,10 @@ using namespace pgx::mlir::relalg;
 // Interface Implementations
 //===----------------------------------------------------------------------===//
 
-namespace pgx::mlir::relalg::detail {
+namespace mlir::relalg::detail {
 
 // Placeholder implementations for interface functions
-void replaceUsages(::mlir::Operation* op, std::function<pgx::mlir::relalg::ColumnRefAttr(pgx::mlir::relalg::ColumnRefAttr)> fn) {
+void replaceUsages(::mlir::Operation* op, std::function<mlir::relalg::ColumnRefAttr(mlir::relalg::ColumnRefAttr)> fn) {
     // TODO: Implement column reference replacement
 }
 
@@ -88,7 +88,7 @@ void inlineOpIntoBlock(::mlir::Operation* vop, ::mlir::Operation* includeChildre
     // TODO: Implement operation inlining
 }
 
-} // namespace pgx::mlir::relalg::detail
+} // namespace mlir::relalg::detail
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"

@@ -26,21 +26,21 @@ using namespace mlir;
 
 namespace {
 
-class ScanSourceLowering : public OpConversionPattern<pgx::mlir::dsa::ScanSource> {
+class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
    public:
-   using OpConversionPattern<pgx::mlir::dsa::ScanSource>::OpConversionPattern;
-   LogicalResult matchAndRewrite(pgx::mlir::dsa::ScanSource op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+   using OpConversionPattern<mlir::dsa::ScanSource>::OpConversionPattern;
+   LogicalResult matchAndRewrite(mlir::dsa::ScanSource op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       std::vector<Type> types;
       auto parentModule = op->getParentOfType<ModuleOp>();
       ::mlir::func::FuncOp funcOp = parentModule.lookupSymbol<::mlir::func::FuncOp>("rt_get_execution_context");
       if (!funcOp) {
          ::mlir::OpBuilder::InsertionGuard guard(rewriter);
          rewriter.setInsertionPointToStart(parentModule.getBody());
-         funcOp = rewriter.create<::mlir::func::FuncOp>(op->getLoc(), "rt_get_execution_context", rewriter.getFunctionType({}, {pgx::mlir::util::RefType::get(getContext(), rewriter.getI8Type())}), rewriter.getStringAttr("private"));
+         funcOp = rewriter.create<::mlir::func::FuncOp>(op->getLoc(), "rt_get_execution_context", rewriter.getFunctionType({}, {mlir::util::RefType::get(getContext(), rewriter.getI8Type())}), rewriter.getStringAttr("private"));
       }
 
       ::mlir::Value executionContext = rewriter.create<mlir::func::CallOp>(op->getLoc(), funcOp, ::mlir::ValueRange{}).getResult(0);
-      ::mlir::Value description = rewriter.create<pgx::mlir::util::CreateConstVarLen>(op->getLoc(), pgx::mlir::util::VarLen32Type::get(rewriter.getContext()), op.descrAttr());
+      ::mlir::Value description = rewriter.create<mlir::util::CreateConstVarLen>(op->getLoc(), mlir::util::VarLen32Type::get(rewriter.getContext()), op.descrAttr());
       auto rawPtr = rt::DataSourceIteration::start(rewriter, op->getLoc())({executionContext, description})[0];
       rewriter.replaceOp(op, rawPtr);
       return success();
@@ -55,7 +55,7 @@ struct DSAToStdLoweringPass
 
    DSAToStdLoweringPass() {}
    void getDependentDialects(DialectRegistry& registry) const override {
-      registry.insert<LLVM::LLVMDialect, pgx::mlir::dsa::DSADialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithmeticDialect>();
+      registry.insert<LLVM::LLVMDialect, mlir::dsa::DSADialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithmeticDialect>();
    }
    void runOnOperation() final;
 };
@@ -89,7 +89,7 @@ class SimpleTypeConversionPattern : public ConversionPattern {
 };
 void DSAToStdLoweringPass::runOnOperation() {
    auto module = getOperation();
-   getContext().getLoadedDialect<pgx::mlir::util::UtilDialect>()->getFunctionHelper().setParentModule(module);
+   getContext().getLoadedDialect<mlir::util::UtilDialect>()->getFunctionHelper().setParentModule(module);
    // Define Conversion Target
    ConversionTarget target(getContext());
    target.addLegalOp<ModuleOp>();
@@ -107,16 +107,16 @@ void DSAToStdLoweringPass::runOnOperation() {
    target.addLegalDialect<cf::ControlFlowDialect>();
 
    target.addDynamicallyLegalDialect<util::UtilDialect>(opIsWithoutDSATypes);
-   target.addLegalOp<pgx::mlir::dsa::CondSkipOp>();
+   target.addLegalOp<mlir::dsa::CondSkipOp>();
 
-   target.addDynamicallyLegalOp<pgx::mlir::dsa::CondSkipOp>(opIsWithoutDSATypes);
+   target.addDynamicallyLegalOp<mlir::dsa::CondSkipOp>(opIsWithoutDSATypes);
    target.addDynamicallyLegalOp<::mlir::func::FuncOp>([&](::mlir::func::FuncOp op) {
       auto isLegal = !hasDSAType(typeConverter, op.getFunctionType().getInputs()) &&
          !hasDSAType(typeConverter, op.getFunctionType().getResults());
       return isLegal;
    });
    target.addDynamicallyLegalOp<func::ConstantOp>([&](func::ConstantOp op) {
-      if (auto functionType = op.getType().dyn_cast_or_null<mlir::FunctionType>()) {
+      if (auto functionType = op.getType().dyn_cast<mlir::FunctionType>()) {
          auto isLegal = !hasDSAType(typeConverter, functionType.getInputs()) &&
             !hasDSAType(typeConverter, functionType.getResults());
          return isLegal;
@@ -135,11 +135,11 @@ void DSAToStdLoweringPass::runOnOperation() {
    typeConverter.addConversion([&](mlir::TupleType tupleType) {
       return convertTuple(tupleType, typeConverter);
    });
-   typeConverter.addConversion([&](pgx::mlir::dsa::TableType tableType) {
-      return pgx::mlir::util::RefType::get(&getContext(), IntegerType::get(&getContext(), 8));
+   typeConverter.addConversion([&](mlir::dsa::TableType tableType) {
+      return mlir::util::RefType::get(&getContext(), IntegerType::get(&getContext(), 8));
    });
-   typeConverter.addConversion([&](pgx::mlir::dsa::TableBuilderType tableType) {
-      return pgx::mlir::util::RefType::get(&getContext(), IntegerType::get(&getContext(), 8));
+   typeConverter.addConversion([&](mlir::dsa::TableBuilderType tableType) {
+      return mlir::util::RefType::get(&getContext(), IntegerType::get(&getContext(), 8));
    });
 
    RewritePatternSet patterns(&getContext());
@@ -147,20 +147,20 @@ void DSAToStdLoweringPass::runOnOperation() {
    mlir::populateFunctionOpInterfaceTypeConversionPattern<::mlir::func::FuncOp>(patterns, typeConverter);
    mlir::populateCallOpTypeConversionPattern(patterns, typeConverter);
    mlir::populateReturnOpTypeConversionPattern(patterns, typeConverter);
-   pgx::mlir::dsa::populateScalarToStdPatterns(typeConverter, patterns);
-   pgx::mlir::dsa::populateDSAToStdPatterns(typeConverter, patterns);
-   pgx::mlir::dsa::populateCollectionsToStdPatterns(typeConverter, patterns);
-   pgx::mlir::util::populateUtilTypeConversionPatterns(typeConverter, patterns);
+   mlir::dsa::populateScalarToStdPatterns(typeConverter, patterns);
+   mlir::dsa::populateDSAToStdPatterns(typeConverter, patterns);
+   mlir::dsa::populateCollectionsToStdPatterns(typeConverter, patterns);
+   mlir::util::populateUtilTypeConversionPatterns(typeConverter, patterns);
    mlir::scf::populateSCFStructuralTypeConversionsAndLegality(typeConverter, patterns, target);
    patterns.insert<SimpleTypeConversionPattern<mlir::func::ConstantOp>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::arith::SelectOp>>(typeConverter, &getContext());
-   patterns.insert<SimpleTypeConversionPattern<pgx::mlir::dsa::CondSkipOp>>(typeConverter, &getContext());
+   patterns.insert<SimpleTypeConversionPattern<mlir::dsa::CondSkipOp>>(typeConverter, &getContext());
    patterns.insert<ScanSourceLowering>(typeConverter, &getContext());
 
    if (failed(applyFullConversion(module, target, std::move(patterns))))
       signalPassFailure();
 }
 
-std::unique_ptr<::mlir::Pass> pgx::mlir::dsa::createLowerToStdPass() {
+std::unique_ptr<::mlir::Pass> mlir::dsa::createLowerToStdPass() {
    return std::make_unique<DSAToStdLoweringPass>();
 }

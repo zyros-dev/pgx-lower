@@ -1,7 +1,7 @@
 #include "mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraphBuilder.h"
 #include <list>
 
-namespace pgx::mlir::relalg {
+namespace mlir::relalg {
 static NodeSet getNodeSetFromClass(llvm::EquivalenceClasses<size_t>& classes, size_t val, size_t numNodes) {
    NodeSet res(numNodes);
    auto eqclass = classes.findLeader(val);
@@ -26,7 +26,7 @@ size_t countCreatingOperators(Operator op, llvm::SmallPtrSet<::mlir::Operation*,
    res += !created.empty();
    return res;
 }
-void pgx::mlir::relalg::QueryGraphBuilder::populateQueryGraph(Operator op) {
+void mlir::relalg::QueryGraphBuilder::populateQueryGraph(Operator op) {
    auto children = op.getChildren();
    auto used = op.getUsedColumns();
    auto created = op.getCreatedColumns();
@@ -40,11 +40,11 @@ void pgx::mlir::relalg::QueryGraphBuilder::populateQueryGraph(Operator op) {
    for (auto child : children) {
       populateQueryGraph(child);
    }
-   if (mlir::isa<pgx::mlir::relalg::CrossProductOp>(op.getOperation())) {
+   if (mlir::isa<mlir::relalg::CrossProductOp>(op.getOperation())) {
       //do not construct crossproducts in the querygraph
-   } else if (mlir::isa<pgx::mlir::relalg::SelectionOp>(op.getOperation()) || mlir::isa<pgx::mlir::relalg::InnerJoinOp>(op.getOperation())) {
+   } else if (mlir::isa<mlir::relalg::SelectionOp>(op.getOperation()) || mlir::isa<mlir::relalg::InnerJoinOp>(op.getOperation())) {
       NodeSet ses = calcSES(op);
-      if (!ses.any() && mlir::isa<pgx::mlir::relalg::SelectionOp>(op.getOperation())) {
+      if (!ses.any() && mlir::isa<mlir::relalg::SelectionOp>(op.getOperation())) {
          ses = calcT(op);
       }
       if (ses.count() == 1) {
@@ -58,7 +58,7 @@ void pgx::mlir::relalg::QueryGraphBuilder::populateQueryGraph(Operator op) {
       } else {
          qg.addSelectionEdge(ses, op);
       }
-   } else if (pgx::mlir::relalg::detail::isJoin(op.getOperation())) {
+   } else if (mlir::relalg::detail::isJoin(op.getOperation())) {
       //add join edges into the query graph
       NodeSet tes = calcTES(op);
       NodeSet leftT = calcT(children[0]);
@@ -174,4 +174,4 @@ QueryGraphBuilder::QueryGraphBuilder(Operator root, llvm::SmallPtrSet<::mlir::Op
                                                                                                                  numNodes(countCreatingOperators(root, alreadyOptimized)),
                                                                                                                  qg(numNodes) {}
 
-} // namespace pgx::mlir::relalg
+} // namespace mlir::relalg

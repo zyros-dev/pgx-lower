@@ -23,11 +23,11 @@ class SimpleTypeConversionPattern : public ConversionPattern {
    }
 };
 
-class SizeOfLowering :  public OpConversionPattern<pgx::mlir::util::SizeOfOp> {
+class SizeOfLowering :  public OpConversionPattern<mlir::util::SizeOfOp> {
    public:
-   using OpConversionPattern<pgx::mlir::util::SizeOfOp>::OpConversionPattern;
-   LogicalResult matchAndRewrite(pgx::mlir::util::SizeOfOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      rewriter.replaceOpWithNewOp<pgx::mlir::util::SizeOfOp>(op, rewriter.getIndexType(), TypeAttr::get(typeConverter->convertType(op.type())));
+   using OpConversionPattern<mlir::util::SizeOfOp>::OpConversionPattern;
+   LogicalResult matchAndRewrite(mlir::util::SizeOfOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      rewriter.replaceOpWithNewOp<mlir::util::SizeOfOp>(op, rewriter.getIndexType(), TypeAttr::get(typeConverter->convertType(op.type())));
       return success();
    }
 };
@@ -44,7 +44,7 @@ struct UtilToLLVMLoweringPass
 };
 } // end anonymous namespace
 
-void pgx::mlir::util::populateUtilTypeConversionPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns) {
+void mlir::util::populateUtilTypeConversionPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns) {
    patterns.add<SimpleTypeConversionPattern<GetTupleOp>>(typeConverter, patterns.getContext());
    patterns.add<SimpleTypeConversionPattern<UndefOp>>(typeConverter, patterns.getContext());
    patterns.add<SimpleTypeConversionPattern<PackOp>>(typeConverter, patterns.getContext());
@@ -64,10 +64,10 @@ void pgx::mlir::util::populateUtilTypeConversionPatterns(TypeConverter& typeConv
    patterns.add<SimpleTypeConversionPattern<ArrayElementPtrOp>>(typeConverter, patterns.getContext());
    patterns.add<SimpleTypeConversionPattern<FilterTaggedPtr>>(typeConverter, patterns.getContext());
 
-   typeConverter.addConversion([&](pgx::mlir::util::RefType genericMemrefType) {
-      return pgx::mlir::util::RefType::get(genericMemrefType.getContext(), typeConverter.convertType(genericMemrefType.getElementType()));
+   typeConverter.addConversion([&](mlir::util::RefType genericMemrefType) {
+      return mlir::util::RefType::get(genericMemrefType.getContext(), typeConverter.convertType(genericMemrefType.getElementType()));
    });
-   typeConverter.addConversion([&](pgx::mlir::util::VarLen32Type varType) {
+   typeConverter.addConversion([&](mlir::util::VarLen32Type varType) {
       return varType;
    });
 }

@@ -1,7 +1,7 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "runtime/Database.h"
 namespace {
@@ -11,8 +11,8 @@ class AttachMetaData : public ::mlir::PassWrapper<AttachMetaData, ::mlir::Operat
    public:
    AttachMetaData(runtime::Database& db):db(db){}
    void runOnOperation() override {
-      getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
-         op.metaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),db.getTableMetaData(op.table_identifier().str())));
+      getOperation().walk([&](mlir::relalg::BaseTableOp op) {
+         op.metaAttr(mlir::relalg::TableMetaDataAttr::get(&getContext(),db.getTableMetaData(op.table_identifier().str())));
       });
    }
 };
@@ -21,16 +21,15 @@ class DetachMetaData : public ::mlir::PassWrapper<DetachMetaData, ::mlir::Operat
 
    public:
    void runOnOperation() override {
-      getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
-         getOperation().walk([&](pgx::mlir::relalg::BaseTableOp op) {
-            op.metaAttr(pgx::mlir::relalg::TableMetaDataAttr::get(&getContext(),std::make_shared<runtime::TableMetaData>()));
+      getOperation().walk([&](mlir::relalg::BaseTableOp op) {
+         getOperation().walk([&](mlir::relalg::BaseTableOp op) {
+            op.metaAttr(mlir::relalg::TableMetaDataAttr::get(&getContext(),std::make_shared<runtime::TableMetaData>()));
          });
       });
    }
 };
 } // end anonymous namespace
 
-namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createAttachMetaDataPass(runtime::Database& db) { return std::make_unique<AttachMetaData>(db); }

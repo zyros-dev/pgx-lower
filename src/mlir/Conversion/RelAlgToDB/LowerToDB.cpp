@@ -18,14 +18,14 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
    virtual llvm::StringRef getArgument() const override { return "relalg-to-db"; }
 
    void getDependentDialects(mlir::DialectRegistry& registry) const override {
-      registry.insert<pgx::mlir::util::UtilDialect>();
+      registry.insert<mlir::util::UtilDialect>();
       registry.insert<mlir::memref::MemRefDialect>();
       registry.insert<mlir::scf::SCFDialect>();
    }
    bool isTranslationHook(::mlir::Operation* op) {
       return ::llvm::TypeSwitch<::mlir::Operation*, bool>(op)
 
-         .Case<pgx::mlir::relalg::MaterializeOp>([&](::mlir::Operation* op) {
+         .Case<mlir::relalg::MaterializeOp>([&](::mlir::Operation* op) {
             return true;
          })
          .Default([&](auto x) {
@@ -33,10 +33,10 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
          });
    }
    void runOnOperation() override {
-      pgx::mlir::relalg::TranslatorContext loweringContext;
+      mlir::relalg::TranslatorContext loweringContext;
       getOperation().walk([&](::mlir::Operation* op) {
          if (isTranslationHook(op)) {
-            auto node = pgx::mlir::relalg::Translator::createTranslator(op);
+            auto node = mlir::relalg::Translator::createTranslator(op);
             node->setInfo(nullptr, {});
             ::mlir::OpBuilder builder(op);
             node->produce(loweringContext, builder);
@@ -47,14 +47,13 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
 };
 } // end anonymous namespace
 
-namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createLowerToDBPass() { return std::make_unique<LowerToDBPass>(); }
 
 void registerRelAlgConversionPasses(){
    ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-      return pgx::mlir::relalg::createLowerToDBPass();
+      return mlir::relalg::createLowerToDBPass();
    });
 
    ::mlir::PassPipelineRegistration<EmptyPipelineOptions>(
@@ -63,7 +62,7 @@ void registerRelAlgConversionPasses(){
       createLowerRelAlgPipeline);
 }
 void createLowerRelAlgPipeline(mlir::OpPassManager& pm){
-   pm.addNestedPass<::mlir::func::FuncOp>(pgx::mlir::relalg::createLowerToDBPass());
+   pm.addNestedPass<::mlir::func::FuncOp>(mlir::relalg::createLowerToDBPass());
    pm.addPass(mlir::createCanonicalizerPass());
 }
 

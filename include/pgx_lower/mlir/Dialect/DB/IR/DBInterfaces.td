@@ -7,7 +7,7 @@ def DB_NeedsNullWrap : OpInterface<"NeedsNullWrap"> {
         This interface allows operations to indicate that they cannot handle
         `NULL` values themselves and need a wrapper.
     }];
-    let cppNamespace = "::pgx::mlir::db";
+    let cppNamespace = "::mlir::db";
 
     let methods = [
         InterfaceMethod<"Returns true if the operator cannot `NULL` itself.",
@@ -27,7 +27,7 @@ def DB_SupportsInvalidValues : OpInterface<"SupportsInvalidValues"> {
         invalid (garbage) values (and therefore can be safely executed on the
         invalid value storage of `NULL` values).
     }];
-    let cppNamespace = "::pgx::mlir::db";
+    let cppNamespace = "::mlir::db";
 
     let methods = [
         InterfaceMethod<"Returns true if the operator supports invalid values.",

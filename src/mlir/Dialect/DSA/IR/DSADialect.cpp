@@ -14,7 +14,7 @@ namespace pgx { namespace mlir { namespace dsa {
 }}}
 
 using namespace mlir;
-using namespace pgx::mlir::dsa;
+using namespace ::mlir::dsa;
 
 struct DSAInlinerInterface : public DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
@@ -67,18 +67,18 @@ void DSADialect::initialize() {
             parser.emitError(parser.getNameLoc(), "table_builder requires tuple type");
             return {};
         }
-        return pgx::mlir::dsa::TableBuilderType::get(parser.getContext(), tupleType);
+        return mlir::dsa::TableBuilderType::get(parser.getContext(), tupleType);
     }
     if (mnemonic == "vector") {
         if (parser.parseLess()) return {};
         ::mlir::Type elementType;
         if (parser.parseType(elementType)) return {};
         if (parser.parseGreater()) return {};
-        return pgx::mlir::dsa::VectorType::get(parser.getContext(), elementType);
+        return mlir::dsa::VectorType::get(parser.getContext(), elementType);
     }
     // Handle simple types
-    if (mnemonic == "table") return pgx::mlir::dsa::TableType::get(parser.getContext());
-    if (mnemonic == "flag") return pgx::mlir::dsa::FlagType::get(parser.getContext());
+    if (mnemonic == "table") return mlir::dsa::TableType::get(parser.getContext());
+    if (mnemonic == "flag") return mlir::dsa::FlagType::get(parser.getContext());
     
     parser.emitError(parser.getNameLoc(), "unknown DSA type: ") << mnemonic;
     return {};
@@ -88,19 +88,19 @@ void DSADialect::printType(::mlir::Type type, ::mlir::DialectAsmPrinter &printer
     PGX_DEBUG("DSADialect::printType() called");
     
     // Print DSA types by their mnemonic
-    if (auto tableBuilder = type.dyn_cast<pgx::mlir::dsa::TableBuilderType>()) {
+    if (auto tableBuilder = type.dyn_cast<mlir::dsa::TableBuilderType>()) {
         printer << "table_builder<" << tableBuilder.getRowType() << ">";
         return;
     }
-    if (auto vector = type.dyn_cast<pgx::mlir::dsa::VectorType>()) {
+    if (auto vector = type.dyn_cast<mlir::dsa::VectorType>()) {
         printer << "vector<" << vector.getElementType() << ">";
         return;
     }
-    if (type.isa<pgx::mlir::dsa::TableType>()) {
+    if (type.isa<mlir::dsa::TableType>()) {
         printer << "table";
         return;
     }
-    if (type.isa<pgx::mlir::dsa::FlagType>()) {
+    if (type.isa<mlir::dsa::FlagType>()) {
         printer << "flag";
         return;
     }

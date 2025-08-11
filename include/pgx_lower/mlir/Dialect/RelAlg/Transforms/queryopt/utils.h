@@ -8,7 +8,7 @@
 #include <iterator>
 #include <mlir/Dialect/RelAlg/IR/RelAlgOps.h>
 
-namespace pgx::mlir::relalg {
+namespace mlir::relalg {
 class QueryGraph;
 class NodeSet {
    public:
@@ -113,7 +113,7 @@ class NodeSet {
 };
 struct HashNodeSet {
    size_t operator()(const NodeSet& bitset) const {
-      return bitset.hash();
+      return bitset.getHash();
    }
 };
 class Plan {
@@ -143,5 +143,5 @@ class Plan {
 
    static std::shared_ptr<Plan> joinPlans(NodeSet leftProblem, NodeSet rightProblem, std::shared_ptr<Plan> leftPlan, std::shared_ptr<Plan> rightPlan, QueryGraph& queryPlan, NodeSet& combinedProblem);
 };
-} // namespace pgx::mlir::relalg
+} // namespace mlir::relalg
 #endif // MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_UTILS_H

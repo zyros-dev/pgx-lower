@@ -5,11 +5,11 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/util/UtilOps.h"
 
-class MaterializeTranslator : public pgx::mlir::relalg::Translator {
-   pgx::mlir::relalg::MaterializeOp materializeOp;
+class MaterializeTranslator : public mlir::relalg::Translator {
+   mlir::relalg::MaterializeOp materializeOp;
    ::mlir::Value tableBuilder;
    ::mlir::Value table;
-   pgx::mlir::relalg::OrderedAttributes orderedAttributes;
+   mlir::relalg::OrderedAttributes orderedAttributes;
    std::string arrowDescrFromType(::mlir::Type type) {
       if (isIntegerType(type, 1)) {
          return "bool";
@@ -17,61 +17,61 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
          return "int[" + std::to_string(intWidth) + "]";
       } else if (auto uIntWidth = getIntegerWidth(type, true)) {
          return "uint[" + std::to_string(uIntWidth) + "]";
-      } else if (auto decimalType = type.dyn_cast_or_null<pgx::mlir::db::DecimalType>()) {
+      } else if (auto decimalType = type.dyn_cast<mlir::db::DecimalType>()) {
          // TODO: actually handle cases where 128 bits are insufficient.
          auto prec = std::min(decimalType.getP(), 38);
          return "decimal[" + std::to_string(prec) + "," + std::to_string(decimalType.getS()) + "]";
-      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
+      } else if (auto floatType = type.dyn_cast<::mlir::FloatType>()) {
          return "float[" + std::to_string(floatType.getWidth()) + "]";
-      } else if (auto stringType = type.dyn_cast_or_null<pgx::mlir::db::StringType>()) {
+      } else if (auto stringType = type.dyn_cast<mlir::db::StringType>()) {
          return "string";
-      } else if (auto dateType = type.dyn_cast_or_null<pgx::mlir::db::DateType>()) {
-         if (dateType.getUnit() == pgx::mlir::db::DateUnitAttr::day) {
+      } else if (auto dateType = type.dyn_cast<mlir::db::DateType>()) {
+         if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
             return "date[32]";
          } else {
             return "date[64]";
          }
-      } else if (auto charType = type.dyn_cast_or_null<pgx::mlir::db::CharType>()) {
+      } else if (auto charType = type.dyn_cast<mlir::db::CharType>()) {
          return "fixed_sized[" + std::to_string(charType.getBytes()) + "]";
-      } else if (auto intervalType = type.dyn_cast_or_null<pgx::mlir::db::IntervalType>()) {
-         if (intervalType.getUnit() == pgx::mlir::db::IntervalUnitAttr::months) {
+      } else if (auto intervalType = type.dyn_cast<mlir::db::IntervalType>()) {
+         if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
             return "interval_months";
          } else {
             return "interval_daytime";
          }
-      } else if (auto timestampType = type.dyn_cast_or_null<pgx::mlir::db::TimestampType>()) {
+      } else if (auto timestampType = type.dyn_cast<mlir::db::TimestampType>()) {
          return "timestamp[" + std::to_string(static_cast<uint32_t>(timestampType.getUnit())) + "]";
       }
       return "";
    }
 
    public:
-   MaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) : pgx::mlir::relalg::Translator(materializeOp.getRel()), materializeOp(materializeOp) {
-      orderedAttributes = pgx::mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.getCols());
+   MaterializeTranslator(mlir::relalg::MaterializeOp materializeOp) : mlir::relalg::Translator(materializeOp.getRel()), materializeOp(materializeOp) {
+      orderedAttributes = mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.getCols());
    }
-   virtual void setInfo(pgx::mlir::relalg::Translator* consumer, pgx::mlir::relalg::ColumnSet requiredAttributes) override {
+   virtual void setInfo(mlir::relalg::Translator* consumer, mlir::relalg::ColumnSet requiredAttributes) override {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
-      this->requiredAttributes.insert(pgx::mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.getCols()));
+      this->requiredAttributes.insert(mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.getCols()));
       propagateInfo();
    }
-   virtual pgx::mlir::relalg::ColumnSet getAvailableColumns() override {
+   virtual mlir::relalg::ColumnSet getAvailableColumns() override {
       return {};
    }
-   virtual void consume(pgx::mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, pgx::mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
          auto val = orderedAttributes.resolve(context, i);
          ::mlir::Value valid;
-         if (val.getType().isa<pgx::mlir::db::NullableType>()) {
-            valid = builder.create<pgx::mlir::db::IsNullOp>(materializeOp->getLoc(), val);
-            valid = builder.create<pgx::mlir::db::NotOp>(materializeOp->getLoc(), valid);
-            val = builder.create<pgx::mlir::db::NullableGetVal>(materializeOp->getLoc(), getBaseType(val.getType()), val);
+         if (val.getType().isa<mlir::db::NullableType>()) {
+            valid = builder.create<mlir::db::IsNullOp>(materializeOp->getLoc(), val);
+            valid = builder.create<mlir::db::NotOp>(materializeOp->getLoc(), valid);
+            val = builder.create<mlir::db::NullableGetVal>(materializeOp->getLoc(), getBaseType(val.getType()), val);
          }
-         builder.create<pgx::mlir::dsa::Append>(materializeOp->getLoc(), tableBuilder, val, valid);
+         builder.create<mlir::dsa::Append>(materializeOp->getLoc(), tableBuilder, val, valid);
       }
-      builder.create<pgx::mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
+      builder.create<mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
    }
-   virtual void produce(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+   virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       std::string descr = "";
       auto tupleType = orderedAttributes.getTupleType(builder.getContext());
       for (size_t i = 0; i < materializeOp.getColumns().size(); i++) {
@@ -80,9 +80,9 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
          }
          descr += materializeOp.getColumns()[i].cast<::mlir::StringAttr>().str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
       }
-      tableBuilder = builder.create<pgx::mlir::dsa::CreateDS>(materializeOp.getLoc(), pgx::mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
+      tableBuilder = builder.create<mlir::dsa::CreateDS>(materializeOp.getLoc(), mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
       children[0]->produce(context, builder);
-      table = builder.create<pgx::mlir::dsa::Finalize>(materializeOp.getLoc(), pgx::mlir::dsa::TableType::get(builder.getContext()), tableBuilder).res();
+      table = builder.create<mlir::dsa::Finalize>(materializeOp.getLoc(), mlir::dsa::TableType::get(builder.getContext()), tableBuilder).res();
    }
    virtual void done() override {
       materializeOp.replaceAllUsesWith(table);
@@ -90,6 +90,6 @@ class MaterializeTranslator : public pgx::mlir::relalg::Translator {
    virtual ~MaterializeTranslator() {}
 };
 
-std::unique_ptr<pgx::mlir::relalg::Translator> pgx::mlir::relalg::Translator::createMaterializeTranslator(pgx::mlir::relalg::MaterializeOp materializeOp) {
+std::unique_ptr<mlir::relalg::Translator> mlir::relalg::Translator::createMaterializeTranslator(mlir::relalg::MaterializeOp materializeOp) {
    return std::make_unique<MaterializeTranslator>(materializeOp);
 }

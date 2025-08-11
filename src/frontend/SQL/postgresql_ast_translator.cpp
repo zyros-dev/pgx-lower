@@ -159,10 +159,10 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     PGX_DEBUG("Creating BaseTableOp for table: " + tableIdentifier);
     
     // Get tuple stream type
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context_);
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context_);
     
     // Create BaseTableOp - simplified without region for Test 1
-    auto baseTableOp = context.builder->create<pgx::mlir::relalg::BaseTableOp>(
+    auto baseTableOp = context.builder->create<mlir::relalg::BaseTableOp>(
         context.builder->getUnknownLoc(),
         tupleStreamType,
         context.builder->getStringAttr(tableIdentifier),
@@ -177,7 +177,7 @@ auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, Tr
     PGX_DEBUG("Creating query function using func::FuncOp pattern");
     
     // Get RelAlg Table type for return value - MaterializeOp produces !relalg.table
-    auto relAlgTableType = pgx::mlir::relalg::TableType::get(&context_);
+    auto relAlgTableType = mlir::relalg::TableType::get(&context_);
     
     // Create func::FuncOp following LingoDB's pattern: func.func @query() -> !relalg.table
     auto queryFuncType = builder.getFunctionType({}, {relAlgTableType});
@@ -208,7 +208,7 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
     }
     
     // Get RelAlg Table type for MaterializeOp
-    auto relAlgTableType = pgx::mlir::relalg::TableType::get(&context_);
+    auto relAlgTableType = mlir::relalg::TableType::get(&context_);
     
     // Materialize tuple stream to table using MaterializeOp
     // For SELECT *, we need to specify which columns to materialize
@@ -217,7 +217,7 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
     columnAttrs.push_back(context.builder->getStringAttr("*"));  // Placeholder for SELECT *
     auto columnsArrayAttr = context.builder->getArrayAttr(columnAttrs);
     
-    auto materializeOp = context.builder->create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = context.builder->create<mlir::relalg::MaterializeOp>(
         context.builder->getUnknownLoc(), relAlgTableType, baseTableOp->getResult(0), columnsArrayAttr);
     
     // Use standard func.return with materialized result

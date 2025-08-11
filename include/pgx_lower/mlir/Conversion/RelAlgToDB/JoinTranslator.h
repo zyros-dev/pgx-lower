@@ -5,7 +5,7 @@
 #include <mlir/Dialect/RelAlg/IR/Column.h>
 #include <mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h>
 
-namespace pgx::mlir::relalg {
+namespace mlir::relalg {
 
 class JoinTranslator;
 struct JoinImpl {
@@ -30,8 +30,8 @@ struct JoinImpl {
 class JoinTranslator : public Translator {
    protected:
    Operator joinOp;
-   pgx::mlir::relalg::Translator* builderChild;
-   pgx::mlir::relalg::Translator* lookupChild;
+   mlir::relalg::Translator* builderChild;
+   mlir::relalg::Translator* lookupChild;
    std::shared_ptr<JoinImpl> impl;
 
    public:
@@ -41,7 +41,7 @@ class JoinTranslator : public Translator {
    void handleMapping(OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope);
    void handlePotentialMatch(OpBuilder& builder, TranslatorContext& context, Value matches, mlir::function_ref<void(OpBuilder&, TranslatorContext& context, TranslatorContext::AttributeResolverScope&)> onMatch = nullptr);
 
-   virtual void scanHT(pgx::mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) = 0;
+   virtual void scanHT(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) = 0;
    void forwardConsume(::mlir::OpBuilder& builder, TranslatorContext& context) {
       consumer->consume(this, builder, context);
    }
@@ -49,5 +49,5 @@ class JoinTranslator : public Translator {
    virtual Value evaluatePredicate(TranslatorContext& context, ::mlir::OpBuilder& builder, TranslatorContext::AttributeResolverScope& scope);
    std::vector<size_t> customLookupBuilders;
 };
-} // end namespace pgx::mlir::relalg
+} // end namespace mlir::relalg
 #endif // MLIR_CONVERSION_RELALGTODB_JOINTRANSLATOR_H

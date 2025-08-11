@@ -2,7 +2,7 @@
 #define MLIR_DIALECT_UTIL_FUNCTIONHELPER_H
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
-namespace pgx::mlir::util {
+namespace mlir::util {
 class FunctionSpec {
    std::string name;
    std::string mangledName;
@@ -40,6 +40,6 @@ class FunctionHelper {
    public:
    static ::mlir::ResultRange call(::mlir::OpBuilder& builder, ::mlir::Location loc, const FunctionSpec& function, ::mlir::ValueRange values);
 };
-} // namespace pgx::mlir::util
+} // namespace mlir::util
 
 #endif // MLIR_DIALECT_UTIL_FUNCTIONHELPER_H

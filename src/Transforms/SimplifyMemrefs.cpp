@@ -5,7 +5,7 @@
 #include <iostream>
 
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
@@ -19,7 +19,7 @@ class FoldLoadGlobal : public mlir::RewritePattern {
       for (auto i : loadOp.getIndices()) {
          if (auto *idxDefiningOp = i.getDefiningOp()) {
             if (auto constantOp = mlir::dyn_cast_or_null<mlir::arith::ConstantOp>(idxDefiningOp)) {
-               if (auto integerAttr = constantOp.value().dyn_cast_or_null<::mlir::IntegerAttr>()) {
+               if (auto integerAttr = constantOp.getValue().dyn_cast<::mlir::IntegerAttr>()) {
                   indices.push_back(integerAttr.getInt());
                   continue;
                }
@@ -35,8 +35,8 @@ class FoldLoadGlobal : public mlir::RewritePattern {
                   if (!globalOp.constant()) return mlir::failure();
                   if (globalOp.isExternal()) return mlir::failure();
                   if (!globalOp.initial_value().has_value()) return mlir::failure();
-                  auto initialValue = globalOp.initial_value().value();
-                  if (auto denseAttr = initialValue.dyn_cast_or_null<mlir::DenseIntOrFPElementsAttr>()) {
+                  auto initialValue = globalOp.initial_value().getValue();
+                  if (auto denseAttr = initialValue.dyn_cast<mlir::DenseIntOrFPElementsAttr>()) {
                      auto it = denseAttr.getValues<float>();
                      auto res = it[indices[0]];
                      std::cout << res << std::endl;
@@ -68,7 +68,7 @@ class FoldLocalLoadStores : public mlir::RewritePattern {
          auto *lastUser = sameBlockUsers.back();
          if (auto storeOp = mlir::dyn_cast_or_null<mlir::memref::StoreOp>(lastUser)) {
             if (storeOp.indices() == loadOp.indices()) {
-               rewriter.replaceOp(op, storeOp.value());
+               rewriter.replaceOp(op, storeOp.getValue());
                return mlir::success();
             }
          }

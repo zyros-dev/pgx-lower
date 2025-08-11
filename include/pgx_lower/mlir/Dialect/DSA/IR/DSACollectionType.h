@@ -7,7 +7,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Transforms/DialectConversion.h>
 
-namespace pgx::mlir::dsa {
+namespace mlir::dsa {
 
 class CollectionType : public ::mlir::Type {
    public:
@@ -15,6 +15,6 @@ class CollectionType : public ::mlir::Type {
    Type getElementType() const;
    static bool classof(Type);
 };
-} // namespace pgx::mlir::dsa
+} // namespace mlir::dsa
 
 #endif // MLIR_DIALECT_DSA_IR_DSACOLLECTIONTYPE_H
