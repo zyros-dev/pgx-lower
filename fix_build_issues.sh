@@ -19,24 +19,10 @@ chmod -R u+w ./include ./src ./tools ./tests
 # ======================================================================================================================
 # ----------------------------------------------------------------------------------------------------------------------
 #                                        FIX #1: DB CONSTANTOP DUPLICATE GETVALUE METHOD
-# SOLVES: error: getValue() method declared twice with identical signature in DB ConstantOp
-# JUSTIFICATION: Rename manual getValue() to getConstantValue() to avoid TableGen conflict
-# EDIT HISTORY: Sidestep duplicate method generation by renaming - ✅ VALIDATED WORKING
+# SOLVES:
+# JUSTIFICATION:
+# EDIT HISTORY:
 # ----------------------------------------------------------------------------------------------------------------------
-
-echo "🔧 Fix #1: Rename DB ConstantOp getValue() to avoid duplicate..."
-sed -i 's/Attribute getValue()/Attribute getConstantValue()/g' include/pgx_lower/mlir/Dialect/DB/IR/DBOps.td
-
-# ----------------------------------------------------------------------------------------------------------------------
-#                                        FIX #2: MLIR ATTRIBUTE ACCESS API (TARGETED FIX)
-# SOLVES: 'class mlir::StringAttr' has no member named 'value'
-# JUSTIFICATION: Only fix MLIR attributes, not std::optional which uses .value() correctly
-# EDIT HISTORY: Target specific MLIR attribute types to avoid breaking std::optional
-# ----------------------------------------------------------------------------------------------------------------------
-
-echo "🔧 Fix #2: Update MLIR attribute access API (validated patterns)..."
-find src -name "*.cpp" -exec sed -i 's/Reference()\.value()/Reference().getValue()/g' {} \;
-find src -name "*.cpp" -exec sed -i 's/\.value()\.dyn_cast/.getValue().dyn_cast/g' {} \;
 
 # ======================================================================================================================
 #                                        END MESSAGE
