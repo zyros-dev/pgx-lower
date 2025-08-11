@@ -64,6 +64,26 @@ echo "🔧 Fixing all pgx_lower include paths globally..."
 find include -name "*.h" -exec sed -i 's/"pgx_lower\/mlir\/Dialect/"mlir\/Dialect/g' {} \;
 find tests -name "*.cpp" -exec sed -i 's/"pgx_lower\/mlir\/Dialect/"mlir\/Dialect/g' {} \;
 
+# ----------------------------------------------------------------------------------------------------------------------
+#                                        FIX #5: DSA FOROP UNTIL ACCESSOR METHOD
+# SOLVES: error: 'until' was not declared in this scope in DSAOps.h.inc:2364:45
+# JUSTIFICATION: DSA ForOp TableGen definition generates until()?2:1 but needs getUntil() accessor
+# EDIT HISTORY: Replace until() with getUntil() - unanimous researcher consensus
+# ----------------------------------------------------------------------------------------------------------------------
+
+echo "🔧 Fix #5: DSA ForOp until() accessor method..."
+sed -i 's/until()?2:1/getUntil()?2:1/g' include/pgx_lower/mlir/Dialect/DSA/IR/DSAOps.td
+
+# ----------------------------------------------------------------------------------------------------------------------
+#                                        FIX #6: UTIL PASSES HEADER EXTRA NAMESPACE BRACE
+# SOLVES: error: expected declaration before '}' token at Passes.h:16
+# JUSTIFICATION: Extra closing brace } // end namespace mlir at line 16 causes syntax error
+# EDIT HISTORY: Remove duplicate namespace closing brace - unanimous researcher consensus
+# ----------------------------------------------------------------------------------------------------------------------
+
+echo "🔧 Fix #6: Remove extra namespace brace in Util header..."
+sed -i '16d' include/pgx_lower/mlir/Conversion/UtilToLLVM/Passes.h
+
 # ======================================================================================================================
 #                                        END MESSAGE
 # ======================================================================================================================
