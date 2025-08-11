@@ -3,9 +3,9 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DB/IR/DBTypes.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBTypes.h"
 #include "mlir/Parser/Parser.h"
 #include "llvm/Support/raw_ostream.h"
 

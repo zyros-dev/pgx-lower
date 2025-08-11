@@ -4,8 +4,8 @@
 
 #include <gtest/gtest.h>
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
@@ -23,9 +23,9 @@ class HybridRelAlgToDBTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Load required dialects
-        context.loadDialect<pgx::mlir::relalg::RelAlgDialect>();
+        context.loadDialect<mlir::relalg::RelAlgDialect>();
         context.loadDialect<pgx::db::DBDialect>();
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
         context.loadDialect<func::FuncDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<scf::SCFDialect>();
@@ -48,15 +48,15 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
     builder->setInsertionPointToStart(module.getBody());
     
     // Function starts with RelAlg table type
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = mlir::relalg::TableType::get(&context);
     auto funcType = builder->getFunctionType({}, {tableType});
     auto funcOp = builder->create<func::FuncOp>(loc, "test_hybrid_approach", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder->create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder->create<mlir::relalg::BaseTableOp>(
         loc,
         tupleStreamType,
         builder->getStringAttr("test_table"),
@@ -65,7 +65,7 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
     
     // Create MaterializeOp with column names
     auto columnsAttr = builder->getArrayAttr({builder->getStringAttr("id")});
-    auto materializeOp = builder->create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder->create<mlir::relalg::MaterializeOp>(
         loc,
         tableType,
         baseTableOp.getResult(),
@@ -97,20 +97,20 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
     bool foundFinalize = false;        // Should NOT have finalize anymore
     
     funcOp.walk([&](Operation *op) {
-        if (isa<pgx::mlir::dsa::CreateDS>(op)) {
+        if (isa<mlir::dsa::CreateDS>(op)) {
             foundCreateDS = true;
-            auto createOp = cast<pgx::mlir::dsa::CreateDS>(op);
-            EXPECT_TRUE(createOp.getDs().getType().isa<pgx::mlir::dsa::TableBuilderType>())
+            auto createOp = cast<mlir::dsa::CreateDS>(op);
+            EXPECT_TRUE(createOp.getDs().getType().isa<mlir::dsa::TableBuilderType>())
                 << "CreateDS should create a TableBuilder for internal processing";
-        } else if (isa<pgx::mlir::dsa::Append>(op)) {
+        } else if (isa<mlir::dsa::Append>(op)) {
             foundDSAppend = true;
-        } else if (isa<pgx::mlir::dsa::NextRow>(op)) {
+        } else if (isa<mlir::dsa::NextRow>(op)) {
             foundNextRow = true;
         } else if (isa<pgx::db::StoreResultOp>(op)) {
             foundStoreResult = true;
         } else if (isa<pgx::db::StreamResultsOp>(op)) {
             foundStreamResults = true;
-        } else if (isa<pgx::mlir::dsa::Finalize>(op)) {
+        } else if (isa<mlir::dsa::Finalize>(op)) {
             foundFinalize = true;  // Should NOT find this in hybrid approach
         }
     });
@@ -146,7 +146,7 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_GeneratesHybridOperations) {
     EXPECT_EQ(updatedFuncType.getNumResults(), 1) << "Function should return DSA table after conversion";
     if (updatedFuncType.getNumResults() > 0) {
         auto returnType = updatedFuncType.getResult(0);
-        EXPECT_TRUE(returnType.isa<pgx::mlir::dsa::TableType>()) << "Return type should be DSA table";
+        EXPECT_TRUE(returnType.isa<mlir::dsa::TableType>()) << "Return type should be DSA table";
     }
     
     PGX_DEBUG("RelAlgToDB correctly generates hybrid DSA+PostgreSQL SPI operations");
@@ -160,15 +160,15 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
     auto module = ModuleOp::create(loc);
     builder->setInsertionPointToStart(module.getBody());
     
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = mlir::relalg::TableType::get(&context);
     auto funcType = builder->getFunctionType({}, {tableType});
     auto funcOp = builder->create<func::FuncOp>(loc, "test_multiple_cols_hybrid", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp with multiple columns
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder->create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder->create<mlir::relalg::BaseTableOp>(
         loc,
         tupleStreamType,
         builder->getStringAttr("test_table"),
@@ -179,7 +179,7 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
     auto columnsAttr = builder->getArrayAttr({
         builder->getStringAttr("id")
     });
-    auto materializeOp = builder->create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder->create<mlir::relalg::MaterializeOp>(
         loc,
         tableType,
         baseTableOp.getResult(),
@@ -201,7 +201,7 @@ TEST_F(HybridRelAlgToDBTest, DISABLED_MultipleColumnsHybrid) {
     
     // First check module-level operations
     module.walk([&](Operation *op) {
-        if (isa<pgx::mlir::dsa::Append>(op)) {
+        if (isa<mlir::dsa::Append>(op)) {
             dsAppendCount++;
             PGX_DEBUG("Found Append at module level");
         } else if (isa<pgx::db::StoreResultOp>(op)) {
@@ -231,15 +231,15 @@ TEST_F(HybridRelAlgToDBTest, NoRemovedOperations) {
     auto module = ModuleOp::create(loc);
     builder->setInsertionPointToStart(module.getBody());
     
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = mlir::relalg::TableType::get(&context);
     auto funcType = builder->getFunctionType({}, {tableType});
     auto funcOp = builder->create<func::FuncOp>(loc, "test_no_removed_ops", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder->setInsertionPointToStart(entryBlock);
     
     // Create a BaseTableOp as input
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder->create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder->create<mlir::relalg::BaseTableOp>(
         loc,
         tupleStreamType,
         builder->getStringAttr("test_table"),
@@ -248,7 +248,7 @@ TEST_F(HybridRelAlgToDBTest, NoRemovedOperations) {
     
     // Create a MaterializeOp with BaseTable input
     auto columnsAttr = builder->getArrayAttr({builder->getStringAttr("id")});
-    auto materializeOp = builder->create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder->create<mlir::relalg::MaterializeOp>(
         loc,
         tableType,
         baseTableOp.getResult(),

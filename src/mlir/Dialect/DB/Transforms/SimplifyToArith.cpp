@@ -11,7 +11,7 @@
 namespace {
 mlir::arith::CmpIPredicateAttr convertToCmpIPred(::mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
-   switch (p.getValue()) {
+   switch (p.value()) {
       case db::DBCmpPredicate::eq:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::eq);
       case db::DBCmpPredicate::neq:
@@ -29,7 +29,7 @@ mlir::arith::CmpIPredicateAttr convertToCmpIPred(::mlir::OpBuilder, ::mlir::db::
 }
 mlir::arith::CmpFPredicateAttr convertToCmpFPred(::mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
-   switch (p.getValue()) {
+   switch (p.value()) {
       case db::DBCmpPredicate::eq:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OEQ);
       case db::DBCmpPredicate::neq:
@@ -48,11 +48,11 @@ mlir::arith::CmpFPredicateAttr convertToCmpFPred(::mlir::OpBuilder, ::mlir::db::
 mlir::Attribute convertConst(::mlir::Attribute attr, ::mlir::Value v) {
    using namespace mlir;
    std::variant<int64_t, double, std::string> parseArg;
-   if (auto integerAttr = attr.dyn_cast<IntegerAttr>()) {
+   if (auto integerAttr = attr.dyn_cast_or_null<IntegerAttr>()) {
       if (v.getType().isIntOrIndex()) {
          return IntegerAttr::get(v.getType(), integerAttr.getInt());
       }
-   } else if (auto floatAttr = attr.dyn_cast<FloatAttr>()) {
+   } else if (auto floatAttr = attr.dyn_cast_or_null<FloatAttr>()) {
       if (v.getType().isa<::mlir::FloatType>()) {
          return FloatAttr::get(v.getType(), floatAttr.getValueAsDouble());
       }

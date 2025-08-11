@@ -1,9 +1,9 @@
 //===- test_dsa_create_table_builder.cpp - Test for CreateTableBuilder lowering --===//
 
 #include "gtest/gtest.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilDialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -24,8 +24,8 @@ using namespace mlir;
 class CreateTableBuilderTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
-        context.loadDialect<pgx::mlir::util::UtilDialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::util::UtilDialect>();
         context.loadDialect<func::FuncDialect>();
         context.loadDialect<arith::ArithDialect>();
     }
@@ -91,7 +91,7 @@ module {
                 EXPECT_EQ(callOp.getNumOperands(), 1);
                 EXPECT_TRUE(callOp.getOperand(0).getType().isa<LLVM::LLVMPointerType>());
                 EXPECT_EQ(callOp.getNumResults(), 1);
-                EXPECT_TRUE(callOp.getResult(0).getType().isa<pgx::mlir::util::RefType>());
+                EXPECT_TRUE(callOp.getResult(0).getType().isa<mlir::util::RefType>());
             }
         }
     });

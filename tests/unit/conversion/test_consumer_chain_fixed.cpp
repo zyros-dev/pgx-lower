@@ -3,8 +3,8 @@
 
 #include <gtest/gtest.h>
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
@@ -22,9 +22,9 @@ class ConsumerChainTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Load required dialects
-        context.loadDialect<pgx::mlir::relalg::RelAlgDialect>();
+        context.loadDialect<mlir::relalg::RelAlgDialect>();
         context.loadDialect<pgx::db::DBDialect>();
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
         context.loadDialect<func::FuncDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<scf::SCFDialect>();
@@ -46,15 +46,15 @@ TEST_F(ConsumerChainTest, DISABLED_ConsumerChainExecutes) {
     builder->setInsertionPointToStart(module.getBody());
     
     // Function starts with RelAlg table type
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = mlir::relalg::TableType::get(&context);
     auto funcType = builder->getFunctionType({}, {tableType});
     auto funcOp = builder->create<func::FuncOp>(loc, "test_consumer_chain", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp with specific table name
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder->create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder->create<mlir::relalg::BaseTableOp>(
         loc,
         tupleStreamType,
         builder->getStringAttr("consumer_test_table"),
@@ -63,7 +63,7 @@ TEST_F(ConsumerChainTest, DISABLED_ConsumerChainExecutes) {
     
     // Create MaterializeOp with column names
     auto columnsAttr = builder->getArrayAttr({builder->getStringAttr("id")});
-    auto materializeOp = builder->create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder->create<mlir::relalg::MaterializeOp>(
         loc,
         tableType,
         baseTableOp.getResult(),
@@ -96,7 +96,7 @@ TEST_F(ConsumerChainTest, DISABLED_ConsumerChainExecutes) {
     int storeResultCount = 0;
     
     module.walk([&](Operation *op) {
-        if (isa<pgx::mlir::dsa::Append>(op)) {
+        if (isa<mlir::dsa::Append>(op)) {
             foundDSAppend = true;
             dsAppendCount++;
             PGX_DEBUG("Found Append - consumer chain executed!");
@@ -104,7 +104,7 @@ TEST_F(ConsumerChainTest, DISABLED_ConsumerChainExecutes) {
             foundStoreResult = true;
             storeResultCount++;
             PGX_DEBUG("Found StoreResultOp - consumer chain executed!");
-        } else if (isa<pgx::mlir::dsa::NextRow>(op)) {
+        } else if (isa<mlir::dsa::NextRow>(op)) {
             foundNextRow = true;
             PGX_DEBUG("Found NextRow - consumer chain executed!");
         }
@@ -130,15 +130,15 @@ TEST_F(ConsumerChainTest, ConsumerChainInLoop) {
     auto module = ModuleOp::create(loc);
     builder->setInsertionPointToStart(module.getBody());
     
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = mlir::relalg::TableType::get(&context);
     auto funcType = builder->getFunctionType({}, {tableType});
     auto funcOp = builder->create<func::FuncOp>(loc, "test_loop_consumer", funcType);
     auto* entryBlock = funcOp.addEntryBlock();
     builder->setInsertionPointToStart(entryBlock);
     
     // Create simple BaseTable -> Materialize pipeline
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder->create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder->create<mlir::relalg::BaseTableOp>(
         loc,
         tupleStreamType,
         builder->getStringAttr("loop_test_table"),
@@ -146,7 +146,7 @@ TEST_F(ConsumerChainTest, ConsumerChainInLoop) {
     );
     
     auto columnsAttr = builder->getArrayAttr({builder->getStringAttr("id")});
-    auto materializeOp = builder->create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder->create<mlir::relalg::MaterializeOp>(
         loc,
         tableType,
         baseTableOp.getResult(),
@@ -171,7 +171,7 @@ TEST_F(ConsumerChainTest, ConsumerChainInLoop) {
         
         // Check if Append and StoreResultOp are inside the loop
         whileOp.getAfter().walk([&](Operation *op) {
-            if (isa<pgx::mlir::dsa::Append>(op) || 
+            if (isa<mlir::dsa::Append>(op) || 
                 isa<pgx::db::StoreResultOp>(op)) {
                 operationsInLoop = true;
             }

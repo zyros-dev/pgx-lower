@@ -11,12 +11,12 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/util/UtilDialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilOps.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/Pass.h"
@@ -30,8 +30,8 @@ protected:
     void SetUp() override {
         context.loadDialect<func::FuncDialect, arith::ArithDialect>();
         context.loadDialect<pgx::db::DBDialect>();
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
-        context.loadDialect<pgx::mlir::util::UtilDialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::util::UtilDialect>();
     }
 
     MLIRContext context;
@@ -56,9 +56,9 @@ TEST_F(MinimalHangReproTest, DISABLED_EmptyDSAOperation) {
     builder.setInsertionPointToStart(block);
     
     // Create ONLY DSA operation - no DB types involved
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -95,9 +95,9 @@ TEST_F(MinimalHangReproTest, DISABLED_DSAWithArithOperand) {
     builder.setInsertionPointToStart(block);
     
     // Create DSA table builder
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -105,7 +105,7 @@ TEST_F(MinimalHangReproTest, DISABLED_DSAWithArithOperand) {
     auto value = builder.create<arith::ConstantIntOp>(
         builder.getUnknownLoc(), 42, 64);
     
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         value.getResult());  // Direct arith value - no DB nullable
@@ -142,9 +142,9 @@ TEST_F(MinimalHangReproTest, DISABLED_DSAWithDBNullableOperand) {
     builder.setInsertionPointToStart(block);
     
     // Create DSA table builder
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -158,7 +158,7 @@ TEST_F(MinimalHangReproTest, DISABLED_DSAWithDBNullableOperand) {
     
     // THIS IS THE EXACT COMBINATION THAT TRIGGERS INFINITE LOOP:
     // DSA operation (Append) with DB nullable operand
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),      // DSA TableBuilder type
         asNullableOp.getResult());   // DB NullableI64Type - CIRCULAR DEPENDENCY!
@@ -205,9 +205,9 @@ TEST_F(MinimalHangReproTest, DISABLED_DSAWithPreConvertedTuple) {
     builder.setInsertionPointToStart(block);
     
     // Create DSA table builder
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -218,12 +218,12 @@ TEST_F(MinimalHangReproTest, DISABLED_DSAWithPreConvertedTuple) {
         builder.getUnknownLoc(), builder.getI1Type(), builder.getBoolAttr(false));
     
     auto tupleType = TupleType::get(&context, {builder.getI64Type(), builder.getI1Type()});
-    auto packOp = builder.create<pgx::mlir::util::PackOp>(
+    auto packOp = builder.create<mlir::util::PackOp>(
         builder.getUnknownLoc(), tupleType, 
         ValueRange{value.getResult(), falseVal.getResult()});
     
     // Use pre-converted tuple instead of DB nullable
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),      // DSA TableBuilder type
         packOp.getResult());         // Tuple type - no circular dependency

@@ -30,7 +30,7 @@ mlir::relalg::ColumnManager& getColumnManager(::mlir::OpAsmParser& parser) {
       if (!parsedSpec)
          return parser.emitError(loc, "invalid ")
             << "type attribute specification: \"" << attrStr << '"';
-      spec = parsedSpec.getValue();
+      spec = parsedSpec.value();
    }
    return success();
 }
@@ -90,7 +90,7 @@ static ParseResult parseCustRefArr(OpAsmParser& parser, ArrayAttr& attr) {
       return failure();
    }
    for (auto a : parsedAttr) {
-      SymbolRefAttr parsedSymbolRefAttr = a.dyn_cast<SymbolRefAttr>();
+      SymbolRefAttr parsedSymbolRefAttr = a.dyn_cast_or_null<SymbolRefAttr>();
       mlir::relalg::ColumnRefAttr attr = getColumnManager(parser).createRef(parsedSymbolRefAttr);
       attributes.push_back(attr);
    }
@@ -108,7 +108,7 @@ static void printCustRefArr(OpAsmPrinter& p, ::mlir::Operation* op, ArrayAttr ar
       } else {
          p << ",";
       }
-      mlir::relalg::ColumnRefAttr parsedSymbolRefAttr = a.dyn_cast<mlir::relalg::ColumnRefAttr>();
+      mlir::relalg::ColumnRefAttr parsedSymbolRefAttr = a.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>();
       p << parsedSymbolRefAttr.getName();
    }
    p << "]";
@@ -144,7 +144,7 @@ static void printSortSpecs(OpAsmPrinter& p, ::mlir::Operation* op, ArrayAttr arr
       } else {
          p << ",";
       }
-      mlir::relalg::SortSpecificationAttr sortSpecificationAttr = a.dyn_cast<mlir::relalg::SortSpecificationAttr>();
+      mlir::relalg::SortSpecificationAttr sortSpecificationAttr = a.dyn_cast_or_null<mlir::relalg::SortSpecificationAttr>();
       p << "(" << sortSpecificationAttr.getAttr().getName() << "," << mlir::relalg::stringifySortSpec(sortSpecificationAttr.getSortSpec()) << ")";
    }
    p << "]";
@@ -153,7 +153,7 @@ static void printSortSpecs(OpAsmPrinter& p, ::mlir::Operation* op, ArrayAttr arr
 static ParseResult parseCustDef(OpAsmParser& parser, mlir::relalg::ColumnDefAttr& attr) {
    SymbolRefAttr attrSymbolAttr;
    if (parser.parseAttribute(attrSymbolAttr, parser.getBuilder().getType<::mlir::NoneType>())) { return failure(); }
-   std::string attrName(attrSymbolAttr.getLeafReference().getValue());
+   std::string attrName(attrSymbolAttr.getLeafReference().value());
    if (parser.parseLParen()) { return failure(); }
    DictionaryAttr dictAttr;
    if (parser.parseAttribute(dictAttr)) { return failure(); }
@@ -165,7 +165,7 @@ static ParseResult parseCustDef(OpAsmParser& parser, mlir::relalg::ColumnDefAttr
       }
    }
    attr = getColumnManager(parser).createDef(attrSymbolAttr, fromExisting);
-   auto propType = dictAttr.get("type").dyn_cast<TypeAttr>().getValue();
+   auto propType = dictAttr.get("type").dyn_cast_or_null<TypeAttr>().value();
    attr.getColumn().type = propType;
    return success();
 }
@@ -178,7 +178,7 @@ static void printCustDef(OpAsmPrinter& p, ::mlir::Operation* op, mlir::relalg::C
    p << "(" << ::mlir::DictionaryAttr::get(context, relAttrDefProps) << ")";
    Attribute fromExisting = attr.getFromExisting();
    if (fromExisting) {
-      ArrayAttr fromExistingArr = fromExisting.dyn_cast<ArrayAttr>();
+      ArrayAttr fromExistingArr = fromExisting.dyn_cast_or_null<ArrayAttr>();
       p << "=";
       printCustRefArr(p, op, fromExistingArr);
    }
@@ -210,7 +210,7 @@ static void printCustDefArr(OpAsmPrinter& p, ::mlir::Operation* op, ArrayAttr ar
       } else {
          p << ",";
       }
-      mlir::relalg::ColumnDefAttr parsedSymbolRefAttr = a.dyn_cast<mlir::relalg::ColumnDefAttr>();
+      mlir::relalg::ColumnDefAttr parsedSymbolRefAttr = a.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
       printCustDef(p, op, parsedSymbolRefAttr);
    }
    p << "]";
@@ -236,8 +236,8 @@ static ParseResult parseCustAttrMapping(OpAsmParser& parser, ArrayAttr& res) {
 static void printCustAttrMapping(OpAsmPrinter& p, ::mlir::Operation* op, Attribute mapping) {
    p << " mapping: {";
    auto first = true;
-   for (auto attr : mapping.dyn_cast<ArrayAttr>()) {
-      auto relationDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>();
+   for (auto attr : mapping.dyn_cast_or_null<ArrayAttr>()) {
+      auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
       if (first) {
          first = false;
       } else {
@@ -271,7 +271,7 @@ ParseResult mlir::relalg::BaseTableOp::parse(OpAsmParser& parser, OperationState
    }
    auto meta = result.attributes.get("meta");
    if (meta) {
-      if (auto strAttr = meta.dyn_cast<::mlir::StringAttr>()) {
+      if (auto strAttr = meta.dyn_cast_or_null<::mlir::StringAttr>()) {
          result.attributes.set("meta", mlir::relalg::TableMetaDataAttr::get(parser.getContext(), runtime::TableMetaData::deserialize(strAttr.str())));
       } else {
          return failure();
@@ -287,7 +287,7 @@ void mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    std::vector<::mlir::NamedAttribute> colsToPrint;
    for (auto attr : this->getOperation()->getAttrs()) {
       if (attr.getName().str() == "meta") {
-         if (auto metaAttr = attr.getValue().dyn_cast<mlir::relalg::TableMetaDataAttr>()) {
+         if (auto metaAttr = attr.value().dyn_cast_or_null<mlir::relalg::TableMetaDataAttr>()) {
             if (metaAttr.getMeta()->isPresent()) {
                colsToPrint.push_back(::mlir::NamedAttribute(::mlir::StringAttr::get(getContext(), "meta"), ::mlir::StringAttr::get(getContext(), metaAttr.getMeta()->serialize())));
             }
@@ -301,14 +301,14 @@ void mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    auto first = true;
    for (auto mapping : columns()) {
       auto columnName = mapping.getName();
-      auto attr = mapping.getValue();
-      auto relationDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>();
+      auto attr = mapping.value();
+      auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
       if (first) {
          first = false;
       } else {
          p << ", ";
       }
-      p << columnName.getValue() << " => ";
+      p << columnName.value() << " => ";
       printCustDef(p, *this, relationDefAttr);
    }
    p << "}";

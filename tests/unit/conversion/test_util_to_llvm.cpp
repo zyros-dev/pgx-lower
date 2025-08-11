@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
+#include "pgx_lower/mlir/Dialect/util/UtilDialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilOps.h"
 #include "mlir/Dialect/Util/IR/UtilTypes.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -26,7 +26,7 @@ protected:
     
     UtilToLLVMTest() : builder(&context), loc(builder.getUnknownLoc()) {
         // Register required dialects
-        context.loadDialect<pgx::mlir::util::UtilDialect>();
+        context.loadDialect<mlir::util::UtilDialect>();
         context.loadDialect<LLVM::LLVMDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<func::FuncDialect>();
@@ -43,7 +43,7 @@ protected:
     
     bool applyUtilToLLVMConversion() {
         PassManager pm(&context);
-        pm.addPass(pgx::mlir::util::createUtilToLLVMPass());
+        pm.addPass(mlir::util::createUtilToLLVMPass());
         
         if (failed(pm.run(module))) {
             PGX_ERROR("UtilToLLVM pass failed");
@@ -69,10 +69,10 @@ TEST_F(UtilToLLVMTest, DISABLED_RefTypeConversion) {
     
     // Create util.ref<i32> type
     auto i32Type = builder.getI32Type();
-    auto refType = pgx::mlir::util::RefType::get(&context, i32Type);
+    auto refType = mlir::util::RefType::get(&context, i32Type);
     
     // Create an alloc operation
-    auto allocOp = builder.create<pgx::mlir::util::AllocOp>(loc, refType, mlir::Value());
+    auto allocOp = builder.create<mlir::util::AllocOp>(loc, refType, mlir::Value());
     
     // Add return
     builder.create<func::ReturnOp>(loc);
@@ -112,7 +112,7 @@ TEST_F(UtilToLLVMTest, PackOpLowering) {
     auto tupleType = TupleType::get(&context, {i32Type, i64Type});
     
     // Create pack operation
-    auto packOp = builder.create<pgx::mlir::util::PackOp>(loc, tupleType, 
+    auto packOp = builder.create<mlir::util::PackOp>(loc, tupleType, 
                                                ValueRange{val1, val2});
     
     builder.create<func::ReturnOp>(loc);
@@ -145,11 +145,11 @@ TEST_F(UtilToLLVMTest, GetTupleOpLowering) {
                                                    builder.getI64IntegerAttr(100));
     
     auto tupleType = TupleType::get(&context, {i32Type, i64Type});
-    auto packOp = builder.create<pgx::mlir::util::PackOp>(loc, tupleType, 
+    auto packOp = builder.create<mlir::util::PackOp>(loc, tupleType, 
                                                ValueRange{val1, val2});
     
     // Extract element at index 0
-    auto getTupleOp = builder.create<pgx::mlir::util::GetTupleOp>(loc, i32Type, 
+    auto getTupleOp = builder.create<mlir::util::GetTupleOp>(loc, i32Type, 
                                                         packOp.getResult(), 0);
     
     builder.create<func::ReturnOp>(loc);
@@ -177,20 +177,20 @@ TEST_F(UtilToLLVMTest, DISABLED_CompletePipeline) {
     auto i32Type = builder.getI32Type();
     auto i64Type = builder.getI64Type();
     auto tupleType = TupleType::get(&context, {i32Type, i64Type});
-    auto refType = pgx::mlir::util::RefType::get(&context, tupleType);
+    auto refType = mlir::util::RefType::get(&context, tupleType);
     
-    auto allocOp = builder.create<pgx::mlir::util::AllocOp>(loc, refType, mlir::Value());
+    auto allocOp = builder.create<mlir::util::AllocOp>(loc, refType, mlir::Value());
     
     // Create values and pack them
     auto val1 = builder.create<arith::ConstantOp>(loc, i32Type, 
                                                    builder.getI32IntegerAttr(42));
     auto val2 = builder.create<arith::ConstantOp>(loc, i64Type,
                                                    builder.getI64IntegerAttr(100));
-    auto packOp = builder.create<pgx::mlir::util::PackOp>(loc, tupleType, 
+    auto packOp = builder.create<mlir::util::PackOp>(loc, tupleType, 
                                                ValueRange{val1, val2});
     
     // Extract first element
-    auto getTupleOp = builder.create<pgx::mlir::util::GetTupleOp>(loc, i32Type, 
+    auto getTupleOp = builder.create<mlir::util::GetTupleOp>(loc, i32Type, 
                                                         packOp.getResult(), 0);
     
     builder.create<func::ReturnOp>(loc);

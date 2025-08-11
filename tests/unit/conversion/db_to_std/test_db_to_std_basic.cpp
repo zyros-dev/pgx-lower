@@ -8,12 +8,12 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DB/IR/DBTypes.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Conversion/DBToStd/DBToStd.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBTypes.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/IR/Verifier.h"
@@ -24,8 +24,8 @@ using namespace mlir;
 class DBToStdBasicTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        context.getOrLoadDialect<pgx::mlir::db::DBDialect>();
-        context.getOrLoadDialect<pgx::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<mlir::db::DBDialect>();
+        context.getOrLoadDialect<mlir::dsa::DSADialect>();
         context.getOrLoadDialect<arith::ArithDialect>();
         context.getOrLoadDialect<scf::SCFDialect>();
         context.getOrLoadDialect<func::FuncDialect>();
@@ -52,7 +52,7 @@ TEST_F(DBToStdBasicTest, ConvertGetExternalToSPICall) {
     // Create db.get_external operation
     auto tableOid = builder.create<arith::ConstantIntOp>(
         builder.getUnknownLoc(), 16384, 64);
-    auto getExternalOp = builder.create<pgx::mlir::db::GetExternalOp>(
+    auto getExternalOp = builder.create<mlir::db::GetExternalOp>(
         builder.getUnknownLoc(), tableOid.getResult());
     
     builder.create<func::ReturnOp>(builder.getUnknownLoc());
@@ -94,11 +94,11 @@ TEST_F(DBToStdBasicTest, ConvertIterateExternalToSPICall) {
     // Create db.get_external first
     auto tableOid = builder.create<arith::ConstantIntOp>(
         builder.getUnknownLoc(), 16384, 64);
-    auto getExternalOp = builder.create<pgx::mlir::db::GetExternalOp>(
+    auto getExternalOp = builder.create<mlir::db::GetExternalOp>(
         builder.getUnknownLoc(), tableOid.getResult());
     
     // Create db.iterate_external
-    auto iterateOp = builder.create<pgx::mlir::db::IterateExternalOp>(
+    auto iterateOp = builder.create<mlir::db::IterateExternalOp>(
         builder.getUnknownLoc(), builder.getI1Type(), 
         getExternalOp.getResult());
     
@@ -143,7 +143,7 @@ TEST_F(DBToStdBasicTest, ConvertAddToArithAddi) {
         builder.getUnknownLoc(), 5, 64);
     auto rhs = builder.create<arith::ConstantIntOp>(
         builder.getUnknownLoc(), 10, 64);
-    auto addOp = builder.create<pgx::mlir::db::AddOp>(
+    auto addOp = builder.create<mlir::db::AddOp>(
         builder.getUnknownLoc(), builder.getI64Type(), lhs.getResult(), rhs.getResult());
     
     builder.create<func::ReturnOp>(builder.getUnknownLoc());
@@ -195,7 +195,7 @@ TEST_F(DBToStdBasicTest, GenerateSPIFunctionDeclarations) {
     // Create operations that will need SPI functions
     auto tableOid = builder.create<arith::ConstantIntOp>(
         builder.getUnknownLoc(), 16384, 64);
-    auto getExternalOp = builder.create<pgx::mlir::db::GetExternalOp>(
+    auto getExternalOp = builder.create<mlir::db::GetExternalOp>(
         builder.getUnknownLoc(), tableOid.getResult());
     
     builder.create<func::ReturnOp>(builder.getUnknownLoc());
@@ -225,7 +225,7 @@ TEST_F(DBToStdBasicTest, ConvertStoreResultToSPICall) {
     auto module = ModuleOp::create(builder.getUnknownLoc());
     
     // Create a function that accepts a nullable value as parameter
-    auto nullableType = pgx::mlir::db::NullableI32Type::get(&context);
+    auto nullableType = mlir::db::NullableI32Type::get(&context);
     auto funcType = builder.getFunctionType({nullableType}, {});
     auto func = builder.create<func::FuncOp>(
         builder.getUnknownLoc(), "test_func", funcType);
@@ -241,7 +241,7 @@ TEST_F(DBToStdBasicTest, ConvertStoreResultToSPICall) {
         builder.getUnknownLoc(), 0);
     
     // Create db.store_result operation
-    builder.create<pgx::mlir::db::StoreResultOp>(
+    builder.create<mlir::db::StoreResultOp>(
         builder.getUnknownLoc(), 
         nullableValue, 
         fieldIndex.getResult());

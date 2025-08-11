@@ -8,12 +8,12 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DB/IR/DBTypes.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Conversion/DBToStd/DBToStd.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBTypes.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/IR/Verifier.h"
@@ -25,7 +25,7 @@ class PostgreSQLSPICallTest : public ::testing::Test {
 protected:
     void SetUp() override {
         context.getOrLoadDialect<pgx::db::DBDialect>();
-        context.getOrLoadDialect<pgx::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<mlir::dsa::DSADialect>();
         context.getOrLoadDialect<arith::ArithDialect>();
         context.getOrLoadDialect<scf::SCFDialect>();
         context.getOrLoadDialect<func::FuncDialect>();
@@ -278,8 +278,8 @@ TEST_F(PostgreSQLSPICallTest, CompleteIterationLoop) {
     // Initialize DSA table builder
     // Create a simple tuple type for the table builder
     auto tupleType = builder.getTupleType({builder.getI64Type()});
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
-    auto dsInit = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(&context, tupleType);
+    auto dsInit = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType);
     
     // Get external table
@@ -325,7 +325,7 @@ TEST_F(PostgreSQLSPICallTest, CompleteIterationLoop) {
         getFieldOp.getResult());
     
     // Append to DSA
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(), dsInit.getResult(), getValOp.getResult());
     
     builder.create<scf::YieldOp>(builder.getUnknownLoc(), ValueRange{});

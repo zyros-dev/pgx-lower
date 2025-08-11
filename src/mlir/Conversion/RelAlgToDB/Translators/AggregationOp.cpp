@@ -34,8 +34,8 @@ class AggregationTranslator : public mlir::relalg::Translator {
          ::mlir::Value compared;
          auto currLeftType = leftUnpacked->getResult(i).getType();
          auto currRightType = rightUnpacked.getResult(i).getType();
-         auto currLeftNullableType = currLeftType.dyn_cast<mlir::db::NullableType>();
-         auto currRightNullableType = currRightType.dyn_cast<mlir::db::NullableType>();
+         auto currLeftNullableType = currLeftType.dyn_cast_or_null<mlir::db::NullableType>();
+         auto currRightNullableType = currRightType.dyn_cast_or_null<mlir::db::NullableType>();
          if (currLeftNullableType || currRightNullableType) {
             ::mlir::Value isNull1 = rewriter.create<mlir::db::IsNullOp>(loc, rewriter.getI1Type(), leftUnpacked->getResult(i));
             ::mlir::Value isNull2 = rewriter.create<mlir::db::IsNullOp>(loc, rewriter.getI1Type(), rightUnpacked->getResult(i));

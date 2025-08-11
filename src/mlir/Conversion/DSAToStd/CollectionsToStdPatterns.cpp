@@ -75,7 +75,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          argumentTypes.push_back(t);
          argumentLocs.push_back(forOp->getLoc());
       }
-      auto collectionType = forOp.getCollection().getType().dyn_cast<mlir::dsa::CollectionType>();
+      auto collectionType = forOp.getCollection().getType().dyn_cast_or_null<mlir::dsa::CollectionType>();
       auto iterator = mlir::dsa::CollectionIterationImpl::getImpl(collectionType, adaptor.getCollection());
 
       ModuleOp parentModule = forOp->getParentOfType<ModuleOp>();
@@ -327,7 +327,7 @@ void mlir::dsa::populateCollectionsToStdPatterns(::mlir::TypeConverter& typeConv
    typeConverter.addConversion([context, i8ptrType, indexType](mlir::dsa::RecordBatchType recordBatchType) {
       std::vector<Type> types;
       types.push_back(indexType);
-      if (auto tupleT = recordBatchType.getRowType().dyn_cast<TupleType>()) {
+      if (auto tupleT = recordBatchType.getRowType().dyn_cast_or_null<TupleType>()) {
          for (auto t : tupleT.getTypes()) {
             if (t.isa<mlir::util::VarLen32Type>()) {
                t = mlir::IntegerType::get(context, 32);
@@ -351,7 +351,7 @@ void mlir::dsa::populateCollectionsToStdPatterns(::mlir::TypeConverter& typeConv
    typeConverter.addConversion([&typeConverter, context, i8ptrType, indexType](mlir::dsa::GenericIterableType genericIterableType) {
       Type elementType = genericIterableType.getElementType();
       Type nestedElementType = elementType;
-      if (auto nested = elementType.dyn_cast<mlir::dsa::GenericIterableType>()) {
+      if (auto nested = elementType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
          nestedElementType = nested.getElementType();
       }
       if (genericIterableType.getIteratorName() == "table_chunk_iterator") {

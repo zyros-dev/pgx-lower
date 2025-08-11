@@ -400,9 +400,9 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
    }
 };
 std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterationImpl::getImpl(Type collectionType, Value loweredCollection) {
-   if (auto generic = collectionType.dyn_cast<mlir::dsa::GenericIterableType>()) {
+   if (auto generic = collectionType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
       if (generic.getIteratorName() == "table_chunk_iterator") {
-         if (auto recordBatchType = generic.getElementType().dyn_cast<mlir::dsa::RecordBatchType>()) {
+         if (auto recordBatchType = generic.getElementType().dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
             return std::make_unique<WhileIteratorIterationImpl>(std::make_unique<TableIterator2>(loweredCollection, recordBatchType));
          }
       } else if (generic.getIteratorName() == "join_ht_iterator") {
@@ -410,17 +410,17 @@ std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterati
       } else if (generic.getIteratorName() == "join_ht_mod_iterator") {
          return std::make_unique<WhileIteratorIterationImpl>(std::make_unique<JoinHtLookupIterator>(loweredCollection, generic.getElementType(), true));
       }
-   } else if (auto vector = collectionType.dyn_cast<mlir::dsa::VectorType>()) {
+   } else if (auto vector = collectionType.dyn_cast_or_null<mlir::dsa::VectorType>()) {
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<VectorIterator>(loweredCollection));
-   } else if (auto aggrHt = collectionType.dyn_cast<mlir::dsa::AggregationHashtableType>()) {
+   } else if (auto aggrHt = collectionType.dyn_cast_or_null<mlir::dsa::AggregationHashtableType>()) {
       if (aggrHt.getKeyType().getTypes().empty()) {
          return std::make_unique<ForIteratorIterationImpl>(std::make_unique<ValueOnlyAggrHTIterator>(loweredCollection, aggrHt.getValType()));
       } else {
          return std::make_unique<ForIteratorIterationImpl>(std::make_unique<AggrHtIterator>(loweredCollection));
       }
-   } else if (auto joinHt = collectionType.dyn_cast<mlir::dsa::JoinHashtableType>()) {
+   } else if (auto joinHt = collectionType.dyn_cast_or_null<mlir::dsa::JoinHashtableType>()) {
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<JoinHtIterator>(loweredCollection));
-   } else if (auto recordBatch = collectionType.dyn_cast<mlir::dsa::RecordBatchType>()) {
+   } else if (auto recordBatch = collectionType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<RecordBatchIterator>(loweredCollection, recordBatch));
    }
    return std::unique_ptr<mlir::dsa::CollectionIterationImpl>();

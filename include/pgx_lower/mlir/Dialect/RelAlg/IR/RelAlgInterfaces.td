@@ -24,12 +24,12 @@ def Relalg_CmpOpInterface : OpInterface<"CmpOpInterface"> {
     >,
     InterfaceMethod<
       /*description=*/"Returns true if it is Equality Predicate",
-      /*retTy=*/"::mlir::Value",
+      /*retTy=*/"mlir::Value",
       /*methodName=*/"getLeft"
     >,
     InterfaceMethod<
       /*description=*/"Returns true if it is Equality Predicate",
-      /*retTy=*/"::mlir::Value",
+      /*retTy=*/"mlir::Value",
       /*methodName=*/"getRight"
     >,
   ];
@@ -39,19 +39,19 @@ def Operator : OpInterface<"Operator"> {
 let methods = [
 InterfaceMethod<
         "get all columns that are used directly by this operator",
-        "::mlir::relalg::ColumnSet", "getUsedColumns",(ins ),"", /*defaultImplementation=*/[{
+        "mlir::relalg::ColumnSet", "getUsedColumns",(ins ),"", /*defaultImplementation=*/[{
     return mlir::relalg::detail::getUsedColumns(this->getOperation());
 }]
 >,
 InterfaceMethod<
         "get all columns that are available after this operator",
-        "::mlir::relalg::ColumnSet", "getAvailableColumns",(ins ),"", /*defaultImplementation=*/[{
+        "mlir::relalg::ColumnSet", "getAvailableColumns",(ins ),"", /*defaultImplementation=*/[{
 return mlir::relalg::detail::getAvailableColumns(this->getOperation());
 }]
 >,
 InterfaceMethod<
         "get all functional dependencies that hold after this operator",
-        "::mlir::relalg::FunctionalDependencies", "getFDs",(ins ),"", /*defaultImplementation=*/[{
+        "mlir::relalg::FunctionalDependencies", "getFDs",(ins ),"", /*defaultImplementation=*/[{
 return mlir::relalg::detail::getFDs(this->getOperation());
 }]
 >,
@@ -68,7 +68,7 @@ InterfaceMethod<
     llvm::SmallVector<Operator,4> children;
     auto op=this->getOperation();
     for (auto operand : op->getOperands()) {
-        ::mlir::Type t=operand.getType();
+        mlir::Type t=operand.getType();
         bool isreltype=t.isa<mlir::relalg::TupleStreamType>();
         auto childOp=operand.getDefiningOp();
         if (isreltype&&childOp) {
@@ -101,7 +101,7 @@ InterfaceMethod<
     size_t i=0;
     size_t j=0;
     for (auto operand : op->getOperands()) {
-        ::mlir::Type t=operand.getType();
+        mlir::Type t=operand.getType();
         bool isreltype=t.isa<mlir::relalg::TupleStreamType>();
         auto childOp=operand.getDefiningOp();
         if (isreltype&&childOp) {
@@ -120,13 +120,13 @@ return this->getOperation()->getResult(0);
 >,
 InterfaceMethod<
         "get all 'free' columns",
-        "::mlir::relalg::ColumnSet", "getFreeColumns",(ins ),"", /*defaultImplementation=*/[{
+        "mlir::relalg::ColumnSet", "getFreeColumns",(ins ),"", /*defaultImplementation=*/[{
 return mlir::relalg::detail::getFreeColumns(this->getOperation());
 }]
 >,
 InterfaceMethod<
         "get all columns that are created by this operator",
-        "::mlir::relalg::ColumnSet", "getCreatedColumns",(ins ),"", /*defaultImplementation=*/[{
+        "mlir::relalg::ColumnSet", "getCreatedColumns",(ins ),"", /*defaultImplementation=*/[{
 return mlir::relalg::ColumnSet();
 }]
 >

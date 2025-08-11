@@ -3,7 +3,7 @@
 #include "mlir/Conversion/RelAlgToDB/TranslatorContext.h"
 #include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"

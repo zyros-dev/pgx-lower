@@ -3,8 +3,8 @@
 
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -19,9 +19,9 @@ using namespace mlir;
 class ConversionBasicsTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        context.getOrLoadDialect<::pgx::mlir::relalg::RelAlgDialect>();
+        context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
         context.getOrLoadDialect<::pgx::db::DBDialect>();
-        context.getOrLoadDialect<::pgx::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<::mlir::dsa::DSADialect>();
         context.getOrLoadDialect<func::FuncDialect>();
         context.getOrLoadDialect<arith::ArithDialect>();
         context.getOrLoadDialect<scf::SCFDialect>();
@@ -40,7 +40,7 @@ TEST_F(ConversionBasicsTest, TestRelAlgModuleCreation) {
     builder->setInsertionPointToStart(module.getBody());
     
     // Create a simple function with RelAlg BaseTable operation
-    auto tableType = ::pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = ::mlir::relalg::TableType::get(&context);
     auto funcType = builder->getFunctionType({}, {tableType});
     auto funcOp = builder->create<func::FuncOp>(
         builder->getUnknownLoc(), "query", funcType);
@@ -49,8 +49,8 @@ TEST_F(ConversionBasicsTest, TestRelAlgModuleCreation) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp
-    auto tupleStreamType = ::pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = ::mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder->create<::mlir::relalg::BaseTableOp>(
         builder->getUnknownLoc(),
         tupleStreamType,
         builder->getStringAttr("test_table"),
@@ -61,7 +61,7 @@ TEST_F(ConversionBasicsTest, TestRelAlgModuleCreation) {
     columnAttrs.push_back(builder->getStringAttr("*"));
     auto columnsArrayAttr = builder->getArrayAttr(columnAttrs);
     
-    auto materializeOp = builder->create<::pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder->create<::mlir::relalg::MaterializeOp>(
         builder->getUnknownLoc(), 
         tableType, 
         baseTableOp.getResult(), 

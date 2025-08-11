@@ -3,8 +3,8 @@
 
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -19,9 +19,9 @@ using namespace mlir;
 class ArchitecturalComplianceTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        context.getOrLoadDialect<::pgx::mlir::relalg::RelAlgDialect>();
+        context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
         context.getOrLoadDialect<::pgx::db::DBDialect>();
-        context.getOrLoadDialect<::pgx::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<::mlir::dsa::DSADialect>();
         context.getOrLoadDialect<func::FuncDialect>();
         context.getOrLoadDialect<arith::ArithDialect>();
         context.getOrLoadDialect<scf::SCFDialect>();
@@ -39,9 +39,9 @@ TEST_F(ArchitecturalComplianceTest, TestDialectLoading) {
     PGX_INFO("Testing dialect loading for architectural compliance");
     
     // Verify all three dialects are loaded
-    auto* relalgDialect = context.getOrLoadDialect<::pgx::mlir::relalg::RelAlgDialect>();
+    auto* relalgDialect = context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
     auto* dbDialect = context.getOrLoadDialect<::pgx::db::DBDialect>();
-    auto* dsaDialect = context.getOrLoadDialect<::pgx::mlir::dsa::DSADialect>();
+    auto* dsaDialect = context.getOrLoadDialect<::mlir::dsa::DSADialect>();
     
     EXPECT_NE(relalgDialect, nullptr);
     EXPECT_NE(dbDialect, nullptr);
@@ -66,8 +66,8 @@ TEST_F(ArchitecturalComplianceTest, TestRelAlgOperationCreation) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Test BaseTableOp creation with current API
-    auto tupleStreamType = ::pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = ::mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder->create<::mlir::relalg::BaseTableOp>(
         builder->getUnknownLoc(),
         tupleStreamType,
         builder->getStringAttr("test_table"),
@@ -133,11 +133,11 @@ TEST_F(ArchitecturalComplianceTest, TestDSAOperationCreation) {
     
     // Test ScanSource creation with current API
     auto tupleType = builder->getTupleType({builder->getI32Type()});
-    auto recordBatchType = ::pgx::mlir::dsa::RecordBatchType::get(&context, tupleType);
-    auto iterableType = ::pgx::mlir::dsa::GenericIterableType::get(
+    auto recordBatchType = ::mlir::dsa::RecordBatchType::get(&context, tupleType);
+    auto iterableType = ::mlir::dsa::GenericIterableType::get(
         &context, recordBatchType, "test_iterator");
     
-    auto scanSourceOp = builder->create<::pgx::mlir::dsa::ScanSource>(
+    auto scanSourceOp = builder->create<::mlir::dsa::ScanSource>(
         builder->getUnknownLoc(), 
         iterableType,
         builder->getStringAttr("{\"table_oid\":12345}"));

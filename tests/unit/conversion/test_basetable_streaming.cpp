@@ -9,8 +9,8 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
 #include "mlir/Conversion/RelAlgToDB/TranslatorContext.h"
@@ -70,9 +70,9 @@ protected:
         context->loadDialect<::mlir::func::FuncDialect>();
         context->loadDialect<::mlir::scf::SCFDialect>();
         context->loadDialect<::mlir::arith::ArithDialect>();
-        context->loadDialect<::pgx::mlir::relalg::RelAlgDialect>();
+        context->loadDialect<::mlir::relalg::RelAlgDialect>();
         context->loadDialect<::pgx::db::DBDialect>();
-        context->loadDialect<::pgx::mlir::dsa::DSADialect>();
+        context->loadDialect<::mlir::dsa::DSADialect>();
         
         // Create module and builder
         module = ::mlir::ModuleOp::create(::mlir::UnknownLoc::get(context.get()));
@@ -96,8 +96,8 @@ TEST_F(BaseTableStreamingTest, GeneratesStreamingOperations) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Create a BaseTableOp
-    auto tableType = ::pgx::mlir::relalg::TupleStreamType::get(context.get());
-    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
+    auto tableType = ::mlir::relalg::TupleStreamType::get(context.get());
+    auto baseTableOp = builder->create<::mlir::relalg::BaseTableOp>(
         loc,
         tableType,
         builder->getStringAttr("test"),
@@ -172,8 +172,8 @@ TEST_F(BaseTableStreamingTest, ProducerConsumerCoordination) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp
-    auto tableType = ::pgx::mlir::relalg::TupleStreamType::get(context.get());
-    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
+    auto tableType = ::mlir::relalg::TupleStreamType::get(context.get());
+    auto baseTableOp = builder->create<::mlir::relalg::BaseTableOp>(
         loc,
         tableType,
         builder->getStringAttr("test"),
@@ -224,8 +224,8 @@ TEST_F(BaseTableStreamingTest, MemoryEfficiencyStructure) {
     builder->setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp for a potentially large table
-    auto tableType = ::pgx::mlir::relalg::TupleStreamType::get(context.get());
-    auto baseTableOp = builder->create<::pgx::mlir::relalg::BaseTableOp>(
+    auto tableType = ::mlir::relalg::TupleStreamType::get(context.get());
+    auto baseTableOp = builder->create<::mlir::relalg::BaseTableOp>(
         loc,
         tableType,
         builder->getStringAttr("large_table"), // Simulating a large table

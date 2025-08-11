@@ -9,7 +9,7 @@
 
 namespace mlir::dsa {
 
-class CollectionType : public ::mlir::Type {
+class CollectionType : public mlir::Type {
    public:
    using Type::Type;
    Type getElementType() const;

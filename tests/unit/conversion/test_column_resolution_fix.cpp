@@ -3,8 +3,8 @@
 #include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
 #include "mlir/Conversion/RelAlgToDB/TranslatorContext.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -25,9 +25,9 @@ protected:
     
     ColumnResolutionTest() : builder(&context) {
         // Load required dialects
-        context.loadDialect<pgx::mlir::relalg::RelAlgDialect>();
+        context.loadDialect<mlir::relalg::RelAlgDialect>();
         context.loadDialect<pgx::db::DBDialect>();
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
         context.loadDialect<func::FuncDialect>();
         context.loadDialect<scf::SCFDialect>();
         context.loadDialect<arith::ArithDialect>();
@@ -48,17 +48,17 @@ TEST_F(ColumnResolutionTest, DISABLED_ColumnIdentitySharing) {
     builder.setInsertionPointToStart(entryBlock);
     
     // Create a simple RelAlg pipeline
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder.create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder.create<mlir::relalg::BaseTableOp>(
         builder.getUnknownLoc(),
         tupleStreamType,
         builder.getStringAttr("test"),  // Use "test" to match BaseTableTranslator
         builder.getI64IntegerAttr(12345)
     );
     
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = mlir::relalg::TableType::get(&context);
     auto columnsAttr = builder.getArrayAttr({builder.getStringAttr("id")});
-    auto materializeOp = builder.create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder.create<mlir::relalg::MaterializeOp>(
         builder.getUnknownLoc(),
         tableType,
         baseTableOp.getResult(),
@@ -130,8 +130,8 @@ TEST_F(ColumnResolutionTest, DISABLED_TypeConsistency) {
     builder.setInsertionPointToStart(entryBlock);
     
     // Create translators
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder.create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder.create<mlir::relalg::BaseTableOp>(
         builder.getUnknownLoc(),
         tupleStreamType,
         builder.getStringAttr("test"),
@@ -238,17 +238,17 @@ TEST_F(ColumnResolutionTest, ColumnPointerIdentitySharing) {
     builder.setInsertionPointToStart(entryBlock);
     
     // Create a simple RelAlg pipeline
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder.create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder.create<mlir::relalg::BaseTableOp>(
         builder.getUnknownLoc(),
         tupleStreamType,
         builder.getStringAttr("test"),
         builder.getI64IntegerAttr(12345)
     );
     
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = mlir::relalg::TableType::get(&context);
     auto columnsAttr = builder.getArrayAttr({builder.getStringAttr("id")});
-    auto materializeOp = builder.create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder.create<mlir::relalg::MaterializeOp>(
         builder.getUnknownLoc(),
         tableType,
         baseTableOp.getResult(),

@@ -1,8 +1,8 @@
 #include "gtest/gtest.h"
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDB.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -21,9 +21,9 @@ protected:
     
     RelAlgToDBFixesTest() : builder(&context) {
         // Load required dialects
-        context.loadDialect<pgx::mlir::relalg::RelAlgDialect>();
+        context.loadDialect<mlir::relalg::RelAlgDialect>();
         context.loadDialect<pgx::db::DBDialect>();
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
         context.loadDialect<func::FuncDialect>();
     }
 };
@@ -66,8 +66,8 @@ TEST_F(RelAlgToDBFixesTest, BaseTableOpWithoutMaterialize) {
     builder.setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp without MaterializeOp
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder.create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder.create<mlir::relalg::BaseTableOp>(
         builder.getUnknownLoc(),
         tupleStreamType,
         builder.getStringAttr("test_table"),
@@ -86,7 +86,7 @@ TEST_F(RelAlgToDBFixesTest, BaseTableOpWithoutMaterialize) {
     
     // Verify BaseTableOp is still there
     int baseTableCount = 0;
-    funcOp.walk([&](pgx::mlir::relalg::BaseTableOp op) {
+    funcOp.walk([&](mlir::relalg::BaseTableOp op) {
         baseTableCount++;
     });
     EXPECT_EQ(baseTableCount, 1) << "BaseTableOp should remain without MaterializeOp";
@@ -112,17 +112,17 @@ TEST_F(RelAlgToDBFixesTest, DISABLED_MaterializeOpWithTermination) {
     builder.setInsertionPointToStart(entryBlock);
     
     // Create BaseTableOp and MaterializeOp
-    auto tupleStreamType = pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto baseTableOp = builder.create<pgx::mlir::relalg::BaseTableOp>(
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context);
+    auto baseTableOp = builder.create<mlir::relalg::BaseTableOp>(
         builder.getUnknownLoc(),
         tupleStreamType,
         builder.getStringAttr("test_table"),
         builder.getI64IntegerAttr(12345)
     );
     
-    auto tableType = pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = mlir::relalg::TableType::get(&context);
     auto columnsAttr = builder.getArrayAttr({builder.getStringAttr("id")});
-    auto materializeOp = builder.create<pgx::mlir::relalg::MaterializeOp>(
+    auto materializeOp = builder.create<mlir::relalg::MaterializeOp>(
         builder.getUnknownLoc(),
         tableType,
         baseTableOp.getResult(),
@@ -169,16 +169,16 @@ TEST_F(RelAlgToDBFixesTest, DISABLED_MaterializeOpWithTermination) {
     if (updatedFuncType.getNumResults() > 0) {
         auto returnType = updatedFuncType.getResult(0);
         // The return type can be either RelAlg table or DSA table depending on implementation
-        if (!returnType.isa<pgx::mlir::dsa::TableType>() && 
-            !returnType.isa<pgx::mlir::relalg::TableType>()) {
+        if (!returnType.isa<mlir::dsa::TableType>() && 
+            !returnType.isa<mlir::relalg::TableType>()) {
             // Print the actual type for debugging
             std::string typeStr;
             llvm::raw_string_ostream os(typeStr);
             returnType.print(os);
             PGX_DEBUG("Actual return type: " + os.str());
         }
-        EXPECT_TRUE(returnType.isa<pgx::mlir::dsa::TableType>() || 
-                    returnType.isa<pgx::mlir::relalg::TableType>()) 
+        EXPECT_TRUE(returnType.isa<mlir::dsa::TableType>() || 
+                    returnType.isa<mlir::relalg::TableType>()) 
             << "Return type should be table type, but got: " << [&]() {
                 std::string typeStr;
                 llvm::raw_string_ostream os(typeStr);

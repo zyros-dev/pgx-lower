@@ -11,10 +11,10 @@ void JoinTranslator::addJoinRequiredColumns() {
    this->requiredAttributes.insert(joinOp.getUsedColumns());
    if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<::mlir::ArrayAttr>()) {
       for (::mlir::Attribute attr : joinOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
-         auto relationDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>();
+         auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
-            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast<::mlir::ArrayAttr>();
+            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<::mlir::ArrayAttr>();
             const auto* refAttr = *mlir::relalg::ColumnSet::fromArrayAttr(fromExisting).begin();
             this->requiredAttributes.insert(refAttr);
          }
@@ -24,7 +24,7 @@ void JoinTranslator::addJoinRequiredColumns() {
 void JoinTranslator::handleMappingNull(OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
    if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<::mlir::ArrayAttr>()) {
       for (::mlir::Attribute attr : joinOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
-         auto relationDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>();
+         auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
             auto nullValue = builder.create<mlir::db::NullOp>(joinOp.getLoc(), defAttr->type);
@@ -36,10 +36,10 @@ void JoinTranslator::handleMappingNull(OpBuilder& builder, TranslatorContext& co
 void JoinTranslator::handleMapping(OpBuilder& builder, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
    if (joinOp->hasAttr("mapping") && joinOp->getAttr("mapping").isa<::mlir::ArrayAttr>()) {
       for (::mlir::Attribute attr : joinOp->getAttr("mapping").cast<::mlir::ArrayAttr>()) {
-         auto relationDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>();
+         auto relationDefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
          auto* defAttr = &relationDefAttr.getColumn();
          if (this->requiredAttributes.contains(defAttr)) {
-            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast<::mlir::ArrayAttr>();
+            auto fromExisting = relationDefAttr.getFromExisting().dyn_cast_or_null<::mlir::ArrayAttr>();
             const auto* refAttr = *mlir::relalg::ColumnSet::fromArrayAttr(fromExisting).begin();
             auto value = context.getValueForAttribute(refAttr);
             if (refAttr->type != defAttr->type) {

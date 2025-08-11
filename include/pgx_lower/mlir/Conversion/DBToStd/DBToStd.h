@@ -1,20 +1,15 @@
-#ifndef MLIR_CONVERSION_DBTOSTD_DBTOSTD_H
-#define MLIR_CONVERSION_DBTOSTD_DBTOSTD_H
-
-#include "mlir/Pass/Pass.h"
-#include "mlir/Transforms/DialectConversion.h"
+#pragma once
 
 #include <memory>
 
 namespace mlir {
+class Pass;
+
 namespace db {
 
+// DBToStd conversion pass
 std::unique_ptr<Pass> createLowerToStdPass();
-void registerDBConversionPasses();
-void createLowerDBPipeline(mlir::OpPassManager& pm);
+void registerDBToStdConversion();
 
 } // end namespace db
 } // end namespace mlir
-} // end namespace pgx
-
-#endif // MLIR_CONVERSION_DBTOSTD_DBTOSTD_H

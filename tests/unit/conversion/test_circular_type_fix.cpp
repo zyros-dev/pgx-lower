@@ -12,13 +12,13 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
-#include "mlir/Conversion/DBToStd/DBToStd.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/util/UtilDialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilOps.h"
+#include "pgx_lower/mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/Pass.h"
@@ -35,11 +35,11 @@ protected:
         
         // Add DB and DSA dialects - these were OK
         context.loadDialect<pgx::db::DBDialect>();
-        context.loadDialect<pgx::mlir::dsa::DSADialect>();
+        context.loadDialect<mlir::dsa::DSADialect>();
         
         // Add Util dialect to test
         PGX_INFO("Loading Util dialect...");
-        context.loadDialect<pgx::mlir::util::UtilDialect>();
+        context.loadDialect<mlir::util::UtilDialect>();
         PGX_INFO("Util dialect loaded");
     }
 
@@ -102,12 +102,12 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     
     // Create table builder - this might be where the issue is
     PGX_INFO("About to create DSA TableBuilderType...");
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
     PGX_INFO("DSA TableBuilderType created");
     
     PGX_INFO("About to create DSA CreateDS...");
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     PGX_INFO("DSA CreateDS created");
@@ -126,7 +126,7 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     // ALL operations must be in the same function block for proper scoping
     // Create a NEW createDSOp inside the function block
     PGX_INFO("Creating new DSA CreateDS inside function block...");
-    auto funcCreateDS = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto funcCreateDS = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -142,7 +142,7 @@ TEST_F(CircularTypeFixTest, UnconvertedNullableType) {
     
     // Append the nullable value using the function-scoped createDSOp
     PGX_INFO("Creating DSA append operation...");
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(),
         funcCreateDS.getResult(),
         asNullableOp.getResult());
@@ -174,9 +174,9 @@ TEST_F(CircularTypeFixTest, DISABLED_AlreadyConvertedTupleType) {
     builder.setInsertionPointToStart(block);
     
     // Create table builder
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -187,12 +187,12 @@ TEST_F(CircularTypeFixTest, DISABLED_AlreadyConvertedTupleType) {
         builder.getUnknownLoc(), builder.getI1Type(), builder.getBoolAttr(false));
     
     auto tupleType = TupleType::get(&context, {builder.getI64Type(), builder.getI1Type()});
-    auto packOp = builder.create<pgx::mlir::util::PackOp>(
+    auto packOp = builder.create<mlir::util::PackOp>(
         builder.getUnknownLoc(), tupleType, 
         ValueRange{value.getResult(), falseVal.getResult()});
     
     // Append the tuple value
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         packOp.getResult());
@@ -209,7 +209,7 @@ TEST_F(CircularTypeFixTest, DISABLED_AlreadyConvertedTupleType) {
     
     // Verify tuple extraction happened
     bool foundGetTuple = false;
-    module.walk([&](pgx::mlir::util::GetTupleOp op) {
+    module.walk([&](mlir::util::GetTupleOp op) {
         foundGetTuple = true;
         PGX_DEBUG("Found get_tuple operation");
     });
@@ -234,9 +234,9 @@ TEST_F(CircularTypeFixTest, DISABLED_CompletePipelineNoCircular) {
     builder.setInsertionPointToStart(block);
     
     // Create table builder
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -249,7 +249,7 @@ TEST_F(CircularTypeFixTest, DISABLED_CompletePipelineNoCircular) {
         value.getResult());
     
     // Append the nullable value
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         asNullableOp.getResult());
@@ -316,9 +316,9 @@ TEST_F(CircularTypeFixTest, DISABLED_ValidateIRConstruction) {
         << "Function with entry block should be valid";
     
     // Step 4: Create DSA table builder
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(
         &context, TupleType::get(&context, {builder.getI64Type()}));
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, 
         builder.getStringAttr("id:int[64]"));
     
@@ -342,7 +342,7 @@ TEST_F(CircularTypeFixTest, DISABLED_ValidateIRConstruction) {
         << "Module should be valid after AsNullableOp";
     
     // Step 7: Create DSA append operation
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(),
         createDSOp.getResult(),
         asNullableOp.getResult());

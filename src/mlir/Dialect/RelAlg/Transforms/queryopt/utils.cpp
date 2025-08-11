@@ -209,7 +209,7 @@ std::shared_ptr<Plan> Plan::joinPlans(NodeSet s1, NodeSet s2, std::shared_ptr<Pl
             equivalentColumns.unionSets(edge.equality->first, edge.equality->second);
          }
          if (edge.createdNode) {
-            s |= NodeSet::single(queryGraph.numNodes, edge.createdNode.getValue());
+            s |= NodeSet::single(queryGraph.numNodes, edge.createdNode.value());
          }
       }
    }

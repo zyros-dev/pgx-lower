@@ -7,8 +7,8 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Conversion/DSAToLLVM/DSAToLLVM.h"
 
 #include <sstream>
@@ -29,7 +29,7 @@ protected:
         // Register necessary dialects
         context.getOrLoadDialect<mlir::func::FuncDialect>();
         context.getOrLoadDialect<mlir::arith::ArithDialect>();
-        context.getOrLoadDialect<pgx::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<mlir::dsa::DSADialect>();
         context.getOrLoadDialect<pgx::db::DBDialect>();
         context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
         
@@ -56,10 +56,10 @@ TEST_F(DSAToLLVMConversionTest, ConvertCreateDS) {
     // Create DSA CreateDS operation for TableBuilder
     auto i32Type = builder.getI32Type();
     auto tupleType = mlir::TupleType::get(&context, {i32Type});
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(&context, tupleType);
     
     auto schemaAttr = builder.getStringAttr("id:int[32]");
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, schemaAttr);
     
     // Return from function
@@ -103,10 +103,10 @@ TEST_F(DSAToLLVMConversionTest, DISABLED_ConvertTest1Operations) {
     // Create table builder (as in MaterializeTranslator)
     auto i64Type = builder.getI64Type();
     auto tupleType = mlir::TupleType::get(&context, {i64Type});
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(&context, tupleType);
     
     auto schemaAttr = builder.getStringAttr("id:int[64]");
-    auto createDSOp = builder.create<pgx::mlir::dsa::CreateDS>(
+    auto createDSOp = builder.create<mlir::dsa::CreateDS>(
         builder.getUnknownLoc(), tableBuilderType, schemaAttr);
     
     // Create a value of nullable type (simulate what MaterializeTranslator produces)
@@ -119,11 +119,11 @@ TEST_F(DSAToLLVMConversionTest, DISABLED_ConvertTest1Operations) {
     auto nullableArg = currentBlock->addArgument(nullableI64Type, builder.getUnknownLoc());
     
     // Append the nullable value (without explicit validity - handled by nullable type)
-    builder.create<pgx::mlir::dsa::Append>(
+    builder.create<mlir::dsa::Append>(
         builder.getUnknownLoc(), createDSOp.getDs(), nullableArg);
     
     // Complete row
-    builder.create<pgx::mlir::dsa::NextRow>(
+    builder.create<mlir::dsa::NextRow>(
         builder.getUnknownLoc(), createDSOp.getDs());
     
     // No finalize - results go directly to PostgreSQL
@@ -180,7 +180,7 @@ TEST_F(DSAToLLVMConversionTest, DISABLED_TypeConversion) {
     // Test TableBuilder type conversion - the only DSA type used by Test 1
     auto i64Type = builder.getI64Type();
     auto tupleType = mlir::TupleType::get(&context, {i64Type});
-    auto tableBuilderType = pgx::mlir::dsa::TableBuilderType::get(&context, tupleType);
+    auto tableBuilderType = mlir::dsa::TableBuilderType::get(&context, tupleType);
     
     auto convertedTableBuilder = typeConverter.convertType(tableBuilderType);
     ASSERT_TRUE(convertedTableBuilder);

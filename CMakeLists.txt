@@ -65,9 +65,13 @@ find_package(MLIR REQUIRED)
 # Include MLIR CMake modules for TableGen
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+# Add Clang CMake modules for runtime-header-tool
+list(APPEND CMAKE_MODULE_PATH "/usr/lib/llvm-20/lib/cmake/clang")
 include(TableGen)
 include(AddMLIR)
 include(AddLLVM)
+include(AddClang)
+set("CLANG_VERSION" ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH})
 
 include(PostgreSQLExtension)
 
@@ -86,18 +90,8 @@ add_custom_target(build_includes)
 set(runtime_funcs_ptr_libs "")
 
 # Add tools for runtime header generation
-# add_subdirectory(tools/build-tools)  # Skip building - use existing binary
+add_subdirectory(tools/build-tools)
 
-# Stub gen_rt_def function - runtime tool has symbol errors
-function(gen_rt_def target_name header_file)
-    add_custom_command(
-        OUTPUT ${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/include/runtime-defs
-        COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file}
-        COMMENT "Stubbing runtime header ${header_file} (tool has symbol errors)"
-    )
-    add_custom_target(${target_name} ALL DEPENDS ${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file})
-endfunction()
 
 # Skip runtime header generation for now - we'll use manual wrappers
 # TODO: Fix runtime-header-tool to work with system clang libraries

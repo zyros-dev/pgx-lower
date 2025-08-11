@@ -68,33 +68,33 @@ extern Logger& get_logger();
 // Convenient macros for logging
 #define PGX_TRACE(msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::TRACE_LVL)) \
-            pgx::get_logger().log(pgx::LogLevel::TRACE_LVL, __FILE__, __LINE__, msg); \
+        if (get_logger().should_log(LogLevel::TRACE_LVL)) \
+            get_logger().log(LogLevel::TRACE_LVL, __FILE__, __LINE__, msg); \
     } while (0)
 
 #define PGX_DEBUG(msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::DEBUG_LVL)) \
-            pgx::get_logger().log(pgx::LogLevel::DEBUG_LVL, __FILE__, __LINE__, msg); \
+        if (get_logger().should_log(LogLevel::DEBUG_LVL)) \
+            get_logger().log(LogLevel::DEBUG_LVL, __FILE__, __LINE__, msg); \
     } while (0)
 
 #define PGX_INFO(msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::INFO_LVL)) { \
-            pgx::get_logger().log(pgx::LogLevel::INFO_LVL, __FILE__, __LINE__, msg); \
+        if (get_logger().should_log(LogLevel::INFO_LVL)) { \
+            get_logger().log(LogLevel::INFO_LVL, __FILE__, __LINE__, msg); \
         } \
     } while (0)
 
 #define PGX_WARNING(msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::WARNING_LVL)) \
-            pgx::get_logger().log(pgx::LogLevel::WARNING_LVL, __FILE__, __LINE__, msg); \
+        if (get_logger().should_log(LogLevel::WARNING_LVL)) \
+            get_logger().log(LogLevel::WARNING_LVL, __FILE__, __LINE__, msg); \
     } while (0)
 
 #define PGX_ERROR(msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::ERROR_LVL)) \
-            pgx::get_logger().log(pgx::LogLevel::ERROR_LVL, __FILE__, __LINE__, msg); \
+        if (get_logger().should_log(LogLevel::ERROR_LVL)) \
+            get_logger().log(LogLevel::ERROR_LVL, __FILE__, __LINE__, msg); \
     } while (0)
 
 #ifdef POSTGRESQL_EXTENSION
@@ -125,57 +125,57 @@ extern Logger& get_logger();
 
 #define PGX_NOTICE(msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::INFO_LVL)) \
-            pgx::get_logger().log(pgx::LogLevel::INFO_LVL, __FILE__, __LINE__, msg); \
+        if (get_logger().should_log(LogLevel::INFO_LVL)) \
+            get_logger().log(LogLevel::INFO_LVL, __FILE__, __LINE__, msg); \
     } while (0)
 
 // MLIR-specific logging macros
 #define MLIR_PGX_DEBUG(dialect, msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::DEBUG_LVL)) { \
+        if (get_logger().should_log(LogLevel::DEBUG_LVL)) { \
             std::string formatted_msg = std::string("[") + dialect + "] " + msg; \
-            pgx::get_logger().log(pgx::LogLevel::DEBUG_LVL, __FILE__, __LINE__, formatted_msg); \
+            get_logger().log(LogLevel::DEBUG_LVL, __FILE__, __LINE__, formatted_msg); \
         } \
     } while (0)
 
 #define MLIR_PGX_INFO(dialect, msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::INFO_LVL)) { \
+        if (get_logger().should_log(LogLevel::INFO_LVL)) { \
             std::string formatted_msg = std::string("[") + dialect + "] " + msg; \
-            pgx::get_logger().log(pgx::LogLevel::INFO_LVL, __FILE__, __LINE__, formatted_msg); \
+            get_logger().log(LogLevel::INFO_LVL, __FILE__, __LINE__, formatted_msg); \
         } \
     } while (0)
 
 #define MLIR_PGX_WARNING(dialect, msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::WARNING_LVL)) { \
+        if (get_logger().should_log(LogLevel::WARNING_LVL)) { \
             std::string formatted_msg = std::string("[") + dialect + "] " + msg; \
-            pgx::get_logger().log(pgx::LogLevel::WARNING_LVL, __FILE__, __LINE__, formatted_msg); \
+            get_logger().log(LogLevel::WARNING_LVL, __FILE__, __LINE__, formatted_msg); \
         } \
     } while (0)
 
 #define MLIR_PGX_ERROR(dialect, msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::ERROR_LVL)) { \
+        if (get_logger().should_log(LogLevel::ERROR_LVL)) { \
             std::string formatted_msg = std::string("[") + dialect + "] " + msg; \
-            pgx::get_logger().log(pgx::LogLevel::ERROR_LVL, __FILE__, __LINE__, formatted_msg); \
+            get_logger().log(LogLevel::ERROR_LVL, __FILE__, __LINE__, formatted_msg); \
         } \
     } while (0)
 
 // Runtime-specific logging macros
 #define RUNTIME_PGX_DEBUG(component, msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::DEBUG_LVL)) { \
+        if (get_logger().should_log(LogLevel::DEBUG_LVL)) { \
             std::string formatted_msg = std::string("[RUNTIME-") + component + "] " + msg; \
-            pgx::get_logger().log(pgx::LogLevel::DEBUG_LVL, __FILE__, __LINE__, formatted_msg); \
+            get_logger().log(LogLevel::DEBUG_LVL, __FILE__, __LINE__, formatted_msg); \
         } \
     } while (0)
 
 #define RUNTIME_PGX_NOTICE(component, msg) \
     do { \
-        if (pgx::get_logger().should_log(pgx::LogLevel::INFO_LVL)) { \
+        if (get_logger().should_log(LogLevel::INFO_LVL)) { \
             std::string formatted_msg = std::string("[RUNTIME-") + component + "] " + msg; \
-            pgx::get_logger().log(pgx::LogLevel::INFO_LVL, __FILE__, __LINE__, formatted_msg); \
+            get_logger().log(LogLevel::INFO_LVL, __FILE__, __LINE__, formatted_msg); \
         } \
     } while (0)
 

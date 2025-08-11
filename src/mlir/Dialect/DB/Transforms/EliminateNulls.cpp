@@ -1,3 +1,4 @@
+#include "mlir/Pass/Pass.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -88,8 +89,12 @@ class WrapWithNullCheck : public mlir::RewritePattern {
 };
 
 //Pattern that optimizes the join order
-class EliminateNulls : public ::mlir::PassWrapper<EliminateNulls, ::mlir::OperationPass<::mlir::ModuleOp>> {
+class EliminateNulls : public ::mlir::OperationPass<::mlir::ModuleOp> {
    virtual llvm::StringRef getArgument() const override { return "eliminate-nulls"; }
+   virtual llvm::StringRef getName() const override { return getArgument(); }
+   std::unique_ptr<Pass> clonePass() const override { return std::make_unique<EliminateNulls>(*this); }
+public:
+   EliminateNulls() : ::mlir::OperationPass<::mlir::ModuleOp>(::mlir::TypeID::get<EliminateNulls>()) {}
    void getDependentDialects(mlir::DialectRegistry& registry) const override {
       registry.insert<mlir::scf::SCFDialect>();
    }

@@ -12,7 +12,7 @@ class TypeCreationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         PGX_DEBUG("Setting up TypeCreationTest");
-        context.getOrLoadDialect<::pgx::mlir::relalg::RelAlgDialect>();
+        context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
     }
     
     MLIRContext context;
@@ -22,13 +22,13 @@ TEST_F(TypeCreationTest, CanCreateRelAlgTypes) {
     PGX_DEBUG("Testing RelAlg type creation");
     
     // Try to create each type
-    auto tupleStreamType = ::pgx::mlir::relalg::TupleStreamType::get(&context);
+    auto tupleStreamType = ::mlir::relalg::TupleStreamType::get(&context);
     EXPECT_TRUE(tupleStreamType) << "Should create TupleStreamType";
     
-    auto tupleType = ::pgx::mlir::relalg::TupleType::get(&context);
+    auto tupleType = ::mlir::relalg::TupleType::get(&context);
     EXPECT_TRUE(tupleType) << "Should create TupleType";
     
-    auto tableType = ::pgx::mlir::relalg::TableType::get(&context);
+    auto tableType = ::mlir::relalg::TableType::get(&context);
     EXPECT_TRUE(tableType) << "Should create TableType";
     
     PGX_DEBUG("RelAlg types created successfully");
@@ -37,9 +37,9 @@ TEST_F(TypeCreationTest, CanCreateRelAlgTypes) {
 TEST_F(TypeCreationTest, CanPrintRelAlgTypes) {
     PGX_DEBUG("Testing RelAlg type printing");
     
-    auto tupleStreamType = ::pgx::mlir::relalg::TupleStreamType::get(&context);
-    auto tupleType = ::pgx::mlir::relalg::TupleType::get(&context);
-    auto tableType = ::pgx::mlir::relalg::TableType::get(&context);
+    auto tupleStreamType = ::mlir::relalg::TupleStreamType::get(&context);
+    auto tupleType = ::mlir::relalg::TupleType::get(&context);
+    auto tableType = ::mlir::relalg::TableType::get(&context);
     
     // Try to print types
     std::string tupleStreamStr;

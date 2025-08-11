@@ -15,12 +15,12 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "mlir/Dialect/Util/IR/UtilOps.h"
-#include "mlir/Conversion/DBToStd/DBToStd.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilDialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilOps.h"
+#include "pgx_lower/mlir/Conversion/DBToStd/DBToStd.h"
 #include "execution/logging.h"
 
 using namespace mlir;
@@ -33,8 +33,8 @@ protected:
     void SetUp() override {
         context.loadDialect<FuncDialect, ArithDialect, SCFDialect, 
                            memref::MemRefDialect, pgx::db::DBDialect,
-                           pgx::mlir::dsa::DSADialect, 
-                           pgx::mlir::util::UtilDialect>();
+                           mlir::dsa::DSADialect, 
+                           mlir::util::UtilDialect>();
     }
 
     MLIRContext context;
@@ -218,7 +218,7 @@ TEST_F(DBToStdEdgeCaseTest, ProperNullableTypeHandling) {
         if (op->getName().getStringRef() == "util.get_tuple") {
             foundGetTuple = true;
             // Verify it's extracting from index 0 (the value)
-            if (auto getTupleOp = dyn_cast<pgx::mlir::util::GetTupleOp>(op)) {
+            if (auto getTupleOp = dyn_cast<mlir::util::GetTupleOp>(op)) {
                 EXPECT_EQ(getTupleOp.getOffset(), 0) << "Should extract value at index 0";
             }
         }
