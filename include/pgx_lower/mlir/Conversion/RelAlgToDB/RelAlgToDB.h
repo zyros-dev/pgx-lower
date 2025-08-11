@@ -4,7 +4,6 @@
 #include "mlir/Pass/Pass.h"
 #include <memory>
 
-namespace pgx {
 namespace mlir {
 
 class Pass;
@@ -25,6 +24,5 @@ void registerRelAlgToDBConversionPasses();
 
 } // namespace pgx_conversion
 } // namespace mlir
-} // namespace pgx
 
 #endif // MLIR_CONVERSION_RELALGTODB_RELALGTODB_H

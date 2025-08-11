@@ -3,7 +3,7 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
@@ -13,7 +13,7 @@ class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::ml
 
    Operator pushdown(Operator topush, Operator curr) {
       UnaryOperator topushUnary = mlir::dyn_cast_or_null<UnaryOperator>(topush.getOperation());
-      pgx::mlir::relalg::ColumnSet usedAttributes = topush.getUsedColumns();
+      mlir::relalg::ColumnSet usedAttributes = topush.getUsedColumns();
       auto res = ::llvm::TypeSwitch<::mlir::Operation*, Operator>(curr.getOperation())
                     .Case<UnaryOperator>([&](UnaryOperator unaryOperator) {
                        Operator asOp = mlir::dyn_cast_or_null<Operator>(unaryOperator.getOperation());
@@ -57,7 +57,7 @@ class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::ml
 
    void runOnOperation() override {
       using namespace mlir;
-      getOperation()->walk([&](pgx::mlir::relalg::SelectionOp sel) {
+      getOperation()->walk([&](mlir::relalg::SelectionOp sel) {
          SmallPtrSet<::mlir::Operation*, 4> users;
          for (auto* u : sel->getUsers()) {
             users.insert(u);
@@ -73,7 +73,6 @@ class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::ml
 };
 } // end anonymous namespace
 
-namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createPushdownPass() { return std::make_unique<Pushdown>(); }

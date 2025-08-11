@@ -38,7 +38,6 @@ extern "C" {
 #pragma pop_macro("_")
 #endif
 
-namespace pgx {
 
 enum class LogLevel {
     TRACE_LVL = 0,
@@ -180,4 +179,3 @@ extern Logger& get_logger();
         } \
     } while (0)
 
-} // namespace pgx

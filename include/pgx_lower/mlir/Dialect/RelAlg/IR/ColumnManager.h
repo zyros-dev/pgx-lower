@@ -5,7 +5,7 @@
 
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
 
-namespace pgx::mlir::relalg {
+namespace mlir::relalg {
 class ColumnManager {
    public:
    void setContext(MLIRContext* context);
@@ -45,6 +45,6 @@ class ColumnManager {
 
    std::unordered_map<std::string, size_t> scopeUnifier;
 };
-} // namespace pgx::mlir::relalg
+} // namespace mlir::relalg
 
 #endif // MLIR_DIALECT_RELALG_IR_COLUMNMANAGER_H

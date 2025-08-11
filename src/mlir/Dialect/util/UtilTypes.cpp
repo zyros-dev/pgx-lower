@@ -9,11 +9,11 @@
 using namespace mlir;
 
 
-void pgx::mlir::util::RefType::print(::mlir::AsmPrinter& printer) const {
+void mlir::util::RefType::print(::mlir::AsmPrinter& printer) const {
    printer << "<";
    printer << getElementType() << ">";
 }
-::mlir::Type pgx::mlir::util::RefType::parse(::mlir::AsmParser& parser) {
+::mlir::Type mlir::util::RefType::parse(::mlir::AsmParser& parser) {
    Type elementType;
    if (parser.parseLess()) {
       return Type();
@@ -22,13 +22,13 @@ void pgx::mlir::util::RefType::print(::mlir::AsmPrinter& printer) const {
    if (parser.parseType(elementType) || parser.parseGreater()) {
       return Type();
    }
-   return pgx::mlir::util::RefType::get(parser.getContext(), elementType);
+   return mlir::util::RefType::get(parser.getContext(), elementType);
 }
 
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/util/UtilOpsTypes.cpp.inc"
 
-namespace pgx::mlir::util {
+namespace mlir::util {
 void UtilDialect::registerTypes() {
    addTypes<
 #define GET_TYPEDEF_LIST
@@ -36,4 +36,4 @@ void UtilDialect::registerTypes() {
       >();
 }
 
-} // namespace pgx::mlir::util
+} // namespace mlir::util

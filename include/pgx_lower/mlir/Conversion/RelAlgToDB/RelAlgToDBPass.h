@@ -4,7 +4,6 @@
 #include "mlir/Pass/Pass.h"
 #include <memory>
 
-namespace pgx {
 namespace mlir {
     namespace relalg {
         std::unique_ptr<Pass> createLowerToDBPass();

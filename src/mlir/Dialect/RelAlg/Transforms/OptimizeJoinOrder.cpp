@@ -16,12 +16,12 @@ class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::
 
    bool isUnsupportedOp(::mlir::Operation* op) {
       return ::llvm::TypeSwitch<::mlir::Operation*, bool>(op)
-         .Case<pgx::mlir::relalg::CrossProductOp, pgx::mlir::relalg::SelectionOp>(
+         .Case<mlir::relalg::CrossProductOp, mlir::relalg::SelectionOp>(
             [&](::mlir::Operation* op) {
                return false;
             })
          .Case<BinaryOperator>([&](::mlir::Operation* op) {
-            if (pgx::mlir::relalg::detail::isJoin(op)) {
+            if (mlir::relalg::detail::isJoin(op)) {
                Operator asOperator = mlir::cast<Operator>(op);
                auto subOps = asOperator.getAllSubOperators();
                auto used = asOperator.getUsedColumns();
@@ -65,18 +65,18 @@ class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::
          return op;
       } else {
          //generate querygraph
-         pgx::mlir::relalg::QueryGraphBuilder queryGraphBuilder(op, alreadyOptimized);
+         mlir::relalg::QueryGraphBuilder queryGraphBuilder(op, alreadyOptimized);
          queryGraphBuilder.generate();
-         pgx::mlir::relalg::QueryGraph& queryGraph = queryGraphBuilder.getQueryGraph();
+         mlir::relalg::QueryGraph& queryGraph = queryGraphBuilder.getQueryGraph();
          queryGraph.estimate();
          //queryGraph.dump();
          //enumerates possible plans and find best one
-         std::shared_ptr<pgx::mlir::relalg::Plan> solution;
-         pgx::mlir::relalg::DPHyp solver(queryGraph);
+         std::shared_ptr<mlir::relalg::Plan> solution;
+         mlir::relalg::DPHyp solver(queryGraph);
          if (solver.countSubGraphs(1000) < 1000) {
             solution = solver.solve();
          } else {
-            pgx::mlir::relalg::GOO fallBackSolver(queryGraph);
+            mlir::relalg::GOO fallBackSolver(queryGraph);
             solution = fallBackSolver.solve();
          }
          if (!solution) {
@@ -131,7 +131,6 @@ class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::
 };
 } // end anonymous namespace
 
-namespace pgx {
 namespace mlir {
 namespace relalg {
 std::unique_ptr<Pass> createOptimizeJoinOrderPass() { return std::make_unique<OptimizeJoinOrder>(); }

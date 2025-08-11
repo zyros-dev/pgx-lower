@@ -9,7 +9,6 @@
 
 using namespace mlir;
 
-namespace pgx {
 namespace utility {
 
 void logModuleIR(ModuleOp module, const std::string& label) {
@@ -106,4 +105,3 @@ bool hasCircularIR(ModuleOp module) {
 }
 
 } // namespace utility
-} // namespace pgx

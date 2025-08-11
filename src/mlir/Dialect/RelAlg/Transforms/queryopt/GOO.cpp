@@ -1,15 +1,15 @@
 #include "mlir/Dialect/RelAlg/Transforms/queryopt/GOO.h"
-static std::shared_ptr<pgx::mlir::relalg::Plan> createInitialPlan(pgx::mlir::relalg::QueryGraph::Node& n) {
+static std::shared_ptr<mlir::relalg::Plan> createInitialPlan(mlir::relalg::QueryGraph::Node& n) {
    std::string description = std::to_string(n.id);
-   if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(n.op.getOperation())) {
+   if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       description = baseTableOp.table_identifier().str();
    }
-   auto currPlan = std::make_shared<pgx::mlir::relalg::Plan>(n.op, std::vector<std::shared_ptr<pgx::mlir::relalg::Plan>>({}), std::vector<Operator>({n.additionalPredicates}), n.rows * n.selectivity);
+   auto currPlan = std::make_shared<mlir::relalg::Plan>(n.op, std::vector<std::shared_ptr<mlir::relalg::Plan>>({}), std::vector<Operator>({n.additionalPredicates}), n.rows * n.selectivity);
    currPlan->setDescription(description);
    return currPlan;
 }
-std::shared_ptr<pgx::mlir::relalg::Plan> pgx::mlir::relalg::GOO::solve() {
-   std::vector<std::pair<NodeSet, std::shared_ptr<pgx::mlir::relalg::Plan>>> availablePlans;
+std::shared_ptr<mlir::relalg::Plan> mlir::relalg::GOO::solve() {
+   std::vector<std::pair<NodeSet, std::shared_ptr<mlir::relalg::Plan>>> availablePlans;
    for (auto v : queryGraph.getNodes()) {
       availablePlans.push_back({NodeSet::single(queryGraph.numNodes, v.id), createInitialPlan(v)});
    }

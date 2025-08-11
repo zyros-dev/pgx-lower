@@ -8,7 +8,7 @@
 #include "mlir-support/parsing.h"
 #include "mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraph.h"
 
-void pgx::mlir::relalg::QueryGraph::print(llvm::raw_ostream& out) {
+void mlir::relalg::QueryGraph::print(llvm::raw_ostream& out) {
    out << "QueryGraph:{\n";
    out << "Nodes: [\n";
    for (auto& n : nodes) {
@@ -55,16 +55,16 @@ void pgx::mlir::relalg::QueryGraph::print(llvm::raw_ostream& out) {
    out << "}\n";
 }
 
-std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unordered_map<const pgx::mlir::relalg::Column*, std::string>& mapping) {
+std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unordered_map<const mlir::relalg::Column*, std::string>& mapping) {
    auto* op = val.getDefiningOp();
    if (!op) return std::move(support::eval::createInvalid());
-   if (auto constantOp = mlir::dyn_cast_or_null<pgx::mlir::db::ConstantOp>(op)) {
+   if (auto constantOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(op)) {
       std::variant<int64_t, double, std::string> parseArg;
-      if (auto integerAttr = constantOp.value().dyn_cast_or_null<::mlir::IntegerAttr>()) {
+      if (auto integerAttr = constantOp.getValue().dyn_cast<::mlir::IntegerAttr>()) {
          parseArg = integerAttr.getInt();
-      } else if (auto floatAttr = constantOp.value().dyn_cast_or_null<::mlir::FloatAttr>()) {
+      } else if (auto floatAttr = constantOp.getValue().dyn_cast<::mlir::FloatAttr>()) {
          parseArg = floatAttr.getValueAsDouble();
-      } else if (auto stringAttr = constantOp.value().dyn_cast_or_null<::mlir::StringAttr>()) {
+      } else if (auto stringAttr = constantOp.getValue().dyn_cast<::mlir::StringAttr>()) {
          parseArg = stringAttr.str();
       } else {
          return support::eval::createInvalid();
@@ -88,34 +88,34 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
             case 32: typeConstant = arrow::Type::type::UINT32; break;
             case 64: typeConstant = arrow::Type::type::UINT64; break;
          }
-      } else if (auto decimalType = type.dyn_cast_or_null<pgx::mlir::db::DecimalType>()) {
+      } else if (auto decimalType = type.dyn_cast<mlir::db::DecimalType>()) {
          typeConstant = arrow::Type::type::DECIMAL128;
          param1 = decimalType.getP();
          param2 = decimalType.getS();
-      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
+      } else if (auto floatType = type.dyn_cast<::mlir::FloatType>()) {
          switch (floatType.getWidth()) {
             case 16: typeConstant = arrow::Type::type::HALF_FLOAT; break;
             case 32: typeConstant = arrow::Type::type::FLOAT; break;
             case 64: typeConstant = arrow::Type::type::DOUBLE; break;
          }
-      } else if (auto stringType = type.dyn_cast_or_null<pgx::mlir::db::StringType>()) {
+      } else if (auto stringType = type.dyn_cast<mlir::db::StringType>()) {
          typeConstant = arrow::Type::type::STRING;
-      } else if (auto dateType = type.dyn_cast_or_null<pgx::mlir::db::DateType>()) {
-         if (dateType.getUnit() == pgx::mlir::db::DateUnitAttr::day) {
+      } else if (auto dateType = type.dyn_cast<mlir::db::DateType>()) {
+         if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
             typeConstant = arrow::Type::type::DATE32;
          } else {
             typeConstant = arrow::Type::type::DATE64;
          }
-      } else if (auto charType = type.dyn_cast_or_null<pgx::mlir::db::CharType>()) {
+      } else if (auto charType = type.dyn_cast<mlir::db::CharType>()) {
          typeConstant = arrow::Type::type::FIXED_SIZE_BINARY;
          param1 = charType.getBytes();
-      } else if (auto intervalType = type.dyn_cast_or_null<pgx::mlir::db::IntervalType>()) {
-         if (intervalType.getUnit() == pgx::mlir::db::IntervalUnitAttr::months) {
+      } else if (auto intervalType = type.dyn_cast<mlir::db::IntervalType>()) {
+         if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
             typeConstant = arrow::Type::type::INTERVAL_MONTHS;
          } else {
             typeConstant = arrow::Type::type::INTERVAL_DAY_TIME;
          }
-      } else if (auto timestampType = type.dyn_cast_or_null<pgx::mlir::db::TimestampType>()) {
+      } else if (auto timestampType = type.dyn_cast<mlir::db::TimestampType>()) {
          typeConstant = arrow::Type::type::TIMESTAMP;
          param1 = static_cast<uint32_t>(timestampType.getUnit());
       }
@@ -123,9 +123,9 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
 
       auto parseResult = support::parse(parseArg, typeConstant, param1);
       return support::eval::createLiteral(parseResult, std::make_tuple(typeConstant, param1, param2));
-   } else if (auto attrRefOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::GetColumnOp>(op)) {
+   } else if (auto attrRefOp = mlir::dyn_cast_or_null<mlir::relalg::GetColumnOp>(op)) {
       return support::eval::createAttrRef(mapping.at(&attrRefOp.getAttr().getColumn()));
-   } else if (auto cmpOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::CmpOpInterface>(op)) {
+   } else if (auto cmpOp = mlir::dyn_cast_or_null<mlir::relalg::CmpOpInterface>(op)) {
       auto left = cmpOp.getLeft();
       auto right = cmpOp.getRight();
       if (cmpOp.isEqualityPred()) {
@@ -137,33 +137,33 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
       } else {
          return support::eval::createInvalid();
       }
-   } else if (auto betweenOp = mlir::dyn_cast_or_null<pgx::mlir::db::BetweenOp>(op)) {
+   } else if (auto betweenOp = mlir::dyn_cast_or_null<mlir::db::BetweenOp>(op)) {
       std::vector<std::unique_ptr<support::eval::expr>> expressions;
       expressions.push_back(support::eval::createLt(buildEvalExpr(betweenOp.getVal(), mapping), buildEvalExpr(betweenOp.upper(), mapping)));
       expressions.push_back(support::eval::createGt(buildEvalExpr(betweenOp.getVal(), mapping), buildEvalExpr(betweenOp.lower(), mapping)));
       return support::eval::createAnd(expressions);
-   } else if (auto oneOfOp = mlir::dyn_cast_or_null<pgx::mlir::db::OneOfOp>(op)) {
+   } else if (auto oneOfOp = mlir::dyn_cast_or_null<mlir::db::OneOfOp>(op)) {
       std::vector<std::unique_ptr<support::eval::expr>> expressions;
       for (auto v : oneOfOp.getVals()) {
          expressions.push_back(support::eval::createEq(buildEvalExpr(oneOfOp.getVal(), mapping), buildEvalExpr(v, mapping)));
       }
       return support::eval::createOr(expressions);
-   } else if (auto andOp = mlir::dyn_cast_or_null<pgx::mlir::db::AndOp>(op)) {
+   } else if (auto andOp = mlir::dyn_cast_or_null<mlir::db::AndOp>(op)) {
       std::vector<std::unique_ptr<support::eval::expr>> expressions;
       for (auto v : andOp.getVals()) {
          expressions.push_back(buildEvalExpr(v, mapping));
       }
       return support::eval::createAnd(expressions);
-   } else if (auto orOp = mlir::dyn_cast_or_null<pgx::mlir::db::OrOp>(op)) {
+   } else if (auto orOp = mlir::dyn_cast_or_null<mlir::db::OrOp>(op)) {
       std::vector<std::unique_ptr<support::eval::expr>> expressions;
       for (auto v : orOp.getVals()) {
          expressions.push_back(buildEvalExpr(v, mapping));
       }
       return support::eval::createOr(expressions);
-   } else if (auto runtimeCall = mlir::dyn_cast_or_null<pgx::mlir::db::RuntimeCall>(op)) {
-      if (runtimeCall.fn() == "ConstLike" || runtimeCall.fn() == "Like") {
-         if (auto constantOp = mlir::dyn_cast_or_null<pgx::mlir::db::ConstantOp>(runtimeCall.args()[1].getDefiningOp())) {
-            return support::eval::createLike(buildEvalExpr(runtimeCall.args()[0], mapping), constantOp.value().cast<::mlir::StringAttr>().str());
+   } else if (auto runtimeCall = mlir::dyn_cast_or_null<mlir::db::RuntimeCall>(op)) {
+      if (runtimeCall.getFn() == "ConstLike" || runtimeCall.getFn() == "Like") {
+         if (auto constantOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(runtimeCall.getArgs()[1].getDefiningOp())) {
+            return support::eval::createLike(buildEvalExpr(runtimeCall.getArgs()[0], mapping), constantOp.getValue().cast<::mlir::StringAttr>().str());
          }
       }
       return support::eval::createInvalid();
@@ -171,41 +171,41 @@ std::unique_ptr<support::eval::expr> buildEvalExpr(::mlir::Value val, std::unord
    return support::eval::createInvalid();
 }
 
-std::optional<double> estimateUsingSample(pgx::mlir::relalg::QueryGraph::Node& n) {
+std::optional<double> estimateUsingSample(mlir::relalg::QueryGraph::Node& n) {
    if (!n.op) return {};
    if (n.additionalPredicates.empty()) return {};
-   if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(n.op.getOperation())) {
-      std::unordered_map<const pgx::mlir::relalg::Column*, std::string> mapping;
+   if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
+      std::unordered_map<const mlir::relalg::Column*, std::string> mapping;
       for (auto c : baseTableOp.getColumns()) {
-         mapping[&c.value().cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn()] = c.getName().str();
+         mapping[&c.getValue().cast<mlir::relalg::ColumnDefAttr>().getColumn()] = c.getName().str();
       }
       auto meta = baseTableOp.meta().getMeta();
       auto sample = meta->getSample();
       if (!sample) return {};
       std::vector<std::unique_ptr<support::eval::expr>> expressions;
       for (auto pred : n.additionalPredicates) {
-         if (auto selOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::SelectionOp>(pred.getOperation())) {
-            auto v = mlir::cast<pgx::mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator()).results()[0];
+         if (auto selOp = mlir::dyn_cast_or_null<mlir::relalg::SelectionOp>(pred.getOperation())) {
+            auto v = mlir::cast<mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator()).results()[0];
             expressions.push_back(buildEvalExpr(v, mapping)); //todo: ignore failing ones?
          }
       }
       auto optionalCount = support::eval::countResults(sample, support::eval::createAnd(expressions));
       if (!optionalCount.has_value()) return {};
-      auto count = optionalCount.value();
+      auto count = optionalCount.getValue();
       if (count == 0) count = 1;
       return static_cast<double>(count) / static_cast<double>(sample->num_rows());
    }
 
    return {};
 }
-pgx::mlir::relalg::ColumnSet pgx::mlir::relalg::QueryGraph::getPKey(pgx::mlir::relalg::QueryGraph::Node& n) {
+mlir::relalg::ColumnSet mlir::relalg::QueryGraph::getPKey(mlir::relalg::QueryGraph::Node& n) {
    if (!n.op) return {};
-   if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(n.op.getOperation())) {
+   if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       auto meta = baseTableOp.meta().getMeta();
-      pgx::mlir::relalg::ColumnSet attributes;
-      std::unordered_map<std::string, const pgx::mlir::relalg::Column*> mapping;
+      mlir::relalg::ColumnSet attributes;
+      std::unordered_map<std::string, const mlir::relalg::Column*> mapping;
       for (auto c : baseTableOp.getColumns()) {
-         mapping[c.getName().str()] = &c.value().cast<pgx::mlir::relalg::ColumnDefAttr>().getColumn();
+         mapping[c.getName().str()] = &c.getValue().cast<mlir::relalg::ColumnDefAttr>().getColumn();
       }
       for (auto c : meta->getPrimaryKey()) {
          attributes.insert(mapping.at(c));
@@ -215,21 +215,21 @@ pgx::mlir::relalg::ColumnSet pgx::mlir::relalg::QueryGraph::getPKey(pgx::mlir::r
 
    return {};
 }
-double getRows(pgx::mlir::relalg::QueryGraph::Node& n) {
-   if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(n.op.getOperation())) {
+double getRows(mlir::relalg::QueryGraph::Node& n) {
+   if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       auto numRows = baseTableOp.meta().getMeta()->getNumRows();
       baseTableOp->setAttr("rows", ::mlir::FloatAttr::get(::mlir::FloatType::getF64(n.op.getContext()), numRows));
       return numRows == 0 ? 1 : numRows;
    }
    return 1;
 }
-void pgx::mlir::relalg::QueryGraph::estimate() {
+void mlir::relalg::QueryGraph::estimate() {
    for (auto& node : nodes) {
       node.selectivity = 1;
       if (node.op) {
          node.rows = getRows(node);
          auto availableLeft = node.op.getAvailableColumns();
-         pgx::mlir::relalg::ColumnSet availableRight;
+         mlir::relalg::ColumnSet availableRight;
          std::vector<Predicate> predicates;
          for (auto pred : node.additionalPredicates) {
             addPredicates(predicates, pred, availableLeft, availableRight);
@@ -245,7 +245,7 @@ void pgx::mlir::relalg::QueryGraph::estimate() {
          } else {
             auto estimation = estimateUsingSample(node);
             if (estimation.has_value()) {
-               node.selectivity = estimation.value();
+               node.selectivity = estimation.getValue();
             } else {
                for (auto predicate : predicates) {
                   if (predicate.isEq) {
@@ -268,7 +268,7 @@ void pgx::mlir::relalg::QueryGraph::estimate() {
       }
    }
 }
-double pgx::mlir::relalg::QueryGraph::calculateSelectivity(SelectionEdge& edge, NodeSet left, NodeSet right) {
+double mlir::relalg::QueryGraph::calculateSelectivity(SelectionEdge& edge, NodeSet left, NodeSet right) {
    if (edge.required.count() == 2 && left.any() && right.any()) return edge.selectivity;
    auto key = left & edge.required;
    if (edge.cachedSel.contains(key)) {
@@ -278,7 +278,7 @@ double pgx::mlir::relalg::QueryGraph::calculateSelectivity(SelectionEdge& edge, 
    edge.cachedSel[key] = selectivity;
    return selectivity;
 }
-double pgx::mlir::relalg::QueryGraph::estimateSelectivity(Operator op, NodeSet left, NodeSet right) {
+double mlir::relalg::QueryGraph::estimateSelectivity(Operator op, NodeSet left, NodeSet right) {
    auto availableLeft = getAttributesForNodeSet(left);
    auto availableRight = getAttributesForNodeSet(right);
    std::vector<Predicate> predicates;
@@ -288,14 +288,14 @@ double pgx::mlir::relalg::QueryGraph::estimateSelectivity(Operator op, NodeSet l
    std::vector<std::pair<double, ColumnSet>> pkeysRight;
    iterateNodes(left, [&](auto node) {
       if (node.op) {
-         if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(node.op.getOperation())) {
+         if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(node.op.getOperation())) {
             pkeysLeft.push_back({node.rows, getPKey(node)});
          }
       }
    });
    iterateNodes(right, [&](auto node) {
       if (node.op) {
-         if (auto baseTableOp = mlir::dyn_cast_or_null<pgx::mlir::relalg::BaseTableOp>(node.op.getOperation())) {
+         if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(node.op.getOperation())) {
             pkeysRight.push_back({node.rows, getPKey(node)});
          }
       }

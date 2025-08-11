@@ -6,7 +6,6 @@
 
 #include <memory>
 
-namespace pgx {
 namespace mlir {
 namespace dsa {
 void populateScalarToStdPatterns(::mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns);

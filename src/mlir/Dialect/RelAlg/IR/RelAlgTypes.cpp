@@ -6,7 +6,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace pgx::mlir::relalg;
+using namespace ::mlir::relalg;
 
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.cpp.inc"

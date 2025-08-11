@@ -5,7 +5,7 @@
 #include <iostream>
 
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {

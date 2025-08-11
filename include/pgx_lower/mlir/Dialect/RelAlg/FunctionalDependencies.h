@@ -1,9 +1,9 @@
 #ifndef MLIR_DIALECT_RELALG_FUNCTIONALDEPENDENCIES_H
 #define MLIR_DIALECT_RELALG_FUNCTIONALDEPENDENCIES_H
-namespace pgx::mlir::relalg {
+namespace mlir::relalg {
 
 class FunctionalDependencies {
-   std::vector<std::pair<pgx::mlir::relalg::ColumnSet,pgx::mlir::relalg::ColumnSet>> fds;
+   std::vector<std::pair<mlir::relalg::ColumnSet,mlir::relalg::ColumnSet>> fds;
    public:
    void insert(const FunctionalDependencies& other){
       fds.insert(fds.end(),other.fds.begin(),other.fds.end());
@@ -23,5 +23,5 @@ class FunctionalDependencies {
       return res;
    }
 };
-} // namespace pgx::mlir::relalg
+} // namespace mlir::relalg
 #endif // MLIR_DIALECT_RELALG_FUNCTIONALDEPENDENCIES_H

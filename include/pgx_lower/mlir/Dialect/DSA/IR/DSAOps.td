@@ -16,7 +16,7 @@ include "mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
 
 def DSA_Dialect : Dialect {
     let name = "dsa";
-    let cppNamespace = "::pgx::mlir::dsa";
+    let cppNamespace = "::mlir::dsa";
     let extraClassDeclaration = [{
         private:
         void registerTypes();
@@ -35,11 +35,11 @@ class DSA_Type<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name> {
     let mnemonic = typeMnemonic;
 }
 
-class DSA_Collection<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name,[],"::pgx::mlir::dsa::CollectionType"> {
+class DSA_Collection<string name, string typeMnemonic> : TypeDef<DSA_Dialect, name,[],"::mlir::dsa::CollectionType"> {
     let mnemonic = typeMnemonic;
 }
 
-def DSA_Collection : Type<CPred<"$_self.isa<::pgx::mlir::dsa::CollectionType>()">,"DSA dialect collection">;
+def DSA_Collection : Type<CPred<"$_self.isa<::mlir::dsa::CollectionType>()">,"DSA dialect collection">;
 
 def DSA_GenericIterable : DSA_Collection<"GenericIterable","iterable"> {
     let summary = "generic iterable";

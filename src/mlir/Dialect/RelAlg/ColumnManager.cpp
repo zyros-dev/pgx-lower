@@ -1,5 +1,5 @@
 #include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
-namespace pgx::mlir::relalg {
+namespace mlir::relalg {
 void ColumnManager::setContext(MLIRContext* context) {
    this->context = context;
 }
@@ -14,18 +14,18 @@ std::shared_ptr<Column> ColumnManager::get(StringRef scope, StringRef attribute)
 }
 ColumnDefAttr ColumnManager::createDef(SymbolRefAttr name, Attribute fromExisting) {
    assert(name.getNestedReferences().size() == 1);
-   auto attribute = get(name.getRootReference().value(), name.getLeafReference().value());
-   return pgx::mlir::relalg::ColumnDefAttr::get(context, name, attribute, fromExisting);
+   auto attribute = get(name.getRootReference().getValue(), name.getLeafReference().getValue());
+   return mlir::relalg::ColumnDefAttr::get(context, name, attribute, fromExisting);
 }
 ColumnDefAttr ColumnManager::createDef(StringRef scope, StringRef name, Attribute fromExisting) {
    auto attribute = get(scope, name);
    std::vector<FlatSymbolRefAttr> nested;
    nested.push_back(FlatSymbolRefAttr::get(context, name));
-   return pgx::mlir::relalg::ColumnDefAttr::get(context, SymbolRefAttr::get(context, scope, nested), attribute, fromExisting);
+   return mlir::relalg::ColumnDefAttr::get(context, SymbolRefAttr::get(context, scope, nested), attribute, fromExisting);
 }
 ColumnRefAttr ColumnManager::createRef(SymbolRefAttr name) {
    assert(name.getNestedReferences().size() == 1);
-   auto attribute = get(name.getRootReference().value(), name.getLeafReference().value());
+   auto attribute = get(name.getRootReference().getValue(), name.getLeafReference().getValue());
    return relalg::ColumnRefAttr::get(context, name, attribute);
 }
 ColumnRefAttr ColumnManager::createRef(StringRef scope, StringRef name) {
@@ -46,4 +46,4 @@ ColumnDefAttr ColumnManager::createDef(const Column* attr) {
 std::pair<std::string, std::string> ColumnManager::getName(const Column* attr) {
    return attributesRev.at(attr);
 }
-} // namespace pgx::mlir::relalg
+} // namespace mlir::relalg

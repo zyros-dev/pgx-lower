@@ -5261,7 +5261,7 @@ template<typename IteratorType> class iteration_proxy_value
     using pointer = value_type *;
     using reference = value_type &;
     using iterator_category = std::forward_iterator_tag;
-    using string_type = typename std::remove_cv< typename std::remove_reference<decltype( std::declval<IteratorType>().key() ) >::type >::type;
+    using string_type = typename std::remove_cv< typename std::remove_reference<decltype( std::declval<IteratorType>().getKey() ) >::type >::type;
 
   private:
     /// the iterator
@@ -5350,7 +5350,7 @@ template<typename IteratorType> class iteration_proxy_value
 
             // use key from the object
             case value_t::object:
-                return anchor.key();
+                return anchor.getKey();
 
             // use an empty key for all primitive types
             case value_t::null:
@@ -5369,7 +5369,7 @@ template<typename IteratorType> class iteration_proxy_value
     /// return value of the iterator
     typename IteratorType::reference value() const
     {
-        return anchor.value();
+        return anchor.getValue();
     }
 };
 
@@ -5410,17 +5410,17 @@ template<typename IteratorType> class iteration_proxy
 // For further reference see https://blog.tartanllama.xyz/structured-bindings/
 // And see https://github.com/nlohmann/json/pull/1391
 template<std::size_t N, typename IteratorType, enable_if_t<N == 0, int> = 0>
-auto get(const nlohmann::detail::iteration_proxy_value<IteratorType>& i) -> decltype(i.key())
+auto get(const nlohmann::detail::iteration_proxy_value<IteratorType>& i) -> decltype(i.getKey())
 {
-    return i.key();
+    return i.getKey();
 }
 // Structured Bindings Support
 // For further reference see https://blog.tartanllama.xyz/structured-bindings/
 // And see https://github.com/nlohmann/json/pull/1391
 template<std::size_t N, typename IteratorType, enable_if_t<N == 1, int> = 0>
-auto get(const nlohmann::detail::iteration_proxy_value<IteratorType>& i) -> decltype(i.value())
+auto get(const nlohmann::detail::iteration_proxy_value<IteratorType>& i) -> decltype(i.getValue())
 {
-    return i.value();
+    return i.getValue();
 }
 
 }  // namespace detail
@@ -5861,7 +5861,7 @@ template<typename BasicJsonType, typename T,
          enable_if_t<std::is_same<T, iteration_proxy_value<typename BasicJsonType::iterator>>::value, int> = 0>
 inline void to_json(BasicJsonType& j, const T& b)
 {
-    j = { {b.key(), b.value()} };
+    j = { {b.getKey(), b.getValue()} };
 }
 
 template<typename BasicJsonType, typename Tuple, std::size_t... Idx>
@@ -6128,9 +6128,9 @@ std::size_t hash(const BasicJsonType& j)
             auto seed = combine(type, j.size());
             for (const auto& element : j.items())
             {
-                const auto h = std::hash<string_t> {}(element.key());
+                const auto h = std::hash<string_t> {}(element.getKey());
                 seed = combine(seed, h);
-                seed = combine(seed, hash(element.value()));
+                seed = combine(seed, hash(element.getValue()));
             }
             return seed;
         }
@@ -13933,10 +13933,10 @@ class json_reverse_iterator : public std::reverse_iterator<Base>
     }
 
     /// return the key of an object iterator
-    auto key() const -> decltype(std::declval<Base>().key())
+    auto key() const -> decltype(std::declval<Base>().getKey())
     {
         auto it = --this->base();
-        return it.key();
+        return it.getKey();
     }
 
     /// return the value of an iterator
@@ -22940,18 +22940,18 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
 
         for (auto it = first; it != last; ++it)
         {
-            if (merge_objects && it.value().is_object())
+            if (merge_objects && it.getValue().is_object())
             {
-                auto it2 = m_data.m_value.object->find(it.key());
+                auto it2 = m_data.m_value.object->find(it.getKey());
                 if (it2 != m_data.m_value.object->end())
                 {
-                    it2->second.update(it.value(), true);
+                    it2->second.update(it.getValue(), true);
                     continue;
                 }
             }
-            m_data.m_value.object->operator[](it.key()) = it.value();
+            m_data.m_value.object->operator[](it.getKey()) = it.getValue();
 #if JSON_DIAGNOSTICS
-            m_data.m_value.object->operator[](it.key()).m_parent = this;
+            m_data.m_value.object->operator[](it.getKey()).m_parent = this;
 #endif
         }
     }
@@ -24550,12 +24550,12 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
                 for (auto it = source.cbegin(); it != source.cend(); ++it)
                 {
                     // escape the key name to be used in a JSON patch
-                    const auto path_key = detail::concat(path, '/', detail::escape(it.key()));
+                    const auto path_key = detail::concat(path, '/', detail::escape(it.getKey()));
 
-                    if (target.find(it.key()) != target.end())
+                    if (target.find(it.getKey()) != target.end())
                     {
                         // recursive call to compare object values at key it
-                        auto temp_diff = diff(it.value(), target[it.key()], path_key);
+                        auto temp_diff = diff(it.getValue(), target[it.getKey()], path_key);
                         result.insert(result.end(), temp_diff.begin(), temp_diff.end());
                     }
                     else
@@ -24571,14 +24571,14 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
                 // second pass: traverse other object's elements
                 for (auto it = target.cbegin(); it != target.cend(); ++it)
                 {
-                    if (source.find(it.key()) == source.end())
+                    if (source.find(it.getKey()) == source.end())
                     {
                         // found a key that is not in this -> add it
-                        const auto path_key = detail::concat(path, '/', detail::escape(it.key()));
+                        const auto path_key = detail::concat(path, '/', detail::escape(it.getKey()));
                         result.push_back(
                         {
                             {"op", "add"}, {"path", path_key},
-                            {"value", it.value()}
+                            {"value", it.getValue()}
                         });
                     }
                 }
@@ -24628,13 +24628,13 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
             }
             for (auto it = apply_patch.begin(); it != apply_patch.end(); ++it)
             {
-                if (it.value().is_null())
+                if (it.getValue().is_null())
                 {
-                    erase(it.key());
+                    erase(it.getKey());
                 }
                 else
                 {
-                    operator[](it.key()).merge_patch(it.value());
+                    operator[](it.getKey()).merge_patch(it.getValue());
                 }
             }
         }

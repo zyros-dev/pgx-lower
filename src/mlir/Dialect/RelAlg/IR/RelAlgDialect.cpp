@@ -6,7 +6,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace pgx::mlir::relalg;
+using namespace ::mlir::relalg;
 
 struct RelalgInlinerInterface : public DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
@@ -57,16 +57,16 @@ void RelAlgDialect::initialize() {
 // Type print/parse methods removed - no longer using hasCustomAssemblyFormat
 // The default generated implementations will be used instead
 
-void pgx::mlir::relalg::ColumnRefAttr::print(::mlir::AsmPrinter& printer) const {
+void mlir::relalg::ColumnRefAttr::print(::mlir::AsmPrinter& printer) const {
     printer << "<" << getName() << ">";
 }
 
-::mlir::Attribute pgx::mlir::relalg::ColumnRefAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
+::mlir::Attribute mlir::relalg::ColumnRefAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
     std::string name;
     if (parser.parseLess() || parser.parseString(&name) || parser.parseGreater()) {
         return ::mlir::Attribute();
     }
-    return pgx::mlir::relalg::ColumnRefAttr::get(parser.getContext(), name);
+    return mlir::relalg::ColumnRefAttr::get(parser.getContext(), name);
 }
 
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.cpp.inc"

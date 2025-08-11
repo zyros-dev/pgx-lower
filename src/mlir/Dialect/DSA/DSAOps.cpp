@@ -25,8 +25,8 @@ static void printInitializationList(OpAsmPrinter& p,
    p << ")";
 }
 //adapted from scf::ForOp
-void pgx::mlir::dsa::ForOp::print(OpAsmPrinter& p) {
-   pgx::mlir::dsa::ForOp& op = *this;
+void mlir::dsa::ForOp::print(OpAsmPrinter& p) {
+   mlir::dsa::ForOp& op = *this;
    p << " " << op.getInductionVar() << " in "
      << op.getCollection() << " : " << op.getCollection().getType() << " ";
    if (op.getUntil()) {
@@ -36,7 +36,7 @@ void pgx::mlir::dsa::ForOp::print(OpAsmPrinter& p) {
                            " iter_args");
    if (!op.getIterOperands().empty())
       p << " -> (" << op.getIterOperands().getTypes() << ')';
-   p.printRegion(op.region(),
+   p.printRegion(op.getRegion(),
                  /*printEntryBlockArgs=*/false,
                  /*printBlockTerminators=*/op.hasIterOperands());
    p.printOptionalAttrDict(op->getAttrs(), {"operand_segment_sizes"});
@@ -48,7 +48,7 @@ ParseResult dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
    OpAsmParser::UnresolvedOperand collection;
    OpAsmParser::Argument inductionVariable;
    Type collType;
-   pgx::mlir::dsa::CollectionType collectionType;
+   mlir::dsa::CollectionType collectionType;
    // Parse the induction variable followed by '='.
    if (parser.parseArgument(inductionVariable) || parser.parseKeyword("in"))
       return failure();
@@ -58,7 +58,7 @@ ParseResult dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
        parser.parseColonType(collType))
       return failure();
 
-   if (!(collectionType = collType.dyn_cast_or_null<pgx::mlir::dsa::CollectionType>())) {
+   if (!(collectionType = collType.dyn_cast<mlir::dsa::CollectionType>())) {
       return failure();
    }
    parser.resolveOperand(collection, collectionType, result.operands);
@@ -71,7 +71,7 @@ ParseResult dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
    bool hasUntil = false;
    if (succeeded(parser.parseOptionalKeyword("until"))) {
       OpAsmParser::UnresolvedOperand until;
-      if (parser.parseOperand(until) || parser.resolveOperand(until, pgx::mlir::dsa::FlagType::get(parser.getBuilder().getContext()), result.operands)) {
+      if (parser.parseOperand(until) || parser.resolveOperand(until, mlir::dsa::FlagType::get(parser.getBuilder().getContext()), result.operands)) {
          return failure();
       }
       hasUntil = true;
@@ -108,7 +108,7 @@ ParseResult dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
    if (parser.parseRegion(*body, regionArgs))
       return failure();
 
-   pgx::mlir::dsa::ForOp::ensureTerminator(*body, builder, result.location);
+   mlir::dsa::ForOp::ensureTerminator(*body, builder, result.location);
    result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({1, (hasUntil ? 1 : 0), static_cast<int32_t>(iterArgs)}));
 
    // Parse the optional attribute list.
@@ -118,7 +118,7 @@ ParseResult dsa::ForOp::parse(OpAsmParser& parser, OperationState& result) {
    return success();
 }
 
-ParseResult pgx::mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::OperationState& result) {
+ParseResult mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::OperationState& result) {
    OpAsmParser::UnresolvedOperand toSort;
    dsa::VectorType vecType;
    if (parser.parseOperand(toSort) || parser.parseColonType(vecType)) {
@@ -138,10 +138,10 @@ ParseResult pgx::mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::O
 
 void dsa::SortOp::print(OpAsmPrinter& p) {
    dsa::SortOp& op = *this;
-   p << " " << op.toSort() << ":" << op.toSort().getType() << " ";
+   p << " " << op.getToSort() << ":" << op.getToSort().getType() << " ";
    p << "(";
    bool first = true;
-   for (auto arg : op.region().front().getArguments()) {
+   for (auto arg : op.getRegion().front().getArguments()) {
       if (first) {
          first = false;
       } else {
@@ -150,10 +150,10 @@ void dsa::SortOp::print(OpAsmPrinter& p) {
       p << arg;
    }
    p << ")";
-   p.printRegion(op.region(), false, true);
+   p.printRegion(op.getRegion(), false, true);
 }
 
-ParseResult pgx::mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, OperationState& result) {
+ParseResult mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, OperationState& result) {
    OpAsmParser::UnresolvedOperand ht, key, val;
    Type htType;
    Type keyType;
@@ -210,14 +210,14 @@ ParseResult pgx::mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, Operatio
 
 void dsa::HashtableInsert::print(OpAsmPrinter& p) {
    dsa::HashtableInsert& op = *this;
-   p << " " << op.ht() << " : " << op.ht().getType() << ", " << op.key() << " : " << op.key().getType();
+   p << " " << op.getHt() << " : " << op.getHt().getType() << ", " << op.getKey() << " : " << op.getKey().getType();
    if (op.getVal()) {
       p << ", " << op.getVal() << " : " << op.getVal().getType();
    }
-   if (!op.hash().empty()) {
+   if (!op.getHash().empty()) {
       p << " hash: (";
       bool first = true;
-      for (auto arg : op.hash().front().getArguments()) {
+      for (auto arg : op.getHash().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -226,12 +226,12 @@ void dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.hash(), false, true);
+      p.printRegion(op.getHash(), false, true);
    }
-   if (!op.equal().empty()) {
+   if (!op.getEqual().empty()) {
       p << " eq: (";
       bool first = true;
-      for (auto arg : op.equal().front().getArguments()) {
+      for (auto arg : op.getEqual().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -240,7 +240,7 @@ void dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.equal(), false, true);
+      p.printRegion(op.getEqual(), false, true);
    }
    if (!op.reduce().empty()) {
       p << " reduce: (";

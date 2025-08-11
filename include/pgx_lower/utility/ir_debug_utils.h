@@ -15,7 +15,6 @@
 #include <set>
 #include <string>
 
-namespace pgx {
 namespace utility {
 
 /// Logs the module IR structure as plaintext for debugging.
@@ -32,6 +31,5 @@ void logModuleIR(::mlir::ModuleOp module, const std::string& label);
 bool hasCircularIR(::mlir::ModuleOp module);
 
 } // namespace utility
-} // namespace pgx
 
 #endif // PGX_LOWER_UTILITY_IR_DEBUG_UTILS_H

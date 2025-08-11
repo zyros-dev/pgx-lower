@@ -2,10 +2,10 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
 
-namespace pgx::mlir::relalg {
+namespace mlir::relalg {
 
 ::mlir::ArrayAttr ColumnSet::asRefArrayAttr(::mlir::MLIRContext* context) {
-    auto& columnManager = context->getLoadedDialect<pgx::mlir::relalg::RelAlgDialect>()->getColumnManager();
+    auto& columnManager = context->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
     
     std::vector<::mlir::Attribute> refAttrs;
     for (const auto* col : columns) {
@@ -17,13 +17,13 @@ namespace pgx::mlir::relalg {
 ColumnSet ColumnSet::fromArrayAttr(::mlir::ArrayAttr arrayAttr) {
     ColumnSet res;
     for (const auto attr : arrayAttr) {
-        if (auto attrRef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnRefAttr>()) {
+        if (auto attrRef = attr.dyn_cast<mlir::relalg::ColumnRefAttr>()) {
             res.insert(&attrRef.getColumn());
-        } else if (auto attrDef = attr.dyn_cast_or_null<pgx::mlir::relalg::ColumnDefAttr>()) {
+        } else if (auto attrDef = attr.dyn_cast<mlir::relalg::ColumnDefAttr>()) {
             res.insert(&attrDef.getColumn());
         }
     }
     return res;
 }
 
-} // namespace pgx::mlir::relalg
+} // namespace mlir::relalg

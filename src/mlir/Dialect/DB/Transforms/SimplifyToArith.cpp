@@ -5,13 +5,13 @@
 #include <iostream>
 
 #include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <variant>
 namespace {
-mlir::arith::CmpIPredicateAttr convertToCmpIPred(::mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
+mlir::arith::CmpIPredicateAttr convertToCmpIPred(::mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
-   switch (p.value()) {
+   switch (p.getValue()) {
       case db::DBCmpPredicate::eq:
          return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::eq);
       case db::DBCmpPredicate::neq:
@@ -27,9 +27,9 @@ mlir::arith::CmpIPredicateAttr convertToCmpIPred(::mlir::OpBuilder, ::pgx::mlir:
    }
    return mlir::arith::CmpIPredicateAttr::get(p.getContext(), arith::CmpIPredicate::sge);
 }
-mlir::arith::CmpFPredicateAttr convertToCmpFPred(::mlir::OpBuilder, ::pgx::mlir::db::DBCmpPredicateAttr p) {
+mlir::arith::CmpFPredicateAttr convertToCmpFPred(::mlir::OpBuilder, ::mlir::db::DBCmpPredicateAttr p) {
    using namespace mlir;
-   switch (p.value()) {
+   switch (p.getValue()) {
       case db::DBCmpPredicate::eq:
          return mlir::arith::CmpFPredicateAttr::get(p.getContext(), arith::CmpFPredicate::OEQ);
       case db::DBCmpPredicate::neq:
@@ -48,18 +48,18 @@ mlir::arith::CmpFPredicateAttr convertToCmpFPred(::mlir::OpBuilder, ::pgx::mlir:
 mlir::Attribute convertConst(::mlir::Attribute attr, ::mlir::Value v) {
    using namespace mlir;
    std::variant<int64_t, double, std::string> parseArg;
-   if (auto integerAttr = attr.dyn_cast_or_null<IntegerAttr>()) {
+   if (auto integerAttr = attr.dyn_cast<IntegerAttr>()) {
       if (v.getType().isIntOrIndex()) {
          return IntegerAttr::get(v.getType(), integerAttr.getInt());
       }
-   } else if (auto floatAttr = attr.dyn_cast_or_null<FloatAttr>()) {
+   } else if (auto floatAttr = attr.dyn_cast<FloatAttr>()) {
       if (v.getType().isa<::mlir::FloatType>()) {
          return FloatAttr::get(v.getType(), floatAttr.getValueAsDouble());
       }
    }
    return attr;
 }
-#include "SimplifyToArith.inc" // DISABLED - LLVM 20 API changes needed
+// #include "SimplifyToArith.inc" // DISABLED - LLVM 20 API changes needed // DISABLED - LLVM 20 API changes needed
 
 //Pattern that optimizes the join order
 class SimplifyToArith : public ::mlir::PassWrapper<SimplifyToArith, ::mlir::OperationPass<::mlir::func::FuncOp>> {
@@ -83,8 +83,8 @@ class SimplifyToArith : public ::mlir::PassWrapper<SimplifyToArith, ::mlir::Oper
 };
 } // end anonymous namespace
 
-namespace pgx::mlir::db {
+namespace mlir::db {
 
 std::unique_ptr<Pass> createSimplifyToArithPass() { return std::make_unique<SimplifyToArith>(); }
 
-} // end namespace pgx::mlir::db
+} // end namespace mlir::db

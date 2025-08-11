@@ -6,7 +6,6 @@
 
 #include <memory>
 
-namespace pgx {
 namespace mlir {
 namespace db {
 

@@ -11,8 +11,8 @@ include "mlir/IR/SymbolInterfaces.td"
 
 include "RelAlgInterfaces.td"
 
-def DSA_Table : Type<CPred<"$_self.isa<::pgx::mlir::dsa::TableType>()">,"DB table type">;
-def DSA_Collection : Type<CPred<"$_self.isa<::pgx::mlir::dsa::CollectionType>()">,"DB collection type">;
+def DSA_Table : Type<CPred<"$_self.isa<::mlir::dsa::TableType>()">,"DB table type">;
+def DSA_Collection : Type<CPred<"$_self.isa<::mlir::dsa::CollectionType>()">,"DB collection type">;
 
 //===----------------------------------------------------------------------===//
 // RelAlg dialect definition.
@@ -21,7 +21,7 @@ def DSA_Collection : Type<CPred<"$_self.isa<::pgx::mlir::dsa::CollectionType>()"
 def RelAlg_Dialect : Dialect {
     let name = "relalg";
     let summary = "A dialect for relational algebra";
-    let cppNamespace = "::pgx::mlir::relalg";
+    let cppNamespace = "::mlir::relalg";
 
     let extraClassDeclaration = [{
         private:
@@ -94,7 +94,7 @@ def RelAlg_AggrFunc_ASC  : I64EnumAttrCase<"asc", 1>;
 
 def RelAlg_SortSpec : I64EnumAttr<"SortSpec", "sort order",
         [RelAlg_SortSpec_DESC,RelAlg_AggrFunc_ASC]> {
-    let cppNamespace = "::pgx::mlir::relalg";
+    let cppNamespace = "::mlir::relalg";
 }
 
 def RelAlg_AggrFunc_Sum   : I64EnumAttrCase<"sum", 0>;
@@ -107,7 +107,7 @@ def RelAlg_AggrFunc_Any : I64EnumAttrCase<"any", 5>;
 def RelAlg_AggrFunc : I64EnumAttr<"AggrFunc", "aggregation function",
         [RelAlg_AggrFunc_Sum, RelAlg_AggrFunc_Min, RelAlg_AggrFunc_Max,
          RelAlg_AggrFunc_Avg, RelAlg_AggrFunc_Count, RelAlg_AggrFunc_Any]> {
-    let cppNamespace = "::pgx::mlir::relalg";
+    let cppNamespace = "::mlir::relalg";
 }
 
 def RelAlg_SetSemantic_Distinct : I64EnumAttrCase<"distinct", 0>;
@@ -115,7 +115,7 @@ def RelAlg_SetSemantic_All      : I64EnumAttrCase<"all", 1>;
 
 def RelAlg_SetSemantic : I64EnumAttr<"SetSemantic", "",
         [RelAlg_SetSemantic_Distinct,RelAlg_SetSemantic_All]> {
-    let cppNamespace = "::pgx::mlir::relalg";
+    let cppNamespace = "::mlir::relalg";
 }
 
 //===----------------------------------------------------------------------===//
@@ -153,7 +153,7 @@ def BaseTableOp : RelAlg_Op<"basetable",
 
     let extraClassDeclaration = [{
         ColumnSet getCreatedColumns();
-        pgx::mlir::relalg::FunctionalDependencies getFDs();
+        mlir::relalg::FunctionalDependencies getFDs();
     }];
 }
 
@@ -371,9 +371,9 @@ class RelAlg_BinarySetOp<string mnemonic> : RelAlg_Op<mnemonic,
         ColumnSet getAvailableColumns();
     }];
     let extraClassDefinition =[{
-        ColumnSet $cppClass::getCreatedColumns(){ return pgx::mlir::relalg::detail::getSetOpCreatedColumns(this->getOperation()); }
-        ColumnSet $cppClass::getUsedColumns(){ return pgx::mlir::relalg::detail::getSetOpUsedColumns(this->getOperation()); }
-        ColumnSet $cppClass::getAvailableColumns(){ return pgx::mlir::relalg::detail::getSetOpCreatedColumns(this->getOperation()); }
+        ColumnSet $cppClass::getCreatedColumns(){ return mlir::relalg::detail::getSetOpCreatedColumns(this->getOperation()); }
+        ColumnSet $cppClass::getUsedColumns(){ return mlir::relalg::detail::getSetOpUsedColumns(this->getOperation()); }
+        ColumnSet $cppClass::getAvailableColumns(){ return mlir::relalg::detail::getSetOpCreatedColumns(this->getOperation()); }
     }];
 }
 

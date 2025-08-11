@@ -6,13 +6,12 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace pgx::mlir::dsa;
+using namespace ::mlir::dsa;
 
 
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/DSA/IR/DSAOpsTypes.cpp.inc"
 
-namespace pgx {
 namespace mlir {
 namespace dsa {
 void DSADialect::registerTypes() {
@@ -23,4 +22,3 @@ void DSADialect::registerTypes() {
 }
 } // namespace dsa
 } // namespace mlir
-} // namespace pgx

@@ -11,7 +11,7 @@ std::unique_ptr<runtime::Database> MetaDataOnlyDatabase::loadMetaData(std::strin
                                      std::istreambuf_iterator<char>());
    auto metaDataJSON = nlohmann::json::parse(metadataString);
    for (auto& table : metaDataJSON["tables"].items()) {
-      database->metaData[table.key()] = runtime::TableMetaData::create(metadataString, table.key(), std::shared_ptr<arrow::RecordBatch>());
+      database->metaData[table.getKey()] = runtime::TableMetaData::create(metadataString, table.getKey(), std::shared_ptr<arrow::RecordBatch>());
    }
    return database;
 }

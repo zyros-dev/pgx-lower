@@ -137,9 +137,9 @@ static bool initialize_mlir_context(::mlir::MLIRContext& context) {
         context.getOrLoadDialect<mlir::arith::ArithDialect>();
         
         // Load custom dialects to register their TypeIDs
-        context.getOrLoadDialect<::pgx::mlir::relalg::RelAlgDialect>();
-        context.getOrLoadDialect<::pgx::mlir::db::DBDialect>();
-        context.getOrLoadDialect<::pgx::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
+        context.getOrLoadDialect<::mlir::db::DBDialect>();
+        context.getOrLoadDialect<::mlir::dsa::DSADialect>();
         
         // Validate dialect registration
         if (!mlir::pgx_lower::validateDialectRegistration()) {

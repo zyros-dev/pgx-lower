@@ -1,7 +1,6 @@
 #include "execution/logging.h"
 #include <cstring>
 
-namespace pgx {
 
 Logger::Logger()
 : current_level(LogLevel::INFO_LVL)
@@ -95,4 +94,3 @@ Logger& get_logger() {
     return instance;
 }
 
-} // namespace pgx
