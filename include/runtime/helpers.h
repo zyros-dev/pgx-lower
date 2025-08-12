@@ -9,7 +9,7 @@
 
 // MLIR includes for complete type definitions
 #include <mlir/IR/Location.h>
-#include <mlir/IR/OpBuilder.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
 
 #define EXPORT extern "C" __attribute__((visibility("default")))
