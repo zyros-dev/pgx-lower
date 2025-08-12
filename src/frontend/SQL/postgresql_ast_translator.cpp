@@ -163,7 +163,7 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     
     // Create BaseTableOp with proper table metadata
     auto tableMetaData = std::make_shared<runtime::TableMetaData>();
-    tableMetaData->tableName = tableName;
+    // Note: table name and tableOid are preserved in tableIdentifier string
 
     auto tableMetaDataAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
     auto columnsAttr = context.builder->getDictionaryAttr({});
@@ -224,7 +224,7 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
     auto columnsArrayAttr = context.builder->getArrayAttr(columnAttrs);
     
     auto materializeOp = context.builder->create<mlir::relalg::MaterializeOp>(
-        context.builder->getUnknownLoc(), relAlgTableType, baseTableOp->getResult(0), columnsArrayAttr);
+        context.builder->getUnknownLoc(), relAlgTableType, baseTableOp->getResult(0), columnsArrayAttr, context.builder->getArrayAttr({}));
     
     // Use standard func.return with materialized result
     context.builder->create<mlir::func::ReturnOp>(
