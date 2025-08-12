@@ -182,8 +182,8 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
 auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context) -> ::mlir::func::FuncOp {
     PGX_DEBUG("Creating query function using func::FuncOp pattern");
     
-    // Get RelAlg Table type for return value - MaterializeOp produces !relalg.table
-    auto relAlgTableType = mlir::relalg::TableType::get(&context_);
+    // Get RelAlg TupleStream type for return value - MaterializeOp produces !relalg.tuplestream  
+    auto relAlgTableType = mlir::relalg::TupleStreamType::get(&context_);
     
     // Create func::FuncOp following LingoDB's pattern: func.func @query() -> !relalg.table
     auto queryFuncType = builder.getFunctionType({}, {relAlgTableType});
@@ -213,8 +213,8 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
         return false;
     }
     
-    // Get RelAlg Table type for MaterializeOp
-    auto relAlgTableType = mlir::relalg::TableType::get(&context_);
+    // Get RelAlg TupleStream type for MaterializeOp
+    auto relAlgTableType = mlir::relalg::TupleStreamType::get(&context_);
     
     // Materialize tuple stream to table using MaterializeOp
     // For SELECT *, we need to specify which columns to materialize
