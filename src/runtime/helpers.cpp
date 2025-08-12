@@ -6,7 +6,9 @@
 // Clean slate refactor: Minimal stub implementation
 // Will be rebuilt incrementally using LingoDB 2022 architecture
 
-namespace pgx_lower::compiler::runtime {
+namespace pgx_lower {
+namespace compiler {
+namespace runtime {
 
 std::vector<::mlir::Value> RuntimeCallGenerator::operator()(const std::vector<::mlir::Value>& args) {
     RUNTIME_PGX_DEBUG("MLIRHelpers", "Generating runtime call with " + std::to_string(args.size()) + " arguments");
@@ -23,4 +25,6 @@ std::vector<::mlir::Value> RuntimeCallGenerator::operator()(const std::vector<::
     return results;
 }
 
-} // namespace pgx_lower::compiler::runtime
+} // namespace runtime
+} // namespace compiler
+} // namespace pgx_lower
