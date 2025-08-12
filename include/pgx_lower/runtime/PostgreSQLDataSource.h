@@ -25,11 +25,14 @@ public:
     static ::runtime::DataSource* createFromDescription(::runtime::VarLen32 description);
 };
 
-// This will be called from GetExternalOp lowering
-inline ::runtime::DataSource* ::runtime::DataSource::get(::runtime::VarLen32 description) {
-    return PostgreSQLDataSource::createFromDescription(description);
-}
-
 } // namespace pgx_lower::compiler::runtime
+
+// This will be called from GetExternalOp lowering
+// Define the get method in the correct namespace
+namespace runtime {
+inline DataSource* DataSource::get(VarLen32 description) {
+    return ::pgx_lower::compiler::runtime::PostgreSQLDataSource::createFromDescription(description);
+}
+} // namespace runtime
 
 #endif // PGX_LOWER_RUNTIME_POSTGRESQLDATASOURCE_H
