@@ -6,11 +6,17 @@
 #include <initializer_list>
 #include <string>
 #include <vector>
+
+// MLIR includes for complete type definitions
+#include <mlir/IR/Location.h>
+#include <mlir/IR/OpBuilder.h>
+#include <mlir/IR/Value.h>
+
 #define EXPORT extern "C" __attribute__((visibility("default")))
 #define INLINE __attribute__((always_inline))
 #define NO_SIDE_EFFECTS __attribute__((annotate("rt-no-sideffect")))
 
-// Forward declarations for MLIR types
+// Forward declarations for MLIR types (kept for compatibility)
 namespace mlir {
 class Value;
 class OpBuilder;
