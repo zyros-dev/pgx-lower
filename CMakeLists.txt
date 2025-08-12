@@ -73,6 +73,12 @@ include(AddLLVM)
 include(AddClang)
 set("CLANG_VERSION" ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH})
 
+# Set MLIR TableGen include directories
+set(MLIR_INCLUDE_DIRS ${MLIR_INCLUDE_DIRS})
+set(MLIR_TABLEGEN_OUTPUT_DIR ${CMAKE_BINARY_DIR}/include)
+include_directories(${MLIR_INCLUDE_DIRS})
+include_directories(${MLIR_TABLEGEN_OUTPUT_DIR})
+
 include(PostgreSQLExtension)
 
 # Include directories for the new structure
