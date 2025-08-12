@@ -17,8 +17,7 @@ class PostgreSQLDataSource : public ::runtime::DataSource {
 public:
     PostgreSQLDataSource(const std::string& description);
     
-    void iterate(bool parallel, std::vector<std::string> members, 
-                const std::function<void(BatchView*)>& cb) override;
+    std::shared_ptr<arrow::RecordBatch> getNext() override;
     
     ~PostgreSQLDataSource() override;
     
