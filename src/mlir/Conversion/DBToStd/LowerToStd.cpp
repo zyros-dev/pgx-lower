@@ -24,6 +24,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/PassRegistry.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/Passes.h"
 #include "runtime-defs/StringRuntime.h"
@@ -32,6 +33,8 @@
 using namespace mlir;
 
 namespace {
+// Empty pipeline options for pass registration
+struct EmptyPipelineOptions : public mlir::PassPipelineOptions<EmptyPipelineOptions> {};
 struct DBToStdLoweringPass
    : public PassWrapper<DBToStdLoweringPass, OperationPass<ModuleOp>> {
    virtual llvm::StringRef getArgument() const override { return "to-arrow-std"; }
