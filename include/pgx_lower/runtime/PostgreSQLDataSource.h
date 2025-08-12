@@ -17,7 +17,7 @@ class PostgreSQLDataSource : public ::runtime::DataSource {
 public:
     PostgreSQLDataSource(const std::string& description);
     
-    std::shared_ptr<arrow::RecordBatch> getNext() override;
+    void* getNext() override; // was: std::shared_ptr<arrow::RecordBatch> - Arrow stubbed out
     
     ~PostgreSQLDataSource() override;
     

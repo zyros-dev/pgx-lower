@@ -42,10 +42,10 @@ PostgreSQLDataSource::PostgreSQLDataSource(const std::string& description) : sca
     scanContext = open_postgres_table(tableName.c_str());
 }
 
-std::shared_ptr<arrow::RecordBatch> PostgreSQLDataSource::getNext() {
+void* PostgreSQLDataSource::getNext() {
     // PostgreSQL doesn't use Arrow batches, so return nullptr for now
-    // TODO: Convert PostgreSQL tuples to Arrow RecordBatch format
-    // This is a stub implementation for compilation
+    // TODO: Convert PostgreSQL tuples to pgx-lower native format
+    // This is a stub implementation for compilation - was arrow::RecordBatch
     RUNTIME_PGX_DEBUG("PostgreSQLDataSource", "getNext() called - returning null (stub)");
     return nullptr;
 }
