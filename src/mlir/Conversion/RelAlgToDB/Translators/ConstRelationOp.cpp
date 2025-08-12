@@ -45,7 +45,7 @@ class ConstRelTranslator : public mlir::relalg::Translator {
          ::mlir::Block* block2 = new ::mlir::Block;
          block2->addArgument(tupleType, constRelationOp->getLoc());
          forOp2.getBodyRegion().push_back(block2);
-         ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
+         ::mlir::OpBuilder builder2 = mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
          auto unpacked = builder2.create<mlir::util::UnPackOp>(constRelationOp->getLoc(), forOp2.getInductionVar());
          attributes.setValuesForColumns(context, scope, unpacked.getResults());
          consumer->consume(this, builder2, context);

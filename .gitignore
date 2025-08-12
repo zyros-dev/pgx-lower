@@ -46,9 +46,14 @@ compile_commands.json
 
 # CMake build directories
 build/
-build-*/
 cmake-build-*/
 _deps/
+
+# CMake generated files in extension directory
+extension/CTestTestfile.cmake
+extension/cmake_install.cmake
+extension/Makefile
+extension/pgx_lower.control
 fast_output.txt
 
 # Test results and outputs
@@ -62,7 +67,10 @@ extension/results/
 
 .cursorignore
 
-build*
+build-debug
+build-release
+runtime-header-tool
+build-utest
 .idea*
 .idea
 llm_documentation
@@ -87,3 +95,5 @@ Testing
 claude_temp_permissions
 
 # Dummy comment for testing - enabling workflow execution
+
+build-ptest

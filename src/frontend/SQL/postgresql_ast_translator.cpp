@@ -161,12 +161,17 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     // Get tuple stream type
     auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context_);
     
-    // Create BaseTableOp - simplified without region for Test 1
+    // Create BaseTableOp with proper table metadata
+    auto tableMetaData = std::make_shared<runtime::TableMetaData>();
+
+    auto tableMetaDataAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
+    auto columnsAttr = context.builder->getDictionaryAttr({});
     auto baseTableOp = context.builder->create<mlir::relalg::BaseTableOp>(
         context.builder->getUnknownLoc(),
         tupleStreamType,
         context.builder->getStringAttr(tableIdentifier),
-        context.builder->getI64IntegerAttr(tableOid)  // Use actual table OID
+        tableMetaDataAttr,
+        columnsAttr
     );
     
     PGX_DEBUG("SeqScan translation completed successfully");
@@ -176,8 +181,8 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
 auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context) -> ::mlir::func::FuncOp {
     PGX_DEBUG("Creating query function using func::FuncOp pattern");
     
-    // Get RelAlg Table type for return value - MaterializeOp produces !relalg.table
-    auto relAlgTableType = mlir::relalg::TableType::get(&context_);
+    // Get RelAlg TupleStream type for return value - MaterializeOp produces !relalg.tuplestream  
+    auto relAlgTableType = mlir::relalg::TupleStreamType::get(&context_);
     
     // Create func::FuncOp following LingoDB's pattern: func.func @query() -> !relalg.table
     auto queryFuncType = builder.getFunctionType({}, {relAlgTableType});
@@ -207,8 +212,8 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
         return false;
     }
     
-    // Get RelAlg Table type for MaterializeOp
-    auto relAlgTableType = mlir::relalg::TableType::get(&context_);
+    // Get RelAlg TupleStream type for MaterializeOp
+    auto relAlgTableType = mlir::relalg::TupleStreamType::get(&context_);
     
     // Materialize tuple stream to table using MaterializeOp
     // For SELECT *, we need to specify which columns to materialize
@@ -218,7 +223,7 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
     auto columnsArrayAttr = context.builder->getArrayAttr(columnAttrs);
     
     auto materializeOp = context.builder->create<mlir::relalg::MaterializeOp>(
-        context.builder->getUnknownLoc(), relAlgTableType, baseTableOp->getResult(0), columnsArrayAttr);
+        context.builder->getUnknownLoc(), relAlgTableType, baseTableOp->getResult(0), columnsArrayAttr, context.builder->getArrayAttr({}));
     
     // Use standard func.return with materialized result
     context.builder->create<mlir::func::ReturnOp>(

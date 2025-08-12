@@ -44,7 +44,7 @@ struct UtilToLLVMLoweringPass
 };
 } // end anonymous namespace
 
-void mlir::util::populateUtilTypeConversionPatterns(const TypeConverter& typeConverter, RewritePatternSet& patterns) {
+void mlir::util::populateUtilTypeConversionPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns) {
    patterns.add<SimpleTypeConversionPattern<GetTupleOp>>(typeConverter, patterns.getContext());
    patterns.add<SimpleTypeConversionPattern<UndefOp>>(typeConverter, patterns.getContext());
    patterns.add<SimpleTypeConversionPattern<PackOp>>(typeConverter, patterns.getContext());

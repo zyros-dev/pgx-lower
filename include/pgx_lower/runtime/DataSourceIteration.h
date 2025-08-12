@@ -5,11 +5,14 @@
 namespace runtime {
 class DataSource {
    public:
-   virtual std::shared_ptr<arrow::RecordBatch> getNext() = 0;
+   virtual void* getNext() = 0; // was: std::shared_ptr<arrow::RecordBatch> getNext() - Arrow stubbed out
    virtual ~DataSource() {}
+   
+   // Static factory method - will be implemented by concrete DataSource types  
+   static DataSource* get(VarLen32 description);
 };
 class DataSourceIteration {
-   std::shared_ptr<arrow::RecordBatch> currChunk;
+   void* currChunk; // was: std::shared_ptr<arrow::RecordBatch> currChunk - Arrow stubbed out
    std::shared_ptr<DataSource> dataSource;
    std::vector<size_t> colIds;
 

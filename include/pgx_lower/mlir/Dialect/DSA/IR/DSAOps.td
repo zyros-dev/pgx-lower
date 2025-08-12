@@ -211,7 +211,7 @@ def DSA_SortOp : DSA_Op<"sort", [IsolatedFromAbove]> {
 }
 
 def ForOp : DSA_Op<"for", [SingleBlockImplicitTerminator<"dsa::YieldOp">,
-                           NoMemoryEffect, AttrSizedOperandSegments]> {
+                           RecursiveMemoryEffects, AttrSizedOperandSegments]> {
     let summary = "iterate over collection";
     let description = [{
         Iterate over all elements of a collection. The iteration can be interrupted when the optionally specified flag becomes set.

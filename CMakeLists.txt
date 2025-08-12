@@ -60,6 +60,8 @@ endif()
 include(PostgreSQLConfig)
 find_package(PostgreSQL REQUIRED)
 find_package(LLVM REQUIRED)
+# Set MLIR_DIR to the LLVM 20 installation
+set(MLIR_DIR "/usr/lib/llvm-20/lib/cmake/mlir")
 find_package(MLIR REQUIRED)
 
 # Include MLIR CMake modules for TableGen
@@ -72,6 +74,12 @@ include(AddMLIR)
 include(AddLLVM)
 include(AddClang)
 set("CLANG_VERSION" ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH})
+
+# Set MLIR TableGen include directories
+set(MLIR_INCLUDE_DIRS ${MLIR_INCLUDE_DIRS})
+set(MLIR_TABLEGEN_OUTPUT_DIR ${CMAKE_BINARY_DIR}/include)
+include_directories(${MLIR_INCLUDE_DIRS})
+include_directories(${MLIR_TABLEGEN_OUTPUT_DIR})
 
 include(PostgreSQLExtension)
 

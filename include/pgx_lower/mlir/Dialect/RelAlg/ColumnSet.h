@@ -83,9 +83,9 @@ class ColumnSet {
    static ColumnSet fromArrayAttr(ArrayAttr arrayAttr) {
       ColumnSet res;
       for (const auto attr : arrayAttr) {
-         if (auto attrRef = attr.dyn_cast<mlir::relalg::ColumnRefAttr>()) {
+         if (auto attrRef = attr.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>()) {
             res.insert(&attrRef.getColumn());
-         } else if (auto attrDef = attr.dyn_cast<mlir::relalg::ColumnDefAttr>()) {
+         } else if (auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>()) {
             res.insert(&attrDef.getColumn());
          }
       }

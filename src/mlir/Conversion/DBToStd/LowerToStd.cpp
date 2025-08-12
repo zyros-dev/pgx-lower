@@ -18,12 +18,13 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-// Removed SCF/Transforms.h - not needed for conversion patterns
+#include "mlir/Dialect/SCF/Transforms/Patterns.h"
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/PassRegistry.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/Passes.h"
 #include "runtime-defs/StringRuntime.h"
@@ -32,6 +33,8 @@
 using namespace mlir;
 
 namespace {
+// Empty pipeline options for pass registration
+struct EmptyPipelineOptions : public mlir::PassPipelineOptions<EmptyPipelineOptions> {};
 struct DBToStdLoweringPass
    : public PassWrapper<DBToStdLoweringPass, OperationPass<ModuleOp>> {
    virtual llvm::StringRef getArgument() const override { return "to-arrow-std"; }
@@ -322,7 +325,7 @@ class RuntimeCallLowering : public OpConversionPattern<mlir::db::RuntimeCall> {
          result = resRange.size() == 1 ? resRange[0] : ::mlir::Value();
       } else if (std::holds_alternative<mlir::db::RuntimeFunction::loweringFnT>(fn->implementation)) {
          auto& implFn = std::get<mlir::db::RuntimeFunction::loweringFnT>(fn->implementation);
-         result = implFn(rewriter, adaptor.getArgs(), runtimeCallOp.getArgs().getTypes(), runtimeCallOp->getNumResults() == 1 ? runtimeCallOp->getResultTypes()[0] : ::mlir::Type(), typeConverter, runtimeCallOp->getLoc());
+         result = implFn(rewriter, adaptor.getArgs(), runtimeCallOp.getArgs().getTypes(), runtimeCallOp->getNumResults() == 1 ? runtimeCallOp->getResultTypes()[0] : ::mlir::Type(), const_cast<mlir::TypeConverter*>(typeConverter), runtimeCallOp->getLoc());
       }
 
       if (runtimeCallOp->getNumResults() == 0) {
@@ -552,58 +555,73 @@ class NullOpLowering : public OpConversionPattern<mlir::db::NullOp> {
    }
 };
 
+// Arrow type enum stubbed out - to be replaced with pgx-lower native types
+enum class PGXTypeEnum {
+   NA = 0,
+   BOOL,
+   INT8, INT16, INT32, INT64,
+   UINT8, UINT16, UINT32, UINT64,
+   DECIMAL128,
+   HALF_FLOAT, FLOAT, DOUBLE,
+   STRING,
+   DATE32, DATE64,
+   FIXED_SIZE_BINARY,
+   INTERVAL_MONTHS, INTERVAL_DAY_TIME,
+   TIMESTAMP
+};
+
 class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
-   static std::tuple<arrow::Type::type, uint32_t, uint32_t> convertTypeToArrow(::mlir::Type type) {
-      arrow::Type::type typeConstant = arrow::Type::type::NA;
+   static std::tuple<PGXTypeEnum, uint32_t, uint32_t> convertTypeToArrow(::mlir::Type type) {
+      PGXTypeEnum typeConstant = PGXTypeEnum::NA;
       uint32_t param1 = 0, param2 = 0;
       if (isIntegerType(type, 1)) {
-         typeConstant = arrow::Type::type::BOOL;
+         typeConstant = PGXTypeEnum::BOOL;
       } else if (auto intWidth = getIntegerWidth(type, false)) {
          switch (intWidth) {
-            case 8: typeConstant = arrow::Type::type::INT8; break;
-            case 16: typeConstant = arrow::Type::type::INT16; break;
-            case 32: typeConstant = arrow::Type::type::INT32; break;
-            case 64: typeConstant = arrow::Type::type::INT64; break;
+            case 8: typeConstant = PGXTypeEnum::INT8; break;
+            case 16: typeConstant = PGXTypeEnum::INT16; break;
+            case 32: typeConstant = PGXTypeEnum::INT32; break;
+            case 64: typeConstant = PGXTypeEnum::INT64; break;
          }
       } else if (auto uIntWidth = getIntegerWidth(type, true)) {
          switch (uIntWidth) {
-            case 8: typeConstant = arrow::Type::type::UINT8; break;
-            case 16: typeConstant = arrow::Type::type::UINT16; break;
-            case 32: typeConstant = arrow::Type::type::UINT32; break;
-            case 64: typeConstant = arrow::Type::type::UINT64; break;
+            case 8: typeConstant = PGXTypeEnum::UINT8; break;
+            case 16: typeConstant = PGXTypeEnum::UINT16; break;
+            case 32: typeConstant = PGXTypeEnum::UINT32; break;
+            case 64: typeConstant = PGXTypeEnum::UINT64; break;
          }
       } else if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
-         typeConstant = arrow::Type::type::DECIMAL128;
+         typeConstant = PGXTypeEnum::DECIMAL128;
          param1 = decimalType.getP();
          param2 = decimalType.getS();
       } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
          switch (floatType.getWidth()) {
-            case 16: typeConstant = arrow::Type::type::HALF_FLOAT; break;
-            case 32: typeConstant = arrow::Type::type::FLOAT; break;
-            case 64: typeConstant = arrow::Type::type::DOUBLE; break;
+            case 16: typeConstant = PGXTypeEnum::HALF_FLOAT; break;
+            case 32: typeConstant = PGXTypeEnum::FLOAT; break;
+            case 64: typeConstant = PGXTypeEnum::DOUBLE; break;
          }
       } else if (auto stringType = type.dyn_cast_or_null<mlir::db::StringType>()) {
-         typeConstant = arrow::Type::type::STRING;
+         typeConstant = PGXTypeEnum::STRING;
       } else if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
          if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
-            typeConstant = arrow::Type::type::DATE32;
+            typeConstant = PGXTypeEnum::DATE32;
          } else {
-            typeConstant = arrow::Type::type::DATE64;
+            typeConstant = PGXTypeEnum::DATE64;
          }
       } else if (auto charType = type.dyn_cast_or_null<mlir::db::CharType>()) {
-         typeConstant = arrow::Type::type::FIXED_SIZE_BINARY;
+         typeConstant = PGXTypeEnum::FIXED_SIZE_BINARY;
          param1 = charType.getBytes();
       } else if (auto intervalType = type.dyn_cast_or_null<mlir::db::IntervalType>()) {
          if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
-            typeConstant = arrow::Type::type::INTERVAL_MONTHS;
+            typeConstant = PGXTypeEnum::INTERVAL_MONTHS;
          } else {
-            typeConstant = arrow::Type::type::INTERVAL_DAY_TIME;
+            typeConstant = PGXTypeEnum::INTERVAL_DAY_TIME;
          }
       } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
-         typeConstant = arrow::Type::type::TIMESTAMP;
+         typeConstant = PGXTypeEnum::TIMESTAMP;
          param1 = static_cast<uint32_t>(timestampType.getUnit());
       }
-      assert(typeConstant != arrow::Type::type::NA);
+      assert(typeConstant != PGXTypeEnum::NA);
       return {typeConstant, param1, param2};
    }
 
@@ -623,7 +641,7 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
       } else {
          return failure();
       }
-      auto parseResult = support::parse(parseArg, arrowType, param1, param2);
+      auto parseResult = support::parse(parseArg, static_cast<int>(arrowType), param1, param2);
       if (auto intType = stdType.dyn_cast_or_null<IntegerType>()) {
          if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
             auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());

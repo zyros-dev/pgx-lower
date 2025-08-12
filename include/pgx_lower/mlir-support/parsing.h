@@ -6,7 +6,8 @@
 #include <variant>
 #include <vector>
 
-#include <arrow/type_fwd.h>
+// Arrow include stubbed out - Arrow dependency removed
+// #include <arrow/type_fwd.h>
 namespace support {
 enum TimeUnit {
    SECOND,

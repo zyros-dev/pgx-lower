@@ -50,12 +50,12 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       ::mlir::Block* block = new ::mlir::Block;
       block->addArgument(recordBatch, baseTableOp->getLoc());
       forOp.getBodyRegion().push_back(block);
-      ::mlir::OpBuilder builder1 = OpBuilder::atBlockBegin(&forOp.getBodyRegion().front());
+      ::mlir::OpBuilder builder1 = mlir::OpBuilder::atBlockBegin(&forOp.getBodyRegion().front());
       auto forOp2 = builder1.create<mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange{}, forOp.getInductionVar(), ::mlir::Value(), ::mlir::ValueRange{});
       ::mlir::Block* block2 = new ::mlir::Block;
       block2->addArgument(recordBatch.getElementType(), baseTableOp->getLoc());
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2 = OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
+      ::mlir::OpBuilder builder2 = mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
       size_t i = 0;
       for (const auto* attr : cols) {
          std::vector<::mlir::Type> types;

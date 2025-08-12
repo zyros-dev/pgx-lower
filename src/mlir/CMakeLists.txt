@@ -10,4 +10,9 @@ target_link_libraries(MLIRPasses
     MLIRDBToStd
     MLIRDSAToStd
     MLIRTransforms
+    MLIRSCFToControlFlow
+    MLIRFuncToLLVM
+    MLIRArithToLLVM
+    MLIRControlFlowToLLVM
+    MLIRReconcileUnrealizedCasts
 )

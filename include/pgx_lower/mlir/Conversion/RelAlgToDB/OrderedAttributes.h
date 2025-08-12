@@ -16,10 +16,10 @@ class OrderedAttributes {
    static OrderedAttributes fromRefArr(ArrayAttr arrayAttr) {
       OrderedAttributes res;
       for (auto attr : arrayAttr) {
-         if (auto attrRef = attr.dyn_cast<mlir::relalg::ColumnRefAttr>()) {
+         if (auto attrRef = dyn_cast_if_present<mlir::relalg::ColumnRefAttr>(attr)) {
             res.insert(&attrRef.getColumn());
          }
-         if (auto attrDef = attr.dyn_cast<mlir::relalg::ColumnDefAttr>()) {
+         if (auto attrDef = dyn_cast_if_present<mlir::relalg::ColumnDefAttr>(attr)) {
             res.insert(&attrDef.getColumn());
          }
       }

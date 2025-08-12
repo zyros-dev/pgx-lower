@@ -10,27 +10,29 @@
 namespace pgx_lower::compiler::runtime {
 
 // PostgreSQL implementation of DataSource
-class PostgreSQLDataSource : public DataSource {
+class PostgreSQLDataSource : public ::runtime::DataSource {
     std::string tableName;
     void* scanContext;
     
 public:
     PostgreSQLDataSource(const std::string& description);
     
-    void iterate(bool parallel, std::vector<std::string> members, 
-                const std::function<void(BatchView*)>& cb) override;
+    void* getNext() override; // was: std::shared_ptr<arrow::RecordBatch> - Arrow stubbed out
     
     ~PostgreSQLDataSource() override;
     
     // Static factory method that DataSource::get will call
-    static DataSource* createFromDescription(runtime::VarLen32 description);
+    static ::runtime::DataSource* createFromDescription(::runtime::VarLen32 description);
 };
 
-// This will be called from GetExternalOp lowering
-inline DataSource* DataSource::get(runtime::VarLen32 description) {
-    return PostgreSQLDataSource::createFromDescription(description);
-}
-
 } // namespace pgx_lower::compiler::runtime
+
+// This will be called from GetExternalOp lowering
+// Define the get method in the correct namespace
+namespace runtime {
+inline DataSource* DataSource::get(VarLen32 description) {
+    return ::pgx_lower::compiler::runtime::PostgreSQLDataSource::createFromDescription(description);
+}
+} // namespace runtime
 
 #endif // PGX_LOWER_RUNTIME_POSTGRESQLDATASOURCE_H

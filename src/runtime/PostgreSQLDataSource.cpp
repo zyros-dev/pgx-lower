@@ -42,16 +42,12 @@ PostgreSQLDataSource::PostgreSQLDataSource(const std::string& description) : sca
     scanContext = open_postgres_table(tableName.c_str());
 }
 
-void PostgreSQLDataSource::iterate(bool parallel, std::vector<std::string> members, 
-                                  const std::function<void(BatchView*)>& cb) {
-    // PostgreSQL doesn't use Arrow batches, so we need a different approach
-    // For now, this is a stub - the real implementation would need to
-    // create a PostgreSQL-compatible BatchView or use a different iteration pattern
-    
-    // The actual iteration happens in ScanRefsTableLowering which expects
-    // Arrow-style iteration. We'd need to either:
-    // 1. Create a fake BatchView that wraps PostgreSQL tuples
-    // 2. Modify ScanRefsTableLowering to handle PostgreSQL directly
+void* PostgreSQLDataSource::getNext() {
+    // PostgreSQL doesn't use Arrow batches, so return nullptr for now
+    // TODO: Convert PostgreSQL tuples to pgx-lower native format
+    // This is a stub implementation for compilation - was arrow::RecordBatch
+    RUNTIME_PGX_DEBUG("PostgreSQLDataSource", "getNext() called - returning null (stub)");
+    return nullptr;
 }
 
 PostgreSQLDataSource::~PostgreSQLDataSource() {
@@ -62,7 +58,7 @@ PostgreSQLDataSource::~PostgreSQLDataSource() {
     RUNTIME_PGX_DEBUG("PostgreSQLDataSource", "PostgreSQL data source destroyed");
 }
 
-DataSource* PostgreSQLDataSource::createFromDescription(runtime::VarLen32 description) {
+::runtime::DataSource* PostgreSQLDataSource::createFromDescription(::runtime::VarLen32 description) {
     // Convert VarLen32 to string
     std::string descStr(description.data(), description.getLen());
     

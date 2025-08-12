@@ -14,7 +14,7 @@ static ::mlir::Value dateAddImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange
    if (llvm::cast<mlir::db::IntervalType>(originalArgumentTypes[1]).getUnit() == mlir::db::IntervalUnitAttr::daytime) {
       return rewriter.create<mlir::arith::AddIOp>(loc, loweredArguments);
    } else {
-      return mlir::util::DateRuntime::addMonths(rewriter, loc)(loweredArguments)[0];
+      return rt::DateRuntime::addMonths(rewriter, loc)(loweredArguments)[0];
    }
 }
 static ::mlir::Value absIntImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments, ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType, ::mlir::TypeConverter* typeConverter,::mlir::Location loc) {
@@ -30,7 +30,7 @@ static ::mlir::Value dateSubImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange
    if (llvm::cast<mlir::db::IntervalType>(originalArgumentTypes[1]).getUnit() == mlir::db::IntervalUnitAttr::daytime) {
       return rewriter.create<mlir::arith::SubIOp>(loc, loweredArguments);
    } else {
-      return mlir::util::DateRuntime::subtractMonths(rewriter, loc)(loweredArguments)[0];
+      return rt::DateRuntime::subtractMonths(rewriter, loc)(loweredArguments)[0];
    }
 }
 static ::mlir::Value matchPart(::mlir::OpBuilder& builder, ::mlir::Location loc, ::mlir::Value lastMatchEnd, std::string pattern, ::mlir::Value str, ::mlir::Value end) {
@@ -42,10 +42,10 @@ static ::mlir::Value matchPart(::mlir::OpBuilder& builder, ::mlir::Location loc,
    }
    ::mlir::Value needleValue = builder.create<mlir::util::CreateConstVarLen>(loc, mlir::util::VarLen32Type::get(builder.getContext()), pattern);
    if (lastMatchEnd) {
-      ::mlir::Value matchEnd = mlir::util::StringRuntime::findMatch(builder, loc)(::mlir::ValueRange{str, needleValue, lastMatchEnd, end})[0];
+      ::mlir::Value matchEnd = rt::StringRuntime::findMatch(builder, loc)(::mlir::ValueRange{str, needleValue, lastMatchEnd, end})[0];
       return builder.create<mlir::arith::IndexCastOp>(loc, builder.getIndexType(), matchEnd);
    } else {
-      ::mlir::Value startsWithPattern = mlir::util::StringRuntime::startsWith(builder, loc)(::mlir::ValueRange{str, needleValue})[0];
+      ::mlir::Value startsWithPattern = rt::StringRuntime::startsWith(builder, loc)(::mlir::ValueRange{str, needleValue})[0];
       ::mlir::Value patternLen = builder.create<mlir::arith::ConstantIndexOp>(loc, pattern.size());
       ::mlir::Value invalidPos = builder.create<mlir::arith::ConstantIndexOp>(loc, 0x8000000000000000);
 
@@ -90,7 +90,7 @@ static ::mlir::Value constLikeImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRan
       }
       if (!currentSubPattern.empty()) {
          ::mlir::Value needleValue = rewriter.create<mlir::util::CreateConstVarLen>(loc, mlir::util::VarLen32Type::get(rewriter.getContext()), currentSubPattern);
-         ::mlir::Value endsWith = mlir::util::StringRuntime::endsWith(rewriter, loc)({str, needleValue})[0];
+         ::mlir::Value endsWith = rt::StringRuntime::endsWith(rewriter, loc)({str, needleValue})[0];
          if (lastMatchEnd) {
             ::mlir::Value patternLength = rewriter.create<mlir::arith::ConstantIndexOp>(loc, currentSubPattern.size());
             lastMatchEnd = rewriter.create<mlir::arith::AddIOp>(loc, lastMatchEnd, patternLength);
@@ -126,19 +126,19 @@ static ::mlir::Value dumpValuesImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRa
       val = loweredArguments[0];
    }
    if (baseType.isa<mlir::IndexType>()) {
-      mlir::util::DumpRuntime::dumpIndex(rewriter, loc)(loweredArguments[0]);
+      rt::DumpRuntime::dumpIndex(rewriter, loc)(loweredArguments[0]);
    } else if (isIntegerType(baseType, 1)) {
-      mlir::util::DumpRuntime::dumpBool(rewriter, loc)({isNull, val});
+      rt::DumpRuntime::dumpBool(rewriter, loc)({isNull, val});
    } else if (auto intWidth = getIntegerWidth(baseType, false)) {
       if (intWidth < 64) {
          val = rewriter.create<arith::ExtSIOp>(loc, i64Type, val);
       }
-      mlir::util::DumpRuntime::dumpInt(rewriter, loc)({isNull, val});
+      rt::DumpRuntime::dumpInt(rewriter, loc)({isNull, val});
    } else if (auto uIntWidth = getIntegerWidth(baseType, true)) {
       if (uIntWidth < 64) {
          val = rewriter.create<arith::ExtUIOp>(loc, i64Type, val);
       }
-      mlir::util::DumpRuntime::dumpUInt(rewriter, loc)({isNull, val});
+      rt::DumpRuntime::dumpUInt(rewriter, loc)({isNull, val});
    } else if (auto decType = baseType.dyn_cast_or_null<mlir::db::DecimalType>()) {
       if (llvm::cast<mlir::IntegerType>(typeConverter->convertType(decType)).getWidth() < 128) {
          auto converted = rewriter.create<arith::ExtSIOp>(loc, rewriter.getIntegerType(128), val);
@@ -149,35 +149,35 @@ static ::mlir::Value dumpValuesImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRa
       Value scale = rewriter.create<arith::ConstantOp>(loc, rewriter.getI32IntegerAttr(decType.getS()));
       Value high = rewriter.create<arith::ShRUIOp>(loc, i128Type, val, shift);
       high = rewriter.create<arith::TruncIOp>(loc, i64Type, high);
-      mlir::util::DumpRuntime::dumpDecimal(rewriter, loc)({isNull, low, high, scale});
+      rt::DumpRuntime::dumpDecimal(rewriter, loc)({isNull, low, high, scale});
    } else if (auto dateType = baseType.dyn_cast_or_null<mlir::db::DateType>()) {
-      mlir::util::DumpRuntime::dumpDate(rewriter, loc)({isNull, val});
+      rt::DumpRuntime::dumpDate(rewriter, loc)({isNull, val});
    } else if (auto timestampType = baseType.dyn_cast_or_null<mlir::db::TimestampType>()) {
       switch (timestampType.getUnit()) {
-         case mlir::db::TimeUnitAttr::second: mlir::util::DumpRuntime::dumpTimestampSecond(rewriter, loc)({isNull, val}); break;
-         case mlir::db::TimeUnitAttr::millisecond: mlir::util::DumpRuntime::dumpTimestampMilliSecond(rewriter, loc)({isNull, val}); break;
-         case mlir::db::TimeUnitAttr::microsecond: mlir::util::DumpRuntime::dumpTimestampMicroSecond(rewriter, loc)({isNull, val}); break;
-         case mlir::db::TimeUnitAttr::nanosecond: mlir::util::DumpRuntime::dumpTimestampNanoSecond(rewriter, loc)({isNull, val}); break;
+         case mlir::db::TimeUnitAttr::second: rt::DumpRuntime::dumpTimestampSecond(rewriter, loc)({isNull, val}); break;
+         case mlir::db::TimeUnitAttr::millisecond: rt::DumpRuntime::dumpTimestampMilliSecond(rewriter, loc)({isNull, val}); break;
+         case mlir::db::TimeUnitAttr::microsecond: rt::DumpRuntime::dumpTimestampMicroSecond(rewriter, loc)({isNull, val}); break;
+         case mlir::db::TimeUnitAttr::nanosecond: rt::DumpRuntime::dumpTimestampNanoSecond(rewriter, loc)({isNull, val}); break;
       }
    } else if (auto intervalType = baseType.dyn_cast_or_null<mlir::db::IntervalType>()) {
       if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
-         mlir::util::DumpRuntime::dumpIntervalMonths(rewriter, loc)({isNull, val});
+         rt::DumpRuntime::dumpIntervalMonths(rewriter, loc)({isNull, val});
       } else {
-         mlir::util::DumpRuntime::dumpIntervalDaytime(rewriter, loc)({isNull, val});
+         rt::DumpRuntime::dumpIntervalDaytime(rewriter, loc)({isNull, val});
       }
    } else if (auto floatType = baseType.dyn_cast_or_null<::mlir::FloatType>()) {
       if (floatType.getWidth() < 64) {
          val = rewriter.create<arith::ExtFOp>(loc, f64Type, val);
       }
-      mlir::util::DumpRuntime::dumpFloat(rewriter, loc)({isNull, val});
+      rt::DumpRuntime::dumpFloat(rewriter, loc)({isNull, val});
    } else if (baseType.isa<mlir::db::StringType>()) {
-      mlir::util::DumpRuntime::dumpString(rewriter, loc)({isNull, val});
+      rt::DumpRuntime::dumpString(rewriter, loc)({isNull, val});
    } else if (auto charType = baseType.dyn_cast_or_null<mlir::db::CharType>()) {
       Value numBytes = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64IntegerAttr(charType.getBytes()));
       if (charType.getBytes() < 8) {
          val = rewriter.create<arith::ExtSIOp>(loc, i64Type, val);
       }
-      mlir::util::DumpRuntime::dumpChar(rewriter, loc)({isNull, val, numBytes});
+      rt::DumpRuntime::dumpChar(rewriter, loc)({isNull, val, numBytes});
    }
    return ::mlir::Value();
 }
@@ -186,14 +186,14 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    builtinRegistry->add("DumpValue").handlesNulls().matchesTypes({RuntimeFunction::anyType}, RuntimeFunction::noReturnType).implementedAs(dumpValuesImpl);
    auto resTypeIsI64 = [](::mlir::Type t, ::mlir::TypeRange) { return t.isInteger(64); };
    auto resTypeIsBool = [](::mlir::Type t, ::mlir::TypeRange) { return t.isInteger(1); };
-   builtinRegistry->add("Substring").implementedAs(mlir::util::StringRuntime::substr).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::matchesArgument());
-   builtinRegistry->add("Like").implementedAs(mlir::util::StringRuntime::like).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool);
+   builtinRegistry->add("Substring").implementedAs(rt::StringRuntime::substr).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::matchesArgument());
+   builtinRegistry->add("Like").implementedAs(rt::StringRuntime::like).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool);
    builtinRegistry->add("ConstLike").matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool).implementedAs(constLikeImpl).needsWrapping();
 
    builtinRegistry->add("ExtractFromDate").matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::dateLike}, resTypeIsI64);
-   builtinRegistry->add("ExtractYearFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(mlir::util::DateRuntime::extractYear);
-   builtinRegistry->add("ExtractMonthFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(mlir::util::DateRuntime::extractMonth);
-   builtinRegistry->add("ExtractDayFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(mlir::util::DateRuntime::extractDay);
+   builtinRegistry->add("ExtractYearFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractYear);
+   builtinRegistry->add("ExtractMonthFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractMonth);
+   builtinRegistry->add("ExtractDayFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractDay);
    builtinRegistry->add("DateAdd").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument()).implementedAs(dateAddImpl);
    builtinRegistry->add("AbsInt").handlesInvalid().matchesTypes({RuntimeFunction::intLike}, RuntimeFunction::matchesArgument()).implementedAs(absIntImpl);
    builtinRegistry->add("DateSubtract").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument()).implementedAs(dateSubImpl);

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="1" failures="0" disabled="0" errors="0" time="0.001" timestamp="2025-08-07T20:31:14.245" name="AllTests">
-  <testsuite name="FunctionalConversionsTest" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="0.001" timestamp="2025-08-07T20:31:14.245">
-    <testcase name="TestMaterializeOpConversion" file="/home/xzel/repos/pgx-lower/tests/unit/conversion/test_functional_conversions.cpp" line="227" status="run" result="completed" time="0.001" timestamp="2025-08-07T20:31:14.245" classname="FunctionalConversionsTest" />
-  </testsuite>
-</testsuites>
