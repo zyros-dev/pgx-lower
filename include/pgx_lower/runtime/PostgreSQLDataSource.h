@@ -23,11 +23,11 @@ public:
     ~PostgreSQLDataSource() override;
     
     // Static factory method that DataSource::get will call
-    static ::runtime::DataSource* createFromDescription(runtime::VarLen32 description);
+    static ::runtime::DataSource* createFromDescription(::runtime::VarLen32 description);
 };
 
 // This will be called from GetExternalOp lowering
-inline DataSource* DataSource::get(runtime::VarLen32 description) {
+inline ::runtime::DataSource* ::runtime::DataSource::get(::runtime::VarLen32 description) {
     return PostgreSQLDataSource::createFromDescription(description);
 }
 

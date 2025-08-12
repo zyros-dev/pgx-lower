@@ -62,7 +62,7 @@ PostgreSQLDataSource::~PostgreSQLDataSource() {
     RUNTIME_PGX_DEBUG("PostgreSQLDataSource", "PostgreSQL data source destroyed");
 }
 
-DataSource* PostgreSQLDataSource::createFromDescription(runtime::VarLen32 description) {
+::runtime::DataSource* PostgreSQLDataSource::createFromDescription(::runtime::VarLen32 description) {
     // Convert VarLen32 to string
     std::string descStr(description.data(), description.getLen());
     

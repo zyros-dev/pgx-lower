@@ -163,7 +163,6 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     
     // Create BaseTableOp with proper table metadata
     auto tableMetaData = std::make_shared<runtime::TableMetaData>();
-    // Note: table name and tableOid are preserved in tableIdentifier string
 
     auto tableMetaDataAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
     auto columnsAttr = context.builder->getDictionaryAttr({});
