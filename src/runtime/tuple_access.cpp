@@ -660,3 +660,185 @@ extern "C" void* DataSource_get(runtime::VarLen32 description) {
 // Pipeline architecture restored - expression computation now flows through:
 // PostgreSQL AST → RelAlg → DB → DSA → LLVM IR → JIT
 // All hardcoded expression shortcuts have been removed
+
+//===----------------------------------------------------------------------===//
+// PostgreSQL SPI Runtime Functions (formerly stubs)
+// These functions integrate with PostgreSQL tables using direct table access
+//===----------------------------------------------------------------------===//
+
+extern "C" void* pg_table_open(const char* table_name) {
+    PGX_DEBUG("pg_table_open called for table: " + std::string(table_name ? table_name : "NULL"));
+    
+    // Critical: Check memory context safety before PostgreSQL operations
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("pg_table_open: Memory context unsafe for PostgreSQL operations");
+        return nullptr;
+    }
+
+    try {
+        auto* handle = new PostgreSQLTableHandle();
+        
+        // Use the table OID passed from the executor (matches open_postgres_table pattern)
+        if (g_jit_table_oid != InvalidOid) {
+            Oid tableOid = g_jit_table_oid;
+            PGX_NOTICE("pg_table_open: Using table OID: " + std::to_string(tableOid));
+            
+            // Open table using proven pattern from open_postgres_table
+            handle->rel = table_open(tableOid, AccessShareLock);
+            handle->tupleDesc = RelationGetDescr(handle->rel);
+            handle->scanDesc = table_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr);
+            handle->isOpen = true;
+            
+            // Force fresh snapshot for recent changes (from open_postgres_table)
+            CommandCounterIncrement();
+            Snapshot currentSnapshot = GetActiveSnapshot();
+            if (currentSnapshot) {
+                handle->scanDesc->rs_snapshot = currentSnapshot;
+            }
+            
+            // Reset scan to beginning
+            heap_rescan(handle->scanDesc, nullptr, false, false, false, false);
+            
+            PGX_NOTICE("pg_table_open: Successfully opened table");
+            return handle;
+        } else {
+            PGX_ERROR("pg_table_open: Cannot determine table to open (g_jit_table_oid not set)");
+            delete handle;
+            return nullptr;
+        }
+    } catch (...) {
+        PGX_ERROR("pg_table_open: Exception caught");
+        return nullptr;
+    }
+}
+
+extern "C" int64_t pg_get_next_tuple(void* table_handle) {
+    PGX_DEBUG("pg_get_next_tuple called");
+    
+    if (!table_handle) {
+        PGX_ERROR("pg_get_next_tuple: Invalid table handle");
+        return -1;
+    }
+    
+    // Critical: Check memory context safety
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("pg_get_next_tuple: Memory context unsafe for PostgreSQL operations");
+        return -1;
+    }
+
+    const auto* handle = static_cast<PostgreSQLTableHandle*>(table_handle);
+    if (!handle->isOpen || !handle->scanDesc) {
+        PGX_ERROR("pg_get_next_tuple: Table not open or invalid scan");
+        return -1;
+    }
+    
+    HeapTuple tuple = nullptr;
+    try {
+        // Use proven pattern from read_next_tuple_from_table
+        PG_TRY();
+        {
+            tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
+        }
+        PG_CATCH();
+        {
+            PGX_ERROR("pg_get_next_tuple: heap_getnext threw PostgreSQL exception");
+            PG_RE_THROW();
+        }
+        PG_END_TRY();
+    } catch (const std::exception& e) {
+        PGX_ERROR("pg_get_next_tuple: heap_getnext threw C++ exception: " + std::string(e.what()));
+        return -1;
+    }
+    
+    if (tuple == nullptr) {
+        PGX_DEBUG("pg_get_next_tuple: End of table reached");
+        return 0; // End of scan
+    }
+    
+    // Store tuple for field extraction using global state (proven pattern)
+    if (g_current_tuple_passthrough.originalTuple) {
+        heap_freetuple(g_current_tuple_passthrough.originalTuple);
+    }
+    g_current_tuple_passthrough.originalTuple = heap_copytuple(tuple);
+    g_current_tuple_passthrough.tupleDesc = handle->tupleDesc;
+    
+    return 1; // Tuple available
+}
+
+extern "C" int32_t pg_extract_field(void* tuple_handle, int32_t field_index) {
+    PGX_DEBUG("pg_extract_field called for field: " + std::to_string(field_index));
+    
+    // Critical: Check memory context safety
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("pg_extract_field: Memory context unsafe for PostgreSQL operations");
+        return 0;
+    }
+    
+    // Use current tuple from global state (proven pattern from get_int_field)
+    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
+        PGX_ERROR("pg_extract_field: No current tuple available");
+        return 0;
+    }
+    
+    HeapTuple tuple = g_current_tuple_passthrough.originalTuple;
+    TupleDesc tupleDesc = g_current_tuple_passthrough.tupleDesc;
+    
+    // PostgreSQL uses 1-based attribute indexing
+    const int attr_num = field_index + 1;
+    if (attr_num > tupleDesc->natts) {
+        PGX_ERROR("pg_extract_field: field_index out of range");
+        return 0;
+    }
+    
+    // Use proven pattern from get_int_field
+    bool isnull;
+    Datum value = heap_getattr(tuple, attr_num, tupleDesc, &isnull);
+    if (isnull) {
+        PGX_DEBUG("pg_extract_field: Field is null, returning 0");
+        return 0;
+    }
+    
+    // Type-specific extraction (from get_int_field pattern)
+    const auto atttypid = TupleDescAttr(tupleDesc, field_index)->atttypid;
+    switch (atttypid) {
+        case BOOLOID: return DatumGetBool(value) ? 1 : 0;
+        case INT2OID: return (int32_t)DatumGetInt16(value);
+        case INT4OID: return DatumGetInt32(value);
+        case INT8OID: return static_cast<int32_t>(DatumGetInt64(value));
+        default:
+            PGX_WARNING("pg_extract_field: Unsupported type OID: " + std::to_string(atttypid));
+            return 0;
+    }
+}
+
+extern "C" void pg_store_result(void* result) {
+    PGX_DEBUG("pg_store_result called with result: " + std::to_string(reinterpret_cast<uintptr_t>(result)));
+    // Use existing computed results storage mechanism
+    // This is a generic store - the value is already stored via other pg_store_result_* calls
+}
+
+extern "C" void pg_store_result_i32(int32_t value) {
+    PGX_DEBUG("pg_store_result_i32 called with value: " + std::to_string(value));
+    // Use existing store_int_result pattern with columnIndex 0 for single results
+    store_int_result(0, value, false);
+}
+
+extern "C" void pg_store_result_i64(int64_t value) {
+    PGX_DEBUG("pg_store_result_i64 called with value: " + std::to_string(value));
+    // Use existing store_bigint_result pattern
+    store_bigint_result(0, value, false);
+}
+
+extern "C" void pg_store_result_f64(double value) {
+    PGX_DEBUG("pg_store_result_f64 called with value: " + std::to_string(value));
+    // Store as float8 datum using PostgreSQL pattern
+    Datum datum = Float8GetDatum(value);
+    g_computed_results.setResult(0, datum, false, FLOAT8OID);
+}
+
+extern "C" void pg_store_result_text(const char* value) {
+    PGX_DEBUG("pg_store_result_text called with value: " + std::string(value ? value : "NULL"));
+    // Use existing store_text_result pattern
+    bool isNull = (value == nullptr);
+    store_text_result(0, value, isNull);
+}

@@ -37,7 +37,7 @@ void pgx_runtime_append_nullable_i64(void* builder, bool is_null, int64_t value)
 void pgx_runtime_append_null(void* builder, size_t col_idx);
 void pgx_runtime_table_next_row(void* builder);
 
-// PostgreSQL SPI Functions (from Phase 4d) - implemented in postgresql_spi_stubs.cpp
+// PostgreSQL SPI Functions (from Phase 4d) - implemented in tuple_access.cpp
 void* pg_table_open(const char* table_name);
 int64_t pg_get_next_tuple(void* table_handle);
 int32_t pg_extract_field(void* tuple, int32_t field_index);
