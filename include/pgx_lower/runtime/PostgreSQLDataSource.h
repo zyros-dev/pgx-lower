@@ -10,7 +10,7 @@
 namespace pgx_lower::compiler::runtime {
 
 // PostgreSQL implementation of DataSource
-class PostgreSQLDataSource : public DataSource {
+class PostgreSQLDataSource : public ::runtime::DataSource {
     std::string tableName;
     void* scanContext;
     
@@ -23,7 +23,7 @@ public:
     ~PostgreSQLDataSource() override;
     
     // Static factory method that DataSource::get will call
-    static DataSource* createFromDescription(runtime::VarLen32 description);
+    static ::runtime::DataSource* createFromDescription(runtime::VarLen32 description);
 };
 
 // This will be called from GetExternalOp lowering

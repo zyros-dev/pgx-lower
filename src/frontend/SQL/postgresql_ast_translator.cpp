@@ -161,12 +161,18 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     // Get tuple stream type
     auto tupleStreamType = mlir::relalg::TupleStreamType::get(&context_);
     
-    // Create BaseTableOp - simplified without region for Test 1
+    // Create BaseTableOp with proper table metadata
+    auto tableMetaData = std::make_shared<runtime::TableMetaData>();
+    tableMetaData->tableName = tableName;
+
+    auto tableMetaDataAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
+    auto columnsAttr = context.builder->getDictionaryAttr({});
     auto baseTableOp = context.builder->create<mlir::relalg::BaseTableOp>(
         context.builder->getUnknownLoc(),
         tupleStreamType,
         context.builder->getStringAttr(tableIdentifier),
-        context.builder->getI64IntegerAttr(tableOid)  // Use actual table OID
+        tableMetaDataAttr,
+        columnsAttr
     );
     
     PGX_DEBUG("SeqScan translation completed successfully");
