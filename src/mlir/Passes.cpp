@@ -6,6 +6,11 @@
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "execution/logging.h"
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 
 namespace mlir {
 namespace pgx_lower {
@@ -26,10 +31,15 @@ void createCompleteLoweringPipeline(PassManager& pm, bool enableVerification) {
     pm.addPass(db::createLowerToStdPass());
     pm.addPass(dsa::createLowerToStdPass());
     
-    // Phase 3: Util to LLVM (if needed)
-    // TODO: Add util::createLowerToLLVMPass() when implemented
+    // Phase 3: Standard MLIR to LLVM conversion
+    PGX_DEBUG("Adding Standard→LLVM conversion passes");
+    pm.addPass(createConvertSCFToCFPass());
+    pm.addPass(createConvertFuncToLLVMPass());
+    pm.addPass(createArithToLLVMConversionPass());
+    pm.addPass(createConvertControlFlowToLLVMPass());
+    pm.addPass(createReconcileUnrealizedCastsPass());
     
-    // Phase 4: Standard optimizations
+    // Phase 4: Final optimizations
     pm.addPass(createCanonicalizerPass());
     pm.addPass(createCSEPass());
 }
