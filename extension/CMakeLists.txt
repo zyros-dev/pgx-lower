@@ -21,7 +21,6 @@ add_postgresql_mixed_extension(
             ../src/runtime/PostgreSQLDataSource.cpp
             ../src/runtime/helpers.cpp
             ../src/runtime/postgresql_runtime.cpp
-            ../src/runtime/postgresql_spi_stubs.cpp
         SCRIPTS 
             sql/pgx_lower--1.0.sql
         REGRESS
