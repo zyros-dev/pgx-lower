@@ -60,6 +60,8 @@ endif()
 include(PostgreSQLConfig)
 find_package(PostgreSQL REQUIRED)
 find_package(LLVM REQUIRED)
+# Set MLIR_DIR to the LLVM 20 installation
+set(MLIR_DIR "/usr/lib/llvm-20/lib/cmake/mlir")
 find_package(MLIR REQUIRED)
 
 # Include MLIR CMake modules for TableGen
