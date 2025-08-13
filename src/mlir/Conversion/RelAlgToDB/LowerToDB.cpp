@@ -9,10 +9,13 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/util/UtilDialect.h"
+#include "mlir/Dialect/DB/IR/DBDialect.h"
+#include "mlir/Dialect/DSA/IR/DSADialect.h"
 
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "mlir/Pass/Pass.h"
+#include "execution/logging.h"
 namespace {
 
 class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::OperationPass<::mlir::func::FuncOp>> {
@@ -22,10 +25,11 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
       registry.insert<mlir::util::UtilDialect>();
       registry.insert<mlir::memref::MemRefDialect>();
       registry.insert<mlir::scf::SCFDialect>();
+      registry.insert<mlir::db::DBDialect>();
+      registry.insert<mlir::dsa::DSADialect>();
    }
    bool isTranslationHook(::mlir::Operation* op) {
       return ::llvm::TypeSwitch<::mlir::Operation*, bool>(op)
-
          .Case<mlir::relalg::MaterializeOp>([&](::mlir::Operation* op) {
             return true;
          })
@@ -35,17 +39,41 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
    }
    void runOnOperation() override {
       mlir::relalg::TranslatorContext loweringContext;
+      PGX_DEBUG("RelAlg→DB Pass: Starting operation walk");
+      
       getOperation().walk([&](::mlir::Operation* op) {
+         // Log all RelAlg operations found
+         if (op->getDialect() && op->getDialect()->getNamespace() == "relalg") {
+            PGX_DEBUG("RelAlg→DB Pass: Found RelAlg operation: " + op->getName().getStringRef().str());
+         }
+         
          if (isTranslationHook(op)) {
+            PGX_INFO("RelAlg→DB Pass: Processing translation hook for: " + op->getName().getStringRef().str());
             auto node = mlir::relalg::Translator::createTranslator(op);
             if (!node) {
                op->emitError("No translator found for operation: ") << op->getName();
+               PGX_ERROR("RelAlg→DB Pass: No translator found for: " + op->getName().getStringRef().str());
                return;
             }
             node->setInfo(nullptr, {});
             ::mlir::OpBuilder builder(op);
             node->produce(loweringContext, builder);
             node->done();
+            PGX_INFO("RelAlg→DB Pass: Successfully translated: " + op->getName().getStringRef().str());
+         }
+      });
+      
+      PGX_DEBUG("RelAlg→DB Pass: Completed operation walk");
+      
+      // Debug: Check what operations remain after translation
+      PGX_DEBUG("RelAlg→DB Pass: Checking operations after translation");
+      getOperation().walk([&](::mlir::Operation* op) {
+         if (op->getDialect()) {
+            std::string dialectName = op->getDialect()->getNamespace().str();
+            if (dialectName == "relalg" || dialectName == "db" || dialectName == "dsa") {
+               PGX_DEBUG("RelAlg→DB Pass: Found " + dialectName + " operation after translation: " + 
+                         op->getName().getStringRef().str());
+            }
          }
       });
    }
