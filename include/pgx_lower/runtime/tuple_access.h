@@ -266,3 +266,11 @@ auto get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) -
 // Critical runtime function for DB dialect (GetExternalOp lowering)
 void* DataSource_get(runtime::VarLen32 description);
 }
+
+namespace pgx_lower {
+namespace runtime {
+// Memory context safety check for PostgreSQL operations
+// Returns true if the current memory context is safe for PostgreSQL operations
+bool check_memory_context_safety();
+} // namespace runtime
+} // namespace pgx_lower

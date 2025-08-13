@@ -40,7 +40,7 @@ Oid g_jit_table_oid = InvalidOid;
 namespace pgx_lower::runtime {
 
 // Memory context safety check for PostgreSQL operations
-static bool check_memory_context_safety() {
+bool check_memory_context_safety() {
 #ifdef POSTGRESQL_EXTENSION
     // Check if we're in a valid PostgreSQL memory context
     // This is critical because LOAD commands can invalidate memory contexts
@@ -49,10 +49,24 @@ static bool check_memory_context_safety() {
         return false;
     }
     
-    // Additional checks for context validity
-    if (CurrentMemoryContext == ErrorContext) {
-        PGX_WARNING("check_memory_context_safety: In error context - may not be safe for PostgreSQL operations");
+    // Check if the context is valid (not NULL and has valid methods)
+    // ErrorContext is actually valid for error recovery operations
+    if (CurrentMemoryContext->methods == NULL) {
+        PGX_ERROR("check_memory_context_safety: Invalid memory context - no methods");
         return false;
+    }
+    
+    // Verify the context hasn't been reset/deleted by checking its type field
+    if (CurrentMemoryContext->type != T_AllocSetContext && 
+        CurrentMemoryContext->type != T_SlabContext && 
+        CurrentMemoryContext->type != T_GenerationContext) {
+        PGX_ERROR("check_memory_context_safety: Unknown memory context type");
+        return false;
+    }
+    
+    // If we're in ErrorContext, just log a debug message but allow operations
+    if (CurrentMemoryContext == ErrorContext) {
+        PGX_DEBUG("check_memory_context_safety: Operating in error recovery context");
     }
     
     return true;

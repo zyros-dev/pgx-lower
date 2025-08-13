@@ -459,10 +459,10 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         g_tuple_streamer.setSelectedColumns(selectedColumns);
 
         // Execute MLIR translation with proper memory contexts
-        const auto mlir_success = mlir_runner::run_mlir_with_estate(
-            const_cast<PlannedStmt*>(stmt), estate, econtext);
+        const auto mlir_success = mlir_runner::run_mlir_with_dest_receiver(
+            const_cast<PlannedStmt*>(stmt), estate, econtext, dest);
         
-        PGX_INFO("mlir_runner::run_mlir_with_estate returned "
+        PGX_INFO("mlir_runner::run_mlir_with_dest_receiver returned "
                       + std::string(mlir_success ? "true" : "false"));
 
         // Handle results
