@@ -262,23 +262,19 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
             return false;
         }
         
-        // TEMPORARY: Skip DB/DSA passes but add Standard→LLVM conversion for arith ops
-        PGX_INFO("SKIPPING DB→Standard lowering pass for debugging");
-        PGX_INFO("SKIPPING DSA→Standard lowering pass for debugging");
+        // Add DB→Standard and DSA→Standard lowering passes
+        PGX_INFO("Adding DB→Standard lowering pass");
+        pm.addNestedPass<mlir::func::FuncOp>(mlir::db::createLowerToStdPass());
         
-        // Add Standard MLIR to LLVM conversion passes
-        PGX_INFO("Adding Standard→LLVM conversion passes for arith operations");
-        ::mlir::PassManager llvmPm(&context);
-        llvmPm.addPass(mlir::createArithToLLVMConversionPass());
-        llvmPm.addPass(mlir::createConvertFuncToLLVMPass());
-        llvmPm.addPass(mlir::createReconcileUnrealizedCastsPass());
+        PGX_INFO("Adding DSA→Standard lowering pass");
+        pm.addNestedPass<mlir::func::FuncOp>(mlir::dsa::createLowerToStdPass());
         
-        PGX_INFO("Running Standard→LLVM conversion");
-        if (mlir::failed(llvmPm.run(*module))) {
-            PGX_ERROR("Standard→LLVM conversion failed");
+        PGX_INFO("Running DB and DSA lowering passes");
+        if (mlir::failed(pm.run(*module))) {
+            PGX_ERROR("DB/DSA to Standard lowering failed");
             return false;
         }
-        PGX_INFO("Standard→LLVM conversion completed successfully");
+        PGX_INFO("DB and DSA lowering passes completed successfully");
         
         if (mlir::failed(mlir::verify(module->getOperation()))) {
             PGX_ERROR("Final module verification failed");
