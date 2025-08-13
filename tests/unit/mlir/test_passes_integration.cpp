@@ -42,8 +42,8 @@ TEST(PassesIntegrationTest, TestDialectLoading) {
     EXPECT_NE(context->getLoadedDialect<mlir::util::UtilDialect>(), nullptr);
 }
 
-// Test that the complete lowering pipeline can be created
-TEST(PassesIntegrationTest, TestCompleteLoweringPipeline) {
+// Test that the sequential lowering pipelines can be created
+TEST(PassesIntegrationTest, TestSequentialLoweringPipelines) {
     auto context = std::make_shared<mlir::MLIRContext>();
     
     // Load all required dialects
@@ -59,13 +59,33 @@ TEST(PassesIntegrationTest, TestCompleteLoweringPipeline) {
     // Create a simple module for testing
     mlir::ModuleOp module = mlir::ModuleOp::create(mlir::UnknownLoc::get(context.get()));
     
-    // Create pass manager and add the complete lowering pipeline
-    mlir::PassManager pm(context.get());
-    mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
+    // Test Phase 1: RelAlg→DB pipeline
+    {
+        mlir::PassManager pm1(context.get());
+        mlir::pgx_lower::createRelAlgToDBPipeline(pm1, true);
+        EXPECT_TRUE(true); // Pipeline created successfully
+    }
     
-    // The pipeline should be created without errors
-    // We can't run it without a proper RelAlg module, but we can verify it's created
-    EXPECT_TRUE(true); // Pipeline created successfully
+    // Test Phase 2: DB+DSA→Standard pipeline
+    {
+        mlir::PassManager pm2(context.get());
+        mlir::pgx_lower::createDBDSAToStandardPipeline(pm2, true);
+        EXPECT_TRUE(true); // Pipeline created successfully
+    }
+    
+    // Test Phase 3: Standard→LLVM pipeline
+    {
+        mlir::PassManager pm3(context.get());
+        mlir::pgx_lower::createStandardToLLVMPipeline(pm3, true);
+        EXPECT_TRUE(true); // Pipeline created successfully
+    }
+    
+    // Test Function-level optimization pipeline
+    {
+        mlir::PassManager pmFunc(context.get(), mlir::func::FuncOp::getOperationName());
+        mlir::pgx_lower::createFunctionOptimizationPipeline(pmFunc, true);
+        EXPECT_TRUE(true); // Pipeline created successfully
+    }
 }
 
 // Test memory context heap allocation pattern

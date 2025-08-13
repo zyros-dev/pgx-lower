@@ -190,18 +190,59 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
             return false;
         }
         
-        // Phase 3c: Use centralized pass pipeline for RelAlg→DB→DSA lowering
-        PGX_INFO("Configuring centralized lowering pipeline");
-        ::mlir::PassManager pm(&context);
+        // Phase 3: Sequential PassManager approach following LingoDB patterns
         
-        // Use centralized pipeline configuration with verification enabled
-        mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
+        // Phase 3a: RelAlg→DB lowering
+        PGX_INFO("Phase 3a: Running RelAlg→DB lowering pipeline");
+        {
+            ::mlir::PassManager pm1(&context);
+            mlir::pgx_lower::createRelAlgToDBPipeline(pm1, true);
+            if (mlir::failed(pm1.run(*module))) {
+                PGX_ERROR("Phase 3a failed: RelAlg→DB lowering pipeline error");
+                return false;
+            }
+            PGX_INFO("Phase 3a completed: RelAlg successfully lowered to DB+DSA+Util");
+        }
         
-        // Run the lowering pipeline (Phase 3a+3b+3c: RelAlg → DB → DSA)
-        PGX_INFO("Running complete lowering pipeline");
-        if (mlir::failed(pm.run(*module))) {
-            PGX_ERROR("MLIR lowering pipeline failed (RelAlg → DB → DSA)");
-            return false;
+        // Phase 3b: DB+DSA→Standard lowering
+        PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering pipeline");
+        {
+            ::mlir::PassManager pm2(&context);
+            mlir::pgx_lower::createDBDSAToStandardPipeline(pm2, true);
+            if (mlir::failed(pm2.run(*module))) {
+                PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering pipeline error");
+                return false;
+            }
+            PGX_INFO("Phase 3b completed: DB+DSA successfully lowered to Standard MLIR");
+        }
+        
+        // Phase 3c: Standard→LLVM lowering
+        PGX_INFO("Phase 3c: Running Standard→LLVM lowering pipeline");
+        {
+            ::mlir::PassManager pm3(&context);
+            mlir::pgx_lower::createStandardToLLVMPipeline(pm3, true);
+            if (mlir::failed(pm3.run(*module))) {
+                PGX_ERROR("Phase 3c failed: Standard→LLVM lowering pipeline error");
+                return false;
+            }
+            PGX_INFO("Phase 3c completed: Standard MLIR successfully lowered to LLVM IR");
+        }
+        
+        // Phase 3d: Function-level optimizations (optional)
+        PGX_INFO("Phase 3d: Running function-level optimizations");
+        {
+            ::mlir::PassManager pmFunc(&context, mlir::func::FuncOp::getOperationName());
+            mlir::pgx_lower::createFunctionOptimizationPipeline(pmFunc, true);
+            
+            // Walk all functions and apply optimizations (like LingoDB)
+            module->walk([&](mlir::func::FuncOp f) {
+                if (!f->hasAttr("passthrough")) {
+                    if (mlir::failed(pmFunc.run(f))) {
+                        PGX_WARNING("Function optimization failed for: " + f.getName().str());
+                    }
+                }
+            });
+            PGX_INFO("Phase 3d completed: Function-level optimizations applied");
         }
         
         // TODO: Next phases - DSA to LLVM IR and JIT compilation
@@ -254,33 +295,60 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         
         PGX_INFO("Initial RelAlg MLIR module verified successfully");
         
-        PGX_INFO("Configuring lowering pipeline");
-        PGX_INFO("Creating PassManager");
-        ::mlir::PassManager pm(&context);
-        PGX_INFO("PassManager created successfully");
+        // Phase 3: Sequential PassManager approach following LingoDB patterns
         
-        // Add the RelAlg to DB lowering pass (generates mixed DB+DSA+Util ops)
-        pm.addNestedPass<mlir::func::FuncOp>(mlir::relalg::createLowerToDBPass());
-        
-        PGX_INFO("Running RelAlg to DB lowering");
-        if (mlir::failed(pm.run(*module))) {
-            PGX_ERROR("RelAlg to DB lowering failed");
-            return false;
+        // Phase 3a: RelAlg→DB lowering
+        PGX_INFO("Phase 3a: Running RelAlg→DB lowering pipeline");
+        {
+            ::mlir::PassManager pm1(&context);
+            mlir::pgx_lower::createRelAlgToDBPipeline(pm1, true);
+            if (mlir::failed(pm1.run(*module))) {
+                PGX_ERROR("Phase 3a failed: RelAlg→DB lowering pipeline error");
+                return false;
+            }
+            PGX_INFO("Phase 3a completed: RelAlg successfully lowered to DB+DSA+Util");
         }
         
-        // Add DB→Standard and DSA→Standard lowering passes
-        PGX_INFO("Adding DB→Standard lowering pass");
-        pm.addPass(mlir::db::createLowerToStdPass());
-        
-        PGX_INFO("Adding DSA→Standard lowering pass");
-        pm.addPass(mlir::dsa::createLowerToStdPass());
-        
-        PGX_INFO("Running DB and DSA lowering passes");
-        if (mlir::failed(pm.run(*module))) {
-            PGX_ERROR("DB/DSA to Standard lowering failed");
-            return false;
+        // Phase 3b: DB+DSA→Standard lowering
+        PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering pipeline");
+        {
+            ::mlir::PassManager pm2(&context);
+            mlir::pgx_lower::createDBDSAToStandardPipeline(pm2, true);
+            if (mlir::failed(pm2.run(*module))) {
+                PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering pipeline error");
+                return false;
+            }
+            PGX_INFO("Phase 3b completed: DB+DSA successfully lowered to Standard MLIR");
         }
-        PGX_INFO("DB and DSA lowering passes completed successfully");
+        
+        // Phase 3c: Standard→LLVM lowering
+        PGX_INFO("Phase 3c: Running Standard→LLVM lowering pipeline");
+        {
+            ::mlir::PassManager pm3(&context);
+            mlir::pgx_lower::createStandardToLLVMPipeline(pm3, true);
+            if (mlir::failed(pm3.run(*module))) {
+                PGX_ERROR("Phase 3c failed: Standard→LLVM lowering pipeline error");
+                return false;
+            }
+            PGX_INFO("Phase 3c completed: Standard MLIR successfully lowered to LLVM IR");
+        }
+        
+        // Phase 3d: Function-level optimizations (optional)
+        PGX_INFO("Phase 3d: Running function-level optimizations");
+        {
+            ::mlir::PassManager pmFunc(&context, mlir::func::FuncOp::getOperationName());
+            mlir::pgx_lower::createFunctionOptimizationPipeline(pmFunc, true);
+            
+            // Walk all functions and apply optimizations (like LingoDB)
+            module->walk([&](mlir::func::FuncOp f) {
+                if (!f->hasAttr("passthrough")) {
+                    if (mlir::failed(pmFunc.run(f))) {
+                        PGX_WARNING("Function optimization failed for: " + f.getName().str());
+                    }
+                }
+            });
+            PGX_INFO("Phase 3d completed: Function-level optimizations applied");
+        }
         
         if (mlir::failed(mlir::verify(module->getOperation()))) {
             PGX_ERROR("Final module verification failed");
@@ -380,17 +448,60 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
         return false;
     }
     
-    // Now run the complete pipeline in a single PassManager
-    PGX_INFO("Running complete lowering pipeline");
-    ::mlir::PassManager pm(&context, ::mlir::ModuleOp::getOperationName());
-    pm.enableVerifier(true);
+    // Phase 3: Sequential PassManager approach following LingoDB patterns
+    PGX_INFO("Running sequential lowering pipelines");
     
-    // Use the centralized pipeline configuration
-    mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
+    // Phase 3a: RelAlg→DB lowering
+    PGX_INFO("Phase 3a: Running RelAlg→DB lowering pipeline");
+    {
+        ::mlir::PassManager pm1(&context);
+        mlir::pgx_lower::createRelAlgToDBPipeline(pm1, true);
+        if (mlir::failed(pm1.run(module))) {
+            PGX_ERROR("Phase 3a failed: RelAlg→DB lowering pipeline error");
+            return false;
+        }
+        PGX_INFO("Phase 3a completed: RelAlg successfully lowered to DB+DSA+Util");
+    }
     
-    if (mlir::failed(pm.run(module))) {
-        PGX_ERROR("Complete lowering pipeline failed");
-        return false;
+    // Phase 3b: DB+DSA→Standard lowering
+    PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering pipeline");
+    {
+        ::mlir::PassManager pm2(&context);
+        mlir::pgx_lower::createDBDSAToStandardPipeline(pm2, true);
+        if (mlir::failed(pm2.run(module))) {
+            PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering pipeline error");
+            return false;
+        }
+        PGX_INFO("Phase 3b completed: DB+DSA successfully lowered to Standard MLIR");
+    }
+    
+    // Phase 3c: Standard→LLVM lowering
+    PGX_INFO("Phase 3c: Running Standard→LLVM lowering pipeline");
+    {
+        ::mlir::PassManager pm3(&context);
+        mlir::pgx_lower::createStandardToLLVMPipeline(pm3, true);
+        if (mlir::failed(pm3.run(module))) {
+            PGX_ERROR("Phase 3c failed: Standard→LLVM lowering pipeline error");
+            return false;
+        }
+        PGX_INFO("Phase 3c completed: Standard MLIR successfully lowered to LLVM IR");
+    }
+    
+    // Phase 3d: Function-level optimizations (optional)
+    PGX_INFO("Phase 3d: Running function-level optimizations");
+    {
+        ::mlir::PassManager pmFunc(&context, mlir::func::FuncOp::getOperationName());
+        mlir::pgx_lower::createFunctionOptimizationPipeline(pmFunc, true);
+        
+        // Walk all functions and apply optimizations (like LingoDB)
+        module.walk([&](mlir::func::FuncOp f) {
+            if (!f->hasAttr("passthrough")) {
+                if (mlir::failed(pmFunc.run(f))) {
+                    PGX_WARNING("Function optimization failed for: " + f.getName().str());
+                }
+            }
+        });
+        PGX_INFO("Phase 3d completed: Function-level optimizations applied");
     }
     
     if (mlir::failed(mlir::verify(module.getOperation()))) {

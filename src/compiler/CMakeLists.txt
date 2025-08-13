@@ -24,6 +24,8 @@ add_subdirectory(../mlir/Conversion/DSAToStd DSAToStdConversion)
 # add_subdirectory(../mlir/Conversion/DSAToLLVM DSAToLLVMConversion)
 # Util → LLVM conversion (utility operations and types)
 add_subdirectory(../mlir/Conversion/UtilToLLVM UtilToLLVMConversion)
+# Unified Standard → LLVM conversion (includes all patterns)
+add_subdirectory(../mlir/Conversion/StandardToLLVM StandardToLLVMConversion)
 
 # Add centralized pass pipeline infrastructure
 add_subdirectory(../mlir MLIRPasses)

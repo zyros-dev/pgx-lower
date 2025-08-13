@@ -9,6 +9,8 @@ target_link_libraries(MLIRPasses
     MLIRRelAlgToDB
     MLIRDBToArrowStd
     MLIRDSAToStd
+    UtilToLLVM
+    StandardToLLVM
     MLIRTransforms
     MLIRSCFToControlFlow
     MLIRFuncToLLVM
