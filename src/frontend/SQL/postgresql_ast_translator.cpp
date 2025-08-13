@@ -184,10 +184,10 @@ auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, Tr
     // Get RelAlg TupleStream type for return value - MaterializeOp produces !relalg.tuplestream  
     auto relAlgTableType = mlir::relalg::TupleStreamType::get(&context_);
     
-    // Create func::FuncOp following LingoDB's pattern: func.func @query() -> !relalg.table
+    // Create func::FuncOp with "main" name for JIT execution
     auto queryFuncType = builder.getFunctionType({}, {relAlgTableType});
     auto queryFunc = builder.create<::mlir::func::FuncOp>(
-        builder.getUnknownLoc(), "query", queryFuncType);
+        builder.getUnknownLoc(), "main", queryFuncType);
     
     // Create function body
     auto& queryBody = queryFunc.getBody().emplaceBlock();

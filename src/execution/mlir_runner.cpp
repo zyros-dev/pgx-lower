@@ -254,18 +254,10 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
             return false;
         }
         
-        // Add parallel lowering passes for DB, DSA, and Util to Standard
-        PGX_INFO("Adding parallel lowering passes (DB+DSA+Util → Standard)");
-        ::mlir::PassManager pm2(&context);
-        pm2.addPass(mlir::db::createLowerToStdPass());
-        pm2.addPass(mlir::dsa::createLowerToStdPass());
-        // Note: Util lowering is handled differently (uses pattern-based lowering)
-        
-        PGX_INFO("Running parallel lowering to Standard dialect");
-        if (mlir::failed(pm2.run(*module))) {
-            PGX_ERROR("Parallel lowering to Standard failed");
-            return false;
-        }
+        // TEMPORARY: Skip both DB and DSA lowering passes to reach later stages
+        PGX_INFO("SKIPPING DB→Standard lowering pass for debugging");
+        PGX_INFO("SKIPPING DSA→Standard lowering pass for debugging");
+        PGX_INFO("All parallel lowering passes skipped - proceeding to next phase");
         
         if (mlir::failed(mlir::verify(module->getOperation()))) {
             PGX_ERROR("Final module verification failed");
