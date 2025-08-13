@@ -26,6 +26,7 @@
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
 #include "mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
@@ -71,6 +72,18 @@ extern "C" {
 extern "C" {
     struct ModuleHandle* pgx_jit_create_module_handle(void* mlir_module_ptr);
     void pgx_jit_destroy_module_handle(struct ModuleHandle* handle);
+}
+
+// C-compatible initialization function for pass registration
+extern "C" void initialize_mlir_passes() {
+    // Register DB conversion passes (includes DBToStd)
+    mlir::db::registerDBConversionPasses();
+    
+    // Register RelAlg passes if needed
+    mlir::relalg::registerRelAlgConversionPasses();
+    
+    // Note: DSA doesn't have a separate registration function
+    // The DSAToStd pass is registered directly when needed
 }
 
 namespace mlir_runner {
@@ -309,6 +322,32 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
             PGX_INFO("Phase 3a completed: RelAlg successfully lowered to DB+DSA+Util");
         }
         
+        // CRITICAL: Add module validation after Phase 3a
+        if (mlir::failed(mlir::verify(module->getOperation()))) {
+            PGX_ERROR("Phase 3a module verification failed - output is malformed");
+            module->getOperation()->dump();
+            return false;
+        }
+        PGX_INFO("Phase 3a completed and verified: RelAlg successfully lowered to DB+DSA+Util");
+        
+        // Add IR dumping for debugging
+        if (get_logger().should_log(LogLevel::DEBUG_LVL)) {
+            PGX_DEBUG("=== Phase 3a Output Module ===");
+            std::string moduleStr;
+            llvm::raw_string_ostream os(moduleStr);
+            module->getOperation()->print(os);
+            PGX_DEBUG("Module IR: " + os.str());
+        }
+        
+        // Verify dialects are loaded before Phase 3b
+        auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
+        auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
+        if (!dbDialect || !dsaDialect) {
+            PGX_ERROR("Required dialects not loaded for Phase 3b");
+            return false;
+        }
+        PGX_INFO("DB and DSA dialects verified for Phase 3b");
+        
         // Phase 3b: DB+DSA→Standard lowering
         PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering pipeline");
         {
@@ -428,6 +467,12 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     context.getOrLoadDialect<::mlir::db::DBDialect>();
     context.getOrLoadDialect<::mlir::dsa::DSADialect>();
     
+    // CRITICAL: Register conversion passes - this might be missing!
+    // Without pass registration, the passes can't be created properly
+    PGX_DEBUG("Registering DB and DSA conversion passes");
+    mlir::db::registerDBConversionPasses();
+    // Note: DSA doesn't have a separate registration function based on our codebase
+    
     // CRITICAL: Get UtilDialect and ensure it's initialized
     auto* utilDialect = context.getOrLoadDialect<::mlir::util::UtilDialect>();
     if (!utilDialect) {
@@ -455,16 +500,88 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
         PGX_INFO("Phase 3a completed: RelAlg successfully lowered to DB+DSA+Util");
     }
     
+    // CRITICAL: Add module validation after Phase 3a
+    if (mlir::failed(mlir::verify(module.getOperation()))) {
+        PGX_ERROR("Phase 3a module verification failed - output is malformed");
+        module.getOperation()->dump();
+        return false;
+    }
+    PGX_INFO("Phase 3a completed and verified: RelAlg successfully lowered to DB+DSA+Util");
+    
+    // Add IR dumping for debugging
+    if (get_logger().should_log(LogLevel::DEBUG_LVL)) {
+        PGX_DEBUG("=== Phase 3a Output Module ===");
+        std::string moduleStr;
+        llvm::raw_string_ostream os(moduleStr);
+        module.getOperation()->print(os);
+        PGX_DEBUG("Module IR: " + os.str());
+    }
+    
+    // Module verification after Phase 3a
+    PGX_INFO("Verifying module state after Phase 3a...");
+    if (mlir::failed(mlir::verify(module.getOperation()))) {
+        PGX_ERROR("Module verification failed after Phase 3a - IR is corrupted!");
+        module.getOperation()->dump();
+        return false;
+    }
+    PGX_INFO("Module verification passed after Phase 3a");
+    
+    // Dump IR for debugging before Phase 3b
+    PGX_DEBUG("Dumping module IR before Phase 3b:");
+    if (context.shouldPrintOpOnDiagnostic()) {
+        module.getOperation()->dump();
+    }
+    
+    // Verify dialects are loaded before Phase 3b
+    auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
+    auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
+    auto* utilDialect2 = context.getLoadedDialect<mlir::util::UtilDialect>();
+    if (!dbDialect || !dsaDialect || !utilDialect2) {
+        std::string dialectStatus = "Required dialects not loaded for Phase 3b (DB=" +
+                                   std::string(dbDialect ? "loaded" : "missing") +
+                                   ", DSA=" + std::string(dsaDialect ? "loaded" : "missing") +
+                                   ", Util=" + std::string(utilDialect2 ? "loaded" : "missing") + ")";
+        PGX_ERROR(dialectStatus);
+        return false;
+    }
+    PGX_INFO("All required dialects verified for Phase 3b");
+    
     // Phase 3b: DB+DSA→Standard lowering
     PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering pipeline");
     {
+        PGX_DEBUG("Phase 3b: About to create PassManager");
+        
+        // Check context validity before PassManager creation
+        PGX_DEBUG("Phase 3b: Context ptr: " + 
+                  std::to_string(reinterpret_cast<uintptr_t>(&context)));
+        PGX_DEBUG("Phase 3b: Loaded dialects count: " + 
+                  std::to_string(context.getLoadedDialects().size()));
+        
+        PGX_DEBUG("Phase 3b: Creating PassManager with context");
         ::mlir::PassManager pm2(&context);
+        PGX_DEBUG("Phase 3b: PassManager created successfully");
+        
+        PGX_DEBUG("Phase 3b: About to configure DB+DSA→Standard pipeline");
         mlir::pgx_lower::createDBDSAToStandardPipeline(pm2, true);
-        if (mlir::failed(pm2.run(module))) {
-            PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering pipeline error");
+        PGX_DEBUG("Phase 3b: Pipeline configured successfully");
+        
+        PGX_DEBUG("Phase 3b: About to run PassManager - module ptr: " + 
+                  std::to_string(reinterpret_cast<uintptr_t>(module.getOperation())));
+        
+        // Add try-catch to get more crash info
+        try {
+            if (mlir::failed(pm2.run(module))) {
+                PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering pipeline error");
+                return false;
+            }
+            PGX_INFO("Phase 3b completed: DB+DSA successfully lowered to Standard MLIR");
+        } catch (const std::exception& e) {
+            PGX_ERROR("Phase 3b crashed with exception: " + std::string(e.what()));
+            return false;
+        } catch (...) {
+            PGX_ERROR("Phase 3b crashed with unknown exception");
             return false;
         }
-        PGX_INFO("Phase 3b completed: DB+DSA successfully lowered to Standard MLIR");
     }
     
     // Phase 3c: Standard→LLVM lowering
