@@ -610,9 +610,37 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
         ::mlir::PassManager pm2(&context);
         PGX_DEBUG("Phase 3b: PassManager created successfully");
         
-        PGX_DEBUG("Phase 3b: About to configure DB+DSA→Standard pipeline");
-        mlir::pgx_lower::createDBDSAToStandardPipeline(pm2, true);
-        PGX_DEBUG("Phase 3b: Pipeline configured successfully");
+        PGX_INFO("Phase 3b: About to configure DB+DSA→Standard pipeline");
+        
+        // Test with minimal pipeline first
+        PGX_INFO("Phase 3b: Testing with empty PassManager first");
+        if (mlir::failed(pm2.run(module))) {
+            PGX_ERROR("Phase 3b: Empty PassManager failed - indicates module corruption");
+            return false;
+        }
+        PGX_INFO("Phase 3b: Empty PassManager succeeded, module is valid");
+        
+        // Try adding just DB→Std pass first
+        PGX_INFO("Phase 3b: Adding only DB→Std pass");
+        auto dbPass = mlir::db::createLowerToStdPass();
+        if (!dbPass) {
+            PGX_ERROR("Phase 3b: Failed to create DB→Std pass!");
+            return false;
+        }
+        pm2.addPass(std::move(dbPass));
+        PGX_INFO("Phase 3b: DB→Std pass added, skipping DSA→Std for isolation");
+        
+        // Dump module to see what operations we're trying to convert
+        if (get_logger().should_log(LogLevel::INFO_LVL)) {
+            std::string moduleStr;
+            llvm::raw_string_ostream os(moduleStr);
+            module.print(os);
+            PGX_INFO("Phase 3b: Module before DB→Std conversion:\n" + os.str());
+        }
+        
+        // Skip full pipeline for now
+        // mlir::pgx_lower::createDBDSAToStandardPipeline(pm2, true);
+        // PGX_INFO("Phase 3b: Pipeline configured successfully");
         
         PGX_DEBUG("Phase 3b: About to run PassManager - module ptr: " + 
                   std::to_string(reinterpret_cast<uintptr_t>(module.getOperation())));
@@ -632,7 +660,28 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
             }
             
             PGX_INFO("Running Phase 3b PassManager...");
+            
+            // Add pass execution listener for debugging
+            pm2.getContext()->disableMultithreading();
+            
+            // Enable pass timing for debugging
+            pm2.enableTiming();
+            
+            PGX_INFO("Phase 3b: About to call pm2.run() on module");
+            PGX_DEBUG("Phase 3b: PassManager configured, starting execution...");
+            
+            // One final validation
+            if (!module.getOperation()) {
+                PGX_ERROR("Phase 3b: Module operation is null right before pm2.run()!");
+                return false;
+            }
+            
+            PGX_INFO("Phase 3b: Calling pm2.run() NOW");
+            
+            // Run the pass manager
             auto result = pm2.run(module);
+            
+            PGX_INFO("Phase 3b: pm2.run() returned");
             
             if (mlir::failed(result)) {
                 PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering pipeline error");

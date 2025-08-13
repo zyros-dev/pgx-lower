@@ -906,6 +906,7 @@ class HashLowering : public ConversionPattern {
    }
 };
 void DBToStdLoweringPass::runOnOperation() {
+   PGX_INFO("DBToStd: ===== PASS ENTRY =====");
    MLIR_PGX_DEBUG("DB", "=== DBToStd Pass Entry ===");
    MLIR_PGX_DEBUG("DB", "Starting DBToStd lowering pass execution");
    
@@ -916,6 +917,8 @@ void DBToStdLoweringPass::runOnOperation() {
       MLIR_PGX_ERROR("DB", "CRITICAL: 'this' pointer is null!");
       return;
    }
+   
+   PGX_INFO("DBToStd: Pass object is valid, proceeding...");
    
    // Add early exit check to debug crash location
    MLIR_PGX_DEBUG("DB", "Getting module operation");
@@ -1120,12 +1123,34 @@ void DBToStdLoweringPass::runOnOperation() {
 
    patterns.insert<HashLowering>(typeConverter, ctxt);
 
-   if (failed(applyFullConversion(module, target, std::move(patterns))))
+   PGX_INFO("DBToStd: Starting module conversion");
+   
+   // Validate module before conversion
+   module.walk([](Operation* op) {
+       if (!op->getContext()) {
+           PGX_ERROR("DBToStd: Found operation with null context: " + op->getName().getStringRef().str());
+           return WalkResult::interrupt();
+       }
+       if (!op->getName().getDialect()) {
+           PGX_ERROR("DBToStd: Found operation with null dialect: " + op->getName().getStringRef().str());
+           return WalkResult::interrupt();
+       }
+       return WalkResult::advance();
+   });
+   
+   PGX_DEBUG("DBToStd: Module validated, applying conversion patterns...");
+   
+   if (failed(applyFullConversion(module, target, std::move(patterns)))) {
+      PGX_ERROR("DBToStd: Conversion failed during applyFullConversion");
       signalPassFailure();
+   } else {
+      PGX_INFO("DBToStd: Conversion completed successfully");
+   }
 }
 
 std::unique_ptr<::mlir::Pass>
 mlir::db::createLowerToStdPass() {
+   PGX_INFO("DBToStd: Creating DBToStdLoweringPass instance");
    return std::make_unique<DBToStdLoweringPass>();
 }
 void mlir::db::createLowerDBPipeline(mlir::OpPassManager& pm) {

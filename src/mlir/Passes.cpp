@@ -43,6 +43,7 @@ void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
 
 // Phase 2: DB+DSA→Standard lowering pipeline  
 void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
+    PGX_INFO("createDBDSAToStandardPipeline: ENTRY - Starting Phase 2 pipeline configuration");
     PGX_DEBUG("createDBDSAToStandardPipeline: Starting Phase 2 pipeline");
     
     if (enableVerification) {
@@ -53,29 +54,31 @@ void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
     // This prevents pass interference identified by research-debugger 1
     
     // First: DB→Std pass
-    PGX_DEBUG("createDBDSAToStandardPipeline: Creating DB→Std pass");
+    PGX_INFO("createDBDSAToStandardPipeline: Creating DB→Std pass");
     auto dbPass = db::createLowerToStdPass();
     if (!dbPass) {
         PGX_ERROR("createDBDSAToStandardPipeline: Failed to create DB→Std pass!");
         return;
     }
-    PGX_DEBUG("createDBDSAToStandardPipeline: Adding DB→Std pass to pipeline");
+    PGX_INFO("createDBDSAToStandardPipeline: Adding DB→Std pass to pipeline");
     pm.addPass(std::move(dbPass));
     
     // Add canonicalizer between passes to clean up
+    PGX_DEBUG("createDBDSAToStandardPipeline: Adding first canonicalizer pass");
     pm.addPass(createCanonicalizerPass());
     
     // Second: DSA→Std pass
-    PGX_DEBUG("createDBDSAToStandardPipeline: Creating DSA→Std pass");
+    PGX_INFO("createDBDSAToStandardPipeline: Creating DSA→Std pass");
     auto dsaPass = dsa::createLowerToStdPass();
     if (!dsaPass) {
         PGX_ERROR("createDBDSAToStandardPipeline: Failed to create DSA→Std pass!");
         return;
     }
-    PGX_DEBUG("createDBDSAToStandardPipeline: Adding DSA→Std pass to pipeline");
+    PGX_INFO("createDBDSAToStandardPipeline: Adding DSA→Std pass to pipeline");
     pm.addPass(std::move(dsaPass));
     
     // Final canonicalizer
+    PGX_DEBUG("createDBDSAToStandardPipeline: Adding final canonicalizer pass");
     pm.addPass(createCanonicalizerPass());
     
     PGX_DEBUG("createDBDSAToStandardPipeline: Phase 2 pipeline configured with sequential execution");

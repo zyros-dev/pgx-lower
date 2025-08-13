@@ -101,6 +101,7 @@ class SimpleTypeConversionPattern : public ConversionPattern {
    }
 };
 void DSAToStdLoweringPass::runOnOperation() {
+   PGX_INFO("DSAToStd: ===== PASS ENTRY =====");
    MLIR_PGX_DEBUG("DSA", "Starting DSAToStd lowering pass execution");
    auto module = getOperation();
    
@@ -182,10 +183,33 @@ void DSAToStdLoweringPass::runOnOperation() {
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::CondSkipOp>>(typeConverter, &getContext());
    patterns.insert<ScanSourceLowering>(typeConverter, &getContext());
 
-   if (failed(applyFullConversion(module, target, std::move(patterns))))
+   PGX_INFO("DSAToStd: Starting module conversion");
+   
+   // Validate module before conversion
+   module.walk([](Operation* op) {
+       if (!op->getContext()) {
+           PGX_ERROR("DSAToStd: Found operation with null context: " + op->getName().getStringRef().str());
+           return WalkResult::interrupt();
+       }
+       if (!op->getName().getDialect()) {
+           PGX_ERROR("DSAToStd: Found operation with null dialect: " + op->getName().getStringRef().str());
+           return WalkResult::interrupt();
+       }
+       MLIR_PGX_DEBUG("DSA", "Processing operation: " + op->getName().getStringRef().str());
+       return WalkResult::advance();
+   });
+   
+   PGX_DEBUG("DSAToStd: Module validated, applying conversion patterns...");
+   
+   if (failed(applyFullConversion(module, target, std::move(patterns)))) {
+      PGX_ERROR("DSAToStd: Conversion failed during applyFullConversion");
       signalPassFailure();
+   } else {
+      PGX_INFO("DSAToStd: Conversion completed successfully");
+   }
 }
 
 std::unique_ptr<::mlir::Pass> mlir::dsa::createLowerToStdPass() {
+   PGX_INFO("DSAToStd: Creating DSAToStdLoweringPass instance");
    return std::make_unique<DSAToStdLoweringPass>();
 }

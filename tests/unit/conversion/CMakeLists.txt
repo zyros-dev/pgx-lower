@@ -16,3 +16,20 @@ target_link_libraries(test_standard_to_llvm
     pgx_lower_logging
 )
 add_test(NAME StandardToLLVMTest COMMAND test_standard_to_llvm)
+
+# Test for DBToStd conversion pass
+add_executable(test_db_to_std test_db_to_std.cpp)
+target_link_libraries(test_db_to_std
+    gtest 
+    gtest_main
+    MLIRDBToArrowStd
+    MLIRDBDialect
+    MLIRDSADialect
+    UtilDialect
+    MLIRArithDialect
+    MLIRFuncDialect
+    MLIRPass
+    MLIRIR
+    pgx_lower_logging
+)
+add_test(NAME DBToStdTest COMMAND test_db_to_std)
