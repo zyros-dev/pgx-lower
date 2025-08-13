@@ -56,150 +56,8 @@ ExprContext *CreateExprContext(EState *estate);
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
-/*
- * RAII Pattern for PostgreSQL EState Management
- * 
- * The EStateGuard class ensures that PostgreSQL's EState and ExprContext
- * are properly cleaned up in ALL scenarios:
- * - Normal function exit
- * - Exception thrown during MLIR execution
- * - Early return due to error conditions
- * 
- * This follows PostgreSQL extension best practices and prevents
- * memory leaks that could occur with manual cleanup patterns.
- */
-
-// RAII wrapper for comprehensive PostgreSQL resource management
-class PsqlMemoryContextGuard {
-private:
-    // Execution state resources
-    EState* estate_;
-    ExprContext* econtext_;
-    MemoryContext old_context_;
-    
-    // Result streaming resources
-    DestReceiver* dest_;
-    TupleTableSlot* slot_;
-    TupleDesc tuple_desc_;
-    
-    bool initialized_;
-    
-public:
-    explicit PsqlMemoryContextGuard() 
-        : estate_(nullptr), econtext_(nullptr), old_context_(CurrentMemoryContext)
-        , dest_(nullptr), slot_(nullptr), tuple_desc_(nullptr), initialized_(false) {
-        
-        // Create EState for proper PostgreSQL memory context hierarchy
-        estate_ = CreateExecutorState();
-        if (!estate_) {
-            throw std::runtime_error("Failed to create EState");
-        }
-        
-        // Switch to per-query memory context
-        old_context_ = MemoryContextSwitchTo(estate_->es_query_cxt);
-        
-        // Create expression context for safe evaluation
-        econtext_ = CreateExprContext(estate_);
-        if (!econtext_) {
-            // Restore context and cleanup EState on failure
-            MemoryContextSwitchTo(old_context_);
-            FreeExecutorState(estate_);
-            throw std::runtime_error("Failed to create ExprContext");
-        }
-        
-        initialized_ = true;
-        PGX_DEBUG("PsqlMemoryContextGuard: Created EState and ExprContext successfully");
-    }
-    
-    ~PsqlMemoryContextGuard() {
-        if (initialized_) {
-            PGX_DEBUG("PsqlMemoryContextGuard: Beginning comprehensive cleanup");
-            
-            // 1. Clean up global tuple streamer first
-            PGX_DEBUG("PsqlMemoryContextGuard: Shutting down global tuple streamer");
-            g_tuple_streamer.shutdown();
-            
-            // 2. Clean up global tuple passthrough if it exists
-            if (g_current_tuple_passthrough.originalTuple) {
-                PGX_DEBUG("PsqlMemoryContextGuard: Freeing global tuple passthrough");
-                heap_freetuple(g_current_tuple_passthrough.originalTuple);
-                g_current_tuple_passthrough.originalTuple = nullptr;
-            }
-            
-            // 3. Clean up result streaming resources
-            if (dest_) {
-                PGX_DEBUG("PsqlMemoryContextGuard: Shutting down destination receiver");
-                dest_->rShutdown(dest_);
-                dest_ = nullptr;
-            }
-            
-            if (slot_) {
-                PGX_DEBUG("PsqlMemoryContextGuard: Dropping tuple slot");
-                ExecDropSingleTupleTableSlot(slot_);
-                slot_ = nullptr;
-            }
-            
-            if (tuple_desc_) {
-                PGX_DEBUG("PsqlMemoryContextGuard: Freeing tuple descriptor");
-                FreeTupleDesc(tuple_desc_);
-                tuple_desc_ = nullptr;
-            }
-            
-            // 2. Clean up execution state resources
-            if (econtext_) {
-                PGX_DEBUG("PsqlMemoryContextGuard: Resetting expression context");
-                ResetExprContext(econtext_);
-            }
-            
-            // 3. Restore original memory context
-            PGX_DEBUG("PsqlMemoryContextGuard: Restoring memory context");
-            MemoryContextSwitchTo(old_context_);
-            
-            // 4. Free EState (automatically cleans up econtext and es_query_cxt)
-            if (estate_) {
-                PGX_DEBUG("PsqlMemoryContextGuard: Freeing executor state");
-                FreeExecutorState(estate_);
-                estate_ = nullptr;
-            }
-            
-            PGX_DEBUG("PsqlMemoryContextGuard: Comprehensive cleanup completed");
-        }
-    }
-    
-    // Execution state accessors
-    EState* getEState() const { 
-        return initialized_ ? estate_ : nullptr; 
-    }
-    
-    ExprContext* getExprContext() const { 
-        return initialized_ ? econtext_ : nullptr; 
-    }
-    
-    // Result streaming setup
-    void setupResultStreaming(DestReceiver* dest, TupleTableSlot* slot, TupleDesc tuple_desc) {
-        if (!initialized_) {
-            throw std::runtime_error("Cannot setup result streaming on uninitialized PsqlMemoryContextGuard");
-        }
-        
-        dest_ = dest;
-        slot_ = slot;
-        tuple_desc_ = tuple_desc;
-        
-        PGX_DEBUG("PsqlMemoryContextGuard: Result streaming resources registered for cleanup");
-    }
-    
-    bool isValid() const { 
-        return initialized_ && estate_ && econtext_; 
-    }
-    
-    // Non-copyable to prevent resource management issues
-    PsqlMemoryContextGuard(const PsqlMemoryContextGuard&) = delete;
-    PsqlMemoryContextGuard& operator=(const PsqlMemoryContextGuard&) = delete;
-    
-    // Non-movable for simplicity (could be implemented if needed)
-    PsqlMemoryContextGuard(PsqlMemoryContextGuard&&) = delete;
-    PsqlMemoryContextGuard& operator=(PsqlMemoryContextGuard&&) = delete;
-};
+// PsqlMemoryContextGuard removed - using PostgreSQL-safe PG_TRY/PG_CATCH instead
+// RAII patterns can be bypassed by PostgreSQL's longjmp error handling
 
 void logQueryDebugInfo(const PlannedStmt* stmt) {
     PGX_DEBUG("Using PostgreSQL AST translation approach");
@@ -420,21 +278,37 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
     // Log query debug information
     logQueryDebugInfo(stmt);
 
-    PGX_DEBUG("Creating PsqlMemoryContextGuard for comprehensive PostgreSQL resource management");
+    PGX_DEBUG("Using PostgreSQL-safe resource management with PG_TRY/PG_CATCH");
     
-    try {
-        // RAII: Comprehensive PostgreSQL resource management (execution state + result streaming)
-        PsqlMemoryContextGuard psql_guard;
-        
-        if (!psql_guard.isValid()) {
-            PGX_ERROR("Failed to initialize PostgreSQL memory contexts");
-            return false;
+    // PostgreSQL resource management variables
+    EState* estate = nullptr;
+    ExprContext* econtext = nullptr;
+    MemoryContext old_context = CurrentMemoryContext;
+    TupleTableSlot* slot = nullptr;
+    TupleDesc resultTupleDesc = nullptr;
+    bool resources_initialized = false;
+    bool mlir_success = false;
+    
+    // Use PostgreSQL's exception handling mechanism
+    PG_TRY();
+    {
+        // Create EState for proper PostgreSQL memory context hierarchy
+        estate = CreateExecutorState();
+        if (!estate) {
+            ereport(ERROR, (errmsg("Failed to create EState")));
         }
         
-        EState* estate = psql_guard.getEState();
-        ExprContext* econtext = psql_guard.getExprContext();
+        // Switch to per-query memory context
+        old_context = MemoryContextSwitchTo(estate->es_query_cxt);
         
-        PGX_DEBUG("PostgreSQL memory contexts initialized successfully via RAII");
+        // Create expression context for safe evaluation
+        econtext = CreateExprContext(estate);
+        if (!econtext) {
+            ereport(ERROR, (errmsg("Failed to create ExprContext")));
+        }
+        
+        resources_initialized = true;
+        PGX_DEBUG("PostgreSQL memory contexts initialized successfully");
 
         // Analyze and configure column selection
         auto selectedColumns = analyzeColumnSelection(stmt);
@@ -446,45 +320,112 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         }
 
         // Setup tuple descriptor for results
-        auto resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns);
+        resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns);
 
         // Initialize PostgreSQL result handling
-        const auto slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
+        slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
         dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
-
-        // Register result streaming resources with RAII guard for automatic cleanup
-        psql_guard.setupResultStreaming(dest, slot, resultTupleDesc);
 
         g_tuple_streamer.initialize(dest, slot);
         g_tuple_streamer.setSelectedColumns(selectedColumns);
 
         // Execute MLIR translation with proper memory contexts
-        const auto mlir_success = mlir_runner::run_mlir_with_dest_receiver(
+        mlir_success = mlir_runner::run_mlir_with_dest_receiver(
             const_cast<PlannedStmt*>(stmt), estate, econtext, dest);
         
         PGX_INFO("mlir_runner::run_mlir_with_dest_receiver returned "
                       + std::string(mlir_success ? "true" : "false"));
-
+    }
+    PG_CATCH();
+    {
+        // PostgreSQL-compatible cleanup in error path
+        PGX_ERROR("PostgreSQL exception caught during MLIR execution");
+        
+        // Clean up in reverse order of allocation
+        if (resources_initialized) {
+            // Shutdown tuple streamer
+            g_tuple_streamer.shutdown();
+            
+            // Clean up result streaming resources
+            if (dest) {
+                dest->rShutdown(dest);
+            }
+            
+            if (slot) {
+                ExecDropSingleTupleTableSlot(slot);
+            }
+            
+            if (resultTupleDesc) {
+                FreeTupleDesc(resultTupleDesc);
+            }
+            
+            // Reset expression context
+            if (econtext) {
+                ResetExprContext(econtext);
+            }
+            
+            // Switch back to original context
+            MemoryContextSwitchTo(old_context);
+            
+            // Free EState (automatically cleans up econtext and es_query_cxt)
+            if (estate) {
+                FreeExecutorState(estate);
+            }
+        }
+        
+        PG_RE_THROW();
+    }
+    PG_END_TRY();
+    
+    // Normal cleanup path - only executed if PG_TRY block succeeds
+    if (resources_initialized) {
+        PGX_DEBUG("Beginning PostgreSQL-safe cleanup");
+        
         // Handle results
         auto final_result = handleMLIRResults(mlir_success);
-
+        
+        // Clean up global tuple streamer
+        g_tuple_streamer.shutdown();
+        
+        // Clean up global tuple passthrough if it exists
+        if (g_current_tuple_passthrough.originalTuple) {
+            heap_freetuple(g_current_tuple_passthrough.originalTuple);
+            g_current_tuple_passthrough.originalTuple = nullptr;
+        }
+        
+        // Clean up result streaming resources
+        if (dest) {
+            dest->rShutdown(dest);
+        }
+        
+        if (slot) {
+            ExecDropSingleTupleTableSlot(slot);
+        }
+        
+        if (resultTupleDesc) {
+            FreeTupleDesc(resultTupleDesc);
+        }
+        
+        // Reset expression context
+        if (econtext) {
+            ResetExprContext(econtext);
+        }
+        
+        // Restore original memory context
+        MemoryContextSwitchTo(old_context);
+        
+        // Free EState (automatically cleans up econtext and es_query_cxt)
+        if (estate) {
+            FreeExecutorState(estate);
+        }
+        
         PGX_INFO("run_mlir_with_ast_translation completed successfully, returning "
                       + std::string(final_result ? "true" : "false"));
         
-        // PsqlMemoryContextGuard destructor will automatically handle ALL PostgreSQL cleanup
         return final_result;
-        
-    } catch (const std::exception& e) {
-        PGX_ERROR("Exception in PostgreSQL memory management: " + std::string(e.what()));
-        // PsqlMemoryContextGuard destructor will automatically handle comprehensive cleanup
-        return false;
-    } catch (...) {
-        PGX_ERROR("Unknown exception in PostgreSQL memory management");
-        // PsqlMemoryContextGuard destructor will automatically handle comprehensive cleanup
-        return false;
     }
     
-    // Note: No manual cleanup needed - RAII handles everything automatically
+    return false;
 }
 
 auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
