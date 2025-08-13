@@ -212,22 +212,10 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
         return false;
     }
     
-    // Get RelAlg TupleStream type for MaterializeOp
-    auto relAlgTableType = mlir::relalg::TupleStreamType::get(&context_);
-    
-    // Materialize tuple stream to table using MaterializeOp
-    // For SELECT *, we need to specify which columns to materialize
-    // TODO Phase 4: Extract actual column list from SELECT statement
-    llvm::SmallVector<::mlir::Attribute> columnAttrs;
-    columnAttrs.push_back(context.builder->getStringAttr("*"));  // Placeholder for SELECT *
-    auto columnsArrayAttr = context.builder->getArrayAttr(columnAttrs);
-    
-    auto materializeOp = context.builder->create<mlir::relalg::MaterializeOp>(
-        context.builder->getUnknownLoc(), relAlgTableType, baseTableOp->getResult(0), columnsArrayAttr, context.builder->getArrayAttr({}));
-    
-    // Use standard func.return with materialized result
+    // TEMPORARY: Skip MaterializeOp and return BaseTableOp directly
+    // TODO Phase 4: Implement proper MaterializeOp with column references
     context.builder->create<mlir::func::ReturnOp>(
-        context.builder->getUnknownLoc(), materializeOp.getResult());
+        context.builder->getUnknownLoc(), baseTableOp->getResult(0));
     
     PGX_DEBUG("RelAlg operations generated successfully");
     return true;

@@ -38,6 +38,10 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
       getOperation().walk([&](::mlir::Operation* op) {
          if (isTranslationHook(op)) {
             auto node = mlir::relalg::Translator::createTranslator(op);
+            if (!node) {
+               op->emitError("No translator found for operation: ") << op->getName();
+               return;
+            }
             node->setInfo(nullptr, {});
             ::mlir::OpBuilder builder(op);
             node->produce(loweringContext, builder);

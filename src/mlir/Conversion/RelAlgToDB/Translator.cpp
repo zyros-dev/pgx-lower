@@ -80,5 +80,8 @@ std::unique_ptr<mlir::relalg::Translator> Translator::createTranslator(::mlir::O
       .Case<LimitOp>([&](auto x) { return createLimitTranslator(x); })
       .Case<TmpOp>([&](auto x) { return createTmpTranslator(x); })
       .Case<UnionOp, IntersectOp, ExceptOp>([&](auto x) { return createSetOpTranslator(x); })
-      .Default([](auto x) { assert(false&&"should not happen"); return std::unique_ptr<Translator>(); });
+      .Default([](auto x) { 
+         x->emitError("Unsupported operation in RelAlg to DB lowering: ") << x->getName();
+         return std::unique_ptr<Translator>(); 
+      });
 }
