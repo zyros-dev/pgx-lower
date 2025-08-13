@@ -917,9 +917,9 @@ void DBToStdLoweringPass::runOnOperation() {
       return;
    }
    
-   MLIR_PGX_DEBUG("DB", "Setting parent module in function helper");
-   utilDialect->getFunctionHelper().setParentModule(module);
-   MLIR_PGX_DEBUG("DB", "Successfully set parent module in function helper");
+   // CRITICAL: Do NOT call setParentModule - causes race conditions and memory corruption with sequential PassManagers
+   // The FunctionHelper will use the module from context when needed
+   MLIR_PGX_DEBUG("DB", "Skipping setParentModule to avoid memory corruption issues");
 
    // Define Conversion Target
    ConversionTarget target(getContext());

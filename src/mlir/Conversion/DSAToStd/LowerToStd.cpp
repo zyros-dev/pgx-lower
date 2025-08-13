@@ -23,6 +23,7 @@
 
 #include "runtime-defs/DataSourceIteration.h"
 #include "execution/logging.h"
+
 using namespace mlir;
 
 namespace {
@@ -43,7 +44,17 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
 
       ::mlir::Value executionContext = rewriter.create<mlir::func::CallOp>(op->getLoc(), funcOp, ::mlir::ValueRange{}).getResult(0);
       ::mlir::Value description = rewriter.create<mlir::util::CreateConstVarLen>(op->getLoc(), mlir::util::VarLen32Type::get(rewriter.getContext()), op.getDescrAttr());
+      
+      // CRITICAL: Ensure rewriter has a valid insertion block before calling runtime functions
+      if (!rewriter.getInsertionBlock()) {
+         MLIR_PGX_ERROR("DSA", "ScanSourceLowering: rewriter has no insertion block!");
+         return failure();
+      }
+      
+      MLIR_PGX_DEBUG("DSA", "Calling rt::DataSourceIteration::start");
       auto rawPtr = rt::DataSourceIteration::start(rewriter, op->getLoc())({executionContext, description})[0];
+      MLIR_PGX_DEBUG("DSA", "Successfully called rt::DataSourceIteration::start");
+      
       rewriter.replaceOp(op, rawPtr);
       return success();
    }
@@ -90,8 +101,20 @@ class SimpleTypeConversionPattern : public ConversionPattern {
    }
 };
 void DSAToStdLoweringPass::runOnOperation() {
+   MLIR_PGX_DEBUG("DSA", "Starting DSAToStd lowering pass execution");
    auto module = getOperation();
-   getContext().getLoadedDialect<mlir::util::UtilDialect>()->getFunctionHelper().setParentModule(module);
+   
+   // Fix 3: Remove setParentModule call entirely - causes memory corruption with sequential PassManagers
+   // Fix 1: Add null safety check (though not setting parent module anymore)
+   auto* utilDialect = getContext().getLoadedDialect<mlir::util::UtilDialect>();
+   if (!utilDialect) {
+      MLIR_PGX_ERROR("DSA", "Failed to get UtilDialect - not loaded!");
+      signalPassFailure();
+      return;
+   }
+   // CRITICAL: Do NOT call setParentModule - causes race conditions and memory corruption
+   MLIR_PGX_DEBUG("DSA", "UtilDialect loaded successfully, skipping setParentModule to avoid memory corruption");
+   
    // Define Conversion Target
    ConversionTarget target(getContext());
    target.addLegalOp<ModuleOp>();
