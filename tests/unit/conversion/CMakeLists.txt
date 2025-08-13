@@ -33,3 +33,21 @@ target_link_libraries(test_db_to_std
     pgx_lower_logging
 )
 add_test(NAME DBToStdTest COMMAND test_db_to_std)
+
+# Test for RelAlgToDB conversion pass
+add_executable(test_relalg_to_db test_relalg_to_db.cpp)
+target_link_libraries(test_relalg_to_db
+    gtest 
+    gtest_main
+    MLIRRelAlgToDBPasses
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSADialect
+    UtilDialect
+    MLIRArithDialect
+    MLIRFuncDialect
+    MLIRPass
+    MLIRIR
+    pgx_lower_logging
+)
+add_test(NAME RelAlgToDBTest COMMAND test_relalg_to_db)

@@ -1,6 +1,7 @@
 #include "execution/mlir_runner.h"
 #include "execution/error_handling.h"
 #include "execution/logging.h"
+#include <sstream>
 
 // MLIR Core Infrastructure
 #include "mlir/IR/MLIRContext.h"
@@ -817,6 +818,54 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         if (failed(mlir::verify(*module))) {
             PGX_ERROR("Initial RelAlg MLIR module verification failed");
             return false;
+        }
+        
+        // Dump the initial RelAlg MLIR for debugging
+        {
+            PGX_INFO("=== Initial RelAlg MLIR ===");
+            
+            // Check if module is valid
+            if (!module) {
+                PGX_ERROR("Module is null!");
+                return false;
+            }
+            
+            if (!module->getOperation()) {
+                PGX_ERROR("Module operation is null!");
+                return false;
+            }
+            
+            // First verify the module is valid
+            if (mlir::failed(mlir::verify(module->getOperation()))) {
+                PGX_ERROR("Initial RelAlg module verification failed - IR is malformed!");
+                // Try to dump anyway for debugging
+                try {
+                    module->getOperation()->dump();
+                } catch (...) {
+                    PGX_ERROR("Failed to dump invalid module");
+                }
+                return false;
+            }
+            
+            PGX_DEBUG("Module verification passed, attempting to print...");
+            
+            try {
+                std::string moduleStr;
+                llvm::raw_string_ostream os(moduleStr);
+                module->print(os);
+                // Split into lines for better logging
+                std::istringstream iss(os.str());
+                std::string line;
+                while (std::getline(iss, line)) {
+                    PGX_INFO(line);
+                }
+            } catch (const std::exception& e) {
+                PGX_ERROR("Exception while printing module: " + std::string(e.what()));
+                return false;
+            } catch (...) {
+                PGX_ERROR("Unknown exception while printing module");
+                return false;
+            }
         }
         
         // Phase 2-3: Run complete lowering pipeline
