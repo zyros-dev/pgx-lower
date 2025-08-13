@@ -27,5 +27,5 @@ add_mlir_conversion_library(MLIRRelAlgToDB
 
         LINK_LIBS mlir-support PUBLIC
         MLIRIR
-        MLIRDB
+        MLIRDBDialect
         )

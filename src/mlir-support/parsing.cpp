@@ -1,4 +1,6 @@
 #include "mlir-support/parsing.h"
+#include <stdexcept>
+#include <cstring>
 
 // PostgreSQL includes for type OIDs and parsing
 #ifdef POSTGRESQL_EXTENSION

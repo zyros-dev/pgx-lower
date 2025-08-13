@@ -13,6 +13,6 @@ add_mlir_conversion_library(MLIRDBToArrowStd
 
         LINK_LIBS mlir-support PUBLIC
         MLIRIR
-        MLIRDB
+        MLIRDBDialect
         MLIRSCFTransforms
         )

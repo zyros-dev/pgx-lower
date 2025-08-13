@@ -12,5 +12,5 @@ add_mlir_conversion_library(MLIRUtilToLLVM
 
         LINK_LIBS PUBLIC
         MLIRIR
-        MLIRUtil
+        MLIRUtilDialect
         )
