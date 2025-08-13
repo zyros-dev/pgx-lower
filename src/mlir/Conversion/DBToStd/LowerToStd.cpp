@@ -906,16 +906,44 @@ class HashLowering : public ConversionPattern {
    }
 };
 void DBToStdLoweringPass::runOnOperation() {
+   MLIR_PGX_DEBUG("DB", "=== DBToStd Pass Entry ===");
    MLIR_PGX_DEBUG("DB", "Starting DBToStd lowering pass execution");
+   
+   // Add very early checks to isolate crash point
+   MLIR_PGX_DEBUG("DB", "Checking this pointer validity");
+   if (!this) {
+      // This should never happen but helps isolate memory corruption
+      MLIR_PGX_ERROR("DB", "CRITICAL: 'this' pointer is null!");
+      return;
+   }
+   
+   // Add early exit check to debug crash location
+   MLIR_PGX_DEBUG("DB", "Getting module operation");
    auto module = getOperation();
+   if (!module) {
+      MLIR_PGX_ERROR("DB", "Module operation is null!");
+      signalPassFailure();
+      return;
+   }
+   
+   MLIR_PGX_DEBUG("DB", "Module operation obtained successfully");
+   
+   // Check context validity
+   auto& context = getContext();
+   MLIR_PGX_DEBUG("DB", "Context obtained, checking loaded dialects");
+   
+   // List all loaded dialects for debugging
+   MLIR_PGX_DEBUG("DB", "Checking loaded dialects count: " + std::to_string(context.getLoadedDialects().size()));
    
    MLIR_PGX_DEBUG("DB", "Getting util dialect for function helper");
-   auto* utilDialect = getContext().getLoadedDialect<mlir::util::UtilDialect>();
+   auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
    if (!utilDialect) {
       MLIR_PGX_ERROR("DB", "Failed to get UtilDialect - not loaded!");
       signalPassFailure();
       return;
    }
+   
+   MLIR_PGX_DEBUG("DB", "UtilDialect obtained successfully");
    
    // CRITICAL: Do NOT call setParentModule - causes race conditions and memory corruption with sequential PassManagers
    // The FunctionHelper will use the module from context when needed
