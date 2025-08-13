@@ -75,8 +75,11 @@ public:
     bool executeQuery(::mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
         PGX_INFO("MlirRunner::executeQuery - Phase 4g-2c JIT execution enabled");
         
+        PGX_INFO("About to call pgx_jit_create_module_handle");
         // Create module handle for isolated JIT execution
         auto moduleHandle = pgx_jit_create_module_handle(&module);
+        PGX_INFO("pgx_jit_create_module_handle completed successfully");
+        
         if (!moduleHandle) {
             PGX_ERROR("Failed to create module handle for JIT execution");
             auto error = pgx_jit_get_last_error();
@@ -86,9 +89,14 @@ public:
             return false;
         }
         
+        PGX_INFO("About to call pgx_jit_create_execution_handle");
         // Create execution handle
         auto execHandle = pgx_jit_create_execution_handle(moduleHandle);
+        PGX_INFO("pgx_jit_create_execution_handle completed successfully");
+        
+        PGX_INFO("About to destroy module handle");
         pgx_jit_destroy_module_handle(moduleHandle);
+        PGX_INFO("Module handle destroyed successfully");
         
         if (!execHandle) {
             PGX_ERROR("Failed to create JIT execution handle");
