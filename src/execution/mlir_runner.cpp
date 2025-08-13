@@ -336,7 +336,15 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         // CRITICAL: Add module validation after Phase 3a
         if (mlir::failed(mlir::verify(module->getOperation()))) {
             PGX_ERROR("Phase 3a module verification failed - output is malformed");
-            module->getOperation()->dump();
+            // Safe dump for debugging
+            try {
+                std::string moduleStr;
+                llvm::raw_string_ostream os(moduleStr);
+                module->getOperation()->print(os);
+                PGX_ERROR("Failed module IR:\n" + os.str());
+            } catch (...) {
+                PGX_ERROR("Failed to print invalid module");
+            }
             return false;
         }
         PGX_INFO("Phase 3a completed and verified: RelAlg successfully lowered to DB+DSA+Util");
@@ -502,8 +510,13 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     // Phase 3a: RelAlg→DB lowering
     PGX_INFO("Phase 3a: Running RelAlg→DB lowering pipeline");
     {
+        PGX_DEBUG("Creating PassManager for RelAlg→DB...");
         ::mlir::PassManager pm1(&context);
+        
+        PGX_DEBUG("Calling createRelAlgToDBPipeline...");
         mlir::pgx_lower::createRelAlgToDBPipeline(pm1, true);
+        
+        PGX_DEBUG("Running RelAlg→DB PassManager...");
         if (mlir::failed(pm1.run(module))) {
             PGX_ERROR("Phase 3a failed: RelAlg→DB lowering pipeline error");
             return false;
@@ -514,7 +527,15 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     // CRITICAL: Add module validation after Phase 3a
     if (mlir::failed(mlir::verify(module.getOperation()))) {
         PGX_ERROR("Phase 3a module verification failed - output is malformed");
-        module.getOperation()->dump();
+        // Safe dump for debugging
+        try {
+            std::string moduleStr;
+            llvm::raw_string_ostream os(moduleStr);
+            module.getOperation()->print(os);
+            PGX_ERROR("Failed module IR:\n" + os.str());
+        } catch (...) {
+            PGX_ERROR("Failed to print invalid module");
+        }
         return false;
     }
     PGX_INFO("Phase 3a completed and verified: RelAlg successfully lowered to DB+DSA+Util");
@@ -532,7 +553,15 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     PGX_INFO("Verifying module state after Phase 3a...");
     if (mlir::failed(mlir::verify(module.getOperation()))) {
         PGX_ERROR("Module verification failed after Phase 3a - IR is corrupted!");
-        module.getOperation()->dump();
+        // Safe dump for debugging
+        try {
+            std::string moduleStr;
+            llvm::raw_string_ostream os(moduleStr);
+            module.getOperation()->print(os);
+            PGX_ERROR("Corrupted module IR:\n" + os.str());
+        } catch (...) {
+            PGX_ERROR("Failed to print corrupted module");
+        }
         return false;
     }
     PGX_INFO("Module verification passed after Phase 3a");
@@ -540,7 +569,14 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     // Dump IR for debugging before Phase 3b
     PGX_DEBUG("Dumping module IR before Phase 3b:");
     if (context.shouldPrintOpOnDiagnostic()) {
-        module.getOperation()->dump();
+        try {
+            std::string moduleStr;
+            llvm::raw_string_ostream os(moduleStr);
+            module.getOperation()->print(os);
+            PGX_DEBUG("Module IR before Phase 3b:\n" + os.str());
+        } catch (...) {
+            PGX_DEBUG("Failed to print module before Phase 3b");
+        }
     }
     
     // CRITICAL: Comprehensive context validation before Phase 3b
@@ -807,7 +843,14 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         
         // Phase 1: PostgreSQL AST to RelAlg translation
         PGX_INFO("Phase 1: PostgreSQL AST to RelAlg translation");
+        PGX_DEBUG("Creating PostgreSQL AST translator...");
         auto translator = postgresql_ast::createPostgreSQLASTTranslator(context);
+        if (!translator) {
+            PGX_ERROR("Failed to create PostgreSQL AST translator");
+            return false;
+        }
+        
+        PGX_DEBUG("Translating query...");
         auto module = translator->translateQuery(plannedStmt);
         
         if (!module) {
@@ -815,56 +858,34 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
             return false;
         }
         
+        PGX_DEBUG("Module created, verifying...");
         if (failed(mlir::verify(*module))) {
             PGX_ERROR("Initial RelAlg MLIR module verification failed");
             return false;
         }
         
+        PGX_DEBUG("Module verified successfully");
+        
         // Dump the initial RelAlg MLIR for debugging
         {
             PGX_INFO("=== Initial RelAlg MLIR ===");
             
-            // Check if module is valid
-            if (!module) {
-                PGX_ERROR("Module is null!");
-                return false;
-            }
+            // TEMPORARY: Skip printing to avoid crash
+            PGX_WARNING("MLIR module printing temporarily disabled to diagnose crash");
+            PGX_INFO("Module created and verified successfully - proceeding to lowering");
             
-            if (!module->getOperation()) {
-                PGX_ERROR("Module operation is null!");
-                return false;
-            }
-            
-            // First verify the module is valid
-            if (mlir::failed(mlir::verify(module->getOperation()))) {
-                PGX_ERROR("Initial RelAlg module verification failed - IR is malformed!");
-                // Try to dump anyway for debugging
-                try {
-                    module->getOperation()->dump();
-                } catch (...) {
-                    PGX_ERROR("Failed to dump invalid module");
-                }
-                return false;
-            }
-            
-            PGX_DEBUG("Module verification passed, attempting to print...");
-            
+            // Add basic module stats without printing
             try {
-                std::string moduleStr;
-                llvm::raw_string_ostream os(moduleStr);
-                module->print(os);
-                // Split into lines for better logging
-                std::istringstream iss(os.str());
-                std::string line;
-                while (std::getline(iss, line)) {
-                    PGX_INFO(line);
+                if (module && module->getOperation()) {
+                    size_t opCount = 0;
+                    module->walk([&opCount](mlir::Operation *op) { 
+                        opCount++;
+                        // Don't try to print operation names as that might also crash
+                    });
+                    PGX_INFO("Module contains " + std::to_string(opCount) + " operations");
                 }
-            } catch (const std::exception& e) {
-                PGX_ERROR("Exception while printing module: " + std::string(e.what()));
-                return false;
             } catch (...) {
-                PGX_ERROR("Unknown exception while printing module");
-                return false;
+                PGX_WARNING("Failed to count operations in module");
             }
         }
         
