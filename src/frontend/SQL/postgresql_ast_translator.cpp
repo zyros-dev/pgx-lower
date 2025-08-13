@@ -181,11 +181,12 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
 auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context) -> ::mlir::func::FuncOp {
     PGX_DEBUG("Creating query function using func::FuncOp pattern");
     
-    // Get RelAlg TupleStream type for return value - MaterializeOp produces !relalg.tuplestream  
-    auto relAlgTableType = mlir::relalg::TupleStreamType::get(&context_);
+    // TEMPORARY: Use i32 return type for simple JIT testing
+    // TODO Phase 4: Restore TupleStreamType when proper lowering is implemented
+    auto i32Type = builder.getI32Type();
     
-    // Create func::FuncOp with "main" name for JIT execution
-    auto queryFuncType = builder.getFunctionType({}, {relAlgTableType});
+    // Create func::FuncOp with "main" name for JIT execution  
+    auto queryFuncType = builder.getFunctionType({}, {i32Type});
     auto queryFunc = builder.create<::mlir::func::FuncOp>(
         builder.getUnknownLoc(), "main", queryFuncType);
     
@@ -212,10 +213,15 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
         return false;
     }
     
-    // TEMPORARY: Skip MaterializeOp and return BaseTableOp directly
-    // TODO Phase 4: Implement proper MaterializeOp with column references
+    // TEMPORARY: Create a simple Standard MLIR function for JIT testing
+    // TODO Phase 4: Implement proper RelAlg→Standard lowering pipeline
+    
+    // Return a simple integer constant for now - this will compile via JIT
+    auto constantOp = context.builder->create<mlir::arith::ConstantIntOp>(
+        context.builder->getUnknownLoc(), 42, 32);
+    
     context.builder->create<mlir::func::ReturnOp>(
-        context.builder->getUnknownLoc(), baseTableOp->getResult(0));
+        context.builder->getUnknownLoc(), constantOp.getResult());
     
     PGX_DEBUG("RelAlg operations generated successfully");
     return true;
