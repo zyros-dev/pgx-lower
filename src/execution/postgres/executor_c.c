@@ -5,9 +5,7 @@
 #include "executor/executor.h"
 #include "fmgr.h"
 #include "postgres.h"
-#include <signal.h>
-#include <execinfo.h>
-#include <unistd.h>
+// Removed signal.h, execinfo.h, unistd.h - not needed without custom signal handler
 
 PG_MODULE_MAGIC;
 
@@ -42,32 +40,13 @@ static void custom_executor(QueryDesc *queryDesc, const ScanDirection direction,
     
 }
 
-static void segfault_handler(const int sig) {
-    void *array[32];
-    const size_t size = backtrace(array, 32);
-    char **strings = backtrace_symbols(array, size);
-    char buffer[256];
-    snprintf(buffer, sizeof(buffer), "Caught signal %d (SIGSEGV) in extension!", sig);
-    PGX_INFO_C(buffer);
-    if (strings) {
-        for (size_t i = 0; i < size; ++i) {
-            char trace_buffer[512];
-            snprintf(trace_buffer, sizeof(trace_buffer), "  %s", strings[i]);
-            PGX_INFO_C(trace_buffer);
-        }
-        free(strings);
-    }
-    fflush(stderr);
-    _exit(128 + sig);
-}
+// Custom SIGSEGV handler removed - rely on PostgreSQL's native error handling
+// Bypassing PostgreSQL's signal handling causes memory context corruption
 
 void _PG_init(void) {
     PGX_NOTICE_C("Installing custom executor hook...");
     prev_ExecutorRun_hook = ExecutorRun_hook;
     ExecutorRun_hook = custom_executor;
-    // Enable SIGSEGV handler for proper debugging
-    PGX_NOTICE_C("SIGSEGV handler enabled for debugging!");
-    signal(SIGSEGV, segfault_handler);
     
     // CRITICAL FIX: Set LOAD detection flag
     g_extension_after_load = true;
