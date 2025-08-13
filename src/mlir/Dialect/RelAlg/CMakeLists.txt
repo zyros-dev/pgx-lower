@@ -1,4 +1,4 @@
-add_mlir_dialect_library(MLIRRelAlg
+add_mlir_dialect_library(MLIRRelAlgDialect
         PARTIAL_SOURCES_INTENDED
         RelAlgDialect.cpp
         RelAlgOps.cpp

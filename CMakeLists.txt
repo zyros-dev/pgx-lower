@@ -64,6 +64,7 @@ find_package(LLVM REQUIRED)
 set(MLIR_DIR "/usr/lib/llvm-20/lib/cmake/mlir")
 find_package(MLIR REQUIRED)
 
+
 # Include MLIR CMake modules for TableGen
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
@@ -117,6 +118,9 @@ add_subdirectory(include/pgx_lower/mlir/Dialect/util)
 
 # Add compiler library (includes dialects)
 add_subdirectory(src/compiler)
+
+# Add mlir-support for both regular and extension-only builds  
+add_subdirectory(src/mlir-support)
 
 # Add the main extension
 add_subdirectory(extension)

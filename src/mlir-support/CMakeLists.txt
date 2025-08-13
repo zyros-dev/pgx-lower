@@ -1,2 +1,2 @@
-add_library(mlir-support OBJECT parsing.cpp eval.cpp)
+add_library(mlir-support STATIC parsing.cpp eval.cpp)
 

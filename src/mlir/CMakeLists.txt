@@ -7,7 +7,7 @@ target_link_libraries(MLIRPasses
     MLIRIR
     MLIRPass
     MLIRRelAlgToDB
-    MLIRDBToStd
+    MLIRDBToArrowStd
     MLIRDSAToStd
     MLIRTransforms
     MLIRSCFToControlFlow

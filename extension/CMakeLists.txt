@@ -11,6 +11,7 @@ add_postgresql_mixed_extension(
             ../src/execution/postgres/executor_c.cpp
             ../src/execution/mlir_runner.cpp 
             ../src/execution/jit_execution_engine.cpp
+            ../src/execution/jit_execution_wrapper.cpp
             ../src/frontend/SQL/postgresql_ast_translator.cpp
             ../src/frontend/SQL/query_analyzer.cpp
             ../src/execution/error_handling.cpp
@@ -21,6 +22,7 @@ add_postgresql_mixed_extension(
             ../src/runtime/PostgreSQLDataSource.cpp
             ../src/runtime/helpers.cpp
             ../src/runtime/postgresql_runtime.cpp
+            ../src/runtime/MetaData.cpp
         SCRIPTS 
             sql/pgx_lower--1.0.sql
         REGRESS
@@ -48,14 +50,13 @@ target_link_libraries(pgx_lower PRIVATE
     -Wl,--whole-archive
     MLIRRelAlgDialect
     MLIRDBDialect  
-    MLIRDSADialect
-    MLIRUtilDialect  # Util dialect for memory management and tuples
-    MLIRRelAlgToDBConversion
-    MLIRDBToStdConversion          # DB → Standard MLIR
-    MLIRDSAToStdConversion         # DSA → Standard MLIR
-    MLIRDSAToLLVMConversion  # DSA → LLVM conversion for data structure algorithms
-    UtilToLLVM                     # Util → LLVM conversion
-    MLIRPgxLowerPasses  # Central pass registration
+    MLIRDSA                        # Our custom DSA dialect
+    MLIRUtilDialect                # Util dialect for memory management and tuples
+    MLIRRelAlgToDB
+    MLIRDBToArrowStd               # DB → Standard MLIR  
+    MLIRDSAToStd                   # DSA → Standard MLIR
+    MLIRUtilToLLVM                 # Util → LLVM conversion
+    MLIRPasses                     # Central pass registration
     # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt
     -Wl,--no-whole-archive
     # Standard MLIR dialects required by our dialects

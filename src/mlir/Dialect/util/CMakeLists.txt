@@ -1,4 +1,4 @@
-add_mlir_dialect_library(MLIRUtil
+add_mlir_dialect_library(MLIRUtilDialect
         UtilDialect.cpp
         UtilOps.cpp
         UtilTypes.cpp
