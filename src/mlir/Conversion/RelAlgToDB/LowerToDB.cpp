@@ -50,6 +50,12 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
          if (isTranslationHook(op)) {
             PGX_INFO("RelAlg→DB Pass: Processing translation hook for: " + op->getName().getStringRef().str());
             
+            // Add safety check for operation type
+            if (!isa<mlir::relalg::MaterializeOp>(op)) {
+               PGX_ERROR("RelAlg→DB Pass: Expected MaterializeOp but got: " + op->getName().getStringRef().str());
+               return;
+            }
+            
             PGX_DEBUG("RelAlg→DB Pass: Creating translator...");
             auto node = mlir::relalg::Translator::createTranslator(op);
             if (!node) {

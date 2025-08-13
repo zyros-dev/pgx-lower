@@ -567,17 +567,8 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     PGX_INFO("Module verification passed after Phase 3a");
     
     // Dump IR for debugging before Phase 3b
-    PGX_DEBUG("Dumping module IR before Phase 3b:");
-    if (context.shouldPrintOpOnDiagnostic()) {
-        try {
-            std::string moduleStr;
-            llvm::raw_string_ostream os(moduleStr);
-            module.getOperation()->print(os);
-            PGX_DEBUG("Module IR before Phase 3b:\n" + os.str());
-        } catch (...) {
-            PGX_DEBUG("Failed to print module before Phase 3b");
-        }
-    }
+    // TEMPORARILY DISABLED - module printing causes crashes
+    PGX_DEBUG("Module printing disabled to avoid crashes before Phase 3b");
     
     // CRITICAL: Comprehensive context validation before Phase 3b
     // PostgreSQL memory context operations between phases can corrupt MLIR state

@@ -3,17 +3,21 @@
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/util/UtilOps.h"
+#include "execution/logging.h"
 
 class BaseTableTranslator : public mlir::relalg::Translator {
    static bool registered;
    mlir::relalg::BaseTableOp baseTableOp;
 
    public:
-   BaseTableTranslator(mlir::relalg::BaseTableOp baseTableOp) : mlir::relalg::Translator(baseTableOp), baseTableOp(baseTableOp) {}
+   BaseTableTranslator(mlir::relalg::BaseTableOp baseTableOp) : mlir::relalg::Translator(baseTableOp), baseTableOp(baseTableOp) {
+      PGX_DEBUG("BaseTableTranslator: Constructor called");
+   }
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       assert(false && "should not happen");
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      PGX_DEBUG("BaseTableTranslator::produce called");
       auto scope = context.createScope();
       using namespace mlir;
       std::vector<::mlir::Type> types;

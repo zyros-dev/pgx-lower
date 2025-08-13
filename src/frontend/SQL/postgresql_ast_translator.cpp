@@ -33,6 +33,7 @@ extern "C" {
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "mlir/Dialect/RelAlg/IR/Column.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/DSA/IR/DSATypes.h"
 
@@ -230,17 +231,14 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
     // This is required for the RelAlg→DB lowering pass to work
     PGX_DEBUG("Creating MaterializeOp to wrap BaseTableOp");
     
-    // TEMPORARY: Create dummy column references to avoid crash
+    // TEMPORARY: Create empty column arrays to avoid crash
+    // The MaterializeOp expects arrays but we'll pass empty ones for now
     // TODO: Properly extract column information from PostgreSQL metadata
     std::vector<mlir::Attribute> columnRefAttrs;
     std::vector<mlir::Attribute> columnNameAttrs;
     
-    // For Test 1, we know there's an "id" column
-    // Create a dummy SymbolRefAttr for it
-    auto dummyColRef = mlir::SymbolRefAttr::get(context.builder->getContext(), "dummy_id_col");
-    columnRefAttrs.push_back(dummyColRef);
-    columnNameAttrs.push_back(context.builder->getStringAttr("id"));
-    
+    // For now, pass empty arrays - this should prevent the crash
+    // The translator will need to handle empty columns gracefully
     auto columnRefs = context.builder->getArrayAttr(columnRefAttrs);
     auto columnNames = context.builder->getArrayAttr(columnNameAttrs);
     
