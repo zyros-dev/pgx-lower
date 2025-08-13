@@ -435,18 +435,10 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
         return false;
     }
     
-    // Set the parent module in the function helper before running any passes
-    // This is what the DB→Std pass expects to be able to do
-    try {
-        utilDialect->getFunctionHelper().setParentModule(module);
-        PGX_INFO("Successfully set parent module in UtilDialect function helper");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to set parent module in function helper: " + std::string(e.what()));
-        return false;
-    } catch (...) {
-        PGX_ERROR("Unknown error setting parent module in function helper");
-        return false;
-    }
+    // CRITICAL: Do NOT call setParentModule - causes memory corruption with sequential PassManagers
+    // The FunctionHelper will use the module from context when needed
+    // Previous setParentModule calls were causing segfaults in Phase 3b
+    PGX_INFO("UtilDialect loaded, skipping setParentModule to avoid memory corruption");
     
     // Phase 3: Sequential PassManager approach following LingoDB patterns
     PGX_INFO("Running sequential lowering pipelines");
