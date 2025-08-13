@@ -36,7 +36,14 @@ void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
     }
     
     // Add RelAlg to DB lowering pass
-    pm.addNestedPass<func::FuncOp>(relalg::createLowerToDBPass());
+    PGX_DEBUG("createRelAlgToDBPipeline: Creating RelAlg to DB pass...");
+    auto pass = relalg::createLowerToDBPass();
+    if (!pass) {
+        PGX_ERROR("createRelAlgToDBPipeline: Failed to create RelAlg to DB pass!");
+        return;
+    }
+    PGX_DEBUG("createRelAlgToDBPipeline: Pass created successfully, adding to pipeline...");
+    pm.addNestedPass<func::FuncOp>(std::move(pass));
     
     PGX_DEBUG("createRelAlgToDBPipeline: Phase 1 pipeline configured");
 }

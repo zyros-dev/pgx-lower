@@ -49,16 +49,27 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
          
          if (isTranslationHook(op)) {
             PGX_INFO("RelAlg→DB Pass: Processing translation hook for: " + op->getName().getStringRef().str());
+            
+            PGX_DEBUG("RelAlg→DB Pass: Creating translator...");
             auto node = mlir::relalg::Translator::createTranslator(op);
             if (!node) {
                op->emitError("No translator found for operation: ") << op->getName();
                PGX_ERROR("RelAlg→DB Pass: No translator found for: " + op->getName().getStringRef().str());
                return;
             }
+            
+            PGX_DEBUG("RelAlg→DB Pass: Setting translator info...");
             node->setInfo(nullptr, {});
+            
+            PGX_DEBUG("RelAlg→DB Pass: Creating OpBuilder...");
             ::mlir::OpBuilder builder(op);
+            
+            PGX_DEBUG("RelAlg→DB Pass: Calling produce on translator...");
             node->produce(loweringContext, builder);
+            
+            PGX_DEBUG("RelAlg→DB Pass: Calling done on translator...");
             node->done();
+            
             PGX_INFO("RelAlg→DB Pass: Successfully translated: " + op->getName().getStringRef().str());
          }
       });
