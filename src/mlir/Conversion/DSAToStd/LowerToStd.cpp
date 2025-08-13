@@ -22,6 +22,7 @@
 #include <mlir/IR/BuiltinTypes.h>
 
 #include "runtime-defs/DataSourceIteration.h"
+#include "execution/logging.h"
 using namespace mlir;
 
 namespace {

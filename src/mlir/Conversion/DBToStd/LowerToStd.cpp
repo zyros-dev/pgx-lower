@@ -29,6 +29,7 @@
 #include "mlir/Transforms/Passes.h"
 #include "runtime-defs/StringRuntime.h"
 #include <mlir/Dialect/util/FunctionHelper.h>
+#include "execution/logging.h"
 
 using namespace mlir;
 
@@ -905,8 +906,20 @@ class HashLowering : public ConversionPattern {
    }
 };
 void DBToStdLoweringPass::runOnOperation() {
+   MLIR_PGX_DEBUG("DB", "Starting DBToStd lowering pass execution");
    auto module = getOperation();
-   getContext().getLoadedDialect<mlir::util::UtilDialect>()->getFunctionHelper().setParentModule(module);
+   
+   MLIR_PGX_DEBUG("DB", "Getting util dialect for function helper");
+   auto* utilDialect = getContext().getLoadedDialect<mlir::util::UtilDialect>();
+   if (!utilDialect) {
+      MLIR_PGX_ERROR("DB", "Failed to get UtilDialect - not loaded!");
+      signalPassFailure();
+      return;
+   }
+   
+   MLIR_PGX_DEBUG("DB", "Setting parent module in function helper");
+   utilDialect->getFunctionHelper().setParentModule(module);
+   MLIR_PGX_DEBUG("DB", "Successfully set parent module in function helper");
 
    // Define Conversion Target
    ConversionTarget target(getContext());

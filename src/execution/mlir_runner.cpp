@@ -7,6 +7,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/IR/Verifier.h"
+#include "llvm/Support/raw_ostream.h"
 
 // Dialect headers
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
@@ -25,6 +26,11 @@
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
 #include "mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 
 // Centralized pass pipeline
 #include "mlir/Transforms/Passes.h"
@@ -264,10 +270,10 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         
         // Add DB→Standard and DSA→Standard lowering passes
         PGX_INFO("Adding DB→Standard lowering pass");
-        pm.addNestedPass<mlir::func::FuncOp>(mlir::db::createLowerToStdPass());
+        pm.addPass(mlir::db::createLowerToStdPass());
         
         PGX_INFO("Adding DSA→Standard lowering pass");
-        pm.addNestedPass<mlir::func::FuncOp>(mlir::dsa::createLowerToStdPass());
+        pm.addPass(mlir::dsa::createLowerToStdPass());
         
         PGX_INFO("Running DB and DSA lowering passes");
         if (mlir::failed(pm.run(*module))) {
@@ -338,44 +344,52 @@ static bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
 // Run complete lowering pipeline including LLVM conversion
 static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
-    ::mlir::PassManager pm(&context);
     
-    // Phase 1: Add the RelAlg to DB lowering pass (generates mixed DB+DSA+Util ops)
-    PGX_INFO("Adding RelAlg to DB lowering pass");
-    pm.addNestedPass<mlir::func::FuncOp>(mlir::relalg::createLowerToDBPass());
+    // CRITICAL FIX: The crash is happening because the UtilDialect's FunctionHelper
+    // is not properly initialized when accessed by the DB→Std pass.
+    // Let's ensure the dialect is properly loaded and initialized.
     
-    PGX_INFO("Running RelAlg to DB lowering");
+    // Load all required dialects first
+    context.getOrLoadDialect<mlir::func::FuncDialect>();
+    context.getOrLoadDialect<mlir::arith::ArithDialect>();
+    context.getOrLoadDialect<mlir::scf::SCFDialect>();
+    context.getOrLoadDialect<mlir::memref::MemRefDialect>();
+    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+    context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
+    context.getOrLoadDialect<::mlir::db::DBDialect>();
+    context.getOrLoadDialect<::mlir::dsa::DSADialect>();
+    
+    // CRITICAL: Get UtilDialect and ensure it's initialized
+    auto* utilDialect = context.getOrLoadDialect<::mlir::util::UtilDialect>();
+    if (!utilDialect) {
+        PGX_ERROR("Failed to load UtilDialect!");
+        return false;
+    }
+    
+    // Set the parent module in the function helper before running any passes
+    // This is what the DB→Std pass expects to be able to do
+    try {
+        utilDialect->getFunctionHelper().setParentModule(module);
+        PGX_INFO("Successfully set parent module in UtilDialect function helper");
+    } catch (const std::exception& e) {
+        PGX_ERROR("Failed to set parent module in function helper: " + std::string(e.what()));
+        return false;
+    } catch (...) {
+        PGX_ERROR("Unknown error setting parent module in function helper");
+        return false;
+    }
+    
+    // Now run the complete pipeline in a single PassManager
+    PGX_INFO("Running complete lowering pipeline");
+    ::mlir::PassManager pm(&context, ::mlir::ModuleOp::getOperationName());
+    pm.enableVerifier(true);
+    
+    // Use the centralized pipeline configuration
+    mlir::pgx_lower::createCompleteLoweringPipeline(pm, true);
+    
     if (mlir::failed(pm.run(module))) {
-        PGX_ERROR("RelAlg to DB lowering failed");
-        return false;
-    }
-    
-    // Phase 2: Add parallel lowering passes for DB, DSA, and Util to Standard
-    PGX_INFO("Adding parallel lowering passes (DB+DSA+Util → Standard)");
-    ::mlir::PassManager pm2(&context);
-    pm2.addPass(mlir::db::createLowerToStdPass());
-    pm2.addPass(mlir::dsa::createLowerToStdPass());
-    // Note: Util lowering is handled differently (uses pattern-based lowering)
-    
-    PGX_INFO("Running parallel lowering to Standard dialect");
-    if (mlir::failed(pm2.run(module))) {
-        PGX_ERROR("Parallel lowering to Standard failed");
-        return false;
-    }
-    
-    // Phase 3: Add Standard to LLVM lowering passes
-    PGX_INFO("Adding Standard→LLVM lowering passes");
-    ::mlir::PassManager pm3(&context);
-    pm3.addPass(mlir::createConvertSCFToCFPass());
-    pm3.addPass(mlir::createConvertFuncToLLVMPass());
-    pm3.addPass(mlir::createArithToLLVMConversionPass());
-    // Note: MemRef to LLVM conversion is handled by the DSAToLLVM pass
-    pm3.addPass(mlir::createConvertControlFlowToLLVMPass());
-    pm3.addPass(mlir::createReconcileUnrealizedCastsPass());
-    
-    PGX_INFO("Running Standard to LLVM conversion");
-    if (mlir::failed(pm3.run(module))) {
-        PGX_ERROR("Standard to LLVM conversion failed");
+        PGX_ERROR("Complete lowering pipeline failed");
         return false;
     }
     

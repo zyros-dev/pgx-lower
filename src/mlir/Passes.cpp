@@ -38,7 +38,13 @@ void createCompleteLoweringPipeline(PassManager& pm, bool enableVerification) {
     // Phase 2: Parallel lowering to Standard MLIR
     PGX_DEBUG("Phase 2: Adding parallel lowering passes (DB→Std, DSA→Std)");
     
-    // Run each pass in its own PassManager to isolate the crash
+    // CRITICAL: DB→Std and DSA→Std are ModuleOp passes, so they must be added
+    // at the module level, not as nested passes. Since RelAlg→DB is a FuncOp pass,
+    // we need to ensure proper pass ordering.
+    
+    // First, run any function-level transformations that might be needed
+    // before the module-level passes
+    
     PGX_DEBUG("Creating DB→Std pass");
     try {
         pm.addPass(db::createLowerToStdPass());
