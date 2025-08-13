@@ -56,6 +56,7 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRDBToArrowStd               # DB → Standard MLIR  
     MLIRDSAToStd                   # DSA → Standard MLIR
     MLIRUtilToLLVM                 # Util → LLVM conversion
+    StandardToLLVM                 # Unified Standard→LLVM conversion pass
     MLIRPasses                     # Central pass registration
     # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt
     -Wl,--no-whole-archive

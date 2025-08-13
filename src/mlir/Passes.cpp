@@ -11,130 +11,87 @@
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+#include "mlir/Conversion/StandardToLLVM/StandardToLLVM.h"
 
 namespace mlir {
 namespace pgx_lower {
 
 void createCompleteLoweringPipeline(PassManager& pm, bool enableVerification) {
     // Phase 4d Architecture: RelAlg → (DB + DSA + Util) → Standard MLIR → LLVM
+    // Following LingoDB's proven sequential PassManager pattern (runner.cpp:413-447)
     
-    PGX_DEBUG("createCompleteLoweringPipeline called with enableVerification=" + std::to_string(enableVerification));
+    PGX_ERROR("createCompleteLoweringPipeline: DEPRECATED - Use sequential PassManagers");
+    
+    // This function is deprecated in favor of sequential PassManager approach
+    // See mlir_runner.cpp for the correct implementation pattern
+    assert(false && "Use sequential PassManagers instead of unified pipeline");
+}
+
+// Phase 1: RelAlg→DB lowering pipeline
+void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
+    PGX_DEBUG("createRelAlgToDBPipeline: Starting Phase 1 pipeline");
     
     if (enableVerification) {
-        PGX_DEBUG("Enabling MLIR verifier");
         pm.enableVerifier(true);
     }
     
-    // Phase 1: RelAlg to mixed DB+DSA+Util operations
-    PGX_DEBUG("Phase 1: Adding RelAlg to DB lowering pass");
-    try {
-        pm.addNestedPass<func::FuncOp>(relalg::createLowerToDBPass());
-        PGX_DEBUG("Successfully added RelAlg to DB pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add RelAlg to DB pass: " + std::string(e.what()));
-        throw;
+    // Add RelAlg to DB lowering pass
+    pm.addNestedPass<func::FuncOp>(relalg::createLowerToDBPass());
+    
+    PGX_DEBUG("createRelAlgToDBPipeline: Phase 1 pipeline configured");
+}
+
+// Phase 2: DB+DSA→Standard lowering pipeline  
+void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
+    PGX_DEBUG("createDBDSAToStandardPipeline: Starting Phase 2 pipeline");
+    
+    if (enableVerification) {
+        pm.enableVerifier(true);
     }
     
-    // Phase 2: Parallel lowering to Standard MLIR
-    PGX_DEBUG("Phase 2: Adding parallel lowering passes (DB→Std, DSA→Std)");
+    // Add DB→Std and DSA→Std passes (module-level)
+    pm.addPass(db::createLowerToStdPass());
+    pm.addPass(dsa::createLowerToStdPass());
     
-    // CRITICAL: DB→Std and DSA→Std are ModuleOp passes, so they must be added
-    // at the module level, not as nested passes. Since RelAlg→DB is a FuncOp pass,
-    // we need to ensure proper pass ordering.
+    // Add canonicalizer like LingoDB does
+    pm.addPass(createCanonicalizerPass());
     
-    // First, run any function-level transformations that might be needed
-    // before the module-level passes
+    PGX_DEBUG("createDBDSAToStandardPipeline: Phase 2 pipeline configured");
+}
+
+// Phase 3: Standard→LLVM lowering pipeline
+void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification) {
+    PGX_DEBUG("createStandardToLLVMPipeline: Starting Phase 3 pipeline");
     
-    PGX_DEBUG("Creating DB→Std pass");
-    try {
-        pm.addPass(db::createLowerToStdPass());
-        PGX_DEBUG("Successfully added DB→Std pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add DB→Std pass: " + std::string(e.what()));
-        throw;
+    if (enableVerification) {
+        pm.enableVerifier(true);
     }
     
-    PGX_DEBUG("Creating DSA→Std pass");
-    try {
-        pm.addPass(dsa::createLowerToStdPass());
-        PGX_DEBUG("Successfully added DSA→Std pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add DSA→Std pass: " + std::string(e.what()));
-        throw;
-    }
-    // Note: UtilToLLVM is added in Phase 3 as it goes directly to LLVM
+    // Convert SCF to ControlFlow first (like LingoDB)
+    pm.addPass(createConvertSCFToCFPass());
     
-    // Phase 3: Standard MLIR to LLVM conversion
-    PGX_DEBUG("Phase 3: Adding Standard→LLVM conversion passes");
+    // Use our unified Standard→LLVM pass that includes all patterns
+    pm.addPass(createStandardToLLVMPass());
     
-    // Note: UtilToLLVM patterns are included in the FuncToLLVM pass
-    // No separate pass needed for Util dialect operations
+    // Reconcile any unrealized casts
+    pm.addPass(createReconcileUnrealizedCastsPass());
     
-    // Standard to LLVM conversion passes
-    PGX_DEBUG("Adding SCF to ControlFlow pass");
-    try {
-        pm.addPass(createConvertSCFToCFPass());
-        PGX_DEBUG("Successfully added SCF to ControlFlow pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add SCF to ControlFlow pass: " + std::string(e.what()));
-        throw;
+    PGX_DEBUG("createStandardToLLVMPipeline: Phase 3 pipeline configured");
+}
+
+// Helper to run function-level optimizations (like LingoDB's pmFunc)
+void createFunctionOptimizationPipeline(PassManager& pm, bool enableVerification) {
+    PGX_DEBUG("createFunctionOptimizationPipeline: Starting function-level optimizations");
+    
+    if (enableVerification) {
+        pm.enableVerifier(true);
     }
     
-    PGX_DEBUG("Adding Func to LLVM pass");
-    try {
-        pm.addPass(createConvertFuncToLLVMPass());
-        PGX_DEBUG("Successfully added Func to LLVM pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add Func to LLVM pass: " + std::string(e.what()));
-        throw;
-    }
+    // Add function-level optimization passes
+    pm.addPass(createLoopInvariantCodeMotionPass());
+    pm.addPass(createCSEPass());
     
-    PGX_DEBUG("Adding Arith to LLVM pass");
-    try {
-        pm.addPass(createArithToLLVMConversionPass());
-        PGX_DEBUG("Successfully added Arith to LLVM pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add Arith to LLVM pass: " + std::string(e.what()));
-        throw;
-    }
-    
-    PGX_DEBUG("Adding ControlFlow to LLVM pass");
-    try {
-        pm.addPass(createConvertControlFlowToLLVMPass());
-        PGX_DEBUG("Successfully added ControlFlow to LLVM pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add ControlFlow to LLVM pass: " + std::string(e.what()));
-        throw;
-    }
-    
-    PGX_DEBUG("Adding reconcile unrealized casts pass");
-    try {
-        pm.addPass(createReconcileUnrealizedCastsPass());
-        PGX_DEBUG("Successfully added reconcile unrealized casts pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add reconcile unrealized casts pass: " + std::string(e.what()));
-        throw;
-    }
-    
-    // Phase 4: Final optimizations
-    PGX_DEBUG("Phase 4: Adding final optimization passes");
-    try {
-        pm.addPass(createCanonicalizerPass());
-        PGX_DEBUG("Successfully added canonicalizer pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add canonicalizer pass: " + std::string(e.what()));
-        throw;
-    }
-    
-    try {
-        pm.addPass(createCSEPass());
-        PGX_DEBUG("Successfully added CSE pass");
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to add CSE pass: " + std::string(e.what()));
-        throw;
-    }
-    
-    PGX_DEBUG("createCompleteLoweringPipeline completed successfully - all passes added");
+    PGX_DEBUG("createFunctionOptimizationPipeline: Function optimizations configured");
 }
 
 } // namespace pgx_lower
