@@ -136,7 +136,7 @@ void DSAToStdLoweringPass::runOnOperation() {
 
    target.addDynamicallyLegalDialect<util::UtilDialect>(opIsWithoutDSATypes);
    target.addLegalOp<mlir::dsa::CondSkipOp>();
-
+   
    target.addDynamicallyLegalOp<mlir::dsa::CondSkipOp>(opIsWithoutDSATypes);
    target.addDynamicallyLegalOp<::mlir::func::FuncOp>([&](::mlir::func::FuncOp op) {
       auto isLegal = !hasDSAType(typeConverter, op.getFunctionType().getInputs()) &&
@@ -187,24 +187,20 @@ void DSAToStdLoweringPass::runOnOperation() {
 
    PGX_INFO("DSAToStd: Starting module conversion");
    
-   // Validate module before conversion
-   module.walk([](Operation* op) {
-       if (!op->getContext()) {
-           PGX_ERROR("DSAToStd: Found operation with null context: " + op->getName().getStringRef().str());
-           return WalkResult::interrupt();
-       }
-       if (!op->getName().getDialect()) {
-           PGX_ERROR("DSAToStd: Found operation with null dialect: " + op->getName().getStringRef().str());
-           return WalkResult::interrupt();
-       }
-       MLIR_PGX_DEBUG("DSA", "Processing operation: " + op->getName().getStringRef().str());
-       return WalkResult::advance();
-   });
-   
-   PGX_DEBUG("DSAToStd: Module validated, applying conversion patterns...");
-   
    if (failed(applyFullConversion(module, target, std::move(patterns)))) {
       PGX_ERROR("DSAToStd: Conversion failed during applyFullConversion");
+      
+      // Log unconverted DSA operations for debugging
+      module.walk([](Operation* op) {
+          if (op->getName().getDialectNamespace() == "dsa") {
+              std::string locStr;
+              llvm::raw_string_ostream locOS(locStr);
+              op->getLoc().print(locOS);
+              PGX_ERROR("DSAToStd: Unconverted DSA operation: " + op->getName().getStringRef().str() + 
+                       " at " + locOS.str());
+          }
+      });
+      
       signalPassFailure();
    } else {
       PGX_INFO("DSAToStd: Conversion completed successfully");
