@@ -97,6 +97,27 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
       
       PGX_DEBUG("RelAlg→DB Pass: Completed operation walk");
       
+      // CRITICAL: Clean up any remaining RelAlg operations that were not translation hooks
+      // These were processed indirectly through their parent MaterializeOp
+      llvm::SmallVector<::mlir::Operation*> remainingRelAlgOps;
+      getOperation().walk([&](::mlir::Operation* op) {
+         if (op->getDialect() && op->getDialect()->getNamespace() == "relalg") {
+            remainingRelAlgOps.push_back(op);
+            PGX_INFO("RelAlg→DB Pass: Found remaining RelAlg operation to clean up: " + 
+                     op->getName().getStringRef().str());
+         }
+      });
+      
+      // Erase remaining RelAlg operations
+      for (auto* op : remainingRelAlgOps) {
+         PGX_DEBUG("RelAlg→DB Pass: Erasing remaining RelAlg operation: " + 
+                   op->getName().getStringRef().str());
+         op->erase();
+      }
+      
+      PGX_INFO("RelAlg→DB Pass: Cleaned up " + std::to_string(remainingRelAlgOps.size()) + 
+               " remaining RelAlg operations");
+      
       // Debug: Check what operations remain after translation
       PGX_DEBUG("RelAlg→DB Pass: Checking operations after translation");
       getOperation().walk([&](::mlir::Operation* op) {

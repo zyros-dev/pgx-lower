@@ -18,13 +18,42 @@ namespace pgx_lower {
 
 void createCompleteLoweringPipeline(PassManager& pm, bool enableVerification) {
     // Phase 4d Architecture: RelAlg → (DB + DSA + Util) → Standard MLIR → LLVM
-    // Following LingoDB's proven sequential PassManager pattern (runner.cpp:413-447)
+    // Following LingoDB's unified PassManager pattern
     
-    PGX_ERROR("createCompleteLoweringPipeline: DEPRECATED - Use sequential PassManagers");
+    PGX_DEBUG("createCompleteLoweringPipeline: Building unified lowering pipeline");
     
-    // This function is deprecated in favor of sequential PassManager approach
-    // See mlir_runner.cpp for the correct implementation pattern
-    assert(false && "Use sequential PassManagers instead of unified pipeline");
+    if (enableVerification) {
+        pm.enableVerifier(true);
+    }
+    
+    // Phase 1: RelAlg→DB+DSA+Util (generates mixed dialects)
+    PGX_DEBUG("Adding RelAlg→DB pass");
+    pm.addNestedPass<func::FuncOp>(relalg::createLowerToDBPass());
+    
+    // Phase 2: DB+DSA→Standard (parallel lowering of mixed dialects)
+    PGX_DEBUG("Adding DB→Std pass");
+    pm.addPass(db::createLowerToStdPass());
+    
+    PGX_DEBUG("Adding DSA→Std pass");
+    pm.addPass(dsa::createLowerToStdPass());
+    
+    // Add canonicalizer to clean up
+    pm.addPass(createCanonicalizerPass());
+    
+    // Phase 3: Standard→LLVM
+    PGX_DEBUG("Adding Standard→LLVM conversion passes");
+    pm.addPass(createConvertSCFToCFPass());
+    // Util patterns are included in the unified Standard→LLVM pass
+    pm.addPass(createConvertFuncToLLVMPass());
+    pm.addPass(createArithToLLVMConversionPass());
+    pm.addPass(createConvertControlFlowToLLVMPass());
+    pm.addPass(createReconcileUnrealizedCastsPass());
+    
+    // Phase 4: Function-level optimizations
+    pm.addNestedPass<func::FuncOp>(createLoopInvariantCodeMotionPass());
+    pm.addNestedPass<func::FuncOp>(createCSEPass());
+    
+    PGX_DEBUG("createCompleteLoweringPipeline: Unified pipeline configured");
 }
 
 // Phase 1: RelAlg→DB lowering pipeline
@@ -104,8 +133,11 @@ void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification) {
     // Convert SCF to ControlFlow first (like LingoDB)
     pm.addPass(createConvertSCFToCFPass());
     
-    // Use our unified Standard→LLVM pass that includes all patterns
-    pm.addPass(createStandardToLLVMPass());
+    // Add all Standard→LLVM conversion passes
+    // Util patterns are included in the unified Standard→LLVM pass
+    pm.addPass(createConvertFuncToLLVMPass());
+    pm.addPass(createArithToLLVMConversionPass());
+    pm.addPass(createConvertControlFlowToLLVMPass());
     
     // Reconcile any unrealized casts
     pm.addPass(createReconcileUnrealizedCastsPass());

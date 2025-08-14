@@ -2,6 +2,7 @@
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/DBToStd/DBToStd.h"
 #include "execution/logging.h"
+#include <sstream>
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
@@ -580,73 +581,64 @@ class NullOpLowering : public OpConversionPattern<mlir::db::NullOp> {
    }
 };
 
-// Arrow type enum stubbed out - to be replaced with pgx-lower native types
-enum class PGXTypeEnum {
-   NA = 0,
-   BOOL,
-   INT8, INT16, INT32, INT64,
-   UINT8, UINT16, UINT32, UINT64,
-   DECIMAL128,
-   HALF_FLOAT, FLOAT, DOUBLE,
-   STRING,
-   DATE32, DATE64,
-   FIXED_SIZE_BINARY,
-   INTERVAL_MONTHS, INTERVAL_DAY_TIME,
-   TIMESTAMP
-};
+// PostgreSQL OID definitions for type mapping
+#define BOOLOID     16
+#define INT2OID     21
+#define INT4OID     23
+#define INT8OID     20
+#define FLOAT4OID   700
+#define FLOAT8OID   701
+#define TEXTOID     25
+#define NUMERICOID  1700
+#define DATEOID     1082
+#define TIMESTAMPOID 1114
 
 class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
-   static std::tuple<PGXTypeEnum, uint32_t, uint32_t> convertTypeToArrow(::mlir::Type type) {
-      PGXTypeEnum typeConstant = PGXTypeEnum::NA;
+   static std::tuple<int, uint32_t, uint32_t> convertTypeToArrow(::mlir::Type type) {
+      int typeConstant = 0;  // Use PostgreSQL OIDs instead of enum
       uint32_t param1 = 0, param2 = 0;
       if (isIntegerType(type, 1)) {
-         typeConstant = PGXTypeEnum::BOOL;
+         typeConstant = BOOLOID;  // PostgreSQL bool OID = 16
       } else if (auto intWidth = getIntegerWidth(type, false)) {
          switch (intWidth) {
-            case 8: typeConstant = PGXTypeEnum::INT8; break;
-            case 16: typeConstant = PGXTypeEnum::INT16; break;
-            case 32: typeConstant = PGXTypeEnum::INT32; break;
-            case 64: typeConstant = PGXTypeEnum::INT64; break;
+            case 8: typeConstant = INT2OID; break;   // 8-bit maps to INT2 (OID 21)
+            case 16: typeConstant = INT2OID; break;  // 16-bit is INT2 (OID 21)
+            case 32: typeConstant = INT4OID; break;  // 32-bit is INT4 (OID 23)
+            case 64: typeConstant = INT8OID; break;  // 64-bit is INT8 (OID 20)
          }
       } else if (auto uIntWidth = getIntegerWidth(type, true)) {
+         // PostgreSQL doesn't have unsigned types, map to signed equivalents
          switch (uIntWidth) {
-            case 8: typeConstant = PGXTypeEnum::UINT8; break;
-            case 16: typeConstant = PGXTypeEnum::UINT16; break;
-            case 32: typeConstant = PGXTypeEnum::UINT32; break;
-            case 64: typeConstant = PGXTypeEnum::UINT64; break;
+            case 8: typeConstant = INT2OID; break;   // Map to INT2
+            case 16: typeConstant = INT2OID; break;  // Map to INT2
+            case 32: typeConstant = INT4OID; break;  // Map to INT4
+            case 64: typeConstant = INT8OID; break;  // Map to INT8
          }
       } else if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
-         typeConstant = PGXTypeEnum::DECIMAL128;
+         typeConstant = NUMERICOID;  // PostgreSQL numeric OID = 1700
          param1 = decimalType.getP();
          param2 = decimalType.getS();
       } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
          switch (floatType.getWidth()) {
-            case 16: typeConstant = PGXTypeEnum::HALF_FLOAT; break;
-            case 32: typeConstant = PGXTypeEnum::FLOAT; break;
-            case 64: typeConstant = PGXTypeEnum::DOUBLE; break;
+            case 16: typeConstant = FLOAT4OID; break;  // Map half to float4
+            case 32: typeConstant = FLOAT4OID; break;  // float4 OID = 700
+            case 64: typeConstant = FLOAT8OID; break;  // float8 OID = 701
          }
       } else if (auto stringType = type.dyn_cast_or_null<mlir::db::StringType>()) {
-         typeConstant = PGXTypeEnum::STRING;
+         typeConstant = TEXTOID;  // PostgreSQL text OID = 25
       } else if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
-         if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
-            typeConstant = PGXTypeEnum::DATE32;
-         } else {
-            typeConstant = PGXTypeEnum::DATE64;
-         }
+         typeConstant = DATEOID;  // PostgreSQL date OID = 1082 (both units map to same OID)
       } else if (auto charType = type.dyn_cast_or_null<mlir::db::CharType>()) {
-         typeConstant = PGXTypeEnum::FIXED_SIZE_BINARY;
+         typeConstant = TEXTOID;  // Map fixed-size char to text for now
          param1 = charType.getBytes();
       } else if (auto intervalType = type.dyn_cast_or_null<mlir::db::IntervalType>()) {
-         if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
-            typeConstant = PGXTypeEnum::INTERVAL_MONTHS;
-         } else {
-            typeConstant = PGXTypeEnum::INTERVAL_DAY_TIME;
-         }
+         // PostgreSQL doesn't have separate interval types, use numeric for now
+         typeConstant = NUMERICOID;
       } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
-         typeConstant = PGXTypeEnum::TIMESTAMP;
+         typeConstant = TIMESTAMPOID;  // PostgreSQL timestamp OID = 1114
          param1 = static_cast<uint32_t>(timestampType.getUnit());
       }
-      assert(typeConstant != PGXTypeEnum::NA);
+      assert(typeConstant != 0);  // Ensure we have a valid OID
       return {typeConstant, param1, param2};
    }
 
@@ -656,6 +648,11 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
       auto type = constantOp.getType();
       auto stdType = typeConverter->convertType(type);
       auto [arrowType, param1, param2] = convertTypeToArrow(type);
+      
+      std::stringstream debugMsg;
+      debugMsg << "ConstantOp lowering - type OID: " << arrowType << ", param1: " << param1 << ", param2: " << param2;
+      MLIR_PGX_DEBUG("DB", debugMsg.str());
+      
       std::variant<int64_t, double, std::string> parseArg;
       if (auto integerAttr = constantOp.getConstantValue().dyn_cast_or_null<IntegerAttr>()) {
          parseArg = integerAttr.getInt();
@@ -666,7 +663,7 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
       } else {
          return failure();
       }
-      auto parseResult = support::parse(parseArg, static_cast<int>(arrowType), param1, param2);
+      auto parseResult = support::parse(parseArg, arrowType, param1, param2);  // arrowType is already an int (OID)
       if (auto intType = stdType.dyn_cast_or_null<IntegerType>()) {
          if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
             auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());
@@ -930,6 +927,8 @@ class HashLowering : public ConversionPattern {
    }
 };
 void DBToStdLoweringPass::runOnOperation() {
+   PGX_DEBUG("\n[DBToStd] ===== PASS ENTRY =====\n");
+   
    PGX_INFO("DBToStd: ===== PASS ENTRY =====");
    MLIR_PGX_DEBUG("DB", "=== DBToStd Pass Entry ===");
    MLIR_PGX_DEBUG("DB", "Starting DBToStd lowering pass execution");
@@ -942,6 +941,8 @@ void DBToStdLoweringPass::runOnOperation() {
       return;
    }
    
+   PGX_DEBUG("[DBToStd] Pass object valid, getting module...");
+   
    PGX_INFO("DBToStd: Pass object is valid, proceeding...");
    
    // Add early exit check to debug crash location
@@ -953,11 +954,16 @@ void DBToStdLoweringPass::runOnOperation() {
       return;
    }
    
+   PGX_DEBUG("[DBToStd] Module obtained: " + std::to_string(reinterpret_cast<uintptr_t>(module.getOperation())));
+   
    MLIR_PGX_DEBUG("DB", "Module operation obtained successfully");
    
    // Check context validity
    auto& context = getContext();
    MLIR_PGX_DEBUG("DB", "Context obtained, checking loaded dialects");
+   
+   PGX_DEBUG("[DBToStd] Context obtained, dialect count: " + 
+           std::to_string(context.getLoadedDialects().size()));
    
    // List all loaded dialects for debugging
    MLIR_PGX_DEBUG("DB", "Checking loaded dialects count: " + std::to_string(context.getLoadedDialects().size()));
@@ -965,18 +971,25 @@ void DBToStdLoweringPass::runOnOperation() {
    MLIR_PGX_DEBUG("DB", "Getting util dialect for function helper");
    auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
    if (!utilDialect) {
+      PGX_ERROR("[DBToStd] CRITICAL: UtilDialect not loaded!");
       MLIR_PGX_ERROR("DB", "Failed to get UtilDialect - not loaded!");
       signalPassFailure();
       return;
    }
    
+   PGX_DEBUG("[DBToStd] UtilDialect obtained: " + std::to_string(reinterpret_cast<uintptr_t>(utilDialect)));
+   
    MLIR_PGX_DEBUG("DB", "UtilDialect obtained successfully");
    
    // Set parent module for FunctionHelper as required by DB patterns
    MLIR_PGX_DEBUG("DB", "Setting parent module for FunctionHelper (required by DB patterns)");
+   
+   PGX_DEBUG("[DBToStd] Setting FunctionHelper parent module...");
+   
    // We already have utilDialect from above - reuse it
    if (utilDialect) {
      utilDialect->getFunctionHelper().setParentModule(module);
+     PGX_DEBUG("[DBToStd] FunctionHelper parent module set successfully");
      PGX_INFO("DBToStd: FunctionHelper parent module set successfully");
    } else {
      PGX_ERROR("DBToStd: UtilDialect not available for FunctionHelper setup");
@@ -1154,27 +1167,57 @@ void DBToStdLoweringPass::runOnOperation() {
 
    patterns.insert<HashLowering>(typeConverter, ctxt);
 
+   PGX_DEBUG("[DBToStd] Pattern setup complete, starting module conversion");
+   
    PGX_INFO("DBToStd: Starting module conversion");
+   
+   // Count operations to convert
+   int dbOpsToConvert = 0;
+   std::vector<std::string> dbOpTypes;
+   module.walk([&](Operation* op) {
+       if (op->getName().getDialectNamespace() == "db") {
+           dbOpsToConvert++;
+           dbOpTypes.push_back(op->getName().getStringRef().str());
+           PGX_DEBUG("[DBToStd] Found DB op to convert: " + op->getName().getStringRef().str() + 
+                   " at " + std::to_string(reinterpret_cast<uintptr_t>(op)));
+       }
+   });
+   PGX_DEBUG("[DBToStd] Total DB operations to convert: " + std::to_string(dbOpsToConvert));
+   for (const auto& opType : dbOpTypes) {
+       PGX_DEBUG("[DBToStd]   - " + opType);
+   }
    
    // Validate module before conversion
    module.walk([](Operation* op) {
        if (!op->getContext()) {
+           PGX_ERROR("[DBToStd] CRITICAL: Operation with null context: " +
+                   op->getName().getStringRef().str());
            PGX_ERROR("DBToStd: Found operation with null context: " + op->getName().getStringRef().str());
            return WalkResult::interrupt();
        }
        if (!op->getName().getDialect()) {
+           PGX_ERROR("[DBToStd] CRITICAL: Operation with null dialect: " +
+                   op->getName().getStringRef().str());
            PGX_ERROR("DBToStd: Found operation with null dialect: " + op->getName().getStringRef().str());
            return WalkResult::interrupt();
        }
        return WalkResult::advance();
    });
    
+   PGX_DEBUG("[DBToStd] Module validated, calling applyFullConversion...");
+   
    PGX_DEBUG("DBToStd: Module validated, applying conversion patterns...");
    
+   // The crash likely happens inside applyFullConversion
+   PGX_DEBUG("[DBToStd] About to call applyFullConversion with " + 
+           std::to_string(patterns.getNativePatterns().size()) + " patterns");
+   
    if (failed(applyFullConversion(module, target, std::move(patterns)))) {
+      PGX_ERROR("[DBToStd] applyFullConversion FAILED");
       PGX_ERROR("DBToStd: Conversion failed during applyFullConversion");
       signalPassFailure();
    } else {
+      PGX_INFO("[DBToStd] applyFullConversion SUCCEEDED");
       PGX_INFO("DBToStd: Conversion completed successfully");
    }
 }
@@ -1182,7 +1225,10 @@ void DBToStdLoweringPass::runOnOperation() {
 std::unique_ptr<::mlir::Pass>
 mlir::db::createLowerToStdPass() {
    PGX_INFO("DBToStd: Creating DBToStdLoweringPass instance");
-   return std::make_unique<DBToStdLoweringPass>();
+   PGX_DEBUG("[DBToStd] createLowerToStdPass called - creating pass instance");
+   auto pass = std::make_unique<DBToStdLoweringPass>();
+   PGX_DEBUG("[DBToStd] Pass instance created successfully");
+   return pass;
 }
 void mlir::db::createLowerDBPipeline(mlir::OpPassManager& pm) {
    pm.addPass(mlir::db::createEliminateNullsPass());
