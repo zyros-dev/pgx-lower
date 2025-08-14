@@ -24,6 +24,7 @@
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -31,7 +32,6 @@
 #include "mlir/Transforms/Passes.h"
 #include "runtime-defs/StringRuntime.h"
 #include <mlir/Dialect/util/FunctionHelper.h>
-#include "execution/logging.h"
 
 using namespace mlir;
 
@@ -315,34 +315,15 @@ class StringCmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
 };
 
 class RuntimeCallLowering : public OpConversionPattern<mlir::db::RuntimeCall> {
-   private:
-   // CRITICAL: Cache the runtime registry to avoid unsafe dialect access during pattern conversion
-   mutable mlir::db::RuntimeFunctionRegistry* cachedRegistry = nullptr;
-   
    public:
    using OpConversionPattern<mlir::db::RuntimeCall>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::db::RuntimeCall runtimeCallOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      // Validate and refresh cached registry on each access to handle dialect reload scenarios
+      // Remove mutable cache - always get fresh registry to prevent corruption
       auto* dialect = getContext()->getLoadedDialect<mlir::db::DBDialect>();
-      if (!dialect) {
-         PGX_ERROR("DB dialect not loaded during RuntimeCallLowering");
-         return failure();
+      if (!dialect || !dialect->getRuntimeFunctionRegistry()) {
+         return rewriter.notifyMatchFailure(runtimeCallOp, "Registry unavailable during conversion");
       }
-      
-      // Always get fresh registry pointer to handle dialect reloads
-      auto* currentRegistry = dialect->getRuntimeFunctionRegistry().get();
-      if (!currentRegistry) {
-         PGX_ERROR("Runtime function registry not available");
-         return failure();
-      }
-      
-      // Update cache if registry changed (dialect reload scenario)
-      if (cachedRegistry != currentRegistry) {
-         PGX_DEBUG("RuntimeCallLowering: Registry pointer changed, updating cache");
-         cachedRegistry = currentRegistry;
-      }
-      
-      auto* fn = cachedRegistry->lookup(runtimeCallOp.getFn().str());
+      auto* fn = dialect->getRuntimeFunctionRegistry()->lookup(runtimeCallOp.getFn().str());
       if (!fn) return failure();
       Value result;
       ::mlir::Type resType = runtimeCallOp->getNumResults() == 1 ? runtimeCallOp->getResultTypes()[0] : ::mlir::Type();
@@ -1054,15 +1035,18 @@ void DBToStdLoweringPass::runOnOperation() {
    });
    auto opIsWithoutDBTypes = [&](Operation* op) { return !hasDBType(typeConverter, op->getOperandTypes()) && !hasDBType(typeConverter, op->getResultTypes()); };
    target.addDynamicallyLegalDialect<scf::SCFDialect>(opIsWithoutDBTypes);
+   // CRITICAL: Follow LingoDB architecture - DBToStd handles BOTH DB and DSA operations for unified type conversion
    target.addDynamicallyLegalDialect<dsa::DSADialect>(opIsWithoutDBTypes);
    target.addDynamicallyLegalDialect<arith::ArithDialect>(opIsWithoutDBTypes);
 
    target.addLegalDialect<cf::ControlFlowDialect>();
 
    target.addDynamicallyLegalDialect<util::UtilDialect>(opIsWithoutDBTypes);
+   
+   // Add CondSkipOp registration per LingoDB architecture
    target.addLegalOp<mlir::dsa::CondSkipOp>();
-
    target.addDynamicallyLegalOp<mlir::dsa::CondSkipOp>(opIsWithoutDBTypes);
+   
    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       auto isLegal = !hasDBType(typeConverter, op.getFunctionType().getInputs()) &&
          !hasDBType(typeConverter, op.getFunctionType().getResults());
@@ -1102,17 +1086,33 @@ void DBToStdLoweringPass::runOnOperation() {
       }
       return mlir::TupleType::get(tuple.getContext(), types);
    };
+   // CRITICAL: Add DSA type conversions per LingoDB architecture for unified type conversion
    typeConverter.addConversion([&](mlir::dsa::RecordType r) {
       return mlir::dsa::RecordType::get(r.getContext(), convertPhysical(r.getRowType()));
    });
    typeConverter.addConversion([&](mlir::dsa::RecordBatchType r) {
       return mlir::dsa::RecordBatchType::get(r.getContext(), convertPhysical(r.getRowType()));
    });
-   typeConverter.addConversion([&](mlir::dsa::GenericIterableType r) { return mlir::dsa::GenericIterableType::get(r.getContext(), typeConverter.convertType(r.getElementType()), r.getIteratorName()); });
-   typeConverter.addConversion([&](mlir::dsa::VectorType r) { return mlir::dsa::VectorType::get(r.getContext(), typeConverter.convertType(r.getElementType())); });
-   typeConverter.addConversion([&](mlir::dsa::JoinHashtableType r) { return mlir::dsa::JoinHashtableType::get(r.getContext(), llvm::cast<mlir::TupleType>(typeConverter.convertType(r.getKeyType())), llvm::cast<mlir::TupleType>(typeConverter.convertType(r.getValType()))); });
-   typeConverter.addConversion([&](mlir::dsa::AggregationHashtableType r) { return mlir::dsa::AggregationHashtableType::get(r.getContext(), typeConverter.convertType(r.getKeyType()).cast<mlir::TupleType>(), typeConverter.convertType(r.getValType()).cast<mlir::TupleType>()); });
-   typeConverter.addConversion([&](mlir::dsa::TableBuilderType r) { return mlir::dsa::TableBuilderType::get(r.getContext(), typeConverter.convertType(r.getRowType()).cast<mlir::TupleType>()); });
+   typeConverter.addConversion([&](mlir::dsa::GenericIterableType r) { 
+      return mlir::dsa::GenericIterableType::get(r.getContext(), typeConverter.convertType(r.getElementType()), r.getIteratorName()); 
+   });
+   typeConverter.addConversion([&](mlir::dsa::VectorType r) { 
+      return mlir::dsa::VectorType::get(r.getContext(), typeConverter.convertType(r.getElementType())); 
+   });
+   typeConverter.addConversion([&](mlir::dsa::JoinHashtableType r) { 
+      return mlir::dsa::JoinHashtableType::get(r.getContext(), 
+         typeConverter.convertType(r.getKeyType()).cast<mlir::TupleType>(), 
+         typeConverter.convertType(r.getValType()).cast<mlir::TupleType>()); 
+   });
+   typeConverter.addConversion([&](mlir::dsa::AggregationHashtableType r) { 
+      return mlir::dsa::AggregationHashtableType::get(r.getContext(), 
+         typeConverter.convertType(r.getKeyType()).cast<mlir::TupleType>(), 
+         typeConverter.convertType(r.getValType()).cast<mlir::TupleType>()); 
+   });
+   typeConverter.addConversion([&](mlir::dsa::TableBuilderType r) { 
+      return mlir::dsa::TableBuilderType::get(r.getContext(), 
+         typeConverter.convertType(r.getRowType()).cast<mlir::TupleType>()); 
+   });
 
    RewritePatternSet patterns(&getContext());
 
@@ -1123,6 +1123,8 @@ void DBToStdLoweringPass::runOnOperation() {
    mlir::scf::populateSCFStructuralTypeConversionsAndLegality(typeConverter, patterns, target);
    patterns.insert<SimpleTypeConversionPattern<mlir::func::ConstantOp>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::arith::SelectOp>>(typeConverter, &getContext());
+   
+   // Add DSA operation patterns per LingoDB architecture for unified type conversion
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::CondSkipOp>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::ScanSource>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::Append>>(typeConverter, &getContext());
@@ -1132,6 +1134,7 @@ void DBToStdLoweringPass::runOnOperation() {
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::FreeOp>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::YieldOp>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::NextRow>>(typeConverter, &getContext());
+   
    patterns.insert<AtLowering>(typeConverter, &getContext());
    patterns.insert<AppendTBLowering>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::HashtableInsert>>(typeConverter, &getContext());
@@ -1217,6 +1220,39 @@ void DBToStdLoweringPass::runOnOperation() {
    PGX_DEBUG("[DBToStd] Module validated, calling applyFullConversion...");
    
    PGX_DEBUG("DBToStd: Module validated, applying conversion patterns...");
+   
+   // Log all operations about to be converted (safer approach)
+   size_t dbOpCount = 0;
+   size_t dsaOpCount = 0;
+   size_t utilOpCount = 0;
+   
+   module.walk([&](Operation* op) {
+       StringRef dialectName = op->getName().getDialectNamespace();
+       if (dialectName == "db") {
+           dbOpCount++;
+           PGX_DEBUG("[DBToStd] Found DB operation: " + op->getName().getStringRef().str());
+       } else if (dialectName == "dsa") {
+           dsaOpCount++;
+           PGX_DEBUG("[DBToStd] Found DSA operation: " + op->getName().getStringRef().str());
+       } else if (dialectName == "util") {
+           utilOpCount++;
+           PGX_DEBUG("[DBToStd] Found Util operation: " + op->getName().getStringRef().str());
+       }
+   });
+   
+   PGX_DEBUG("[DBToStd] Operation counts - DB: " + std::to_string(dbOpCount) + 
+             ", DSA: " + std::to_string(dsaOpCount) + 
+             ", Util: " + std::to_string(utilOpCount));
+
+   // Safer module dump - skip for now as it might be causing the crash
+   PGX_DEBUG("[DBToStd] Skipping module dump to avoid potential crash");
+   
+   // Verify module is valid before applying conversion patterns
+   if (failed(verify(module))) {
+       PGX_ERROR("[DBToStd] Module verification failed before pattern conversion");
+       signalPassFailure();
+       return;
+   }
    
    // The crash likely happens inside applyFullConversion
    PGX_DEBUG("[DBToStd] About to call applyFullConversion with " + 
