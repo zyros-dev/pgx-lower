@@ -28,12 +28,14 @@
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
 #include "mlir/Conversion/DBToStd/DBToStd.h"
 #include "mlir/Conversion/DSAToStd/DSAToStd.h"
+#include "mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+#include "mlir/Transforms/Passes.h"
 
 // Centralized pass pipeline
 #include "mlir/Transforms/Passes.h"
@@ -226,6 +228,13 @@ static bool initialize_mlir_context(::mlir::MLIRContext& context) {
     }
 }
 
+// Forward declare helper functions
+static void safeModulePrint(mlir::ModuleOp module, const std::string& label);
+static bool validateModuleState(mlir::ModuleOp module, const std::string& phase);
+static bool runPhase3a(mlir::ModuleOp module);
+static bool runPhase3b(mlir::ModuleOp module);
+static bool runPhase3c(mlir::ModuleOp module);
+
 auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool {
     if (!plannedStmt) {
         auto error = pgx_lower::ErrorManager::postgresqlError("Null PlannedStmt provided to MLIR runner");
@@ -357,8 +366,11 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         
         PGX_INFO("Phase 1 complete: RelAlg MLIR module created successfully");
         
-        // TEMPORARILY SKIP VERIFICATION TO ISOLATE CRASH
-        PGX_INFO("Skipping MLIR module verification for debugging");
+        // Verify module is well-formed
+        if (mlir::failed(mlir::verify(module->getOperation()))) {
+            PGX_ERROR("Initial RelAlg MLIR module verification failed");
+            return false;
+        }
         
         PGX_INFO("Initial RelAlg MLIR module verified successfully");
         
@@ -380,25 +392,15 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
         if (mlir::failed(mlir::verify(module->getOperation()))) {
             PGX_ERROR("Phase 3a module verification failed - output is malformed");
             // Safe dump for debugging
-            try {
-                std::string moduleStr;
-                llvm::raw_string_ostream os(moduleStr);
-                module->getOperation()->print(os);
-                PGX_ERROR("Failed module IR:\n" + os.str());
-            } catch (...) {
-                PGX_ERROR("Failed to print invalid module");
-            }
+            // Safe module printing for debugging
+            safeModulePrint(*module, "Phase 3a verification failure");
             return false;
         }
         PGX_INFO("Phase 3a completed and verified: RelAlg successfully lowered to DB+DSA+Util");
         
         // Add IR dumping for debugging
         if (get_logger().should_log(LogLevel::DEBUG_LVL)) {
-            PGX_DEBUG("=== Phase 3a Output Module ===");
-            std::string moduleStr;
-            llvm::raw_string_ostream os(moduleStr);
-            module->getOperation()->print(os);
-            PGX_DEBUG("Module IR: " + os.str());
+            safeModulePrint(*module, "Phase 3a Output Module");
         }
         
         // Verify dialects are loaded before Phase 3b
@@ -510,453 +512,6 @@ static bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
     return true;
 }
 
-// Helper function to validate module before Phase 3b execution
-static bool validatePhase3bPreconditions(mlir::ModuleOp module) {
-    if (!module.getOperation()) {
-        PGX_ERROR("Module operation became null before Phase 3b execution");
-        return false;
-    }
-    
-    if (mlir::failed(mlir::verify(module.getOperation()))) {
-        PGX_ERROR("Module verification failed immediately before Phase 3b - module is corrupted");
-        return false;
-    }
-    
-    return true;
-}
-
-// Helper function to dump module state for debugging
-static void dumpModuleForDebugging(mlir::ModuleOp module, const std::string& phase) {
-    if (get_logger().should_log(LogLevel::INFO_LVL)) {
-        std::string moduleStr;
-        llvm::raw_string_ostream os(moduleStr);
-        module.print(os);
-        PGX_INFO(phase + ": Module state:\n" + os.str());
-    }
-}
-
-// Helper function to execute Phase 3b pass with proper exception handling
-static bool executePhase3bPass(mlir::ModuleOp module, mlir::PassManager& pm) {
-    PGX_INFO("DIAGNOSTIC: Entered executePhase3bPass function");
-    
-    try {
-        PGX_INFO("DIAGNOSTIC: About to configure pass manager");
-        // Configure pass manager for debugging
-        pm.getContext()->disableMultithreading();
-        pm.enableTiming();
-        
-        PGX_INFO("Phase 3b: About to call pm.run() on module");
-        
-        // Final validation
-        if (!module.getOperation()) {
-            PGX_ERROR("Phase 3b: Module operation is null right before pm.run()!");
-            return false;
-        }
-        
-        PGX_INFO("Phase 3b: Calling pm.run() NOW");
-        
-        // Add stack canary check
-        volatile int stack_canary = 0xDEADBEEF;
-        
-        try {
-            auto result = pm.run(module);
-            
-            // Check stack canary
-            if (stack_canary != 0xDEADBEEF) {
-                PGX_ERROR("STACK CORRUPTION DETECTED!");
-            }
-            
-            PGX_INFO("Phase 3b: pm.run() returned");
-            
-            if (mlir::failed(result)) {
-                PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering pipeline error");
-                return false;
-            }
-            
-            return true;
-        } catch (const std::exception& e) {
-            PGX_ERROR("Phase 3b: Exception during pm.run(): " + std::string(e.what()));
-            return false;
-        } catch (...) {
-            PGX_ERROR("Phase 3b: Unknown exception during pm.run()");
-            return false;
-        }
-        
-    } catch (const std::exception& e) {
-        PGX_ERROR("Phase 3b crashed with C++ exception: " + std::string(e.what()));
-        return false;
-    } catch (...) {
-        PGX_ERROR("Phase 3b crashed with unknown C++ exception");
-        return false;
-    }
-}
-
-// Helper function to execute Phase 3b with memory isolation
-static bool executePhase3bWithMemoryIsolation(mlir::ModuleOp module, mlir::PassManager& pm) {
-    // DIAGNOSTIC: Using fprintf to bypass PGX logging which might be causing the crash
-    fprintf(stderr, "\n[DIAGNOSTIC] Entered executePhase3bWithMemoryIsolation\n");
-    fflush(stderr);
-    
-    PGX_INFO("Phase 3b: Creating isolated memory context for pass execution");
-    
-    fprintf(stderr, "[DIAGNOSTIC] After first PGX_INFO\n");
-    fflush(stderr);
-    
-    // Validate preconditions
-    if (!validatePhase3bPreconditions(module)) {
-        fprintf(stderr, "[DIAGNOSTIC] validatePhase3bPreconditions returned false\n");
-        fflush(stderr);
-        return false;
-    }
-    
-    fprintf(stderr, "[DIAGNOSTIC] validatePhase3bPreconditions passed\n");
-    fflush(stderr);
-    
-    PGX_INFO("Running Phase 3b PassManager in isolated memory context...");
-    
-    // Dump module state before conversion
-    dumpModuleForDebugging(module, "Phase 3b: Module before DB→Std conversion");
-    
-    // DIAGNOSTIC: Completely bypass PostgreSQL exception handling and memory context
-    bool phase3b_success = false;
-    
-    PGX_INFO("DIAGNOSTIC: Executing Phase 3b without ANY PostgreSQL memory context or exception handling");
-    PGX_INFO("DIAGNOSTIC: This will help determine if PostgreSQL integration is causing the crash");
-    
-    // Direct execution - no PG_TRY, no memory guard, no isolation
-    PGX_INFO("DIAGNOSTIC: About to call executePhase3bPass directly");
-    phase3b_success = executePhase3bPass(module, pm);
-    PGX_INFO("DIAGNOSTIC: executePhase3bPass returned successfully");
-    
-    if (!phase3b_success) {
-        PGX_ERROR("Phase 3b: Execution failed, aborting pipeline");
-        return false;
-    }
-    
-    return true;
-}
-
-// Run complete lowering pipeline including LLVM conversion
-static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
-    auto& context = *module.getContext();
-    
-    // CRITICAL FIX: The crash is happening because the UtilDialect's FunctionHelper
-    // is not properly initialized when accessed by the DB→Std pass.
-    // Let's ensure the dialect is properly loaded and initialized.
-    
-    // Load all required dialects first
-    context.getOrLoadDialect<mlir::func::FuncDialect>();
-    context.getOrLoadDialect<mlir::arith::ArithDialect>();
-    context.getOrLoadDialect<mlir::scf::SCFDialect>();
-    context.getOrLoadDialect<mlir::memref::MemRefDialect>();
-    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
-    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
-    context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
-    context.getOrLoadDialect<::mlir::db::DBDialect>();
-    context.getOrLoadDialect<::mlir::dsa::DSADialect>();
-    
-    // CRITICAL: Register conversion passes - this might be missing!
-    // Without pass registration, the passes can't be created properly
-    PGX_DEBUG("Registering DB and DSA conversion passes");
-    mlir::db::registerDBConversionPasses();
-    // Note: DSA doesn't have a separate registration function based on our codebase
-    
-    // CRITICAL: Get UtilDialect and ensure it's initialized
-    auto* utilDialect = context.getOrLoadDialect<::mlir::util::UtilDialect>();
-    if (!utilDialect) {
-        PGX_ERROR("Failed to load UtilDialect!");
-        return false;
-    }
-    
-    // CRITICAL: Do NOT call setParentModule - causes memory corruption with sequential PassManagers
-    // The FunctionHelper will use the module from context when needed
-    // Previous setParentModule calls were causing segfaults in Phase 3b
-    PGX_INFO("UtilDialect loaded, skipping setParentModule to avoid memory corruption");
-    
-    // Phase 3: Sequential PassManager approach following LingoDB patterns
-    PGX_INFO("Running sequential lowering pipelines");
-    
-    // Phase 3a: RelAlg→DB lowering
-    PGX_INFO("Phase 3a: Running RelAlg→DB lowering pipeline");
-    {
-        PGX_DEBUG("Creating PassManager for RelAlg→DB...");
-        ::mlir::PassManager pm1(&context);
-        
-        PGX_DEBUG("Calling createRelAlgToDBPipeline...");
-        mlir::pgx_lower::createRelAlgToDBPipeline(pm1, true);
-        
-        PGX_DEBUG("Running RelAlg→DB PassManager...");
-        if (mlir::failed(pm1.run(module))) {
-            PGX_ERROR("Phase 3a failed: RelAlg→DB lowering pipeline error");
-            return false;
-        }
-        PGX_INFO("Phase 3a completed: RelAlg successfully lowered to DB+DSA+Util");
-    }
-    
-    // CRITICAL: Add module validation after Phase 3a
-    if (mlir::failed(mlir::verify(module.getOperation()))) {
-        PGX_ERROR("Phase 3a module verification failed - output is malformed");
-        // Safe dump for debugging
-        try {
-            std::string moduleStr;
-            llvm::raw_string_ostream os(moduleStr);
-            module.getOperation()->print(os);
-            PGX_ERROR("Failed module IR:\n" + os.str());
-        } catch (...) {
-            PGX_ERROR("Failed to print invalid module");
-        }
-        return false;
-    }
-    PGX_INFO("Phase 3a completed and verified: RelAlg successfully lowered to DB+DSA+Util");
-    
-    // Add IR dumping for debugging
-    if (get_logger().should_log(LogLevel::DEBUG_LVL)) {
-        PGX_DEBUG("=== Phase 3a Output Module ===");
-        std::string moduleStr;
-        llvm::raw_string_ostream os(moduleStr);
-        module.getOperation()->print(os);
-        PGX_DEBUG("Module IR: " + os.str());
-    }
-    
-    // Module verification after Phase 3a
-    PGX_INFO("Verifying module state after Phase 3a...");
-    if (mlir::failed(mlir::verify(module.getOperation()))) {
-        PGX_ERROR("Module verification failed after Phase 3a - IR is corrupted!");
-        // Safe dump for debugging
-        try {
-            std::string moduleStr;
-            llvm::raw_string_ostream os(moduleStr);
-            module.getOperation()->print(os);
-            PGX_ERROR("Corrupted module IR:\n" + os.str());
-        } catch (...) {
-            PGX_ERROR("Failed to print corrupted module");
-        }
-        return false;
-    }
-    PGX_INFO("Module verification passed after Phase 3a");
-    
-    // Dump IR for debugging before Phase 3b
-    // TEMPORARILY DISABLED - module printing causes crashes
-    PGX_DEBUG("Module printing disabled to avoid crashes before Phase 3b");
-    
-    // CRITICAL: Comprehensive context validation before Phase 3b
-    // PostgreSQL memory context operations between phases can corrupt MLIR state
-    PGX_INFO("Performing comprehensive MLIR context validation before Phase 3b");
-    
-    // 1. Verify dialects are still loaded
-    auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
-    auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
-    auto* utilDialect2 = context.getLoadedDialect<mlir::util::UtilDialect>();
-    if (!dbDialect || !dsaDialect || !utilDialect2) {
-        std::string dialectStatus = "MLIR context corrupted between Phase 3a and 3b! Required dialects not loaded (DB=" +
-                                   std::string(dbDialect ? "loaded" : "missing") +
-                                   ", DSA=" + std::string(dsaDialect ? "loaded" : "missing") +
-                                   ", Util=" + std::string(utilDialect2 ? "loaded" : "missing") + ")";
-        PGX_ERROR(dialectStatus);
-        return false;
-    }
-    
-    // 2. Validate module operation tree integrity
-    bool operationTreeValid = true;
-    std::string invalidOpError;
-    module.getOperation()->walk([&](mlir::Operation* op) {
-        if (!op) {
-            operationTreeValid = false;
-            invalidOpError = "Null operation found in module tree";
-            return mlir::WalkResult::interrupt();
-        }
-        if (!op->getContext()) {
-            operationTreeValid = false;
-            invalidOpError = "Operation with null context found: " + op->getName().getStringRef().str();
-            return mlir::WalkResult::interrupt();
-        }
-        // Verify operation belongs to our context
-        if (op->getContext() != &context) {
-            operationTreeValid = false;
-            invalidOpError = "Operation belongs to different context: " + op->getName().getStringRef().str();
-            return mlir::WalkResult::interrupt();
-        }
-        return mlir::WalkResult::advance();
-    });
-    
-    if (!operationTreeValid) {
-        PGX_ERROR("MLIR operation tree corrupted before Phase 3b: " + invalidOpError);
-        return false;
-    }
-    
-    // 3. Verify module itself is valid
-    if (!module || !module.getOperation()) {
-        PGX_ERROR("Module operation is null before Phase 3b");
-        return false;
-    }
-    
-    PGX_INFO("All required dialects and operations verified for Phase 3b - context is intact");
-    
-    // Phase 3b: DB+DSA→Standard lowering
-    PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering pipeline");
-    {
-        PGX_DEBUG("Phase 3b: About to create PassManager");
-        
-        // Check context validity before PassManager creation
-        PGX_DEBUG("Phase 3b: Context ptr: " + 
-                  std::to_string(reinterpret_cast<uintptr_t>(&context)));
-        PGX_DEBUG("Phase 3b: Loaded dialects count: " + 
-                  std::to_string(context.getLoadedDialects().size()));
-        
-        PGX_DEBUG("Phase 3b: Creating PassManager with context");
-        ::mlir::PassManager pm2(&context);
-        PGX_DEBUG("Phase 3b: PassManager created successfully");
-        
-        PGX_INFO("Phase 3b: About to configure DB+DSA→Standard pipeline");
-        
-        // Test with minimal pipeline first
-        PGX_INFO("Phase 3b: Testing with empty PassManager first");
-        if (mlir::failed(pm2.run(module))) {
-            PGX_ERROR("Phase 3b: Empty PassManager failed - indicates module corruption");
-            return false;
-        }
-        PGX_INFO("Phase 3b: Empty PassManager succeeded, module is valid");
-        
-        // CRITICAL: Set parent module BEFORE creating the pass
-        // The DBToStd pass patterns may need FunctionHelper during construction
-        PGX_INFO("Phase 3b: Setting up FunctionHelper parent module before pass creation");
-        auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
-        if (!utilDialect) {
-            PGX_ERROR("Phase 3b: UtilDialect not loaded!");
-            return false;
-        }
-        utilDialect->getFunctionHelper().setParentModule(module);
-        PGX_INFO("Phase 3b: FunctionHelper parent module set successfully");
-        
-        // Try adding just DB→Std pass first
-        PGX_INFO("Phase 3b: Adding only DB→Std pass");
-        auto dbPass = mlir::db::createLowerToStdPass();
-        if (!dbPass) {
-            PGX_ERROR("Phase 3b: Failed to create DB→Std pass!");
-            return false;
-        }
-        pm2.addPass(std::move(dbPass));
-        PGX_INFO("Phase 3b: DB→Std pass added, skipping DSA→Std for isolation");
-        
-        PGX_DEBUG("Phase 3b: About to run PassManager - module ptr: " + 
-                  std::to_string(reinterpret_cast<uintptr_t>(module.getOperation())));
-        
-        // Ensure DB dialect is loaded before pass execution
-        PGX_INFO("Phase 3b: Ensuring DB dialect is loaded");
-        auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
-        if (!dbDialect) {
-            PGX_ERROR("Phase 3b: DB dialect not loaded!");
-            return false;
-        }
-        
-        // Check runtime registry
-        auto* registry = dbDialect->getRuntimeFunctionRegistry().get();
-        if (!registry) {
-            PGX_ERROR("Phase 3b: Runtime function registry not available!");
-            return false;
-        }
-        PGX_INFO("Phase 3b: DB dialect and runtime registry confirmed");
-        
-        fprintf(stderr, "\n[DIAGNOSTIC] About to call executePhase3bWithMemoryIsolation\n");
-        fflush(stderr);
-        
-        // TEMPORARY: Bypass memory isolation for testing
-        PGX_INFO("Phase 3b: BYPASSING memory isolation - executing pass directly");
-        
-        // Direct execution without any PostgreSQL memory context or exception handling
-        bool phase3b_success = false;
-        try {
-            // CRITICAL: Verify we have all required dialects before running pass
-            auto* dbDialect = context.getOrLoadDialect<::mlir::db::DBDialect>();
-            auto* utilDialect = context.getOrLoadDialect<::mlir::util::UtilDialect>();
-            
-            if (!dbDialect || !utilDialect) {
-                std::string errorMsg = "Phase 3b: Required dialects not loaded (DB=";
-                errorMsg += dbDialect ? "loaded" : "missing";
-                errorMsg += ", Util=";
-                errorMsg += utilDialect ? "loaded" : "missing";
-                errorMsg += ")";
-                PGX_ERROR(errorMsg);
-                return false;
-            }
-            
-            // Verify runtime registry is available
-            auto* registry = dbDialect->getRuntimeFunctionRegistry().get();
-            if (!registry) {
-                PGX_ERROR("Phase 3b: DBDialect runtime registry is NULL");
-                return false;
-            }
-            
-            PGX_INFO("Phase 3b: All prerequisites verified, calling pm2.run()");
-            
-            // Add extreme debugging to isolate crash location
-            fprintf(stderr, "\n[PHASE3B] About to call pm2.run(module)\n");
-            fprintf(stderr, "[PHASE3B] Module ptr: %p\n", module.getOperation());
-            fprintf(stderr, "[PHASE3B] PassManager ptr: %p\n", &pm2);
-            fflush(stderr);
-            
-            auto result = pm2.run(module);
-            
-            fprintf(stderr, "[PHASE3B] pm2.run() returned!\n");
-            fflush(stderr);
-            
-            if (mlir::succeeded(result)) {
-                phase3b_success = true;
-                PGX_INFO("Phase 3b: Direct pm2.run() succeeded!");
-            } else {
-                PGX_ERROR("Phase 3b: Direct pm2.run() failed with MLIR error");
-            }
-        } catch (const std::exception& e) {
-            PGX_ERROR("Phase 3b: Direct execution caught exception: " + std::string(e.what()));
-        } catch (...) {
-            PGX_ERROR("Phase 3b: Direct execution caught unknown exception");
-        }
-        
-        if (!phase3b_success) {
-            PGX_ERROR("Phase 3b: Direct execution failed, aborting pipeline");
-            return false;
-        }
-        
-        PGX_INFO("Phase 3b completed: DB+DSA+Util successfully lowered to Standard MLIR");
-    }
-    
-    // Phase 3c: Standard→LLVM lowering
-    PGX_INFO("Phase 3c: Running Standard→LLVM lowering pipeline");
-    {
-        ::mlir::PassManager pm3(&context);
-        mlir::pgx_lower::createStandardToLLVMPipeline(pm3, true);
-        if (mlir::failed(pm3.run(module))) {
-            PGX_ERROR("Phase 3c failed: Standard→LLVM lowering pipeline error");
-            return false;
-        }
-        PGX_INFO("Phase 3c completed: Standard MLIR successfully lowered to LLVM IR");
-    }
-    
-    // Phase 3d: Function-level optimizations (optional)
-    PGX_INFO("Phase 3d: Running function-level optimizations");
-    {
-        ::mlir::PassManager pmFunc(&context, mlir::func::FuncOp::getOperationName());
-        mlir::pgx_lower::createFunctionOptimizationPipeline(pmFunc, true);
-        
-        // Walk all functions and apply optimizations (like LingoDB)
-        module.walk([&](mlir::func::FuncOp f) {
-            if (!f->hasAttr("passthrough")) {
-                if (mlir::failed(pmFunc.run(f))) {
-                    PGX_WARNING("Function optimization failed for: " + f.getName().str());
-                }
-            }
-        });
-        PGX_INFO("Phase 3d completed: Function-level optimizations applied");
-    }
-    
-    if (mlir::failed(mlir::verify(module.getOperation()))) {
-        PGX_ERROR("Final LLVM IR module verification failed");
-        return false;
-    }
-    
-    return true;
-}
-
 // Execute JIT compiled module with destination receiver
 static bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
     // Create module handle for isolated JIT execution
@@ -999,6 +554,298 @@ static bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, 
         return false;
     }
     
+    return true;
+}
+
+// Helper function to validate module before Phase 3b execution
+static bool validatePhase3bPreconditions(mlir::ModuleOp module) {
+    if (!module.getOperation()) {
+        PGX_ERROR("Module operation became null before Phase 3b execution");
+        return false;
+    }
+    
+    if (mlir::failed(mlir::verify(module.getOperation()))) {
+        PGX_ERROR("Module verification failed immediately before Phase 3b - module is corrupted");
+        return false;
+    }
+    
+    return true;
+}
+
+// Helper function to dump module state for debugging
+static void dumpModuleForDebugging(mlir::ModuleOp module, const std::string& phase) {
+    if (get_logger().should_log(LogLevel::INFO_LVL)) {
+        // Safe module printing for debugging
+        PGX_INFO(phase + ": Module state (printing disabled to avoid crash)");
+    }
+}
+
+// Safe module printing that handles potential crashes
+static void safeModulePrint(mlir::ModuleOp module, const std::string& label) {
+    PGX_INFO("safeModulePrint called for: " + label);
+    
+    if (!module) {
+        PGX_WARNING(label + ": Module is null, cannot print");
+        return;
+    }
+    
+    if (!module.getOperation()) {
+        PGX_WARNING(label + ": Module operation is null, cannot print");
+        return;
+    }
+    
+    try {
+        PGX_INFO("Attempting to verify module for: " + label);
+        
+        // First try to verify the module is valid
+        if (mlir::failed(mlir::verify(module.getOperation()))) {
+            PGX_WARNING(label + ": Module verification failed, cannot print invalid module");
+            return;
+        }
+        
+        PGX_INFO("Module verification passed for: " + label);
+        
+        // Count operations as a safer check
+        int totalOps = 0;
+        try {
+            PGX_INFO(label + ": Starting operation count walk");
+            module.walk([&](mlir::Operation* op) {
+                if (!op) {
+                    PGX_WARNING(label + ": Null operation during walk");
+                    return;
+                }
+                totalOps++;
+            });
+            PGX_INFO(label + ": Walk completed, found " + std::to_string(totalOps) + " operations");
+        } catch (const std::exception& e) {
+            PGX_WARNING(label + ": Exception during operation count: " + std::string(e.what()));
+            return;
+        } catch (...) {
+            PGX_WARNING(label + ": Unknown exception during operation count");
+            return;
+        }
+        
+        PGX_INFO(label + ": Module contains " + std::to_string(totalOps) + " operations");
+        
+        // Temporarily disable module printing to avoid crashes
+        // TODO: Re-enable once we understand why module->print() crashes PostgreSQL
+        PGX_WARNING(label + ": Module printing temporarily disabled to avoid PostgreSQL crashes");
+        PGX_INFO(label + ": Module statistics - " + std::to_string(totalOps) + " operations");
+        
+        // Walk and print operation types instead of full module
+        try {
+            std::map<std::string, int> opTypes;
+            module.walk([&](mlir::Operation* op) {
+                if (op) {
+                    std::string opName = op->getName().getStringRef().str();
+                    opTypes[opName]++;
+                }
+            });
+            
+            for (const auto& [opType, count] : opTypes) {
+                PGX_INFO(label + ": Operation type '" + opType + "': " + std::to_string(count));
+            }
+        } catch (...) {
+            PGX_WARNING(label + ": Failed to collect operation statistics");
+        }
+    } catch (const std::exception& e) {
+        PGX_WARNING(label + ": Exception during module print: " + std::string(e.what()));
+    } catch (...) {
+        PGX_WARNING(label + ": Unknown exception during module print");
+    }
+}
+
+// Helper function to execute Phase 3b with proper PostgreSQL memory management
+static bool executePhase3bWithMemoryIsolation(mlir::ModuleOp module, mlir::PassManager& pm) {
+    PGX_DEBUG("Executing Phase 3b with PostgreSQL memory context");
+    
+    // Validate preconditions
+    if (!validatePhase3bPreconditions(module)) {
+        PGX_ERROR("Phase 3b preconditions validation failed");
+        return false;
+    }
+    
+    PGX_INFO("Running Phase 3b PassManager...");
+    
+    // Dump module state before conversion if debug enabled
+    dumpModuleForDebugging(module, "Phase 3b: Module before DB→Std conversion");
+    
+    // Execute with proper PostgreSQL memory context
+    bool phase3b_success = false;
+    
+#ifndef BUILDING_UNIT_TESTS
+    // Use PostgreSQL memory context for production
+    MemoryContext oldcontext = CurrentMemoryContext;
+    MemoryContext phase3b_context = AllocSetContextCreate(CurrentMemoryContext,
+                                                          "Phase3bContext",
+                                                          ALLOCSET_DEFAULT_SIZES);
+    
+    PG_TRY();
+    {
+        MemoryContextSwitchTo(phase3b_context);
+        if (mlir::failed(pm.run(module))) {
+            PGX_ERROR("Phase 3b: PassManager execution failed");
+            phase3b_success = false;
+        } else {
+            PGX_INFO("Phase 3b: PassManager execution succeeded");
+            phase3b_success = true;
+        }
+        MemoryContextSwitchTo(oldcontext);
+    }
+    PG_CATCH();
+    {
+        MemoryContextSwitchTo(oldcontext);
+        MemoryContextDelete(phase3b_context);
+        PG_RE_THROW();
+    }
+    PG_END_TRY();
+    
+    MemoryContextDelete(phase3b_context);
+#else
+    // Unit tests run without PostgreSQL context
+    if (mlir::failed(pm.run(module))) {
+        PGX_ERROR("Phase 3b: PassManager execution failed");
+        phase3b_success = false;
+    } else {
+        PGX_INFO("Phase 3b: PassManager execution succeeded");
+        phase3b_success = true;
+    }
+#endif
+    
+    if (!phase3b_success) {
+        PGX_ERROR("Phase 3b: Execution failed, aborting pipeline");
+        return false;
+    }
+    
+    return true;
+}
+
+// Validate module state between pipeline phases
+static bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
+    if (!module || !module.getOperation()) {
+        PGX_ERROR(phase + ": Module operation is null");
+        return false;
+    }
+    
+    if (mlir::failed(mlir::verify(module.getOperation()))) {
+        PGX_ERROR(phase + ": Module verification failed");
+        return false;
+    }
+    
+    // Count operations by dialect
+    std::map<std::string, int> dialectOpCounts;
+    module.walk([&](mlir::Operation* op) {
+        auto dialectName = op->getName().getDialectNamespace();
+        dialectOpCounts[dialectName.str()]++;
+    });
+    
+    PGX_DEBUG(phase + " operation counts:");
+    for (const auto& [dialect, count] : dialectOpCounts) {
+        PGX_DEBUG("  - " + dialect + ": " + std::to_string(count));
+    }
+    
+    return true;
+}
+
+// Run Phase 3a: RelAlg→DB+DSA+Util lowering
+static bool runPhase3a(::mlir::ModuleOp module) {
+    auto& context = *module.getContext();
+    PGX_INFO("Phase 3a: Running RelAlg→DB lowering");
+    
+    ::mlir::PassManager pm(&context);
+    mlir::pgx_lower::createRelAlgToDBPipeline(pm, true);
+    
+    if (mlir::failed(pm.run(module))) {
+        PGX_ERROR("Phase 3a failed: RelAlg→DB lowering error");
+        return false;
+    }
+    
+    if (!validateModuleState(module, "Phase 3a output")) {
+        return false;
+    }
+    
+    PGX_INFO("Phase 3a completed: RelAlg successfully lowered to DB+DSA+Util");
+    return true;
+}
+
+// Run Phase 3b: DB+DSA→Standard lowering
+static bool runPhase3b(::mlir::ModuleOp module) {
+    auto& context = *module.getContext();
+    PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering");
+    
+    // Ensure all required dialects are loaded
+    auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
+    auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
+    auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
+    
+    if (!dbDialect || !dsaDialect || !utilDialect) {
+        PGX_ERROR("Phase 3b: Required dialects not loaded");
+        return false;
+    }
+    
+    // Set up FunctionHelper parent module
+    utilDialect->getFunctionHelper().setParentModule(module);
+    
+    ::mlir::PassManager pm(&context);
+    mlir::pgx_lower::createDBDSAToStandardPipeline(pm, true);
+    
+    if (mlir::failed(pm.run(module))) {
+        PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering error");
+        return false;
+    }
+    
+    if (!validateModuleState(module, "Phase 3b output")) {
+        return false;
+    }
+    
+    PGX_INFO("Phase 3b completed: DB+DSA successfully lowered to Standard MLIR");
+    return true;
+}
+
+// Run Phase 3c: Standard→LLVM lowering
+static bool runPhase3c(::mlir::ModuleOp module) {
+    auto& context = *module.getContext();
+    PGX_INFO("Phase 3c: Running Standard→LLVM lowering");
+    
+    ::mlir::PassManager pm(&context);
+    mlir::pgx_lower::createStandardToLLVMPipeline(pm, true);
+    
+    if (mlir::failed(pm.run(module))) {
+        PGX_ERROR("Phase 3c failed: Standard→LLVM lowering error");
+        return false;
+    }
+    
+    if (!validateModuleState(module, "Phase 3c output")) {
+        return false;
+    }
+    
+    PGX_INFO("Phase 3c completed: Standard MLIR successfully lowered to LLVM IR");
+    return true;
+}
+
+// Run complete lowering pipeline following LingoDB's unified architecture
+static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
+    PGX_INFO("Running complete MLIR lowering pipeline");
+    
+    // Phase 3a: RelAlg→DB+DSA+Util lowering
+    if (!runPhase3a(module)) {
+        PGX_ERROR("Phase 3a failed");
+        return false;
+    }
+    
+    // Phase 3b: DB+DSA→Standard lowering
+    if (!runPhase3b(module)) {
+        PGX_ERROR("Phase 3b failed");
+        return false;
+    }
+    
+    // Phase 3c: Standard→LLVM lowering
+    if (!runPhase3c(module)) {
+        PGX_ERROR("Phase 3c failed");
+        return false;
+    }
+    
+    PGX_INFO("Complete pipeline succeeded");
     return true;
 }
 
@@ -1047,22 +894,36 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         {
             PGX_INFO("=== Initial RelAlg MLIR ===");
             
-            // TEMPORARY: Skip printing to avoid crash
-            PGX_WARNING("MLIR module printing temporarily disabled to diagnose crash");
-            PGX_INFO("Module created and verified successfully - proceeding to lowering");
+            // Check if module is valid before printing
+            if (!module) {
+                PGX_ERROR("Module is null after AST translation");
+                return false;
+            }
             
-            // Add basic module stats without printing
+            // Use safe module printing to avoid PostgreSQL backend crashes
+            safeModulePrint(*module, "Initial RelAlg MLIR");
+            
+            // Add module stats
             try {
-                if (module && module->getOperation()) {
-                    size_t opCount = 0;
-                    module->walk([&opCount](mlir::Operation *op) { 
-                        opCount++;
-                        // Don't try to print operation names as that might also crash
-                    });
-                    PGX_INFO("Module contains " + std::to_string(opCount) + " operations");
+                PGX_INFO("Starting module walk for stats");
+                size_t opCount = 0;
+                std::map<std::string, int> dialectOpCounts;
+                module->walk([&opCount, &dialectOpCounts](mlir::Operation *op) { 
+                    if (!op) return;
+                    opCount++;
+                    auto dialectName = op->getName().getDialectNamespace();
+                    if (!dialectName.empty()) {
+                        dialectOpCounts[dialectName.str()]++;
+                    }
+                });
+                PGX_INFO("Module contains " + std::to_string(opCount) + " operations");
+                for (const auto& [dialect, count] : dialectOpCounts) {
+                    PGX_INFO("  - " + dialect + ": " + std::to_string(count));
                 }
+            } catch (const std::exception& e) {
+                PGX_WARNING("Exception during module walk: " + std::string(e.what()));
             } catch (...) {
-                PGX_WARNING("Failed to count operations in module");
+                PGX_WARNING("Unknown exception during module walk");
             }
         }
         

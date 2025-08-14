@@ -83,3 +83,18 @@ target_link_libraries(test_db_to_std_parent_module
     pgx_lower_logging
 )
 add_test(NAME DBToStdParentModuleTest COMMAND test_db_to_std_parent_module)
+
+# Test for Constant Type Mapping fix (PostgreSQL OIDs)
+add_executable(test_constant_type_mapping test_constant_type_mapping.cpp)
+target_link_libraries(test_constant_type_mapping
+    gtest 
+    gtest_main
+    MLIRDBToArrowStd
+    MLIRDBDialect
+    MLIRArithDialect
+    MLIRFuncDialect
+    MLIRPass
+    MLIRIR
+    pgx_lower_logging
+)
+add_test(NAME ConstantTypeMappingTest COMMAND test_constant_type_mapping)
