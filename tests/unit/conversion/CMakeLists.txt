@@ -113,3 +113,22 @@ target_link_libraries(test_dsa_to_std_patterns
     pgx_lower_logging
 )
 add_test(NAME DSAToStdPatternsTest COMMAND test_dsa_to_std_patterns)
+
+# Test for unified DB+DSA processing in DBToStd pass
+add_executable(test_unified_db_dsa test_unified_db_dsa.cpp)
+target_link_libraries(test_unified_db_dsa
+    gtest 
+    gtest_main
+    MLIRDBToArrowStd
+    MLIRDBDialect
+    MLIRDSADialect
+    UtilDialect
+    MLIRArithDialect
+    MLIRFuncDialect
+    MLIRSCFDialect
+    MLIRMemRefDialect
+    MLIRPass
+    MLIRIR
+    pgx_lower_logging
+)
+add_test(NAME UnifiedDBDSATest COMMAND test_unified_db_dsa)
