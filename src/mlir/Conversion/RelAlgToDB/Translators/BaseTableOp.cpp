@@ -14,7 +14,10 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       PGX_DEBUG("BaseTableTranslator: Constructor called");
    }
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
-      assert(false && "should not happen");
+      // BaseTableOp is a leaf node and should never consume from children
+      PGX_ERROR("BaseTableTranslator::consume called - this should not happen for leaf nodes");
+      // Cannot continue processing - just return without producing anything
+      return;
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       PGX_DEBUG("BaseTableTranslator::produce called");

@@ -338,8 +338,16 @@ std::unique_ptr<mlir::relalg::Translator> mlir::relalg::Translator::createJoinTr
                       .Case<SingleJoinOp>([&](auto x) { return createSingleJoinImpl(x); })
                       .Case<MarkJoinOp>([&](auto x) { return createMarkJoinImpl(x); })
                       .Case<CollectionJoinOp>([&](auto x) { return createCollectionJoinImpl(x); })
-                      .Default([](auto x) { assert(false&&"should not happen"); return std::shared_ptr<JoinImpl>(); });
+                      .Default([](auto x) { 
+                        // Unsupported join type - return null to indicate failure
+                        return std::shared_ptr<JoinImpl>(); 
+                     });
 
+   if (!joinImpl) {
+      // Unsupported join type
+      return nullptr;
+   }
+   
    if (hash) {
       return std::make_unique<mlir::relalg::HashJoinTranslator>(joinImpl);
    } else {

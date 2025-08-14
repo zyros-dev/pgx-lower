@@ -342,6 +342,7 @@ std::unique_ptr<mlir::relalg::Translator> mlir::relalg::Translator::createSetOpT
    }  else if (auto exceptOp = mlir::dyn_cast<mlir::relalg::ExceptOp>(setOp)) {
       return std::make_unique<CountingSetTranslator>(exceptOp);
    }else {
-      assert(false && "should not happen");
+      // Unsupported set operation type
+      return nullptr;
    }
 }

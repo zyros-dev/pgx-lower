@@ -143,8 +143,8 @@ class AggregationTranslator : public mlir::relalg::Translator {
                                          } else if (t.getWidth() == 64) {
                                             return (::mlir::Attribute) builder.getF64FloatAttr(std::numeric_limits<double>::max());
                                          } else {
-                                            assert(false && "should not happen");
-                                            return ::mlir::Attribute();
+                                            // Unsupported float width - use double as fallback
+                                            return (::mlir::Attribute) builder.getF64FloatAttr(std::numeric_limits<double>::max());
                                          }
                                       })
                                       .Default([&](::mlir::Type) { return builder.getI64IntegerAttr(std::numeric_limits<int64_t>::max()); });

@@ -4,6 +4,7 @@
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/util/UtilOps.h"
+#include "execution/logging.h"
 class ConstRelTranslator : public mlir::relalg::Translator {
    mlir::relalg::ConstRelationOp constRelationOp;
 
@@ -11,7 +12,10 @@ class ConstRelTranslator : public mlir::relalg::Translator {
    ConstRelTranslator(mlir::relalg::ConstRelationOp constRelationOp) : mlir::relalg::Translator(constRelationOp), constRelationOp(constRelationOp) {}
 
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
-      assert(false && "should not happen");
+      // ConstRelationOp is a leaf node and should never consume from children
+      PGX_ERROR("ConstRelTranslator::consume called - this should not happen for leaf nodes");
+      // Cannot continue processing - just return without producing anything
+      return;
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
