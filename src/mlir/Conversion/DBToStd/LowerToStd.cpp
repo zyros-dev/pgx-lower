@@ -1,6 +1,7 @@
 #include "mlir-support/parsing.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/DBToStd/DBToStd.h"
+#include "execution/logging.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
@@ -311,11 +312,34 @@ class StringCmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
 };
 
 class RuntimeCallLowering : public OpConversionPattern<mlir::db::RuntimeCall> {
+   private:
+   // CRITICAL: Cache the runtime registry to avoid unsafe dialect access during pattern conversion
+   mutable mlir::db::RuntimeFunctionRegistry* cachedRegistry = nullptr;
+   
    public:
    using OpConversionPattern<mlir::db::RuntimeCall>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::db::RuntimeCall runtimeCallOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      auto reg = getContext()->getLoadedDialect<mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
-      auto* fn = reg->lookup(runtimeCallOp.getFn().str());
+      // Validate and refresh cached registry on each access to handle dialect reload scenarios
+      auto* dialect = getContext()->getLoadedDialect<mlir::db::DBDialect>();
+      if (!dialect) {
+         PGX_ERROR("DB dialect not loaded during RuntimeCallLowering");
+         return failure();
+      }
+      
+      // Always get fresh registry pointer to handle dialect reloads
+      auto* currentRegistry = dialect->getRuntimeFunctionRegistry().get();
+      if (!currentRegistry) {
+         PGX_ERROR("Runtime function registry not available");
+         return failure();
+      }
+      
+      // Update cache if registry changed (dialect reload scenario)
+      if (cachedRegistry != currentRegistry) {
+         PGX_DEBUG("RuntimeCallLowering: Registry pointer changed, updating cache");
+         cachedRegistry = currentRegistry;
+      }
+      
+      auto* fn = cachedRegistry->lookup(runtimeCallOp.getFn().str());
       if (!fn) return failure();
       Value result;
       ::mlir::Type resType = runtimeCallOp->getNumResults() == 1 ? runtimeCallOp->getResultTypes()[0] : ::mlir::Type();

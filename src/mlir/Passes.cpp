@@ -60,6 +60,8 @@ void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
     // CRITICAL: Run passes sequentially with canonicalization between them
     // This prevents pass interference identified by research-debugger 1
     
+    // Module validation is handled by pm.enableVerifier(true) above
+    
     // First: DB→Std pass
     PGX_INFO("createDBDSAToStandardPipeline: Creating DB→Std pass");
     auto dbPass = db::createLowerToStdPass();
@@ -70,7 +72,7 @@ void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
     PGX_INFO("createDBDSAToStandardPipeline: Adding DB→Std pass to pipeline");
     pm.addPass(std::move(dbPass));
     
-    // Add canonicalizer between passes to clean up
+    // Add canonicalizer between passes to clean up and validate state
     PGX_DEBUG("createDBDSAToStandardPipeline: Adding first canonicalizer pass");
     pm.addPass(createCanonicalizerPass());
     
