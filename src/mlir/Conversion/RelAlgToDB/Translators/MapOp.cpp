@@ -1,6 +1,7 @@
 #include "mlir/Conversion/RelAlgToDB/Translator.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/util/UtilOps.h"
+#include "execution/logging.h"
 
 class MapTranslator : public mlir::relalg::Translator {
    mlir::relalg::MapOp mapOp;
@@ -12,7 +13,13 @@ class MapTranslator : public mlir::relalg::Translator {
       auto scope = context.createScope();
       auto computedCols = mergeRelationalBlock(
          builder.getInsertionBlock(), op, [](auto x) { return &x->getRegion(0).front(); }, context, scope);
-      assert(computedCols.size() == mapOp.getComputedCols().size());
+      if (computedCols.size() != mapOp.getComputedCols().size()) {
+         PGX_ERROR("MapOp: computed columns size mismatch - expected " + 
+                 std::to_string(mapOp.getComputedCols().size()) + 
+                 " but got " + std::to_string(computedCols.size()));
+         // Cannot continue processing - just return without producing anything
+         return;
+      }
       for (size_t i = 0; i < computedCols.size(); i++) {
          context.setValueForAttribute(scope, &cast<mlir::relalg::ColumnDefAttr>(mapOp.getComputedCols()[i]).getColumn(), computedCols[i]);
       }

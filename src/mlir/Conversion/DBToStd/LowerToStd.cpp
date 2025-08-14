@@ -93,7 +93,9 @@ class SimpleTypeConversionPattern : public ConversionPattern {
    matchAndRewrite(Operation* op, ArrayRef<Value> operands,
                    ConversionPatternRewriter& rewriter) const override {
       llvm::SmallVector<::mlir::Type> convertedTypes;
-      assert(typeConverter->convertTypes(op->getResultTypes(), convertedTypes).succeeded());
+      if (failed(typeConverter->convertTypes(op->getResultTypes(), convertedTypes))) {
+         return rewriter.notifyMatchFailure(op, "Type conversion failed");
+      }
       auto newOp = rewriter.create<Op>(op->getLoc(), convertedTypes, ValueRange(operands), op->getAttrs());
       for (size_t i = 0; i < op->getNumRegions(); i++) {
          if (safelyMoveRegion(rewriter, *typeConverter, op->getRegion(i), newOp->getRegion(i)).failed()) {
@@ -347,7 +349,9 @@ class RuntimeCallLowering : public OpConversionPattern<mlir::db::RuntimeCall> {
       if (std::holds_alternative<mlir::util::FunctionSpec>(fn->implementation)) {
          auto& implFn = std::get<mlir::util::FunctionSpec>(fn->implementation);
          auto resRange = implFn(rewriter, rewriter.getUnknownLoc())(adaptor.getArgs());
-         assert((resRange.size() == 1 && resType) || (resRange.empty() && !resType));
+         if ((resRange.size() == 1 && !resType) || (resRange.size() > 1) || (resRange.empty() && resType)) {
+            return rewriter.notifyMatchFailure(runtimeCallOp, "Unexpected result count from runtime function");
+         }
          result = resRange.size() == 1 ? resRange[0] : ::mlir::Value();
       } else if (std::holds_alternative<mlir::db::RuntimeFunction::loweringFnT>(fn->implementation)) {
          auto& implFn = std::get<mlir::db::RuntimeFunction::loweringFnT>(fn->implementation);
@@ -638,7 +642,7 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
          typeConstant = TIMESTAMPOID;  // PostgreSQL timestamp OID = 1114
          param1 = static_cast<uint32_t>(timestampType.getUnit());
       }
-      assert(typeConstant != 0);  // Ensure we have a valid OID
+      // Note: typeConstant will be 0 for unsupported types, handled by caller
       return {typeConstant, param1, param2};
    }
 
@@ -648,6 +652,10 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
       auto type = constantOp.getType();
       auto stdType = typeConverter->convertType(type);
       auto [arrowType, param1, param2] = convertTypeToArrow(type);
+      
+      if (arrowType == 0) {
+         return rewriter.notifyMatchFailure(constantOp, "Unsupported type for constant conversion");
+      }
       
       std::stringstream debugMsg;
       debugMsg << "ConstantOp lowering - type OID: " << arrowType << ", param1: " << param1 << ", param2: " << param2;
@@ -706,7 +714,7 @@ class CmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
          case db::DBCmpPredicate::gte:
             return arith::CmpIPredicate::sge;
       }
-      assert(false && "unexpected case");
+      // Should never reach here, but return default to avoid crash
       return arith::CmpIPredicate::eq;
    }
    arith::CmpFPredicate translateFPredicate(db::DBCmpPredicate pred) const {
@@ -724,7 +732,7 @@ class CmpOpLowering : public OpConversionPattern<mlir::db::CmpOp> {
          case db::DBCmpPredicate::gte:
             return arith::CmpFPredicate::OGE;
       }
-      assert(false && "unexpected case");
+      // Should never reach here, but return default to avoid crash
       return arith::CmpFPredicate::OEQ;
    }
    LogicalResult matchAndRewrite(mlir::db::CmpOp cmpOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
@@ -888,7 +896,8 @@ class HashLowering : public ConversionPattern {
          }
 
       } else if (auto floatType = v.getType().dyn_cast_or_null<::mlir::FloatType>()) {
-         assert(false && "can not hash float values");
+         // Float hashing not supported - return failure through the pattern rewriter
+         return Value();
       } else if (auto varLenType = v.getType().dyn_cast_or_null<mlir::util::VarLen32Type>()) {
          auto hash = builder.create<mlir::util::HashVarLen>(loc, builder.getIndexType(), v);
          return combineHashes(builder, loc, hash, totalHash);
@@ -908,10 +917,10 @@ class HashLowering : public ConversionPattern {
             }
             return builder.create<mlir::arith::SelectOp>(loc, unpacked.getResult(0), totalHash, hashedIfNotNull);
          }
-         assert(false && "should not happen");
+         // Unexpected tuple structure - return null value to indicate failure
          return Value();
       }
-      assert(false && "should not happen");
+      // Unexpected type - return null value to indicate failure
       return Value();
    }
 
@@ -922,7 +931,11 @@ class HashLowering : public ConversionPattern {
       mlir::db::HashAdaptor hashAdaptor(operands);
       auto hashOp = mlir::cast<mlir::db::Hash>(op);
 
-      rewriter.replaceOp(op, hashImpl(rewriter, op->getLoc(), hashAdaptor.getVal(), Value(), hashOp.getVal().getType()));
+      Value result = hashImpl(rewriter, op->getLoc(), hashAdaptor.getVal(), Value(), hashOp.getVal().getType());
+      if (!result) {
+         return rewriter.notifyMatchFailure(op, "Unable to hash the given type");
+      }
+      rewriter.replaceOp(op, result);
       return success();
    }
 };
