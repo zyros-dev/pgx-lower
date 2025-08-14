@@ -994,20 +994,17 @@ void DBToStdLoweringPass::runOnOperation() {
    
    MLIR_PGX_DEBUG("DB", "UtilDialect obtained successfully");
    
-   // Set parent module for FunctionHelper as required by DB patterns
-   MLIR_PGX_DEBUG("DB", "Setting parent module for FunctionHelper (required by DB patterns)");
+   // Check FunctionHelper availability but DO NOT set parent module
+   MLIR_PGX_DEBUG("DB", "Checking FunctionHelper availability (but NOT setting parent module)");
    
-   PGX_DEBUG("[DBToStd] Setting FunctionHelper parent module...");
+   PGX_DEBUG("[DBToStd] Verifying FunctionHelper exists...");
    
-   // We already have utilDialect from above - reuse it
-   if (utilDialect) {
-     utilDialect->getFunctionHelper().setParentModule(module);
-     PGX_DEBUG("[DBToStd] FunctionHelper parent module set successfully");
-     PGX_INFO("DBToStd: FunctionHelper parent module set successfully");
-   } else {
-     PGX_ERROR("DBToStd: UtilDialect not available for FunctionHelper setup");
-     return signalPassFailure();
-   }
+   // CRITICAL: Do NOT call setParentModule - causes race conditions and memory corruption
+   // This was discovered to cause crashes when used with sequential PassManagers
+   // The DSAToStd pass already identified this issue and removed the call
+   MLIR_PGX_DEBUG("DB", "UtilDialect loaded successfully, skipping setParentModule to avoid memory corruption");
+   PGX_DEBUG("[DBToStd] Skipping FunctionHelper.setParentModule to prevent memory corruption");
+   PGX_INFO("DBToStd: Skipping setParentModule (causes crashes with sequential PassManagers)");
 
    // Define Conversion Target
    ConversionTarget target(getContext());

@@ -783,8 +783,27 @@ static bool runPhase3b(::mlir::ModuleOp module) {
         return false;
     }
     
-    // Set up FunctionHelper parent module
-    utilDialect->getFunctionHelper().setParentModule(module);
+    // CRITICAL: Do NOT call setParentModule - causes memory corruption with sequential PassManagers
+    // This was discovered to cause crashes in Phase 3b
+    // Both DBToStd and DSAToStd passes skip this call to prevent crashes
+    PGX_INFO("Phase 3b: Skipping setParentModule to prevent memory corruption");
+    
+    // Validate module state before running passes
+    if (!validateModuleState(module, "Phase 3b input")) {
+        PGX_ERROR("Phase 3b: Module validation failed before running passes");
+        return false;
+    }
+    
+    // Additional safety check - verify module is not null
+    if (!module) {
+        PGX_ERROR("Phase 3b: Module is null!");
+        return false;
+    }
+    
+    // Verify module operation count
+    int opCount = 0;
+    module.walk([&opCount](::mlir::Operation* op) { opCount++; });
+    PGX_INFO("Phase 3b: Module has " + std::to_string(opCount) + " operations before conversion");
     
     ::mlir::PassManager pm(&context);
     mlir::pgx_lower::createDBDSAToStandardPipeline(pm, true);
