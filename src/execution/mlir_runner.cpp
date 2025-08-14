@@ -2,6 +2,7 @@
 #include "execution/error_handling.h"
 #include "execution/logging.h"
 #include <sstream>
+#include <csignal>
 
 // MLIR Core Infrastructure
 #include "mlir/IR/MLIRContext.h"
@@ -816,6 +817,17 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
         }
         PGX_INFO("Phase 3b: Empty PassManager succeeded, module is valid");
         
+        // CRITICAL: Set parent module BEFORE creating the pass
+        // The DBToStd pass patterns may need FunctionHelper during construction
+        PGX_INFO("Phase 3b: Setting up FunctionHelper parent module before pass creation");
+        auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
+        if (!utilDialect) {
+            PGX_ERROR("Phase 3b: UtilDialect not loaded!");
+            return false;
+        }
+        utilDialect->getFunctionHelper().setParentModule(module);
+        PGX_INFO("Phase 3b: FunctionHelper parent module set successfully");
+        
         // Try adding just DB→Std pass first
         PGX_INFO("Phase 3b: Adding only DB→Std pass");
         auto dbPass = mlir::db::createLowerToStdPass();
@@ -848,10 +860,64 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
         fprintf(stderr, "\n[DIAGNOSTIC] About to call executePhase3bWithMemoryIsolation\n");
         fflush(stderr);
         
-        // Execute Phase 3b with proper memory isolation
-        if (!executePhase3bWithMemoryIsolation(module, pm2)) {
+        // TEMPORARY: Bypass memory isolation for testing
+        PGX_INFO("Phase 3b: BYPASSING memory isolation - executing pass directly");
+        
+        // Direct execution without any PostgreSQL memory context or exception handling
+        bool phase3b_success = false;
+        try {
+            // CRITICAL: Verify we have all required dialects before running pass
+            auto* dbDialect = context.getOrLoadDialect<::mlir::db::DBDialect>();
+            auto* utilDialect = context.getOrLoadDialect<::mlir::util::UtilDialect>();
+            
+            if (!dbDialect || !utilDialect) {
+                std::string errorMsg = "Phase 3b: Required dialects not loaded (DB=";
+                errorMsg += dbDialect ? "loaded" : "missing";
+                errorMsg += ", Util=";
+                errorMsg += utilDialect ? "loaded" : "missing";
+                errorMsg += ")";
+                PGX_ERROR(errorMsg);
+                return false;
+            }
+            
+            // Verify runtime registry is available
+            auto* registry = dbDialect->getRuntimeFunctionRegistry().get();
+            if (!registry) {
+                PGX_ERROR("Phase 3b: DBDialect runtime registry is NULL");
+                return false;
+            }
+            
+            PGX_INFO("Phase 3b: All prerequisites verified, calling pm2.run()");
+            
+            // Add extreme debugging to isolate crash location
+            fprintf(stderr, "\n[PHASE3B] About to call pm2.run(module)\n");
+            fprintf(stderr, "[PHASE3B] Module ptr: %p\n", module.getOperation());
+            fprintf(stderr, "[PHASE3B] PassManager ptr: %p\n", &pm2);
+            fflush(stderr);
+            
+            auto result = pm2.run(module);
+            
+            fprintf(stderr, "[PHASE3B] pm2.run() returned!\n");
+            fflush(stderr);
+            
+            if (mlir::succeeded(result)) {
+                phase3b_success = true;
+                PGX_INFO("Phase 3b: Direct pm2.run() succeeded!");
+            } else {
+                PGX_ERROR("Phase 3b: Direct pm2.run() failed with MLIR error");
+            }
+        } catch (const std::exception& e) {
+            PGX_ERROR("Phase 3b: Direct execution caught exception: " + std::string(e.what()));
+        } catch (...) {
+            PGX_ERROR("Phase 3b: Direct execution caught unknown exception");
+        }
+        
+        if (!phase3b_success) {
+            PGX_ERROR("Phase 3b: Direct execution failed, aborting pipeline");
             return false;
         }
+        
+        PGX_INFO("Phase 3b completed: DB+DSA+Util successfully lowered to Standard MLIR");
     }
     
     // Phase 3c: Standard→LLVM lowering

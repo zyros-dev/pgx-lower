@@ -972,9 +972,16 @@ void DBToStdLoweringPass::runOnOperation() {
    
    MLIR_PGX_DEBUG("DB", "UtilDialect obtained successfully");
    
-   // CRITICAL: Do NOT call setParentModule - causes race conditions and memory corruption with sequential PassManagers
-   // The FunctionHelper will use the module from context when needed
-   MLIR_PGX_DEBUG("DB", "Skipping setParentModule to avoid memory corruption issues");
+   // Set parent module for FunctionHelper as required by DB patterns
+   MLIR_PGX_DEBUG("DB", "Setting parent module for FunctionHelper (required by DB patterns)");
+   // We already have utilDialect from above - reuse it
+   if (utilDialect) {
+     utilDialect->getFunctionHelper().setParentModule(module);
+     PGX_INFO("DBToStd: FunctionHelper parent module set successfully");
+   } else {
+     PGX_ERROR("DBToStd: UtilDialect not available for FunctionHelper setup");
+     return signalPassFailure();
+   }
 
    // Define Conversion Target
    ConversionTarget target(getContext());
