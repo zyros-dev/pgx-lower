@@ -10,6 +10,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/IR/Verifier.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/TargetSelect.h"
 
 // Dialect headers
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
@@ -206,6 +207,14 @@ public:
 // This resolves TypeID symbol linking issues by registering dialect TypeIDs
 static bool initialize_mlir_context(::mlir::MLIRContext& context) {
     try {
+        // CRITICAL: Disable multithreading for PostgreSQL compatibility
+        context.disableMultithreading();
+        
+        // Initialize LLVM targets and ASM parsers
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
+        llvm::InitializeNativeTargetAsmParser();
+        
         // Load standard MLIR dialects
         context.getOrLoadDialect<mlir::func::FuncDialect>();
         context.getOrLoadDialect<mlir::arith::ArithDialect>();
@@ -771,54 +780,74 @@ static bool runPhase3a(::mlir::ModuleOp module) {
 // Run Phase 3b: DB+DSA→Standard lowering
 static bool runPhase3b(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
-    PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering");
     
-    // Ensure all required dialects are loaded
-    auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
-    auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
-    auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
-    
-    if (!dbDialect || !dsaDialect || !utilDialect) {
-        PGX_ERROR("Phase 3b: Required dialects not loaded");
+    try {
+        PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering");
+        
+        // Ensure all required dialects are loaded
+        auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
+        auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
+        auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
+        
+        if (!dbDialect || !dsaDialect || !utilDialect) {
+            PGX_ERROR("Phase 3b: Required dialects not loaded");
+            return false;
+        }
+        
+        // CRITICAL: Do NOT call setParentModule - causes memory corruption with sequential PassManagers
+        // This was discovered to cause crashes in Phase 3b
+        // Both DBToStd and DSAToStd passes skip this call to prevent crashes
+        PGX_INFO("Phase 3b: Skipping setParentModule to prevent memory corruption");
+        
+        // Validate module state before running passes
+        if (!validateModuleState(module, "Phase 3b input")) {
+            PGX_ERROR("Phase 3b: Module validation failed before running passes");
+            return false;
+        }
+        
+        // Additional safety check - verify module is not null
+        if (!module) {
+            PGX_ERROR("Phase 3b: Module is null!");
+            return false;
+        }
+        
+        // Verify module operation count
+        int opCount = 0;
+        module.walk([&opCount](::mlir::Operation* op) { opCount++; });
+        PGX_INFO("Phase 3b: Module has " + std::to_string(opCount) + " operations before conversion");
+        
+        ::mlir::PassManager pm(&context);
+        
+        // Add debugging and crash handler
+        pm.enableCrashReproducerGeneration("/tmp/pgx_lower_phase3b_crash.mlir");
+        pm.enableVerifier(true);
+        
+        PGX_INFO("Phase 3b: Creating DB+DSA→Standard pipeline");
+        mlir::pgx_lower::createDBDSAToStandardPipeline(pm, true);
+        
+        PGX_INFO("Phase 3b: Starting PassManager execution");
+        
+        // Critical: Exception-safe PassManager execution
+        if (mlir::failed(pm.run(module))) {
+            PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering error");
+            PGX_ERROR("Check /tmp/pgx_lower_phase3b_crash.mlir for crash reproducer");
+            return false;
+        }
+        
+        if (!validateModuleState(module, "Phase 3b output")) {
+            return false;
+        }
+        
+        PGX_INFO("Phase 3b completed: DB+DSA successfully lowered to Standard MLIR");
+        return true;
+        
+    } catch (const std::exception& e) {
+        PGX_ERROR("Phase 3b C++ exception: " + std::string(e.what()));
+        return false;
+    } catch (...) {
+        PGX_ERROR("Phase 3b unknown C++ exception - backend crash prevented");
         return false;
     }
-    
-    // CRITICAL: Do NOT call setParentModule - causes memory corruption with sequential PassManagers
-    // This was discovered to cause crashes in Phase 3b
-    // Both DBToStd and DSAToStd passes skip this call to prevent crashes
-    PGX_INFO("Phase 3b: Skipping setParentModule to prevent memory corruption");
-    
-    // Validate module state before running passes
-    if (!validateModuleState(module, "Phase 3b input")) {
-        PGX_ERROR("Phase 3b: Module validation failed before running passes");
-        return false;
-    }
-    
-    // Additional safety check - verify module is not null
-    if (!module) {
-        PGX_ERROR("Phase 3b: Module is null!");
-        return false;
-    }
-    
-    // Verify module operation count
-    int opCount = 0;
-    module.walk([&opCount](::mlir::Operation* op) { opCount++; });
-    PGX_INFO("Phase 3b: Module has " + std::to_string(opCount) + " operations before conversion");
-    
-    ::mlir::PassManager pm(&context);
-    mlir::pgx_lower::createDBDSAToStandardPipeline(pm, true);
-    
-    if (mlir::failed(pm.run(module))) {
-        PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering error");
-        return false;
-    }
-    
-    if (!validateModuleState(module, "Phase 3b output")) {
-        return false;
-    }
-    
-    PGX_INFO("Phase 3b completed: DB+DSA successfully lowered to Standard MLIR");
-    return true;
 }
 
 // Run Phase 3c: Standard→LLVM lowering
