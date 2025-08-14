@@ -51,3 +51,20 @@ target_link_libraries(test_relalg_to_db
     pgx_lower_logging
 )
 add_test(NAME RelAlgToDBTest COMMAND test_relalg_to_db)
+
+# Test for RuntimeCallLowering in DBToStd conversion
+add_executable(test_runtime_call_lowering test_runtime_call_lowering.cpp)
+target_link_libraries(test_runtime_call_lowering
+    gtest 
+    gtest_main
+    MLIRDBToArrowStd
+    MLIRDBDialect
+    MLIRDSADialect
+    UtilDialect
+    MLIRArithDialect
+    MLIRFuncDialect
+    MLIRPass
+    MLIRIR
+    pgx_lower_logging
+)
+add_test(NAME RuntimeCallLoweringTest COMMAND test_runtime_call_lowering)

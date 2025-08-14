@@ -42,6 +42,7 @@
 #ifndef BUILDING_UNIT_TESTS
 extern "C" {
 #include "postgres.h"
+#include "utils/memutils.h"  // CRITICAL: Required for AllocSetContextCreate, MemoryContextSwitchTo
 #include "utils/elog.h"
 #include "utils/errcodes.h"
 #include "executor/executor.h"
@@ -74,6 +75,47 @@ extern "C" {
     struct ModuleHandle* pgx_jit_create_module_handle(void* mlir_module_ptr);
     void pgx_jit_destroy_module_handle(struct ModuleHandle* handle);
 }
+
+// Phase 3b Memory Management Helper
+#ifndef BUILDING_UNIT_TESTS
+class Phase3bMemoryGuard {
+private:
+    MemoryContext phase3b_context_;
+    MemoryContext old_context_;
+    bool active_;
+
+public:
+    Phase3bMemoryGuard() : phase3b_context_(nullptr), old_context_(nullptr), active_(false) {
+        // PostgreSQL requires constant string for memory context name
+        phase3b_context_ = AllocSetContextCreate(CurrentMemoryContext, "Phase3bContext", ALLOCSET_DEFAULT_SIZES);
+        old_context_ = MemoryContextSwitchTo(phase3b_context_);
+        active_ = true;
+        PGX_INFO("Phase3bMemoryGuard: Created and switched to isolated memory context");
+    }
+    
+    ~Phase3bMemoryGuard() {
+        if (active_) {
+            MemoryContextSwitchTo(old_context_);
+            MemoryContextDelete(phase3b_context_);
+            PGX_INFO("Phase3bMemoryGuard: Cleaned up memory context");
+        }
+    }
+    
+    void deactivate() {
+        if (active_) {
+            MemoryContextSwitchTo(old_context_);
+            MemoryContextDelete(phase3b_context_);
+            active_ = false;
+        }
+    }
+    
+    // Disable copy/move to ensure single ownership
+    Phase3bMemoryGuard(const Phase3bMemoryGuard&) = delete;
+    Phase3bMemoryGuard& operator=(const Phase3bMemoryGuard&) = delete;
+    Phase3bMemoryGuard(Phase3bMemoryGuard&&) = delete;
+    Phase3bMemoryGuard& operator=(Phase3bMemoryGuard&&) = delete;
+};
+#endif // BUILDING_UNIT_TESTS
 
 // C-compatible initialization function for pass registration
 extern "C" void initialize_mlir_passes() {
@@ -467,6 +509,132 @@ static bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
     return true;
 }
 
+// Helper function to validate module before Phase 3b execution
+static bool validatePhase3bPreconditions(mlir::ModuleOp module) {
+    if (!module.getOperation()) {
+        PGX_ERROR("Module operation became null before Phase 3b execution");
+        return false;
+    }
+    
+    if (mlir::failed(mlir::verify(module.getOperation()))) {
+        PGX_ERROR("Module verification failed immediately before Phase 3b - module is corrupted");
+        return false;
+    }
+    
+    return true;
+}
+
+// Helper function to dump module state for debugging
+static void dumpModuleForDebugging(mlir::ModuleOp module, const std::string& phase) {
+    if (get_logger().should_log(LogLevel::INFO_LVL)) {
+        std::string moduleStr;
+        llvm::raw_string_ostream os(moduleStr);
+        module.print(os);
+        PGX_INFO(phase + ": Module state:\n" + os.str());
+    }
+}
+
+// Helper function to execute Phase 3b pass with proper exception handling
+static bool executePhase3bPass(mlir::ModuleOp module, mlir::PassManager& pm) {
+    PGX_INFO("DIAGNOSTIC: Entered executePhase3bPass function");
+    
+    try {
+        PGX_INFO("DIAGNOSTIC: About to configure pass manager");
+        // Configure pass manager for debugging
+        pm.getContext()->disableMultithreading();
+        pm.enableTiming();
+        
+        PGX_INFO("Phase 3b: About to call pm.run() on module");
+        
+        // Final validation
+        if (!module.getOperation()) {
+            PGX_ERROR("Phase 3b: Module operation is null right before pm.run()!");
+            return false;
+        }
+        
+        PGX_INFO("Phase 3b: Calling pm.run() NOW");
+        
+        // Add stack canary check
+        volatile int stack_canary = 0xDEADBEEF;
+        
+        try {
+            auto result = pm.run(module);
+            
+            // Check stack canary
+            if (stack_canary != 0xDEADBEEF) {
+                PGX_ERROR("STACK CORRUPTION DETECTED!");
+            }
+            
+            PGX_INFO("Phase 3b: pm.run() returned");
+            
+            if (mlir::failed(result)) {
+                PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering pipeline error");
+                return false;
+            }
+            
+            return true;
+        } catch (const std::exception& e) {
+            PGX_ERROR("Phase 3b: Exception during pm.run(): " + std::string(e.what()));
+            return false;
+        } catch (...) {
+            PGX_ERROR("Phase 3b: Unknown exception during pm.run()");
+            return false;
+        }
+        
+    } catch (const std::exception& e) {
+        PGX_ERROR("Phase 3b crashed with C++ exception: " + std::string(e.what()));
+        return false;
+    } catch (...) {
+        PGX_ERROR("Phase 3b crashed with unknown C++ exception");
+        return false;
+    }
+}
+
+// Helper function to execute Phase 3b with memory isolation
+static bool executePhase3bWithMemoryIsolation(mlir::ModuleOp module, mlir::PassManager& pm) {
+    // DIAGNOSTIC: Using fprintf to bypass PGX logging which might be causing the crash
+    fprintf(stderr, "\n[DIAGNOSTIC] Entered executePhase3bWithMemoryIsolation\n");
+    fflush(stderr);
+    
+    PGX_INFO("Phase 3b: Creating isolated memory context for pass execution");
+    
+    fprintf(stderr, "[DIAGNOSTIC] After first PGX_INFO\n");
+    fflush(stderr);
+    
+    // Validate preconditions
+    if (!validatePhase3bPreconditions(module)) {
+        fprintf(stderr, "[DIAGNOSTIC] validatePhase3bPreconditions returned false\n");
+        fflush(stderr);
+        return false;
+    }
+    
+    fprintf(stderr, "[DIAGNOSTIC] validatePhase3bPreconditions passed\n");
+    fflush(stderr);
+    
+    PGX_INFO("Running Phase 3b PassManager in isolated memory context...");
+    
+    // Dump module state before conversion
+    dumpModuleForDebugging(module, "Phase 3b: Module before DB→Std conversion");
+    
+    // DIAGNOSTIC: Completely bypass PostgreSQL exception handling and memory context
+    bool phase3b_success = false;
+    
+    PGX_INFO("DIAGNOSTIC: Executing Phase 3b without ANY PostgreSQL memory context or exception handling");
+    PGX_INFO("DIAGNOSTIC: This will help determine if PostgreSQL integration is causing the crash");
+    
+    // Direct execution - no PG_TRY, no memory guard, no isolation
+    PGX_INFO("DIAGNOSTIC: About to call executePhase3bPass directly");
+    phase3b_success = executePhase3bPass(module, pm);
+    PGX_INFO("DIAGNOSTIC: executePhase3bPass returned successfully");
+    
+    if (!phase3b_success) {
+        PGX_ERROR("Phase 3b: Execution failed, aborting pipeline");
+        return false;
+    }
+    
+    return true;
+}
+
 // Run complete lowering pipeline including LLVM conversion
 static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
@@ -658,78 +826,30 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
         pm2.addPass(std::move(dbPass));
         PGX_INFO("Phase 3b: DB→Std pass added, skipping DSA→Std for isolation");
         
-        // Dump module to see what operations we're trying to convert
-        if (get_logger().should_log(LogLevel::INFO_LVL)) {
-            std::string moduleStr;
-            llvm::raw_string_ostream os(moduleStr);
-            module.print(os);
-            PGX_INFO("Phase 3b: Module before DB→Std conversion:\n" + os.str());
-        }
-        
-        // Skip full pipeline for now
-        // mlir::pgx_lower::createDBDSAToStandardPipeline(pm2, true);
-        // PGX_INFO("Phase 3b: Pipeline configured successfully");
-        
         PGX_DEBUG("Phase 3b: About to run PassManager - module ptr: " + 
                   std::to_string(reinterpret_cast<uintptr_t>(module.getOperation())));
         
-        // Add robust error handling for PostgreSQL/MLIR interaction
-        try {
-            // Additional validation before running the pass
-            if (!module.getOperation()) {
-                PGX_ERROR("Module operation became null before Phase 3b execution");
-                return false;
-            }
-            
-            // Check if module is still valid
-            if (mlir::failed(mlir::verify(module.getOperation()))) {
-                PGX_ERROR("Module verification failed immediately before Phase 3b - module is corrupted");
-                return false;
-            }
-            
-            PGX_INFO("Running Phase 3b PassManager...");
-            
-            // Add pass execution listener for debugging
-            pm2.getContext()->disableMultithreading();
-            
-            // Enable pass timing for debugging
-            pm2.enableTiming();
-            
-            PGX_INFO("Phase 3b: About to call pm2.run() on module");
-            PGX_DEBUG("Phase 3b: PassManager configured, starting execution...");
-            
-            // One final validation
-            if (!module.getOperation()) {
-                PGX_ERROR("Phase 3b: Module operation is null right before pm2.run()!");
-                return false;
-            }
-            
-            PGX_INFO("Phase 3b: Calling pm2.run() NOW");
-            
-            // Run the pass manager
-            auto result = pm2.run(module);
-            
-            PGX_INFO("Phase 3b: pm2.run() returned");
-            
-            if (mlir::failed(result)) {
-                PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering pipeline error");
-                // Dump module state for debugging
-                if (get_logger().should_log(LogLevel::DEBUG_LVL)) {
-                    std::string moduleStr;
-                    llvm::raw_string_ostream os(moduleStr);
-                    module.getOperation()->print(os);
-                    PGX_DEBUG("Failed module state: " + os.str());
-                }
-                return false;
-            }
-            PGX_INFO("Phase 3b completed: DB+DSA successfully lowered to Standard MLIR");
-        } catch (const std::exception& e) {
-            PGX_ERROR("Phase 3b crashed with C++ exception: " + std::string(e.what()));
-            // Never let C++ exceptions escape to PostgreSQL
+        // Ensure DB dialect is loaded before pass execution
+        PGX_INFO("Phase 3b: Ensuring DB dialect is loaded");
+        auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
+        if (!dbDialect) {
+            PGX_ERROR("Phase 3b: DB dialect not loaded!");
             return false;
-        } catch (...) {
-            PGX_ERROR("Phase 3b crashed with unknown C++ exception");
-            // Never let C++ exceptions escape to PostgreSQL
+        }
+        
+        // Check runtime registry
+        auto* registry = dbDialect->getRuntimeFunctionRegistry().get();
+        if (!registry) {
+            PGX_ERROR("Phase 3b: Runtime function registry not available!");
+            return false;
+        }
+        PGX_INFO("Phase 3b: DB dialect and runtime registry confirmed");
+        
+        fprintf(stderr, "\n[DIAGNOSTIC] About to call executePhase3bWithMemoryIsolation\n");
+        fflush(stderr);
+        
+        // Execute Phase 3b with proper memory isolation
+        if (!executePhase3bWithMemoryIsolation(module, pm2)) {
             return false;
         }
     }
