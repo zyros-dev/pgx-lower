@@ -68,3 +68,18 @@ target_link_libraries(test_runtime_call_lowering
     pgx_lower_logging
 )
 add_test(NAME RuntimeCallLoweringTest COMMAND test_runtime_call_lowering)
+
+# Test for DB to Std parent module handling
+add_executable(test_db_to_std_parent_module test_db_to_std_parent_module.cpp)
+target_link_libraries(test_db_to_std_parent_module
+    gtest 
+    gtest_main
+    MLIRDBToArrowStd
+    MLIRDBDialect
+    UtilDialect
+    MLIRFuncDialect
+    MLIRIR
+    MLIRPass
+    pgx_lower_logging
+)
+add_test(NAME DBToStdParentModuleTest COMMAND test_db_to_std_parent_module)
