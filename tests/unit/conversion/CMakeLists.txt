@@ -98,3 +98,18 @@ target_link_libraries(test_constant_type_mapping
     pgx_lower_logging
 )
 add_test(NAME ConstantTypeMappingTest COMMAND test_constant_type_mapping)
+
+# Test for DSAToStd conversion patterns
+add_executable(test_dsa_to_std_patterns test_dsa_to_std_patterns.cpp)
+target_link_libraries(test_dsa_to_std_patterns
+    gtest 
+    gtest_main
+    MLIRDSAToStd
+    MLIRDSADialect
+    MLIRSCFDialect
+    MLIRFuncDialect
+    MLIRPass
+    MLIRIR
+    pgx_lower_logging
+)
+add_test(NAME DSAToStdPatternsTest COMMAND test_dsa_to_std_patterns)
