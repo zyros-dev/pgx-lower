@@ -35,15 +35,15 @@ endif()
 if(NOT TARGET pgx_lower_jit)
     add_library(pgx_lower_jit STATIC
         ${CMAKE_SOURCE_DIR}/src/execution/jit_execution_engine.cpp
-        ${CMAKE_SOURCE_DIR}/src/execution/jit_execution_wrapper.cpp
-        ${CMAKE_SOURCE_DIR}/src/execution/mlir_runner.cpp
-        ${CMAKE_SOURCE_DIR}/src/frontend/SQL/postgresql_ast_translator.cpp
-        ${CMAKE_SOURCE_DIR}/src/frontend/SQL/query_analyzer.cpp
-        ${CMAKE_SOURCE_DIR}/src/runtime/helpers.cpp
-        ${CMAKE_SOURCE_DIR}/src/runtime/PostgreSQLDataSource.cpp
-        ${CMAKE_SOURCE_DIR}/src/runtime/postgresql_runtime.cpp
-        ${CMAKE_SOURCE_DIR}/src/runtime/tuple_access.cpp
-        ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp
+        # ${CMAKE_SOURCE_DIR}/src/execution/jit_execution_wrapper.cpp  # Requires PostgreSQL
+        # ${CMAKE_SOURCE_DIR}/src/execution/mlir_runner.cpp  # Temporarily disabled due to DestReceiver conflicts
+        # ${CMAKE_SOURCE_DIR}/src/frontend/SQL/postgresql_ast_translator.cpp  # Requires PostgreSQL
+        # ${CMAKE_SOURCE_DIR}/src/frontend/SQL/query_analyzer.cpp  # Requires PostgreSQL  
+        # ${CMAKE_SOURCE_DIR}/src/runtime/helpers.cpp  # Requires PostgreSQL
+        # ${CMAKE_SOURCE_DIR}/src/runtime/PostgreSQLDataSource.cpp  # Requires PostgreSQL
+        # ${CMAKE_SOURCE_DIR}/src/runtime/postgresql_runtime.cpp  # Requires PostgreSQL
+        # ${CMAKE_SOURCE_DIR}/src/runtime/tuple_access.cpp  # Temporarily disabled due to PostgreSQL API issues
+        # ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp  # Requires PostgreSQL
     )
     target_include_directories(pgx_lower_jit PUBLIC
         ${CMAKE_SOURCE_DIR}/include
@@ -215,3 +215,77 @@ target_link_libraries(test_function_preservation
 )
 
 add_test(NAME FunctionPreservationTest COMMAND test_function_preservation)
+
+# Test for JIT isolation debugging (Category A: Pure MLIR)
+add_executable(test_jit_isolation_debug 
+    test_jit_isolation_debug.cpp
+    runtime_stubs.cpp
+)
+
+target_include_directories(test_jit_isolation_debug PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src/mlir/Conversion
+    ${CMAKE_SOURCE_DIR}/src/execution
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_BINARY_DIR}/include/pgx_lower
+)
+
+target_link_libraries(test_jit_isolation_debug
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    pgx_lower_passes
+    pgx_lower_logging
+    pgx_lower_jit
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRLLVMDialect
+    MLIRSCFDialect
+    MLIRControlFlowDialect
+    MLIRMemRefDialect
+    MLIRPass
+    MLIRIR
+    MLIRTransforms
+)
+
+add_test(NAME JITIsolationDebugTest COMMAND test_jit_isolation_debug)
+
+# Test for simple JIT debugging (Category A: Pure MLIR, simplified API)
+add_executable(test_simple_jit_debug 
+    test_simple_jit_debug.cpp
+    runtime_stubs.cpp
+)
+
+target_include_directories(test_simple_jit_debug PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src/mlir/Conversion
+    ${CMAKE_SOURCE_DIR}/src/execution
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_BINARY_DIR}/include/pgx_lower
+)
+
+target_link_libraries(test_simple_jit_debug
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    pgx_lower_passes
+    pgx_lower_logging
+    pgx_lower_jit
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRLLVMDialect
+    MLIRSCFDialect
+    MLIRControlFlowDialect
+    MLIRMemRefDialect
+    MLIRPass
+    MLIRIR
+    MLIRTransforms
+)
+
+add_test(NAME SimpleJITDebugTest COMMAND test_simple_jit_debug)
