@@ -109,7 +109,9 @@ void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification) {
     // Add unified conversion pass that handles all Standard→LLVM lowering
     // This matches LingoDB's approach exactly and avoids type converter conflicts
     PGX_INFO("createStandardToLLVMPipeline: BEFORE createConvertToLLVMPass()");
+    PGX_INFO("createStandardToLLVMPipeline: About to call createConvertToLLVMPass() - THIS IS THE SUSPECTED CRASH POINT");
     auto pass = createConvertToLLVMPass();
+    PGX_INFO("createStandardToLLVMPipeline: createConvertToLLVMPass() returned successfully");
     PGX_INFO("createStandardToLLVMPipeline: Pass created successfully");
     
     PGX_INFO("createStandardToLLVMPipeline: BEFORE pm.addPass()");
@@ -122,9 +124,15 @@ void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification) {
 // Unified Standard→LLVM conversion pass implementation (based on LingoDB runner.cpp)
 namespace {
 struct ConvertToLLVMPass : public PassWrapper<ConvertToLLVMPass, OperationPass<ModuleOp>> {
+    ConvertToLLVMPass() {
+        PGX_INFO("ConvertToLLVMPass: CONSTRUCTOR called - pass object being created");
+    }
+    
     void getDependentDialects(DialectRegistry& registry) const override {
-        PGX_INFO("ConvertToLLVMPass: get depdendent dialects");
+        PGX_INFO("ConvertToLLVMPass: ENTRY - getDependentDialects called");
+        PGX_INFO("ConvertToLLVMPass: BEFORE registry.insert<LLVM::LLVMDialect>");
         registry.insert<LLVM::LLVMDialect>();
+        PGX_INFO("ConvertToLLVMPass: EXIT - getDependentDialects completed successfully");
     }
     
     void runOnOperation() override {
@@ -220,7 +228,11 @@ struct ConvertToLLVMPass : public PassWrapper<ConvertToLLVMPass, OperationPass<M
 } // end anonymous namespace
 
 std::unique_ptr<Pass> createConvertToLLVMPass() {
-    return std::make_unique<ConvertToLLVMPass>();
+    PGX_INFO("createConvertToLLVMPass: ENTRY - Creating ConvertToLLVMPass");
+    PGX_INFO("createConvertToLLVMPass: BEFORE std::make_unique<ConvertToLLVMPass>");
+    auto pass = std::make_unique<ConvertToLLVMPass>();
+    PGX_INFO("createConvertToLLVMPass: Pass created successfully, returning");
+    return pass;
 }
 
 
