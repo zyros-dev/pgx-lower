@@ -31,6 +31,46 @@ if(NOT TARGET pgx_lower_logging)
     )
 endif()
 
+# Create JIT execution library for unit tests
+if(NOT TARGET pgx_lower_jit)
+    add_library(pgx_lower_jit STATIC
+        ${CMAKE_SOURCE_DIR}/src/execution/jit_execution_engine.cpp
+        ${CMAKE_SOURCE_DIR}/src/execution/jit_execution_wrapper.cpp
+        ${CMAKE_SOURCE_DIR}/src/execution/mlir_runner.cpp
+        ${CMAKE_SOURCE_DIR}/src/frontend/SQL/postgresql_ast_translator.cpp
+        ${CMAKE_SOURCE_DIR}/src/frontend/SQL/query_analyzer.cpp
+        ${CMAKE_SOURCE_DIR}/src/runtime/helpers.cpp
+        ${CMAKE_SOURCE_DIR}/src/runtime/PostgreSQLDataSource.cpp
+        ${CMAKE_SOURCE_DIR}/src/runtime/postgresql_runtime.cpp
+        ${CMAKE_SOURCE_DIR}/src/runtime/tuple_access.cpp
+        ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp
+    )
+    target_include_directories(pgx_lower_jit PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/include/pgx_lower
+        ${CMAKE_SOURCE_DIR}/src/execution
+        ${CMAKE_SOURCE_DIR}/src/frontend/SQL
+        ${CMAKE_SOURCE_DIR}/src/runtime
+        ${CMAKE_SOURCE_DIR}/src/mlir/Dialect/RelAlg/include
+        ${CMAKE_SOURCE_DIR}/src/mlir/Dialect/DB/include
+        ${CMAKE_SOURCE_DIR}/src/mlir/Dialect/DSA/include
+        ${CMAKE_SOURCE_DIR}/src/mlir/Dialect/util/include
+        ${PostgreSQL_INCLUDE_DIRS}
+        ${PostgreSQL_SERVER_INCLUDE_DIRS}
+    )
+    target_link_libraries(pgx_lower_jit PUBLIC
+        MLIRRelAlgDialect
+        MLIRDBDialect
+        MLIRDSA
+        MLIRUtilDialect
+        pgx_lower_passes
+        pgx_lower_logging
+        MLIRExecutionEngine
+        MLIRJitRunner
+        ${PostgreSQL_LIBRARIES}
+    )
+endif()
+
 # Create a local passes library for unit tests if not already defined
 if(NOT TARGET pgx_lower_passes)
     add_library(pgx_lower_passes INTERFACE)
@@ -102,3 +142,76 @@ target_link_libraries(test_dsa_to_std_lowering
 )
 
 add_test(NAME DSAToStdLoweringTest COMMAND test_dsa_to_std_lowering)
+
+# Test for JIT execution debugging
+add_executable(test_jit_execution_debug 
+    test_jit_execution_debug.cpp
+    runtime_stubs.cpp
+)
+
+target_include_directories(test_jit_execution_debug PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src/mlir/Conversion
+    ${CMAKE_SOURCE_DIR}/src/execution
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_BINARY_DIR}/include/pgx_lower
+)
+
+target_link_libraries(test_jit_execution_debug
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    pgx_lower_passes
+    pgx_lower_logging
+    pgx_lower_jit
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRLLVMDialect
+    MLIRSCFDialect
+    MLIRControlFlowDialect
+    MLIRMemRefDialect
+    MLIRPass
+    MLIRIR
+    MLIRTransforms
+)
+
+add_test(NAME JITExecutionDebugTest COMMAND test_jit_execution_debug)
+
+# Test for function preservation through lowering passes
+add_executable(test_function_preservation 
+    test_function_preservation.cpp
+    runtime_stubs.cpp
+)
+
+target_include_directories(test_function_preservation PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src/mlir/Conversion
+    ${CMAKE_SOURCE_DIR}/src/execution
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_BINARY_DIR}/include/pgx_lower
+)
+
+target_link_libraries(test_function_preservation
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    pgx_lower_passes
+    pgx_lower_logging
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRLLVMDialect
+    MLIRSCFDialect
+    MLIRControlFlowDialect
+    MLIRMemRefDialect
+    MLIRPass
+    MLIRIR
+    MLIRTransforms
+)
+
+add_test(NAME FunctionPreservationTest COMMAND test_function_preservation)
