@@ -17,5 +17,6 @@ target_link_libraries(StandardToLLVM PUBLIC
     MLIRArithToLLVM
     MLIRControlFlowToLLVM
     MLIRUtilToLLVM
+    MLIRAffineToStandard
     mlir-support
 )

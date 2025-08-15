@@ -17,6 +17,7 @@
 #include "mlir/IR/Verifier.h"
 #include "execution/logging.h"
 #include "execution/jit_execution_engine.h"
+#include "mlir/Passes.h"
 #include <sstream>
 
 namespace {
@@ -131,20 +132,20 @@ TEST_F(JITExecutionDebugTest, TestCompleteStandardToLLVMToJIT) {
     ASSERT_TRUE(mlir::succeeded(loweringResult)) << "Standard→LLVM lowering must succeed";
     
     // Test JIT execution (isolate the exact failure point)
-    auto jitEngine = std::make_unique<::pgx_lower::JITExecutionEngine>(module);
+    auto jitEngine = std::make_unique<::pgx_lower::execution::PostgreSQLJITExecutionEngine>();
     
     // Check if JIT initialization succeeds
-    bool jitInitSuccess = jitEngine->initialize();
+    bool jitInitSuccess = jitEngine->initialize(module);
     if (!jitInitSuccess) {
         PGX_ERROR("✗ JIT initialization failed");
         FAIL() << "JIT engine initialization failed";
     }
     PGX_INFO("✓ JIT engine initialized successfully");
     
-    // Test function lookup (this is where PostgreSQL fails)
-    bool lookupSuccess = jitEngine->lookupCompiledQuery();
-    if (!lookupSuccess) {
-        PGX_ERROR("✗ JIT function lookup failed - this is the PostgreSQL bug!");
+    // Test compilation (this is where PostgreSQL fails)
+    bool compileSuccess = jitEngine->compileToLLVMIR(module);
+    if (!compileSuccess) {
+        PGX_ERROR("✗ JIT compilation failed - this is the PostgreSQL bug!");
         
         // Debug: Check what functions are available
         PGX_INFO("Module contains these functions:");
@@ -156,7 +157,7 @@ TEST_F(JITExecutionDebugTest, TestCompleteStandardToLLVMToJIT) {
         PGX_INFO("Raw LLVM module content:");
         module->dump();
         
-        FAIL() << "JIT function lookup failed - matches PostgreSQL error";
+        FAIL() << "JIT compilation failed - matches PostgreSQL error";
     }
     
     PGX_INFO("✓ JIT function lookup succeeded!");
@@ -272,19 +273,19 @@ TEST_F(JITExecutionDebugTest, TestPostgreSQLExactPipelineReplication) {
         }
         
         // Try JIT execution like PostgreSQL does
-        auto jitEngine = std::make_unique<::pgx_lower::JITExecutionEngine>(module);
-        bool initSuccess = jitEngine->initialize();
+        auto jitEngine = std::make_unique<::pgx_lower::execution::PostgreSQLJITExecutionEngine>();
+        bool initSuccess = jitEngine->initialize(module);
         EXPECT_TRUE(initSuccess) << "JIT initialization should succeed";
         
         if (initSuccess) {
-            bool lookupSuccess = jitEngine->lookupCompiledQuery();
-            if (lookupSuccess) {
+            bool compileSuccess = jitEngine->compileToLLVMIR(module);
+            if (compileSuccess) {
                 PGX_INFO("✓ JIT execution setup succeeded - PostgreSQL bug is NOT in function naming");
             } else {
-                PGX_ERROR("✗ JIT function lookup failed - this IS the PostgreSQL bug");
+                PGX_ERROR("✗ JIT compilation failed - this IS the PostgreSQL bug");
                 PGX_INFO("This unit test has isolated the exact failure point in PostgreSQL tests");
             }
-            EXPECT_TRUE(lookupSuccess) << "JIT function lookup should succeed";
+            EXPECT_TRUE(compileSuccess) << "JIT compilation should succeed";
         }
     }
 }

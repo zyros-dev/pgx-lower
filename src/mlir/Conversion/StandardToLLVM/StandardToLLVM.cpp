@@ -5,10 +5,13 @@
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Analysis/DataLayoutAnalysis.h"
@@ -23,7 +26,8 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StandardToLLVMPass)
 
     void getDependentDialects(DialectRegistry& registry) const override {
-        registry.insert<LLVM::LLVMDialect>();
+        registry.insert<LLVM::LLVMDialect, scf::SCFDialect, 
+                       cf::ControlFlowDialect, arith::ArithDialect>();
     }
 
     void runOnOperation() override {
@@ -51,11 +55,14 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
         RewritePatternSet patterns(context);
         
         // Add ALL conversion patterns in the correct order
+        PGX_DEBUG("StandardToLLVMPass: Populating Affine→Standard patterns");
+        mlir::populateAffineToStdConversionPatterns(patterns);
+        
         PGX_DEBUG("StandardToLLVMPass: Populating SCF→ControlFlow patterns");
-        populateSCFToControlFlowConversionPatterns(patterns);
+        mlir::populateSCFToControlFlowConversionPatterns(patterns);
         
         PGX_DEBUG("StandardToLLVMPass: Populating Func→LLVM patterns");
-        populateFuncToLLVMConversionPatterns(typeConverter, patterns);
+        mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
         
         // CRITICAL: Add Util→LLVM patterns that were missing
         PGX_DEBUG("StandardToLLVMPass: Populating Util→LLVM patterns");

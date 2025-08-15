@@ -289,3 +289,127 @@ target_link_libraries(test_simple_jit_debug
 )
 
 add_test(NAME SimpleJITDebugTest COMMAND test_simple_jit_debug)
+
+# Test for Standard to LLVM unified lowering pass
+add_executable(test_standard_to_llvm_pass 
+    test_standard_to_llvm_pass.cpp
+    runtime_stubs.cpp
+)
+
+target_include_directories(test_standard_to_llvm_pass PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src/mlir/Conversion
+    ${CMAKE_SOURCE_DIR}/src/execution
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_BINARY_DIR}/include/pgx_lower
+)
+
+target_link_libraries(test_standard_to_llvm_pass
+    gtest gtest_main
+    MLIRUtilDialect
+    StandardToLLVM
+    pgx_lower_passes
+    pgx_lower_logging
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRLLVMDialect
+    MLIRPass
+    MLIRIR
+    MLIRTransforms
+)
+
+add_test(NAME StandardToLLVMPassTest COMMAND test_standard_to_llvm_pass)
+
+# Test for dialect verification logic
+add_executable(test_dialect_verification 
+    test_dialect_verification.cpp
+    runtime_stubs.cpp
+)
+
+target_include_directories(test_dialect_verification PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src/mlir/Conversion
+    ${CMAKE_SOURCE_DIR}/src/execution
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_BINARY_DIR}/include/pgx_lower
+)
+
+target_link_libraries(test_dialect_verification
+    gtest gtest_main
+    pgx_lower_logging
+    MLIRArithDialect
+    MLIRLLVMDialect
+    MLIRIR
+)
+
+add_test(NAME DialectVerificationTest COMMAND test_dialect_verification)
+
+# Test for Standard→LLVM crash debugging
+add_executable(test_standard_to_llvm_crash 
+    test_standard_to_llvm_crash.cpp
+    runtime_stubs.cpp
+)
+
+target_include_directories(test_standard_to_llvm_crash PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src/mlir/Conversion
+    ${CMAKE_SOURCE_DIR}/src/execution
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_BINARY_DIR}/include/pgx_lower
+)
+
+target_link_libraries(test_standard_to_llvm_crash
+    gtest gtest_main
+    MLIRPasses
+    MLIRRelAlgDialect  # Add to resolve symbols
+    pgx_lower_logging
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRLLVMDialect
+    MLIRSCFDialect
+    MLIRControlFlowDialect
+    MLIRMemRefDialect
+    MLIRPass
+    MLIRIR
+    MLIRTransforms
+    MLIRSCFToControlFlow
+    MLIRFuncToLLVM
+    MLIRArithToLLVM
+    MLIRControlFlowToLLVM
+    MLIRReconcileUnrealizedCasts
+)
+
+add_test(NAME StandardToLLVMCrashTest COMMAND test_standard_to_llvm_crash)
+
+# Simpler test for LLVM passes debugging
+add_executable(test_llvm_passes_simple 
+    test_llvm_passes_simple.cpp
+    runtime_stubs.cpp
+)
+
+target_include_directories(test_llvm_passes_simple PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src/execution
+    ${CMAKE_BINARY_DIR}/include
+)
+
+target_link_libraries(test_llvm_passes_simple
+    gtest gtest_main
+    pgx_lower_logging
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRLLVMDialect
+    MLIRControlFlowDialect
+    MLIRPass
+    MLIRIR
+    MLIRFuncToLLVM
+    MLIRArithToLLVM
+    MLIRControlFlowToLLVM
+    MLIRReconcileUnrealizedCasts
+)
+
+add_test(NAME LLVMPassesSimpleTest COMMAND test_llvm_passes_simple)
