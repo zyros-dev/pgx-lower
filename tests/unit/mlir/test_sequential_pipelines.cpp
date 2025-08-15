@@ -22,6 +22,7 @@
 #include "execution/logging.h"
 #include "runtime/metadata.h"
 #include "runtime/tuple_access.h"
+#include <sstream>
 
 // PostgreSQL OID type for test
 typedef unsigned int Oid;
@@ -265,11 +266,30 @@ TEST_F(SequentialPipelinesTest, TestPostgreSQLLikeOperations) {
         mlir::pgx_lower::createDBDSAToStandardPipeline(dbToStdPM, true);
         
         auto phase3bResult = dbToStdPM.run(module);
+        
+        // Always print the generated MLIR, regardless of success/failure
+        PGX_INFO("Generated MLIR after Phase 3b (regardless of result):");
+        std::string moduleStr;
+        llvm::raw_string_ostream os(moduleStr);
+        module->print(os, mlir::OpPrintingFlags().assumeVerified());
+        os.flush();
+        
+        // Split into lines for easier reading
+        std::istringstream iss(moduleStr);
+        std::string line;
+        while (std::getline(iss, line)) {
+            PGX_INFO(line);
+        }
+        
         if (mlir::succeeded(phase3bResult)) {
             PGX_INFO("Phase 3b succeeded! Complete pipeline works in unit test");
             
             // Verify module is still valid
-            EXPECT_TRUE(mlir::succeeded(mlir::verify(module)));
+            auto verifyResult = mlir::verify(module);
+            if (mlir::failed(verifyResult)) {
+                PGX_ERROR("Module verification failed after Phase 3b!");
+            }
+            EXPECT_TRUE(mlir::succeeded(verifyResult));
             
             // Count final operations
             size_t finalOpCount = 0;

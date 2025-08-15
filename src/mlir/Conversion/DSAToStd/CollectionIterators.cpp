@@ -290,17 +290,15 @@ class WhileIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
       builder.create<mlir::scf::ConditionOp>(loc, builder.getRemappedValue(condition), whileOp.getBefore().front().getArguments());
       builder.setInsertionPointToStart(&whileOp.getAfter().front());
       auto arg2 = whileOp.getAfter().front().getArgument(0);
-      auto terminator = builder.create<mlir::dsa::YieldOp>(loc);
-      builder.setInsertionPoint(terminator);
       std::vector<Value> bodyParams = {};
       auto additionalArgs = whileOp.getAfter().front().getArguments().drop_front();
       bodyParams.insert(bodyParams.end(), additionalArgs.begin(), additionalArgs.end());
+      
       auto returnValues = bodyBuilder([&](::mlir::OpBuilder& b) { return iterator->iteratorGetCurrentElement(b, arg2); }, bodyParams, builder);
-      builder.setInsertionPoint(terminator);
+      
       Value nextIterator = iterator->iteratorNext(builder, arg2);
       returnValues.insert(returnValues.begin(), nextIterator);
       builder.create<mlir::scf::YieldOp>(loc, remap(returnValues, builder));
-      builder.eraseOp(terminator);
       Value finalIterator = whileOp.getResult(0);
       builder.restoreInsertionPoint(insertionPoint);
       iterator->iteratorFree(builder, finalIterator);
@@ -386,16 +384,14 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
       builder.setInsertionPointToStart(&whileOp.getAfter().front());
       auto arg2 = whileOp.getAfter().front().getArgument(0);
       Value nextIterator = builder.create<arith::AddIOp>(loc, builder.getIndexType(), arg2, step);
-      auto terminator = builder.create<mlir::dsa::YieldOp>(loc);
-      builder.setInsertionPoint(nextIterator.getDefiningOp());
       std::vector<Value> bodyParams = {};
       auto additionalArgs = whileOp.getAfter().front().getArguments().drop_front();
       bodyParams.insert(bodyParams.end(), additionalArgs.begin(), additionalArgs.end());
+      
       auto returnValues = bodyBuilder([&](::mlir::OpBuilder& b) { return iterator->getElement(b, arg2); }, bodyParams, builder);
+      
       returnValues.insert(returnValues.begin(), nextIterator);
-      builder.setInsertionPoint(terminator);
       builder.create<mlir::scf::YieldOp>(loc, remap(returnValues, builder));
-      builder.eraseOp(terminator);
       builder.restoreInsertionPoint(insertionPoint);
       auto loopResultValues = whileOp.getResults().drop_front();
       return std::vector<Value>(loopResultValues.begin(), loopResultValues.end());
