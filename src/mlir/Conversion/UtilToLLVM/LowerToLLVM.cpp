@@ -1,6 +1,7 @@
 #include "mlir/Analysis/DataLayoutAnalysis.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/FunctionCallUtils.h"
@@ -12,8 +13,10 @@
 #include "mlir/Dialect/util/UtilTypes.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/IR/BuiltinOps.h"
 
 #include <iostream>
+#include "execution/logging.h"
 
 using namespace mlir;
 
@@ -36,7 +39,7 @@ class PackOpLowering : public OpConversionPattern<mlir::util::PackOp> {
       Value tpl = rewriter.create<LLVM::UndefOp>(packOp->getLoc(), structType);
       unsigned pos = 0;
       for (auto val : adaptor.getVals()) {
-         tpl = rewriter.create<LLVM::InsertValueOp>(packOp->getLoc(), tpl, val, static_cast<int64_t>(pos++));
+         tpl = rewriter.create<LLVM::InsertValueOp>(packOp->getLoc(), tpl, val, pos++);
       }
       rewriter.replaceOp(packOp, tpl);
       return success();
@@ -63,20 +66,16 @@ class GetTupleOpLowering : public OpConversionPattern<mlir::util::GetTupleOp> {
 class SizeOfOpLowering : public ConversionPattern {
    public:
    DataLayout defaultLayout;
-   LLVMTypeConverter& llvmTypeConverter;
    explicit SizeOfOpLowering(LLVMTypeConverter& typeConverter, MLIRContext* context)
-      : ConversionPattern(typeConverter, mlir::util::SizeOfOp::getOperationName(), 1, context), defaultLayout(), llvmTypeConverter(typeConverter) {}
+      : ConversionPattern(typeConverter, mlir::util::SizeOfOp::getOperationName(), 1, context), defaultLayout() {}
 
    LogicalResult
    matchAndRewrite(Operation* op, ArrayRef<Value> operands,
                    ConversionPatternRewriter& rewriter) const override {
       auto sizeOfOp = mlir::dyn_cast_or_null<mlir::util::SizeOfOp>(op);
       Type t = typeConverter->convertType(sizeOfOp.getType());
-      const DataLayout* layout = &defaultLayout;
-      if (const DataLayoutAnalysis* analysis = llvmTypeConverter.getDataLayoutAnalysis()) {
-         layout = &analysis->getAbove(op);
-      }
-      size_t typeSize = layout->getTypeSize(t);
+      // Use default data layout for now
+      size_t typeSize = defaultLayout.getTypeSize(t);
       rewriter.replaceOpWithNewOp<mlir::LLVM::ConstantOp>(op, rewriter.getI64Type(), rewriter.getI64IntegerAttr(typeSize));
       return success();
    }
@@ -110,8 +109,9 @@ class ToMemrefOpLowering : public OpConversionPattern<mlir::util::ToMemrefOp> {
 
       Value elementPtr = adaptor.getRef();
       auto offset = rewriter.create<arith::ConstantOp>(op->getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
-      Value deadBeefConst = rewriter.create<arith::ConstantOp>(op->getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(0xdeadbeef));
-      auto allocatedPtr = rewriter.create<LLVM::IntToPtrOp>(op->getLoc(), targetPointerType, deadBeefConst);
+      // Use safe null pointer instead of dangerous 0xdeadbeef pattern
+      Value nullConst = rewriter.create<arith::ConstantOp>(op->getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
+      auto allocatedPtr = rewriter.create<LLVM::IntToPtrOp>(op->getLoc(), targetPointerType, nullConst);
 
       Value alignedPtr = rewriter.create<LLVM::BitcastOp>(op->getLoc(), targetPointerType, elementPtr);
       tpl = rewriter.create<LLVM::InsertValueOp>(op->getLoc(), targetType, tpl, allocatedPtr, rewriter.getDenseI64ArrayAttr({0}));
@@ -451,4 +451,62 @@ void mlir::util::populateUtilToLLVMConversionPatterns(LLVMTypeConverter& typeCon
    patterns.add<Hash64Lowering>(typeConverter, patterns.getContext());
    patterns.add<HashVarLenLowering>(typeConverter, patterns.getContext());
    patterns.add<FilterTaggedPtrLowering>(typeConverter, patterns.getContext());
+}
+
+namespace {
+// Pass to convert Util dialect to LLVM
+struct ConvertUtilToLLVMPass : public PassWrapper<ConvertUtilToLLVMPass, OperationPass<ModuleOp>> {
+    void getDependentDialects(DialectRegistry& registry) const override {
+        registry.insert<LLVM::LLVMDialect>();
+    }
+    
+    void runOnOperation() override {
+        PGX_DEBUG("UtilToLLVM: Starting pass execution");
+        auto* context = &getContext();
+        ModuleOp module = getOperation();
+        
+        PGX_DEBUG("UtilToLLVM: Creating LLVM type converter");
+        // Create a simple LLVM type converter without DataLayoutAnalysis
+        // to avoid crashes during initialization
+        LLVMTypeConverter typeConverter(context);
+        
+        // Add source materialization
+        typeConverter.addSourceMaterialization([&](OpBuilder&, FunctionType type, 
+                                                  ValueRange valueRange, Location loc) {
+            return valueRange.front();
+        });
+        
+        // Create patterns
+        PGX_DEBUG("UtilToLLVM: Creating conversion patterns");
+        RewritePatternSet patterns(context);
+        util::populateUtilToLLVMConversionPatterns(typeConverter, patterns);
+        
+        // Configure target
+        PGX_DEBUG("UtilToLLVM: Configuring conversion target");
+        LLVMConversionTarget target(*context);
+        target.addLegalOp<ModuleOp>();
+        target.addIllegalDialect<util::UtilDialect>();
+        
+        // Add target materialization for unrealized conversion casts
+        target.addDynamicallyLegalOp<mlir::UnrealizedConversionCastOp>(
+            [](mlir::UnrealizedConversionCastOp op) {
+                return op.use_empty();
+            });
+        
+        // Apply conversion
+        PGX_DEBUG("UtilToLLVM: Applying partial conversion");
+        if (failed(applyPartialConversion(getOperation(), target, std::move(patterns)))) {
+            PGX_ERROR("UtilToLLVM: Conversion failed");
+            signalPassFailure();
+        } else {
+            PGX_DEBUG("UtilToLLVM: Conversion succeeded");
+        }
+    }
+};
+} // namespace
+
+// Create the pass
+std::unique_ptr<Pass> mlir::createConvertUtilToLLVMPass() {
+    PGX_DEBUG("createConvertUtilToLLVMPass: Creating UtilToLLVM pass instance");
+    return std::make_unique<ConvertUtilToLLVMPass>();
 }

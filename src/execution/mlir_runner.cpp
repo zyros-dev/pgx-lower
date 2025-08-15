@@ -46,6 +46,7 @@
 #ifndef BUILDING_UNIT_TESTS
 extern "C" {
 #include "postgres.h"
+#include "miscadmin.h"
 #include "utils/memutils.h"  // CRITICAL: Required for AllocSetContextCreate, MemoryContextSwitchTo
 #include "utils/elog.h"
 #include "utils/errcodes.h"
@@ -210,10 +211,8 @@ static bool initialize_mlir_context(::mlir::MLIRContext& context) {
         // CRITICAL: Disable multithreading for PostgreSQL compatibility
         context.disableMultithreading();
         
-        // Initialize LLVM targets and ASM parsers
-        llvm::InitializeNativeTarget();
-        llvm::InitializeNativeTargetAsmPrinter();
-        llvm::InitializeNativeTargetAsmParser();
+        // LLVM initialization moved to JIT engine to prevent duplicate initialization
+        // which was causing memory corruption in PostgreSQL server context
         
         // Load standard MLIR dialects
         context.getOrLoadDialect<mlir::func::FuncDialect>();
@@ -873,14 +872,67 @@ static bool runPhase3b(::mlir::ModuleOp module) {
 
 // Run Phase 3c: Standard→LLVM lowering
 static bool runPhase3c(::mlir::ModuleOp module) {
-    auto& context = *module.getContext();
     PGX_INFO("Phase 3c: Running Standard→LLVM lowering");
     
-    ::mlir::PassManager pm(&context);
-    mlir::pgx_lower::createStandardToLLVMPipeline(pm, true);
+    // Validate module before conversion
+    if (!module) {
+        PGX_ERROR("Phase 3c: Module is null!");
+        return false;
+    }
     
-    if (mlir::failed(pm.run(module))) {
-        PGX_ERROR("Phase 3c failed: Standard→LLVM lowering error");
+    if (!validateModuleState(module, "Phase 3c input")) {
+        PGX_ERROR("Phase 3c: Invalid module state before Standard→LLVM lowering");
+        return false;
+    }
+    
+    // Debug: Print operation types before lowering
+    PGX_DEBUG("Phase 3c: Operations before Standard→LLVM lowering:");
+    std::map<std::string, int> dialectCounts;
+    module->walk([&](mlir::Operation* op) {
+        if (op->getDialect()) {
+            dialectCounts[op->getDialect()->getNamespace().str()]++;
+        }
+    });
+    for (const auto& [dialect, count] : dialectCounts) {
+        PGX_DEBUG("  - " + dialect + ": " + std::to_string(count));
+    }
+    
+    // Add PostgreSQL-safe error handling
+    volatile bool success = false;
+    PG_TRY();
+    {
+        // Create PassManager with module context (not context pointer)
+        PGX_DEBUG("Phase 3c: Creating PassManager");
+        auto* moduleContext = module.getContext();
+        if (!moduleContext) {
+            PGX_ERROR("Phase 3c: Module context is null!");
+            success = false;
+            return false;
+        }
+        
+        PGX_DEBUG("Phase 3c: Module context obtained, creating PassManager");
+        ::mlir::PassManager pm(moduleContext);
+        
+        PGX_DEBUG("Phase 3c: PassManager created successfully");
+        PGX_DEBUG("Phase 3c: Configuring Standard→LLVM pipeline");
+        mlir::pgx_lower::createStandardToLLVMPipeline(pm, true);
+        
+        PGX_DEBUG("Phase 3c: Running PassManager");
+        if (mlir::failed(pm.run(module))) {
+            PGX_ERROR("Phase 3c failed: Standard→LLVM lowering error");
+            success = false;
+        } else {
+            success = true;
+        }
+    }
+    PG_CATCH();
+    {
+        PGX_ERROR("Phase 3c: PostgreSQL exception caught during Standard→LLVM lowering");
+        PG_RE_THROW();
+    }
+    PG_END_TRY();
+    
+    if (!success) {
         return false;
     }
     
@@ -888,7 +940,31 @@ static bool runPhase3c(::mlir::ModuleOp module) {
         return false;
     }
     
-    PGX_INFO("Phase 3c completed: Standard MLIR successfully lowered to LLVM IR");
+    // Enhanced verification: ensure all operations are LLVM dialect
+    PGX_DEBUG("Verifying complete lowering to LLVM dialect");
+    bool hasNonLLVMOps = false;
+    module->walk([&](mlir::Operation* op) {
+        if (!mlir::isa<mlir::ModuleOp>(op) && 
+            op->getDialect() && op->getDialect()->getNamespace() != "llvm") {
+            // Special handling for func dialect which is allowed
+            if (op->getDialect()->getNamespace() == "func") {
+                PGX_DEBUG("Func operation remains (allowed): " + 
+                         op->getName().getStringRef().str());
+            } else {
+                PGX_ERROR("Non-LLVM operation remains after lowering: " + 
+                         op->getName().getStringRef().str() + " from dialect: " +
+                         op->getDialect()->getNamespace().str());
+                hasNonLLVMOps = true;
+            }
+        }
+    });
+    
+    if (hasNonLLVMOps) {
+        PGX_ERROR("Phase 3c failed: Module contains non-LLVM operations");
+        return false;
+    }
+    
+    PGX_INFO("Phase 3c completed: All operations successfully lowered to LLVM dialect");
     return true;
 }
 

@@ -25,6 +25,9 @@ extern "C" {
 #include "utils/snapmgr.h"
 #include "storage/lockdefs.h"
 #include "utils/memutils.h"
+#include "miscadmin.h"
+#include "commands/trigger.h"
+#include "access/xact.h"
 }
 #endif
 

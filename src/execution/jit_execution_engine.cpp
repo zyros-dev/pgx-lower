@@ -19,6 +19,7 @@
 #include "llvm/TargetParser/Host.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
@@ -93,10 +94,17 @@ namespace execution {
 void PostgreSQLJITExecutionEngine::configureLLVMTargetMachine() {
     PGX_DEBUG("Configuring LLVM target machine");
     
-    // Initialize LLVM native target for JIT compilation
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-    llvm::InitializeNativeTargetAsmParser();
+    // Initialize LLVM native target for JIT compilation with guard to prevent duplicates
+    static bool llvm_initialized = false;
+    if (!llvm_initialized) {
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
+        llvm::InitializeNativeTargetAsmParser();
+        llvm_initialized = true;
+        PGX_DEBUG("LLVM target initialization completed");
+    } else {
+        PGX_DEBUG("LLVM target already initialized, skipping");
+    }
     
     // Get the target triple for the current platform
     auto targetTriple = llvm::sys::getDefaultTargetTriple();
@@ -208,24 +216,215 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
     // Define the module translation function (MLIR -> LLVM IR)
     auto moduleTranslation = [](::mlir::Operation* op, llvm::LLVMContext& context) 
         -> std::unique_ptr<llvm::Module> {
-        auto module = mlir::cast<::mlir::ModuleOp>(op);
-        PGX_DEBUG("Translating MLIR module to LLVM IR");
+        PGX_INFO("moduleTranslation lambda called!");
         
-        // Perform the translation
-        auto llvmModule = mlir::translateModuleToLLVMIR(module, context, "PostgreSQLJITModule");
+        // Temporarily disable memory context switching to isolate issue
         
-        if (!llvmModule) {
-            PGX_ERROR("Failed to translate MLIR module to LLVM IR");
+        if (!op) {
+            PGX_ERROR("moduleTranslation received null operation");
             return nullptr;
         }
         
-        PGX_DEBUG("Successfully translated to LLVM IR");
+        auto module = mlir::cast<::mlir::ModuleOp>(op);
+        PGX_DEBUG("Translating MLIR module to LLVM IR");
+        PGX_DEBUG("Module has " + std::to_string(std::distance(module.begin(), module.end())) + " operations");
+        
+        // List all operations in the module for debugging
+        PGX_INFO("Operations in MLIR module before translation:");
+        int opCount = 0;
+        module.walk([&opCount](mlir::Operation* op) {
+            PGX_INFO("  Op[" + std::to_string(opCount++) + "]: " + op->getName().getStringRef().str());
+        });
+        
+        // Check if module contains LLVM dialect operations
+        bool hasLLVMOps = false;
+        module.walk([&hasLLVMOps](mlir::Operation* op) {
+            if (op->getName().getDialectNamespace() == "llvm") {
+                hasLLVMOps = true;
+            }
+        });
+        
+        if (!hasLLVMOps) {
+            PGX_ERROR("Module does not contain LLVM dialect operations - not properly lowered!");
+        } else {
+            PGX_INFO("Module contains LLVM dialect operations, proceeding with translation");
+        }
+        
+        // Always dump module for debugging the translation failure
+        std::string moduleStr;
+        llvm::raw_string_ostream moduleStream(moduleStr);
+        module.print(moduleStream);
+        moduleStream.flush();
+        
+        // Log only first 1000 chars to avoid overwhelming logs
+        if (moduleStr.length() > 1000) {
+            PGX_INFO("MLIR module (truncated):\n" + moduleStr.substr(0, 1000) + "\n... [truncated]");
+        } else {
+            PGX_INFO("MLIR module:\n" + moduleStr);
+        }
+        
+        // Perform the translation with error handling
+        PGX_INFO("About to call translateModuleToLLVMIR...");
+        std::unique_ptr<llvm::Module> llvmModule;
+        
+        // CRITICAL: Wrap in PostgreSQL exception handling
+#ifdef POSTGRESQL_EXTENSION
+        bool translationSuccess = false;
+        PG_TRY();
+        {
+            llvmModule = mlir::translateModuleToLLVMIR(
+                module, 
+                context, 
+                "PostgreSQLJITModule"
+            );
+            translationSuccess = true;
+            PGX_INFO("translateModuleToLLVMIR call completed");
+        }
+        PG_CATCH();
+        {
+            PGX_ERROR("PostgreSQL exception during translateModuleToLLVMIR");
+            PG_RE_THROW();
+        }
+        PG_END_TRY();
+        
+        if (!translationSuccess) {
+            PGX_ERROR("Translation failed");
+            return nullptr;
+        }
+#else
+        try {
+            llvmModule = mlir::translateModuleToLLVMIR(
+                module, 
+                context, 
+                "PostgreSQLJITModule"
+            );
+            PGX_INFO("translateModuleToLLVMIR call completed");
+        } catch (const std::exception& e) {
+            PGX_ERROR("Exception in translateModuleToLLVMIR: " + std::string(e.what()));
+            return nullptr;
+        } catch (...) {
+            PGX_ERROR("Unknown exception in translateModuleToLLVMIR");
+            return nullptr;
+        }
+#endif
+        
+        PGX_INFO("About to check llvmModule pointer...");
+        fflush(stdout); // Force output flush
+        
+        // Try to check without dereferencing
+        bool isNull = false;
+        try {
+            isNull = (llvmModule == nullptr);
+            PGX_INFO("Pointer comparison succeeded, isNull = " + std::string(isNull ? "true" : "false"));
+        } catch (...) {
+            PGX_ERROR("Exception just checking if llvmModule == nullptr");
+            return nullptr;
+        }
+        
+        PGX_INFO("Checking if llvmModule is null...");
+        if (!llvmModule || isNull) {
+            PGX_ERROR("Failed to translate MLIR module to LLVM IR - null module returned");
+            
+            // Dump the MLIR module that failed to translate
+            std::string mlirDump;
+            llvm::raw_string_ostream mlirStream(mlirDump);
+            module.print(mlirStream);
+            mlirStream.flush();
+            PGX_ERROR("Failed MLIR module:\n" + mlirDump);
+            return nullptr;
+        }
+        
+        PGX_INFO("llvmModule is not null, continuing...");
+        // Don't access llvmModule internals yet - might cause crash
+        PGX_INFO("LLVM module created successfully, preparing validation");
+        
+        // CRITICAL: Validate LLVM module before ExecutionEngine creation
+        std::string validationErrors;
+        llvm::raw_string_ostream errorStream(validationErrors);
+        
+        PGX_INFO("Starting LLVM module validation...");
+        try {
+            bool validationFailed = llvm::verifyModule(*llvmModule, &errorStream);
+            errorStream.flush(); // Ensure all error data is written
+            
+            if (validationFailed) {
+                PGX_ERROR("LLVM module validation failed: " + validationErrors);
+                
+                // Safe module dumping for debugging
+                std::string moduleStr;
+                llvm::raw_string_ostream moduleStream(moduleStr);
+                llvmModule->print(moduleStream, nullptr);
+                moduleStream.flush();
+                PGX_DEBUG("Invalid LLVM IR:\n" + moduleStr);
+                
+                return nullptr;
+            }
+        } catch (const std::exception& e) {
+            PGX_ERROR("Exception during LLVM module validation: " + std::string(e.what()));
+            return nullptr;
+        } catch (...) {
+            PGX_ERROR("Unknown exception during LLVM module validation");
+            return nullptr;
+        }
+        
+        PGX_INFO("LLVM module validation passed - module is valid for ExecutionEngine");
+        
+        // Add module inspection for debugging
+        PGX_DEBUG("LLVM module functions:");
+        for (const auto& func : *llvmModule) {
+            PGX_DEBUG("  Function: " + func.getName().str() + 
+                      " (args: " + std::to_string(func.arg_size()) + 
+                      ", basic_blocks: " + std::to_string(func.size()) + ")");
+        }
+        
+        // Check if module has the expected query function
+        bool hasQueryFunc = false;
+        for (const auto& func : *llvmModule) {
+            if (func.getName().starts_with("query")) {
+                hasQueryFunc = true;
+                PGX_INFO("Found query function: " + func.getName().str());
+            }
+        }
+        
+        if (!hasQueryFunc) {
+            PGX_WARNING("No query function found in LLVM module - this may cause ExecutionEngine issues");
+        }
+        
+        PGX_INFO("Successfully translated to LLVM IR, returning module");
+        
         return llvmModule;
     };
     
     // Define the optimization function
     auto optimizeModule = [this](llvm::Module* module) -> llvm::Error {
+        PGX_INFO("optimizeModule lambda called!");
+        
+        // Add validation before optimization
+        if (!module) {
+            PGX_ERROR("optimizeModule received null module");
+            return llvm::createStringError(llvm::inconvertibleErrorCode(), 
+                                         "Null module passed to optimizer");
+        }
+        
+        // Verify module is still valid before optimization
+        std::string preOptErrors;
+        llvm::raw_string_ostream preOptStream(preOptErrors);
+        if (llvm::verifyModule(*module, &preOptStream)) {
+            preOptStream.flush();
+            PGX_ERROR("Module invalid before optimization: " + preOptErrors);
+            return llvm::createStringError(llvm::inconvertibleErrorCode(), 
+                                         "Invalid module before optimization");
+        }
+        PGX_INFO("Module validated successfully before optimization");
+        
+        if (!module) {
+            PGX_ERROR("optimizeModule received null module");
+            return llvm::createStringError(llvm::inconvertibleErrorCode(), 
+                                         "Null module passed to optimizer");
+        }
+        
         PGX_DEBUG("Optimizing LLVM module");
+        PGX_DEBUG("Module name in optimizer: " + module->getName().str());
         
         if (optimizationLevel == llvm::CodeGenOptLevel::None) {
             PGX_INFO("Skipping LLVM optimization (optimization level = None)");
@@ -260,20 +459,81 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
     engineOptions.llvmModuleBuilder = moduleTranslation;
     engineOptions.transformer = optimizeModule;
     engineOptions.jitCodeGenOptLevel = optimizationLevel;
-    engineOptions.enableObjectDump = false; // Disable for PostgreSQL compatibility
+    engineOptions.enableObjectDump = true; // Enable for debugging
     
-    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
+    // Note: sharedLibPaths configuration removed due to API incompatibility
+    // The ExecutionEngine will use default symbol resolution
     
-    if (!maybeEngine) {
-        auto error = maybeEngine.takeError();
-        std::string errorStr;
-        llvm::raw_string_ostream errorStream(errorStr);
-        errorStream << error;
-        PGX_ERROR("Failed to create execution engine: " + errorStream.str());
+    PGX_INFO("Creating ExecutionEngine with configured options");
+    
+    // Add pre-validation of the MLIR module state
+    if (!module) {
+        PGX_ERROR("Module is null before ExecutionEngine creation");
         return false;
     }
     
-    engine = std::move(*maybeEngine);
+    PGX_DEBUG("Module verification before ExecutionEngine::create");
+    if (mlir::failed(mlir::verify(module))) {
+        PGX_ERROR("Module verification failed before ExecutionEngine creation");
+        return false;
+    }
+    
+    PGX_DEBUG("Module stats before ExecutionEngine creation:");
+    int funcCount = 0;
+    module.walk([&funcCount](mlir::func::FuncOp func) {
+        funcCount++;
+        PGX_DEBUG("  Function: " + func.getName().str());
+    });
+    PGX_DEBUG("Total functions in module: " + std::to_string(funcCount));
+    
+    std::unique_ptr<mlir::ExecutionEngine> createdEngine;
+    try {
+        PGX_INFO("Calling mlir::ExecutionEngine::create now...");
+        auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
+        
+        if (!maybeEngine) {
+            auto error = maybeEngine.takeError();
+            std::string errorStr;
+            llvm::raw_string_ostream errorStream(errorStr);
+            errorStream << error;
+            PGX_ERROR("ExecutionEngine::create failed: " + errorStr);
+            return false;
+        }
+        
+        PGX_INFO("ExecutionEngine::create returned valid result, extracting engine...");
+        createdEngine = std::move(*maybeEngine);
+        PGX_INFO("ExecutionEngine::create succeeded!");
+        
+        if (!createdEngine) {
+            PGX_ERROR("ExecutionEngine::create returned null engine despite success");
+            return false;
+        }
+        
+        PGX_INFO("ExecutionEngine created and validated successfully");
+        
+    } catch (const std::exception& e) {
+        PGX_ERROR("Exception during ExecutionEngine creation: " + std::string(e.what()));
+        return false;
+    } catch (...) {
+        PGX_ERROR("Unknown exception during ExecutionEngine creation");
+        
+        // Try to get more information about the state
+        PGX_DEBUG("Module state after crash:");
+        if (module) {
+            PGX_DEBUG("  Module is still valid");
+            if (mlir::succeeded(mlir::verify(module))) {
+                PGX_DEBUG("  Module still verifies correctly");
+            } else {
+                PGX_DEBUG("  Module no longer verifies");
+            }
+        } else {
+            PGX_DEBUG("  Module is now null");
+        }
+        
+        return false;
+    }
+    
+    engine = std::move(createdEngine);
     initialized = true;
     
     auto endTime = std::chrono::high_resolution_clock::now();
@@ -530,6 +790,44 @@ void PostgreSQLJITExecutionEngine::registerRuntimeSupportFunctions() {
         });
 }
 
+void PostgreSQLJITExecutionEngine::registerLingoDRuntimeContextFunctions() {
+    PGX_DEBUG("Registering LingoDB runtime context functions");
+    
+    // Global execution context storage (thread-local for PostgreSQL safety)
+    static thread_local void* global_execution_context = nullptr;
+    
+    engine->registerSymbols(
+        [](llvm::orc::MangleAndInterner interner) {
+            llvm::orc::SymbolMap symbolMap;
+            
+            // rt_set_execution_context function (LingoDB requirement)
+            symbolMap[interner("rt_set_execution_context")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(
+                    +[](void* context_ptr) -> void {
+                        static thread_local void* global_execution_context = nullptr;
+                        global_execution_context = context_ptr;
+                        PGX_DEBUG("JIT: Set execution context to " + std::to_string(reinterpret_cast<uintptr_t>(context_ptr)));
+                    }
+                )),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
+            // rt_get_execution_context function (LingoDB requirement)  
+            symbolMap[interner("rt_get_execution_context")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(
+                    +[]() -> void* {
+                        static thread_local void* global_execution_context = nullptr;
+                        PGX_DEBUG("JIT: Get execution context returning " + std::to_string(reinterpret_cast<uintptr_t>(global_execution_context)));
+                        return global_execution_context;
+                    }
+                )),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
+            return symbolMap;
+        });
+}
+
 void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
     PGX_DEBUG("Registering PostgreSQL runtime functions with JIT symbol table");
     
@@ -546,6 +844,7 @@ void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
     registerMemoryManagementFunctions();
     registerDataSourceFunctions();
     registerRuntimeSupportFunctions();
+    registerLingoDRuntimeContextFunctions();
     
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();

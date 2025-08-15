@@ -22,7 +22,7 @@ private:
     bool initialized = false;
     
     // JIT optimization configuration
-    llvm::CodeGenOptLevel optimizationLevel = llvm::CodeGenOptLevel::Default;
+    llvm::CodeGenOptLevel optimizationLevel = llvm::CodeGenOptLevel::None;
     
     // Module validation and preparation
     bool validateModuleForCompilation(::mlir::ModuleOp module);
@@ -34,6 +34,7 @@ private:
     void registerMemoryManagementFunctions();
     void registerDataSourceFunctions();
     void registerRuntimeSupportFunctions();
+    void registerLingoDRuntimeContextFunctions();
     
 public:
     PostgreSQLJITExecutionEngine() = default;

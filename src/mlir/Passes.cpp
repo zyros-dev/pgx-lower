@@ -11,7 +11,6 @@
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
-#include "mlir/Conversion/StandardToLLVM/StandardToLLVM.h"
 
 namespace mlir {
 namespace pgx_lower {
@@ -130,18 +129,82 @@ void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification) {
     }
     
     // Convert SCF to ControlFlow first (like LingoDB)
-    pm.addPass(createConvertSCFToCFPass());
+    PGX_DEBUG("createStandardToLLVMPipeline: Adding SCF→CF pass");
+    try {
+        auto scfPass = createConvertSCFToCFPass();
+        if (!scfPass) {
+            PGX_ERROR("createStandardToLLVMPipeline: Failed to create SCF→CF pass!");
+            return;
+        }
+        pm.addPass(std::move(scfPass));
+        PGX_DEBUG("createStandardToLLVMPipeline: SCF→CF pass added successfully");
+    } catch (...) {
+        PGX_ERROR("createStandardToLLVMPipeline: Exception creating SCF→CF pass!");
+        return;
+    }
     
-    // Add all Standard→LLVM conversion passes
-    // Util patterns are included in the unified Standard→LLVM pass
-    pm.addPass(createConvertFuncToLLVMPass());
-    pm.addPass(createArithToLLVMConversionPass());
-    pm.addPass(createConvertControlFlowToLLVMPass());
+    // Add individual conversion passes (matching LingoDB's approach)
+    PGX_DEBUG("createStandardToLLVMPipeline: Adding Func→LLVM pass");
+    try {
+        auto funcPass = createConvertFuncToLLVMPass();
+        if (!funcPass) {
+            PGX_ERROR("createStandardToLLVMPipeline: Failed to create Func→LLVM pass!");
+            return;
+        }
+        pm.addPass(std::move(funcPass));
+        PGX_DEBUG("createStandardToLLVMPipeline: Func→LLVM pass added successfully");
+    } catch (...) {
+        PGX_ERROR("createStandardToLLVMPipeline: Exception creating Func→LLVM pass!");
+        return;
+    }
+    
+    PGX_DEBUG("createStandardToLLVMPipeline: Adding Arith→LLVM pass");
+    try {
+        auto arithPass = createArithToLLVMConversionPass();
+        if (!arithPass) {
+            PGX_ERROR("createStandardToLLVMPipeline: Failed to create Arith→LLVM pass!");
+            return;
+        }
+        pm.addPass(std::move(arithPass));
+        PGX_DEBUG("createStandardToLLVMPipeline: Arith→LLVM pass added successfully");
+    } catch (...) {
+        PGX_ERROR("createStandardToLLVMPipeline: Exception creating Arith→LLVM pass!");
+        return;
+    }
+    
+    PGX_DEBUG("createStandardToLLVMPipeline: Adding ControlFlow→LLVM pass");
+    try {
+        auto cfPass = createConvertControlFlowToLLVMPass();
+        if (!cfPass) {
+            PGX_ERROR("createStandardToLLVMPipeline: Failed to create ControlFlow→LLVM pass!");
+            return;
+        }
+        pm.addPass(std::move(cfPass));
+        PGX_DEBUG("createStandardToLLVMPipeline: ControlFlow→LLVM pass added successfully");
+    } catch (...) {
+        PGX_ERROR("createStandardToLLVMPipeline: Exception creating ControlFlow→LLVM pass!");
+        return;
+    }
+    
+    // Util→LLVM conversion is already handled by the existing conversion patterns
+    // Removed redundant ConvertUtilToLLVMPass that was causing type converter conflicts
     
     // Reconcile any unrealized casts
-    pm.addPass(createReconcileUnrealizedCastsPass());
+    PGX_DEBUG("createStandardToLLVMPipeline: Adding ReconcileUnrealizedCasts pass");
+    try {
+        auto reconcilePass = createReconcileUnrealizedCastsPass();
+        if (!reconcilePass) {
+            PGX_ERROR("createStandardToLLVMPipeline: Failed to create ReconcileUnrealizedCasts pass!");
+            return;
+        }
+        pm.addPass(std::move(reconcilePass));
+        PGX_DEBUG("createStandardToLLVMPipeline: ReconcileUnrealizedCasts pass added successfully");
+    } catch (...) {
+        PGX_ERROR("createStandardToLLVMPipeline: Exception creating ReconcileUnrealizedCasts pass!");
+        return;
+    }
     
-    PGX_DEBUG("createStandardToLLVMPipeline: Phase 3 pipeline configured");
+    PGX_DEBUG("createStandardToLLVMPipeline: Phase 3 pipeline configured with unified lowering");
 }
 
 // Helper to run function-level optimizations (like LingoDB's pmFunc)
