@@ -134,6 +134,8 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
+    # Add test subdirectories to build individual unit tests
+    add_subdirectory(tests)
     # Clean slate refactor - minimal unit tests for core infrastructure only
     file(GLOB_RECURSE UNIT_TEST_SOURCES 
         "tests/unit/core/*.cpp"

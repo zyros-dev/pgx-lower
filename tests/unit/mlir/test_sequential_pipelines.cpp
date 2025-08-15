@@ -14,6 +14,7 @@
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/Verifier.h"
 #include "execution/logging.h"
 
 namespace {

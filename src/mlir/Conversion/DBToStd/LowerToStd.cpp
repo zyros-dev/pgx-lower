@@ -42,7 +42,9 @@ struct DBToStdLoweringPass
    : public PassWrapper<DBToStdLoweringPass, OperationPass<ModuleOp>> {
    virtual llvm::StringRef getArgument() const override { return "to-arrow-std"; }
 
-   DBToStdLoweringPass() {}
+   DBToStdLoweringPass() {
+      PGX_INFO("DBToStdLoweringPass: Constructor ENTRY");
+   }
    void getDependentDialects(DialectRegistry& registry) const override {
       registry.insert<LLVM::LLVMDialect, mlir::db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect>();
    }
@@ -1270,10 +1272,9 @@ void DBToStdLoweringPass::runOnOperation() {
 
 std::unique_ptr<::mlir::Pass>
 mlir::db::createLowerToStdPass() {
-   PGX_INFO("DBToStd: Creating DBToStdLoweringPass instance");
-   PGX_DEBUG("[DBToStd] createLowerToStdPass called - creating pass instance");
+   PGX_INFO("DBToStd: ENTRY createLowerToStdPass");
    auto pass = std::make_unique<DBToStdLoweringPass>();
-   PGX_DEBUG("[DBToStd] Pass instance created successfully");
+   PGX_INFO("DBToStd: AFTER DBToStdLoweringPass constructor - success");
    return pass;
 }
 void mlir::db::createLowerDBPipeline(mlir::OpPassManager& pm) {
