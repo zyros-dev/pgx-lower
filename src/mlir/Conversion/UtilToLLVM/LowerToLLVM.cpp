@@ -71,7 +71,7 @@ class SizeOfOpLowering : public ConversionPattern {
    matchAndRewrite(Operation* op, ArrayRef<Value> operands,
                    ConversionPatternRewriter& rewriter) const override {
       auto sizeOfOp = mlir::dyn_cast_or_null<mlir::util::SizeOfOp>(op);
-      Type t = typeConverter->convertType(sizeOfOp.getType());
+      Type t = typeConverter->convertType(sizeOfOp.getTypeAttr().getValue());
       const DataLayout* layout = &defaultLayout;
       if (const DataLayoutAnalysis* analysis = llvmTypeConverter.getDataLayoutAnalysis()) {
          layout = &analysis->getAbove(op);
@@ -150,12 +150,23 @@ class AllocaOpLowering : public OpConversionPattern<mlir::util::AllocaOp> {
          int64_t staticSize = 1;
          entries = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(staticSize));
       }
-      auto bytesPerEntry = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getI64Type(), genericMemrefType.getElementType());
-      Value sizeInBytes = rewriter.create<mlir::arith::MulIOp>(loc, rewriter.getI64Type(), entries, bytesPerEntry);
-      Value sizeInBytesI64 = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.getI64Type(), sizeInBytes);
+      DataLayout defaultLayout;
+      const DataLayout* layout = &defaultLayout;
+      Type elemType = typeConverter->convertType(genericMemrefType.getElementType());
+      size_t typeSize = layout->getTypeSize(elemType);
+      auto bytesPerEntry = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(typeSize));
+      
+      Value entriesI64;
+      if (entries.getType() == rewriter.getIndexType()) {
+         entriesI64 = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.getI64Type(), entries);
+      } else {
+         entriesI64 = entries;
+      }
+      
+      Value sizeInBytes = rewriter.create<mlir::arith::MulIOp>(loc, rewriter.getI64Type(), entriesI64, bytesPerEntry);
 
       auto elemPtrType = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
-      ::mlir::Value allocatedElementPtr = rewriter.create<LLVM::AllocaOp>(loc, elemPtrType, rewriter.getI8Type(), sizeInBytesI64, 0);
+      ::mlir::Value allocatedElementPtr = rewriter.create<LLVM::AllocaOp>(loc, elemPtrType, rewriter.getI8Type(), sizeInBytes, 0);
       rewriter.replaceOp(allocOp, allocatedElementPtr);
 
       return success();

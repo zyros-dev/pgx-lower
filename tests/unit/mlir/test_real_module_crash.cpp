@@ -99,7 +99,7 @@ module {
         
         // Also print to console (first 500 chars)
         printf("=== CONVERTED LLVM IR (preview) ===\n");
-        printf("%.500s...\n", outputStr.c_str());
+        printf("%.5000s...\n", outputStr.c_str());
         printf("=== END PREVIEW ===\n");
     }
     
