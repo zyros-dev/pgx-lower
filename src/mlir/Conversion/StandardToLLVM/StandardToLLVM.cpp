@@ -64,7 +64,7 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
         mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
         mlir::cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
 
-        mlir::populateMemRefToLLVMConversionPatterns(typeConverter, patterns);
+        mlir::populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
         mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
         // We want to completely lower to LLVM, so we use a `FullConversion`. This
         // ensures that only legal operations will remain after the conversion.

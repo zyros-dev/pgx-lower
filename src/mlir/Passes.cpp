@@ -27,8 +27,9 @@
 namespace mlir {
 namespace pgx_lower {
 
-// Forward declaration for unified conversion pass
+// Forward declarations
 std::unique_ptr<Pass> createConvertToLLVMPass();
+std::unique_ptr<Pass> createStandardToLLVMPass();
 
 
 // Phase 1: RelAlg→DB lowering pipeline
@@ -96,145 +97,18 @@ void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
     PGX_INFO("createDBDSAToStandardPipeline: Phase 2 pipeline configured with sequential execution");
 }
 
-// Phase 3: Standard→LLVM lowering pipeline (LingoDB unified approach)
 void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification) {
-    PGX_INFO("createStandardToLLVMPipeline: ENTRY - Starting unified LingoDB-style conversion");
-    
     if (enableVerification) {
-        PGX_INFO("createStandardToLLVMPipeline: Enabling verifier");
         pm.enableVerifier(true);
-        PGX_INFO("createStandardToLLVMPipeline: Verifier enabled successfully");
     }
     
-    // Add unified conversion pass that handles all Standard→LLVM lowering
-    // This matches LingoDB's approach exactly and avoids type converter conflicts
-    PGX_INFO("createStandardToLLVMPipeline: BEFORE createConvertToLLVMPass()");
-    PGX_INFO("createStandardToLLVMPipeline: About to call createConvertToLLVMPass() - THIS IS THE SUSPECTED CRASH POINT");
-    auto pass = createConvertToLLVMPass();
-    PGX_INFO("createStandardToLLVMPipeline: createConvertToLLVMPass() returned successfully");
-    PGX_INFO("createStandardToLLVMPipeline: Pass created successfully");
-    
-    PGX_INFO("createStandardToLLVMPipeline: BEFORE pm.addPass()");
-    pm.addPass(std::move(pass));
-    PGX_INFO("createStandardToLLVMPipeline: Pass added to pipeline successfully");
-    
-    PGX_INFO("createStandardToLLVMPipeline: EXIT - Unified conversion pass configured successfully");
+    // Use the working StandardToLLVMPass from StandardToLLVM.cpp
+    PGX_INFO("createStandardToLLVMPipeline: Using StandardToLLVMPass");
+
+    pm.addPass(std::move(createStandardToLLVMPass()));
+
+    PGX_INFO("createStandardToLLVMPipeline: StandardToLLVMPass added successfully");
 }
-
-// Unified Standard→LLVM conversion pass implementation (based on LingoDB runner.cpp)
-namespace {
-struct ConvertToLLVMPass : public PassWrapper<ConvertToLLVMPass, OperationPass<ModuleOp>> {
-    ConvertToLLVMPass() {
-        PGX_INFO("ConvertToLLVMPass: CONSTRUCTOR called - pass object being created");
-    }
-    
-    void getDependentDialects(DialectRegistry& registry) const override {
-        PGX_INFO("ConvertToLLVMPass: ENTRY - getDependentDialects called");
-        PGX_INFO("ConvertToLLVMPass: BEFORE registry.insert<LLVM::LLVMDialect>");
-        registry.insert<LLVM::LLVMDialect>();
-        PGX_INFO("ConvertToLLVMPass: EXIT - getDependentDialects completed successfully");
-    }
-    
-    void runOnOperation() override {
-        PGX_INFO("ConvertToLLVMPass: ENTRY - Starting unified conversion");
-        auto module = getOperation();
-        PGX_INFO("ConvertToLLVMPass: Got module operation successfully");
-        auto* context = &getContext();
-        PGX_INFO("ConvertToLLVMPass: Got context successfully");
-        
-        // Create DataLayoutAnalysis and LLVM type converter (like LingoDB)
-        PGX_INFO("ConvertToLLVMPass: BEFORE DataLayoutAnalysis creation");
-        DataLayoutAnalysis dataLayoutAnalysis(module);
-        PGX_INFO("ConvertToLLVMPass: DataLayoutAnalysis created successfully");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE getAtOrAbove call");
-        auto dataLayout = dataLayoutAnalysis.getAtOrAbove(module);
-        PGX_INFO("ConvertToLLVMPass: getAtOrAbove completed successfully");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE LowerToLLVMOptions creation");
-        LowerToLLVMOptions options(context, dataLayout);
-        PGX_INFO("ConvertToLLVMPass: LowerToLLVMOptions created successfully");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE LLVMTypeConverter creation");
-        LLVMTypeConverter typeConverter(context, options, &dataLayoutAnalysis);
-        PGX_INFO("ConvertToLLVMPass: LLVMTypeConverter created successfully");
-        
-        // Add source materialization (like LingoDB)
-        PGX_INFO("ConvertToLLVMPass: BEFORE source materialization setup");
-        typeConverter.addSourceMaterialization([&](OpBuilder&, FunctionType type, ValueRange valueRange, Location loc) {
-            PGX_INFO("ConvertToLLVMPass: Source materialization callback invoked");
-            return valueRange.front();
-        });
-        PGX_INFO("ConvertToLLVMPass: Source materialization configured successfully");
-        
-        // Create unified pattern set
-        PGX_INFO("ConvertToLLVMPass: BEFORE RewritePatternSet creation");
-        RewritePatternSet patterns(context);
-        PGX_INFO("ConvertToLLVMPass: RewritePatternSet created successfully");
-        
-        // Populate all conversion patterns in one unified set (LingoDB approach)  
-        PGX_INFO("ConvertToLLVMPass: BEFORE populateAffineToStdConversionPatterns");
-        populateAffineToStdConversionPatterns(patterns);
-        PGX_INFO("ConvertToLLVMPass: populateAffineToStdConversionPatterns completed");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE populateSCFToControlFlowConversionPatterns");
-        populateSCFToControlFlowConversionPatterns(patterns);
-        PGX_INFO("ConvertToLLVMPass: populateSCFToControlFlowConversionPatterns completed");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE populateUtilToLLVMConversionPatterns");
-        mlir::util::populateUtilToLLVMConversionPatterns(typeConverter, patterns);  // Key addition!
-        PGX_INFO("ConvertToLLVMPass: populateUtilToLLVMConversionPatterns completed");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE populateFuncToLLVMConversionPatterns");
-        populateFuncToLLVMConversionPatterns(typeConverter, patterns);
-        PGX_INFO("ConvertToLLVMPass: populateFuncToLLVMConversionPatterns completed");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE populateControlFlowToLLVMConversionPatterns");
-        cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
-        PGX_INFO("ConvertToLLVMPass: populateControlFlowToLLVMConversionPatterns completed");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE populateFinalizeMemRefToLLVMConversionPatterns");
-        populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
-        PGX_INFO("ConvertToLLVMPass: populateFinalizeMemRefToLLVMConversionPatterns completed");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE populateArithToLLVMConversionPatterns");
-        arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
-        PGX_INFO("ConvertToLLVMPass: populateArithToLLVMConversionPatterns completed");
-        
-        // Configure conversion target
-        PGX_INFO("ConvertToLLVMPass: BEFORE ConversionTarget creation");
-        ConversionTarget target(*context);
-        PGX_INFO("ConvertToLLVMPass: ConversionTarget created successfully");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE target.addLegalDialect<LLVM::LLVMDialect>");
-        target.addLegalDialect<LLVM::LLVMDialect>();
-        PGX_INFO("ConvertToLLVMPass: target.addLegalDialect completed");
-        
-        PGX_INFO("ConvertToLLVMPass: BEFORE target.addLegalOp<ModuleOp>");
-        target.addLegalOp<ModuleOp>();
-        PGX_INFO("ConvertToLLVMPass: target.addLegalOp completed");
-        
-        // Apply unified conversion (like LingoDB)
-        PGX_INFO("ConvertToLLVMPass: BEFORE applyFullConversion - THIS IS THE CRITICAL CALL");
-        if (failed(applyFullConversion(module, target, std::move(patterns)))) {
-            PGX_ERROR("ConvertToLLVMPass: Unified conversion failed");
-            signalPassFailure();
-        } else {
-            PGX_INFO("ConvertToLLVMPass: Unified conversion completed successfully");
-        }
-        PGX_INFO("ConvertToLLVMPass: EXIT - Conversion pass completed");
-    }
-};
-} // end anonymous namespace
-
-std::unique_ptr<Pass> createConvertToLLVMPass() {
-    PGX_INFO("createConvertToLLVMPass: ENTRY - Creating ConvertToLLVMPass");
-    PGX_INFO("createConvertToLLVMPass: BEFORE std::make_unique<ConvertToLLVMPass>");
-    auto pass = std::make_unique<ConvertToLLVMPass>();
-    PGX_INFO("createConvertToLLVMPass: Pass created successfully, returning");
-    return pass;
-}
-
 
 } // namespace pgx_lower
 } // namespace mlir
