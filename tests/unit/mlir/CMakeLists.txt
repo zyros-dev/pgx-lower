@@ -182,6 +182,7 @@ add_executable(mlir_unit_test
     test_standard_to_llvm_pass.cpp
     test_dialect_verification.cpp  
     test_llvm_passes_simple.cpp
+    test_real_module_crash.cpp
     runtime_stubs.cpp
 )
 

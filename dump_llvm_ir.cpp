@@ -1,36 +1,30 @@
-#include <gtest/gtest.h>
+#include <iostream>
+#include <fstream>
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinOps.h" 
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
-#include "pgx_lower/mlir/Passes.h"
-#include "pgx_lower/mlir/Conversion/StandardToLLVM/StandardToLLVM.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/util/UtilDialect.h"
+#include "pgx_lower/mlir/Passes.h"
 #include "llvm/Support/raw_ostream.h"
-#include <fstream>
 
 using namespace mlir;
 
-class RealModuleCrashTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        // Load required dialects
-        context.loadDialect<func::FuncDialect>();
-        context.loadDialect<arith::ArithDialect>();
-        context.loadDialect<scf::SCFDialect>();
-        context.loadDialect<LLVM::LLVMDialect>();
-        context.loadDialect<util::UtilDialect>();
-    }
-
+int main() {
     MLIRContext context;
-};
-
-TEST_F(RealModuleCrashTest, ExactRealModuleContent) {
-    // The exact MLIR that crashes in production (from /tmp/real_module.mlir)
+    
+    // Load required dialects
+    context.loadDialect<func::FuncDialect>();
+    context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<scf::SCFDialect>();
+    context.loadDialect<LLVM::LLVMDialect>();
+    context.loadDialect<util::UtilDialect>();
+    
+    // The exact MLIR from /tmp/real_module.mlir
     const char* moduleStr = R"(
 module {
   func.func private @_ZN7runtime12TableBuilder5buildEv(!util.ref<i8>) -> !util.ref<i8>
@@ -50,7 +44,7 @@ module {
     %1 = util.varlen32_create_const ""
     %2 = call @_ZN7runtime12TableBuilder6createENS_8VarLen32E(%1) : (!util.varlen32) -> !util.ref<i8>
     %3 = call @rt_get_execution_context() : () -> !util.ref<i8>
-    %4 = util.varlen32_create_const "{ \"table\": \"test|oid:5741428\", \"columns\": [ \"dummy_col\"] }"
+    %4 = util.varlen32_create_const "{ \"table\": \"test|oid:5749620\", \"columns\": [ \"dummy_col\"] }"
     %5 = call @_ZN7runtime19DataSourceIteration5startEPNS_16ExecutionContextENS_8VarLen32E(%3, %4) : (!util.ref<i8>, !util.varlen32) -> !util.ref<i8>
     scf.while : () -> () {
       %7 = func.call @_ZN7runtime19DataSourceIteration7isValidEv(%5) : (!util.ref<i8>) -> i1
@@ -74,16 +68,22 @@ module {
 )";
 
     auto module = parseSourceString<ModuleOp>(moduleStr, &context);
-    ASSERT_TRUE(module) << "Failed to parse real module";
+    if (!module) {
+        std::cout << "Failed to parse module" << std::endl;
+        return 1;
+    }
+    
+    std::cout << "Module parsed successfully" << std::endl;
     
     PassManager pm(&context);
-    pm.addPass(mlir::pgx_lower::createStandardToLLVMPass());
+    pm.addPass(pgx_lower::createStandardToLLVMPass());
     
-    // This should reproduce the exact crash
-    bool result = succeeded(pm.run(module.get()));
+    std::cout << "About to run StandardToLLVMPass..." << std::endl;
     
-    if (result) {
-        // Dump the resulting LLVM IR to file
+    if (succeeded(pm.run(module.get()))) {
+        std::cout << "SUCCESS: StandardToLLVMPass worked!" << std::endl;
+        
+        // Dump the resulting LLVM IR
         std::string outputStr;
         llvm::raw_string_ostream stream(outputStr);
         module->print(stream);
@@ -92,16 +92,22 @@ module {
         if (outFile.is_open()) {
             outFile << outputStr;
             outFile.close();
-            printf("✅ Converted LLVM IR dumped to /tmp/converted_llvm_ir.mlir\n");
+            std::cout << "✅ Converted LLVM IR dumped to /tmp/converted_llvm_ir.mlir" << std::endl;
         } else {
-            printf("❌ Failed to dump converted IR\n");
+            std::cout << "❌ Failed to dump converted IR" << std::endl;
         }
         
-        // Also print to console (first 500 chars)
-        printf("=== CONVERTED LLVM IR (preview) ===\n");
-        printf("%.500s...\n", outputStr.c_str());
-        printf("=== END PREVIEW ===\n");
+        // Print first 2000 chars to console
+        std::cout << "\n=== CONVERTED LLVM IR (first 2000 chars) ===" << std::endl;
+        std::cout << outputStr.substr(0, 2000) << std::endl;
+        if (outputStr.length() > 2000) {
+            std::cout << "...(truncated, see full output in /tmp/converted_llvm_ir.mlir)" << std::endl;
+        }
+        std::cout << "=== END CONVERTED IR ===" << std::endl;
+        
+        return 0;
+    } else {
+        std::cout << "FAILED: StandardToLLVMPass failed" << std::endl;
+        return 1;
     }
-    
-    EXPECT_TRUE(result) << "StandardToLLVMPass failed on real module content";
 }
