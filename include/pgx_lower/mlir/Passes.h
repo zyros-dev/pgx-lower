@@ -1,6 +1,9 @@
 #ifndef PGX_LOWER_MLIR_PASSES_H
 #define PGX_LOWER_MLIR_PASSES_H
 
+#include "mlir/Pass/Pass.h"
+#include <memory>
+
 namespace mlir {
 class PassManager;
 
@@ -19,6 +22,9 @@ void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification = fa
 
 // Phase 3: Standard→LLVM lowering pipeline
 void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification = false);
+
+// Unified Standard→LLVM conversion pass (LingoDB approach)
+std::unique_ptr<Pass> createConvertToLLVMPass();
 
 // Helper: Function-level optimization pipeline
 void createFunctionOptimizationPipeline(PassManager& pm, bool enableVerification = false);

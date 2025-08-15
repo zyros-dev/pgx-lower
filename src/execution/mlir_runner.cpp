@@ -889,7 +889,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
     }
     
     // Debug: Print operation types before lowering
-    PGX_DEBUG("Phase 3c: Operations before Standard→LLVM lowering:");
+    PGX_INFO("Phase 3c: Operations before Standard→LLVM lowering:");
     std::map<std::string, int> dialectCounts;
     module->walk([&](mlir::Operation* op) {
         if (op->getDialect()) {
@@ -897,7 +897,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
         }
     });
     for (const auto& [dialect, count] : dialectCounts) {
-        PGX_DEBUG("  - " + dialect + ": " + std::to_string(count));
+        PGX_INFO("  - " + dialect + ": " + std::to_string(count));
     }
     
     // Add PostgreSQL-safe error handling
@@ -905,7 +905,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
     PG_TRY();
     {
         // Create PassManager with module context (not context pointer)
-        PGX_DEBUG("Phase 3c: Creating PassManager");
+        PGX_INFO("Phase 3c: Creating PassManager");
         auto* moduleContext = module.getContext();
         if (!moduleContext) {
             PGX_ERROR("Phase 3c: Module context is null!");
@@ -913,14 +913,14 @@ static bool runPhase3c(::mlir::ModuleOp module) {
             return false;
         }
         
-        PGX_DEBUG("Phase 3c: Module context obtained, creating PassManager");
+        PGX_INFO("Phase 3c: Module context obtained, creating PassManager");
         ::mlir::PassManager pm(moduleContext);
         
-        PGX_DEBUG("Phase 3c: PassManager created successfully");
-        PGX_DEBUG("Phase 3c: Configuring Standard→LLVM pipeline");
+        PGX_INFO("Phase 3c: PassManager created successfully");
+        PGX_INFO("Phase 3c: Configuring Standard→LLVM pipeline");
         mlir::pgx_lower::createStandardToLLVMPipeline(pm, true);
         
-        PGX_DEBUG("Phase 3c: Running PassManager");
+        PGX_INFO("Phase 3c: Running PassManager");
         if (mlir::failed(pm.run(module))) {
             PGX_ERROR("Phase 3c failed: Standard→LLVM lowering error");
             success = false;
@@ -954,7 +954,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
                 PGX_INFO("Func operation remains (allowed): " +
                          op->getName().getStringRef().str());
             } else {
-                PGX_ERROR("Non-LLVM operation remains after lowering: " +
+                PGX_INFO("Non-LLVM operation remains after lowering: " +
                          op->getName().getStringRef().str() + " from dialect: " +
                          op->getDialect()->getNamespace().str());
                 hasNonLLVMOps = true;
