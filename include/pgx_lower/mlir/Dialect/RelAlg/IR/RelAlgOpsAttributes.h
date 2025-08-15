@@ -7,6 +7,6 @@
 
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsEnums.h"
 #define GET_ATTRDEF_CLASSES
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h.inc"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h.inc"
 
 #endif // MLIR_DIALECT_RELALG_IR_RELALGOPSATTRIBUTES_H
