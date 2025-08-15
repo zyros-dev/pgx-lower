@@ -90,8 +90,8 @@ rebuild-utest:
 	@echo "Unit test rebuild completed!"
 
 utest: build-utest
-	@echo "Running unit tests (MLIR dialects, lowering passes, streaming translators)..."
-	cd $(BUILD_DIR_UTEST) && ./tests/unit/mlir/test_standard_to_llvm_pass; cd -
+	@echo "Running ALL unit tests..."
+	cd $(BUILD_DIR_UTEST) && ./tests/unit/mlir/mlir_unit_test && cd -
 	@echo "Unit tests completed!"
 
 utest-run:
