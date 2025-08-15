@@ -4,6 +4,7 @@
 
 #include <string>
 #include <memory>
+#include <optional>
 #include "runtime/metadata.h"
 
 // Forward declarations needed
@@ -13,6 +14,23 @@ class RewritePatternSet;
 } // namespace mlir
 
 namespace runtime {
+
+// Implement ColumnMetaData methods
+const std::optional<size_t>& ColumnMetaData::getDistinctValues() const {
+    return distinctValues;
+}
+
+void ColumnMetaData::setDistinctValues(const std::optional<size_t>& distinctValues) {
+    this->distinctValues = distinctValues;
+}
+
+const ColumnType& ColumnMetaData::getColumnType() const {
+    return columnType;
+}
+
+void ColumnMetaData::setColumnType(const ColumnType& columnType) {
+    this->columnType = columnType;
+}
 
 // Implement the methods declared in metadata.h
 std::shared_ptr<TableMetaData> TableMetaData::deserialize(std::string str) {

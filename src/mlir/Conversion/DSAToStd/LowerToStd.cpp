@@ -32,6 +32,13 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
    public:
    using OpConversionPattern<mlir::dsa::ScanSource>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::ScanSource op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: ENTRY");
+      MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: Original ScanSource result type check...");
+      auto originalType = op.getResult().getType();
+      if (auto genIterType = originalType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
+         MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: Original type is GenericIterableType with name: " + genIterType.getIteratorName());
+      }
+      
       std::vector<Type> types;
       auto parentModule = op->getParentOfType<ModuleOp>();
       ::mlir::func::FuncOp funcOp = parentModule.lookupSymbol<::mlir::func::FuncOp>("rt_get_execution_context");
@@ -55,6 +62,7 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
       auto rawPtr = rt::DataSourceIteration::start(rewriter, op->getLoc())({executionContext, description})[0];
       MLIR_PGX_DEBUG("DSA", "Successfully called rt::DataSourceIteration::start");
       
+      MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: Replacing op with i8* pointer");
       rewriter.replaceOp(op, rawPtr);
       return success();
    }
@@ -188,6 +196,17 @@ void DSAToStdLoweringPass::runOnOperation() {
    patterns.insert<ScanSourceLowering>(typeConverter, &getContext());
 
    PGX_INFO("DSAToStd: Starting module conversion");
+   
+   // Add pre-conversion debugging
+   MLIR_PGX_DEBUG("DSA", "Pre-conversion module state:");
+   size_t dsaOpCount = 0;
+   module.walk([&dsaOpCount](Operation* op) {
+       if (op->getName().getDialectNamespace() == "dsa") {
+           dsaOpCount++;
+           MLIR_PGX_DEBUG("DSA", "DSA operation before conversion: " + op->getName().getStringRef().str());
+       }
+   });
+   MLIR_PGX_DEBUG("DSA", "Total DSA operations to convert: " + std::to_string(dsaOpCount));
    
    if (failed(applyFullConversion(module, target, std::move(patterns)))) {
       PGX_ERROR("DSAToStd: Conversion failed during applyFullConversion");
