@@ -402,11 +402,19 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
    }
 };
 std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterationImpl::getImpl(Type collectionType, Value loweredCollection) {
+   MLIR_PGX_INFO("DSA", "CollectionIterationImpl::getImpl - ENTRY");
+   
    // Add debugging to understand why this fails
    if (!collectionType) {
       MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - collectionType is null!");
       return std::unique_ptr<mlir::dsa::CollectionIterationImpl>();
    }
+   
+   // Try to print the type
+   std::string typeName = "unknown";
+   llvm::raw_string_ostream typeStream(typeName);
+   collectionType.print(typeStream);
+   MLIR_PGX_INFO("DSA", "CollectionIterationImpl::getImpl - Collection type string: " + typeName);
    
    if (auto generic = collectionType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
       MLIR_PGX_DEBUG("DSA", "CollectionIterationImpl::getImpl - GenericIterableType with name: " + generic.getIteratorName());
@@ -435,6 +443,7 @@ std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterati
    } else if (auto joinHt = collectionType.dyn_cast_or_null<mlir::dsa::JoinHashtableType>()) {
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<JoinHtIterator>(loweredCollection));
    } else if (auto recordBatch = collectionType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
+      MLIR_PGX_INFO("DSA", "CollectionIterationImpl::getImpl - Creating RecordBatchIterator");
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<RecordBatchIterator>(loweredCollection, recordBatch));
    } else {
       MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - Unknown collection type!");

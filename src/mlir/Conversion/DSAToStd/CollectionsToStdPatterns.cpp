@@ -73,7 +73,65 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
    }
 
    LogicalResult matchAndRewrite(mlir::dsa::ForOp forOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: ENTRY");
+      MLIR_PGX_INFO("DSA", "ForOpLowering: ENTRY");
+      
+      // Print location info to help debug
+      auto loc = forOp.getLoc();
+      if (auto fileLoc = loc.dyn_cast<FileLineColLoc>()) {
+         MLIR_PGX_INFO("DSA", "ForOpLowering: Processing ForOp at " + fileLoc.getFilename().str());
+      } else {
+         MLIR_PGX_INFO("DSA", "ForOpLowering: Processing ForOp at unknown location");
+      }
+      
+      // Debug: Print the collection operand info
+      if (!forOp.getCollection()) {
+         MLIR_PGX_ERROR("DSA", "ForOpLowering: ForOp has null collection!");
+         return failure();
+      }
+      
+      // Debug: Log collection type early
+      auto collectionType = forOp.getCollection().getType();
+      
+      // Try to print the type name
+      std::string typeName = "unknown";
+      llvm::raw_string_ostream typeStream(typeName);
+      collectionType.print(typeStream);
+      MLIR_PGX_INFO("DSA", "ForOpLowering: Original collection type string: " + typeName);
+      
+      // Check the type of the region argument to understand what type this ForOp expects
+      if (!forOp.getRegion().empty() && forOp.getRegion().front().getNumArguments() > 0) {
+         auto argType = forOp.getRegion().front().getArgument(0).getType();
+         std::string argTypeName = "unknown";
+         llvm::raw_string_ostream argTypeStream(argTypeName);
+         argType.print(argTypeStream);
+         MLIR_PGX_INFO("DSA", "ForOpLowering: ForOp expects induction variable of type: " + argTypeName);
+         
+         // If the collection is already converted but the ForOp expects a DSA type,
+         // we need to infer the original DSA collection type
+         if (!collectionType.isa<mlir::dsa::CollectionType>()) {
+            if (auto recordType = argType.dyn_cast_or_null<mlir::dsa::RecordType>()) {
+               MLIR_PGX_INFO("DSA", "ForOpLowering: Collection already converted, ForOp expects RecordType");
+               // The ForOp expects to iterate over records, so the collection must have been a RecordBatchType
+               auto recordBatchType = mlir::dsa::RecordBatchType::get(forOp.getContext(), recordType.getRowType());
+               collectionType = recordBatchType;
+               MLIR_PGX_INFO("DSA", "ForOpLowering: Inferred collection type as RecordBatchType");
+            } else if (argType.isa<mlir::dsa::RecordBatchType>()) {
+               MLIR_PGX_INFO("DSA", "ForOpLowering: Collection already converted, but ForOp expects RecordBatchType");
+               // Use the argument type directly
+               collectionType = argType;
+            }
+         }
+      }
+      
+      if (auto genIter = collectionType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
+         MLIR_PGX_INFO("DSA", "ForOpLowering: Collection is GenericIterableType: " + genIter.getIteratorName());
+      } else if (auto recordBatch = collectionType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
+         MLIR_PGX_INFO("DSA", "ForOpLowering: Collection is RecordBatchType");
+      } else if (auto record = collectionType.dyn_cast_or_null<mlir::dsa::RecordType>()) {
+         MLIR_PGX_INFO("DSA", "ForOpLowering: Collection is RecordType");
+      } else {
+         MLIR_PGX_INFO("DSA", "ForOpLowering: Collection is NOT a known DSA type");
+      }
       
       // CRITICAL: Check if region is empty before accessing
       if (forOp.getRegion().empty()) {
@@ -95,29 +153,11 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          argumentTypes.push_back(t);
          argumentLocs.push_back(forOp->getLoc());
       }
-      // CRITICAL: Pass the actual type to getImpl, don't cast to CollectionType first
-      auto actualType = forOp.getCollection().getType();
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: Getting iterator for collection");
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: Original forOp collection type is valid");
-      
-      // Check if it's a GenericIterableType for debugging
-      if (auto genIterType = actualType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
-         MLIR_PGX_DEBUG("DSA", "ForOpLowering: Type is GenericIterableType with name: " + genIterType.getIteratorName());
-      } else {
-         MLIR_PGX_ERROR("DSA", "ForOpLowering: actualType is NOT a GenericIterableType!");
-         // Try to understand what type it is
-         if (auto recordBatchType = actualType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
-            MLIR_PGX_ERROR("DSA", "ForOpLowering: actualType is RecordBatchType");
-         } else {
-            MLIR_PGX_ERROR("DSA", "ForOpLowering: actualType is completely unknown type");
-         }
-      }
-      
       // CRITICAL: During conversion, the adaptor's collection value is already converted to i8*
       // We MUST use the ORIGINAL type from forOp, not the converted value's type
       MLIR_PGX_DEBUG("DSA", "ForOpLowering: Using original ForOp collection type for iterator lookup");
       
-      auto iterator = mlir::dsa::CollectionIterationImpl::getImpl(actualType, adaptor.getCollection());
+      auto iterator = mlir::dsa::CollectionIterationImpl::getImpl(collectionType, adaptor.getCollection());
       if (!iterator) {
          MLIR_PGX_ERROR("DSA", "ForOpLowering: Failed to get iterator for collection type!");
          return failure();

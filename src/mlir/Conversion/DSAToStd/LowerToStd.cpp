@@ -145,8 +145,11 @@ void DSAToStdLoweringPass::runOnOperation() {
    target.addLegalDialect<cf::ControlFlowDialect>();
 
    target.addDynamicallyLegalDialect<util::UtilDialect>(opIsWithoutDSATypes);
-   target.addLegalOp<mlir::dsa::CondSkipOp>();
    
+   // Mark DSA dialect as illegal so its operations get converted
+   target.addIllegalDialect<dsa::DSADialect>();
+   
+   // CondSkipOp is handled specially during ForOp lowering
    target.addDynamicallyLegalOp<mlir::dsa::CondSkipOp>(opIsWithoutDSATypes);
    target.addDynamicallyLegalOp<::mlir::func::FuncOp>([&](::mlir::func::FuncOp op) {
       auto isLegal = !hasDSAType(typeConverter, op.getFunctionType().getInputs()) &&

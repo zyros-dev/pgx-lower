@@ -10,6 +10,7 @@ include "mlir/Interfaces/LoopLikeInterface.td"
 def Util_Dialect : Dialect {
 let name = "util";
 let cppNamespace = "::mlir::util";
+let useDefaultTypePrinterParser = 1;
 let extraClassDeclaration = [{
 private:
 void registerTypes();
