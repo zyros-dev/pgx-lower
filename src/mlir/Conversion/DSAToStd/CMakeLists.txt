@@ -26,5 +26,7 @@ add_mlir_conversion_library(MLIRDSAToStd
         LINK_LIBS mlir-support PUBLIC
         MLIRIR
         MLIRDSA
+        MLIRDBDialect
+        MLIRLLVMDialect
         MLIRSCFTransforms
         )
