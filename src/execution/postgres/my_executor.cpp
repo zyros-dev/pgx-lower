@@ -335,6 +335,10 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
         
         PGX_INFO("mlir_runner::run_mlir_with_dest_receiver returned "
                       + std::string(mlir_success ? "true" : "false"));
+        
+        if (!mlir_success) {
+            PGX_ERROR("MLIR compilation failed, falling back to PostgreSQL standard execution");
+        }
     }
     PG_CATCH();
     {
