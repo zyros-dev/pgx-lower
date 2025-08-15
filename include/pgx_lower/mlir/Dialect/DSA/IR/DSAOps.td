@@ -17,6 +17,7 @@ include "mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
 def DSA_Dialect : Dialect {
     let name = "dsa";
     let cppNamespace = "::mlir::dsa";
+    let useDefaultTypePrinterParser = 1;
     let extraClassDeclaration = [{
         private:
         void registerTypes();

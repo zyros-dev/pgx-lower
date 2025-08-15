@@ -1089,6 +1089,7 @@ void DBToStdLoweringPass::runOnOperation() {
       return mlir::TupleType::get(tuple.getContext(), types);
    };
    // CRITICAL: Add DSA type conversions per LingoDB architecture for unified type conversion
+   // These conversions preserve DSA types but convert their element types
    typeConverter.addConversion([&](mlir::dsa::RecordType r) {
       return mlir::dsa::RecordType::get(r.getContext(), convertPhysical(r.getRowType()));
    });

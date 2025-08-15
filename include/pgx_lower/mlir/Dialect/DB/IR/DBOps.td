@@ -24,6 +24,7 @@ def DB_Dialect : Dialect {
 
     let name = "db";
     let cppNamespace = "::mlir::db";
+    let useDefaultTypePrinterParser = 1;
     let extraClassDeclaration = [{
         private:
         void registerTypes();
