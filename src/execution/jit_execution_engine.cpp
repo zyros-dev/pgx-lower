@@ -6,6 +6,7 @@
 #include "mlir/Target/LLVMIR/Dialect/All.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 // LLVM includes
 #include "llvm/Support/TargetSelect.h"
@@ -121,7 +122,8 @@ bool PostgreSQLJITExecutionEngine::validateModuleForCompilation(::mlir::ModuleOp
     }
     
     // Check for main function (required for execution)
-    auto mainFunc = module.lookupSymbol<::mlir::func::FuncOp>("main");
+    // After Standard→LLVM lowering, functions become llvm.func, not func.func
+    auto mainFunc = module.lookupSymbol<::mlir::LLVM::LLVMFuncOp>("main");
     if (!mainFunc) {
         PGX_WARNING("Module does not contain 'main' function - execution may not be possible");
     } else {
