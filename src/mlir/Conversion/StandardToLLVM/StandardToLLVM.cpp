@@ -7,6 +7,7 @@
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -26,76 +27,57 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StandardToLLVMPass)
 
     void getDependentDialects(DialectRegistry& registry) const override {
-        registry.insert<LLVM::LLVMDialect, scf::SCFDialect, 
+        PGX_INFO("StandardToLLVMPass: Get dialects");
+        registry.insert<LLVM::LLVMDialect, scf::SCFDialect,
                        cf::ControlFlowDialect, arith::ArithDialect>();
     }
 
     void runOnOperation() override {
-        PGX_DEBUG("StandardToLLVMPass: Starting unified Standard→LLVM conversion");
-        
-        auto* context = &getContext();
-        ModuleOp module = getOperation();
-        
-        // Get DataLayoutAnalysis (like LingoDB)
+        PGX_INFO("[StandardToLLVMPass] Starting run on operation!");
+        // The first thing to define is the conversion target. This will define the
+        // final target for this lowering. For this lowering, we are only targeting
+        // the LLVM dialect.
         const auto& dataLayoutAnalysis = getAnalysis<mlir::DataLayoutAnalysis>();
-        PGX_DEBUG("StandardToLLVMPass: Retrieved DataLayoutAnalysis");
-        
-        // Create LLVM type converter with DataLayout options
-        LowerToLLVMOptions options(context, dataLayoutAnalysis.getAtOrAbove(module));
-        LLVMTypeConverter typeConverter(context, options, &dataLayoutAnalysis);
-        PGX_DEBUG("StandardToLLVMPass: Created LLVM type converter with DataLayout");
-        
-        // Add source materialization (like LingoDB)
-        typeConverter.addSourceMaterialization([&](OpBuilder&, FunctionType type, 
-                                                  ValueRange valueRange, Location loc) {
-            return valueRange.front();
-        });
-        
-        // Create pattern set
-        RewritePatternSet patterns(context);
-        
-        // Add ALL conversion patterns in the correct order
-        PGX_DEBUG("StandardToLLVMPass: Populating Affine→Standard patterns");
-        mlir::populateAffineToStdConversionPatterns(patterns);
-        
-        PGX_DEBUG("StandardToLLVMPass: Populating SCF→ControlFlow patterns");
+
+        mlir::LLVMConversionTarget target(getContext());
+        target.addLegalOp<mlir::ModuleOp>();
+
+        // During this lowering, we will also be lowering the MemRef types, that are
+        // currently being operated on, to a representation in LLVM. To perform this
+        // conversion we use a TypeConverter as part of the lowering. This converter
+        // details how one type maps to another. This is necessary now that we will be
+        // doing more complicated lowerings, involving loop region arguments.
+        PGX_INFO("[StandardToLLVMPass] Init options");
+        mlir::LowerToLLVMOptions options(&getContext(), dataLayoutAnalysis.getAtOrAbove(getOperation()));
+        // options.emitCWrappers = true;
+        mlir::LLVMTypeConverter typeConverter(&getContext(), options, &dataLayoutAnalysis);
+        typeConverter.addSourceMaterialization(
+            [&](mlir::OpBuilder&, mlir::FunctionType type, mlir::ValueRange valueRange, mlir::Location loc) {
+                return valueRange.front();
+            });
+
+        PGX_INFO("[StandardToLLVMPass] registering!");
+        mlir::RewritePatternSet patterns(&getContext());
+        populateAffineToStdConversionPatterns(patterns);
         mlir::populateSCFToControlFlowConversionPatterns(patterns);
-        
-        PGX_DEBUG("StandardToLLVMPass: Populating Func→LLVM patterns");
-        mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
-        
-        // CRITICAL: Add Util→LLVM patterns that were missing
-        PGX_DEBUG("StandardToLLVMPass: Populating Util→LLVM patterns");
         mlir::util::populateUtilToLLVMConversionPatterns(typeConverter, patterns);
-        
-        PGX_DEBUG("StandardToLLVMPass: Populating Arith→LLVM patterns");
-        arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
-        
-        PGX_DEBUG("StandardToLLVMPass: Populating ControlFlow→LLVM patterns");
-        cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
-        
-        // Configure conversion target (use LLVMConversionTarget like LingoDB)
-        LLVMConversionTarget target(*context);
-        target.addLegalOp<ModuleOp>();
-        
-        PGX_DEBUG("StandardToLLVMPass: Configured LLVM conversion target");
-        
-        // Apply full conversion
-        PGX_DEBUG("StandardToLLVMPass: Applying full conversion to module");
-        if (failed(applyFullConversion(module, target, std::move(patterns)))) {
-            PGX_ERROR("StandardToLLVMPass: Full conversion failed");
+        mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
+        mlir::cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
+
+        mlir::populateMemRefToLLVMConversionPatterns(typeConverter, patterns);
+        mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
+        // We want to completely lower to LLVM, so we use a `FullConversion`. This
+        // ensures that only legal operations will remain after the conversion.
+        auto module = getOperation();
+        if (failed(applyFullConversion(module, target, std::move(patterns))))
             signalPassFailure();
-            return;
-        }
-        
-        PGX_DEBUG("StandardToLLVMPass: Successfully completed unified Standard→LLVM conversion");
     }
 };
 
 } // namespace
 
 std::unique_ptr<Pass> createStandardToLLVMPass() {
-    PGX_DEBUG("Creating StandardToLLVMPass instance");
+    PGX_INFO("Creating StandardToLLVMPass instance");
     return std::make_unique<StandardToLLVMPass>();
 }
 

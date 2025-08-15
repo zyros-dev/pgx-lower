@@ -10,13 +10,13 @@ namespace {
 template <class Op>
 class SimpleTypeConversionPattern : public ConversionPattern {
    public:
-   explicit SimpleTypeConversionPattern(const TypeConverter& typeConverter, MLIRContext* context)
+   explicit SimpleTypeConversionPattern(TypeConverter& typeConverter, MLIRContext* context)
       : ConversionPattern(typeConverter, Op::getOperationName(), 1, context) {}
 
    LogicalResult
    matchAndRewrite(Operation* op, ArrayRef<Value> operands,
                    ConversionPatternRewriter& rewriter) const override {
-      llvm::SmallVector<::mlir::Type> convertedTypes;
+      llvm::SmallVector<mlir::Type> convertedTypes;
       assert(typeConverter->convertTypes(op->getResultTypes(), convertedTypes).succeeded());
       rewriter.replaceOpWithNewOp<Op>(op, convertedTypes, ValueRange(operands), op->getAttrs());
       return success();
@@ -45,24 +45,24 @@ struct UtilToLLVMLoweringPass
 } // end anonymous namespace
 
 void mlir::util::populateUtilTypeConversionPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns) {
-   patterns.add<SimpleTypeConversionPattern<GetTupleOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<UndefOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<PackOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<UnPackOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<ToGenericMemrefOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<ToMemrefOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<IsRefValidOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<InvalidRefOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<StoreOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<AllocOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<AllocaOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<DeAllocOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<GenericMemrefCastOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::GetTupleOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::UndefOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::PackOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::UnPackOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::ToGenericMemrefOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::ToMemrefOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::IsRefValidOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::InvalidRefOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::StoreOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::AllocOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::AllocaOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::DeAllocOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::GenericMemrefCastOp>>(typeConverter, patterns.getContext());
    patterns.add<SizeOfLowering>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<LoadOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<TupleElementPtrOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<ArrayElementPtrOp>>(typeConverter, patterns.getContext());
-   patterns.add<SimpleTypeConversionPattern<FilterTaggedPtr>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::LoadOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::TupleElementPtrOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::ArrayElementPtrOp>>(typeConverter, patterns.getContext());
+   patterns.add<SimpleTypeConversionPattern<mlir::util::FilterTaggedPtr>>(typeConverter, patterns.getContext());
 
    typeConverter.addConversion([&](mlir::util::RefType genericMemrefType) {
       return mlir::util::RefType::get(genericMemrefType.getContext(), typeConverter.convertType(genericMemrefType.getElementType()));
