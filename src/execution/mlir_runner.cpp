@@ -84,6 +84,8 @@ extern "C" {
     bool test_unit_code_from_postgresql();
     bool test_passmanager_creation_only();
     bool test_real_module_from_postgresql(mlir::ModuleOp real_module);
+    bool test_empty_passmanager_from_postgresql(mlir::ModuleOp real_module);
+    bool test_dummy_pass_from_postgresql(mlir::ModuleOp real_module);
 }
 
 // Phase 3b Memory Management Helper
@@ -684,6 +686,24 @@ static bool runPhase3c(::mlir::ModuleOp module) {
             PGX_INFO("SHOCKING: Unit test code WORKS in PostgreSQL! Theory disproven!");
         } else {
             PGX_INFO("EXPECTED: Unit test code FAILS in PostgreSQL - theory confirmed!");
+        }
+        
+        // 🎯 EMPTY PASSMANAGER TEST: Is it pm.run() itself or our passes?
+        PGX_INFO("🎯 EMPTY PASSMANAGER TEST: Testing with NO passes...");
+        bool empty_pm_result = test_empty_passmanager_from_postgresql(module);
+        if (empty_pm_result) {
+            PGX_INFO("✅ EMPTY PassManager works! Issue is in StandardToLLVMPass");
+        } else {
+            PGX_INFO("❌ EMPTY PassManager crashes! Issue is deeper - pm.run() itself!");
+        }
+        
+        // 🎯 DUMMY PASS TEST: Is it pass infrastructure or specifically our pass?
+        PGX_INFO("🎯 DUMMY PASS TEST: Testing with simple canonicalizer pass...");
+        bool dummy_pm_result = test_dummy_pass_from_postgresql(module);
+        if (dummy_pm_result) {
+            PGX_INFO("✅ DUMMY pass works! Issue is specifically StandardToLLVMPass implementation");
+        } else {
+            PGX_INFO("❌ DUMMY pass crashes! Issue is broader pass infrastructure");
         }
         
         // 🎯 ULTIMATE EXPERIMENT: Test the REAL module from the pipeline

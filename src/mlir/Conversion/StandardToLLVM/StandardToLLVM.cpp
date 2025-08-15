@@ -26,24 +26,25 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StandardToLLVMPass)
 
     void getDependentDialects(DialectRegistry& registry) const override {
-        registry.insert<LLVM::LLVMDialect, scf::SCFDialect, 
+        PGX_INFO("StandardToLLVMPass: Get dialects");
+        registry.insert<LLVM::LLVMDialect, scf::SCFDialect,
                        cf::ControlFlowDialect, arith::ArithDialect>();
     }
 
     void runOnOperation() override {
-        PGX_DEBUG("StandardToLLVMPass: Starting unified Standard→LLVM conversion");
+        PGX_INFO("StandardToLLVMPass: Starting unified Standard→LLVM conversion");
         
         auto* context = &getContext();
         ModuleOp module = getOperation();
         
         // Get DataLayoutAnalysis (like LingoDB)
         const auto& dataLayoutAnalysis = getAnalysis<mlir::DataLayoutAnalysis>();
-        PGX_DEBUG("StandardToLLVMPass: Retrieved DataLayoutAnalysis");
+        PGX_INFO("StandardToLLVMPass: Retrieved DataLayoutAnalysis");
         
         // Create LLVM type converter with DataLayout options
         LowerToLLVMOptions options(context, dataLayoutAnalysis.getAtOrAbove(module));
         LLVMTypeConverter typeConverter(context, options, &dataLayoutAnalysis);
-        PGX_DEBUG("StandardToLLVMPass: Created LLVM type converter with DataLayout");
+        PGX_INFO("StandardToLLVMPass: Created LLVM type converter with DataLayout");
         
         // Add source materialization (like LingoDB)
         typeConverter.addSourceMaterialization([&](OpBuilder&, FunctionType type, 
@@ -55,47 +56,47 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
         RewritePatternSet patterns(context);
         
         // Add ALL conversion patterns in the correct order
-        PGX_DEBUG("StandardToLLVMPass: Populating Affine→Standard patterns");
+        PGX_INFO("StandardToLLVMPass: Populating Affine→Standard patterns");
         mlir::populateAffineToStdConversionPatterns(patterns);
         
-        PGX_DEBUG("StandardToLLVMPass: Populating SCF→ControlFlow patterns");
+        PGX_INFO("StandardToLLVMPass: Populating SCF→ControlFlow patterns");
         mlir::populateSCFToControlFlowConversionPatterns(patterns);
         
-        PGX_DEBUG("StandardToLLVMPass: Populating Func→LLVM patterns");
+        PGX_INFO("StandardToLLVMPass: Populating Func→LLVM patterns");
         mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
         
         // CRITICAL: Add Util→LLVM patterns that were missing
-        PGX_DEBUG("StandardToLLVMPass: Populating Util→LLVM patterns");
+        PGX_INFO("StandardToLLVMPass: Populating Util→LLVM patterns");
         mlir::util::populateUtilToLLVMConversionPatterns(typeConverter, patterns);
         
-        PGX_DEBUG("StandardToLLVMPass: Populating Arith→LLVM patterns");
+        PGX_INFO("StandardToLLVMPass: Populating Arith→LLVM patterns");
         arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
         
-        PGX_DEBUG("StandardToLLVMPass: Populating ControlFlow→LLVM patterns");
+        PGX_INFO("StandardToLLVMPass: Populating ControlFlow→LLVM patterns");
         cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
         
         // Configure conversion target (use LLVMConversionTarget like LingoDB)
         LLVMConversionTarget target(*context);
         target.addLegalOp<ModuleOp>();
         
-        PGX_DEBUG("StandardToLLVMPass: Configured LLVM conversion target");
+        PGX_INFO("StandardToLLVMPass: Configured LLVM conversion target");
         
         // Apply full conversion
-        PGX_DEBUG("StandardToLLVMPass: Applying full conversion to module");
+        PGX_INFO("StandardToLLVMPass: Applying full conversion to module");
         if (failed(applyFullConversion(module, target, std::move(patterns)))) {
             PGX_ERROR("StandardToLLVMPass: Full conversion failed");
             signalPassFailure();
             return;
         }
         
-        PGX_DEBUG("StandardToLLVMPass: Successfully completed unified Standard→LLVM conversion");
+        PGX_INFO("StandardToLLVMPass: Successfully completed unified Standard→LLVM conversion");
     }
 };
 
 } // namespace
 
 std::unique_ptr<Pass> createStandardToLLVMPass() {
-    PGX_DEBUG("Creating StandardToLLVMPass instance");
+    PGX_INFO("Creating StandardToLLVMPass instance");
     return std::make_unique<StandardToLLVMPass>();
 }
 
