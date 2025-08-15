@@ -47,6 +47,8 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
          rewriter.setInsertionPointToStart(parentModule.getBody());
          auto funcType = rewriter.getFunctionType({}, {mlir::util::RefType::get(getContext(), rewriter.getI8Type())});
          funcOp = rewriter.create<::mlir::func::FuncOp>(op->getLoc(), "rt_get_execution_context", funcType);
+         // Fix visibility issue - external functions must be private
+         funcOp.setVisibility(::mlir::func::FuncOp::Visibility::Private);
       }
 
       ::mlir::Value executionContext = rewriter.create<mlir::func::CallOp>(op->getLoc(), funcOp, ::mlir::ValueRange{}).getResult(0);
