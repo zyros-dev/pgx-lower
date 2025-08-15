@@ -79,6 +79,10 @@ extern "C" {
 extern "C" {
     struct ModuleHandle* pgx_jit_create_module_handle(void* mlir_module_ptr);
     void pgx_jit_destroy_module_handle(struct ModuleHandle* handle);
+    
+    // EXPERIMENT: Test exact unit test code from within PostgreSQL
+    bool test_unit_code_from_postgresql();
+    bool test_passmanager_creation_only();
 }
 
 // Phase 3b Memory Management Helper
@@ -671,6 +675,26 @@ static bool runPhase3c(::mlir::ModuleOp module) {
             return false;
         }
         PGX_INFO("Phase 3c: Module is valid, starting PassManager execution");
+        
+        // 🧪 CRITICAL EXPERIMENT: Test unit test code in PostgreSQL context
+        PGX_INFO("🧪 EXPERIMENT: Testing exact unit test code from PostgreSQL context...");
+        bool unit_test_result = test_unit_code_from_postgresql();
+        if (unit_test_result) {
+            PGX_INFO("SHOCKING: Unit test code WORKS in PostgreSQL! Theory disproven!");
+        } else {
+            PGX_INFO("EXPECTED: Unit test code FAILS in PostgreSQL - theory confirmed!");
+        }
+        
+        // Also test just PassManager creation
+        PGX_INFO("Testing PassManager creation in PostgreSQL...");
+        bool pm_creation_result = test_passmanager_creation_only();
+        if (pm_creation_result) {
+            PGX_INFO("PassManager creation works in PostgreSQL");
+        } else {
+            PGX_INFO("PassManager creation fails in PostgreSQL");
+        }
+        
+        PGX_INFO("Now continuing with original pm.run() call...");
         
         if (mlir::failed(pm.run(module))) {
             PGX_ERROR("Phase 3c failed: Standard→LLVM lowering error");
