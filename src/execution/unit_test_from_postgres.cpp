@@ -10,10 +10,97 @@
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/Conversion/StandardToLLVM/StandardToLLVM.h"
 #include "execution/logging.h"
+#include "llvm/Support/raw_ostream.h"
+#include <fstream>
 
-// EXACT COPY of the unit test that works perfectly outside PostgreSQL
+// Test the REAL module from the pipeline - not synthetic data
+extern "C" bool test_real_module_from_postgresql(mlir::ModuleOp real_module) {
+    PGX_INFO("🧪 EXPERIMENT: Testing REAL pipeline module from within PostgreSQL!");
+    PGX_INFO("🎯 Using the EXACT same module that crashes in the original pipeline");
+    
+    try {
+        // Get the context from the real module (not creating fresh one)
+        auto* context = real_module.getContext();
+        
+        PGX_INFO("📋 Real module statistics before test:");
+        std::map<std::string, int> dialectCounts;
+        real_module.walk([&](mlir::Operation* op) {
+            if (op->getDialect()) {
+                dialectCounts[op->getDialect()->getNamespace().str()]++;
+            }
+        });
+        
+        for (const auto& [dialect, count] : dialectCounts) {
+            PGX_INFO("  - " + dialect + ": " + std::to_string(count));
+        }
+
+        // 🔍 DEEPWIKI DEBUGGING: Dump real module IR before crash
+        PGX_INFO("🔍 DEEPWIKI DEBUG: Dumping real module IR to /tmp/real_module.mlir");
+        std::string moduleStr;
+        llvm::raw_string_ostream stream(moduleStr);
+        real_module.print(stream);
+        
+        std::ofstream file("/tmp/real_module.mlir");
+        if (file.is_open()) {
+            file << moduleStr;
+            file.close();
+            PGX_INFO("✅ Real module IR dumped successfully");
+        } else {
+            PGX_ERROR("❌ Failed to dump real module IR");
+        }
+        
+        // 🔍 DEEPWIKI DEBUG: Detailed context inspection
+        PGX_INFO("🔍 DEEPWIKI DEBUG: MLIRContext details:");
+        PGX_INFO("  - Context ptr: " + std::to_string(reinterpret_cast<uintptr_t>(context)));
+        PGX_INFO("  - Module context ptr: " + std::to_string(reinterpret_cast<uintptr_t>(real_module.getContext())));
+        PGX_INFO("  - Context threading disabled: " + std::to_string(context->isMultithreadingEnabled() ? 0 : 1));
+        
+        auto loadedDialects = context->getLoadedDialects();
+        PGX_INFO("  - Loaded dialects count: " + std::to_string(loadedDialects.size()));
+        for (auto* dialect : loadedDialects) {
+            if (dialect) {
+                PGX_INFO("    - " + dialect->getNamespace().str());
+            }
+        }
+        
+        PGX_INFO("🔥 CRITICAL: Creating NEW PassManager with SAME module");
+        mlir::PassManager pm(context);
+        
+        // 🔍 DEEPWIKI DEBUG: PassManager state before adding passes
+        PGX_INFO("🔍 DEEPWIKI DEBUG: PassManager created successfully");
+        PGX_INFO("  - PassManager ptr: " + std::to_string(reinterpret_cast<uintptr_t>(&pm)));
+        
+        pm.addPass(mlir::pgx_lower::createStandardToLLVMPass());
+        PGX_INFO("🔍 DEEPWIKI DEBUG: StandardToLLVMPass added successfully");
+        
+        PGX_INFO("🎯 THE ULTIMATE TEST: pm.run() with REAL module in PostgreSQL...");
+        PGX_INFO("🔍 ABOUT TO CALL pm.run() - this is where we expect the crash");
+        
+        // 🎯 THE CRITICAL MOMENT: Same module, fresh PassManager
+        if (mlir::succeeded(pm.run(real_module))) {
+            PGX_INFO("🤯 INCREDIBLE: Real module pm.run() SUCCEEDED in PostgreSQL!");
+            PGX_INFO("🔍 This suggests the issue is PassManager state, not module content");
+            return true;
+        } else {
+            PGX_ERROR("❌ Real module pm.run() failed - but with fresh PassManager!");
+            PGX_ERROR("🔍 This suggests the issue is the module content itself");
+            return false;
+        }
+        
+    } catch (const std::exception& e) {
+        PGX_ERROR("🧪 REAL MODULE TEST: C++ exception: " + std::string(e.what()));
+        PGX_ERROR("🔍 Same module content crashes even with fresh PassManager");
+        return false;
+    } catch (...) {
+        PGX_ERROR("🧪 REAL MODULE TEST: Unknown exception with real module");
+        PGX_ERROR("🔍 Module content itself may be corrupted or problematic");
+        return false;
+    }
+}
+
+// Legacy synthetic test (keeping for comparison)
 extern "C" bool test_unit_code_from_postgresql() {
-    PGX_INFO("🧪 EXPERIMENT: Running EXACT unit test code from within PostgreSQL!");
+    PGX_INFO("🧪 SYNTHETIC TEST: Creating fresh module from scratch in PostgreSQL");
     
     try {
         mlir::MLIRContext context;
@@ -39,14 +126,11 @@ extern "C" bool test_unit_code_from_postgresql() {
         auto* block = func.addEntryBlock();
         builder.setInsertionPointToEnd(block);
         
-        // THE EXACT SAME OPERATIONS FROM THE UNIT TEST:
-        
-        // 1. Simple arithmetic - forms the basis of query operations
+        // Simple operations for testing
         auto constantValue = builder.create<mlir::arith::ConstantIntOp>(
             builder.getUnknownLoc(), 42, 32);
-        PGX_INFO("Created arithmetic operations in PostgreSQL context");
+        PGX_INFO("Created synthetic operations in PostgreSQL context");
         
-        // 2. Create a util.pack operation with real values (similar to tuple operations)
         auto val1 = builder.create<mlir::arith::ConstantIntOp>(
             builder.getUnknownLoc(), 1, 32);
         auto val2 = builder.create<mlir::arith::ConstantIntOp>(
@@ -57,39 +141,42 @@ extern "C" bool test_unit_code_from_postgresql() {
         auto packOp = builder.create<mlir::util::PackOp>(
             builder.getUnknownLoc(), tupleType, 
             mlir::ValueRange{val1, val2});
-        PGX_INFO("Created util.pack in PostgreSQL context");
         
         builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
         
-        PGX_INFO("💀 SAME MODULE THAT WORKS IN UNIT TEST, NOW IN POSTGRESQL!");
-        PGX_INFO("🎯 About to call pm.run() - THE MOMENT OF TRUTH!");
+        // 🔍 DEEPWIKI DEBUGGING: Dump synthetic module IR for comparison
+        PGX_INFO("🔍 DEEPWIKI DEBUG: Dumping synthetic module IR to /tmp/synthetic_module.mlir");
+        std::string syntheticModuleStr;
+        llvm::raw_string_ostream syntheticStream(syntheticModuleStr);
+        module.print(syntheticStream);
         
-        // THE EXACT SAME PASS MANAGER SETUP FROM UNIT TEST:
+        std::ofstream syntheticFile("/tmp/synthetic_module.mlir");
+        if (syntheticFile.is_open()) {
+            syntheticFile << syntheticModuleStr;
+            syntheticFile.close();
+            PGX_INFO("✅ Synthetic module IR dumped successfully");
+        } else {
+            PGX_ERROR("❌ Failed to dump synthetic module IR");
+        }
+
         mlir::PassManager pm(&context);
         pm.addPass(mlir::pgx_lower::createStandardToLLVMPass());
         
-        PGX_INFO("🔥 CALLING pm.run(module) FROM POSTGRESQL CONTEXT...");
+        PGX_INFO("🔥 CALLING pm.run(synthetic_module) FROM POSTGRESQL...");
         
-        // 🎯 THE CRITICAL MOMENT: Same code, different environment
         if (mlir::succeeded(pm.run(module))) {
-            PGX_INFO("🤯 SHOCKING: pm.run() succeeded in PostgreSQL context!");
-            PGX_INFO("This would DISPROVE the environment incompatibility theory");
+            PGX_INFO("✅ Synthetic module works in PostgreSQL");
             return true;
         } else {
-            PGX_ERROR("❌ pm.run() failed in PostgreSQL context");
-            PGX_ERROR("But unit test shows the MLIR code is correct");
+            PGX_ERROR("❌ Synthetic module failed in PostgreSQL");
             return false;
         }
         
     } catch (const std::exception& e) {
-        PGX_ERROR("🧪 EXPERIMENT RESULT: C++ exception in PostgreSQL: " + std::string(e.what()));
-        PGX_ERROR("Same code works in unit test but crashes in PostgreSQL");
-        PGX_ERROR("PROOF: Environment incompatibility confirmed");
+        PGX_ERROR("🧪 SYNTHETIC TEST: Exception: " + std::string(e.what()));
         return false;
     } catch (...) {
-        PGX_ERROR("🧪 EXPERIMENT RESULT: Unknown exception in PostgreSQL");
-        PGX_ERROR("Same code works in unit test but crashes in PostgreSQL");  
-        PGX_ERROR("PROOF: Environment incompatibility confirmed");
+        PGX_ERROR("🧪 SYNTHETIC TEST: Unknown exception");
         return false;
     }
 }

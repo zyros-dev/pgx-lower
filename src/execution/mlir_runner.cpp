@@ -83,6 +83,7 @@ extern "C" {
     // EXPERIMENT: Test exact unit test code from within PostgreSQL
     bool test_unit_code_from_postgresql();
     bool test_passmanager_creation_only();
+    bool test_real_module_from_postgresql(mlir::ModuleOp real_module);
 }
 
 // Phase 3b Memory Management Helper
@@ -683,6 +684,17 @@ static bool runPhase3c(::mlir::ModuleOp module) {
             PGX_INFO("SHOCKING: Unit test code WORKS in PostgreSQL! Theory disproven!");
         } else {
             PGX_INFO("EXPECTED: Unit test code FAILS in PostgreSQL - theory confirmed!");
+        }
+        
+        // 🎯 ULTIMATE EXPERIMENT: Test the REAL module from the pipeline
+        PGX_INFO("🎯 ULTIMATE EXPERIMENT: Testing REAL pipeline module...");
+        bool real_module_result = test_real_module_from_postgresql(module);
+        if (real_module_result) {
+            PGX_INFO("🤯 INCREDIBLE: Real pipeline module WORKS with fresh PassManager!");
+            PGX_INFO("🔍 This proves the issue is PassManager state, not module content!");
+        } else {
+            PGX_INFO("❌ Real module fails even with fresh PassManager");
+            PGX_INFO("🔍 This suggests the issue is module content corruption");
         }
         
         // Also test just PassManager creation
