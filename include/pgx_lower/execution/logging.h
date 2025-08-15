@@ -119,7 +119,7 @@ extern Logger& get_logger();
 #undef PGX_ERROR
 #define PGX_ERROR(msg) \
     do { \
-        elog(ERROR, "[ERROR] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
+        elog(WARNING, "[ERROR] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
     } while (0)
 #endif
 

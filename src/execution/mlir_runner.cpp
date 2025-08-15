@@ -954,7 +954,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
                 PGX_INFO("Func operation remains (allowed): " +
                          op->getName().getStringRef().str());
             } else {
-                PGX_INFO("Non-LLVM operation remains after lowering: " +
+                PGX_ERROR("Non-LLVM operation remains after lowering: " +
                          op->getName().getStringRef().str() + " from dialect: " +
                          op->getDialect()->getNamespace().str());
                 hasNonLLVMOps = true;
@@ -964,7 +964,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
     PGX_INFO("Finished verifying complete lowering to LLVM dialect");
 
     if (hasNonLLVMOps) {
-        PGX_INFO("Phase 3c failed: Module contains non-LLVM operations");
+        PGX_ERROR("Phase 3c failed: Module contains non-LLVM operations");
         return false;
     }
     
@@ -990,7 +990,7 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     
     // Phase 3c: Standard→LLVM lowering
     if (!runPhase3c(module)) {
-        PGX_INFO("Phase 3c failed");
+        PGX_ERROR("Phase 3c failed");
         return false;
     }
     
