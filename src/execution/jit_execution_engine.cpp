@@ -7,6 +7,12 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 
 // LLVM includes
 #include "llvm/Support/TargetSelect.h"
@@ -182,7 +188,17 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
     // Register all standard dialect translations before any LLVM operations
     mlir::DialectRegistry registry;
     mlir::registerAllToLLVMIRTranslations(registry);
+    
+    // CRITICAL: Register missing translation interfaces that cause JIT failures
+    mlir::registerConvertFuncToLLVMInterface(registry);
+    mlir::arith::registerConvertArithToLLVMInterface(registry);
+    mlir::cf::registerConvertControlFlowToLLVMInterface(registry);
+    mlir::registerConvertMemRefToLLVMInterface(registry);
+    
     module->getContext()->appendDialectRegistry(registry);
+    
+    // CRITICAL: Register base LLVM dialect translation in context (LingoDB pattern)
+    mlir::registerLLVMDialectTranslation(*module->getContext());
     
     // Configure LLVM target machine
     configureLLVMTargetMachine();
