@@ -20,6 +20,6 @@
 #include "mlir/IR/Builders.h"
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h.inc"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOps.h.inc"
 
 #endif // MLIR_DIALECT_RELALG_IR_RELALGOPS_H

@@ -5,6 +5,6 @@
 #include "mlir/IR/OpDefinition.h"
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.h.inc"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.h.inc"
 
 #endif // MLIR_DIALECT_RELALG_IR_RELALGTYPES_H
