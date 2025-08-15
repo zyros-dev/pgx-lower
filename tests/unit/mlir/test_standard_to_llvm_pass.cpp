@@ -96,6 +96,27 @@ TEST_F(StandardToLLVMTest, ConvertsUtilDialectOperations) {
         PGX_INFO("🎉 PROOF COMPLETE: All PostgreSQL-crashing operations successfully converted!");
         PGX_INFO("🔍 This PROVES the MLIR pipeline works outside PostgreSQL environment");
         PGX_INFO("💡 The crash is PostgreSQL environment incompatibility, not MLIR bugs");
+        
+        // Dump the resulting LLVM IR
+        std::string outputStr;
+        llvm::raw_string_ostream stream(outputStr);
+        module.print(stream);
+        
+        std::ofstream outFile("/tmp/converted_util_operations.mlir");
+        if (outFile.is_open()) {
+            outFile << outputStr;
+            outFile.close();
+            PGX_INFO("✅ Converted LLVM IR dumped to /tmp/converted_util_operations.mlir");
+        }
+        
+        // Print preview  
+        PGX_INFO("=== CONVERTED LLVM IR (first 1000 chars) ===");
+        std::string preview = outputStr.substr(0, 1000);
+        std::cout << preview << std::endl;
+        if (outputStr.length() > 1000) {
+            PGX_INFO("...(truncated, see full output in /tmp/converted_util_operations.mlir)");
+        }
+        PGX_INFO("=== END CONVERTED IR ===");
     }
 }
 
