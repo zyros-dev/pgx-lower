@@ -820,11 +820,14 @@ static bool runPhase3b(::mlir::ModuleOp module) {
         
         ::mlir::PassManager pm(&context);
         
-        pm.enableTiming();
-        pm.enableStatistics();
-        pm.enableCrashReproducerGeneration("/tmp/pgx_lower_phase3b_crash.mlir");
-        pm.enableVerifier(true);
-        PGX_INFO("Phase 3b: PassManager debugging features enabled");
+        // COMMENTED OUT: These MLIR debugging features cause segfaults in PostgreSQL
+        // Root cause: They bypass PostgreSQL's memory context system
+        // pm.enableTiming();                    // Memory allocator conflicts
+        // pm.enableStatistics();               // Bypasses PostgreSQL memory contexts
+        // pm.enableCrashReproducerGeneration("/tmp/pgx_lower_phase3b_crash.mlir"); // Signal handling conflicts
+        
+        pm.enableVerifier(true);  // This one is safe and works in PostgreSQL
+        PGX_INFO("Phase 3b: PassManager configured for PostgreSQL compatibility (debugging features disabled)");
         
         // Pre-execution module validation
         PGX_INFO("Phase 3b: Validating module state before pass execution");
