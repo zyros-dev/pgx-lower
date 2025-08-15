@@ -7,6 +7,7 @@
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/UtilToLLVM/Passes.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -32,64 +33,44 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
     }
 
     void runOnOperation() override {
-        PGX_INFO("StandardToLLVMPass: Starting unified Standard→LLVM conversion");
-        
-        auto* context = &getContext();
-        ModuleOp module = getOperation();
-        
-        // Get DataLayoutAnalysis (like LingoDB)
+        PGX_INFO("[StandardToLLVMPass] Starting run on operation!");
+        // The first thing to define is the conversion target. This will define the
+        // final target for this lowering. For this lowering, we are only targeting
+        // the LLVM dialect.
         const auto& dataLayoutAnalysis = getAnalysis<mlir::DataLayoutAnalysis>();
-        PGX_INFO("StandardToLLVMPass: Retrieved DataLayoutAnalysis");
-        
-        // Create LLVM type converter with DataLayout options
-        LowerToLLVMOptions options(context, dataLayoutAnalysis.getAtOrAbove(module));
-        LLVMTypeConverter typeConverter(context, options, &dataLayoutAnalysis);
-        PGX_INFO("StandardToLLVMPass: Created LLVM type converter with DataLayout");
-        
-        // Add source materialization (like LingoDB)
-        typeConverter.addSourceMaterialization([&](OpBuilder&, FunctionType type, 
-                                                  ValueRange valueRange, Location loc) {
-            return valueRange.front();
-        });
-        
-        // Create pattern set
-        RewritePatternSet patterns(context);
-        
-        // Add ALL conversion patterns in the correct order
-        PGX_INFO("StandardToLLVMPass: Populating Affine→Standard patterns");
-        mlir::populateAffineToStdConversionPatterns(patterns);
-        
-        PGX_INFO("StandardToLLVMPass: Populating SCF→ControlFlow patterns");
+
+        mlir::LLVMConversionTarget target(getContext());
+        target.addLegalOp<mlir::ModuleOp>();
+
+        // During this lowering, we will also be lowering the MemRef types, that are
+        // currently being operated on, to a representation in LLVM. To perform this
+        // conversion we use a TypeConverter as part of the lowering. This converter
+        // details how one type maps to another. This is necessary now that we will be
+        // doing more complicated lowerings, involving loop region arguments.
+        PGX_INFO("[StandardToLLVMPass] Init options");
+        mlir::LowerToLLVMOptions options(&getContext(), dataLayoutAnalysis.getAtOrAbove(getOperation()));
+        // options.emitCWrappers = true;
+        mlir::LLVMTypeConverter typeConverter(&getContext(), options, &dataLayoutAnalysis);
+        typeConverter.addSourceMaterialization(
+            [&](mlir::OpBuilder&, mlir::FunctionType type, mlir::ValueRange valueRange, mlir::Location loc) {
+                return valueRange.front();
+            });
+
+        PGX_INFO("[StandardToLLVMPass] registering!");
+        mlir::RewritePatternSet patterns(&getContext());
+        populateAffineToStdConversionPatterns(patterns);
         mlir::populateSCFToControlFlowConversionPatterns(patterns);
-        
-        PGX_INFO("StandardToLLVMPass: Populating Func→LLVM patterns");
-        mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
-        
-        // CRITICAL: Add Util→LLVM patterns that were missing
-        PGX_INFO("StandardToLLVMPass: Populating Util→LLVM patterns");
         mlir::util::populateUtilToLLVMConversionPatterns(typeConverter, patterns);
-        
-        PGX_INFO("StandardToLLVMPass: Populating Arith→LLVM patterns");
-        arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
-        
-        PGX_INFO("StandardToLLVMPass: Populating ControlFlow→LLVM patterns");
-        cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
-        
-        // Configure conversion target (use LLVMConversionTarget like LingoDB)
-        LLVMConversionTarget target(*context);
-        target.addLegalOp<ModuleOp>();
-        
-        PGX_INFO("StandardToLLVMPass: Configured LLVM conversion target");
-        
-        // Apply full conversion
-        PGX_INFO("StandardToLLVMPass: Applying full conversion to module");
-        if (failed(applyFullConversion(module, target, std::move(patterns)))) {
-            PGX_ERROR("StandardToLLVMPass: Full conversion failed");
+        mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
+        mlir::cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
+
+        mlir::populateMemRefToLLVMConversionPatterns(typeConverter, patterns);
+        mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
+        // We want to completely lower to LLVM, so we use a `FullConversion`. This
+        // ensures that only legal operations will remain after the conversion.
+        auto module = getOperation();
+        if (failed(applyFullConversion(module, target, std::move(patterns))))
             signalPassFailure();
-            return;
-        }
-        
-        PGX_INFO("StandardToLLVMPass: Successfully completed unified Standard→LLVM conversion");
     }
 };
 
