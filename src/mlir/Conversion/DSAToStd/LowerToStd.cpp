@@ -66,7 +66,9 @@ struct DSAToStdLoweringPass
    : public PassWrapper<DSAToStdLoweringPass, OperationPass<ModuleOp>> {
    virtual llvm::StringRef getArgument() const override { return "lower-dsa"; }
 
-   DSAToStdLoweringPass() {}
+   DSAToStdLoweringPass() {
+      PGX_INFO("DSAToStdLoweringPass: Constructor ENTRY");
+   }
    void getDependentDialects(DialectRegistry& registry) const override {
       registry.insert<LLVM::LLVMDialect, mlir::dsa::DSADialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect>();
    }
@@ -208,6 +210,8 @@ void DSAToStdLoweringPass::runOnOperation() {
 }
 
 std::unique_ptr<::mlir::Pass> mlir::dsa::createLowerToStdPass() {
-   PGX_INFO("DSAToStd: Creating DSAToStdLoweringPass instance");
-   return std::make_unique<DSAToStdLoweringPass>();
+   PGX_INFO("DSAToStd: ENTRY createLowerToStdPass");
+   auto pass = std::make_unique<DSAToStdLoweringPass>();
+   PGX_INFO("DSAToStd: AFTER DSAToStdLoweringPass constructor - success");
+   return pass;
 }

@@ -86,34 +86,33 @@ void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
         pm.enableVerifier(true);
     }
     
-    // CRITICAL: Run passes sequentially with canonicalization between them
-    // This prevents pass interference identified by research-debugger 1
-    
-    // Module validation is handled by pm.enableVerifier(true) above
-    
-    // First: DB→Std pass
-    PGX_INFO("createDBDSAToStandardPipeline: Creating DB→Std pass");
+    // Enhanced pass creation with crash isolation
+    PGX_INFO("createDBDSAToStandardPipeline: BEFORE DB pass creation");
     auto dbPass = db::createLowerToStdPass();
     if (!dbPass) {
-        PGX_ERROR("createDBDSAToStandardPipeline: Failed to create DB→Std pass!");
+        PGX_ERROR("createDBDSAToStandardPipeline: DB pass creation returned null!");
         return;
     }
-    PGX_INFO("createDBDSAToStandardPipeline: Adding DB→Std pass to pipeline");
+    PGX_INFO("createDBDSAToStandardPipeline: BEFORE adding DB pass to pipeline");
     pm.addPass(std::move(dbPass));
+    PGX_INFO("createDBDSAToStandardPipeline: DB pass added to pipeline successfully");
     
     // Add canonicalizer between passes to clean up and validate state
     PGX_DEBUG("createDBDSAToStandardPipeline: Adding first canonicalizer pass");
     pm.addPass(createCanonicalizerPass());
     
     // Second: DSA→Std pass
-    PGX_INFO("createDBDSAToStandardPipeline: Creating DSA→Std pass");
+    PGX_INFO("createDBDSAToStandardPipeline: BEFORE DSA pass creation");
     auto dsaPass = dsa::createLowerToStdPass();
     if (!dsaPass) {
-        PGX_ERROR("createDBDSAToStandardPipeline: Failed to create DSA→Std pass!");
+        PGX_ERROR("createDBDSAToStandardPipeline: DSA pass creation returned null!");
         return;
     }
-    PGX_INFO("createDBDSAToStandardPipeline: Adding DSA→Std pass to pipeline");
+    PGX_INFO("createDBDSAToStandardPipeline: DSA pass created successfully");
+    
+    PGX_INFO("createDBDSAToStandardPipeline: BEFORE adding DSA pass to pipeline");
     pm.addPass(std::move(dsaPass));
+    PGX_INFO("createDBDSAToStandardPipeline: DSA pass added to pipeline successfully");
     
     // Final canonicalizer
     PGX_DEBUG("createDBDSAToStandardPipeline: Adding final canonicalizer pass");

@@ -816,11 +816,32 @@ static bool runPhase3b(::mlir::ModuleOp module) {
         module.walk([&opCount](::mlir::Operation* op) { opCount++; });
         PGX_INFO("Phase 3b: Module has " + std::to_string(opCount) + " operations before conversion");
         
+        context.disableMultithreading();
+        PGX_INFO("Phase 3b: Threading disabled for PostgreSQL compatibility");
+        
         ::mlir::PassManager pm(&context);
         
-        // Add debugging and crash handler
+        pm.enableTiming();
+        pm.enableStatistics();
         pm.enableCrashReproducerGeneration("/tmp/pgx_lower_phase3b_crash.mlir");
         pm.enableVerifier(true);
+        PGX_INFO("Phase 3b: PassManager debugging features enabled");
+        
+        // Pre-execution module validation
+        PGX_INFO("Phase 3b: Validating module state before pass execution");
+        if (mlir::failed(mlir::verify(module))) {
+            PGX_ERROR("Phase 3b: Module verification failed before pass execution");
+            return false;
+        }
+        
+        // Dialect validation
+        auto dialects = context.getLoadedDialects();
+        PGX_INFO("Phase 3b: Loaded dialects before pass execution:");
+        for (auto* dialect : dialects) {
+            if (dialect) {
+                PGX_INFO("  - Dialect: " + std::string(dialect->getNamespace().str()));
+            }
+        }
         
         PGX_INFO("Phase 3b: Creating DB+DSA→Standard pipeline");
         mlir::pgx_lower::createDBDSAToStandardPipeline(pm, true);
