@@ -35,7 +35,7 @@ private:
     void registerDataSourceFunctions();
     void registerRuntimeSupportFunctions();
     void registerLingoDRuntimeContextFunctions();
-    void registerMangledRuntimeFunctions();
+    void registerCRuntimeFunctions();
     
 public:
     PostgreSQLJITExecutionEngine() = default;

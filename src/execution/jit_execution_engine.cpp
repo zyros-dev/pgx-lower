@@ -609,7 +609,7 @@ void PostgreSQLJITExecutionEngine::registerLingoDRuntimeContextFunctions() {
         });
 }
 
-void PostgreSQLJITExecutionEngine::registerMangledRuntimeFunctions() {
+void PostgreSQLJITExecutionEngine::registerCRuntimeFunctions() {
     PGX_INFO("🎯 Registering C runtime functions");
     
     engine->registerSymbols(
@@ -674,7 +674,7 @@ void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
     
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    registerMangledRuntimeFunctions();
+    registerCRuntimeFunctions();
     registerLingoDRuntimeContextFunctions();
 
     auto endTime = std::chrono::high_resolution_clock::now();
