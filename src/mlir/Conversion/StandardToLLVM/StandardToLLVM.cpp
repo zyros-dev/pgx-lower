@@ -130,13 +130,10 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
             PGX_INFO("🔧 Post-processing: Setting main function visibility to public");
             fprintf(stderr, "🔧 FORCED LOG: POST-PROCESSING main function visibility in PostgreSQL!\n");
             module.walk([&](LLVM::LLVMFuncOp func) {
-                if (func.getSymName() == "main") {
-                    PGX_INFO("🎯 Found main function! Setting sym_visibility=\"public\" for ExecutionEngine");
-                    func.setSymVisibilityAttr(mlir::StringAttr::get(&getContext(), "public"));
-                    PGX_INFO("✅ Main function visibility set to public");
-                } else {
-                    PGX_INFO("📝 Function " + func.getSymName().str() + " kept with default visibility");
-                }
+                // For JIT execution, ALL functions need to be public for cross-module linking
+                PGX_INFO("🎯 Setting function " + func.getSymName().str() + " visibility to public for JIT");
+                func.setSymVisibilityAttr(mlir::StringAttr::get(&getContext(), "public"));
+                PGX_INFO("✅ Function " + func.getSymName().str() + " visibility set to public");
             });
             PGX_INFO("🎉 Post-processing completed!");
         }
