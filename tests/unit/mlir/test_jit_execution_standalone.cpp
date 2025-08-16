@@ -39,6 +39,7 @@ static bool g_test_function_executed = false;
 extern "C" {
 
 // Test stub that proves function execution - MUST match LLVM IR signature exactly
+// DEEPWIKI SUGGESTION: extern "C" prevents C++ name mangling to match llvm.func @test_execution_marker()
 void test_execution_marker() {
     // CRITICAL: Use stderr to bypass any buffering issues
     fprintf(stderr, "🎯 JIT FUNCTION EXECUTED! About to increment counter\n");
