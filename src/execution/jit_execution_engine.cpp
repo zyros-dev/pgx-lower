@@ -259,8 +259,8 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
         moduleStream.flush();
         
         // Log only first 1000 chars to avoid overwhelming logs
-        if (moduleStr.length() > 1000) {
-            PGX_INFO("MLIR module (truncated):\n" + moduleStr.substr(0, 1000) + "\n... [truncated]");
+        if (moduleStr.length() > 50000) {
+            PGX_INFO("MLIR module (truncated):\n" + moduleStr.substr(0, 50000) + "\n... [truncated]");
         } else {
             PGX_INFO("MLIR module:\n" + moduleStr);
         }
@@ -530,6 +530,30 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
         PGX_DEBUG("  Function: " + func.getName().str());
     });
     PGX_DEBUG("Total functions in module: " + std::to_string(funcCount));
+    
+    // CRITICAL: Dump the MLIR IR just before creating ExecutionEngine to see what we're compiling
+    PGX_INFO("==================== MLIR IR BEFORE EXECUTION ENGINE ====================");
+    std::string irStr;
+    llvm::raw_string_ostream irStream(irStr);
+    module.print(irStream);
+    irStream.flush();
+    
+    // Write to file for backup
+    std::ofstream irFile("/tmp/pgx_lower_mlir_ir.mlir");
+    if (irFile.is_open()) {
+        irFile << irStr;
+        irFile.close();
+        PGX_INFO("MLIR IR also written to /tmp/pgx_lower_mlir_ir.mlir");
+    }
+    
+    // Log the entire MLIR IR in chunks to avoid truncation
+    PGX_INFO("Full MLIR Module contents:");
+    size_t chunkSize = 2000; // Log in 2000 char chunks
+    for (size_t i = 0; i < irStr.length(); i += chunkSize) {
+        size_t len = std::min(chunkSize, irStr.length() - i);
+        PGX_INFO("MLIR[" + std::to_string(i) + "-" + std::to_string(i+len) + "]:\n" + irStr.substr(i, len));
+    }
+    PGX_INFO("==================== END MLIR IR ====================");
     
     std::unique_ptr<mlir::ExecutionEngine> createdEngine;
     try {
