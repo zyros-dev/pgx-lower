@@ -261,6 +261,10 @@ bool validateAndLogPlanStructure(const PlannedStmt* stmt) {
 
     PGX_DEBUG("Using AST-based translation - JIT will manage table scan");
     PGX_INFO("Table OID: " + std::to_string(rte->relid));
+    
+    // Set the global table OID for JIT runtime access
+    g_jit_table_oid = rte->relid;
+    PGX_INFO("Set g_jit_table_oid to: " + std::to_string(g_jit_table_oid));
 
     return true;
 }

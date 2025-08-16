@@ -712,6 +712,28 @@ void PostgreSQLJITExecutionEngine::registerMangledRuntimeFunctions() {
                 PGX_WARNING("❌ rt_datasourceiteration_next NOT FOUND");
             }
             
+            void* dsi_access = dlsym(handle, "rt_datasourceiteration_access");
+            if (dsi_access) {
+                symbolMap[interner("rt_datasourceiteration_access")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(dsi_access),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_INFO("✅ rt_datasourceiteration_access registered");
+            } else {
+                PGX_WARNING("❌ rt_datasourceiteration_access NOT FOUND");
+            }
+            
+            void* dsi_end = dlsym(handle, "rt_datasourceiteration_end");
+            if (dsi_end) {
+                symbolMap[interner("rt_datasourceiteration_end")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(dsi_end),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_INFO("✅ rt_datasourceiteration_end registered");
+            } else {
+                PGX_WARNING("❌ rt_datasourceiteration_end NOT FOUND");
+            }
+            
             void* rt_ctx = dlsym(handle, "rt_get_execution_context");
             if (rt_ctx) {
                 symbolMap[interner("rt_get_execution_context")] = {
