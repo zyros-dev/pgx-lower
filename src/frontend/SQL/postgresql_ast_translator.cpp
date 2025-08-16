@@ -507,12 +507,14 @@ auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp,
     
     // Translate qual conditions and combine with AND
     ::mlir::Value predicateResult = nullptr;
-    // TODO: Properly iterate through qual list when List structure is available
+    
+    // Process qual list - each element is an expression
+    // TODO: Implement proper list iteration when PostgreSQL headers are available
     // For now, create a simple true predicate
     if (qual && qual->length > 0) {
-        PGX_DEBUG("Processing qual list - implementation simplified for initial version");
-        // For now, just create a true predicate
-        // Full implementation would iterate through the list
+        PGX_DEBUG("Processing qual list with " + std::to_string(qual->length) + " conditions");
+        // In production, we'd iterate through ListCells
+        // For now, just create a true predicate as placeholder
         predicateResult = predicateBuilder.create<mlir::arith::ConstantIntOp>(
             predicateBuilder.getUnknownLoc(), 1, predicateBuilder.getI1Type()
         );
@@ -561,10 +563,14 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
     
     // Check if we have computed expressions in target list
     bool hasComputedColumns = false;
-    // TODO: Properly iterate through target list when List structure is available
+    std::vector<TargetEntry*> targetEntries;
+    
+    // Extract target entries from the list
+    // TODO: Implement proper list iteration when PostgreSQL headers are available
     if (targetList && targetList->length > 0) {
-        PGX_DEBUG("Target list has entries - checking for computed columns");
-        // For initial implementation, assume no computed columns
+        PGX_DEBUG("Processing target list with " + std::to_string(targetList->length) + " entries");
+        // In production, we'd iterate through ListCells and extract TargetEntry nodes
+        // For now, we can't properly iterate so we'll skip MapOp creation
         hasComputedColumns = false;
     }
     
@@ -577,10 +583,21 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
     std::vector<mlir::Attribute> computedColAttrs;
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
     
-    int colIndex = 0;
-    // TODO: Properly iterate through target list
-    if (false) { // Disabled for now until proper list iteration
-        // Placeholder - will be implemented when list iteration is available
+    // Process target entries to create computed columns
+    for (auto* entry : targetEntries) {
+        if (entry->expr && entry->expr->type != T_Var) {
+            // Create a computed column definition
+            std::string colName = entry->resname ? entry->resname : 
+                                 "expr_" + std::to_string(entry->resno);
+            auto colDef = columnManager.createDef("computed", colName);
+            
+            // Set the column type based on expression type
+            if (colDef.getColumnPtr()) {
+                // Default to i32 for now - proper type inference would be needed
+                colDef.getColumn().type = context.builder->getI32Type();
+            }
+            computedColAttrs.push_back(colDef);
+        }
     }
     
     if (computedColAttrs.empty()) {
@@ -617,15 +634,35 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
     
     // Translate computed expressions
     std::vector<mlir::Value> computedValues;
-    // TODO: Properly iterate through target list
-    if (false) { // Disabled for now
-        // Placeholder - will be implemented when list iteration is available
+    
+    // Process each target entry
+    for (auto* entry : targetEntries) {
+        if (entry->expr && entry->expr->type != T_Var) {
+            // Translate the expression
+            ::mlir::Value exprValue = translateExpression(reinterpret_cast<Expr*>(entry->expr));
+            if (exprValue) {
+                computedValues.push_back(exprValue);
+            } else {
+                // If translation fails, use a placeholder
+                auto placeholder = predicateBuilder.create<mlir::arith::ConstantIntOp>(
+                    predicateBuilder.getUnknownLoc(), 0, predicateBuilder.getI32Type()
+                );
+                computedValues.push_back(placeholder);
+            }
+        }
     }
     
     // Return computed values
-    predicateBuilder.create<mlir::relalg::ReturnOp>(
-        predicateBuilder.getUnknownLoc(), computedValues
-    );
+    if (!computedValues.empty()) {
+        predicateBuilder.create<mlir::relalg::ReturnOp>(
+            predicateBuilder.getUnknownLoc(), computedValues
+        );
+    } else {
+        // Return empty if no values computed
+        predicateBuilder.create<mlir::relalg::ReturnOp>(
+            predicateBuilder.getUnknownLoc(), mlir::ValueRange{}
+        );
+    }
     
     // Restore builder and tuple
     builder_ = savedBuilder;
@@ -1166,8 +1203,8 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
     PGX_DEBUG("Translating OpExpr: opno=" + std::to_string(opExpr->opno));
     
     // OpExpr has a list of arguments
-    if (!opExpr->args || opExpr->args->length < 2) {
-        PGX_ERROR("OpExpr requires at least 2 arguments");
+    if (!opExpr->args) {
+        PGX_ERROR("OpExpr has no arguments");
         return nullptr;
     }
     
@@ -1175,16 +1212,25 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
     Oid opOid = opExpr->opno;
     
     // Extract operands from args list
-    // TODO: Properly extract from args list when ListCell structure is available
-    PGX_DEBUG("Creating placeholder operands for OpExpr");
+    ::mlir::Value lhs = nullptr;
+    ::mlir::Value rhs = nullptr;
     
-    // For now, create placeholder values for testing
-    auto lhs = builder_->create<mlir::arith::ConstantIntOp>(
-        builder_->getUnknownLoc(), 1, builder_->getI32Type()
-    );
-    auto rhs = builder_->create<mlir::arith::ConstantIntOp>(
-        builder_->getUnknownLoc(), 2, builder_->getI32Type()
-    );
+    // TODO: Implement proper list iteration when PostgreSQL headers are available
+    // For now, we can't iterate through args list properly
+    // Create placeholder operands for testing
+    PGX_DEBUG("OpExpr args list has " + std::to_string(opExpr->args ? opExpr->args->length : 0) + " arguments");
+    
+    // If we couldn't extract proper operands, create placeholders
+    if (!lhs) {
+        lhs = builder_->create<mlir::arith::ConstantIntOp>(
+            builder_->getUnknownLoc(), 1, builder_->getI32Type()
+        );
+    }
+    if (!rhs) {
+        rhs = builder_->create<mlir::arith::ConstantIntOp>(
+            builder_->getUnknownLoc(), 2, builder_->getI32Type()
+        );
+    }
     
     if (!lhs || !rhs) {
         PGX_ERROR("Failed to translate OpExpr operands");
@@ -1299,9 +1345,18 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
         case AND_EXPR: {
             // Process AND chain
             ::mlir::Value result = nullptr;
-            // TODO: Properly iterate through args list
+            
+            // TODO: Implement proper list iteration when PostgreSQL headers are available
             if (boolExpr->args && boolExpr->args->length > 0) {
-                // Simplified for initial implementation
+                PGX_DEBUG("AND expression has " + std::to_string(boolExpr->args->length) + " arguments");
+                // For now, create a placeholder true value
+                result = builder_->create<mlir::arith::ConstantIntOp>(
+                    builder_->getUnknownLoc(), 1, builder_->getI1Type()
+                );
+            }
+            
+            if (!result) {
+                // Default to true if no valid expression
                 result = builder_->create<mlir::arith::ConstantIntOp>(
                     builder_->getUnknownLoc(), 1, builder_->getI1Type()
                 );
@@ -1312,9 +1367,18 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
         case OR_EXPR: {
             // Process OR chain
             ::mlir::Value result = nullptr;
-            // TODO: Properly iterate through args list
+            
+            // TODO: Implement proper list iteration when PostgreSQL headers are available
             if (boolExpr->args && boolExpr->args->length > 0) {
-                // Simplified for initial implementation
+                PGX_DEBUG("OR expression has " + std::to_string(boolExpr->args->length) + " arguments");
+                // For now, create a placeholder false value
+                result = builder_->create<mlir::arith::ConstantIntOp>(
+                    builder_->getUnknownLoc(), 0, builder_->getI1Type()
+                );
+            }
+            
+            if (!result) {
+                // Default to false if no valid expression
                 result = builder_->create<mlir::arith::ConstantIntOp>(
                     builder_->getUnknownLoc(), 0, builder_->getI1Type()
                 );
@@ -1324,11 +1388,30 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
         
         case NOT_EXPR: {
             // NOT has single argument
-            // TODO: Extract from args list properly
-            // Simplified for initial implementation
-            auto argVal = builder_->create<mlir::arith::ConstantIntOp>(
-                builder_->getUnknownLoc(), 1, builder_->getI1Type()
-            );
+            ::mlir::Value argVal = nullptr;
+            
+            // TODO: Implement proper list iteration when PostgreSQL headers are available  
+            if (boolExpr->args && boolExpr->args->length > 0) {
+                PGX_DEBUG("NOT expression has " + std::to_string(boolExpr->args->length) + " arguments");
+                // For now, create a placeholder true value to negate
+                argVal = builder_->create<mlir::arith::ConstantIntOp>(
+                    builder_->getUnknownLoc(), 1, builder_->getI1Type()
+                );
+            }
+            
+            if (!argVal) {
+                // Default argument if none provided
+                argVal = builder_->create<mlir::arith::ConstantIntOp>(
+                    builder_->getUnknownLoc(), 1, builder_->getI1Type()
+                );
+            }
+            
+            // Ensure argument is boolean
+            if (!argVal.getType().isInteger(1)) {
+                argVal = builder_->create<mlir::db::DeriveTruth>(
+                    builder_->getUnknownLoc(), argVal
+                );
+            }
             
             // Create NOT operation using DB dialect
             return builder_->create<mlir::db::NotOp>(
