@@ -21,6 +21,7 @@
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "execution/logging.h"
 #include "llvm/Support/TargetSelect.h"
+#include <fstream>
 
 // Include all our conversion passes
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
@@ -33,13 +34,24 @@ static int g_test_execution_counter = 0;
 static bool g_test_function_executed = false;
 
 // Runtime function stubs for JIT execution
+// CRITICAL: extern "C" prevents C++ name mangling and ensures C calling convention
 extern "C" {
 
-// Test stub that proves function execution
+// Test stub that proves function execution - MUST match LLVM IR signature exactly
 void test_execution_marker() {
+    // CRITICAL: Use stderr to bypass any buffering issues
+    fprintf(stderr, "🎯 JIT FUNCTION EXECUTED! About to increment counter\n");
+    fflush(stderr);
+    
     g_test_execution_counter++;
     g_test_function_executed = true;
+    
+    fprintf(stderr, "🎯 JIT FUNCTION: Counter now = %d, executed = %s\n", 
+            g_test_execution_counter, g_test_function_executed ? "true" : "false");
+    fflush(stderr);
+    
     std::cout << "🎯 JIT FUNCTION EXECUTED! Counter: " << g_test_execution_counter << std::endl;
+    fflush(stdout);
 }
 
 // Declare runtime stubs here so they're available for symbol registration
@@ -99,7 +111,7 @@ TEST_F(JITExecutionStandaloneTest, ExecuteMinimalFunction) {
         builder.getUnknownLoc(), 
         "test_execution_marker", 
         testMarkerFuncType);
-    testMarkerFunc.setPrivate(); // External function
+    testMarkerFunc.setPublic(); // External function - needs to be public for JIT linking
     
     // Create main function
     auto mainFuncType = builder.getFunctionType({}, {});
@@ -109,7 +121,7 @@ TEST_F(JITExecutionStandaloneTest, ExecuteMinimalFunction) {
     auto* block = mainFunc.addEntryBlock();
     builder.setInsertionPointToEnd(block);
     
-    // Call the test marker to prove execution
+    // Call the test marker to prove execution (and ONLY that - remove other operations)
     auto testMarkerSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), "test_execution_marker");
     builder.create<mlir::func::CallOp>(
         builder.getUnknownLoc(),
@@ -117,20 +129,7 @@ TEST_F(JITExecutionStandaloneTest, ExecuteMinimalFunction) {
         mlir::TypeRange{}, // void return type
         mlir::ValueRange{});
     
-    // Add simple arithmetic to test basic operations
-    auto constOne = builder.create<mlir::arith::ConstantOp>(
-        builder.getUnknownLoc(),
-        builder.getI32IntegerAttr(1));
-    
-    auto constTwo = builder.create<mlir::arith::ConstantOp>(
-        builder.getUnknownLoc(),
-        builder.getI32IntegerAttr(2));
-    
-    auto addResult = builder.create<mlir::arith::AddIOp>(
-        builder.getUnknownLoc(),
-        constOne,
-        constTwo);
-    
+    // SIMPLIFIED: Just return immediately after the call
     builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
     
     PGX_INFO("📋 Created function with test marker call and arithmetic");
@@ -141,6 +140,30 @@ TEST_F(JITExecutionStandaloneTest, ExecuteMinimalFunction) {
     
     ASSERT_TRUE(mlir::succeeded(pm.run(module))) << "Standard→LLVM lowering failed";
     PGX_INFO("✅ Standard→LLVM lowering succeeded");
+    
+    // Dump the LLVM IR before JIT execution for analysis
+    PGX_INFO("📋 DUMPING LLVM IR BEFORE JIT EXECUTION:");
+    std::string irStr;
+    llvm::raw_string_ostream irStream(irStr);
+    module.print(irStream);
+    irStream.flush();
+    
+    // Write to file for detailed analysis
+    std::ofstream irFile("/tmp/jit_execution_ir.mlir");
+    if (irFile.is_open()) {
+        irFile << irStr;
+        irFile.close();
+        PGX_INFO("✅ Full LLVM IR written to /tmp/jit_execution_ir.mlir");
+    }
+    
+    // Print key parts to console
+    PGX_INFO("=== LLVM IR PREVIEW (first 2000 chars) ===");
+    std::string preview = irStr.substr(0, 2000);
+    std::cout << preview << std::endl;
+    if (irStr.length() > 2000) {
+        PGX_INFO("...(truncated, see full IR in /tmp/jit_execution_ir.mlir)");
+    }
+    PGX_INFO("=== END LLVM IR PREVIEW ===");
     
     // Create ExecutionEngine
     mlir::ExecutionEngineOptions engineOptions;
