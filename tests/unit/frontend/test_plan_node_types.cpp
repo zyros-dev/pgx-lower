@@ -565,8 +565,9 @@ TEST_F(PlanNodeTranslationTest, TranslatesSeqScanNode) {
     std::vector<std::string> expectedPatterns = {
         "sym_name = \"main\"",           // Main query function
         "func.func",                     // Function declarations
-        "table_access",                  // Table access function name contains this
-        "func.call",                     // Call to table access
+        "table_scan",                    // Table scan function name contains this
+        "func.call",                     // Call to table scan
+        "relalg.materialize",            // Materialize operation wraps result
         "func.return"                    // Function return
     };
     
