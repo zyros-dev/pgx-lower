@@ -30,33 +30,36 @@ extern bool g_extension_after_load;
 
 namespace pgx_lower {
 
-// NOTE: I break C++ rules a bit in this file since it's interacting a lot with C-style things.
-
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
-    // Must be SELECT statement with compatible types (basic requirements)
-    if (!isSelectStatement || !hasCompatibleTypes) {
-        return false;
-    }
-    bool basicTableAccess = requiresSeqScan || !requiresSeqScan; // Always allow table access patterns
-    bool projectionSupported = requiresProjection || !requiresProjection; // Allow with or without
-    bool expressionsSupported = hasExpressions || !hasExpressions; // Allow with or without
-    bool filteringSupported = requiresFilter || !requiresFilter; // Allow with or without
-    bool aggregationSupported = requiresAggregation || !requiresAggregation; // Allow with or without
-    bool sortingSupported = requiresSort || !requiresSort; // Allow with or without
-
-    if (requiresJoin) {
-        PGX_INFO("❌ REJECTED: JOIN operations not yet supported in MLIR pipeline");
-        return false;
+    // 📊 DATA COLLECTION MODE: Log features but decline MLIR compilation
+    // This ensures we get execution trees from ALL queries for AST parser development
+    
+    // Log query characteristics for analysis
+    std::vector<std::string> features;
+    if (isSelectStatement) features.emplace_back("SELECT");
+    if (requiresSeqScan) features.emplace_back("SeqScan");
+    if (requiresProjection) features.emplace_back("Projection");
+    if (hasExpressions) features.emplace_back("Expressions");
+    if (requiresFilter) features.emplace_back("WHERE");
+    if (requiresAggregation) features.emplace_back("Aggregation");
+    if (requiresSort) features.emplace_back("ORDER BY");
+    if (requiresJoin) features.emplace_back("JOIN");
+    if (requiresLimit) features.emplace_back("LIMIT");
+    if (hasCompatibleTypes) features.emplace_back("CompatibleTypes");
+    
+    if (!features.empty()) {
+        std::string feature_list = features[0];
+        for (size_t i = 1; i < features.size(); ++i) {
+            feature_list += "+" + features[i];
+        }
+        PGX_INFO("📋 Query features: " + feature_list);
+    } else {
+        PGX_INFO("📋 Query features: None detected");
     }
     
-    if (requiresLimit) {
-        PGX_INFO("❌ REJECTED: LIMIT clause needs implementation in MLIR execution engine");
-        return false;
-    }
-    
-    PGX_INFO("✅ ACCEPTED: Query uses only operations supported by MLIR pipeline (Tests 1-28 patterns)");
-    return basicTableAccess && projectionSupported && expressionsSupported && 
-           filteringSupported && aggregationSupported && sortingSupported;
+    // 📊 EARLY RETURN: Decline all MLIR compilation to focus on tree data collection
+    PGX_INFO("📊 DATA COLLECTION: Declining MLIR compilation to collect execution tree data");
+    return false;
 }
 
 auto QueryCapabilities::getDescription() const -> std::string {

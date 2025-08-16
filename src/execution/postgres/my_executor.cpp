@@ -430,12 +430,12 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
 
     PGX_DEBUG("Query analysis: " + std::string(capabilities.getDescription()));
 
+    // 📊 ALWAYS log execution tree regardless of compatibility for comprehensive data collection
+    PGX_INFO("📊 FORCING tree logging for all queries in comprehensive collection mode");
+    pgx_lower::QueryAnalyzer::validateAndLogPlanStructure(stmt);
+
     if (!capabilities.isMLIRCompatible()) {
         PGX_INFO("Query requires features not yet supported by MLIR");
-        return false;
-    }
-
-    if (!pgx_lower::QueryAnalyzer::validateAndLogPlanStructure(stmt)) {
         return false;
     }
 
