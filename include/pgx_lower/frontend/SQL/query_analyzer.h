@@ -40,6 +40,10 @@ class QueryAnalyzer {
 #ifdef POSTGRESQL_EXTENSION
     static QueryCapabilities analyzePlan(const PlannedStmt* stmt);
     static QueryCapabilities analyzeNode(const Plan* plan);
+    
+    // Tree analysis and logging
+    static void logExecutionTree(Plan* rootPlan);
+    static bool validateAndLogPlanStructure(const PlannedStmt* stmt);
 #endif
 
     // Mock analysis for unit tests
