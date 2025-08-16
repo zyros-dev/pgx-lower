@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <cstddef>  // for offsetof
 #include "pgx_lower/frontend/SQL/postgresql_ast_translator.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Builders.h"
@@ -78,7 +79,9 @@ extern "C" {
         bool hasModifyingCTE;   // has insert|update|delete in WITH?
         bool canSetTag;         // do I set the command result tag?
         bool transientPlan;     // is plan short-lived?
-        // Note: No parallelModeNeeded in the version we're looking at
+        bool dependsOnRole;     // needs to be replanned when role changes?
+        bool parallelModeNeeded; // parallel mode needed?
+        int jitFlags;           // JIT flags
         Plan* planTree;         // tree of Plan nodes
         List* rtable;           // list of RangeTblEntry nodes
     };
@@ -174,12 +177,37 @@ TEST_F(PlanNodeTranslationTest, TranslatesSeqScanNode) {
     seqScan.plan.righttree = nullptr;
     seqScan.scan.scanrelid = 1;
     
-    // Create mock PlannedStmt
+    // Create mock PlannedStmt with proper pointer alignment
     PlannedStmt stmt{};
     stmt.type = T_PlannedStmt;  // Must set the node type!
     stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = reinterpret_cast<Plan*>(&seqScan);
+    stmt.queryId = 0;
+    stmt.hasReturning = false;
+    stmt.hasModifyingCTE = false;
+    stmt.canSetTag = true;
+    stmt.transientPlan = false;
+    stmt.dependsOnRole = false;
+    stmt.parallelModeNeeded = false;
+    stmt.jitFlags = 0;
+    
+    // Debug the address calculation and structure layout
+    printf("DEBUG TEST: seqScan address: %p\n", (void*)&seqScan);
+    printf("DEBUG TEST: seqScan.plan address: %p\n", (void*)&seqScan.plan);
+    printf("DEBUG TEST: seqScan.plan.type: %d\n", seqScan.plan.type);
+    
+    // Print struct offsets for debugging  
+    printf("DEBUG TEST: PlannedStmt size: %zu\n", sizeof(PlannedStmt));
+    printf("DEBUG TEST: planTree offset: %zu\n", offsetof(PlannedStmt, planTree));
+    printf("DEBUG TEST: rtable offset: %zu\n", offsetof(PlannedStmt, rtable));
+    
+    // Ensure the seqScan.plan is properly cast to Plan*
+    stmt.planTree = &seqScan.plan;  // Direct address, no reinterpret_cast needed
     stmt.rtable = nullptr;
+    
+    printf("DEBUG TEST: stmt.planTree after assignment: %p\n", (void*)stmt.planTree);
+    printf("DEBUG TEST: Checking stmt.planTree field by address: %p\n", 
+           (void*)*(Plan**)((char*)&stmt + offsetof(PlannedStmt, planTree)));
+    printf("DEBUG TEST: About to call translateQuery with stmt at: %p\n", (void*)&stmt);
     
     // Translate
     auto module = translator->translateQuery(&stmt);
