@@ -23,6 +23,8 @@
 #include "llvm/Support/TargetSelect.h"
 #include "mlir/Parser/Parser.h"
 #include <fstream>
+#include <dlfcn.h>  // For dlopen, dlsym, dlclose
+#include <cstdlib>  // For system() calls
 
 // Include all our conversion passes
 #include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
@@ -483,4 +485,211 @@ TEST_F(JITExecutionStandaloneTest, ExecutePureLLVMDialect) {
     PGX_INFO("- JIT external function calls work: ❌ (registerSymbols broken)");
     PGX_ERROR("❌ CONFIRMED: MLIR ExecutionEngine registerSymbols() cannot resolve external functions");
     PGX_ERROR("This is either a fundamental MLIR limitation or missing configuration");
+}
+
+TEST_F(JITExecutionStandaloneTest, LingoDBAStaticCompilation) {
+    PGX_INFO("🧪 TEST: LingoDB static compilation approach (dumpToObjectFile + g++ + dlopen)");
+    
+    registerAllDialects();
+    
+    // Reset test state
+    g_test_execution_counter = 0;
+    g_test_function_executed = false;
+    
+    // Create LLVM dialect module that matches our working case
+    builder.setInsertionPointToEnd(module.getBody());
+    
+    auto voidType = mlir::LLVM::LLVMVoidType::get(&context);
+    
+    // LINGODB APPROACH: Declare external test marker function 
+    auto testMarkerFuncType = mlir::LLVM::LLVMFunctionType::get(voidType, {});
+    auto testMarkerFunc = builder.create<mlir::LLVM::LLVMFuncOp>(
+        builder.getUnknownLoc(), "test_execution_marker", testMarkerFuncType);
+    
+    // CRITICAL: External linkage for static compilation linking
+    testMarkerFunc.setLinkageAttr(mlir::LLVM::LinkageAttr::get(&context, mlir::LLVM::Linkage::External));
+    testMarkerFunc.setSymVisibilityAttr(builder.getStringAttr("default"));
+    
+    // Create main function
+    auto mainFuncType = mlir::LLVM::LLVMFunctionType::get(voidType, {});
+    auto mainFunc = builder.create<mlir::LLVM::LLVMFuncOp>(
+        builder.getUnknownLoc(), "main", mainFuncType);
+    mainFunc.setSymVisibilityAttr(builder.getStringAttr("public"));
+    
+    auto* block = mainFunc.addEntryBlock(builder);
+    builder.setInsertionPointToEnd(block);
+    
+    // Call the test marker
+    builder.create<mlir::LLVM::CallOp>(
+        builder.getUnknownLoc(),
+        testMarkerFunc,
+        mlir::ValueRange{});
+    
+    builder.create<mlir::LLVM::ReturnOp>(builder.getUnknownLoc(), mlir::ValueRange{});
+    
+    PGX_INFO("📋 Created LLVM module for static compilation");
+    
+    // STEP 1: Create ExecutionEngine (for compilation, not execution)
+    mlir::ExecutionEngineOptions engineOptions;
+    engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
+    engineOptions.enableObjectDump = true;  // CRITICAL: Enable object cache for dumpToObjectFile (LingoDB approach)
+    
+    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
+    if (!maybeEngine) {
+        PGX_ERROR("ExecutionEngine creation failed: " + llvm::toString(maybeEngine.takeError()));
+        ASSERT_TRUE(false) << "ExecutionEngine creation failed";
+    }
+    
+    auto engine = std::move(*maybeEngine);
+    PGX_INFO("✅ ExecutionEngine created for compilation");
+    
+    // STEP 2: Convert MLIR to LLVM IR and compile directly (bypass ExecutionEngine object cache)
+    std::string llvmIRPath = "/tmp/pgx-unit-test.ll";
+    std::string objectPath = "/tmp/pgx-unit-test.o";
+    std::string sharedLibPath = "/tmp/pgx-unit-test.so";
+    
+    PGX_INFO("🔧 ALTERNATIVE APPROACH: Converting MLIR to LLVM IR directly");
+    
+    // Convert MLIR module to LLVM IR
+    llvm::LLVMContext llvmContext;
+    auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
+    if (!llvmModule) {
+        PGX_ERROR("Failed to convert MLIR to LLVM IR");
+        ASSERT_TRUE(false) << "MLIR to LLVM IR conversion failed";
+    }
+    
+    // Write LLVM IR to file
+    std::error_code EC;
+    llvm::raw_fd_ostream llvmIRFile(llvmIRPath, EC);
+    if (EC) {
+        PGX_ERROR("Failed to open LLVM IR file: " + EC.message());
+        ASSERT_TRUE(false) << "LLVM IR file creation failed";
+    }
+    llvmModule->print(llvmIRFile, nullptr);
+    llvmIRFile.close();
+    
+    PGX_INFO("✅ LLVM IR written to: " + llvmIRPath);
+    
+    // STEP 3: Compile LLVM IR to object file using LLC
+    std::string llcCmd = "llc -filetype=obj -o " + objectPath + " " + llvmIRPath;
+    PGX_INFO("🔧 STEP 2A: Compiling LLVM IR to object file: " + llcCmd);
+    
+    int llcResult = std::system(llcCmd.c_str());
+    if (llcResult != 0) {
+        PGX_ERROR("LLC compilation failed with exit code: " + std::to_string(llcResult));
+        ASSERT_EQ(llcResult, 0) << "LLC compilation failed";
+    }
+    
+    PGX_INFO("✅ Object file created: " + objectPath);
+    
+    // STEP 4: Create external function stub object file
+    std::string stubSourcePath = "/tmp/pgx-stub.c";
+    std::string stubObjectPath = "/tmp/pgx-stub.o";
+    
+    // Write a C source file with our external function implementation
+    std::ofstream stubFile(stubSourcePath);
+    if (!stubFile.is_open()) {
+        PGX_ERROR("Failed to create stub source file");
+        ASSERT_TRUE(false) << "Stub source file creation failed";
+    }
+    
+    stubFile << "#include <stdio.h>\n";
+    stubFile << "static int g_test_execution_counter = 0;\n";
+    stubFile << "static int g_test_function_executed = 0;\n";
+    stubFile << "void test_execution_marker() {\n";
+    stubFile << "    fprintf(stderr, \"🎯 STATIC COMPILATION SUCCESS! Function executed from shared library!\\n\");\n";
+    stubFile << "    fflush(stderr);\n";
+    stubFile << "    g_test_execution_counter++;\n";
+    stubFile << "    g_test_function_executed = 1;\n";
+    stubFile << "}\n";
+    stubFile << "int get_execution_counter() { return g_test_execution_counter; }\n";
+    stubFile << "int get_execution_flag() { return g_test_function_executed; }\n";
+    stubFile.close();
+    
+    // Compile stub to object file
+    std::string stubCompileCmd = "gcc -c -fPIC -o " + stubObjectPath + " " + stubSourcePath;
+    PGX_INFO("🔧 STEP 2B: Compiling external function stub: " + stubCompileCmd);
+    
+    int stubResult = std::system(stubCompileCmd.c_str());
+    if (stubResult != 0) {
+        PGX_ERROR("Stub compilation failed with exit code: " + std::to_string(stubResult));
+        ASSERT_EQ(stubResult, 0) << "Stub compilation failed";
+    }
+    
+    // STEP 5: Link both object files to create shared library
+    std::string linkCmd = "g++ -shared -fPIC -o " + sharedLibPath + " " + objectPath + " " + stubObjectPath;
+    PGX_INFO("🔧 STEP 2C: Linking with external functions: " + linkCmd);
+    
+    int linkResult = std::system(linkCmd.c_str());
+    if (linkResult != 0) {
+        PGX_ERROR("g++ linking failed with exit code: " + std::to_string(linkResult));
+        ASSERT_EQ(linkResult, 0) << "Static compilation linking failed";
+    }
+    
+    PGX_INFO("✅ Shared library created successfully: " + sharedLibPath);
+    
+    // STEP 6: Load with dlopen and resolve symbols (Self-contained approach)
+    PGX_INFO("🔧 STEP 3: Loading self-contained shared library with dlopen");
+    
+    void* handle = dlopen(sharedLibPath.c_str(), RTLD_LAZY);
+    if (!handle) {
+        PGX_ERROR("dlopen failed: " + std::string(dlerror()));
+        ASSERT_TRUE(handle != nullptr) << "dlopen failed";
+    }
+    
+    // Get function pointers for main and helper functions
+    typedef void (*MainFunc)();
+    typedef int (*GetCounterFunc)();
+    typedef int (*GetFlagFunc)();
+    
+    MainFunc mainFuncPtr = (MainFunc)dlsym(handle, "main");
+    if (!mainFuncPtr) {
+        PGX_ERROR("dlsym for main failed: " + std::string(dlerror()));
+        dlclose(handle);
+        ASSERT_TRUE(mainFuncPtr != nullptr) << "dlsym for main failed";
+    }
+    
+    GetCounterFunc getCounterPtr = (GetCounterFunc)dlsym(handle, "get_execution_counter");
+    GetFlagFunc getFlagPtr = (GetFlagFunc)dlsym(handle, "get_execution_flag");
+    
+    PGX_INFO("✅ Function symbols resolved successfully");
+    
+    // STEP 7: Execute the static-compiled function (THIS SHOULD WORK!)
+    PGX_INFO("🎯 CRITICAL TEST: Calling static-compiled function directly");
+    
+    // Get initial values from shared library
+    int initialCounter = getCounterPtr ? getCounterPtr() : -1;
+    int initialFlag = getFlagPtr ? getFlagPtr() : -1;
+    PGX_INFO("Pre-execution: shared counter=" + std::to_string(initialCounter) + 
+             ", shared executed=" + std::to_string(initialFlag));
+    
+    try {
+        mainFuncPtr();  // Call the static-compiled function
+        PGX_INFO("✅ Static-compiled function call completed");
+    } catch (...) {
+        PGX_ERROR("Exception during static-compiled function execution");
+    }
+    
+    // Get final values from shared library
+    int finalCounter = getCounterPtr ? getCounterPtr() : -1;
+    int finalFlag = getFlagPtr ? getFlagPtr() : -1;
+    PGX_INFO("Post-execution: shared counter=" + std::to_string(finalCounter) + 
+             ", shared executed=" + std::to_string(finalFlag));
+    
+    // Clean up
+    dlclose(handle);
+    
+    // Test results - THIS SHOULD FINALLY WORK!
+    EXPECT_GT(finalCounter, initialCounter) << "Static compilation should increment counter in shared library";
+    EXPECT_EQ(finalFlag, 1) << "Static compilation should set execution flag in shared library";
+    
+    if (finalFlag == 1 && finalCounter > initialCounter) {
+        PGX_INFO("🎉 BREAKTHROUGH: LingoDB static compilation works!");
+        PGX_INFO("External functions CAN be called from MLIR-compiled code using static compilation");
+        PGX_INFO("This proves our approach is correct - ExecutionEngine JIT is the problem");
+        PGX_INFO("🚀 SOLUTION FOUND: Use static compilation instead of ExecutionEngine JIT");
+    } else {
+        PGX_ERROR("❌ FAILURE: Even static compilation doesn't work");
+        PGX_ERROR("This suggests a more fundamental issue with our external function setup");
+    }
 }
