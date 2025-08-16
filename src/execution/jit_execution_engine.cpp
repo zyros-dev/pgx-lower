@@ -28,6 +28,8 @@
 #include "llvm/Transforms/Scalar/GVN.h"
 
 #include <chrono>
+#include <future>
+#include <thread>
 
 // PostgreSQL headers for runtime function declarations
 #ifdef POSTGRESQL_EXTENSION
@@ -819,10 +821,42 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
     try {
         PGX_INFO("🔧 EXPERIMENT: Testing different invoke methods...");
         
-        // Method 1: Try invokePacked for C interface (from working unit test!)
-        PGX_INFO("🔧 Method 1: Calling engine->invokePacked('_mlir_ciface_main') for C interface");
-        auto invokeResult = engine->invokePacked("_mlir_ciface_main");
-        if (invokeResult) {
+        // Method 1: Try invoke on main function (historical working pattern!)
+        PGX_INFO("🔧 Method 1: Calling engine->invoke('main') with 10s timeout - working pattern from commit 4c4e6b3");
+        
+        // Add timeout protection to prevent infinite hangs (research recommendation)
+        std::promise<llvm::Error> promise;
+        std::future<llvm::Error> future = promise.get_future();
+        
+        std::thread invokeThread([&promise, this]() {
+            try {
+                auto result = engine->invoke("main");
+                promise.set_value(std::move(result));
+            } catch (...) {
+                promise.set_exception(std::current_exception());
+            }
+        });
+        
+        bool timedOut = false;
+        llvm::Error invokeResult = llvm::Error::success();
+        
+        if (future.wait_for(std::chrono::seconds(10)) == std::future_status::timeout) {
+            PGX_ERROR("🚨 TIMEOUT: JIT execution hung for 10+ seconds - likely symbol resolution deadlock or infinite loop");
+            timedOut = true;
+            // Detach the thread since we can't safely kill it
+            invokeThread.detach();
+            invokeResult = llvm::createStringError(llvm::inconvertibleErrorCode(), "JIT execution timeout");
+        } else {
+            try {
+                invokeResult = future.get();
+                invokeThread.join();
+            } catch (...) {
+                invokeThread.join();
+                invokeResult = llvm::createStringError(llvm::inconvertibleErrorCode(), "JIT execution exception");
+            }
+        }
+        
+        if (!timedOut && invokeResult) {
             PGX_INFO("🔍 Method 1: engine->invoke('main') returned success, checking execution");
             PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
             
@@ -837,9 +871,9 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
             PGX_WARNING("🔍 Method 1 failed: engine->invoke('main') returned failure");
         }
         
-        // Method 2: Try invoking with no arguments at all (different overload)
-        PGX_INFO("🔧 Method 2: Calling engine->invoke('_mlir_ciface_main') with no arguments");
-        auto invokeResult2 = engine->invoke("_mlir_ciface_main");
+        // Method 2: Try invokePacked as fallback (if Method 1 fails)
+        PGX_INFO("🔧 Method 2: Calling engine->invokePacked('main') as fallback");
+        auto invokeResult2 = engine->invokePacked("main");
         if (invokeResult2) {
             PGX_INFO("🔍 Method 2: engine->invoke('main') returned success, checking execution");
             PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));

@@ -292,9 +292,10 @@ void rt_tablebuilder_destroy(void* builder) {
 
 void* rt_datasourceiteration_start(void* datasource, __int128 varlen_data) {
     RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "rt_datasourceiteration_start called with datasource=" + 
-                      std::to_string(reinterpret_cast<uintptr_t>(datasource)));
+                      std::to_string(reinterpret_cast<uintptr_t>(datasource)) + 
+                      ", varlen_data=" + std::to_string((uint64_t)varlen_data));
     
-    // Extract table information from the 128-bit varlen_data
+    // Extract table information from the 128-bit varlen_data (FIXED ABI from researchers!)
     // Lower 64 bits contain table hash/id, upper 64 bits contain pointer to JSON metadata
     uint64_t table_ptr = static_cast<uint64_t>(varlen_data >> 64);
     uint64_t table_hash = static_cast<uint64_t>(varlen_data & 0xFFFFFFFFFFFFFFFF);
