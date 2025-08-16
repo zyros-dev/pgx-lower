@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
-#include "frontend/SQL/postgresql_ast_translator.h"
+#include "pgx_lower/frontend/SQL/postgresql_ast_translator.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/Util/IR/UtilDialect.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "execution/logging.h"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "pgx_lower/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "pgx_lower/mlir/Dialect/util/UtilDialect.h"
+#include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
+#include "pgx_lower/execution/logging.h"
 
 // Mock PostgreSQL structures for testing
 extern "C" {
