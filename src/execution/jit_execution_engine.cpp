@@ -38,57 +38,15 @@ extern "C" {
 }
 #endif
 
-// Forward declarations of runtime functions
+// Forward declarations of runtime functions actually used
 extern "C" {
-// DSA Runtime Functions (from Phase 4e-3)
-void* pgx_runtime_create_table_builder(const char* schema);
-void pgx_runtime_append_i64(void* builder, size_t col_idx, int64_t value);
-void pgx_runtime_append_i64_direct(void* builder, int64_t value);
-void pgx_runtime_append_nullable_i64(void* builder, bool is_null, int64_t value);
-void pgx_runtime_append_null(void* builder, size_t col_idx);
-void pgx_runtime_table_next_row(void* builder);
+// Only the essential functions needed for Test 1
+void* rt_get_execution_context();
 
-// PostgreSQL SPI Functions (from Phase 4d) - implemented in tuple_access.cpp
-void* pg_table_open(const char* table_name);
-int64_t pg_get_next_tuple(void* table_handle);
-int32_t pg_extract_field(void* tuple, int32_t field_index);
-void pg_store_result(void* result);
-void pg_store_result_i32(int32_t value);
-void pg_store_result_i64(int64_t value);
-void pg_store_result_f64(double value);
-void pg_store_result_text(const char* value);
-
-// PostgreSQL tuple access functions (from tuple_access.cpp)
-void* open_postgres_table(const char* tableName);
-int64_t read_next_tuple_from_table(void* tableHandle);
-void close_postgres_table(void* tableHandle);
-int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
-int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null);
-double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null);
-int32_t get_int_field_mlir(int64_t iteration_signal, int32_t field_index);
-void store_int_result(int32_t columnIndex, int32_t value, bool isNull);
-void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
-void store_text_result(int32_t columnIndex, const char* value, bool isNull);
-void store_field_as_datum(int32_t columnIndex, int64_t iteration_signal, int32_t field_index);
+// PostgreSQL tuple access functions (minimal set from tuple_access.cpp)
 bool add_tuple_to_result(int64_t value);
 void mark_results_ready_for_streaming();
 void prepare_computed_results(int32_t numColumns);
-
-// PostgreSQL runtime functions (from postgresql_runtime.cpp)
-void* pgx_exec_alloc_state_raw(int64_t size);
-void pgx_exec_free_state(void* state);
-void pgx_exec_set_tuple_count(void* exec_context, int64_t count);
-int64_t pgx_exec_get_tuple_count(void* exec_context);
-void* pgx_threadlocal_create(int64_t size);
-void* pgx_threadlocal_get(void* tls);
-void pgx_threadlocal_merge(void* dest, void* src);
-void* pgx_datasource_get(void* table_ref);
-void* pgx_datasource_iteration_init(void* datasource, int64_t start, int64_t end);
-int8_t pgx_datasource_iteration_iterate(void* iteration, void** row_out);
-void* pgx_buffer_create_zeroed(int64_t size);
-void* pgx_buffer_iterate(void* buffer, int64_t index);
-void* pgx_growing_buffer_create(int64_t initial_capacity);
-void pgx_growing_buffer_insert(void* buffer, void* value, int64_t value_size);
 }
 
 namespace pgx_lower {
@@ -652,7 +610,7 @@ void PostgreSQLJITExecutionEngine::registerLingoDRuntimeContextFunctions() {
 }
 
 void PostgreSQLJITExecutionEngine::registerMangledRuntimeFunctions() {
-    PGX_INFO("🎯 Registering mangled runtime functions");
+    PGX_INFO("🎯 Registering C runtime functions");
     
     engine->registerSymbols(
         [](llvm::orc::MangleAndInterner interner) {
@@ -665,97 +623,93 @@ void PostgreSQLJITExecutionEngine::registerMangledRuntimeFunctions() {
                 return symbolMap;
             }
             
-            void* tb_create = dlsym(handle, "_ZN7runtime12TableBuilder6createENS_8VarLen32E");
+            // Register C function names that match JIT calls
+            void* tb_create = dlsym(handle, "rt_tablebuilder_create");
             if (tb_create) {
-                symbolMap[interner("_ZN7runtime12TableBuilder6createENS_8VarLen32E")] = {
+                symbolMap[interner("rt_tablebuilder_create")] = {
                     llvm::orc::ExecutorAddr::fromPtr(tb_create),
                     llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
                 };
-                PGX_INFO("✅ TableBuilder::create registered");
+                PGX_INFO("✅ rt_tablebuilder_create registered");
             } else {
-                PGX_WARNING("❌ TableBuilder::create NOT FOUND");
+                PGX_WARNING("❌ rt_tablebuilder_create NOT FOUND");
             }
             
-            void* tb_build = dlsym(handle, "_ZN7runtime12TableBuilder5buildEv");
+            void* tb_build = dlsym(handle, "rt_tablebuilder_build");
             if (tb_build) {
-                symbolMap[interner("_ZN7runtime12TableBuilder5buildEv")] = {
+                symbolMap[interner("rt_tablebuilder_build")] = {
                     llvm::orc::ExecutorAddr::fromPtr(tb_build),
                     llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
                 };
-                PGX_INFO("✅ TableBuilder::build registered");
+                PGX_INFO("✅ rt_tablebuilder_build registered");
             } else {
-                PGX_WARNING("❌ TableBuilder::build NOT FOUND");
+                PGX_WARNING("❌ rt_tablebuilder_build NOT FOUND");
             }
             
-            // TableBuilder::nextRow() - Moves to next row
-            void* tb_nextRow = dlsym(handle, "_ZN7runtime12TableBuilder7nextRowEv");
+            void* tb_nextRow = dlsym(handle, "rt_tablebuilder_nextrow");
             if (tb_nextRow) {
-                symbolMap[interner("_ZN7runtime12TableBuilder7nextRowEv")] = {
+                symbolMap[interner("rt_tablebuilder_nextrow")] = {
                     llvm::orc::ExecutorAddr::fromPtr(tb_nextRow),
                     llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
                 };
-                PGX_INFO("✅ TableBuilder::nextRow registered");
+                PGX_INFO("✅ rt_tablebuilder_nextrow registered");
             } else {
-                PGX_WARNING("❌ TableBuilder::nextRow NOT FOUND");
+                PGX_WARNING("❌ rt_tablebuilder_nextrow NOT FOUND");
             }
             
-            void* dsi_start = dlsym(handle, "_ZN7runtime19DataSourceIteration5startEPNS_16ExecutionContextENS_8VarLen32E");
+            void* tb_addInt64 = dlsym(handle, "rt_tablebuilder_addint64");
+            if (tb_addInt64) {
+                symbolMap[interner("rt_tablebuilder_addint64")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(tb_addInt64),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_INFO("✅ rt_tablebuilder_addint64 registered");
+            } else {
+                PGX_WARNING("❌ rt_tablebuilder_addint64 NOT FOUND");
+            }
+            
+            void* tb_destroy = dlsym(handle, "rt_tablebuilder_destroy");
+            if (tb_destroy) {
+                symbolMap[interner("rt_tablebuilder_destroy")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(tb_destroy),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_INFO("✅ rt_tablebuilder_destroy registered");
+            } else {
+                PGX_WARNING("❌ rt_tablebuilder_destroy NOT FOUND");
+            }
+            
+            void* dsi_start = dlsym(handle, "rt_datasourceiteration_start");
             if (dsi_start) {
-                symbolMap[interner("_ZN7runtime19DataSourceIteration5startEPNS_16ExecutionContextENS_8VarLen32E")] = {
+                symbolMap[interner("rt_datasourceiteration_start")] = {
                     llvm::orc::ExecutorAddr::fromPtr(dsi_start),
                     llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
                 };
-                PGX_INFO("✅ DataSourceIteration::start registered");
+                PGX_INFO("✅ rt_datasourceiteration_start registered");
             } else {
-                PGX_WARNING("❌ DataSourceIteration::start NOT FOUND");
+                PGX_WARNING("❌ rt_datasourceiteration_start NOT FOUND");
             }
             
-            // DataSourceIteration::isValid()
-            void* dsi_isValid = dlsym(handle, "_ZN7runtime19DataSourceIteration7isValidEv");
+            void* dsi_isValid = dlsym(handle, "rt_datasourceiteration_isvalid");
             if (dsi_isValid) {
-                symbolMap[interner("_ZN7runtime19DataSourceIteration7isValidEv")] = {
+                symbolMap[interner("rt_datasourceiteration_isvalid")] = {
                     llvm::orc::ExecutorAddr::fromPtr(dsi_isValid),
                     llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
                 };
-                PGX_INFO("✅ DataSourceIteration::isValid registered");
+                PGX_INFO("✅ rt_datasourceiteration_isvalid registered");
             } else {
-                PGX_WARNING("❌ DataSourceIteration::isValid NOT FOUND");
+                PGX_WARNING("❌ rt_datasourceiteration_isvalid NOT FOUND");
             }
             
-            // DataSourceIteration::next()
-            void* dsi_next = dlsym(handle, "_ZN7runtime19DataSourceIteration4nextEv");
+            void* dsi_next = dlsym(handle, "rt_datasourceiteration_next");
             if (dsi_next) {
-                symbolMap[interner("_ZN7runtime19DataSourceIteration4nextEv")] = {
+                symbolMap[interner("rt_datasourceiteration_next")] = {
                     llvm::orc::ExecutorAddr::fromPtr(dsi_next),
                     llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
                 };
-                PGX_INFO("✅ DataSourceIteration::next registered");
+                PGX_INFO("✅ rt_datasourceiteration_next registered");
             } else {
-                PGX_WARNING("❌ DataSourceIteration::next NOT FOUND");
-            }
-            
-            // DataSourceIteration::access(RecordBatchInfo*)
-            void* dsi_access = dlsym(handle, "_ZN7runtime19DataSourceIteration6accessEPNS0_15RecordBatchInfoE");
-            if (dsi_access) {
-                symbolMap[interner("_ZN7runtime19DataSourceIteration6accessEPNS0_15RecordBatchInfoE")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(dsi_access),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ DataSourceIteration::access registered");
-            } else {
-                PGX_WARNING("❌ DataSourceIteration::access NOT FOUND");
-            }
-            
-            // DataSourceIteration::end(DataSourceIteration*)
-            void* dsi_end = dlsym(handle, "_ZN7runtime19DataSourceIteration3endEPS0_");
-            if (dsi_end) {
-                symbolMap[interner("_ZN7runtime19DataSourceIteration3endEPS0_")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(dsi_end),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ DataSourceIteration::end registered");
-            } else {
-                PGX_WARNING("❌ DataSourceIteration::end NOT FOUND");
+                PGX_WARNING("❌ rt_datasourceiteration_next NOT FOUND");
             }
             
             void* rt_ctx = dlsym(handle, "rt_get_execution_context");
@@ -771,7 +725,7 @@ void PostgreSQLJITExecutionEngine::registerMangledRuntimeFunctions() {
             
             dlclose(handle);
             
-            PGX_INFO("✨ Test 1 Registration Complete: " + std::to_string(symbolMap.size()) + " functions registered");
+            PGX_INFO("✨ C Function Registration Complete: " + std::to_string(symbolMap.size()) + " functions registered");
             
             return symbolMap;
         });
