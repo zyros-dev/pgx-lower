@@ -31,8 +31,8 @@ extern bool g_extension_after_load;
 namespace pgx_lower {
 
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
-    // 🎯 ACCEPT ALL queries that validateAndLogPlanStructure accepts for consistent behavior
-    // This matches the comprehensive acceptance logic used for tree logging
+    // 📊 DATA COLLECTION MODE: Log features but decline MLIR compilation
+    // This ensures we get execution trees from ALL queries for AST parser development
     
     // Log query characteristics for analysis
     std::vector<std::string> features;
@@ -57,15 +57,8 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         PGX_INFO("📋 Query features: None detected");
     }
     
-    // ACCEPT ALL PATTERNS like validateAndLogPlanStructure does
-    // This ensures consistent behavior between tree logging and MLIR compilation
-    if (isSelectStatement) {
-        PGX_INFO("✅ ACCEPTING query for MLIR compilation - matches tree acceptance logic");
-        return true;
-    }
-    
-    // Only decline non-SELECT statements
-    PGX_INFO("❌ DECLINING: Non-SELECT statement not supported in MLIR");
+    // 📊 EARLY RETURN: Decline all MLIR compilation to focus on tree data collection
+    PGX_INFO("📊 DATA COLLECTION: Declining MLIR compilation to collect execution tree data");
     return false;
 }
 
