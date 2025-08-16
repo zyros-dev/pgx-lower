@@ -37,6 +37,18 @@ void* rt_get_execution_context() {
     return &dummy_context;
 }
 
+// Data source iteration functions (moved before table builder to resolve dependency)
+struct DataSourceIterator {
+    void* context;
+    void* table_handle;  // PostgreSQL table handle
+    bool has_current_tuple;
+    int32_t current_value;
+    bool current_is_null;
+};
+
+// Global to store the current tuple data during JIT execution
+static DataSourceIterator* g_current_iterator = nullptr;
+
 // Table builder functions
 struct TableBuilder {
     void* data;
@@ -52,62 +64,50 @@ void* rt_tablebuilder_create(uint64_t /* varlen32_value */) {
 }
 
 void rt_tablebuilder_nextrow(void* builder) {
-    // Increment row count
+    elog(NOTICE, "🔗 rt_tablebuilder_nextrow: Streaming current tuple immediately");
+    
+    // IMMEDIATE STREAMING: Stream the current tuple right now
+    // This is called by MLIR for each tuple during iteration
+    
+    if (g_current_iterator && g_current_iterator->has_current_tuple) {
+        // We have a current tuple from PostgreSQL
+        elog(NOTICE, "🔗 Streaming tuple with value=%d, is_null=%s",
+             g_current_iterator->current_value, 
+             g_current_iterator->current_is_null ? "true" : "false");
+        
+        // Prepare results storage for this tuple
+        prepare_computed_results(1);  // Each tuple has 1 column for Test 1/2
+        
+        // Store the current tuple's value
+        store_bigint_result(0, g_current_iterator->current_value, g_current_iterator->current_is_null);
+        
+        // Stream this tuple immediately to PostgreSQL output
+        bool streaming_result = add_tuple_to_result(1);
+        elog(NOTICE, "🔗 Immediate streaming returned: %s", streaming_result ? "true" : "false");
+    }
+    
+    // Also increment row count for tracking
     if (builder) {
         auto* tb = (TableBuilder*)builder;
         tb->row_count++;
     }
 }
 
-// Data source iteration functions
-struct DataSourceIterator {
-    void* context;
-    void* table_handle;  // PostgreSQL table handle
-    bool has_current_tuple;
-    int32_t current_value;
-    bool current_is_null;
-};
+// DataSourceIterator already defined above (moved before table builder functions)
 
-// Global to store the current tuple data during JIT execution
-static DataSourceIterator* g_current_iterator = nullptr;
-
-// Global to preserve PostgreSQL data for table builder
-struct PreservedData {
-    bool has_data;
-    int32_t value;
-    bool is_null;
-} g_preserved_data = { false, 0, true };
+// Removed g_preserved_data - switching to immediate streaming pattern
+// Each tuple is streamed immediately when MLIR accesses it
 
 void* rt_tablebuilder_build(void* builder) {
     elog(NOTICE, "🎯 rt_tablebuilder_build called from JIT!");
     
-    // Check if we have preserved PostgreSQL data
-    if (g_preserved_data.has_data) {
-        elog(NOTICE, "🔗 Using PRESERVED PostgreSQL data: value=%d, is_null=%s",
-             g_preserved_data.value, g_preserved_data.is_null ? "true" : "false");
-        
-        // Prepare results storage
-        prepare_computed_results(1);  // Test 1 has 1 column
-        
-        // Store the REAL PostgreSQL value
-        store_bigint_result(0, g_preserved_data.value, g_preserved_data.is_null);
-        
-        // Stream the tuple to PostgreSQL output
-        bool streaming_result = add_tuple_to_result(1);
-        elog(NOTICE, "🔗 add_tuple_to_result returned: %s", streaming_result ? "true" : "false");
-    } else {
-        elog(NOTICE, "🚨 No PostgreSQL data available, using fallback");
-        
-        // Fallback to dummy data if PostgreSQL access failed
-        prepare_computed_results(1);
-        store_bigint_result(0, 999, false);  // Use 999 to distinguish from real data
-        add_tuple_to_result(1);
-    }
+    // In immediate streaming mode, tuples have already been streamed during iteration
+    // This function now just signals that all results have been streamed
     
-    // Signal that results are ready for streaming
+    // Signal that results are ready (all tuples have been streamed)
     mark_results_ready_for_streaming();
     
-    elog(NOTICE, "🎯 rt_tablebuilder_build completed!");
+    elog(NOTICE, "🎯 rt_tablebuilder_build completed - all tuples already streamed!");
     return builder;
 }
 
@@ -164,10 +164,7 @@ bool rt_datasourceiteration_isvalid(void* iterator) {
         iter->current_is_null = is_null;
         iter->has_current_tuple = true;
         
-        // PRESERVE the PostgreSQL data for table builder
-        g_preserved_data.has_data = true;
-        g_preserved_data.value = iter->current_value;
-        g_preserved_data.is_null = is_null;
+        // No longer preserving data - we stream immediately in rt_tablebuilder_nextrow
         
         elog(NOTICE, "🔗 rt_datasourceiteration_isvalid: Got tuple with value=%d, is_null=%s (PRESERVED)", 
              iter->current_value, is_null ? "true" : "false");
