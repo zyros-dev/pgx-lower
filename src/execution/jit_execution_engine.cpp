@@ -623,126 +623,37 @@ void PostgreSQLJITExecutionEngine::registerMangledRuntimeFunctions() {
                 return symbolMap;
             }
             
-            // Register C function names that match JIT calls
-            void* tb_create = dlsym(handle, "rt_tablebuilder_create");
-            if (tb_create) {
-                symbolMap[interner("rt_tablebuilder_create")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(tb_create),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_tablebuilder_create registered");
-            } else {
-                PGX_WARNING("❌ rt_tablebuilder_create NOT FOUND");
-            }
+            // Helper lambda to register a single function
+            auto registerFunction = [&](const std::string& funcName) {
+                void* funcPtr = dlsym(handle, funcName.c_str());
+                if (funcPtr) {
+                    symbolMap[interner(funcName)] = {
+                        llvm::orc::ExecutorAddr::fromPtr(funcPtr),
+                        llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                    };
+                    PGX_INFO("✅ " + funcName + " registered");
+                } else {
+                    PGX_WARNING("❌ " + funcName + " NOT FOUND");
+                }
+            };
             
-            void* tb_build = dlsym(handle, "rt_tablebuilder_build");
-            if (tb_build) {
-                symbolMap[interner("rt_tablebuilder_build")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(tb_build),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_tablebuilder_build registered");
-            } else {
-                PGX_WARNING("❌ rt_tablebuilder_build NOT FOUND");
-            }
+            // Register all Test 1 runtime functions
+            const std::vector<std::string> functions = {
+                "rt_tablebuilder_create",
+                "rt_tablebuilder_build", 
+                "rt_tablebuilder_nextrow",
+                "rt_tablebuilder_addint64",
+                "rt_tablebuilder_destroy",
+                "rt_datasourceiteration_start",
+                "rt_datasourceiteration_isvalid",
+                "rt_datasourceiteration_next",
+                "rt_datasourceiteration_access",
+                "rt_datasourceiteration_end",
+                "rt_get_execution_context"
+            };
             
-            void* tb_nextRow = dlsym(handle, "rt_tablebuilder_nextrow");
-            if (tb_nextRow) {
-                symbolMap[interner("rt_tablebuilder_nextrow")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(tb_nextRow),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_tablebuilder_nextrow registered");
-            } else {
-                PGX_WARNING("❌ rt_tablebuilder_nextrow NOT FOUND");
-            }
-            
-            void* tb_addInt64 = dlsym(handle, "rt_tablebuilder_addint64");
-            if (tb_addInt64) {
-                symbolMap[interner("rt_tablebuilder_addint64")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(tb_addInt64),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_tablebuilder_addint64 registered");
-            } else {
-                PGX_WARNING("❌ rt_tablebuilder_addint64 NOT FOUND");
-            }
-            
-            void* tb_destroy = dlsym(handle, "rt_tablebuilder_destroy");
-            if (tb_destroy) {
-                symbolMap[interner("rt_tablebuilder_destroy")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(tb_destroy),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_tablebuilder_destroy registered");
-            } else {
-                PGX_WARNING("❌ rt_tablebuilder_destroy NOT FOUND");
-            }
-            
-            void* dsi_start = dlsym(handle, "rt_datasourceiteration_start");
-            if (dsi_start) {
-                symbolMap[interner("rt_datasourceiteration_start")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(dsi_start),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_datasourceiteration_start registered");
-            } else {
-                PGX_WARNING("❌ rt_datasourceiteration_start NOT FOUND");
-            }
-            
-            void* dsi_isValid = dlsym(handle, "rt_datasourceiteration_isvalid");
-            if (dsi_isValid) {
-                symbolMap[interner("rt_datasourceiteration_isvalid")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(dsi_isValid),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_datasourceiteration_isvalid registered");
-            } else {
-                PGX_WARNING("❌ rt_datasourceiteration_isvalid NOT FOUND");
-            }
-            
-            void* dsi_next = dlsym(handle, "rt_datasourceiteration_next");
-            if (dsi_next) {
-                symbolMap[interner("rt_datasourceiteration_next")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(dsi_next),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_datasourceiteration_next registered");
-            } else {
-                PGX_WARNING("❌ rt_datasourceiteration_next NOT FOUND");
-            }
-            
-            void* dsi_access = dlsym(handle, "rt_datasourceiteration_access");
-            if (dsi_access) {
-                symbolMap[interner("rt_datasourceiteration_access")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(dsi_access),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_datasourceiteration_access registered");
-            } else {
-                PGX_WARNING("❌ rt_datasourceiteration_access NOT FOUND");
-            }
-            
-            void* dsi_end = dlsym(handle, "rt_datasourceiteration_end");
-            if (dsi_end) {
-                symbolMap[interner("rt_datasourceiteration_end")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(dsi_end),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_datasourceiteration_end registered");
-            } else {
-                PGX_WARNING("❌ rt_datasourceiteration_end NOT FOUND");
-            }
-            
-            void* rt_ctx = dlsym(handle, "rt_get_execution_context");
-            if (rt_ctx) {
-                symbolMap[interner("rt_get_execution_context")] = {
-                    llvm::orc::ExecutorAddr::fromPtr(rt_ctx),
-                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
-                };
-                PGX_INFO("✅ rt_get_execution_context registered");
-            } else {
-                PGX_WARNING("❌ rt_get_execution_context NOT FOUND");
+            for (const auto& funcName : functions) {
+                registerFunction(funcName);
             }
             
             dlclose(handle);
