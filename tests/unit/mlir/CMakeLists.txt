@@ -171,6 +171,9 @@ add_executable(mlir_unit_test
     test_dialect_verification.cpp  
     test_llvm_passes_simple.cpp
     test_real_module_crash.cpp
+    ../frontend/test_plan_node_types.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/SQL/postgresql_ast_translator.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp
 )
 
 target_include_directories(mlir_unit_test PRIVATE
