@@ -42,6 +42,19 @@ add_postgresql_mixed_extension(
             13_text_operations
             14_aggregate_functions
             15_special_operators
+            16_debug_text
+            17_where_simple_conditions
+            18_where_logical_combinations
+            19_where_null_patterns
+            20_where_pattern_matching
+            21_order_by_basic
+            22_order_by_multiple_columns
+            23_order_by_expressions
+            24_order_by_with_where
+            25_group_by_simple
+            26_group_by_having
+            27_group_by_with_where
+            28_complete_sql_patterns
 )
 
 # MLIR dialect libraries for TypeID resolution  
