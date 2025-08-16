@@ -127,13 +127,22 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
             PGX_INFO("✅ applyFullConversion succeeded!");
             
             // POST-PROCESS: Fix main function visibility for ExecutionEngine lookup
-            PGX_INFO("🔧 Post-processing: Setting main function visibility to public");
-            fprintf(stderr, "🔧 FORCED LOG: POST-PROCESSING main function visibility in PostgreSQL!\n");
+            PGX_INFO("🔧 Post-processing: Setting function visibility and External linkage for JIT");
+            fprintf(stderr, "🔧 FORCED LOG: POST-PROCESSING function linkage in PostgreSQL!\n");
             module.walk([&](LLVM::LLVMFuncOp func) {
-                // For JIT execution, ALL functions need to be public for cross-module linking
-                PGX_INFO("🎯 Setting function " + func.getSymName().str() + " visibility to public for JIT");
-                func.setSymVisibilityAttr(mlir::StringAttr::get(&getContext(), "public"));
-                PGX_INFO("✅ Function " + func.getSymName().str() + " visibility set to public");
+                // LINGODB SOLUTION: Set External linkage for all external function declarations
+                if (func.isDeclaration()) {
+                    // External functions (runtime functions) need External linkage for JIT resolution
+                    func.setLinkageAttr(LLVM::LinkageAttr::get(&getContext(), LLVM::Linkage::External));
+                    func.setSymVisibilityAttr(mlir::StringAttr::get(&getContext(), "default"));
+                    PGX_INFO("🎯 EXTERNAL FUNC: " + func.getSymName().str() + " -> External linkage");
+                    fprintf(stderr, "🎯 EXTERNAL: %s -> External linkage\n", func.getSymName().str().c_str());
+                } else {
+                    // Defined functions (main, etc.) need public visibility for ExecutionEngine lookup
+                    func.setSymVisibilityAttr(mlir::StringAttr::get(&getContext(), "public"));
+                    PGX_INFO("🎯 DEFINED FUNC: " + func.getSymName().str() + " -> public visibility");
+                    fprintf(stderr, "🎯 DEFINED: %s -> public visibility\n", func.getSymName().str().c_str());
+                }
             });
             PGX_INFO("🎉 Post-processing completed!");
         }
