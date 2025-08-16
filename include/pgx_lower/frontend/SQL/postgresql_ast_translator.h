@@ -31,6 +31,10 @@ struct NullTest;
 struct Aggref;
 struct CoalesceExpr;
 struct SeqScan;
+struct Agg;
+struct Sort;
+struct Limit;
+struct Gather;
 struct Plan;
 struct List;
 struct Node;
@@ -61,6 +65,10 @@ private:
     // Plan node translation
     auto translatePlanNode(Plan* plan, struct TranslationContext& context) -> ::mlir::Operation*;
     auto translateSeqScan(SeqScan* seqScan, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto translateAgg(Agg* agg, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto translateSort(Sort* sort, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto translateLimit(Limit* limit, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto translateGather(Gather* gather, struct TranslationContext& context) -> ::mlir::Operation*;
     
     // Helper functions for translateQuery refactoring
     auto createQueryFunction(::mlir::OpBuilder& builder, struct TranslationContext& context) -> ::mlir::func::FuncOp;
