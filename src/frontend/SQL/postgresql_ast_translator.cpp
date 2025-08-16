@@ -30,6 +30,7 @@ extern "C" {
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
@@ -98,14 +99,8 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     ::mlir::OpBuilder builder(&context_);
     builder.setInsertionPointToStart(module.getBody());
     
-    // TESTING: Go back to calling the external function but with better error checking
-    // Declare the external function at module level
-    auto markReadyFuncType = builder.getFunctionType({}, {});
-    auto markReadyFunc = builder.create<mlir::func::FuncOp>(
-        builder.getUnknownLoc(), 
-        "mark_results_ready_for_streaming", 
-        markReadyFuncType);
-    markReadyFunc.setPrivate(); // Mark as external function
+    // TESTING: No external function declarations needed for this test
+    // We'll test pure computation without external calls
     
     // Create translation context
     TranslationContext context;
@@ -263,15 +258,25 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
     
     PGX_DEBUG("MaterializeOp created successfully");
     
-    // TESTING: Call the external function that was declared at module level
-    auto markReadySymbol = mlir::FlatSymbolRefAttr::get(context.builder->getContext(), "mark_results_ready_for_streaming");
-    context.builder->create<mlir::func::CallOp>(
-        context.builder->getUnknownLoc(),
-        markReadySymbol,
-        mlir::TypeRange{}, // void return type
-        mlir::ValueRange{});
+    // TESTING: Create the most minimal possible function body
+    // Just arithmetic operations to test if function execution works at all
     
-    // Return void
+    // Create two constants and add them - this is the simplest possible computation
+    auto constOne = context.builder->create<mlir::arith::ConstantOp>(
+        context.builder->getUnknownLoc(),
+        context.builder->getI32IntegerAttr(1));
+    
+    auto constTwo = context.builder->create<mlir::arith::ConstantOp>(
+        context.builder->getUnknownLoc(),
+        context.builder->getI32IntegerAttr(2));
+    
+    // Add them together - this computation will prove function execution if it happens
+    auto addResult = context.builder->create<mlir::arith::AddIOp>(
+        context.builder->getUnknownLoc(),
+        constOne,
+        constTwo);
+    
+    // Return void - this is the absolute minimal function that does some computation
     context.builder->create<mlir::func::ReturnOp>(context.builder->getUnknownLoc());
     
     PGX_DEBUG("RelAlg operations generated successfully");
