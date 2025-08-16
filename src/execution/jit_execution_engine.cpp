@@ -817,76 +817,53 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
     // CRITICAL FIX: Try alternative MLIR ExecutionEngine invocation methods FIRST
     PGX_INFO("🔧 ATTEMPTING alternative MLIR ExecutionEngine invocation before manual lookup...");
     
-    // Try invoke with empty arguments (for void main())
-    try {
-        PGX_INFO("🔧 EXPERIMENT: Testing different invoke methods...");
+    // Helper function to execute JIT with timeout
+    auto executeWithTimeout = [this](const std::string& method, std::function<llvm::Error()> exec) -> bool {
+        PGX_INFO("🔧 Trying " + method + " with 10s timeout");
         
-        // Method 1: Try invoke on main function (historical working pattern!)
-        PGX_INFO("🔧 Method 1: Calling engine->invoke('main') with 10s timeout - working pattern from commit 4c4e6b3");
-        
-        // Add timeout protection to prevent infinite hangs (research recommendation)
         std::promise<llvm::Error> promise;
-        std::future<llvm::Error> future = promise.get_future();
+        auto future = promise.get_future();
         
-        std::thread invokeThread([&promise, this]() {
+        std::thread execThread([&promise, exec]() {
             try {
-                auto result = engine->invoke("main");
-                promise.set_value(std::move(result));
+                promise.set_value(exec());
             } catch (...) {
                 promise.set_exception(std::current_exception());
             }
         });
         
-        bool timedOut = false;
-        llvm::Error invokeResult = llvm::Error::success();
-        
         if (future.wait_for(std::chrono::seconds(10)) == std::future_status::timeout) {
-            PGX_ERROR("🚨 TIMEOUT: JIT execution hung for 10+ seconds - likely symbol resolution deadlock or infinite loop");
-            timedOut = true;
-            // Detach the thread since we can't safely kill it
-            invokeThread.detach();
-            invokeResult = llvm::createStringError(llvm::inconvertibleErrorCode(), "JIT execution timeout");
-        } else {
-            try {
-                invokeResult = future.get();
-                invokeThread.join();
-            } catch (...) {
-                invokeThread.join();
-                invokeResult = llvm::createStringError(llvm::inconvertibleErrorCode(), "JIT execution exception");
-            }
+            PGX_ERROR("🚨 TIMEOUT: " + method + " hung for 10+ seconds");
+            execThread.detach();
+            return false;
         }
         
-        if (!timedOut && invokeResult) {
-            PGX_INFO("🔍 Method 1: engine->invoke('main') returned success, checking execution");
-            PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
-            
-            if (g_jit_results_ready) {
-                PGX_INFO("✅ SUCCESS: JIT function actually executed and set results flag!");
-                PGX_INFO("JIT query execution completed successfully");
-                return true;
-            } else {
-                PGX_WARNING("⚠️ Method 1 failed: invoke returned success but function body didn't execute");
+        try {
+            auto result = future.get();
+            execThread.join();
+            if (result) {
+                PGX_INFO("✅ " + method + " succeeded, checking results...");
+                if (g_jit_results_ready) {
+                    PGX_INFO("🎉 JIT execution completed successfully!");
+                    return true;
+                }
             }
-        } else {
-            PGX_WARNING("🔍 Method 1 failed: engine->invoke('main') returned failure");
+        } catch (...) {
+            execThread.join();
         }
         
-        // Method 2: Try invokePacked as fallback (if Method 1 fails)
-        PGX_INFO("🔧 Method 2: Calling engine->invokePacked('main') as fallback");
-        auto invokeResult2 = engine->invokePacked("main");
-        if (invokeResult2) {
-            PGX_INFO("🔍 Method 2: engine->invoke('main') returned success, checking execution");
-            PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
-            
-            if (g_jit_results_ready) {
-                PGX_INFO("✅ SUCCESS: Method 2 worked! JIT function executed properly!");
-                PGX_INFO("JIT query execution completed successfully");
-                return true;
-            } else {
-                PGX_WARNING("⚠️ Method 2 failed: invoke returned success but function body didn't execute");
-            }
-        } else {
-            PGX_WARNING("🔍 Method 2 failed: engine->invoke('main') returned failure");
+        PGX_WARNING("❌ " + method + " failed");
+        return false;
+    };
+    
+    try {
+        // Try different JIT execution methods with timeout protection
+        if (executeWithTimeout("engine->invoke('main')", [this]() { return engine->invoke("main"); })) {
+            return true;
+        }
+        
+        if (executeWithTimeout("engine->invokePacked('main')", [this]() { return engine->invokePacked("main"); })) {
+            return true;
         }
         
         // Method 3: Try manual function pointer approach with correct API
