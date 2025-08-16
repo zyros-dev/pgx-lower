@@ -814,212 +814,29 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
         PGX_WARNING("Exception occurred during LLVM module visibility fix");
     }
     
-    // CRITICAL FIX: Try alternative MLIR ExecutionEngine invocation methods FIRST
-    PGX_INFO("🔧 ATTEMPTING alternative MLIR ExecutionEngine invocation before manual lookup...");
-    
-    // Helper function to execute JIT with timeout
-    auto executeWithTimeout = [this](const std::string& method, std::function<llvm::Error()> exec) -> bool {
-        PGX_INFO("🔧 Trying " + method + " with 10s timeout");
-        
-        std::promise<llvm::Error> promise;
-        auto future = promise.get_future();
-        
-        std::thread execThread([&promise, exec]() {
-            try {
-                promise.set_value(exec());
-            } catch (...) {
-                promise.set_exception(std::current_exception());
-            }
-        });
-        
-        if (future.wait_for(std::chrono::seconds(10)) == std::future_status::timeout) {
-            PGX_ERROR("🚨 TIMEOUT: " + method + " hung for 10+ seconds");
-            execThread.detach();
-            return false;
-        }
-        
-        try {
-            auto result = future.get();
-            execThread.join();
-            if (result) {
-                PGX_INFO("✅ " + method + " succeeded, checking results...");
-                if (g_jit_results_ready) {
-                    PGX_INFO("🎉 JIT execution completed successfully!");
-                    return true;
-                }
-            }
-        } catch (...) {
-            execThread.join();
-        }
-        
-        PGX_WARNING("❌ " + method + " failed");
-        return false;
-    };
+    // Execute JIT compiled main function
+    PGX_INFO("🎯 Executing JIT compiled main function");
     
     try {
-        // Try different JIT execution methods with timeout protection
-        if (executeWithTimeout("engine->invoke('main')", [this]() { return engine->invoke("main"); })) {
-            return true;
-        }
-        
-        if (executeWithTimeout("engine->invokePacked('main')", [this]() { return engine->invokePacked("main"); })) {
-            return true;
-        }
-        
-        // Method 3: Try manual function pointer approach with correct API
-        PGX_INFO("🔧 Method 3: Trying manual function pointer lookup and execution");
-        auto mainFuncResult = engine->lookup("main");
-        if (mainFuncResult) {
-            PGX_INFO("🔍 Method 3: Function lookup succeeded, attempting direct call");
-            
-            // Get raw function pointer from ExecutionEngine lookup result
-            void* rawFuncPtr = mainFuncResult.get();
-            if (rawFuncPtr) {
-                PGX_INFO("🔍 Method 3: Got raw function pointer, converting to callable...");
-                
-                // Cast to void function pointer for main()
-                auto mainFunc = reinterpret_cast<void(*)()>(rawFuncPtr);
-                
-                try {
-                    PGX_INFO("🔍 Method 3: Calling function directly...");
-                    mainFunc(); // Direct function call
-                    
-                    PGX_INFO("🔍 Method 3: Direct call completed, checking execution");
-                    PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
-                    
-                    if (g_jit_results_ready) {
-                        PGX_INFO("✅ SUCCESS: Method 3 worked! Direct function call executed properly!");
-                        PGX_INFO("JIT query execution completed successfully");
-                        return true;
-                    } else {
-                        PGX_WARNING("⚠️ Method 3 failed: Direct call succeeded but function body didn't execute");
-                    }
-                } catch (const std::exception& e) {
-                    PGX_WARNING("🔍 Method 3 exception: " + std::string(e.what()));
-                } catch (...) {
-                    PGX_WARNING("🔍 Method 3 unknown exception during direct call");
-                }
-            } else {
-                PGX_WARNING("🔍 Method 3 failed: Got null raw function pointer");
+        // Use the standard MLIR ExecutionEngine invoke method
+        auto result = engine->invoke("main");
+        if (!result) { // LLVM Error = success (no error)
+            PGX_INFO("✅ JIT execution succeeded, checking results...");
+            if (g_jit_results_ready) {
+                PGX_INFO("🎉 JIT execution completed successfully!");
+                return true;
             }
         } else {
-            PGX_WARNING("🔍 Method 3 failed: Function lookup returned null");
+            PGX_WARNING("❌ engine->invoke('main') returned error");
         }
-        
-        // Method 4: Check if external function registration is the issue
-        PGX_INFO("🔧 Method 4: Testing external function registration and symbol resolution");
-        
-        // Test if ExecutionEngine can find any of our registered runtime functions
-        std::vector<std::string> registeredFunctions = {
-            "increment_test_counter", "mark_results_ready_for_streaming", 
-            "open_postgres_table", "read_next_tuple_from_table"
-        };
-        
-        bool foundAnyRegistered = false;
-        for (const auto& funcName : registeredFunctions) {
-            auto testResult = engine->lookup(funcName);
-            if (testResult) {
-                PGX_INFO("✅ Found registered function: " + funcName);
-                foundAnyRegistered = true;
-            } else {
-                PGX_INFO("❌ Could not find registered function: " + funcName);
-            }
-        }
-        
-        if (!foundAnyRegistered) {
-            PGX_WARNING("🚨 CRITICAL: ExecutionEngine cannot find ANY registered functions");
-            PGX_WARNING("This suggests the JIT symbol table is completely broken");
-        } else {
-            PGX_INFO("✅ Some registered functions found - symbol registration works");
-        }
-        
-        // Try a different approach - check if the main function is actually compiled correctly
-        PGX_INFO("🔍 Checking if main function compilation generated valid code...");
-        
-        // Method 5: Try creating a minimal test function that just returns a value
-        PGX_INFO("🔧 Method 5: Testing with a simple return-value function");
-        
-        // If external function calls fail, maybe we can test with a function that just returns a value
-        // Look for any function that returns an integer to test basic execution
-        auto simpleTestResult = engine->lookup("main");
-        if (simpleTestResult) {
-            PGX_INFO("🔍 Found main function symbol, attempting to test basic execution");
-            
-            // Try converting to a function that returns void and see if it does anything at all
-            try {
-                PGX_INFO("🎯 FINAL TEST: Attempting to call function in most basic way possible");
-                
-                // Since invoke() claims to work, let's try to trace exactly what happens
-                PGX_INFO("🔍 Re-testing invoke with detailed tracing...");
-                
-                // Check if the issue is memory corruption during execution
-                PGX_INFO("🔍 Pre-invoke state: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
-                
-                auto invokeResult = engine->invoke("main");
-                
-                PGX_INFO("🔍 Post-invoke state: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
-                PGX_INFO("🔍 Invoke result success: " + std::to_string(static_cast<bool>(invokeResult)));
-                
-            } catch (...) {
-                PGX_WARNING("🔍 Exception during final test");
-            }
-        }
-        
-        PGX_WARNING("🚨 CONCLUSION: ExecutionEngine invoke() succeeds but function body doesn't execute");
-        
     } catch (const std::exception& e) {
-        PGX_WARNING("🔍 Exception in engine->invoke: " + std::string(e.what()));
-    }
-    
-    // Look up the compiled query function
-    // The function should be named "compiled_query" or "main" depending on the lowering
-    auto queryFuncResult = engine->lookup("compiled_query");
-    if (!queryFuncResult) {
-        PGX_WARNING("Failed to find 'compiled_query' function, trying 'main'");
-        queryFuncResult = engine->lookup("main");
-        
-        if (!queryFuncResult) {
-            PGX_ERROR("Failed to lookup compiled query function - neither 'compiled_query' nor 'main' found");
-            return false;
-        }
-    }
-    
-    // Get the function pointer
-    auto funcPtr = queryFuncResult.get();
-    if (!funcPtr) {
-        PGX_ERROR("Failed to get function pointer from JIT lookup result");
-        return false;
-    }
-    
-    PGX_INFO("Found JIT compiled query function, preparing for execution");
-    
-    // Continue with manual function pointer approach as fallback
-    // Cast to the expected function signature
-    // The function signature should match what the MLIR lowering produces
-    // For Test 1, this is likely: int compiled_query(void* estate, void* dest)
-    typedef int (*QueryFunctionType)(void*, void*);
-    auto compiledQuery = reinterpret_cast<QueryFunctionType>(funcPtr);
-    
-    // Execute the compiled query
-    PGX_INFO("Executing JIT compiled query for Test 1");
-    
-    try {
-        int result = compiledQuery(estate, dest);
-        
-        auto endTime = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
-        PGX_INFO("JIT query execution completed in " + std::to_string(duration / 1000.0) + " ms with result: " + std::to_string(result));
-        
-        // Return true if execution succeeded (result == 0)
-        return (result == 0);
-        
-    } catch (const std::exception& e) {
-        PGX_ERROR("Exception during JIT query execution: " + std::string(e.what()));
-        return false;
+        PGX_WARNING("❌ Exception during JIT execution: " + std::string(e.what()));
     } catch (...) {
-        PGX_ERROR("Unknown exception during JIT query execution");
-        return false;
+        PGX_WARNING("❌ Unknown exception during JIT execution");
     }
+    
+    PGX_ERROR("JIT execution failed - no valid results produced");
+    return false;
 }
 
 } // namespace execution
