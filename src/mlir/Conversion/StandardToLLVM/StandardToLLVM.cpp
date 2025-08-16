@@ -76,6 +76,7 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
 
     void runOnOperation() override {
         PGX_INFO("[StandardToLLVMPass] Starting run on operation!");
+        fprintf(stderr, "🚨 FORCED LOG: StandardToLLVMPass::runOnOperation() EXECUTING in PostgreSQL!\n");
         // The first thing to define is the conversion target. This will define the
         // final target for this lowering. For this lowering, we are only targeting
         // the LLVM dialect.
@@ -127,6 +128,7 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
             
             // POST-PROCESS: Fix main function visibility for ExecutionEngine lookup
             PGX_INFO("🔧 Post-processing: Setting main function visibility to public");
+            fprintf(stderr, "🔧 FORCED LOG: POST-PROCESSING main function visibility in PostgreSQL!\n");
             module.walk([&](LLVM::LLVMFuncOp func) {
                 if (func.getSymName() == "main") {
                     PGX_INFO("🎯 Found main function! Setting sym_visibility=\"public\" for ExecutionEngine");
@@ -144,7 +146,9 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
 } // namespace
 
 std::unique_ptr<Pass> createStandardToLLVMPass() {
+    // Use multiple logging approaches to ensure visibility
     PGX_INFO("Creating StandardToLLVMPass instance");
+    fprintf(stderr, "🔥 FORCED LOG: createStandardToLLVMPass() called in PostgreSQL!\n");
     return std::make_unique<StandardToLLVMPass>();
 }
 
