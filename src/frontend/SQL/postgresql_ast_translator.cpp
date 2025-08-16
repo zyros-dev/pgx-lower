@@ -178,6 +178,8 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& 
             case T_Agg:
                 // Validate before unsafe cast
                 if (plan->type == T_Agg) {
+                    // Plan is embedded as first member of Agg, so cast is safe
+                    // Since Plan is the first member, the addresses are the same
                     result = translateAgg(reinterpret_cast<Agg*>(plan), context);
                 } else {
                     PGX_ERROR("Type mismatch for Agg");
@@ -227,18 +229,8 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
     ::mlir::Operation* childOp = nullptr;
     
     // First, recursively process the child plan
-    // Use offset-based access for unit tests due to structure layout differences
-    Plan* leftTree = nullptr;
-    if (reinterpret_cast<uintptr_t>(agg) > 0x7f0000000000) {
-        // Unit test mode: use offset-based access for lefttree
-        // The lefttree field is at offset 56 in the Plan structure
-        leftTree = *(Plan**)((char*)agg + 56);  // lefttree at offset 56 within Plan
-        PGX_DEBUG("Using offset-based access for Agg lefttree (unit test mode)");
-        printf("DEBUG: Agg address: %p, leftTree read from offset 56: %p\n", (void*)agg, (void*)leftTree);
-    } else {
-        // Production mode: use direct field access
-        leftTree = agg->plan.lefttree;
-    }
+    Plan* leftTree = agg->plan.lefttree;
+    PGX_DEBUG("Using direct field access for Agg lefttree");
     
     if (leftTree) {
         childOp = translatePlanNode(leftTree, context);
@@ -263,23 +255,10 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
     std::vector<mlir::Attribute> groupByAttrs;
     std::vector<mlir::Attribute> computedColAttrs;
     
-    // Access Agg-specific fields with offset-based access for unit tests
-    int numCols = 0;
-    AttrNumber* grpColIdx = nullptr;
-    
-    if (reinterpret_cast<uintptr_t>(agg) > 0x7f0000000000) {
-        // Unit test mode: Agg fields are after 72-byte Plan struct
-        // aggstrategy at offset 72 (4 bytes)
-        // numCols at offset 76 (4 bytes)
-        numCols = *(int*)((char*)agg + 76);
-        // grpColIdx at offset 80 (after padding)
-        grpColIdx = *(AttrNumber**)((char*)agg + 80);
-        PGX_DEBUG("Using offset-based access for Agg fields (unit test mode)");
-    } else {
-        // Production mode: use direct field access
-        numCols = agg->numCols;
-        grpColIdx = agg->grpColIdx;
-    }
+    // Access Agg-specific fields with direct field access
+    int numCols = agg->numCols;
+    AttrNumber* grpColIdx = agg->grpColIdx;
+    PGX_DEBUG("Using direct field access for Agg fields");
     
     // Process group by columns from PostgreSQL Agg node
     if (numCols > 0 && grpColIdx) {
@@ -364,17 +343,8 @@ auto PostgreSQLASTTranslator::translateSort(Sort* sort, TranslationContext& cont
     ::mlir::Operation* childOp = nullptr;
     
     // First, recursively process the child plan
-    // Use offset-based access for unit tests due to structure layout differences
-    Plan* leftTree = nullptr;
-    if (reinterpret_cast<uintptr_t>(sort) > 0x7f0000000000) {
-        // Unit test mode: use offset-based access for lefttree
-        // The lefttree field is at offset 56 in the Plan structure
-        leftTree = *(Plan**)((char*)sort + 56);  // lefttree at offset 56 within Plan
-        PGX_DEBUG("Using offset-based access for Sort lefttree (unit test mode)");
-    } else {
-        // Production mode: use direct field access
-        leftTree = sort->plan.lefttree;
-    }
+    Plan* leftTree = sort->plan.lefttree;
+    PGX_DEBUG("Using direct field access for Sort lefttree");
     
     if (leftTree) {
         childOp = translatePlanNode(leftTree, context);
@@ -398,31 +368,12 @@ auto PostgreSQLASTTranslator::translateSort(Sort* sort, TranslationContext& cont
     // Extract actual sort keys and directions from PostgreSQL structure
     std::vector<mlir::Attribute> sortSpecAttrs;
     
-    // Access Sort-specific fields with offset-based access for unit tests
-    int numCols = 0;
-    AttrNumber* sortColIdx = nullptr;
-    Oid* sortOperators = nullptr;
-    bool* nullsFirst = nullptr;
-    
-    if (reinterpret_cast<uintptr_t>(sort) > 0x7f0000000000) {
-        // Unit test mode: Sort fields are after 72-byte Plan struct
-        // numCols at offset 72
-        numCols = *(int*)((char*)sort + 72);
-        // sortColIdx at offset 80 (after 4-byte int + 4-byte padding)
-        sortColIdx = *(AttrNumber**)((char*)sort + 80);
-        // sortOperators at offset 88
-        sortOperators = *(Oid**)((char*)sort + 88);
-        // collations at offset 96 (we skip this)
-        // nullsFirst at offset 104
-        nullsFirst = *(bool**)((char*)sort + 104);
-        PGX_DEBUG("Using offset-based access for Sort fields (unit test mode)");
-    } else {
-        // Production mode: use direct field access
-        numCols = sort->numCols;
-        sortColIdx = sort->sortColIdx;
-        sortOperators = sort->sortOperators;
-        nullsFirst = sort->nullsFirst;
-    }
+    // Access Sort-specific fields with direct field access
+    int numCols = sort->numCols;
+    AttrNumber* sortColIdx = sort->sortColIdx;
+    Oid* sortOperators = sort->sortOperators;
+    bool* nullsFirst = sort->nullsFirst;
+    PGX_DEBUG("Using direct field access for Sort fields");
     
     // Check numCols value for validity first
     if (numCols > 0 && numCols < 100) {
@@ -502,17 +453,8 @@ auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& c
     ::mlir::Operation* childOp = nullptr;
     
     // First, recursively process the child plan
-    // Use offset-based access for unit tests due to structure layout differences
-    Plan* leftTree = nullptr;
-    if (reinterpret_cast<uintptr_t>(limit) > 0x7f0000000000) {
-        // Unit test mode: use offset-based access for lefttree
-        // The lefttree field is at offset 56 in the Plan structure
-        leftTree = *(Plan**)((char*)limit + 56);  // lefttree at offset 56 within Plan
-        PGX_DEBUG("Using offset-based access for Limit lefttree (unit test mode)");
-    } else {
-        // Production mode: use direct field access
-        leftTree = limit->plan.lefttree;
-    }
+    Plan* leftTree = limit->plan.lefttree;
+    PGX_DEBUG("Using direct field access for Limit lefttree");
     
     if (leftTree) {
         childOp = translatePlanNode(leftTree, context);
@@ -537,22 +479,17 @@ auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& c
     int64_t limitCount = 10; // Default for unit tests
     int64_t limitOffset = 0;
     
-    // Use offset-based access for unit tests due to structure layout differences
-    Node* limitCountNode = nullptr;
-    Node* limitOffsetNode = nullptr;
+    // Use direct field access for limitCount and limitOffset
+    PGX_INFO("Limit node address: " + std::to_string(reinterpret_cast<uintptr_t>(limit)));
+    PGX_INFO("&limit->limitOffset address: " + std::to_string(reinterpret_cast<uintptr_t>(&limit->limitOffset)));
+    PGX_INFO("&limit->limitCount address: " + std::to_string(reinterpret_cast<uintptr_t>(&limit->limitCount)));
     
-    if (reinterpret_cast<uintptr_t>(limit) > 0x7f0000000000) {
-        // Unit test mode: use offset-based access for limitCount and limitOffset
-        // limitCount is at offset 72 (after 72-byte Plan struct)
-        // limitOffset is at offset 80 
-        limitCountNode = *(Node**)((char*)limit + 72);
-        limitOffsetNode = *(Node**)((char*)limit + 80);
-        PGX_DEBUG("Using offset-based access for Limit count/offset (unit test mode)");
-    } else {
-        // Production mode: use direct field access
-        limitCountNode = limit->limitCount;
-        limitOffsetNode = limit->limitOffset;
-    }
+    Node* limitOffsetNode = limit->limitOffset;
+    Node* limitCountNode = limit->limitCount;
+    
+    PGX_INFO("limitOffset value: " + std::to_string(reinterpret_cast<uintptr_t>(limitOffsetNode)));
+    PGX_INFO("limitCount value: " + std::to_string(reinterpret_cast<uintptr_t>(limitCountNode)));
+    PGX_DEBUG("Using direct field access for Limit count/offset");
     
     // In unit tests, limitCountNode might be a mock Const structure
     // In production, it's a real PostgreSQL Node
@@ -633,23 +570,10 @@ auto PostgreSQLASTTranslator::translateGather(Gather* gather, TranslationContext
     
     PGX_DEBUG("Translating Gather operation (parallel query coordinator)");
     
-    // Access Gather-specific fields with offset-based access for unit tests
-    int num_workers = 0;
-    bool single_copy = false;
-    
-    if (reinterpret_cast<uintptr_t>(gather) > 0x7f0000000000) {
-        // Unit test mode: Gather fields are after 72-byte Plan struct
-        // num_workers at offset 72
-        num_workers = *(int*)((char*)gather + 72);
-        // rescan_param at offset 76 (skip)
-        // single_copy at offset 80
-        single_copy = *(bool*)((char*)gather + 80);
-        PGX_DEBUG("Using offset-based access for Gather fields (unit test mode)");
-    } else {
-        // Production mode: use direct field access
-        num_workers = gather->num_workers;
-        single_copy = gather->single_copy;
-    }
+    // Access Gather-specific fields with direct field access
+    int num_workers = gather->num_workers;
+    bool single_copy = gather->single_copy;
+    PGX_DEBUG("Using direct field access for Gather fields");
     
     // Extract Gather-specific information
     if (num_workers > 0) {
@@ -663,17 +587,8 @@ auto PostgreSQLASTTranslator::translateGather(Gather* gather, TranslationContext
     ::mlir::Operation* childOp = nullptr;
     
     // First, recursively process the child plan
-    // Use offset-based access for unit tests due to structure layout differences
-    Plan* leftTree = nullptr;
-    if (reinterpret_cast<uintptr_t>(gather) > 0x7f0000000000) {
-        // Unit test mode: use offset-based access for lefttree
-        // The lefttree field is at offset 56 in the Plan structure
-        leftTree = *(Plan**)((char*)gather + 56);  // lefttree at offset 56 within Plan
-        PGX_DEBUG("Using offset-based access for Gather lefttree (unit test mode)");
-    } else {
-        // Production mode: use direct field access
-        leftTree = gather->plan.lefttree;
-    }
+    Plan* leftTree = gather->plan.lefttree;
+    PGX_DEBUG("Using direct field access for Gather lefttree");
     
     if (leftTree) {
         childOp = translatePlanNode(leftTree, context);
@@ -794,16 +709,9 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
     // The mock structure in unit tests has the same layout for the fields we need
     PGX_DEBUG("Accessing PlannedStmt planTree for translation");
     
-    // Use offset-based access for unit tests due to structure layout differences
-    Plan* planTree;
-    if (reinterpret_cast<uintptr_t>(plannedStmt) > 0x7f0000000000) {
-        // Unit test mode: use offset-based access to handle structure layout differences
-        planTree = *(Plan**)((char*)plannedStmt + 24);  // planTree at offset 24
-        PGX_DEBUG("Using offset-based access for unit test mode");
-    } else {
-        // Production mode: use direct field access
-        planTree = plannedStmt->planTree;
-    }
+    // Use direct field access for planTree
+    Plan* planTree = plannedStmt->planTree;
+    PGX_DEBUG("Using direct field access for planTree");
     
     if (!planTree) {
         PGX_ERROR("PlannedStmt planTree is null");
