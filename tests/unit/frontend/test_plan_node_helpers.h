@@ -108,7 +108,8 @@ extern "C" {
     };
     
     struct List {
-        void* head;
+        int length;     // Number of elements
+        void* head;     // Simplified: points to first element for test purposes
     };
     
     struct Node {
@@ -198,6 +199,42 @@ extern "C" {
         int location;         // Token location or -1
     };
     
+    struct Aggref {
+        Node node;
+        Oid aggfnoid;         // Aggregate function OID
+        Oid aggtype;          // Result type OID
+        Oid aggcollid;        // Collation OID for result
+        Oid inputcollid;      // Input collation OID
+        Oid aggtranstype;     // Transition value type OID (for internal state)
+        List* aggargtypes;    // Argument types (list of OIDs)
+        List* aggdirectargs;  // Direct arguments (list of Exprs)
+        List* args;           // Arguments to aggregate
+        List* aggorder;       // ORDER BY within aggregate
+        List* aggdistinct;    // DISTINCT within aggregate
+        Node* aggfilter;      // FILTER expression
+        bool aggstar;         // TRUE if COUNT(*)
+        bool aggvariadic;     // TRUE if uses VARIADIC
+        char aggkind;         // Kind of aggregate
+        uint32_t agglevelsup; // Levels up for subquery
+        int location;         // Token location or -1
+    };
+    
+    struct NullTest {
+        Node node;
+        Node* arg;            // Expression to test
+        int nulltesttype;     // IS NULL or IS NOT NULL
+        bool argisrow;        // T if arg is a RowExpr
+        int location;         // Token location or -1
+    };
+    
+    struct CoalesceExpr {
+        Node node;
+        Oid coalescetype;     // Result type OID
+        Oid coalescecollid;   // Result collation OID
+        List* args;           // List of expressions
+        int location;         // Token location or -1
+    };
+    
     // Plan node type constants
     #define T_PlannedStmt 67    // PlannedStmt node type
     #define T_SeqScan 335
@@ -212,6 +249,9 @@ extern "C" {
     #define T_BoolExpr 404
     #define T_TargetEntry 405
     #define T_FuncExpr 406
+    #define T_Aggref 407
+    #define T_NullTest 408
+    #define T_CoalesceExpr 409
     
     // Aggregate strategy constants
     #define AGG_PLAIN 0
@@ -235,6 +275,17 @@ extern "C" {
     #define INT4MINUSOID 552  // - operator for int4
     #define INT4MULOID 514    // * operator for int4
     #define INT4DIVOID 528    // / operator for int4
+    
+    // Null test types
+    #define IS_NULL 0
+    #define IS_NOT_NULL 1
+    
+    // Common aggregate function OIDs
+    #define COUNT_STAR_OID 2147  // COUNT(*)
+    #define SUM_INT4_OID 2108    // SUM(int4)
+    #define AVG_INT4_OID 2101    // AVG(int4)
+    #define MAX_INT4_OID 2116    // MAX(int4)
+    #define MIN_INT4_OID 2132    // MIN(int4)
 }
 
 class PlanNodeTestBase : public ::testing::Test {
