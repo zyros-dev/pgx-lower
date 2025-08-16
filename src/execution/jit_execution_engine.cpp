@@ -589,7 +589,7 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
 }
 
 void PostgreSQLJITExecutionEngine::registerDSARuntimeFunctions() {
-    PGX_DEBUG("Registering DSA runtime functions");
+    PGX_DEBUG("Registering DSA runtime functions with C interface wrappers");
     
     engine->registerSymbols(
         [](llvm::orc::MangleAndInterner interner) {
@@ -600,23 +600,52 @@ void PostgreSQLJITExecutionEngine::registerDSARuntimeFunctions() {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_create_table_builder)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pgx_runtime_create_table_builder")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_create_table_builder)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pgx_runtime_append_i64")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_append_i64)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pgx_runtime_append_i64")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_append_i64)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pgx_runtime_append_i64_direct")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_append_i64_direct)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pgx_runtime_append_i64_direct")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_append_i64_direct)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pgx_runtime_append_nullable_i64")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_append_nullable_i64)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pgx_runtime_append_nullable_i64")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_append_nullable_i64)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pgx_runtime_append_null")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_append_null)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pgx_runtime_append_null")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_append_null)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pgx_runtime_table_next_row")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_table_next_row)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            symbolMap[interner("_mlir_ciface_pgx_runtime_table_next_row")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pgx_runtime_table_next_row)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
@@ -626,41 +655,81 @@ void PostgreSQLJITExecutionEngine::registerDSARuntimeFunctions() {
 }
 
 void PostgreSQLJITExecutionEngine::registerPostgreSQLSPIFunctions() {
-    PGX_DEBUG("Registering PostgreSQL SPI functions");
+    PGX_DEBUG("Registering PostgreSQL SPI functions with C interface wrappers");
     
     engine->registerSymbols(
         [](llvm::orc::MangleAndInterner interner) {
             llvm::orc::SymbolMap symbolMap;
             
+            // Register both raw and C interface versions for all functions
             symbolMap[interner("pg_table_open")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_table_open)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pg_table_open")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_table_open)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pg_get_next_tuple")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_get_next_tuple)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pg_get_next_tuple")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_get_next_tuple)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pg_extract_field")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_extract_field)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pg_extract_field")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_extract_field)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pg_store_result")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pg_store_result")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pg_store_result_i32")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result_i32)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pg_store_result_i32")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result_i32)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pg_store_result_i64")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result_i64)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pg_store_result_i64")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result_i64)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pg_store_result_f64")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result_f64)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_pg_store_result_f64")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result_f64)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("pg_store_result_text")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result_text)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            symbolMap[interner("_mlir_ciface_pg_store_result_text")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(pg_store_result_text)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
@@ -760,36 +829,71 @@ void PostgreSQLJITExecutionEngine::registerDataSourceFunctions() {
 void PostgreSQLJITExecutionEngine::registerRuntimeSupportFunctions() {
     PGX_DEBUG("Registering runtime support functions");
     
-    // PostgreSQL tuple access functions
+    // PostgreSQL tuple access functions with C interface wrappers
     engine->registerSymbols(
         [](llvm::orc::MangleAndInterner interner) {
             llvm::orc::SymbolMap symbolMap;
             
+            // Register both raw and C interface versions
             symbolMap[interner("open_postgres_table")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(open_postgres_table)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_open_postgres_table")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(open_postgres_table)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("read_next_tuple_from_table")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(read_next_tuple_from_table)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_read_next_tuple_from_table")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(read_next_tuple_from_table)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("close_postgres_table")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(close_postgres_table)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_close_postgres_table")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(close_postgres_table)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("get_int_field")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(get_int_field)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_get_int_field")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(get_int_field)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("get_int_field_mlir")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(get_int_field_mlir)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_get_int_field_mlir")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(get_int_field_mlir)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("get_text_field")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(get_text_field)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_get_text_field")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(get_text_field)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("get_numeric_field")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(get_numeric_field)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            symbolMap[interner("_mlir_ciface_get_numeric_field")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(get_numeric_field)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
@@ -797,27 +901,48 @@ void PostgreSQLJITExecutionEngine::registerRuntimeSupportFunctions() {
             return symbolMap;
         });
     
-    // Result storage functions
+    // Result storage functions with complete C interface wrappers
     engine->registerSymbols(
         [](llvm::orc::MangleAndInterner interner) {
             llvm::orc::SymbolMap symbolMap;
             
+            // Register both raw and C interface versions for ALL functions
             symbolMap[interner("store_int_result")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(store_int_result)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_store_int_result")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(store_int_result)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("store_bigint_result")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(store_bigint_result)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_store_bigint_result")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(store_bigint_result)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("store_text_result")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(store_text_result)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_store_text_result")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(store_text_result)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("store_field_as_datum")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(store_field_as_datum)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_store_field_as_datum")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(store_field_as_datum)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
             symbolMap[interner("add_tuple_to_result")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(add_tuple_to_result)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
@@ -826,17 +951,21 @@ void PostgreSQLJITExecutionEngine::registerRuntimeSupportFunctions() {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(add_tuple_to_result)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            
             symbolMap[interner("mark_results_ready_for_streaming")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(mark_results_ready_for_streaming)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
-            
-            // CRITICAL FIX: Also register C interface wrappers (from working unit test!)
             symbolMap[interner("_mlir_ciface_mark_results_ready_for_streaming")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(mark_results_ready_for_streaming)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            
             symbolMap[interner("prepare_computed_results")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(prepare_computed_results)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            symbolMap[interner("_mlir_ciface_prepare_computed_results")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(prepare_computed_results)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
