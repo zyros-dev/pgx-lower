@@ -2,6 +2,7 @@
 #include "execution/logging.h"
 #include "runtime/tuple_access.h"
 #include <fstream>
+#include <dlfcn.h>
 
 // MLIR includes
 #include "mlir/IR/Verifier.h"
@@ -259,8 +260,8 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
         moduleStream.flush();
         
         // Log only first 1000 chars to avoid overwhelming logs
-        if (moduleStr.length() > 1000) {
-            PGX_INFO("MLIR module (truncated):\n" + moduleStr.substr(0, 1000) + "\n... [truncated]");
+        if (moduleStr.length() > 50000) {
+            PGX_INFO("MLIR module (truncated):\n" + moduleStr.substr(0, 50000) + "\n... [truncated]");
         } else {
             PGX_INFO("MLIR module:\n" + moduleStr);
         }
@@ -530,6 +531,30 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
         PGX_DEBUG("  Function: " + func.getName().str());
     });
     PGX_DEBUG("Total functions in module: " + std::to_string(funcCount));
+    
+    // CRITICAL: Dump the MLIR IR just before creating ExecutionEngine to see what we're compiling
+    PGX_INFO("==================== MLIR IR BEFORE EXECUTION ENGINE ====================");
+    std::string irStr;
+    llvm::raw_string_ostream irStream(irStr);
+    module.print(irStream);
+    irStream.flush();
+    
+    // Write to file for backup
+    std::ofstream irFile("/tmp/pgx_lower_mlir_ir.mlir");
+    if (irFile.is_open()) {
+        irFile << irStr;
+        irFile.close();
+        PGX_INFO("MLIR IR also written to /tmp/pgx_lower_mlir_ir.mlir");
+    }
+    
+    // Log the entire MLIR IR in chunks to avoid truncation
+    PGX_INFO("Full MLIR Module contents:");
+    size_t chunkSize = 2000; // Log in 2000 char chunks
+    for (size_t i = 0; i < irStr.length(); i += chunkSize) {
+        size_t len = std::min(chunkSize, irStr.length() - i);
+        PGX_INFO("MLIR[" + std::to_string(i) + "-" + std::to_string(i+len) + "]:\n" + irStr.substr(i, len));
+    }
+    PGX_INFO("==================== END MLIR IR ====================");
     
     std::unique_ptr<mlir::ExecutionEngine> createdEngine;
     try {
@@ -1012,6 +1037,102 @@ void PostgreSQLJITExecutionEngine::registerLingoDRuntimeContextFunctions() {
         });
 }
 
+void PostgreSQLJITExecutionEngine::registerMangledRuntimeFunctions() {
+    PGX_DEBUG("Registering runtime functions with mangled names");
+    
+    engine->registerSymbols(
+        [](llvm::orc::MangleAndInterner interner) {
+            llvm::orc::SymbolMap symbolMap;
+            
+            // Use dlsym to get the symbols from the current process
+            void* handle = dlopen(nullptr, RTLD_NOW | RTLD_GLOBAL);
+            if (!handle) {
+                PGX_ERROR("Failed to open current process for symbol lookup");
+                return symbolMap;
+            }
+            
+            // Register TableBuilder mangled names
+            void* tb_create = dlsym(handle, "_ZN7runtime12TableBuilder6createENS_8VarLen32E");
+            if (tb_create) {
+                symbolMap[interner("_ZN7runtime12TableBuilder6createENS_8VarLen32E")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(tb_create),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_DEBUG("Registered TableBuilder::create");
+            }
+            
+            void* tb_build = dlsym(handle, "_ZN7runtime12TableBuilder5buildEv");
+            if (tb_build) {
+                symbolMap[interner("_ZN7runtime12TableBuilder5buildEv")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(tb_build),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_DEBUG("Registered TableBuilder::build");
+            }
+            
+            void* tb_nextRow = dlsym(handle, "_ZN7runtime12TableBuilder7nextRowEv");
+            if (tb_nextRow) {
+                symbolMap[interner("_ZN7runtime12TableBuilder7nextRowEv")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(tb_nextRow),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_DEBUG("Registered TableBuilder::nextRow");
+            }
+            
+            // Register DataSourceIteration mangled names
+            void* dsi_start = dlsym(handle, "_ZN7runtime19DataSourceIteration5startEPNS_16ExecutionContextENS_8VarLen32E");
+            if (dsi_start) {
+                symbolMap[interner("_ZN7runtime19DataSourceIteration5startEPNS_16ExecutionContextENS_8VarLen32E")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(dsi_start),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_DEBUG("Registered DataSourceIteration::start");
+            }
+            
+            void* dsi_isValid = dlsym(handle, "_ZN7runtime19DataSourceIteration7isValidEv");
+            if (dsi_isValid) {
+                symbolMap[interner("_ZN7runtime19DataSourceIteration7isValidEv")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(dsi_isValid),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_DEBUG("Registered DataSourceIteration::isValid");
+            }
+            
+            void* dsi_next = dlsym(handle, "_ZN7runtime19DataSourceIteration4nextEv");
+            if (dsi_next) {
+                symbolMap[interner("_ZN7runtime19DataSourceIteration4nextEv")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(dsi_next),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_DEBUG("Registered DataSourceIteration::next");
+            }
+            
+            void* dsi_access = dlsym(handle, "_ZN7runtime19DataSourceIteration6accessEPNS0_15RecordBatchInfoE");
+            if (dsi_access) {
+                symbolMap[interner("_ZN7runtime19DataSourceIteration6accessEPNS0_15RecordBatchInfoE")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(dsi_access),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_DEBUG("Registered DataSourceIteration::access");
+            }
+            
+            void* dsi_end = dlsym(handle, "_ZN7runtime19DataSourceIteration3endEPS0_");
+            if (dsi_end) {
+                symbolMap[interner("_ZN7runtime19DataSourceIteration3endEPS0_")] = {
+                    llvm::orc::ExecutorAddr::fromPtr(dsi_end),
+                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+                };
+                PGX_DEBUG("Registered DataSourceIteration::end");
+            }
+            
+            dlclose(handle);
+            
+            PGX_INFO("Registered " + std::to_string(symbolMap.size()) + " mangled runtime function symbols");
+            
+            return symbolMap;
+        });
+}
+
 void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
     PGX_DEBUG("Registering PostgreSQL runtime functions with JIT symbol table");
     
@@ -1029,6 +1150,7 @@ void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
     registerDataSourceFunctions();
     registerRuntimeSupportFunctions();
     registerLingoDRuntimeContextFunctions();
+    registerMangledRuntimeFunctions();  // Register the mangled names
     
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
