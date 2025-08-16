@@ -12,6 +12,8 @@
 
 #include <cstdio>
 #include <iostream>
+#include <algorithm>
+#include <cctype>
 
 #include <optional>
 using namespace clang;
@@ -133,10 +135,12 @@ class MethodPrinter : public MatchFinder::MatchCallback {
             if (!method->isStatic()) {
                types.push_back(translatePointer());
             }
-            std::string mangled;
-            llvm::raw_string_ostream mangleStream(mangled);
-            mangleContext->mangleName(method, mangleStream);
-            mangleStream.flush();
+            // Generate C function name instead of mangled C++ name
+            // Convert to C function naming: rt_classname_methodname (lowercase)
+            std::string cFunctionName = "rt_" + className + "_" + methodName;
+            std::transform(cFunctionName.begin(), cFunctionName.end(), cFunctionName.begin(), ::tolower);
+            
+            std::string mangled = cFunctionName;
             bool unknownTypes = false;
             for (const auto& p : method->parameters()) {
                auto translatedType = translateType(p->getType());
