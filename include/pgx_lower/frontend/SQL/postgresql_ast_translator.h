@@ -30,6 +30,7 @@ struct BoolExpr;
 struct NullTest;
 struct Aggref;
 struct CoalesceExpr;
+struct TargetEntry;
 struct SeqScan;
 struct Agg;
 struct Sort;
@@ -73,6 +74,10 @@ private:
     // Helper functions for translateQuery refactoring
     auto createQueryFunction(::mlir::OpBuilder& builder, struct TranslationContext& context) -> ::mlir::func::FuncOp;
     auto generateRelAlgOperations(::mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, struct TranslationContext& context) -> bool;
+    
+    // Expression processing helpers
+    auto applySelectionFromQual(::mlir::Operation* inputOp, List* qual, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto applyProjectionFromTargetList(::mlir::Operation* inputOp, List* targetList, struct TranslationContext& context) -> ::mlir::Operation*;
     
     // Tuple iteration and result processing
     auto generateTupleIterationLoop(::mlir::OpBuilder& builder, ::mlir::Location location, 
