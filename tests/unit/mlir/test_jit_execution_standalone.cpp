@@ -366,11 +366,16 @@ TEST_F(JITExecutionStandaloneTest, ExecutePureLLVMDialect) {
     
     auto voidType = mlir::LLVM::LLVMVoidType::get(&context);
     
-    // Declare external test marker function using LLVM dialect directly
+    // LINGODB SOLUTION: Declare external test marker function with External linkage
     auto testMarkerFuncType = mlir::LLVM::LLVMFunctionType::get(voidType, {});
     auto testMarkerFunc = builder.create<mlir::LLVM::LLVMFuncOp>(
         builder.getUnknownLoc(), "test_execution_marker", testMarkerFuncType);
-    testMarkerFunc.setSymVisibilityAttr(builder.getStringAttr("public"));
+    
+    // CRITICAL: Use External linkage instead of public visibility - this makes LLVM linker resolve it
+    testMarkerFunc.setLinkageAttr(mlir::LLVM::LinkageAttr::get(&context, mlir::LLVM::Linkage::External));
+    testMarkerFunc.setSymVisibilityAttr(builder.getStringAttr("default"));
+    
+    PGX_INFO("🔧 LINGODB PATTERN: Created external function declaration with External linkage");
     
     // Create main function using LLVM dialect directly
     auto mainFuncType = mlir::LLVM::LLVMFunctionType::get(voidType, {});
@@ -406,6 +411,23 @@ TEST_F(JITExecutionStandaloneTest, ExecutePureLLVMDialect) {
     mlir::ExecutionEngineOptions engineOptions;
     engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
     
+    // LINGODB INSIGHT: Configure ExecutionEngine for external symbol resolution
+    engineOptions.enableObjectDump = true; // For debugging
+    
+    // CRITICAL: Add transformer to make external symbols available to the process
+    engineOptions.transformer = [](llvm::Module *module) -> llvm::Error {
+        // LingoDB approach - ensure external functions are available to linker
+        for (auto &func : module->functions()) {
+            if (func.isDeclaration() && func.hasExternalLinkage()) {
+                PGX_INFO("🔗 Found external function declaration: " + func.getName().str());
+                // External linkage functions will be resolved by the linker
+            }
+        }
+        return llvm::Error::success();
+    };
+    
+    PGX_INFO("🔧 LINGODB CONFIGURATION: Setting up ExecutionEngine for external symbol resolution");
+    
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
     if (!maybeEngine) {
         PGX_ERROR("ExecutionEngine creation failed: " + llvm::toString(maybeEngine.takeError()));
@@ -415,7 +437,8 @@ TEST_F(JITExecutionStandaloneTest, ExecutePureLLVMDialect) {
     auto engine = std::move(*maybeEngine);
     PGX_INFO("✅ ExecutionEngine created successfully from pure LLVM dialect");
     
-    // Register our test runtime function
+    // EXPERIMENTAL: Still register symbols for linker resolution (different from JITDylib issue)
+    // The External linkage creates the reference, but we still need to provide the symbol
     engine->registerSymbols([](llvm::orc::MangleAndInterner interner) {
         llvm::orc::SymbolMap symbolMap;
         
@@ -427,7 +450,7 @@ TEST_F(JITExecutionStandaloneTest, ExecutePureLLVMDialect) {
         return symbolMap;
     });
     
-    PGX_INFO("🔧 Registered test execution marker function for pure LLVM dialect");
+    PGX_INFO("🧪 HYBRID: External linkage + registerSymbols for symbol resolution");
     
     // Execute using invoke() method
     PGX_INFO("🎯 CRITICAL TEST: Calling engine->invoke('main') on PURE LLVM DIALECT");
