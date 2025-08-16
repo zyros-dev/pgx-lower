@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <cstddef>  // for offsetof
+#include <cstring>  // for memset
 #include "pgx_lower/frontend/SQL/postgresql_ast_translator.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Builders.h"
@@ -274,6 +275,7 @@ TEST_F(PlanNodeTranslationTest, TranslatesSortNode) {
     
     // Create Sort node with SeqScan as child
     Sort sort{};
+    memset(&sort, 0, sizeof(Sort));  // Ensure full initialization
     sort.plan.type = T_Sort;
     sort.plan.startup_cost = 0.0;
     sort.plan.total_cost = 15.0;
