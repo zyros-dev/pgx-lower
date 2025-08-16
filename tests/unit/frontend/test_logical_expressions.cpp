@@ -19,17 +19,15 @@ TEST_F(LogicalExpressionTest, TranslatesComparisonExpressions) {
     seqScan.scan.scanrelid = 1;
     
     // Create WHERE clause with comparison expressions
-    // Simulating: WHERE val1 = 10, val1 < val2, val1 >= 5
-    static List qualList{};
+    // Simulating: WHERE val1 = 10 AND val1 < val2 AND val1 >= 5
     static OpExpr compExprs[3];
     static Var compVars[3];
     static Const compConsts[2];
-    static List compArgLists[3];
     
     // Setup first comparison: val1 = 10
     compVars[0].node.type = T_Var;
     compVars[0].varno = 1;
-    compVars[0].varattno = 2;  // val1
+    compVars[0].varattno = 1;  // col1
     compVars[0].vartype = 23;  // INT4OID
     compVars[0].vartypmod = -1;
     compVars[0].varcollid = 0;
@@ -43,7 +41,11 @@ TEST_F(LogicalExpressionTest, TranslatesComparisonExpressions) {
     compConsts[0].constbyval = true;
     compConsts[0].location = -1;
     
-    compArgLists[0].head = &compVars[0];  // Simplified
+    // Create proper argument list for first comparison
+    List* args1 = list_make2(
+        reinterpret_cast<void*>(&compVars[0]),
+        reinterpret_cast<void*>(&compConsts[0])
+    );
     
     compExprs[0].node.type = T_OpExpr;
     compExprs[0].opno = INT4EQOID;
@@ -52,32 +54,36 @@ TEST_F(LogicalExpressionTest, TranslatesComparisonExpressions) {
     compExprs[0].opretset = false;
     compExprs[0].opcollid = 0;
     compExprs[0].inputcollid = 0;
-    compExprs[0].args = &compArgLists[0];
+    compExprs[0].args = args1;
     compExprs[0].location = -1;
     
     // Setup second comparison: val1 < val2
     compVars[1].node.type = T_Var;
     compVars[1].varno = 1;
-    compVars[1].varattno = 2;  // val1
+    compVars[1].varattno = 1;  // col1
     compVars[1].vartype = 23;
     compVars[1].vartypmod = -1;
     compVars[1].location = -1;
     
     compVars[2].node.type = T_Var;
     compVars[2].varno = 1;
-    compVars[2].varattno = 3;  // val2
+    compVars[2].varattno = 2;  // col2
     compVars[2].vartype = 23;
     compVars[2].vartypmod = -1;
     compVars[2].location = -1;
     
-    compArgLists[1].head = &compVars[1];  // Simplified
+    // Create proper argument list for second comparison
+    List* args2 = list_make2(
+        reinterpret_cast<void*>(&compVars[1]),
+        reinterpret_cast<void*>(&compVars[2])
+    );
     
     compExprs[1].node.type = T_OpExpr;
     compExprs[1].opno = INT4LTOID;
     compExprs[1].opfuncid = INT4LTOID;
     compExprs[1].opresulttype = 16;  // BOOLOID
     compExprs[1].opretset = false;
-    compExprs[1].args = &compArgLists[1];
+    compExprs[1].args = args2;
     compExprs[1].location = -1;
     
     // Setup third comparison: val1 >= 5
@@ -88,18 +94,26 @@ TEST_F(LogicalExpressionTest, TranslatesComparisonExpressions) {
     compConsts[1].constbyval = true;
     compConsts[1].location = -1;
     
-    compArgLists[2].head = &compVars[0];  // Reuse val1
+    // Create proper argument list for third comparison
+    List* args3 = list_make2(
+        reinterpret_cast<void*>(&compVars[0]),  // Reuse val1
+        reinterpret_cast<void*>(&compConsts[1])
+    );
     
     compExprs[2].node.type = T_OpExpr;
     compExprs[2].opno = INT4GEOID;
     compExprs[2].opfuncid = INT4GEOID;
     compExprs[2].opresulttype = 16;  // BOOLOID
     compExprs[2].opretset = false;
-    compExprs[2].args = &compArgLists[2];
+    compExprs[2].args = args3;
     compExprs[2].location = -1;
     
-    qualList.head = &compExprs[0];  // Simplified list
-    seqScan.plan.qual = &qualList;
+    // Create qual list with all three comparisons
+    List* qualList = NIL;
+    qualList = lappend(qualList, &compExprs[0]);
+    qualList = lappend(qualList, &compExprs[1]);
+    qualList = lappend(qualList, &compExprs[2]);
+    seqScan.plan.qual = qualList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -144,13 +158,10 @@ TEST_F(LogicalExpressionTest, TranslatesLogicalExpressions) {
     
     // Create WHERE clause with logical expressions
     // Simulating: WHERE (val1 > 5 AND val2 < 10) OR (val1 = 1 OR val2 = 2)
-    static List qualList{};
     static BoolExpr boolExprs[3];  // Main OR, left AND, right OR
     static OpExpr condExprs[4];    // val1 > 5, val2 < 10, val1 = 1, val2 = 2
     static Var logicVars[4];
     static Const logicConsts[4];
-    static List boolArgLists[3];
-    static List condArgLists[4];
     
     // Setup variables and constants
     for (int i = 0; i < 4; i++) {
@@ -175,41 +186,42 @@ TEST_F(LogicalExpressionTest, TranslatesLogicalExpressions) {
     
     // Setup comparison expressions
     Oid compOps[] = {INT4GTOID, INT4LTOID, INT4EQOID, INT4EQOID};
+    List* condArgListPtrs[4];
     for (int i = 0; i < 4; i++) {
-        condArgLists[i].head = &logicVars[i];  // Simplified
+        condArgListPtrs[i] = list_make2(&logicVars[i], &logicConsts[i]);
         
         condExprs[i].node.type = T_OpExpr;
         condExprs[i].opno = compOps[i];
         condExprs[i].opfuncid = compOps[i];
         condExprs[i].opresulttype = 16;  // BOOLOID
         condExprs[i].opretset = false;
-        condExprs[i].args = &condArgLists[i];
+        condExprs[i].args = condArgListPtrs[i];
         condExprs[i].location = -1;
     }
     
     // Setup AND expression: val1 > 5 AND val2 < 10
-    boolArgLists[0].head = &condExprs[0];  // Simplified list
+    List* andArgList = list_make2(&condExprs[0], &condExprs[1]);
     boolExprs[0].node.type = T_BoolExpr;
     boolExprs[0].boolop = AND_EXPR;
-    boolExprs[0].args = &boolArgLists[0];
+    boolExprs[0].args = andArgList;
     boolExprs[0].location = -1;
     
     // Setup OR expression: val1 = 1 OR val2 = 2
-    boolArgLists[1].head = &condExprs[2];  // Simplified list
+    List* orArgList = list_make2(&condExprs[2], &condExprs[3]);
     boolExprs[1].node.type = T_BoolExpr;
     boolExprs[1].boolop = OR_EXPR;
-    boolExprs[1].args = &boolArgLists[1];
+    boolExprs[1].args = orArgList;
     boolExprs[1].location = -1;
     
     // Setup main OR expression: (AND expr) OR (OR expr)
-    boolArgLists[2].head = &boolExprs[0];  // Simplified list
+    List* mainOrArgList = list_make2(&boolExprs[0], &boolExprs[1]);
     boolExprs[2].node.type = T_BoolExpr;
     boolExprs[2].boolop = OR_EXPR;
-    boolExprs[2].args = &boolArgLists[2];
+    boolExprs[2].args = mainOrArgList;
     boolExprs[2].location = -1;
     
-    qualList.head = &boolExprs[2];  // Main OR expression
-    seqScan.plan.qual = &qualList;
+    List* qualListPtr = list_make1(&boolExprs[2]);  // Main OR expression
+    seqScan.plan.qual = qualListPtr;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -253,12 +265,10 @@ TEST_F(LogicalExpressionTest, TranslatesNotExpression) {
     
     // Create WHERE clause with NOT expression
     // Simulating: WHERE NOT (val1 = 10 OR val2 > 20)
-    static List qualList{};
     static BoolExpr notExpr, orExpr;
     static OpExpr eqExpr, gtExpr;
     static Var val1, val2;
     static Const const10, const20;
-    static List notArgList, orArgList, eqArgList, gtArgList;
     
     // Setup val1 = 10
     val1.node.type = T_Var;
@@ -275,14 +285,14 @@ TEST_F(LogicalExpressionTest, TranslatesNotExpression) {
     const10.constbyval = true;
     const10.location = -1;
     
-    eqArgList.head = &val1;
+    List* eqArgList = list_make2(&val1, &const10);
     
     eqExpr.node.type = T_OpExpr;
     eqExpr.opno = INT4EQOID;
     eqExpr.opfuncid = INT4EQOID;
     eqExpr.opresulttype = 16;
     eqExpr.opretset = false;
-    eqExpr.args = &eqArgList;
+    eqExpr.args = eqArgList;
     eqExpr.location = -1;
     
     // Setup val2 > 20
@@ -300,34 +310,34 @@ TEST_F(LogicalExpressionTest, TranslatesNotExpression) {
     const20.constbyval = true;
     const20.location = -1;
     
-    gtArgList.head = &val2;
+    List* gtArgList = list_make2(&val2, &const20);
     
     gtExpr.node.type = T_OpExpr;
     gtExpr.opno = INT4GTOID;
     gtExpr.opfuncid = INT4GTOID;
     gtExpr.opresulttype = 16;
     gtExpr.opretset = false;
-    gtExpr.args = &gtArgList;
+    gtExpr.args = gtArgList;
     gtExpr.location = -1;
     
     // Setup OR expression: val1 = 10 OR val2 > 20
-    orArgList.head = &eqExpr;
+    List* orArgList = list_make2(&eqExpr, &gtExpr);
     
     orExpr.node.type = T_BoolExpr;
     orExpr.boolop = OR_EXPR;
-    orExpr.args = &orArgList;
+    orExpr.args = orArgList;
     orExpr.location = -1;
     
     // Setup NOT expression: NOT (OR expr)
-    notArgList.head = &orExpr;
+    List* notArgList = list_make1(&orExpr);
     
     notExpr.node.type = T_BoolExpr;
     notExpr.boolop = NOT_EXPR;
-    notExpr.args = &notArgList;
+    notExpr.args = notArgList;
     notExpr.location = -1;
     
-    qualList.head = &notExpr;
-    seqScan.plan.qual = &qualList;
+    List* qualList = list_make1(&notExpr);
+    seqScan.plan.qual = qualList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -368,13 +378,10 @@ TEST_F(LogicalExpressionTest, TranslatesAllComparisonOperators) {
     seqScan.scan.scanrelid = 1;
     
     // Test all comparison operators: =, <, >, <=, >=, !=
-    static List qualList{};
     static BoolExpr andExpr;
     static OpExpr compExprs[6];
     static Var vars[6];
     static Const consts[6];
-    static List andArgList;
-    static List compArgLists[6];
     
     Oid operators[] = {
         INT4EQOID,   // =
@@ -388,6 +395,7 @@ TEST_F(LogicalExpressionTest, TranslatesAllComparisonOperators) {
     const char* opNames[] = {"eq", "lt", "gt", "le", "ge", "ne"};
     
     // Setup comparison expressions
+    List* compArgLists[6];
     for (int i = 0; i < 6; i++) {
         vars[i].node.type = T_Var;
         vars[i].varno = 1;
@@ -403,27 +411,30 @@ TEST_F(LogicalExpressionTest, TranslatesAllComparisonOperators) {
         consts[i].constbyval = true;
         consts[i].location = -1;
         
-        compArgLists[i].head = &vars[i];
+        compArgLists[i] = list_make2(&vars[i], &consts[i]);
         
         compExprs[i].node.type = T_OpExpr;
         compExprs[i].opno = operators[i];
         compExprs[i].opfuncid = operators[i];
         compExprs[i].opresulttype = 16;
         compExprs[i].opretset = false;
-        compExprs[i].args = &compArgLists[i];
+        compExprs[i].args = compArgLists[i];
         compExprs[i].location = -1;
     }
     
     // Combine all comparisons with AND
-    andArgList.head = &compExprs[0];
+    List* andArgList = list_make1(&compExprs[0]);
+    for (int i = 1; i < 6; i++) {
+        andArgList = lappend(andArgList, &compExprs[i]);
+    }
     
     andExpr.node.type = T_BoolExpr;
     andExpr.boolop = AND_EXPR;
-    andExpr.args = &andArgList;
+    andExpr.args = andArgList;
     andExpr.location = -1;
     
-    qualList.head = &andExpr;
-    seqScan.plan.qual = &qualList;
+    List* qualList = list_make1(&andExpr);
+    seqScan.plan.qual = qualList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);

@@ -107,9 +107,23 @@ extern "C" {
         List* rtable;           // list of RangeTblEntry nodes
     };
     
+    // Forward declare ListCell for List structure
+    typedef struct ListCell ListCell;
+    
     struct List {
+        int type;       // NodeTag - for compatibility with PostgreSQL
         int length;     // Number of elements
-        void* head;     // Simplified: points to first element for test purposes
+        ListCell* head; // Head of the linked list
+        ListCell* tail; // Tail of the linked list
+    };
+    
+    struct ListCell {
+        union {
+            void* ptr_value;
+            int int_value;
+            unsigned int oid_value;
+        } data;
+        ListCell* next;
     };
     
     struct Node {
@@ -286,6 +300,72 @@ extern "C" {
     #define AVG_INT4_OID 2101    // AVG(int4)
     #define MAX_INT4_OID 2116    // MAX(int4)
     #define MIN_INT4_OID 2132    // MIN(int4)
+    
+    // List manipulation macros for compatibility with PostgreSQL
+    #define NIL ((List*)NULL)
+    #define T_List 16  // NodeTag for List
+    
+    // Iterate through a list
+    #define foreach(cell, l) \
+        for ((cell) = ((l) ? (l)->head : NULL); (cell) != NULL; (cell) = (cell)->next)
+    
+    // Access list cell data
+    #define lfirst(lc) ((lc)->data.ptr_value)
+    #define lfirst_int(lc) ((lc)->data.int_value)
+    #define lfirst_oid(lc) ((lc)->data.oid_value)
+    #define lnext(lc) ((lc)->next)
+    
+    // Get list head
+    static inline ListCell* list_head(const List* l) {
+        return l ? l->head : NULL;
+    }
+    
+    // Helper function to create a list with one element
+    static inline List* list_make1(void* x1) {
+        List* list = new List{};
+        list->type = T_List;
+        list->length = 1;
+        
+        ListCell* cell = new ListCell{};
+        cell->data.ptr_value = x1;
+        cell->next = NULL;
+        
+        list->head = cell;
+        list->tail = cell;
+        return list;
+    }
+    
+    // Helper function to append to a list
+    static inline List* lappend(List* list, void* datum) {
+        ListCell* new_cell = new ListCell{};
+        new_cell->data.ptr_value = datum;
+        new_cell->next = NULL;
+        
+        if (list == NIL) {
+            list = new List{};
+            list->type = T_List;
+            list->length = 0;
+            list->head = NULL;
+            list->tail = NULL;
+        }
+        
+        if (list->tail) {
+            list->tail->next = new_cell;
+            list->tail = new_cell;
+        } else {
+            list->head = new_cell;
+            list->tail = new_cell;
+        }
+        
+        list->length++;
+        return list;
+    }
+    
+    // Helper function to create a list with two elements
+    static inline List* list_make2(void* x1, void* x2) {
+        List* list = list_make1(x1);
+        return lappend(list, x2);
+    }
 }
 
 class PlanNodeTestBase : public ::testing::Test {
