@@ -1,5 +1,6 @@
 #include "execution/jit_execution_engine.h"
 #include "execution/logging.h"
+#include <fstream>
 
 // MLIR includes
 #include "mlir/IR/Verifier.h"
@@ -917,6 +918,26 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
     }
     
     auto startTime = std::chrono::high_resolution_clock::now();
+    
+    // DEBUG: Check what functions ExecutionEngine can see
+    PGX_INFO("🔍 DEBUGGING: Testing ExecutionEngine function lookup capabilities");
+    
+    // Test if we can find any well-known runtime functions first
+    auto testLookup = engine->lookup("_ZN7runtime12TableBuilder5buildEv");
+    if (testLookup) {
+        PGX_INFO("✅ ExecutionEngine can find runtime functions (TableBuilder found)");
+    } else {
+        PGX_WARNING("❌ ExecutionEngine cannot find runtime functions - may indicate symbol visibility issue");
+    }
+    
+    // Test main function specifically
+    PGX_INFO("🎯 Testing direct lookup of 'main' function...");
+    auto mainTest = engine->lookup("main");
+    if (mainTest) {
+        PGX_INFO("✅ SUCCESS: 'main' function found by ExecutionEngine!");
+    } else {
+        PGX_ERROR("❌ CRITICAL: 'main' function NOT found by ExecutionEngine");
+    }
     
     // Look up the compiled query function
     // The function should be named "compiled_query" or "main" depending on the lowering

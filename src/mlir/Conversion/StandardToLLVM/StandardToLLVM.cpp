@@ -23,6 +23,48 @@ namespace pgx_lower {
 
 namespace {
 
+// Custom pattern to ensure main function has proper visibility for ExecutionEngine
+class MainFunctionVisibilityPattern : public OpConversionPattern<func::FuncOp> {
+public:
+    using OpConversionPattern<func::FuncOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(func::FuncOp funcOp, OpAdaptor adaptor,
+                                  ConversionPatternRewriter& rewriter) const override {
+        PGX_INFO("🔍 CustomMainPattern: Checking function: " + funcOp.getSymName().str());
+        
+        // Only handle main function - let default patterns handle others for proper type conversion
+        if (funcOp.getSymName() != "main") {
+            PGX_INFO("❌ Not main function, letting default pattern handle: " + funcOp.getSymName().str());
+            return failure(); // Let default pattern handle this
+        }
+
+        PGX_INFO("🎯 MAIN FUNCTION FOUND! Applying custom PUBLIC visibility");
+
+        // Convert function type using the same converter as default patterns
+        auto convertedType = getTypeConverter()->convertType(funcOp.getFunctionType());
+        auto funcType = mlir::dyn_cast<LLVM::LLVMFunctionType>(convertedType);
+        if (!funcType) {
+            PGX_ERROR("❌ Failed to convert main function type");
+            return failure();
+        }
+
+        // Create LLVM function with PUBLIC visibility
+        auto llvmFunc = rewriter.create<LLVM::LLVMFuncOp>(
+            funcOp.getLoc(), funcOp.getSymName(), funcType);
+        
+        // Set PUBLIC visibility for ExecutionEngine lookup
+        llvmFunc.setSymVisibilityAttr(rewriter.getStringAttr("public"));
+        PGX_INFO("✅ Set sym_visibility=\"public\" on main function for ExecutionEngine");
+
+        // Move function body
+        rewriter.inlineRegionBefore(funcOp.getBody(), llvmFunc.getBody(), llvmFunc.end());
+
+        rewriter.eraseOp(funcOp);
+        PGX_INFO("🎉 Successfully converted main function with PUBLIC visibility");
+        return success();
+    }
+};
+
 struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass<ModuleOp>> {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StandardToLLVMPass)
 
@@ -58,9 +100,16 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
 
         PGX_INFO("[StandardToLLVMPass] registering!");
         mlir::RewritePatternSet patterns(&getContext());
+        
+        PGX_INFO("🔧 Adding MainFunctionVisibilityPattern to pattern set");
+        patterns.add<MainFunctionVisibilityPattern>(typeConverter, &getContext());
+        PGX_INFO("✅ MainFunctionVisibilityPattern added successfully");
+        
         populateAffineToStdConversionPatterns(patterns);
         mlir::populateSCFToControlFlowConversionPatterns(patterns);
         mlir::util::populateUtilToLLVMConversionPatterns(typeConverter, patterns);
+        
+        PGX_INFO("🔄 ADDING default func patterns for type conversion, but custom pattern will override main");
         mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
         mlir::cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
 
@@ -69,8 +118,26 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
         // We want to completely lower to LLVM, so we use a `FullConversion`. This
         // ensures that only legal operations will remain after the conversion.
         auto module = getOperation();
-        if (failed(applyFullConversion(module, target, std::move(patterns))))
+        PGX_INFO("🚀 About to run applyFullConversion with custom patterns");
+        if (failed(applyFullConversion(module, target, std::move(patterns)))) {
+            PGX_ERROR("❌ applyFullConversion failed!");
             signalPassFailure();
+        } else {
+            PGX_INFO("✅ applyFullConversion succeeded!");
+            
+            // POST-PROCESS: Fix main function visibility for ExecutionEngine lookup
+            PGX_INFO("🔧 Post-processing: Setting main function visibility to public");
+            module.walk([&](LLVM::LLVMFuncOp func) {
+                if (func.getSymName() == "main") {
+                    PGX_INFO("🎯 Found main function! Setting sym_visibility=\"public\" for ExecutionEngine");
+                    func.setSymVisibilityAttr(mlir::StringAttr::get(&getContext(), "public"));
+                    PGX_INFO("✅ Main function visibility set to public");
+                } else {
+                    PGX_INFO("📝 Function " + func.getSymName().str() + " kept with default visibility");
+                }
+            });
+            PGX_INFO("🎉 Post-processing completed!");
+        }
     }
 };
 
