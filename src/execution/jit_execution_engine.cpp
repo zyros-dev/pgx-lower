@@ -822,7 +822,17 @@ void PostgreSQLJITExecutionEngine::registerRuntimeSupportFunctions() {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(add_tuple_to_result)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
+            symbolMap[interner("_mlir_ciface_add_tuple_to_result")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(add_tuple_to_result)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
             symbolMap[interner("mark_results_ready_for_streaming")] = {
+                llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(mark_results_ready_for_streaming)),
+                llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+            };
+            
+            // CRITICAL FIX: Also register C interface wrappers (from working unit test!)
+            symbolMap[interner("_mlir_ciface_mark_results_ready_for_streaming")] = {
                 llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(mark_results_ready_for_streaming)),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
             };
@@ -1033,10 +1043,9 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
     try {
         PGX_INFO("🔧 EXPERIMENT: Testing different invoke methods...");
         
-        // Method 1: Try with empty arguments
-        std::vector<void*> args; // Empty args for main() function
-        PGX_INFO("🔧 Method 1: Calling engine->invoke('main') with empty args vector");
-        auto invokeResult = engine->invoke("main", args);
+        // Method 1: Try invokePacked for C interface (from working unit test!)
+        PGX_INFO("🔧 Method 1: Calling engine->invokePacked('main') for C interface");
+        auto invokeResult = engine->invokePacked("main");
         if (invokeResult) {
             PGX_INFO("🔍 Method 1: engine->invoke('main') returned success, checking execution");
             PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
