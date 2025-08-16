@@ -18,6 +18,20 @@ extern "C" {
 
 extern "C" {
 
+// Execution context function needed by Test 1
+void* rt_get_execution_context() {
+    RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Getting execution context for Test 1");
+    
+    // For now, return a dummy context
+    // In a real implementation, this would return the current execution context
+    static struct {
+        void* table_ref;
+        int64_t row_count;
+    } dummy_context = { nullptr, 0 };
+    
+    return &dummy_context;
+}
+
 // Memory allocation functions
 void* pgx_exec_alloc_state_raw(int64_t size) {
     RUNTIME_PGX_DEBUG("PostgreSQLRuntime", "Starting memory allocation for execution state, size: " + std::to_string(size));
