@@ -30,13 +30,9 @@ extern bool g_extension_after_load;
 
 namespace pgx_lower {
 
-// NOTE: I break C++ rules a bit in this file since it's interacting a lot with C-style things.
-
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
-    // 📊 COMPREHENSIVE TREE LOGGING MODE: Log all execution patterns then decline MLIR compilation
-    // This allows us to collect execution tree data from ALL regression tests without compilation failures
-    
-    PGX_INFO("📊 TREE LOGGING MODE: Collecting execution tree patterns, declining MLIR compilation for comprehensive analysis");
+    // 🎯 ACCEPT ALL queries that validateAndLogPlanStructure accepts for consistent behavior
+    // This matches the comprehensive acceptance logic used for tree logging
     
     // Log query characteristics for analysis
     std::vector<std::string> features;
@@ -61,8 +57,15 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         PGX_INFO("📋 Query features: None detected");
     }
     
-    // DECLINE ALL queries for pure tree logging without compilation failures
-    PGX_INFO("📊 DECLINING for tree collection - execution tree will be logged by validateAndLogPlanStructure()");
+    // ACCEPT ALL PATTERNS like validateAndLogPlanStructure does
+    // This ensures consistent behavior between tree logging and MLIR compilation
+    if (isSelectStatement) {
+        PGX_INFO("✅ ACCEPTING query for MLIR compilation - matches tree acceptance logic");
+        return true;
+    }
+    
+    // Only decline non-SELECT statements
+    PGX_INFO("❌ DECLINING: Non-SELECT statement not supported in MLIR");
     return false;
 }
 
