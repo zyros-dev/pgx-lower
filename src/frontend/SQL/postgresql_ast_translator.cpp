@@ -457,8 +457,15 @@ auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp,
     if (qual && qual->length > 0) {
         PGX_DEBUG("Processing qual list with " + std::to_string(qual->length) + " conditions");
         
-        ListCell* lc;
-        foreach(lc, qual) {
+        // Safety check for elements array (PostgreSQL 17)
+        if (!qual->elements) {
+            PGX_WARNING("Qual list has length but no elements array");
+            return inputOp;
+        }
+        
+        // Iterate using PostgreSQL 17 style with elements array
+        for (int i = 0; i < qual->length; i++) {
+            ListCell* lc = &qual->elements[i];
             Node* qualNode = static_cast<Node*>(lfirst(lc));
             if (qualNode) {
                 ::mlir::Value condValue = translateExpression(reinterpret_cast<Expr*>(qualNode));
@@ -532,12 +539,36 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
     
     // Extract target entries from the list
     // Iterate through target list to check for computed columns
-    if (targetList && targetList->length > 0) {
+    // Safety check: ensure the List is properly initialized
+    if (!targetList) {
+        PGX_DEBUG("No target list provided");
+        return inputOp;
+    }
+    
+    // Check if this is a properly initialized List
+    // In PostgreSQL 17, Lists use elements array, not head/tail
+    if (targetList->length <= 0) {
+        PGX_DEBUG("Empty or invalid target list, skipping projection");
+        // For test compatibility: if length is 0 but there might be data,
+        // we skip to avoid accessing invalid memory
+        return inputOp;
+    }
+    
+    if (targetList->length > 0) {
         PGX_DEBUG("Processing target list with " + std::to_string(targetList->length) + " entries");
-        // Note: PostgreSQL 17 uses elements array, not head/tail pointers
         
-        ListCell* lc;
-        foreach(lc, targetList) {
+        // Safety check: ensure elements pointer is valid
+        if (!targetList->elements) {
+            PGX_WARNING("Target list has length but no elements array");
+            return inputOp;
+        }
+        
+        // PostgreSQL 17 uses elements array for Lists
+        // We need to iterate using the new style
+        for (int i = 0; i < targetList->length; i++) {
+            ListCell* lc = &targetList->elements[i];
+            if (!lc) break; // Safety check for iteration
+            
             void* ptr = lfirst(lc);
             if (!ptr) {
                 PGX_WARNING("Null pointer in target list");
@@ -884,19 +915,17 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     
     // For the test table, we know it has an 'id' column of type INT4
     if (tableName == "test") {
-        // Create column reference for 'id' column
-        auto colSymbol = mlir::SymbolRefAttr::get(&context_, "test::id");
-        mlir::relalg::Column col;
-        col.type = mlir::IntegerType::get(&context_, 32); // INT4 -> i32
-        auto colPtr = std::make_shared<mlir::relalg::Column>(col);
-        auto colRef = mlir::relalg::ColumnRefAttr::get(&context_, colSymbol, colPtr);
+        // Create column definition using ColumnManager's createDef method
+        // This creates a proper ColumnDefAttr with the column managed internally
+        auto colDef = columnManager.createDef("test", "id");
         
-        // Column will be managed by the column manager
+        // Set the column type to INT4 (i32 in MLIR)
+        colDef.getColumn().type = mlir::IntegerType::get(&context_, 32);
         
         // Add to column definitions
-        columnDefs.push_back(context.builder->getNamedAttr("id", colRef));
+        columnDefs.push_back(context.builder->getNamedAttr("id", colDef));
         
-        PGX_DEBUG("Added column definition for 'id' column");
+        PGX_DEBUG("Added column definition for 'id' column using ColumnDefAttr");
     }
     
     auto columnsAttr = context.builder->getDictionaryAttr(columnDefs);
@@ -986,11 +1015,19 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
             
             // For SELECT * FROM test, we need to include the 'id' column
             if (context.currentStmt && context.currentStmt->planTree && 
-                context.currentStmt->planTree->targetlist) {
+                context.currentStmt->planTree->targetlist &&
+                context.currentStmt->planTree->targetlist->length > 0) {
                 
-                ListCell* lc;
-                foreach(lc, context.currentStmt->planTree->targetlist) {
-                    TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+                List* tlist = context.currentStmt->planTree->targetlist;
+                
+                // Safety check for elements array
+                if (!tlist->elements) {
+                    PGX_WARNING("Target list has length but no elements array in MaterializeOp");
+                } else {
+                    // Iterate using PostgreSQL 17 style with elements array
+                    for (int i = 0; i < tlist->length; i++) {
+                        ListCell* lc = &tlist->elements[i];
+                        TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
                     if (tle && tle->expr) {
                         // Create column reference
                         std::string colName = tle->resname ? tle->resname : "col_" + std::to_string(tle->resno);
@@ -1004,24 +1041,32 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
                             colType = typeMapper.mapPostgreSQLType(var->vartype);
                         }
                         
-                        mlir::relalg::Column col;
-                        col.type = colType;
-                        auto colPtr = std::make_shared<mlir::relalg::Column>(col);
-                        auto colRef = mlir::relalg::ColumnRefAttr::get(&context_, colSymbol, colPtr);
+                        // Get column manager
+                        auto& columnManager = context_
+                            .getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+                        
+                        // Create column reference using column manager
+                        auto colRef = columnManager.createRef(colSymbol);
+                        
+                        // Set the column type
+                        colRef.getColumn().type = colType;
                         
                         columnRefAttrs.push_back(colRef);
                         columnNameAttrs.push_back(context.builder->getStringAttr(colName));
                         
                         PGX_DEBUG("MaterializeOp column: " + colName);
                     }
-                }
+                    } // end for loop
+                } // end if elements check
             } else {
                 // Default case: include 'id' column
-                auto colSymbol = mlir::SymbolRefAttr::get(&context_, "test::id");
-                mlir::relalg::Column col;
-                col.type = context.builder->getI32Type();
-                auto colPtr = std::make_shared<mlir::relalg::Column>(col);
-                auto colRef = mlir::relalg::ColumnRefAttr::get(&context_, colSymbol, colPtr);
+                auto& columnManager = context_
+                    .getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+                
+                auto colRef = columnManager.createRef("test", "id");
+                
+                // Set the column type to INT4
+                colRef.getColumn().type = context.builder->getI32Type();
                 
                 columnRefAttrs.push_back(colRef);
                 columnNameAttrs.push_back(context.builder->getStringAttr("id"));
@@ -1142,15 +1187,12 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> ::mlir::Value {
         PostgreSQLTypeMapper typeMapper(context_);
         auto mlirType = typeMapper.mapPostgreSQLType(var->vartype);
         
-        // Create or retrieve column from column manager
-        mlir::relalg::Column col;
-        col.type = mlirType;
-        auto colPtr = std::make_shared<mlir::relalg::Column>(col);
+        // Create column reference using column manager
+        // This ensures proper column tracking and avoids invalid attributes
+        auto colRef = columnManager.createRef(tableName, colName);
         
-        // Column will be managed by the column manager
-        
-        // Create column reference attribute
-        auto colRef = mlir::relalg::ColumnRefAttr::get(&context_, colSymRef, colPtr);
+        // Set the column type
+        colRef.getColumn().type = mlirType;
         
         // Create GetColumnOp to access the column from tuple
         auto getColOp = builder_->create<mlir::relalg::GetColumnOp>(
@@ -1271,9 +1313,15 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
     PGX_DEBUG("OpExpr args list has " + std::to_string(opExpr->args ? opExpr->args->length : 0) + " arguments");
     
     if (opExpr->args && opExpr->args->length >= 1) {
-        ListCell* lc;
-        int argIndex = 0;
-        foreach(lc, opExpr->args) {
+        // Safety check for elements array (PostgreSQL 17)
+        if (!opExpr->args->elements) {
+            PGX_WARNING("OpExpr args list has length but no elements array");
+            return nullptr;
+        }
+        
+        // Iterate using PostgreSQL 17 style with elements array
+        for (int argIndex = 0; argIndex < opExpr->args->length; argIndex++) {
+            ListCell* lc = &opExpr->args->elements[argIndex];
             Node* argNode = static_cast<Node*>(lfirst(lc));
             if (argNode) {
                 ::mlir::Value argValue = translateExpression(reinterpret_cast<Expr*>(argNode));
@@ -1285,8 +1333,7 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
                     }
                 }
             }
-            argIndex++;
-            if (argIndex >= 2) break; // Binary operators only need 2 args
+            if (argIndex >= 1) break; // Binary operators only need 2 args (index 0 and 1)
         }
     }
     
@@ -1423,8 +1470,15 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
             if (boolExpr->args && boolExpr->args->length > 0) {
                 PGX_DEBUG("AND expression has " + std::to_string(boolExpr->args->length) + " arguments");
                 
-                ListCell* lc;
-                foreach(lc, boolExpr->args) {
+                // Safety check for elements array (PostgreSQL 17)
+                if (!boolExpr->args->elements) {
+                    PGX_WARNING("BoolExpr AND args list has length but no elements array");
+                    return nullptr;
+                }
+                
+                // Iterate using PostgreSQL 17 style with elements array
+                for (int i = 0; i < boolExpr->args->length; i++) {
+                    ListCell* lc = &boolExpr->args->elements[i];
                     Node* argNode = static_cast<Node*>(lfirst(lc));
                     if (argNode) {
                         ::mlir::Value argValue = translateExpression(reinterpret_cast<Expr*>(argNode));
@@ -1467,8 +1521,15 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
             if (boolExpr->args && boolExpr->args->length > 0) {
                 PGX_DEBUG("OR expression has " + std::to_string(boolExpr->args->length) + " arguments");
                 
-                ListCell* lc;
-                foreach(lc, boolExpr->args) {
+                // Safety check for elements array (PostgreSQL 17)
+                if (!boolExpr->args->elements) {
+                    PGX_WARNING("BoolExpr OR args list has length but no elements array");
+                    return nullptr;
+                }
+                
+                // Iterate using PostgreSQL 17 style with elements array
+                for (int i = 0; i < boolExpr->args->length; i++) {
+                    ListCell* lc = &boolExpr->args->elements[i];
                     Node* argNode = static_cast<Node*>(lfirst(lc));
                     if (argNode) {
                         ::mlir::Value argValue = translateExpression(reinterpret_cast<Expr*>(argNode));
