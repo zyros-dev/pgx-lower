@@ -98,6 +98,15 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     ::mlir::OpBuilder builder(&context_);
     builder.setInsertionPointToStart(module.getBody());
     
+    // TESTING: Go back to calling the external function but with better error checking
+    // Declare the external function at module level
+    auto markReadyFuncType = builder.getFunctionType({}, {});
+    auto markReadyFunc = builder.create<mlir::func::FuncOp>(
+        builder.getUnknownLoc(), 
+        "mark_results_ready_for_streaming", 
+        markReadyFuncType);
+    markReadyFunc.setPrivate(); // Mark as external function
+    
     // Create translation context
     TranslationContext context;
     context.currentStmt = plannedStmt;
@@ -188,12 +197,11 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
 auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context) -> ::mlir::func::FuncOp {
     PGX_DEBUG("Creating query function using func::FuncOp pattern");
     
-    // TEMPORARY: Use i32 return type for simple JIT testing
-    // TODO Phase 4: Restore TupleStreamType when proper lowering is implemented
-    auto i32Type = builder.getI32Type();
+    // FIXED: Use void return type and call mark_results_ready_for_streaming()
+    // This enables proper JIT→PostgreSQL result communication
     
     // Create func::FuncOp with "main" name for JIT execution  
-    auto queryFuncType = builder.getFunctionType({}, {i32Type});
+    auto queryFuncType = builder.getFunctionType({}, {});
     auto queryFunc = builder.create<::mlir::func::FuncOp>(
         builder.getUnknownLoc(), "main", queryFuncType);
     
@@ -255,15 +263,16 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
     
     PGX_DEBUG("MaterializeOp created successfully");
     
-    // TEMPORARY: Still return constant 42 for JIT testing
-    // TODO Phase 4: Once the full pipeline works, return the materialize result
-    // Future: context.builder->create<mlir::func::ReturnOp>(loc, materializeOp.getResult());
+    // TESTING: Call the external function that was declared at module level
+    auto markReadySymbol = mlir::FlatSymbolRefAttr::get(context.builder->getContext(), "mark_results_ready_for_streaming");
+    context.builder->create<mlir::func::CallOp>(
+        context.builder->getUnknownLoc(),
+        markReadySymbol,
+        mlir::TypeRange{}, // void return type
+        mlir::ValueRange{});
     
-    auto constantOp = context.builder->create<mlir::arith::ConstantIntOp>(
-        context.builder->getUnknownLoc(), 42, 32);
-    
-    context.builder->create<mlir::func::ReturnOp>(
-        context.builder->getUnknownLoc(), constantOp.getResult());
+    // Return void
+    context.builder->create<mlir::func::ReturnOp>(context.builder->getUnknownLoc());
     
     PGX_DEBUG("RelAlg operations generated successfully");
     return true;
