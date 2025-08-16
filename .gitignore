@@ -68,3 +68,7 @@ Testing
 .vscode
 .serena
 .gemini
+
+extension
+tests
+include
