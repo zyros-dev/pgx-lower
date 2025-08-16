@@ -53,6 +53,8 @@ typedef struct Gather Gather;
 #include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/Column.h"
+#include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
+#include "runtime/metadata.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/DSA/IR/DSATypes.h"
 #include "mlir/Dialect/DB/IR/DBOps.h"
@@ -267,6 +269,10 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
         return nullptr;
     }
     
+    // Get column manager for creating column references
+    auto& columnManager = context_
+        .getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+    
     // Extract actual group by columns from PostgreSQL structure
     std::vector<mlir::Attribute> groupByAttrs;
     std::vector<mlir::Attribute> computedColAttrs;
@@ -283,9 +289,9 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
             // Extract actual column index (1-based in PostgreSQL)
             AttrNumber colIdx = grpColIdx[i];
             if (colIdx > 0 && colIdx < 1000) { // Sanity check
-                // Create column reference attribute
+                // Create proper column reference using column manager
                 auto colName = "col_" + std::to_string(colIdx);
-                auto colRef = context.builder->getStringAttr(colName);
+                auto colRef = columnManager.createRef("test", colName);
                 groupByAttrs.push_back(colRef);
                 PGX_DEBUG("  Added GROUP BY column: " + colName);
             } else {
@@ -325,9 +331,12 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
     if (computedColAttrs.empty() && 
         (agg->aggstrategy == AGG_PLAIN || agg->aggstrategy == AGG_SORTED || 
          agg->aggstrategy == AGG_HASHED)) {
-        // Create a computed column as a simple string attribute
-        auto aggExpr = context.builder->getStringAttr("count(*)");
-        computedColAttrs.push_back(aggExpr);
+        // Create a computed column definition using column manager
+        auto aggColDef = columnManager.createDef("agg", "count_star");
+        if (aggColDef.getColumnPtr()) {
+            aggColDef.getColumn().type = context.builder->getI64Type();
+        }
+        computedColAttrs.push_back(aggColDef);
         PGX_DEBUG("Added default COUNT(*) aggregate");
     }
     
@@ -828,32 +837,46 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     
     PGX_DEBUG("Creating BaseTableOp for table: " + tableIdentifier);
     
-    // For now, create a simplified version to avoid attribute printing issues
-    // We'll generate a simpler operation that doesn't crash
-    // TODO: Fix attribute printing and use proper BaseTableOp
+    // Create table metadata - initially empty, will be populated by metadata pass
+    auto tableMetaData = std::make_shared<runtime::TableMetaData>();
+    tableMetaData->setNumRows(0); // Will be updated from PostgreSQL catalog
     
-    // Create a simple operation that represents table access
-    // This is a temporary workaround until attribute printing is fixed
-    auto funcType = context.builder->getFunctionType(
-        {}, // No inputs for simple table scan
-        mlir::relalg::TupleStreamType::get(&context_) // Returns tuple stream
+    // Create TableMetaDataAttr
+    auto tableMetaAttr = mlir::relalg::TableMetaDataAttr::get(
+        &context_,
+        tableMetaData
     );
     
-    // Create function declaration for table access
-    auto funcName = "table_scan_" + tableName;
-    auto funcOp = context.builder->create<mlir::func::FuncOp>(
-        context.builder->getUnknownLoc(),
-        funcName,
-        funcType
-    );
-    funcOp.setPrivate();
+    // Create column definitions for the test table
+    // For Test 1 (SELECT * FROM test), we need an 'id' column of type integer
+    auto& columnManager = context_
+        .getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
     
-    // Create call to this table scan function
-    auto baseTableOp = context.builder->create<mlir::func::CallOp>(
+    // Create column definition for 'id' column
+    auto idColumnDef = columnManager.createDef(
+        tableName,  // scope (table name)
+        "id"        // column name
+    );
+    
+    // Set the column type to i32 (integer)
+    if (idColumnDef.getColumnPtr()) {
+        idColumnDef.getColumn().type = context.builder->getI32Type();
+    }
+    
+    // Create dictionary attribute with columns
+    // Build a vector of NamedAttribute for the dictionary
+    std::vector<mlir::NamedAttribute> namedAttrs;
+    namedAttrs.push_back(context.builder->getNamedAttr("id", idColumnDef));
+    
+    auto columnsAttr = context.builder->getDictionaryAttr(namedAttrs);
+    
+    // Create the actual BaseTableOp with all required attributes
+    auto baseTableOp = context.builder->create<mlir::relalg::BaseTableOp>(
         context.builder->getUnknownLoc(),
-        funcOp.getSymName(),
         mlir::relalg::TupleStreamType::get(&context_),
-        mlir::ValueRange{}
+        context.builder->getStringAttr(tableIdentifier),
+        tableMetaAttr,
+        columnsAttr
     );
     
     PGX_DEBUG("SeqScan translation completed successfully with BaseTableOp");

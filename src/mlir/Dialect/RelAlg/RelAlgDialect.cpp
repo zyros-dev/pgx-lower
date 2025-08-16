@@ -133,11 +133,23 @@ void RelAlgDialect::initialize() {
 }
 void mlir::relalg::TableMetaDataAttr::print(::mlir::AsmPrinter& printer) const {
    printer << "<";
-   printer.printAttribute(StringAttr::get(getContext(), getMeta()->serialize()));
+   // Check if the metadata pointer is valid before calling serialize
+   if (getMeta()) {
+      printer.printAttribute(StringAttr::get(getContext(), getMeta()->serialize()));
+   } else {
+      // Print empty metadata for null pointer
+      printer.printAttribute(StringAttr::get(getContext(), "{}"));
+   }
    printer << ">";
 }
 void mlir::relalg::ColumnDefAttr::print(::mlir::AsmPrinter& printer) const {
-   printer << "<" << getName()<<","<<getColumn().type;
+   printer << "<" << getName();
+   // Check if column pointer is valid before accessing type
+   if (getColumnPtr()) {
+      printer << "," << getColumn().type;
+   } else {
+      printer << ",<null>";
+   }
    if (auto fromexisting = getFromExisting()) {
       printer << "," << fromexisting;
    }
@@ -159,7 +171,12 @@ void mlir::relalg::ColumnDefAttr::print(::mlir::AsmPrinter& printer) const {
    return columnDef;
 }
 void mlir::relalg::ColumnRefAttr::print(::mlir::AsmPrinter& printer) const {
-   printer << "<" << getName() << ">";
+   // Check if name is valid before printing
+   if (getName()) {
+      printer << "<" << getName() << ">";
+   } else {
+      printer << "<null>";
+   }
 }
 ::mlir::Attribute mlir::relalg::ColumnRefAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
    mlir::SymbolRefAttr sym;

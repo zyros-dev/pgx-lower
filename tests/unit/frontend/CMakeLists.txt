@@ -36,3 +36,35 @@ target_link_libraries(test_plan_node_types_simple
 )
 
 add_test(NAME PlanNodeTypesSimpleTest COMMAND test_plan_node_types_simple)
+
+# Test for BaseTableOp attribute printing fix
+add_executable(test_base_table_op 
+    test_base_table_op.cpp
+    ${CMAKE_SOURCE_DIR}/src/frontend/SQL/postgresql_ast_translator.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp
+)
+
+target_include_directories(test_base_table_op PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${MLIR_INCLUDE_DIRS}
+    ${LLVM_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_base_table_op
+    gtest
+    gtest_main
+    pgx_lower_logging
+    MLIRRelAlgDialect
+    MLIRDSA
+    MLIRUtilDialect
+    MLIRDBDialect
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRIR
+    MLIRSupport
+    MLIRAnalysis
+    MLIRTransforms
+)
+
+add_test(NAME BaseTableOpTest COMMAND test_base_table_op)
