@@ -33,30 +33,37 @@ namespace pgx_lower {
 // NOTE: I break C++ rules a bit in this file since it's interacting a lot with C-style things.
 
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
-    // Must be SELECT statement with compatible types (basic requirements)
-    if (!isSelectStatement || !hasCompatibleTypes) {
-        return false;
-    }
-    bool basicTableAccess = requiresSeqScan || !requiresSeqScan; // Always allow table access patterns
-    bool projectionSupported = requiresProjection || !requiresProjection; // Allow with or without
-    bool expressionsSupported = hasExpressions || !hasExpressions; // Allow with or without
-    bool filteringSupported = requiresFilter || !requiresFilter; // Allow with or without
-    bool aggregationSupported = requiresAggregation || !requiresAggregation; // Allow with or without
-    bool sortingSupported = requiresSort || !requiresSort; // Allow with or without
-
-    if (requiresJoin) {
-        PGX_INFO("❌ REJECTED: JOIN operations not yet supported in MLIR pipeline");
-        return false;
+    // 📊 COMPREHENSIVE TREE LOGGING MODE: Log all execution patterns then decline MLIR compilation
+    // This allows us to collect execution tree data from ALL regression tests without compilation failures
+    
+    PGX_INFO("📊 TREE LOGGING MODE: Collecting execution tree patterns, declining MLIR compilation for comprehensive analysis");
+    
+    // Log query characteristics for analysis
+    std::vector<std::string> features;
+    if (isSelectStatement) features.emplace_back("SELECT");
+    if (requiresSeqScan) features.emplace_back("SeqScan");
+    if (requiresProjection) features.emplace_back("Projection");
+    if (hasExpressions) features.emplace_back("Expressions");
+    if (requiresFilter) features.emplace_back("WHERE");
+    if (requiresAggregation) features.emplace_back("Aggregation");
+    if (requiresSort) features.emplace_back("ORDER BY");
+    if (requiresJoin) features.emplace_back("JOIN");
+    if (requiresLimit) features.emplace_back("LIMIT");
+    if (hasCompatibleTypes) features.emplace_back("CompatibleTypes");
+    
+    if (!features.empty()) {
+        std::string feature_list = features[0];
+        for (size_t i = 1; i < features.size(); ++i) {
+            feature_list += "+" + features[i];
+        }
+        PGX_INFO("📋 Query features: " + feature_list);
+    } else {
+        PGX_INFO("📋 Query features: None detected");
     }
     
-    if (requiresLimit) {
-        PGX_INFO("❌ REJECTED: LIMIT clause needs implementation in MLIR execution engine");
-        return false;
-    }
-    
-    PGX_INFO("✅ ACCEPTED: Query uses only operations supported by MLIR pipeline (Tests 1-28 patterns)");
-    return basicTableAccess && projectionSupported && expressionsSupported && 
-           filteringSupported && aggregationSupported && sortingSupported;
+    // DECLINE ALL queries for pure tree logging without compilation failures
+    PGX_INFO("📊 DECLINING for tree collection - execution tree will be logged by validateAndLogPlanStructure()");
+    return false;
 }
 
 auto QueryCapabilities::getDescription() const -> std::string {
