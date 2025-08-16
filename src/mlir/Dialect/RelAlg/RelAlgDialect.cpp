@@ -1,5 +1,6 @@
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
 
@@ -111,10 +112,7 @@ void RelAlgDialect::initialize() {
 #define GET_OP_LIST
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"
       >();
-   addTypes<
-#define GET_TYPEDEF_LIST
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.cpp.inc"
-      >();
+   registerTypes();
    addAttributes<
 #define GET_ATTRDEF_LIST
 #include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.cpp.inc"
