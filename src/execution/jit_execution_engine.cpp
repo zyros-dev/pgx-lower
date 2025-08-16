@@ -834,7 +834,7 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
         PGX_INFO("🔍 Attempting to enumerate symbols available in ExecutionEngine...");
         
         // Test with mangled name variations that might work
-        std::vector<std::string> possibleNames = {"main", "_main", "query_main", "compiled_query"};
+        std::vector<std::string> possibleNames = {"main", "_main", "_mlir_ciface_main", "query_main", "compiled_query"};
         
         bool foundFunction = false;
         for (const auto& name : possibleNames) {
@@ -887,8 +887,8 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
         PGX_INFO("🔧 EXPERIMENT: Testing different invoke methods...");
         
         // Method 1: Try invokePacked for C interface (from working unit test!)
-        PGX_INFO("🔧 Method 1: Calling engine->invokePacked('main') for C interface");
-        auto invokeResult = engine->invokePacked("main");
+        PGX_INFO("🔧 Method 1: Calling engine->invokePacked('_mlir_ciface_main') for C interface");
+        auto invokeResult = engine->invokePacked("_mlir_ciface_main");
         if (invokeResult) {
             PGX_INFO("🔍 Method 1: engine->invoke('main') returned success, checking execution");
             PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
@@ -905,8 +905,8 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
         }
         
         // Method 2: Try invoking with no arguments at all (different overload)
-        PGX_INFO("🔧 Method 2: Calling engine->invoke('main') with no arguments");
-        auto invokeResult2 = engine->invoke("main");
+        PGX_INFO("🔧 Method 2: Calling engine->invoke('_mlir_ciface_main') with no arguments");
+        auto invokeResult2 = engine->invoke("_mlir_ciface_main");
         if (invokeResult2) {
             PGX_INFO("🔍 Method 2: engine->invoke('main') returned success, checking execution");
             PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
