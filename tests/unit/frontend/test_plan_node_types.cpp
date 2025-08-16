@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 #include <cstddef>  // for offsetof
 #include <cstring>  // for memset
+#include <string>
+#include "llvm/Support/raw_ostream.h"
 #include "pgx_lower/frontend/SQL/postgresql_ast_translator.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/AsmState.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
@@ -158,6 +161,36 @@ protected:
         translator = postgresql_ast::createPostgreSQLASTTranslator(*context);
     }
     
+    // Helper function to validate MLIR output contains expected patterns
+    void validateMLIR(mlir::ModuleOp* module, const std::vector<std::string>& expectedPatterns) {
+        ASSERT_NE(module, nullptr) << "Module should not be null";
+        
+        // Dump the MLIR to string in proper textual format
+        std::string actualMLIR;
+        llvm::raw_string_ostream stream(actualMLIR);
+        
+        // Print the module - even though func dialect uses generic form,
+        // we can still validate the structure
+        module->print(stream);
+        actualMLIR = stream.str();
+        
+        // Log expected patterns and actual MLIR
+        PGX_INFO("=== EXPECTED MLIR PATTERNS ===");
+        for (const auto& pattern : expectedPatterns) {
+            PGX_INFO("  - Should contain: " + pattern);
+        }
+        
+        PGX_INFO("=== ACTUAL MLIR OUTPUT ===");
+        PGX_INFO(actualMLIR);
+        PGX_INFO("=== END MLIR OUTPUT ===");
+        
+        // Validate each expected pattern is present
+        for (const auto& pattern : expectedPatterns) {
+            EXPECT_TRUE(actualMLIR.find(pattern) != std::string::npos) 
+                << "Missing expected pattern: " << pattern;
+        }
+    }
+    
     std::unique_ptr<mlir::MLIRContext> context;
     std::unique_ptr<postgresql_ast::PostgreSQLASTTranslator> translator;
     
@@ -202,8 +235,22 @@ TEST_F(PlanNodeTranslationTest, TranslatesSeqScanNode) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    ASSERT_NE(module, nullptr) << "SeqScan translation should produce a module";
-    PGX_INFO("SeqScan node translated successfully");
+    // Validate the MLIR output for SeqScan
+    // For Test 1: SELECT * FROM test should generate:
+    // - A main function
+    // - A table access function (name varies based on table)
+    // - A function call to access the table
+    // - A return statement
+    std::vector<std::string> expectedPatterns = {
+        "sym_name = \"main\"",           // Main query function
+        "func.func",                     // Function declarations
+        "table_access",                  // Table access function name contains this
+        "func.call",                     // Call to table access
+        "func.return"                    // Function return
+    };
+    
+    validateMLIR(module.get(), expectedPatterns);
+    PGX_INFO("SeqScan node translated and validated successfully");
 }
 
 TEST_F(PlanNodeTranslationTest, TranslatesAggNode) {
