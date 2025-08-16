@@ -38,57 +38,15 @@ extern "C" {
 }
 #endif
 
-// Forward declarations of runtime functions
+// Forward declarations of runtime functions actually used
 extern "C" {
-// DSA Runtime Functions (from Phase 4e-3)
-void* pgx_runtime_create_table_builder(const char* schema);
-void pgx_runtime_append_i64(void* builder, size_t col_idx, int64_t value);
-void pgx_runtime_append_i64_direct(void* builder, int64_t value);
-void pgx_runtime_append_nullable_i64(void* builder, bool is_null, int64_t value);
-void pgx_runtime_append_null(void* builder, size_t col_idx);
-void pgx_runtime_table_next_row(void* builder);
+// Only the essential functions needed for Test 1
+void* rt_get_execution_context();
 
-// PostgreSQL SPI Functions (from Phase 4d) - implemented in tuple_access.cpp
-void* pg_table_open(const char* table_name);
-int64_t pg_get_next_tuple(void* table_handle);
-int32_t pg_extract_field(void* tuple, int32_t field_index);
-void pg_store_result(void* result);
-void pg_store_result_i32(int32_t value);
-void pg_store_result_i64(int64_t value);
-void pg_store_result_f64(double value);
-void pg_store_result_text(const char* value);
-
-// PostgreSQL tuple access functions (from tuple_access.cpp)
-void* open_postgres_table(const char* tableName);
-int64_t read_next_tuple_from_table(void* tableHandle);
-void close_postgres_table(void* tableHandle);
-int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
-int64_t get_text_field(void* tuple_handle, int32_t field_index, bool* is_null);
-double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null);
-int32_t get_int_field_mlir(int64_t iteration_signal, int32_t field_index);
-void store_int_result(int32_t columnIndex, int32_t value, bool isNull);
-void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
-void store_text_result(int32_t columnIndex, const char* value, bool isNull);
-void store_field_as_datum(int32_t columnIndex, int64_t iteration_signal, int32_t field_index);
+// PostgreSQL tuple access functions (minimal set from tuple_access.cpp)
 bool add_tuple_to_result(int64_t value);
 void mark_results_ready_for_streaming();
 void prepare_computed_results(int32_t numColumns);
-
-// PostgreSQL runtime functions (from postgresql_runtime.cpp)
-void* pgx_exec_alloc_state_raw(int64_t size);
-void pgx_exec_free_state(void* state);
-void pgx_exec_set_tuple_count(void* exec_context, int64_t count);
-int64_t pgx_exec_get_tuple_count(void* exec_context);
-void* pgx_threadlocal_create(int64_t size);
-void* pgx_threadlocal_get(void* tls);
-void pgx_threadlocal_merge(void* dest, void* src);
-void* pgx_datasource_get(void* table_ref);
-void* pgx_datasource_iteration_init(void* datasource, int64_t start, int64_t end);
-int8_t pgx_datasource_iteration_iterate(void* iteration, void** row_out);
-void* pgx_buffer_create_zeroed(int64_t size);
-void* pgx_buffer_iterate(void* buffer, int64_t index);
-void* pgx_growing_buffer_create(int64_t initial_capacity);
-void pgx_growing_buffer_insert(void* buffer, void* value, int64_t value_size);
 }
 
 namespace pgx_lower {
