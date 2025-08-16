@@ -255,6 +255,10 @@ void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
 void store_text_result(int32_t columnIndex, const char* value, bool isNull);
 void prepare_computed_results(int32_t numColumns);
 void mark_results_ready_for_streaming();
+
+// Global flag to indicate results are ready for streaming (defined in tuple_access.cpp)
+extern bool g_jit_results_ready;
+
 // Type-aware field extractor that handles all PostgreSQL types
 void store_field_as_datum(int32_t columnIndex, int64_t iteration_signal, int32_t field_index);
 

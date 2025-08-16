@@ -1,5 +1,6 @@
 #include "execution/jit_execution_engine.h"
 #include "execution/logging.h"
+#include "runtime/tuple_access.h"
 #include <fstream>
 
 // MLIR includes
@@ -1030,15 +1031,48 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
     
     // Try invoke with empty arguments (for void main())
     try {
+        PGX_INFO("🔧 EXPERIMENT: Testing different invoke methods...");
+        
+        // Method 1: Try with empty arguments
         std::vector<void*> args; // Empty args for main() function
+        PGX_INFO("🔧 Method 1: Calling engine->invoke('main') with empty args vector");
         auto invokeResult = engine->invoke("main", args);
         if (invokeResult) {
-            PGX_INFO("✅ SUCCESS: engine->invoke('main') executed successfully!");
-            PGX_INFO("JIT query execution completed successfully");
-            return true;
+            PGX_INFO("🔍 Method 1: engine->invoke('main') returned success, checking execution");
+            PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
+            
+            if (g_jit_results_ready) {
+                PGX_INFO("✅ SUCCESS: JIT function actually executed and set results flag!");
+                PGX_INFO("JIT query execution completed successfully");
+                return true;
+            } else {
+                PGX_WARNING("⚠️ Method 1 failed: invoke returned success but function body didn't execute");
+            }
         } else {
-            PGX_WARNING("🔍 engine->invoke('main') failed - falling back to manual lookup");
+            PGX_WARNING("🔍 Method 1 failed: engine->invoke('main') returned failure");
         }
+        
+        // Method 2: Try invoking with no arguments at all (different overload)
+        PGX_INFO("🔧 Method 2: Calling engine->invoke('main') with no arguments");
+        auto invokeResult2 = engine->invoke("main");
+        if (invokeResult2) {
+            PGX_INFO("🔍 Method 2: engine->invoke('main') returned success, checking execution");
+            PGX_INFO("🔍 Post-execution check: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
+            
+            if (g_jit_results_ready) {
+                PGX_INFO("✅ SUCCESS: Method 2 worked! JIT function executed properly!");
+                PGX_INFO("JIT query execution completed successfully");
+                return true;
+            } else {
+                PGX_WARNING("⚠️ Method 2 failed: invoke returned success but function body didn't execute");
+            }
+        } else {
+            PGX_WARNING("🔍 Method 2 failed: engine->invoke('main') returned failure");
+        }
+        
+        PGX_WARNING("🚨 CRITICAL: Both invoke methods failed - function exists but won't execute");
+        PGX_WARNING("This suggests a deeper issue with ExecutionEngine or function compilation");
+        
     } catch (const std::exception& e) {
         PGX_WARNING("🔍 Exception in engine->invoke: " + std::string(e.what()));
     }
