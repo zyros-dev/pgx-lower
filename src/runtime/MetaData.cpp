@@ -33,6 +33,7 @@ std::shared_ptr<TableMetaData> TableMetaData::deserialize(std::string json) {
 
 std::string TableMetaData::serialize(bool serializeSample) const {
     // TODO: Replace JSON serialization with PostgreSQL metadata format
+    // For now, return empty JSON
     return "{}";
 }
 
