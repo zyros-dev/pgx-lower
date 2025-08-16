@@ -3,7 +3,7 @@
 
 class ComplexPlanTreeTest : public PlanNodeTestBase {};
 
-TEST_F(ComplexPlanTreeTest, DISABLED_TranslatesComplexPlanTree) {
+TEST_F(ComplexPlanTreeTest, TranslatesComplexPlanTree) {
     PGX_INFO("Testing complex plan tree translation");
     
     // Create bottom-level SeqScan

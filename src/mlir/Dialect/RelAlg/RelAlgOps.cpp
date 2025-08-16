@@ -109,7 +109,12 @@ static void printCustRefArr(OpAsmPrinter& p, ::mlir::Operation* op, ArrayAttr ar
          p << ",";
       }
       mlir::relalg::ColumnRefAttr parsedSymbolRefAttr = a.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>();
-      p << parsedSymbolRefAttr.getName();
+      if (parsedSymbolRefAttr) {
+         p << parsedSymbolRefAttr.getName();
+      } else {
+         // Fallback for non-ColumnRefAttr attributes (e.g., StringAttr)
+         p << a;
+      }
    }
    p << "]";
 }
@@ -211,7 +216,12 @@ static void printCustDefArr(OpAsmPrinter& p, ::mlir::Operation* op, ArrayAttr ar
          p << ",";
       }
       mlir::relalg::ColumnDefAttr parsedSymbolRefAttr = a.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
-      printCustDef(p, op, parsedSymbolRefAttr);
+      if (parsedSymbolRefAttr) {
+         printCustDef(p, op, parsedSymbolRefAttr);
+      } else {
+         // Fallback for non-ColumnDefAttr attributes (e.g., StringAttr)
+         p << a;
+      }
    }
    p << "]";
 }
@@ -288,7 +298,8 @@ void mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
    for (auto attr : this->getOperation()->getAttrs()) {
       if (attr.getName().str() == "meta") {
          if (auto metaAttr = attr.getValue().dyn_cast_or_null<mlir::relalg::TableMetaDataAttr>()) {
-            if (metaAttr.getMeta()->isPresent()) {
+            // Check if getMeta() returns null before calling isPresent()
+            if (metaAttr.getMeta() && metaAttr.getMeta()->isPresent()) {
                colsToPrint.push_back(::mlir::NamedAttribute(::mlir::StringAttr::get(getContext(), "meta"), ::mlir::StringAttr::get(getContext(), metaAttr.getMeta()->serialize())));
             }
          }
