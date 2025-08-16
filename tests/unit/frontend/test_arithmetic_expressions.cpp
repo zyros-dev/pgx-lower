@@ -20,23 +20,21 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
     
     // Create targetlist with arithmetic expressions
     // Simulating: SELECT val1 + val2, val1 - val2, val1 * val2, val1 / val2 FROM test
-    static List targetList{};
     static TargetEntry entries[4];
     static OpExpr opExprs[4];
     static Var vars[8];
-    static List argLists[4];
     
     // Setup variables for columns
     for (int i = 0; i < 8; i++) {
         vars[i].node.type = T_Var;
         vars[i].varno = 1;
-        vars[i].varattno = (i % 2) + 2;  // Alternating val1(2) and val2(3)
+        vars[i].varattno = (i % 2) + 1;  // Alternating col1(1) and col2(2)
         vars[i].vartype = 23;  // INT4OID
         vars[i].vartypmod = -1;
         vars[i].varcollid = 0;
         vars[i].varlevelsup = 0;
         vars[i].varnoold = 1;
-        vars[i].varoattno = (i % 2) + 2;
+        vars[i].varoattno = (i % 2) + 1;
         vars[i].location = -1;
     }
     
@@ -44,9 +42,15 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
     Oid operators[] = {INT4PLUSOID, INT4MINUSOID, INT4MULOID, INT4DIVOID};
     const char* opNames[] = {"add", "sub", "mul", "div"};
     
+    // Create targetlist as proper linked list
+    List* targetList = NIL;
+    
     for (int i = 0; i < 4; i++) {
-        // Setup argument lists (val1, val2)
-        argLists[i].head = &vars[i * 2];  // Simplified list structure
+        // Create argument list for operator (val1, val2)
+        List* args = list_make2(
+            reinterpret_cast<void*>(&vars[i * 2]),
+            reinterpret_cast<void*>(&vars[i * 2 + 1])
+        );
         
         // Setup OpExpr for each arithmetic operation
         opExprs[i].node.type = T_OpExpr;
@@ -56,7 +60,7 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
         opExprs[i].opretset = false;
         opExprs[i].opcollid = 0;
         opExprs[i].inputcollid = 0;
-        opExprs[i].args = &argLists[i];
+        opExprs[i].args = args;
         opExprs[i].location = -1;
         
         // Setup TargetEntry
@@ -68,10 +72,14 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
         entries[i].resorigtbl = 0;
         entries[i].resorigcol = 0;
         entries[i].resjunk = false;
+        
+        // Add to targetlist
+        PGX_INFO("Adding TargetEntry[" + std::to_string(i) + "] at address " + 
+                 std::to_string(reinterpret_cast<uintptr_t>(&entries[i])));
+        targetList = lappend(targetList, &entries[i]);
     }
     
-    targetList.head = &entries[0];  // Simplified list linking
-    seqScan.plan.targetlist = &targetList;
+    seqScan.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -79,24 +87,25 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once expression translation is implemented, these patterns should appear
-    // For now, we expect the translation might fail or produce partial results
+    // Check that expression translation is working
     if (module) {
         std::vector<std::string> expectedPatterns = {
-            // Once implemented, should see:
-            // "relalg.add",  // Addition operation
-            // "relalg.sub",  // Subtraction operation
-            // "relalg.mul",  // Multiplication operation
-            // "relalg.div",  // Division operation
-            "func.func",    // Function wrapper
-            "func.return"   // Function return
+            "relalg.basetable",  // Base table scan
+            "relalg.map",        // Map operation for computed columns
+            "arith.addi",        // Addition operation
+            "arith.subi",        // Subtraction operation
+            "arith.muli",        // Multiplication operation
+            "arith.divsi",       // Division operation
+            "relalg.return",     // Return from map predicate
+            "relalg.materialize", // Materialize results
+            "func.func",         // Function wrapper
+            "func.return"        // Function return
         };
         
         validateMLIR(module.get(), expectedPatterns);
-        PGX_INFO("Arithmetic expressions test completed - TODO: Implement arithmetic operators in translator");
+        PGX_INFO("Arithmetic expressions test completed - expressions are being translated!");
     } else {
-        PGX_INFO("Arithmetic expressions not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module
+        FAIL() << "Module generation failed - expression translation should be working";
     }
 }
 
@@ -117,11 +126,9 @@ TEST_F(ArithmeticExpressionTest, TranslatesNestedArithmetic) {
     
     // Create targetlist with nested arithmetic expression
     // Simulating: SELECT (val1 + val2) * (val3 - val4) FROM test
-    static List targetList{};
     static TargetEntry entry;
     static OpExpr mulExpr, addExpr, subExpr;
     static Var val1, val2, val3, val4;
-    static List mulArgList, addArgList, subArgList;
     
     // Setup variables
     val1.node.type = T_Var;
@@ -153,33 +160,42 @@ TEST_F(ArithmeticExpressionTest, TranslatesNestedArithmetic) {
     val4.location = -1;
     
     // Setup val1 + val2
-    addArgList.head = &val1;  // Simplified
+    List* addArgs = list_make2(
+        reinterpret_cast<void*>(&val1),
+        reinterpret_cast<void*>(&val2)
+    );
     addExpr.node.type = T_OpExpr;
     addExpr.opno = INT4PLUSOID;
     addExpr.opfuncid = INT4PLUSOID;
     addExpr.opresulttype = 23;
     addExpr.opretset = false;
-    addExpr.args = &addArgList;
+    addExpr.args = addArgs;
     addExpr.location = -1;
     
     // Setup val3 - val4
-    subArgList.head = &val3;  // Simplified
+    List* subArgs = list_make2(
+        reinterpret_cast<void*>(&val3),
+        reinterpret_cast<void*>(&val4)
+    );
     subExpr.node.type = T_OpExpr;
     subExpr.opno = INT4MINUSOID;
     subExpr.opfuncid = INT4MINUSOID;
     subExpr.opresulttype = 23;
     subExpr.opretset = false;
-    subExpr.args = &subArgList;
+    subExpr.args = subArgs;
     subExpr.location = -1;
     
     // Setup (val1 + val2) * (val3 - val4)
-    mulArgList.head = &addExpr;  // Simplified
+    List* mulArgs = list_make2(
+        reinterpret_cast<void*>(&addExpr),
+        reinterpret_cast<void*>(&subExpr)
+    );
     mulExpr.node.type = T_OpExpr;
     mulExpr.opno = INT4MULOID;
     mulExpr.opfuncid = INT4MULOID;
     mulExpr.opresulttype = 23;
     mulExpr.opretset = false;
-    mulExpr.args = &mulArgList;
+    mulExpr.args = mulArgs;
     mulExpr.location = -1;
     
     // Setup TargetEntry
@@ -192,8 +208,9 @@ TEST_F(ArithmeticExpressionTest, TranslatesNestedArithmetic) {
     entry.resorigcol = 0;
     entry.resjunk = false;
     
-    targetList.head = &entry;
-    seqScan.plan.targetlist = &targetList;
+    // Create targetlist
+    List* targetList = list_make1(&entry);
+    seqScan.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -235,12 +252,10 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticWithConstants) {
     
     // Create targetlist with constants in arithmetic
     // Simulating: SELECT val1 * 2, val2 + 100, 10 - val3 FROM test
-    static List targetList{};
     static TargetEntry entries[3];
     static OpExpr opExprs[3];
     static Var vars[3];
     static Const consts[3];
-    static List argLists[3];
     
     // Setup variables
     for (int i = 0; i < 3; i++) {
@@ -274,34 +289,46 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticWithConstants) {
     consts[2].constbyval = true;
     consts[2].location = -1;
     
+    // Create targetlist as proper linked list
+    List* targetList = NIL;
+    
     // Setup val1 * 2
-    argLists[0].head = &vars[0];  // Simplified
+    List* args0 = list_make2(
+        reinterpret_cast<void*>(&vars[0]),
+        reinterpret_cast<void*>(&consts[0])
+    );
     opExprs[0].node.type = T_OpExpr;
     opExprs[0].opno = INT4MULOID;
     opExprs[0].opfuncid = INT4MULOID;
     opExprs[0].opresulttype = 23;
     opExprs[0].opretset = false;
-    opExprs[0].args = &argLists[0];
+    opExprs[0].args = args0;
     opExprs[0].location = -1;
     
     // Setup val2 + 100
-    argLists[1].head = &vars[1];  // Simplified
+    List* args1 = list_make2(
+        reinterpret_cast<void*>(&vars[1]),
+        reinterpret_cast<void*>(&consts[1])
+    );
     opExprs[1].node.type = T_OpExpr;
     opExprs[1].opno = INT4PLUSOID;
     opExprs[1].opfuncid = INT4PLUSOID;
     opExprs[1].opresulttype = 23;
     opExprs[1].opretset = false;
-    opExprs[1].args = &argLists[1];
+    opExprs[1].args = args1;
     opExprs[1].location = -1;
     
     // Setup 10 - val3
-    argLists[2].head = &consts[2];  // Simplified
+    List* args2 = list_make2(
+        reinterpret_cast<void*>(&consts[2]),
+        reinterpret_cast<void*>(&vars[2])
+    );
     opExprs[2].node.type = T_OpExpr;
     opExprs[2].opno = INT4MINUSOID;
     opExprs[2].opfuncid = INT4MINUSOID;
     opExprs[2].opresulttype = 23;
     opExprs[2].opretset = false;
-    opExprs[2].args = &argLists[2];
+    opExprs[2].args = args2;
     opExprs[2].location = -1;
     
     // Setup TargetEntries
@@ -315,10 +342,14 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticWithConstants) {
         entries[i].resorigtbl = 0;
         entries[i].resorigcol = 0;
         entries[i].resjunk = false;
+        
+        // Add to targetlist
+        PGX_INFO("Adding TargetEntry[" + std::to_string(i) + "] at address " + 
+                 std::to_string(reinterpret_cast<uintptr_t>(&entries[i])));
+        targetList = lappend(targetList, &entries[i]);
     }
     
-    targetList.head = &entries[0];
-    seqScan.plan.targetlist = &targetList;
+    seqScan.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);

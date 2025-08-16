@@ -51,12 +51,10 @@ TEST_F(ComplexPlanTreeTest, TranslatesWhereClause) {
     
     // Create WHERE clause conditions
     // Simulating: SELECT * FROM test WHERE id = 42 OR value > 10
-    static List qualList{};
     static BoolExpr orExpr;
     static OpExpr eqExpr, gtExpr;
     static Var idVar, valueVar;
     static Const const42, const10;
-    static List orArgList, eqArgList, gtArgList;
     
     // Setup id = 42 condition
     idVar.node.type = T_Var;
@@ -73,14 +71,15 @@ TEST_F(ComplexPlanTreeTest, TranslatesWhereClause) {
     const42.constbyval = true;
     const42.location = -1;
     
-    eqArgList.head = &idVar;
+    // Create list for equality expression arguments
+    List* eqArgList = list_make2(&idVar, &const42);
     
     eqExpr.node.type = T_OpExpr;
     eqExpr.opno = INT4EQOID;
     eqExpr.opfuncid = INT4EQOID;
     eqExpr.opresulttype = 16;  // BOOLOID
     eqExpr.opretset = false;
-    eqExpr.args = &eqArgList;
+    eqExpr.args = eqArgList;
     eqExpr.location = -1;
     
     // Setup value > 10 condition
@@ -98,26 +97,28 @@ TEST_F(ComplexPlanTreeTest, TranslatesWhereClause) {
     const10.constbyval = true;
     const10.location = -1;
     
-    gtArgList.head = &valueVar;
+    // Create list for greater-than expression arguments
+    List* gtArgList = list_make2(&valueVar, &const10);
     
     gtExpr.node.type = T_OpExpr;
     gtExpr.opno = INT4GTOID;
     gtExpr.opfuncid = INT4GTOID;
     gtExpr.opresulttype = 16;  // BOOLOID
     gtExpr.opretset = false;
-    gtExpr.args = &gtArgList;
+    gtExpr.args = gtArgList;
     gtExpr.location = -1;
     
     // Setup OR expression
-    orArgList.head = &eqExpr;
+    List* orArgList = list_make2(&eqExpr, &gtExpr);
     
     orExpr.node.type = T_BoolExpr;
     orExpr.boolop = OR_EXPR;
-    orExpr.args = &orArgList;
+    orExpr.args = orArgList;
     orExpr.location = -1;
     
-    qualList.head = &orExpr;
-    seqScan.plan.qual = &qualList;
+    // Create the qual list
+    List* qualList = list_make1(&orExpr);
+    seqScan.plan.qual = qualList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -160,12 +161,10 @@ TEST_F(ComplexPlanTreeTest, TranslatesComplexWhereConditions) {
     
     // Create complex WHERE clause
     // Simulating: WHERE (a > 5 AND b < 10) OR c = 20
-    static List qualList{};
     static BoolExpr mainOrExpr, andExpr;
     static OpExpr gtExpr, ltExpr, eqExpr;
     static Var aVar, bVar, cVar;
     static Const const5, const10, const20;
-    static List mainOrArgList, andArgList, gtArgList, ltArgList, eqArgList;
     
     // Setup a > 5
     aVar.node.type = T_Var;
@@ -182,14 +181,14 @@ TEST_F(ComplexPlanTreeTest, TranslatesComplexWhereConditions) {
     const5.constbyval = true;
     const5.location = -1;
     
-    gtArgList.head = &aVar;
+    List* gtArgList = list_make2(&aVar, &const5);
     
     gtExpr.node.type = T_OpExpr;
     gtExpr.opno = INT4GTOID;
     gtExpr.opfuncid = INT4GTOID;
     gtExpr.opresulttype = 16;  // BOOLOID
     gtExpr.opretset = false;
-    gtExpr.args = &gtArgList;
+    gtExpr.args = gtArgList;
     gtExpr.location = -1;
     
     // Setup b < 10
@@ -207,22 +206,22 @@ TEST_F(ComplexPlanTreeTest, TranslatesComplexWhereConditions) {
     const10.constbyval = true;
     const10.location = -1;
     
-    ltArgList.head = &bVar;
+    List* ltArgList = list_make2(&bVar, &const10);
     
     ltExpr.node.type = T_OpExpr;
     ltExpr.opno = INT4LTOID;
     ltExpr.opfuncid = INT4LTOID;
     ltExpr.opresulttype = 16;
     ltExpr.opretset = false;
-    ltExpr.args = &ltArgList;
+    ltExpr.args = ltArgList;
     ltExpr.location = -1;
     
     // Setup AND expression: (a > 5 AND b < 10)
-    andArgList.head = &gtExpr;
+    List* andArgList = list_make2(&gtExpr, &ltExpr);
     
     andExpr.node.type = T_BoolExpr;
     andExpr.boolop = AND_EXPR;
-    andExpr.args = &andArgList;
+    andExpr.args = andArgList;
     andExpr.location = -1;
     
     // Setup c = 20
@@ -240,26 +239,26 @@ TEST_F(ComplexPlanTreeTest, TranslatesComplexWhereConditions) {
     const20.constbyval = true;
     const20.location = -1;
     
-    eqArgList.head = &cVar;
+    List* eqArgList = list_make2(&cVar, &const20);
     
     eqExpr.node.type = T_OpExpr;
     eqExpr.opno = INT4EQOID;
     eqExpr.opfuncid = INT4EQOID;
     eqExpr.opresulttype = 16;
     eqExpr.opretset = false;
-    eqExpr.args = &eqArgList;
+    eqExpr.args = eqArgList;
     eqExpr.location = -1;
     
     // Setup main OR expression: (AND expr) OR (c = 20)
-    mainOrArgList.head = &andExpr;
+    List* mainOrArgList = list_make2(&andExpr, &eqExpr);
     
     mainOrExpr.node.type = T_BoolExpr;
     mainOrExpr.boolop = OR_EXPR;
-    mainOrExpr.args = &mainOrArgList;
+    mainOrExpr.args = mainOrArgList;
     mainOrExpr.location = -1;
     
-    qualList.head = &mainOrExpr;
-    seqScan.plan.qual = &qualList;
+    List* qualList = list_make1(&mainOrExpr);
+    seqScan.plan.qual = qualList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -303,7 +302,6 @@ TEST_F(ComplexPlanTreeTest, TranslatesSimpleProjection) {
     
     // Create targetlist with just column references
     // Simulating: SELECT id, name FROM test
-    static List targetList{};
     static TargetEntry entries[2];
     static Var idVar, nameVar;
     
@@ -349,8 +347,9 @@ TEST_F(ComplexPlanTreeTest, TranslatesSimpleProjection) {
     entries[1].resorigcol = 2;
     entries[1].resjunk = false;
     
-    targetList.head = &entries[0];
-    seqScan.plan.targetlist = &targetList;
+    // Create target list with two entries
+    List* targetList = list_make2(&entries[0], &entries[1]);
+    seqScan.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -393,12 +392,10 @@ TEST_F(ComplexPlanTreeTest, TranslatesProjectionWithExpression) {
     
     // Create targetlist with mixed column references and expressions
     // Simulating: SELECT id, val1 + val2 AS sum FROM test
-    static List targetList{};
     static TargetEntry entries[2];
     static Var idVar;
     static OpExpr sumExpr;
     static Var sumVars[2];
-    static List sumArgList;
     
     // Setup first entry: id column reference
     idVar.node.type = T_Var;
@@ -436,7 +433,8 @@ TEST_F(ComplexPlanTreeTest, TranslatesProjectionWithExpression) {
     sumVars[1].vartypmod = -1;
     sumVars[1].location = -1;
     
-    sumArgList.head = &sumVars[0];  // Simplified list
+    // Create argument list for sum expression
+    List* sumArgList = list_make2(&sumVars[0], &sumVars[1]);
     
     sumExpr.node.type = T_OpExpr;
     sumExpr.opno = INT4PLUSOID;
@@ -445,7 +443,7 @@ TEST_F(ComplexPlanTreeTest, TranslatesProjectionWithExpression) {
     sumExpr.opretset = false;
     sumExpr.opcollid = 0;
     sumExpr.inputcollid = 0;
-    sumExpr.args = &sumArgList;
+    sumExpr.args = sumArgList;
     sumExpr.location = -1;
     
     entries[1].node.type = T_TargetEntry;
@@ -457,8 +455,9 @@ TEST_F(ComplexPlanTreeTest, TranslatesProjectionWithExpression) {
     entries[1].resorigcol = 0;  // Computed column
     entries[1].resjunk = false;
     
-    targetList.head = &entries[0];  // Simplified list linking
-    seqScan.plan.targetlist = &targetList;
+    // Create target list with two entries
+    List* targetList = list_make2(&entries[0], &entries[1]);
+    seqScan.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);

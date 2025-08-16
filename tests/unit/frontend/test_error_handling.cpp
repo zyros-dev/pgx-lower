@@ -259,7 +259,6 @@ TEST_F(ErrorHandlingTest, HandlesInvalidExpressionType) {
     seqScan.scan.scanrelid = 1;
     
     // Create targetlist with invalid expression
-    static List targetList{};
     static TargetEntry entry;
     static Node invalidExpr;
     
@@ -274,8 +273,8 @@ TEST_F(ErrorHandlingTest, HandlesInvalidExpressionType) {
     entry.resorigcol = 0;
     entry.resjunk = false;
     
-    targetList.head = &entry;
-    seqScan.plan.targetlist = &targetList;
+    List* targetList = list_make1(&entry);
+    seqScan.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);

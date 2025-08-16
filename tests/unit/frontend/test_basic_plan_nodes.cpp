@@ -238,11 +238,9 @@ TEST_F(BasicPlanNodeTest, TranslatesAggregateFunctions) {
     
     // Create targetlist with aggregate functions
     // Simulating: SELECT SUM(amount), COUNT(*), AVG(value), MIN(id), MAX(id) FROM test
-    static List targetList{};
     static TargetEntry entries[5];
     static FuncExpr funcExprs[5];
     static Var aggVars[4];  // For SUM, AVG, MIN, MAX (COUNT(*) has no args)
-    static List argLists[4];
     
     // Setup aggregate function OIDs
     Oid aggFuncOids[] = {
@@ -255,6 +253,7 @@ TEST_F(BasicPlanNodeTest, TranslatesAggregateFunctions) {
     const char* aggNames[] = {"sum", "count", "avg", "min", "max"};
     
     // Setup variables for aggregate arguments
+    List* argLists[4];
     for (int i = 0; i < 4; i++) {
         aggVars[i].node.type = T_Var;
         aggVars[i].varno = 1;
@@ -263,7 +262,7 @@ TEST_F(BasicPlanNodeTest, TranslatesAggregateFunctions) {
         aggVars[i].vartypmod = -1;
         aggVars[i].location = -1;
         
-        argLists[i].head = &aggVars[i];
+        argLists[i] = list_make1(&aggVars[i]);
     }
     
     // Setup aggregate function expressions
@@ -276,7 +275,7 @@ TEST_F(BasicPlanNodeTest, TranslatesAggregateFunctions) {
         funcExprs[i].funcformat = 0;
         funcExprs[i].funccollid = 0;
         funcExprs[i].inputcollid = 0;
-        funcExprs[i].args = (i == 1) ? nullptr : &argLists[i < 2 ? i : i - 1];  // COUNT(*) has no args
+        funcExprs[i].args = (i == 1) ? nullptr : argLists[i < 2 ? i : i - 1];  // COUNT(*) has no args
         funcExprs[i].location = -1;
         
         entries[i].node.type = T_TargetEntry;
@@ -289,8 +288,12 @@ TEST_F(BasicPlanNodeTest, TranslatesAggregateFunctions) {
         entries[i].resjunk = false;
     }
     
-    targetList.head = &entries[0];
-    agg.plan.targetlist = &targetList;
+    // Create target list with all aggregate entries
+    List* targetList = list_make1(&entries[0]);
+    for (int i = 1; i < 5; i++) {
+        targetList = lappend(targetList, &entries[i]);
+    }
+    agg.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&agg.plan);
@@ -357,12 +360,10 @@ TEST_F(BasicPlanNodeTest, TranslatesGroupByWithAggregates) {
     agg.grpCollations = grpCollations;
     
     // Create targetlist: SELECT department, SUM(salary) FROM employees GROUP BY department
-    static List targetList{};
     static TargetEntry entries[2];
     static Var deptVar;
     static FuncExpr sumFunc;
     static Var salaryVar;
-    static List sumArgList;
     
     // First entry: department column (GROUP BY column)
     deptVar.node.type = T_Var;
@@ -389,7 +390,7 @@ TEST_F(BasicPlanNodeTest, TranslatesGroupByWithAggregates) {
     salaryVar.vartypmod = -1;
     salaryVar.location = -1;
     
-    sumArgList.head = &salaryVar;
+    List* sumArgList = list_make1(&salaryVar);
     
     sumFunc.node.type = T_FuncExpr;
     sumFunc.funcid = 2108;  // SUM(int4)
@@ -399,7 +400,7 @@ TEST_F(BasicPlanNodeTest, TranslatesGroupByWithAggregates) {
     sumFunc.funcformat = 0;
     sumFunc.funccollid = 0;
     sumFunc.inputcollid = 0;
-    sumFunc.args = &sumArgList;
+    sumFunc.args = sumArgList;
     sumFunc.location = -1;
     
     entries[1].node.type = T_TargetEntry;
@@ -411,8 +412,8 @@ TEST_F(BasicPlanNodeTest, TranslatesGroupByWithAggregates) {
     entries[1].resorigcol = 0;
     entries[1].resjunk = false;
     
-    targetList.head = &entries[0];
-    agg.plan.targetlist = &targetList;
+    List* targetList = list_make2(&entries[0], &entries[1]);
+    agg.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&agg.plan);
