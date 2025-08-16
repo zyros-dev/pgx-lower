@@ -322,5 +322,3 @@ void mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"
-#define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.cpp.inc"

@@ -22,10 +22,12 @@ def RelAlg_Dialect : Dialect {
     let name = "relalg";
     let summary = "A dialect for relational algebra";
     let cppNamespace = "::mlir::relalg";
+    let useDefaultTypePrinterParser = 1;
 
     let extraClassDeclaration = [{
         private:
             ColumnManager columnManager;
+            void registerTypes();
         public:
             ColumnManager& getColumnManager(){
                 return columnManager;
