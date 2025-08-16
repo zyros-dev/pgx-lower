@@ -12,6 +12,7 @@
 #include "mlir/Target/LLVMIR/Dialect/All.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Conversion/StandardToLLVM/StandardToLLVM.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
 #include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
@@ -21,6 +22,7 @@
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "execution/logging.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/ExecutionEngine/Orc/LLJIT.h"  // For DynamicLibrarySearchGenerator
 #include "mlir/Parser/Parser.h"
 #include <fstream>
 #include <dlfcn.h>  // For dlopen, dlsym, dlclose
@@ -102,134 +104,72 @@ protected:
 };
 
 TEST_F(JITExecutionStandaloneTest, ExecuteMinimalFunction) {
-    PGX_INFO("🧪 TEST: Executing minimal function with ExecutionEngine");
-    
+    // Register LLVM dialect translation FIRST (from working version!)
     registerAllDialects();
     
-    // Create the simplest possible function that calls our test marker
+    // Reset test state
+    g_test_execution_counter = 0;
+    g_test_function_executed = false;
+    
+    // WORKING VERSION APPROACH: Use func dialect with llvm.emit_c_interface!
     builder.setInsertionPointToEnd(module.getBody());
     
-    // Declare the test marker function
-    auto testMarkerFuncType = builder.getFunctionType({}, {});
+    // External function declaration using func dialect (working July 30 approach!)
+    auto voidType = builder.getNoneType();
+    auto testMarkerFuncType = mlir::FunctionType::get(&context, {}, {});
     auto testMarkerFunc = builder.create<mlir::func::FuncOp>(
-        builder.getUnknownLoc(), 
-        "test_execution_marker", 
-        testMarkerFuncType);
-    testMarkerFunc.setPublic(); // External function - needs to be public for JIT linking
+        builder.getUnknownLoc(), "test_execution_marker", testMarkerFuncType);
+    testMarkerFunc->setAttr("llvm.emit_c_interface", mlir::UnitAttr::get(&context));
     
-    // Create main function
-    auto mainFuncType = builder.getFunctionType({}, {});
+    // Main function using func dialect
     auto mainFunc = builder.create<mlir::func::FuncOp>(
-        builder.getUnknownLoc(), "main", mainFuncType);
+        builder.getUnknownLoc(), "main", testMarkerFuncType);
+    mainFunc->setAttr("llvm.emit_c_interface", mlir::UnitAttr::get(&context));
     
     auto* block = mainFunc.addEntryBlock();
     builder.setInsertionPointToEnd(block);
+    builder.create<mlir::func::CallOp>(builder.getUnknownLoc(), testMarkerFunc, mlir::ValueRange{});
+    builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc(), mlir::ValueRange{});
     
-    // Call the test marker to prove execution (and ONLY that - remove other operations)
-    auto testMarkerSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), "test_execution_marker");
-    builder.create<mlir::func::CallOp>(
-        builder.getUnknownLoc(),
-        testMarkerSymbol,
-        mlir::TypeRange{}, // void return type
-        mlir::ValueRange{});
-    
-    // SIMPLIFIED: Just return immediately after the call
-    builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
-    
-    PGX_INFO("📋 Created function with test marker call and arithmetic");
-    
-    // Lower to LLVM IR
+    // Need to lower func dialect to LLVM first (working version did this!)
     mlir::PassManager pm(&context);
-    pm.addPass(mlir::pgx_lower::createStandardToLLVMPass());
-    
-    ASSERT_TRUE(mlir::succeeded(pm.run(module))) << "Standard→LLVM lowering failed";
-    PGX_INFO("✅ Standard→LLVM lowering succeeded");
-    
-    // Dump the LLVM IR before JIT execution for analysis
-    PGX_INFO("📋 DUMPING LLVM IR BEFORE JIT EXECUTION:");
-    std::string irStr;
-    llvm::raw_string_ostream irStream(irStr);
-    module.print(irStream);
-    irStream.flush();
-    
-    // Write to file for detailed analysis
-    std::ofstream irFile("/tmp/jit_execution_ir.mlir");
-    if (irFile.is_open()) {
-        irFile << irStr;
-        irFile.close();
-        PGX_INFO("✅ Full LLVM IR written to /tmp/jit_execution_ir.mlir");
+    pm.addPass(mlir::createConvertFuncToLLVMPass());
+    if (mlir::failed(pm.run(module))) {
+        FAIL() << "Failed to lower func dialect to LLVM";
     }
     
-    // Print key parts to console
-    PGX_INFO("=== LLVM IR PREVIEW (first 2000 chars) ===");
-    std::string preview = irStr.substr(0, 2000);
-    std::cout << preview << std::endl;
-    if (irStr.length() > 2000) {
-        PGX_INFO("...(truncated, see full IR in /tmp/jit_execution_ir.mlir)");
-    }
-    PGX_INFO("=== END LLVM IR PREVIEW ===");
-    
-    // Create ExecutionEngine
+    // Create ExecutionEngine WITH OPTIMIZER (from working July 30 version!)
+    auto optPipeline = mlir::makeOptimizingTransformer(0, 0, nullptr);
     mlir::ExecutionEngineOptions engineOptions;
+    engineOptions.transformer = optPipeline;  // CRITICAL: This was in working version!
     engineOptions.jitCodeGenOptLevel = llvm::CodeGenOptLevel::None;
     
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-    if (!maybeEngine) {
-        PGX_ERROR("ExecutionEngine creation failed: " + llvm::toString(maybeEngine.takeError()));
-        ASSERT_TRUE(false) << "ExecutionEngine creation failed";
-    }
-    
+    ASSERT_TRUE(static_cast<bool>(maybeEngine)) << "ExecutionEngine creation failed";
     auto engine = std::move(*maybeEngine);
-    PGX_INFO("✅ ExecutionEngine created successfully");
     
-    // Register our test runtime function
+    // Register the external function (both with and without C interface wrapper)
     engine->registerSymbols([](llvm::orc::MangleAndInterner interner) {
         llvm::orc::SymbolMap symbolMap;
-        
+        // Register both the raw function and the C interface wrapper
         symbolMap[interner("test_execution_marker")] = {
             llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(test_execution_marker)),
             llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
         };
-        
+        symbolMap[interner("_mlir_ciface_test_execution_marker")] = {
+            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(test_execution_marker)),
+            llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
+        };
         return symbolMap;
     });
     
-    PGX_INFO("🔧 Registered test execution marker function");
-    
-    // Verify function lookup works
-    auto lookupResult = engine->lookup("main");
-    EXPECT_TRUE(static_cast<bool>(lookupResult)) << "Main function lookup should succeed";
-    
-    auto testMarkerLookup = engine->lookup("test_execution_marker");
-    EXPECT_TRUE(static_cast<bool>(testMarkerLookup)) << "Test marker function lookup should succeed";
-    
-    if (lookupResult && testMarkerLookup) {
-        PGX_INFO("✅ Both functions found in ExecutionEngine");
-    }
-    
-    // Execute using invoke() method
-    PGX_INFO("🎯 CRITICAL TEST: Calling engine->invoke('main')");
-    PGX_INFO("Pre-execution: counter=" + std::to_string(g_test_execution_counter) + 
-             ", executed=" + std::to_string(g_test_function_executed));
-    
-    auto invokeResult = engine->invoke("main");
-    
-    PGX_INFO("Post-execution: counter=" + std::to_string(g_test_execution_counter) + 
-             ", executed=" + std::to_string(g_test_function_executed));
-    PGX_INFO("Invoke result: " + std::to_string(static_cast<bool>(invokeResult)));
+    // Execute (invoke uses _mlir_ciface wrapper)
+    auto invokeResult = engine->invokePacked("main");
+    EXPECT_FALSE(static_cast<bool>(invokeResult)) << "invoke('main') should succeed";
     
     // Test results
-    EXPECT_TRUE(static_cast<bool>(invokeResult)) << "invoke('main') should succeed";
-    EXPECT_TRUE(g_test_function_executed) << "Test marker function should have been called";
-    EXPECT_GT(g_test_execution_counter, 0) << "Execution counter should be incremented";
-    
-    if (g_test_function_executed) {
-        PGX_INFO("🎉 SUCCESS: JIT function execution works in unit test environment!");
-        PGX_INFO("This proves ExecutionEngine can execute functions when properly configured");
-    } else {
-        PGX_ERROR("❌ FAILURE: JIT function execution failed even in unit test environment");
-        PGX_ERROR("This suggests a fundamental issue with our ExecutionEngine usage");
-    }
+    EXPECT_TRUE(g_test_function_executed) << "External function should have been called";
+    EXPECT_GT(g_test_execution_counter, 0) << "Counter should be incremented";
 }
 
 TEST_F(JITExecutionStandaloneTest, ExecuteWithRuntimeFunctions) {
