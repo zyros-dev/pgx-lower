@@ -23,17 +23,27 @@ extern "C" {
     typedef int16 AttrNumber;
     typedef unsigned int Oid;
     
-    // Mock plan nodes for unit testing
+    // Mock plan nodes for unit testing - must match PostgreSQL exactly!
     struct Plan {
         int type;               // NodeTag
         double startup_cost;    // Cost - estimated startup cost
-        double total_cost;      // Cost - total cost
+        double total_cost;      // Cost - total cost  
         double plan_rows;       // estimated number of rows
         int plan_width;         // average row width in bytes
+        
+        // FIXED: Added fields that were missing
+        bool parallel_aware;    // engage parallel-aware logic?
+        bool parallel_safe;     // OK to use as part of parallel plan?
+        bool async_capable;     // engage asynchronous-capable logic?
+        int plan_node_id;       // unique across entire final plan tree
+        
         List* targetlist;       // target list to be computed
         List* qual;             // qual conditions
         Plan* lefttree;         // left input plan tree
         Plan* righttree;        // right input plan tree
+        List* initPlan;         // Init Plan nodes (uncorrelated subselects)
+        void* extParam;         // external params affecting this node (Bitmapset*)
+        void* allParam;         // all params affecting this node (Bitmapset*)
     };
     
     struct SeqScan {
@@ -45,11 +55,13 @@ extern "C" {
     
     struct Agg {
         Plan plan;
-        int aggstrategy;
+        int aggstrategy;      // AggStrategy enum
+        int aggsplit;         // AggSplit enum - FIXED: was missing this field!
         int numCols;
         AttrNumber* grpColIdx;
         Oid* grpOperators;
         Oid* grpCollations;
+        // Note: Additional fields exist in real PostgreSQL but not needed for tests
     };
     
     struct Sort {
@@ -63,8 +75,10 @@ extern "C" {
     
     struct Limit {
         Plan plan;
-        Node* limitCount;
-        Node* limitOffset;
+        Node* limitOffset;    // FIXED: Swapped order to match PostgreSQL
+        Node* limitCount;     // OFFSET comes before COUNT in PostgreSQL
+        int limitOption;      // FIXED: Added missing field
+        int uniqNumCols;      // FIXED: Added missing field for LIMIT DISTINCT support
     };
     
     struct Gather {
@@ -78,7 +92,7 @@ extern "C" {
     struct PlannedStmt {
         int type;               // NodeTag - must be first!
         int commandType;        // CmdType enum
-        uint32_t queryId;       // query identifier
+        uint64_t queryId;       // query identifier - FIXED: uint64_t to match PostgreSQL
         bool hasReturning;      // is it insert|update|delete RETURNING?
         bool hasModifyingCTE;   // has insert|update|delete in WITH?
         bool canSetTag;         // do I set the command result tag?
@@ -245,11 +259,16 @@ protected:
     // Create a SeqScan node with default values
     SeqScan* createSeqScan(int scanrelid = 1, double total_cost = 10.0, double plan_rows = 100) {
         SeqScan* seqScan = new SeqScan{};
+        memset(seqScan, 0, sizeof(SeqScan));  // Clear all memory first
         seqScan->plan.type = T_SeqScan;
         seqScan->plan.startup_cost = 0.0;
         seqScan->plan.total_cost = total_cost;
         seqScan->plan.plan_rows = plan_rows;
         seqScan->plan.plan_width = 32;
+        seqScan->plan.parallel_aware = false;
+        seqScan->plan.parallel_safe = true;
+        seqScan->plan.async_capable = false;
+        seqScan->plan.plan_node_id = 0;
         seqScan->plan.targetlist = nullptr;
         seqScan->plan.qual = nullptr;
         seqScan->plan.lefttree = nullptr;
@@ -262,16 +281,22 @@ protected:
     Agg* createAggNode(Plan* child, int aggstrategy, int numCols, AttrNumber* grpColIdx = nullptr,
                        double total_cost = 20.0, double plan_rows = 10) {
         Agg* agg = new Agg{};
+        memset(agg, 0, sizeof(Agg));  // Clear all memory first
         agg->plan.type = T_Agg;
         agg->plan.startup_cost = 0.0;
         agg->plan.total_cost = total_cost;
         agg->plan.plan_rows = plan_rows;
         agg->plan.plan_width = 8;
+        agg->plan.parallel_aware = false;
+        agg->plan.parallel_safe = true;
+        agg->plan.async_capable = false;
+        agg->plan.plan_node_id = 0;
         agg->plan.targetlist = nullptr;
         agg->plan.qual = nullptr;
         agg->plan.lefttree = child;
         agg->plan.righttree = nullptr;
         agg->aggstrategy = aggstrategy;
+        agg->aggsplit = 0;  // AGGSPLIT_SIMPLE - no split
         agg->numCols = numCols;
         agg->grpColIdx = grpColIdx;
         agg->grpOperators = nullptr;
@@ -290,6 +315,10 @@ protected:
         sort->plan.total_cost = total_cost;
         sort->plan.plan_rows = plan_rows;
         sort->plan.plan_width = 32;
+        sort->plan.parallel_aware = false;
+        sort->plan.parallel_safe = true;
+        sort->plan.async_capable = false;
+        sort->plan.plan_node_id = 0;
         sort->plan.targetlist = nullptr;
         sort->plan.qual = nullptr;
         sort->plan.lefttree = child;
@@ -306,11 +335,16 @@ protected:
     Limit* createLimitNode(Plan* child, int limitCount,
                           double total_cost = 5.0, double plan_rows = -1) {
         Limit* limit = new Limit{};
+        memset(limit, 0, sizeof(Limit));  // Clear all memory first
         limit->plan.type = T_Limit;
         limit->plan.startup_cost = 0.0;
         limit->plan.total_cost = total_cost;
         limit->plan.plan_rows = (plan_rows == -1) ? limitCount : plan_rows;
         limit->plan.plan_width = 32;
+        limit->plan.parallel_aware = false;
+        limit->plan.parallel_safe = true;
+        limit->plan.async_capable = false;
+        limit->plan.plan_node_id = 0;
         limit->plan.targetlist = nullptr;
         limit->plan.qual = nullptr;
         limit->plan.lefttree = child;
@@ -324,8 +358,10 @@ protected:
         limitConst->constisnull = false;
         limitConst->constbyval = true;
         
+        limit->limitOffset = nullptr;  // OFFSET comes first in PostgreSQL
         limit->limitCount = reinterpret_cast<Node*>(limitConst);
-        limit->limitOffset = nullptr;
+        limit->limitOption = 0;  // LIMIT_OPTION_COUNT - default option
+        limit->uniqNumCols = 0;  // Not using LIMIT DISTINCT
         return limit;
     }
     
@@ -333,11 +369,16 @@ protected:
     Gather* createGatherNode(Plan* child, int num_workers = 2,
                             double total_cost = 25.0, double plan_rows = 10) {
         Gather* gather = new Gather{};
+        memset(gather, 0, sizeof(Gather));  // Clear all memory first
         gather->plan.type = T_Gather;
         gather->plan.startup_cost = 0.0;
         gather->plan.total_cost = total_cost;
         gather->plan.plan_rows = plan_rows;
         gather->plan.plan_width = 8;
+        gather->plan.parallel_aware = true;  // Gather is parallel-aware
+        gather->plan.parallel_safe = true;
+        gather->plan.async_capable = false;
+        gather->plan.plan_node_id = 0;
         gather->plan.targetlist = nullptr;
         gather->plan.qual = nullptr;
         gather->plan.lefttree = child;
@@ -495,7 +536,7 @@ protected:
     // Helper to properly initialize PlannedStmt with all required fields
     PlannedStmt createPlannedStmt(Plan* planTree) {
         PlannedStmt stmt{};
-        stmt.type = T_PlannedStmt;
+        stmt.type = 0;  // Set to 0 for unit tests (different from production T_PlannedStmt=326)
         stmt.commandType = 1;  // CMD_SELECT
         stmt.queryId = 0;
         stmt.hasReturning = false;
@@ -544,6 +585,7 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggNode) {
     
     // Create Agg node with SeqScan as child
     Agg* agg = createAggNode(&seqScan->plan, AGG_PLAIN, 1, grpCols);
+    
     
     // Create mock PlannedStmt using helper
     PlannedStmt stmt = createPlannedStmt(&agg->plan);
@@ -598,6 +640,11 @@ TEST_F(PlanNodeTranslationTest, TranslatesLimitNode) {
     
     // Create Limit node with SeqScan as child
     Limit* limit = createLimitNode(&seqScan->plan, 20);
+    
+    // Debug: Check sizes
+    PGX_INFO("sizeof(Plan): " + std::to_string(sizeof(Plan)));
+    PGX_INFO("offsetof(Limit, limitOffset): " + std::to_string(offsetof(Limit, limitOffset)));
+    PGX_INFO("offsetof(Limit, limitCount): " + std::to_string(offsetof(Limit, limitCount)));
     
     // Create mock PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&limit->plan);
