@@ -159,6 +159,24 @@ protected:
     
     std::unique_ptr<mlir::MLIRContext> context;
     std::unique_ptr<postgresql_ast::PostgreSQLASTTranslator> translator;
+    
+    // Helper to properly initialize PlannedStmt with all required fields
+    PlannedStmt createPlannedStmt(Plan* planTree) {
+        PlannedStmt stmt{};
+        stmt.type = T_PlannedStmt;
+        stmt.commandType = 1;  // CMD_SELECT
+        stmt.queryId = 0;
+        stmt.hasReturning = false;
+        stmt.hasModifyingCTE = false;
+        stmt.canSetTag = true;
+        stmt.transientPlan = false;
+        stmt.dependsOnRole = false;
+        stmt.parallelModeNeeded = false;
+        stmt.jitFlags = 0;
+        stmt.planTree = planTree;
+        stmt.rtable = nullptr;
+        return stmt;
+    }
 };
 
 TEST_F(PlanNodeTranslationTest, TranslatesSeqScanNode) {
@@ -177,37 +195,8 @@ TEST_F(PlanNodeTranslationTest, TranslatesSeqScanNode) {
     seqScan.plan.righttree = nullptr;
     seqScan.scan.scanrelid = 1;
     
-    // Create mock PlannedStmt with proper pointer alignment
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.queryId = 0;
-    stmt.hasReturning = false;
-    stmt.hasModifyingCTE = false;
-    stmt.canSetTag = true;
-    stmt.transientPlan = false;
-    stmt.dependsOnRole = false;
-    stmt.parallelModeNeeded = false;
-    stmt.jitFlags = 0;
-    
-    // Debug the address calculation and structure layout
-    printf("DEBUG TEST: seqScan address: %p\n", (void*)&seqScan);
-    printf("DEBUG TEST: seqScan.plan address: %p\n", (void*)&seqScan.plan);
-    printf("DEBUG TEST: seqScan.plan.type: %d\n", seqScan.plan.type);
-    
-    // Print struct offsets for debugging  
-    printf("DEBUG TEST: PlannedStmt size: %zu\n", sizeof(PlannedStmt));
-    printf("DEBUG TEST: planTree offset: %zu\n", offsetof(PlannedStmt, planTree));
-    printf("DEBUG TEST: rtable offset: %zu\n", offsetof(PlannedStmt, rtable));
-    
-    // Ensure the seqScan.plan is properly cast to Plan*
-    stmt.planTree = &seqScan.plan;  // Direct address, no reinterpret_cast needed
-    stmt.rtable = nullptr;
-    
-    printf("DEBUG TEST: stmt.planTree after assignment: %p\n", (void*)stmt.planTree);
-    printf("DEBUG TEST: Checking stmt.planTree field by address: %p\n", 
-           (void*)*(Plan**)((char*)&stmt + offsetof(PlannedStmt, planTree)));
-    printf("DEBUG TEST: About to call translateQuery with stmt at: %p\n", (void*)&stmt);
+    // Create mock PlannedStmt using helper
+    PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
     
     // Translate
     auto module = translator->translateQuery(&stmt);
@@ -218,6 +207,10 @@ TEST_F(PlanNodeTranslationTest, TranslatesSeqScanNode) {
 
 TEST_F(PlanNodeTranslationTest, TranslatesAggNode) {
     PGX_INFO("Testing Agg node translation");
+    
+    // Debug structure offsets
+    printf("DEBUG TEST: sizeof(Plan): %zu\n", sizeof(Plan));
+    printf("DEBUG TEST: offsetof(Plan, lefttree): %zu\n", offsetof(Plan, lefttree));
     
     // Create child SeqScan node
     SeqScan seqScan{};
@@ -241,21 +234,17 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggNode) {
     agg.plan.plan_width = 8;
     agg.plan.targetlist = nullptr;
     agg.plan.qual = nullptr;
-    agg.plan.lefttree = reinterpret_cast<Plan*>(&seqScan);
+    agg.plan.lefttree = &seqScan.plan;
     agg.plan.righttree = nullptr;
     agg.aggstrategy = AGG_PLAIN;
     agg.numCols = 1;
     
-    // Setup group by columns
-    AttrNumber grpCols[] = {1};
+    // Setup group by columns - must be static for pointer validity
+    static AttrNumber grpCols[] = {1};
     agg.grpColIdx = grpCols;
     
-    // Create mock PlannedStmt
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = reinterpret_cast<Plan*>(&agg);
-    stmt.rtable = nullptr;
+    // Create mock PlannedStmt using helper
+    PlannedStmt stmt = createPlannedStmt(&agg.plan);
     
     // Translate
     auto module = translator->translateQuery(&stmt);
@@ -292,24 +281,20 @@ TEST_F(PlanNodeTranslationTest, TranslatesSortNode) {
     sort.plan.plan_width = 32;
     sort.plan.targetlist = nullptr;
     sort.plan.qual = nullptr;
-    sort.plan.lefttree = reinterpret_cast<Plan*>(&seqScan);
+    sort.plan.lefttree = &seqScan.plan;
     sort.plan.righttree = nullptr;
     sort.numCols = 1;
     
-    // Setup sort columns
-    AttrNumber sortCols[] = {1};
+    // Setup sort columns - must be static for pointer validity
+    static AttrNumber sortCols[] = {1};
     sort.sortColIdx = sortCols;
-    Oid sortOps[] = {97}; // < operator for ascending
+    static Oid sortOps[] = {97}; // < operator for ascending
     sort.sortOperators = sortOps;
-    bool nullsFirst[] = {false};
+    static bool nullsFirst[] = {false};
     sort.nullsFirst = nullsFirst;
     
     // Create mock PlannedStmt
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = reinterpret_cast<Plan*>(&sort);
-    stmt.rtable = nullptr;
+    PlannedStmt stmt = createPlannedStmt(&sort.plan);
     
     // Translate
     auto module = translator->translateQuery(&stmt);
@@ -354,17 +339,13 @@ TEST_F(PlanNodeTranslationTest, TranslatesLimitNode) {
     limit.plan.plan_width = 32;
     limit.plan.targetlist = nullptr;
     limit.plan.qual = nullptr;
-    limit.plan.lefttree = reinterpret_cast<Plan*>(&seqScan);
+    limit.plan.lefttree = &seqScan.plan;
     limit.plan.righttree = nullptr;
     limit.limitCount = reinterpret_cast<Node*>(&limitConst);
     limit.limitOffset = nullptr;
     
     // Create mock PlannedStmt
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = reinterpret_cast<Plan*>(&limit);
-    stmt.rtable = nullptr;
+    PlannedStmt stmt = createPlannedStmt(&limit.plan);
     
     // Translate
     auto module = translator->translateQuery(&stmt);
@@ -392,11 +373,7 @@ TEST_F(PlanNodeTranslationTest, HandlesInvalidPlanNode) {
     invalidPlan.righttree = nullptr;
     
     // Create mock PlannedStmt
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = &invalidPlan;
-    stmt.rtable = nullptr;
+    PlannedStmt stmt = createPlannedStmt(&invalidPlan);
     
     // Translate - should handle gracefully
     auto module = translator->translateQuery(&stmt);
@@ -410,11 +387,7 @@ TEST_F(PlanNodeTranslationTest, HandlesNullPlanTree) {
     PGX_INFO("Testing null plan tree handling");
     
     // Create PlannedStmt with null plan tree
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = nullptr;
-    stmt.rtable = nullptr;
+    PlannedStmt stmt = createPlannedStmt(nullptr);
     
     // Translate - should handle gracefully
     auto module = translator->translateQuery(&stmt);
@@ -440,11 +413,7 @@ TEST_F(PlanNodeTranslationTest, HandlesUnsupportedPlanType) {
     unsupportedPlan.righttree = nullptr;
     
     // Create mock PlannedStmt
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = &unsupportedPlan;
-    stmt.rtable = nullptr;
+    PlannedStmt stmt = createPlannedStmt(&unsupportedPlan);
     
     // Translate - should handle gracefully
     auto module = translator->translateQuery(&stmt);
@@ -464,6 +433,9 @@ TEST_F(PlanNodeTranslationTest, TranslatesGatherNode) {
     agg.plan.righttree = nullptr;
     agg.aggstrategy = AGG_HASHED;
     agg.numCols = 0; // No group by for this test
+    agg.grpColIdx = nullptr;
+    agg.grpOperators = nullptr;
+    agg.grpCollations = nullptr;
     
     // Create SeqScan as child of Agg
     SeqScan seqScan{};
@@ -471,7 +443,7 @@ TEST_F(PlanNodeTranslationTest, TranslatesGatherNode) {
     seqScan.plan.lefttree = nullptr;
     seqScan.plan.righttree = nullptr;
     seqScan.scan.scanrelid = 1;
-    agg.plan.lefttree = reinterpret_cast<Plan*>(&seqScan);
+    agg.plan.lefttree = &seqScan.plan;
     
     // Create Gather node with Agg as child
     Gather gather{};
@@ -482,18 +454,14 @@ TEST_F(PlanNodeTranslationTest, TranslatesGatherNode) {
     gather.plan.plan_width = 8;
     gather.plan.targetlist = nullptr;
     gather.plan.qual = nullptr;
-    gather.plan.lefttree = reinterpret_cast<Plan*>(&agg);
+    gather.plan.lefttree = &agg.plan;
     gather.plan.righttree = nullptr;
     gather.num_workers = 2;
     gather.single_copy = false;
     gather.invisible = false;
     
     // Create mock PlannedStmt
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = reinterpret_cast<Plan*>(&gather);
-    stmt.rtable = nullptr;
+    PlannedStmt stmt = createPlannedStmt(&gather.plan);
     
     // Translate
     auto module = translator->translateQuery(&stmt);
@@ -531,18 +499,16 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggWithoutGroupBy) {
     agg.plan.plan_width = 8;
     agg.plan.targetlist = nullptr;
     agg.plan.qual = nullptr;
-    agg.plan.lefttree = reinterpret_cast<Plan*>(&seqScan);
+    agg.plan.lefttree = &seqScan.plan;
     agg.plan.righttree = nullptr;
     agg.aggstrategy = AGG_PLAIN;
     agg.numCols = 0; // No GROUP BY columns
     agg.grpColIdx = nullptr;
+    agg.grpOperators = nullptr;
+    agg.grpCollations = nullptr;
     
-    // Create mock PlannedStmt
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = reinterpret_cast<Plan*>(&agg);
-    stmt.rtable = nullptr;
+    // Create mock PlannedStmt using helper
+    PlannedStmt stmt = createPlannedStmt(&agg.plan);
     
     // Translate
     auto module = translator->translateQuery(&stmt);
@@ -579,24 +545,20 @@ TEST_F(PlanNodeTranslationTest, TranslatesSortWithMultipleColumns) {
     sort.plan.plan_width = 32;
     sort.plan.targetlist = nullptr;
     sort.plan.qual = nullptr;
-    sort.plan.lefttree = reinterpret_cast<Plan*>(&seqScan);
+    sort.plan.lefttree = &seqScan.plan;
     sort.plan.righttree = nullptr;
     sort.numCols = 3;
     
-    // Setup multiple sort columns
-    AttrNumber sortCols[] = {1, 3, 2};
-    sort.sortColIdx = sortCols;
-    Oid sortOps[] = {97, 521, 97}; // <, >, < (mix of ascending/descending)
-    sort.sortOperators = sortOps;
-    bool nullsFirst[] = {false, true, false};
-    sort.nullsFirst = nullsFirst;
+    // Setup multiple sort columns - must be static for pointer validity
+    static AttrNumber sortCols2[] = {1, 3, 2};
+    sort.sortColIdx = sortCols2;
+    static Oid sortOps2[] = {97, 521, 97}; // <, >, < (mix of ascending/descending)
+    sort.sortOperators = sortOps2;
+    static bool nullsFirst2[] = {false, true, false};
+    sort.nullsFirst = nullsFirst2;
     
     // Create mock PlannedStmt
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = reinterpret_cast<Plan*>(&sort);
-    stmt.rtable = nullptr;
+    PlannedStmt stmt = createPlannedStmt(&sort.plan);
     
     // Translate
     auto module = translator->translateQuery(&stmt);
@@ -627,11 +589,11 @@ TEST_F(PlanNodeTranslationTest, TranslatesComplexPlanTree) {
     sort.plan.plan_width = 32;
     sort.plan.targetlist = nullptr;
     sort.plan.qual = nullptr;
-    sort.plan.lefttree = reinterpret_cast<Plan*>(&seqScan);
+    sort.plan.lefttree = &seqScan.plan;
     sort.plan.righttree = nullptr;
     sort.numCols = 1;
-    AttrNumber sortCols[] = {2};
-    sort.sortColIdx = sortCols;
+    static AttrNumber sortCols3[] = {2};
+    sort.sortColIdx = sortCols3;
     
     // Create a Const node for limit
     Const limitConst{};
@@ -649,17 +611,13 @@ TEST_F(PlanNodeTranslationTest, TranslatesComplexPlanTree) {
     limit.plan.plan_width = 32;
     limit.plan.targetlist = nullptr;
     limit.plan.qual = nullptr;
-    limit.plan.lefttree = reinterpret_cast<Plan*>(&sort);
+    limit.plan.lefttree = &sort.plan;
     limit.plan.righttree = nullptr;
     limit.limitCount = reinterpret_cast<Node*>(&limitConst);
     limit.limitOffset = nullptr;
     
     // Create mock PlannedStmt
-    PlannedStmt stmt{};
-    stmt.type = T_PlannedStmt;  // Must set the node type!
-    stmt.commandType = 1;  // CMD_SELECT
-    stmt.planTree = reinterpret_cast<Plan*>(&limit);
-    stmt.rtable = nullptr;
+    PlannedStmt stmt = createPlannedStmt(&limit.plan);
     
     // Translate
     auto module = translator->translateQuery(&stmt);
