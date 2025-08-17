@@ -1641,6 +1641,14 @@ auto PostgreSQLASTTranslator::translateArithmeticOp(Oid opOid, ::mlir::Value lhs
                 builder_->getUnknownLoc(), lhs, rhs
             );
             
+        // Modulo operators
+        case 529:  // int4 % int4 (INT4MODOID)
+        case 690:  // int8 % int8
+            PGX_DEBUG("Translating modulo operator (OID " + std::to_string(opOid) + ")");
+            return builder_->create<mlir::arith::RemSIOp>(
+                builder_->getUnknownLoc(), lhs, rhs
+            );
+            
         default:
             return nullptr;
     }
