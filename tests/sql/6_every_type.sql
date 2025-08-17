@@ -61,4 +61,4 @@ with time zone, CURRENT_TIMESTAMP + (i || ' hours'):: interval, CURRENT_TIMESTAM
 FROM generate_series(1, 3) AS s(i);
 
 SELECT id, small_int, integer_col, big_int, boolean_col, text_col 
-FROM test LIMIT 3;
+FROM test;
