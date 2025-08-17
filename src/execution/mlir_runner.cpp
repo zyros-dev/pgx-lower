@@ -397,10 +397,18 @@ static void safeModulePrint(mlir::ModuleOp module, const std::string& label) {
         
         PGX_INFO(label + ": Module contains " + std::to_string(totalOps) + " operations");
         
-        // Temporarily disable module printing to avoid crashes
-        // TODO: Re-enable once we understand why module->print() crashes PostgreSQL
-        PGX_WARNING(label + ": Module printing temporarily disabled to avoid PostgreSQL crashes");
-        PGX_INFO(label + ": Module statistics - " + std::to_string(totalOps) + " operations");
+        // Print the complete module for debugging
+        PGX_INFO(label + ": Printing complete MLIR module");
+        try {
+            std::string moduleStr;
+            llvm::raw_string_ostream stream(moduleStr);
+            module.print(stream);
+            PGX_INFO(label + ": Complete module:\n" + moduleStr);
+        } catch (const std::exception& e) {
+            PGX_WARNING(label + ": Exception during module printing: " + std::string(e.what()));
+        } catch (...) {
+            PGX_WARNING(label + ": Unknown exception during module printing");
+        }
         
         // Walk and print operation types instead of full module
         try {
