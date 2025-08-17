@@ -528,24 +528,29 @@ static bool validateModuleState(::mlir::ModuleOp module, const std::string& phas
 // Run Phase 3a: RelAlg→DB+DSA+Util lowering
 static bool runPhase3a(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
+    context.disableMultithreading();
     PGX_INFO("Phase 3a: Running RelAlg→DB lowering");
     
     ::mlir::PassManager pm(&context);
     pm.enableVerifier(true);  // Enable verification for all transformations
-    
+    PGX_INFO("Phase 1");
+
     // Verify module before lowering
     if (mlir::failed(mlir::verify(module))) {
         PGX_ERROR("Phase 3a: Module verification failed before lowering");
         return false;
     }
-    
+    PGX_INFO("Phase 2");
+
     mlir::pgx_lower::createRelAlgToDBPipeline(pm, true);
-    
+    PGX_INFO("Phase 3");
+
     if (mlir::failed(pm.run(module))) {
         PGX_ERROR("Phase 3a failed: RelAlg→DB lowering error");
         return false;
     }
-    
+    PGX_INFO("Phase 4");
+
     // Verify module after lowering
     if (mlir::failed(mlir::verify(module))) {
         PGX_ERROR("Phase 3a: Module verification failed after lowering");
