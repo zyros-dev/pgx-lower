@@ -117,3 +117,12 @@ add_executable(test_opexpr_translation
 target_include_directories(test_opexpr_translation PRIVATE ${FRONTEND_TEST_INCLUDES})
 target_link_libraries(test_opexpr_translation ${FRONTEND_TEST_LIBS})
 add_test(NAME OpExprTranslationTest COMMAND test_opexpr_translation)
+
+# Test for multi-column basetable translation (reproduces Test 4 bug)
+add_executable(test_multi_column_basetable
+    test_multi_column_basetable.cpp
+    ${FRONTEND_TEST_SOURCES}
+)
+target_include_directories(test_multi_column_basetable PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_link_libraries(test_multi_column_basetable ${FRONTEND_TEST_LIBS})
+add_test(NAME MultiColumnBaseTableTest COMMAND test_multi_column_basetable)
