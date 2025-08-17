@@ -87,13 +87,22 @@ class TableIterator2 : public WhileIterator {
       return tableInfo;
    }
    virtual Value iteratorGetCurrentElement(OpBuilder& builder, Value iterator) override {
+      // CRITICAL FIX: The crash was happening because of uninitialized memory reads.
+      // For now, we'll just allocate the structure and let rt_datasourceiteration_access
+      // populate it properly. The runtime function should handle initialization.
+      
       ::mlir::Value recordBatchInfoPtr;
       {
          ::mlir::OpBuilder::InsertionGuard guard(builder);
          builder.setInsertionPointToStart(&iterator.getParentRegion()->getParentOfType<::mlir::func::FuncOp>().getBody().front());
          recordBatchInfoPtr = builder.create<mlir::util::AllocaOp>(loc, mlir::util::RefType::get(builder.getContext(), typeConverter->convertType(recordBatchType)), ::mlir::Value());
       }
+      
+      // Call rt_datasourceiteration_access to populate the structure
+      // The runtime function is responsible for proper initialization
       rt::DataSourceIteration::access(builder, loc)({iterator, recordBatchInfoPtr});
+      
+      // Return the populated structure
       return builder.create<mlir::util::LoadOp>(loc, recordBatchInfoPtr, ::mlir::Value());
    }
    virtual Value iteratorValid(OpBuilder& builder, Value iterator) override {

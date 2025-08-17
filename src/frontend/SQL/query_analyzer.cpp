@@ -56,7 +56,7 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
     
     // ✅ ENABLE MLIR COMPILATION: Test if pipeline works for basic SELECT+SeqScan queries
     bool compatible = isSelectStatement && requiresSeqScan && hasCompatibleTypes && 
-                     !requiresJoin && !requiresAggregation && !requiresSort;
+                     !requiresJoin && !requiresAggregation && !requiresSort && !requiresLimit;
     
     if (compatible) {
         PGX_INFO("🎯 MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");

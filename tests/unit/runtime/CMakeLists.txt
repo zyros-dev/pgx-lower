@@ -38,3 +38,20 @@ target_link_libraries(test_tuple_access_helpers
 )
 
 add_test(NAME TupleAccessHelpersTest COMMAND test_tuple_access_helpers)
+
+# MLIR memory layout tests
+add_executable(test_mlir_memory_layout test_mlir_memory_layout.cpp)
+
+target_include_directories(test_mlir_memory_layout PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src
+    ${GTEST_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_mlir_memory_layout
+    gtest
+    gtest_main
+)
+
+add_test(NAME MLIRMemoryLayoutTest COMMAND test_mlir_memory_layout)
