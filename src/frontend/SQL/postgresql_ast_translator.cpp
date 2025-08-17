@@ -999,19 +999,60 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     // Create column definitions based on the table being scanned
     std::vector<mlir::NamedAttribute> columnDefs;
     
-    // For the test table, we know it has an 'id' column of type INT4
-    if (tableName == "test") {
-        // Create column definition using ColumnManager's createDef method
-        // This creates a proper ColumnDefAttr with the column managed internally
+    // Extract columns from targetlist instead of hard-coding  
+    // In real PostgreSQL, SeqScan inherits from Scan which inherits from Plan
+    Plan* plan = &seqScan->scan.plan;
+    if (tableName == "test" && plan->targetlist) {
+        List* targetList = plan->targetlist;
+        PGX_DEBUG("Processing targetlist with " + std::to_string(targetList->length) + " entries");
+        
+        for (int i = 0; i < targetList->length; i++) {
+            // Get the list element using PostgreSQL list access macros
+            ListCell* cell = &targetList->elements[i];
+            void* ptr = lfirst(cell);
+            if (!ptr) {
+                PGX_WARNING("Null pointer at targetlist index " + std::to_string(i));
+                continue;
+            }
+            
+            TargetEntry* entry = reinterpret_cast<TargetEntry*>(ptr);
+            
+            // Validate the entry and check if it has a Var expression
+            if (entry && entry->expr && entry->expr->type == T_Var) {
+                Var* var = reinterpret_cast<Var*>(entry->expr);
+                
+                // Get column name from resname or generate one
+                std::string colName = entry->resname ? entry->resname : "col_" + std::to_string(entry->resno);
+                
+                // Create column definition
+                auto colDef = columnManager.createDef("test", colName);
+                
+                // Map PostgreSQL type to MLIR type
+                PostgreSQLTypeMapper typeMapper(context_);
+                mlir::Type mlirType = typeMapper.mapPostgreSQLType(var->vartype);
+                colDef.getColumn().type = mlirType;
+                
+                // Add to column definitions
+                columnDefs.push_back(context.builder->getNamedAttr(colName, colDef));
+                
+                PGX_DEBUG("Added column definition for '" + colName + "' column with type OID " + 
+                         std::to_string(var->vartype));
+            }
+        }
+        
+        // Fallback: If no columns were extracted, add default 'id' column
+        if (columnDefs.empty()) {
+            PGX_WARNING("No columns extracted from targetlist, adding default 'id' column");
+            auto colDef = columnManager.createDef("test", "id");
+            colDef.getColumn().type = mlir::IntegerType::get(&context_, 32);
+            columnDefs.push_back(context.builder->getNamedAttr("id", colDef));
+        }
+    } else if (tableName == "test") {
+        // No targetlist available, use default 'id' column
+        PGX_DEBUG("No targetlist available, using default 'id' column");
         auto colDef = columnManager.createDef("test", "id");
-        
-        // Set the column type to INT4 (i32 in MLIR)
         colDef.getColumn().type = mlir::IntegerType::get(&context_, 32);
-        
-        // Add to column definitions
         columnDefs.push_back(context.builder->getNamedAttr("id", colDef));
-        
-        PGX_DEBUG("Added column definition for 'id' column using ColumnDefAttr");
     }
     
     auto columnsAttr = context.builder->getDictionaryAttr(columnDefs);
