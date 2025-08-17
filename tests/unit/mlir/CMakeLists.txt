@@ -165,6 +165,38 @@ add_test(NAME LLVMPassesSimpleTest COMMAND test_llvm_passes_simple)
 
 # DELETED: test_jit_execution_standalone - file removed as part of Stage 5 cleanup
 
+# Create a separate crash test that only needs RelAlg→DB conversion
+add_executable(test_relalg_crash
+    ../conversion/test_relalg_lowering_crash.cpp
+)
+
+target_include_directories(test_relalg_crash PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src/execution
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_BINARY_DIR}/include/pgx_lower
+)
+
+target_link_libraries(test_relalg_crash
+    gtest gtest_main
+    MLIRRelAlgDialect
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    MLIRRelAlgToDB
+    pgx_lower_logging
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRPass
+    MLIRIR
+    MLIRTransforms
+    MLIRParser
+    mlir-support
+)
+
+add_test(NAME RelAlgCrashTest COMMAND test_relalg_crash)
+
 # Create mlir_unit_test executable that runs all unit tests
 add_executable(mlir_unit_test
     test_standard_to_llvm_pass.cpp
