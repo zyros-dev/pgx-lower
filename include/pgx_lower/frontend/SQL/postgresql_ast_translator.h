@@ -125,6 +125,11 @@ private:
     auto canHandleExpression(Node* expr) -> bool;
     auto logExpressionInfo(Node* expr, const char* context) -> void;
     
+    // PostgreSQL schema access helpers
+    auto getTableNameFromRTE(int varno) -> std::string;
+    auto getColumnNameFromSchema(int varno, int varattno) -> std::string;
+    auto getAllTableColumnsFromSchema(int scanrelid) -> std::vector<std::pair<std::string, Oid>>;
+    
     // AST node type validation
     auto isArithmeticOperator(const char* opName) -> bool;
     auto isComparisonOperator(const char* opName) -> bool;
