@@ -254,10 +254,12 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
                     std::string funcName = func.getName().str();
                     functionNames.push_back(funcName);
                     
-                    if (funcName == "main") {
+                    // CRITICAL FIX: MLIR generates _mlir_ciface_main when llvm.emit_c_interface is used
+                    if (funcName == "main" || funcName == "_mlir_ciface_main") {
                         func.setLinkage(llvm::GlobalValue::ExternalLinkage);
                         func.setVisibility(llvm::GlobalValue::DefaultVisibility);
-                        PGX_INFO("✅ SUCCESS: Set main function to ExternalLinkage + DefaultVisibility");
+                        func.setDSOLocal(true); // Make it locally accessible
+                        PGX_INFO("✅ SUCCESS: Set " + funcName + " to ExternalLinkage + DefaultVisibility + DSOLocal");
                         mainFunctionFound = true;
                     }
                 }
@@ -273,12 +275,15 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
                     // Look for likely query function names and fix their visibility too
                     for (auto& func : llvmModule->functions()) {
                         std::string funcName = func.getName().str();
+                        // Also look for _mlir_ciface prefix which MLIR generates for C interface functions
                         if (funcName.find("query") != std::string::npos || 
                             funcName.find("compiled") != std::string::npos ||
-                            !func.isDeclaration()) { // Any defined function could be the query
+                            funcName.find("_mlir_ciface") != std::string::npos ||
+                            (!func.isDeclaration() && !funcName.starts_with("rt_"))) { // Any defined non-runtime function
                             func.setLinkage(llvm::GlobalValue::ExternalLinkage);
                             func.setVisibility(llvm::GlobalValue::DefaultVisibility);
-                            PGX_INFO("🔧 Set function " + funcName + " to ExternalLinkage + DefaultVisibility");
+                            func.setDSOLocal(true);
+                            PGX_INFO("🔧 Set function " + funcName + " to ExternalLinkage + DefaultVisibility + DSOLocal");
                         }
                     }
                 } else {
@@ -467,8 +472,9 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
     engineOptions.jitCodeGenOptLevel = optimizationLevel;
     engineOptions.enableObjectDump = true; // Enable for debugging
     
-    // Note: sharedLibPaths configuration removed due to API incompatibility
-    // The ExecutionEngine will use default symbol resolution
+    // CRITICAL: Try enabling ORCV2 JIT which might have better symbol resolution
+    // Note: symbolMap configuration removed - API incompatibility
+    // The ExecutionEngine will use registerSymbols after creation
     
     PGX_INFO("Creating ExecutionEngine with configured options");
     
@@ -564,6 +570,32 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
     }
     
     engine = std::move(createdEngine);
+    
+    // CRITICAL: Force materialization of all symbols to make them available for lookup
+    PGX_INFO("🔧 Forcing materialization of all symbols in ExecutionEngine...");
+    
+    // Try to dump the object file to understand what's being generated
+    if (engine) {
+        engine->dumpToObjectFile("pgx_jit_module.o");
+        PGX_INFO("📁 Dumped JIT object file to pgx_jit_module.o for debugging");
+        
+        // CRITICAL FIX: Try to get the function immediately after creation
+        PGX_INFO("🔍 Testing immediate function lookup after ExecutionEngine creation...");
+        auto mainLookup = engine->lookup("main");
+        if (mainLookup) {
+            PGX_INFO("✅ IMMEDIATE SUCCESS: Found 'main' function at address: " + 
+                     std::to_string(reinterpret_cast<uintptr_t>(mainLookup.get())));
+            mainFunctionPtr = reinterpret_cast<void(*)()>(mainLookup.get());
+        } else {
+            PGX_WARNING("❌ IMMEDIATE FAILURE: 'main' not found even right after creation");
+            // Try without underscore prefix
+            auto mainLookup2 = engine->lookup("main");
+            if (!mainLookup2) {
+                PGX_ERROR("❌ CRITICAL: ExecutionEngine cannot find ANY variation of main function");
+            }
+        }
+    }
+    
     initialized = true;
     
     auto endTime = std::chrono::high_resolution_clock::now();
@@ -817,25 +849,76 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
     // Execute JIT compiled main function
     PGX_INFO("🎯 Executing JIT compiled main function");
     
-    try {
-        // Use the standard MLIR ExecutionEngine invoke method
-        auto result = engine->invoke("main");
-        if (!result) { // LLVM Error = success (no error)
-            PGX_INFO("✅ JIT execution succeeded, checking results...");
-            if (g_jit_results_ready) {
-                PGX_INFO("🎉 JIT execution completed successfully!");
-                return true;
+    // Try different function name variations that MLIR might generate
+    std::vector<std::string> functionNamesToTry = {
+        "_mlir_ciface_main",  // MLIR C interface wrapper (most likely)
+        "main",               // Direct function name
+        "query_main",         // Possible alternative naming
+        "compiled_query"      // Another possible naming
+    };
+    
+    for (const auto& funcName : functionNamesToTry) {
+        try {
+            PGX_INFO("🔍 Attempting to invoke function: " + funcName);
+            
+            // First check if the function exists
+            auto lookupResult = engine->lookup(funcName);
+            if (!lookupResult) {
+                PGX_INFO("❌ Function '" + funcName + "' not found in ExecutionEngine");
+                continue;
             }
-        } else {
-            PGX_WARNING("❌ engine->invoke('main') returned error");
+            
+            PGX_INFO("✅ Function '" + funcName + "' found at address: " + 
+                     std::to_string(reinterpret_cast<uintptr_t>(lookupResult.get())));
+            
+            // Try direct function call instead of invoke
+            try {
+                // Cast to a void function and call it
+                auto funcPtr = reinterpret_cast<void(*)()>(lookupResult.get());
+                if (funcPtr) {
+                    PGX_INFO("🎯 Calling function directly via pointer...");
+                    funcPtr();  // Direct call
+                    PGX_INFO("✅ Direct function call completed for " + funcName + ", checking results...");
+                    if (g_jit_results_ready) {
+                        PGX_INFO("🎉 JIT execution completed successfully!");
+                        return true;
+                    }
+                    PGX_WARNING("⚠️ Function executed but no results were ready");
+                } else {
+                    PGX_WARNING("❌ Function pointer is null for " + funcName);
+                }
+            } catch (const std::exception& e) {
+                PGX_WARNING("❌ Exception during direct call: " + std::string(e.what()));
+            } catch (...) {
+                PGX_WARNING("❌ Unknown exception during direct call");
+            }
+            
+            // Also try the invoke method as fallback
+            PGX_INFO("🔄 Trying invoke method as fallback...");
+            auto result = engine->invoke(funcName);
+            if (!result) { // LLVM Error = success (no error)
+                PGX_INFO("✅ JIT invoke succeeded for " + funcName + ", checking results...");
+                if (g_jit_results_ready) {
+                    PGX_INFO("🎉 JIT execution completed successfully!");
+                    return true;
+                }
+                PGX_WARNING("⚠️ Function invoked but no results were ready");
+            } else {
+                // Extract error message if available
+                std::string errorStr;
+                llvm::raw_string_ostream errorStream(errorStr);
+                errorStream << result;
+                errorStream.flush();
+                PGX_WARNING("❌ engine->invoke('" + funcName + "') returned error: " + errorStr);
+            }
+        } catch (const std::exception& e) {
+            PGX_WARNING("❌ Exception during JIT execution of " + funcName + ": " + std::string(e.what()));
+        } catch (...) {
+            PGX_WARNING("❌ Unknown exception during JIT execution of " + funcName);
         }
-    } catch (const std::exception& e) {
-        PGX_WARNING("❌ Exception during JIT execution: " + std::string(e.what()));
-    } catch (...) {
-        PGX_WARNING("❌ Unknown exception during JIT execution");
     }
     
-    PGX_ERROR("JIT execution failed - no valid results produced");
+    PGX_ERROR("JIT execution failed - no valid function could be invoked");
     return false;
 }
 

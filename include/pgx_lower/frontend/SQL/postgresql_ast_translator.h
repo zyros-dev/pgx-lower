@@ -2,9 +2,11 @@
 #define POSTGRESQL_AST_TRANSLATOR_H
 
 #include <memory>
+#include <vector>
 
 // Forward declarations to avoid include issues
 namespace mlir {
+class Attribute;
 class MLIRContext;
 class ModuleOp;
 class Value;
@@ -78,6 +80,22 @@ private:
     // Expression processing helpers
     auto applySelectionFromQual(::mlir::Operation* inputOp, List* qual, struct TranslationContext& context) -> ::mlir::Operation*;
     auto applyProjectionFromTargetList(::mlir::Operation* inputOp, List* targetList, struct TranslationContext& context) -> ::mlir::Operation*;
+    
+    // Helper functions for code organization
+    auto validatePlanTree(Plan* planTree) -> bool;
+    auto extractTargetListColumns(struct TranslationContext& context,
+                                 std::vector<::mlir::Attribute>& columnRefAttrs,
+                                 std::vector<::mlir::Attribute>& columnNameAttrs) -> bool;
+    auto processTargetEntry(struct TranslationContext& context,
+                           List* tlist,
+                           int index,
+                           std::vector<::mlir::Attribute>& columnRefAttrs,
+                           std::vector<::mlir::Attribute>& columnNameAttrs) -> bool;
+    auto determineColumnType(struct TranslationContext& context, Expr* expr) -> ::mlir::Type;
+    auto createMaterializeOp(struct TranslationContext& context, ::mlir::Value tupleStream) -> ::mlir::Operation*;
+    auto extractOpExprOperands(OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool;
+    auto translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
+    auto translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
     
     // Tuple iteration and result processing
     auto generateTupleIterationLoop(::mlir::OpBuilder& builder, ::mlir::Location location, 

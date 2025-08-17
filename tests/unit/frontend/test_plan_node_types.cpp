@@ -22,6 +22,10 @@ extern "C" {
     typedef int16_t int16;
     typedef int16 AttrNumber;
     typedef unsigned int Oid;
+    typedef int NodeTag;
+    
+    // Define T_List early since it's needed by list functions
+    #define T_List 407
     
     // Mock plan nodes for unit testing - must match PostgreSQL exactly!
     struct Plan {
@@ -104,9 +108,90 @@ extern "C" {
         List* rtable;           // list of RangeTblEntry nodes
     };
     
-    struct List {
-        void* head;
+    // PostgreSQL 17 List compatibility
+    struct ListCell {
+        union {
+            void* ptr_value;
+            int int_value;
+            unsigned int oid_value;
+        } data;
     };
+    
+    struct List {
+        NodeTag type;
+        int length;
+        int max_length;
+        ListCell* elements;
+        ListCell* initial_elements;
+    };
+    
+    // PostgreSQL ListCell access macros for PostgreSQL 17+
+    #define lfirst(lc) ((lc)->data.ptr_value)
+    #define lfirst_int(lc) ((lc)->data.int_value)
+    #define lfirst_oid(lc) ((lc)->data.oid_value)
+    
+    // Helper function to create a list with one element (PostgreSQL 17 style)
+    static inline List* list_make1(void* x1) {
+        List* list = new List{};
+        list->type = T_List;
+        list->length = 1;
+        list->max_length = 4;  // Initial allocation
+        
+        // Allocate elements array
+        list->elements = new ListCell[list->max_length];
+        list->elements[0].data.ptr_value = x1;
+        
+        list->initial_elements = nullptr;  // Not using static allocation
+        return list;
+    }
+    
+    // Helper function to create a list with two elements
+    static inline List* list_make2(void* x1, void* x2) {
+        List* list = new List{};
+        list->type = T_List;
+        list->length = 2;
+        list->max_length = 4;  // Initial allocation
+        
+        // Allocate elements array
+        list->elements = new ListCell[list->max_length];
+        list->elements[0].data.ptr_value = x1;
+        list->elements[1].data.ptr_value = x2;
+        
+        list->initial_elements = nullptr;  // Not using static allocation
+        return list;
+    }
+    
+    // Helper function to append to a list (PostgreSQL 17 style)
+    static inline List* lappend(List* list, void* datum) {
+        if (list == nullptr) {
+            return list_make1(datum);
+        }
+        
+        // Check if we need to grow the array
+        if (list->length >= list->max_length) {
+            int new_max = list->max_length * 2;
+            ListCell* new_elements = new ListCell[new_max];
+            
+            // Copy existing elements
+            for (int i = 0; i < list->length; i++) {
+                new_elements[i] = list->elements[i];
+            }
+            
+            // Free old array if it wasn't the initial static allocation
+            if (list->elements != list->initial_elements) {
+                delete[] list->elements;
+            }
+            
+            list->elements = new_elements;
+            list->max_length = new_max;
+        }
+        
+        // Add the new element
+        list->elements[list->length].data.ptr_value = datum;
+        list->length++;
+        
+        return list;
+    }
     
     struct Node {
         int type;
@@ -858,11 +943,9 @@ TEST_F(PlanNodeTranslationTest, TranslatesArithmeticExpressions) {
     
     // Create targetlist with arithmetic expressions
     // Simulating: SELECT val1 + val2, val1 - val2, val1 * val2, val1 / val2 FROM test
-    static List targetList{};
     static TargetEntry entries[4];
     static OpExpr opExprs[4];
     static Var vars[8];
-    static List argLists[4];
     
     // Setup variables for columns
     for (int i = 0; i < 8; i++) {
@@ -883,8 +966,8 @@ TEST_F(PlanNodeTranslationTest, TranslatesArithmeticExpressions) {
     const char* opNames[] = {"add", "sub", "mul", "div"};
     
     for (int i = 0; i < 4; i++) {
-        // Setup argument lists (val1, val2)
-        argLists[i].head = &vars[i * 2];  // Simplified list structure
+        // Create argument lists properly (val1, val2)
+        List* argList = list_make2(&vars[i * 2], &vars[i * 2 + 1]);
         
         // Setup OpExpr for each arithmetic operation
         opExprs[i].node.type = T_OpExpr;
@@ -894,7 +977,7 @@ TEST_F(PlanNodeTranslationTest, TranslatesArithmeticExpressions) {
         opExprs[i].opretset = false;
         opExprs[i].opcollid = 0;
         opExprs[i].inputcollid = 0;
-        opExprs[i].args = &argLists[i];
+        opExprs[i].args = argList;
         opExprs[i].location = -1;
         
         // Setup TargetEntry
@@ -908,8 +991,12 @@ TEST_F(PlanNodeTranslationTest, TranslatesArithmeticExpressions) {
         entries[i].resjunk = false;
     }
     
-    targetList.head = &entries[0];  // Simplified list linking
-    seqScan.plan.targetlist = &targetList;
+    // Create target list properly
+    List* targetList = list_make1(&entries[0]);
+    for (int i = 1; i < 4; i++) {
+        targetList = lappend(targetList, &entries[i]);
+    }
+    seqScan.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -955,11 +1042,9 @@ TEST_F(PlanNodeTranslationTest, TranslatesComparisonExpressions) {
     
     // Create WHERE clause with comparison expressions
     // Simulating: WHERE val1 = 10, val1 < val2, val1 >= 5
-    static List qualList{};
     static OpExpr compExprs[3];
     static Var compVars[3];
     static Const compConsts[2];
-    static List compArgLists[3];
     
     // Setup first comparison: val1 = 10
     compVars[0].node.type = T_Var;
@@ -978,7 +1063,8 @@ TEST_F(PlanNodeTranslationTest, TranslatesComparisonExpressions) {
     compConsts[0].constbyval = true;
     compConsts[0].location = -1;
     
-    compArgLists[0].head = &compVars[0];  // Simplified
+    // Create argument list using list_make2
+    List* compArgList0 = list_make2(&compVars[0], &compConsts[0]);
     
     compExprs[0].node.type = T_OpExpr;
     compExprs[0].opno = INT4EQOID;
@@ -987,7 +1073,7 @@ TEST_F(PlanNodeTranslationTest, TranslatesComparisonExpressions) {
     compExprs[0].opretset = false;
     compExprs[0].opcollid = 0;
     compExprs[0].inputcollid = 0;
-    compExprs[0].args = &compArgLists[0];
+    compExprs[0].args = compArgList0;
     compExprs[0].location = -1;
     
     // Setup second comparison: val1 < val2
@@ -1005,14 +1091,15 @@ TEST_F(PlanNodeTranslationTest, TranslatesComparisonExpressions) {
     compVars[2].vartypmod = -1;
     compVars[2].location = -1;
     
-    compArgLists[1].head = &compVars[1];  // Simplified
+    // Create argument list using list_make2
+    List* compArgList1 = list_make2(&compVars[1], &compVars[2]);
     
     compExprs[1].node.type = T_OpExpr;
     compExprs[1].opno = INT4LTOID;
     compExprs[1].opfuncid = INT4LTOID;
     compExprs[1].opresulttype = 16;  // BOOLOID
     compExprs[1].opretset = false;
-    compExprs[1].args = &compArgLists[1];
+    compExprs[1].args = compArgList1;
     compExprs[1].location = -1;
     
     // Setup third comparison: val1 >= 5
@@ -1023,18 +1110,22 @@ TEST_F(PlanNodeTranslationTest, TranslatesComparisonExpressions) {
     compConsts[1].constbyval = true;
     compConsts[1].location = -1;
     
-    compArgLists[2].head = &compVars[0];  // Reuse val1
+    // Create argument list using list_make2
+    List* compArgList2 = list_make2(&compVars[0], &compConsts[1]);
     
     compExprs[2].node.type = T_OpExpr;
     compExprs[2].opno = INT4GEOID;
     compExprs[2].opfuncid = INT4GEOID;
     compExprs[2].opresulttype = 16;  // BOOLOID
     compExprs[2].opretset = false;
-    compExprs[2].args = &compArgLists[2];
+    compExprs[2].args = compArgList2;
     compExprs[2].location = -1;
     
-    qualList.head = &compExprs[0];  // Simplified list
-    seqScan.plan.qual = &qualList;
+    // Create qual list with all expressions using list_make1 and lappend
+    List* qualList = list_make1(&compExprs[0]);
+    qualList = lappend(qualList, &compExprs[1]);
+    qualList = lappend(qualList, &compExprs[2]);
+    seqScan.plan.qual = qualList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -1079,13 +1170,10 @@ TEST_F(PlanNodeTranslationTest, TranslatesLogicalExpressions) {
     
     // Create WHERE clause with logical expressions
     // Simulating: WHERE (val1 > 5 AND val2 < 10) OR (val1 = 1 OR val2 = 2)
-    static List qualList{};
     static BoolExpr boolExprs[3];  // Main OR, left AND, right OR
     static OpExpr condExprs[4];    // val1 > 5, val2 < 10, val1 = 1, val2 = 2
     static Var logicVars[4];
     static Const logicConsts[4];
-    static List boolArgLists[3];
-    static List condArgLists[4];
     
     // Setup variables and constants
     for (int i = 0; i < 4; i++) {
@@ -1108,43 +1196,50 @@ TEST_F(PlanNodeTranslationTest, TranslatesLogicalExpressions) {
     logicConsts[2].constvalue = 1;   // for val1 = 1
     logicConsts[3].constvalue = 2;   // for val2 = 2
     
-    // Setup comparison expressions
+    // Setup comparison expressions with proper Lists
     Oid compOps[] = {INT4GTOID, INT4LTOID, INT4EQOID, INT4EQOID};
+    List* condArgLists[4];
+    
+    // Create argument lists for each comparison
+    condArgLists[0] = list_make2(&logicVars[0], &logicConsts[0]);  // val1 > 5
+    condArgLists[1] = list_make2(&logicVars[1], &logicConsts[1]);  // val2 < 10
+    condArgLists[2] = list_make2(&logicVars[2], &logicConsts[2]);  // val1 = 1
+    condArgLists[3] = list_make2(&logicVars[3], &logicConsts[3]);  // val2 = 2
+    
     for (int i = 0; i < 4; i++) {
-        condArgLists[i].head = &logicVars[i];  // Simplified
-        
         condExprs[i].node.type = T_OpExpr;
         condExprs[i].opno = compOps[i];
         condExprs[i].opfuncid = compOps[i];
         condExprs[i].opresulttype = 16;  // BOOLOID
         condExprs[i].opretset = false;
-        condExprs[i].args = &condArgLists[i];
+        condExprs[i].args = condArgLists[i];
         condExprs[i].location = -1;
     }
     
     // Setup AND expression: val1 > 5 AND val2 < 10
-    boolArgLists[0].head = &condExprs[0];  // Simplified list
+    List* boolArgList0 = list_make2(&condExprs[0], &condExprs[1]);
     boolExprs[0].node.type = T_BoolExpr;
     boolExprs[0].boolop = AND_EXPR;
-    boolExprs[0].args = &boolArgLists[0];
+    boolExprs[0].args = boolArgList0;
     boolExprs[0].location = -1;
     
     // Setup OR expression: val1 = 1 OR val2 = 2
-    boolArgLists[1].head = &condExprs[2];  // Simplified list
+    List* boolArgList1 = list_make2(&condExprs[2], &condExprs[3]);
     boolExprs[1].node.type = T_BoolExpr;
     boolExprs[1].boolop = OR_EXPR;
-    boolExprs[1].args = &boolArgLists[1];
+    boolExprs[1].args = boolArgList1;
     boolExprs[1].location = -1;
     
     // Setup main OR expression: (AND expr) OR (OR expr)
-    boolArgLists[2].head = &boolExprs[0];  // Simplified list
+    List* boolArgList2 = list_make2(&boolExprs[0], &boolExprs[1]);
     boolExprs[2].node.type = T_BoolExpr;
     boolExprs[2].boolop = OR_EXPR;
-    boolExprs[2].args = &boolArgLists[2];
+    boolExprs[2].args = boolArgList2;
     boolExprs[2].location = -1;
     
-    qualList.head = &boolExprs[2];  // Main OR expression
-    seqScan.plan.qual = &qualList;
+    // Create qual list properly using list_make1
+    List* qualList = list_make1(&boolExprs[2]);
+    seqScan.plan.qual = qualList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -1188,12 +1283,10 @@ TEST_F(PlanNodeTranslationTest, TranslatesProjectionWithExpression) {
     
     // Create targetlist with mixed column references and expressions
     // Simulating: SELECT id, val1 + val2 AS sum FROM test
-    static List targetList{};
     static TargetEntry entries[2];
     static Var idVar;
     static OpExpr sumExpr;
     static Var sumVars[2];
-    static List sumArgList;
     
     // Setup first entry: id column reference
     idVar.node.type = T_Var;
@@ -1231,7 +1324,8 @@ TEST_F(PlanNodeTranslationTest, TranslatesProjectionWithExpression) {
     sumVars[1].vartypmod = -1;
     sumVars[1].location = -1;
     
-    sumArgList.head = &sumVars[0];  // Simplified list
+    // Create argument list using list_make2
+    List* sumArgList = list_make2(&sumVars[0], &sumVars[1]);
     
     sumExpr.node.type = T_OpExpr;
     sumExpr.opno = INT4PLUSOID;
@@ -1240,7 +1334,7 @@ TEST_F(PlanNodeTranslationTest, TranslatesProjectionWithExpression) {
     sumExpr.opretset = false;
     sumExpr.opcollid = 0;
     sumExpr.inputcollid = 0;
-    sumExpr.args = &sumArgList;
+    sumExpr.args = sumArgList;
     sumExpr.location = -1;
     
     entries[1].node.type = T_TargetEntry;
@@ -1252,8 +1346,9 @@ TEST_F(PlanNodeTranslationTest, TranslatesProjectionWithExpression) {
     entries[1].resorigcol = 0;  // Computed column
     entries[1].resjunk = false;
     
-    targetList.head = &entries[0];  // Simplified list linking
-    seqScan.plan.targetlist = &targetList;
+    // Create target list using list_make2
+    List* targetList = list_make2(&entries[0], &entries[1]);
+    seqScan.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -1313,11 +1408,9 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggregateFunctions) {
     
     // Create targetlist with aggregate functions
     // Simulating: SELECT SUM(amount), COUNT(*), AVG(value), MIN(id), MAX(id) FROM test
-    static List targetList{};
     static TargetEntry entries[5];
     static FuncExpr funcExprs[5];
     static Var aggVars[4];  // For SUM, AVG, MIN, MAX (COUNT(*) has no args)
-    static List argLists[4];
     
     // Setup aggregate function OIDs
     Oid aggFuncOids[] = {
@@ -1337,8 +1430,12 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggregateFunctions) {
         aggVars[i].vartype = 23;  // INT4OID
         aggVars[i].vartypmod = -1;
         aggVars[i].location = -1;
-        
-        argLists[i].head = &aggVars[i];
+    }
+    
+    // Create argument lists for each aggregate function  
+    List* argLists[4];
+    for (int i = 0; i < 4; i++) {
+        argLists[i] = list_make1(&aggVars[i]);
     }
     
     // Setup aggregate function expressions
@@ -1351,7 +1448,7 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggregateFunctions) {
         funcExprs[i].funcformat = 0;
         funcExprs[i].funccollid = 0;
         funcExprs[i].inputcollid = 0;
-        funcExprs[i].args = (i == 1) ? nullptr : &argLists[i < 2 ? i : i - 1];  // COUNT(*) has no args
+        funcExprs[i].args = (i == 1) ? nullptr : argLists[i < 2 ? i : i - 1];  // COUNT(*) has no args
         funcExprs[i].location = -1;
         
         entries[i].node.type = T_TargetEntry;
@@ -1364,8 +1461,12 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggregateFunctions) {
         entries[i].resjunk = false;
     }
     
-    targetList.head = &entries[0];
-    agg.plan.targetlist = &targetList;
+    // Create target list using list_make1 and lappend
+    List* targetList = list_make1(&entries[0]);
+    for (int i = 1; i < 5; i++) {
+        targetList = lappend(targetList, &entries[i]);
+    }
+    agg.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&agg.plan);
@@ -1417,8 +1518,9 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggregateFunctions) {
 TEST_F(PlanNodeTranslationTest, TranslatesWhereClause) {
     PGX_INFO("Testing WHERE clause filtering");
     
-    // Create base SeqScan node
+    // Create base SeqScan node with memset to ensure clean initialization
     SeqScan seqScan{};
+    memset(&seqScan, 0, sizeof(SeqScan));  // Clear all memory first
     seqScan.plan.type = T_SeqScan;
     seqScan.plan.startup_cost = 0.0;
     seqScan.plan.total_cost = 10.0;
@@ -1431,12 +1533,19 @@ TEST_F(PlanNodeTranslationTest, TranslatesWhereClause) {
     
     // Create WHERE clause conditions
     // Simulating: SELECT * FROM test WHERE id = 42 OR value > 10
-    static List qualList{};
     static BoolExpr orExpr;
     static OpExpr eqExpr, gtExpr;
     static Var idVar, valueVar;
     static Const const42, const10;
-    static List orArgList, eqArgList, gtArgList;
+    
+    // Clear all static structures
+    memset(&orExpr, 0, sizeof(BoolExpr));
+    memset(&eqExpr, 0, sizeof(OpExpr));
+    memset(&gtExpr, 0, sizeof(OpExpr));
+    memset(&idVar, 0, sizeof(Var));
+    memset(&valueVar, 0, sizeof(Var));
+    memset(&const42, 0, sizeof(Const));
+    memset(&const10, 0, sizeof(Const));
     
     // Setup id = 42 condition
     idVar.node.type = T_Var;
@@ -1444,23 +1553,33 @@ TEST_F(PlanNodeTranslationTest, TranslatesWhereClause) {
     idVar.varattno = 1;  // id column
     idVar.vartype = 23;  // INT4OID
     idVar.vartypmod = -1;
+    idVar.varcollid = 0;
+    idVar.varlevelsup = 0;
+    idVar.varnoold = 1;
+    idVar.varoattno = 1;
     idVar.location = -1;
     
     const42.node.type = T_Const;
     const42.consttype = 23;  // INT4OID
+    const42.consttypmod = -1;
+    const42.constcollid = 0;
+    const42.constlen = 4;
     const42.constvalue = 42;
     const42.constisnull = false;
     const42.constbyval = true;
     const42.location = -1;
     
-    eqArgList.head = &idVar;
+    // Create argument list for eq expression using list_make2
+    List* eqArgList = list_make2(&idVar, &const42);
     
     eqExpr.node.type = T_OpExpr;
     eqExpr.opno = INT4EQOID;
     eqExpr.opfuncid = INT4EQOID;
     eqExpr.opresulttype = 16;  // BOOLOID
     eqExpr.opretset = false;
-    eqExpr.args = &eqArgList;
+    eqExpr.opcollid = 0;
+    eqExpr.inputcollid = 0;
+    eqExpr.args = eqArgList;
     eqExpr.location = -1;
     
     // Setup value > 10 condition
@@ -1469,35 +1588,47 @@ TEST_F(PlanNodeTranslationTest, TranslatesWhereClause) {
     valueVar.varattno = 2;  // value column
     valueVar.vartype = 23;  // INT4OID
     valueVar.vartypmod = -1;
+    valueVar.varcollid = 0;
+    valueVar.varlevelsup = 0;
+    valueVar.varnoold = 1;
+    valueVar.varoattno = 2;
     valueVar.location = -1;
     
     const10.node.type = T_Const;
     const10.consttype = 23;  // INT4OID
+    const10.consttypmod = -1;
+    const10.constcollid = 0;
+    const10.constlen = 4;
     const10.constvalue = 10;
     const10.constisnull = false;
     const10.constbyval = true;
     const10.location = -1;
     
-    gtArgList.head = &valueVar;
+    // Create argument list for gt expression using list_make2
+    List* gtArgList = list_make2(&valueVar, &const10);
     
     gtExpr.node.type = T_OpExpr;
     gtExpr.opno = INT4GTOID;
     gtExpr.opfuncid = INT4GTOID;
     gtExpr.opresulttype = 16;  // BOOLOID
     gtExpr.opretset = false;
-    gtExpr.args = &gtArgList;
+    gtExpr.opcollid = 0;
+    gtExpr.inputcollid = 0;
+    gtExpr.args = gtArgList;
     gtExpr.location = -1;
     
     // Setup OR expression
-    orArgList.head = &eqExpr;
+    // Create argument list for OR expression using list_make2
+    List* orArgList = list_make2(&eqExpr, &gtExpr);
     
     orExpr.node.type = T_BoolExpr;
     orExpr.boolop = OR_EXPR;
-    orExpr.args = &orArgList;
+    orExpr.args = orArgList;
     orExpr.location = -1;
     
-    qualList.head = &orExpr;
-    seqScan.plan.qual = &qualList;
+    // Create qual list properly using list_make1
+    List* qualList = list_make1(&orExpr);
+    seqScan.plan.qual = qualList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -1560,12 +1691,10 @@ TEST_F(PlanNodeTranslationTest, TranslatesGroupByWithAggregates) {
     agg.grpCollations = grpCollations;
     
     // Create targetlist: SELECT department, SUM(salary) FROM employees GROUP BY department
-    static List targetList{};
     static TargetEntry entries[2];
     static Var deptVar;
     static FuncExpr sumFunc;
     static Var salaryVar;
-    static List sumArgList;
     
     // First entry: department column (GROUP BY column)
     deptVar.node.type = T_Var;
@@ -1592,7 +1721,8 @@ TEST_F(PlanNodeTranslationTest, TranslatesGroupByWithAggregates) {
     salaryVar.vartypmod = -1;
     salaryVar.location = -1;
     
-    sumArgList.head = &salaryVar;
+    // Create argument list for SUM function
+    List* sumArgList = list_make1(&salaryVar);
     
     sumFunc.node.type = T_FuncExpr;
     sumFunc.funcid = 2108;  // SUM(int4)
@@ -1602,7 +1732,7 @@ TEST_F(PlanNodeTranslationTest, TranslatesGroupByWithAggregates) {
     sumFunc.funcformat = 0;
     sumFunc.funccollid = 0;
     sumFunc.inputcollid = 0;
-    sumFunc.args = &sumArgList;
+    sumFunc.args = sumArgList;
     sumFunc.location = -1;
     
     entries[1].node.type = T_TargetEntry;
@@ -1614,8 +1744,9 @@ TEST_F(PlanNodeTranslationTest, TranslatesGroupByWithAggregates) {
     entries[1].resorigcol = 0;
     entries[1].resjunk = false;
     
-    targetList.head = &entries[0];
-    agg.plan.targetlist = &targetList;
+    // Create target list using list_make2
+    List* targetList = list_make2(&entries[0], &entries[1]);
+    agg.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&agg.plan);
@@ -1673,12 +1804,10 @@ TEST_F(PlanNodeTranslationTest, TranslatesComplexWhereConditions) {
     
     // Create complex WHERE clause
     // Simulating: WHERE (a > 5 AND b < 10) OR c = 20
-    static List qualList{};
     static BoolExpr mainOrExpr, andExpr;
     static OpExpr gtExpr, ltExpr, eqExpr;
     static Var aVar, bVar, cVar;
     static Const const5, const10, const20;
-    static List mainOrArgList, andArgList, gtArgList, ltArgList, eqArgList;
     
     // Setup a > 5
     aVar.node.type = T_Var;
@@ -1695,14 +1824,15 @@ TEST_F(PlanNodeTranslationTest, TranslatesComplexWhereConditions) {
     const5.constbyval = true;
     const5.location = -1;
     
-    gtArgList.head = &aVar;
+    // Create argument list for greater than
+    List* gtArgList = list_make2(&aVar, &const5);
     
     gtExpr.node.type = T_OpExpr;
     gtExpr.opno = INT4GTOID;
     gtExpr.opfuncid = INT4GTOID;
     gtExpr.opresulttype = 16;  // BOOLOID
     gtExpr.opretset = false;
-    gtExpr.args = &gtArgList;
+    gtExpr.args = gtArgList;
     gtExpr.location = -1;
     
     // Setup b < 10
@@ -1720,22 +1850,23 @@ TEST_F(PlanNodeTranslationTest, TranslatesComplexWhereConditions) {
     const10.constbyval = true;
     const10.location = -1;
     
-    ltArgList.head = &bVar;
+    // Create argument list for less than
+    List* ltArgList = list_make2(&bVar, &const10);
     
     ltExpr.node.type = T_OpExpr;
     ltExpr.opno = INT4LTOID;
     ltExpr.opfuncid = INT4LTOID;
     ltExpr.opresulttype = 16;
     ltExpr.opretset = false;
-    ltExpr.args = &ltArgList;
+    ltExpr.args = ltArgList;
     ltExpr.location = -1;
     
     // Setup AND expression: (a > 5 AND b < 10)
-    andArgList.head = &gtExpr;
+    List* andArgList = list_make2(&gtExpr, &ltExpr);
     
     andExpr.node.type = T_BoolExpr;
     andExpr.boolop = AND_EXPR;
-    andExpr.args = &andArgList;
+    andExpr.args = andArgList;
     andExpr.location = -1;
     
     // Setup c = 20
@@ -1753,26 +1884,28 @@ TEST_F(PlanNodeTranslationTest, TranslatesComplexWhereConditions) {
     const20.constbyval = true;
     const20.location = -1;
     
-    eqArgList.head = &cVar;
+    // Create argument list for equality
+    List* eqArgList = list_make2(&cVar, &const20);
     
     eqExpr.node.type = T_OpExpr;
     eqExpr.opno = INT4EQOID;
     eqExpr.opfuncid = INT4EQOID;
     eqExpr.opresulttype = 16;
     eqExpr.opretset = false;
-    eqExpr.args = &eqArgList;
+    eqExpr.args = eqArgList;
     eqExpr.location = -1;
     
     // Setup main OR expression: (AND expr) OR (c = 20)
-    mainOrArgList.head = &andExpr;
+    List* mainOrArgList = list_make2(&andExpr, &eqExpr);
     
     mainOrExpr.node.type = T_BoolExpr;
     mainOrExpr.boolop = OR_EXPR;
-    mainOrExpr.args = &mainOrArgList;
+    mainOrExpr.args = mainOrArgList;
     mainOrExpr.location = -1;
     
-    qualList.head = &mainOrExpr;
-    seqScan.plan.qual = &qualList;
+    // Create qual list with the main OR expression
+    List* qualList = list_make1(&mainOrExpr);
+    seqScan.plan.qual = qualList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
@@ -1816,7 +1949,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesSimpleProjection) {
     
     // Create targetlist with just column references
     // Simulating: SELECT id, name FROM test
-    static List targetList{};
     static TargetEntry entries[2];
     static Var idVar, nameVar;
     
@@ -1862,8 +1994,9 @@ TEST_F(PlanNodeTranslationTest, TranslatesSimpleProjection) {
     entries[1].resorigcol = 2;
     entries[1].resjunk = false;
     
-    targetList.head = &entries[0];
-    seqScan.plan.targetlist = &targetList;
+    // Create target list using list_make2
+    List* targetList = list_make2(&entries[0], &entries[1]);
+    seqScan.plan.targetlist = targetList;
     
     // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);

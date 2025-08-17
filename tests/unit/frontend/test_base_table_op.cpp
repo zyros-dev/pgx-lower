@@ -224,7 +224,7 @@ TEST_F(BaseTableOpTest, DISABLED_SeqScanTranslationWithProperBaseTableOp) {
     EXPECT_TRUE(mlirStr.find("relalg.basetable") != std::string::npos);
     EXPECT_TRUE(mlirStr.find("table_identifier = \"test|oid:16384\"") != std::string::npos);
     EXPECT_TRUE(mlirStr.find("columns:") != std::string::npos);
-    // NOTE: Column definitions are currently empty due to attribute printing issues
+    // NOTE: Column definitions still have issues due to mock structure problems  
     // EXPECT_TRUE(mlirStr.find("@test::@id") != std::string::npos);
     EXPECT_TRUE(mlirStr.find("relalg.materialize") != std::string::npos);
     

@@ -108,3 +108,12 @@ add_executable(test_ast_translator_fixed
 target_include_directories(test_ast_translator_fixed PRIVATE ${FRONTEND_TEST_INCLUDES})
 target_link_libraries(test_ast_translator_fixed ${FRONTEND_TEST_LIBS})
 add_test(NAME ASTTranslatorFixedTest COMMAND test_ast_translator_fixed)
+
+# Test for OpExpr translation functions
+add_executable(test_opexpr_translation
+    test_opexpr_translation.cpp
+    ${FRONTEND_TEST_SOURCES}
+)
+target_include_directories(test_opexpr_translation PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_link_libraries(test_opexpr_translation ${FRONTEND_TEST_LIBS})
+add_test(NAME OpExprTranslationTest COMMAND test_opexpr_translation)
