@@ -848,6 +848,7 @@ static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     return true;
 }
 
+#ifdef POSTGRESQL_EXTENSION
 auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, DestReceiver* dest) -> bool {
     if (!plannedStmt || !estate || !dest) {
         auto error = pgx_lower::ErrorManager::postgresqlError("Null parameters provided to MLIR runner with DestReceiver");
@@ -971,5 +972,6 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         return false;
     }
 }
+#endif
 
 } // namespace mlir_runner

@@ -39,7 +39,7 @@ TEST_F(RelAlgCrashTest, TestSimplePassExecution) {
 module {
   func.func @main() {
     %0 = relalg.basetable  {table_identifier = "test|oid:16384"} columns: {id => @test::@id({type = i32})}
-    %1 = relalg.map %0 computes : ["addition"] (%arg0: !relalg.tuple){
+    %1 = relalg.map %0 computes : [@map::@addition({type = i32})] (%arg0: !relalg.tuple){
       %3 = relalg.getcol %arg0 @test::@col_2 : i32
       %4 = relalg.getcol %arg0 @test::@col_3 : i32
       %5 = arith.addi %3, %4 : i32
