@@ -66,7 +66,7 @@ if(NOT TARGET pgx_lower_passes)
         StandardToLLVM
         MLIRDBToArrowStd
         MLIRDSAToStd
-        UtilToLLVM
+        MLIRUtilToLLVM
         MLIRRelAlgToDB
         MLIRSCFToControlFlow
         MLIRFuncToLLVM
@@ -205,6 +205,7 @@ add_executable(mlir_unit_test
     test_dialect_verification.cpp  
     test_llvm_passes_simple.cpp
     test_real_module_crash.cpp
+    ../conversion/test_relalg_lowering_crash.cpp  # Add crash reproduction test back
     ../frontend/test_plan_node_types.cpp
     ../frontend/test_base_table_op.cpp
     ${CMAKE_SOURCE_DIR}/src/frontend/SQL/postgresql_ast_translator.cpp
@@ -228,6 +229,7 @@ target_link_libraries(mlir_unit_test
     MLIRUtilDialect
     StandardToLLVM
     pgx_lower_passes
+    MLIRPasses  # Contains createRelAlgToDBPipeline for crash test
     pgx_lower_logging
     MLIRExecutionEngine
     MLIRJitRunner

@@ -27,6 +27,7 @@ add_mlir_conversion_library(MLIRDSAToStd
         MLIRIR
         MLIRDSA
         MLIRDBDialect
+        MLIRUtilToLLVM
         MLIRLLVMDialect
         MLIRSCFTransforms
         )
