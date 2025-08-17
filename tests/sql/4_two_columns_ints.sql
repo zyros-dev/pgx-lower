@@ -14,4 +14,4 @@ CREATE TABLE test (
 INSERT INTO test(col2)
 SELECT generate_series(1, 100);
 
-SELECT * FROM test LIMIT 5;
+SELECT * FROM test;
