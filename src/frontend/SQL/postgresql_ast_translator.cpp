@@ -1047,8 +1047,8 @@ auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, Tr
         auto queryFunc = builder.create<::mlir::func::FuncOp>(
             builder.getUnknownLoc(), "main", queryFuncType);
         
-        // CRITICAL FIX: Add C interface for external function calls (from working July 30 version!)
-        queryFunc->setAttr("llvm.emit_c_interface", ::mlir::UnitAttr::get(builder.getContext()));
+        // CRITICAL FIX: Remove C interface attribute - it generates wrapper that ExecutionEngine can't find
+        // queryFunc->setAttr("llvm.emit_c_interface", ::mlir::UnitAttr::get(builder.getContext()));
         
         // Create function body
         auto& queryBody = queryFunc.getBody().emplaceBlock();

@@ -2,12 +2,16 @@
 
 #include <memory>
 #include <string>
+#include <chrono>
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/IR/Module.h"
 
 namespace pgx_lower {
 namespace execution {
+
+// Forward declaration for helper methods
+class WrappedExecutionEngine;
 
 /**
  * @brief PostgreSQL-compatible JIT execution engine for MLIR modules
@@ -18,7 +22,9 @@ namespace execution {
  */
 class PostgreSQLJITExecutionEngine {
 private:
-    std::unique_ptr<mlir::ExecutionEngine> engine;
+    // Use void* to avoid incomplete type issues with forward declaration
+    // The actual WrappedExecutionEngine is defined in the .cpp file
+    void* wrappedEngine = nullptr;  // LingoDB pattern (actual type: WrappedExecutionEngine*)
     bool initialized = false;
     
     // JIT optimization configuration
@@ -37,9 +43,18 @@ private:
     void registerLingoDRuntimeContextFunctions();
     void registerCRuntimeFunctions();
     
+    // Helper methods for initialize()
+    void registerDialectTranslations(::mlir::ModuleOp module);
+    bool createWrappedExecutionEngine(::mlir::ModuleOp module);
+    
+    // Helper methods for executeCompiledQuery()
+    void* lookupExecutionFunction(WrappedExecutionEngine* wrapped);
+    bool invokeCompiledFunction(void* funcPtr, void* estate, void* dest);
+    void logExecutionMetrics(std::chrono::microseconds duration);
+    
 public:
     PostgreSQLJITExecutionEngine() = default;
-    ~PostgreSQLJITExecutionEngine() = default;
+    ~PostgreSQLJITExecutionEngine();  // Defined in cpp to properly delete WrappedExecutionEngine
     
     // Non-copyable, movable
     PostgreSQLJITExecutionEngine(const PostgreSQLJITExecutionEngine&) = delete;
