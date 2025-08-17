@@ -38,14 +38,14 @@ TEST_F(RelAlgCrashTest, TestSimplePassExecution) {
     const char* simpleIR = R"(
 module {
   func.func @main() {
-    %0 = relalg.basetable  {table_identifier = "test|oid:16384"} columns: {id => @test::@id({type = i32})}
+    %0 = relalg.basetable  {table_identifier = "test|oid:16384"} columns: {col_2 => @test::@col_2({type = i32}), col_3 => @test::@col_3({type = i32})}
     %1 = relalg.map %0 computes : [@map::@addition({type = i32})] (%arg0: !relalg.tuple){
       %3 = relalg.getcol %arg0 @test::@col_2 : i32
       %4 = relalg.getcol %arg0 @test::@col_3 : i32
       %5 = arith.addi %3, %4 : i32
       relalg.return %5 : i32
     }
-    %2 = relalg.materialize %1 [@test::@addition] => ["addition"] : !dsa.table
+    %2 = relalg.materialize %1 [@map::@addition] => ["addition"] : !dsa.table
     return
   }
 }
