@@ -110,11 +110,13 @@ extern "C" {
     // Forward declare ListCell for List structure
     typedef struct ListCell ListCell;
     
+    // PostgreSQL 17 uses an array-based List structure
     struct List {
-        int type;       // NodeTag - for compatibility with PostgreSQL
-        int length;     // Number of elements
-        ListCell* head; // Head of the linked list
-        ListCell* tail; // Tail of the linked list
+        int type;           // NodeTag - for compatibility with PostgreSQL
+        int length;         // Number of elements
+        int max_length;     // Allocated length of elements array
+        ListCell* elements; // Array of ListCell elements (PostgreSQL 17 style)
+        ListCell* initial_elements; // Initial static allocation (optional)
     };
     
     struct ListCell {
@@ -123,7 +125,6 @@ extern "C" {
             int int_value;
             unsigned int oid_value;
         } data;
-        ListCell* next;
     };
     
     struct Node {
@@ -296,6 +297,9 @@ extern "C" {
     
     // Common aggregate function OIDs
     #define COUNT_STAR_OID 2147  // COUNT(*)
+    
+    // List access macros for PostgreSQL 17 compatibility
+    // (These will be defined below after the NIL macro)
     #define SUM_INT4_OID 2108    // SUM(int4)
     #define AVG_INT4_OID 2101    // AVG(int4)
     #define MAX_INT4_OID 2116    // MAX(int4)
@@ -305,59 +309,60 @@ extern "C" {
     #define NIL ((List*)NULL)
     #define T_List 16  // NodeTag for List
     
-    // Iterate through a list
-    #define foreach(cell, l) \
-        for ((cell) = ((l) ? (l)->head : NULL); (cell) != NULL; (cell) = (cell)->next)
-    
-    // Access list cell data
+    // Access list cell data (PostgreSQL 17 array-based lists)
     #define lfirst(lc) ((lc)->data.ptr_value)
     #define lfirst_int(lc) ((lc)->data.int_value)
     #define lfirst_oid(lc) ((lc)->data.oid_value)
-    #define lnext(lc) ((lc)->next)
     
-    // Get list head
+    // Get list head (for array-based lists)
     static inline ListCell* list_head(const List* l) {
-        return l ? l->head : NULL;
+        return (l && l->length > 0) ? &l->elements[0] : NULL;
     }
     
-    // Helper function to create a list with one element
+    // Helper function to create a list with one element (PostgreSQL 17 style)
     static inline List* list_make1(void* x1) {
         List* list = new List{};
         list->type = T_List;
         list->length = 1;
+        list->max_length = 4;  // Initial allocation
         
-        ListCell* cell = new ListCell{};
-        cell->data.ptr_value = x1;
-        cell->next = NULL;
+        // Allocate elements array
+        list->elements = new ListCell[list->max_length];
+        list->elements[0].data.ptr_value = x1;
         
-        list->head = cell;
-        list->tail = cell;
+        list->initial_elements = nullptr;  // Not using static allocation
         return list;
     }
     
-    // Helper function to append to a list
+    // Helper function to append to a list (PostgreSQL 17 style)
     static inline List* lappend(List* list, void* datum) {
-        ListCell* new_cell = new ListCell{};
-        new_cell->data.ptr_value = datum;
-        new_cell->next = NULL;
-        
         if (list == NIL) {
-            list = new List{};
-            list->type = T_List;
-            list->length = 0;
-            list->head = NULL;
-            list->tail = NULL;
+            return list_make1(datum);
         }
         
-        if (list->tail) {
-            list->tail->next = new_cell;
-            list->tail = new_cell;
-        } else {
-            list->head = new_cell;
-            list->tail = new_cell;
+        // Check if we need to grow the array
+        if (list->length >= list->max_length) {
+            int new_max = list->max_length * 2;
+            ListCell* new_elements = new ListCell[new_max];
+            
+            // Copy existing elements
+            for (int i = 0; i < list->length; i++) {
+                new_elements[i] = list->elements[i];
+            }
+            
+            // Free old array if it wasn't the initial static allocation
+            if (list->elements != list->initial_elements) {
+                delete[] list->elements;
+            }
+            
+            list->elements = new_elements;
+            list->max_length = new_max;
         }
         
+        // Add new element
+        list->elements[list->length].data.ptr_value = datum;
         list->length++;
+        
         return list;
     }
     

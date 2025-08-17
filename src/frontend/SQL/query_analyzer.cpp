@@ -31,9 +31,6 @@ extern bool g_extension_after_load;
 namespace pgx_lower {
 
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
-    // 📊 DATA COLLECTION MODE: Log features but decline MLIR compilation
-    // This ensures we get execution trees from ALL queries for AST parser development
-    
     // Log query characteristics for analysis
     std::vector<std::string> features;
     if (isSelectStatement) features.emplace_back("SELECT");
@@ -57,9 +54,17 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         PGX_INFO("📋 Query features: None detected");
     }
     
-    // 📊 EARLY RETURN: Decline all MLIR compilation to focus on tree data collection
-    PGX_INFO("📊 DATA COLLECTION: Declining MLIR compilation to collect execution tree data");
-    return false;
+    // ✅ ENABLE MLIR COMPILATION: Test if pipeline works for basic SELECT+SeqScan queries
+    bool compatible = isSelectStatement && requiresSeqScan && hasCompatibleTypes && 
+                     !requiresJoin && !requiresAggregation && !requiresSort;
+    
+    if (compatible) {
+        PGX_INFO("🎯 MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");
+        return true;
+    } else {
+        PGX_INFO("📊 DATA COLLECTION: Query too complex for current MLIR implementation");
+        return false;
+    }
 }
 
 auto QueryCapabilities::getDescription() const -> std::string {
