@@ -121,10 +121,20 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         return nullptr;
     }
     
+    // Safety check for pointer validity
+    if (reinterpret_cast<uintptr_t>(plannedStmt) < 0x1000) {
+        PGX_ERROR("Invalid PlannedStmt pointer address");
+        return nullptr;
+    }
+    
     // Create MLIR module and builder context
     auto module = ::mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
     ::mlir::OpBuilder builder(&context_);
     builder.setInsertionPointToStart(module.getBody());
+    
+    // Store builder for expression translation methods
+    builder_ = &builder;
+    currentPlannedStmt_ = plannedStmt;
     
     // TESTING: No external function declarations needed for this test
     // We'll test pure computation without external calls
@@ -134,18 +144,30 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     context.currentStmt = plannedStmt;
     context.builder = &builder;
     
+    PGX_DEBUG("About to create query function");
+    
     // Create query function with RelAlg operations
     auto queryFunc = createQueryFunction(builder, context);
     if (!queryFunc) {
         PGX_ERROR("Failed to create query function");
+        builder_ = nullptr;
+        currentPlannedStmt_ = nullptr;
         return nullptr;
     }
+    
+    PGX_DEBUG("Query function created, generating RelAlg operations");
     
     // Generate RelAlg operations inside the function
     if (!generateRelAlgOperations(queryFunc, plannedStmt, context)) {
         PGX_ERROR("Failed to generate RelAlg operations");
+        builder_ = nullptr;
+        currentPlannedStmt_ = nullptr;
         return nullptr;
     }
+    
+    // Clear builder reference
+    builder_ = nullptr;
+    currentPlannedStmt_ = nullptr;
     
     PGX_INFO("PostgreSQL AST translation completed successfully");
     return std::make_unique<::mlir::ModuleOp>(module);
@@ -946,22 +968,37 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
 auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context) -> ::mlir::func::FuncOp {
     PGX_DEBUG("Creating query function using func::FuncOp pattern");
     
-    // FIXED: Use void return type and call mark_results_ready_for_streaming()
-    // This enables proper JIT→PostgreSQL result communication
+    // Safety checks
+    if (!context.builder) {
+        PGX_ERROR("Builder is null in context");
+        return nullptr;
+    }
     
-    // Create func::FuncOp with "main" name for JIT execution  
-    auto queryFuncType = builder.getFunctionType({}, {});
-    auto queryFunc = builder.create<::mlir::func::FuncOp>(
-        builder.getUnknownLoc(), "main", queryFuncType);
-    
-    // CRITICAL FIX: Add C interface for external function calls (from working July 30 version!)
-    queryFunc->setAttr("llvm.emit_c_interface", ::mlir::UnitAttr::get(builder.getContext()));
-    
-    // Create function body
-    auto& queryBody = queryFunc.getBody().emplaceBlock();
-    builder.setInsertionPointToStart(&queryBody);
-    
-    return queryFunc;
+    try {
+        // FIXED: Use void return type and call mark_results_ready_for_streaming()
+        // This enables proper JIT→PostgreSQL result communication
+        
+        // Create func::FuncOp with "main" name for JIT execution  
+        auto queryFuncType = builder.getFunctionType({}, {});
+        auto queryFunc = builder.create<::mlir::func::FuncOp>(
+            builder.getUnknownLoc(), "main", queryFuncType);
+        
+        // CRITICAL FIX: Add C interface for external function calls (from working July 30 version!)
+        queryFunc->setAttr("llvm.emit_c_interface", ::mlir::UnitAttr::get(builder.getContext()));
+        
+        // Create function body
+        auto& queryBody = queryFunc.getBody().emplaceBlock();
+        builder.setInsertionPointToStart(&queryBody);
+        
+        PGX_DEBUG("Query function created successfully");
+        return queryFunc;
+    } catch (const std::exception& e) {
+        PGX_ERROR("Exception creating query function: " + std::string(e.what()));
+        return nullptr;
+    } catch (...) {
+        PGX_ERROR("Unknown exception creating query function");
+        return nullptr;
+    }
 }
 
 auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, TranslationContext& context) -> bool {
@@ -1494,7 +1531,7 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
                                 result = argValue;
                             } else {
                                 // Create AND operation using DB dialect
-                                result = builder_->create<mlir::db::AndOp>(
+                                result = builder_->create<::mlir::db::AndOp>(
                                     builder_->getUnknownLoc(),
                                     builder_->getI1Type(),
                                     mlir::ValueRange{result, argValue}
@@ -1545,7 +1582,7 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
                                 result = argValue;
                             } else {
                                 // Create OR operation using DB dialect
-                                result = builder_->create<mlir::db::OrOp>(
+                                result = builder_->create<::mlir::db::OrOp>(
                                     builder_->getUnknownLoc(),
                                     builder_->getI1Type(),
                                     mlir::ValueRange{result, argValue}
@@ -1598,7 +1635,7 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
             }
             
             // Create NOT operation using DB dialect
-            return builder_->create<mlir::db::NotOp>(
+            return builder_->create<::mlir::db::NotOp>(
                 builder_->getUnknownLoc(), argVal
             );
         }
@@ -1617,13 +1654,160 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
     
     PGX_DEBUG("Translating FuncExpr: funcid=" + std::to_string(funcExpr->funcid));
     
-    // For now, create a placeholder
-    // In a full implementation, we'd map function OIDs to DB dialect operations
-    PGX_WARNING("FuncExpr translation not fully implemented");
+    // Translate function arguments first
+    std::vector<::mlir::Value> args;
+    if (funcExpr->args && funcExpr->args->length > 0) {
+        // Safety check for elements array (PostgreSQL 17)
+        if (!funcExpr->args->elements) {
+            PGX_WARNING("FuncExpr args list has length but no elements array");
+            return nullptr;
+        }
+        
+        // Iterate through arguments
+        for (int i = 0; i < funcExpr->args->length; i++) {
+            ListCell* lc = &funcExpr->args->elements[i];
+            Node* argNode = static_cast<Node*>(lfirst(lc));
+            if (argNode) {
+                ::mlir::Value argValue = translateExpression(reinterpret_cast<Expr*>(argNode));
+                if (argValue) {
+                    args.push_back(argValue);
+                }
+            }
+        }
+    }
     
-    return builder_->create<mlir::arith::ConstantIntOp>(
-        builder_->getUnknownLoc(), 0, builder_->getI32Type()
-    );
+    // Map PostgreSQL function OID to MLIR operations
+    // Common PostgreSQL function OIDs (from fmgroids.h)
+    constexpr Oid F_ABS_INT4 = 1397;       // abs(int4)
+    constexpr Oid F_ABS_INT8 = 1398;       // abs(int8)
+    constexpr Oid F_ABS_FLOAT4 = 1394;     // abs(float4)
+    constexpr Oid F_ABS_FLOAT8 = 1395;     // abs(float8)
+    constexpr Oid F_UPPER = 871;           // upper(text)
+    constexpr Oid F_LOWER = 870;           // lower(text)
+    constexpr Oid F_LENGTH = 1317;         // length(text)
+    constexpr Oid F_SUBSTR = 877;          // substr(text, int, int)
+    constexpr Oid F_CONCAT = 3058;         // concat(text, text)
+    constexpr Oid F_SQRT_FLOAT8 = 230;     // sqrt(float8)
+    constexpr Oid F_POWER_FLOAT8 = 232;    // power(float8, float8)
+    constexpr Oid F_CEIL_FLOAT8 = 2308;    // ceil(float8)
+    constexpr Oid F_FLOOR_FLOAT8 = 2309;   // floor(float8)
+    constexpr Oid F_ROUND_FLOAT8 = 233;    // round(float8)
+    
+    auto loc = builder_->getUnknownLoc();
+    
+    switch (funcExpr->funcid) {
+        case F_ABS_INT4:
+        case F_ABS_INT8:
+        case F_ABS_FLOAT4:
+        case F_ABS_FLOAT8:
+            if (args.size() != 1) {
+                PGX_ERROR("ABS requires exactly 1 argument, got " + std::to_string(args.size()));
+                return nullptr;
+            }
+            // Implement absolute value using comparison and negation
+            // Since DB dialect doesn't have AbsOp, use arith operations
+            {
+                auto zero = builder_->create<mlir::arith::ConstantIntOp>(
+                    loc, 0, args[0].getType()
+                );
+                auto cmp = builder_->create<mlir::arith::CmpIOp>(
+                    loc, mlir::arith::CmpIPredicate::slt, args[0], zero
+                );
+                auto neg = builder_->create<mlir::arith::SubIOp>(
+                    loc, zero, args[0]
+                );
+                return builder_->create<mlir::arith::SelectOp>(
+                    loc, cmp, neg, args[0]
+                );
+            }
+            
+        case F_SQRT_FLOAT8:
+            if (args.size() != 1) {
+                PGX_ERROR("SQRT requires exactly 1 argument");
+                return nullptr;
+            }
+            // Use math dialect sqrt (TODO: may need to add math dialect)
+            // For now, use a placeholder
+            PGX_WARNING("SQRT function not yet implemented in DB dialect");
+            return args[0];  // Pass through for now
+            
+        case F_POWER_FLOAT8:
+            if (args.size() != 2) {
+                PGX_ERROR("POWER requires exactly 2 arguments");
+                return nullptr;
+            }
+            // TODO: Implement power operation in DB dialect
+            PGX_WARNING("POWER function not yet implemented in DB dialect");
+            return args[0];  // Return base for now
+            
+        case F_UPPER:
+        case F_LOWER:
+            if (args.size() != 1) {
+                PGX_ERROR("String function requires exactly 1 argument");
+                return nullptr;
+            }
+            // TODO: String operations need string type support
+            PGX_WARNING("String functions not yet implemented");
+            return args[0];  // Pass through for now
+            
+        case F_LENGTH:
+            if (args.size() != 1) {
+                PGX_ERROR("LENGTH requires exactly 1 argument");
+                return nullptr;
+            }
+            // TODO: Return string length as integer
+            PGX_WARNING("LENGTH function not yet implemented");
+            return builder_->create<mlir::arith::ConstantIntOp>(
+                loc, 0, builder_->getI32Type()
+            );
+            
+        case F_CEIL_FLOAT8:
+        case F_FLOOR_FLOAT8:
+        case F_ROUND_FLOAT8:
+            if (args.size() != 1) {
+                PGX_ERROR("Rounding function requires exactly 1 argument");
+                return nullptr;
+            }
+            // TODO: Implement rounding operations in DB dialect
+            PGX_WARNING("Rounding functions not yet implemented in DB dialect");
+            return args[0];  // Pass through for now
+            
+        default: {
+            // Unknown function - try to determine result type from funcresulttype
+            PGX_WARNING("Unknown function OID " + std::to_string(funcExpr->funcid) + 
+                       ", creating placeholder");
+            
+            // Map result type
+            PostgreSQLTypeMapper typeMapper(context_);
+            auto resultType = typeMapper.mapPostgreSQLType(funcExpr->funcresulttype);
+            
+            // For unknown functions, return first argument or a constant
+            if (!args.empty()) {
+                // Try to cast first argument to result type if needed
+                if (args[0].getType() != resultType) {
+                    // TODO: Add proper type casting
+                    PGX_DEBUG("Type mismatch in function result");
+                }
+                return args[0];
+            } else {
+                // No arguments - return a constant of the result type
+                if (resultType.isIntOrIndex()) {
+                    return builder_->create<mlir::arith::ConstantIntOp>(
+                        loc, 0, resultType
+                    );
+                } else if (resultType.isa<mlir::FloatType>()) {
+                    return builder_->create<mlir::arith::ConstantFloatOp>(
+                        loc, llvm::APFloat(0.0), resultType.cast<mlir::FloatType>()
+                    );
+                } else {
+                    // Default to i32 zero
+                    return builder_->create<mlir::arith::ConstantIntOp>(
+                        loc, 0, builder_->getI32Type()
+                    );
+                }
+            }
+        }
+    }
 }
 
 auto PostgreSQLASTTranslator::translateAggref(Aggref* aggref) -> ::mlir::Value {

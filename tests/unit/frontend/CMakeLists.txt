@@ -99,3 +99,12 @@ add_executable(test_base_table_op
 target_include_directories(test_base_table_op PRIVATE ${FRONTEND_TEST_INCLUDES})
 target_link_libraries(test_base_table_op ${FRONTEND_TEST_LIBS})
 add_test(NAME BaseTableOpTest COMMAND test_base_table_op)
+
+# Test for AST translator with fixed PostgreSQL 17 structures
+add_executable(test_ast_translator_fixed
+    test_ast_translator_fixed.cpp
+    ${FRONTEND_TEST_SOURCES}
+)
+target_include_directories(test_ast_translator_fixed PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_link_libraries(test_ast_translator_fixed ${FRONTEND_TEST_LIBS})
+add_test(NAME ASTTranslatorFixedTest COMMAND test_ast_translator_fixed)
