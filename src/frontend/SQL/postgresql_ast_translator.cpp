@@ -699,13 +699,19 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
     // Process target entries to create computed columns
     for (auto* entry : targetEntries) {
         if (entry->expr && entry->expr->type != T_Var) {
-            // Create a computed column definition
+            // Create a computed column definition using LingoDB pattern
             std::string colName = entry->resname ? entry->resname : 
                                  "expr_" + std::to_string(entry->resno);
-            // For now, use a simple string attribute to avoid printing issues
-            // TODO: Fix ColumnDefAttr printing in ArrayAttr context
-            auto colNameAttr = context.builder->getStringAttr(colName);
-            computedColAttrs.push_back(colNameAttr);
+            
+            // Create ColumnDefAttr following LingoDB's attrManager.createDef() pattern
+            // Use "map" as scope name (matching LingoDB's mapName in createMap lambda)
+            auto attrDef = columnManager.createDef("map", colName);
+            
+            // The type will be set later when we translate the expression
+            // For now, use i32 as default (will be updated during expression translation)
+            attrDef.getColumn().type = context.builder->getI32Type();
+            
+            computedColAttrs.push_back(attrDef);
         }
     }
     
@@ -1579,8 +1585,8 @@ auto PostgreSQLASTTranslator::translateArithmeticOp(Oid opOid, ::mlir::Value lhs
         // Addition operators
         case 551:  // int4 + int4 (INT4PLUSOID)
         case 684:  // int8 + int8
-            PGX_DEBUG("Translating addition operator (OID " + std::to_string(opOid) + ")");
-            return builder_->create<mlir::arith::AddIOp>(
+            PGX_DEBUG("Translating addition operator (OID " + std::to_string(opOid) + ") using DB dialect");
+            return builder_->create<mlir::db::AddOp>(
                 builder_->getUnknownLoc(), lhs, rhs
             );
             
@@ -1588,16 +1594,16 @@ auto PostgreSQLASTTranslator::translateArithmeticOp(Oid opOid, ::mlir::Value lhs
         case 552:  // int4 - int4 (INT4MINUSOID)
         case 555:  // Alternative int4 - int4 (keeping for compatibility)
         case 688:  // int8 - int8
-            PGX_DEBUG("Translating subtraction operator (OID " + std::to_string(opOid) + ")");
-            return builder_->create<mlir::arith::SubIOp>(
+            PGX_DEBUG("Translating subtraction operator (OID " + std::to_string(opOid) + ") using DB dialect");
+            return builder_->create<mlir::db::SubOp>(
                 builder_->getUnknownLoc(), lhs, rhs
             );
             
         // Multiplication operators
         case 514:  // int4 * int4 (INT4MULOID)
         case 686:  // int8 * int8
-            PGX_DEBUG("Translating multiplication operator (OID " + std::to_string(opOid) + ")");
-            return builder_->create<mlir::arith::MulIOp>(
+            PGX_DEBUG("Translating multiplication operator (OID " + std::to_string(opOid) + ") using DB dialect");
+            return builder_->create<mlir::db::MulOp>(
                 builder_->getUnknownLoc(), lhs, rhs
             );
             
@@ -1605,16 +1611,16 @@ auto PostgreSQLASTTranslator::translateArithmeticOp(Oid opOid, ::mlir::Value lhs
         case 527:  // int4 / int4 (alternative)
         case 528:  // int4 / int4 (INT4DIVOID)
         case 689:  // int8 / int8
-            PGX_DEBUG("Translating division operator (OID " + std::to_string(opOid) + ")");
-            return builder_->create<mlir::arith::DivSIOp>(
+            PGX_DEBUG("Translating division operator (OID " + std::to_string(opOid) + ") using DB dialect");
+            return builder_->create<mlir::db::DivOp>(
                 builder_->getUnknownLoc(), lhs, rhs
             );
             
         // Modulo operators
         case 529:  // int4 % int4 (INT4MODOID)
         case 690:  // int8 % int8
-            PGX_DEBUG("Translating modulo operator (OID " + std::to_string(opOid) + ")");
-            return builder_->create<mlir::arith::RemSIOp>(
+            PGX_DEBUG("Translating modulo operator (OID " + std::to_string(opOid) + ") using DB dialect");
+            return builder_->create<mlir::db::ModOp>(
                 builder_->getUnknownLoc(), lhs, rhs
             );
             
