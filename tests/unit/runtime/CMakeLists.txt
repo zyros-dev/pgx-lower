@@ -55,3 +55,21 @@ target_link_libraries(test_mlir_memory_layout
 )
 
 add_test(NAME MLIRMemoryLayoutTest COMMAND test_mlir_memory_layout)
+
+# TableBuilder boolean function tests
+add_executable(test_tablebuilder_addbool test_tablebuilder_addbool.cpp)
+
+target_include_directories(test_tablebuilder_addbool PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/pgx_lower
+    ${CMAKE_SOURCE_DIR}/src
+    ${GTEST_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_tablebuilder_addbool
+    gtest
+    gtest_main
+    runtime  # Link against runtime library for rt_tablebuilder_addbool
+)
+
+add_test(NAME TableBuilderAddBoolTest COMMAND test_tablebuilder_addbool)

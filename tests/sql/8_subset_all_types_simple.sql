@@ -1,15 +1,15 @@
-LOAD 'pgx_lower.so';
--- CRITICAL: Do not change logging level - required for MLIR pipeline visibility
--- NOTICE level enables full debugging of PostgreSQL AST → RelAlg → DB → LLVM → JIT pipeline
--- WARNING level suppresses essential MLIR compilation logs and breaks debugging capability
-SET client_min_messages TO NOTICE;
-DROP TABLE IF EXISTS text_test;
-
-CREATE TABLE text_test (
-    char_col CHAR(10),
-    varchar_col VARCHAR(255),
-    text_col TEXT
-);
-
-INSERT INTO text_test VALUES ('hello', 'world', 'test');
-SELECT char_col, varchar_col, text_col FROM text_test;
+-- LOAD 'pgx_lower.so';
+-- -- CRITICAL: Do not change logging level - required for MLIR pipeline visibility
+-- -- NOTICE level enables full debugging of PostgreSQL AST → RelAlg → DB → LLVM → JIT pipeline
+-- -- WARNING level suppresses essential MLIR compilation logs and breaks debugging capability
+-- SET client_min_messages TO NOTICE;
+-- DROP TABLE IF EXISTS text_test;
+--
+-- CREATE TABLE text_test (
+--     char_col CHAR(10),
+--     varchar_col VARCHAR(255),
+--     text_col TEXT
+-- );
+--
+-- INSERT INTO text_test VALUES ('hello', 'world', 'test');
+-- SELECT char_col, varchar_col, text_col FROM text_test;

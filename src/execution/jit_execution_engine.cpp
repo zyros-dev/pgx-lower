@@ -229,7 +229,8 @@ public:
     
     // Helper method to compile object file to shared library
     bool compileObjectToSharedLibrary(const std::string& objectFile, const std::string& sharedLibFile) {
-        std::string cmd = "g++ -shared -fPIC -o " + sharedLibFile + " " + objectFile + " 2>&1";
+        // Link with undefined symbols allowed - they'll be resolved from the main extension
+        std::string cmd = "g++ -shared -fPIC -Wl,--unresolved-symbols=ignore-all -o " + sharedLibFile + " " + objectFile + " 2>&1";
         PGX_INFO("Compiling: " + cmd);
         
         auto* pPipe = ::popen(cmd.c_str(), "r");
@@ -529,6 +530,7 @@ std::vector<std::string> getTableBuilderFunctions() {
         "rt_tablebuilder_nextrow",
         "rt_tablebuilder_addint64",
         "rt_tablebuilder_addint32",
+        "rt_tablebuilder_addbool",
         "rt_tablebuilder_destroy"
     };
 }
