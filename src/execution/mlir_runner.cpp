@@ -637,6 +637,10 @@ static bool runPhase3b(::mlir::ModuleOp module) {
         PGX_INFO("Phase 3b: Creating DB+DSA→Standard pipeline");
         mlir::pgx_lower::createDBDSAToStandardPipeline(pm, true);
         
+        PGX_INFO("=== MLIR IR AFTER RelAlg→DB (before Phase 3b crash) ===");
+        safeModulePrint(module, "MLIR after RelAlg→DB lowering");
+        PGX_INFO("=== END MLIR IR DUMP ===");
+        
         PGX_INFO("Phase 3b: Starting PassManager execution");
         
         // Critical: Exception-safe PassManager execution

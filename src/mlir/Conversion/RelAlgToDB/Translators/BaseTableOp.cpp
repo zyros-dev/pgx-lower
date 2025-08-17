@@ -61,20 +61,20 @@ class BaseTableTranslator : public mlir::relalg::Translator {
 
       auto tupleType = mlir::TupleType::get(builder.getContext(), types);
       auto recordBatch = mlir::dsa::RecordBatchType::get(builder.getContext(), tupleType);
-      ::mlir::Type chunkIterable = mlir::dsa::GenericIterableType::get(builder.getContext(), recordBatch, "table_chunk_iterator");
+      mlir::Type chunkIterable = mlir::dsa::GenericIterableType::get(builder.getContext(), recordBatch, "table_chunk_iterator");
 
       auto chunkIterator = builder.create<mlir::dsa::ScanSource>(baseTableOp->getLoc(), chunkIterable, builder.getStringAttr(scanDescription));
 
-      auto forOp = builder.create<mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange{}, chunkIterator, ::mlir::Value(), ::mlir::ValueRange{});
-      ::mlir::Block* block = new ::mlir::Block;
+      auto forOp = builder.create<mlir::dsa::ForOp>(baseTableOp->getLoc(), mlir::TypeRange{}, chunkIterator, mlir::Value(), mlir::ValueRange{});
+      mlir::Block* block = new mlir::Block;
       block->addArgument(recordBatch, baseTableOp->getLoc());
       forOp.getBodyRegion().push_back(block);
-      ::mlir::OpBuilder builder1 = mlir::OpBuilder::atBlockBegin(&forOp.getBodyRegion().front());
-      auto forOp2 = builder1.create<mlir::dsa::ForOp>(baseTableOp->getLoc(), ::mlir::TypeRange{}, forOp.getInductionVar(), ::mlir::Value(), ::mlir::ValueRange{});
-      ::mlir::Block* block2 = new ::mlir::Block;
+      mlir::OpBuilder builder1(forOp.getBodyRegion());
+      auto forOp2 = builder1.create<mlir::dsa::ForOp>(baseTableOp->getLoc(), mlir::TypeRange{}, forOp.getInductionVar(), mlir::Value(), mlir::ValueRange{});
+      mlir::Block* block2 = new mlir::Block;
       block2->addArgument(recordBatch.getElementType(), baseTableOp->getLoc());
       forOp2.getBodyRegion().push_back(block2);
-      ::mlir::OpBuilder builder2 = mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
+      mlir::OpBuilder builder2(forOp2.getBodyRegion());
       size_t i = 0;
       
       if (cols.empty()) {
