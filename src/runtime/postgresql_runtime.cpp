@@ -56,6 +56,14 @@ struct DataSourceIterator {
     void* context;
     void* table_handle;  // PostgreSQL table handle
     bool has_current_tuple;
+    
+    // Multi-column support: store both id and col2 values
+    int32_t current_id;       // Column 0: id value
+    bool current_id_is_null;
+    int32_t current_col2;     // Column 1: col2 value  
+    bool current_col2_is_null;
+    
+    // Legacy field for backward compatibility
     int32_t current_value;
     bool current_is_null;
 };
@@ -177,20 +185,26 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
     int64_t read_result = read_next_tuple_from_table(iter->table_handle);
     
     if (read_result == 1) {
-        // We have a tuple - extract the integer field (column 0)
-        // CRITICAL FIX: get_int_field_mlir expects iteration_signal, not table_handle
-        // The function signature is: get_int_field_mlir(int64_t iteration_signal, int32_t field_index)
-        // We need to use get_int_field instead which takes the proper parameters
+        // We have a tuple - extract both integer fields (column 0: id, column 1: col2)
         extern int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
-        bool is_null = false;
-        iter->current_value = get_int_field(iter->table_handle, 0, &is_null);
-        iter->current_is_null = is_null;
+        
+        // Read column 0: id
+        bool id_is_null = false;
+        iter->current_id = get_int_field(iter->table_handle, 0, &id_is_null);
+        iter->current_id_is_null = id_is_null;
+        
+        // Read column 1: col2
+        bool col2_is_null = false;
+        iter->current_col2 = get_int_field(iter->table_handle, 1, &col2_is_null);
+        iter->current_col2_is_null = col2_is_null;
+        
+        // Set legacy fields for backward compatibility (use id column)
+        iter->current_value = iter->current_id;
+        iter->current_is_null = iter->current_id_is_null;
         iter->has_current_tuple = true;
         
-        // No longer preserving data - we stream immediately in rt_tablebuilder_nextrow
-        
-        elog(NOTICE, "🔗 rt_datasourceiteration_isvalid: Got tuple with value=%d, is_null=%s (PRESERVED)", 
-             iter->current_value, is_null ? "true" : "false");
+        elog(NOTICE, "🔗 rt_datasourceiteration_isvalid: Got tuple with id=%d, col2=%d (both preserved)", 
+             iter->current_id, iter->current_col2);
         return true;
     } else {
         // End of table or error
@@ -223,30 +237,33 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
             ColumnInfo columnInfo[2]; // Elements 1-10: 2 columns × 5 fields each
         } __attribute__((packed)) *batchInfo = (RecordBatchInfo*)row_data;
         
-        // Initialize with Test 4 data: 2 columns (id, col2)
-        batchInfo->numRows = 1;  // Test 4 has 1 row with 2 columns
+        // Initialize with real PostgreSQL data: 2 columns (id, col2)
+        batchInfo->numRows = 1;  // Each iteration processes 1 row with 2 columns
         
-        // Set up actual data for Test 4: id=1, col2=42
-        static int32_t id_data = 1;      // id column value  
-        static int32_t col2_data = 42;   // col2 column value
+        // Get real data from current PostgreSQL tuple via iterator
+        auto* iter = (DataSourceIterator*)iterator;
         static uint8_t valid_bitmap = 0xFF; // All bits valid
         
-        // Column 0: id column
-        batchInfo->columnInfo[0].offset = 0;
-        batchInfo->columnInfo[0].validMultiplier = 0;  // No validity bitmap
-        batchInfo->columnInfo[0].validBuffer = &valid_bitmap;
-        batchInfo->columnInfo[0].dataBuffer = &id_data;
-        batchInfo->columnInfo[0].varLenBuffer = nullptr;
-        
-        // Column 1: col2 column  
-        batchInfo->columnInfo[1].offset = 0;
-        batchInfo->columnInfo[1].validMultiplier = 0;  // No validity bitmap
-        batchInfo->columnInfo[1].validBuffer = &valid_bitmap;
-        batchInfo->columnInfo[1].dataBuffer = &col2_data;
-        batchInfo->columnInfo[1].varLenBuffer = nullptr;
-        
-        elog(NOTICE, "🔗 rt_datasourceiteration_access: Initialized MLIR tuple layout with numRows=%zu, data=0x%p pointing to value=%d", 
-             batchInfo->numRows, batchInfo->columnInfo[0].dataBuffer, id_data);
+        if (iter && iter->has_current_tuple) {
+            // Column 0: id column - use real PostgreSQL data
+            batchInfo->columnInfo[0].offset = 0;
+            batchInfo->columnInfo[0].validMultiplier = 0;  // No validity bitmap
+            batchInfo->columnInfo[0].validBuffer = &valid_bitmap;
+            batchInfo->columnInfo[0].dataBuffer = &iter->current_id;
+            batchInfo->columnInfo[0].varLenBuffer = nullptr;
+            
+            // Column 1: col2 column - use real PostgreSQL data
+            batchInfo->columnInfo[1].offset = 0;
+            batchInfo->columnInfo[1].validMultiplier = 0;  // No validity bitmap
+            batchInfo->columnInfo[1].validBuffer = &valid_bitmap;
+            batchInfo->columnInfo[1].dataBuffer = &iter->current_col2;
+            batchInfo->columnInfo[1].varLenBuffer = nullptr;
+            
+            elog(NOTICE, "🔗 rt_datasourceiteration_access: Initialized MLIR tuple layout with numRows=%zu, id=%d, col2=%d", 
+                 batchInfo->numRows, iter->current_id, iter->current_col2);
+        } else {
+            elog(NOTICE, "🔗 rt_datasourceiteration_access: WARNING - No current tuple data available");
+        }
     }
     
     // Explicit memory barrier to ensure all writes complete before return
