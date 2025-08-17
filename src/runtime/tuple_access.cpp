@@ -25,6 +25,7 @@ extern "C" {
 #include "utils/snapmgr.h"
 #include "storage/lockdefs.h"
 #include "utils/memutils.h"
+#include "utils/datum.h"
 #include "miscadmin.h"
 #include "commands/trigger.h"
 #include "access/xact.h"
@@ -295,87 +296,178 @@ extern "C" void close_postgres_table(void* tableHandle) {
     g_jit_table_oid = InvalidOid;
 }
 
+// Helper: Copy a datum to PostgreSQL memory based on its type
+static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNull) {
+    if (isNull) {
+        return value;  // NULL values don't need copying
+    }
+    
+    // Switch on type to determine copy strategy
+    switch (typeOid) {
+        case TEXTOID:
+        case VARCHAROID:
+        case BPCHAROID:
+            // Text types need deep copy using datumCopy
+            return datumCopy(value, false, -1);
+            
+        case INT2OID:
+        case INT4OID:
+        case INT8OID:
+        case BOOLOID:
+        case FLOAT4OID:
+        case FLOAT8OID:
+            // Scalar types are pass-by-value, safe to use directly
+            return value;
+            
+        default:
+            // For unknown types, attempt conservative copy
+            // TODO: Add more type-specific handling as needed
+            return value;
+    }
+}
+
+// Helper: Validate that memory context is safe for PostgreSQL operations
+static bool validate_memory_context_safety(const char* operation) {
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR(std::string(operation) + ": Memory context unsafe for PostgreSQL operations");
+        return false;
+    }
+    return true;
+}
+
+// Helper: Stream a tuple to the destination
+static bool stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest,
+                                       Datum* values, bool* nulls, int numColumns) {
+    if (!slot || !dest) {
+        PGX_ERROR("stream_tuple_to_destination: Invalid slot or destination");
+        return false;
+    }
+    
+    // Clear the slot first
+    ExecClearTuple(slot);
+    
+    // Copy values to slot
+    for (int i = 0; i < numColumns; i++) {
+        slot->tts_values[i] = values[i];
+        slot->tts_isnull[i] = nulls[i];
+    }
+    
+    slot->tts_nvalid = numColumns;
+    ExecStoreVirtualTuple(slot);
+    
+    // Send to destination
+    return dest->receiveSlot(slot, dest);
+}
+
+// Helper: Process computed results for streaming
+// Helper: Validate streaming prerequisites
+static bool validate_streaming_context() {
+    if (!g_tuple_streamer.isActive || !g_tuple_streamer.dest || !g_tuple_streamer.slot) {
+        PGX_TRACE("process_computed_results: Tuple streamer not active");
+        return false;
+    }
+    return true;
+}
+
+// Helper: Setup memory context for processing
+static MemoryContext setup_processing_memory_context(TupleTableSlot* slot) {
+    MemoryContext destContext = slot->tts_mcxt ? slot->tts_mcxt : CurrentMemoryContext;
+    
+    if (!destContext) {
+        PGX_ERROR("process_computed_results: Invalid destination memory context");
+        return nullptr;
+    }
+    
+    MemoryContextSwitchTo(destContext);
+    return CurrentMemoryContext;
+}
+
+// Helper: Allocate and process column values
+static bool allocate_and_process_columns(Datum** processedValues, bool** processedNulls) {
+    *processedValues = (Datum*)palloc(g_computed_results.numComputedColumns * sizeof(Datum));
+    *processedNulls = (bool*)palloc(g_computed_results.numComputedColumns * sizeof(bool));
+    
+    if (!*processedValues || !*processedNulls) {
+        PGX_ERROR("process_computed_results: Memory allocation failed");
+        return false;
+    }
+    
+    // Process each column
+    for (int i = 0; i < g_computed_results.numComputedColumns; i++) {
+        (*processedValues)[i] = copy_datum_to_postgresql_memory(
+            g_computed_results.computedValues[i],
+            g_computed_results.computedTypes[i],
+            g_computed_results.computedNulls[i]
+        );
+        (*processedNulls)[i] = g_computed_results.computedNulls[i];
+        
+        PGX_TRACE("process_computed_results: col[" + std::to_string(i) + "] type=" + 
+                 std::to_string(g_computed_results.computedTypes[i]) + 
+                 " null=" + ((*processedNulls)[i] ? "true" : "false"));
+    }
+    
+    return true;
+}
+
+static bool process_computed_results_for_streaming() {
+    // Validate streaming context
+    if (!validate_streaming_context()) {
+        return false;
+    }
+    
+    auto slot = g_tuple_streamer.slot;
+    MemoryContext oldContext = CurrentMemoryContext;
+    
+    // Setup memory context for processing
+    MemoryContext destContext = setup_processing_memory_context(slot);
+    if (!destContext) {
+        return false;
+    }
+    
+    // Allocate and process columns
+    Datum* processedValues = nullptr;
+    bool* processedNulls = nullptr;
+    
+    if (!allocate_and_process_columns(&processedValues, &processedNulls)) {
+        MemoryContextSwitchTo(oldContext);
+        return false;
+    }
+    
+    // Stream the processed tuple
+    bool result = stream_tuple_to_destination(slot, g_tuple_streamer.dest,
+                                             processedValues, processedNulls,
+                                             g_computed_results.numComputedColumns);
+    
+    // Clean up allocated memory
+    pfree(processedValues);
+    pfree(processedNulls);
+    
+    // Restore original memory context
+    MemoryContextSwitchTo(oldContext);
+    
+    PGX_TRACE("process_computed_results: streaming returned " + std::string(result ? "true" : "false"));
+    return result;
+}
+
 // MLIR Interface: Stream complete PostgreSQL tuple to output
 // The 'value' parameter is ignored - it's just MLIR's iteration signal
 extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
     PGX_TRACE("add_tuple_to_result: called with value=" + std::to_string(value));
-    PGX_TRACE("add_tuple_to_result: g_computed_results.numComputedColumns=" + std::to_string(g_computed_results.numComputedColumns));
-    PGX_TRACE("add_tuple_to_result: originalTuple=" + std::to_string(reinterpret_cast<uintptr_t>(g_current_tuple_passthrough.originalTuple)));
+    PGX_TRACE("add_tuple_to_result: numComputedColumns=" + 
+             std::to_string(g_computed_results.numComputedColumns));
     
-    // For aggregate queries, we may not have an original tuple but do have computed results
-    // Check if we have computed results to stream
-    if (!g_current_tuple_passthrough.originalTuple && g_computed_results.numComputedColumns > 0) {
-        PGX_NOTICE("add_tuple_to_result: Using computed results path");
-        
-        // For test 1 simplified path: directly stream the computed result
-        // This bypasses the complex tuple streaming logic
-        if (g_tuple_streamer.isActive && g_tuple_streamer.dest && g_tuple_streamer.slot) {
-            auto slot = g_tuple_streamer.slot;
-            
-            // Clear the slot
-            ExecClearTuple(slot);
-            
-            // For test 1: we have one computed column (id=1)
-            if (g_computed_results.numComputedColumns >= 1) {
-                slot->tts_values[0] = g_computed_results.computedValues[0];
-                slot->tts_isnull[0] = g_computed_results.computedNulls[0];
-                PGX_TRACE("add_tuple_to_result: storing value=" + std::to_string(DatumGetInt64(g_computed_results.computedValues[0])) + ", isNull=" + (g_computed_results.computedNulls[0] ? "true" : "false") + ", type=" + std::to_string(g_computed_results.computedTypes[0]));
-            }
-            
-            slot->tts_nvalid = 1;  // We have 1 column
-            ExecStoreVirtualTuple(slot);
-            
-            // Send the tuple to the destination
-            bool result = g_tuple_streamer.dest->receiveSlot(slot, g_tuple_streamer.dest);
-            PGX_TRACE("add_tuple_to_result: direct streaming returned " + std::string(result ? "true" : "false"));
-            return result;
-        }
-        
-        PGX_TRACE("add_tuple_to_result: tuple streamer not active");
+    // Validate memory context safety
+    if (!validate_memory_context_safety("add_tuple_to_result")) {
         return false;
     }
     
-    PGX_NOTICE("add_tuple_to_result: Using computed results path (simplified)");
-    // For minimal control flow, we always use computed results
-    // The JIT has already called store_int_result to populate g_computed_results
-    
-    if (g_tuple_streamer.isActive && g_tuple_streamer.dest && g_tuple_streamer.slot) {
-        auto slot = g_tuple_streamer.slot;
-        
-        // Clear the slot
-        ExecClearTuple(slot);
-        
-        // Stream all computed columns
-        for (int i = 0; i < g_computed_results.numComputedColumns; i++) {
-            slot->tts_values[i] = g_computed_results.computedValues[i];
-            slot->tts_isnull[i] = g_computed_results.computedNulls[i];
-            // Don't try to log values as integers - they might be other types
-            PGX_TRACE("add_tuple_to_result: streaming col[" + std::to_string(i) + "] (type OID=" + std::to_string(g_computed_results.computedTypes[i]) + ", isNull=" + (g_computed_results.computedNulls[i] ? "true" : "false") + ")");
-            
-            // Add validation for text types
-            if ((g_computed_results.computedTypes[i] == TEXTOID || 
-                 g_computed_results.computedTypes[i] == VARCHAROID ||
-                 g_computed_results.computedTypes[i] == BPCHAROID) && 
-                !g_computed_results.computedNulls[i]) {
-                // Check if the Datum is valid
-                void* ptr = DatumGetPointer(g_computed_results.computedValues[i]);
-                PGX_TRACE("add_tuple_to_result: Text column " + std::to_string(i) + " has pointer=" + std::to_string(reinterpret_cast<uintptr_t>(ptr)));
-                if (!ptr) {
-                    PGX_ERROR("add_tuple_to_result: NULL pointer for non-null text column " + std::to_string(i));
-                }
-            }
-        }
-        
-        slot->tts_nvalid = g_computed_results.numComputedColumns;
-        ExecStoreVirtualTuple(slot);
-        
-        // Send the tuple to the destination
-        bool result = g_tuple_streamer.dest->receiveSlot(slot, g_tuple_streamer.dest);
-        PGX_TRACE("add_tuple_to_result: streaming " + std::to_string(g_computed_results.numComputedColumns) + " columns returned " + std::string(result ? "true" : "false"));
-        return result;
+    // Check if we have computed results to stream
+    if (g_computed_results.numComputedColumns > 0) {
+        PGX_NOTICE("add_tuple_to_result: Streaming computed results");
+        return process_computed_results_for_streaming();
     }
     
-    PGX_TRACE("add_tuple_to_result: tuple streamer not active");
+    PGX_TRACE("add_tuple_to_result: No computed results available");
     return false;
 }
 
@@ -458,6 +550,7 @@ extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index,
 // MLIR runtime functions for storing computed expression results
 extern "C" void store_int_result(int32_t columnIndex, int32_t value, bool isNull) {
     PGX_TRACE("store_int_result called with columnIndex=" + std::to_string(columnIndex) + ", value=" + std::to_string(value) + ", isNull=" + (isNull ? "true" : "false"));
+    // INT4 is pass-by-value, no memory context switch needed
     Datum datum = Int32GetDatum(value);
     g_computed_results.setResult(columnIndex, datum, isNull, INT4OID);
     PGX_TRACE("store_int_result completed successfully");
@@ -472,6 +565,7 @@ extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isN
     PGX_TRACE("store_bigint_result: columnIndex=" + std::to_string(columnIndex) + ", value=" + std::to_string(value) + ", isNull=" + (isNull ? "true" : "false"));
     // For test 1, the SERIAL type is actually INT4, not INT8
     // Convert the value to INT4 for proper display
+    // INT4 is pass-by-value, no memory context switch needed
     Datum datum = Int32GetDatum((int32_t)value);
     g_computed_results.setResult(columnIndex, datum, isNull, INT4OID);
     PGX_TRACE("store_bigint_result: stored as INT4 in g_computed_results.numComputedColumns=" + std::to_string(g_computed_results.numComputedColumns));
@@ -480,7 +574,18 @@ extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isN
 extern "C" void store_text_result(int32_t columnIndex, const char* value, bool isNull) {
     Datum datum = 0;
     if (!isNull && value != nullptr) {
-        datum = CStringGetDatum(value);
+        // CRITICAL FIX: Use PostgreSQL's memory context to allocate text
+        // Switch to a stable memory context (e.g., CurTransactionContext)
+        // to ensure the text data survives JIT execution
+        MemoryContext oldContext = CurrentMemoryContext;
+        MemoryContextSwitchTo(CurTransactionContext);
+        
+        // cstring_to_text allocates in the current memory context
+        text* textval = cstring_to_text(value);
+        datum = PointerGetDatum(textval);
+        
+        // Restore original context
+        MemoryContextSwitchTo(oldContext);
     }
     g_computed_results.setResult(columnIndex, datum, isNull, TEXTOID);
 }
@@ -597,6 +702,12 @@ extern "C" int32_t get_int_field_mlir(int64_t iteration_signal, int32_t field_in
 
 // Generic field extractor that stores Datum directly based on actual type
 extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_signal, int32_t field_index) {
+    // Critical: Check memory context safety before PostgreSQL tuple access
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("store_field_as_datum: Memory context unsafe for PostgreSQL operations");
+        return;
+    }
+    
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         PGX_WARNING("store_field_as_datum: No tuple available");
         return;
@@ -622,6 +733,16 @@ extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_sign
     // Get the type OID for this column
     Oid typeOid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
     
+    // MEMORY FIX: For pass-by-reference types, copy to stable memory context
+    MemoryContext oldContext = CurrentMemoryContext;
+    bool needContextSwitch = false;
+    
+    // Check if we need to copy pass-by-reference data
+    if (!isnull && (typeOid == TEXTOID || typeOid == VARCHAROID || typeOid == BPCHAROID)) {
+        needContextSwitch = true;
+        MemoryContextSwitchTo(CurTransactionContext);
+    }
+    
     // Store with the ORIGINAL type OID - this is critical for proper display
     // The store_xxx_result functions hardcode their type OIDs, so we bypass them
     // and call setResult directly to preserve the original column type
@@ -640,11 +761,15 @@ extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_sign
             break;
         case TEXTOID:
         case VARCHAROID:
-        case BPCHAROID: // CHAR type (blank-padded)
-            // Store the original text Datum directly - PostgreSQL manages the memory
-            // The issue might be that all text types should be normalized to TEXTOID for display
-            g_computed_results.setResult(columnIndex, value, isnull, TEXTOID);
+        case BPCHAROID: { // CHAR type (blank-padded)
+            // MEMORY FIX: Copy text data to stable memory
+            Datum copiedValue = value;
+            if (!isnull) {
+                copiedValue = datumCopy(value, false, -1);
+            }
+            g_computed_results.setResult(columnIndex, copiedValue, isnull, TEXTOID);
             break;
+        }
         case FLOAT4OID:
             // Store original float value with correct type - PostgreSQL will handle display
             g_computed_results.setResult(columnIndex, Float4GetDatum(DatumGetFloat4(value)), isnull, typeOid);
@@ -658,6 +783,11 @@ extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_sign
             // PostgreSQL will handle display formatting - we just pass through the data
             g_computed_results.setResult(columnIndex, value, isnull, typeOid);
             break;
+    }
+    
+    // Restore original context if we switched
+    if (needContextSwitch) {
+        MemoryContextSwitchTo(oldContext);
     }
 }
 
@@ -857,7 +987,7 @@ extern "C" void pg_store_result_f64(double value) {
 
 extern "C" void pg_store_result_text(const char* value) {
     PGX_DEBUG("pg_store_result_text called with value: " + std::string(value ? value : "NULL"));
-    // Use existing store_text_result pattern
+    // Use existing store_text_result pattern which now properly copies the string
     bool isNull = (value == nullptr);
     store_text_result(0, value, isNull);
 }

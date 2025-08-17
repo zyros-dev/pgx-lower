@@ -241,171 +241,204 @@ bool handleMLIRResults(bool mlir_success) {
 }
 
 
-bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
-    auto* dest = queryDesc->dest;
-
-    // Extract the planned statement for AST translation
-    const auto* stmt = queryDesc->plannedstmt;
-    if (!stmt) {
-        PGX_ERROR("PlannedStmt is null");
+// Helper: Initialize PostgreSQL execution resources
+static bool initializeExecutionResources(EState** estate, ExprContext** econtext, MemoryContext* old_context) {
+    // Create EState for proper PostgreSQL memory context hierarchy
+    *estate = CreateExecutorState();
+    if (!*estate) {
+        PGX_ERROR("Failed to create EState");
         return false;
     }
-
-    // Log query debug information
-    logQueryDebugInfo(stmt);
-
-    PGX_DEBUG("Using PostgreSQL-safe resource management with PG_TRY/PG_CATCH");
     
-    // PostgreSQL resource management variables
+    // Switch to per-query memory context
+    *old_context = MemoryContextSwitchTo((*estate)->es_query_cxt);
+    
+    // Create expression context for safe evaluation
+    *econtext = CreateExprContext(*estate);
+    if (!*econtext) {
+        PGX_ERROR("Failed to create ExprContext");
+        return false;
+    }
+    
+    PGX_DEBUG("PostgreSQL memory contexts initialized successfully");
+    return true;
+}
+
+// Helper: Setup result processing infrastructure
+static TupleDesc setupResultProcessing(const PlannedStmt* stmt, DestReceiver* dest, 
+                                      TupleTableSlot** slot, CmdType operation) {
+    // Analyze and configure column selection
+    auto selectedColumns = analyzeColumnSelection(stmt);
+
+    // Initialize computed results storage if using computed results path
+    if (!selectedColumns.empty() && selectedColumns[0] == -1) {
+        g_computed_results.resize(selectedColumns.size());
+        PGX_DEBUG("Allocated computed results storage for " + std::to_string(selectedColumns.size()) + " columns");
+    }
+
+    // Setup tuple descriptor for results
+    TupleDesc resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns);
+
+    // Initialize PostgreSQL result handling
+    *slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
+    dest->rStartup(dest, operation, resultTupleDesc);
+
+    g_tuple_streamer.initialize(dest, *slot);
+    g_tuple_streamer.setSelectedColumns(selectedColumns);
+    
+    return resultTupleDesc;
+}
+
+// Helper: Clean up PostgreSQL resources
+static void cleanupExecutionResources(EState* estate, ExprContext* econtext, 
+                                     TupleTableSlot* slot, TupleDesc resultTupleDesc,
+                                     DestReceiver* dest, MemoryContext old_context) {
+    PGX_DEBUG("Beginning PostgreSQL-safe cleanup");
+    
+    // Clean up global tuple streamer
+    g_tuple_streamer.shutdown();
+    
+    // Clean up global tuple passthrough if it exists
+    if (g_current_tuple_passthrough.originalTuple) {
+        heap_freetuple(g_current_tuple_passthrough.originalTuple);
+        g_current_tuple_passthrough.originalTuple = nullptr;
+    }
+    
+    // Clean up result streaming resources
+    if (dest) {
+        dest->rShutdown(dest);
+    }
+    
+    if (slot) {
+        ExecDropSingleTupleTableSlot(slot);
+    }
+    
+    if (resultTupleDesc) {
+        FreeTupleDesc(resultTupleDesc);
+    }
+    
+    // Reset expression context
+    if (econtext) {
+        ResetExprContext(econtext);
+    }
+    
+    // Restore original memory context
+    MemoryContextSwitchTo(old_context);
+    
+    // Free EState (automatically cleans up econtext and es_query_cxt)
+    if (estate) {
+        FreeExecutorState(estate);
+    }
+}
+
+// Helper: Execute MLIR translation phase
+static bool executeMLIRTranslation(PlannedStmt* stmt, EState* estate, 
+                                  ExprContext* econtext, DestReceiver* dest) {
+    bool mlir_success = mlir_runner::run_mlir_with_dest_receiver(
+        stmt, estate, econtext, dest);
+    
+    PGX_INFO("mlir_runner::run_mlir_with_dest_receiver returned "
+                  + std::string(mlir_success ? "true" : "false"));
+    
+    if (!mlir_success) {
+        PGX_ERROR("MLIR compilation failed, falling back to PostgreSQL standard execution");
+    }
+    
+    return mlir_success;
+}
+
+// Helper: Validate and prepare query for execution
+static bool validateAndPrepareQuery(const QueryDesc* queryDesc, const PlannedStmt** stmt) {
+    if (!queryDesc || !queryDesc->plannedstmt) {
+        PGX_ERROR("Invalid QueryDesc or PlannedStmt");
+        return false;
+    }
+    
+    *stmt = queryDesc->plannedstmt;
+    logQueryDebugInfo(*stmt);
+    return true;
+}
+
+// Helper: Initialize execution context
+struct ExecutionContext {
     EState* estate = nullptr;
     ExprContext* econtext = nullptr;
-    MemoryContext old_context = CurrentMemoryContext;
+    MemoryContext old_context = nullptr;
     TupleTableSlot* slot = nullptr;
     TupleDesc resultTupleDesc = nullptr;
-    bool resources_initialized = false;
+    bool initialized = false;
+};
+
+// Helper: Setup execution with resources
+static bool setupExecution(ExecutionContext& ctx, const PlannedStmt* stmt, 
+                          DestReceiver* dest, CmdType operation) {
+    // Initialize execution resources
+    if (!initializeExecutionResources(&ctx.estate, &ctx.econtext, &ctx.old_context)) {
+        return false;
+    }
+    
+    ctx.initialized = true;
+    
+    // Setup result processing
+    ctx.resultTupleDesc = setupResultProcessing(stmt, dest, &ctx.slot, operation);
+    return true;
+}
+
+// Helper: Execute with exception handling
+static bool executeWithExceptionHandling(ExecutionContext& ctx, PlannedStmt* stmt,
+                                        DestReceiver* dest) {
     bool mlir_success = false;
     
-    // Use PostgreSQL's exception handling mechanism
     PG_TRY();
     {
-        // Create EState for proper PostgreSQL memory context hierarchy
-        estate = CreateExecutorState();
-        if (!estate) {
-            ereport(ERROR, (errmsg("Failed to create EState")));
-        }
-        
-        // Switch to per-query memory context
-        old_context = MemoryContextSwitchTo(estate->es_query_cxt);
-        
-        // Create expression context for safe evaluation
-        econtext = CreateExprContext(estate);
-        if (!econtext) {
-            ereport(ERROR, (errmsg("Failed to create ExprContext")));
-        }
-        
-        resources_initialized = true;
-        PGX_DEBUG("PostgreSQL memory contexts initialized successfully");
-
-        // Analyze and configure column selection
-        auto selectedColumns = analyzeColumnSelection(stmt);
-
-        // Initialize computed results storage if using computed results path
-        if (!selectedColumns.empty() && selectedColumns[0] == -1) {
-            g_computed_results.resize(selectedColumns.size());
-            PGX_DEBUG("Allocated computed results storage for " + std::to_string(selectedColumns.size()) + " columns");
-        }
-
-        // Setup tuple descriptor for results
-        resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns);
-
-        // Initialize PostgreSQL result handling
-        slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
-        dest->rStartup(dest, queryDesc->operation, resultTupleDesc);
-
-        g_tuple_streamer.initialize(dest, slot);
-        g_tuple_streamer.setSelectedColumns(selectedColumns);
-
-        // Execute MLIR translation with proper memory contexts
-        mlir_success = mlir_runner::run_mlir_with_dest_receiver(
-            const_cast<PlannedStmt*>(stmt), estate, econtext, dest);
-        
-        PGX_INFO("mlir_runner::run_mlir_with_dest_receiver returned "
-                      + std::string(mlir_success ? "true" : "false"));
-        
-        if (!mlir_success) {
-            PGX_ERROR("MLIR compilation failed, falling back to PostgreSQL standard execution");
-        }
+        mlir_success = executeMLIRTranslation(stmt, ctx.estate, ctx.econtext, dest);
     }
     PG_CATCH();
     {
-        // PostgreSQL-compatible cleanup in error path
-        PGX_ERROR("PostgreSQL exception caught during MLIR execution");
-        
-        // Clean up in reverse order of allocation
-        if (resources_initialized) {
-            // Shutdown tuple streamer
-            g_tuple_streamer.shutdown();
-            
-            // Clean up result streaming resources
-            if (dest) {
-                dest->rShutdown(dest);
-            }
-            
-            if (slot) {
-                ExecDropSingleTupleTableSlot(slot);
-            }
-            
-            if (resultTupleDesc) {
-                FreeTupleDesc(resultTupleDesc);
-            }
-            
-            // Reset expression context
-            if (econtext) {
-                ResetExprContext(econtext);
-            }
-            
-            // Switch back to original context
-            MemoryContextSwitchTo(old_context);
-            
-            // Free EState (automatically cleans up econtext and es_query_cxt)
-            if (estate) {
-                FreeExecutorState(estate);
-            }
+        PGX_ERROR("PostgreSQL exception during MLIR execution");
+        if (ctx.initialized) {
+            cleanupExecutionResources(ctx.estate, ctx.econtext, ctx.slot, 
+                                    ctx.resultTupleDesc, dest, ctx.old_context);
         }
-        
         PG_RE_THROW();
     }
     PG_END_TRY();
     
-    // Normal cleanup path - only executed if PG_TRY block succeeds
-    if (resources_initialized) {
-        PGX_DEBUG("Beginning PostgreSQL-safe cleanup");
-        
-        // Handle results
-        auto final_result = handleMLIRResults(mlir_success);
-        
-        // Clean up global tuple streamer
-        g_tuple_streamer.shutdown();
-        
-        // Clean up global tuple passthrough if it exists
-        if (g_current_tuple_passthrough.originalTuple) {
-            heap_freetuple(g_current_tuple_passthrough.originalTuple);
-            g_current_tuple_passthrough.originalTuple = nullptr;
-        }
-        
-        // Clean up result streaming resources
-        if (dest) {
-            dest->rShutdown(dest);
-        }
-        
-        if (slot) {
-            ExecDropSingleTupleTableSlot(slot);
-        }
-        
-        if (resultTupleDesc) {
-            FreeTupleDesc(resultTupleDesc);
-        }
-        
-        // Reset expression context
-        if (econtext) {
-            ResetExprContext(econtext);
-        }
-        
-        // Restore original memory context
-        MemoryContextSwitchTo(old_context);
-        
-        // Free EState (automatically cleans up econtext and es_query_cxt)
-        if (estate) {
-            FreeExecutorState(estate);
-        }
-        
-        PGX_INFO("run_mlir_with_ast_translation completed successfully, returning "
-                      + std::string(final_result ? "true" : "false"));
-        
-        return final_result;
+    return mlir_success;
+}
+
+bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
+    PGX_DEBUG("Using PostgreSQL-safe resource management with PG_TRY/PG_CATCH");
+    
+    // Validate and prepare query
+    const PlannedStmt* stmt = nullptr;
+    if (!validateAndPrepareQuery(queryDesc, &stmt)) {
+        return false;
     }
     
-    return false;
+    // Initialize execution context
+    ExecutionContext ctx;
+    ctx.old_context = CurrentMemoryContext;
+    
+    // Setup and execute with exception handling
+    if (!setupExecution(ctx, stmt, queryDesc->dest, queryDesc->operation)) {
+        ereport(ERROR, (errmsg("Failed to initialize execution resources")));
+        return false;
+    }
+    
+    // Execute MLIR translation with exception handling
+    bool mlir_success = executeWithExceptionHandling(ctx, const_cast<PlannedStmt*>(stmt), 
+                                                    queryDesc->dest);
+    
+    // Handle results and cleanup
+    auto final_result = handleMLIRResults(mlir_success);
+    cleanupExecutionResources(ctx.estate, ctx.econtext, ctx.slot, ctx.resultTupleDesc, 
+                            queryDesc->dest, ctx.old_context);
+    
+    PGX_INFO("run_mlir_with_ast_translation completed, returning "
+                  + std::string(final_result ? "true" : "false"));
+    
+    return final_result;
 }
 
 auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {

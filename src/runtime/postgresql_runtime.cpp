@@ -26,9 +26,23 @@ extern void* open_postgres_table(const char* tableName);
 extern int64_t read_next_tuple_from_table(void* tableHandle);
 extern int32_t get_int_field_mlir(void* tuple_handle, int32_t field_index, bool* is_null);
 
-// Execution context function
+// Execution context functions
+static void* g_execution_context = nullptr;
+
+void rt_set_execution_context(void* context_ptr) {
+    // Store context pointer for retrieval by rt_get_execution_context
+    g_execution_context = context_ptr;
+    elog(NOTICE, "🔗 rt_set_execution_context: Stored context ptr=%p", context_ptr);
+}
+
 void* rt_get_execution_context() {
-    // Return a dummy context for Test 1
+    // If context was set, return it; otherwise return dummy context for Test 1
+    if (g_execution_context) {
+        elog(NOTICE, "🔗 rt_get_execution_context: Returning stored context ptr=%p", g_execution_context);
+        return g_execution_context;
+    }
+    
+    // Fallback to dummy context for Test 1
     static struct {
         void* table_ref;
         int64_t row_count;
@@ -115,6 +129,11 @@ void rt_tablebuilder_addint64(void* /* builder */, int64_t /* value */) {
     // Add an int64 value to the current row - no-op for Test 1
 }
 
+void rt_tablebuilder_addint32(void* /* builder */, bool /* is_null */, int32_t /* value */) {
+    // Add an int32 value to the current row - no-op for Test 1
+    // All data streaming happens in rt_datasourceiteration_isvalid()
+}
+
 void rt_tablebuilder_destroy(void* builder) {
     // Clean up the table builder
     if (builder) {
@@ -159,8 +178,12 @@ bool rt_datasourceiteration_isvalid(void* iterator) {
     
     if (read_result == 1) {
         // We have a tuple - extract the integer field (column 0)
+        // CRITICAL FIX: get_int_field_mlir expects iteration_signal, not table_handle
+        // The function signature is: get_int_field_mlir(int64_t iteration_signal, int32_t field_index)
+        // We need to use get_int_field instead which takes the proper parameters
+        extern int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
         bool is_null = false;
-        iter->current_value = get_int_field_mlir(iter->table_handle, 0, &is_null);
+        iter->current_value = get_int_field(iter->table_handle, 0, &is_null);
         iter->current_is_null = is_null;
         iter->has_current_tuple = true;
         
@@ -210,8 +233,25 @@ void rt_datasourceiteration_next(void* iterator) {
 }
 
 void rt_datasourceiteration_end(void* iterator) {
-    // Clean up iterator
+    // Clean up iterator and close PostgreSQL table
     if (iterator) {
+        auto* iter = (DataSourceIterator*)iterator;
+        
+        // CRITICAL FIX: Close the PostgreSQL table handle
+        // This was missing and causing resource leaks and potential crashes
+        if (iter->table_handle) {
+            elog(NOTICE, "🔗 rt_datasourceiteration_end: Closing PostgreSQL table");
+            // Need to call the close function from tuple_access.cpp
+            extern void close_postgres_table(void* tableHandle);
+            close_postgres_table(iter->table_handle);
+            iter->table_handle = nullptr;
+        }
+        
+        // Clear global pointer if it matches this iterator
+        if (g_current_iterator == iterator) {
+            g_current_iterator = nullptr;
+        }
+        
         free(iterator);
     }
 }

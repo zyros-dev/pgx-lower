@@ -37,6 +37,7 @@ extern "C" {
 #include "postgres.h"
 #include "utils/memutils.h"
 #include "utils/elog.h"
+#include "miscadmin.h"  // For CHECK_FOR_INTERRUPTS
 }
 #endif
 
@@ -59,6 +60,7 @@ class WrappedExecutionEngine {
     std::unique_ptr<mlir::ExecutionEngine> engine;
     size_t jitTime;
     void* mainFuncPtr;
+    void* setContextPtr;  // Added per LingoDB pattern
     bool useStaticLinking;
     
 private:
@@ -159,12 +161,22 @@ private:
                 PGX_WARNING("Main function not found via ExecutionEngine::lookup, will use static linking");
                 useStaticLinking = true;
             }
+            
+            // Lookup setContext function per LingoDB pattern
+            auto setContextResult = engine->lookup("rt_set_execution_context");
+            if (setContextResult) {
+                setContextPtr = setContextResult.get();
+                PGX_INFO("Found rt_set_execution_context function at: " + 
+                         std::to_string(reinterpret_cast<uintptr_t>(setContextPtr)));
+            } else {
+                PGX_WARNING("rt_set_execution_context function not found - context management disabled");
+            }
         }
     }
     
 public:
     WrappedExecutionEngine(mlir::ModuleOp module, llvm::CodeGenOptLevel optLevel, bool forceStatic = false) 
-        : mainFuncPtr(nullptr), useStaticLinking(forceStatic) {
+        : mainFuncPtr(nullptr), setContextPtr(nullptr), useStaticLinking(forceStatic) {
         
         auto start = std::chrono::high_resolution_clock::now();
         
@@ -177,7 +189,12 @@ public:
     }
     
     bool succeeded() const {
-        return mainFuncPtr != nullptr || useStaticLinking;
+        // Per LingoDB pattern: both mainFuncPtr and setContextPtr must be valid
+        return (mainFuncPtr != nullptr && setContextPtr != nullptr) || useStaticLinking;
+    }
+    
+    void* getSetContextPtr() const {
+        return setContextPtr;
     }
     
     // Helper method to compile object file to shared library
@@ -264,7 +281,20 @@ public:
         
         // Lookup main function
         mainFuncPtr = lookupMainFunction(handle);
-        return mainFuncPtr != nullptr;
+        
+        // Lookup setContext function per LingoDB pattern
+        setContextPtr = dlsym(handle, "rt_set_execution_context");
+        if (!setContextPtr) {
+            const char* dlError = dlerror();
+            PGX_WARNING("Cannot find rt_set_execution_context via dlsym: " + 
+                       std::string(dlError ? dlError : "unknown"));
+        } else {
+            PGX_INFO("Found rt_set_execution_context via dlsym at: " + 
+                    std::to_string(reinterpret_cast<uintptr_t>(setContextPtr)));
+        }
+        
+        // Both functions must be found for success per LingoDB pattern
+        return mainFuncPtr != nullptr && setContextPtr != nullptr;
     }
     
     size_t getJitTime() const {
@@ -468,6 +498,7 @@ std::vector<std::string> getTableBuilderFunctions() {
         "rt_tablebuilder_build", 
         "rt_tablebuilder_nextrow",
         "rt_tablebuilder_addint64",
+        "rt_tablebuilder_addint32",
         "rt_tablebuilder_destroy"
     };
 }
@@ -626,20 +657,58 @@ void* PostgreSQLJITExecutionEngine::lookupExecutionFunction(WrappedExecutionEngi
 bool PostgreSQLJITExecutionEngine::invokeCompiledFunction(void* funcPtr, void* estate, void* dest) {
 #ifdef POSTGRESQL_EXTENSION
     bool executionSuccess = false;
+    
+    // CRITICAL: Save current memory context before JIT execution
+    // This ensures we can safely return to it after JIT completes
+    MemoryContext savedContext = CurrentMemoryContext;
+    
+    // MEMORY FIX: Do NOT switch contexts before JIT execution
+    // The JIT code will manage its own memory context switching as needed
+    // Switching here can cause issues with tuple streaming
+    PGX_DEBUG("Keeping current memory context for JIT execution");
+    
     PG_TRY();
     {
+        // CRITICAL: Set execution context before calling JIT function
+        // The JIT code expects rt_get_execution_context to return the estate
+        if (wrappedEngine) {
+            auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
+            void* setContextPtr = wrapped->getSetContextPtr();
+            if (setContextPtr) {
+                PGX_INFO("Setting execution context via rt_set_execution_context");
+                typedef void (*set_context_func)(void*);
+                auto setCtx = (set_context_func) setContextPtr;
+                setCtx(estate);
+            }
+        }
+        
         typedef void (*query_func)();
         auto fn = (query_func) funcPtr;
         fn();
         executionSuccess = true;
         PGX_INFO("JIT function execution completed");
+        
+        // CRITICAL FIX: DO NOT switch context here!
+        // PostgreSQL still needs access to JIT-allocated data.
+        // The context switch will happen after the function returns
+        // and PostgreSQL has finished processing all tuples.
+        
+        // Just ensure interrupts are processed
+        CHECK_FOR_INTERRUPTS();
     }
     PG_CATCH();
     {
+        // Ensure we're back in the saved context even on error
+        MemoryContextSwitchTo(savedContext);
         PGX_ERROR("PostgreSQL exception during JIT execution");
         PG_RE_THROW();
     }
     PG_END_TRY();
+    
+    // MEMORY FIX: Restore context AFTER all tuple processing is complete
+    // This is safe because we're now outside the critical path
+    MemoryContextSwitchTo(savedContext);
+    PGX_DEBUG("Restored original memory context after JIT execution");
     
     return executionSuccess;
 #else

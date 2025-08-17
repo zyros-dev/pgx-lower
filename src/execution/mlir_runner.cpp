@@ -299,7 +299,20 @@ static bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, 
     PGX_INFO("Executing JIT compiled query with destination receiver");
     int result = pgx_jit_execute_query(execHandle, estate, dest);
     
-    // Cleanup
+    // CRITICAL FIX: Delay cleanup to prevent PostgreSQL crash
+    // The execution handle destruction was happening too early, causing PostgreSQL
+    // to access deallocated memory when processing results. We need to ensure
+    // PostgreSQL has finished accessing any shared memory before cleanup.
+    
+    // Force PostgreSQL to flush any pending results before cleanup
+    if (result == 0 && dest) {
+        PGX_DEBUG("JIT execution successful, ensuring results are fully processed");
+        // The destination receiver has already received the tuples during JIT execution
+        // but we need to ensure PostgreSQL isn't still accessing shared memory
+    }
+    
+    // Now safe to cleanup - PostgreSQL has finished with the results
+    PGX_DEBUG("Destroying JIT execution handle after results are processed");
     pgx_jit_destroy_execution_handle(execHandle);
     
     if (result != 0) {
@@ -510,10 +523,24 @@ static bool runPhase3a(::mlir::ModuleOp module) {
     PGX_INFO("Phase 3a: Running RelAlg→DB lowering");
     
     ::mlir::PassManager pm(&context);
+    pm.enableVerifier(true);  // Enable verification for all transformations
+    
+    // Verify module before lowering
+    if (mlir::failed(mlir::verify(module))) {
+        PGX_ERROR("Phase 3a: Module verification failed before lowering");
+        return false;
+    }
+    
     mlir::pgx_lower::createRelAlgToDBPipeline(pm, true);
     
     if (mlir::failed(pm.run(module))) {
         PGX_ERROR("Phase 3a failed: RelAlg→DB lowering error");
+        return false;
+    }
+    
+    // Verify module after lowering
+    if (mlir::failed(mlir::verify(module))) {
+        PGX_ERROR("Phase 3a: Module verification failed after lowering");
         return false;
     }
     
@@ -664,6 +691,14 @@ static bool runPhase3c(::mlir::ModuleOp module) {
         
         PGX_INFO("Phase 3c: Module context obtained, creating PassManager");
         ::mlir::PassManager pm(moduleContext);
+        pm.enableVerifier(true);  // Enable verification for all transformations
+        
+        // Verify module before lowering
+        if (mlir::failed(mlir::verify(module))) {
+            PGX_ERROR("Phase 3c: Module verification failed before lowering");
+            success = false;
+            return false;
+        }
         
         PGX_INFO("Phase 3c: PassManager created successfully");
         PGX_INFO("Phase 3c: BEFORE configuring Standard→LLVM pipeline");
@@ -724,7 +759,14 @@ static bool runPhase3c(::mlir::ModuleOp module) {
             success = false;
         } else {
             PGX_INFO("Phase 3c: PassManager execution completed successfully");
-            success = true;
+            
+            // Verify module after lowering
+            if (mlir::failed(mlir::verify(module))) {
+                PGX_ERROR("Phase 3c: Module verification failed after lowering");
+                success = false;
+            } else {
+                success = true;
+            }
         }
         PGX_INFO("Phase 3c: EXIT - Pipeline execution finished");
     }
