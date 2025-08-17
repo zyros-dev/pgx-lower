@@ -15,12 +15,7 @@ struct ExprContext;
 }
 
 // For DestReceiver, we need conditional compilation
-#ifdef POSTGRESQL_EXTENSION
-extern "C" {
-#include "postgres.h"
-#include "tcop/dest.h"
-}
-#else
+#ifndef POSTGRESQL_EXTENSION
 // In unit tests, use void* for DestReceiver
 typedef void* DestReceiver;
 #endif
@@ -36,7 +31,7 @@ auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool;
 auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext) -> bool;
 
 // PostgreSQL Integration with DestReceiver for result streaming (Phase 4g-2c)
-auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, DestReceiver* dest) -> bool;
+// Note: DestReceiver forward declaration is handled in the implementation file to avoid header conflicts
 
 } // namespace mlir_runner
 

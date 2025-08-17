@@ -168,6 +168,7 @@ add_test(NAME LLVMPassesSimpleTest COMMAND test_llvm_passes_simple)
 # Create a separate crash test that only needs RelAlg→DB conversion
 add_executable(test_relalg_crash
     ../conversion/test_relalg_lowering_crash.cpp
+    ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp  # Direct inclusion for TableMetaData functions
 )
 
 target_include_directories(test_relalg_crash PRIVATE
@@ -185,6 +186,7 @@ target_link_libraries(test_relalg_crash
     MLIRDSA
     MLIRUtilDialect
     MLIRRelAlgToDB
+    MLIRPasses  # Contains createRelAlgToDBPipeline function
     pgx_lower_logging
     MLIRFuncDialect
     MLIRArithDialect

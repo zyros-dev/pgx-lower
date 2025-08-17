@@ -69,7 +69,7 @@ target_include_directories(test_tablebuilder_addbool PRIVATE
 target_link_libraries(test_tablebuilder_addbool
     gtest
     gtest_main
-    runtime  # Link against runtime library for rt_tablebuilder_addbool
+    # runtime library removed - not available in unit test environment
 )
 
 add_test(NAME TableBuilderAddBoolTest COMMAND test_tablebuilder_addbool)

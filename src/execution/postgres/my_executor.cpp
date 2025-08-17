@@ -4,6 +4,11 @@
 #include "execution/error_handling.h"
 #include "execution/logging.h"
 
+// Forward declaration for DestReceiver function (declared in mlir_runner.cpp)
+namespace mlir_runner {
+    auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, DestReceiver* dest) -> bool;
+}
+
 #include "runtime/tuple_access.h"
 
 #include <vector>
@@ -459,6 +464,7 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     PGX_DEBUG("Query text: " + std::string(plan->sourceText ? plan->sourceText : "NULL"));
 
     const auto* stmt = plan->plannedstmt;
+#ifdef POSTGRESQL_EXTENSION
     const auto capabilities = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
 
     PGX_DEBUG("Query analysis: " + std::string(capabilities.getDescription()));
@@ -466,6 +472,11 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
     // 📊 ALWAYS log execution tree regardless of compatibility for comprehensive data collection
     PGX_INFO("📊 FORCING tree logging for all queries in comprehensive collection mode");
     pgx_lower::QueryAnalyzer::validateAndLogPlanStructure(stmt);
+#else
+    // In unit tests, create a mock analysis
+    auto capabilities = pgx_lower::QueryAnalyzer::analyzeForTesting("test query");
+    PGX_DEBUG("Query analysis: " + std::string(capabilities.getDescription()));
+#endif
 
     if (!capabilities.isMLIRCompatible()) {
         PGX_INFO("Query requires features not yet supported by MLIR");
