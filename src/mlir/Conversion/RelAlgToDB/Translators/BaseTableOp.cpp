@@ -44,7 +44,7 @@ class BaseTableTranslator : public mlir::relalg::Translator {
          auto identifier = namedAttr.getName();
          auto attr = namedAttr.getValue();
          auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
-         if (requiredAttributes.contains(&attrDef.getColumn())) {
+         if (requiredAttributes.empty() || requiredAttributes.contains(&attrDef.getColumn())) {
             if (!first) {
                scanDescription += ",";
             } else {

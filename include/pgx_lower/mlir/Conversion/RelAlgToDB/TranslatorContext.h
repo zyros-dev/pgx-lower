@@ -13,11 +13,9 @@ class TranslatorContext {
    using AttributeResolverScope = llvm::ScopedHashTableScope<const mlir::relalg::Column*, ::mlir::Value>;
 
    ::mlir::Value getValueForAttribute(const mlir::relalg::Column* attribute) const {
-      if (!symbolTable.lookup(attribute)) {
-         assert(symbolTable.count(attribute));
-      }
-
-      return symbolTable.lookup(attribute);
+      auto value = symbolTable.lookup(attribute);
+      assert(value && "Symbol not found in table - check column registration order");
+      return value;
    }
    ::mlir::Value getUnsafeValueForAttribute(const mlir::relalg::Column* attribute) const {
       return symbolTable.lookup(attribute);
