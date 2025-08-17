@@ -208,7 +208,6 @@ add_executable(mlir_unit_test
     ../conversion/test_relalg_lowering_crash.cpp  # Add crash reproduction test back
     ../frontend/test_plan_node_types.cpp
     ../frontend/test_base_table_op.cpp
-    ${CMAKE_SOURCE_DIR}/src/frontend/SQL/postgresql_ast_translator.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp
 )
 

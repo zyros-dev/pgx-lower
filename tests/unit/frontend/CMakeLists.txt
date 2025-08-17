@@ -43,6 +43,7 @@ add_executable(test_basic_plan_nodes
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_basic_plan_nodes PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_basic_plan_nodes PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_basic_plan_nodes ${FRONTEND_TEST_LIBS})
 add_test(NAME BasicPlanNodesTest COMMAND test_basic_plan_nodes)
 
@@ -52,6 +53,7 @@ add_executable(test_complex_plan_trees
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_complex_plan_trees PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_complex_plan_trees PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_complex_plan_trees ${FRONTEND_TEST_LIBS})
 add_test(NAME ComplexPlanTreesTest COMMAND test_complex_plan_trees)
 
@@ -61,6 +63,7 @@ add_executable(test_arithmetic_expressions
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_arithmetic_expressions PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_arithmetic_expressions PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_arithmetic_expressions ${FRONTEND_TEST_LIBS})
 add_test(NAME ArithmeticExpressionsTest COMMAND test_arithmetic_expressions)
 
@@ -70,6 +73,7 @@ add_executable(test_logical_expressions
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_logical_expressions PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_logical_expressions PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_logical_expressions ${FRONTEND_TEST_LIBS})
 add_test(NAME LogicalExpressionsTest COMMAND test_logical_expressions)
 
@@ -79,6 +83,7 @@ add_executable(test_error_handling
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_error_handling PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_error_handling PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_error_handling ${FRONTEND_TEST_LIBS})
 add_test(NAME ErrorHandlingTest COMMAND test_error_handling)
 
@@ -88,6 +93,7 @@ add_executable(test_plan_node_types_full
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_plan_node_types_full PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_plan_node_types_full PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_plan_node_types_full ${FRONTEND_TEST_LIBS})
 add_test(NAME PlanNodeTypesFullTest COMMAND test_plan_node_types_full)
 
@@ -97,6 +103,7 @@ add_executable(test_base_table_op
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_base_table_op PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_base_table_op PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_base_table_op ${FRONTEND_TEST_LIBS})
 add_test(NAME BaseTableOpTest COMMAND test_base_table_op)
 
@@ -106,6 +113,7 @@ add_executable(test_ast_translator_fixed
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_ast_translator_fixed PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_ast_translator_fixed PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_ast_translator_fixed ${FRONTEND_TEST_LIBS})
 add_test(NAME ASTTranslatorFixedTest COMMAND test_ast_translator_fixed)
 
@@ -115,6 +123,7 @@ add_executable(test_opexpr_translation
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_opexpr_translation PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_opexpr_translation PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_opexpr_translation ${FRONTEND_TEST_LIBS})
 add_test(NAME OpExprTranslationTest COMMAND test_opexpr_translation)
 
@@ -124,5 +133,6 @@ add_executable(test_multi_column_basetable
     ${FRONTEND_TEST_SOURCES}
 )
 target_include_directories(test_multi_column_basetable PRIVATE ${FRONTEND_TEST_INCLUDES})
+target_compile_definitions(test_multi_column_basetable PRIVATE BUILDING_UNIT_TESTS)
 target_link_libraries(test_multi_column_basetable ${FRONTEND_TEST_LIBS})
 add_test(NAME MultiColumnBaseTableTest COMMAND test_multi_column_basetable)
