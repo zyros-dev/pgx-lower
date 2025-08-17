@@ -11,4 +11,4 @@ CREATE TABLE test(id SERIAL);
 INSERT INTO test(id)
 SELECT generate_series(1, 1000000);
 
-SELECT COUNT(*) FROM test;
+SELECT * FROM test;

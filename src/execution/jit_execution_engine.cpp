@@ -2,6 +2,7 @@
 #include "execution/logging.h"
 #include "runtime/tuple_access.h"
 #include <fstream>
+#include <sstream>
 #include <dlfcn.h>
 #include <filesystem>
 #include <array>
@@ -85,6 +86,35 @@ private:
             if (!llvmModule) {
                 PGX_ERROR("Failed to translate MLIR to LLVM IR");
                 return nullptr;
+            }
+            
+            // CRITICAL DEBUG: Dump LLVM IR to analyze the generated code
+            PGX_INFO("=== LLVM IR DUMP START ===");
+            std::string llvmIRString;
+            llvm::raw_string_ostream llvmIRStream(llvmIRString);
+            llvmModule->print(llvmIRStream, nullptr);
+            llvmIRStream.flush();
+            
+            // Split into lines for readable output
+            std::istringstream iss(llvmIRString);
+            std::string line;
+            int lineNum = 0;
+            while (std::getline(iss, line)) {
+                if (lineNum < 200) { // Limit output to prevent overwhelming logs
+                    PGX_INFO("LLVM IR [" + std::to_string(lineNum++) + "]: " + line);
+                }
+            }
+            PGX_INFO("=== LLVM IR DUMP END (showing first 200 lines) ===");
+            
+            // Verify the module is valid
+            std::string verifyError;
+            llvm::raw_string_ostream verifyStream(verifyError);
+            if (llvm::verifyModule(*llvmModule, &verifyStream)) {
+                verifyStream.flush();
+                PGX_ERROR("LLVM module verification failed: " + verifyError);
+                // Don't return nullptr, let's try to continue and see what happens
+            } else {
+                PGX_INFO("LLVM module verification passed");
             }
             
             // Fix function visibility for dlsym lookup (critical for dlopen approach)
