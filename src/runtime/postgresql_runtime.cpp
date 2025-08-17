@@ -142,6 +142,12 @@ void rt_tablebuilder_addint32(void* /* builder */, bool /* is_null */, int32_t /
     // All data streaming happens in rt_datasourceiteration_isvalid()
 }
 
+void rt_tablebuilder_addbool(void* /* builder */, bool /* is_null */, bool /* value */) {
+    // Add a boolean value to the current row - no-op for Test 1
+    // All data streaming happens in rt_datasourceiteration_isvalid()
+    elog(NOTICE, "🔗 rt_tablebuilder_addbool: Adding boolean value");
+}
+
 void rt_tablebuilder_destroy(void* builder) {
     // Clean up the table builder
     if (builder) {

@@ -83,6 +83,9 @@ target_link_libraries(pgx_lower PRIVATE
     -Wl,--as-needed
 )
 
+# Export runtime symbols for JIT-compiled code
+target_link_options(pgx_lower PRIVATE -Wl,--export-dynamic)
+
 # Add include directories for source files
 target_include_directories(pgx_lower PRIVATE
     ${CMAKE_SOURCE_DIR}/src
