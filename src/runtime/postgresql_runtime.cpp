@@ -206,35 +206,47 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
     
     elog(NOTICE, "🔗 rt_datasourceiteration_access: Called with iterator=%p, row_data=%p", iterator, row_data);
     
-    // CRITICAL FIX: Initialize the RecordBatchInfo structure to prevent undefined behavior
-    // The LLVM code expects this structure to be populated with valid data
+    // CRITICAL FIX: Initialize the RecordBatchInfo structure for multi-column support
+    // Test 4 has 2 columns (id, col2) so needs 11-element structure: 1 numRows + 2×5 ColumnInfo fields
     if (row_data) {
-        // MLIR expects EXACTLY this layout (48 bytes total, no padding):
-        // This matches the 6-element tuple allocation in LLVM IR
-        struct MLIRTupleLayout {
-            size_t numRows;           // Element 0: index type
-            size_t offset;            // Element 1: index (ColumnInfo[0].offset)  
-            size_t validMultiplier;   // Element 2: index (ColumnInfo[0].validMultiplier)
-            void* validBuffer;        // Element 3: !util.ref<i8>
-            void* dataBuffer;         // Element 4: !util.ref<i32>
-            void* varLenBuffer;       // Element 5: !util.ref<i8>
-        } __attribute__((packed)) *batchInfo = (decltype(batchInfo))row_data;
+        // Multi-column RecordBatchInfo structure matching LingoDB pattern
+        struct ColumnInfo {
+            size_t offset;            // Offset in buffer
+            size_t validMultiplier;   // Validity bitmap multiplier
+            void* validBuffer;        // Validity bitmap buffer
+            void* dataBuffer;         // Data buffer
+            void* varLenBuffer;       // Variable length buffer
+        };
         
-        // Initialize with correct values for Test 1
-        batchInfo->numRows = 1;           // Test 1 has 1 row
-        batchInfo->offset = 0;            // Column 0 starts at offset 0
-        batchInfo->validMultiplier = 0;   // Not using validity bitmap for Test 1
+        struct RecordBatchInfo {
+            size_t numRows;           // Element 0: number of rows
+            ColumnInfo columnInfo[2]; // Elements 1-10: 2 columns × 5 fields each
+        } __attribute__((packed)) *batchInfo = (RecordBatchInfo*)row_data;
         
-        // Set up actual data for Test 1
-        static int32_t test_data = 42;    // Test 1's value
+        // Initialize with Test 4 data: 2 columns (id, col2)
+        batchInfo->numRows = 1;  // Test 4 has 1 row with 2 columns
+        
+        // Set up actual data for Test 4: id=1, col2=42
+        static int32_t id_data = 1;      // id column value  
+        static int32_t col2_data = 42;   // col2 column value
         static uint8_t valid_bitmap = 0xFF; // All bits valid
         
-        batchInfo->validBuffer = &valid_bitmap;
-        batchInfo->dataBuffer = &test_data;
-        batchInfo->varLenBuffer = nullptr;  // No variable length data in Test 1
+        // Column 0: id column
+        batchInfo->columnInfo[0].offset = 0;
+        batchInfo->columnInfo[0].validMultiplier = 0;  // No validity bitmap
+        batchInfo->columnInfo[0].validBuffer = &valid_bitmap;
+        batchInfo->columnInfo[0].dataBuffer = &id_data;
+        batchInfo->columnInfo[0].varLenBuffer = nullptr;
         
-        elog(NOTICE, "🔗 rt_datasourceiteration_access: Initialized MLIR tuple layout with numRows=%zu, data=%p pointing to value=%d", 
-             batchInfo->numRows, batchInfo->dataBuffer, test_data);
+        // Column 1: col2 column  
+        batchInfo->columnInfo[1].offset = 0;
+        batchInfo->columnInfo[1].validMultiplier = 0;  // No validity bitmap
+        batchInfo->columnInfo[1].validBuffer = &valid_bitmap;
+        batchInfo->columnInfo[1].dataBuffer = &col2_data;
+        batchInfo->columnInfo[1].varLenBuffer = nullptr;
+        
+        elog(NOTICE, "🔗 rt_datasourceiteration_access: Initialized MLIR tuple layout with numRows=%zu, data=0x%p pointing to value=%d", 
+             batchInfo->numRows, batchInfo->columnInfo[0].dataBuffer, id_data);
     }
     
     // Explicit memory barrier to ensure all writes complete before return
