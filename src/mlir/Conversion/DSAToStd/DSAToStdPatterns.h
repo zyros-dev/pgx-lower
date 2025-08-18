@@ -15,6 +15,9 @@ void populateScalarToStdPatterns(TypeConverter& typeConverter, RewritePatternSet
 void populateDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns);
 void populateCollectionsToStdPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns);
 
+// Heavy pattern registration (isolated in PatternRegistry.cpp)
+void registerAllDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns, ConversionTarget& target);
+
 // Main pass creation
 std::unique_ptr<Pass> createLowerToStdPass();
 

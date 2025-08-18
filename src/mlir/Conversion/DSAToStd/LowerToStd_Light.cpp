@@ -66,8 +66,7 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
    }
 };
 
-// Forward declaration for heavy pattern registration (in PatternRegistry.cpp)
-void registerAllDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns, ConversionTarget& target);
+// Function declared in DSAToStdPatterns.h, implemented in PatternRegistry.cpp
 
 } // end anonymous namespace
 
@@ -113,7 +112,7 @@ struct DSAToStdLoweringPass : public PassWrapper<DSAToStdLoweringPass, Operation
       patterns.insert<ScanSourceLowering>(typeConverter, &getContext());
       
       // Register heavy patterns from separate compilation unit
-      registerAllDSAToStdPatterns(typeConverter, patterns, target);
+      mlir::dsa::registerAllDSAToStdPatterns(typeConverter, patterns, target);
 
       if (failed(applyFullConversion(module, target, std::move(patterns))))
          signalPassFailure();
