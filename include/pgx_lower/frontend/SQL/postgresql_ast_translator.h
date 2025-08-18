@@ -48,6 +48,13 @@ typedef uintptr_t Datum;
 namespace postgresql_ast {
 class PostgreSQLASTTranslator {
 public:
+    struct ColumnInfo {
+        std::string name;
+        Oid typeOid;
+        int32_t typmod;
+        bool nullable;
+    };
+
     explicit PostgreSQLASTTranslator(::mlir::MLIRContext& context);
     ~PostgreSQLASTTranslator() = default;
 
@@ -128,8 +135,8 @@ private:
     // PostgreSQL schema access helpers
     auto getTableNameFromRTE(int varno) -> std::string;
     auto getColumnNameFromSchema(int varno, int varattno) -> std::string;
-    auto getAllTableColumnsFromSchema(int scanrelid) -> std::vector<std::pair<std::string, Oid>>;
-    
+    auto getAllTableColumnsFromSchema(int scanrelid) -> std::vector<ColumnInfo>;
+
     // AST node type validation
     auto isArithmeticOperator(const char* opName) -> bool;
     auto isComparisonOperator(const char* opName) -> bool;
