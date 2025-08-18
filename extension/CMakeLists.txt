@@ -84,7 +84,14 @@ target_link_libraries(pgx_lower PRIVATE
 
 target_link_options(pgx_lower PRIVATE -Wl,--export-dynamic)
 
-# Add include directories for source files
+# Add dependencies on TableGen targets to ensure .inc files are generated first
+add_dependencies(pgx_lower 
+    PGXLowerRelAlgOpsIncGen
+    PGXLowerDBOpsIncGen
+    PGXLowerDSAOpsIncGen
+    MLIRUtilOpsIncGen
+)
+
 target_include_directories(pgx_lower PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
