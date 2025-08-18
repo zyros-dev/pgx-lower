@@ -8,7 +8,7 @@
 
 // Pipeline creation includes (moderate template weight)  
 #include "mlir/Passes.h"
-#include "pgx_lower/mlir/Passes.h"
+#include "mlir/Transforms/Passes.h"
 
 // Dialect includes needed for type checking
 #include "mlir/Dialect/DB/IR/DBDialect.h"
@@ -30,6 +30,10 @@ class Phase3bMemoryGuard;
 #endif
 
 namespace mlir_runner {
+
+// Forward declarations from main runner
+extern void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title);
+extern bool validateModuleState(::mlir::ModuleOp module, const std::string& phase);
 
 // Phase 3a: RelAlg→DB+DSA+Util lowering
 bool runPhase3a(::mlir::ModuleOp module) {
@@ -64,14 +68,9 @@ bool runPhase3a(::mlir::ModuleOp module) {
     return true;
 }
 
-// Phase 3b: DB+DSA→Standard lowering
 bool runPhase3b(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
-#ifndef BUILDING_UNIT_TESTS
-    // Memory guard implementation moved to core module to avoid duplication
-    // Phase3bMemoryGuard guard{};
-#endif
-
+    
     try {
         auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
         auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
@@ -100,21 +99,25 @@ bool runPhase3b(::mlir::ModuleOp module) {
         }
         
         dumpModuleWithStats(module, "MLIR after RelAlg→DB lowering");
-        
-        {
-            ::mlir::PassManager pm(&context);
-            pm.enableVerifier(true);
-            
-            mlir::pgx_lower::createDBToStandardPipeline(pm, false); // Don't duplicate verifier
-            pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DB→Standard lowering"));
-            pm.addPass(mlir::createCanonicalizerPass());
-            mlir::pgx_lower::createDSAToStandardPipeline(pm, false); // Don't duplicate verifier
-            pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DSA→Standard lowering"));
-            pm.addPass(mlir::createCanonicalizerPass());
-            if (mlir::failed(pm.run(module))) {
-                PGX_ERROR("Phase 3b failed: Unified parallel lowering error");
-                return false;
-            }
+
+        ::mlir::PassManager pm(&context);
+        pm.enableVerifier(true);
+
+        mlir::pgx_lower::createDBToStandardPipeline(pm, false);
+
+        pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DB→Standard lowering"));
+
+        pm.addPass(mlir::createCanonicalizerPass());
+
+        mlir::pgx_lower::createDSAToStandardPipeline(pm, false);
+
+        pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DSA→Standard lowering"));
+
+        pm.addPass(mlir::createCanonicalizerPass());
+
+        if (mlir::failed(pm.run(module))) {
+            PGX_ERROR("Phase 3b failed: Unified parallel lowering error");
+            return false;
         }
         
         if (!validateModuleState(module, "Phase 3b output")) {

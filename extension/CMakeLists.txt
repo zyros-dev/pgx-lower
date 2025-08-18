@@ -9,7 +9,8 @@ add_postgresql_mixed_extension(
         CPP_SOURCES
             ../src/execution/postgres/my_executor.cpp 
             ../src/execution/postgres/executor_c.cpp
-            ../src/execution/mlir_runner.cpp 
+            ../src/execution/mlir_runner.cpp
+            ../src/execution/mlir_runner_phases.cpp
             ../src/execution/jit_execution_engine.cpp
             ../src/execution/jit_execution_wrapper.cpp
             ../src/frontend/SQL/postgresql_ast_translator.cpp

@@ -157,7 +157,7 @@ extern "C" void initialize_mlir_passes() {
 
 namespace mlir_runner {
 
-static void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
+void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
     if (!module) {
         PGX_WARNING("dumpModuleWithStats: Module is null for title: " + title);
         return;
@@ -392,13 +392,7 @@ static bool initialize_mlir_context(::mlir::MLIRContext& context) {
     }
 }
 
-// Forward declare helper functions
-static bool validateModuleState(mlir::ModuleOp module, const std::string& phase);
-static bool runPhase3a(mlir::ModuleOp module);
-static bool runPhase3b(mlir::ModuleOp module);
-static bool runPhase3c(mlir::ModuleOp module);
-
-
+bool validateModuleState(mlir::ModuleOp module, const std::string& phase);
 
 static bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
     if (!initialize_mlir_context(context)) {
@@ -454,7 +448,7 @@ static bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, 
 }
 
 // Validate module state between pipeline phases
-static bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
+bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
     if (!module || !module.getOperation()) {
         PGX_ERROR(phase + ": Module operation is null");
         return false;
@@ -671,25 +665,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
     return true;
 }
 
-// Run complete lowering pipeline following LingoDB's unified architecture
-static bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
-    if (!runPhase3a(module)) {
-        PGX_ERROR("Phase 3a failed");
-        return false;
-    }
-    
-    if (!runPhase3b(module)) {
-        PGX_ERROR("Phase 3b failed");
-        return false;
-    }
-    
-    if (!runPhase3c(module)) {
-        PGX_ERROR("Phase 3c failed");
-        return false;
-    }
-    
-    return true;
-}
+bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
 
 #ifdef POSTGRESQL_EXTENSION
 auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, DestReceiver* dest) -> bool {
