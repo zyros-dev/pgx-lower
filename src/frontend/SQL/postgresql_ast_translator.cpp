@@ -298,14 +298,11 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
         return nullptr;
     }
 
-    PGX_DEBUG("Translating Agg operation with strategy: " + std::to_string(agg->aggstrategy));
-
     // Translate child plan - single code path for tests and production
     ::mlir::Operation* childOp = nullptr;
 
     // First, recursively process the child plan
     Plan* leftTree = agg->plan.lefttree;
-    PGX_DEBUG("Using direct field access for Agg lefttree");
 
     if (leftTree) {
         childOp = translatePlanNode(leftTree, context);
@@ -320,7 +317,6 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
     }
 
     // Get the child operation's result
-    PGX_DEBUG("Getting child operation result...");
     if (!childOp->getNumResults()) {
         PGX_ERROR("Child operation has no results");
         return nullptr;
@@ -330,19 +326,16 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
         PGX_ERROR("Child operation result 0 is null");
         return nullptr;
     }
-    PGX_DEBUG("Got child operation result successfully");
 
     // For now, since AggregationOp requires complex column attributes that aren't
     // properly registered for printing, we'll create a simpler placeholder operation
     // that still allows tests to validate the translation logic.
     // TODO: Implement proper column manager integration once attribute printing is fixed
 
-    // Access Agg-specific fields with direct field access
     int numCols = agg->numCols;
     AttrNumber* grpColIdx = agg->grpColIdx;
     PGX_DEBUG("Using direct field access for Agg fields");
 
-    // Log the aggregation details for debugging
     if (numCols > 0 && grpColIdx) {
         PGX_DEBUG("Processing " + std::to_string(numCols) + " GROUP BY columns");
         for (int i = 0; i < numCols && i < 100; i++) { // Sanity limit
@@ -353,7 +346,6 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
         }
     }
 
-    // Extract aggregate functions based on strategy
     const char* aggStrategyName = "UNKNOWN";
     switch (agg->aggstrategy) {
         case AGG_PLAIN:
