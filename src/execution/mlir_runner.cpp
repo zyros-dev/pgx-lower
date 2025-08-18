@@ -70,6 +70,9 @@ extern "C" {
 #include "mlir/Dialect/DB/Passes.h"
 
 #include <mlir/InitAllPasses.h>
+#include <fstream>
+#include <chrono>
+#include <iomanip>
 
 // Restore PostgreSQL's restrict macro after MLIR includes
 #ifndef BUILDING_UNIT_TESTS
@@ -154,6 +157,148 @@ extern "C" void initialize_mlir_passes() {
 
 namespace mlir_runner {
 
+// Debug function to dump MLIR module with comprehensive statistics
+static void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
+    if (!module) {
+        PGX_WARNING("dumpModuleWithStats: Module is null for title: " + title);
+        return;
+    }
+    
+    auto timestamp = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(timestamp);
+    
+    // Create filename with timestamp
+    std::stringstream filename;
+    filename << "/tmp/pgx_lower_" << title << "_" 
+             << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S") << ".mlir";
+    
+    try {
+        // Collect comprehensive module statistics
+        std::map<std::string, int> dialectCounts;
+        std::map<std::string, int> operationCounts;
+        std::map<std::string, int> typeCounts;
+        std::map<std::string, int> attributeCounts;
+        int totalOperations = 0;
+        int totalBlocks = 0;
+        int totalRegions = 0;
+        int totalValues = 0;
+        
+        module.walk([&](::mlir::Operation* op) {
+            if (!op) return;
+            
+            totalOperations++;
+            
+            // Count by dialect
+            std::string dialectName = op->getName().getDialectNamespace().str();
+            if (dialectName.empty()) dialectName = "builtin";
+            dialectCounts[dialectName]++;
+            
+            // Count by operation type
+            std::string opName = op->getName().getStringRef().str();
+            operationCounts[opName]++;
+            
+            // Count regions and blocks
+            totalRegions += op->getNumRegions();
+            for (auto& region : op->getRegions()) {
+                totalBlocks += region.getBlocks().size();
+            }
+            
+            // Count values (results)
+            totalValues += op->getNumResults();
+            
+            // Count types
+            for (auto result : op->getResults()) {
+                std::string typeName = "unknown";
+                llvm::raw_string_ostream stream(typeName);
+                result.getType().print(stream);
+                typeCounts[typeName]++;
+            }
+            
+            // Count attributes
+            for (auto attr : op->getAttrs()) {
+                std::string attrType = attr.getName().str();
+                attributeCounts[attrType]++;
+            }
+        });
+        
+        // Log comprehensive statistics
+        PGX_INFO("======= " + title + " =======");
+        std::stringstream timeStr;
+        timeStr << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+        PGX_INFO("Timestamp: " + timeStr.str());
+        PGX_INFO("Output file: " + filename.str());
+        
+        // Overall statistics
+        PGX_INFO("Module Statistics:");
+        PGX_INFO("  Total Operations: " + std::to_string(totalOperations));
+        PGX_INFO("  Total Blocks: " + std::to_string(totalBlocks));
+        PGX_INFO("  Total Regions: " + std::to_string(totalRegions));
+        PGX_INFO("  Total Values: " + std::to_string(totalValues));
+        
+        // Dialect breakdown
+        PGX_INFO("Operations by Dialect:");
+        for (const auto& [dialect, count] : dialectCounts) {
+            PGX_INFO("  " + dialect + ": " + std::to_string(count));
+        }
+        
+        // Top 10 most frequent operations
+        std::vector<std::pair<int, std::string>> opsByFreq;
+        for (const auto& [op, count] : operationCounts) {
+            opsByFreq.emplace_back(count, op);
+        }
+        std::sort(opsByFreq.rbegin(), opsByFreq.rend());
+        
+        PGX_INFO("Top Operations by Frequency:");
+        for (size_t i = 0; i < std::min(size_t(10), opsByFreq.size()); ++i) {
+            PGX_INFO("  " + opsByFreq[i].second + ": " + std::to_string(opsByFreq[i].first));
+        }
+        
+        // Type statistics (top 5)
+        std::vector<std::pair<int, std::string>> typesByFreq;
+        for (const auto& [type, count] : typeCounts) {
+            typesByFreq.emplace_back(count, type);
+        }
+        std::sort(typesByFreq.rbegin(), typesByFreq.rend());
+        
+        PGX_INFO("Top Types by Frequency:");
+        for (size_t i = 0; i < std::min(size_t(5), typesByFreq.size()); ++i) {
+            PGX_INFO("  " + typesByFreq[i].second + ": " + std::to_string(typesByFreq[i].first));
+        }
+        
+        // Module verification status
+        bool isValid = ::mlir::succeeded(::mlir::verify(module));
+        PGX_INFO("Module Verification: " + std::string(isValid ? "PASSED" : "FAILED"));
+        
+        // Write module to file
+        std::ofstream file(filename.str());
+        if (file.is_open()) {
+            file << "// MLIR Module Debug Dump: " << title << "\n";
+            std::stringstream genTime;
+            genTime << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+            file << "// Generated: " << genTime.str() << "\n";
+            file << "// Total Operations: " << totalOperations << "\n";
+            file << "// Module Valid: " << (isValid ? "YES" : "NO") << "\n\n";
+            
+            std::string moduleStr;
+            llvm::raw_string_ostream stream(moduleStr);
+            module.print(stream);
+            file << moduleStr;
+            file.close();
+            
+            PGX_INFO("Module dumped to: " + filename.str());
+        } else {
+            PGX_WARNING("Failed to open file for writing: " + filename.str());
+        }
+        
+        PGX_INFO("=== End Module Debug Dump ===");
+        
+    } catch (const std::exception& e) {
+        PGX_ERROR("Exception in dumpModuleWithStats: " + std::string(e.what()));
+    } catch (...) {
+        PGX_ERROR("Unknown exception in dumpModuleWithStats");
+    }
+}
+
 class MlirRunner {
 public:
     bool executeQuery(::mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
@@ -222,7 +367,6 @@ static bool initialize_mlir_context(::mlir::MLIRContext& context) {
 }
 
 // Forward declare helper functions
-static void safeModulePrint(mlir::ModuleOp module, const std::string& label);
 static bool validateModuleState(mlir::ModuleOp module, const std::string& phase);
 static bool runPhase3a(mlir::ModuleOp module);
 static bool runPhase3b(mlir::ModuleOp module);
@@ -283,56 +427,6 @@ static bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, 
     return true;
 }
 
-
-// Safe module printing that handles potential crashes
-static void safeModulePrint(mlir::ModuleOp module, const std::string& label) {
-    PGX_INFO("safeModulePrint called for: " + label);
-    
-    if (!module) {
-        PGX_WARNING(label + ": Module is null, cannot print");
-        return;
-    }
-    
-    if (!module.getOperation()) {
-        PGX_WARNING(label + ": Module operation is null, cannot print");
-        return;
-    }
-    
-    try {
-        PGX_INFO("Attempting to verify module for: " + label);
-        
-        // First try to verify the module is valid
-        if (mlir::failed(mlir::verify(module.getOperation()))) {
-            PGX_WARNING(label + ": Module verification failed, cannot print invalid module");
-            return;
-        }
-        
-        PGX_INFO("Module verification passed for: " + label);
-        
-        // Count operations
-        int totalOps = 0;
-        module.walk([&](mlir::Operation* op) {
-            if (op) totalOps++;
-        });
-        
-        // Print the complete module for debugging
-        try {
-            std::string moduleStr;
-            llvm::raw_string_ostream stream(moduleStr);
-            module.print(stream);
-            PGX_INFO(label + ": Complete module:\n" + moduleStr);
-        } catch (const std::exception& e) {
-            PGX_WARNING(label + ": Exception during module printing: " + std::string(e.what()));
-        } catch (...) {
-            PGX_WARNING(label + ": Unknown exception during module printing");
-        }
-    } catch (const std::exception& e) {
-        PGX_WARNING(label + ": Exception during module print: " + std::string(e.what()));
-    } catch (...) {
-        PGX_WARNING(label + ": Unknown exception during module print");
-    }
-}
-
 // Validate module state between pipeline phases
 static bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
     if (!module || !module.getOperation()) {
@@ -344,19 +438,7 @@ static bool validateModuleState(::mlir::ModuleOp module, const std::string& phas
         PGX_ERROR(phase + ": Module verification failed");
         return false;
     }
-    
-    // Count operations by dialect
-    std::map<std::string, int> dialectOpCounts;
-    module.walk([&](mlir::Operation* op) {
-        auto dialectName = op->getName().getDialectNamespace();
-        dialectOpCounts[dialectName.str()]++;
-    });
-    
-    PGX_DEBUG(phase + " operation counts:");
-    for (const auto& [dialect, count] : dialectOpCounts) {
-        PGX_DEBUG("  - " + dialect + ": " + std::to_string(count));
-    }
-    
+
     return true;
 }
 
@@ -375,6 +457,7 @@ static bool runPhase3a(::mlir::ModuleOp module) {
 
     mlir::pgx_lower::createRelAlgToDBPipeline(pm, true);
 
+    dumpModuleWithStats(module, "MLIR before RelAlg -> Mixed");
     if (mlir::failed(pm.run(module))) {
         PGX_ERROR("Phase 3a failed: RelAlg→DB lowering error");
         return false;
@@ -431,7 +514,7 @@ static bool runPhase3b(::mlir::ModuleOp module) {
         }
         
         mlir::pgx_lower::createDBDSAToStandardPipeline(pm, true);
-        safeModulePrint(module, "MLIR after RelAlg→DB lowering");
+        dumpModuleWithStats(module, "MLIR after RelAlg→DB lowering");
         
         if (mlir::failed(pm.run(module))) {
             PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering error");
@@ -492,6 +575,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
             return false;
         }
 
+        dumpModuleWithStats(module, "MLIR before standard -> llvm");
         if (mlir::failed(pm.run(module))) {
             PGX_ERROR("Phase 3c failed: Standard→LLVM lowering error");
             success = false;
@@ -504,6 +588,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
                 success = true;
             }
         }
+        dumpModuleWithStats(module, "MLIR after standard -> llvm");
     }
     PG_CATCH();
     {
