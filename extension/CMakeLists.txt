@@ -10,7 +10,6 @@ add_postgresql_mixed_extension(
             ../src/execution/postgres/my_executor.cpp 
             ../src/execution/postgres/executor_c.cpp
             ../src/execution/mlir_runner.cpp 
-            ../src/execution/unit_test_from_postgres.cpp 
             ../src/execution/jit_execution_engine.cpp
             ../src/execution/jit_execution_wrapper.cpp
             ../src/frontend/SQL/postgresql_ast_translator.cpp

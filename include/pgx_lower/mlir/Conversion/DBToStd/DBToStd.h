@@ -12,7 +12,5 @@ std::unique_ptr<Pass> createLowerToStdPass();
 void registerDBConversionPasses();
 void createLowerDBPipeline(mlir::OpPassManager& pm);
 
-std::unique_ptr<Pass> createMinimalDBToStdPass();
-
 }
 }

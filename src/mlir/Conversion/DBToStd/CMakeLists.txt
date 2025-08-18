@@ -1,6 +1,5 @@
 add_mlir_conversion_library(MLIRDBToArrowStd
         LowerToStd.cpp
-        MinimalDBToStd.cpp
 
         ADDITIONAL_HEADER_DIRS
         ../../../mlir/Conversion/DBToArrowStd
