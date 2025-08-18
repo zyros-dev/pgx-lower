@@ -1,6 +1,4 @@
 // PostgreSQL JIT Bridge - Isolates PostgreSQL headers from LLVM/MLIR headers
-// This avoids macro conflicts with LLVM code
-
 #include "execution/logging.h"
 
 #ifdef POSTGRESQL_EXTENSION
@@ -12,7 +10,6 @@ extern "C" {
 }
 #endif
 
-// Forward declaration to avoid including JIT engine header here
 namespace pgx_lower {
 namespace execution {
     class PostgreSQLJITExecutionEngine;
@@ -23,7 +20,6 @@ namespace pgx_lower {
 namespace bridge {
 
 // Bridge function that executes JIT compiled query with PostgreSQL types
-// This isolates PostgreSQL types from the MLIR/LLVM headers
 bool executeJITQueryWithPostgreSQL(void* jit_engine_ptr, void* estate, void* dest) {
     #ifdef POSTGRESQL_EXTENSION
     if (!jit_engine_ptr || !estate || !dest) {
@@ -38,11 +34,8 @@ bool executeJITQueryWithPostgreSQL(void* jit_engine_ptr, void* estate, void* des
     
     PGX_INFO("Bridge: Executing JIT query with PostgreSQL types");
     
-    // The actual execution happens in the JIT engine
-    // We just provide the type-safe bridge here
     return true;
     #else
-    // In unit tests, just return success
     return true;
     #endif
 }

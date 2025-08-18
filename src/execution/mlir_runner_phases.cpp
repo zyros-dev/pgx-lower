@@ -24,7 +24,6 @@ extern "C" {
 #include "utils/errcodes.h"
 }
 
-// Forward declare memory guard from core module
 class Phase3bMemoryGuard;
 
 #endif
@@ -73,7 +72,6 @@ bool runPhase3b(::mlir::ModuleOp module) {
 #endif
 
     try {
-        // Ensure all required dialects are loaded
         auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
         auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
         auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
@@ -157,13 +155,11 @@ bool runPhase3c(::mlir::ModuleOp module) {
         return false;
     }
     
-    // Add PostgreSQL-safe error handling
     volatile bool success = false;
 #ifndef BUILDING_UNIT_TESTS
     PG_TRY();
 #endif
     {
-        // Create PassManager with module context (not context pointer)
         auto* moduleContext = module.getContext();
         if (!moduleContext) {
             PGX_ERROR("Phase 3c: Module context is null!");

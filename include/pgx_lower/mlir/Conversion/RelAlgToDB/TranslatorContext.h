@@ -30,7 +30,7 @@ class TranslatorContext {
 
    std::unordered_map<::mlir::Operation*, std::pair<::mlir::Value, std::vector<const mlir::relalg::Column*>>> materializedTmp;
 };
-} // end namespace relalg
-} // end namespace mlir
+}
+}
 
-#endif // MLIR_CONVERSION_RELALGTODB_TRANSLATORCONTEXT_H
+#endif

@@ -13,21 +13,12 @@
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/util/UtilOps.h"
 
-// Include the pipeline creation function
 #include "mlir/Passes.h"
 
-// CRITICAL: Stub the logging to avoid PostgreSQL dependencies
-void PGX_INFO(const std::string& msg) {
-    std::cout << "[INFO] " << msg << std::endl;
-}
-void PGX_ERROR(const std::string& msg) {
-    std::cout << "[ERROR] " << msg << std::endl;
-}
-void PGX_DEBUG(const std::string& msg) {
-    std::cout << "[DEBUG] " << msg << std::endl;
-}
+void PGX_INFO(const std::string& msg) {}
+void PGX_ERROR(const std::string& msg) {}
+void PGX_DEBUG(const std::string& msg) {}
 
-// Forward declare the pipeline creation function from mlir_runner.cpp
 namespace mlir {
 namespace pgx_lower {
 void createStandardToLLVMPipeline(mlir::PassManager& pm, bool enableOptimizations);
@@ -37,7 +28,6 @@ void createStandardToLLVMPipeline(mlir::PassManager& pm, bool enableOptimization
 class Phase3cReproductionTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Setup MLIR context with all required dialects
         context.disableMultithreading();
         
         context.getOrLoadDialect<mlir::func::FuncDialect>();

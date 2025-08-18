@@ -126,7 +126,6 @@ TEST_F(ComplexPlanTreeTest, TranslatesWhereClause) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once WHERE clause translation is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -140,7 +139,6 @@ TEST_F(ComplexPlanTreeTest, TranslatesWhereClause) {
         PGX_INFO("WHERE clause test completed - TODO: Implement filter/selection operations in translator");
     } else {
         PGX_INFO("WHERE clause filtering not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module with selection/filter operations
     }
 }
 
@@ -266,7 +264,6 @@ TEST_F(ComplexPlanTreeTest, TranslatesComplexWhereConditions) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once complex WHERE translation is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -281,7 +278,6 @@ TEST_F(ComplexPlanTreeTest, TranslatesComplexWhereConditions) {
         PGX_INFO("Complex WHERE conditions test completed - TODO: Implement complex logical operations in filters");
     } else {
         PGX_INFO("Complex WHERE conditions not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module
     }
 }
 
@@ -357,7 +353,6 @@ TEST_F(ComplexPlanTreeTest, TranslatesSimpleProjection) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once simple projection is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -371,7 +366,6 @@ TEST_F(ComplexPlanTreeTest, TranslatesSimpleProjection) {
         PGX_INFO("Simple projection test completed - TODO: Implement projection operations for column references");
     } else {
         PGX_INFO("Simple projection not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module with projection operations
     }
 }
 
@@ -465,7 +459,6 @@ TEST_F(ComplexPlanTreeTest, TranslatesProjectionWithExpression) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once expression translation is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -480,6 +473,5 @@ TEST_F(ComplexPlanTreeTest, TranslatesProjectionWithExpression) {
         PGX_INFO("Projection with expression test completed - TODO: Implement expression handling in projections");
     } else {
         PGX_INFO("Projection with expressions not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module
     }
 }

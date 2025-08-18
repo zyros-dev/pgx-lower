@@ -30,37 +30,24 @@ public:
 
     LogicalResult matchAndRewrite(func::FuncOp funcOp, OpAdaptor adaptor,
                                   ConversionPatternRewriter& rewriter) const override {
-        PGX_INFO("🔍 CustomMainPattern: Checking function: " + funcOp.getSymName().str());
-        
-        // Only handle main function - let default patterns handle others for proper type conversion
         if (funcOp.getSymName() != "main") {
-            PGX_INFO("❌ Not main function, letting default pattern handle: " + funcOp.getSymName().str());
-            return failure(); // Let default pattern handle this
-        }
-
-        PGX_INFO("🎯 MAIN FUNCTION FOUND! Applying custom PUBLIC visibility");
-
-        // Convert function type using the same converter as default patterns
-        auto convertedType = getTypeConverter()->convertType(funcOp.getFunctionType());
-        auto funcType = mlir::dyn_cast<LLVM::LLVMFunctionType>(convertedType);
-        if (!funcType) {
-            PGX_ERROR("❌ Failed to convert main function type");
             return failure();
         }
 
-        // Create LLVM function with PUBLIC visibility
+        auto convertedType = getTypeConverter()->convertType(funcOp.getFunctionType());
+        auto funcType = mlir::dyn_cast<LLVM::LLVMFunctionType>(convertedType);
+        if (!funcType) {
+            return failure();
+        }
+
         auto llvmFunc = rewriter.create<LLVM::LLVMFuncOp>(
             funcOp.getLoc(), funcOp.getSymName(), funcType);
         
-        // Set PUBLIC visibility for ExecutionEngine lookup
         llvmFunc.setSymVisibilityAttr(rewriter.getStringAttr("public"));
-        PGX_INFO("✅ Set sym_visibility=\"public\" on main function for ExecutionEngine");
 
-        // Move function body
         rewriter.inlineRegionBefore(funcOp.getBody(), llvmFunc.getBody(), llvmFunc.end());
 
         rewriter.eraseOp(funcOp);
-        PGX_INFO("🎉 Successfully converted main function with PUBLIC visibility");
         return success();
     }
 };
@@ -69,82 +56,49 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StandardToLLVMPass)
 
     void getDependentDialects(DialectRegistry& registry) const override {
-        PGX_INFO("StandardToLLVMPass: Get dialects");
         registry.insert<LLVM::LLVMDialect, scf::SCFDialect,
                        cf::ControlFlowDialect, arith::ArithDialect>();
     }
 
     void runOnOperation() override {
-        PGX_INFO("[StandardToLLVMPass] Starting run on operation!");
-        fprintf(stderr, "🚨 FORCED LOG: StandardToLLVMPass::runOnOperation() EXECUTING in PostgreSQL!\n");
-        // The first thing to define is the conversion target. This will define the
-        // final target for this lowering. For this lowering, we are only targeting
-        // the LLVM dialect.
         const auto& dataLayoutAnalysis = getAnalysis<mlir::DataLayoutAnalysis>();
 
         mlir::LLVMConversionTarget target(getContext());
         target.addLegalOp<mlir::ModuleOp>();
 
-        // During this lowering, we will also be lowering the MemRef types, that are
-        // currently being operated on, to a representation in LLVM. To perform this
-        // conversion we use a TypeConverter as part of the lowering. This converter
-        // details how one type maps to another. This is necessary now that we will be
-        // doing more complicated lowerings, involving loop region arguments.
-        PGX_INFO("[StandardToLLVMPass] Init options");
         mlir::LowerToLLVMOptions options(&getContext(), dataLayoutAnalysis.getAtOrAbove(getOperation()));
-        // options.emitCWrappers = true;
         mlir::LLVMTypeConverter typeConverter(&getContext(), options, &dataLayoutAnalysis);
         typeConverter.addSourceMaterialization(
             [&](mlir::OpBuilder&, mlir::FunctionType type, mlir::ValueRange valueRange, mlir::Location loc) {
                 return valueRange.front();
             });
 
-        PGX_INFO("[StandardToLLVMPass] registering!");
         mlir::RewritePatternSet patterns(&getContext());
         
-        PGX_INFO("🔧 Adding MainFunctionVisibilityPattern to pattern set");
         patterns.add<MainFunctionVisibilityPattern>(typeConverter, &getContext());
-        PGX_INFO("✅ MainFunctionVisibilityPattern added successfully");
         
         populateAffineToStdConversionPatterns(patterns);
         mlir::populateSCFToControlFlowConversionPatterns(patterns);
         mlir::util::populateUtilToLLVMConversionPatterns(typeConverter, patterns);
         
-        PGX_INFO("🔄 ADDING default func patterns for type conversion, but custom pattern will override main");
         mlir::populateFuncToLLVMConversionPatterns(typeConverter, patterns);
         mlir::cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
 
         mlir::populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
         mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
-        // We want to completely lower to LLVM, so we use a `FullConversion`. This
-        // ensures that only legal operations will remain after the conversion.
+        
         auto module = getOperation();
-        PGX_INFO("🚀 About to run applyFullConversion with custom patterns");
         if (failed(applyFullConversion(module, target, std::move(patterns)))) {
-            PGX_ERROR("❌ applyFullConversion failed!");
             signalPassFailure();
         } else {
-            PGX_INFO("✅ applyFullConversion succeeded!");
-            
-            // POST-PROCESS: Fix main function visibility for ExecutionEngine lookup
-            PGX_INFO("🔧 Post-processing: Setting function visibility and External linkage for JIT");
-            fprintf(stderr, "🔧 FORCED LOG: POST-PROCESSING function linkage in PostgreSQL!\n");
             module.walk([&](LLVM::LLVMFuncOp func) {
-                // LINGODB SOLUTION: Set External linkage for all external function declarations
                 if (func.isDeclaration()) {
-                    // External functions (runtime functions) need External linkage for JIT resolution
                     func.setLinkageAttr(LLVM::LinkageAttr::get(&getContext(), LLVM::Linkage::External));
                     func.setSymVisibilityAttr(mlir::StringAttr::get(&getContext(), "default"));
-                    PGX_INFO("🎯 EXTERNAL FUNC: " + func.getSymName().str() + " -> External linkage");
-                    fprintf(stderr, "🎯 EXTERNAL: %s -> External linkage\n", func.getSymName().str().c_str());
                 } else {
-                    // Defined functions (main, etc.) need public visibility for ExecutionEngine lookup
                     func.setSymVisibilityAttr(mlir::StringAttr::get(&getContext(), "public"));
-                    PGX_INFO("🎯 DEFINED FUNC: " + func.getSymName().str() + " -> public visibility");
-                    fprintf(stderr, "🎯 DEFINED: %s -> public visibility\n", func.getSymName().str().c_str());
                 }
             });
-            PGX_INFO("🎉 Post-processing completed!");
         }
     }
 };
@@ -152,9 +106,6 @@ struct StandardToLLVMPass : public PassWrapper<StandardToLLVMPass, OperationPass
 } // namespace
 
 std::unique_ptr<Pass> createStandardToLLVMPass() {
-    // Use multiple logging approaches to ensure visibility
-    PGX_INFO("Creating StandardToLLVMPass instance");
-    fprintf(stderr, "🔥 FORCED LOG: createStandardToLLVMPass() called in PostgreSQL!\n");
     return std::make_unique<StandardToLLVMPass>();
 }
 

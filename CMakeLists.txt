@@ -168,7 +168,6 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         src/execution/jit_execution_wrapper.cpp  # Phase 4g-2c header isolation
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
-        src/utility/ir_debug_utils.cpp
         src/runtime/helpers.cpp
         src/mlir/Passes.cpp  # Centralized pass pipeline
         # Note: PostgreSQL runtime files require full PostgreSQL runtime

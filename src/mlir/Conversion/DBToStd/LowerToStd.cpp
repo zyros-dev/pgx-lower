@@ -987,17 +987,7 @@ void DBToStdLoweringPass::runOnOperation() {
    
    MLIR_PGX_DEBUG("DB", "UtilDialect obtained successfully");
    
-   // Check FunctionHelper availability but DO NOT set parent module
-   MLIR_PGX_DEBUG("DB", "Checking FunctionHelper availability (but NOT setting parent module)");
-   
-   PGX_DEBUG("[DBToStd] Verifying FunctionHelper exists...");
-   
-   // CRITICAL: Do NOT call setParentModule - causes race conditions and memory corruption
-   // This was discovered to cause crashes when used with sequential PassManagers
-   // The DSAToStd pass already identified this issue and removed the call
-   MLIR_PGX_DEBUG("DB", "UtilDialect loaded successfully, skipping setParentModule to avoid memory corruption");
-   PGX_DEBUG("[DBToStd] Skipping FunctionHelper.setParentModule to prevent memory corruption");
-   PGX_INFO("DBToStd: Skipping setParentModule (causes crashes with sequential PassManagers)");
+   // Do NOT call setParentModule - causes race conditions
 
    // Define Conversion Target
    ConversionTarget target(getContext());
@@ -1047,7 +1037,6 @@ void DBToStdLoweringPass::runOnOperation() {
    });
    auto opIsWithoutDBTypes = [&](Operation* op) { return !hasDBType(typeConverter, op->getOperandTypes()) && !hasDBType(typeConverter, op->getResultTypes()); };
    target.addDynamicallyLegalDialect<scf::SCFDialect>(opIsWithoutDBTypes);
-   // CRITICAL: Follow LingoDB architecture - DBToStd handles BOTH DB and DSA operations for unified type conversion
    target.addDynamicallyLegalDialect<dsa::DSADialect>(opIsWithoutDBTypes);
    target.addDynamicallyLegalDialect<arith::ArithDialect>(opIsWithoutDBTypes);
 
@@ -1055,7 +1044,6 @@ void DBToStdLoweringPass::runOnOperation() {
 
    target.addDynamicallyLegalDialect<util::UtilDialect>(opIsWithoutDBTypes);
    
-   // Add CondSkipOp registration per LingoDB architecture
    target.addLegalOp<mlir::dsa::CondSkipOp>();
    target.addDynamicallyLegalOp<mlir::dsa::CondSkipOp>(opIsWithoutDBTypes);
    

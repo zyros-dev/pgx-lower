@@ -701,7 +701,6 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
     
     
     try {
-        // Create and setup MLIR context
         ::mlir::MLIRContext context;
         if (!setupMLIRContextForJIT(context)) {
             return false;

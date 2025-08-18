@@ -1,4 +1,3 @@
-// This file provides a C interface to the JIT execution engine
 // It isolates LLVM headers from PostgreSQL headers to avoid conflicts
 
 #include "execution/jit_execution_interface.h"
@@ -37,7 +36,6 @@ ExecutionHandle* pgx_jit_create_execution_handle(ModuleHandle* module_handle) {
         auto exec_handle = new ExecutionHandle();
         exec_handle->module = module_handle->module;
         
-        // Initialize the JIT engine
         if (!exec_handle->engine->initialize(module_handle->module)) {
             last_error_message = "Failed to initialize JIT execution engine";
             PGX_ERROR("pgx_jit_create_execution_handle: " + last_error_message);
@@ -45,10 +43,8 @@ ExecutionHandle* pgx_jit_create_execution_handle(ModuleHandle* module_handle) {
             return nullptr;
         }
         
-        // Register runtime functions
         exec_handle->engine->registerPostgreSQLRuntimeFunctions();
         
-        // Setup memory contexts
         if (!exec_handle->engine->setupMemoryContexts()) {
             last_error_message = "Failed to setup memory contexts";
             PGX_ERROR("pgx_jit_create_execution_handle: " + last_error_message);
@@ -84,7 +80,6 @@ int pgx_jit_execute_query(ExecutionHandle* exec_handle, void* estate, void* dest
     }
     
     try {
-        // Execute the compiled query
         bool success = exec_handle->engine->executeCompiledQuery(estate, dest);
         
         if (!success) {
@@ -120,7 +115,6 @@ const char* pgx_jit_get_last_error(void) {
 
 } // extern "C"
 
-// Additional C++ helper to create ModuleHandle from MLIR module
 extern "C" ModuleHandle* pgx_jit_create_module_handle(void* mlir_module_ptr) {
     if (!mlir_module_ptr) {
         last_error_message = "Null MLIR module pointer";

@@ -1,4 +1,3 @@
-// CRITICAL: Include ALL MLIR headers BEFORE any PostgreSQL headers
 // to avoid PostgreSQL's 'restrict' macro pollution
 
 // Heavy template instantiation isolated here
@@ -67,7 +66,6 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
         return false;
     }
     
-    // Load pipeline-specific dialects
     context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
     context.getOrLoadDialect<::mlir::db::DBDialect>();
     context.getOrLoadDialect<::mlir::dsa::DSADialect>();

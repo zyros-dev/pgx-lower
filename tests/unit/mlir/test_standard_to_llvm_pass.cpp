@@ -10,7 +10,7 @@
 #include "mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/Conversion/StandardToLLVM/StandardToLLVM.h"
-#include "execution/logging.h"
+#include <fstream>
 
 class StandardToLLVMTest : public ::testing::Test {
 protected:
@@ -32,7 +32,6 @@ protected:
 };
 
 TEST_F(StandardToLLVMTest, ConvertsUtilDialectOperations) {
-    PGX_INFO("🔥 CRITICAL TEST: Converting the EXACT util operations that crash PostgreSQL!");
     
     // Create a realistic function that mirrors what Phase 3b produces  
     builder.setInsertionPointToEnd(module.getBody());
@@ -52,7 +51,6 @@ TEST_F(StandardToLLVMTest, ConvertsUtilDialectOperations) {
     // 1. Simple arithmetic - forms the basis of query operations
     auto constantValue = builder.create<mlir::arith::ConstantIntOp>(
         builder.getUnknownLoc(), 42, 32);
-    PGX_INFO("Created arithmetic operations - part of query execution");
     
     // 2. Create a util.pack operation with real values (similar to tuple operations)
     auto val1 = builder.create<mlir::arith::ConstantIntOp>(
@@ -65,12 +63,9 @@ TEST_F(StandardToLLVMTest, ConvertsUtilDialectOperations) {
     auto packOp = builder.create<mlir::util::PackOp>(
         builder.getUnknownLoc(), tupleType, 
         mlir::ValueRange{val1, val2});
-    PGX_INFO("Created util.pack - tuple operations crash PostgreSQL");
     
     builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
     
-    PGX_INFO("💀 MODULE CONTAINS ALL THE OPERATIONS THAT KILL POSTGRESQL!");
-    PGX_INFO("🎯 Now running pm.run(module) - THE EXACT CALL THAT CRASHES POSTGRESQL!");
     
     // 🔥 THE CRITICAL MOMENT: This pm.run() call crashes PostgreSQL but works here
     mlir::PassManager pm(&context);
@@ -79,13 +74,11 @@ TEST_F(StandardToLLVMTest, ConvertsUtilDialectOperations) {
     // 🎯 THIS IS THE EXACT LINE THAT CRASHES POSTGRESQL:
     ASSERT_TRUE(mlir::succeeded(pm.run(module)));
     
-    PGX_INFO("✅ SUCCESS! pm.run(module) completed - PostgreSQL would have crashed here!");
     
     // Verify all util operations were converted to LLVM
     bool hasUtilOps = false;
     module.walk([&](mlir::Operation* op) {
         if (op->getDialect() && op->getDialect()->getNamespace() == "util") {
-            PGX_ERROR("❌ Util operation remains: " + op->getName().getStringRef().str());
             hasUtilOps = true;
         }
     });
@@ -93,9 +86,6 @@ TEST_F(StandardToLLVMTest, ConvertsUtilDialectOperations) {
     EXPECT_FALSE(hasUtilOps) << "All util operations should be converted to LLVM";
     
     if (!hasUtilOps) {
-        PGX_INFO("🎉 PROOF COMPLETE: All PostgreSQL-crashing operations successfully converted!");
-        PGX_INFO("🔍 This PROVES the MLIR pipeline works outside PostgreSQL environment");
-        PGX_INFO("💡 The crash is PostgreSQL environment incompatibility, not MLIR bugs");
         
         // Dump the resulting LLVM IR
         std::string outputStr;
@@ -106,17 +96,8 @@ TEST_F(StandardToLLVMTest, ConvertsUtilDialectOperations) {
         if (outFile.is_open()) {
             outFile << outputStr;
             outFile.close();
-            PGX_INFO("✅ Converted LLVM IR dumped to /tmp/converted_util_operations.mlir");
         }
         
-        // Print preview  
-        PGX_INFO("=== CONVERTED LLVM IR (first 1000 chars) ===");
-        std::string preview = outputStr.substr(0, 1000);
-        std::cout << preview << std::endl;
-        if (outputStr.length() > 1000) {
-            PGX_INFO("...(truncated, see full output in /tmp/converted_util_operations.mlir)");
-        }
-        PGX_INFO("=== END CONVERTED IR ===");
     }
 }
 

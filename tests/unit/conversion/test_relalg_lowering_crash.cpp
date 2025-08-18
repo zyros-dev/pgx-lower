@@ -11,14 +11,12 @@
 #include "mlir/Dialect/DB/IR/DBDialect.h"
 #include "mlir/Dialect/DSA/IR/DSADialect.h"
 #include "mlir/Passes.h"
-#include "execution/logging.h"
 
 class RelAlgCrashTest : public ::testing::Test {
 protected:
     mlir::MLIRContext context;
     
     RelAlgCrashTest() {
-        // Load required dialects for RelAlg parsing and lowering
         context.loadDialect<mlir::func::FuncDialect>();
         context.loadDialect<mlir::arith::ArithDialect>();
         context.loadDialect<mlir::util::UtilDialect>();
@@ -26,15 +24,12 @@ protected:
         context.loadDialect<mlir::db::DBDialect>();
         context.loadDialect<mlir::dsa::DSADialect>();
         
-        // Disable threading for PostgreSQL compatibility
         context.disableMultithreading();
     }
 };
 
 TEST_F(RelAlgCrashTest, TestSimplePassExecution) {
-    PGX_INFO("=== Testing Simple Pass Execution (Crash Reproduction) ===");
     
-    // Create a simple test module with just func and arith operations
     const char* simpleIR = R"(
 module {
   func.func @main() {
@@ -52,37 +47,27 @@ module {
 
 )";
 
-    PGX_INFO("Step 1: Parsing RelAlg MLIR from logs");
     auto module = mlir::parseSourceString<mlir::ModuleOp>(simpleIR, &context);
     ASSERT_TRUE(module) << "Failed to parse RelAlg MLIR string";
     
-    PGX_INFO("Step 2: Verifying RelAlg module");
     ASSERT_TRUE(mlir::succeeded(mlir::verify(*module))) << "RelAlg module verification failed";
     
-    // Count initial operations
     int opCount = 0;
     module->walk([&](mlir::Operation* op) { opCount++; });
-    PGX_INFO("RelAlg module has " + std::to_string(opCount) + " operations");
     
-    // Step 3: Run Phase 3a - the EXACT pipeline that crashes PostgreSQL
-    PGX_INFO("Phase 3a: Running RelAlg→DB lowering");
     {
         mlir::PassManager pm(&context);
         pm.enableVerifier(true);
         
-        // Verify module before lowering
         if (mlir::failed(mlir::verify(*module))) {
             FAIL() << "Phase 3a: Module verification failed before lowering";
         }
         
-        // Use the EXACT Phase 3a pipeline that crashes PostgreSQL
         mlir::pgx_lower::createRelAlgToDBPipeline(pm, true);
         
-        PGX_INFO("🎯 Running THE EXACT Phase 3a PIPELINE THAT CRASHES POSTGRESQL");
         if (mlir::failed(pm.run(*module))) {
             FAIL() << "❌ FOUND CRASH: Phase 3a RelAlg→DB lowering failed";
         }
-        PGX_INFO("✅ Phase 3a RelAlg→DB lowering succeeded in unit test");
         
         // Verify module after lowering
         if (mlir::failed(mlir::verify(*module))) {
@@ -98,10 +83,7 @@ module {
         std::string dialectName = op->getDialect()->getNamespace().str();
         dialectCounts[dialectName]++;
     });
-    PGX_INFO("Final module has " + std::to_string(finalOpCount) + " operations");
     for (const auto& [dialect, count] : dialectCounts) {
-        PGX_INFO("  " + dialect + " dialect: " + std::to_string(count) + " operations");
     }
     
-    PGX_INFO("🎉 NO CRASH REPRODUCED - Confirms PostgreSQL environment issue");
 }

@@ -5,7 +5,6 @@
 #include <string>
 #include <cstdlib>
 
-// Add PostgreSQL integration when building as extension
 #ifdef POSTGRESQL_EXTENSION
 // Push/pop PostgreSQL macros to avoid conflicts
 // Save PostgreSQL macros that conflict with C++
@@ -65,7 +64,6 @@ public:
 
 extern Logger& get_logger();
 
-// Convenient macros for logging
 #define PGX_TRACE(msg) \
     do { \
         if (get_logger().should_log(LogLevel::TRACE_LVL)) \
@@ -129,7 +127,6 @@ extern Logger& get_logger();
             get_logger().log(LogLevel::INFO_LVL, __FILE__, __LINE__, msg); \
     } while (0)
 
-// MLIR-specific logging macros
 #define MLIR_PGX_DEBUG(dialect, msg) \
     do { \
         if (get_logger().should_log(LogLevel::DEBUG_LVL)) { \
@@ -162,7 +159,6 @@ extern Logger& get_logger();
         } \
     } while (0)
 
-// Runtime-specific logging macros
 #define RUNTIME_PGX_DEBUG(component, msg) \
     do { \
         if (get_logger().should_log(LogLevel::DEBUG_LVL)) { \

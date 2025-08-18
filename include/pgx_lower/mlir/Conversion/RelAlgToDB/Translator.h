@@ -49,10 +49,8 @@ class Translator {
    static std::unique_ptr<mlir::relalg::Translator> createTranslator(::mlir::Operation* operation);
    static std::unique_ptr<mlir::relalg::Translator> createJoinTranslator(::mlir::Operation* operation);
    static std::unique_ptr<mlir::relalg::Translator> createSetOpTranslator(::mlir::Operation* operation);
-
-
 };
-} // end namespace relalg
-} // end namespace mlir
+}
+}
 
-#endif // MLIR_CONVERSION_RELALGTODB_TRANSLATOR_H
+#endif

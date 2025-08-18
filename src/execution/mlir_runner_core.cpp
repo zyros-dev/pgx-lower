@@ -67,7 +67,6 @@ public:
     Phase3bMemoryGuard& operator=(Phase3bMemoryGuard&&) = delete;
 };
 
-// Restore PostgreSQL's restrict macro after MLIR includes
 #ifdef PG_RESTRICT_SAVED
 #define restrict PG_RESTRICT_SAVED
 #undef PG_RESTRICT_SAVED
@@ -87,7 +86,6 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
     auto timestamp = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(timestamp);
     
-    // Create filename with timestamp
     std::stringstream filename;
     filename << "/tmp/pgx_lower_" << title << "_" 
              << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S") << ".mlir";
@@ -185,7 +183,6 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
             PGX_INFO("  " + typesByFreq[i].second + ": " + std::to_string(typesByFreq[i].first));
         }
         
-        // Module verification status
         bool isValid = ::mlir::succeeded(::mlir::verify(module));
         PGX_INFO("Module Verification: " + std::string(isValid ? "PASSED" : "FAILED"));
         
@@ -195,7 +192,6 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
             llvm::raw_string_ostream stream(moduleStr);
             module.print(stream);
             
-            // Build formatted MLIR string with line numbers
             std::stringstream formattedMLIR;
             formattedMLIR << "\n=== MLIR MODULE CONTENT: " << title << " ===\n";
             
@@ -246,12 +242,10 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
     }
 }
 
-// Basic MLIR context initialization - minimal dialect loading
 bool initialize_mlir_context(::mlir::MLIRContext& context) {
     try {
         context.disableMultithreading();
         
-        // Load core dialects with forward declarations to minimize template instantiation
         context.getOrLoadDialect<mlir::func::FuncDialect>();
         context.getOrLoadDialect<mlir::arith::ArithDialect>();
         
@@ -266,7 +260,6 @@ bool initialize_mlir_context(::mlir::MLIRContext& context) {
     }
 }
 
-// Validate module state between pipeline phases
 bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
     if (!module || !module.getOperation()) {
         PGX_ERROR(phase + ": Module operation is null");

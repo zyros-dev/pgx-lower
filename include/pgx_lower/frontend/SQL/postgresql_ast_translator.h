@@ -4,7 +4,6 @@
 #include <memory>
 #include <vector>
 
-// Forward declarations to avoid include issues
 namespace mlir {
 class Attribute;
 class MLIRContext;
@@ -16,10 +15,9 @@ class Type;
 class Location;
 namespace func {
 class FuncOp;
-} // namespace func
+}
 }
 
-// PostgreSQL C headers - need extern "C" wrapping
 extern "C" {
 struct PlannedStmt;
 struct SelectStmt;
@@ -58,10 +56,8 @@ public:
     explicit PostgreSQLASTTranslator(::mlir::MLIRContext& context);
     ~PostgreSQLASTTranslator() = default;
 
-    // Main translation entry points
     auto translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp>;
 private:
-    // Expression translation (recursive descent)
     auto translateExpression(Expr* expr) -> ::mlir::Value;
     auto translateOpExpr(OpExpr* opExpr) -> ::mlir::Value;
     auto translateVar(Var* var) -> ::mlir::Value;
@@ -72,7 +68,6 @@ private:
     auto translateAggref(Aggref* aggref) -> ::mlir::Value;
     auto translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value;
     
-    // Plan node translation
     auto translatePlanNode(Plan* plan, struct TranslationContext& context) -> ::mlir::Operation*;
     auto translateSeqScan(SeqScan* seqScan, struct TranslationContext& context) -> ::mlir::Operation*;
     auto translateAgg(Agg* agg, struct TranslationContext& context) -> ::mlir::Operation*;
@@ -80,15 +75,12 @@ private:
     auto translateLimit(Limit* limit, struct TranslationContext& context) -> ::mlir::Operation*;
     auto translateGather(Gather* gather, struct TranslationContext& context) -> ::mlir::Operation*;
     
-    // Helper functions for translateQuery refactoring
     auto createQueryFunction(::mlir::OpBuilder& builder, struct TranslationContext& context) -> ::mlir::func::FuncOp;
     auto generateRelAlgOperations(::mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, struct TranslationContext& context) -> bool;
     
-    // Expression processing helpers
     auto applySelectionFromQual(::mlir::Operation* inputOp, List* qual, struct TranslationContext& context) -> ::mlir::Operation*;
     auto applyProjectionFromTargetList(::mlir::Operation* inputOp, List* targetList, struct TranslationContext& context) -> ::mlir::Operation*;
     
-    // Helper functions for code organization
     auto validatePlanTree(Plan* planTree) -> bool;
     auto extractTargetListColumns(struct TranslationContext& context,
                                  std::vector<::mlir::Attribute>& columnRefAttrs,
@@ -104,7 +96,6 @@ private:
     auto translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
     auto translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
     
-    // Tuple iteration and result processing
     auto generateTupleIterationLoop(::mlir::OpBuilder& builder, ::mlir::Location location, 
                                    SeqScan* seqScan, List* targetList) -> void;
     auto generateAggregateLoop(::mlir::OpBuilder& builder, ::mlir::Location location,
@@ -116,11 +107,11 @@ private:
                                        ::mlir::Value tupleHandle, List* targetList) -> void;
 
     ::mlir::MLIRContext& context_;
-    ::mlir::OpBuilder* builder_;  // Current builder context
-    ::mlir::ModuleOp* currentModule_;  // Current module being built
-    ::mlir::Value* currentTupleHandle_;  // Current tuple handle for field access (nullptr if none)
-    PlannedStmt* currentPlannedStmt_;  // Current planned statement for accessing metadata
-    bool contextNeedsRecreation_;  // Track if context was invalidated by LOAD
+    ::mlir::OpBuilder* builder_;
+    ::mlir::ModuleOp* currentModule_;
+    ::mlir::Value* currentTupleHandle_;
+    PlannedStmt* currentPlannedStmt_;
+    bool contextNeedsRecreation_;
     
     auto registerDialects() -> void;
     auto recreateContextAfterLoad() -> void;
@@ -132,12 +123,10 @@ private:
     auto canHandleExpression(Node* expr) -> bool;
     auto logExpressionInfo(Node* expr, const char* context) -> void;
     
-    // PostgreSQL schema access helpers
     auto getTableNameFromRTE(int varno) -> std::string;
     auto getColumnNameFromSchema(int varno, int varattno) -> std::string;
     auto getAllTableColumnsFromSchema(int scanrelid) -> std::vector<ColumnInfo>;
 
-    // AST node type validation
     auto isArithmeticOperator(const char* opName) -> bool;
     auto isComparisonOperator(const char* opName) -> bool;
     auto isLogicalOperator(const char* opName) -> bool;
@@ -151,10 +140,9 @@ private:
                            Datum value, Oid typeOid, ::mlir::Type mlirType) -> ::mlir::Value;
 };
 
-// Factory function
 auto createPostgreSQLASTTranslator(::mlir::MLIRContext& context) 
     -> std::unique_ptr<PostgreSQLASTTranslator>;
 
-} // namespace postgresql_ast
+}
 
-#endif // POSTGRESQL_AST_TRANSLATOR_H
+#endif

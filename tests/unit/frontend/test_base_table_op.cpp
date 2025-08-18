@@ -145,7 +145,6 @@ TEST_F(BaseTableOpTest, CreateBaseTableOpWithNullMetadata) {
     );
     
     // Create empty columns dictionary to avoid attribute printing issues
-    // TODO: Fix this once ColumnDefAttr printing is properly implemented
     auto columnsAttr = builder->getDictionaryAttr({});
     
     PGX_INFO("About to create BaseTableOp with null metadata");

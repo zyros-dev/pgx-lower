@@ -19,35 +19,16 @@
 #include "pgx_lower/mlir/Dialect/DB/IR/DBDialect.h"
 #include "pgx_lower/execution/logging.h"
 
-// Mock PostgreSQL structures for testing
 extern "C" {
-    // Basic types
-    typedef int16_t int16;
+        typedef int16_t int16;
     typedef int16 AttrNumber;
     typedef unsigned int Oid;
     
-    // Mock plan nodes for unit testing - must match PostgreSQL exactly!
-    struct Plan {
-        int type;               // NodeTag
-        double startup_cost;    // Cost - estimated startup cost
-        double total_cost;      // Cost - total cost  
-        double plan_rows;       // estimated number of rows
-        int plan_width;         // average row width in bytes
-        
-        // FIXED: Added fields that were missing
-        bool parallel_aware;    // engage parallel-aware logic?
-        bool parallel_safe;     // OK to use as part of parallel plan?
-        bool async_capable;     // engage asynchronous-capable logic?
-        int plan_node_id;       // unique across entire final plan tree
-        
-        List* targetlist;       // target list to be computed
-        List* qual;             // qual conditions
-        Plan* lefttree;         // left input plan tree
-        Plan* righttree;        // right input plan tree
-        List* initPlan;         // Init Plan nodes (uncorrelated subselects)
-        void* extParam;         // external params affecting this node (Bitmapset*)
-        void* allParam;         // all params affecting this node (Bitmapset*)
-    };
+        struct Plan {
+        int type;                       double startup_cost;            double total_cost;        
+        double plan_rows;               int plan_width;                 
+        bool parallel_aware;            bool parallel_safe;             bool async_capable;             int plan_node_id;               
+        List* targetlist;               List* qual;                     Plan* lefttree;                 Plan* righttree;                List* initPlan;                 void* extParam;                 void* allParam;             };
     
     struct SeqScan {
         Plan plan;
@@ -58,14 +39,11 @@ extern "C" {
     
     struct Agg {
         Plan plan;
-        int aggstrategy;      // AggStrategy enum
-        int aggsplit;         // AggSplit enum - FIXED: was missing this field!
-        int numCols;
+        int aggstrategy;              int aggsplit;                 int numCols;
         AttrNumber* grpColIdx;
         Oid* grpOperators;
         Oid* grpCollations;
-        // Note: Additional fields exist in real PostgreSQL but not needed for tests
-    };
+            };
     
     struct Sort {
         Plan plan;
@@ -78,11 +56,7 @@ extern "C" {
     
     struct Limit {
         Plan plan;
-        Node* limitOffset;    // FIXED: Swapped order to match PostgreSQL
-        Node* limitCount;     // OFFSET comes before COUNT in PostgreSQL
-        int limitOption;      // FIXED: Added missing field
-        int uniqNumCols;      // FIXED: Added missing field for LIMIT DISTINCT support
-    };
+        Node* limitOffset;            Node* limitCount;             int limitOption;              int uniqNumCols;          };
     
     struct Gather {
         Plan plan;
@@ -93,31 +67,12 @@ extern "C" {
     };
     
     struct PlannedStmt {
-        int type;               // NodeTag - must be first!
-        int commandType;        // CmdType enum
-        uint64_t queryId;       // query identifier - FIXED: uint64_t to match PostgreSQL
-        bool hasReturning;      // is it insert|update|delete RETURNING?
-        bool hasModifyingCTE;   // has insert|update|delete in WITH?
-        bool canSetTag;         // do I set the command result tag?
-        bool transientPlan;     // is plan short-lived?
-        bool dependsOnRole;     // needs to be replanned when role changes?
-        bool parallelModeNeeded; // parallel mode needed?
-        int jitFlags;           // JIT flags
-        Plan* planTree;         // tree of Plan nodes
-        List* rtable;           // list of RangeTblEntry nodes
-    };
+        int type;                       int commandType;                uint64_t queryId;               bool hasReturning;              bool hasModifyingCTE;           bool canSetTag;                 bool transientPlan;             bool dependsOnRole;             bool parallelModeNeeded;         int jitFlags;                   Plan* planTree;                 List* rtable;               };
     
-    // Forward declare ListCell for List structure
     typedef struct ListCell ListCell;
     
-    // PostgreSQL 17 uses an array-based List structure
-    struct List {
-        int type;           // NodeTag - for compatibility with PostgreSQL
-        int length;         // Number of elements
-        int max_length;     // Allocated length of elements array
-        ListCell* elements; // Array of ListCell elements (PostgreSQL 17 style)
-        ListCell* initial_elements; // Initial static allocation (optional)
-    };
+        struct List {
+        int type;                   int length;                 int max_length;             ListCell* elements;         ListCell* initial_elements;     };
     
     struct ListCell {
         union {
@@ -157,98 +112,39 @@ extern "C" {
         int location;
     };
     
-    // Expression nodes for Tests 9-28
-    struct Var {
+        struct Var {
         Node node;
-        uint32_t varno;        // Index of this var's relation in the range table
-        AttrNumber varattno;   // Attribute number of this var
-        Oid vartype;          // Data type OID
-        int32_t vartypmod;    // Type modifier
-        Oid varcollid;        // Collation OID
-        uint32_t varlevelsup; // For subqueries
-        uint32_t varnoold;    // Original varno before query rewriting
-        AttrNumber varoattno; // Original attribute number
-        int location;         // Token location or -1
-    };
+        uint32_t varno;                AttrNumber varattno;           Oid vartype;                  int32_t vartypmod;            Oid varcollid;                uint32_t varlevelsup;         uint32_t varnoold;            AttrNumber varoattno;         int location;             };
     
     struct OpExpr {
         Node node;
-        Oid opno;             // Operator OID
-        Oid opfuncid;         // Underlying function OID
-        Oid opresulttype;     // Result type OID
-        bool opretset;        // True if operator returns a set
-        Oid opcollid;         // Collation OID
-        Oid inputcollid;      // Input collation OID
-        List* args;           // Arguments to the operator (List of Expr)
-        int location;         // Token location or -1
-    };
+        Oid opno;                     Oid opfuncid;                 Oid opresulttype;             bool opretset;                Oid opcollid;                 Oid inputcollid;              List* args;                   int location;             };
     
     struct BoolExpr {
         Node node;
-        int boolop;           // Type of boolean operator (AND, OR, NOT)
-        List* args;           // Arguments (List of Expr)
-        int location;         // Token location or -1
-    };
+        int boolop;                   List* args;                   int location;             };
     
     struct TargetEntry {
         Node node;
-        Node* expr;           // Expression to compute or Var
-        AttrNumber resno;     // Attribute number (1-based)
-        char* resname;        // Name of the column (can be NULL)
-        uint32_t ressortgroupref; // Nonzero if referenced by ORDER BY/GROUP BY
-        Oid resorigtbl;       // OID of column's source table
-        AttrNumber resorigcol; // Column's original attribute number
-        bool resjunk;         // True if not a real output column
-    };
+        Node* expr;                   AttrNumber resno;             char* resname;                uint32_t ressortgroupref;         Oid resorigtbl;               AttrNumber resorigcol;         bool resjunk;             };
     
     struct FuncExpr {
         Node node;
-        Oid funcid;           // Function OID
-        Oid funcresulttype;   // Result type OID
-        bool funcretset;      // True if function returns a set
-        bool funcvariadic;    // True if function uses VARIADIC
-        unsigned char funcformat; // How to display the function call
-        Oid funccollid;       // Collation OID for result
-        Oid inputcollid;      // Input collation OID
-        List* args;           // Arguments to the function
-        int location;         // Token location or -1
-    };
+        Oid funcid;                   Oid funcresulttype;           bool funcretset;              bool funcvariadic;            unsigned char funcformat;         Oid funccollid;               Oid inputcollid;              List* args;                   int location;             };
     
     struct Aggref {
         Node node;
-        Oid aggfnoid;         // Aggregate function OID
-        Oid aggtype;          // Result type OID
-        Oid aggcollid;        // Collation OID for result
-        Oid inputcollid;      // Input collation OID
-        Oid aggtranstype;     // Transition value type OID (for internal state)
-        List* aggargtypes;    // Argument types (list of OIDs)
-        List* aggdirectargs;  // Direct arguments (list of Exprs)
-        List* args;           // Arguments to aggregate
-        List* aggorder;       // ORDER BY within aggregate
-        List* aggdistinct;    // DISTINCT within aggregate
-        Node* aggfilter;      // FILTER expression
-        bool aggstar;         // TRUE if COUNT(*)
-        bool aggvariadic;     // TRUE if uses VARIADIC
-        char aggkind;         // Kind of aggregate
-        uint32_t agglevelsup; // Levels up for subquery
-        int location;         // Token location or -1
-    };
+        Oid aggfnoid;                 Oid aggtype;                  Oid aggcollid;                Oid inputcollid;              Oid aggtranstype;             List* aggargtypes;            List* aggdirectargs;          List* args;                   List* aggorder;               List* aggdistinct;            Node* aggfilter;              bool aggstar;                 bool aggvariadic;             char aggkind;                 uint32_t agglevelsup;         int location;             };
     
     struct NullTest {
         Node node;
-        Node* arg;            // Expression to test
-        int nulltesttype;     // IS NULL or IS NOT NULL
-        bool argisrow;        // T if arg is a RowExpr
-        int location;         // Token location or -1
-    };
+        Node* arg;                    int nulltesttype;             bool argisrow;                int location;             };
     
     struct CoalesceExpr {
         Node node;
-        Oid coalescetype;     // Result type OID
-        Oid coalescecollid;   // Result collation OID
+        Oid coalescetype;             Oid coalescecollid;   // Result collation OID
         List* args;           // List of expressions
-        int location;         // Token location or -1
-    };
+        int location;             };
     
     // Plan node type constants
     #define T_PlannedStmt 67    // PlannedStmt node type

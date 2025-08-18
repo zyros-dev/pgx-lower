@@ -38,11 +38,10 @@ extern "C" {
 #include "postgres.h"
 #include "utils/memutils.h"
 #include "utils/elog.h"
-#include "miscadmin.h"  // For CHECK_FOR_INTERRUPTS
+#include "miscadmin.h"
 }
 #endif
 
-// Forward declarations of runtime functions
 extern "C" {
 void* rt_get_execution_context();
 bool add_tuple_to_result(int64_t value);
@@ -53,7 +52,6 @@ void prepare_computed_results(int32_t numColumns);
 namespace pgx_lower {
 namespace execution {
 
-// Forward declaration for destructor
 class WrappedExecutionEngine;
 
 // WrappedExecutionEngine class following LingoDB pattern from lingo-db/lib/runner/runner.cpp:551-634
@@ -61,16 +59,14 @@ class WrappedExecutionEngine {
     std::unique_ptr<mlir::ExecutionEngine> engine;
     size_t jitTime;
     void* mainFuncPtr;
-    void* setContextPtr;  // Added per LingoDB pattern
+    void* setContextPtr;
     bool useStaticLinking;
     
 private:
-    // Helper method to create module translation lambda
     static auto createModuleTranslationLambda() {
         return [](::mlir::Operation* op, llvm::LLVMContext& context) 
             -> std::unique_ptr<llvm::Module> {
             
-            PGX_DEBUG("WrappedExecutionEngine: Translating MLIR module to LLVM IR");
             if (!op) {
                 PGX_ERROR("Null operation in module translation");
                 return nullptr;
@@ -78,7 +74,6 @@ private:
             
             auto module = mlir::cast<::mlir::ModuleOp>(op);
             
-            // Register translations before conversion
             mlir::registerLLVMDialectTranslation(*module->getContext());
             
             auto llvmModule = mlir::translateModuleToLLVMIR(module, context, "PostgreSQLJITModule");
@@ -89,7 +84,6 @@ private:
             }
             
             // CRITICAL DEBUG: Dump LLVM IR to analyze the generated code
-            PGX_INFO("=== LLVM IR DUMP START ===");
             std::string llvmIRString;
             llvm::raw_string_ostream llvmIRStream(llvmIRString);
             llvmModule->print(llvmIRStream, nullptr);
@@ -105,7 +99,7 @@ private:
                 }
             }
             PGX_INFO("=== LLVM IR DUMP END (showing first 200 lines) ===");
-            
+
             // Verify the module is valid
             std::string verifyError;
             llvm::raw_string_ostream verifyStream(verifyError);
@@ -113,18 +107,14 @@ private:
                 verifyStream.flush();
                 PGX_ERROR("LLVM module verification failed: " + verifyError);
                 // Don't return nullptr, let's try to continue and see what happens
-            } else {
-                PGX_INFO("LLVM module verification passed");
             }
             
-            // Fix function visibility for dlsym lookup (critical for dlopen approach)
             for (auto& func : llvmModule->functions()) {
                 std::string funcName = func.getName().str();
                 if (funcName == "main" || funcName == "_mlir_ciface_main") {
                     func.setLinkage(llvm::GlobalValue::ExternalLinkage);
                     func.setVisibility(llvm::GlobalValue::DefaultVisibility);
                     func.setDSOLocal(true);
-                    PGX_INFO("Set " + funcName + " to ExternalLinkage for dlsym");
                 }
             }
             
@@ -132,13 +122,10 @@ private:
         };
     }
     
-    // Helper method to create optimization lambda
     static auto createOptimizationLambda(llvm::CodeGenOptLevel optLevel) {
         return [optLevel](llvm::Module* module) -> llvm::Error {
-            PGX_DEBUG("WrappedExecutionEngine: Optimizing LLVM module");
             
             if (optLevel == llvm::CodeGenOptLevel::None) {
-                PGX_INFO("Skipping optimization (level = None)");
                 return llvm::Error::success();
             }
             
@@ -160,7 +147,6 @@ private:
         };
     }
     
-    // Helper method to initialize the engine with options
     void initializeEngineWithOptions(mlir::ModuleOp module, llvm::CodeGenOptLevel optLevel) {
         mlir::ExecutionEngineOptions engineOptions;
         engineOptions.llvmModuleBuilder = createModuleTranslationLambda();
@@ -176,7 +162,6 @@ private:
         
         engine = std::move(*maybeEngine);
         
-        // Try standard lookup first (unless forcing static)
         if (!useStaticLinking) {
             auto lookupResult = engine->lookup("main");
             if (!lookupResult) {
@@ -185,8 +170,6 @@ private:
             
             if (lookupResult) {
                 mainFuncPtr = lookupResult.get();
-                PGX_INFO("Found main function via ExecutionEngine at: " + 
-                         std::to_string(reinterpret_cast<uintptr_t>(mainFuncPtr)));
             } else {
                 PGX_WARNING("Main function not found via ExecutionEngine::lookup, will use static linking");
                 useStaticLinking = true;
@@ -196,8 +179,6 @@ private:
             auto setContextResult = engine->lookup("rt_set_execution_context");
             if (setContextResult) {
                 setContextPtr = setContextResult.get();
-                PGX_INFO("Found rt_set_execution_context function at: " + 
-                         std::to_string(reinterpret_cast<uintptr_t>(setContextPtr)));
             } else {
                 PGX_WARNING("rt_set_execution_context function not found - context management disabled");
             }
@@ -210,12 +191,10 @@ public:
         
         auto start = std::chrono::high_resolution_clock::now();
         
-        // Initialize the execution engine with proper options
         initializeEngineWithOptions(module, optLevel);
         
         auto end = std::chrono::high_resolution_clock::now();
         jitTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        PGX_INFO("JIT compilation took: " + std::to_string(jitTime / 1000.0) + " ms");
     }
     
     bool succeeded() const {
@@ -227,11 +206,9 @@ public:
         return setContextPtr;
     }
     
-    // Helper method to compile object file to shared library
     bool compileObjectToSharedLibrary(const std::string& objectFile, const std::string& sharedLibFile) {
         // Link with undefined symbols allowed - they'll be resolved from the main extension
         std::string cmd = "g++ -shared -fPIC -Wl,--unresolved-symbols=ignore-all -o " + sharedLibFile + " " + objectFile + " 2>&1";
-        PGX_INFO("Compiling: " + cmd);
         
         auto* pPipe = ::popen(cmd.c_str(), "r");
         if (!pPipe) {
@@ -252,11 +229,9 @@ public:
             return false;
         }
         
-        PGX_INFO("Successfully compiled to " + sharedLibFile);
         return true;
     }
     
-    // Helper method to load shared library
     void* loadSharedLibrary(const std::string& path) {
         void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
         
@@ -266,11 +241,9 @@ public:
             return nullptr;
         }
         
-        PGX_INFO("Successfully loaded shared library");
         return handle;
     }
     
-    // Helper method to lookup main function in loaded library
     void* lookupMainFunction(void* handle) {
         void* funcPtr = dlsym(handle, "main");
         if (!funcPtr) {
@@ -283,27 +256,21 @@ public:
             return nullptr;
         }
         
-        PGX_INFO("Successfully found main function via dlsym at: " + 
-                 std::to_string(reinterpret_cast<uintptr_t>(funcPtr)));
         return funcPtr;
     }
     
     bool linkStatic() {
-        // Following LingoDB pattern from runner.cpp:584-624
-        PGX_INFO("Using LingoDB static linking pattern with dlopen/dlsym");
         
         auto currPath = std::filesystem::current_path();
         
         // Dump JIT object to file
         engine->dumpToObjectFile("pgx_jit_module.o");
-        PGX_INFO("Dumped JIT object to pgx_jit_module.o");
         
         // Compile to shared library
         if (!compileObjectToSharedLibrary("pgx_jit_module.o", "pgx_jit_module.so")) {
             return false;
         }
         
-        // Load shared library
         std::string soPath = currPath.string() + "/pgx_jit_module.so";
         void* handle = loadSharedLibrary(soPath);
         if (!handle) {
@@ -350,7 +317,6 @@ PostgreSQLJITExecutionEngine::~PostgreSQLJITExecutionEngine() {
 }
 
 void PostgreSQLJITExecutionEngine::configureLLVMTargetMachine() {
-    PGX_DEBUG("Configuring LLVM target machine");
     
     static bool llvm_initialized = false;
     if (!llvm_initialized) {
@@ -358,7 +324,6 @@ void PostgreSQLJITExecutionEngine::configureLLVMTargetMachine() {
         llvm::InitializeNativeTargetAsmPrinter();
         llvm::InitializeNativeTargetAsmParser();
         llvm_initialized = true;
-        PGX_DEBUG("LLVM target initialization completed");
     }
     
     auto targetTriple = llvm::sys::getDefaultTargetTriple();
@@ -372,7 +337,6 @@ void PostgreSQLJITExecutionEngine::configureLLVMTargetMachine() {
 }
 
 bool PostgreSQLJITExecutionEngine::validateModuleForCompilation(::mlir::ModuleOp module) {
-    PGX_DEBUG("Validating MLIR module for compilation");
     
     if (!module) {
         PGX_ERROR("Module is null");
@@ -388,20 +352,16 @@ bool PostgreSQLJITExecutionEngine::validateModuleForCompilation(::mlir::ModuleOp
     if (!mainFunc) {
         PGX_WARNING("Module does not contain 'main' function");
     } else {
-        PGX_DEBUG("Found main function");
     }
     
     return true;
 }
 
 bool PostgreSQLJITExecutionEngine::setupJITOptimizationPipeline() {
-    PGX_DEBUG("Setting up JIT optimization pipeline");
-    PGX_INFO("JIT optimization level set to: " + std::to_string(static_cast<int>(optimizationLevel)));
     return true;
 }
 
 bool PostgreSQLJITExecutionEngine::compileToLLVMIR(::mlir::ModuleOp module) {
-    PGX_DEBUG("Compiling MLIR module to LLVM IR");
     
     if (!validateModuleForCompilation(module)) {
         PGX_ERROR("Module validation failed");
@@ -411,7 +371,6 @@ bool PostgreSQLJITExecutionEngine::compileToLLVMIR(::mlir::ModuleOp module) {
     return true;
 }
 
-// Helper method to register dialect translations for MLIR compilation
 void PostgreSQLJITExecutionEngine::registerDialectTranslations(::mlir::ModuleOp module) {
     mlir::DialectRegistry registry;
     mlir::registerAllToLLVMIRTranslations(registry);
@@ -424,7 +383,6 @@ void PostgreSQLJITExecutionEngine::registerDialectTranslations(::mlir::ModuleOp 
     mlir::registerLLVMDialectTranslation(*module->getContext());
 }
 
-// Helper method to create and initialize the wrapped execution engine
 bool PostgreSQLJITExecutionEngine::createWrappedExecutionEngine(::mlir::ModuleOp module) {
     auto* wrapped = new WrappedExecutionEngine(module, optimizationLevel);
     wrappedEngine = wrapped;
@@ -439,7 +397,6 @@ bool PostgreSQLJITExecutionEngine::createWrappedExecutionEngine(::mlir::ModuleOp
         }
     }
     
-    // Register runtime functions if engine is available
     if (wrapped->getEngine()) {
         registerPostgreSQLRuntimeFunctions();
     }
@@ -448,27 +405,22 @@ bool PostgreSQLJITExecutionEngine::createWrappedExecutionEngine(::mlir::ModuleOp
 }
 
 bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
-    PGX_INFO("Initializing PostgreSQL JIT execution engine with LingoDB pattern");
     
     if (initialized) {
         PGX_WARNING("Execution engine already initialized");
         return true;
     }
     
-    // Validate module
     if (!validateModuleForCompilation(module)) {
         return false;
     }
     
-    // Register dialect translations
     registerDialectTranslations(module);
     
-    // Configure LLVM target
     configureLLVMTargetMachine();
     
     auto startTime = std::chrono::high_resolution_clock::now();
     
-    // Create and initialize the wrapped execution engine
     if (!createWrappedExecutionEngine(module)) {
         return false;
     }
@@ -477,13 +429,11 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
     
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
-    PGX_INFO("JIT execution engine initialized in " + std::to_string(duration / 1000.0) + " ms");
     
     return true;
 }
 
 void PostgreSQLJITExecutionEngine::registerLingoDRuntimeContextFunctions() {
-    PGX_DEBUG("Registering LingoDB runtime context functions");
     
     auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
     if (!wrapped || !wrapped->getEngine()) {
@@ -501,7 +451,6 @@ void PostgreSQLJITExecutionEngine::registerLingoDRuntimeContextFunctions() {
                     +[](void* context_ptr) -> void {
                         static thread_local void* global_execution_context = nullptr;
                         global_execution_context = context_ptr;
-                        PGX_DEBUG("Set execution context");
                     }
                 )),
                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
@@ -522,7 +471,6 @@ void PostgreSQLJITExecutionEngine::registerLingoDRuntimeContextFunctions() {
         });
 }
 
-// Helper method to get list of runtime table builder functions
 std::vector<std::string> getTableBuilderFunctions() {
     return {
         "rt_tablebuilder_create",
@@ -535,7 +483,6 @@ std::vector<std::string> getTableBuilderFunctions() {
     };
 }
 
-// Helper method to get list of data source iteration functions
 std::vector<std::string> getDataSourceIterationFunctions() {
     return {
         "rt_datasourceiteration_start",
@@ -546,14 +493,12 @@ std::vector<std::string> getDataSourceIterationFunctions() {
     };
 }
 
-// Helper method to get list of context management functions
 std::vector<std::string> getContextManagementFunctions() {
     return {
         "rt_get_execution_context"
     };
 }
 
-// Helper lambda to create the symbol registration function
 auto createSymbolRegistrationLambda() {
     return [](llvm::orc::MangleAndInterner interner) {
         llvm::orc::SymbolMap symbolMap;
@@ -571,11 +516,9 @@ auto createSymbolRegistrationLambda() {
                     llvm::orc::ExecutorAddr::fromPtr(funcPtr),
                     llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable
                 };
-                PGX_DEBUG("Registered: " + funcName);
             }
         };
         
-        // Register all runtime function groups
         auto tableBuilderFuncs = getTableBuilderFunctions();
         auto dataSourceFuncs = getDataSourceIterationFunctions();
         auto contextFuncs = getContextManagementFunctions();
@@ -624,7 +567,6 @@ void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
 }
 
 bool PostgreSQLJITExecutionEngine::setupMemoryContexts() {
-    PGX_DEBUG("Setting up PostgreSQL memory contexts");
     
 #ifdef POSTGRESQL_EXTENSION
     if (!CurrentMemoryContext) {
@@ -649,7 +591,6 @@ bool PostgreSQLJITExecutionEngine::setupMemoryContexts() {
         
         MemoryContextSwitchTo(oldcontext);
         
-        PGX_DEBUG("Memory contexts configured successfully");
         return true;
     }
     PG_CATCH();
@@ -659,12 +600,10 @@ bool PostgreSQLJITExecutionEngine::setupMemoryContexts() {
     }
     PG_END_TRY();
 #else
-    PGX_DEBUG("Running in unit test environment");
     return true;
 #endif
 }
 
-// Helper method to lookup the execution function from wrapped engine
 void* PostgreSQLJITExecutionEngine::lookupExecutionFunction(WrappedExecutionEngine* wrapped) {
     void* funcPtr = wrapped->getMainFuncPtr();
     if (!funcPtr) {
@@ -685,24 +624,17 @@ void* PostgreSQLJITExecutionEngine::lookupExecutionFunction(WrappedExecutionEngi
     return funcPtr;
 }
 
-// Helper method to invoke the compiled function with proper error handling
 bool PostgreSQLJITExecutionEngine::invokeCompiledFunction(void* funcPtr, void* estate, void* dest) {
 #ifdef POSTGRESQL_EXTENSION
     bool executionSuccess = false;
     
-    // CRITICAL: Save current memory context before JIT execution
-    // This ensures we can safely return to it after JIT completes
     MemoryContext savedContext = CurrentMemoryContext;
     
     // MEMORY FIX: Do NOT switch contexts before JIT execution
-    // The JIT code will manage its own memory context switching as needed
     // Switching here can cause issues with tuple streaming
-    PGX_DEBUG("Keeping current memory context for JIT execution");
     
     PG_TRY();
     {
-        // CRITICAL: Set execution context before calling JIT function
-        // The JIT code expects rt_get_execution_context to return the estate
         if (wrappedEngine) {
             auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
             void* setContextPtr = wrapped->getSetContextPtr();
@@ -722,15 +654,12 @@ bool PostgreSQLJITExecutionEngine::invokeCompiledFunction(void* funcPtr, void* e
         
         // CRITICAL FIX: DO NOT switch context here!
         // PostgreSQL still needs access to JIT-allocated data.
-        // The context switch will happen after the function returns
         // and PostgreSQL has finished processing all tuples.
         
-        // Just ensure interrupts are processed
         CHECK_FOR_INTERRUPTS();
     }
     PG_CATCH();
     {
-        // Ensure we're back in the saved context even on error
         MemoryContextSwitchTo(savedContext);
         PGX_ERROR("PostgreSQL exception during JIT execution");
         PG_RE_THROW();
@@ -738,9 +667,7 @@ bool PostgreSQLJITExecutionEngine::invokeCompiledFunction(void* funcPtr, void* e
     PG_END_TRY();
     
     // MEMORY FIX: Restore context AFTER all tuple processing is complete
-    // This is safe because we're now outside the critical path
     MemoryContextSwitchTo(savedContext);
-    PGX_DEBUG("Restored original memory context after JIT execution");
     
     return executionSuccess;
 #else
@@ -760,7 +687,6 @@ bool PostgreSQLJITExecutionEngine::invokeCompiledFunction(void* funcPtr, void* e
 #endif
 }
 
-// Helper method to log execution timing metrics
 void PostgreSQLJITExecutionEngine::logExecutionMetrics(std::chrono::microseconds duration) {
     PGX_INFO("JIT execution took " + std::to_string(duration.count() / 1000.0) + " ms");
     PGX_INFO("JIT execution completed successfully");
@@ -789,7 +715,6 @@ bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest
         return false;
     }
     
-    // Invoke the compiled function
     bool success = invokeCompiledFunction(funcPtr, estate, dest);
     if (!success) {
         return false;

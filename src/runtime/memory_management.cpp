@@ -1,5 +1,3 @@
-// PostgreSQL Memory Management Abstraction Layer
-// This module provides clean separation between MLIR execution and PostgreSQL memory contexts
 
 #include "execution/logging.h"
 #include <cstdint>
@@ -18,7 +16,6 @@ namespace pgx_lower {
 namespace runtime {
 namespace memory {
 
-// Check if current memory context is valid for PostgreSQL operations
 bool is_context_valid() {
 #ifdef POSTGRESQL_EXTENSION
     if (!CurrentMemoryContext) {
@@ -26,13 +23,11 @@ bool is_context_valid() {
         return false;
     }
     
-    // Verify context has valid methods (not corrupted)
     if (CurrentMemoryContext->methods == NULL) {
         PGX_ERROR("memory::is_context_valid: Invalid context - no methods");
         return false;
     }
     
-    // Check for known valid context types
     if (CurrentMemoryContext->type != T_AllocSetContext && 
         CurrentMemoryContext->type != T_SlabContext && 
         CurrentMemoryContext->type != T_GenerationContext) {
@@ -42,12 +37,10 @@ bool is_context_valid() {
     
     return true;
 #else
-    // In unit tests, always return true
     return true;
 #endif
 }
 
-// Allocate memory in the current PostgreSQL context with error handling
 void* allocate(size_t size) {
     if (!is_context_valid()) {
         PGX_ERROR("memory::allocate: Invalid context, cannot allocate " + std::to_string(size) + " bytes");

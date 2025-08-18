@@ -6,7 +6,6 @@ class ArithmeticExpressionTest : public PlanNodeTestBase {};
 TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
     PGX_INFO("Testing arithmetic expression translation");
     
-    // Create base SeqScan node
     SeqScan seqScan{};
     seqScan.plan.type = T_SeqScan;
     seqScan.plan.startup_cost = 0.0;
@@ -18,19 +17,14 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
     seqScan.plan.righttree = nullptr;
     seqScan.scan.scanrelid = 1;
     
-    // Create targetlist with arithmetic expressions
-    // Simulating: SELECT val1 + val2, val1 - val2, val1 * val2, val1 / val2 FROM test
     static TargetEntry entries[4];
     static OpExpr opExprs[4];
     static Var vars[8];
     
-    // Setup variables for columns
     for (int i = 0; i < 8; i++) {
         vars[i].node.type = T_Var;
         vars[i].varno = 1;
-        vars[i].varattno = (i % 2) + 1;  // Alternating col1(1) and col2(2)
-        vars[i].vartype = 23;  // INT4OID
-        vars[i].vartypmod = -1;
+        vars[i].varattno = (i % 2) + 1;        vars[i].vartype = 23;        vars[i].vartypmod = -1;
         vars[i].varcollid = 0;
         vars[i].varlevelsup = 0;
         vars[i].varnoold = 1;
@@ -38,32 +32,25 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
         vars[i].location = -1;
     }
     
-    // Setup arithmetic operations
     Oid operators[] = {INT4PLUSOID, INT4MINUSOID, INT4MULOID, INT4DIVOID};
     const char* opNames[] = {"add", "sub", "mul", "div"};
     
-    // Create targetlist as proper linked list
     List* targetList = NIL;
     
     for (int i = 0; i < 4; i++) {
-        // Create argument list for operator (val1, val2)
         List* args = list_make2(
             reinterpret_cast<void*>(&vars[i * 2]),
             reinterpret_cast<void*>(&vars[i * 2 + 1])
         );
         
-        // Setup OpExpr for each arithmetic operation
         opExprs[i].node.type = T_OpExpr;
         opExprs[i].opno = operators[i];
-        opExprs[i].opfuncid = operators[i];  // Simplified: using same ID
-        opExprs[i].opresulttype = 23;  // INT4OID
-        opExprs[i].opretset = false;
+        opExprs[i].opfuncid = operators[i];        opExprs[i].opresulttype = 23;        opExprs[i].opretset = false;
         opExprs[i].opcollid = 0;
         opExprs[i].inputcollid = 0;
         opExprs[i].args = args;
         opExprs[i].location = -1;
         
-        // Setup TargetEntry
         entries[i].node.type = T_TargetEntry;
         entries[i].expr = reinterpret_cast<Node*>(&opExprs[i]);
         entries[i].resno = i + 1;
@@ -73,7 +60,6 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
         entries[i].resorigcol = 0;
         entries[i].resjunk = false;
         
-        // Add to targetlist
         PGX_INFO("Adding TargetEntry[" + std::to_string(i) + "] at address " + 
                  std::to_string(reinterpret_cast<uintptr_t>(&entries[i])));
         targetList = lappend(targetList, &entries[i]);
@@ -81,13 +67,10 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
     
     seqScan.plan.targetlist = targetList;
     
-    // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
     
-    // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // Check that expression translation is working
     if (module) {
         std::vector<std::string> expectedPatterns = {
             "relalg.basetable",  // Base table scan
@@ -112,7 +95,6 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticExpressions) {
 TEST_F(ArithmeticExpressionTest, TranslatesNestedArithmetic) {
     PGX_INFO("Testing nested arithmetic expression translation");
     
-    // Create base SeqScan node
     SeqScan seqScan{};
     seqScan.plan.type = T_SeqScan;
     seqScan.plan.startup_cost = 0.0;
@@ -134,8 +116,7 @@ TEST_F(ArithmeticExpressionTest, TranslatesNestedArithmetic) {
     val1.node.type = T_Var;
     val1.varno = 1;
     val1.varattno = 1;
-    val1.vartype = 23;  // INT4OID
-    val1.vartypmod = -1;
+    val1.vartype = 23;    val1.vartypmod = -1;
     val1.location = -1;
     
     val2.node.type = T_Var;
@@ -212,10 +193,8 @@ TEST_F(ArithmeticExpressionTest, TranslatesNestedArithmetic) {
     List* targetList = list_make1(&entry);
     seqScan.plan.targetlist = targetList;
     
-    // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
     
-    // Translate
     auto module = translator->translateQuery(&stmt);
     
     if (module) {
@@ -238,7 +217,6 @@ TEST_F(ArithmeticExpressionTest, TranslatesNestedArithmetic) {
 TEST_F(ArithmeticExpressionTest, TranslatesArithmeticWithConstants) {
     PGX_INFO("Testing arithmetic with constants");
     
-    // Create base SeqScan node
     SeqScan seqScan{};
     seqScan.plan.type = T_SeqScan;
     seqScan.plan.startup_cost = 0.0;
@@ -262,8 +240,7 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticWithConstants) {
         vars[i].node.type = T_Var;
         vars[i].varno = 1;
         vars[i].varattno = i + 1;
-        vars[i].vartype = 23;  // INT4OID
-        vars[i].vartypmod = -1;
+        vars[i].vartype = 23;        vars[i].vartypmod = -1;
         vars[i].location = -1;
     }
     
@@ -289,7 +266,6 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticWithConstants) {
     consts[2].constbyval = true;
     consts[2].location = -1;
     
-    // Create targetlist as proper linked list
     List* targetList = NIL;
     
     // Setup val1 * 2
@@ -343,7 +319,6 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticWithConstants) {
         entries[i].resorigcol = 0;
         entries[i].resjunk = false;
         
-        // Add to targetlist
         PGX_INFO("Adding TargetEntry[" + std::to_string(i) + "] at address " + 
                  std::to_string(reinterpret_cast<uintptr_t>(&entries[i])));
         targetList = lappend(targetList, &entries[i]);
@@ -351,10 +326,8 @@ TEST_F(ArithmeticExpressionTest, TranslatesArithmeticWithConstants) {
     
     seqScan.plan.targetlist = targetList;
     
-    // Create PlannedStmt
     PlannedStmt stmt = createPlannedStmt(&seqScan.plan);
     
-    // Translate
     auto module = translator->translateQuery(&stmt);
     
     if (module) {

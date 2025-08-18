@@ -301,7 +301,6 @@ TEST_F(BasicPlanNodeTest, TranslatesAggregateFunctions) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once aggregate function translation is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             "relalg.aggregation",  // Aggregation operation
@@ -319,7 +318,6 @@ TEST_F(BasicPlanNodeTest, TranslatesAggregateFunctions) {
         PGX_INFO("Aggregate functions test completed - TODO: Implement aggregate function indicators in translator");
     } else {
         PGX_INFO("Aggregate functions not yet fully implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module with aggregate function indicators
     }
 }
 

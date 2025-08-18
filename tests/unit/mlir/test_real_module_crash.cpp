@@ -18,7 +18,6 @@ using namespace mlir;
 class RealModuleCrashTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Load required dialects
         context.loadDialect<func::FuncDialect>();
         context.loadDialect<arith::ArithDialect>();
         context.loadDialect<scf::SCFDialect>();
@@ -30,7 +29,6 @@ protected:
 };
 
 TEST_F(RealModuleCrashTest, ExactRealModuleContent) {
-    // The exact MLIR that crashes in production (from /tmp/real_module.mlir)
     const char* moduleStr = R"(
 module {
   func.func private @_ZN7runtime12TableBuilder5buildEv(!util.ref<i8>) -> !util.ref<i8>
@@ -79,11 +77,9 @@ module {
     PassManager pm(&context);
     pm.addPass(mlir::pgx_lower::createStandardToLLVMPass());
     
-    // This should reproduce the exact crash
     bool result = succeeded(pm.run(module.get()));
     
     if (result) {
-        // Dump the resulting LLVM IR to file
         std::string outputStr;
         llvm::raw_string_ostream stream(outputStr);
         module->print(stream);
@@ -92,15 +88,9 @@ module {
         if (outFile.is_open()) {
             outFile << outputStr;
             outFile.close();
-            printf("✅ Converted LLVM IR dumped to /tmp/converted_llvm_ir.mlir\n");
         } else {
-            printf("❌ Failed to dump converted IR\n");
         }
         
-        // Also print to console (first 500 chars)
-        printf("=== CONVERTED LLVM IR (preview) ===\n");
-        printf("%.5000s...\n", outputStr.c_str());
-        printf("=== END PREVIEW ===\n");
     }
     
     EXPECT_TRUE(result) << "StandardToLLVMPass failed on real module content";

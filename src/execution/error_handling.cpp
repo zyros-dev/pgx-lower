@@ -121,7 +121,6 @@ void ErrorManager::setHandler(std::unique_ptr<ErrorHandler> handler) {
 
 auto ErrorManager::getHandler() -> ErrorHandler* {
     if (!handler_) {
-        // Default to console handler if none set
         handler_ = std::make_unique<ConsoleErrorHandler>();
     }
     return handler_.get();

@@ -1,10 +1,8 @@
-# DELETED: test_sequential_pipelines - links against problematic MLIRPasses
-
-# Create a local logging library for unit tests if not already defined
 if(NOT TARGET pgx_lower_logging)
     add_library(pgx_lower_logging STATIC
         ${CMAKE_SOURCE_DIR}/src/utility/logging.cpp
         ${CMAKE_SOURCE_DIR}/src/utility/logging_tools.cpp
+        ${CMAKE_SOURCE_DIR}/src/utility/logging_c.cpp
         ${CMAKE_SOURCE_DIR}/src/execution/error_handling.cpp
     )
     target_include_directories(pgx_lower_logging PUBLIC
@@ -15,22 +13,17 @@ if(NOT TARGET pgx_lower_logging)
         ${CMAKE_SOURCE_DIR}/src/mlir/Dialect/DB/include
         ${CMAKE_SOURCE_DIR}/src/mlir/Dialect/DSA/include
         ${CMAKE_SOURCE_DIR}/src/mlir/Dialect/util/include
+        ${PostgreSQL_INCLUDE_DIRS}
+        ${PostgreSQL_SERVER_INCLUDE_DIRS}
+    )
+    target_link_libraries(pgx_lower_logging PUBLIC
+        ${PostgreSQL_LIBRARIES}
     )
 endif()
 
-# Create JIT execution library for unit tests
 if(NOT TARGET pgx_lower_jit)
     add_library(pgx_lower_jit STATIC
         ${CMAKE_SOURCE_DIR}/src/execution/jit_execution_engine.cpp
-        # ${CMAKE_SOURCE_DIR}/src/execution/jit_execution_wrapper.cpp  # Requires PostgreSQL
-        # ${CMAKE_SOURCE_DIR}/src/execution/mlir_runner.cpp  # Temporarily disabled due to DestReceiver conflicts
-        # ${CMAKE_SOURCE_DIR}/src/frontend/SQL/postgresql_ast_translator.cpp  # Requires PostgreSQL
-        # ${CMAKE_SOURCE_DIR}/src/frontend/SQL/query_analyzer.cpp  # Requires PostgreSQL  
-        # ${CMAKE_SOURCE_DIR}/src/runtime/helpers.cpp  # Requires PostgreSQL
-        # ${CMAKE_SOURCE_DIR}/src/runtime/PostgreSQLDataSource.cpp  # Requires PostgreSQL
-        # ${CMAKE_SOURCE_DIR}/src/runtime/postgresql_runtime.cpp  # Requires PostgreSQL
-        # ${CMAKE_SOURCE_DIR}/src/runtime/tuple_access.cpp  # Temporarily disabled due to PostgreSQL API issues
-        # ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp  # Requires PostgreSQL
     )
     target_include_directories(pgx_lower_jit PUBLIC
         ${CMAKE_SOURCE_DIR}/include
@@ -58,7 +51,6 @@ if(NOT TARGET pgx_lower_jit)
     )
 endif()
 
-# Create a local passes library for unit tests if not already defined
 if(NOT TARGET pgx_lower_passes)
     add_library(pgx_lower_passes INTERFACE)
     target_link_libraries(pgx_lower_passes INTERFACE
@@ -76,8 +68,7 @@ if(NOT TARGET pgx_lower_passes)
     )
 endif()
 
-# Test for Standard to LLVM unified lowering pass
-add_executable(test_standard_to_llvm_pass 
+add_executable(test_standard_to_llvm_pass
     test_standard_to_llvm_pass.cpp
 )
 
@@ -130,8 +121,6 @@ target_link_libraries(test_dialect_verification
 
 add_test(NAME DialectVerificationTest COMMAND test_dialect_verification)
 
-# DELETED: test_standard_to_llvm_crash - links directly against problematic MLIRPasses
-
 # Simpler test for LLVM passes debugging
 add_executable(test_llvm_passes_simple 
     test_llvm_passes_simple.cpp
@@ -146,7 +135,6 @@ target_include_directories(test_llvm_passes_simple PRIVATE
 
 target_link_libraries(test_llvm_passes_simple
     gtest gtest_main
-    pgx_lower_logging
     MLIRFuncDialect
     MLIRArithDialect
     MLIRLLVMDialect
@@ -157,13 +145,10 @@ target_link_libraries(test_llvm_passes_simple
     MLIRArithToLLVM
     MLIRControlFlowToLLVM
     MLIRReconcileUnrealizedCasts
+    pgx_lower_logging
 )
 
 add_test(NAME LLVMPassesSimpleTest COMMAND test_llvm_passes_simple)
-
-# REMOVED: test_phase3c_simple due to linking issues with UtilToLLVM logging dependencies
-
-# DELETED: test_jit_execution_standalone - file removed as part of Stage 5 cleanup
 
 # Create a separate crash test that only needs RelAlg→DB conversion
 add_executable(test_relalg_crash

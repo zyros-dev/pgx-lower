@@ -14,7 +14,6 @@
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 
-#include "execution/logging.h"
 
 // Simple test to isolate LLVM lowering passes
 class LLVMPassesSimpleTest : public ::testing::Test {
@@ -30,7 +29,6 @@ protected:
 };
 
 TEST_F(LLVMPassesSimpleTest, BasicFuncToLLVM) {
-    PGX_INFO("TEST: Starting BasicFuncToLLVM test");
     
     // Create a simple module
     mlir::OpBuilder builder(&context);
@@ -54,29 +52,23 @@ TEST_F(LLVMPassesSimpleTest, BasicFuncToLLVM) {
     
     // Verify module
     ASSERT_FALSE(mlir::failed(module.verify()));
-    PGX_INFO("TEST: Module created and verified");
     
     // Run just FuncToLLVM conversion
     {
-        PGX_INFO("TEST: Testing FuncToLLVM pass in isolation");
         mlir::PassManager pm(&context);
         pm.addPass(mlir::createConvertFuncToLLVMPass());
         
         auto result = pm.run(module);
         if (mlir::failed(result)) {
-            PGX_ERROR("TEST: FuncToLLVM pass failed");
             FAIL() << "FuncToLLVM pass failed";
         }
-        PGX_INFO("TEST: FuncToLLVM pass succeeded");
     }
     
     // Module should still verify
     ASSERT_FALSE(mlir::failed(module.verify()));
-    PGX_INFO("TEST: Module verified after FuncToLLVM");
 }
 
 TEST_F(LLVMPassesSimpleTest, SequentialLLVMPasses) {
-    PGX_INFO("TEST: Starting SequentialLLVMPasses test");
     
     // Create module with arithmetic operations
     mlir::OpBuilder builder(&context);
@@ -102,33 +94,25 @@ TEST_F(LLVMPassesSimpleTest, SequentialLLVMPasses) {
     
     // Verify initial module
     ASSERT_FALSE(mlir::failed(module.verify()));
-    PGX_INFO("TEST: Initial module verified");
     
     // Run passes one by one
     mlir::PassManager pm(&context);
     
     // Add each pass individually
-    PGX_INFO("TEST: Adding FuncToLLVM pass");
     pm.addPass(mlir::createConvertFuncToLLVMPass());
     
-    PGX_INFO("TEST: Adding ArithToLLVM pass");
     pm.addPass(mlir::createArithToLLVMConversionPass());
     
-    PGX_INFO("TEST: Adding ReconcileUnrealizedCasts pass");
     pm.addPass(mlir::createReconcileUnrealizedCastsPass());
     
     // Run the pipeline
-    PGX_INFO("TEST: Running pass pipeline");
     auto result = pm.run(module);
     
     if (mlir::failed(result)) {
-        PGX_ERROR("TEST: Pass pipeline failed");
         FAIL() << "Pass pipeline failed";
     }
     
-    PGX_INFO("TEST: Pass pipeline succeeded");
     
     // Verify final module
     ASSERT_FALSE(mlir::failed(module.verify()));
-    PGX_INFO("TEST: Final module verified");
 }

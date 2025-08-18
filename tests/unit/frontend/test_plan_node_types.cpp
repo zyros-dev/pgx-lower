@@ -1004,7 +1004,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesArithmeticExpressions) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once expression translation is implemented, these patterns should appear
     // For now, we expect the translation might fail or produce partial results
     if (module) {
         std::vector<std::string> expectedPatterns = {
@@ -1021,7 +1020,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesArithmeticExpressions) {
         PGX_INFO("Arithmetic expressions test completed - TODO: Implement arithmetic operators in translator");
     } else {
         PGX_INFO("Arithmetic expressions not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module
     }
 }
 
@@ -1133,7 +1131,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesComparisonExpressions) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once expression translation is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -1149,7 +1146,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesComparisonExpressions) {
         PGX_INFO("Comparison expressions test completed - TODO: Implement comparison operators in translator");
     } else {
         PGX_INFO("Comparison expressions not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module
     }
 }
 
@@ -1247,7 +1243,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesLogicalExpressions) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once expression translation is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -1262,7 +1257,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesLogicalExpressions) {
         PGX_INFO("Logical expressions test completed - TODO: Implement logical operators in translator");
     } else {
         PGX_INFO("Logical expressions not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module
     }
 }
 
@@ -1356,7 +1350,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesProjectionWithExpression) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once expression translation is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -1371,7 +1364,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesProjectionWithExpression) {
         PGX_INFO("Projection with expression test completed - TODO: Implement expression handling in projections");
     } else {
         PGX_INFO("Projection with expressions not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module
     }
 }
 
@@ -1474,7 +1466,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggregateFunctions) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once aggregate function translation is implemented, these patterns should appear
     if (module) {
         PGX_INFO("Module created, checking for aggregation operations");
         
@@ -1488,7 +1479,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggregateFunctions) {
         });
         
         // For now, skip validateMLIR for aggregation tests due to attribute printing issues
-        // TODO: Fix after ColumnDefAttr/ColumnRefAttr printing is properly implemented
         if (hasAggregation) {
             PGX_INFO("Skipping MLIR validation for aggregation test - attribute printing not yet fixed");
             EXPECT_TRUE(hasAggregation) << "Module should contain aggregation operation";
@@ -1511,7 +1501,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesAggregateFunctions) {
         PGX_INFO("Aggregate functions test completed - TODO: Implement aggregate function indicators in translator");
     } else {
         PGX_INFO("Aggregate functions not yet fully implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module with aggregate function indicators
     }
 }
 
@@ -1636,7 +1625,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesWhereClause) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once WHERE clause translation is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -1650,7 +1638,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesWhereClause) {
         PGX_INFO("WHERE clause test completed - TODO: Implement filter/selection operations in translator");
     } else {
         PGX_INFO("WHERE clause filtering not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module with selection/filter operations
     }
 }
 
@@ -1765,7 +1752,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesGroupByWithAggregates) {
         });
         
         // For now, skip validateMLIR for aggregation tests due to attribute printing issues
-        // TODO: Fix after ColumnDefAttr/ColumnRefAttr printing is properly implemented
         if (hasAggregation) {
             PGX_INFO("Skipping MLIR validation for GROUP BY test - attribute printing not yet fixed");
             EXPECT_TRUE(hasAggregation) << "Module should contain GROUP BY aggregation operation";
@@ -1913,7 +1899,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesComplexWhereConditions) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once complex WHERE translation is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -1928,7 +1913,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesComplexWhereConditions) {
         PGX_INFO("Complex WHERE conditions test completed - TODO: Implement complex logical operations in filters");
     } else {
         PGX_INFO("Complex WHERE conditions not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module
     }
 }
 
@@ -2004,7 +1988,6 @@ TEST_F(PlanNodeTranslationTest, TranslatesSimpleProjection) {
     // Translate
     auto module = translator->translateQuery(&stmt);
     
-    // TODO: Once simple projection is implemented, these patterns should appear
     if (module) {
         std::vector<std::string> expectedPatterns = {
             // Once implemented, should see:
@@ -2018,6 +2001,5 @@ TEST_F(PlanNodeTranslationTest, TranslatesSimpleProjection) {
         PGX_INFO("Simple projection test completed - TODO: Implement projection operations for column references");
     } else {
         PGX_INFO("Simple projection not yet implemented - module is null as expected");
-        // TODO: Once implemented, this should produce a valid module with projection operations
     }
 }
