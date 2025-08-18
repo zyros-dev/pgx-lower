@@ -10,9 +10,9 @@ class SinkOp : public ::mlir::PassWrapper<SinkOp, ::mlir::OperationPass<::mlir::
          if (!memInterface.hasNoEffect())
             return false;
          // If the op does not have recursive side effects, then it can be moved.
-         if (!op->hasTrait<mlir::OpTrait::HasRecursiveSideEffects>())
+         if (!op->hasTrait<mlir::OpTrait::HasRecursiveMemoryEffects>())
             return true;
-      } else if (!op->hasTrait<mlir::OpTrait::HasRecursiveSideEffects>()) {
+      } else if (!op->hasTrait<mlir::OpTrait::HasRecursiveMemoryEffects>()) {
          // Otherwise, if the op does not implement the memory effect interface and
          // it does not have recursive side effects, then it cannot be known that the
          // op is moveable.

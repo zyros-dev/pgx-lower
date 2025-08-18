@@ -53,6 +53,12 @@ extern "C" {
 #include "executor/executor.h"
 #include "nodes/execnodes.h"
 }
+
+#ifdef restrict
+#define PG_RESTRICT_SAVED restrict
+#undef restrict
+#endif
+
 #endif
 
 // Include MLIR diagnostic infrastructure
@@ -74,10 +80,18 @@ extern "C" {
 
 // Include JIT execution interface for header isolation
 #include "execution/jit_execution_interface.h"
-#include "lingo-db/include/mlir/Transforms/CustomPasses.h"
+#include "mlir/Transforms/CustomPasses.h"
 #include "mlir/Dialect/DB/Passes.h"
 
 #include <mlir/InitAllPasses.h>
+
+// Restore PostgreSQL's restrict macro after MLIR includes
+#ifndef BUILDING_UNIT_TESTS
+#ifdef PG_RESTRICT_SAVED
+#define restrict PG_RESTRICT_SAVED
+#undef PG_RESTRICT_SAVED
+#endif
+#endif
 
 // Forward declare module handle creation
 extern "C" {
@@ -162,21 +176,16 @@ extern "C" void initialize_mlir_passes() {
         PGX_INFO("MLIR passes registered successfully");
     } catch (const std::exception& e) {
         PGX_ERROR("Pass registration failed: " + std::string(e.what()));
-        // Never let C++ exceptions escape to PostgreSQL
     } catch (...) {
         PGX_ERROR("Pass registration failed with unknown exception");
-        // Never let C++ exceptions escape to PostgreSQL  
     }
 }
 
 namespace mlir_runner {
 
-// MlirRunner class implementation for Phase 4g-2c requirements
 class MlirRunner {
 public:
     bool executeQuery(::mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
-        PGX_INFO("MlirRunner::executeQuery - Phase 4g-2c JIT execution enabled");
-        
         PGX_INFO("About to call pgx_jit_create_module_handle");
         // Create module handle for isolated JIT execution
         auto moduleHandle = pgx_jit_create_module_handle(&module);
@@ -693,6 +702,8 @@ static bool runPhase3c(::mlir::ModuleOp module) {
             PGX_INFO("EXPECTED: Unit test code FAILS in PostgreSQL - theory confirmed!");
         }
         
+        // TODO: Experimental debugging code - uncomment when test functions are implemented
+        /*
         // 🎯 EMPTY PASSMANAGER TEST: Is it pm.run() itself or our passes?
         PGX_INFO("🎯 EMPTY PASSMANAGER TEST: Testing with NO passes...");
         bool empty_pm_result = test_empty_passmanager_from_postgresql(module);
@@ -721,6 +732,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
         } else {
             PGX_INFO("PassManager creation fails in PostgreSQL");
         }
+        */
         
         PGX_INFO("Now continuing with original pm.run() call...");
         

@@ -30,6 +30,9 @@ add_subdirectory(../mlir/Conversion/StandardToLLVM StandardToLLVMConversion)
 # Add centralized pass pipeline infrastructure
 add_subdirectory(../mlir MLIRPasses)
 
+# Add custom transform passes (SinkOp, SimplifyArithmetics, SimplifyMemrefs)
+add_subdirectory(../Transforms MLIRCustomTransforms)
+
 # Architecture: RelAlg generates mixed (DB + DSA + Util) operations
 # Parallel lowering: DB → Standard, DSA → LLVM, Util → LLVM
 
