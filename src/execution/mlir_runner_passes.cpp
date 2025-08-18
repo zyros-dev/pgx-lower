@@ -1,0 +1,83 @@
+// CRITICAL: Include ALL MLIR headers BEFORE any PostgreSQL headers
+// to avoid PostgreSQL's 'restrict' macro pollution
+
+// Heavy template instantiation isolated here
+#include <mlir/InitAllPasses.h>
+
+// Dialect registration includes
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/DB/IR/DBDialect.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/util/UtilDialect.h"
+
+// Pass registration includes
+#include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
+#include "mlir/Conversion/DBToStd/DBToStd.h"
+#include "mlir/Conversion/DSAToStd/DSAToStd.h"
+#include "mlir/Conversion/UtilToLLVM/Passes.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/Transforms/CustomPasses.h"
+#include "mlir/Dialect/DB/Passes.h"
+
+// NOW include headers that may bring in PostgreSQL (after MLIR is safe)
+#include "execution/mlir_runner.h"
+#include "execution/logging.h"
+
+// Pass registration function - isolated to minimize template explosion impact
+extern "C" void initialize_mlir_passes() {
+    try {
+       mlir::registerAllPasses();
+       mlir::relalg::registerRelAlgConversionPasses();
+       mlir::relalg::registerQueryOptimizationPasses();
+       mlir::db::registerDBConversionPasses();
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::dsa::createLowerToStdPass();
+       });
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::relalg::createDetachMetaDataPass();
+       });
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::createSinkOpPass();
+       });
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::createSimplifyMemrefsPass();
+       });
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::createSimplifyArithmeticsPass();
+       });
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::db::createSimplifyToArithPass();
+       });
+    } catch (const std::exception& e) {
+        PGX_ERROR("Pass registration failed: " + std::string(e.what()));
+    } catch (...) {
+        PGX_ERROR("Pass registration failed with unknown exception");
+    }
+}
+
+namespace mlir_runner {
+
+// Extended MLIR context setup for pipeline execution - loads all required dialects
+bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
+    if (!initialize_mlir_context(context)) {
+        auto error = pgx_lower::ErrorManager::postgresqlError("Failed to initialize MLIR context and dialects");
+        pgx_lower::ErrorManager::reportError(error);
+        return false;
+    }
+    
+    // Load pipeline-specific dialects
+    context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
+    context.getOrLoadDialect<::mlir::db::DBDialect>();
+    context.getOrLoadDialect<::mlir::dsa::DSADialect>();
+    context.getOrLoadDialect<::mlir::util::UtilDialect>();
+    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+    context.getOrLoadDialect<mlir::scf::SCFDialect>();
+    context.getOrLoadDialect<mlir::memref::MemRefDialect>();
+    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+    
+    return true;
+}
+
+} // namespace mlir_runner
