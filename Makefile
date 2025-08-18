@@ -104,11 +104,24 @@ utest-all:
 	cd $(BUILD_DIR_UTEST) && ./tests/unit/mlir/test_standard_to_llvm_pass; cd -
 	@echo "All unit tests completed!"
 
-compile_commands: build
+compile_commands:
 	@echo "Generating compile_commands.json..."
-	cmake -S . -B $(BUILD_DIR) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-	cp $(BUILD_DIR)/compile_commands.json .
-	@echo "compile_commands.json generated!"
+	@echo "Using PostgreSQL extension build (ptest) which is known to work..."
+	cmake -S . -B $(BUILD_DIR_PTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DBUILD_ONLY_EXTENSION=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+	@if [ -f $(BUILD_DIR_PTEST)/compile_commands.json ]; then \
+		cp $(BUILD_DIR_PTEST)/compile_commands.json .; \
+		echo "compile_commands.json generated from PostgreSQL extension build!"; \
+		echo "This includes all core source files used by the extension."; \
+	else \
+		echo "Warning: compile_commands.json not found in ptest build, trying full build..."; \
+		cmake -S . -B $(BUILD_DIR) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON; \
+		if [ -f $(BUILD_DIR)/compile_commands.json ]; then \
+			cp $(BUILD_DIR)/compile_commands.json .; \
+			echo "compile_commands.json generated from full build!"; \
+		else \
+			echo "Error: Could not generate compile_commands.json"; \
+		fi; \
+	fi
 
 fcheck:
 	@echo "Checking clang-format errors in source code..."
