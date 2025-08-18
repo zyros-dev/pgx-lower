@@ -221,7 +221,7 @@ static void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& titl
         });
         
         // Log comprehensive statistics
-        PGX_INFO("======= " + title + " =======");
+        PGX_INFO("\n\n======= " + title + " =======");
         std::stringstream timeStr;
         timeStr << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
         PGX_INFO("Timestamp: " + timeStr.str());
@@ -316,7 +316,8 @@ static void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& titl
         }
         
         PGX_INFO("=== End Module Debug Dump ===");
-        
+        PGX_INFO("\n\n");
+
     } catch (const std::exception& e) {
         PGX_ERROR("Exception in dumpModuleWithStats: " + std::string(e.what()));
     } catch (...) {
