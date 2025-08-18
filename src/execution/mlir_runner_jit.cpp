@@ -2,11 +2,9 @@
 #include "execution/error_handling.h"
 #include "execution/logging.h"
 
-// JIT execution infrastructure - heavy LLVM includes isolated here
 #include "llvm/Support/TargetSelect.h"
 #include "execution/jit_execution_interface.h"
 
-// PostgreSQL execution includes
 #ifndef BUILDING_UNIT_TESTS
 extern "C" {
 #include "postgres.h"
