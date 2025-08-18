@@ -157,7 +157,6 @@ extern "C" void initialize_mlir_passes() {
 
 namespace mlir_runner {
 
-// Debug function to dump MLIR module with comprehensive statistics
 static void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
     if (!module) {
         PGX_WARNING("dumpModuleWithStats: Module is null for title: " + title);
@@ -268,6 +267,32 @@ static void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& titl
         // Module verification status
         bool isValid = ::mlir::succeeded(::mlir::verify(module));
         PGX_INFO("Module Verification: " + std::string(isValid ? "PASSED" : "FAILED"));
+        
+        // Print the actual MLIR code to logs as a formatted block
+        try {
+            std::string moduleStr;
+            llvm::raw_string_ostream stream(moduleStr);
+            module.print(stream);
+            
+            // Build formatted MLIR string with line numbers
+            std::stringstream formattedMLIR;
+            formattedMLIR << "\n=== MLIR MODULE CONTENT: " << title << " ===\n";
+            
+            std::stringstream ss(moduleStr);
+            std::string line;
+            int lineNum = 1;
+            while (std::getline(ss, line)) {
+                formattedMLIR << std::setw(3) << lineNum << ": " << line << "\n";
+                lineNum++;
+            }
+            formattedMLIR << "=== END MLIR MODULE CONTENT ===\n";
+            
+            // Log the entire formatted block
+            PGX_INFO(formattedMLIR.str());
+            
+        } catch (const std::exception& e) {
+            PGX_ERROR("Failed to print MLIR module: " + std::string(e.what()));
+        }
         
         // Write module to file
         std::ofstream file(filename.str());
