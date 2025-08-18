@@ -49,6 +49,12 @@ build/
 cmake-build-*/
 _deps/
 
+# CMake generated files anywhere (prevents in-source builds)
+**/CMakeFiles/
+**/cmake_install.cmake
+**/CTestTestfile.cmake
+**/Makefile
+
 # CMake generated files in extension directory
 extension/CTestTestfile.cmake
 extension/cmake_install.cmake

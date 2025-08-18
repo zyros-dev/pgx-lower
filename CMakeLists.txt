@@ -121,7 +121,7 @@ add_subdirectory(include/pgx_lower/mlir/Dialect/DSA/IR)
 add_subdirectory(include/pgx_lower/mlir/Dialect/util)
 
 # Add compiler library (includes dialects)
-add_subdirectory(src/compiler)
+add_subdirectory(src/mlir)
 
 # Add mlir-support for both regular and extension-only builds  
 add_subdirectory(src/mlir-support)

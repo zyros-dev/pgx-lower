@@ -72,6 +72,7 @@ target_link_libraries(pgx_lower PRIVATE
     StandardToLLVM
     MLIRPasses
     MLIRCustomTransforms
+    mlir-support
     -Wl,--no-whole-archive
     MLIRLLVMDialect
     MLIRLLVMCommonConversion
