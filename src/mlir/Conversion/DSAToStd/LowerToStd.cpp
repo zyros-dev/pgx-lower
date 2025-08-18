@@ -88,12 +88,18 @@ struct DSAToStdLoweringPass : public PassWrapper<DSAToStdLoweringPass, Operation
       auto module = getOperation();
       getContext().getLoadedDialect<mlir::util::UtilDialect>()->getFunctionHelper().setParentModule(module);
       
-      // Define Conversion Target
       ConversionTarget target(getContext());
       target.addLegalOp<ModuleOp>();
       target.addLegalOp<UnrealizedConversionCastOp>();
+      
       target.addLegalDialect<func::FuncDialect>();
       target.addLegalDialect<memref::MemRefDialect>();
+      target.addLegalDialect<arith::ArithDialect>();
+      target.addLegalDialect<scf::SCFDialect>();
+      target.addLegalDialect<cf::ControlFlowDialect>();
+      target.addLegalDialect<util::UtilDialect>();
+      
+      target.addIllegalDialect<mlir::dsa::DSADialect>();
       
       TypeConverter typeConverter;
       typeConverter.addConversion([&](mlir::Type type) { return type; });
