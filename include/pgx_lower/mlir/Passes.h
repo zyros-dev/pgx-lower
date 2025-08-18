@@ -17,8 +17,11 @@ void createCompleteLoweringPipeline(PassManager& pm, bool enableVerification = f
 // Phase 1: RelAlg→DB lowering pipeline
 void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification = false);
 
-// Phase 2: DB+DSA→Standard lowering pipeline
-void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification = false);
+// Phase 2a: DB→Standard lowering pipeline (sequential approach)
+void createDBToStandardPipeline(PassManager& pm, bool enableVerification = false);
+
+// Phase 2b: DSA→Standard lowering pipeline (sequential approach)  
+void createDSAToStandardPipeline(PassManager& pm, bool enableVerification = false);
 
 // Phase 3: Standard→LLVM lowering pipeline
 void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification = false);

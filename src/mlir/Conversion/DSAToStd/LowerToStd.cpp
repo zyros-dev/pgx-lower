@@ -24,6 +24,8 @@
 #include "runtime-defs/DataSourceIteration.h"
 #include "execution/logging.h"
 
+#include <mlir/Dialect/SCF/Transforms/Patterns.h>
+
 using namespace mlir;
 
 namespace {
@@ -115,21 +117,8 @@ class SimpleTypeConversionPattern : public ConversionPattern {
    }
 };
 void DSAToStdLoweringPass::runOnOperation() {
-   PGX_INFO("DSAToStd: ===== PASS ENTRY =====");
-   MLIR_PGX_DEBUG("DSA", "Starting DSAToStd lowering pass execution");
    auto module = getOperation();
-   
-   // Fix 3: Remove setParentModule call entirely - causes memory corruption with sequential PassManagers
-   // Fix 1: Add null safety check (though not setting parent module anymore)
-   auto* utilDialect = getContext().getLoadedDialect<mlir::util::UtilDialect>();
-   if (!utilDialect) {
-      MLIR_PGX_ERROR("DSA", "Failed to get UtilDialect - not loaded!");
-      signalPassFailure();
-      return;
-   }
-   // CRITICAL: Do NOT call setParentModule - causes race conditions and memory corruption
-   MLIR_PGX_DEBUG("DSA", "UtilDialect loaded successfully, skipping setParentModule to avoid memory corruption");
-   
+   getContext().getLoadedDialect<mlir::util::UtilDialect>()->getFunctionHelper().setParentModule(module);
    // Define Conversion Target
    ConversionTarget target(getContext());
    target.addLegalOp<ModuleOp>();
@@ -138,7 +127,7 @@ void DSAToStdLoweringPass::runOnOperation() {
    target.addLegalDialect<func::FuncDialect>();
    target.addLegalDialect<memref::MemRefDialect>();
    TypeConverter typeConverter;
-   typeConverter.addConversion([&](::mlir::Type type) { return type; });
+   typeConverter.addConversion([&](mlir::Type type) { return type; });
 
    auto opIsWithoutDSATypes = [&](Operation* op) { return !hasDSAType(typeConverter, op->getOperandTypes()) && !hasDSAType(typeConverter, op->getResultTypes()); };
    target.addDynamicallyLegalDialect<scf::SCFDialect>(opIsWithoutDSATypes);
@@ -147,19 +136,16 @@ void DSAToStdLoweringPass::runOnOperation() {
    target.addLegalDialect<cf::ControlFlowDialect>();
 
    target.addDynamicallyLegalDialect<util::UtilDialect>(opIsWithoutDSATypes);
-   
-   // Mark DSA dialect as illegal so its operations get converted
-   target.addIllegalDialect<dsa::DSADialect>();
-   
-   // CondSkipOp is handled specially during ForOp lowering
+   target.addLegalOp<mlir::dsa::CondSkipOp>();
+
    target.addDynamicallyLegalOp<mlir::dsa::CondSkipOp>(opIsWithoutDSATypes);
-   target.addDynamicallyLegalOp<::mlir::func::FuncOp>([&](::mlir::func::FuncOp op) {
+   target.addDynamicallyLegalOp<mlir::func::FuncOp>([&](mlir::func::FuncOp op) {
       auto isLegal = !hasDSAType(typeConverter, op.getFunctionType().getInputs()) &&
          !hasDSAType(typeConverter, op.getFunctionType().getResults());
       return isLegal;
    });
    target.addDynamicallyLegalOp<func::ConstantOp>([&](func::ConstantOp op) {
-      if (auto functionType = op.getType().dyn_cast_or_null<mlir::FunctionType>()) {
+      if (auto functionType = op.getType().dyn_cast<mlir::FunctionType>()) {
          auto isLegal = !hasDSAType(typeConverter, functionType.getInputs()) &&
             !hasDSAType(typeConverter, functionType.getResults());
          return isLegal;
@@ -171,7 +157,7 @@ void DSAToStdLoweringPass::runOnOperation() {
 
    target.addDynamicallyLegalOp<util::SizeOfOp>(
       [&typeConverter](util::SizeOfOp op) {
-         auto isLegal = !hasDSAType(typeConverter, op.getType());
+         auto isLegal = !hasDSAType(typeConverter, op.type());
          return isLegal;
       });
 
@@ -187,50 +173,21 @@ void DSAToStdLoweringPass::runOnOperation() {
 
    RewritePatternSet patterns(&getContext());
 
-   mlir::populateFunctionOpInterfaceTypeConversionPattern<::mlir::func::FuncOp>(patterns, typeConverter);
+   mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, typeConverter);
    mlir::populateCallOpTypeConversionPattern(patterns, typeConverter);
    mlir::populateReturnOpTypeConversionPattern(patterns, typeConverter);
    mlir::dsa::populateScalarToStdPatterns(typeConverter, patterns);
    mlir::dsa::populateDSAToStdPatterns(typeConverter, patterns);
    mlir::dsa::populateCollectionsToStdPatterns(typeConverter, patterns);
    mlir::util::populateUtilTypeConversionPatterns(typeConverter, patterns);
-   // LLVM 20 removed this function - SCF structural conversions are now automatic
+   mlir::scf::populateSCFStructuralTypeConversionsAndLegality(typeConverter, patterns, target);
    patterns.insert<SimpleTypeConversionPattern<mlir::func::ConstantOp>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::arith::SelectOp>>(typeConverter, &getContext());
    patterns.insert<SimpleTypeConversionPattern<mlir::dsa::CondSkipOp>>(typeConverter, &getContext());
    patterns.insert<ScanSourceLowering>(typeConverter, &getContext());
 
-   PGX_INFO("DSAToStd: Starting module conversion");
-   
-   // Add pre-conversion debugging
-   MLIR_PGX_DEBUG("DSA", "Pre-conversion module state:");
-   size_t dsaOpCount = 0;
-   module.walk([&dsaOpCount](Operation* op) {
-       if (op->getName().getDialectNamespace() == "dsa") {
-           dsaOpCount++;
-           MLIR_PGX_DEBUG("DSA", "DSA operation before conversion: " + op->getName().getStringRef().str());
-       }
-   });
-   MLIR_PGX_DEBUG("DSA", "Total DSA operations to convert: " + std::to_string(dsaOpCount));
-   
-   if (failed(applyFullConversion(module, target, std::move(patterns)))) {
-      PGX_ERROR("DSAToStd: Conversion failed during applyFullConversion");
-      
-      // Log unconverted DSA operations for debugging
-      module.walk([](Operation* op) {
-          if (op->getName().getDialectNamespace() == "dsa") {
-              std::string locStr;
-              llvm::raw_string_ostream locOS(locStr);
-              op->getLoc().print(locOS);
-              PGX_ERROR("DSAToStd: Unconverted DSA operation: " + op->getName().getStringRef().str() + 
-                       " at " + locOS.str());
-          }
-      });
-      
+   if (failed(applyFullConversion(module, target, std::move(patterns))))
       signalPassFailure();
-   } else {
-      PGX_INFO("DSAToStd: Conversion completed successfully");
-   }
 }
 
 std::unique_ptr<::mlir::Pass> mlir::dsa::createLowerToStdPass() {
