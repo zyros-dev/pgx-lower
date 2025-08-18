@@ -531,20 +531,40 @@ static bool runPhase3b(::mlir::ModuleOp module) {
         }
         
         context.disableMultithreading();
-        ::mlir::PassManager pm(&context);
-        pm.enableVerifier(true);
         
         if (mlir::failed(mlir::verify(module))) {
             PGX_ERROR("Phase 3b: Module verification failed before pass execution");
             return false;
         }
         
-        mlir::pgx_lower::createDBDSAToStandardPipeline(pm, true);
         dumpModuleWithStats(module, "MLIR after RelAlg→DB lowering");
         
-        if (mlir::failed(pm.run(module))) {
-            PGX_ERROR("Phase 3b failed: DB+DSA→Standard lowering error");
-            return false;
+        // Phase 3b-1: DB→Standard lowering (following LingoDB sequential pattern)
+        {
+            ::mlir::PassManager pm1(&context);
+            pm1.enableVerifier(true);
+            mlir::pgx_lower::createDBToStandardPipeline(pm1, true);
+            
+            if (mlir::failed(pm1.run(module))) {
+                PGX_ERROR("Phase 3b-1 failed: DB→Standard lowering error");
+                return false;
+            }
+            
+            dumpModuleWithStats(module, "MLIR after DB→Standard lowering");
+        }
+        
+        // Phase 3b-2: DSA→Standard lowering (after DB operations are converted)
+        {
+            ::mlir::PassManager pm2(&context);
+            pm2.enableVerifier(true);
+            mlir::pgx_lower::createDSAToStandardPipeline(pm2, true);
+            
+            if (mlir::failed(pm2.run(module))) {
+                PGX_ERROR("Phase 3b-2 failed: DSA→Standard lowering error");
+                return false;
+            }
+            
+            dumpModuleWithStats(module, "MLIR after DSA→Standard lowering");
         }
         
         if (!validateModuleState(module, "Phase 3b output")) {

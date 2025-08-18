@@ -49,27 +49,34 @@ void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
     pm.addPass(createCanonicalizerPass());
 }
 
-// Phase 2: DB+DSA→Standard lowering pipeline  
-void createDBDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
-    PGX_INFO("[createDBDSAToStandardPipeline]: Adding DB DSA to Standard pipeline");
+// Phase 2a: DB→Standard lowering pipeline (following LingoDB sequential pattern)
+void createDBToStandardPipeline(PassManager& pm, bool enableVerification) {
+    PGX_INFO("[createDBToStandardPipeline]: Adding DB to Standard pipeline (Phase 2a)");
     if (enableVerification) {
         pm.enableVerifier(true);
     }
     
     auto dbPass = db::createLowerToStdPass();
     if (!dbPass) {
-        PGX_ERROR("createDBDSAToStandardPipeline: DB pass creation returned null!");
+        PGX_ERROR("createDBToStandardPipeline: DB pass creation returned null!");
         return;
     }
     pm.addPass(std::move(dbPass));
     pm.addPass(createCanonicalizerPass());
+}
 
+// Phase 2b: DSA→Standard lowering pipeline (following LingoDB sequential pattern)
+void createDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
+    PGX_INFO("[createDSAToStandardPipeline]: Adding DSA to Standard pipeline (Phase 2b)");
+    if (enableVerification) {
+        pm.enableVerifier(true);
+    }
+    
     auto dsaPass = dsa::createLowerToStdPass();
     if (!dsaPass) {
-        PGX_ERROR("createDBDSAToStandardPipeline: DSA pass creation returned null!");
+        PGX_ERROR("createDSAToStandardPipeline: DSA pass creation returned null!");
         return;
     }
-
     pm.addPass(std::move(dsaPass));
     pm.addPass(createCanonicalizerPass());
 }
