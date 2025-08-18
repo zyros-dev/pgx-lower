@@ -30,15 +30,15 @@ class FoldLoadGlobal : public mlir::RewritePattern {
       if (auto *memrefDefiningOp = loadOp.getMemref().getDefiningOp()) {
          if (auto getGlobalOp = mlir::dyn_cast_or_null<mlir::memref::GetGlobalOp>(memrefDefiningOp)) {
             if (auto *symbolTableOp = mlir::SymbolTable::getNearestSymbolTable(op)) {
-               auto *resolvedOp = mlir::SymbolTable::lookupSymbolIn(symbolTableOp, getGlobalOp.name());
+               auto *resolvedOp = mlir::SymbolTable::lookupSymbolIn(symbolTableOp, getGlobalOp.getName());
                if (auto globalOp = mlir::dyn_cast_or_null<mlir::memref::GlobalOp>(resolvedOp)) {
-                  if (!globalOp.constant()) return mlir::failure();
+                  if (!globalOp.getConstant()) return mlir::failure();
                   if (globalOp.isExternal()) return mlir::failure();
-                  if (!globalOp.initial_value().has_value()) return mlir::failure();
-                  auto initialValue = globalOp.initial_value().value();
-                  if (auto denseAttr = initialValue.dyn_cast_or_null<mlir::DenseIntOrFPElementsAttr>()) {
-                     auto it = denseAttr.getValues<float>();
-                     auto res = it[indices[0]];
+                  if (!globalOp.getInitialValue().has_value()) return mlir::failure();
+                  auto initialValue = globalOp.getInitialValue().value();
+                  if (auto denseAttr = mlir::dyn_cast<mlir::DenseIntOrFPElementsAttr>(initialValue)) {
+                     auto values = denseAttr.getValues<float>();
+                     auto res = *(values.begin() + indices[0]);
                      std::cout << res << std::endl;
                      ::mlir::Value resConstant = rewriter.create<mlir::arith::ConstantOp>(loadOp->getLoc(), loadOp.getType(), rewriter.getF32FloatAttr(res));
                      rewriter.replaceOp(loadOp, resConstant);
@@ -67,8 +67,8 @@ class FoldLocalLoadStores : public mlir::RewritePattern {
          std::sort(sameBlockUsers.begin(), sameBlockUsers.end(), [](::mlir::Operation* a, ::mlir::Operation* b) { return a->isBeforeInBlock(b); });
          auto *lastUser = sameBlockUsers.back();
          if (auto storeOp = mlir::dyn_cast_or_null<mlir::memref::StoreOp>(lastUser)) {
-            if (storeOp.indices() == loadOp.indices()) {
-               rewriter.replaceOp(op, storeOp.value());
+            if (storeOp.getIndices() == loadOp.getIndices()) {
+               rewriter.replaceOp(op, storeOp.getValue());
                return mlir::success();
             }
          }

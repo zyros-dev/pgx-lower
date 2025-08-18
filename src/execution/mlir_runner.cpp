@@ -53,6 +53,12 @@ extern "C" {
 #include "executor/executor.h"
 #include "nodes/execnodes.h"
 }
+
+#ifdef restrict
+#define PG_RESTRICT_SAVED restrict
+#undef restrict
+#endif
+
 #endif
 
 // Include MLIR diagnostic infrastructure
@@ -66,18 +72,24 @@ extern "C" {
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 
-// LLVM dialects for verification
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 
-// Include JIT execution interface for header isolation
 #include "execution/jit_execution_interface.h"
-#include "lingo-db/include/mlir/Transforms/CustomPasses.h"
+#include "mlir/Transforms/CustomPasses.h"
 #include "mlir/Dialect/DB/Passes.h"
 
 #include <mlir/InitAllPasses.h>
+
+// Restore PostgreSQL's restrict macro after MLIR includes
+#ifndef BUILDING_UNIT_TESTS
+#ifdef PG_RESTRICT_SAVED
+#define restrict PG_RESTRICT_SAVED
+#undef PG_RESTRICT_SAVED
+#endif
+#endif
 
 // Forward declare module handle creation
 extern "C" {
@@ -157,26 +169,19 @@ extern "C" void initialize_mlir_passes() {
           return mlir::db::createSimplifyToArithPass();
        });
 
-
-        
         PGX_INFO("MLIR passes registered successfully");
     } catch (const std::exception& e) {
         PGX_ERROR("Pass registration failed: " + std::string(e.what()));
-        // Never let C++ exceptions escape to PostgreSQL
     } catch (...) {
         PGX_ERROR("Pass registration failed with unknown exception");
-        // Never let C++ exceptions escape to PostgreSQL  
     }
 }
 
 namespace mlir_runner {
 
-// MlirRunner class implementation for Phase 4g-2c requirements
 class MlirRunner {
 public:
     bool executeQuery(::mlir::ModuleOp module, EState* estate, DestReceiver* dest) {
-        PGX_INFO("MlirRunner::executeQuery - Phase 4g-2c JIT execution enabled");
-        
         PGX_INFO("About to call pgx_jit_create_module_handle");
         // Create module handle for isolated JIT execution
         auto moduleHandle = pgx_jit_create_module_handle(&module);
@@ -521,6 +526,10 @@ static bool runPhase3a(::mlir::ModuleOp module) {
 // Run Phase 3b: DB+DSA→Standard lowering
 static bool runPhase3b(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
+#ifndef BUILDING_UNIT_TESTS
+    Phase3bMemoryGuard guard{};
+#endif
+
     
     try {
         PGX_INFO("Phase 3b: Running DB+DSA→Standard lowering");
@@ -561,13 +570,7 @@ static bool runPhase3b(::mlir::ModuleOp module) {
         PGX_INFO("Phase 3b: Threading disabled for PostgreSQL compatibility");
         
         ::mlir::PassManager pm(&context);
-        
-        // COMMENTED OUT: These MLIR debugging features cause segfaults in PostgreSQL
-        // Root cause: They bypass PostgreSQL's memory context system
-        // pm.enableTiming();                    // Memory allocator conflicts
-        // pm.enableStatistics();               // Bypasses PostgreSQL memory contexts
-        // pm.enableCrashReproducerGeneration("/tmp/pgx_lower_phase3b_crash.mlir"); // Signal handling conflicts
-        
+
         pm.enableVerifier(true);  // This one is safe and works in PostgreSQL
         PGX_INFO("Phase 3b: PassManager configured for PostgreSQL compatibility (debugging features disabled)");
         
@@ -671,65 +674,16 @@ static bool runPhase3c(::mlir::ModuleOp module) {
         }
         
         PGX_INFO("Phase 3c: PassManager created successfully");
-        PGX_INFO("Phase 3c: BEFORE configuring Standard→LLVM pipeline");
         mlir::pgx_lower::createStandardToLLVMPipeline(pm, true);
-        PGX_INFO("Phase 3c: Pipeline configuration completed successfully");
-        
-        PGX_INFO("Phase 3c: BEFORE pm.run(module) - CRITICAL EXECUTION POINT");
-        PGX_INFO("Phase 3c: Module pointer validity check before run");
         if (!module) {
-            PGX_ERROR("Phase 3c: Module is null before pm.run!");
             success = false;
             return false;
         }
-        PGX_INFO("Phase 3c: Module is valid, starting PassManager execution");
-        
-        // 🧪 CRITICAL EXPERIMENT: Test unit test code in PostgreSQL context
-        PGX_INFO("🧪 EXPERIMENT: Testing exact unit test code from PostgreSQL context...");
-        bool unit_test_result = test_unit_code_from_postgresql();
-        if (unit_test_result) {
-            PGX_INFO("SHOCKING: Unit test code WORKS in PostgreSQL! Theory disproven!");
-        } else {
-            PGX_INFO("EXPECTED: Unit test code FAILS in PostgreSQL - theory confirmed!");
-        }
-        
-        // 🎯 EMPTY PASSMANAGER TEST: Is it pm.run() itself or our passes?
-        PGX_INFO("🎯 EMPTY PASSMANAGER TEST: Testing with NO passes...");
-        bool empty_pm_result = test_empty_passmanager_from_postgresql(module);
-        if (empty_pm_result) {
-            PGX_INFO("✅ EMPTY PassManager works! Issue is in StandardToLLVMPass");
-        } else {
-            PGX_INFO("❌ EMPTY PassManager crashes! Issue is deeper - pm.run() itself!");
-        }
-        
-        // 🎯 ULTIMATE EXPERIMENT: Test the REAL module from the pipeline
-        PGX_INFO("🎯 ULTIMATE EXPERIMENT: Testing REAL pipeline module...");
-        bool real_module_result = test_real_module_from_postgresql(module);
-        if (real_module_result) {
-            PGX_INFO("🤯 INCREDIBLE: Real pipeline module WORKS with fresh PassManager!");
-            PGX_INFO("🔍 This proves the issue is PassManager state, not module content!");
-        } else {
-            PGX_INFO("❌ Real module fails even with fresh PassManager");
-            PGX_INFO("🔍 This suggests the issue is module content corruption");
-        }
-        
-        // Also test just PassManager creation
-        PGX_INFO("Testing PassManager creation in PostgreSQL...");
-        bool pm_creation_result = test_passmanager_creation_only();
-        if (pm_creation_result) {
-            PGX_INFO("PassManager creation works in PostgreSQL");
-        } else {
-            PGX_INFO("PassManager creation fails in PostgreSQL");
-        }
-        
-        PGX_INFO("Now continuing with original pm.run() call...");
-        
+
         if (mlir::failed(pm.run(module))) {
             PGX_ERROR("Phase 3c failed: Standard→LLVM lowering error");
             success = false;
         } else {
-            PGX_INFO("Phase 3c: PassManager execution completed successfully");
-            
             // Verify module after lowering
             if (mlir::failed(mlir::verify(module))) {
                 PGX_ERROR("Phase 3c: Module verification failed after lowering");
@@ -738,7 +692,6 @@ static bool runPhase3c(::mlir::ModuleOp module) {
                 success = true;
             }
         }
-        PGX_INFO("Phase 3c: EXIT - Pipeline execution finished");
     }
     PG_CATCH();
     {

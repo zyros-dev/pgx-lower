@@ -64,22 +64,21 @@ target_link_libraries(pgx_lower PRIVATE
     -Wl,--whole-archive
     MLIRRelAlgDialect
     MLIRDBDialect  
-    MLIRDSA                        # Our custom DSA dialect
-    MLIRUtilDialect                # Util dialect for memory management and tuples
+    MLIRDSA
+    MLIRUtilDialect
     MLIRRelAlgToDB
-    MLIRDBToArrowStd               # DB → Standard MLIR  
-    MLIRDSAToStd                   # DSA → Standard MLIR
-    MLIRUtilToLLVM                 # Util → LLVM conversion
-    StandardToLLVM                 # Unified Standard→LLVM conversion pass
-    MLIRPasses                     # Central pass registration
-    # PgxLowerRuntime  # TODO: Re-add when runtime system is rebuilt
+    MLIRDBToArrowStd
+    MLIRDSAToStd
+    MLIRUtilToLLVM
+    StandardToLLVM
+    MLIRPasses
+    MLIRCustomTransforms
     -Wl,--no-whole-archive
-    # Standard MLIR dialects required by our dialects
-    MLIRLLVMDialect  # Required for DSA → LLVM conversion
-    MLIRLLVMCommonConversion  # LLVM conversion infrastructure
-    MLIRFuncToLLVM  # Function to LLVM conversion patterns
-    MLIRExecutionEngine  # JIT execution engine for Phase 4g-2a
-    MLIRTargetLLVMIRExport  # LLVM IR export functionality
+    MLIRLLVMDialect
+    MLIRLLVMCommonConversion
+    MLIRFuncToLLVM
+    MLIRExecutionEngine
+    MLIRTargetLLVMIRExport
     -Wl,--as-needed
 )
 
@@ -88,5 +87,6 @@ target_link_options(pgx_lower PRIVATE -Wl,--export-dynamic)
 # Add include directories for source files
 target_include_directories(pgx_lower PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/lingo-db/include
 )
 
