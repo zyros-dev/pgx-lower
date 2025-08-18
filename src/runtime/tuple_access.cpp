@@ -807,7 +807,7 @@ extern "C" void* DataSource_get(runtime::VarLen32 description) {
 }
 
 // Pipeline architecture restored - expression computation now flows through:
-// PostgreSQL AST → RelAlg → DB → DSA → LLVM IR → JIT
+// PostgreSQL AST -> RelAlg -> DB -> DSA -> LLVM IR -> JIT
 // All hardcoded expression shortcuts have been removed
 
 //===----------------------------------------------------------------------===//

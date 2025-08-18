@@ -1057,7 +1057,7 @@ auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, Tr
 
     try {
         // FIXED: Use void return type and call mark_results_ready_for_streaming()
-        // This enables proper JIT→PostgreSQL result communication
+        // This enables proper JIT->PostgreSQL result communication
 
         // Create func::FuncOp with "main" name for JIT execution
         auto queryFuncType = builder.getFunctionType({}, {});

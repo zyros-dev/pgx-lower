@@ -146,7 +146,7 @@ TEST_F(StandardToLLVMTest, ConvertsPackOperation) {
     
     builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
     
-    // Run the Standard→LLVM pass
+    // Run the Standard->LLVM pass
     mlir::PassManager pm(&context);
     pm.addPass(mlir::pgx_lower::createStandardToLLVMPass());
     
@@ -184,7 +184,7 @@ TEST_F(StandardToLLVMTest, PreservesLLVMOperations) {
     funcBuilder.create<mlir::LLVM::ReturnOp>(
         funcBuilder.getUnknownLoc(), mlir::ValueRange{});
     
-    // Run the Standard→LLVM pass
+    // Run the Standard->LLVM pass
     mlir::PassManager pm(&context);
     pm.addPass(mlir::pgx_lower::createStandardToLLVMPass());
     

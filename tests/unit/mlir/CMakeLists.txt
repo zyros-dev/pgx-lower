@@ -165,7 +165,7 @@ add_test(NAME LLVMPassesSimpleTest COMMAND test_llvm_passes_simple)
 
 # DELETED: test_jit_execution_standalone - file removed as part of Stage 5 cleanup
 
-# Create a separate crash test that only needs RelAlg→DB conversion
+# Create a separate crash test that only needs RelAlg->DB conversion
 add_executable(test_relalg_crash
     ../conversion/test_relalg_lowering_crash.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp  # Direct inclusion for TableMetaData functions

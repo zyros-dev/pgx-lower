@@ -468,7 +468,7 @@ static bool validateModuleState(::mlir::ModuleOp module, const std::string& phas
     return true;
 }
 
-// Run Phase 3a: RelAlg→DB+DSA+Util lowering
+// Run Phase 3a: RelAlg->DB+DSA+Util lowering
 static bool runPhase3a(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
     context.disableMultithreading();
@@ -485,7 +485,7 @@ static bool runPhase3a(::mlir::ModuleOp module) {
 
     dumpModuleWithStats(module, "MLIR before RelAlg -> Mixed");
     if (mlir::failed(pm.run(module))) {
-        PGX_ERROR("Phase 3a failed: RelAlg→DB lowering error");
+        PGX_ERROR("Phase 3a failed: RelAlg->DB lowering error");
         return false;
     }
 
@@ -501,7 +501,7 @@ static bool runPhase3a(::mlir::ModuleOp module) {
     return true;
 }
 
-// Run Phase 3b: DB+DSA→Standard lowering
+// Run Phase 3b: DB+DSA->Standard lowering
 static bool runPhase3b(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
 #ifndef BUILDING_UNIT_TESTS
@@ -537,34 +537,34 @@ static bool runPhase3b(::mlir::ModuleOp module) {
             return false;
         }
         
-        dumpModuleWithStats(module, "MLIR after RelAlg→DB lowering");
+        dumpModuleWithStats(module, "MLIR after RelAlg->DB lowering");
         
-        // Phase 3b-1: DB→Standard lowering (following LingoDB sequential pattern)
+        // Phase 3b-1: DB->Standard lowering (following LingoDB sequential pattern)
         {
             ::mlir::PassManager pm1(&context);
             pm1.enableVerifier(true);
             mlir::pgx_lower::createDBToStandardPipeline(pm1, true);
             
             if (mlir::failed(pm1.run(module))) {
-                PGX_ERROR("Phase 3b-1 failed: DB→Standard lowering error");
+                PGX_ERROR("Phase 3b-1 failed: DB->Standard lowering error");
                 return false;
             }
             
-            dumpModuleWithStats(module, "MLIR after DB→Standard lowering");
+            dumpModuleWithStats(module, "MLIR after DB->Standard lowering");
         }
         
-        // Phase 3b-2: DSA→Standard lowering (after DB operations are converted)
+        // Phase 3b-2: DSA->Standard lowering (after DB operations are converted)
         {
             ::mlir::PassManager pm2(&context);
             pm2.enableVerifier(true);
             mlir::pgx_lower::createDSAToStandardPipeline(pm2, true);
             
             if (mlir::failed(pm2.run(module))) {
-                PGX_ERROR("Phase 3b-2 failed: DSA→Standard lowering error");
+                PGX_ERROR("Phase 3b-2 failed: DSA->Standard lowering error");
                 return false;
             }
             
-            dumpModuleWithStats(module, "MLIR after DSA→Standard lowering");
+            dumpModuleWithStats(module, "MLIR after DSA->Standard lowering");
         }
         
         if (!validateModuleState(module, "Phase 3b output")) {
@@ -582,7 +582,7 @@ static bool runPhase3b(::mlir::ModuleOp module) {
     }
 }
 
-// Run Phase 3c: Standard→LLVM lowering
+// Run Phase 3c: Standard->LLVM lowering
 static bool runPhase3c(::mlir::ModuleOp module) {
     if (!module) {
         PGX_ERROR("Phase 3c: Module is null!");
@@ -590,7 +590,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
     }
     
     if (!validateModuleState(module, "Phase 3c input")) {
-        PGX_ERROR("Phase 3c: Invalid module state before Standard→LLVM lowering");
+        PGX_ERROR("Phase 3c: Invalid module state before Standard->LLVM lowering");
         return false;
     }
     
@@ -623,7 +623,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
 
         dumpModuleWithStats(module, "MLIR before standard -> llvm");
         if (mlir::failed(pm.run(module))) {
-            PGX_ERROR("Phase 3c failed: Standard→LLVM lowering error");
+            PGX_ERROR("Phase 3c failed: Standard->LLVM lowering error");
             success = false;
         } else {
             // Verify module after lowering
@@ -638,7 +638,7 @@ static bool runPhase3c(::mlir::ModuleOp module) {
     }
     PG_CATCH();
     {
-        PGX_ERROR("Phase 3c: PostgreSQL exception caught during Standard→LLVM lowering");
+        PGX_ERROR("Phase 3c: PostgreSQL exception caught during Standard->LLVM lowering");
         PG_RE_THROW();
     }
     PG_END_TRY();

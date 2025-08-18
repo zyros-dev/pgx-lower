@@ -14,17 +14,17 @@ add_subdirectory(../mlir/Dialect/DSA DSADialect)
 add_subdirectory(../mlir/Dialect/util UtilDialect)
 
 # Add conversion passes - LingoDB-compliant parallel lowering architecture:
-# RelAlg → (DB + DSA + Util) then parallel lowering to Standard MLIR → LLVM
+# RelAlg -> (DB + DSA + Util) then parallel lowering to Standard MLIR -> LLVM
 add_subdirectory(../mlir/Conversion/RelAlgToDB RelAlgToDBConversion)
-# DB → Standard MLIR conversion (PostgreSQL SPI integration)
+# DB -> Standard MLIR conversion (PostgreSQL SPI integration)
 add_subdirectory(../mlir/Conversion/DBToStd DBToStdConversion)
-# DSA → Standard MLIR conversion (data structure operations)
+# DSA -> Standard MLIR conversion (data structure operations)
 add_subdirectory(../mlir/Conversion/DSAToStd DSAToStdConversion)
-# DSA → LLVM conversion (data structure algorithms) - TODO: Import from LingoDB
+# DSA -> LLVM conversion (data structure algorithms) - TODO: Import from LingoDB
 # add_subdirectory(../mlir/Conversion/DSAToLLVM DSAToLLVMConversion)
-# Util → LLVM conversion (utility operations and types)
+# Util -> LLVM conversion (utility operations and types)
 add_subdirectory(../mlir/Conversion/UtilToLLVM UtilToLLVMConversion)
-# Unified Standard → LLVM conversion (includes all patterns)
+# Unified Standard -> LLVM conversion (includes all patterns)
 add_subdirectory(../mlir/Conversion/StandardToLLVM StandardToLLVMConversion)
 
 # Add centralized pass pipeline infrastructure
@@ -34,7 +34,7 @@ add_subdirectory(../mlir MLIRPasses)
 add_subdirectory(../Transforms MLIRCustomTransforms)
 
 # Architecture: RelAlg generates mixed (DB + DSA + Util) operations
-# Parallel lowering: DB → Standard, DSA → LLVM, Util → LLVM
+# Parallel lowering: DB -> Standard, DSA -> LLVM, Util -> LLVM
 
 # Current Focus: Test 1 (SELECT * FROM test) through complete pipeline
-# Architecture: PostgreSQL AST → RelAlg → (DB + DSA + Util) → Standard MLIR → LLVM IR → JIT
+# Architecture: PostgreSQL AST -> RelAlg -> (DB + DSA + Util) -> Standard MLIR -> LLVM IR -> JIT

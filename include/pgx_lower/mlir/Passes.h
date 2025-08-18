@@ -14,19 +14,19 @@ namespace pgx_lower {
 void createCompleteLoweringPipeline(PassManager& pm, bool enableVerification = false);
 
 // Sequential PassManager approach following LingoDB patterns (runner.cpp:413-447)
-// Phase 1: RelAlg→DB lowering pipeline
+// Phase 1: RelAlg->DB lowering pipeline
 void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification = false);
 
-// Phase 2a: DB→Standard lowering pipeline (sequential approach)
+// Phase 2a: DB->Standard lowering pipeline (sequential approach)
 void createDBToStandardPipeline(PassManager& pm, bool enableVerification = false);
 
-// Phase 2b: DSA→Standard lowering pipeline (sequential approach)  
+// Phase 2b: DSA->Standard lowering pipeline (sequential approach)  
 void createDSAToStandardPipeline(PassManager& pm, bool enableVerification = false);
 
-// Phase 3: Standard→LLVM lowering pipeline
+// Phase 3: Standard->LLVM lowering pipeline
 void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification = false);
 
-// Unified Standard→LLVM conversion pass (LingoDB approach)
+// Unified Standard->LLVM conversion pass (LingoDB approach)
 std::unique_ptr<Pass> createConvertToLLVMPass();
 
 // Helper: Function-level optimization pipeline

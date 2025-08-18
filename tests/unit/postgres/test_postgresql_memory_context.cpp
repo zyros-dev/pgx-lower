@@ -98,7 +98,7 @@ protected:
         builder.create<mlir::func::ReturnOp>(
             builder.getUnknownLoc(), constant.getResult());
         
-        // Apply Standard→LLVM pipeline
+        // Apply Standard->LLVM pipeline
         mlir::PassManager pm(mlir_context.get());
         mlir::pgx_lower::createStandardToLLVMPipeline(pm, true);
         auto result = pm.run(module);

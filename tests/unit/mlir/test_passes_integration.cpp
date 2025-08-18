@@ -59,21 +59,21 @@ TEST(PassesIntegrationTest, TestSequentialLoweringPipelines) {
     // Create a simple module for testing
     mlir::ModuleOp module = mlir::ModuleOp::create(mlir::UnknownLoc::get(context.get()));
     
-    // Test Phase 1: RelAlg→DB pipeline
+    // Test Phase 1: RelAlg->DB pipeline
     {
         mlir::PassManager pm1(context.get());
         mlir::pgx_lower::createRelAlgToDBPipeline(pm1, true);
         EXPECT_TRUE(true); // Pipeline created successfully
     }
     
-    // Test Phase 2: DB+DSA→Standard pipeline
+    // Test Phase 2: DB+DSA->Standard pipeline
     {
         mlir::PassManager pm2(context.get());
         mlir::pgx_lower::createDBDSAToStandardPipeline(pm2, true);
         EXPECT_TRUE(true); // Pipeline created successfully
     }
     
-    // Test Phase 3: Standard→LLVM pipeline
+    // Test Phase 3: Standard->LLVM pipeline
     {
         mlir::PassManager pm3(context.get());
         mlir::pgx_lower::createStandardToLLVMPipeline(pm3, true);

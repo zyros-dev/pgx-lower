@@ -32,7 +32,7 @@ std::unique_ptr<Pass> createConvertToLLVMPass();
 std::unique_ptr<Pass> createStandardToLLVMPass();
 
 
-// Phase 1: RelAlg→DB lowering pipeline
+// Phase 1: RelAlg->DB lowering pipeline
 void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
     PGX_INFO("createRelAlgToDBPipeline: Adding relalg to db pipeline");
     
@@ -49,7 +49,7 @@ void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
     pm.addPass(createCanonicalizerPass());
 }
 
-// Phase 2a: DB→Standard lowering pipeline (following LingoDB sequential pattern)
+// Phase 2a: DB->Standard lowering pipeline (following LingoDB sequential pattern)
 void createDBToStandardPipeline(PassManager& pm, bool enableVerification) {
     PGX_INFO("[createDBToStandardPipeline]: Adding DB to Standard pipeline (Phase 2a)");
     if (enableVerification) {
@@ -65,7 +65,7 @@ void createDBToStandardPipeline(PassManager& pm, bool enableVerification) {
     pm.addPass(createCanonicalizerPass());
 }
 
-// Phase 2b: DSA→Standard lowering pipeline (following LingoDB sequential pattern)
+// Phase 2b: DSA->Standard lowering pipeline (following LingoDB sequential pattern)
 void createDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
     PGX_INFO("[createDSAToStandardPipeline]: Adding DSA to Standard pipeline (Phase 2b)");
     if (enableVerification) {

@@ -112,7 +112,7 @@ TEST_F(Phase3cReproductionTest, ReproduceStandardToLLVMPipelineCrash) {
     }
     
     // This is the critical test: Create PassManager and call the same pipeline function
-    PGX_INFO("Phase 3c Reproduction Test: Creating PassManager for Standard→LLVM lowering");
+    PGX_INFO("Phase 3c Reproduction Test: Creating PassManager for Standard->LLVM lowering");
     mlir::PassManager pm(&context);
     
     PGX_INFO("Phase 3c Reproduction Test: Calling createStandardToLLVMPipeline (the function that crashes in PostgreSQL)");
@@ -144,7 +144,7 @@ TEST_F(Phase3cReproductionTest, ReproduceStandardToLLVMPipelineCrash) {
         // Verify module is still valid after lowering
         EXPECT_TRUE(mlir::succeeded(mlir::verify(module)));
         
-        PGX_INFO("Phase 3c Reproduction Test: COMPLETE SUCCESS - Standard→LLVM lowering works in unit test environment");
+        PGX_INFO("Phase 3c Reproduction Test: COMPLETE SUCCESS - Standard->LLVM lowering works in unit test environment");
         
     } else {
         PGX_ERROR("Phase 3c Reproduction Test: FAILURE - pm.run() failed even in unit test environment");

@@ -483,13 +483,13 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
         PGX_INFO("✅ ACCEPTED: Aggregate query with SeqScan source");
     }
     else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_Gather) {
-        // Pattern 3: Parallel aggregation (Agg → Gather → Agg → SeqScan)
+        // Pattern 3: Parallel aggregation (Agg -> Gather -> Agg -> SeqScan)
         auto* gatherPlan = rootPlan->lefttree;
         if (gatherPlan->lefttree && gatherPlan->lefttree->type == T_Agg) {
             auto* innerAggPlan = gatherPlan->lefttree;
             if (innerAggPlan->lefttree && innerAggPlan->lefttree->type == T_SeqScan) {
                 scanPlan = innerAggPlan->lefttree;
-                PGX_INFO("✅ ACCEPTED: Parallel aggregate query (Agg→Gather→Agg→SeqScan)");
+                PGX_INFO("✅ ACCEPTED: Parallel aggregate query (Agg->Gather->Agg->SeqScan)");
             }
         }
         

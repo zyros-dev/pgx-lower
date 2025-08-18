@@ -65,7 +65,7 @@ module {
     PGX_INFO("RelAlg module has " + std::to_string(opCount) + " operations");
     
     // Step 3: Run Phase 3a - the EXACT pipeline that crashes PostgreSQL
-    PGX_INFO("Phase 3a: Running RelAlg→DB lowering");
+    PGX_INFO("Phase 3a: Running RelAlg->DB lowering");
     {
         mlir::PassManager pm(&context);
         pm.enableVerifier(true);
@@ -80,9 +80,9 @@ module {
         
         PGX_INFO("🎯 Running THE EXACT Phase 3a PIPELINE THAT CRASHES POSTGRESQL");
         if (mlir::failed(pm.run(*module))) {
-            FAIL() << "❌ FOUND CRASH: Phase 3a RelAlg→DB lowering failed";
+            FAIL() << "❌ FOUND CRASH: Phase 3a RelAlg->DB lowering failed";
         }
-        PGX_INFO("✅ Phase 3a RelAlg→DB lowering succeeded in unit test");
+        PGX_INFO("✅ Phase 3a RelAlg->DB lowering succeeded in unit test");
         
         // Verify module after lowering
         if (mlir::failed(mlir::verify(*module))) {
