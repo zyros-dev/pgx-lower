@@ -6,8 +6,9 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/IR/Verifier.h"
 
-// Pipeline creation includes (moderate template weight)
+// Pipeline creation includes (moderate template weight)  
 #include "mlir/Passes.h"
+#include "pgx_lower/mlir/Passes.h"
 
 // Dialect includes needed for type checking
 #include "mlir/Dialect/DB/IR/DBDialect.h"
@@ -100,32 +101,20 @@ bool runPhase3b(::mlir::ModuleOp module) {
         
         dumpModuleWithStats(module, "MLIR after RelAlg→DB lowering");
         
-        // Phase 3b-1: DB→Standard lowering (following LingoDB sequential pattern)
         {
-            ::mlir::PassManager pm1(&context);
-            pm1.enableVerifier(true);
-            mlir::pgx_lower::createDBToStandardPipeline(pm1, true);
+            ::mlir::PassManager pm(&context);
+            pm.enableVerifier(true);
             
-            if (mlir::failed(pm1.run(module))) {
-                PGX_ERROR("Phase 3b-1 failed: DB→Standard lowering error");
+            mlir::pgx_lower::createDBToStandardPipeline(pm, false); // Don't duplicate verifier
+            pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DB→Standard lowering"));
+            pm.addPass(mlir::createCanonicalizerPass());
+            mlir::pgx_lower::createDSAToStandardPipeline(pm, false); // Don't duplicate verifier
+            pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DSA→Standard lowering"));
+            pm.addPass(mlir::createCanonicalizerPass());
+            if (mlir::failed(pm.run(module))) {
+                PGX_ERROR("Phase 3b failed: Unified parallel lowering error");
                 return false;
             }
-            
-            dumpModuleWithStats(module, "MLIR after DB→Standard lowering");
-        }
-        
-        // Phase 3b-2: DSA→Standard lowering (after DB operations are converted)
-        {
-            ::mlir::PassManager pm2(&context);
-            pm2.enableVerifier(true);
-            mlir::pgx_lower::createDSAToStandardPipeline(pm2, true);
-            
-            if (mlir::failed(pm2.run(module))) {
-                PGX_ERROR("Phase 3b-2 failed: DSA→Standard lowering error");
-                return false;
-            }
-            
-            dumpModuleWithStats(module, "MLIR after DSA→Standard lowering");
         }
         
         if (!validateModuleState(module, "Phase 3b output")) {

@@ -17,6 +17,7 @@ void createDSAToStandardPipeline(PassManager& pm, bool enableVerification = fals
 void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification = false);
 
 std::unique_ptr<Pass> createConvertToLLVMPass();
+std::unique_ptr<Pass> createModuleDumpPass(const std::string& phaseName);
 
 void createFunctionOptimizationPipeline(PassManager& pm, bool enableVerification = false);
 
