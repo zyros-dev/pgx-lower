@@ -80,6 +80,14 @@ struct TranslationContext {
     // TODO: Add column mapping when BaseTableOp attribute printing is fixed
 };
 
+// Enhanced column information structure
+struct ColumnInfo {
+    std::string name;
+    Oid typeOid;
+    int32_t typmod;
+    bool nullable;
+};
+
 class PostgreSQLTypeMapper {
 public:
     explicit PostgreSQLTypeMapper(::mlir::MLIRContext& context) : context_(context) {}
@@ -165,9 +173,10 @@ public:
             return mlir::db::DecimalType::get(&context_, precision, scale);
         }
         case DATEOID: return mlir::db::DateType::get(&context_, mlir::db::DateUnitAttr::day);
-        case TIMESTAMPOID:
+        case TIMESTAMPOID: {
             mlir::db::TimeUnitAttr timeUnit = extractTimestampPrecision(typmod);
             return mlir::db::TimestampType::get(&context_, timeUnit);
+        }
 
         default:
             PGX_WARNING("Unknown PostgreSQL type OID: " + std::to_string(typeOid) + ", defaulting to i32");
@@ -1038,7 +1047,7 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
             mlir::Type mlirType = typeMapper.mapPostgreSQLType(colInfo.typeOid, colInfo.typmod);
             colDef.getColumn().type = mlirType;
             
-            columnDefs.push_back(context.builder->getNamedAttr(colInfo.typeOid, colDef));
+            columnDefs.push_back(context.builder->getNamedAttr(colInfo.name, colDef));
             
             PGX_DEBUG("Added column definition for '" + colInfo.name + "' (type OID " +
                      std::to_string(colInfo.typeOid) + ")");
@@ -2185,7 +2194,7 @@ auto PostgreSQLASTTranslator::getAllTableColumnsFromSchema(int scanrelid) -> std
     
 #ifdef BUILDING_UNIT_TESTS
     // In unit test environment, return hardcoded schema for test_arithmetic table
-    columns.emplace_back("name", "id", 1, false);
+    columns.emplace_back("id", INT4OID, -1, false);
     PGX_DEBUG("Unit test mode: returning hardcoded test_arithmetic schema");
     return columns;
 #else    
