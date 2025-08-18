@@ -80,28 +80,98 @@ struct TranslationContext {
     // TODO: Add column mapping when BaseTableOp attribute printing is fixed
 };
 
-// Simple PostgreSQL type mapper
 class PostgreSQLTypeMapper {
 public:
     explicit PostgreSQLTypeMapper(::mlir::MLIRContext& context) : context_(context) {}
-    
-    ::mlir::Type mapPostgreSQLType(Oid typeOid) {
+
+    // Extract character length from typmod for CHAR/VARCHAR
+    int32_t extractCharLength(int32_t typmod) {
+        return typmod >= 0 ? typmod - 4 : 255;  // PostgreSQL typmod encoding
+    }
+
+    std::pair<int32_t, int32_t> extractNumericInfo(int32_t typmod) {
+        if (typmod < 0) {
+            // PostgreSQL default for unconstrained NUMERIC
+            return {-1, -1};
+        }
+
+        // Remove VARHDRSZ offset
+        int32_t tmp = typmod - 4;
+
+        // Extract precision and scale
+        int32_t precision = (tmp >> 16) & 0xFFFF;
+        int32_t scale = tmp & 0xFFFF;
+
+        // Validate extracted values (PostgreSQL limits)
+        if (precision < 1 || precision > 1000) {
+            PGX_WARNING("Invalid NUMERIC precision: " + std::to_string(precision) +
+                       " from typmod " + std::to_string(typmod));
+            return {38, 0};  // Safe default
+        }
+
+        if (scale < 0 || scale > precision) {
+            PGX_WARNING("Invalid NUMERIC scale: " + std::to_string(scale) +
+                       " for precision " + std::to_string(precision));
+            return {precision, 0};  // Use precision, zero scale
+        }
+
+        return {precision, scale};
+    }
+
+    mlir::db::TimeUnitAttr extractTimestampPrecision(int32_t typmod) {
+        if (typmod < 0) {
+            return mlir::db::TimeUnitAttr::microsecond;
+        }
+
+        switch (typmod) {
+        case 0:
+            return mlir::db::TimeUnitAttr::second;
+        case 1:
+        case 2:
+        case 3:
+            return mlir::db::TimeUnitAttr::millisecond;
+        case 4:
+        case 5:
+        case 6:
+            return mlir::db::TimeUnitAttr::microsecond;
+        case 7:
+        case 8:
+        case 9:
+            return mlir::db::TimeUnitAttr::nanosecond;
+        default:
+            PGX_WARNING("Invalid TIMESTAMP precision: " + std::to_string(typmod) +
+                       ", defaulting to microsecond");
+            return mlir::db::TimeUnitAttr::microsecond;
+        }
+    }
+
+
+    ::mlir::Type mapPostgreSQLType(Oid typeOid, int32_t typmod) {
         switch (typeOid) {
-            case INT4OID:
-                return mlir::IntegerType::get(&context_, 32);
-            case INT8OID:
-                return mlir::IntegerType::get(&context_, 64);
-            case INT2OID:
-                return mlir::IntegerType::get(&context_, 16);
-            case FLOAT4OID:
-                return mlir::Float32Type::get(&context_);
-            case FLOAT8OID:
-                return mlir::Float64Type::get(&context_);
-            case BOOLOID:
-                return mlir::IntegerType::get(&context_, 1);
-            default:
-                PGX_WARNING("Unknown PostgreSQL type OID: " + std::to_string(typeOid) + ", defaulting to i32");
-                return mlir::IntegerType::get(&context_, 32);
+        case INT4OID: return mlir::IntegerType::get(&context_, 32);
+        case INT8OID: return mlir::IntegerType::get(&context_, 64);
+        case INT2OID: return mlir::IntegerType::get(&context_, 16);
+        case FLOAT4OID: return mlir::Float32Type::get(&context_);
+        case FLOAT8OID: return mlir::Float64Type::get(&context_);
+        case BOOLOID: return mlir::IntegerType::get(&context_, 1);
+        case TEXTOID:
+        case VARCHAROID: return mlir::db::StringType::get(&context_);
+        case BPCHAROID: {
+            int32_t maxlen = extractCharLength(typmod);
+            return mlir::db::CharType::get(&context_, maxlen);
+        }
+        case NUMERICOID: {
+            auto [precision, scale] = extractNumericInfo(typmod);
+            return mlir::db::DecimalType::get(&context_, precision, scale);
+        }
+        case DATEOID: return mlir::db::DateType::get(&context_, mlir::db::DateUnitAttr::day);
+        case TIMESTAMPOID:
+            mlir::db::TimeUnitAttr timeUnit = extractTimestampPrecision(typmod);
+            return mlir::db::TimestampType::get(&context_, timeUnit);
+
+        default:
+            PGX_WARNING("Unknown PostgreSQL type OID: " + std::to_string(typeOid) + ", defaulting to i32");
+            return mlir::IntegerType::get(&context_, 32);
         }
     }
     
@@ -181,22 +251,7 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& 
         return nullptr;
     }
     
-    // Validate plan pointer before dereferencing
-    if (reinterpret_cast<uintptr_t>(plan) < 0x1000) {
-        PGX_ERROR("Invalid plan pointer");
-        return nullptr;
-    }
-    
-    int planType = plan->type;
-    
-    // Validate plan node type
-    if (planType < 0 || planType > 1000) {
-        PGX_ERROR("Invalid plan node type value: " + std::to_string(planType));
-        return nullptr;
-    }
-    
     PGX_DEBUG("Translating plan node of type: " + std::to_string(plan->type));
-    
     ::mlir::Operation* result = nullptr;
     
     switch (plan->type) {
@@ -206,12 +261,10 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& 
                     auto* seqScan = reinterpret_cast<SeqScan*>(plan);
                     result = translateSeqScan(seqScan, context);
                     
-                    // Apply WHERE clause if present (qual list)
                     if (result && plan->qual) {
                         result = applySelectionFromQual(result, plan->qual, context);
                     }
                     
-                    // Apply projections from target list if present
                     if (result && plan->targetlist) {
                         result = applyProjectionFromTargetList(result, plan->targetlist, context);
                     }
@@ -449,34 +502,11 @@ auto PostgreSQLASTTranslator::translateSort(Sort* sort, TranslationContext& cont
 
 // Helper method to apply WHERE clause conditions
 auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp, List* qual, TranslationContext& context) -> ::mlir::Operation* {
-    if (!inputOp || !qual) {
+    if (!inputOp || !qual || qual->length == 0) {
         PGX_DEBUG("No qual list provided, returning input op");
         return inputOp;  // No selection needed
     }
-    
-    // Extra safety: Check if qual is a valid pointer
-    if (reinterpret_cast<uintptr_t>(qual) < 0x1000) {
-        PGX_WARNING("Invalid qual list pointer: " + std::to_string(reinterpret_cast<uintptr_t>(qual)));
-        return inputOp;
-    }
-    
-    // Check length field
-    if (qual->length == 0) {
-        PGX_DEBUG("Qual list is empty, no selection needed");
-        return inputOp;
-    }
-    
-    // Extra safety: Check if length is reasonable (not uninitialized)
-    if (qual->length > 1000 || qual->length < 0) {
-        PGX_WARNING("Qual list has invalid length (" + std::to_string(qual->length) + ") - likely uninitialized, skipping filter");
-        return inputOp;
-    }
-    
-    PGX_INFO("Applying selection from qual list with " + std::to_string(qual->length) + " conditions");
-    PGX_DEBUG("Qual list pointer: " + std::to_string(reinterpret_cast<uintptr_t>(qual)));
-    PGX_DEBUG("Qual list type: " + std::to_string(qual->type));
-    PGX_DEBUG("Qual list elements pointer: " + std::to_string(reinterpret_cast<uintptr_t>(qual->elements)));
-    
+
     auto inputValue = inputOp->getResult(0);
     if (!inputValue) {
         PGX_ERROR("Input operation has no result");
@@ -964,19 +994,14 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     }
     
     PGX_DEBUG("Translating SeqScan operation");
-    
-    // Default table information for unit tests
+
+    // TODO: Load a different table
     std::string tableName = "test";
     Oid tableOid = 16384;
     std::string tableIdentifier;
     
-    // For unit tests, we use the defaults
-    // For production, we would extract from rtable but that requires
-    // PostgreSQL-specific structures that aren't available in tests
     if (seqScan->scan.scanrelid > 0) {
         PGX_DEBUG("SeqScan references relation " + std::to_string(seqScan->scan.scanrelid));
-        // In production, we'd look up the actual table name here
-        // For now, use a naming convention for tests
         if (seqScan->scan.scanrelid == 1) {
             tableName = "test";  // Default test table
         } else {
@@ -989,65 +1014,40 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     
     PGX_DEBUG("Creating BaseTableOp for table: " + tableIdentifier);
     
-    // Create table metadata - initially empty, will be populated by metadata pass
     auto tableMetaData = std::make_shared<runtime::TableMetaData>();
     tableMetaData->setNumRows(0); // Will be updated from PostgreSQL catalog
     
-    // Create TableMetaDataAttr
     auto tableMetaAttr = mlir::relalg::TableMetaDataAttr::get(
         &context_,
         tableMetaData
     );
     
-    // Create column definitions for the test table
-    // For Test 1 (SELECT * FROM test), we need an 'id' column of type integer
-    auto& columnManager = context_
-        .getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+    auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
     
-    // Create column definitions based on the table being scanned
     std::vector<mlir::NamedAttribute> columnDefs;
-    
-    // Use PostgreSQL schema discovery to get ALL table columns
     auto allColumns = getAllTableColumnsFromSchema(seqScan->scan.scanrelid);
     
     if (!allColumns.empty()) {
-        // Get real table name from PostgreSQL rtable
         std::string realTableName = getTableNameFromRTE(seqScan->scan.scanrelid);
-        
         PGX_INFO("Discovered " + std::to_string(allColumns.size()) + " columns for table " + realTableName);
         
-        // Create column definitions for ALL table columns
-        for (const auto& [colName, colType] : allColumns) {
-            // Create column definition with real table name
-            auto colDef = columnManager.createDef(realTableName, colName);
+        for (const auto& colInfo : allColumns) {
+            auto colDef = columnManager.createDef(realTableName, colInfo.name);
             
-            // Map PostgreSQL type to MLIR type
             PostgreSQLTypeMapper typeMapper(context_);
-            mlir::Type mlirType = typeMapper.mapPostgreSQLType(colType);
+            mlir::Type mlirType = typeMapper.mapPostgreSQLType(colInfo.typeOid, colInfo.typmod);
             colDef.getColumn().type = mlirType;
             
-            // Add to column definitions
-            columnDefs.push_back(context.builder->getNamedAttr(colName, colDef));
+            columnDefs.push_back(context.builder->getNamedAttr(colInfo.typeOid, colDef));
             
-            PGX_DEBUG("Added column definition for '" + colName + "' (type OID " + 
-                     std::to_string(colType) + ")");
+            PGX_DEBUG("Added column definition for '" + colInfo.name + "' (type OID " +
+                     std::to_string(colInfo.typeOid) + ")");
         }
         
-        // Update tableIdentifier to use real table name
-        tableIdentifier = realTableName + "|oid:" + std::to_string(getAllTableColumnsFromSchema(seqScan->scan.scanrelid).empty() ? 0 : 
+        tableIdentifier = realTableName + "|oid:" + std::to_string(getAllTableColumnsFromSchema(seqScan->scan.scanrelid).empty() ? 0 :
                          static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, seqScan->scan.scanrelid - 1))->relid);
     } else {
-        // Fallback to original logic for compatibility
-        PGX_WARNING("Could not discover table schema, using fallback logic");
-        
-        if (tableName == "test") {
-            // Column 1: id (INTEGER) - fallback
-            auto idDef = columnManager.createDef("test", "id");
-            idDef.getColumn().type = mlir::IntegerType::get(&context_, 32);
-            columnDefs.push_back(context.builder->getNamedAttr("id", idDef));
-            
-            PGX_INFO("Added fallback 'id' column for test table");
-        }
+        PGX_ERROR("Could not discover table schema");
     }
     
     auto columnsAttr = context.builder->getDictionaryAttr(columnDefs);
@@ -1190,10 +1190,7 @@ auto PostgreSQLASTTranslator::processTargetEntry(
         return false;
     }
     
-    // Create column reference
     std::string colName = tle->resname ? tle->resname : "col_" + std::to_string(tle->resno);
-    
-    // Determine type from expression
     mlir::Type colType = determineColumnType(context, tle->expr);
     
     // Get column manager
@@ -1235,17 +1232,17 @@ auto PostgreSQLASTTranslator::determineColumnType(
     TranslationContext& context,
     Expr* expr) -> mlir::Type {
     
-    mlir::Type colType = context.builder->getI32Type(); // Default to i32
+    mlir::Type colType = context.builder->getI32Type();
     
     if (expr->type == T_Var) {
         Var* var = reinterpret_cast<Var*>(expr);
         PostgreSQLTypeMapper typeMapper(context_);
-        colType = typeMapper.mapPostgreSQLType(var->vartype);
+        colType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod);
     } else if (expr->type == T_OpExpr) {
         // For arithmetic/comparison operators, use result type from OpExpr
         OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
         PostgreSQLTypeMapper typeMapper(context_);
-        colType = typeMapper.mapPostgreSQLType(opExpr->opresulttype);
+        colType = typeMapper.mapPostgreSQLType(opExpr->opresulttype, -1);
         PGX_DEBUG("Found OpExpr for column, result type OID: " + std::to_string(opExpr->opresulttype));
     } else if (expr->type == T_FuncExpr) {
         // For aggregate functions, use appropriate result type
@@ -1423,7 +1420,7 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> ::mlir::Value {
         
         // Map PostgreSQL type to MLIR type
         PostgreSQLTypeMapper typeMapper(context_);
-        auto mlirType = typeMapper.mapPostgreSQLType(var->vartype);
+        auto mlirType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod);
         
         // Create column reference using column manager
         // This ensures proper column tracking and avoids invalid attributes
@@ -1473,7 +1470,7 @@ auto PostgreSQLASTTranslator::translateConst(Const* constNode) -> ::mlir::Value 
     
     // Map PostgreSQL type to MLIR type
     PostgreSQLTypeMapper typeMapper(context_);
-    auto mlirType = typeMapper.mapPostgreSQLType(constNode->consttype);
+    auto mlirType = typeMapper.mapPostgreSQLType(constNode->consttype, constNode->consttypmod);
     
     // Create constant based on type
     switch (constNode->consttype) {
@@ -2011,7 +2008,7 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
             
             // Map result type
             PostgreSQLTypeMapper typeMapper(context_);
-            auto resultType = typeMapper.mapPostgreSQLType(funcExpr->funcresulttype);
+            auto resultType = typeMapper.mapPostgreSQLType(funcExpr->funcresulttype, -1);
             
             // For unknown functions, return first argument or a constant
             if (!args.empty()) {
@@ -2183,14 +2180,12 @@ auto PostgreSQLASTTranslator::getColumnNameFromSchema(int varno, int varattno) -
 #endif
 }
 
-auto PostgreSQLASTTranslator::getAllTableColumnsFromSchema(int scanrelid) -> std::vector<std::pair<std::string, Oid>> {
-    std::vector<std::pair<std::string, Oid>> columns;
+auto PostgreSQLASTTranslator::getAllTableColumnsFromSchema(int scanrelid) -> std::vector<ColumnInfo> {
+    std::vector<ColumnInfo> columns;
     
 #ifdef BUILDING_UNIT_TESTS
     // In unit test environment, return hardcoded schema for test_arithmetic table
-    columns.emplace_back("id", 23);      // INT4OID
-    columns.emplace_back("val1", 23);    // INT4OID
-    columns.emplace_back("val2", 23);    // INT4OID
+    columns.emplace_back("name", "id", 1, false);
     PGX_DEBUG("Unit test mode: returning hardcoded test_arithmetic schema");
     return columns;
 #else    
@@ -2233,13 +2228,18 @@ auto PostgreSQLASTTranslator::getAllTableColumnsFromSchema(int scanrelid) -> std
         if (attr->attisdropped) {
             continue; // Skip dropped columns
         }
-        
+
         std::string colName = NameStr(attr->attname);
         Oid colType = attr->atttypid;
-        
-        columns.emplace_back(colName, colType);
-        PGX_DEBUG("Found column: " + colName + " (type OID: " + std::to_string(colType) + ")");
+        int32_t typmod = attr->atttypmod;
+        bool nullable = !attr->attnotnull;
+
+        columns.push_back({colName, colType, typmod, nullable});
+
+        PGX_DEBUG("Found column: " + colName + " (type OID: " + std::to_string(colType)
+                  + ", typmod: " + std::to_string(typmod) + ", nullable: " + (nullable ? "true" : "false") + ")");
     }
+
     
     table_close(rel, AccessShareLock);
     

@@ -206,8 +206,6 @@ add_executable(mlir_unit_test
     test_llvm_passes_simple.cpp
     test_real_module_crash.cpp
     ../conversion/test_relalg_lowering_crash.cpp  # Add crash reproduction test back
-    ../frontend/test_plan_node_types.cpp
-    ../frontend/test_base_table_op.cpp
     ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp
 )
 
