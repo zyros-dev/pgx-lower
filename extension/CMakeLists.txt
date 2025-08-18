@@ -87,6 +87,5 @@ target_link_options(pgx_lower PRIVATE -Wl,--export-dynamic)
 # Add include directories for source files
 target_include_directories(pgx_lower PRIVATE
     ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/lingo-db/include
 )
 
