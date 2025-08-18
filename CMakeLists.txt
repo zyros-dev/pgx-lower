@@ -95,6 +95,10 @@ include_directories(
 
 enable_testing()
 
+# Global preprocessor definition for CLion linting support
+# This ensures ifdef POSTGRESQL_EXTENSION blocks are properly linted
+add_compile_definitions(POSTGRESQL_EXTENSION=1)
+
 # Create build_includes target for runtime header generation
 add_custom_target(build_includes)
 set(runtime_funcs_ptr_libs "")

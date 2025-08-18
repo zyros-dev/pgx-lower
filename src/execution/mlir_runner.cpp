@@ -74,18 +74,18 @@ extern "C" {
 
 // Include JIT execution interface for header isolation
 #include "execution/jit_execution_interface.h"
+#include "lingo-db/include/mlir/Transforms/CustomPasses.h"
+#include "mlir/Dialect/DB/Passes.h"
+
+#include <mlir/InitAllPasses.h>
 
 // Forward declare module handle creation
 extern "C" {
     struct ModuleHandle* pgx_jit_create_module_handle(void* mlir_module_ptr);
     void pgx_jit_destroy_module_handle(struct ModuleHandle* handle);
-    
+
     // EXPERIMENT: Test exact unit test code from within PostgreSQL
     bool test_unit_code_from_postgresql();
-    bool test_passmanager_creation_only();
-    bool test_real_module_from_postgresql(mlir::ModuleOp real_module);
-    bool test_empty_passmanager_from_postgresql(mlir::ModuleOp real_module);
-    bool test_dummy_pass_from_postgresql(mlir::ModuleOp real_module);
 }
 
 // Phase 3b Memory Management Helper
@@ -132,14 +132,32 @@ public:
 // C-compatible initialization function for pass registration
 extern "C" void initialize_mlir_passes() {
     try {
-        // Register DB conversion passes (includes DBToStd)
-        mlir::db::registerDBConversionPasses();
-        
-        // Register RelAlg passes if needed
-        mlir::relalg::registerRelAlgConversionPasses();
-        
-        // Note: DSA doesn't have a separate registration function
-        // The DSAToStd pass is registered directly when needed
+       mlir::registerAllPasses();
+
+       mlir::relalg::registerRelAlgConversionPasses();
+       mlir::relalg::registerQueryOptimizationPasses();
+       mlir::db::registerDBConversionPasses();
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::dsa::createLowerToStdPass();
+       });
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::relalg::createDetachMetaDataPass();
+       });
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::createSinkOpPass();
+       });
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::createSimplifyMemrefsPass();
+       });
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::createSimplifyArithmeticsPass();
+       });
+
+       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+          return mlir::db::createSimplifyToArithPass();
+       });
+
+
         
         PGX_INFO("MLIR passes registered successfully");
     } catch (const std::exception& e) {
@@ -431,71 +449,6 @@ static void safeModulePrint(mlir::ModuleOp module, const std::string& label) {
     } catch (...) {
         PGX_WARNING(label + ": Unknown exception during module print");
     }
-}
-
-// Helper function to execute Phase 3b with proper PostgreSQL memory management
-static bool executePhase3bWithMemoryIsolation(mlir::ModuleOp module, mlir::PassManager& pm) {
-    PGX_DEBUG("Executing Phase 3b with PostgreSQL memory context");
-    
-    // Validate preconditions
-    if (!validatePhase3bPreconditions(module)) {
-        PGX_ERROR("Phase 3b preconditions validation failed");
-        return false;
-    }
-    
-    PGX_INFO("Running Phase 3b PassManager...");
-    
-    // Dump module state before conversion if debug enabled
-    dumpModuleForDebugging(module, "Phase 3b: Module before DB→Std conversion");
-    
-    // Execute with proper PostgreSQL memory context
-    bool phase3b_success = false;
-    
-#ifndef BUILDING_UNIT_TESTS
-    // Use PostgreSQL memory context for production
-    MemoryContext oldcontext = CurrentMemoryContext;
-    MemoryContext phase3b_context = AllocSetContextCreate(CurrentMemoryContext,
-                                                          "Phase3bContext",
-                                                          ALLOCSET_DEFAULT_SIZES);
-    
-    PG_TRY();
-    {
-        MemoryContextSwitchTo(phase3b_context);
-        if (mlir::failed(pm.run(module))) {
-            PGX_ERROR("Phase 3b: PassManager execution failed");
-            phase3b_success = false;
-        } else {
-            PGX_INFO("Phase 3b: PassManager execution succeeded");
-            phase3b_success = true;
-        }
-        MemoryContextSwitchTo(oldcontext);
-    }
-    PG_CATCH();
-    {
-        MemoryContextSwitchTo(oldcontext);
-        MemoryContextDelete(phase3b_context);
-        PG_RE_THROW();
-    }
-    PG_END_TRY();
-    
-    MemoryContextDelete(phase3b_context);
-#else
-    // Unit tests run without PostgreSQL context
-    if (mlir::failed(pm.run(module))) {
-        PGX_ERROR("Phase 3b: PassManager execution failed");
-        phase3b_success = false;
-    } else {
-        PGX_INFO("Phase 3b: PassManager execution succeeded");
-        phase3b_success = true;
-    }
-#endif
-    
-    if (!phase3b_success) {
-        PGX_ERROR("Phase 3b: Execution failed, aborting pipeline");
-        return false;
-    }
-    
-    return true;
 }
 
 // Validate module state between pipeline phases
