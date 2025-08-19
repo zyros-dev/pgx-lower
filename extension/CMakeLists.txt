@@ -4,18 +4,20 @@
 add_postgresql_mixed_extension(
         pgx_lower
         VERSION 1.0
-        C_SOURCES 
+        C_SOURCES
             ../src/execution/postgres/executor_c.c
         CPP_SOURCES
-            ../src/execution/postgres/my_executor.cpp 
+            ../src/execution/postgres/my_executor.cpp
             ../src/execution/postgres/executor_c.cpp
             ../src/execution/mlir_runner.cpp
-        ../src/execution/mlir_setup/mlir_runner_phases.cpp
-        ../src/execution/jit_engine/jit_execution_engine.cpp
-        ../src/execution/jit_engine/jit_execution_wrapper.cpp
+            ../src/execution/mlir_setup/mlir_runner_phases.cpp
+            ../src/execution/mlir_setup/mlir_runner_passes.cpp
+            ../src/execution/mlir_setup/mlir_runner_utils.cpp
+            ../src/execution/jit_engine/jit_execution_engine.cpp
+            ../src/execution/jit_engine/jit_execution_wrapper.cpp
             ../src/frontend/SQL/postgresql_ast_translator.cpp
             ../src/frontend/SQL/query_analyzer.cpp
-        ../src/utility/error_handling.cpp
+            ../src/utility/error_handling.cpp
             ../src/utility/logging.cpp
             ../src/utility/logging_c.cpp
             ../src/utility/logging_tools.cpp
@@ -24,7 +26,7 @@ add_postgresql_mixed_extension(
             ../src/runtime/helpers.cpp
             ../src/runtime/postgresql_runtime.cpp
             ../src/runtime/MetaData.cpp
-        SCRIPTS 
+        SCRIPTS
             sql/pgx_lower--1.0.sql
         REGRESS
             1_one_tuple
@@ -59,11 +61,11 @@ add_postgresql_mixed_extension(
 
 # MLIR dialect libraries for TypeID resolution  
 # These are required for extension loading to resolve MLIR dialect TypeIDs
-target_link_libraries(pgx_lower PRIVATE 
+target_link_libraries(pgx_lower PRIVATE
     -Wl,--no-as-needed
     -Wl,--whole-archive
     MLIRRelAlgDialect
-    MLIRDBDialect  
+    MLIRDBDialect
     MLIRDSA
     MLIRUtilDialect
     MLIRRelAlgToDB
@@ -85,8 +87,7 @@ target_link_libraries(pgx_lower PRIVATE
 
 target_link_options(pgx_lower PRIVATE -Wl,--export-dynamic)
 
-# Add dependencies on TableGen targets to ensure .inc files are generated first
-add_dependencies(pgx_lower 
+add_dependencies(pgx_lower
     PGXLowerRelAlgOpsIncGen
     PGXLowerDBOpsIncGen
     PGXLowerDSAOpsIncGen

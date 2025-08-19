@@ -20,9 +20,21 @@ struct ExprContext;
 typedef void* DestReceiver;
 #endif
 
+// Forward declarations for MLIR
+namespace mlir {
+class MLIRContext;
+class ModuleOp;
+} // namespace mlir
+
 namespace mlir_runner {
 
 using ExternalFunction = std::function<int64_t()>;
+
+// MLIR Context Management
+bool initialize_mlir_context(::mlir::MLIRContext& context);
+
+// JIT Execution (forward declaration only - avoid including complex MLIR types)
+bool executeJITWithDestReceiver(mlir::ModuleOp module, EState* estate, DestReceiver* dest);
 
 // PostgreSQL Integration - New AST-based translation (replaces ColumnExpression approach)
 auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool;

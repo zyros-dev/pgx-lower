@@ -2,7 +2,7 @@
 # Build system for PostgreSQL JIT compilation via MLIR
 # Architecture: PostgreSQL AST → RelAlg → DB → DSA → Standard MLIR → LLVM IR → JIT
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands clean-root
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands clean-root gviz
 
 # Build directories for different test types
 BUILD_DIR = build
@@ -138,6 +138,27 @@ ffix:
 	@find src/ -name "*.cpp" -o -name "*.c" -o -name "*.h" | xargs clang-format -i
 	@echo "Format fix completed!"
 
+gviz:
+	@echo "Generating CMake dependency visualization..."
+	@echo "Creating build-viz directory and generating graphviz files..."
+	@mkdir -p build-viz
+	@cd build-viz && cmake --graphviz=pgx_lower_deps.dot .. >/dev/null 2>&1
+	@echo "Converting to SVG format..."
+	@cd build-viz && dot -Tsvg pgx_lower_deps.dot -o pgx_lower_deps.svg
+	@echo "Creating clean version (filtering out Google Test dependencies)..."
+	@cd build-viz && grep -v "googletest\|gmock\|gtest" pgx_lower_deps.dot > clean_deps.dot
+	@cd build-viz && dot -Tsvg clean_deps.dot -o clean_pgx_lower_deps.svg
+	@echo "Generated visualizations:"
+	@echo "  - build-viz/pgx_lower_deps.svg (complete dependency graph)"
+	@echo "  - build-viz/clean_pgx_lower_deps.svg (project dependencies only)"
+	@echo "Opening visualization..."
+	@if which firefox >/dev/null 2>&1; then \
+		firefox build-viz/clean_pgx_lower_deps.svg >/dev/null 2>&1 & \
+	else \
+		echo "Install firefox to auto-open SVG files"; \
+	fi
+	@echo "CMake visualization completed!"
+
 help:
 	@echo "Available targets:"
 	@echo "  build        - Build the main project"
@@ -154,3 +175,4 @@ help:
 	@echo "  rebuild      - Quick rebuild without cleaning"
 	@echo "  fcheck       - Check code formatting"
 	@echo "  ffix         - Fix code formatting"
+	@echo "  gviz         - Generate CMake dependency visualization graphs"
