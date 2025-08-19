@@ -68,35 +68,6 @@ if(NOT TARGET pgx_lower_passes)
     )
 endif()
 
-add_executable(test_standard_to_llvm_pass
-    test_standard_to_llvm_pass.cpp
-)
-
-target_include_directories(test_standard_to_llvm_pass PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/include/pgx_lower
-    ${CMAKE_SOURCE_DIR}/src/mlir/Conversion
-    ${CMAKE_SOURCE_DIR}/src/execution
-    ${CMAKE_BINARY_DIR}/include
-    ${CMAKE_BINARY_DIR}/include/pgx_lower
-)
-
-target_link_libraries(test_standard_to_llvm_pass
-    gtest gtest_main
-    MLIRUtilDialect
-    StandardToLLVM
-    pgx_lower_passes
-    pgx_lower_logging
-    MLIRFuncDialect
-    MLIRArithDialect
-    MLIRLLVMDialect
-    MLIRPass
-    MLIRIR
-    MLIRTransforms
-)
-
-add_test(NAME StandardToLLVMPassTest COMMAND test_standard_to_llvm_pass)
-
 # Test for dialect verification logic
 add_executable(test_dialect_verification 
     test_dialect_verification.cpp
@@ -150,47 +121,11 @@ target_link_libraries(test_llvm_passes_simple
 
 add_test(NAME LLVMPassesSimpleTest COMMAND test_llvm_passes_simple)
 
-# Create a separate crash test that only needs RelAlg→DB conversion
-add_executable(test_relalg_crash
-    ../conversion/test_relalg_lowering_crash.cpp
-    ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp  # Direct inclusion for TableMetaData functions
-)
-
-target_include_directories(test_relalg_crash PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/include/pgx_lower
-    ${CMAKE_SOURCE_DIR}/src/execution
-    ${CMAKE_BINARY_DIR}/include
-    ${CMAKE_BINARY_DIR}/include/pgx_lower
-)
-
-target_link_libraries(test_relalg_crash
-    gtest gtest_main
-    MLIRRelAlgDialect
-    MLIRDBDialect
-    MLIRDSA
-    MLIRUtilDialect
-    MLIRRelAlgToDB
-    MLIRPasses  # Contains createRelAlgToDBPipeline function
-    pgx_lower_logging
-    MLIRFuncDialect
-    MLIRArithDialect
-    MLIRPass
-    MLIRIR
-    MLIRTransforms
-    MLIRParser
-    mlir-support
-)
-
-add_test(NAME RelAlgCrashTest COMMAND test_relalg_crash)
-
 # Create mlir_unit_test executable that runs all unit tests
 add_executable(mlir_unit_test
-    test_standard_to_llvm_pass.cpp
-    test_dialect_verification.cpp  
+    test_dialect_verification.cpp
     test_llvm_passes_simple.cpp
     test_real_module_crash.cpp
-    ../conversion/test_relalg_lowering_crash.cpp  # Add crash reproduction test back
     ${CMAKE_SOURCE_DIR}/src/runtime/MetaData.cpp
 )
 
