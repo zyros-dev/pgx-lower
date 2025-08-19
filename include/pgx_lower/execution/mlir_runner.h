@@ -18,6 +18,10 @@ struct ExprContext;
 #ifndef POSTGRESQL_EXTENSION
 // In unit tests, use void* for DestReceiver
 typedef void* DestReceiver;
+#else
+// Forward declaration for PostgreSQL extension - use the same structure as PostgreSQL
+struct _DestReceiver;
+typedef struct _DestReceiver DestReceiver;
 #endif
 
 // Forward declarations for MLIR
