@@ -1,3 +1,9 @@
+# Add dialect subdirectories
+add_subdirectory(Dialect)
+
+# Add conversion subdirectories
+add_subdirectory(Conversion)
+
 add_library(MLIRPasses
     Passes.cpp
 )
