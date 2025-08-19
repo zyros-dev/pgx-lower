@@ -478,8 +478,34 @@ static bool runPhase3a(::mlir::ModuleOp module) {
     mlir::pgx_lower::createRelAlgToDBPipeline(pm, true);
 
     dumpModuleWithStats(module, "MLIR before RelAlg -> Mixed");
-    if (mlir::failed(pm.run(module))) {
-        PGX_ERROR("Phase 3a failed: RelAlg→DB lowering error");
+    
+    // Wrap PassManager run in PostgreSQL exception handling to prevent memory corruption
+    bool pmRunSucceeded = false;
+#ifndef BUILDING_UNIT_TESTS
+    PG_TRY();
+    {
+#endif
+        if (mlir::failed(pm.run(module))) {
+            PGX_ERROR("Phase 3a failed: RelAlg→DB lowering error");
+            pmRunSucceeded = false;
+        } else {
+            PGX_INFO("Phase 3a: RelAlg→DB PassManager run SUCCEEDED");
+            pmRunSucceeded = true;
+        }
+#ifndef BUILDING_UNIT_TESTS
+    }
+    PG_CATCH();
+    {
+        PGX_ERROR("Phase 3a: PostgreSQL exception caught during RelAlg→DB PassManager run");
+        PGX_ERROR("Phase 3a: This indicates memory corruption during RelAlg→DB lowering");
+        pmRunSucceeded = false;
+        // Re-throw to let PostgreSQL handle the cleanup
+        PG_RE_THROW();
+    }
+    PG_END_TRY();
+#endif
+    
+    if (!pmRunSucceeded) {
         return false;
     }
 
@@ -495,86 +521,8 @@ static bool runPhase3a(::mlir::ModuleOp module) {
     return true;
 }
 
-// Run Phase 3b: DB+DSA→Standard lowering
-static bool runPhase3b(::mlir::ModuleOp module) {
-    auto& context = *module.getContext();
-#ifndef BUILDING_UNIT_TESTS
-    Phase3bMemoryGuard guard{};
-#endif
-
-    
-    try {
-        // Ensure all required dialects are loaded
-        auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
-        auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
-        auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
-        
-        if (!dbDialect || !dsaDialect || !utilDialect) {
-            PGX_ERROR("Phase 3b: Required dialects not loaded");
-            return false;
-        }
-        
-        if (!validateModuleState(module, "Phase 3b input")) {
-            PGX_ERROR("Phase 3b: Module validation failed before running passes");
-            return false;
-        }
-        
-        if (!module) {
-            PGX_ERROR("Phase 3b: Module is null!");
-            return false;
-        }
-        
-        context.disableMultithreading();
-        
-        if (mlir::failed(mlir::verify(module))) {
-            PGX_ERROR("Phase 3b: Module verification failed before pass execution");
-            return false;
-        }
-        
-        dumpModuleWithStats(module, "MLIR after RelAlg→DB lowering");
-        
-        // Phase 3b-1: DB→Standard lowering (following LingoDB sequential pattern)
-        {
-            ::mlir::PassManager pm1(&context);
-            pm1.enableVerifier(true);
-            mlir::pgx_lower::createDBToStandardPipeline(pm1, true);
-            
-            if (mlir::failed(pm1.run(module))) {
-                PGX_ERROR("Phase 3b-1 failed: DB→Standard lowering error");
-                return false;
-            }
-            
-            dumpModuleWithStats(module, "MLIR after DB→Standard lowering");
-        }
-        
-        // Phase 3b-2: DSA→Standard lowering (after DB operations are converted)
-        {
-            ::mlir::PassManager pm2(&context);
-            pm2.enableVerifier(true);
-            mlir::pgx_lower::createDSAToStandardPipeline(pm2, true);
-            
-            if (mlir::failed(pm2.run(module))) {
-                PGX_ERROR("Phase 3b-2 failed: DSA→Standard lowering error");
-                return false;
-            }
-            
-            dumpModuleWithStats(module, "MLIR after DSA→Standard lowering");
-        }
-        
-        if (!validateModuleState(module, "Phase 3b output")) {
-            return false;
-        }
-        
-        return true;
-        
-    } catch (const std::exception& e) {
-        PGX_ERROR("Phase 3b C++ exception: " + std::string(e.what()));
-        return false;
-    } catch (...) {
-        PGX_ERROR("Phase 3b unknown C++ exception - backend crash prevented");
-        return false;
-    }
-}
+// Forward declaration for the correct runPhase3b from mlir_runner_phases.cpp
+bool runPhase3b(::mlir::ModuleOp module);
 
 // Run Phase 3c: Standard→LLVM lowering
 static bool runPhase3c(::mlir::ModuleOp module) {

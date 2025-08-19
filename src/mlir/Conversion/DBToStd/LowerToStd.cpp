@@ -1259,13 +1259,36 @@ void DBToStdLoweringPass::runOnOperation() {
    PGX_DEBUG("[DBToStd] About to call applyFullConversion with " + 
            std::to_string(patterns.getNativePatterns().size()) + " patterns");
    
-   if (failed(applyFullConversion(module, target, std::move(patterns)))) {
-      PGX_ERROR("[DBToStd] applyFullConversion FAILED");
-      PGX_ERROR("DBToStd: Conversion failed during applyFullConversion");
-      signalPassFailure();
-   } else {
-      PGX_INFO("[DBToStd] applyFullConversion SUCCEEDED");
-      PGX_INFO("DBToStd: Conversion completed successfully");
+   // Wrap MLIR conversion in PostgreSQL exception handling to prevent memory corruption
+   bool conversionSucceeded = false;
+   #ifdef POSTGRESQL_EXTENSION
+   PG_TRY();
+   {
+   #endif
+       if (failed(applyFullConversion(module, target, std::move(patterns)))) {
+          PGX_ERROR("[DBToStd] applyFullConversion FAILED");
+          PGX_ERROR("DBToStd: Conversion failed during applyFullConversion");
+          conversionSucceeded = false;
+       } else {
+          PGX_INFO("[DBToStd] applyFullConversion SUCCEEDED");
+          PGX_INFO("DBToStd: Conversion completed successfully");
+          conversionSucceeded = true;
+       }
+   #ifdef POSTGRESQL_EXTENSION
+   }
+   PG_CATCH();
+   {
+       PGX_ERROR("[DBToStd] PostgreSQL exception caught during applyFullConversion");
+       PGX_ERROR("[DBToStd] This indicates memory corruption or signal handling conflict");
+       conversionSucceeded = false;
+       // Re-throw to let PostgreSQL handle the cleanup
+       PG_RE_THROW();
+   }
+   PG_END_TRY();
+   #endif
+   
+   if (!conversionSucceeded) {
+       signalPassFailure();
    }
 }
 

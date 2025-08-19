@@ -2,6 +2,14 @@
 #include "DSAToStdPatterns.h"
 #include "execution/logging.h"
 
+// PostgreSQL headers for exception handling
+#ifdef POSTGRESQL_EXTENSION
+extern "C" {
+#include "postgres.h"
+#include "utils/elog.h"
+}
+#endif
+
 // Only essential includes for the actual conversion logic
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -120,8 +128,35 @@ struct DSAToStdLoweringPass : public PassWrapper<DSAToStdLoweringPass, Operation
       // Register heavy patterns from separate compilation unit
       mlir::dsa::registerAllDSAToStdPatterns(typeConverter, patterns, target);
 
-      if (failed(applyFullConversion(module, target, std::move(patterns))))
-         signalPassFailure();
+      // Wrap MLIR conversion in PostgreSQL exception handling to prevent memory corruption
+      bool conversionSucceeded = false;
+      #ifdef POSTGRESQL_EXTENSION
+      PG_TRY();
+      {
+      #endif
+          if (failed(applyFullConversion(module, target, std::move(patterns)))) {
+             PGX_ERROR("[DSAToStd] applyFullConversion FAILED");
+             conversionSucceeded = false;
+          } else {
+             PGX_INFO("[DSAToStd] applyFullConversion SUCCEEDED");  
+             conversionSucceeded = true;
+          }
+      #ifdef POSTGRESQL_EXTENSION
+      }
+      PG_CATCH();
+      {
+          PGX_ERROR("[DSAToStd] PostgreSQL exception caught during applyFullConversion");
+          PGX_ERROR("[DSAToStd] This indicates memory corruption or signal handling conflict");
+          conversionSucceeded = false;
+          // Re-throw to let PostgreSQL handle the cleanup
+          PG_RE_THROW();
+      }
+      PG_END_TRY();
+      #endif
+      
+      if (!conversionSucceeded) {
+          signalPassFailure();
+      }
    }
 };
 } // end anonymous namespace
