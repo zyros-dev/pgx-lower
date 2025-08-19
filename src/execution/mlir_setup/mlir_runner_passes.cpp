@@ -78,4 +78,26 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
     return true;
 }
 
+static bool initialize_mlir_context(::mlir::MLIRContext& context) {
+    try {
+        context.disableMultithreading();
+
+        context.getOrLoadDialect<mlir::func::FuncDialect>();
+        context.getOrLoadDialect<mlir::arith::ArithDialect>();
+        context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
+        context.getOrLoadDialect<::mlir::db::DBDialect>();
+        context.getOrLoadDialect<::mlir::dsa::DSADialect>();
+        context.getOrLoadDialect<::mlir::util::UtilDialect>();
+
+        return true;
+
+    } catch (const std::exception& e) {
+        PGX_ERROR("Failed to initialize MLIR context: " + std::string(e.what()));
+        return false;
+    } catch (...) {
+        PGX_ERROR("Unknown error during MLIR context initialization");
+        return false;
+    }
+}
+
 } // namespace mlir_runner

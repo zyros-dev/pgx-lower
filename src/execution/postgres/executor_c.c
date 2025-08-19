@@ -40,9 +40,6 @@ static void custom_executor(QueryDesc *queryDesc, const ScanDirection direction,
     
 }
 
-// Custom SIGSEGV handler removed - rely on PostgreSQL's native error handling
-// Bypassing PostgreSQL's signal handling causes memory context corruption
-
 void _PG_init(void) {
     PGX_NOTICE_C("Installing custom executor hook...");
     prev_ExecutorRun_hook = ExecutorRun_hook;

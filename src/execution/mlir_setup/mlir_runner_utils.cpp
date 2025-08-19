@@ -242,23 +242,8 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
     }
 }
 
-bool initialize_mlir_context(::mlir::MLIRContext& context) {
-    try {
-        context.disableMultithreading();
-        
-        context.getOrLoadDialect<mlir::func::FuncDialect>();
-        context.getOrLoadDialect<mlir::arith::ArithDialect>();
-        
-        return true;
-        
-    } catch (const std::exception& e) {
-        PGX_ERROR("Failed to initialize MLIR context: " + std::string(e.what()));
-        return false;
-    } catch (...) {
-        PGX_ERROR("Unknown error during MLIR context initialization");
-        return false;
-    }
-}
+
+
 
 bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
     if (!module || !module.getOperation()) {
