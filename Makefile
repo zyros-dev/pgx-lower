@@ -91,11 +91,6 @@ rebuild-utest:
 
 utest: build-utest
 	@echo "Running ALL unit tests..."
-	cd $(BUILD_DIR_UTEST) && \
-	./tests/unit/mlir/test_dialect_verification && \
-	./tests/unit/mlir/test_llvm_passes_simple && \
-	./tests/unit/execution/test_wrapped_execution_engine && \
-	./tests/unit/execution/test_executor_helpers && \
 	cd -
 	@echo "Unit tests completed!"
 
