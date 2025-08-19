@@ -36,6 +36,7 @@ using ExternalFunction = std::function<int64_t()>;
 
 // MLIR Context Management
 bool initialize_mlir_context(::mlir::MLIRContext& context);
+bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
 
 // JIT Execution (forward declaration only - avoid including complex MLIR types)
 bool executeJITWithDestReceiver(mlir::ModuleOp module, EState* estate, DestReceiver* dest);
