@@ -987,17 +987,7 @@ void DBToStdLoweringPass::runOnOperation() {
    
    MLIR_PGX_DEBUG("DB", "UtilDialect obtained successfully");
    
-   // Check FunctionHelper availability but DO NOT set parent module
-   MLIR_PGX_DEBUG("DB", "Checking FunctionHelper availability (but NOT setting parent module)");
-   
-   PGX_DEBUG("[DBToStd] Verifying FunctionHelper exists...");
-   
-   // CRITICAL: Do NOT call setParentModule - causes race conditions and memory corruption
-   // This was discovered to cause crashes when used with sequential PassManagers
-   // The DSAToStd pass already identified this issue and removed the call
-   MLIR_PGX_DEBUG("DB", "UtilDialect loaded successfully, skipping setParentModule to avoid memory corruption");
-   PGX_DEBUG("[DBToStd] Skipping FunctionHelper.setParentModule to prevent memory corruption");
-   PGX_INFO("DBToStd: Skipping setParentModule (causes crashes with sequential PassManagers)");
+   // Do NOT call setParentModule - causes race conditions
 
    // Define Conversion Target
    ConversionTarget target(getContext());
@@ -1047,7 +1037,6 @@ void DBToStdLoweringPass::runOnOperation() {
    });
    auto opIsWithoutDBTypes = [&](Operation* op) { return !hasDBType(typeConverter, op->getOperandTypes()) && !hasDBType(typeConverter, op->getResultTypes()); };
    target.addDynamicallyLegalDialect<scf::SCFDialect>(opIsWithoutDBTypes);
-   // CRITICAL: Follow LingoDB architecture - DBToStd handles BOTH DB and DSA operations for unified type conversion
    target.addDynamicallyLegalDialect<dsa::DSADialect>(opIsWithoutDBTypes);
    target.addDynamicallyLegalDialect<arith::ArithDialect>(opIsWithoutDBTypes);
 
@@ -1055,7 +1044,6 @@ void DBToStdLoweringPass::runOnOperation() {
 
    target.addDynamicallyLegalDialect<util::UtilDialect>(opIsWithoutDBTypes);
    
-   // Add CondSkipOp registration per LingoDB architecture
    target.addLegalOp<mlir::dsa::CondSkipOp>();
    target.addDynamicallyLegalOp<mlir::dsa::CondSkipOp>(opIsWithoutDBTypes);
    
@@ -1271,13 +1259,36 @@ void DBToStdLoweringPass::runOnOperation() {
    PGX_DEBUG("[DBToStd] About to call applyFullConversion with " + 
            std::to_string(patterns.getNativePatterns().size()) + " patterns");
    
-   if (failed(applyFullConversion(module, target, std::move(patterns)))) {
-      PGX_ERROR("[DBToStd] applyFullConversion FAILED");
-      PGX_ERROR("DBToStd: Conversion failed during applyFullConversion");
-      signalPassFailure();
-   } else {
-      PGX_INFO("[DBToStd] applyFullConversion SUCCEEDED");
-      PGX_INFO("DBToStd: Conversion completed successfully");
+   // Wrap MLIR conversion in PostgreSQL exception handling to prevent memory corruption
+   bool conversionSucceeded = false;
+   #ifdef POSTGRESQL_EXTENSION
+   PG_TRY();
+   {
+   #endif
+       if (failed(applyFullConversion(module, target, std::move(patterns)))) {
+          PGX_ERROR("[DBToStd] applyFullConversion FAILED");
+          PGX_ERROR("DBToStd: Conversion failed during applyFullConversion");
+          conversionSucceeded = false;
+       } else {
+          PGX_INFO("[DBToStd] applyFullConversion SUCCEEDED");
+          PGX_INFO("DBToStd: Conversion completed successfully");
+          conversionSucceeded = true;
+       }
+   #ifdef POSTGRESQL_EXTENSION
+   }
+   PG_CATCH();
+   {
+       PGX_ERROR("[DBToStd] PostgreSQL exception caught during applyFullConversion");
+       PGX_ERROR("[DBToStd] This indicates memory corruption or signal handling conflict");
+       conversionSucceeded = false;
+       // Re-throw to let PostgreSQL handle the cleanup
+       PG_RE_THROW();
+   }
+   PG_END_TRY();
+   #endif
+   
+   if (!conversionSucceeded) {
+       signalPassFailure();
    }
 }
 

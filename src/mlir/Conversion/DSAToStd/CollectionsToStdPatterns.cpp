@@ -128,24 +128,15 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
       } else if (auto recordBatch = collectionType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
          MLIR_PGX_INFO("DSA", "ForOpLowering: Collection is RecordBatchType");
       } else if (auto record = collectionType.dyn_cast_or_null<mlir::dsa::RecordType>()) {
-         MLIR_PGX_INFO("DSA", "ForOpLowering: Collection is RecordType");
       } else {
-         MLIR_PGX_INFO("DSA", "ForOpLowering: Collection is NOT a known DSA type");
       }
       
-      // CRITICAL: Check if region is empty before accessing
       if (forOp.getRegion().empty()) {
-         MLIR_PGX_ERROR("DSA", "ForOpLowering: ForOp has empty region!");
          return failure();
       }
       
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: ForOp has non-empty region");
-      
-      // CRITICAL: Capture the body block and terminator BEFORE they get moved
       Block* originalBody = forOp.getBody();
       mlir::dsa::YieldOp originalYieldOp = cast<mlir::dsa::YieldOp>(originalBody->getTerminator());
-      
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: Captured original body and yield op");
       
       std::vector<Type> argumentTypes;
       std::vector<Location> argumentLocs;
@@ -153,16 +144,11 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          argumentTypes.push_back(t);
          argumentLocs.push_back(forOp->getLoc());
       }
-      // CRITICAL: During conversion, the adaptor's collection value is already converted to i8*
-      // We MUST use the ORIGINAL type from forOp, not the converted value's type
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: Using original ForOp collection type for iterator lookup");
       
       auto iterator = mlir::dsa::CollectionIterationImpl::getImpl(collectionType, adaptor.getCollection());
       if (!iterator) {
-         MLIR_PGX_ERROR("DSA", "ForOpLowering: Failed to get iterator for collection type!");
          return failure();
       }
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: Got iterator successfully");
 
       ModuleOp parentModule = forOp->getParentOfType<ModuleOp>();
       bool containsCondSkip = false;
@@ -256,23 +242,18 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          return results;
       };
 
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: About to call implementLoop");
       std::vector<Value> results = iterator->implementLoop(forOp->getLoc(), adaptor.getInitArgs(), forOp.getUntil(), *typeConverter, rewriter, parentModule, containsCondSkip ? fn1 : fn2);
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: implementLoop returned successfully");
       
       {
          OpBuilder::InsertionGuard insertionGuard(rewriter);
 
-         MLIR_PGX_DEBUG("DSA", "ForOpLowering: Replacing ForOp region with empty block");
          forOp.getRegion().push_back(new Block());
          forOp.getRegion().front().addArguments(argumentTypes, argumentLocs);
          rewriter.setInsertionPointToStart(&forOp.getRegion().front());
          rewriter.create<mlir::dsa::YieldOp>(forOp.getLoc());
       }
 
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: Replacing ForOp with results");
       rewriter.replaceOp(forOp, results);
-      MLIR_PGX_DEBUG("DSA", "ForOpLowering: SUCCESS");
       return success();
    }
 };

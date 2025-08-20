@@ -13,6 +13,11 @@
 #include <unordered_map>
 
 namespace {
+using mlir::relalg::Operator;
+using mlir::relalg::BinaryOperator;
+using mlir::relalg::UnaryOperator;
+using mlir::relalg::TupleLamdaOperator;
+using mlir::relalg::PredicateOperator;
 
 class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-unnesting"; }

@@ -11,16 +11,12 @@ class BaseTableTranslator : public mlir::relalg::Translator {
 
    public:
    BaseTableTranslator(mlir::relalg::BaseTableOp baseTableOp) : mlir::relalg::Translator(baseTableOp), baseTableOp(baseTableOp) {
-      PGX_DEBUG("BaseTableTranslator: Constructor called");
    }
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
-      // BaseTableOp is a leaf node and should never consume from children
       PGX_ERROR("BaseTableTranslator::consume called - this should not happen for leaf nodes");
-      // Cannot continue processing - just return without producing anything
       return;
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      PGX_DEBUG("BaseTableTranslator::produce called");
       auto scope = context.createScope();
       using namespace mlir;
       std::vector<::mlir::Type> types;
@@ -30,15 +26,10 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       std::string scanDescription = R"({ "table": ")" + tableName + R"(", "columns": [ )";
       bool first = true;
       
-      // Check if columns attribute exists and is not empty
       auto columnsAttr = baseTableOp.getColumnsAttr();
       if (!columnsAttr || columnsAttr.empty()) {
-         // TEMPORARY: Handle empty columns case for Test 1
-         // In a real implementation, we would query PostgreSQL catalog here
-         // For now, create a dummy integer column to allow pipeline to proceed
          scanDescription += R"("dummy_col")";
          types.push_back(builder.getI32Type());
-         // Note: We're not adding to cols since we don't have actual Column objects
       } else {
          for (auto namedAttr : columnsAttr) {
          auto identifier = namedAttr.getName();
@@ -56,7 +47,7 @@ class BaseTableTranslator : public mlir::relalg::Translator {
             cols.push_back(&attrDef.getColumn());
          }
       }
-      }  // Close the else block
+      }
       scanDescription += "] }";
 
       auto tupleType = mlir::TupleType::get(builder.getContext(), types);
@@ -78,12 +69,9 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       size_t i = 0;
       
       if (cols.empty()) {
-         // TEMPORARY: Handle empty columns case
-         // Create a dummy value for the pipeline to proceed
          auto atOp = builder2.create<mlir::dsa::At>(baseTableOp->getLoc(), 
                                                     builder.getI32Type(), 
                                                     forOp2.getInductionVar(), 0);
-         // Note: We don't set any attribute values since we have no Column objects
       } else {
          for (const auto* attr : cols) {
             std::vector<::mlir::Type> types;

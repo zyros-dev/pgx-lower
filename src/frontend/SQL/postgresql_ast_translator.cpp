@@ -5,16 +5,16 @@ extern "C" {
 #include "nodes/primnodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/parsenodes.h"
-#include "nodes/nodeFuncs.h"  // For exprType
-#include "nodes/pg_list.h"     // For list iteration macros
+#include "nodes/nodeFuncs.h" // For exprType
+#include "nodes/pg_list.h" // For list iteration macros
 #include "utils/lsyscache.h"
 #include "utils/builtins.h"
-#include "utils/memutils.h"    // For MemoryContext management
+#include "utils/memutils.h" // For MemoryContext management
 #include "catalog/pg_operator.h"
 #include "catalog/pg_type.h"
 #include "catalog/namespace.h"
-#include "access/table.h"      // For table_open/table_close
-#include "utils/rel.h"         // For get_rel_name, get_attname
+#include "access/table.h" // For table_open/table_close
+#include "utils/rel.h" // For get_rel_name, get_attname
 
 // Forward declare PostgreSQL node types
 typedef int16 AttrNumber;
@@ -42,7 +42,7 @@ typedef struct Gather Gather;
 #include "frontend/SQL/postgresql_ast_translator.h"
 #include "execution/logging.h"
 #include "runtime/tuple_access.h"
-#include <cstddef>  // for offsetof
+#include <cstddef> // for offsetof
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -76,7 +76,7 @@ struct TranslationContext {
     PlannedStmt* currentStmt = nullptr;
     ::mlir::OpBuilder* builder = nullptr;
     std::unordered_map<Oid, ::mlir::Type> typeCache;
-    ::mlir::Value currentTuple = nullptr;  // Current tuple for expression evaluation
+    ::mlir::Value currentTuple = nullptr;
     // TODO: Add column mapping when BaseTableOp attribute printing is fixed
 };
 
@@ -89,12 +89,13 @@ struct ColumnInfo {
 };
 
 class PostgreSQLTypeMapper {
-public:
-    explicit PostgreSQLTypeMapper(::mlir::MLIRContext& context) : context_(context) {}
+   public:
+    explicit PostgreSQLTypeMapper(::mlir::MLIRContext& context)
+    : context_(context) {}
 
     // Extract character length from typmod for CHAR/VARCHAR
     int32_t extractCharLength(int32_t typmod) {
-        return typmod >= 0 ? typmod - 4 : 255;  // PostgreSQL typmod encoding
+        return typmod >= 0 ? typmod - 4 : 255; // PostgreSQL typmod encoding
     }
 
     std::pair<int32_t, int32_t> extractNumericInfo(int32_t typmod) {
@@ -110,17 +111,15 @@ public:
         int32_t precision = (tmp >> 16) & 0xFFFF;
         int32_t scale = tmp & 0xFFFF;
 
-        // Validate extracted values (PostgreSQL limits)
         if (precision < 1 || precision > 1000) {
-            PGX_WARNING("Invalid NUMERIC precision: " + std::to_string(precision) +
-                       " from typmod " + std::to_string(typmod));
-            return {38, 0};  // Safe default
+            PGX_WARNING("Invalid NUMERIC precision: " + std::to_string(precision) + " from typmod "
+                        + std::to_string(typmod));
+            return {38, 0}; // Safe default
         }
 
         if (scale < 0 || scale > precision) {
-            PGX_WARNING("Invalid NUMERIC scale: " + std::to_string(scale) +
-                       " for precision " + std::to_string(precision));
-            return {precision, 0};  // Use precision, zero scale
+            PGX_WARNING("Invalid NUMERIC scale: " + std::to_string(scale) + " for precision " + std::to_string(precision));
+            return {precision, 0}; // Use precision, zero scale
         }
 
         return {precision, scale};
@@ -132,27 +131,21 @@ public:
         }
 
         switch (typmod) {
-        case 0:
-            return mlir::db::TimeUnitAttr::second;
+        case 0: return mlir::db::TimeUnitAttr::second;
         case 1:
         case 2:
-        case 3:
-            return mlir::db::TimeUnitAttr::millisecond;
+        case 3: return mlir::db::TimeUnitAttr::millisecond;
         case 4:
         case 5:
-        case 6:
-            return mlir::db::TimeUnitAttr::microsecond;
+        case 6: return mlir::db::TimeUnitAttr::microsecond;
         case 7:
         case 8:
-        case 9:
-            return mlir::db::TimeUnitAttr::nanosecond;
+        case 9: return mlir::db::TimeUnitAttr::nanosecond;
         default:
-            PGX_WARNING("Invalid TIMESTAMP precision: " + std::to_string(typmod) +
-                       ", defaulting to microsecond");
+            PGX_WARNING("Invalid TIMESTAMP precision: " + std::to_string(typmod) + ", defaulting to microsecond");
             return mlir::db::TimeUnitAttr::microsecond;
         }
     }
-
 
     ::mlir::Type mapPostgreSQLType(Oid typeOid, int32_t typmod) {
         switch (typeOid) {
@@ -183,26 +176,25 @@ public:
             return mlir::IntegerType::get(&context_, 32);
         }
     }
-    
-private:
+
+   private:
     ::mlir::MLIRContext& context_;
 };
 
-PostgreSQLASTTranslator::PostgreSQLASTTranslator(::mlir::MLIRContext& context) 
-    : context_(context), builder_(nullptr), currentModule_(nullptr),
-      currentTupleHandle_(nullptr), currentPlannedStmt_(nullptr), contextNeedsRecreation_(false) {
-    PGX_DEBUG("PostgreSQLASTTranslator initialized with minimal implementation");
-}
+PostgreSQLASTTranslator::PostgreSQLASTTranslator(::mlir::MLIRContext& context)
+: context_(context)
+, builder_(nullptr)
+, currentModule_(nullptr)
+, currentTupleHandle_(nullptr)
+, currentPlannedStmt_(nullptr)
+, contextNeedsRecreation_(false) {}
 
 auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
-    PGX_INFO("Starting PostgreSQL AST translation for PlannedStmt");
-
     if (!plannedStmt) {
         PGX_ERROR("PlannedStmt is null");
         return nullptr;
     }
 
-    // Create MLIR module and builder context
     auto module = ::mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
     ::mlir::OpBuilder builder(&context_);
     builder.setInsertionPointToStart(module.getBody());
@@ -211,14 +203,10 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     builder_ = &builder;
     currentPlannedStmt_ = plannedStmt;
 
-    // Create translation context
     TranslationContext context;
     context.currentStmt = plannedStmt;
     context.builder = &builder;
 
-    PGX_DEBUG("About to create query function");
-
-    // Create query function with RelAlg operations
     auto queryFunc = createQueryFunction(builder, context);
     if (!queryFunc) {
         PGX_ERROR("Failed to create query function");
@@ -226,8 +214,6 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         currentPlannedStmt_ = nullptr;
         return nullptr;
     }
-
-    PGX_DEBUG("Query function created, generating RelAlg operations");
 
     // Generate RelAlg operations inside the function
     if (!generateRelAlgOperations(queryFunc, plannedStmt, context)) {
@@ -237,11 +223,9 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
         return nullptr;
     }
 
-    // Clear builder reference
     builder_ = nullptr;
     currentPlannedStmt_ = nullptr;
 
-    PGX_INFO("PostgreSQL AST translation completed successfully");
     return std::make_unique<::mlir::ModuleOp>(module);
 }
 
@@ -251,42 +235,31 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& 
         return nullptr;
     }
 
-    PGX_DEBUG("Translating plan node of type: " + std::to_string(plan->type));
     ::mlir::Operation* result = nullptr;
 
     switch (plan->type) {
-            case T_SeqScan:
-                // Validate before unsafe cast
-                if (plan->type == T_SeqScan) {
-                    auto* seqScan = reinterpret_cast<SeqScan*>(plan);
-                    result = translateSeqScan(seqScan, context);
+    case T_SeqScan:
+        if (plan->type == T_SeqScan) {
+            auto* seqScan = reinterpret_cast<SeqScan*>(plan);
+            result = translateSeqScan(seqScan, context);
 
-                    if (result && plan->qual) {
-                        result = applySelectionFromQual(result, plan->qual, context);
-                    }
+            if (result && plan->qual) {
+                result = applySelectionFromQual(result, plan->qual, context);
+            }
 
-                    if (result && plan->targetlist) {
-                        result = applyProjectionFromTargetList(result, plan->targetlist, context);
-                    }
-                } else {
-                    PGX_ERROR("Type mismatch for SeqScan");
-                }
-                break;
-            case T_Agg:
-                result = translateAgg(reinterpret_cast<Agg*>(plan), context);
-                break;
-            case T_Sort:
-                result = translateSort(reinterpret_cast<Sort*>(plan), context);
-                break;
-            case T_Limit:
-                result = translateLimit(reinterpret_cast<Limit*>(plan), context);
-                break;
-            case T_Gather:
-                result = translateGather(reinterpret_cast<Gather*>(plan), context);
-                break;
-            default:
-                PGX_ERROR("Unsupported plan node type: " + std::to_string(plan->type));
-                result = nullptr;
+            if (result && plan->targetlist) {
+                result = applyProjectionFromTargetList(result, plan->targetlist, context);
+            }
+        }
+        else {
+            PGX_ERROR("Type mismatch for SeqScan");
+        }
+        break;
+    case T_Agg: result = translateAgg(reinterpret_cast<Agg*>(plan), context); break;
+    case T_Sort: result = translateSort(reinterpret_cast<Sort*>(plan), context); break;
+    case T_Limit: result = translateLimit(reinterpret_cast<Limit*>(plan), context); break;
+    case T_Gather: result = translateGather(reinterpret_cast<Gather*>(plan), context); break;
+    default: PGX_ERROR("Unsupported plan node type: " + std::to_string(plan->type)); result = nullptr;
     }
 
     return result;
@@ -301,7 +274,6 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
     // Translate child plan - single code path for tests and production
     ::mlir::Operation* childOp = nullptr;
 
-    // First, recursively process the child plan
     Plan* leftTree = agg->plan.lefttree;
 
     if (leftTree) {
@@ -310,13 +282,13 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
             PGX_ERROR("Failed to translate Agg child plan");
             return nullptr;
         }
-    } else {
+    }
+    else {
         PGX_WARNING("Agg node has no child plan");
         // For unit tests, return nullptr and handle gracefully
         return nullptr;
     }
 
-    // Get the child operation's result
     if (!childOp->getNumResults()) {
         PGX_ERROR("Child operation has no results");
         return nullptr;
@@ -327,68 +299,52 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
         return nullptr;
     }
 
-    auto& columnManager = context.builder->getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-    
+    auto& columnManager =
+        context.builder->getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+
     std::vector<mlir::Attribute> groupByAttrs;
     int numCols = agg->numCols;
     AttrNumber* grpColIdx = agg->grpColIdx;
-    
-    if (numCols > 0 && grpColIdx) {
-        PGX_DEBUG("Processing " + std::to_string(numCols) + " GROUP BY columns");
-        for (int i = 0; i < numCols; i++) {
-            AttrNumber colIdx = grpColIdx[i];
-            if (colIdx > 0) {
-                // For now, create a simple column reference
-                // In full implementation, this would map PostgreSQL column indices to proper column refs
-                PGX_DEBUG("  GROUP BY column index: " + std::to_string(colIdx));
-            }
-        }
-    }
 
-    // Process aggregate functions from targetlist
     std::vector<mlir::Attribute> aggCols;
     auto tupleStreamType = mlir::relalg::TupleStreamType::get(context.builder->getContext());
-    
+
     if (agg->plan.targetlist && agg->plan.targetlist->length > 0) {
-        PGX_DEBUG("Processing " + std::to_string(agg->plan.targetlist->length) + " aggregate functions");
-        
-        // Create aggregate function block following
         auto* block = new mlir::Block;
         block->addArgument(tupleStreamType, context.builder->getUnknownLoc());
         block->addArgument(mlir::relalg::TupleType::get(context.builder->getContext()), context.builder->getUnknownLoc());
-        
+
         mlir::OpBuilder aggrBuilder(context.builder->getContext());
         aggrBuilder.setInsertionPointToStart(block);
-        
+
         std::vector<mlir::Value> createdValues;
         std::vector<mlir::Attribute> createdCols;
-        
+
         // For simple COUNT(*) aggregation, create count operation
         std::string aggName = "aggr_result";
         auto attrDef = columnManager.createDef(aggName, "count");
         attrDef.getColumn().type = context.builder->getI64Type();
-        
+
         mlir::Value relation = block->getArgument(0);
-        mlir::Value countResult = aggrBuilder.create<mlir::relalg::CountRowsOp>(
-            context.builder->getUnknownLoc(), context.builder->getI64Type(), relation);
-            
+        mlir::Value countResult = aggrBuilder.create<mlir::relalg::CountRowsOp>(context.builder->getUnknownLoc(),
+                                                                                context.builder->getI64Type(),
+                                                                                relation);
+
         createdCols.push_back(attrDef);
         createdValues.push_back(countResult);
-        
+
         aggrBuilder.create<mlir::relalg::ReturnOp>(context.builder->getUnknownLoc(), createdValues);
-        
-        // Create the aggregation operation
-        auto aggOp = context.builder->create<mlir::relalg::AggregationOp>(
-            context.builder->getUnknownLoc(), tupleStreamType, childResult,
-            context.builder->getArrayAttr(groupByAttrs),
-            context.builder->getArrayAttr(createdCols));
+
+        auto aggOp = context.builder->create<mlir::relalg::AggregationOp>(context.builder->getUnknownLoc(),
+                                                                          tupleStreamType,
+                                                                          childResult,
+                                                                          context.builder->getArrayAttr(groupByAttrs),
+                                                                          context.builder->getArrayAttr(createdCols));
         aggOp.getAggrFunc().push_back(block);
-        
-        PGX_INFO("Created proper AggregationOp with aggregate functions");
+
         return aggOp;
     }
 
-    PGX_INFO("Agg translation completed with proper AggregationOp");
     return childOp;
 }
 
@@ -398,14 +354,10 @@ auto PostgreSQLASTTranslator::translateSort(Sort* sort, TranslationContext& cont
         return nullptr;
     }
 
-    PGX_DEBUG("Translating Sort operation");
-
     // Translate child plan - single code path for tests and production
     ::mlir::Operation* childOp = nullptr;
 
-    // First, recursively process the child plan
     Plan* leftTree = sort->plan.lefttree;
-    PGX_DEBUG("Using direct field access for Sort lefttree");
 
     if (leftTree) {
         childOp = translatePlanNode(leftTree, context);
@@ -413,35 +365,26 @@ auto PostgreSQLASTTranslator::translateSort(Sort* sort, TranslationContext& cont
             PGX_ERROR("Failed to translate Sort child plan");
             return nullptr;
         }
-    } else {
+    }
+    else {
         PGX_WARNING("Sort node has no child plan");
         // For unit tests, return nullptr and handle gracefully
         return nullptr;
     }
 
-    // Get the child operation's result
     auto childResult = childOp->getResult(0);
     if (!childResult) {
         PGX_ERROR("Child operation has no result");
         return nullptr;
     }
 
-    // For now, since SortOp requires complex column attributes that aren't
-    // properly registered for printing, we'll create a simpler placeholder operation
-    // that still allows tests to validate the translation logic.
-    // TODO: Implement proper column manager integration once attribute printing is fixed
-
-    // Access Sort-specific fields with direct field access
     int numCols = sort->numCols;
     AttrNumber* sortColIdx = sort->sortColIdx;
     Oid* sortOperators = sort->sortOperators;
     bool* nullsFirst = sort->nullsFirst;
-    PGX_DEBUG("Using direct field access for Sort fields");
 
-    // Log the sort details for debugging
     if (numCols > 0 && numCols < 100) {
         if (sortColIdx) {
-            PGX_DEBUG("Processing " + std::to_string(numCols) + " sort columns");
             for (int i = 0; i < numCols; i++) {
                 AttrNumber colIdx = sortColIdx[i];
                 if (colIdx > 0 && colIdx < 1000) { // Sanity check
@@ -453,39 +396,24 @@ auto PostgreSQLASTTranslator::translateSort(Sort* sort, TranslationContext& cont
                         // Common descending operators in PostgreSQL
                         // INT4: 97 (<), 521 (>), INT8: 412 (<), 413 (>)
                         descending = (sortOp == 521 || sortOp == 413 || sortOp == 523 || sortOp == 525);
-                        PGX_DEBUG("  Sort operator OID: " + std::to_string(sortOp) +
-                                 " (descending=" + std::to_string(descending) + ")");
                     }
 
                     if (nullsFirst) {
                         nullsFirstVal = nullsFirst[i];
                     }
-
-                    PGX_DEBUG("  Sort column index: " + std::to_string(colIdx) +
-                             " DESC=" + std::to_string(descending) +
-                             " NULLS_FIRST=" + std::to_string(nullsFirstVal));
                 }
             }
         }
     }
 
-    // For unit testing, we'll pass through the child result directly
-    // In a full implementation, this would create an actual SortOp
-    // with proper sort specifications
-    PGX_INFO("Sort translation using pass-through for unit testing (proper SortOp pending column manager fixes)");
-
-    // Return the child operation as a placeholder
-    // Tests can still validate that Sort nodes are being processed
-
-    PGX_DEBUG("Sort translation completed successfully (pass-through mode)");
     return childOp;
 }
 
 // Helper method to apply WHERE clause conditions
-auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp, List* qual, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp, List* qual, TranslationContext& context)
+    -> ::mlir::Operation* {
     if (!inputOp || !qual || qual->length == 0) {
-        PGX_DEBUG("No qual list provided, returning input op");
-        return inputOp;  // No selection needed
+        return inputOp; // No selection needed
     }
 
     auto inputValue = inputOp->getResult(0);
@@ -494,12 +422,7 @@ auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp,
         return inputOp;
     }
 
-    // Create SelectionOp with predicate region
-    PGX_DEBUG("Creating SelectionOp");
-    auto selectionOp = context.builder->create<mlir::relalg::SelectionOp>(
-        context.builder->getUnknownLoc(),
-        inputValue
-    );
+    auto selectionOp = context.builder->create<mlir::relalg::SelectionOp>(context.builder->getUnknownLoc(), inputValue);
 
     // Build the predicate region
     auto& predicateRegion = selectionOp.getPredicate();
@@ -523,21 +446,13 @@ auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp,
     // Translate qual conditions and combine with AND
     ::mlir::Value predicateResult = nullptr;
 
-    // Process qual list - each element is an expression
     if (qual && qual->length > 0) {
-        PGX_DEBUG("Processing qual list with " + std::to_string(qual->length) + " conditions");
-
         // Safety check for elements array (PostgreSQL 17)
         if (!qual->elements) {
             PGX_WARNING("Qual list has length but no elements array - continuing without filter");
-            // Continue without applying filter rather than returning early
-            // This avoids the crash but still processes the rest of the query
-        } else {
-            PGX_DEBUG("Qual list has valid elements array, iterating through conditions");
-            // Iterate using PostgreSQL 17 style with elements array
+        }
+        else {
             for (int i = 0; i < qual->length; i++) {
-                PGX_DEBUG("Processing qual condition " + std::to_string(i));
-
                 ListCell* lc = &qual->elements[i];
                 if (!lc) {
                     PGX_WARNING("Null ListCell at index " + std::to_string(i));
@@ -545,7 +460,6 @@ auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp,
                 }
 
                 Node* qualNode = static_cast<Node*>(lfirst(lc));
-                PGX_DEBUG("Qual node pointer: " + std::to_string(reinterpret_cast<uintptr_t>(qualNode)));
 
                 if (!qualNode) {
                     PGX_WARNING("Null qual node at index " + std::to_string(i));
@@ -558,33 +472,26 @@ auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp,
                     continue;
                 }
 
-                PGX_DEBUG("Qual node type: " + std::to_string(qualNode->type));
-                PGX_DEBUG("Translating expression for qual node");
-
                 ::mlir::Value condValue = translateExpression(reinterpret_cast<Expr*>(qualNode));
                 if (condValue) {
-                    PGX_DEBUG("Successfully translated qual condition");
                     // Ensure boolean type
                     if (!condValue.getType().isInteger(1)) {
-                        PGX_DEBUG("Converting to boolean type");
-                        condValue = predicateBuilder.create<mlir::db::DeriveTruth>(
-                            predicateBuilder.getUnknownLoc(), condValue
-                        );
+                        condValue =
+                            predicateBuilder.create<mlir::db::DeriveTruth>(predicateBuilder.getUnknownLoc(), condValue);
                     }
 
                     if (!predicateResult) {
                         predicateResult = condValue;
-                        PGX_DEBUG("Set initial predicate result");
-                    } else {
-                        // AND multiple conditions together
-                        PGX_DEBUG("ANDing with previous conditions");
-                        predicateResult = predicateBuilder.create<mlir::db::AndOp>(
-                            predicateBuilder.getUnknownLoc(),
-                            predicateBuilder.getI1Type(),
-                            mlir::ValueRange{predicateResult, condValue}
-                        );
                     }
-                } else {
+                    else {
+                        // AND multiple conditions together
+                        predicateResult =
+                            predicateBuilder.create<mlir::db::AndOp>(predicateBuilder.getUnknownLoc(),
+                                                                     predicateBuilder.getI1Type(),
+                                                                     mlir::ValueRange{predicateResult, condValue});
+                    }
+                }
+                else {
                     PGX_WARNING("Failed to translate qual condition at index " + std::to_string(i));
                 }
             }
@@ -593,38 +500,34 @@ auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp,
 
     // If no valid predicate was created, default to true
     if (!predicateResult) {
-        predicateResult = predicateBuilder.create<mlir::arith::ConstantIntOp>(
-            predicateBuilder.getUnknownLoc(), 1, predicateBuilder.getI1Type()
-        );
+        predicateResult = predicateBuilder.create<mlir::arith::ConstantIntOp>(predicateBuilder.getUnknownLoc(),
+                                                                              1,
+                                                                              predicateBuilder.getI1Type());
     }
 
     // Ensure result is boolean
     if (!predicateResult.getType().isInteger(1)) {
-        predicateResult = predicateBuilder.create<mlir::db::DeriveTruth>(
-            predicateBuilder.getUnknownLoc(), predicateResult
-        );
+        predicateResult =
+            predicateBuilder.create<mlir::db::DeriveTruth>(predicateBuilder.getUnknownLoc(), predicateResult);
     }
 
     // Return the predicate result
-    predicateBuilder.create<mlir::relalg::ReturnOp>(
-        predicateBuilder.getUnknownLoc(), mlir::ValueRange{predicateResult}
-    );
+    predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), mlir::ValueRange{predicateResult});
 
     // Restore builder and tuple
     builder_ = savedBuilder;
     currentTupleHandle_ = savedTuple;
 
-    PGX_DEBUG("Selection operation created successfully");
     return selectionOp;
 }
 
 // Helper method to apply projections from target list
-auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* inputOp, List* targetList, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* inputOp,
+                                                            List* targetList,
+                                                            TranslationContext& context) -> ::mlir::Operation* {
     if (!inputOp || !targetList || targetList->length == 0) {
-        return inputOp;  // No projection needed
+        return inputOp; // No projection needed
     }
-
-    PGX_DEBUG("Applying projection from target list with " + std::to_string(targetList->length) + " entries");
 
     auto inputValue = inputOp->getResult(0);
     if (!inputValue) {
@@ -640,22 +543,18 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
     // Iterate through target list to check for computed columns
     // Safety check: ensure the List is properly initialized
     if (!targetList) {
-        PGX_DEBUG("No target list provided");
         return inputOp;
     }
 
     // Check if this is a properly initialized List
     // In PostgreSQL 17, Lists use elements array, not head/tail
     if (targetList->length <= 0) {
-        PGX_DEBUG("Empty or invalid target list, skipping projection");
         // For test compatibility: if length is 0 but there might be data,
         // we skip to avoid accessing invalid memory
         return inputOp;
     }
 
     if (targetList->length > 0) {
-        PGX_DEBUG("Processing target list with " + std::to_string(targetList->length) + " entries");
-
         // Safety check: ensure elements pointer is valid
         if (!targetList->elements) {
             PGX_WARNING("Target list has length but no elements array");
@@ -666,7 +565,8 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
         // We need to iterate using the new style
         for (int i = 0; i < targetList->length; i++) {
             ListCell* lc = &targetList->elements[i];
-            if (!lc) break; // Safety check for iteration
+            if (!lc)
+                break; // Safety check for iteration
 
             void* ptr = lfirst(lc);
             if (!ptr) {
@@ -674,10 +574,7 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
                 continue;
             }
 
-            PGX_DEBUG("TargetEntry pointer: " + std::to_string(reinterpret_cast<uintptr_t>(ptr)));
-
             TargetEntry* tle = static_cast<TargetEntry*>(ptr);
-            // Validate that this looks like a valid TargetEntry
             if (reinterpret_cast<uintptr_t>(tle) < 0x1000) {
                 PGX_WARNING("Invalid TargetEntry pointer: " + std::to_string(reinterpret_cast<uintptr_t>(tle)));
                 continue;
@@ -691,35 +588,26 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
                 // Check if this is a computed expression (not just a Var)
                 if (tle->expr->type != T_Var) {
                     hasComputedColumns = true;
-                    PGX_DEBUG("Found computed column: " +
-                             (tle->resname ? std::string(tle->resname) : "expr_" + std::to_string(tle->resno)));
                 }
             }
         }
     }
 
     if (!hasComputedColumns) {
-        PGX_DEBUG("Target list contains only simple column references, skipping MapOp");
         return inputOp;
     }
 
-    // Create computed column definitions
     std::vector<mlir::Attribute> computedColAttrs;
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
-    // Process target entries to create computed columns
     for (auto* entry : targetEntries) {
         if (entry->expr && entry->expr->type != T_Var) {
-            // Create a computed column definition using LingoDB pattern
-            std::string colName = entry->resname ? entry->resname :
-                                 "expr_" + std::to_string(entry->resno);
+            std::string colName = entry->resname ? entry->resname : "expr_" + std::to_string(entry->resno);
 
-            // Create ColumnDefAttr following LingoDB's attrManager.createDef() pattern
             // Use "map" as scope name (matching LingoDB's mapName in createMap lambda)
             auto attrDef = columnManager.createDef("map", colName);
 
             // The type will be set later when we translate the expression
-            // For now, use i32 as default (will be updated during expression translation)
             attrDef.getColumn().type = context.builder->getI32Type();
 
             computedColAttrs.push_back(attrDef);
@@ -732,12 +620,7 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
 
     auto computedCols = context.builder->getArrayAttr(computedColAttrs);
 
-    // Create MapOp with computation region
-    auto mapOp = context.builder->create<mlir::relalg::MapOp>(
-        context.builder->getUnknownLoc(),
-        inputValue,
-        computedCols
-    );
+    auto mapOp = context.builder->create<mlir::relalg::MapOp>(context.builder->getUnknownLoc(), inputValue, computedCols);
 
     // Build the computation region
     auto& predicateRegion = mapOp.getPredicate();
@@ -761,18 +644,18 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
     // Translate computed expressions
     std::vector<mlir::Value> computedValues;
 
-    // Process each target entry
     for (auto* entry : targetEntries) {
         if (entry->expr && entry->expr->type != T_Var) {
             // Translate the expression
             ::mlir::Value exprValue = translateExpression(reinterpret_cast<Expr*>(entry->expr));
             if (exprValue) {
                 computedValues.push_back(exprValue);
-            } else {
+            }
+            else {
                 // If translation fails, use a placeholder
-                auto placeholder = predicateBuilder.create<mlir::arith::ConstantIntOp>(
-                    predicateBuilder.getUnknownLoc(), 0, predicateBuilder.getI32Type()
-                );
+                auto placeholder = predicateBuilder.create<mlir::arith::ConstantIntOp>(predicateBuilder.getUnknownLoc(),
+                                                                                       0,
+                                                                                       predicateBuilder.getI32Type());
                 computedValues.push_back(placeholder);
             }
         }
@@ -780,21 +663,17 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
 
     // Return computed values
     if (!computedValues.empty()) {
-        predicateBuilder.create<mlir::relalg::ReturnOp>(
-            predicateBuilder.getUnknownLoc(), computedValues
-        );
-    } else {
+        predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), computedValues);
+    }
+    else {
         // Return empty if no values computed
-        predicateBuilder.create<mlir::relalg::ReturnOp>(
-            predicateBuilder.getUnknownLoc(), mlir::ValueRange{}
-        );
+        predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), mlir::ValueRange{});
     }
 
     // Restore builder and tuple
     builder_ = savedBuilder;
     currentTupleHandle_ = savedTuple;
 
-    PGX_DEBUG("Map operation created successfully with " + std::to_string(computedValues.size()) + " computed columns");
     return mapOp;
 }
 
@@ -804,14 +683,10 @@ auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& c
         return nullptr;
     }
 
-    PGX_DEBUG("Translating Limit operation");
-
     // Translate child plan - single code path for tests and production
     ::mlir::Operation* childOp = nullptr;
 
-    // First, recursively process the child plan
     Plan* leftTree = limit->plan.lefttree;
-    PGX_DEBUG("Using direct field access for Limit lefttree");
 
     if (leftTree) {
         childOp = translatePlanNode(leftTree, context);
@@ -819,13 +694,13 @@ auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& c
             PGX_ERROR("Failed to translate Limit child plan");
             return nullptr;
         }
-    } else {
+    }
+    else {
         PGX_WARNING("Limit node has no child plan");
         // For unit tests, return nullptr and handle gracefully
         return nullptr;
     }
 
-    // Get the child operation's result
     auto childResult = childOp->getResult(0);
     if (!childResult) {
         PGX_ERROR("Child operation has no result");
@@ -836,17 +711,11 @@ auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& c
     int64_t limitCount = 10; // Default for unit tests
     int64_t limitOffset = 0;
 
-    // Use direct field access for limitCount and limitOffset
-    PGX_INFO("Limit node address: " + std::to_string(reinterpret_cast<uintptr_t>(limit)));
-    PGX_INFO("&limit->limitOffset address: " + std::to_string(reinterpret_cast<uintptr_t>(&limit->limitOffset)));
-    PGX_INFO("&limit->limitCount address: " + std::to_string(reinterpret_cast<uintptr_t>(&limit->limitCount)));
-
     Node* limitOffsetNode = limit->limitOffset;
     Node* limitCountNode = limit->limitCount;
 
     PGX_INFO("limitOffset value: " + std::to_string(reinterpret_cast<uintptr_t>(limitOffsetNode)));
     PGX_INFO("limitCount value: " + std::to_string(reinterpret_cast<uintptr_t>(limitCountNode)));
-    PGX_DEBUG("Using direct field access for Limit count/offset");
 
     // In unit tests, limitCountNode might be a mock Const structure
     // In production, it's a real PostgreSQL Node
@@ -863,13 +732,13 @@ auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& c
                 // In unit tests, constvalue is directly the integer value
                 // In production, we'd use DatumGetInt32/64
                 limitCount = static_cast<int64_t>(constNode->constvalue);
-                PGX_DEBUG("Extracted limit count: " + std::to_string(limitCount));
-            } else {
-                PGX_DEBUG("Limit count is NULL, using default");
             }
-        } else if (node->type == T_Param) {
-            PGX_DEBUG("Limit count is a parameter, using default");
-        } else {
+            else {
+            }
+        }
+        else if (node->type == T_Param) {
+        }
+        else {
             PGX_WARNING("Limit count is not a Const or Param node");
         }
     }
@@ -881,16 +750,15 @@ auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& c
             Const* constNode = reinterpret_cast<Const*>(node);
             if (!constNode->constisnull) {
                 limitOffset = static_cast<int64_t>(constNode->constvalue);
-                PGX_DEBUG("Extracted limit offset: " + std::to_string(limitOffset));
             }
         }
     }
 
-    // Validate extracted values
     if (limitCount < 0) {
         PGX_WARNING("Invalid negative limit count: " + std::to_string(limitCount));
         limitCount = 10;
-    } else if (limitCount > 1000000) {
+    }
+    else if (limitCount > 1000000) {
         PGX_WARNING("Very large limit count: " + std::to_string(limitCount));
     }
 
@@ -901,21 +769,14 @@ auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& c
 
     // Handle special cases
     if (limitCount == -1) {
-        PGX_DEBUG("No limit specified, using large value");
         limitCount = INT32_MAX; // Use max for "no limit"
     }
 
-    PGX_DEBUG("Creating LimitOp with count=" + std::to_string(limitCount) +
-             " offset=" + std::to_string(limitOffset));
-
-    // Create LimitOp with proper parameters
     auto limitOp = context.builder->create<mlir::relalg::LimitOp>(
         context.builder->getUnknownLoc(),
         context.builder->getI32IntegerAttr(static_cast<int32_t>(limitCount)),
-        childResult
-    );
+        childResult);
 
-    PGX_DEBUG("Limit translation completed successfully");
     return limitOp;
 }
 
@@ -925,27 +786,20 @@ auto PostgreSQLASTTranslator::translateGather(Gather* gather, TranslationContext
         return nullptr;
     }
 
-    PGX_DEBUG("Translating Gather operation (parallel query coordinator)");
-
     // Access Gather-specific fields with direct field access
     int num_workers = gather->num_workers;
     bool single_copy = gather->single_copy;
-    PGX_DEBUG("Using direct field access for Gather fields");
 
     // Extract Gather-specific information
     if (num_workers > 0) {
-        PGX_DEBUG("Gather plans to use " + std::to_string(num_workers) + " workers");
     }
     if (single_copy) {
-        PGX_DEBUG("Gather is in single-copy mode");
     }
 
     // Translate child plan - single code path for tests and production
     ::mlir::Operation* childOp = nullptr;
 
-    // First, recursively process the child plan
     Plan* leftTree = gather->plan.lefttree;
-    PGX_DEBUG("Using direct field access for Gather lefttree");
 
     if (leftTree) {
         childOp = translatePlanNode(leftTree, context);
@@ -953,18 +807,17 @@ auto PostgreSQLASTTranslator::translateGather(Gather* gather, TranslationContext
             PGX_ERROR("Failed to translate Gather child plan");
             return nullptr;
         }
-    } else {
+    }
+    else {
         PGX_WARNING("Gather node has no child plan");
         // For unit tests, return nullptr and handle gracefully
         return nullptr;
     }
 
-    // For now, Gather just passes through its child result
     // In a full implementation, we would:
     // 1. Create worker coordination logic
     // 2. Handle partial aggregates from workers
     // 3. Implement tuple gathering and merging
-    PGX_DEBUG("Gather translation completed (pass-through implementation)");
     return childOp;
 }
 
@@ -974,18 +827,15 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
         return nullptr;
     }
 
-    PGX_DEBUG("Translating SeqScan operation");
-
-    // TODO: Load a different table
     std::string tableName = "test";
     Oid tableOid = 16384;
     std::string tableIdentifier;
 
     if (seqScan->scan.scanrelid > 0) {
-        PGX_DEBUG("SeqScan references relation " + std::to_string(seqScan->scan.scanrelid));
         if (seqScan->scan.scanrelid == 1) {
-            tableName = "test";  // Default test table
-        } else {
+            tableName = "test"; // Default test table
+        }
+        else {
             tableName = "table_" + std::to_string(seqScan->scan.scanrelid);
         }
         tableOid = 16384 + seqScan->scan.scanrelid - 1;
@@ -993,15 +843,10 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
 
     tableIdentifier = tableName + "|oid:" + std::to_string(tableOid);
 
-    PGX_DEBUG("Creating BaseTableOp for table: " + tableIdentifier);
-
     auto tableMetaData = std::make_shared<runtime::TableMetaData>();
     tableMetaData->setNumRows(0); // Will be updated from PostgreSQL catalog
 
-    auto tableMetaAttr = mlir::relalg::TableMetaDataAttr::get(
-        &context_,
-        tableMetaData
-    );
+    auto tableMetaAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
 
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
@@ -1020,35 +865,32 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
             colDef.getColumn().type = mlirType;
 
             columnDefs.push_back(context.builder->getNamedAttr(colInfo.name, colDef));
-
-            PGX_DEBUG("Added column definition for '" + colInfo.name + "' (type OID " +
-                     std::to_string(colInfo.typeOid) + ")");
         }
 
-        tableIdentifier = realTableName + "|oid:" + std::to_string(getAllTableColumnsFromSchema(seqScan->scan.scanrelid).empty() ? 0 :
-                         static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, seqScan->scan.scanrelid - 1))->relid);
-    } else {
+        tableIdentifier =
+            realTableName + "|oid:"
+            + std::to_string(
+                getAllTableColumnsFromSchema(seqScan->scan.scanrelid).empty()
+                    ? 0
+                    : static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, seqScan->scan.scanrelid - 1))->relid);
+    }
+    else {
         PGX_ERROR("Could not discover table schema");
     }
 
     auto columnsAttr = context.builder->getDictionaryAttr(columnDefs);
 
-    // Create the actual BaseTableOp with all required attributes
-    auto baseTableOp = context.builder->create<mlir::relalg::BaseTableOp>(
-        context.builder->getUnknownLoc(),
-        mlir::relalg::TupleStreamType::get(&context_),
-        context.builder->getStringAttr(tableIdentifier),
-        tableMetaAttr,
-        columnsAttr
-    );
+    auto baseTableOp = context.builder->create<mlir::relalg::BaseTableOp>(context.builder->getUnknownLoc(),
+                                                                          mlir::relalg::TupleStreamType::get(&context_),
+                                                                          context.builder->getStringAttr(tableIdentifier),
+                                                                          tableMetaAttr,
+                                                                          columnsAttr);
 
-    PGX_DEBUG("SeqScan translation completed successfully with BaseTableOp");
     return baseTableOp;
 }
 
-auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context) -> ::mlir::func::FuncOp {
-    PGX_DEBUG("Creating query function using func::FuncOp pattern");
-
+auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context)
+    -> ::mlir::func::FuncOp {
     // Safety checks
     if (!context.builder) {
         PGX_ERROR("Builder is null in context");
@@ -1057,21 +899,17 @@ auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, Tr
 
     try {
         // FIXED: Use void return type and call mark_results_ready_for_streaming()
-        // This enables proper JIT->PostgreSQL result communication
+        // This enables proper JITPostgreSQL result communication
 
-        // Create func::FuncOp with "main" name for JIT execution
         auto queryFuncType = builder.getFunctionType({}, {});
-        auto queryFunc = builder.create<::mlir::func::FuncOp>(
-            builder.getUnknownLoc(), "main", queryFuncType);
+        auto queryFunc = builder.create<::mlir::func::FuncOp>(builder.getUnknownLoc(), "main", queryFuncType);
 
         // CRITICAL FIX: Remove C interface attribute - it generates wrapper that ExecutionEngine can't find
         // queryFunc->setAttr("llvm.emit_c_interface", ::mlir::UnitAttr::get(builder.getContext()));
 
-        // Create function body
         auto& queryBody = queryFunc.getBody().emplaceBlock();
         builder.setInsertionPointToStart(&queryBody);
 
-        PGX_DEBUG("Query function created successfully");
         return queryFunc;
     } catch (const std::exception& e) {
         PGX_ERROR("Exception creating query function: " + std::string(e.what()));
@@ -1088,27 +926,22 @@ auto PostgreSQLASTTranslator::validatePlanTree(Plan* planTree) -> bool {
         return false;
     }
 
-    // Validate plan tree pointer
     if (reinterpret_cast<uintptr_t>(planTree) < 0x1000) {
         PGX_ERROR("Invalid plan tree pointer");
         return false;
     }
 
-    PGX_DEBUG("Plan tree pointer validated successfully");
     return true;
 }
 
-auto PostgreSQLASTTranslator::extractTargetListColumns(
-    TranslationContext& context,
-    std::vector<mlir::Attribute>& columnRefAttrs,
-    std::vector<mlir::Attribute>& columnNameAttrs) -> bool {
-
-    if (!context.currentStmt || !context.currentStmt->planTree ||
-        !context.currentStmt->planTree->targetlist ||
-        context.currentStmt->planTree->targetlist->length <= 0) {
+auto PostgreSQLASTTranslator::extractTargetListColumns(TranslationContext& context,
+                                                       std::vector<mlir::Attribute>& columnRefAttrs,
+                                                       std::vector<mlir::Attribute>& columnNameAttrs) -> bool {
+    if (!context.currentStmt || !context.currentStmt->planTree || !context.currentStmt->planTree->targetlist
+        || context.currentStmt->planTree->targetlist->length <= 0)
+    {
         // Default case: include 'id' column
-        auto& columnManager = context_
-            .getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+        auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
         auto colRef = columnManager.createRef("test", "id");
         colRef.getColumn().type = context.builder->getI32Type();
@@ -1145,13 +978,11 @@ auto PostgreSQLASTTranslator::extractTargetListColumns(
     return !columnRefAttrs.empty();
 }
 
-auto PostgreSQLASTTranslator::processTargetEntry(
-    TranslationContext& context,
-    List* tlist,
-    int index,
-    std::vector<mlir::Attribute>& columnRefAttrs,
-    std::vector<mlir::Attribute>& columnNameAttrs) -> bool {
-
+auto PostgreSQLASTTranslator::processTargetEntry(TranslationContext& context,
+                                                 List* tlist,
+                                                 int index,
+                                                 std::vector<mlir::Attribute>& columnRefAttrs,
+                                                 std::vector<mlir::Attribute>& columnNameAttrs) -> bool {
     ListCell* lc = &tlist->elements[index];
     void* ptr = lfirst(lc);
     if (!ptr) {
@@ -1160,10 +991,8 @@ auto PostgreSQLASTTranslator::processTargetEntry(
     }
 
     TargetEntry* tle = static_cast<TargetEntry*>(ptr);
-    // Validate the pointer looks reasonable
     if (reinterpret_cast<uintptr_t>(tle) < 0x1000) {
-        PGX_WARNING("Invalid TargetEntry pointer: " +
-                   std::to_string(reinterpret_cast<uintptr_t>(tle)));
+        PGX_WARNING("Invalid TargetEntry pointer: " + std::to_string(reinterpret_cast<uintptr_t>(tle)));
         return false;
     }
 
@@ -1176,29 +1005,24 @@ auto PostgreSQLASTTranslator::processTargetEntry(
 
     // Get column manager
     try {
-        auto& columnManager = context_
-            .getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+        auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
-        // Create column reference using appropriate scope for computed vs base columns
         // For computed expressions (like addition), use @map scope
         // For base table columns, use actual table name
         std::string scope;
         if (tle->expr && tle->expr->type == T_OpExpr) {
-            scope = "map";  // Computed expressions go to @map:: namespace
-            PGX_DEBUG("Using 'map' scope for computed column: " + colName);
-        } else {
-            scope = "test";  // Base columns use table scope (TODO: get real table name)
-            PGX_DEBUG("Using 'test' scope for base column: " + colName);
+            scope = "map"; // Computed expressions go to @map:: namespace
+        }
+        else {
+            scope = "test"; // Base columns use table scope (TODO: get real table name)
         }
 
-        PGX_DEBUG("About to call createRef with scope='" + scope + "', name='" + colName + "'");
         auto colRef = columnManager.createRef(scope, colName);
         colRef.getColumn().type = colType;
 
         columnRefAttrs.push_back(colRef);
         columnNameAttrs.push_back(context.builder->getStringAttr(colName));
 
-        PGX_DEBUG("Column added: " + colName);
         return true;
     } catch (const std::exception& e) {
         PGX_ERROR("Exception creating column reference: " + std::string(e.what()));
@@ -1209,40 +1033,34 @@ auto PostgreSQLASTTranslator::processTargetEntry(
     }
 }
 
-auto PostgreSQLASTTranslator::determineColumnType(
-    TranslationContext& context,
-    Expr* expr) -> mlir::Type {
-
+auto PostgreSQLASTTranslator::determineColumnType(TranslationContext& context, Expr* expr) -> mlir::Type {
     mlir::Type colType = context.builder->getI32Type();
 
     if (expr->type == T_Var) {
         Var* var = reinterpret_cast<Var*>(expr);
         PostgreSQLTypeMapper typeMapper(context_);
         colType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod);
-    } else if (expr->type == T_OpExpr) {
+    }
+    else if (expr->type == T_OpExpr) {
         // For arithmetic/comparison operators, use result type from OpExpr
         OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
         PostgreSQLTypeMapper typeMapper(context_);
         colType = typeMapper.mapPostgreSQLType(opExpr->opresulttype, -1);
-        PGX_DEBUG("Found OpExpr for column, result type OID: " + std::to_string(opExpr->opresulttype));
-    } else if (expr->type == T_FuncExpr) {
+    }
+    else if (expr->type == T_FuncExpr) {
         // For aggregate functions, use appropriate result type
-        PGX_DEBUG("Found FuncExpr for column");
         colType = context.builder->getI64Type(); // Use BIGINT for aggregate functions
-    } else if (expr->type == T_Aggref) {
+    }
+    else if (expr->type == T_Aggref) {
         // Direct Aggref reference
-        PGX_DEBUG("Found Aggref for column");
         colType = context.builder->getI64Type(); // Use BIGINT for aggregate results
     }
 
     return colType;
 }
 
-auto PostgreSQLASTTranslator::createMaterializeOp(
-    TranslationContext& context,
-    ::mlir::Value tupleStream) -> ::mlir::Operation* {
-
-    // Create column arrays based on the query's target list
+auto PostgreSQLASTTranslator::createMaterializeOp(TranslationContext& context, ::mlir::Value tupleStream)
+    -> ::mlir::Operation* {
     std::vector<mlir::Attribute> columnRefAttrs;
     std::vector<mlir::Attribute> columnNameAttrs;
 
@@ -1254,24 +1072,20 @@ auto PostgreSQLASTTranslator::createMaterializeOp(
     auto columnRefs = context.builder->getArrayAttr(columnRefAttrs);
     auto columnNames = context.builder->getArrayAttr(columnNameAttrs);
 
-    // Get the DSA table type for MaterializeOp result
     auto tableType = mlir::dsa::TableType::get(&context_);
 
-    auto materializeOp = context.builder->create<mlir::relalg::MaterializeOp>(
-        context.builder->getUnknownLoc(),
-        tableType,
-        tupleStream,
-        columnRefs,
-        columnNames
-    );
+    auto materializeOp = context.builder->create<mlir::relalg::MaterializeOp>(context.builder->getUnknownLoc(),
+                                                                              tableType,
+                                                                              tupleStream,
+                                                                              columnRefs,
+                                                                              columnNames);
 
-    PGX_DEBUG("MaterializeOp created successfully");
     return materializeOp;
 }
 
-auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, TranslationContext& context) -> bool {
-    PGX_DEBUG("Generating RelAlg operations inside function body");
-
+auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp queryFunc,
+                                                       PlannedStmt* plannedStmt,
+                                                       TranslationContext& context) -> bool {
     // Safety check for PlannedStmt
     if (!plannedStmt) {
         PGX_ERROR("PlannedStmt is null");
@@ -1280,21 +1094,17 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
 
     // Access and validate plan tree
     Plan* planTree = plannedStmt->planTree;
-    PGX_DEBUG("Using direct field access for planTree");
 
     if (!validatePlanTree(planTree)) {
         return false;
     }
 
     // Translate the plan tree inside the function body
-    PGX_DEBUG("About to call translatePlanNode");
     auto translatedOp = translatePlanNode(planTree, context);
-    PGX_DEBUG("translatePlanNode returned");
     if (!translatedOp) {
         PGX_ERROR("Failed to translate plan node");
         return false;
     }
-    PGX_DEBUG("Translated operation is non-null");
 
     // Check if the operation has a result we can use
     PGX_INFO("Checking if translated operation has results");
@@ -1308,18 +1118,16 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
         if (result.getType().isa<mlir::relalg::TupleStreamType>()) {
             PGX_INFO("Result is TupleStreamType, creating MaterializeOp");
             createMaterializeOp(context, result);
-        } else {
-            PGX_DEBUG("Translated operation does not produce tuple stream, skipping MaterializeOp");
         }
-    } else {
-        PGX_DEBUG("Translated operation has no results");
+        else {
+        }
+    }
+    else {
     }
 
     // Return void - proper implementation will add result handling here
-    PGX_DEBUG("Creating function return operation");
     context.builder->create<mlir::func::ReturnOp>(context.builder->getUnknownLoc());
 
-    PGX_DEBUG("RelAlg operations generated successfully");
     return true;
 }
 
@@ -1336,33 +1144,23 @@ auto PostgreSQLASTTranslator::translateExpression(Expr* expr) -> ::mlir::Value {
         return nullptr;
     }
 
-    PGX_DEBUG("Translating expression of type: " + std::to_string(expr->type));
-
     switch (expr->type) {
-        case T_Var:
-        case 402:  // T_Var from lingo-db headers (for unit tests)
-            return translateVar(reinterpret_cast<Var*>(expr));
-        case T_Const:
-            return translateConst(reinterpret_cast<Const*>(expr));
-        case T_OpExpr:
-        case 403:  // T_OpExpr from lingo-db headers (for unit tests)
-            return translateOpExpr(reinterpret_cast<OpExpr*>(expr));
-        case T_FuncExpr:
-            return translateFuncExpr(reinterpret_cast<FuncExpr*>(expr));
-        case T_BoolExpr:
-            return translateBoolExpr(reinterpret_cast<BoolExpr*>(expr));
-        case T_Aggref:
-            return translateAggref(reinterpret_cast<Aggref*>(expr));
-        case T_NullTest:
-            return translateNullTest(reinterpret_cast<NullTest*>(expr));
-        case T_CoalesceExpr:
-            return translateCoalesceExpr(reinterpret_cast<CoalesceExpr*>(expr));
-        default:
-            PGX_WARNING("Unsupported expression type: " + std::to_string(expr->type));
-            // Return a placeholder constant for now
-            return builder_->create<mlir::arith::ConstantIntOp>(
-                builder_->getUnknownLoc(), 0, builder_->getI32Type()
-            );
+    case T_Var:
+    case 402: // T_Var from lingo-db headers (for unit tests)
+        return translateVar(reinterpret_cast<Var*>(expr));
+    case T_Const: return translateConst(reinterpret_cast<Const*>(expr));
+    case T_OpExpr:
+    case 403: // T_OpExpr from lingo-db headers (for unit tests)
+        return translateOpExpr(reinterpret_cast<OpExpr*>(expr));
+    case T_FuncExpr: return translateFuncExpr(reinterpret_cast<FuncExpr*>(expr));
+    case T_BoolExpr: return translateBoolExpr(reinterpret_cast<BoolExpr*>(expr));
+    case T_Aggref: return translateAggref(reinterpret_cast<Aggref*>(expr));
+    case T_NullTest: return translateNullTest(reinterpret_cast<NullTest*>(expr));
+    case T_CoalesceExpr: return translateCoalesceExpr(reinterpret_cast<CoalesceExpr*>(expr));
+    default:
+        PGX_WARNING("Unsupported expression type: " + std::to_string(expr->type));
+        // Return a placeholder constant for now
+        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
     }
 }
 
@@ -1371,10 +1169,6 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> ::mlir::Value {
         PGX_ERROR("Invalid Var parameters");
         return nullptr;
     }
-
-    PGX_DEBUG("Translating Var: varno=" + std::to_string(var->varno) +
-              " varattno=" + std::to_string(var->varattno) +
-              " vartype=" + std::to_string(var->vartype));
 
     // For RelAlg operations, we need to generate a GetColumnOp
     // This requires the current tuple value and column reference
@@ -1387,7 +1181,6 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> ::mlir::Value {
         std::string tableName = getTableNameFromRTE(var->varno);
         std::string colName = getColumnNameFromSchema(var->varno, var->varattno);
 
-        // Create fully qualified column reference
         auto colSymRef = mlir::SymbolRefAttr::get(&context_, tableName + "::" + colName);
 
         // Get column manager from RelAlg dialect
@@ -1403,29 +1196,21 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> ::mlir::Value {
         PostgreSQLTypeMapper typeMapper(context_);
         auto mlirType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod);
 
-        // Create column reference using column manager
         // This ensures proper column tracking and avoids invalid attributes
         auto colRef = columnManager.createRef(tableName, colName);
 
         // Set the column type
         colRef.getColumn().type = mlirType;
 
-        // Create GetColumnOp to access the column from tuple
-        auto getColOp = builder_->create<mlir::relalg::GetColumnOp>(
-            builder_->getUnknownLoc(),
-            mlirType,
-            colRef,
-            *currentTupleHandle_
-        );
+        auto getColOp =
+            builder_->create<mlir::relalg::GetColumnOp>(builder_->getUnknownLoc(), mlirType, colRef, *currentTupleHandle_);
 
-        PGX_DEBUG("Generated GetColumnOp for column '" + tableName + "::" + colName + "'");
         return getColOp.getRes();
-    } else {
+    }
+    else {
         // No tuple context - this shouldn't happen in properly structured queries
         PGX_WARNING("No tuple context for Var translation, using placeholder");
-        return builder_->create<mlir::arith::ConstantIntOp>(
-            builder_->getUnknownLoc(), 0, builder_->getI32Type()
-        );
+        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
     }
 }
 
@@ -1435,72 +1220,48 @@ auto PostgreSQLASTTranslator::translateConst(Const* constNode) -> ::mlir::Value 
         return nullptr;
     }
 
-    PGX_DEBUG("Translating Const: type=" + std::to_string(constNode->consttype) +
-              " isnull=" + std::to_string(constNode->constisnull));
-
     if (constNode->constisnull) {
-        // Create null constant using DB dialect
-        auto nullType = mlir::db::NullableType::get(
-            &context_,
-            mlir::IntegerType::get(&context_, 32)
-        );
-        return builder_->create<mlir::db::NullOp>(
-            builder_->getUnknownLoc(), nullType
-        );
+        auto nullType = mlir::db::NullableType::get(&context_, mlir::IntegerType::get(&context_, 32));
+        return builder_->create<mlir::db::NullOp>(builder_->getUnknownLoc(), nullType);
     }
 
     // Map PostgreSQL type to MLIR type
     PostgreSQLTypeMapper typeMapper(context_);
     auto mlirType = typeMapper.mapPostgreSQLType(constNode->consttype, constNode->consttypmod);
 
-    // Create constant based on type
     switch (constNode->consttype) {
-        case INT4OID: {
-            int32_t val = static_cast<int32_t>(constNode->constvalue);
-            return builder_->create<mlir::arith::ConstantIntOp>(
-                builder_->getUnknownLoc(), val, mlirType
-            );
-        }
-        case INT8OID: {
-            int64_t val = static_cast<int64_t>(constNode->constvalue);
-            return builder_->create<mlir::arith::ConstantIntOp>(
-                builder_->getUnknownLoc(), val, mlirType
-            );
-        }
-        case INT2OID: {
-            int16_t val = static_cast<int16_t>(constNode->constvalue);
-            return builder_->create<mlir::arith::ConstantIntOp>(
-                builder_->getUnknownLoc(), val, mlirType
-            );
-        }
-        case FLOAT4OID: {
-            float val = *reinterpret_cast<float*>(&constNode->constvalue);
-            return builder_->create<mlir::arith::ConstantFloatOp>(
-                builder_->getUnknownLoc(),
-                llvm::APFloat(val),
-                mlirType.cast<mlir::FloatType>()
-            );
-        }
-        case FLOAT8OID: {
-            double val = *reinterpret_cast<double*>(&constNode->constvalue);
-            return builder_->create<mlir::arith::ConstantFloatOp>(
-                builder_->getUnknownLoc(),
-                llvm::APFloat(val),
-                mlirType.cast<mlir::FloatType>()
-            );
-        }
-        case BOOLOID: {
-            bool val = static_cast<bool>(constNode->constvalue);
-            return builder_->create<mlir::arith::ConstantIntOp>(
-                builder_->getUnknownLoc(), val ? 1 : 0, mlirType
-            );
-        }
-        default:
-            PGX_WARNING("Unsupported constant type: " + std::to_string(constNode->consttype));
-            // Default to i32 zero
-            return builder_->create<mlir::arith::ConstantIntOp>(
-                builder_->getUnknownLoc(), 0, builder_->getI32Type()
-            );
+    case INT4OID: {
+        int32_t val = static_cast<int32_t>(constNode->constvalue);
+        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), val, mlirType);
+    }
+    case INT8OID: {
+        int64_t val = static_cast<int64_t>(constNode->constvalue);
+        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), val, mlirType);
+    }
+    case INT2OID: {
+        int16_t val = static_cast<int16_t>(constNode->constvalue);
+        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), val, mlirType);
+    }
+    case FLOAT4OID: {
+        float val = *reinterpret_cast<float*>(&constNode->constvalue);
+        return builder_->create<mlir::arith::ConstantFloatOp>(builder_->getUnknownLoc(),
+                                                              llvm::APFloat(val),
+                                                              mlirType.cast<mlir::FloatType>());
+    }
+    case FLOAT8OID: {
+        double val = *reinterpret_cast<double*>(&constNode->constvalue);
+        return builder_->create<mlir::arith::ConstantFloatOp>(builder_->getUnknownLoc(),
+                                                              llvm::APFloat(val),
+                                                              mlirType.cast<mlir::FloatType>());
+    }
+    case BOOLOID: {
+        bool val = static_cast<bool>(constNode->constvalue);
+        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), val ? 1 : 0, mlirType);
+    }
+    default:
+        PGX_WARNING("Unsupported constant type: " + std::to_string(constNode->consttype));
+        // Default to i32 zero
+        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
     }
 }
 
@@ -1510,8 +1271,6 @@ auto PostgreSQLASTTranslator::extractOpExprOperands(OpExpr* opExpr, ::mlir::Valu
         return false;
     }
 
-    PGX_DEBUG("OpExpr args list has " + std::to_string(opExpr->args->length) + " arguments");
-
     if (opExpr->args->length < 1) {
         return false;
     }
@@ -1520,7 +1279,6 @@ auto PostgreSQLASTTranslator::extractOpExprOperands(OpExpr* opExpr, ::mlir::Valu
     if (!opExpr->args->elements) {
         PGX_WARNING("OpExpr args list has length " + std::to_string(opExpr->args->length) + " but no elements array");
         PGX_WARNING("This suggests the test setup needs to properly initialize the List structure");
-        // For now, return false to trigger the "Failed to extract OpExpr operands" error
         // This will help us identify when this is happening
         return false;
     }
@@ -1534,7 +1292,8 @@ auto PostgreSQLASTTranslator::extractOpExprOperands(OpExpr* opExpr, ::mlir::Valu
             if (argValue) {
                 if (argIndex == 0) {
                     lhs = argValue;
-                } else if (argIndex == 1) {
+                }
+                else if (argIndex == 1) {
                     rhs = argValue;
                 }
             }
@@ -1544,15 +1303,11 @@ auto PostgreSQLASTTranslator::extractOpExprOperands(OpExpr* opExpr, ::mlir::Valu
     // If we couldn't extract proper operands, create placeholders
     if (!lhs) {
         PGX_WARNING("Failed to translate left operand, using placeholder");
-        lhs = builder_->create<mlir::arith::ConstantIntOp>(
-            builder_->getUnknownLoc(), 0, builder_->getI32Type()
-        );
+        lhs = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
     }
     if (!rhs && opExpr->args->length >= 2) {
         PGX_WARNING("Failed to translate right operand, using placeholder");
-        rhs = builder_->create<mlir::arith::ConstantIntOp>(
-            builder_->getUnknownLoc(), 0, builder_->getI32Type()
-        );
+        rhs = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
     }
 
     return lhs && rhs;
@@ -1560,50 +1315,34 @@ auto PostgreSQLASTTranslator::extractOpExprOperands(OpExpr* opExpr, ::mlir::Valu
 
 auto PostgreSQLASTTranslator::translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value {
     switch (opOid) {
-        // Addition operators
-        case 551:  // int4 + int4 (INT4PLUSOID)
-        case 684:  // int8 + int8
-            PGX_DEBUG("Translating addition operator (OID " + std::to_string(opOid) + ") using DB dialect");
-            return builder_->create<mlir::db::AddOp>(
-                builder_->getUnknownLoc(), lhs, rhs
-            );
+    // Addition operators
+    case 551: // int4 + int4 (INT4PLUSOID)
+    case 684: // int8 + int8
+        return builder_->create<mlir::db::AddOp>(builder_->getUnknownLoc(), lhs, rhs);
 
-        // Subtraction operators
-        case 552:  // int4 - int4 (INT4MINUSOID)
-        case 555:  // Alternative int4 - int4 (keeping for compatibility)
-        case 688:  // int8 - int8
-            PGX_DEBUG("Translating subtraction operator (OID " + std::to_string(opOid) + ") using DB dialect");
-            return builder_->create<mlir::db::SubOp>(
-                builder_->getUnknownLoc(), lhs, rhs
-            );
+    // Subtraction operators
+    case 552: // int4 - int4 (INT4MINUSOID)
+    case 555: // Alternative int4 - int4 (keeping for compatibility)
+    case 688: // int8 - int8
+        return builder_->create<mlir::db::SubOp>(builder_->getUnknownLoc(), lhs, rhs);
 
-        // Multiplication operators
-        case 514:  // int4 * int4 (INT4MULOID)
-        case 686:  // int8 * int8
-            PGX_DEBUG("Translating multiplication operator (OID " + std::to_string(opOid) + ") using DB dialect");
-            return builder_->create<mlir::db::MulOp>(
-                builder_->getUnknownLoc(), lhs, rhs
-            );
+    // Multiplication operators
+    case 514: // int4 * int4 (INT4MULOID)
+    case 686: // int8 * int8
+        return builder_->create<mlir::db::MulOp>(builder_->getUnknownLoc(), lhs, rhs);
 
-        // Division operators
-        case 527:  // int4 / int4 (alternative)
-        case 528:  // int4 / int4 (INT4DIVOID)
-        case 689:  // int8 / int8
-            PGX_DEBUG("Translating division operator (OID " + std::to_string(opOid) + ") using DB dialect");
-            return builder_->create<mlir::db::DivOp>(
-                builder_->getUnknownLoc(), lhs, rhs
-            );
+    // Division operators
+    case 527: // int4 / int4 (alternative)
+    case 528: // int4 / int4 (INT4DIVOID)
+    case 689: // int8 / int8
+        return builder_->create<mlir::db::DivOp>(builder_->getUnknownLoc(), lhs, rhs);
 
-        // Modulo operators
-        case 529:  // int4 % int4 (INT4MODOID)
-        case 690:  // int8 % int8
-            PGX_DEBUG("Translating modulo operator (OID " + std::to_string(opOid) + ") using DB dialect");
-            return builder_->create<mlir::db::ModOp>(
-                builder_->getUnknownLoc(), lhs, rhs
-            );
+    // Modulo operators
+    case 529: // int4 % int4 (INT4MODOID)
+    case 690: // int8 % int8
+        return builder_->create<mlir::db::ModOp>(builder_->getUnknownLoc(), lhs, rhs);
 
-        default:
-            return nullptr;
+    default: return nullptr;
     }
 }
 
@@ -1611,45 +1350,40 @@ auto PostgreSQLASTTranslator::translateComparisonOp(Oid opOid, ::mlir::Value lhs
     mlir::db::DBCmpPredicate predicate;
 
     switch (opOid) {
-        case 96:   // int4 = int4
-        case 410:  // int8 = int8
-            predicate = mlir::db::DBCmpPredicate::eq;
-            break;
+    case 96: // int4 = int4
+    case 410: // int8 = int8
+        predicate = mlir::db::DBCmpPredicate::eq;
+        break;
 
-        case 518:  // int4 != int4
-        case 411:  // int8 != int8
-            predicate = mlir::db::DBCmpPredicate::neq;
-            break;
+    case 518: // int4 != int4
+    case 411: // int8 != int8
+        predicate = mlir::db::DBCmpPredicate::neq;
+        break;
 
-        case 97:   // int4 < int4
-        case 412:  // int8 < int8
-            predicate = mlir::db::DBCmpPredicate::lt;
-            break;
+    case 97: // int4 < int4
+    case 412: // int8 < int8
+        predicate = mlir::db::DBCmpPredicate::lt;
+        break;
 
-        case 523:  // int4 <= int4
-        case 414:  // int8 <= int8
-            predicate = mlir::db::DBCmpPredicate::lte;
-            break;
+    case 523: // int4 <= int4
+    case 414: // int8 <= int8
+        predicate = mlir::db::DBCmpPredicate::lte;
+        break;
 
-        case 521:  // int4 > int4
-        case 413:  // int8 > int8
-            predicate = mlir::db::DBCmpPredicate::gt;
-            break;
+    case 521: // int4 > int4
+    case 413: // int8 > int8
+        predicate = mlir::db::DBCmpPredicate::gt;
+        break;
 
-        case 525:  // int4 >= int4
-        case 415:  // int8 >= int8
-            predicate = mlir::db::DBCmpPredicate::gte;
-            break;
+    case 525: // int4 >= int4
+    case 415: // int8 >= int8
+        predicate = mlir::db::DBCmpPredicate::gte;
+        break;
 
-        default:
-            return nullptr;
+    default: return nullptr;
     }
 
-    return builder_->create<mlir::db::CmpOp>(
-        builder_->getUnknownLoc(),
-        predicate,
-        lhs, rhs
-    );
+    return builder_->create<mlir::db::CmpOp>(builder_->getUnknownLoc(), predicate, lhs, rhs);
 }
 
 auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
@@ -1657,8 +1391,6 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
         PGX_ERROR("Invalid OpExpr parameters");
         return nullptr;
     }
-
-    PGX_DEBUG("Translating OpExpr: opno=" + std::to_string(opExpr->opno));
 
     // Extract operands from args list
     ::mlir::Value lhs = nullptr;
@@ -1669,7 +1401,6 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
         return nullptr;
     }
 
-    // Get the operator OID
     Oid opOid = opExpr->opno;
 
     // Try arithmetic operators first
@@ -1695,164 +1426,129 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
         return nullptr;
     }
 
-    PGX_DEBUG("Translating BoolExpr: boolop=" + std::to_string(boolExpr->boolop));
-
     if (!boolExpr->args || boolExpr->args->length == 0) {
         PGX_ERROR("BoolExpr has no arguments");
         return nullptr;
     }
 
     // BoolExprType enum values
-    enum BoolExprType {
-        AND_EXPR = 0,
-        OR_EXPR = 1,
-        NOT_EXPR = 2
-    };
+    enum BoolExprType { AND_EXPR = 0, OR_EXPR = 1, NOT_EXPR = 2 };
 
     switch (boolExpr->boolop) {
-        case AND_EXPR: {
-            // Process AND chain
-            ::mlir::Value result = nullptr;
+    case AND_EXPR: {
+        ::mlir::Value result = nullptr;
 
-            if (boolExpr->args && boolExpr->args->length > 0) {
-                PGX_DEBUG("AND expression has " + std::to_string(boolExpr->args->length) + " arguments");
+        if (boolExpr->args && boolExpr->args->length > 0) {
+            // Safety check for elements array (PostgreSQL 17)
+            if (!boolExpr->args->elements) {
+                PGX_WARNING("BoolExpr AND args list has length but no elements array");
+                return nullptr;
+            }
 
-                // Safety check for elements array (PostgreSQL 17)
-                if (!boolExpr->args->elements) {
-                    PGX_WARNING("BoolExpr AND args list has length but no elements array");
-                    return nullptr;
-                }
+            // Iterate using PostgreSQL 17 style with elements array
+            for (int i = 0; i < boolExpr->args->length; i++) {
+                ListCell* lc = &boolExpr->args->elements[i];
+                Node* argNode = static_cast<Node*>(lfirst(lc));
+                if (argNode) {
+                    ::mlir::Value argValue = translateExpression(reinterpret_cast<Expr*>(argNode));
+                    if (argValue) {
+                        // Ensure boolean type
+                        if (!argValue.getType().isInteger(1)) {
+                            argValue = builder_->create<mlir::db::DeriveTruth>(builder_->getUnknownLoc(), argValue);
+                        }
 
-                // Iterate using PostgreSQL 17 style with elements array
-                for (int i = 0; i < boolExpr->args->length; i++) {
-                    ListCell* lc = &boolExpr->args->elements[i];
-                    Node* argNode = static_cast<Node*>(lfirst(lc));
-                    if (argNode) {
-                        ::mlir::Value argValue = translateExpression(reinterpret_cast<Expr*>(argNode));
-                        if (argValue) {
-                            // Ensure boolean type
-                            if (!argValue.getType().isInteger(1)) {
-                                argValue = builder_->create<mlir::db::DeriveTruth>(
-                                    builder_->getUnknownLoc(), argValue
-                                );
-                            }
-
-                            if (!result) {
-                                result = argValue;
-                            } else {
-                                // Create AND operation using DB dialect
-                                result = builder_->create<::mlir::db::AndOp>(
-                                    builder_->getUnknownLoc(),
-                                    builder_->getI1Type(),
-                                    mlir::ValueRange{result, argValue}
-                                );
-                            }
+                        if (!result) {
+                            result = argValue;
+                        }
+                        else {
+                            result = builder_->create<::mlir::db::AndOp>(builder_->getUnknownLoc(),
+                                                                         builder_->getI1Type(),
+                                                                         mlir::ValueRange{result, argValue});
                         }
                     }
                 }
             }
-
-            if (!result) {
-                // Default to true if no valid expression
-                result = builder_->create<mlir::arith::ConstantIntOp>(
-                    builder_->getUnknownLoc(), 1, builder_->getI1Type()
-                );
-            }
-            return result;
         }
 
-        case OR_EXPR: {
-            // Process OR chain
-            ::mlir::Value result = nullptr;
+        if (!result) {
+            // Default to true if no valid expression
+            result = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 1, builder_->getI1Type());
+        }
+        return result;
+    }
 
-            if (boolExpr->args && boolExpr->args->length > 0) {
-                PGX_DEBUG("OR expression has " + std::to_string(boolExpr->args->length) + " arguments");
+    case OR_EXPR: {
+        ::mlir::Value result = nullptr;
 
-                // Safety check for elements array (PostgreSQL 17)
-                if (!boolExpr->args->elements) {
-                    PGX_WARNING("BoolExpr OR args list has length but no elements array");
-                    return nullptr;
-                }
+        if (boolExpr->args && boolExpr->args->length > 0) {
+            // Safety check for elements array (PostgreSQL 17)
+            if (!boolExpr->args->elements) {
+                PGX_WARNING("BoolExpr OR args list has length but no elements array");
+                return nullptr;
+            }
 
-                // Iterate using PostgreSQL 17 style with elements array
-                for (int i = 0; i < boolExpr->args->length; i++) {
-                    ListCell* lc = &boolExpr->args->elements[i];
-                    Node* argNode = static_cast<Node*>(lfirst(lc));
-                    if (argNode) {
-                        ::mlir::Value argValue = translateExpression(reinterpret_cast<Expr*>(argNode));
-                        if (argValue) {
-                            // Ensure boolean type
-                            if (!argValue.getType().isInteger(1)) {
-                                argValue = builder_->create<mlir::db::DeriveTruth>(
-                                    builder_->getUnknownLoc(), argValue
-                                );
-                            }
+            // Iterate using PostgreSQL 17 style with elements array
+            for (int i = 0; i < boolExpr->args->length; i++) {
+                ListCell* lc = &boolExpr->args->elements[i];
+                Node* argNode = static_cast<Node*>(lfirst(lc));
+                if (argNode) {
+                    ::mlir::Value argValue = translateExpression(reinterpret_cast<Expr*>(argNode));
+                    if (argValue) {
+                        // Ensure boolean type
+                        if (!argValue.getType().isInteger(1)) {
+                            argValue = builder_->create<mlir::db::DeriveTruth>(builder_->getUnknownLoc(), argValue);
+                        }
 
-                            if (!result) {
-                                result = argValue;
-                            } else {
-                                // Create OR operation using DB dialect
-                                result = builder_->create<::mlir::db::OrOp>(
-                                    builder_->getUnknownLoc(),
-                                    builder_->getI1Type(),
-                                    mlir::ValueRange{result, argValue}
-                                );
-                            }
+                        if (!result) {
+                            result = argValue;
+                        }
+                        else {
+                            result = builder_->create<::mlir::db::OrOp>(builder_->getUnknownLoc(),
+                                                                        builder_->getI1Type(),
+                                                                        mlir::ValueRange{result, argValue});
                         }
                     }
                 }
             }
-
-            if (!result) {
-                // Default to false if no valid expression
-                result = builder_->create<mlir::arith::ConstantIntOp>(
-                    builder_->getUnknownLoc(), 0, builder_->getI1Type()
-                );
-            }
-            return result;
         }
 
-        case NOT_EXPR: {
-            // NOT has single argument
-            ::mlir::Value argVal = nullptr;
+        if (!result) {
+            // Default to false if no valid expression
+            result = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI1Type());
+        }
+        return result;
+    }
 
-            if (boolExpr->args && boolExpr->args->length > 0) {
-                PGX_DEBUG("NOT expression has " + std::to_string(boolExpr->args->length) + " arguments");
+    case NOT_EXPR: {
+        // NOT has single argument
+        ::mlir::Value argVal = nullptr;
 
-                // Get first argument
-                ListCell* lc = list_head(boolExpr->args);
-                if (lc) {
-                    Node* argNode = static_cast<Node*>(lfirst(lc));
-                    if (argNode) {
-                        argVal = translateExpression(reinterpret_cast<Expr*>(argNode));
-                    }
+        if (boolExpr->args && boolExpr->args->length > 0) {
+            // Get first argument
+            ListCell* lc = list_head(boolExpr->args);
+            if (lc) {
+                Node* argNode = static_cast<Node*>(lfirst(lc));
+                if (argNode) {
+                    argVal = translateExpression(reinterpret_cast<Expr*>(argNode));
                 }
             }
-
-            if (!argVal) {
-                // Default argument if none provided
-                PGX_WARNING("NOT expression has no valid argument, using placeholder");
-                argVal = builder_->create<mlir::arith::ConstantIntOp>(
-                    builder_->getUnknownLoc(), 1, builder_->getI1Type()
-                );
-            }
-
-            // Ensure argument is boolean
-            if (!argVal.getType().isInteger(1)) {
-                argVal = builder_->create<mlir::db::DeriveTruth>(
-                    builder_->getUnknownLoc(), argVal
-                );
-            }
-
-            // Create NOT operation using DB dialect
-            return builder_->create<::mlir::db::NotOp>(
-                builder_->getUnknownLoc(), argVal
-            );
         }
 
-        default:
-            PGX_ERROR("Unknown BoolExpr type: " + std::to_string(boolExpr->boolop));
-            return nullptr;
+        if (!argVal) {
+            // Default argument if none provided
+            PGX_WARNING("NOT expression has no valid argument, using placeholder");
+            argVal = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 1, builder_->getI1Type());
+        }
+
+        // Ensure argument is boolean
+        if (!argVal.getType().isInteger(1)) {
+            argVal = builder_->create<mlir::db::DeriveTruth>(builder_->getUnknownLoc(), argVal);
+        }
+
+        return builder_->create<::mlir::db::NotOp>(builder_->getUnknownLoc(), argVal);
+    }
+
+    default: PGX_ERROR("Unknown BoolExpr type: " + std::to_string(boolExpr->boolop)); return nullptr;
     }
 }
 
@@ -1861,8 +1557,6 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
         PGX_ERROR("Invalid FuncExpr parameters");
         return nullptr;
     }
-
-    PGX_DEBUG("Translating FuncExpr: funcid=" + std::to_string(funcExpr->funcid));
 
     // Translate function arguments first
     std::vector<::mlir::Value> args;
@@ -1888,135 +1582,116 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
 
     // Map PostgreSQL function OID to MLIR operations
     // Common PostgreSQL function OIDs (from fmgroids.h)
-    constexpr Oid F_ABS_INT4 = 1397;       // abs(int4)
-    constexpr Oid F_ABS_INT8 = 1398;       // abs(int8)
-    constexpr Oid F_ABS_FLOAT4 = 1394;     // abs(float4)
-    constexpr Oid F_ABS_FLOAT8 = 1395;     // abs(float8)
-    constexpr Oid F_UPPER = 871;           // upper(text)
-    constexpr Oid F_LOWER = 870;           // lower(text)
-    constexpr Oid F_LENGTH = 1317;         // length(text)
-    constexpr Oid F_SUBSTR = 877;          // substr(text, int, int)
-    constexpr Oid F_CONCAT = 3058;         // concat(text, text)
-    constexpr Oid F_SQRT_FLOAT8 = 230;     // sqrt(float8)
-    constexpr Oid F_POWER_FLOAT8 = 232;    // power(float8, float8)
-    constexpr Oid F_CEIL_FLOAT8 = 2308;    // ceil(float8)
-    constexpr Oid F_FLOOR_FLOAT8 = 2309;   // floor(float8)
-    constexpr Oid F_ROUND_FLOAT8 = 233;    // round(float8)
+    constexpr Oid F_ABS_INT4 = 1397; // abs(int4)
+    constexpr Oid F_ABS_INT8 = 1398; // abs(int8)
+    constexpr Oid F_ABS_FLOAT4 = 1394; // abs(float4)
+    constexpr Oid F_ABS_FLOAT8 = 1395; // abs(float8)
+    constexpr Oid F_UPPER = 871; // upper(text)
+    constexpr Oid F_LOWER = 870; // lower(text)
+    constexpr Oid F_LENGTH = 1317; // length(text)
+    constexpr Oid F_SUBSTR = 877; // substr(text, int, int)
+    constexpr Oid F_CONCAT = 3058; // concat(text, text)
+    constexpr Oid F_SQRT_FLOAT8 = 230; // sqrt(float8)
+    constexpr Oid F_POWER_FLOAT8 = 232; // power(float8, float8)
+    constexpr Oid F_CEIL_FLOAT8 = 2308; // ceil(float8)
+    constexpr Oid F_FLOOR_FLOAT8 = 2309; // floor(float8)
+    constexpr Oid F_ROUND_FLOAT8 = 233; // round(float8)
 
     auto loc = builder_->getUnknownLoc();
 
     switch (funcExpr->funcid) {
-        case F_ABS_INT4:
-        case F_ABS_INT8:
-        case F_ABS_FLOAT4:
-        case F_ABS_FLOAT8:
-            if (args.size() != 1) {
-                PGX_ERROR("ABS requires exactly 1 argument, got " + std::to_string(args.size()));
-                return nullptr;
+    case F_ABS_INT4:
+    case F_ABS_INT8:
+    case F_ABS_FLOAT4:
+    case F_ABS_FLOAT8:
+        if (args.size() != 1) {
+            PGX_ERROR("ABS requires exactly 1 argument, got " + std::to_string(args.size()));
+            return nullptr;
+        }
+        // Implement absolute value using comparison and negation
+        // Since DB dialect doesn't have AbsOp, use arith operations
+        {
+            auto zero = builder_->create<mlir::arith::ConstantIntOp>(loc, 0, args[0].getType());
+            auto cmp = builder_->create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, args[0], zero);
+            auto neg = builder_->create<mlir::arith::SubIOp>(loc, zero, args[0]);
+            return builder_->create<mlir::arith::SelectOp>(loc, cmp, neg, args[0]);
+        }
+
+    case F_SQRT_FLOAT8:
+        if (args.size() != 1) {
+            PGX_ERROR("SQRT requires exactly 1 argument");
+            return nullptr;
+        }
+        // Use math dialect sqrt (TODO: may need to add math dialect)
+        PGX_WARNING("SQRT function not yet implemented in DB dialect");
+        return args[0]; // Pass through for now
+
+    case F_POWER_FLOAT8:
+        if (args.size() != 2) {
+            PGX_ERROR("POWER requires exactly 2 arguments");
+            return nullptr;
+        }
+        PGX_WARNING("POWER function not yet implemented in DB dialect");
+        return args[0]; // Return base for now
+
+    case F_UPPER:
+    case F_LOWER:
+        if (args.size() != 1) {
+            PGX_ERROR("String function requires exactly 1 argument");
+            return nullptr;
+        }
+        PGX_WARNING("String functions not yet implemented");
+        return args[0]; // Pass through for now
+
+    case F_LENGTH:
+        if (args.size() != 1) {
+            PGX_ERROR("LENGTH requires exactly 1 argument");
+            return nullptr;
+        }
+        PGX_WARNING("LENGTH function not yet implemented");
+        return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, builder_->getI32Type());
+
+    case F_CEIL_FLOAT8:
+    case F_FLOOR_FLOAT8:
+    case F_ROUND_FLOAT8:
+        if (args.size() != 1) {
+            PGX_ERROR("Rounding function requires exactly 1 argument");
+            return nullptr;
+        }
+        PGX_WARNING("Rounding functions not yet implemented in DB dialect");
+        return args[0]; // Pass through for now
+
+    default: {
+        // Unknown function - try to determine result type from funcresulttype
+        PGX_WARNING("Unknown function OID " + std::to_string(funcExpr->funcid) + ", creating placeholder");
+
+        // Map result type
+        PostgreSQLTypeMapper typeMapper(context_);
+        auto resultType = typeMapper.mapPostgreSQLType(funcExpr->funcresulttype, -1);
+
+        // For unknown functions, return first argument or a constant
+        if (!args.empty()) {
+            // Try to cast first argument to result type if needed
+            if (args[0].getType() != resultType) {
             }
-            // Implement absolute value using comparison and negation
-            // Since DB dialect doesn't have AbsOp, use arith operations
-            {
-                auto zero = builder_->create<mlir::arith::ConstantIntOp>(
-                    loc, 0, args[0].getType()
-                );
-                auto cmp = builder_->create<mlir::arith::CmpIOp>(
-                    loc, mlir::arith::CmpIPredicate::slt, args[0], zero
-                );
-                auto neg = builder_->create<mlir::arith::SubIOp>(
-                    loc, zero, args[0]
-                );
-                return builder_->create<mlir::arith::SelectOp>(
-                    loc, cmp, neg, args[0]
-                );
+            return args[0];
+        }
+        else {
+            // No arguments - return a constant of the result type
+            if (resultType.isIntOrIndex()) {
+                return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, resultType);
             }
-
-        case F_SQRT_FLOAT8:
-            if (args.size() != 1) {
-                PGX_ERROR("SQRT requires exactly 1 argument");
-                return nullptr;
+            else if (resultType.isa<mlir::FloatType>()) {
+                return builder_->create<mlir::arith::ConstantFloatOp>(loc,
+                                                                      llvm::APFloat(0.0),
+                                                                      resultType.cast<mlir::FloatType>());
             }
-            // Use math dialect sqrt (TODO: may need to add math dialect)
-            // For now, use a placeholder
-            PGX_WARNING("SQRT function not yet implemented in DB dialect");
-            return args[0];  // Pass through for now
-
-        case F_POWER_FLOAT8:
-            if (args.size() != 2) {
-                PGX_ERROR("POWER requires exactly 2 arguments");
-                return nullptr;
-            }
-            // TODO: Implement power operation in DB dialect
-            PGX_WARNING("POWER function not yet implemented in DB dialect");
-            return args[0];  // Return base for now
-
-        case F_UPPER:
-        case F_LOWER:
-            if (args.size() != 1) {
-                PGX_ERROR("String function requires exactly 1 argument");
-                return nullptr;
-            }
-            // TODO: String operations need string type support
-            PGX_WARNING("String functions not yet implemented");
-            return args[0];  // Pass through for now
-
-        case F_LENGTH:
-            if (args.size() != 1) {
-                PGX_ERROR("LENGTH requires exactly 1 argument");
-                return nullptr;
-            }
-            // TODO: Return string length as integer
-            PGX_WARNING("LENGTH function not yet implemented");
-            return builder_->create<mlir::arith::ConstantIntOp>(
-                loc, 0, builder_->getI32Type()
-            );
-
-        case F_CEIL_FLOAT8:
-        case F_FLOOR_FLOAT8:
-        case F_ROUND_FLOAT8:
-            if (args.size() != 1) {
-                PGX_ERROR("Rounding function requires exactly 1 argument");
-                return nullptr;
-            }
-            // TODO: Implement rounding operations in DB dialect
-            PGX_WARNING("Rounding functions not yet implemented in DB dialect");
-            return args[0];  // Pass through for now
-
-        default: {
-            // Unknown function - try to determine result type from funcresulttype
-            PGX_WARNING("Unknown function OID " + std::to_string(funcExpr->funcid) +
-                       ", creating placeholder");
-
-            // Map result type
-            PostgreSQLTypeMapper typeMapper(context_);
-            auto resultType = typeMapper.mapPostgreSQLType(funcExpr->funcresulttype, -1);
-
-            // For unknown functions, return first argument or a constant
-            if (!args.empty()) {
-                // Try to cast first argument to result type if needed
-                if (args[0].getType() != resultType) {
-                    // TODO: Add proper type casting
-                    PGX_DEBUG("Type mismatch in function result");
-                }
-                return args[0];
-            } else {
-                // No arguments - return a constant of the result type
-                if (resultType.isIntOrIndex()) {
-                    return builder_->create<mlir::arith::ConstantIntOp>(
-                        loc, 0, resultType
-                    );
-                } else if (resultType.isa<mlir::FloatType>()) {
-                    return builder_->create<mlir::arith::ConstantFloatOp>(
-                        loc, llvm::APFloat(0.0), resultType.cast<mlir::FloatType>()
-                    );
-                } else {
-                    // Default to i32 zero
-                    return builder_->create<mlir::arith::ConstantIntOp>(
-                        loc, 0, builder_->getI32Type()
-                    );
-                }
+            else {
+                // Default to i32 zero
+                return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, builder_->getI32Type());
             }
         }
+    }
     }
 }
 
@@ -2026,15 +1701,10 @@ auto PostgreSQLASTTranslator::translateAggref(Aggref* aggref) -> ::mlir::Value {
         return nullptr;
     }
 
-    PGX_DEBUG("Translating Aggref: aggfnoid=" + std::to_string(aggref->aggfnoid));
-
     // Aggregate functions are handled differently - they need to be in aggregation context
-    // For now, create a placeholder
     PGX_WARNING("Aggref translation requires aggregation context");
 
-    return builder_->create<mlir::arith::ConstantIntOp>(
-        builder_->getUnknownLoc(), 0, builder_->getI64Type()
-    );
+    return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI64Type());
 }
 
 auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> ::mlir::Value {
@@ -2042,8 +1712,6 @@ auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> ::mlir::V
         PGX_ERROR("Invalid NullTest parameters");
         return nullptr;
     }
-
-    PGX_DEBUG("Translating NullTest");
 
     // Translate the argument expression
     auto* argNode = reinterpret_cast<Node*>(nullTest->arg);
@@ -2053,16 +1721,11 @@ auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> ::mlir::V
         return nullptr;
     }
 
-    // Create IsNull operation using DB dialect
-    auto isNullOp = builder_->create<mlir::db::IsNullOp>(
-        builder_->getUnknownLoc(), argVal
-    );
+    auto isNullOp = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), argVal);
 
     // Handle IS NOT NULL case
     if (nullTest->nulltesttype == 1) { // IS_NOT_NULL
-        return builder_->create<mlir::db::NotOp>(
-            builder_->getUnknownLoc(), isNullOp
-        );
+        return builder_->create<mlir::db::NotOp>(builder_->getUnknownLoc(), isNullOp);
     }
 
     return isNullOp;
@@ -2074,135 +1737,125 @@ auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) 
         return nullptr;
     }
 
-    PGX_DEBUG("Translating CoalesceExpr");
-
     // COALESCE returns first non-null argument
-    // For now, create a placeholder
     PGX_WARNING("CoalesceExpr translation not fully implemented");
 
-    return builder_->create<mlir::arith::ConstantIntOp>(
-        builder_->getUnknownLoc(), 0, builder_->getI32Type()
-    );
+    return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
 }
 
 // PostgreSQL schema access helpers
 auto PostgreSQLASTTranslator::getTableNameFromRTE(int varno) -> std::string {
     if (!currentPlannedStmt_ || !currentPlannedStmt_->rtable || varno <= 0) {
-        PGX_WARNING("Cannot access rtable: currentPlannedStmt=" + 
-                   std::to_string(reinterpret_cast<uintptr_t>(currentPlannedStmt_)) +
-                   " varno=" + std::to_string(varno));
+        PGX_WARNING("Cannot access rtable: currentPlannedStmt="
+                    + std::to_string(reinterpret_cast<uintptr_t>(currentPlannedStmt_))
+                    + " varno=" + std::to_string(varno));
         return "test_arithmetic"; // Fallback for unit tests
     }
-    
+
     // Get RangeTblEntry from rtable using varno (1-based index)
     if (varno > list_length(currentPlannedStmt_->rtable)) {
-        PGX_WARNING("varno " + std::to_string(varno) + " exceeds rtable length " + 
-                   std::to_string(list_length(currentPlannedStmt_->rtable)));
+        PGX_WARNING("varno " + std::to_string(varno) + " exceeds rtable length "
+                    + std::to_string(list_length(currentPlannedStmt_->rtable)));
         return "test_arithmetic"; // Fallback for unit tests
     }
-    
-    RangeTblEntry* rte = static_cast<RangeTblEntry*>(
-        list_nth(currentPlannedStmt_->rtable, varno - 1));
-    
+
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, varno - 1));
+
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for varno " + std::to_string(varno));
         return "test_arithmetic"; // Fallback for unit tests
     }
-    
+
 #ifdef BUILDING_UNIT_TESTS
     // In unit test environment, use fallback table name
-    PGX_DEBUG("Unit test mode: using fallback table name test_arithmetic");
     return "test_arithmetic";
 #else
     // Get table name from PostgreSQL catalog (only in PostgreSQL environment)
     char* relname = get_rel_name(rte->relid);
     std::string tableName = relname ? relname : "test_arithmetic";
-    
-    PGX_DEBUG("Resolved varno " + std::to_string(varno) + " to table: " + tableName);
+
     return tableName;
 #endif
 }
 
 auto PostgreSQLASTTranslator::getColumnNameFromSchema(int varno, int varattno) -> std::string {
     if (!currentPlannedStmt_ || !currentPlannedStmt_->rtable || varno <= 0 || varattno <= 0) {
-        PGX_WARNING("Cannot access schema for column: varno=" + std::to_string(varno) + 
-                   " varattno=" + std::to_string(varattno));
+        PGX_WARNING("Cannot access schema for column: varno=" + std::to_string(varno)
+                    + " varattno=" + std::to_string(varattno));
         return "col_" + std::to_string(varattno);
     }
-    
+
     // Get RangeTblEntry
     if (varno > list_length(currentPlannedStmt_->rtable)) {
         PGX_WARNING("varno exceeds rtable length");
         return "col_" + std::to_string(varattno);
     }
-    
-    RangeTblEntry* rte = static_cast<RangeTblEntry*>(
-        list_nth(currentPlannedStmt_->rtable, varno - 1));
-    
+
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, varno - 1));
+
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for column lookup");
         return "col_" + std::to_string(varattno);
     }
-    
+
 #ifdef BUILDING_UNIT_TESTS
     // In unit test environment, use hardcoded column names for test_arithmetic table
-    if (varattno == 1) return "id";
-    if (varattno == 2) return "val1";
-    if (varattno == 3) return "val2";
+    if (varattno == 1)
+        return "id";
+    if (varattno == 2)
+        return "val1";
+    if (varattno == 3)
+        return "val2";
     return "col_" + std::to_string(varattno);
 #else
     // Get column name from PostgreSQL catalog (only in PostgreSQL environment)
     char* attname = get_attname(rte->relid, varattno, false);
     std::string columnName = attname ? attname : ("col_" + std::to_string(varattno));
-    
-    PGX_DEBUG("Resolved varno=" + std::to_string(varno) + " varattno=" + std::to_string(varattno) + 
-              " to column: " + columnName);
+
     return columnName;
 #endif
 }
 
 auto PostgreSQLASTTranslator::getAllTableColumnsFromSchema(int scanrelid) -> std::vector<ColumnInfo> {
     std::vector<ColumnInfo> columns;
-    
+
 #ifdef BUILDING_UNIT_TESTS
     // In unit test environment, return hardcoded schema for test_arithmetic table
     columns.emplace_back("id", INT4OID, -1, false);
-    PGX_DEBUG("Unit test mode: returning hardcoded test_arithmetic schema");
     return columns;
-#else    
+#else
     if (!currentPlannedStmt_ || !currentPlannedStmt_->rtable || scanrelid <= 0) {
         PGX_WARNING("Cannot access rtable for scanrelid " + std::to_string(scanrelid));
         return columns;
     }
-    
+
     // Get RangeTblEntry
     if (scanrelid > list_length(currentPlannedStmt_->rtable)) {
         PGX_WARNING("scanrelid exceeds rtable length");
         return columns;
     }
-    
-    RangeTblEntry* rte = static_cast<RangeTblEntry*>(
-        list_nth(currentPlannedStmt_->rtable, scanrelid - 1));
-    
+
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, scanrelid - 1));
+
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for table schema discovery");
         return columns;
     }
-    
+
     // Open relation to get schema information
     Relation rel = table_open(rte->relid, AccessShareLock);
     if (!rel) {
         PGX_ERROR("Failed to open relation " + std::to_string(rte->relid));
         return columns;
     }
-    
+
     TupleDesc tupleDesc = RelationGetDescr(rel);
     if (!tupleDesc) {
         PGX_ERROR("Failed to get tuple descriptor");
         table_close(rel, AccessShareLock);
         return columns;
     }
-    
+
     // Iterate through all table columns
     for (int i = 0; i < tupleDesc->natts; i++) {
         Form_pg_attribute attr = TupleDescAttr(tupleDesc, i);
@@ -2216,22 +1869,16 @@ auto PostgreSQLASTTranslator::getAllTableColumnsFromSchema(int scanrelid) -> std
         bool nullable = !attr->attnotnull;
 
         columns.push_back({colName, colType, typmod, nullable});
-
-        PGX_DEBUG("Found column: " + colName + " (type OID: " + std::to_string(colType)
-                  + ", typmod: " + std::to_string(typmod) + ", nullable: " + (nullable ? "true" : "false") + ")");
     }
 
-    
     table_close(rel, AccessShareLock);
-    
-    PGX_INFO("Discovered " + std::to_string(columns.size()) + " columns for scanrelid " + 
-             std::to_string(scanrelid));
+
+    PGX_INFO("Discovered " + std::to_string(columns.size()) + " columns for scanrelid " + std::to_string(scanrelid));
     return columns;
 #endif
 }
 
-auto createPostgreSQLASTTranslator(::mlir::MLIRContext& context) 
-    -> std::unique_ptr<PostgreSQLASTTranslator> {
+auto createPostgreSQLASTTranslator(::mlir::MLIRContext& context) -> std::unique_ptr<PostgreSQLASTTranslator> {
     return std::make_unique<PostgreSQLASTTranslator>(context);
 }
 

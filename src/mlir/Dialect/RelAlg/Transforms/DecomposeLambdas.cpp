@@ -7,6 +7,12 @@
 #include <unordered_set>
 
 namespace {
+using mlir::relalg::Operator;
+using mlir::relalg::BinaryOperator;
+using mlir::relalg::UnaryOperator;
+using mlir::relalg::TupleLamdaOperator;
+using mlir::relalg::PredicateOperator;
+
 class DecomposeLambdas : public ::mlir::PassWrapper<DecomposeLambdas, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-decompose-lambdas"; }
 

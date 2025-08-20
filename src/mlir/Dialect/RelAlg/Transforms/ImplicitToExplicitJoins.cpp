@@ -8,6 +8,11 @@
 #include "mlir/Pass/Pass.h"
 
 namespace {
+using mlir::relalg::Operator;
+using mlir::relalg::BinaryOperator;
+using mlir::relalg::UnaryOperator;
+using mlir::relalg::TupleLamdaOperator;
+using mlir::relalg::PredicateOperator;
 
 class ImplicitToExplicitJoins : public ::mlir::PassWrapper<ImplicitToExplicitJoins, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-implicit-to-explicit-joins"; }
