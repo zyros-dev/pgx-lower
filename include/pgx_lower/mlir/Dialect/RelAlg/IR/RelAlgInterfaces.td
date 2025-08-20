@@ -36,6 +36,7 @@ def Relalg_CmpOpInterface : OpInterface<"CmpOpInterface"> {
 }
 
 def Operator : OpInterface<"Operator"> {
+  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "get all columns that are used directly by this operator",
@@ -133,6 +134,7 @@ return mlir::relalg::ColumnSet();
 ];
 }
 def BinaryOperator : OpInterface<"BinaryOperator"> {
+  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "get all attributes that are used directly by this operator",
@@ -167,6 +169,7 @@ return this->getOperation()->getOperand(1).getDefiningOp();
 ];
 }
 def UnaryOperator : OpInterface<"UnaryOperator"> {
+  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "get all attributes that are used directly by this operator",
@@ -195,6 +198,7 @@ return mlir::relalg::detail::rPushable.contains(mlir::relalg::detail::getUnaryOp
 ];
 }
 def TupleLamdaOperator : OpInterface<"TupleLamdaOperator"> {
+  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "",
@@ -218,6 +222,7 @@ return this->getOperation()->getRegion(0).getArgument(0);
 >];
 }
 def PredicateOperator : OpInterface<"PredicateOperator"> {
+  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "",
