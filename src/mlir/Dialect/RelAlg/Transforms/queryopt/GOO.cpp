@@ -4,7 +4,7 @@ static std::shared_ptr<mlir::relalg::Plan> createInitialPlan(mlir::relalg::Query
    if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
       description = baseTableOp.getTableIdentifier().str();
    }
-   auto currPlan = std::make_shared<mlir::relalg::Plan>(n.op, std::vector<std::shared_ptr<mlir::relalg::Plan>>({}), std::vector<Operator>({n.additionalPredicates}), n.rows * n.selectivity);
+   auto currPlan = std::make_shared<mlir::relalg::Plan>(n.op, std::vector<std::shared_ptr<mlir::relalg::Plan>>({}), std::vector<mlir::relalg::Operator>({n.additionalPredicates}), n.rows * n.selectivity);
    currPlan->setDescription(description);
    return currPlan;
 }

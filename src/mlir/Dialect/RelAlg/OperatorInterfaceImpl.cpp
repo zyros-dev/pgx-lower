@@ -7,18 +7,18 @@
 #include <functional>
 #include <unordered_set>
 using namespace ::mlir::relalg;
-using operator_list = llvm::SmallVector<Operator, 4>;
+using operator_list = llvm::SmallVector<mlir::relalg::Operator, 4>;
 static operator_list getChildOperators(::mlir::Operation* parent) {
    operator_list children;
    for (auto operand : parent->getOperands()) {
-      if (auto childOperator = mlir::dyn_cast_or_null<Operator>(operand.getDefiningOp())) {
+      if (auto childOperator = mlir::dyn_cast_or_null<mlir::relalg::Operator>(operand.getDefiningOp())) {
          children.push_back(childOperator);
       }
    }
    return children;
 }
 
-static ColumnSet collectColumns(operator_list operators, std::function<ColumnSet(Operator)> fn) {
+static ColumnSet collectColumns(operator_list operators, std::function<ColumnSet(mlir::relalg::Operator)> fn) {
    ColumnSet collected;
    for (auto op : operators) {
       auto res = fn(op);

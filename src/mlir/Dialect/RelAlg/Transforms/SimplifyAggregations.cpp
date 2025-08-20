@@ -7,6 +7,12 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
+using mlir::relalg::Operator;
+using mlir::relalg::BinaryOperator;
+using mlir::relalg::UnaryOperator;
+using mlir::relalg::TupleLamdaOperator;
+using mlir::relalg::PredicateOperator;
+
 //Pattern that optimizes the join order
 class WrapAggrFuncPattern : public mlir::RewritePattern {
    public:

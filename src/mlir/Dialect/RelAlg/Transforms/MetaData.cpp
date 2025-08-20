@@ -6,6 +6,12 @@
 #include "mlir/Pass/Pass.h"
 #include "runtime/Database.h"
 namespace {
+using mlir::relalg::Operator;
+using mlir::relalg::BinaryOperator;
+using mlir::relalg::UnaryOperator;
+using mlir::relalg::TupleLamdaOperator;
+using mlir::relalg::PredicateOperator;
+
 class AttachMetaData : public ::mlir::PassWrapper<AttachMetaData, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-attach-meta-data"; }
    runtime::Database& db;

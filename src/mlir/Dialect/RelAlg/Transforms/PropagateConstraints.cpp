@@ -12,6 +12,12 @@
 
 namespace {
 using ReplaceFnT = std::function<mlir::relalg::ColumnRefAttr(mlir::relalg::ColumnRefAttr)>;
+using mlir::relalg::Operator;
+using mlir::relalg::BinaryOperator;
+using mlir::relalg::UnaryOperator;
+using mlir::relalg::TupleLamdaOperator;
+using mlir::relalg::PredicateOperator;
+
 mlir::Attribute updateAttribute(::mlir::Attribute attr, ReplaceFnT replaceFn) {
    if (auto colRefAttr = attr.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>()) {
       return replaceFn(colRefAttr);
