@@ -65,8 +65,8 @@ mlir::relalg::detail::moveSubTreeBefore(this->getOperation(),before);
 >,
 InterfaceMethod<
         "get children of operator",
-        "llvm::SmallVector<Operator,4>", "getChildren",(ins ),"", /*defaultImplementation=*/[{
-    llvm::SmallVector<Operator,4> children;
+        "llvm::SmallVector<mlir::relalg::Operator,4>", "getChildren",(ins ),"", /*defaultImplementation=*/[{
+    llvm::SmallVector<mlir::relalg::Operator,4> children;
     auto op=this->getOperation();
     for (auto operand : op->getOperands()) {
         mlir::Type t=operand.getType();
@@ -84,9 +84,9 @@ InterfaceMethod<
 >,
 InterfaceMethod<
         "get children of operator",
-        "llvm::SmallVector<Operator,4>", "getAllSubOperators",(ins ),"", /*defaultImplementation=*/[{
-    llvm::SmallVector<Operator,4> suboperators;
-    suboperators.push_back(mlir::dyn_cast_or_null<Operator>(this->getOperation()));
+        "llvm::SmallVector<mlir::relalg::Operator,4>", "getAllSubOperators",(ins ),"", /*defaultImplementation=*/[{
+    llvm::SmallVector<mlir::relalg::Operator,4> suboperators;
+    suboperators.push_back(mlir::cast<mlir::relalg::Operator>(this->getOperation()));
     auto children=this->getChildren();
     for (auto child : children) {
         auto subsub=child.getAllSubOperators();
@@ -97,7 +97,7 @@ InterfaceMethod<
 >,
 InterfaceMethod<
         "set children of operator",
-        "void ", "setChildren",(ins "llvm::SmallVector<Operator,4>":$children),"", /*defaultImplementation=*/[{
+        "void ", "setChildren",(ins "llvm::SmallVector<mlir::relalg::Operator,4>":$children),"", /*defaultImplementation=*/[{
     auto op=this->getOperation();
     size_t i=0;
     size_t j=0;
