@@ -44,8 +44,6 @@ if(ENABLE_COVERAGE)
     endif()
 endif()
 
-# Note: MLIR headers may produce C++20 ambiguity warnings, but they're not critical
-# Disable specific warnings that cause build failures with LLVM 20 and C++20
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # Clang specific warning suppression
     add_compile_options(-Wno-ambiguous-reversed-operator)
@@ -84,15 +82,17 @@ include_directories(${MLIR_TABLEGEN_OUTPUT_DIR})
 
 include(PostgreSQLExtension)
 
-# Include directories for the flattened structure
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_BINARY_DIR}/include  # For both runtime-defs and generated headers
+    ${CMAKE_BINARY_DIR}/include
     ${PostgreSQL_INCLUDE_DIRS}
     ${PostgreSQL_SERVER_INCLUDE_DIRS}
 )
 
 enable_testing()
+
+# Enable compile commands export for IDE/linter integration
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Global preprocessor definition for CLion linting support
 # This ensures ifdef POSTGRESQL_EXTENSION blocks are properly linted
@@ -145,32 +145,25 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
         "tests/unit/runtime/*.cpp"
         "tests/unit/logging/*.cpp"
         "tests/unit/dialects/*.cpp"
-        "tests/unit/dialect_dsa/*.cpp"  # Added for new DSA operations tests
+        "tests/unit/dialect_dsa/*.cpp"
         "tests/unit/frontend/*.cpp"
         "tests/unit/conversion/*.cpp"
-        "tests/unit/mlir/*.cpp"  # Added for pass pipeline tests
-        "tests/unit/execution/*.cpp"  # Added for JIT execution engine tests
+        "tests/unit/mlir/*.cpp"
+        "tests/unit/execution/*.cpp"
     )
-    # mlir_runner_test.cpp now included - minimal MLIR context and dialect loading implemented
-    
-    # NOTE: test_expression_handling.cpp and test_runtime_wrapper_pattern.cpp
-    # temporarily removed due to clean slate refactor - they reference deleted MLIR components
-    # Will be restored once basic dialects are rebuilt
-    
+
     # Build list of additional sources based on configuration
     set(UNIT_TEST_ADDITIONAL_SOURCES
         src/frontend/SQL/query_analyzer.cpp
         src/frontend/SQL/postgresql_ast_translator.cpp
             src/utility/error_handling.cpp
         src/execution/mlir_runner.cpp
-            src/execution/jit_engine/jit_execution_engine.cpp  # Phase 4g-2a JIT infrastructure
-            src/execution/jit_engine/jit_execution_wrapper.cpp  # Phase 4g-2c header isolation
+            src/execution/jit_engine/jit_execution_engine.cpp
+            src/execution/jit_engine/jit_execution_wrapper.cpp
         src/utility/logging.cpp
         src/utility/logging_tools.cpp
         src/runtime/helpers.cpp
-        src/mlir/Passes.cpp  # Centralized pass pipeline
-        # Note: PostgreSQL runtime files require full PostgreSQL runtime
-        # and cannot be easily compiled in unit test environment
+        src/mlir/Passes.cpp
     )
     
     

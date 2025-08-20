@@ -9,8 +9,6 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h.inc>
 
-// Example PostgreSQL executor header file
-
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -27,21 +27,17 @@ struct QueryCapabilities {
     bool hasCompatibleTypes = false; // All column types are MLIR-compatible
     bool hasExpressions = false; // Contains computed expressions (arithmetic, functions, etc.)
 
-    // Check if MLIR can handle this combination
     [[nodiscard]] auto isMLIRCompatible() const -> bool;
 
-    // Get human-readable description
     [[nodiscard]] auto getDescription() const -> std::string;
 };
 
 class QueryAnalyzer {
    public:
-// Analyze a PostgreSQL plan node
 #ifdef POSTGRESQL_EXTENSION
     static QueryCapabilities analyzePlan(const PlannedStmt* stmt);
     static QueryCapabilities analyzeNode(const Plan* plan);
     
-    // Tree analysis and logging
     static void logExecutionTree(Plan* rootPlan);
     static bool validateAndLogPlanStructure(const PlannedStmt* stmt);
 #endif

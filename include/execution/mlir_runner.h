@@ -38,18 +38,11 @@ using ExternalFunction = std::function<int64_t()>;
 bool initialize_mlir_context(::mlir::MLIRContext& context);
 bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
 
-// JIT Execution (forward declaration only - avoid including complex MLIR types)
 bool executeJITWithDestReceiver(mlir::ModuleOp module, EState* estate, DestReceiver* dest);
 
-// PostgreSQL Integration - New AST-based translation (replaces ColumnExpression approach)
 auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool;
 
-// PostgreSQL Integration with EState memory context support
 auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext) -> bool;
-
-// PostgreSQL Integration with DestReceiver for result streaming (Phase 4g-2c)
-// Note: DestReceiver forward declaration is handled in the implementation file to avoid header conflicts
-
 } // namespace mlir_runner
 
 #endif // MLIR_RUNNER_H

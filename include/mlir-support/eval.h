@@ -8,8 +8,6 @@
 #include <variant>
 #include <vector>
 
-// #include <arrow/compute/type_fwd.h>
-// #include <arrow/type_fwd.h>
 namespace support::eval {
 struct Expr {
    virtual ~Expr() = default;
