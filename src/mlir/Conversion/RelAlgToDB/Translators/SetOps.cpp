@@ -3,8 +3,9 @@
 #include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
 class SetOpTranslator : public mlir::relalg::Translator {
-   Operator unionOp;
+   mlir::relalg::Operator unionOp;
    std::unordered_map<const mlir::relalg::Column*, const mlir::relalg::Column*> leftMapping;
    std::unordered_map<const mlir::relalg::Column*, const mlir::relalg::Column*> rightMapping;
 
@@ -13,7 +14,7 @@ class SetOpTranslator : public mlir::relalg::Translator {
    mlir::TupleType tupleType;
 
    public:
-   SetOpTranslator(Operator unionOp) : mlir::relalg::Translator(unionOp), unionOp(unionOp) {
+   SetOpTranslator(mlir::relalg::Operator unionOp) : mlir::relalg::Translator(unionOp), unionOp(unionOp) {
    }
    virtual void setInfo(mlir::relalg::Translator* consumer, mlir::relalg::ColumnSet requiredAttributes) override {
       this->consumer = consumer;
@@ -200,8 +201,8 @@ class CountingSetTranslator : public SetOpTranslator {
    mlir::TupleType aggrTupleType;
 
    public:
-   CountingSetTranslator(mlir::relalg::IntersectOp intersectOp) : SetOpTranslator(intersectOp), loc(intersectOp->getLoc()), distinct(intersectOp.getSetSemantic() == mlir::relalg::SetSemantic::distinct), except(false) {}
-   CountingSetTranslator(mlir::relalg::ExceptOp exceptOp) : SetOpTranslator(exceptOp), loc(exceptOp->getLoc()), distinct(exceptOp.getSetSemantic() == mlir::relalg::SetSemantic::distinct), except(true) {}
+   CountingSetTranslator(mlir::relalg::IntersectOp intersectOp) : SetOpTranslator(mlir::cast<mlir::relalg::Operator>(intersectOp.getOperation())), loc(intersectOp->getLoc()), distinct(intersectOp.getSetSemantic() == mlir::relalg::SetSemantic::distinct), except(false) {}
+   CountingSetTranslator(mlir::relalg::ExceptOp exceptOp) : SetOpTranslator(mlir::cast<mlir::relalg::Operator>(exceptOp.getOperation())), loc(exceptOp->getLoc()), distinct(exceptOp.getSetSemantic() == mlir::relalg::SetSemantic::distinct), except(true) {}
 
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       size_t updateWhich = child == children[0].get() ? 0 : 1;
