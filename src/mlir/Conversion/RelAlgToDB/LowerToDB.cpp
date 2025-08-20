@@ -50,7 +50,7 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
       
       for (auto* op : translationHooks) {
          if (!llvm::isa<mlir::relalg::MaterializeOp>(op)) {
-            PGX_ERROR("RelAlg→DB Pass: Expected MaterializeOp but got: " + op->getName().getStringRef().str());
+            PGX_ERROR("RelAlgDB Pass: Expected MaterializeOp but got: " + op->getName().getStringRef().str());
             continue;
          }
          

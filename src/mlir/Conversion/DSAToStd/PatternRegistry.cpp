@@ -36,10 +36,7 @@ void registerAllDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet
     mlir::dsa::populateScalarToStdPatterns(typeConverter, patterns);
     
     // TEMPORARILY DISABLED: These patterns cause memory corruption in Test 9 arithmetic operations
-    // The crash occurs AFTER DSA→Standard lowering reports success, during PostgreSQL backend cleanup
-    // This indicates C++ exceptions or memory corruption in DSA pattern implementations
     // TODO: Re-enable one by one to isolate the specific problematic pattern
-    // mlir::dsa::populateDSAToStdPatterns(typeConverter, patterns);
     // mlir::dsa::populateCollectionsToStdPatterns(typeConverter, patterns);
     
     // Utility patterns  

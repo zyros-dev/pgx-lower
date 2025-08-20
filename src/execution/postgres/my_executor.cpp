@@ -61,11 +61,7 @@ ExprContext* CreateExprContext(EState* estate);
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
-// PsqlMemoryContextGuard removed - using PostgreSQL-safe PG_TRY/PG_CATCH instead
-// RAII patterns can be bypassed by PostgreSQL's longjmp error handling
-
 void logQueryDebugInfo(const PlannedStmt* stmt) {
-    // Debug targetList availability
     PGX_INFO("=== run_mlir_with_ast_translation: Query info ===");
     PGX_INFO("PlannedStmt ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt)));
     PGX_INFO("planTree ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree)));
@@ -109,7 +105,6 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
                 // uses store_int_result which populates g_computed_results
                 // TODO Phase 6: Eventually fix this to use table columns directly
 
-                // Count actual number of columns selected
                 int numSelectedColumns = 0;
                 ListCell* lc2;
                 foreach (lc2, targetList) {
@@ -121,19 +116,17 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
 
                 selectedColumns.clear();
                 for (int i = 0; i < numSelectedColumns; i++) {
-                    selectedColumns.push_back(-1); // -1 indicates computed result
+                    selectedColumns.push_back(-1);
                 }
                 PGX_INFO("Configured for table column results via computed storage (temporary solution) - "
                          + std::to_string(numSelectedColumns) + " columns");
             }
         }
         else {
-            // Fallback: assume first column
             selectedColumns = {0};
         }
     }
     else {
-        // Fallback: assume first column
         selectedColumns = {0};
     }
 
@@ -401,8 +394,7 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
 #ifdef POSTGRESQL_EXTENSION
     const auto capabilities = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
 
-    // 📊 ALWAYS log execution tree regardless of compatibility for comprehensive data collection
-    PGX_INFO("📊 FORCING tree logging for all queries in comprehensive collection mode");
+    PGX_INFO(" FORCING tree logging for all queries in comprehensive collection mode");
     pgx_lower::QueryAnalyzer::validateAndLogPlanStructure(stmt);
 #else
     auto capabilities = pgx_lower::QueryAnalyzer::analyzeForTesting("test query");
@@ -413,11 +405,7 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
         return false;
     }
 
-    // Pass null scanDesc since AST translation doesn't use it
     bool mlir_success = run_mlir_with_ast_translation(plan);
-
-    // AST translation is the primary and only method now
-    // No table cleanup needed since JIT handled it
 
     PGX_INFO("MyCppExecutor::execute completed, returning " + std::string(mlir_success ? "true" : "false"));
     return mlir_success;

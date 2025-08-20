@@ -5,8 +5,8 @@
 // Signal handling and C library includes for comprehensive exception handling
 #include <csignal>
 #include <cstdlib>
-#include <execinfo.h> // For backtrace functions
-#include <cxxabi.h> // For name demangling
+#include <execinfo.h>
+#include <cxxabi.h>
 
 // Phase-specific includes
 #include "mlir/Pass/PassManager.h"
@@ -37,11 +37,10 @@ class Phase3bMemoryGuard;
 
 namespace mlir_runner {
 
-// Forward declarations from main runner
 extern void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title);
 extern bool validateModuleState(::mlir::ModuleOp module, const std::string& phase);
 
-// Phase 3a: RelAlg→DB+DSA+Util lowering
+// Phase 3a: RelAlg->DB+DSA+Util lowering
 bool runPhase3a(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
     context.disableMultithreading();
@@ -65,18 +64,18 @@ bool runPhase3a(::mlir::ModuleOp module) {
     {
 #endif
         if (mlir::failed(pm.run(module))) {
-            PGX_ERROR("Phase 3a failed: RelAlg→DB lowering error");
+            PGX_ERROR("Phase 3a failed: RelAlgDB lowering error");
             pmRunSucceeded = false;
         }
         else {
-            PGX_INFO("Phase 3a (phases): RelAlg→DB PassManager run SUCCEEDED");
+            PGX_INFO("Phase 3a (phases): RelAlgDB PassManager run SUCCEEDED");
             pmRunSucceeded = true;
         }
 #ifndef BUILDING_UNIT_TESTS
     }
     PG_CATCH();
     {
-        PGX_ERROR("Phase 3a (phases): PostgreSQL exception caught during RelAlg→DB PassManager run");
+        PGX_ERROR("Phase 3a (phases): PostgreSQL exception caught during RelAlgDB PassManager run");
         pmRunSucceeded = false;
         // Re-throw to let PostgreSQL handle the cleanup
         PG_RE_THROW();
@@ -130,21 +129,20 @@ bool runPhase3b(::mlir::ModuleOp module) {
             return false;
         }
 
-        dumpModuleWithStats(module, "MLIR after RelAlg→DB lowering");
+        dumpModuleWithStats(module, "MLIR after RelAlgDB lowering");
 
         ::mlir::PassManager pm(&context);
         pm.enableVerifier(true);
 
         mlir::pgx_lower::createDBToStandardPipeline(pm, false);
-        pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DB→Standard lowering"));
+        pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DBStandard lowering"));
         pm.addPass(mlir::createCanonicalizerPass());
         pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after db->standard canon pass"));
         mlir::pgx_lower::createDSAToStandardPipeline(pm, false);
-        pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DSA→Standard lowering"));
+        pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DSAStandard lowering"));
         pm.addPass(mlir::createCanonicalizerPass());
         pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after dsa->standard canon pass"));
 
-        // Multi-layer exception protection around PassManager run
         bool pmRunSucceeded = false;
 
         // Install signal handlers to catch crashes during PassManager setup
@@ -182,7 +180,6 @@ bool runPhase3b(::mlir::ModuleOp module) {
             }
             PGX_ERROR("=== END STACK TRACE ===");
 
-            // Log additional context
             PGX_ERROR("Context: Crash during MLIR PassManager.run() before first pass execution");
             PGX_ERROR("Last successful operation: 'About to run db+dsa->standard pass'");
             PGX_ERROR("Pipeline: createDBToStandardPipeline + createDSAToStandardPipeline");
@@ -239,7 +236,7 @@ bool runPhase3b(::mlir::ModuleOp module) {
         PG_CATCH();
         {
             PGX_ERROR("Phase 3b: PostgreSQL exception caught during unified PassManager run");
-            PGX_ERROR("Phase 3b: This indicates memory corruption during DB+DSA→Standard lowering");
+            PGX_ERROR("Phase 3b: This indicates memory corruption during DB+DSAStandard lowering");
             pmRunSucceeded = false;
             // Re-throw to let PostgreSQL handle the cleanup
             PG_RE_THROW();
@@ -271,7 +268,7 @@ bool runPhase3b(::mlir::ModuleOp module) {
     }
 }
 
-// Phase 3c: Standard→LLVM lowering
+// Phase 3c: StandardLLVM lowering
 bool runPhase3c(::mlir::ModuleOp module) {
     if (!module) {
         PGX_ERROR("Phase 3c: Module is null!");
@@ -279,7 +276,7 @@ bool runPhase3c(::mlir::ModuleOp module) {
     }
 
     if (!validateModuleState(module, "Phase 3c input")) {
-        PGX_ERROR("Phase 3c: Invalid module state before Standard→LLVM lowering");
+        PGX_ERROR("Phase 3c: Invalid module state before StandardLLVM lowering");
         return false;
     }
 
@@ -312,7 +309,7 @@ bool runPhase3c(::mlir::ModuleOp module) {
 
         dumpModuleWithStats(module, "MLIR before standard -> llvm");
         if (mlir::failed(pm.run(module))) {
-            PGX_ERROR("Phase 3c failed: Standard→LLVM lowering error");
+            PGX_ERROR("Phase 3c failed: StandardLLVM lowering error");
             success = false;
         }
         else {
@@ -330,7 +327,7 @@ bool runPhase3c(::mlir::ModuleOp module) {
 #ifndef BUILDING_UNIT_TESTS
     PG_CATCH();
     {
-        PGX_ERROR("Phase 3c: PostgreSQL exception caught during Standard→LLVM lowering");
+        PGX_ERROR("Phase 3c: PostgreSQL exception caught during StandardLLVM lowering");
         PG_RE_THROW();
     }
     PG_END_TRY();
@@ -344,11 +341,9 @@ bool runPhase3c(::mlir::ModuleOp module) {
         return false;
     }
 
-    // Enhanced verification: ensure all operations are LLVM dialect
     bool hasNonLLVMOps = false;
     module->walk([&](mlir::Operation* op) {
         if (!mlir::isa<mlir::ModuleOp>(op) && op->getDialect() && op->getDialect()->getNamespace() != "llvm") {
-            // Special handling for func dialect which is allowed
             if (op->getDialect()->getNamespace() != "func") {
                 hasNonLLVMOps = true;
             }
@@ -363,7 +358,6 @@ bool runPhase3c(::mlir::ModuleOp module) {
     return true;
 }
 
-// Complete lowering pipeline coordinator
 bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
     if (!runPhase3a(module)) {
         PGX_ERROR("Phase 3a failed");

@@ -93,7 +93,6 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
     filename << "/tmp/pgx_lower_" << title << "_" << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S") << ".mlir";
 
     try {
-        // Collect comprehensive module statistics
         std::map<std::string, int> dialectCounts;
         std::map<std::string, int> operationCounts;
         std::map<std::string, int> typeCounts;

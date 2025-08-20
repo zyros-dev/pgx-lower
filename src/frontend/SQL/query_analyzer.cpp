@@ -59,22 +59,22 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         for (size_t i = 1; i < features.size(); ++i) {
             feature_list += "+" + features[i];
         }
-        PGX_INFO("📋 Query features: " + feature_list);
+        PGX_INFO(" Query features: " + feature_list);
     }
     else {
-        PGX_INFO("📋 Query features: None detected");
+        PGX_INFO(" Query features: None detected");
     }
 
-    // ✅ ENABLE MLIR COMPILATION: Test if pipeline works for basic SELECT+SeqScan queries
+    //  ENABLE MLIR COMPILATION: Test if pipeline works for basic SELECT+SeqScan queries
     bool compatible = isSelectStatement && requiresSeqScan && hasCompatibleTypes && !requiresJoin
                       && !requiresAggregation && !requiresSort && !requiresLimit;
 
     if (compatible) {
-        PGX_INFO("🎯 MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");
+        PGX_INFO(" MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");
         return true;
     }
     else {
-        PGX_INFO("📊 DATA COLLECTION: Query too complex for current MLIR implementation");
+        PGX_INFO(" DATA COLLECTION: Query too complex for current MLIR implementation");
         return false;
     }
 }
@@ -429,10 +429,10 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
             // Print children with tree formatting
             if (plan->lefttree || plan->righttree) {
                 if (plan->lefttree) {
-                    printPlanTree(plan->lefttree, depth + 1, indent + "├─ ");
+                    printPlanTree(plan->lefttree, depth + 1, indent + " ");
                 }
                 if (plan->righttree) {
-                    printPlanTree(plan->righttree, depth + 1, indent + "└─ ");
+                    printPlanTree(plan->righttree, depth + 1, indent + " ");
                 }
             }
         };
@@ -454,31 +454,31 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
     if (rootPlan->type == T_SeqScan) {
         // Pattern 1: Simple table scan
         scanPlan = rootPlan;
-        PGX_INFO("✅ ACCEPTED: Simple SeqScan query");
+        PGX_INFO(" ACCEPTED: Simple SeqScan query");
     }
     else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
         // Pattern 2: Aggregation with SeqScan
         scanPlan = rootPlan->lefttree;
-        PGX_INFO("✅ ACCEPTED: Aggregate query with SeqScan source");
+        PGX_INFO(" ACCEPTED: Aggregate query with SeqScan source");
     }
     else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_Gather) {
-        // Pattern 3: Parallel aggregation (Agg → Gather → Agg → SeqScan)
+        // Pattern 3: Parallel aggregation (Agg  Gather  Agg  SeqScan)
         auto* gatherPlan = rootPlan->lefttree;
         if (gatherPlan->lefttree && gatherPlan->lefttree->type == T_Agg) {
             auto* innerAggPlan = gatherPlan->lefttree;
             if (innerAggPlan->lefttree && innerAggPlan->lefttree->type == T_SeqScan) {
                 scanPlan = innerAggPlan->lefttree;
-                PGX_INFO("✅ ACCEPTED: Parallel aggregate query (Agg→Gather→Agg→SeqScan)");
+                PGX_INFO(" ACCEPTED: Parallel aggregate query (AggGatherAggSeqScan)");
             }
         }
 
         if (!scanPlan) {
-            PGX_INFO("⚠️ PARTIAL SUPPORT: Gather pattern recognized but structure unexpected");
+            PGX_INFO(" PARTIAL SUPPORT: Gather pattern recognized but structure unexpected");
             // Still accept it for now to allow testing
         }
     }
     else {
-        PGX_INFO("⚠️ UNKNOWN PATTERN: Accepting for testing but may need implementation");
+        PGX_INFO(" UNKNOWN PATTERN: Accepting for testing but may need implementation");
         // Accept unknown patterns for comprehensive testing
     }
 
@@ -487,18 +487,18 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
         const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
         const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
 
-        PGX_INFO("📊 Table OID: " + std::to_string(rte->relid));
+        PGX_INFO(" Table OID: " + std::to_string(rte->relid));
 
         // Set the global table OID for JIT runtime access
         g_jit_table_oid = rte->relid;
-        PGX_INFO("🔗 Set g_jit_table_oid to: " + std::to_string(g_jit_table_oid));
+        PGX_INFO(" Set g_jit_table_oid to: " + std::to_string(g_jit_table_oid));
     }
     else {
-        PGX_INFO("⚠️ No scan plan extracted - query may not access tables directly");
+        PGX_INFO(" No scan plan extracted - query may not access tables directly");
     }
 
     // ACCEPT ALL PATTERNS from the 30 test cases for comprehensive testing
-    PGX_INFO("🎯 QUERY ACCEPTED: Proceeding to MLIR compilation pipeline");
+    PGX_INFO(" QUERY ACCEPTED: Proceeding to MLIR compilation pipeline");
     return true;
 }
 

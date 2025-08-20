@@ -151,7 +151,7 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
         
         struct RecordBatchInfo {
             size_t numRows;           // Element 0: number of rows
-            ColumnInfo columnInfo[2]; // Elements 1-10: 2 columns × 5 fields each
+            ColumnInfo columnInfo[2]; // Elements 1-10: 2 columns  5 fields each
         } __attribute__((packed)) *batchInfo = (RecordBatchInfo*)row_data;
         
         batchInfo->numRows = 1;

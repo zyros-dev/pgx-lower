@@ -601,7 +601,6 @@ bool PostgreSQLJITExecutionEngine::invokeCompiledFunction(void* funcPtr, void* e
         executionSuccess = true;
         PGX_INFO("JIT function execution completed");
 
-        // CRITICAL FIX: DO NOT switch context here!
         // PostgreSQL still needs access to JIT-allocated data.
         // and PostgreSQL has finished processing all tuples.
 

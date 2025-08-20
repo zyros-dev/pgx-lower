@@ -5,7 +5,6 @@
 #include "executor/executor.h"
 #include "fmgr.h"
 #include "postgres.h"
-// Removed signal.h, execinfo.h, unistd.h - not needed without custom signal handler
 
 PG_MODULE_MAGIC;
 
@@ -44,12 +43,9 @@ void _PG_init(void) {
     prev_ExecutorRun_hook = ExecutorRun_hook;
     ExecutorRun_hook = custom_executor;
 
-    // CRITICAL FIX: Set LOAD detection flag
     g_extension_after_load = true;
     PGX_NOTICE_C("LOAD detection flag set - memory context protection enabled");
 
-    // Initialize MLIR pass registration
-    // This needs to be done once at startup to ensure passes can be created
     PGX_NOTICE_C("Initializing MLIR pass registration...");
     extern void initialize_mlir_passes(void);
     initialize_mlir_passes();

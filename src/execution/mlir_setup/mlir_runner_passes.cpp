@@ -1,5 +1,3 @@
-// to avoid PostgreSQL's 'restrict' macro pollution
-
 // Basic MLIR infrastructure first
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinDialect.h"
@@ -35,7 +33,6 @@
 #include "execution/mlir_runner.h"
 #include "execution/logging.h"
 
-// Pass registration function - isolated to minimize template explosion impact
 extern "C" void initialize_mlir_passes() {
     try {
         mlir::registerAllPasses();

@@ -599,10 +599,10 @@ bool g_jit_results_ready = false;
 
 // Mark results as ready for streaming (called from JIT)
 extern "C" void mark_results_ready_for_streaming() {
-    PGX_NOTICE("🎯 CRITICAL: mark_results_ready_for_streaming called from JIT!");
-    PGX_NOTICE("🎯 BEFORE: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
+    PGX_NOTICE(" CRITICAL: mark_results_ready_for_streaming called from JIT!");
+    PGX_NOTICE(" BEFORE: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
     g_jit_results_ready = true;
-    PGX_NOTICE("🎯 AFTER: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
+    PGX_NOTICE(" AFTER: g_jit_results_ready = " + std::to_string(g_jit_results_ready));
     PGX_NOTICE("Results marked as ready for streaming");
     
     // Add some validation
@@ -610,7 +610,7 @@ extern "C" void mark_results_ready_for_streaming() {
     if (g_computed_results.numComputedColumns > 0) {
         PGX_TRACE("Validation: First computed value = " + std::to_string(DatumGetInt64(g_computed_results.computedValues[0])));
     }
-    PGX_NOTICE("🎯 CRITICAL: mark_results_ready_for_streaming completed - returning to JIT");
+    PGX_NOTICE(" CRITICAL: mark_results_ready_for_streaming completed - returning to JIT");
 }
 
 //===----------------------------------------------------------------------===//
@@ -807,7 +807,7 @@ extern "C" void* DataSource_get(runtime::VarLen32 description) {
 }
 
 // Pipeline architecture restored - expression computation now flows through:
-// PostgreSQL AST → RelAlg → DB → DSA → LLVM IR → JIT
+// PostgreSQL AST  RelAlg  DB  DSA  LLVM IR  JIT
 // All hardcoded expression shortcuts have been removed
 
 //===----------------------------------------------------------------------===//
