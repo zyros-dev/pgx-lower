@@ -16,67 +16,6 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
-// PostgreSQL error handling (only include when not building unit tests)
-#ifndef BUILDING_UNIT_TESTS
-extern "C" {
-#include "postgres.h"
-#include "miscadmin.h"
-#include "utils/memutils.h"
-#include "utils/elog.h"
-#include "utils/errcodes.h"
-#include "executor/executor.h"
-#include "nodes/execnodes.h"
-}
-
-#ifdef restrict
-#define PG_RESTRICT_SAVED restrict
-#undef restrict
-#endif
-
-class Phase3bMemoryGuard {
-   private:
-    MemoryContext phase3b_context_;
-    MemoryContext old_context_;
-    bool active_;
-
-   public:
-    Phase3bMemoryGuard()
-    : phase3b_context_(nullptr)
-    , old_context_(nullptr)
-    , active_(false) {
-        phase3b_context_ = AllocSetContextCreate(CurrentMemoryContext, "Phase3bContext", ALLOCSET_DEFAULT_SIZES);
-        old_context_ = MemoryContextSwitchTo(phase3b_context_);
-        active_ = true;
-    }
-
-    ~Phase3bMemoryGuard() {
-        if (active_) {
-            MemoryContextSwitchTo(old_context_);
-            MemoryContextDelete(phase3b_context_);
-        }
-    }
-
-    void deactivate() {
-        if (active_) {
-            MemoryContextSwitchTo(old_context_);
-            MemoryContextDelete(phase3b_context_);
-            active_ = false;
-        }
-    }
-
-    Phase3bMemoryGuard(const Phase3bMemoryGuard&) = delete;
-    Phase3bMemoryGuard& operator=(const Phase3bMemoryGuard&) = delete;
-    Phase3bMemoryGuard(Phase3bMemoryGuard&&) = delete;
-    Phase3bMemoryGuard& operator=(Phase3bMemoryGuard&&) = delete;
-};
-
-#ifdef PG_RESTRICT_SAVED
-#define restrict PG_RESTRICT_SAVED
-#undef PG_RESTRICT_SAVED
-#endif
-
-#endif
-
 namespace mlir_runner {
 
 // Module statistics and debugging utilities

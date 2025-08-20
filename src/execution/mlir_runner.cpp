@@ -135,8 +135,35 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
             return false;
         }
 
-        // Phase 2-3: Run complete lowering pipeline
-        if (!runCompleteLoweringPipeline(*module)) {
+        // Phase 2-3: Run complete lowering pipeline with PostgreSQL safety wrapper
+        bool pipelineSuccess = false;
+#ifndef BUILDING_UNIT_TESTS
+        PG_TRY();
+        {
+#endif
+            try {
+                runCompleteLoweringPipeline(*module);
+                pipelineSuccess = true;
+            } catch (const std::exception& e) {
+                PGX_ERROR("MLIR pipeline exception: " + std::string(e.what()));
+#ifndef BUILDING_UNIT_TESTS
+                ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), 
+                               errmsg("MLIR lowering pipeline failed: %s", e.what())));
+#endif
+                pipelineSuccess = false;
+            }
+#ifndef BUILDING_UNIT_TESTS
+        }
+        PG_CATCH();
+        {
+            PGX_ERROR("PostgreSQL exception during MLIR pipeline execution");
+            pipelineSuccess = false;
+            PG_RE_THROW();
+        }
+        PG_END_TRY();
+#endif
+
+        if (!pipelineSuccess) {
             return false;
         }
 
