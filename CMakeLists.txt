@@ -114,11 +114,11 @@ add_subdirectory(tools/build-tools)
 add_library(runtime_funcs_ptr INTERFACE)
 
 # Add include directory for TableGen processing
-add_subdirectory(include/pgx_lower/mlir/Dialect/RelAlg/IR)
-add_subdirectory(include/pgx_lower/mlir/Dialect/DB/IR)
-add_subdirectory(include/pgx_lower/mlir/Dialect/DSA/IR)
+add_subdirectory(include/mlir/Dialect/RelAlg/IR)
+add_subdirectory(include/mlir/Dialect/DB/IR)
+add_subdirectory(include/mlir/Dialect/DSA/IR)
 # Add include directory for util dialect
-add_subdirectory(include/pgx_lower/mlir/Dialect/util)
+add_subdirectory(include/mlir/Dialect/util)
 
 # Add compiler library (includes dialects)
 add_subdirectory(src/mlir)
