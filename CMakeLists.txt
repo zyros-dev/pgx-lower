@@ -84,11 +84,10 @@ include_directories(${MLIR_TABLEGEN_OUTPUT_DIR})
 
 include(PostgreSQLExtension)
 
-# Include directories for the new structure
+# Include directories for the flattened structure
 include_directories(
-    ${CMAKE_SOURCE_DIR}/include/pgx_lower
-    ${CMAKE_BINARY_DIR}/include/pgx_lower
-    ${CMAKE_BINARY_DIR}/include  # For runtime-defs headers
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_BINARY_DIR}/include  # For both runtime-defs and generated headers
     ${PostgreSQL_INCLUDE_DIRS}
     ${PostgreSQL_SERVER_INCLUDE_DIRS}
 )

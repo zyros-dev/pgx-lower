@@ -215,6 +215,6 @@ void inlineOpIntoBlock(::mlir::Operation* vop, ::mlir::Operation* includeChildre
 } // namespace mlir::relalg::detail
 class Operator;
 #define GET_OP_CLASSES
-#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h.inc"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h.inc"
 
 #endif // MLIR_DIALECT_RELALG_IR_RELALGOPSINTERFACES_H

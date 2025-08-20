@@ -9,7 +9,7 @@ llvm::hash_code hash_value(std::shared_ptr<T> arg);
 #include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "mlir/IR/Dialect.h"
 
-#include "pgx_lower/mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.h.inc"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.h.inc"
 
 namespace llvm {
 template <typename T>
