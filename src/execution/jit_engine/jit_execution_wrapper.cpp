@@ -137,7 +137,8 @@ extern "C" void pgx_jit_destroy_module_handle(ModuleHandle* handle) {
 // Forward declarations for PostgreSQL types
 struct PlannedStmt;
 struct EState;
-struct DestReceiver;
+struct _DestReceiver;
+typedef struct _DestReceiver DestReceiver;
 
 namespace mlir_runner {
 
