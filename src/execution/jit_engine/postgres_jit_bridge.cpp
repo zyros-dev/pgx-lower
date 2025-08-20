@@ -10,35 +10,31 @@ extern "C" {
 }
 #endif
 
-namespace pgx_lower {
-namespace execution {
-    class PostgreSQLJITExecutionEngine;
-}
-}
+namespace pgx_lower { namespace execution {
+class PostgreSQLJITExecutionEngine;
+}} // namespace pgx_lower::execution
 
-namespace pgx_lower {
-namespace bridge {
+namespace pgx_lower { namespace bridge {
 
 // Bridge function that executes JIT compiled query with PostgreSQL types
 bool executeJITQueryWithPostgreSQL(void* jit_engine_ptr, void* estate, void* dest) {
-    #ifdef POSTGRESQL_EXTENSION
+#ifdef POSTGRESQL_EXTENSION
     if (!jit_engine_ptr || !estate || !dest) {
         PGX_ERROR("Invalid parameters to JIT bridge");
         return false;
     }
-    
+
     // Cast back to our types
     auto* jit_engine = static_cast<execution::PostgreSQLJITExecutionEngine*>(jit_engine_ptr);
     auto* pg_estate = static_cast<EState*>(estate);
     auto* pg_dest = static_cast<DestReceiver*>(dest);
-    
+
     PGX_INFO("Bridge: Executing JIT query with PostgreSQL types");
-    
+
     return true;
-    #else
+#else
     return true;
-    #endif
+#endif
 }
 
-} // namespace bridge
-} // namespace pgx_lower
+}} // namespace pgx_lower::bridge

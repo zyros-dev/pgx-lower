@@ -14,13 +14,13 @@ extern bool g_extension_after_load;
 
 static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL; // NOLINT(*-avoid-non-const-global-variables)
 
-
 static bool try_cpp_executor_internal(const QueryDesc *queryDesc) {
     PGX_NOTICE_C("Calling C++ executor from C...");
     return try_cpp_executor_direct(queryDesc);
 }
 
-static void custom_executor(QueryDesc *queryDesc, const ScanDirection direction, const uint64 count, const bool execute_once) {
+static void
+custom_executor(QueryDesc *queryDesc, const ScanDirection direction, const uint64 count, const bool execute_once) {
     PGX_NOTICE_C("Custom executor is being executed in C!");
 
     const bool mlir_handled = try_cpp_executor_internal(queryDesc);
@@ -37,18 +37,17 @@ static void custom_executor(QueryDesc *queryDesc, const ScanDirection direction,
     else {
         PGX_NOTICE_C("MLIR successfully handled the query");
     }
-    
 }
 
 void _PG_init(void) {
     PGX_NOTICE_C("Installing custom executor hook...");
     prev_ExecutorRun_hook = ExecutorRun_hook;
     ExecutorRun_hook = custom_executor;
-    
+
     // CRITICAL FIX: Set LOAD detection flag
     g_extension_after_load = true;
     PGX_NOTICE_C("LOAD detection flag set - memory context protection enabled");
-    
+
     // Initialize MLIR pass registration
     // This needs to be done once at startup to ensure passes can be created
     PGX_NOTICE_C("Initializing MLIR pass registration...");

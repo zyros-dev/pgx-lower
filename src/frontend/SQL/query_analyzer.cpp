@@ -1,5 +1,5 @@
 #include "frontend/SQL/query_analyzer.h"
- 
+
 #include "execution/error_handling.h"
 #include "execution/logging.h"
 
@@ -33,35 +33,47 @@ namespace pgx_lower {
 auto QueryCapabilities::isMLIRCompatible() const -> bool {
     // Log query characteristics for analysis
     std::vector<std::string> features;
-    if (isSelectStatement) features.emplace_back("SELECT");
-    if (requiresSeqScan) features.emplace_back("SeqScan");
-    if (requiresProjection) features.emplace_back("Projection");
-    if (hasExpressions) features.emplace_back("Expressions");
-    if (requiresFilter) features.emplace_back("WHERE");
-    if (requiresAggregation) features.emplace_back("Aggregation");
-    if (requiresSort) features.emplace_back("ORDER BY");
-    if (requiresJoin) features.emplace_back("JOIN");
-    if (requiresLimit) features.emplace_back("LIMIT");
-    if (hasCompatibleTypes) features.emplace_back("CompatibleTypes");
-    
+    if (isSelectStatement)
+        features.emplace_back("SELECT");
+    if (requiresSeqScan)
+        features.emplace_back("SeqScan");
+    if (requiresProjection)
+        features.emplace_back("Projection");
+    if (hasExpressions)
+        features.emplace_back("Expressions");
+    if (requiresFilter)
+        features.emplace_back("WHERE");
+    if (requiresAggregation)
+        features.emplace_back("Aggregation");
+    if (requiresSort)
+        features.emplace_back("ORDER BY");
+    if (requiresJoin)
+        features.emplace_back("JOIN");
+    if (requiresLimit)
+        features.emplace_back("LIMIT");
+    if (hasCompatibleTypes)
+        features.emplace_back("CompatibleTypes");
+
     if (!features.empty()) {
         std::string feature_list = features[0];
         for (size_t i = 1; i < features.size(); ++i) {
             feature_list += "+" + features[i];
         }
         PGX_INFO("📋 Query features: " + feature_list);
-    } else {
+    }
+    else {
         PGX_INFO("📋 Query features: None detected");
     }
-    
+
     // ✅ ENABLE MLIR COMPILATION: Test if pipeline works for basic SELECT+SeqScan queries
-    bool compatible = isSelectStatement && requiresSeqScan && hasCompatibleTypes && 
-                     !requiresJoin && !requiresAggregation && !requiresSort && !requiresLimit;
-    
+    bool compatible = isSelectStatement && requiresSeqScan && hasCompatibleTypes && !requiresJoin
+                      && !requiresAggregation && !requiresSort && !requiresLimit;
+
     if (compatible) {
         PGX_INFO("🎯 MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");
         return true;
-    } else {
+    }
+    else {
         PGX_INFO("📊 DATA COLLECTION: Query too complex for current MLIR implementation");
         return false;
     }
@@ -115,13 +127,12 @@ auto QueryCapabilities::getDescription() const -> std::string {
 
 QueryCapabilities QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) {
     QueryCapabilities caps;
-    
+
     if (!stmt || !stmt->planTree) {
         auto error = ErrorManager::queryAnalysisError("No plan tree to analyze");
         ErrorManager::reportError(error);
         return caps;
     }
-
 
     try {
         // 1. Check command type first (CMD_SELECT only)
@@ -130,13 +141,13 @@ QueryCapabilities QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) {
             return caps;
         }
 
-        // 2. Analyze plan structure and requirements  
+        // 2. Analyze plan structure and requirements
         caps = analyzeNode(stmt->planTree);
         caps.isSelectStatement = true; // Preserve the SELECT check
-        
+
         // 3. Analyze column types from plan metadata (no table access)
         analyzeTypes(stmt->planTree, caps);
-        
+
         return caps;
     } catch (const std::exception& e) {
         auto error = ErrorManager::queryAnalysisError("Exception during plan analysis: " + std::string(e.what()));
@@ -164,22 +175,13 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
 
     case T_NestLoop:
     case T_MergeJoin:
-    case T_HashJoin:
-        caps.requiresJoin = true;
-        break;
+    case T_HashJoin: caps.requiresJoin = true; break;
 
-    case T_Sort:
-        caps.requiresSort = true;
-        break;
+    case T_Sort: caps.requiresSort = true; break;
 
-    case T_Limit:
-        caps.requiresLimit = true;
-        break;
+    case T_Limit: caps.requiresLimit = true; break;
 
-    case T_Agg:
-        caps.requiresAggregation = true;
-        break;
-
+    case T_Agg: caps.requiresAggregation = true; break;
     }
 
     // Check for filters
@@ -240,22 +242,22 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
 
     std::vector<Oid> columnTypes;
     ListCell* lc;
-    
+
     // Extract types from plan's target list (no table access needed)
-    foreach(lc, plan->targetlist) {
+    foreach (lc, plan->targetlist) {
         TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
         if (tle && !tle->resjunk && tle->expr) {
             // Check if this is a computed expression (not just a simple Var)
             if (nodeTag(tle->expr) != T_Var) {
                 caps.hasExpressions = true;
             }
-            
+
             // Later we can add more sophisticated filtering
             if (IsA(tle->expr, FuncExpr)) {
                 caps.hasCompatibleTypes = false;
                 return;
             }
-            
+
             Oid columnType = exprType(reinterpret_cast<Node*>(tle->expr));
             columnTypes.push_back(columnType);
         }
@@ -268,11 +270,10 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
 
     // Analyze type compatibility using built-in system
     auto [supportedCount, unsupportedCount] = analyzeTypeCompatibility(columnTypes);
-    
 
     // In the future, we could allow partial support with fallbacks
     caps.hasCompatibleTypes = (unsupportedCount == 0);
-    
+
     if (!caps.hasCompatibleTypes) {
     }
 }
@@ -281,11 +282,11 @@ bool QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) {
     if (!stmt) {
         return false;
     }
-    
+
     bool isSelect = (stmt->commandType == CMD_SELECT);
     if (!isSelect) {
     }
-    
+
     return isSelect;
 }
 
@@ -293,62 +294,59 @@ bool QueryAnalyzer::isTypeSupportedByMLIR(Oid postgresType) {
     // PostgreSQL types that MLIR runtime can handle
     // Based on working test cases and available runtime functions
     switch (postgresType) {
-        // Integer types (handled by get_int_field)
-        case BOOLOID:
-        case INT2OID:
-        case INT4OID:
-        case INT8OID:
-        case NUMERICOID:
-        case FLOAT4OID:
-        case FLOAT8OID:
-            return true;
-            
-        case TEXTOID:
-        case VARCHAROID:
-        case CHAROID:
-            return true;
+    // Integer types (handled by get_int_field)
+    case BOOLOID:
+    case INT2OID:
+    case INT4OID:
+    case INT8OID:
+    case NUMERICOID:
+    case FLOAT4OID:
+    case FLOAT8OID: return true;
 
-        case MONEYOID:
-        case DATEOID:
-        case TIMEOID:
-        case TIMETZOID:
-        case TIMESTAMPOID:
-        case TIMESTAMPTZOID:
-        case INTERVALOID:
-        case UUIDOID:
-        case INETOID:
-        case CIDROID:
-        case MACADDROID:
-        case BITOID:
-        case VARBITOID:
-        case BYTEAOID:
-        case NAMEOID:
-        case OIDOID:
-        case JSONOID:
-        case JSONBOID:
-        case XMLOID:
-        case BPCHAROID:
-        case MACADDR8OID:
-        case PG_LSNOID:
-            return true;
+    case TEXTOID:
+    case VARCHAROID:
+    case CHAROID: return true;
 
-        default:
-            return false;
+    case MONEYOID:
+    case DATEOID:
+    case TIMEOID:
+    case TIMETZOID:
+    case TIMESTAMPOID:
+    case TIMESTAMPTZOID:
+    case INTERVALOID:
+    case UUIDOID:
+    case INETOID:
+    case CIDROID:
+    case MACADDROID:
+    case BITOID:
+    case VARBITOID:
+    case BYTEAOID:
+    case NAMEOID:
+    case OIDOID:
+    case JSONOID:
+    case JSONBOID:
+    case XMLOID:
+    case BPCHAROID:
+    case MACADDR8OID:
+    case PG_LSNOID: return true;
+
+    default: return false;
     }
 }
 
 std::pair<int, int> QueryAnalyzer::analyzeTypeCompatibility(const std::vector<Oid>& types) {
     int supportedCount = 0;
     int unsupportedCount = 0;
-    
+
     for (Oid type : types) {
         if (isTypeSupportedByMLIR(type)) {
             supportedCount++;
-        } else {
+        }
+        else {
             unsupportedCount++;
         }
     }
-    
+
     return {supportedCount, unsupportedCount};
 }
 
@@ -357,75 +355,77 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
     // Get readable node type names
     auto getNodeTypeName = [](NodeTag nodeType) -> std::string {
         switch (nodeType) {
-            case T_SeqScan: return "SeqScan";
-            case T_IndexScan: return "IndexScan";
-            case T_IndexOnlyScan: return "IndexOnlyScan";
-            case T_BitmapIndexScan: return "BitmapIndexScan";
-            case T_BitmapHeapScan: return "BitmapHeapScan";
-            case T_TidScan: return "TidScan";
-            case T_SubqueryScan: return "SubqueryScan";
-            case T_FunctionScan: return "FunctionScan";
-            case T_ValuesScan: return "ValuesScan";
-            case T_TableFuncScan: return "TableFuncScan";
-            case T_CteScan: return "CteScan";
-            case T_NamedTuplestoreScan: return "NamedTuplestoreScan";
-            case T_WorkTableScan: return "WorkTableScan";
-            case T_ForeignScan: return "ForeignScan";
-            case T_CustomScan: return "CustomScan";
-            case T_NestLoop: return "NestLoop";
-            case T_MergeJoin: return "MergeJoin";
-            case T_HashJoin: return "HashJoin";
-            case T_Material: return "Material";
-            case T_Sort: return "Sort";
-            case T_Group: return "Group";
-            case T_Agg: return "Agg";
-            case T_WindowAgg: return "WindowAgg";
-            case T_Unique: return "Unique";
-            case T_Gather: return "Gather";
-            case T_GatherMerge: return "GatherMerge";
-            case T_Hash: return "Hash";
-            case T_SetOp: return "SetOp";
-            case T_LockRows: return "LockRows";
-            case T_Limit: return "Limit";
-            case T_Result: return "Result";
-            case T_ProjectSet: return "ProjectSet";
-            case T_ModifyTable: return "ModifyTable";
-            case T_Append: return "Append";
-            case T_MergeAppend: return "MergeAppend";
-            case T_RecursiveUnion: return "RecursiveUnion";
-            case T_BitmapAnd: return "BitmapAnd";
-            case T_BitmapOr: return "BitmapOr";
-            case T_Memoize: return "Memoize";
-            default: return "Unknown(" + std::to_string(nodeType) + ")";
+        case T_SeqScan: return "SeqScan";
+        case T_IndexScan: return "IndexScan";
+        case T_IndexOnlyScan: return "IndexOnlyScan";
+        case T_BitmapIndexScan: return "BitmapIndexScan";
+        case T_BitmapHeapScan: return "BitmapHeapScan";
+        case T_TidScan: return "TidScan";
+        case T_SubqueryScan: return "SubqueryScan";
+        case T_FunctionScan: return "FunctionScan";
+        case T_ValuesScan: return "ValuesScan";
+        case T_TableFuncScan: return "TableFuncScan";
+        case T_CteScan: return "CteScan";
+        case T_NamedTuplestoreScan: return "NamedTuplestoreScan";
+        case T_WorkTableScan: return "WorkTableScan";
+        case T_ForeignScan: return "ForeignScan";
+        case T_CustomScan: return "CustomScan";
+        case T_NestLoop: return "NestLoop";
+        case T_MergeJoin: return "MergeJoin";
+        case T_HashJoin: return "HashJoin";
+        case T_Material: return "Material";
+        case T_Sort: return "Sort";
+        case T_Group: return "Group";
+        case T_Agg: return "Agg";
+        case T_WindowAgg: return "WindowAgg";
+        case T_Unique: return "Unique";
+        case T_Gather: return "Gather";
+        case T_GatherMerge: return "GatherMerge";
+        case T_Hash: return "Hash";
+        case T_SetOp: return "SetOp";
+        case T_LockRows: return "LockRows";
+        case T_Limit: return "Limit";
+        case T_Result: return "Result";
+        case T_ProjectSet: return "ProjectSet";
+        case T_ModifyTable: return "ModifyTable";
+        case T_Append: return "Append";
+        case T_MergeAppend: return "MergeAppend";
+        case T_RecursiveUnion: return "RecursiveUnion";
+        case T_BitmapAnd: return "BitmapAnd";
+        case T_BitmapOr: return "BitmapOr";
+        case T_Memoize: return "Memoize";
+        default: return "Unknown(" + std::to_string(nodeType) + ")";
         }
     };
-    
+
     // Recursively print execution tree
-    std::function<void(Plan*, int, const std::string&)> printPlanTree = 
+    std::function<void(Plan*, int, const std::string&)> printPlanTree =
         [&](Plan* plan, int depth, const std::string& prefix) {
             if (!plan) {
                 PGX_INFO(prefix + "NULL");
                 return;
             }
-            
+
             std::string indent(depth * 2, ' ');
             std::string nodeName = getNodeTypeName(static_cast<NodeTag>(plan->type));
             std::string nodeInfo = prefix + nodeName + " (type=" + std::to_string(plan->type) + ")";
-            
+
             // Add node-specific details
             if (plan->type == T_SeqScan) {
                 auto* seqScan = reinterpret_cast<SeqScan*>(plan);
                 nodeInfo += " [scanrelid=" + std::to_string(seqScan->scan.scanrelid) + "]";
-            } else if (plan->type == T_Agg) {
+            }
+            else if (plan->type == T_Agg) {
                 auto* agg = reinterpret_cast<Agg*>(plan);
                 nodeInfo += " [strategy=" + std::to_string(agg->aggstrategy) + "]";
-            } else if (plan->type == T_Gather) {
+            }
+            else if (plan->type == T_Gather) {
                 auto* gather = reinterpret_cast<Gather*>(plan);
                 nodeInfo += " [num_workers=" + std::to_string(gather->num_workers) + "]";
             }
-            
+
             PGX_INFO(nodeInfo);
-            
+
             // Print children with tree formatting
             if (plan->lefttree || plan->righttree) {
                 if (plan->lefttree) {
@@ -436,7 +436,7 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
                 }
             }
         };
-    
+
     // Print the complete execution tree
     PGX_INFO("=== POSTGRESQL EXECUTION TREE ===");
     printPlanTree(rootPlan, 0, "");
@@ -449,7 +449,7 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
 
     // Log the execution tree for analysis
     logExecutionTree(rootPlan);
-    
+
     // ACCEPT ALL PATTERNS FROM TEST CASES: Handle all observed execution tree patterns
     if (rootPlan->type == T_SeqScan) {
         // Pattern 1: Simple table scan
@@ -471,7 +471,7 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
                 PGX_INFO("✅ ACCEPTED: Parallel aggregate query (Agg→Gather→Agg→SeqScan)");
             }
         }
-        
+
         if (!scanPlan) {
             PGX_INFO("⚠️ PARTIAL SUPPORT: Gather pattern recognized but structure unexpected");
             // Still accept it for now to allow testing
@@ -488,11 +488,12 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
         const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
 
         PGX_INFO("📊 Table OID: " + std::to_string(rte->relid));
-        
+
         // Set the global table OID for JIT runtime access
         g_jit_table_oid = rte->relid;
         PGX_INFO("🔗 Set g_jit_table_oid to: " + std::to_string(g_jit_table_oid));
-    } else {
+    }
+    else {
         PGX_INFO("⚠️ No scan plan extracted - query may not access tables directly");
     }
 
@@ -548,8 +549,8 @@ auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilitie
         caps.requiresLimit = true;
     }
 
-    if ((strstr(queryText, "COUNT") != nullptr) || (strstr(queryText, "SUM") != nullptr) || (strstr(queryText, "AVG") != nullptr)
-        || (strstr(queryText, "GROUP BY") != nullptr))
+    if ((strstr(queryText, "COUNT") != nullptr) || (strstr(queryText, "SUM") != nullptr)
+        || (strstr(queryText, "AVG") != nullptr) || (strstr(queryText, "GROUP BY") != nullptr))
     {
         caps.requiresAggregation = true;
     }

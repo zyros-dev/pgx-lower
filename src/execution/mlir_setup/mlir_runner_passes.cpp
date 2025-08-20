@@ -19,7 +19,7 @@
 #include "execution/error_handling.h"
 #include "execution/logging.h"
 
-// RelAlg includes last to avoid interface conflicts  
+// RelAlg includes last to avoid interface conflicts
 #include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
 // Pass registration includes
@@ -38,28 +38,16 @@
 // Pass registration function - isolated to minimize template explosion impact
 extern "C" void initialize_mlir_passes() {
     try {
-       mlir::registerAllPasses();
-       mlir::relalg::registerRelAlgConversionPasses();
-       mlir::relalg::registerQueryOptimizationPasses();
-       mlir::db::registerDBConversionPasses();
-       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-          return mlir::dsa::createLowerToStdPass();
-       });
-       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-          return mlir::relalg::createDetachMetaDataPass();
-       });
-       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-          return mlir::createSinkOpPass();
-       });
-       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-          return mlir::createSimplifyMemrefsPass();
-       });
-       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-          return mlir::createSimplifyArithmeticsPass();
-       });
-       ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
-          return mlir::db::createSimplifyToArithPass();
-       });
+        mlir::registerAllPasses();
+        mlir::relalg::registerRelAlgConversionPasses();
+        mlir::relalg::registerQueryOptimizationPasses();
+        mlir::db::registerDBConversionPasses();
+        ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> { return mlir::dsa::createLowerToStdPass(); });
+        ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> { return mlir::relalg::createDetachMetaDataPass(); });
+        ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> { return mlir::createSinkOpPass(); });
+        ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> { return mlir::createSimplifyMemrefsPass(); });
+        ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> { return mlir::createSimplifyArithmeticsPass(); });
+        ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> { return mlir::db::createSimplifyToArithPass(); });
     } catch (const std::exception& e) {
         PGX_ERROR("Pass registration failed: " + std::string(e.what()));
     } catch (...) {
@@ -75,7 +63,7 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
         PGX_ERROR("Failed to initialize MLIR context and dialects");
         return false;
     }
-    
+
     context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
     context.getOrLoadDialect<::mlir::db::DBDialect>();
     context.getOrLoadDialect<::mlir::dsa::DSADialect>();
@@ -84,7 +72,7 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
     context.getOrLoadDialect<mlir::scf::SCFDialect>();
     context.getOrLoadDialect<mlir::memref::MemRefDialect>();
     context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
-    
+
     return true;
 }
 
