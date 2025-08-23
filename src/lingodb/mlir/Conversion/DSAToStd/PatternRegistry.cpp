@@ -32,12 +32,9 @@ void registerAllDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet
     mlir::populateCallOpTypeConversionPattern(patterns, typeConverter);
     mlir::populateReturnOpTypeConversionPattern(patterns, typeConverter);
     
-    // DSA-specific patterns - DEBUGGING: Isolate to find memory corruption source
     mlir::dsa::populateScalarToStdPatterns(typeConverter, patterns);
     
-    // TEMPORARILY DISABLED: These patterns cause memory corruption in Test 9 arithmetic operations
-    // TODO: Re-enable one by one to isolate the specific problematic pattern
-    // mlir::dsa::populateCollectionsToStdPatterns(typeConverter, patterns);
+    mlir::dsa::populateCollectionsToStdPatterns(typeConverter, patterns);
     
     // Utility patterns  
     mlir::util::populateUtilTypeConversionPatterns(typeConverter, patterns);

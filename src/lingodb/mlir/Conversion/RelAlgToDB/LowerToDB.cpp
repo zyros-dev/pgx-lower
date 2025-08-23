@@ -40,47 +40,20 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
    void runOnOperation() override {
       mlir::relalg::TranslatorContext loweringContext;
       
-      llvm::SmallVector<::mlir::Operation*> translationHooks;
-      
       getOperation().walk([&](::mlir::Operation* op) {
          if (isTranslationHook(op)) {
-            translationHooks.push_back(op);
+            auto node = mlir::relalg::Translator::createTranslator(op);
+            if (!node) {
+               op->emitError("No translator found for operation: ") << op->getName();
+               return;
+            }
+            
+            node->setInfo(nullptr, {});
+            ::mlir::OpBuilder builder(op);
+            node->produce(loweringContext, builder);
+            node->done();
          }
       });
-      
-      for (auto* op : translationHooks) {
-         if (!llvm::isa<mlir::relalg::MaterializeOp>(op)) {
-            PGX_ERROR("RelAlgDB Pass: Expected MaterializeOp but got: " + op->getName().getStringRef().str());
-            continue;
-         }
-         
-         auto node = mlir::relalg::Translator::createTranslator(op);
-         if (!node) {
-            op->emitError("No translator found for operation: ") << op->getName();
-            continue;
-         }
-         
-         node->setInfo(nullptr, {});
-         
-         ::mlir::OpBuilder builder(op);
-         
-         node->produce(loweringContext, builder);
-         
-         node->done();
-         
-         op->erase();
-      }
-      
-      llvm::SmallVector<::mlir::Operation*> remainingRelAlgOps;
-      getOperation().walk([&](::mlir::Operation* op) {
-         if (op->getDialect() && op->getDialect()->getNamespace() == "relalg") {
-            remainingRelAlgOps.push_back(op);
-         }
-      });
-      
-      for (auto* op : remainingRelAlgOps) {
-         op->erase();
-      }
    }
 };
 } // end anonymous namespace
