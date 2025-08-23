@@ -70,3 +70,33 @@ TEST_F(MLIRLoweringPipelineTest, Test9Arith) {
     std::string finalMLIR = tester->getCurrentMLIR();
     EXPECT_TRUE(finalMLIR.find("llvm.") != std::string::npos) << "Expected LLVM dialect operations in final MLIR";
 }
+
+TEST_F(MLIRLoweringPipelineTest, Test11) {
+    // Very basic test - just constant return
+    auto simpleMLIR = R"(
+        module {
+          func.func @main() {
+            %0 = relalg.basetable  {table_identifier = "test_logical|oid:8493992"} columns: {flag1 => @test_logical::@flag1({type = i1}), flag2 => @test_logical::@flag2({type = i1}), id => @test_logical::@id({type = i32}), value => @test_logical::@value({type = i32})}
+            %1 = relalg.map %0 computes : [@map::@and_result({type = i32})] (%arg0: !relalg.tuple){
+              %3 = relalg.getcol %arg0 @test_logical::@flag1 : i1
+              %4 = relalg.getcol %arg0 @test_logical::@flag2 : i1
+              %5 = db.and %3, %4 : i1, i1
+              relalg.return %5 : i1
+            }
+            %2 = relalg.materialize %1 [@test::@and_result] => ["and_result"] : !dsa.table
+            return
+          }
+        }
+    )";
+
+    ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR)) << "Failed to load MLIR module";
+
+    EXPECT_TRUE(tester->runPhase3a()) << "Phase 3a failed";
+    EXPECT_TRUE(tester->runPhase3b()) << "Phase 3b failed";
+    EXPECT_TRUE(tester->runPhase3c()) << "Phase 3c failed";
+
+    EXPECT_TRUE(tester->verifyCurrentModule()) << "Final module should be valid";
+
+    std::string finalMLIR = tester->getCurrentMLIR();
+    EXPECT_TRUE(finalMLIR.find("llvm.") != std::string::npos) << "Expected LLVM dialect operations in final MLIR";
+}
