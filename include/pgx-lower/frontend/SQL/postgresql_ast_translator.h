@@ -16,9 +16,6 @@ class Location;
 namespace func {
 class FuncOp;
 }
-namespace relalg {
-class ColumnDefAttr;
-}
 }
 
 extern "C" {
@@ -35,7 +32,6 @@ struct Aggref;
 struct CoalesceExpr;
 struct TargetEntry;
 struct SeqScan;
-struct Result;
 struct Agg;
 struct Sort;
 struct Limit;
@@ -48,9 +44,6 @@ typedef uintptr_t Datum;
 }
 
 namespace postgresql_ast {
-
-using PGResult = ::Result;  // PostgreSQL Result node type
-
 class PostgreSQLASTTranslator {
 public:
     struct ColumnInfo {
@@ -77,7 +70,6 @@ private:
     
     auto translatePlanNode(Plan* plan, struct TranslationContext& context) -> ::mlir::Operation*;
     auto translateSeqScan(SeqScan* seqScan, struct TranslationContext& context) -> ::mlir::Operation*;
-    auto translateResult(PGResult* result, struct TranslationContext& context) -> ::mlir::Operation*;
     auto translateAgg(Agg* agg, struct TranslationContext& context) -> ::mlir::Operation*;
     auto translateSort(Sort* sort, struct TranslationContext& context) -> ::mlir::Operation*;
     auto translateLimit(Limit* limit, struct TranslationContext& context) -> ::mlir::Operation*;
@@ -146,16 +138,6 @@ private:
                                  ::mlir::Value tupleArg, Node* operandNode) -> ::mlir::Value;
     auto generateDBConstant(::mlir::OpBuilder& builder, ::mlir::Location location,
                            Datum value, Oid typeOid, ::mlir::Type mlirType) -> ::mlir::Value;
-    
-    auto extractConstantAttr(::mlir::Value value, ::mlir::OpBuilder* builder) -> ::mlir::Attribute;
-    auto createResultColumnDef(const std::string& name, ::mlir::Type type, int index) -> ::mlir::relalg::ColumnDefAttr;
-    auto processResultTargetList(List* targetlist, TranslationContext& context,
-                                 std::vector<::mlir::Attribute>& columnDefs,
-                                 std::vector<::mlir::Attribute>& values) -> bool;
-    auto translateFuncExprArgs(FuncExpr* funcExpr, std::vector<::mlir::Value>& args) -> bool;
-    auto translateMathFunction(Oid funcId, const std::vector<::mlir::Value>& args) -> ::mlir::Value;
-    auto translateStringFunction(Oid funcId, const std::vector<::mlir::Value>& args) -> ::mlir::Value;
-    auto translateUnknownFunction(FuncExpr* funcExpr, const std::vector<::mlir::Value>& args) -> ::mlir::Value;
 };
 
 auto createPostgreSQLASTTranslator(::mlir::MLIRContext& context) 

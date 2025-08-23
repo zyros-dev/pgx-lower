@@ -1,5 +1,1 @@
 add_subdirectory(test_lowerings)
-add_subdirectory(frontend)
-add_subdirectory(conversion)
-add_subdirectory(frontend)
-add_subdirectory(conversion)

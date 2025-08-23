@@ -9,7 +9,6 @@
 #include "runtime-defs/LazyJoinHashtable.h"
 #include "runtime-defs/TableBuilder.h"
 #include "runtime-defs/Vector.h"
-#include "pgx-lower/execution/logging.h"
 using namespace mlir;
 namespace {
 static mlir::util::RefType getLoweredVectorType(MLIRContext* context, Type elementType) {
@@ -455,18 +454,7 @@ class TBAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
             case 64: rt::TableBuilder::addInt64(rewriter, loc)({builderVal, isValid, val}); break;
             case 128: rt::TableBuilder::addDecimal(rewriter, loc)({builderVal, isValid, val}); break;
             default: {
-               // Non-standard integer width (e.g., 40-bit from db.char<5>)
-               MLIR_PGX_DEBUG("DSA", std::string("TBAppendLowering: Using addFixedSized for non-standard width: ") + std::to_string(intWidth));
-               
-               // Ensure proper extension to 64-bit for non-standard widths
-               // Check if extension is needed (width < 64)
-               if (intWidth < 64) {
-                  MLIR_PGX_DEBUG("DSA", std::string("TBAppendLowering: Extending ") + std::to_string(intWidth) + "-bit value to 64-bit");
-                  val = rewriter.create<arith::ExtUIOp>(loc, rewriter.getI64Type(), val);
-               } else {
-                  MLIR_PGX_WARNING("DSA", std::string("TBAppendLowering: Unexpected integer width > 64: ") + std::to_string(intWidth));
-               }
-               
+               val=rewriter.create<arith::ExtUIOp>(loc,rewriter.getI64Type(),val);
                rt::TableBuilder::addFixedSized(rewriter, loc)({builderVal, isValid, val});
                break;
             }
@@ -479,13 +467,6 @@ class TBAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
          }
       } else if (auto stringType = type.dyn_cast_or_null<mlir::util::VarLen32Type>()) {
          rt::TableBuilder::addBinary(rewriter, loc)({builderVal, isValid, val});
-      } else {
-         // Log unhandled type for debugging
-         std::string typeStr;
-         llvm::raw_string_ostream os(typeStr);
-         type.print(os);
-         MLIR_PGX_ERROR("DSA", std::string("TBAppendLowering: Unhandled type in append operation: ") + os.str());
-         return failure();
       }
       rewriter.eraseOp(appendOp);
       return success();

@@ -34,8 +34,6 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         features.emplace_back("SELECT");
     if (requiresSeqScan)
         features.emplace_back("SeqScan");
-    if (hasConstantExpression)
-        features.emplace_back("ConstantExpression");
     if (requiresProjection)
         features.emplace_back("Projection");
     if (hasExpressions)
@@ -64,16 +62,12 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         PGX_INFO(" Query features: None detected");
     }
 
-    bool compatible = isSelectStatement && hasCompatibleTypes && !requiresJoin
-                      && !requiresAggregation && !requiresSort && !requiresLimit
-                      && (requiresSeqScan || hasConstantExpression);
+    //  ENABLE MLIR COMPILATION: Test if pipeline works for basic SELECT+SeqScan queries
+    bool compatible = isSelectStatement && requiresSeqScan && hasCompatibleTypes && !requiresJoin
+                      && !requiresAggregation && !requiresSort && !requiresLimit;
 
     if (compatible) {
-        if (hasConstantExpression) {
-            PGX_INFO(" MLIR COMPATIBLE: Constant expression query accepted for compilation");
-        } else {
-            PGX_INFO(" MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");
-        }
+        PGX_INFO(" MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");
         return true;
     }
     else {
@@ -169,8 +163,6 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
     // Analyze this node
     switch (nodeTag(plan)) {
     case T_SeqScan: analyzeSeqScan(reinterpret_cast<const SeqScan*>(plan), caps); break;
-    
-    case T_Result: analyzeResult(reinterpret_cast<const PGResult*>(plan), caps); break;
 
     case T_IndexScan:
     case T_IndexOnlyScan:
@@ -223,28 +215,6 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
 
 void QueryAnalyzer::analyzeSeqScan(const SeqScan* seqScan, QueryCapabilities& caps) {
     caps.requiresSeqScan = true;
-}
-
-void QueryAnalyzer::analyzeResult(const PGResult* result, QueryCapabilities& caps) {
-    // Result nodes are used for constant expressions that don't access tables
-    caps.hasConstantExpression = true;
-    
-    // If the Result node has a targetlist, it contains the constant expressions
-    if (result && result->plan.targetlist) {
-        // Check if we have expressions in the targetlist
-        ListCell* lc;
-        foreach (lc, result->plan.targetlist) {
-            TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
-            if (tle && !tle->resjunk && tle->expr) {
-                // If this is not just a Var, we have an expression
-                if (nodeTag(tle->expr) != T_Var) {
-                    caps.hasExpressions = true;
-                }
-            }
-        }
-    }
-    
-    PGX_INFO(" Result node detected - constant expression query");
 }
 
 void QueryAnalyzer::analyzeFilter(const Plan* plan, QueryCapabilities& caps) {
@@ -483,19 +453,13 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
         scanPlan = rootPlan;
         PGX_INFO(" ACCEPTED: Simple SeqScan query");
     }
-    else if (rootPlan->type == T_Result) {
-        // Pattern 2: Constant expression query (no table access)
-        PGX_INFO(" ACCEPTED: Result node for constant expression query");
-        // Result nodes don't have a scan plan since they don't access tables
-        scanPlan = nullptr;
-    }
     else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
-        // Pattern 3: Aggregation with SeqScan
+        // Pattern 2: Aggregation with SeqScan
         scanPlan = rootPlan->lefttree;
         PGX_INFO(" ACCEPTED: Aggregate query with SeqScan source");
     }
     else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_Gather) {
-        // Pattern 4: Parallel aggregation (Agg  Gather  Agg  SeqScan)
+        // Pattern 3: Parallel aggregation (Agg  Gather  Agg  SeqScan)
         auto* gatherPlan = rootPlan->lefttree;
         if (gatherPlan->lefttree && gatherPlan->lefttree->type == T_Agg) {
             auto* innerAggPlan = gatherPlan->lefttree;

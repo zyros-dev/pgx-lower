@@ -3,7 +3,6 @@
 #include "lingodb/mlir/Conversion/DBToStd/DBToStd.h"
 #include "pgx-lower/execution/logging.h"
 #include <sstream>
-#include <cstring>
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "lingodb/mlir/Conversion/UtilToLLVM/Passes.h"
@@ -671,20 +670,6 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
             auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());
             std::vector<uint64_t> parts = {low, high};
             rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, APInt(llvm::cast<mlir::IntegerType>(stdType).getWidth(), parts)));
-            return success();
-         } else if (auto charType = type.dyn_cast_or_null<mlir::db::CharType>()) {
-            std::string str = std::get<std::string>(parseResult);
-            
-            // Convert string to integer representation for char type
-            // Pack string bytes into integer (up to 8 bytes supported)
-            int64_t packedValue = 0;
-            size_t copyBytes = std::min(str.size(), static_cast<size_t>(charType.getBytes()));
-            copyBytes = std::min(copyBytes, sizeof(int64_t)); // Max 8 bytes
-            
-            std::memcpy(&packedValue, str.data(), copyBytes);
-            
-            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, 
-                                        rewriter.getIntegerAttr(stdType, packedValue));
             return success();
          } else {
             rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, std::get<int64_t>(parseResult)));
