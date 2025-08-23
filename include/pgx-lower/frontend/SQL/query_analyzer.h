@@ -15,6 +15,8 @@ extern "C" {
 
 namespace pgx_lower {
 
+using PGResult = ::Result;  // PostgreSQL Result node type
+
 struct QueryCapabilities {
     bool requiresSeqScan = false; // Sequential table scan
     bool requiresFilter = false; // WHERE clause filtering
@@ -26,6 +28,7 @@ struct QueryCapabilities {
     bool isSelectStatement = false; // Only SELECT statements supported
     bool hasCompatibleTypes = false; // All column types are MLIR-compatible
     bool hasExpressions = false; // Contains computed expressions (arithmetic, functions, etc.)
+    bool hasConstantExpression = false; // Query returns constant values without table access (Result node)
 
     [[nodiscard]] auto isMLIRCompatible() const -> bool;
 
@@ -48,6 +51,7 @@ class QueryAnalyzer {
    private:
 #ifdef POSTGRESQL_EXTENSION
     static void analyzeSeqScan(const SeqScan* seqScan, QueryCapabilities& caps);
+    static void analyzeResult(const PGResult* result, QueryCapabilities& caps);
     static void analyzeFilter(const Plan* plan, QueryCapabilities& caps);
     static void analyzeProjection(const Plan* plan, QueryCapabilities& caps);
     static void analyzeTypes(const Plan* plan, QueryCapabilities& caps);

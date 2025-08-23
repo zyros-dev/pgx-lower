@@ -15,6 +15,12 @@ extern "C" {
 #include "catalog/namespace.h"
 #include "access/table.h" // For table_open/table_close
 #include "utils/rel.h" // For get_rel_name, get_attname
+#include "catalog/pg_type_d.h"
+#include "utils/numeric.h"
+#include "utils/cash.h"
+#include "utils/date.h"
+#include "utils/timestamp.h"
+#include "fmgr.h"
 
 // Forward declare PostgreSQL node types
 typedef int16 AttrNumber;
@@ -255,6 +261,7 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& 
             PGX_ERROR("Type mismatch for SeqScan");
         }
         break;
+    case T_Result: result = translateResult(reinterpret_cast<PGResult*>(plan), context); break;
     case T_Agg: result = translateAgg(reinterpret_cast<Agg*>(plan), context); break;
     case T_Sort: result = translateSort(reinterpret_cast<Sort*>(plan), context); break;
     case T_Limit: result = translateLimit(reinterpret_cast<Limit*>(plan), context); break;
@@ -263,6 +270,119 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& 
     }
 
     return result;
+}
+
+// Helper: Extract constant attribute from MLIR value
+auto PostgreSQLASTTranslator::extractConstantAttr(::mlir::Value value, ::mlir::OpBuilder* builder) -> ::mlir::Attribute {
+    if (!value || !value.getDefiningOp()) {
+        return builder->getI32IntegerAttr(0);  // Default placeholder
+    }
+    
+    auto* op = value.getDefiningOp();
+    if (auto arithConst = llvm::dyn_cast<mlir::arith::ConstantOp>(op)) {
+        return arithConst.getValue();
+    }
+    if (auto dbConst = llvm::dyn_cast<mlir::db::ConstantOp>(op)) {
+        return dbConst.getValue();
+    }
+    
+    PGX_WARNING("Unsupported constant type, using placeholder");
+    return builder->getI32IntegerAttr(0);
+}
+
+// Helper: Create column definition for Result node
+auto PostgreSQLASTTranslator::createResultColumnDef(
+    const std::string& name, 
+    ::mlir::Type type,
+    int index) -> ::mlir::relalg::ColumnDefAttr {
+    
+    // Create simple column definition without internal dialect access
+    // Following LingoDB's simple pattern
+    auto colName = name.empty() ? "?column?" : name;
+    auto fullName = "const_" + std::to_string(index) + "_" + colName;
+    
+    // Create a simple column object
+    auto columnPtr = std::make_shared<mlir::relalg::Column>();
+    columnPtr->type = type;
+    
+    auto symRef = mlir::SymbolRefAttr::get(&context_, fullName);
+    return mlir::relalg::ColumnDefAttr::get(
+        &context_,
+        symRef,
+        columnPtr,
+        mlir::ArrayAttr::get(&context_, {})  // No fromExisting
+    );
+}
+
+// Main Result translation - simplified and decomposed
+auto PostgreSQLASTTranslator::processResultTargetList(List* targetlist, TranslationContext& context,
+                                                      std::vector<::mlir::Attribute>& columnDefs,
+                                                      std::vector<::mlir::Attribute>& values) -> bool {
+    // Save context for expression translation
+    auto* savedBuilder = builder_;
+    builder_ = context.builder;
+    currentTupleHandle_ = nullptr;  // No tuple for constants
+    
+    ListCell* lc;
+    int index = 0;
+    foreach (lc, targetlist) {
+        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (!tle || tle->resjunk) continue;
+        
+        // Translate expression
+        auto exprValue = translateExpression(reinterpret_cast<Expr*>(tle->expr));
+        if (!exprValue) {
+            PGX_WARNING("Failed to translate expression");
+            continue;
+        }
+        
+        // Create column definition
+        auto colName = tle->resname ? tle->resname : "";
+        auto colDef = createResultColumnDef(colName, exprValue.getType(), index++);
+        columnDefs.push_back(colDef);
+        
+        // Extract constant value
+        values.push_back(extractConstantAttr(exprValue, context.builder));
+    }
+    
+    // Restore context
+    builder_ = savedBuilder;
+    
+    return !columnDefs.empty();
+}
+
+auto PostgreSQLASTTranslator::translateResult(PGResult* result, TranslationContext& context) -> ::mlir::Operation* {
+    if (!result || !context.builder) {
+        PGX_ERROR("Invalid Result parameters");
+        return nullptr;
+    }
+    
+    PGX_INFO("Translating Result node for constant expression query");
+    
+    if (!result->plan.targetlist) {
+        PGX_ERROR("Result node has no targetlist");
+        return nullptr;
+    }
+    
+    // Process targetlist to build columns and values
+    std::vector<::mlir::Attribute> columnDefs;
+    std::vector<::mlir::Attribute> values;
+    
+    if (!processResultTargetList(result->plan.targetlist, context, columnDefs, values)) {
+        PGX_ERROR("No values in Result node");
+        return nullptr;
+    }
+    
+    // Create ConstRelationOp following LingoDB's simple pattern
+    auto rowAttr = context.builder->getArrayAttr(values);
+    auto allRows = context.builder->getArrayAttr({rowAttr});
+    
+    return context.builder->create<mlir::relalg::ConstRelationOp>(
+        context.builder->getUnknownLoc(),
+        mlir::relalg::TupleStreamType::get(&context_),
+        context.builder->getArrayAttr(columnDefs),
+        allRows
+    );
 }
 
 auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context) -> ::mlir::Operation* {
@@ -1258,6 +1378,141 @@ auto PostgreSQLASTTranslator::translateConst(Const* constNode) -> ::mlir::Value 
         bool val = static_cast<bool>(constNode->constvalue);
         return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), val ? 1 : 0, mlirType);
     }
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: {
+        // Memory-safe string constant extraction
+        PG_TRY();
+        {
+            // DatumGetTextP extracts the text pointer from the Datum
+            auto* textval = DatumGetTextP(constNode->constvalue);
+            
+            char* str = text_to_cstring(textval);
+            const auto value = std::string(str);
+            pfree(str);
+            
+            auto stringType = mlir::Type{};
+            if (value.size() <= 8) {
+                stringType = mlir::db::CharType::get(builder_->getContext(), value.size());
+                PGX_DEBUG("Using CharType for string of length " + std::to_string(value.size()));
+            } else {
+                stringType = mlir::db::StringType::get(builder_->getContext());
+                PGX_DEBUG("Using StringType for string of length " + std::to_string(value.size()));
+            }
+            
+            mlir::Operation* result = builder_->create<mlir::db::ConstantOp>(
+                builder_->getUnknownLoc(),
+                stringType,
+                builder_->getStringAttr(value)
+            );
+            
+            return result->getResult(0);
+        }
+        PG_CATCH();
+        {
+            PGX_ERROR("Failed to extract string constant from PostgreSQL text type");
+            PG_RE_THROW();
+        }
+        PG_END_TRY();
+        // No code here - it would be unreachable
+    }
+    case NUMERICOID: {
+        // Memory-safe numeric constant extraction
+        PG_TRY();
+        {
+            // Extract numeric value and convert to string representation
+            Numeric num = DatumGetNumeric(constNode->constvalue);
+            
+            // Convert numeric to string using PostgreSQL's numeric_out function
+            char* numStr = DatumGetCString(DirectFunctionCall1(numeric_out, constNode->constvalue));
+            
+            // Create std::string copy to ensure we own the memory
+            std::string value(numStr);
+            
+            // CRITICAL: Free PostgreSQL-allocated memory immediately
+            pfree(numStr);
+            
+            PGX_DEBUG("Extracted numeric constant: " + value);
+            
+            // Create MLIR constant operation with DecimalType
+            mlir::Operation* result = builder_->create<mlir::db::ConstantOp>(
+                builder_->getUnknownLoc(),
+                mlirType,  // Uses existing DecimalType from type mapper
+                builder_->getStringAttr(value)
+            );
+            
+            return result->getResult(0);
+        }
+        PG_CATCH();
+        {
+            PGX_ERROR("Failed to extract numeric constant");
+            PG_RE_THROW();
+        }
+        PG_END_TRY();
+    }
+    case MONEYOID: {
+        // Memory-safe money constant extraction
+        PG_TRY();
+        {
+            // Extract money value (stored as int64 representing cents)
+            Cash money = DatumGetCash(constNode->constvalue);
+            
+            // Convert money to string using PostgreSQL's cash_out function
+            char* moneyStr = DatumGetCString(DirectFunctionCall1(cash_out, constNode->constvalue));
+            
+            // Create std::string copy to ensure we own the memory
+            std::string value(moneyStr);
+            
+            // CRITICAL: Free PostgreSQL-allocated memory immediately
+            pfree(moneyStr);
+            
+            PGX_DEBUG("Extracted money constant: " + value);
+            
+            // Create MLIR constant operation with DecimalType
+            mlir::Operation* result = builder_->create<mlir::db::ConstantOp>(
+                builder_->getUnknownLoc(),
+                mlirType,  // Uses existing DecimalType from type mapper
+                builder_->getStringAttr(value)
+            );
+            
+            return result->getResult(0);
+        }
+        PG_CATCH();
+        {
+            PGX_ERROR("Failed to extract money constant");
+            PG_RE_THROW();
+        }
+        PG_END_TRY();
+    }
+    case DATEOID: {
+        // Extract date constant (days since 2000-01-01)
+        DateADT date = DatumGetDateADT(constNode->constvalue);
+        int32_t daysSinceEpoch = static_cast<int32_t>(date);
+        
+        PGX_DEBUG("Extracted date constant: " + std::to_string(daysSinceEpoch) + " days since epoch");
+        
+        // Create MLIR constant operation with DateType
+        return builder_->create<mlir::db::ConstantOp>(
+            builder_->getUnknownLoc(),
+            mlirType,  // Uses existing DateType from type mapper
+            builder_->getI32IntegerAttr(daysSinceEpoch)
+        );
+    }
+    case TIMESTAMPOID:
+    case TIMESTAMPTZOID: {
+        // Extract timestamp constant (microseconds since 2000-01-01)
+        Timestamp timestamp = DatumGetTimestamp(constNode->constvalue);
+        int64_t microsecondsSinceEpoch = static_cast<int64_t>(timestamp);
+        
+        PGX_DEBUG("Extracted timestamp constant: " + std::to_string(microsecondsSinceEpoch) + " microseconds since epoch");
+        
+        // Create MLIR constant operation with TimestampType
+        return builder_->create<mlir::db::ConstantOp>(
+            builder_->getUnknownLoc(),
+            mlirType,  // Uses existing TimestampType from type mapper
+            builder_->getI64IntegerAttr(microsecondsSinceEpoch)
+        );
+    }
     default:
         PGX_WARNING("Unsupported constant type: " + std::to_string(constNode->consttype));
         // Default to i32 zero
@@ -1552,19 +1807,12 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
     }
 }
 
-auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::Value {
-    if (!funcExpr || !builder_) {
-        PGX_ERROR("Invalid FuncExpr parameters");
-        return nullptr;
-    }
-
-    // Translate function arguments first
-    std::vector<::mlir::Value> args;
+auto PostgreSQLASTTranslator::translateFuncExprArgs(FuncExpr* funcExpr, std::vector<::mlir::Value>& args) -> bool {
     if (funcExpr->args && funcExpr->args->length > 0) {
         // Safety check for elements array (PostgreSQL 17)
         if (!funcExpr->args->elements) {
             PGX_WARNING("FuncExpr args list has length but no elements array");
-            return nullptr;
+            return false;
         }
 
         // Iterate through arguments
@@ -1579,27 +1827,24 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
             }
         }
     }
+    return true;
+}
 
-    // Map PostgreSQL function OID to MLIR operations
+auto PostgreSQLASTTranslator::translateMathFunction(Oid funcId, const std::vector<::mlir::Value>& args) -> ::mlir::Value {
     // Common PostgreSQL function OIDs (from fmgroids.h)
-    constexpr Oid F_ABS_INT4 = 1397; // abs(int4)
-    constexpr Oid F_ABS_INT8 = 1398; // abs(int8)
-    constexpr Oid F_ABS_FLOAT4 = 1394; // abs(float4)
-    constexpr Oid F_ABS_FLOAT8 = 1395; // abs(float8)
-    constexpr Oid F_UPPER = 871; // upper(text)
-    constexpr Oid F_LOWER = 870; // lower(text)
-    constexpr Oid F_LENGTH = 1317; // length(text)
-    constexpr Oid F_SUBSTR = 877; // substr(text, int, int)
-    constexpr Oid F_CONCAT = 3058; // concat(text, text)
-    constexpr Oid F_SQRT_FLOAT8 = 230; // sqrt(float8)
-    constexpr Oid F_POWER_FLOAT8 = 232; // power(float8, float8)
-    constexpr Oid F_CEIL_FLOAT8 = 2308; // ceil(float8)
-    constexpr Oid F_FLOOR_FLOAT8 = 2309; // floor(float8)
-    constexpr Oid F_ROUND_FLOAT8 = 233; // round(float8)
+    constexpr Oid F_ABS_INT4 = 1397;
+    constexpr Oid F_ABS_INT8 = 1398;
+    constexpr Oid F_ABS_FLOAT4 = 1394;
+    constexpr Oid F_ABS_FLOAT8 = 1395;
+    constexpr Oid F_SQRT_FLOAT8 = 230;
+    constexpr Oid F_POWER_FLOAT8 = 232;
+    constexpr Oid F_CEIL_FLOAT8 = 2308;
+    constexpr Oid F_FLOOR_FLOAT8 = 2309;
+    constexpr Oid F_ROUND_FLOAT8 = 233;
 
     auto loc = builder_->getUnknownLoc();
 
-    switch (funcExpr->funcid) {
+    switch (funcId) {
     case F_ABS_INT4:
     case F_ABS_INT8:
     case F_ABS_FLOAT4:
@@ -1609,7 +1854,6 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
             return nullptr;
         }
         // Implement absolute value using comparison and negation
-        // Since DB dialect doesn't have AbsOp, use arith operations
         {
             auto zero = builder_->create<mlir::arith::ConstantIntOp>(loc, 0, args[0].getType());
             auto cmp = builder_->create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, args[0], zero);
@@ -1618,22 +1862,26 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
         }
 
     case F_SQRT_FLOAT8:
-        if (args.size() != 1) {
-            PGX_ERROR("SQRT requires exactly 1 argument");
-            return nullptr;
-        }
-        // Use math dialect sqrt (TODO: may need to add math dialect)
-        PGX_WARNING("SQRT function not yet implemented in DB dialect");
-        return args[0]; // Pass through for now
-
     case F_POWER_FLOAT8:
-        if (args.size() != 2) {
-            PGX_ERROR("POWER requires exactly 2 arguments");
-            return nullptr;
-        }
-        PGX_WARNING("POWER function not yet implemented in DB dialect");
-        return args[0]; // Return base for now
+    case F_CEIL_FLOAT8:
+    case F_FLOOR_FLOAT8:
+    case F_ROUND_FLOAT8:
+        PGX_WARNING("Math function not yet implemented in DB dialect");
+        return args.empty() ? nullptr : args[0];
 
+    default:
+        return nullptr;
+    }
+}
+
+auto PostgreSQLASTTranslator::translateStringFunction(Oid funcId, const std::vector<::mlir::Value>& args) -> ::mlir::Value {
+    constexpr Oid F_UPPER = 871;
+    constexpr Oid F_LOWER = 870;
+    constexpr Oid F_LENGTH = 1317;
+
+    auto loc = builder_->getUnknownLoc();
+
+    switch (funcId) {
     case F_UPPER:
     case F_LOWER:
         if (args.size() != 1) {
@@ -1641,7 +1889,7 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
             return nullptr;
         }
         PGX_WARNING("String functions not yet implemented");
-        return args[0]; // Pass through for now
+        return args[0];
 
     case F_LENGTH:
         if (args.size() != 1) {
@@ -1651,48 +1899,63 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
         PGX_WARNING("LENGTH function not yet implemented");
         return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, builder_->getI32Type());
 
-    case F_CEIL_FLOAT8:
-    case F_FLOOR_FLOAT8:
-    case F_ROUND_FLOAT8:
-        if (args.size() != 1) {
-            PGX_ERROR("Rounding function requires exactly 1 argument");
-            return nullptr;
+    default:
+        return nullptr;
+    }
+}
+
+auto PostgreSQLASTTranslator::translateUnknownFunction(FuncExpr* funcExpr, const std::vector<::mlir::Value>& args) -> ::mlir::Value {
+    PGX_WARNING("Unknown function OID " + std::to_string(funcExpr->funcid) + ", creating placeholder");
+
+    auto loc = builder_->getUnknownLoc();
+    PostgreSQLTypeMapper typeMapper(context_);
+    auto resultType = typeMapper.mapPostgreSQLType(funcExpr->funcresulttype, -1);
+
+    // For unknown functions, return first argument or a constant
+    if (!args.empty()) {
+        return args[0];
+    }
+    else {
+        // No arguments - return a constant of the result type
+        if (resultType.isIntOrIndex()) {
+            return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, resultType);
         }
-        PGX_WARNING("Rounding functions not yet implemented in DB dialect");
-        return args[0]; // Pass through for now
-
-    default: {
-        // Unknown function - try to determine result type from funcresulttype
-        PGX_WARNING("Unknown function OID " + std::to_string(funcExpr->funcid) + ", creating placeholder");
-
-        // Map result type
-        PostgreSQLTypeMapper typeMapper(context_);
-        auto resultType = typeMapper.mapPostgreSQLType(funcExpr->funcresulttype, -1);
-
-        // For unknown functions, return first argument or a constant
-        if (!args.empty()) {
-            // Try to cast first argument to result type if needed
-            if (args[0].getType() != resultType) {
-            }
-            return args[0];
+        else if (resultType.isa<mlir::FloatType>()) {
+            return builder_->create<mlir::arith::ConstantFloatOp>(loc,
+                                                                  llvm::APFloat(0.0),
+                                                                  resultType.cast<mlir::FloatType>());
         }
         else {
-            // No arguments - return a constant of the result type
-            if (resultType.isIntOrIndex()) {
-                return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, resultType);
-            }
-            else if (resultType.isa<mlir::FloatType>()) {
-                return builder_->create<mlir::arith::ConstantFloatOp>(loc,
-                                                                      llvm::APFloat(0.0),
-                                                                      resultType.cast<mlir::FloatType>());
-            }
-            else {
-                // Default to i32 zero
-                return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, builder_->getI32Type());
-            }
+            return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, builder_->getI32Type());
         }
     }
+}
+
+auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::Value {
+    if (!funcExpr || !builder_) {
+        PGX_ERROR("Invalid FuncExpr parameters");
+        return nullptr;
     }
+
+    // Translate function arguments first
+    std::vector<::mlir::Value> args;
+    if (!translateFuncExprArgs(funcExpr, args)) {
+        return nullptr;
+    }
+
+    // Try specialized function handlers
+    auto mathResult = translateMathFunction(funcExpr->funcid, args);
+    if (mathResult) {
+        return mathResult;
+    }
+
+    auto stringResult = translateStringFunction(funcExpr->funcid, args);
+    if (stringResult) {
+        return stringResult;
+    }
+
+    // Unknown function - use generic handler
+    return translateUnknownFunction(funcExpr, args);
 }
 
 auto PostgreSQLASTTranslator::translateAggref(Aggref* aggref) -> ::mlir::Value {

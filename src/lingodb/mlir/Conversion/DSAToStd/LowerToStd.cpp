@@ -39,6 +39,10 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
       MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: ENTRY");
       MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: Original ScanSource result type check...");
       auto originalType = op.getResult().getType();
+      if (!originalType) {
+         MLIR_PGX_ERROR("DSA", "ScanSourceLowering: Result type is null!");
+         return failure();
+      }
       if (auto genIterType = originalType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
          MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: Original type is GenericIterableType with name: " + genIterType.getIteratorName());
       }
