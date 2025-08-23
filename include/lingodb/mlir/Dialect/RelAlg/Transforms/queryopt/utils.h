@@ -1,12 +1,13 @@
 #ifndef MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_UTILS_H
 #define MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_UTILS_H
+#include <functional>
 #include <llvm/ADT/EquivalenceClasses.h>
 #include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <cstddef>
 #include <iomanip>
 #include <iterator>
-#include <mlir/Dialect/RelAlg/IR/RelAlgOps.h>
+#include <lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h>
 
 namespace mlir::relalg {
 class QueryGraph;

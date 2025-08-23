@@ -1,15 +1,17 @@
 #ifndef RUNTIME_DATASOURCEITERATION_H
 #define RUNTIME_DATASOURCEITERATION_H
-#include "runtime/ExecutionContext.h"
-#include "runtime/helpers.h"
+#include "lingodb/runtime/ExecutionContext.h"
+#include "lingodb/runtime/helpers.h"
 namespace runtime {
 class DataSource {
    public:
-   virtual std::shared_ptr<arrow::RecordBatch> getNext() = 0;
+   virtual void* getNext() = 0;
    virtual ~DataSource() {}
+   
+   static DataSource* get(VarLen32 description);
 };
 class DataSourceIteration {
-   std::shared_ptr<arrow::RecordBatch> currChunk;
+   void* currChunk;
    std::shared_ptr<DataSource> dataSource;
    std::vector<size_t> colIds;
 

@@ -2,7 +2,7 @@ add_mlir_conversion_library(MLIRDBToArrowStd
         LowerToStd.cpp
 
         ADDITIONAL_HEADER_DIRS
-        ../../../mlir/Conversion/DBToArrowStd
+        ../../Conversion/DBToArrowStd
 
         DEPENDS
         dump-rt-defs
@@ -13,6 +13,8 @@ add_mlir_conversion_library(MLIRDBToArrowStd
 
         LINK_LIBS mlir-support PUBLIC
         MLIRIR
-        MLIRDB
+        MLIRDBDialect
+        MLIRUtilToLLVM
+        MLIRLLVMDialect
         MLIRSCFTransforms
         )

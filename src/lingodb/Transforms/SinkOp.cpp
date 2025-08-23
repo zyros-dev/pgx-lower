@@ -2,16 +2,15 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include <queue>
 namespace {
-class SinkOp : public mlir::PassWrapper<SinkOp, mlir::OperationPass<mlir::func::FuncOp>> {
+class SinkOp : public ::mlir::PassWrapper<SinkOp, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "sinkop"; }
-   static bool isSideEffectFree(mlir::Operation* op) {
+   static bool isSideEffectFree(::mlir::Operation* op) {
       if (auto memInterface = dyn_cast<mlir::MemoryEffectOpInterface>(op)) {
          if (!memInterface.hasNoEffect())
             return false;
-         // If the op does not have recursive side effects, then it can be moved.
-         if (!op->hasTrait<mlir::OpTrait::HasRecursiveSideEffects>())
+         if (!op->hasTrait<mlir::OpTrait::HasRecursiveMemoryEffects>())
             return true;
-      } else if (!op->hasTrait<mlir::OpTrait::HasRecursiveSideEffects>()) {
+      } else if (!op->hasTrait<mlir::OpTrait::HasRecursiveMemoryEffects>()) {
          // Otherwise, if the op does not implement the memory effect interface and
          // it does not have recursive side effects, then it cannot be known that the
          // op is moveable.
@@ -20,12 +19,12 @@ class SinkOp : public mlir::PassWrapper<SinkOp, mlir::OperationPass<mlir::func::
 
       // Recurse into the regions and ensure that all nested ops can also be moved.
       for (mlir::Region& region : op->getRegions())
-         for (mlir::Operation& op : region.getOps())
+         for (::mlir::Operation& op : region.getOps())
             if (!isSideEffectFree(&op))
                return false;
       return true;
    }
-   mlir::Block* canSink(mlir::Operation* op) {
+   ::mlir::Block* canSink(::mlir::Operation* op) {
       auto users = op->getUsers();
       if (users.empty()) return nullptr;
       auto *firstUser = *users.begin();
@@ -43,14 +42,14 @@ class SinkOp : public mlir::PassWrapper<SinkOp, mlir::OperationPass<mlir::func::
 
    public:
    void runOnOperation() override {
-      std::queue<mlir::Operation*> q;
+      std::queue<::mlir::Operation*> q;
       //todo: better performance
-      getOperation().walk([&](mlir::Operation* op) {
+      getOperation().walk([&](::mlir::Operation* op) {
          if (canSink(op))
             q.push(op);
       });
       while (!q.empty()) {
-         mlir::Operation* curr = q.front();
+         ::mlir::Operation* curr = q.front();
          q.pop();
          auto *sinkBefore = canSink(curr);
          if (!sinkBefore) continue;
@@ -66,6 +65,6 @@ class SinkOp : public mlir::PassWrapper<SinkOp, mlir::OperationPass<mlir::func::
    }
 };
 } // end anonymous namespace
-std::unique_ptr<mlir::Pass> mlir::createSinkOpPass() {
+std::unique_ptr<::mlir::Pass> mlir::createSinkOpPass() {
    return std::make_unique<SinkOp>();
 }

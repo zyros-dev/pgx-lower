@@ -3,8 +3,8 @@
 #define MLIR_DIALECT_RELALG_COLUMNSET_H
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/Support/Debug.h>
-#include <mlir/Dialect/RelAlg/IR/Column.h>
-#include <mlir/Dialect/RelAlg/IR/RelAlgDialect.h>
+#include <lingodb/mlir/Dialect/RelAlg/IR/Column.h>
+#include <lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h>
 namespace mlir::relalg {
 class ColumnSet {
    using attribute_set = llvm::SmallPtrSet<const mlir::relalg::Column*, 8>;

@@ -1,14 +1,21 @@
 #include "llvm/ADT/TypeSwitch.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Pass/Pass.h"
 
 namespace {
-class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<mlir::func::FuncOp>> {
+using mlir::relalg::Operator;
+using mlir::relalg::BinaryOperator;
+using mlir::relalg::UnaryOperator;
+using mlir::relalg::TupleLamdaOperator;
+using mlir::relalg::PredicateOperator;
+
+class IntroduceTmp : public ::mlir::PassWrapper<IntroduceTmp, ::mlir::OperationPass<::mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-introduce-tmp"; }
    public:
-   mlir::relalg::ColumnSet getUsed(mlir::Operation* op) {
+   mlir::relalg::ColumnSet getUsed(::mlir::Operation* op) {
       if (auto asOperator = mlir::dyn_cast_or_null<Operator>(op)) {
          auto cols = asOperator.getUsedColumns();
          for (auto *user : asOperator.asRelation().getUsers()) {
@@ -16,7 +23,7 @@ class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<
          }
          return cols;
       } else if (auto matOp = mlir::dyn_cast_or_null<mlir::relalg::MaterializeOp>(op)) {
-         return mlir::relalg::ColumnSet::fromArrayAttr(matOp.cols());
+         return mlir::relalg::ColumnSet::fromArrayAttr(matOp.getCols());
       }
       return {};
    }
@@ -24,7 +31,7 @@ class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<
       getOperation().walk([&](Operator op) {
          auto users = op->getUsers();
          if (!users.empty() && ++users.begin() != users.end()) {
-            mlir::OpBuilder builder(&getContext());
+            ::mlir::OpBuilder builder(&getContext());
             builder.setInsertionPointAfter(op.getOperation());
             mlir::relalg::ColumnSet usedAttributes;
             for (auto *user : users) {
@@ -42,6 +49,7 @@ class IntroduceTmp : public mlir::PassWrapper<IntroduceTmp, mlir::OperationPass<
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<Pass> createIntroduceTmpPass() { return std::make_unique<IntroduceTmp>(); }
+std::unique_ptr<mlir::Pass> createIntroduceTmpPass() { return std::make_unique<IntroduceTmp>(); }
 } // end namespace relalg
 } // end namespace mlir
+

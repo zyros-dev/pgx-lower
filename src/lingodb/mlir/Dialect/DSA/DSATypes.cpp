@@ -1,6 +1,6 @@
-#include "mlir/Dialect/DSA/IR/DSATypes.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/DSA/IR/DSAOpsEnums.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOpsEnums.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -48,7 +48,7 @@ bool mlir::dsa::CollectionType::classof(Type t) {
    Type type;
    StringRef parserName;
    if (parser.parseLess() || parser.parseType(type) || parser.parseComma(), parser.parseKeyword(&parserName) || parser.parseGreater()) {
-      return mlir::Type();
+      return ::mlir::Type();
    }
    return mlir::dsa::GenericIterableType::get(parser.getBuilder().getContext(), type, parserName.str());
 }
@@ -57,12 +57,12 @@ void mlir::dsa::GenericIterableType::print(mlir::AsmPrinter& p) const {
 }
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/DSA/IR/DSAOpsTypes.cpp.inc"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOpsTypes.cpp.inc"
 namespace mlir::dsa {
 void DSADialect::registerTypes() {
    addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/DSA/IR/DSAOpsTypes.cpp.inc"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOpsTypes.cpp.inc"
       >();
 }
 

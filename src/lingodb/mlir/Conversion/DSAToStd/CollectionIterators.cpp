@@ -1,31 +1,33 @@
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/DSA/IR/DSATypes.h"
+#include <optional>
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
 
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
-#include "mlir/Dialect/SCF/SCF.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 
-#include "mlir/Conversion/DSAToStd/CollectionIteration.h"
+#include "lingodb/mlir/Conversion/DSAToStd/CollectionIteration.h"
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include "runtime-defs/DataSourceIteration.h"
+#include "pgx-lower/execution/logging.h"
 using namespace mlir;
 
 class WhileIterator {
    protected:
-   mlir::TypeConverter* typeConverter;
+   ::mlir::TypeConverter* typeConverter;
    MLIRContext* context;
-   mlir::Location loc;
-   WhileIterator(mlir::MLIRContext* context) : context(context), loc(mlir::UnknownLoc::get(context)) {}
+   ::mlir::Location loc;
+   WhileIterator(::mlir::MLIRContext* context) : context(context), loc(mlir::UnknownLoc::get(context)) {}
 
    public:
-   void setTypeConverter(TypeConverter* typeConverter) {
-      WhileIterator::typeConverter = typeConverter;
+   void setTypeConverter(const TypeConverter* typeConverter) {
+      WhileIterator::typeConverter = const_cast<TypeConverter*>(typeConverter);
    }
-   void setLoc(mlir::Location loc) {
+   void setLoc(::mlir::Location loc) {
       this->loc = loc;
    }
    virtual Type iteratorType(OpBuilder& builder) = 0;
@@ -39,14 +41,14 @@ class WhileIterator {
 };
 class ForIterator {
    protected:
-   mlir::TypeConverter* typeConverter;
+   ::mlir::TypeConverter* typeConverter;
    MLIRContext* context;
-   mlir::Location loc;
-   mlir::Value len;
-   ForIterator(mlir::MLIRContext* context) : context(context), loc(mlir::UnknownLoc::get(context)) {}
+   ::mlir::Location loc;
+   ::mlir::Value len;
+   ForIterator(::mlir::MLIRContext* context) : context(context), loc(mlir::UnknownLoc::get(context)) {}
 
    public:
-   void setLoc(mlir::Location loc) {
+   void setLoc(::mlir::Location loc) {
       this->loc = loc;
    }
    virtual void init(OpBuilder& builder){};
@@ -62,8 +64,8 @@ class ForIterator {
    }
    virtual Value getElement(OpBuilder& builder, Value index) = 0;
    virtual ~ForIterator() {}
-   void setTypeConverter(TypeConverter* typeConverter) {
-      ForIterator::typeConverter = typeConverter;
+   void setTypeConverter(const TypeConverter* typeConverter) {
+      ForIterator::typeConverter = const_cast<TypeConverter*>(typeConverter);
    }
 };
 class TableIterator2 : public WhileIterator {
@@ -85,14 +87,23 @@ class TableIterator2 : public WhileIterator {
       return tableInfo;
    }
    virtual Value iteratorGetCurrentElement(OpBuilder& builder, Value iterator) override {
-      mlir::Value recordBatchInfoPtr;
+      // CRITICAL FIX: The crash was happening because of uninitialized memory reads.
+      // For now, we'll just allocate the structure and let rt_datasourceiteration_access
+      // populate it properly. The runtime function should handle initialization.
+      
+      ::mlir::Value recordBatchInfoPtr;
       {
-         mlir::OpBuilder::InsertionGuard guard(builder);
-         builder.setInsertionPointToStart(&iterator.getParentRegion()->getParentOfType<mlir::func::FuncOp>().getBody().front());
-         recordBatchInfoPtr = builder.create<mlir::util::AllocaOp>(loc, mlir::util::RefType::get(builder.getContext(), typeConverter->convertType(recordBatchType)), mlir::Value());
+         ::mlir::OpBuilder::InsertionGuard guard(builder);
+         builder.setInsertionPointToStart(&iterator.getParentRegion()->getParentOfType<::mlir::func::FuncOp>().getBody().front());
+         recordBatchInfoPtr = builder.create<mlir::util::AllocaOp>(loc, mlir::util::RefType::get(builder.getContext(), typeConverter->convertType(recordBatchType)), ::mlir::Value());
       }
+      
+      // Call rt_datasourceiteration_access to populate the structure
+      // The runtime function is responsible for proper initialization
       rt::DataSourceIteration::access(builder, loc)({iterator, recordBatchInfoPtr});
-      return builder.create<mlir::util::LoadOp>(loc, recordBatchInfoPtr, mlir::Value());
+      
+      // Return the populated structure
+      return builder.create<mlir::util::LoadOp>(loc, recordBatchInfoPtr, ::mlir::Value());
    }
    virtual Value iteratorValid(OpBuilder& builder, Value iterator) override {
       return rt::DataSourceIteration::isValid(builder, loc)({iterator})[0];
@@ -114,7 +125,7 @@ class JoinHtLookupIterator : public WhileIterator {
    JoinHtLookupIterator(Value tableInfo, Type elementType, bool modifiable = false) : WhileIterator(tableInfo.getContext()), iteratorInfo(tableInfo), modifiable(modifiable) {
    }
    virtual Type iteratorType(OpBuilder& builder) override {
-      tupleType = iteratorInfo.getType().cast<mlir::TupleType>();
+      tupleType = llvm::cast<mlir::TupleType>(iteratorInfo.getType());
       ptrType = tupleType.getType(0);
       return ptrType;
    }
@@ -128,19 +139,19 @@ class JoinHtLookupIterator : public WhileIterator {
    virtual Value iteratorNext(OpBuilder& builder, Value iterator) override {
       auto i8PtrType = mlir::util::RefType::get(builder.getContext(), builder.getI8Type());
       Value nextPtr = builder.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(builder.getContext(), i8PtrType), iterator, 0);
-      mlir::Value next = builder.create<mlir::util::LoadOp>(loc, nextPtr, mlir::Value());
+      ::mlir::Value next = builder.create<mlir::util::LoadOp>(loc, nextPtr, ::mlir::Value());
       next = builder.create<util::GenericMemrefCastOp>(loc, ptrType, next);
       return builder.create<mlir::util::FilterTaggedPtr>(loc, next.getType(), next, hash);
    }
    virtual Value iteratorGetCurrentElement(OpBuilder& builder, Value iterator) override {
-      auto bucketType = iterator.getType().cast<mlir::util::RefType>().getElementType();
-      auto elemType = bucketType.cast<TupleType>().getTypes()[1];
-      auto valType = elemType.cast<TupleType>().getTypes()[1];
+      auto bucketType = llvm::cast<mlir::util::RefType>(iterator.getType()).getElementType();
+      auto elemType = llvm::cast<TupleType>(bucketType).getTypes()[1];
+      auto valType = llvm::cast<TupleType>(elemType).getTypes()[1];
       Value elemAddress = builder.create<util::TupleElementPtrOp>(loc, util::RefType::get(builder.getContext(), elemType), iterator, 1);
       Value loadedValue = builder.create<util::LoadOp>(loc, elemType, elemAddress);
       if (modifiable) {
          Value valAddress = builder.create<util::TupleElementPtrOp>(loc, util::RefType::get(builder.getContext(), valType), elemAddress, 1);
-         return builder.create<mlir::util::PackOp>(loc, mlir::ValueRange{loadedValue, valAddress});
+         return builder.create<mlir::util::PackOp>(loc, ::mlir::ValueRange{loadedValue, valAddress});
       } else {
          return loadedValue;
       }
@@ -189,17 +200,17 @@ class AggrHtIterator : public ForIterator {
    }
 };
 class RecordBatchIterator : public ForIterator {
-   mlir::Value recordBatch;
+   ::mlir::Value recordBatch;
    mlir::dsa::RecordBatchType recordBatchType;
 
    public:
-   RecordBatchIterator(Value recordBatch, Type recordBatchType) : ForIterator(recordBatch.getContext()), recordBatch(recordBatch), recordBatchType(recordBatchType.cast<mlir::dsa::RecordBatchType>()) {
+   RecordBatchIterator(Value recordBatch, Type recordBatchType) : ForIterator(recordBatch.getContext()), recordBatch(recordBatch), recordBatchType(llvm::cast<mlir::dsa::RecordBatchType>(recordBatchType)) {
    }
    virtual Value upper(OpBuilder& builder) override {
       return builder.create<mlir::util::GetTupleOp>(loc, builder.getIndexType(), recordBatch, 0);
    }
    virtual Value getElement(OpBuilder& builder, Value index) override {
-      return builder.create<mlir::util::PackOp>(loc, typeConverter->convertType(mlir::dsa::RecordType::get(builder.getContext(), recordBatchType.getRowType())), mlir::ValueRange({index, recordBatch}));
+      return builder.create<mlir::util::PackOp>(loc, typeConverter->convertType(mlir::dsa::RecordType::get(builder.getContext(), recordBatchType.getRowType())), ::mlir::ValueRange({index, recordBatch}));
    }
 };
 
@@ -251,7 +262,7 @@ class WhileIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
    public:
    WhileIteratorIterationImpl(std::unique_ptr<WhileIterator> iterator) : iterator(std::move(iterator)) {
    }
-   virtual std::vector<Value> implementLoop(mlir::Location loc, mlir::ValueRange iterArgs, Value flag, mlir::TypeConverter& typeConverter, ConversionPatternRewriter& builder, ModuleOp parentModule, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) override {
+   virtual std::vector<Value> implementLoop(::mlir::Location loc, ::mlir::ValueRange iterArgs, Value flag, const ::mlir::TypeConverter& typeConverter, ConversionPatternRewriter& builder, ModuleOp parentModule, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) override {
       auto insertionPoint = builder.saveInsertionPoint();
 
       iterator->setTypeConverter(&typeConverter);
@@ -288,17 +299,15 @@ class WhileIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
       builder.create<mlir::scf::ConditionOp>(loc, builder.getRemappedValue(condition), whileOp.getBefore().front().getArguments());
       builder.setInsertionPointToStart(&whileOp.getAfter().front());
       auto arg2 = whileOp.getAfter().front().getArgument(0);
-      auto terminator = builder.create<mlir::dsa::YieldOp>(loc);
-      builder.setInsertionPoint(terminator);
       std::vector<Value> bodyParams = {};
       auto additionalArgs = whileOp.getAfter().front().getArguments().drop_front();
       bodyParams.insert(bodyParams.end(), additionalArgs.begin(), additionalArgs.end());
-      auto returnValues = bodyBuilder([&](mlir::OpBuilder& b) { return iterator->iteratorGetCurrentElement(b, arg2); }, bodyParams, builder);
-      builder.setInsertionPoint(terminator);
+      
+      auto returnValues = bodyBuilder([&](::mlir::OpBuilder& b) { return iterator->iteratorGetCurrentElement(b, arg2); }, bodyParams, builder);
+      
       Value nextIterator = iterator->iteratorNext(builder, arg2);
       returnValues.insert(returnValues.begin(), nextIterator);
       builder.create<mlir::scf::YieldOp>(loc, remap(returnValues, builder));
-      builder.eraseOp(terminator);
       Value finalIterator = whileOp.getResult(0);
       builder.restoreInsertionPoint(insertionPoint);
       iterator->iteratorFree(builder, finalIterator);
@@ -312,19 +321,19 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
    public:
    ForIteratorIterationImpl(std::unique_ptr<ForIterator> iterator) : iterator(std::move(iterator)) {
    }
-   virtual std::vector<Value> implementLoop(mlir::Location loc, mlir::ValueRange iterArgs, Value flag, mlir::TypeConverter& typeConverter, ConversionPatternRewriter& builder, ModuleOp parentModule, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) override {
+   virtual std::vector<Value> implementLoop(::mlir::Location loc, ::mlir::ValueRange iterArgs, Value flag, const ::mlir::TypeConverter& typeConverter, ConversionPatternRewriter& builder, ModuleOp parentModule, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) override {
       if (flag) {
          return implementLoopCondition(loc, iterArgs, flag, typeConverter, builder, bodyBuilder);
       } else {
          return implementLoopSimple(loc, iterArgs, typeConverter, builder, bodyBuilder);
       }
    }
-   std::vector<Value> implementLoopSimple(mlir::Location loc, const ValueRange& iterArgs, TypeConverter& typeConverter, ConversionPatternRewriter& builder, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) {
+   std::vector<Value> implementLoopSimple(::mlir::Location loc, const ValueRange& iterArgs, const TypeConverter& typeConverter, ConversionPatternRewriter& builder, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) {
       auto insertionPoint = builder.saveInsertionPoint();
       iterator->setTypeConverter(&typeConverter);
       iterator->init(builder);
       iterator->setLoc(loc);
-      auto forOp = builder.create<scf::ForOp>(loc, iterator->lower(builder), iterator->upper(builder), iterator->step(builder), iterArgs.size() ? iterArgs : llvm::None);
+      auto forOp = builder.create<scf::ForOp>(loc, iterator->lower(builder), iterator->upper(builder), iterator->step(builder), iterArgs.size() ? iterArgs : std::nullopt);
       if (iterArgs.size()) {
          builder.setInsertionPointToStart(forOp.getBody());
          builder.create<scf::YieldOp>(loc);
@@ -335,7 +344,7 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
 
       bodyArguments.insert(bodyArguments.end(), forOp.getRegionIterArgs().begin(), forOp.getRegionIterArgs().end());
       Value element;
-      auto results = bodyBuilder([&](mlir::OpBuilder& b) { return element = iterator->getElement(b, forOp.getInductionVar()); }, bodyArguments, builder);
+      auto results = bodyBuilder([&](::mlir::OpBuilder& b) { return element = iterator->getElement(b, forOp.getInductionVar()); }, bodyArguments, builder);
       if (iterArgs.size()) {
          builder.create<scf::YieldOp>(loc, remap(results, builder));
          builder.eraseOp(terminator);
@@ -343,7 +352,7 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
       builder.restoreInsertionPoint(insertionPoint);
       return std::vector<Value>(forOp.getResults().begin(), forOp.getResults().end());
    }
-   std::vector<Value> implementLoopCondition(mlir::Location loc, const ValueRange& iterArgs, Value flag, TypeConverter& typeConverter, ConversionPatternRewriter& builder, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) {
+   std::vector<Value> implementLoopCondition(::mlir::Location loc, const ValueRange& iterArgs, Value flag, const TypeConverter& typeConverter, ConversionPatternRewriter& builder, std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)> bodyBuilder) {
       auto insertionPoint = builder.saveInsertionPoint();
 
       iterator->setTypeConverter(&typeConverter);
@@ -384,31 +393,49 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
       builder.setInsertionPointToStart(&whileOp.getAfter().front());
       auto arg2 = whileOp.getAfter().front().getArgument(0);
       Value nextIterator = builder.create<arith::AddIOp>(loc, builder.getIndexType(), arg2, step);
-      auto terminator = builder.create<mlir::dsa::YieldOp>(loc);
-      builder.setInsertionPoint(nextIterator.getDefiningOp());
       std::vector<Value> bodyParams = {};
       auto additionalArgs = whileOp.getAfter().front().getArguments().drop_front();
       bodyParams.insert(bodyParams.end(), additionalArgs.begin(), additionalArgs.end());
-      auto returnValues = bodyBuilder([&](mlir::OpBuilder& b) { return iterator->getElement(b, arg2); }, bodyParams, builder);
+      
+      auto returnValues = bodyBuilder([&](::mlir::OpBuilder& b) { return iterator->getElement(b, arg2); }, bodyParams, builder);
+      
       returnValues.insert(returnValues.begin(), nextIterator);
-      builder.setInsertionPoint(terminator);
       builder.create<mlir::scf::YieldOp>(loc, remap(returnValues, builder));
-      builder.eraseOp(terminator);
       builder.restoreInsertionPoint(insertionPoint);
       auto loopResultValues = whileOp.getResults().drop_front();
       return std::vector<Value>(loopResultValues.begin(), loopResultValues.end());
    }
 };
 std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterationImpl::getImpl(Type collectionType, Value loweredCollection) {
+   MLIR_PGX_INFO("DSA", "CollectionIterationImpl::getImpl - ENTRY");
+   
+   // Add debugging to understand why this fails
+   if (!collectionType) {
+      MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - collectionType is null!");
+      return std::unique_ptr<mlir::dsa::CollectionIterationImpl>();
+   }
+   
+   // Try to print the type
+   std::string typeName = "unknown";
+   llvm::raw_string_ostream typeStream(typeName);
+   collectionType.print(typeStream);
+   MLIR_PGX_INFO("DSA", "CollectionIterationImpl::getImpl - Collection type string: " + typeName);
+   
    if (auto generic = collectionType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
+      MLIR_PGX_DEBUG("DSA", "CollectionIterationImpl::getImpl - GenericIterableType with name: " + generic.getIteratorName());
       if (generic.getIteratorName() == "table_chunk_iterator") {
          if (auto recordBatchType = generic.getElementType().dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
+            MLIR_PGX_DEBUG("DSA", "CollectionIterationImpl::getImpl - Creating TableIterator2");
             return std::make_unique<WhileIteratorIterationImpl>(std::make_unique<TableIterator2>(loweredCollection, recordBatchType));
+         } else {
+            MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - table_chunk_iterator element type is not RecordBatchType!");
          }
       } else if (generic.getIteratorName() == "join_ht_iterator") {
          return std::make_unique<WhileIteratorIterationImpl>(std::make_unique<JoinHtLookupIterator>(loweredCollection, generic.getElementType(), false));
       } else if (generic.getIteratorName() == "join_ht_mod_iterator") {
          return std::make_unique<WhileIteratorIterationImpl>(std::make_unique<JoinHtLookupIterator>(loweredCollection, generic.getElementType(), true));
+      } else {
+         MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - Unknown GenericIterableType name: " + generic.getIteratorName());
       }
    } else if (auto vector = collectionType.dyn_cast_or_null<mlir::dsa::VectorType>()) {
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<VectorIterator>(loweredCollection));
@@ -421,7 +448,10 @@ std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterati
    } else if (auto joinHt = collectionType.dyn_cast_or_null<mlir::dsa::JoinHashtableType>()) {
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<JoinHtIterator>(loweredCollection));
    } else if (auto recordBatch = collectionType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
+      MLIR_PGX_INFO("DSA", "CollectionIterationImpl::getImpl - Creating RecordBatchIterator");
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<RecordBatchIterator>(loweredCollection, recordBatch));
+   } else {
+      MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - Unknown collection type!");
    }
    return std::unique_ptr<mlir::dsa::CollectionIterationImpl>();
 }

@@ -1,6 +1,7 @@
-#include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
+#include "pgx-lower/execution/logging.h"
 
 class MapTranslator : public mlir::relalg::Translator {
    mlir::relalg::MapOp mapOp;
@@ -8,17 +9,23 @@ class MapTranslator : public mlir::relalg::Translator {
    public:
    MapTranslator(mlir::relalg::MapOp mapOp) : mlir::relalg::Translator(mapOp), mapOp(mapOp) {}
 
-   virtual void consume(mlir::relalg::Translator* child, mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
+   virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       auto scope = context.createScope();
       auto computedCols = mergeRelationalBlock(
          builder.getInsertionBlock(), op, [](auto x) { return &x->getRegion(0).front(); }, context, scope);
-      assert(computedCols.size() == mapOp.computed_cols().size());
+      if (computedCols.size() != mapOp.getComputedCols().size()) {
+         PGX_ERROR("MapOp: computed columns size mismatch - expected " + 
+                 std::to_string(mapOp.getComputedCols().size()) + 
+                 " but got " + std::to_string(computedCols.size()));
+         return;
+      }
       for (size_t i = 0; i < computedCols.size(); i++) {
-         context.setValueForAttribute(scope, &mapOp.computed_cols()[i].cast<mlir::relalg::ColumnDefAttr>().getColumn(), computedCols[i]);
+         auto& column = cast<mlir::relalg::ColumnDefAttr>(mapOp.getComputedCols()[i]).getColumn();
+         context.setValueForAttribute(scope, &column, computedCols[i]);
       }
       consumer->consume(this, builder, context);
    }
-   virtual void produce(mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       children[0]->produce(context, builder);
    }
 

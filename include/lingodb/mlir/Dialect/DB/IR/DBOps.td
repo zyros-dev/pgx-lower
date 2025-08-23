@@ -7,8 +7,8 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
-include "mlir/Dialect/DB/IR/DBInterfaces.td"
-include "mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
+include "lingodb/mlir/Dialect/DB/IR/DBInterfaces.td"
+include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // DB dialect definition.
@@ -24,6 +24,7 @@ def DB_Dialect : Dialect {
 
     let name = "db";
     let cppNamespace = "::mlir::db";
+    let useDefaultTypePrinterParser = 1;
     let extraClassDeclaration = [{
         private:
         void registerTypes();
@@ -126,7 +127,7 @@ def DB_StringType : DB_Type<"String","string"> {
 def AnyBool: AnyTypeOf<[I1,NullableType]>;
 def NullableDBType: AnyTypeOf<[AnyType,NullableType]>;
 
-def DB_ConstantOp : DB_Op<"constant", [NoSideEffect]> {
+def DB_ConstantOp : DB_Op<"constant", [Pure]> {
     let summary = "Create constant value";
 
     let arguments = (ins AnyAttr:$value);
@@ -134,18 +135,18 @@ def DB_ConstantOp : DB_Op<"constant", [NoSideEffect]> {
     let assemblyFormat = "`(` $value `)` `:` type($result) attr-dict";
 
     let extraClassDeclaration = [{
-        Attribute getValue() { return (*this)->getAttr("value"); }
+        Attribute getConstantValue() { return (*this)->getAttr("value"); }
     }];
 }
 
-def DB_NullOp : DB_Op<"null", [NoSideEffect]> {
+def DB_NullOp : DB_Op<"null", [Pure]> {
     let summary = "Create null value";
 
     let results = (outs NullableType:$res);
     let assemblyFormat = "`:` type($res) attr-dict";
 }
 
-def DB_DeriveTruth : DB_Op<"derive_truth", [NoSideEffect]> {
+def DB_DeriveTruth : DB_Op<"derive_truth", [Pure]> {
     let summary = "Get whether a value is true-ish";
 
     let arguments  = (ins AnyType:$val);
@@ -153,7 +154,7 @@ def DB_DeriveTruth : DB_Op<"derive_truth", [NoSideEffect]> {
     let assemblyFormat = "$val `:` type($val) attr-dict";
 }
 
-def DB_AsNullableOp : DB_Op<"as_nullable", [NoSideEffect]> {
+def DB_AsNullableOp : DB_Op<"as_nullable", [Pure]> {
     let summary = "Convert to nullable type";
 
     let arguments = (ins AnyType: $val,Optional<I1>: $null);
@@ -161,7 +162,7 @@ def DB_AsNullableOp : DB_Op<"as_nullable", [NoSideEffect]> {
     let assemblyFormat = "$val `:` type($val) ( `,` $null^ )?  `->` type($res) attr-dict";
 }
 
-def DB_IsNullOp : DB_Op<"isnull", [NoSideEffect]> {
+def DB_IsNullOp : DB_Op<"isnull", [Pure]> {
     let summary = "Indicate whether a nullable value is null";
 
     let arguments = (ins NullableType:$val);
@@ -169,7 +170,7 @@ def DB_IsNullOp : DB_Op<"isnull", [NoSideEffect]> {
     let assemblyFormat = "$val `:` type($val) attr-dict";
 }
 
-def DB_NullableGetVal : DB_Op<"nullable_get_val", [NoSideEffect,DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+def DB_NullableGetVal : DB_Op<"nullable_get_val", [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
     let summary = "Get value of nullable type";
 
     let arguments = (ins NullableType: $val);
@@ -177,8 +178,8 @@ def DB_NullableGetVal : DB_Op<"nullable_get_val", [NoSideEffect,DeclareOpInterfa
     let assemblyFormat = "$val `:` type($val)  attr-dict";
     let extraClassDefinition = [{
         LogicalResult $cppClass::inferReturnTypes(
-                MLIRContext* context, Optional<Location> location,
-                ValueRange operands, DictionaryAttr attributes,
+                MLIRContext* context, std::optional<mlir::Location> location,
+                ValueRange operands, DictionaryAttr attributes, OpaqueProperties properties,
                 RegionRange regions, SmallVectorImpl<Type>& inferredReturnTypes) {
             inferredReturnTypes.assign({operands[0].getType().cast<mlir::db::NullableType>().getType()});
             return success();
@@ -196,7 +197,7 @@ def DB_RuntimeCall : DB_Op<"runtime_call", [DB_MayNeedNullWrap,DB_MaySupportInva
     let hasVerifier=1;
 }
 
-def DB_Hash : DB_Op<"hash", [NoSideEffect]> {
+def DB_Hash : DB_Op<"hash", [Pure]> {
     let summary = "Compute hash";
 
     let arguments = (ins AnyType: $val);
@@ -206,12 +207,12 @@ def DB_Hash : DB_Op<"hash", [NoSideEffect]> {
 
 class DB_BinaryOp<string mnemonic, list<Trait> traits = []> :
         Op<DB_Dialect, mnemonic,
-            !listconcat(traits, [NoSideEffect,DeclareOpInterfaceMethods<InferTypeOpInterface>,DB_NeedsNullWrap,DB_SupportsInvalidValues])>,Arguments<(ins NullableDBType:$left, NullableDBType:$right)> {
+            !listconcat(traits, [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>,DB_NeedsNullWrap,DB_SupportsInvalidValues])>,Arguments<(ins NullableDBType:$left, NullableDBType:$right)> {
     let results = (outs AnyType:$result);
     let extraClassDefinition = [{
         LogicalResult $cppClass::inferReturnTypes(
-        MLIRContext* context, Optional<Location> location, ValueRange operands,
-        DictionaryAttr attributes, RegionRange regions,
+        MLIRContext* context, std::optional<mlir::Location> location, ValueRange operands,
+        DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
         SmallVectorImpl<Type>& inferredReturnTypes) {
             return inferReturnType(context,location,operands,inferredReturnTypes);
         }
@@ -230,8 +231,8 @@ def DB_MulOp : DB_BinaryOp<"mul"> {
 
   let extraClassDefinition = [{
     LogicalResult $cppClass::inferReturnTypes(
-   MLIRContext* context, Optional<Location> location, ValueRange operands,
-   DictionaryAttr attributes, RegionRange regions,
+   MLIRContext* context, std::optional<mlir::Location> location, ValueRange operands,
+   DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
    SmallVectorImpl<Type>& inferredReturnTypes) {
          return inferMulReturnType(context,location,operands,inferredReturnTypes);
     }
@@ -242,8 +243,8 @@ def DB_DivOp : DB_BinaryOp<"div"> {
 
   let extraClassDefinition = [{
     LogicalResult $cppClass::inferReturnTypes(
-   MLIRContext* context, Optional<Location> location, ValueRange operands,
-   DictionaryAttr attributes, RegionRange regions,
+   MLIRContext* context, std::optional<mlir::Location> location, ValueRange operands,
+   DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
    SmallVectorImpl<Type>& inferredReturnTypes) {
          return inferDivReturnType(context,location,operands,inferredReturnTypes);
     }
@@ -254,8 +255,8 @@ def DB_ModOp : DB_BinaryOp<"mod"> {
 
   let extraClassDefinition = [{
     LogicalResult $cppClass::inferReturnTypes(
-   MLIRContext* context, Optional<Location> location, ValueRange operands,
-   DictionaryAttr attributes, RegionRange regions,
+   MLIRContext* context, std::optional<mlir::Location> location, ValueRange operands,
+   DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
    SmallVectorImpl<Type>& inferredReturnTypes) {
          return inferDivReturnType(context,location,operands,inferredReturnTypes);
     }
@@ -264,11 +265,11 @@ def DB_ModOp : DB_BinaryOp<"mod"> {
 
 class DB_LogicalOp<string mnemonic, list<Trait> traits = []> :
         Op<DB_Dialect, mnemonic,
-            !listconcat(traits, [NoSideEffect,DeclareOpInterfaceMethods<InferTypeOpInterface>])> {
+            !listconcat(traits, [Pure,DeclareOpInterfaceMethods<InferTypeOpInterface>])> {
     let results = (outs AnyBool:$res);
     let extraClassDefinition = [{
-        LogicalResult $cppClass::inferReturnTypes(MLIRContext* context, Optional<Location>, ValueRange operands,
-                DictionaryAttr, RegionRange, SmallVectorImpl<Type>& inferredReturnTypes) {
+        LogicalResult $cppClass::inferReturnTypes(MLIRContext* context, std::optional<mlir::Location>, ValueRange operands,
+                DictionaryAttr, OpaqueProperties, RegionRange, SmallVectorImpl<Type>& inferredReturnTypes) {
             mlir::Type i1 = IntegerType::get(context, 1);
             inferredReturnTypes.assign({wrapNullableType(context, i1, operands)});
             return success();
@@ -331,7 +332,7 @@ def OrOp : DB_LogicalOp<"or"> {
     let assemblyFormat = "$vals `:` type($vals) attr-dict";
 }
 
-def NotOp : DB_Op<"not", [NoSideEffect,SameOperandsAndResultType,DB_NeedsNullWrap,DB_SupportsInvalidValues]> {
+def NotOp : DB_Op<"not", [Pure,SameOperandsAndResultType,DB_NeedsNullWrap,DB_SupportsInvalidValues]> {
     let summary = "Logical Not";
 
     let arguments = (ins AnyBool: $val);

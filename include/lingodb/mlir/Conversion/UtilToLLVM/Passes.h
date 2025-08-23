@@ -8,6 +8,9 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 namespace mlir {
+
+std::unique_ptr<Pass> createConvertUtilToLLVMPass();
+
 namespace util {
 void populateUtilToLLVMConversionPatterns(LLVMTypeConverter& typeConverter, RewritePatternSet& patterns);
 void populateUtilTypeConversionPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns);

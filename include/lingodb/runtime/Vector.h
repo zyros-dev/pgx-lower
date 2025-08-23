@@ -1,7 +1,7 @@
 
 #ifndef RUNTIME_VECTOR_H
 #define RUNTIME_VECTOR_H
-#include "runtime/helpers.h"
+#include "lingodb/runtime/helpers.h"
 namespace runtime {
 class Vector {
    size_t len;

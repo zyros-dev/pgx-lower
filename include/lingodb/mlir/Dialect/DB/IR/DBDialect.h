@@ -5,6 +5,6 @@
 namespace mlir::db {
 class RuntimeFunctionRegistry;
 } // end namespace mlir::db
-#include "mlir/Dialect/DB/IR/DBOpsDialect.h.inc"
+#include "lingodb/mlir/Dialect/DB/IR/DBOpsDialect.h.inc"
 
 #endif // MLIR_DIALECT_DB_IR_DBDIALECT_H

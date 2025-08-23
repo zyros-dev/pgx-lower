@@ -1,5 +1,5 @@
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/utils.h"
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraph.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/utils.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraph.h"
 #include <unordered_set>
 namespace mlir::relalg {
 void NodeSet::iterateSubsets(const std::function<void(NodeSet)>& fn) const {
@@ -93,8 +93,9 @@ Operator Plan::realizePlanRec() {
    Operator firstNode{};
    Operator lastNode{};
    for (auto op : additionalOps) {
-      op->setAttr("cost", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), cost));
-      op->setAttr("rows", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), rows));
+      ::mlir::OpBuilder builder(op.getContext());
+      op->setAttr("cost", ::mlir::FloatAttr::get(builder.getF64Type(), cost));
+      op->setAttr("rows", ::mlir::FloatAttr::get(builder.getF64Type(), rows));
       if (lastNode) {
          lastNode.setChildren({op});
       }
@@ -113,9 +114,9 @@ Operator Plan::realizePlanRec() {
       if (currop) {
          if (mlir::isa<mlir::relalg::SelectionOp>(currop.getOperation()) && children.size() == 2) {
             auto selop = mlir::dyn_cast_or_null<mlir::relalg::SelectionOp>(currop.getOperation());
-            mlir::OpBuilder builder(currop.getOperation());
+            ::mlir::OpBuilder builder(currop.getOperation());
             auto x = builder.create<mlir::relalg::InnerJoinOp>(selop.getLoc(), mlir::relalg::TupleStreamType::get(builder.getContext()), children[0]->getResult(0), children[1]->getResult(0));
-            x.predicate().push_back(new mlir::Block);
+            x.getPredicate().push_back(new ::mlir::Block);
             x.getLambdaBlock().addArgument(mlir::relalg::TupleType::get(builder.getContext()), selop->getLoc());
             selop.getLambdaArgument().replaceAllUsesWith(x.getLambdaArgument());
             x.getLambdaBlock().getOperations().splice(x.getLambdaBlock().end(), selop.getLambdaBlock().getOperations());
@@ -123,13 +124,12 @@ Operator Plan::realizePlanRec() {
          } else if (mlir::isa<mlir::relalg::InnerJoinOp>(currop.getOperation()) && children.size() == 1) {
             assert(false && "need to implement Join -> Selection transition");
          }
-         currop->setAttr("cost", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), cost));
-         currop->setAttr("rows", mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()), rows));
+         ::mlir::OpBuilder attrBuilder(currop.getOperation());
+         currop->setAttr("cost", ::mlir::FloatAttr::get(attrBuilder.getF64Type(), cost));
+         currop->setAttr("rows", ::mlir::FloatAttr::get(attrBuilder.getF64Type(), rows));
       } else if (!currop && children.size() == 2) {
-         mlir::OpBuilder builder(children[0].getOperation());
+         ::mlir::OpBuilder builder(children[0].getOperation());
          currop = builder.create<mlir::relalg::CrossProductOp>(children[0].getOperation()->getLoc(), mlir::relalg::TupleStreamType::get(builder.getContext()), children[0]->getResult(0), children[1]->getResult(0));
-         //currop->setAttr("cost",mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()),cost));
-         //currop->setAttr("rows",mlir::FloatAttr::get(mlir::FloatType::getF64(op.getContext()),rows));
       } else if (!currop && children.size() == 1) {
          if (lastNode) {
             lastNode.setChildren({children[0]});
@@ -168,7 +168,7 @@ std::shared_ptr<Plan> Plan::joinPlans(NodeSet s1, NodeSet s2, std::shared_ptr<Pl
 
    struct HashOp {
       size_t operator()(const Operator& op) const {
-         return (size_t) op.operator mlir::Operation*();
+         return (size_t) op.operator ::mlir::Operation*();
       }
    };
    std::unordered_set<Operator, HashOp> predicates;
@@ -208,7 +208,7 @@ std::shared_ptr<Plan> Plan::joinPlans(NodeSet s1, NodeSet s2, std::shared_ptr<Pl
             equivalentColumns.unionSets(edge.equality->first, edge.equality->second);
          }
          if (edge.createdNode) {
-            s |= NodeSet::single(queryGraph.numNodes, edge.createdNode.getValue());
+            s |= NodeSet::single(queryGraph.numNodes, edge.createdNode.value());
          }
       }
    }

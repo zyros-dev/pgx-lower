@@ -1,32 +1,41 @@
-#include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
+#include "pgx-lower/execution/logging.h"
 
 class BaseTableTranslator : public mlir::relalg::Translator {
    static bool registered;
    mlir::relalg::BaseTableOp baseTableOp;
 
    public:
-   BaseTableTranslator(mlir::relalg::BaseTableOp baseTableOp) : mlir::relalg::Translator(baseTableOp), baseTableOp(baseTableOp) {}
-   virtual void consume(mlir::relalg::Translator* child, mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
-      assert(false && "should not happen");
+   BaseTableTranslator(mlir::relalg::BaseTableOp baseTableOp) : mlir::relalg::Translator(baseTableOp), baseTableOp(baseTableOp) {
    }
-   virtual void produce(mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
+   virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
+      PGX_ERROR("BaseTableTranslator::consume called - this should not happen for leaf nodes");
+      return;
+   }
+   virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
       using namespace mlir;
-      std::vector<mlir::Type> types;
+      std::vector<::mlir::Type> types;
       std::vector<const mlir::relalg::Column*> cols;
-      std::vector<mlir::Attribute> columnNames;
-      std::string tableName = baseTableOp->getAttr("table_identifier").cast<mlir::StringAttr>().str();
+      std::vector<::mlir::Attribute> columnNames;
+      std::string tableName = cast<::mlir::StringAttr>(baseTableOp->getAttr("table_identifier")).str();
       std::string scanDescription = R"({ "table": ")" + tableName + R"(", "columns": [ )";
       bool first = true;
-      for (auto namedAttr : baseTableOp.columnsAttr().getValue()) {
+      
+      auto columnsAttr = baseTableOp.getColumnsAttr();
+      if (!columnsAttr || columnsAttr.empty()) {
+         scanDescription += R"("dummy_col")";
+         types.push_back(builder.getI32Type());
+      } else {
+         for (auto namedAttr : columnsAttr) {
          auto identifier = namedAttr.getName();
          auto attr = namedAttr.getValue();
          auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
-         if (requiredAttributes.contains(&attrDef.getColumn())) {
+         if (requiredAttributes.empty() || requiredAttributes.contains(&attrDef.getColumn())) {
             if (!first) {
                scanDescription += ",";
             } else {
@@ -37,6 +46,7 @@ class BaseTableTranslator : public mlir::relalg::Translator {
             types.push_back(getBaseType(attrDef.getColumn().type));
             cols.push_back(&attrDef.getColumn());
          }
+      }
       }
       scanDescription += "] }";
 
@@ -57,22 +67,33 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       forOp2.getBodyRegion().push_back(block2);
       mlir::OpBuilder builder2(forOp2.getBodyRegion());
       size_t i = 0;
-      for (const auto* attr : cols) {
-         std::vector<mlir::Type> types;
-         types.push_back(getBaseType(attr->type));
-         if (attr->type.isa<mlir::db::NullableType>()) {
-            types.push_back(builder.getI1Type());
-         }
-         auto atOp = builder2.create<mlir::dsa::At>(baseTableOp->getLoc(), types, forOp2.getInductionVar(), i++);
-         if (attr->type.isa<mlir::db::NullableType>()) {
-            mlir::Value isNull = builder2.create<mlir::db::NotOp>(baseTableOp->getLoc(), atOp.valid());
-            mlir::Value val = builder2.create<mlir::db::AsNullableOp>(baseTableOp->getLoc(), attr->type, atOp.val(), isNull);
-            context.setValueForAttribute(scope, attr, val);
-         } else {
-            context.setValueForAttribute(scope, attr, atOp.val());
+      
+      if (cols.empty()) {
+         auto atOp = builder2.create<mlir::dsa::At>(baseTableOp->getLoc(), 
+                                                    builder.getI32Type(), 
+                                                    forOp2.getInductionVar(), 0);
+      } else {
+         for (const auto* attr : cols) {
+            std::vector<::mlir::Type> types;
+            types.push_back(getBaseType(attr->type));
+            if (isa<mlir::db::NullableType>(attr->type)) {
+               types.push_back(builder.getI1Type());
+            }
+            auto atOp = builder2.create<mlir::dsa::At>(baseTableOp->getLoc(), types, forOp2.getInductionVar(), i++);
+            if (isa<mlir::db::NullableType>(attr->type)) {
+               ::mlir::Value isNull = builder2.create<mlir::db::NotOp>(baseTableOp->getLoc(), atOp.getValid());
+               ::mlir::Value val = builder2.create<mlir::db::AsNullableOp>(baseTableOp->getLoc(), attr->type, atOp.getVal(), isNull);
+               context.setValueForAttribute(scope, attr, val);
+            } else {
+               context.setValueForAttribute(scope, attr, atOp.getVal());
+            }
          }
       }
-      consumer->consume(this, builder2, context);
+      
+      // Only call consume if we have a consumer (MaterializeOp sets this)
+      if (consumer) {
+         consumer->consume(this, builder2, context);
+      }
       builder2.create<mlir::dsa::YieldOp>(baseTableOp->getLoc());
       builder1.create<mlir::dsa::YieldOp>(baseTableOp->getLoc());
    }

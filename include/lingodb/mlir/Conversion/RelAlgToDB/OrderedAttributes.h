@@ -1,9 +1,9 @@
 #ifndef MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H
 #define MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H
-#include "mlir/Conversion/RelAlgToDB/TranslatorContext.h"
-#include "mlir/Dialect/RelAlg/ColumnSet.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/TranslatorContext.h"
+#include "lingodb/mlir/Dialect/RelAlg/ColumnSet.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/Value.h"
 
 namespace mlir {
@@ -16,10 +16,10 @@ class OrderedAttributes {
    static OrderedAttributes fromRefArr(ArrayAttr arrayAttr) {
       OrderedAttributes res;
       for (auto attr : arrayAttr) {
-         if (auto attrRef = attr.dyn_cast_or_null<mlir::relalg::ColumnRefAttr>()) {
+         if (auto attrRef = dyn_cast_if_present<mlir::relalg::ColumnRefAttr>(attr)) {
             res.insert(&attrRef.getColumn());
          }
-         if (auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>()) {
+         if (auto attrDef = dyn_cast_if_present<mlir::relalg::ColumnDefAttr>(attr)) {
             res.insert(&attrDef.getColumn());
          }
       }
@@ -39,10 +39,10 @@ class OrderedAttributes {
       }
       return res;
    }
-   mlir::Value resolve(TranslatorContext& context, size_t pos) {
+   ::mlir::Value resolve(TranslatorContext& context, size_t pos) {
       return context.getValueForAttribute(attrs[pos]);
    }
-   mlir::Value pack(TranslatorContext& context, OpBuilder& builder, Location loc, std::vector<Value> additional = {}) {
+   ::mlir::Value pack(TranslatorContext& context, OpBuilder& builder, Location loc, std::vector<Value> additional = {}) {
       std::vector<Value> values(additional);
       for (size_t i = 0; i < attrs.size(); i++) {
          values.push_back(resolve(context, i));
@@ -62,7 +62,7 @@ class OrderedAttributes {
       }
       return attrs.size() - 1;
    }
-   mlir::TupleType getTupleType(mlir::MLIRContext* ctxt, std::vector<Type> additional = {}) {
+   mlir::TupleType getTupleType(::mlir::MLIRContext* ctxt, std::vector<Type> additional = {}) {
       std::vector<Type> tps(additional);
       tps.insert(tps.end(), types.begin(), types.end());
       return mlir::TupleType::get(ctxt, tps);

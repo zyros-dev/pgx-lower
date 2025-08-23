@@ -6,6 +6,10 @@
 #include <initializer_list>
 #include <string>
 #include <vector>
+
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/Value.h>
 #define EXPORT extern "C" __attribute__((visibility("default")))
 #define INLINE __attribute__((always_inline))
 #define NO_SIDE_EFFECTS __attribute__((annotate("rt-no-sideffect")))
@@ -149,4 +153,20 @@ T* untag(T* ptr) {
    return reinterpret_cast<T*>(asInt & ptrMask);
 }
 } // end namespace runtime
+
+namespace pgx_lower::compiler::runtime {
+
+class RuntimeCallGenerator {
+   ::mlir::OpBuilder& builder;
+   ::mlir::Location loc;
+
+public:
+   RuntimeCallGenerator(::mlir::OpBuilder& builder, ::mlir::Location loc) 
+       : builder(builder), loc(loc) {}
+
+   std::vector<::mlir::Value> operator()(const std::vector<::mlir::Value>& args);
+};
+
+} // end namespace pgx_lower::compiler::runtime
+
 #endif // RUNTIME_HELPERS_H
