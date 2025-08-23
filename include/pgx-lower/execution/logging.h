@@ -14,6 +14,7 @@
 #pragma push_macro("ngettext")
 #pragma push_macro("dngettext")
 #pragma push_macro("dcgettext")
+#pragma push_macro("restrict")
 
 // Undefine conflicting macros before including PostgreSQL headers
 #undef _
@@ -22,6 +23,7 @@
 #undef ngettext
 #undef dngettext
 #undef dcgettext
+#undef restrict
 
 extern "C" {
 #include "postgres.h"
@@ -29,6 +31,7 @@ extern "C" {
 }
 
 // Restore original macros
+#pragma pop_macro("restrict")
 #pragma pop_macro("dcgettext")
 #pragma pop_macro("dngettext")
 #pragma pop_macro("ngettext")

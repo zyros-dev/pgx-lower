@@ -25,7 +25,6 @@ using namespace mlir;
 namespace mlir {
 namespace dsa {
 
-// Heavy pattern registration isolated here - this is what takes 18+ hours to compile
 void registerAllDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns, ConversionTarget& target) {
     // Function interface patterns
     mlir::populateFunctionOpInterfaceTypeConversionPattern<mlir::func::FuncOp>(patterns, typeConverter);
@@ -34,6 +33,7 @@ void registerAllDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet
     
     mlir::dsa::populateScalarToStdPatterns(typeConverter, patterns);
     
+    mlir::dsa::populateDSAToStdPatterns(typeConverter, patterns);
     mlir::dsa::populateCollectionsToStdPatterns(typeConverter, patterns);
     
     // Utility patterns  
