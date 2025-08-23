@@ -1,7 +1,6 @@
 # PostgreSQL Extension Configuration for pgx-lower
-# Clean, organized extension build using the new directory structure
-
-add_postgresql_mixed_extension(
+if(NOT BUILDING_UNIT_TESTS)
+    add_postgresql_mixed_extension(
         pgx_lower
         VERSION 1.0
         C_SOURCES
@@ -97,4 +96,6 @@ add_dependencies(pgx_lower
 target_include_directories(pgx_lower PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
+
+endif() # NOT BUILDING_UNIT_TESTS
 

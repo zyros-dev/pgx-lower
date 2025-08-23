@@ -18,7 +18,7 @@ protected:
 
 TEST_F(MLIRLoweringPipelineTest, SimpleConstantPipeline) {
     // Very basic test - just constant return
-    const char* simpleMLIR = R"(
+    auto simpleMLIR = R"(
         module {
             func.func @main() -> i32 {
                 %c42 = arith.constant 42 : i32
@@ -28,10 +28,10 @@ TEST_F(MLIRLoweringPipelineTest, SimpleConstantPipeline) {
     )";
     
     ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR)) 
-        << "Failed to load MLIR module: " << tester->getLastError();
+        << "Failed to load MLIR module";
     
     EXPECT_TRUE(tester->runCompletePipeline()) 
-        << "Complete pipeline error: " << tester->getLastError();
+        << "Complete pipeline failed";
     
     EXPECT_TRUE(tester->verifyCurrentModule()) << "Final module should be valid";
     
