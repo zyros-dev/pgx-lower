@@ -28,7 +28,7 @@ build-ptest:
 
 build-utest:
 	@echo "Building project for unit tests..."
-	cmake -S . -B $(BUILD_DIR_UTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
+	cmake -S . -B $(BUILD_DIR_UTEST) -G $(CMAKE_GENERATOR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE) -DBUILDING_UNIT_TESTS=ON
 	cmake --build $(BUILD_DIR_UTEST)
 	@echo "Unit test build completed!"
 
@@ -90,13 +90,13 @@ rebuild-utest:
 	@echo "Unit test rebuild completed!"
 
 utest: build-utest
-	@echo "Running ALL unit tests..."
-	cd -
+	@echo "Running unit tests..."
+	cd $(BUILD_DIR_UTEST) && ctest --output-on-failure --verbose
 	@echo "Unit tests completed!"
 
 utest-run:
 	@echo "Running unit tests without rebuild..."
-	cd $(BUILD_DIR_UTEST) && ./tests/unit/mlir/test_standard_to_llvm_pass; cd -
+	cd $(BUILD_DIR_UTEST) && ctest --output-on-failure --verbose
 	@echo "Unit tests completed!"
 
 utest-all:

@@ -96,7 +96,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Global preprocessor definition for CLion linting support
 # This ensures ifdef POSTGRESQL_EXTENSION blocks are properly linted
-add_compile_definitions(POSTGRESQL_EXTENSION=1)
+if(BUILDING_UNIT_TESTS)
+    message(STATUS "Unit test mode - PostgreSQL extension disabled")
+else()
+    add_compile_definitions(POSTGRESQL_EXTENSION=1)
+    message(STATUS "PostgreSQL extension mode enabled")
+endif()
 
 # Create build_includes target for runtime header generation
 add_custom_target(build_includes)

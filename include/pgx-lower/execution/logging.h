@@ -159,6 +159,27 @@ extern Logger& get_logger();
         } \
     } while (0)
 
+// Unit test mode - override all logging macros to avoid PostgreSQL dependencies
+#ifdef BUILDING_UNIT_TESTS
+#undef PGX_INFO
+#undef PGX_DEBUG  
+#undef PGX_ERROR
+#undef PGX_NOTICE
+#undef MLIR_PGX_DEBUG
+#undef MLIR_PGX_INFO
+#undef MLIR_PGX_WARNING
+#undef MLIR_PGX_ERROR
+
+#define PGX_INFO(msg) do { std::cout << "[INFO] " << msg << std::endl; } while(0)
+#define PGX_DEBUG(msg) do { std::cout << "[DEBUG] " << msg << std::endl; } while(0)
+#define PGX_ERROR(msg) do { std::cerr << "[ERROR] " << msg << std::endl; } while(0)
+#define PGX_NOTICE(msg) do { std::cout << "[NOTICE] " << msg << std::endl; } while(0)
+#define MLIR_PGX_DEBUG(dialect, msg) do { std::cout << "[" << dialect << "] [DEBUG] " << msg << std::endl; } while(0)
+#define MLIR_PGX_INFO(dialect, msg) do { std::cout << "[" << dialect << "] [INFO] " << msg << std::endl; } while(0)
+#define MLIR_PGX_WARNING(dialect, msg) do { std::cout << "[" << dialect << "] [WARNING] " << msg << std::endl; } while(0)
+#define MLIR_PGX_ERROR(dialect, msg) do { std::cerr << "[" << dialect << "] [ERROR] " << msg << std::endl; } while(0)
+#endif
+
 #define RUNTIME_PGX_DEBUG(component, msg) \
     do { \
         if (get_logger().should_log(LogLevel::DEBUG_LVL)) { \

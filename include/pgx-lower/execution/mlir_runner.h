@@ -43,6 +43,12 @@ bool executeJITWithDestReceiver(mlir::ModuleOp module, EState* estate, DestRecei
 auto run_mlir_postgres_ast_translation(PlannedStmt* plannedStmt) -> bool;
 
 auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext) -> bool;
+
+// MLIR Pipeline Phases - for testing access
+bool runPhase3a(::mlir::ModuleOp module);
+bool runPhase3b(::mlir::ModuleOp module);
+bool runPhase3c(::mlir::ModuleOp module);
+
 } // namespace mlir_runner
 
 #endif // MLIR_RUNNER_H
