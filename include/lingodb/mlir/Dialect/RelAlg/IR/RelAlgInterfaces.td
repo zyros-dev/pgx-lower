@@ -36,7 +36,6 @@ def Relalg_CmpOpInterface : OpInterface<"CmpOpInterface"> {
 }
 
 def Operator : OpInterface<"Operator"> {
-  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "get all columns that are used directly by this operator",
@@ -65,8 +64,8 @@ mlir::relalg::detail::moveSubTreeBefore(this->getOperation(),before);
 >,
 InterfaceMethod<
         "get children of operator",
-        "llvm::SmallVector<mlir::relalg::Operator,4>", "getChildren",(ins ),"", /*defaultImplementation=*/[{
-    llvm::SmallVector<mlir::relalg::Operator,4> children;
+        "llvm::SmallVector<Operator,4>", "getChildren",(ins ),"", /*defaultImplementation=*/[{
+    llvm::SmallVector<Operator,4> children;
     auto op=this->getOperation();
     for (auto operand : op->getOperands()) {
         mlir::Type t=operand.getType();
@@ -84,9 +83,9 @@ InterfaceMethod<
 >,
 InterfaceMethod<
         "get children of operator",
-        "llvm::SmallVector<mlir::relalg::Operator,4>", "getAllSubOperators",(ins ),"", /*defaultImplementation=*/[{
-    llvm::SmallVector<mlir::relalg::Operator,4> suboperators;
-    suboperators.push_back(mlir::cast<mlir::relalg::Operator>(this->getOperation()));
+        "llvm::SmallVector<Operator,4>", "getAllSubOperators",(ins ),"", /*defaultImplementation=*/[{
+    llvm::SmallVector<Operator,4> suboperators;
+    suboperators.push_back(mlir::dyn_cast_or_null<Operator>(this->getOperation()));
     auto children=this->getChildren();
     for (auto child : children) {
         auto subsub=child.getAllSubOperators();
@@ -97,7 +96,7 @@ InterfaceMethod<
 >,
 InterfaceMethod<
         "set children of operator",
-        "void ", "setChildren",(ins "llvm::SmallVector<mlir::relalg::Operator,4>":$children),"", /*defaultImplementation=*/[{
+        "void ", "setChildren",(ins "llvm::SmallVector<Operator,4>":$children),"", /*defaultImplementation=*/[{
     auto op=this->getOperation();
     size_t i=0;
     size_t j=0;
@@ -134,7 +133,6 @@ return mlir::relalg::ColumnSet();
 ];
 }
 def BinaryOperator : OpInterface<"BinaryOperator"> {
-  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "get all attributes that are used directly by this operator",
@@ -169,7 +167,6 @@ return this->getOperation()->getOperand(1).getDefiningOp();
 ];
 }
 def UnaryOperator : OpInterface<"UnaryOperator"> {
-  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "get all attributes that are used directly by this operator",
@@ -198,7 +195,6 @@ return mlir::relalg::detail::rPushable.contains(mlir::relalg::detail::getUnaryOp
 ];
 }
 def TupleLamdaOperator : OpInterface<"TupleLamdaOperator"> {
-  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "",
@@ -222,7 +218,6 @@ return this->getOperation()->getRegion(0).getArgument(0);
 >];
 }
 def PredicateOperator : OpInterface<"PredicateOperator"> {
-  let cppNamespace = "::mlir::relalg";
 let methods = [
 InterfaceMethod<
         "",

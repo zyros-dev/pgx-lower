@@ -1,24 +1,24 @@
-#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include <mlir/Transforms/InliningUtils.h>
 using namespace mlir;
-using namespace ::mlir::dsa;
+using namespace mlir::dsa;
 struct DSAInlinerInterface : public DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
-   bool isLegalToInline(Operation*, Region*, bool, IRMapping&) const final override {
+   bool isLegalToInline(Operation*, Region*, bool, BlockAndValueMapping&) const final override {
       return true;
    }
-   virtual bool isLegalToInline(Region* dest, Region* src, bool wouldBeCloned, IRMapping& valueMapping) const override {
+   virtual bool isLegalToInline(Region* dest, Region* src, bool wouldBeCloned, BlockAndValueMapping& valueMapping) const override {
       return true;
    }
 };
 void DSADialect::initialize() {
    addOperations<
 #define GET_OP_LIST
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.cpp.inc"
+#include "mlir/Dialect/DSA/IR/DSAOps.cpp.inc"
       >();
    addInterfaces<DSAInlinerInterface>();
    registerTypes();
 }
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOpsDialect.cpp.inc"
+#include "mlir/Dialect/DSA/IR/DSAOpsDialect.cpp.inc"

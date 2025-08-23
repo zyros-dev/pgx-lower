@@ -5,6 +5,6 @@
 namespace mlir::dsa {
 class RuntimeFunctionRegistry;
 } // end namespace mlir::dsa
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOpsDialect.h.inc"
+#include "mlir/Dialect/DSA/IR/DSAOpsDialect.h.inc"
 
 #endif // MLIR_DIALECT_DSA_IR_DSADIALECT_H

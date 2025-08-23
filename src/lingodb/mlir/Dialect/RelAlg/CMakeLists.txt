@@ -1,9 +1,7 @@
-add_mlir_dialect_library(MLIRRelAlgDialect
-        PARTIAL_SOURCES_INTENDED
+add_mlir_dialect_library(MLIRRelAlg
         RelAlgDialect.cpp
         RelAlgOps.cpp
         RelAlgOpsEnums.cpp
-        RelAlgTypes.cpp
         OperatorInterfaceImpl.cpp
         Transforms/MetaData.cpp
         Transforms/ExtractNestedOperators.cpp
@@ -28,8 +26,8 @@ add_mlir_dialect_library(MLIRRelAlgDialect
         ../../include/mlir/Dialect/RelAlg
 
         DEPENDS
-        PGXLowerRelAlgOpsIncGen
-        PGXLowerDBOpsIncGen
+        MLIRRelAlgOpsIncGen
+        MLIRDBOpsIncGen
 
         LINK_LIBS mlir-support PUBLIC
         MLIRIR

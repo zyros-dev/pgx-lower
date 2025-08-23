@@ -8,10 +8,9 @@ add_mlir_dialect_library(MLIRDSA
         ../../include/mlir/Dialect/DSA
 
         DEPENDS
-        PGXLowerDSAOpsIncGen
-        PGXLowerRelAlgOpsIncGen
+        MLIRDSAOpsIncGen
         LINK_LIBS PUBLIC
         MLIRIR
         MLIRFuncTransforms
-        MLIRUtilDialect
+        MLIRUtil
         )

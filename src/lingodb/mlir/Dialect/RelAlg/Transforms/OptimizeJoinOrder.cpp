@@ -1,32 +1,26 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
-#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/DPhyp.h"
-#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/GOO.h"
-#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraphBuilder.h"
-#include "mlir/Pass/Pass.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/Dialect/RelAlg/Transforms/queryopt/DPhyp.h"
+#include "mlir/Dialect/RelAlg/Transforms/queryopt/GOO.h"
+#include "mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraphBuilder.h"
 
 namespace {
-using mlir::relalg::Operator;
-using mlir::relalg::BinaryOperator;
-using mlir::relalg::UnaryOperator;
-using mlir::relalg::TupleLamdaOperator;
-using mlir::relalg::PredicateOperator;
 
-class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::OperationPass<::mlir::func::FuncOp>> {
+class OptimizeJoinOrder : public mlir::PassWrapper<OptimizeJoinOrder, mlir::OperationPass<mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-optimize-join-order"; }
 
-   llvm::SmallPtrSet<::mlir::Operation*, 12> alreadyOptimized;
+   llvm::SmallPtrSet<mlir::Operation*, 12> alreadyOptimized;
 
-   bool isUnsupportedOp(::mlir::Operation* op) {
-      return ::llvm::TypeSwitch<::mlir::Operation*, bool>(op)
+   bool isUnsupportedOp(mlir::Operation* op) {
+      return ::llvm::TypeSwitch<mlir::Operation*, bool>(op)
          .Case<mlir::relalg::CrossProductOp, mlir::relalg::SelectionOp>(
-            [&](::mlir::Operation* op) {
+            [&](mlir::Operation* op) {
                return false;
             })
-         .Case<BinaryOperator>([&](::mlir::Operation* op) {
+         .Case<BinaryOperator>([&](mlir::Operation* op) {
             if (mlir::relalg::detail::isJoin(op)) {
                Operator asOperator = mlir::cast<Operator>(op);
                auto subOps = asOperator.getAllSubOperators();
@@ -41,7 +35,7 @@ class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::
          });
    }
 
-   bool isOptimizationRoot(::mlir::Operation* op) {
+   bool isOptimizationRoot(mlir::Operation* op) {
       //reason one: used by multiple parent operators (DAG)
       auto users = op->getUsers();
       if (!users.empty() && ++users.begin() != users.end()) {
@@ -89,7 +83,7 @@ class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::
          //now: realize found plan
          //first: collect all operators that are reachable now
          llvm::SmallVector<Operator, 4> before = op.getAllSubOperators();
-         llvm::SmallPtrSet<::mlir::Operation*, 8> prevUsers{op->user_begin(), op->user_end()};
+         llvm::SmallPtrSet<mlir::Operation*, 8> prevUsers{op->user_begin(), op->user_end()};
          //realize plan
          Operator realized = solution->realizePlan();
          //second: collect all operators that are reachable now
@@ -102,7 +96,7 @@ class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::
             });
          }
          //cleanup: make sure that all operators that are not reachable any more are cleaned up
-         llvm::SmallPtrSet<::mlir::Operation*, 8> afterHt;
+         llvm::SmallPtrSet<mlir::Operation*, 8> afterHt;
          for (auto op : after) {
             afterHt.insert(op.getOperation());
          }
@@ -135,7 +129,6 @@ class OptimizeJoinOrder : public ::mlir::PassWrapper<OptimizeJoinOrder, ::mlir::
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<mlir::Pass> createOptimizeJoinOrderPass() { return std::make_unique<OptimizeJoinOrder>(); }
+std::unique_ptr<Pass> createOptimizeJoinOrderPass() { return std::make_unique<OptimizeJoinOrder>(); }
 } // end namespace relalg
 } // end namespace mlir
-

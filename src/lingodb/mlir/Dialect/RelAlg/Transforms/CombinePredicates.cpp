@@ -1,18 +1,11 @@
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include "mlir/Pass/Pass.h"
 
 namespace {
-using mlir::relalg::Operator;
-using mlir::relalg::BinaryOperator;
-using mlir::relalg::UnaryOperator;
-using mlir::relalg::TupleLamdaOperator;
-using mlir::relalg::PredicateOperator;
-
-class CombinePredicates : public ::mlir::PassWrapper<CombinePredicates, ::mlir::OperationPass<::mlir::func::FuncOp>> {
+class CombinePredicates : public mlir::PassWrapper<CombinePredicates, mlir::OperationPass<mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-combine-predicates"; }
 
    public:
@@ -21,30 +14,30 @@ class CombinePredicates : public ::mlir::PassWrapper<CombinePredicates, ::mlir::
       auto higherTerminator = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(higher.getPredicateBlock().getTerminator());
       auto lowerTerminator = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(lower.getPredicateBlock().getTerminator());
 
-      Value higherPredVal = higherTerminator.getResults()[0];
-      Value lowerPredVal = lowerTerminator.getResults()[0];
+      Value higherPredVal = higherTerminator.results()[0];
+      Value lowerPredVal = lowerTerminator.results()[0];
 
       OpBuilder builder(lower);
-      ::mlir::IRMapping mapping;
+      mlir::BlockAndValueMapping mapping;
       mapping.map(higher.getPredicateArgument(), lower.getPredicateArgument());
       builder.setInsertionPointToEnd(&lower.getPredicateBlock());
       mlir::relalg::detail::inlineOpIntoBlock(higherPredVal.getDefiningOp(), higherPredVal.getDefiningOp()->getParentOp(), lower.getOperation(), &lower.getPredicateBlock(), mapping);
       auto nullable = higherPredVal.getType().isa<mlir::db::NullableType>() || lowerPredVal.getType().isa<mlir::db::NullableType>();
-      ::mlir::Type restype = builder.getI1Type();
+      mlir::Type restype = builder.getI1Type();
       if (nullable) {
          restype = mlir::db::NullableType::get(builder.getContext(), restype);
       }
-      ::mlir::Value combined = builder.create<mlir::db::AndOp>(higher->getLoc(), restype, ValueRange{lowerPredVal, mapping.lookup(higherPredVal)});
+      mlir::Value combined = builder.create<mlir::db::AndOp>(higher->getLoc(), restype, ValueRange{lowerPredVal, mapping.lookup(higherPredVal)});
       builder.create<mlir::relalg::ReturnOp>(higher->getLoc(), combined);
       lowerTerminator->erase();
    }
 
    void runOnOperation() override {
       getOperation().walk([&](mlir::relalg::SelectionOp op) {
-         ::mlir::Value lower = op.getRel();
+         mlir::Value lower = op.rel();
          bool canCombine = mlir::isa<mlir::relalg::SelectionOp>(lower.getDefiningOp()) || mlir::isa<mlir::relalg::InnerJoinOp>(lower.getDefiningOp());
          if (canCombine) {
-            combine(op, mlir::cast<PredicateOperator>(lower.getDefiningOp()));
+            combine(op, lower.getDefiningOp());
             op.replaceAllUsesWith(lower);
             op->erase();
          }
@@ -55,7 +48,6 @@ class CombinePredicates : public ::mlir::PassWrapper<CombinePredicates, ::mlir::
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<mlir::Pass> createCombinePredicatesPass() { return std::make_unique<CombinePredicates>(); }
+std::unique_ptr<Pass> createCombinePredicatesPass() { return std::make_unique<CombinePredicates>(); }
 } // end namespace relalg
 } // end namespace mlir
-

@@ -1,17 +1,16 @@
-#include "lingodb/mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
-#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/mlir/Dialect/util/UtilOps.h"
-#include "pgx-lower/execution/logging.h"
+#include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
+#include "mlir/Conversion/RelAlgToDB/Translator.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/util/UtilOps.h"
 
 class MaterializeTranslator : public mlir::relalg::Translator {
    mlir::relalg::MaterializeOp materializeOp;
-   ::mlir::Value tableBuilder;
-   ::mlir::Value table;
+   mlir::Value tableBuilder;
+   mlir::Value table;
    mlir::relalg::OrderedAttributes orderedAttributes;
-   std::string arrowDescrFromType(::mlir::Type type) {
+   std::string arrowDescrFromType(mlir::Type type) {
       if (isIntegerType(type, 1)) {
          return "bool";
       } else if (auto intWidth = getIntegerWidth(type, false)) {
@@ -22,7 +21,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
          // TODO: actually handle cases where 128 bits are insufficient.
          auto prec = std::min(decimalType.getP(), 38);
          return "decimal[" + std::to_string(prec) + "," + std::to_string(decimalType.getS()) + "]";
-      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
+      } else if (auto floatType = type.dyn_cast_or_null<mlir::FloatType>()) {
          return "float[" + std::to_string(floatType.getWidth()) + "]";
       } else if (auto stringType = type.dyn_cast_or_null<mlir::db::StringType>()) {
          return "string";
@@ -47,46 +46,23 @@ class MaterializeTranslator : public mlir::relalg::Translator {
    }
 
    public:
-   MaterializeTranslator(mlir::relalg::MaterializeOp materializeOp) : mlir::relalg::Translator(materializeOp.getRel()), materializeOp(materializeOp) {
-      if (!materializeOp) {
-         PGX_ERROR("MaterializeTranslator: materializeOp is null!");
-         return;
-      }
-      
-      auto cols = materializeOp.getCols();
-      if (!cols) {
-         PGX_ERROR("MaterializeTranslator: materializeOp.getCols() returned null!");
-         return;
-      }
-      
-      if (!cols.empty()) {
-         orderedAttributes = mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.getCols());
-      }
+   MaterializeTranslator(mlir::relalg::MaterializeOp materializeOp) : mlir::relalg::Translator(materializeOp.rel()), materializeOp(materializeOp) {
+      orderedAttributes = mlir::relalg::OrderedAttributes::fromRefArr(materializeOp.cols());
    }
    virtual void setInfo(mlir::relalg::Translator* consumer, mlir::relalg::ColumnSet requiredAttributes) override {
       this->consumer = consumer;
       this->requiredAttributes = requiredAttributes;
-      
-      auto cols = materializeOp.getCols();
-      if (!cols.empty()) {
-         this->requiredAttributes.insert(mlir::relalg::ColumnSet::fromArrayAttr(cols));
-      }
-      
+      this->requiredAttributes.insert(mlir::relalg::ColumnSet::fromArrayAttr(materializeOp.cols()));
       propagateInfo();
    }
    virtual mlir::relalg::ColumnSet getAvailableColumns() override {
       return {};
    }
-   virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
-      if (materializeOp.getCols().empty()) {
-         builder.create<mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
-         return;
-      }
-      
+   virtual void consume(mlir::relalg::Translator* child, mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
          auto val = orderedAttributes.resolve(context, i);
-         ::mlir::Value valid;
-         if (isa<mlir::db::NullableType>(val.getType())) {
+         mlir::Value valid;
+         if (val.getType().isa<mlir::db::NullableType>()) {
             valid = builder.create<mlir::db::IsNullOp>(materializeOp->getLoc(), val);
             valid = builder.create<mlir::db::NotOp>(materializeOp->getLoc(), valid);
             val = builder.create<mlir::db::NullableGetVal>(materializeOp->getLoc(), getBaseType(val.getType()), val);
@@ -95,62 +71,18 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       }
       builder.create<mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
    }
-   virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      if (materializeOp.getCols().empty()) {
-         auto emptyTupleType = mlir::TupleType::get(builder.getContext(), {});
-         auto tableBuilderType = mlir::dsa::TableBuilderType::get(builder.getContext(), emptyTupleType);
-         
-         tableBuilder = builder.create<mlir::dsa::CreateDS>(
-            materializeOp.getLoc(), 
-            tableBuilderType, 
-            builder.getStringAttr("")  // Empty description
-         );
-         
-         // Still need to process children
-         if (!children.empty()) {
-            children[0]->produce(context, builder);
-         }
-         
-         table = builder.create<mlir::dsa::Finalize>(
-            materializeOp.getLoc(), 
-            mlir::dsa::TableType::get(builder.getContext()), 
-            tableBuilder
-         ).getRes();
-         
-         return;
-      }
-      
+   virtual void produce(mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
       std::string descr = "";
       auto tupleType = orderedAttributes.getTupleType(builder.getContext());
-      for (size_t i = 0; i < materializeOp.getColumns().size(); i++) {
+      for (size_t i = 0; i < materializeOp.columns().size(); i++) {
          if (!descr.empty()) {
             descr += ";";
          }
-         auto colAttr = materializeOp.getColumns()[i];
-         if (!colAttr) {
-            PGX_ERROR("MaterializeTranslator::produce column attribute at index " + std::to_string(i) + " is null");
-            continue;
-         }
-         
-         // Safety check for cast
-         if (!isa<::mlir::StringAttr>(colAttr)) {
-            PGX_ERROR("MaterializeTranslator::produce column attribute is not a StringAttr");
-            continue;
-         }
-         
-         descr += cast<::mlir::StringAttr>(colAttr).str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
+         descr += materializeOp.columns()[i].cast<mlir::StringAttr>().str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
       }
-      
       tableBuilder = builder.create<mlir::dsa::CreateDS>(materializeOp.getLoc(), mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
-      
-      if (children.empty()) {
-         PGX_ERROR("MaterializeTranslator::produce no children!");
-         return;
-      }
-      
       children[0]->produce(context, builder);
-      
-      table = builder.create<mlir::dsa::Finalize>(materializeOp.getLoc(), mlir::dsa::TableType::get(builder.getContext()), tableBuilder).getRes();
+      table = builder.create<mlir::dsa::Finalize>(materializeOp.getLoc(), mlir::dsa::TableType::get(builder.getContext()), tableBuilder).res();
    }
    virtual void done() override {
       materializeOp.replaceAllUsesWith(table);
@@ -159,10 +91,5 @@ class MaterializeTranslator : public mlir::relalg::Translator {
 };
 
 std::unique_ptr<mlir::relalg::Translator> mlir::relalg::Translator::createMaterializeTranslator(mlir::relalg::MaterializeOp materializeOp) {
-   if (!materializeOp) {
-      PGX_ERROR("createMaterializeTranslator: materializeOp is null!");
-      return nullptr;
-   }
-   
    return std::make_unique<MaterializeTranslator>(materializeOp);
 }

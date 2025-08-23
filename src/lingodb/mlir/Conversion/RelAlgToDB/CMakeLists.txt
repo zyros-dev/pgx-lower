@@ -18,7 +18,7 @@ add_mlir_conversion_library(MLIRRelAlgToDB
         Translators/LimitOp.cpp
         Translators/TmpOp.cpp
         ADDITIONAL_HEADER_DIRS
-        .
+        ../../../mlir/Conversion/RelAlgToDB
 
         DEPENDS
 
@@ -27,5 +27,5 @@ add_mlir_conversion_library(MLIRRelAlgToDB
 
         LINK_LIBS mlir-support PUBLIC
         MLIRIR
-        MLIRDBDialect
+        MLIRDB
         )

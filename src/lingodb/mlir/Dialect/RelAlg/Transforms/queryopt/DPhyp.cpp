@@ -1,4 +1,4 @@
-#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/DPhyp.h"
+#include "mlir/Dialect/RelAlg/Transforms/queryopt/DPhyp.h"
 #include <unordered_set>
 
 void mlir::relalg::DPHyp::emitCsgCmp(const NodeSet& s1, const NodeSet& s2) {
@@ -50,9 +50,9 @@ void mlir::relalg::DPHyp::emitCsg(NodeSet s1) {
 static std::shared_ptr<mlir::relalg::Plan> createInitialPlan(mlir::relalg::QueryGraph::Node& n) {
    std::string description = std::to_string(n.id);
    if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {
-      description = baseTableOp.getTableIdentifier().str();
+      description = baseTableOp.table_identifier().str();
    }
-   auto currPlan = std::make_shared<mlir::relalg::Plan>(n.op, std::vector<std::shared_ptr<mlir::relalg::Plan>>({}), std::vector<mlir::relalg::Operator>({n.additionalPredicates}), n.rows * n.selectivity);
+   auto currPlan = std::make_shared<mlir::relalg::Plan>(n.op, std::vector<std::shared_ptr<mlir::relalg::Plan>>({}), std::vector<Operator>({n.additionalPredicates}), n.rows * n.selectivity);
    currPlan->setDescription(description);
    return currPlan;
 }

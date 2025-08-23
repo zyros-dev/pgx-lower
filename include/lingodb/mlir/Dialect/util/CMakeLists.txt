@@ -1,3 +1,4 @@
+
 set(LLVM_TARGET_DEFINITIONS UtilOps.td)
 mlir_tablegen(UtilOpsDialect.h.inc -gen-dialect-decls)
 mlir_tablegen(UtilOpsDialect.cpp.inc -gen-dialect-defs)

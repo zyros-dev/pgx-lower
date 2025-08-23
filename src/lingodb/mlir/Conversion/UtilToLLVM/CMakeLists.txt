@@ -3,7 +3,7 @@ add_mlir_conversion_library(MLIRUtilToLLVM
         UtilTypeConversion.cpp
 
         ADDITIONAL_HEADER_DIRS
-        .
+        ../../../mlir/Conversion/UtilToLLVM
 
         DEPENDS
 
@@ -12,5 +12,5 @@ add_mlir_conversion_library(MLIRUtilToLLVM
 
         LINK_LIBS PUBLIC
         MLIRIR
-        MLIRUtilDialect
+        MLIRUtil
         )

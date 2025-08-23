@@ -1,13 +1,13 @@
 #ifndef MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_QUERYGRAPHBUILDER_H
 #define MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_QUERYGRAPHBUILDER_H
 #include "QueryGraph.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
 namespace mlir::relalg {
 class QueryGraphBuilder {
 
    Operator root;
-   llvm::SmallPtrSet<::mlir::Operation*,12>& alreadyOptimized;
+   llvm::SmallPtrSet<mlir::Operation*,12>& alreadyOptimized;
    size_t numNodes;
    QueryGraph qg;
    std::unordered_map<const relalg::Column*, size_t> attrToNodes;
@@ -26,9 +26,9 @@ class QueryGraphBuilder {
 
    NodeSet calcSES(Operator op) const;
 
-   std::unordered_map<::mlir::Operation*, NodeSet> ts;
-   std::unordered_map<::mlir::Operation*, NodeSet> teSs;
-   std::unordered_map<::mlir::Operation*, size_t> nodeForOp;
+   std::unordered_map<mlir::Operation*, NodeSet> ts;
+   std::unordered_map<mlir::Operation*, NodeSet> teSs;
+   std::unordered_map<mlir::Operation*, size_t> nodeForOp;
 
    NodeSet calcT(Operator op) {
       if (ts.count(op.getOperation())) {
@@ -52,7 +52,7 @@ class QueryGraphBuilder {
 
 
    public:
-   QueryGraphBuilder(Operator root, llvm::SmallPtrSet<::mlir::Operation*,12>& alreadyOptimized);
+   QueryGraphBuilder(Operator root, llvm::SmallPtrSet<mlir::Operation*,12>& alreadyOptimized);
    void generate() {
       populateQueryGraph(root);
       ensureConnected();

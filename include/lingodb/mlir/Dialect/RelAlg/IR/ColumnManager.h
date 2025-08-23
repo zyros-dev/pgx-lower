@@ -1,9 +1,9 @@
 #ifndef MLIR_DIALECT_RELALG_IR_COLUMNMANAGER_H
 #define MLIR_DIALECT_RELALG_IR_COLUMNMANAGER_H
 
-#include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
+#include "mlir/Dialect/RelAlg/IR/Column.h"
 
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
 
 namespace mlir::relalg {
 class ColumnManager {

@@ -1,76 +1,37 @@
-#include "lingodb/mlir-support/parsing.h"
-#include <stdexcept>
-#include <cstring>
-
-// PostgreSQL includes for type OIDs and parsing
-#ifdef POSTGRESQL_EXTENSION
-extern "C" {
-#include "postgres.h"
-#include "catalog/pg_type.h"
-}
-#else
-// Define PostgreSQL type OIDs for unit tests
-#define BOOLOID     16
-#define INT2OID     21
-#define INT4OID     23
-#define INT8OID     20
-#define FLOAT4OID   700
-#define FLOAT8OID   701
-#define TEXTOID     25
-#define NUMERICOID  1700
-#define DATEOID     1082
-#define TIMESTAMPOID 1114
-#endif
+#include "mlir-support/parsing.h"
+#include "arrow/util/decimal.h"
+#include "arrow/util/value_parsing.h"
 int32_t parseDate32(std::string str) {
-   // Simple date parsing - convert to days since epoch
-   // Format: YYYY-MM-DD
-   if (str.length() != 10 || str[4] != '-' || str[7] != '-') {
-       return 0; // Invalid format
-   }
-   
-   int year = std::stoi(str.substr(0, 4));
-   int month = std::stoi(str.substr(5, 2));
-   int day = std::stoi(str.substr(8, 2));
-   
-   // Simplified calculation: days since 1970-01-01
-   // This is approximate - real PostgreSQL parsing would be more accurate
-   int days = (year - 1970) * 365 + (month - 1) * 30 + day;
-   return days;
+   int32_t res;
+   arrow::internal::ParseValue<arrow::Date32Type>(str.data(), str.length(), &res);
+   return res;
 }
-int convertTimeUnit(support::TimeUnit unit) {
+arrow::TimeUnit::type convertTimeUnit(support::TimeUnit unit) {
    switch (unit) {
-      case support::TimeUnit::SECOND: return 0;
-      case support::TimeUnit::MILLI: return 1;
-      case support::TimeUnit::MICRO: return 2;
-      case support::TimeUnit::NANO: return 3;
+      case support::TimeUnit::SECOND: return arrow::TimeUnit::SECOND;
+      case support::TimeUnit::MILLI: return arrow::TimeUnit::MILLI;
+      case support::TimeUnit::MICRO: return arrow::TimeUnit::MICRO;
+      case support::TimeUnit::NANO: return arrow::TimeUnit::NANO;
    }
-   return 0;
+   return arrow::TimeUnit::SECOND;
 }
 
 std::pair<uint64_t, uint64_t> support::getDecimalScaleMultiplier(int32_t scale) {
-   // Calculate scale multiplier for decimals (10^scale)
-   uint64_t multiplier = 1;
-   for (int i = 0; i < scale; i++) {
-       multiplier *= 10;
-   }
-   // Return as high/low 64-bit parts (simplified - high part is 0)
-   return {multiplier, 0};
+   auto decimalrep = arrow::Decimal128::GetScaleMultiplier(scale);
+   return {decimalrep.low_bits(), (uint64_t) decimalrep.high_bits()};
 }
-
 std::pair<uint64_t, uint64_t> support::parseDecimal(std::string str, int32_t reqScale) {
-   // Simple decimal parsing - convert string to integer representation
-   double value = std::stod(str);
-   
-   // Scale the value 
-   uint64_t multiplier = 1;
-   for (int i = 0; i < reqScale; i++) {
-       multiplier *= 10;
+   int32_t precision;
+   int32_t scale;
+   arrow::Decimal128 decimalrep;
+   if (!arrow::Decimal128::FromString(str, &decimalrep, &precision, &scale).ok()) {
+      assert(false && "could not parse decimal const");
    }
-   
-   uint64_t scaled_value = (uint64_t)(value * multiplier);
-   
-   // Return as high/low 64-bit parts (simplified - high part is 0)
-   return {scaled_value, 0};
+   auto x = decimalrep.Rescale(scale, reqScale);
+   decimalrep = x.ValueOrDie();
+   uint64_t low = decimalrep.low_bits();
+   uint64_t high = decimalrep.high_bits();
+   return {low, high};
 }
 
 std::variant<int64_t, double, std::string> parseInt(std::variant<int64_t, double, std::string> val) {
@@ -165,50 +126,34 @@ std::variant<int64_t, double, std::string> parseTimestamp(std::variant<int64_t, 
       throw std::runtime_error("can not parse timestamp");
    }
    std::string str = std::get<std::string>(val);
-   
-   // Simple timestamp parsing - convert ISO format to microseconds since epoch
-   // Format: YYYY-MM-DD HH:MM:SS
-   // For now, just use a simple approximation
-   int64_t res = 0;
-   if (str.length() >= 19) {
-       // Extract date part and convert to days
-       std::string date_part = str.substr(0, 10);
-       int32_t days = parseDate32(date_part);
-       res = days * 24 * 60 * 60 * 1000000LL; // Convert to microseconds
-       
-       // Add time part (simplified)
-       if (str.length() >= 19) {
-           int hour = std::stoi(str.substr(11, 2));
-           int minute = std::stoi(str.substr(14, 2)); 
-           int second = std::stoi(str.substr(17, 2));
-           res += (hour * 3600 + minute * 60 + second) * 1000000LL;
-       }
-   }
-   
+   int64_t res;
+   arrow::internal::ParseValue<arrow::TimestampType>(arrow::TimestampType(convertTimeUnit(unit)), str.data(), str.length(), &res);
    return res;
 }
-std::variant<int64_t, double, std::string> support::parse(std::variant<int64_t, double, std::string> val, int type, uint32_t param1, uint32_t param2) {
-   // Use PostgreSQL type OIDs instead of Arrow types
+std::variant<int64_t, double, std::string> support::parse(std::variant<int64_t, double, std::string> val, arrow::Type::type type, uint32_t param1, uint32_t param2) {
    switch (type) {
-      case INT2OID:
-      case INT4OID:
-      case INT8OID:
-         return parseInt(val);
-      case BOOLOID: 
-         return parseBool(val);
-      case FLOAT4OID:
-      case FLOAT8OID: 
-         return parseDouble(val);
-      case NUMERICOID: 
-         return parseString(val, true);
-      case TEXTOID: 
-         return parseString(val, true);
-      case DATEOID: 
-         return parseDate(val, false);
-      case TIMESTAMPOID: 
-         return parseTimestamp(val, static_cast<TimeUnit>(param1));
+      case arrow::Type::type::INT8:
+      case arrow::Type::type::INT16:
+      case arrow::Type::type::INT32:
+      case arrow::Type::type::INT64:
+      case arrow::Type::type::UINT8:
+      case arrow::Type::type::UINT16:
+      case arrow::Type::type::UINT32:
+      case arrow::Type::type::UINT64:
+      case arrow::Type::type::INTERVAL_DAY_TIME:
+      case arrow::Type::type::INTERVAL_MONTHS:
+         return parseInterval(val);
+      case arrow::Type::type::BOOL: return parseBool(val);
+      case arrow::Type::type::HALF_FLOAT:
+      case arrow::Type::type::FLOAT:
+      case arrow::Type::type::DOUBLE: return parseDouble(val);
+      case arrow::Type::type::FIXED_SIZE_BINARY: return toI64(parseString(val));
+      case arrow::Type::type::DECIMAL128: return parseString(val, true);
+      case arrow::Type::type::STRING: return parseString(val,true);
+      case arrow::Type::type::DATE32: return parseDate(val, false);
+      case arrow::Type::type::DATE64: return parseDate(val, true);
+      case arrow::Type::type::TIMESTAMP: return parseTimestamp(val, static_cast<TimeUnit>(param1));
       default:
-         // For unknown types, try to parse as string
-         return parseString(val, true);
+         throw std::runtime_error("could not parse");
    }
 }

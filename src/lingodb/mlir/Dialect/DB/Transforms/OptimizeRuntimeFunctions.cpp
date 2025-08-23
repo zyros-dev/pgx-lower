@@ -1,30 +1,29 @@
-#include "mlir/Pass/Pass.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 #include <iostream>
 
-#include "lingodb/mlir-support/parsing.h"
-#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir-support/parsing.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <variant>
 namespace {
 
 struct Matcher {
    public:
-   virtual bool matches(::mlir::Value) = 0;
+   virtual bool matches(mlir::Value) = 0;
    virtual bool skip() { return false; }
    virtual ~Matcher() {}
 };
 struct AnyMatcher : public Matcher {
-   bool matches(::mlir::Value) override { return true; }
+   bool matches(mlir::Value) override { return true; }
    virtual ~AnyMatcher() {}
 };
-std::optional<std::string> getConstantString(::mlir::Value v) {
+std::optional<std::string> getConstantString(mlir::Value v) {
    if (auto* defOp = v.getDefiningOp()) {
       if (auto constOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(defOp)) {
-         if (auto strAttr = constOp.getConstantValue().dyn_cast_or_null<::mlir::StringAttr>()) {
+         if (auto strAttr = constOp.getValue().dyn_cast<mlir::StringAttr>()) {
             return strAttr.str();
          }
       }
@@ -33,7 +32,7 @@ std::optional<std::string> getConstantString(::mlir::Value v) {
 }
 struct ConstStringMatcher : public Matcher {
    ConstStringMatcher() {}
-   bool matches(::mlir::Value v) override {
+   bool matches(mlir::Value v) override {
       return getConstantString(v).has_value();
    }
    virtual ~ConstStringMatcher() {}
@@ -41,7 +40,7 @@ struct ConstStringMatcher : public Matcher {
 struct StringConstMatcher : public Matcher {
    std::string toMatch;
    StringConstMatcher(std::string toMatch) : toMatch(toMatch) {}
-   bool matches(::mlir::Value v) override {
+   bool matches(mlir::Value v) override {
       auto constStr = getConstantString(v);
       if (!constStr.has_value()) return false;
       return constStr.value() == toMatch;
@@ -57,36 +56,32 @@ class ReplaceFnWithFn : public mlir::RewritePattern {
    std::vector<std::shared_ptr<Matcher>> matchers;
 
    public:
-   ReplaceFnWithFn(::mlir::MLIRContext* context, std::string funcName, std::vector<std::shared_ptr<Matcher>> matchers, std::string newFuncName) : RewritePattern(mlir::db::RuntimeCall::getOperationName(), mlir::PatternBenefit(1), context), funcName(funcName), newFuncName(newFuncName), matchers(matchers) {}
-   ::mlir::LogicalResult match(::mlir::Operation* op) const override {
+   ReplaceFnWithFn(mlir::MLIRContext* context, std::string funcName, std::vector<std::shared_ptr<Matcher>> matchers, std::string newFuncName) : RewritePattern(mlir::db::RuntimeCall::getOperationName(), mlir::PatternBenefit(1), context), funcName(funcName), newFuncName(newFuncName), matchers(matchers) {}
+   mlir::LogicalResult match(mlir::Operation* op) const override {
       auto runtimeCall = mlir::cast<mlir::db::RuntimeCall>(op);
-      if (runtimeCall.getFn().str() != funcName) { return mlir::failure(); }
-      if (runtimeCall.getArgs().size() != matchers.size()) { return mlir::failure(); }
-      for (size_t i = 0; i < runtimeCall.getArgs().size(); ++i) {
-         if (!matchers[i]->matches(runtimeCall.getArgs()[i])) { return mlir::failure(); }
+      if (runtimeCall.fn().str() != funcName) { return mlir::failure(); }
+      if (runtimeCall.args().size() != matchers.size()) { return mlir::failure(); }
+      for (size_t i = 0; i < runtimeCall.args().size(); ++i) {
+         if (!matchers[i]->matches(runtimeCall.args()[i])) { return mlir::failure(); }
       }
       return mlir::success();
    }
 
-   void rewrite(::mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
-      std::vector<::mlir::Value> values;
+   void rewrite(mlir::Operation* op, mlir::PatternRewriter& rewriter) const override {
+      std::vector<mlir::Value> values;
       auto runtimeCall = mlir::cast<mlir::db::RuntimeCall>(op);
-      for (size_t i = 0; i < runtimeCall.getArgs().size(); ++i) {
+      for (size_t i = 0; i < runtimeCall.args().size(); ++i) {
          if (matchers[i]->skip()) {
             continue;
          }
-         values.push_back(runtimeCall.getArgs()[i]);
+         values.push_back(runtimeCall.args()[i]);
       }
-      rewriter.replaceOpWithNewOp<mlir::db::RuntimeCall>(op, op->getResultTypes(), newFuncName, ::mlir::ValueRange{values});
+      rewriter.replaceOpWithNewOp<mlir::db::RuntimeCall>(op, op->getResultTypes(), newFuncName, mlir::ValueRange{values});
    }
 };
 //Pattern that optimizes the join order
-class OptimizeRuntimeFunctions : public ::mlir::OperationPass<::mlir::ModuleOp> {
+class OptimizeRuntimeFunctions : public mlir::PassWrapper<OptimizeRuntimeFunctions, mlir::OperationPass<mlir::ModuleOp>> {
    virtual llvm::StringRef getArgument() const override { return "db-optimize-runtime-functions"; }
-   virtual llvm::StringRef getName() const override { return getArgument(); }
-   std::unique_ptr<Pass> clonePass() const override { return std::make_unique<OptimizeRuntimeFunctions>(*this); }
-public:
-   OptimizeRuntimeFunctions() : ::mlir::OperationPass<::mlir::ModuleOp>(::mlir::TypeID::get<OptimizeRuntimeFunctions>()) {}
 
    public:
    void runOnOperation() override {

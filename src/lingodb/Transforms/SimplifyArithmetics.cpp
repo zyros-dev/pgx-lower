@@ -1,18 +1,18 @@
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 #include <iostream>
 
-#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace {
 #include "CustomCanonicalization.inc"
 
 //Pattern that optimizes the join order
-class SimplifyArithmetics : public ::mlir::PassWrapper<SimplifyArithmetics, ::mlir::OperationPass<::mlir::func::FuncOp>> {
+class SimplifyArithmetics : public mlir::PassWrapper<SimplifyArithmetics, mlir::OperationPass<mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "simplify-arithmetics"; }
 
    public:

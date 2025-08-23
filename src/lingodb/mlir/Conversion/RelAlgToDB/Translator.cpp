@@ -1,24 +1,23 @@
-#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
-#include <lingodb/mlir/Conversion/RelAlgToDB/HashJoinTranslator.h>
-#include <lingodb/mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
-#include "pgx-lower/execution/logging.h"
+#include "mlir/Conversion/RelAlgToDB/Translator.h"
+#include <mlir/Conversion/RelAlgToDB/HashJoinTranslator.h>
+#include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
 
-using namespace ::mlir::relalg;
-std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir::Block* dest, ::mlir::Operation* op, mlir::function_ref<::mlir::Block*(::mlir::Operation*)> getBlockFn, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
+using namespace mlir::relalg;
+std::vector<mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(mlir::Block* dest, mlir::Operation* op, mlir::function_ref<mlir::Block*(mlir::Operation*)> getBlockFn, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {
    // Splice the operations of the 'source' block into the 'dest' block and erase
    // it.
-   llvm::iplist<::mlir::Operation> translated;
-   std::vector<::mlir::Operation*> toErase;
+   llvm::iplist<mlir::Operation> translated;
+   std::vector<mlir::Operation*> toErase;
    auto* cloned = op->clone();
-   ::mlir::Block* source = getBlockFn(cloned);
+   mlir::Block* source = getBlockFn(cloned);
    auto* terminator = source->getTerminator();
 
    source->walk([&](mlir::relalg::GetColumnOp getColumnOp) {
-      getColumnOp.replaceAllUsesWith(context.getValueForAttribute(&getColumnOp.getAttr().getColumn()));
+      getColumnOp.replaceAllUsesWith(context.getValueForAttribute(&getColumnOp.attr().getColumn()));
       toErase.push_back(getColumnOp.getOperation());
    });
    /*for (auto addColumnOp : source->getOps<mlir::relalg::AddColumnOp>()) {
-      context.setValueForAttribute(scope, &addColumnOp.getAttr().getColumn(), addColumnOp.getVal());
+      context.setValueForAttribute(scope, &addColumnOp.attr().getColumn(), addColumnOp.val());
       toErase.push_back(addColumnOp.getOperation());
    }*/
 
@@ -28,7 +27,7 @@ std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir
       op->erase();
    }
    auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(terminator);
-   std::vector<Value> res(returnOp.getResults().begin(), returnOp.getResults().end());
+   std::vector<Value> res(returnOp.results().begin(), returnOp.results().end());
    terminator->erase();
    return res;
 }
@@ -41,23 +40,12 @@ void Translator::propagateInfo() {
    }
 }
 mlir::relalg::Translator::Translator(Operator op) : op(op) {
-   PGX_DEBUG("Translator: Base constructor called with Operator");
-   
-   if (!op) {
-      PGX_DEBUG("Translator: Operator is null, skipping children initialization");
-      return;
-   }
-   
-   PGX_DEBUG("Translator: Getting children from operator");
    for (auto child : op.getChildren()) {
-      PGX_DEBUG("Translator: Creating translator for child operation");
       children.push_back(mlir::relalg::Translator::createTranslator(child.getOperation()));
    }
-   
-   PGX_DEBUG("Translator: Base constructor completed, " + std::to_string(children.size()) + " children");
 }
 
-mlir::relalg::Translator::Translator(::mlir::ValueRange potentialChildren) : op() {
+mlir::relalg::Translator::Translator(mlir::ValueRange potentialChildren) : op() {
    for (auto child : potentialChildren) {
       if (child.getType().isa<mlir::relalg::TupleStreamType>()) {
          children.push_back(mlir::relalg::Translator::createTranslator(child.getDefiningOp()));
@@ -77,25 +65,14 @@ mlir::relalg::ColumnSet Translator::getAvailableColumns() {
    return op.getAvailableColumns();
 };
 
-std::unique_ptr<mlir::relalg::Translator> Translator::createTranslator(::mlir::Operation* operation) {
-   PGX_DEBUG("Translator::createTranslator called for operation: " + operation->getName().getStringRef().str());
-   
-   return ::llvm::TypeSwitch<::mlir::Operation*, std::unique_ptr<mlir::relalg::Translator>>(operation)
-      .Case<BaseTableOp>([&](auto x) { 
-         PGX_DEBUG("Translator::createTranslator matched BaseTableOp");
-         return createBaseTableTranslator(x); 
-      })
-      .Case<ConstRelationOp>([&](auto x) { 
-         PGX_DEBUG("Translator::createTranslator matched ConstRelationOp");
-         return createConstRelTranslator(x); 
-      })
-      .Case<MaterializeOp>([&](auto x) { 
-         PGX_DEBUG("Translator::createTranslator matched MaterializeOp");
-         return createMaterializeTranslator(x); 
-      })
+std::unique_ptr<mlir::relalg::Translator> Translator::createTranslator(mlir::Operation* operation) {
+   return ::llvm::TypeSwitch<mlir::Operation*, std::unique_ptr<mlir::relalg::Translator>>(operation)
+      .Case<BaseTableOp>([&](auto x) { return createBaseTableTranslator(x); })
+      .Case<ConstRelationOp>([&](auto x) { return createConstRelTranslator(x); })
+      .Case<MaterializeOp>([&](auto x) { return createMaterializeTranslator(x); })
       .Case<SelectionOp>([&](auto x) { return createSelectionTranslator(x); })
       .Case<MapOp>([&](auto x) { return createMapTranslator(x); })
-      .Case<CrossProductOp, InnerJoinOp, SemiJoinOp, AntiSemiJoinOp, OuterJoinOp, SingleJoinOp, MarkJoinOp, CollectionJoinOp>([&](::mlir::Operation* op) { return createJoinTranslator(op); })
+      .Case<CrossProductOp, InnerJoinOp, SemiJoinOp, AntiSemiJoinOp, OuterJoinOp, SingleJoinOp, MarkJoinOp, CollectionJoinOp>([&](mlir::Operation* op) { return createJoinTranslator(op); })
       .Case<SortOp>([&](auto x) { return createSortTranslator(x); })
       .Case<AggregationOp>([&](auto x) { return createAggregationTranslator(x); })
       .Case<RenamingOp>([&](auto x) { return createRenamingTranslator(x); })
@@ -103,9 +80,5 @@ std::unique_ptr<mlir::relalg::Translator> Translator::createTranslator(::mlir::O
       .Case<LimitOp>([&](auto x) { return createLimitTranslator(x); })
       .Case<TmpOp>([&](auto x) { return createTmpTranslator(x); })
       .Case<UnionOp, IntersectOp, ExceptOp>([&](auto x) { return createSetOpTranslator(x); })
-      .Default([](auto x) { 
-         PGX_ERROR("Translator::createTranslator unsupported operation: " + x->getName().getStringRef().str());
-         x->emitError("Unsupported operation in RelAlg to DB lowering: ") << x->getName();
-         return std::unique_ptr<Translator>(); 
-      });
+      .Default([](auto x) { assert(false&&"should not happen"); return std::unique_ptr<Translator>(); });
 }

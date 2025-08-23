@@ -1,26 +1,20 @@
 #include "llvm/ADT/TypeSwitch.h"
-#include "lingodb/mlir/Dialect/RelAlg/ColumnSet.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/Dialect/RelAlg/ColumnSet.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include "mlir/Pass/Pass.h"
 
 namespace {
-using mlir::relalg::Operator;
-using mlir::relalg::BinaryOperator;
-using mlir::relalg::UnaryOperator;
-using mlir::relalg::TupleLamdaOperator;
-using mlir::relalg::PredicateOperator;
 
-class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::mlir::func::FuncOp>> {
+class Pushdown : public mlir::PassWrapper<Pushdown, mlir::OperationPass<mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-pushdown"; }
 
    Operator pushdown(Operator topush, Operator curr) {
       UnaryOperator topushUnary = mlir::dyn_cast_or_null<UnaryOperator>(topush.getOperation());
       mlir::relalg::ColumnSet usedAttributes = topush.getUsedColumns();
-      auto res = ::llvm::TypeSwitch<::mlir::Operation*, Operator>(curr.getOperation())
+      auto res = ::llvm::TypeSwitch<mlir::Operation*, Operator>(curr.getOperation())
                     .Case<UnaryOperator>([&](UnaryOperator unaryOperator) {
                        Operator asOp = mlir::dyn_cast_or_null<Operator>(unaryOperator.getOperation());
                        auto child = mlir::dyn_cast_or_null<Operator>(unaryOperator.child());
@@ -54,9 +48,8 @@ class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::ml
                        asOp.setChildren({left, right});
                        return asOp;
                     })
-                    .Default([&](auto others) {
-                       auto otherOp = mlir::dyn_cast_or_null<Operator>(others);
-                       topush.setChildren({otherOp});
+                    .Default([&](Operator others) {
+                       topush.setChildren({others});
                        return topush;
                     });
       return res;
@@ -65,7 +58,7 @@ class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::ml
    void runOnOperation() override {
       using namespace mlir;
       getOperation()->walk([&](mlir::relalg::SelectionOp sel) {
-         SmallPtrSet<::mlir::Operation*, 4> users;
+         SmallPtrSet<mlir::Operation*, 4> users;
          for (auto* u : sel->getUsers()) {
             users.insert(u);
          }
@@ -82,6 +75,6 @@ class Pushdown : public ::mlir::PassWrapper<Pushdown, ::mlir::OperationPass<::ml
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<mlir::Pass> createPushdownPass() { return std::make_unique<Pushdown>(); }
+std::unique_ptr<Pass> createPushdownPass() { return std::make_unique<Pushdown>(); }
 } // end namespace relalg
 } // end namespace mlir

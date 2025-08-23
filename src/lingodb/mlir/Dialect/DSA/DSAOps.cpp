@@ -1,5 +1,5 @@
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/DSA/IR/DSADialect.h"
 
 #include "mlir/IR/OpImplementation.h"
 #include <unordered_set>
@@ -28,15 +28,15 @@ static void printInitializationList(OpAsmPrinter& p,
 void mlir::dsa::ForOp::print(OpAsmPrinter& p) {
    mlir::dsa::ForOp& op = *this;
    p << " " << op.getInductionVar() << " in "
-     << op.getCollection() << " : " << op.getCollection().getType() << " ";
-   if (op.getUntil()) {
-      p << "until " << op.getUntil() << " ";
+     << op.collection() << " : " << op.collection().getType() << " ";
+   if (op.until()) {
+      p << "until " << op.until() << " ";
    }
    printInitializationList(p, op.getRegionIterArgs(), op.getIterOperands(),
                            " iter_args");
    if (!op.getIterOperands().empty())
       p << " -> (" << op.getIterOperands().getTypes() << ')';
-   p.printRegion(op.getRegion(),
+   p.printRegion(op.region(),
                  /*printEntryBlockArgs=*/false,
                  /*printBlockTerminators=*/op.hasIterOperands());
    p.printOptionalAttrDict(op->getAttrs(), {"operand_segment_sizes"});
@@ -133,10 +133,10 @@ ParseResult mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::Operat
 
 void dsa::SortOp::print(OpAsmPrinter& p) {
    dsa::SortOp& op = *this;
-   p << " " << op.getToSort() << ":" << op.getToSort().getType() << " ";
+   p << " " << op.toSort() << ":" << op.toSort().getType() << " ";
    p << "(";
    bool first = true;
-   for (auto arg : op.getRegion().front().getArguments()) {
+   for (auto arg : op.region().front().getArguments()) {
       if (first) {
          first = false;
       } else {
@@ -145,7 +145,7 @@ void dsa::SortOp::print(OpAsmPrinter& p) {
       p << arg;
    }
    p << ")";
-   p.printRegion(op.getRegion(), false, true);
+   p.printRegion(op.region(), false, true);
 }
 
 ParseResult mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, OperationState& result) {
@@ -205,14 +205,14 @@ ParseResult mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, OperationStat
 
 void dsa::HashtableInsert::print(OpAsmPrinter& p) {
    dsa::HashtableInsert& op = *this;
-   p << " " << op.getHt() << " : " << op.getHt().getType() << ", " << op.getKey() << " : " << op.getKey().getType();
-   if (op.getVal()) {
-      p << ", " << op.getVal() << " : " << op.getVal().getType();
+   p << " " << op.ht() << " : " << op.ht().getType() << ", " << op.key() << " : " << op.key().getType();
+   if (op.val()) {
+      p << ", " << op.val() << " : " << op.val().getType();
    }
-   if (!op.getHash().empty()) {
+   if (!op.hash().empty()) {
       p << " hash: (";
       bool first = true;
-      for (auto arg : op.getHash().front().getArguments()) {
+      for (auto arg : op.hash().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -221,12 +221,12 @@ void dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.getHash(), false, true);
+      p.printRegion(op.hash(), false, true);
    }
-   if (!op.getEqual().empty()) {
+   if (!op.equal().empty()) {
       p << " eq: (";
       bool first = true;
-      for (auto arg : op.getEqual().front().getArguments()) {
+      for (auto arg : op.equal().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -235,12 +235,12 @@ void dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.getEqual(), false, true);
+      p.printRegion(op.equal(), false, true);
    }
-   if (!op.getReduce().empty()) {
+   if (!op.reduce().empty()) {
       p << " reduce: (";
       bool first = true;
-      for (auto arg : op.getReduce().front().getArguments()) {
+      for (auto arg : op.reduce().front().getArguments()) {
          if (first) {
             first = false;
          } else {
@@ -249,10 +249,10 @@ void dsa::HashtableInsert::print(OpAsmPrinter& p) {
          p << arg << ":" << arg.getType();
       }
       p << ")";
-      p.printRegion(op.getReduce(), false, true);
+      p.printRegion(op.reduce(), false, true);
    }
 }
 
 #define GET_OP_CLASSES
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.cpp.inc"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOpsInterfaces.cpp.inc"
+#include "mlir/Dialect/DSA/IR/DSAOps.cpp.inc"
+#include "mlir/Dialect/DSA/IR/DSAOpsInterfaces.cpp.inc"

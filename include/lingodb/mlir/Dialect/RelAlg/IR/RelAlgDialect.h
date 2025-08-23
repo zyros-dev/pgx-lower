@@ -2,19 +2,19 @@
 #define MLIR_DIALECT_RELALG_IR_RELALGDIALECT_H
 #include <memory>
 namespace llvm {
-class hash_code;
+class hash_code;// NOLINT (readability-identifier-naming)
 template <typename T>
-llvm::hash_code hash_value(std::shared_ptr<T> arg);
-}
-#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
+llvm::hash_code hash_value(std::shared_ptr<T> arg);// NOLINT (readability-identifier-naming)
+} // end namespace llvm
+#include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "mlir/IR/Dialect.h"
 
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.h.inc"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.h.inc"
 
 namespace llvm {
 template <typename T>
-llvm::hash_code hash_value(std::shared_ptr<T> arg) {
+llvm::hash_code hash_value(std::shared_ptr<T> arg) {// NOLINT (readability-identifier-naming)
    return hash_value(arg.get());
 }
-}
-#endif
+} // end namespace llvm
+#endif // MLIR_DIALECT_RELALG_IR_RELALGDIALECT_H

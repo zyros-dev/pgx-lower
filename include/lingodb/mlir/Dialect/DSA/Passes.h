@@ -8,5 +8,4 @@ namespace dsa {
 
 } // end namespace dsa
 } // end namespace mlir
-} // end namespace mlir
 #endif // MLIR_DIALECT_DSA_PASSES_H

@@ -1,8 +1,15 @@
 add_library(runtime OBJECT
-        helpers.cpp
-        postgresql_runtime.cpp
-        MetaData.cpp
-        tuple_access.cpp
-        PostgreSQLDataSource.cpp)
+        TableBuilder.cpp
+        DumpRuntime.cpp
+        DataSourceIteration.cpp
+        Vector.cpp
+        LazyJoinHashtable.cpp
+        Hashtable.cpp
+        StringRuntime.cpp
+        Hash.cpp
+        DateRuntime.cpp
+        ExecutionContext.cpp
+        Database.cpp MetaData.cpp ArrowDirDatabase.cpp ExternalArrowDatabase.cpp MetaDataOnlyDatabase.cpp)
+target_link_libraries(runtime PUBLIC arrow_shared)
 target_link_options(runtime PUBLIC -export-dynamic)
 

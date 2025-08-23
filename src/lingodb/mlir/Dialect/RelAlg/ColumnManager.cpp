@@ -1,4 +1,4 @@
-#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
+#include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
 namespace mlir::relalg {
 void ColumnManager::setContext(MLIRContext* context) {
    this->context = context;
@@ -24,12 +24,6 @@ ColumnDefAttr ColumnManager::createDef(StringRef scope, StringRef name, Attribut
    return mlir::relalg::ColumnDefAttr::get(context, SymbolRefAttr::get(context, scope, nested), attribute, fromExisting);
 }
 ColumnRefAttr ColumnManager::createRef(SymbolRefAttr name) {
-   // DEBUG: Print info about the SymbolRefAttr to understand the issue
-   llvm::errs() << "DEBUG createRef(SymbolRefAttr): nested refs = " << name.getNestedReferences().size() << "\n";
-   llvm::errs() << "DEBUG createRef(SymbolRefAttr): root = " << name.getRootReference().getValue() << "\n";
-   if (name.getNestedReferences().size() > 0) {
-     llvm::errs() << "DEBUG createRef(SymbolRefAttr): leaf = " << name.getLeafReference().getValue() << "\n";
-   }
    assert(name.getNestedReferences().size() == 1);
    auto attribute = get(name.getRootReference().getValue(), name.getLeafReference().getValue());
    return relalg::ColumnRefAttr::get(context, name, attribute);

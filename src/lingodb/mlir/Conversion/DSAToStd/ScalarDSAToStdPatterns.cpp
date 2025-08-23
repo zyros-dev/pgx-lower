@@ -1,9 +1,9 @@
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/util/UtilOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Conversion/DSAToStd/DSAToStd.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/util/UtilOps.h"
 #include "mlir/Transforms/DialectConversion.h"
-#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/SCF/SCF.h>
 
 
 using namespace mlir;
@@ -32,7 +32,7 @@ class SetFlagLowering : public OpConversionPattern<mlir::dsa::SetFlag> {
    public:
    using OpConversionPattern<mlir::dsa::SetFlag>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::SetFlag op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      rewriter.create<util::StoreOp>(op->getLoc(), adaptor.getVal(), adaptor.getFlag(), Value());
+      rewriter.create<util::StoreOp>(op->getLoc(), adaptor.val(), adaptor.flag(), Value());
       rewriter.eraseOp(op);
       return success();
    }
@@ -41,7 +41,7 @@ class GetFlagLowering : public OpConversionPattern<mlir::dsa::GetFlag> {
    public:
    using OpConversionPattern<mlir::dsa::GetFlag>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::GetFlag op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      Value flagValue = rewriter.create<util::LoadOp>(op->getLoc(), rewriter.getI1Type(), adaptor.getFlag(), Value());
+      Value flagValue = rewriter.create<util::LoadOp>(op->getLoc(), rewriter.getI1Type(), adaptor.flag(), Value());
       rewriter.replaceOp(op, flagValue);
       return success();
    }

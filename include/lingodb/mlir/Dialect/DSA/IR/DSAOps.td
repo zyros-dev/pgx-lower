@@ -7,14 +7,13 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
-include "lingodb/mlir/Dialect/DSA/IR/DSAInterfaces.td"
-include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
+include "mlir/Dialect/DSA/IR/DSAInterfaces.td"
+include "mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
 
 // DSA dialect definition.
 def DSA_Dialect : Dialect {
     let name = "dsa";
     let cppNamespace = "::mlir::dsa";
-    let useDefaultTypePrinterParser = 1;
     let extraClassDeclaration = [{
         private:
         void registerTypes();
@@ -139,7 +138,7 @@ def DSA_CreateDS : DSA_Op<"create_ds"> {
     ];
 }
 
-def DSA_At : DSA_Op<"at", [Pure]> {
+def DSA_At : DSA_Op<"at", [NoSideEffect]> {
     let summary = "access column in a record";
 
     let arguments = (ins DSA_Record:$collection,I32Attr:$pos);
@@ -189,7 +188,7 @@ def DSA_ScanSource : DSA_Op<"scan_source"> {
     let assemblyFormat = "$descr `:` type($iterable) attr-dict";
 }
 
-def DSA_Lookup : DSA_Op<"lookup", [Pure]> {
+def DSA_Lookup : DSA_Op<"lookup", [NoSideEffect]> {
     let summary = "lookup in a hash table";
 
     let arguments = (ins DSA_Collection:$collection,AnyType:$key);
@@ -209,7 +208,7 @@ def DSA_SortOp : DSA_Op<"sort", [IsolatedFromAbove]> {
 }
 
 def ForOp : DSA_Op<"for", [SingleBlockImplicitTerminator<"dsa::YieldOp">,
-                           RecursiveMemoryEffects, AttrSizedOperandSegments]> {
+                           RecursiveSideEffects, AttrSizedOperandSegments]> {
     let summary = "iterate over collection";
     let description = [{
         Iterate over all elements of a collection. The iteration can be interrupted when the optionally specified flag becomes set.
@@ -233,7 +232,7 @@ def ForOp : DSA_Op<"for", [SingleBlockImplicitTerminator<"dsa::YieldOp">,
             return getBody()->getNumArguments() - 1;
         }
         /// Number of operands controlling the loop: lb, ub, step
-        unsigned getNumControlOperands() { return getUntil()?2:1; }
+        unsigned getNumControlOperands() { return until()?2:1; }
         /// Does the operation hold operands for loop-carried values
         bool hasIterOperands() {
             return getOperation()->getNumOperands() > getNumControlOperands();
@@ -245,7 +244,7 @@ def ForOp : DSA_Op<"for", [SingleBlockImplicitTerminator<"dsa::YieldOp">,
     }];
 }
 
-def YieldOp : DSA_Op<"yield", [Pure, Terminator,
+def YieldOp : DSA_Op<"yield", [NoSideEffect, Terminator,
                                ParentOneOf<["ForOp","SortOp","HashtableInsert"]>]> {
     let arguments = (ins Variadic<AnyType>:$results);
     let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];

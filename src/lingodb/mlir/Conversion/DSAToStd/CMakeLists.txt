@@ -7,13 +7,12 @@ gen_rt_def(ht-rt-defs "Hashtable.h")
 add_mlir_conversion_library(MLIRDSAToStd
         CollectionIterators.cpp
         LowerToStd.cpp
-        PatternRegistry.cpp
         ScalarDSAToStdPatterns.cpp
         DSAToStdPatterns.cpp
         CollectionsToStdPatterns.cpp
 
         ADDITIONAL_HEADER_DIRS
-        .
+        ../../../mlir/Conversion/DSAToStd
 
         DEPENDS
         tb-rt-defs
@@ -27,8 +26,5 @@ add_mlir_conversion_library(MLIRDSAToStd
         LINK_LIBS mlir-support PUBLIC
         MLIRIR
         MLIRDSA
-        MLIRDBDialect
-        MLIRUtilToLLVM
-        MLIRLLVMDialect
         MLIRSCFTransforms
         )

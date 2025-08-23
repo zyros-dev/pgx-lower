@@ -1,25 +1,24 @@
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
 
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/DB/IR/DBDialect.h"
+#include "mlir/Dialect/DSA/IR/DSADialect.h"
 
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace ::mlir::relalg;
+using namespace mlir::relalg;
 
 struct RelalgInlinerInterface : public DialectInlinerInterface {
    using DialectInlinerInterface::DialectInlinerInterface;
-   bool isLegalToInline(Operation*, Region*, bool, IRMapping&) const final override {
+   bool isLegalToInline(Operation*, Region*, bool, BlockAndValueMapping&) const final override {
       return true;
    }
    virtual bool isLegalToInline(Region* dest, Region* src, bool wouldBeCloned,
-                                IRMapping& valueMapping) const override {
+                                BlockAndValueMapping& valueMapping) const override {
       return true;
    }
 };
@@ -27,11 +26,11 @@ struct ArithCmpICmpInterface
    : public CmpOpInterface::ExternalModel<ArithCmpICmpInterface, mlir::arith::CmpIOp> {
    // No need to define `exampleInterfaceHook` that has a default implementation
    // in `ExternalModel`. But it can be overridden if desired.
-   bool isEqualityPred(::mlir::Operation* op) const {
+   bool isEqualityPred(mlir::Operation* op) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpIOp>(op);
       return cmpOp.getPredicate() == mlir::arith::CmpIPredicate::eq;
    }
-   bool isLessPred(::mlir::Operation* op, bool eq) const {
+   bool isLessPred(mlir::Operation* op, bool eq) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpIOp>(op);
       switch (cmpOp.getPredicate()) {
          case mlir::arith::CmpIPredicate::sle:
@@ -43,7 +42,7 @@ struct ArithCmpICmpInterface
          default: return false;
       }
    }
-   bool isGreaterPred(::mlir::Operation* op, bool eq) const {
+   bool isGreaterPred(mlir::Operation* op, bool eq) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpIOp>(op);
       switch (cmpOp.getPredicate()) {
          case mlir::arith::CmpIPredicate::sge:
@@ -55,11 +54,11 @@ struct ArithCmpICmpInterface
          default: return false;
       }
    }
-   ::mlir::Value getLeft(::mlir::Operation* op) const {
+   mlir::Value getLeft(mlir::Operation* op) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpIOp>(op);
       return cmpOp.getLhs();
    }
-   ::mlir::Value getRight(::mlir::Operation* op) const {
+   mlir::Value getRight(mlir::Operation* op) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpIOp>(op);
       return cmpOp.getRhs();
    }
@@ -68,11 +67,11 @@ struct ArithCmpFCmpInterface
    : public CmpOpInterface::ExternalModel<ArithCmpFCmpInterface, mlir::arith::CmpFOp> {
    // No need to define `exampleInterfaceHook` that has a default implementation
    // in `ExternalModel`. But it can be overridden if desired.
-   bool isEqualityPred(::mlir::Operation* op) const {
+   bool isEqualityPred(mlir::Operation* op) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpFOp>(op);
       return cmpOp.getPredicate() == mlir::arith::CmpFPredicate::OEQ || cmpOp.getPredicate() == mlir::arith::CmpFPredicate::UEQ;
    }
-   bool isLessPred(::mlir::Operation* op, bool eq) const {
+   bool isLessPred(mlir::Operation* op, bool eq) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpFOp>(op);
       switch (cmpOp.getPredicate()) {
          case mlir::arith::CmpFPredicate::ULE:
@@ -84,7 +83,7 @@ struct ArithCmpFCmpInterface
          default: return false;
       }
    }
-   bool isGreaterPred(::mlir::Operation* op, bool eq) const {
+   bool isGreaterPred(mlir::Operation* op, bool eq) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpFOp>(op);
       switch (cmpOp.getPredicate()) {
          case mlir::arith::CmpFPredicate::UGE:
@@ -96,34 +95,36 @@ struct ArithCmpFCmpInterface
          default: return false;
       }
    }
-   ::mlir::Value getLeft(::mlir::Operation* op) const {
+   mlir::Value getLeft(mlir::Operation* op) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpFOp>(op);
       return cmpOp.getLhs();
    }
-   ::mlir::Value getRight(::mlir::Operation* op) const {
+   mlir::Value getRight(mlir::Operation* op) const {
       auto cmpOp = mlir::cast<mlir::arith::CmpFOp>(op);
       return cmpOp.getRhs();
    }
 };
 #define GET_ATTRDEF_CLASSES
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.cpp.inc"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.cpp.inc"
 void RelAlgDialect::initialize() {
    addOperations<
 #define GET_OP_LIST
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"
       >();
-   registerTypes();
+   addTypes<
+#define GET_TYPEDEF_LIST
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.cpp.inc"
+      >();
    addAttributes<
 #define GET_ATTRDEF_LIST
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.cpp.inc"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.cpp.inc"
       >();
    addInterfaces<RelalgInlinerInterface>();
    columnManager.setContext(getContext());
    getContext()->loadDialect<mlir::db::DBDialect>();
    getContext()->loadDialect<mlir::dsa::DSADialect>();
-   getContext()->loadDialect<mlir::arith::ArithDialect>();
-   mlir::arith::CmpFOp::attachInterface<ArithCmpFCmpInterface>(*getContext());
-   mlir::arith::CmpIOp::attachInterface<ArithCmpICmpInterface>(*getContext());
+   getContext()->loadDialect<mlir::arith::ArithmeticDialect>();
+   mlir::arith::CmpIOp::attachInterface<ArithCmpFCmpInterface>(*getContext());
 }
 
 ::mlir::Attribute mlir::relalg::TableMetaDataAttr::parse(::mlir::AsmParser& parser, ::mlir::Type type) {
@@ -133,23 +134,11 @@ void RelAlgDialect::initialize() {
 }
 void mlir::relalg::TableMetaDataAttr::print(::mlir::AsmPrinter& printer) const {
    printer << "<";
-   // Check if the metadata pointer is valid before calling serialize
-   if (getMeta()) {
-      printer.printAttribute(StringAttr::get(getContext(), getMeta()->serialize()));
-   } else {
-      // Print empty metadata for null pointer
-      printer.printAttribute(StringAttr::get(getContext(), "{}"));
-   }
+   printer.printAttribute(StringAttr::get(getContext(), getMeta()->serialize()));
    printer << ">";
 }
 void mlir::relalg::ColumnDefAttr::print(::mlir::AsmPrinter& printer) const {
-   printer << "<" << getName();
-   // Check if column pointer is valid before accessing type
-   if (getColumnPtr()) {
-      printer << "," << getColumn().type;
-   } else {
-      printer << ",<null>";
-   }
+   printer << "<" << getName()<<","<<getColumn().type;
    if (auto fromexisting = getFromExisting()) {
       printer << "," << fromexisting;
    }
@@ -157,8 +146,8 @@ void mlir::relalg::ColumnDefAttr::print(::mlir::AsmPrinter& printer) const {
 }
 ::mlir::Attribute mlir::relalg::ColumnDefAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
    mlir::SymbolRefAttr sym;
-   ::mlir::Type t;
-   ::mlir::ArrayAttr fromExisting;
+   mlir::Type t;
+   mlir::ArrayAttr fromExisting;
    if (parser.parseLess() || parser.parseAttribute(sym)||parser.parseComma()||parser.parseType(t)) return Attribute();
    if (parser.parseOptionalComma().succeeded()) {
       if (parser.parseAttribute(fromExisting)) {
@@ -171,12 +160,7 @@ void mlir::relalg::ColumnDefAttr::print(::mlir::AsmPrinter& printer) const {
    return columnDef;
 }
 void mlir::relalg::ColumnRefAttr::print(::mlir::AsmPrinter& printer) const {
-   // Check if name is valid before printing
-   if (getName()) {
-      printer << "<" << getName() << ">";
-   } else {
-      printer << "<null>";
-   }
+   printer << "<" << getName() << ">";
 }
 ::mlir::Attribute mlir::relalg::ColumnRefAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
    mlir::SymbolRefAttr sym;
@@ -190,13 +174,13 @@ void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) con
    mlir::SymbolRefAttr sym;
    std::string sortSpecDescr;
    if (parser.parseLess() || parser.parseAttribute(sym) || parser.parseComma() || parser.parseKeywordOrString(&sortSpecDescr) || parser.parseGreater()) {
-      return ::mlir::Attribute();
+      return mlir::Attribute();
    }
    auto sortSpec = symbolizeSortSpec(sortSpecDescr);
-   if (!sortSpec.has_value()) {
+   if (!sortSpec.hasValue()) {
       return {};
    }
    auto columnRefAttr = parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
-   return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.value());
+   return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.getValue());
 }
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.cpp.inc"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.cpp.inc"

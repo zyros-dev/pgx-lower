@@ -1,18 +1,15 @@
 #ifndef RUNTIME_DATASOURCEITERATION_H
 #define RUNTIME_DATASOURCEITERATION_H
-#include "lingodb/runtime/ExecutionContext.h"
-#include "lingodb/runtime/helpers.h"
+#include "runtime/ExecutionContext.h"
+#include "runtime/helpers.h"
 namespace runtime {
 class DataSource {
    public:
-   virtual void* getNext() = 0; // was: std::shared_ptr<arrow::RecordBatch> getNext() - Arrow stubbed out
+   virtual std::shared_ptr<arrow::RecordBatch> getNext() = 0;
    virtual ~DataSource() {}
-   
-   // Static factory method - will be implemented by concrete DataSource types  
-   static DataSource* get(VarLen32 description);
 };
 class DataSourceIteration {
-   void* currChunk; // was: std::shared_ptr<arrow::RecordBatch> currChunk - Arrow stubbed out
+   std::shared_ptr<arrow::RecordBatch> currChunk;
    std::shared_ptr<DataSource> dataSource;
    std::vector<size_t> colIds;
 

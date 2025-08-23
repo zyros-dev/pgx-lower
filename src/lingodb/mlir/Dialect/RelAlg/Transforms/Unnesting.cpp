@@ -1,53 +1,47 @@
 
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
-#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/IR/IRMapping.h"
+#include "mlir/Dialect/RelAlg/Passes.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include "mlir/Pass/Pass.h"
 #include <llvm/ADT/TypeSwitch.h>
 #include <list>
 #include <unordered_map>
 
 namespace {
-using mlir::relalg::Operator;
-using mlir::relalg::BinaryOperator;
-using mlir::relalg::UnaryOperator;
-using mlir::relalg::TupleLamdaOperator;
-using mlir::relalg::PredicateOperator;
 
-class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::mlir::func::FuncOp>> {
+class Unnesting : public mlir::PassWrapper<Unnesting, mlir::OperationPass<mlir::func::FuncOp>> {
    virtual llvm::StringRef getArgument() const override { return "relalg-unnesting"; }
 
    Operator getFirstOfTree(Operator tree) {
       Operator currFirst = tree;
       for (auto child : tree.getChildren()) {
-         Operator otherFirst = getFirstOfTree(child);
-         if (otherFirst->isBeforeInBlock(currFirst.getOperation())) {
+         mlir::Operation* otherFirst = getFirstOfTree(child);
+         if (otherFirst->isBeforeInBlock(currFirst)) {
             currFirst = otherFirst;
          }
       }
       return currFirst;
    }
 
-   void handleChildren(::mlir::Location loc,Operator d, Operator others) {
+   void handleChildren(mlir::Location loc,Operator d, Operator others) {
       llvm::SmallVector<Operator, 4> newChildren;
       for (auto childOp : others.getChildren()) {
          newChildren.push_back(pushDependJoinDown(loc,d, childOp));
       }
       others.setChildren(newChildren);
    }
-   Operator pushDependJoinDown(::mlir::Location loc,Operator d, Operator op) {
+   Operator pushDependJoinDown(mlir::Location loc,Operator d, Operator op) {
       auto availableD = d.getAvailableColumns();
 
-      using namespace ::mlir::relalg;
+      using namespace mlir::relalg;
       auto relType = TupleStreamType::get(&getContext());
-      ::mlir::OpBuilder builder(&getContext());
+      mlir::OpBuilder builder(&getContext());
       builder.setInsertionPointAfter(op.getOperation());
-      return ::llvm::TypeSwitch<::mlir::Operation*, Operator>(op.getOperation())
+      return ::llvm::TypeSwitch<mlir::Operation*, Operator>(op.getOperation())
          .Case<mlir::relalg::BaseTableOp, mlir::relalg::ConstRelationOp>([&](Operator baserelation) {
             return builder.create<CrossProductOp>(loc, relType, baserelation.asRelation(), d.asRelation()).getOperation();
          })
@@ -70,12 +64,12 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
          })
          .Case<AggregationOp>([&](AggregationOp projection) {
             handleChildren(loc,d, projection);
-            projection.setGroupByColsAttr(ColumnSet::fromArrayAttr(projection.getGroupByCols()).insert(availableD).asRefArrayAttr(&getContext()));
+            projection->setAttr("group_by_cols", ColumnSet::fromArrayAttr(projection.group_by_cols()).insert(availableD).asRefArrayAttr(&getContext()));
             return projection;
          })
          .Case<ProjectionOp>([&](ProjectionOp projection) {
             handleChildren(loc,d, projection);
-            projection.setColsAttr(ColumnSet::fromArrayAttr(projection.getCols()).insert(availableD).asRefArrayAttr(&getContext()));
+            projection->setAttr("cols", ColumnSet::fromArrayAttr(projection.cols()).insert(availableD).asRefArrayAttr(&getContext()));
             return projection;
          })
          .Case<BinaryOperator>([&](BinaryOperator join) {
@@ -111,18 +105,17 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
                return mlir::dyn_cast_or_null<Operator>(join.getOperation());
             }
          })
-         .Default([&](auto others) {
-            auto othersOp = mlir::dyn_cast_or_null<Operator>(others);
-            handleChildren(loc,d, othersOp);
-            return othersOp;
+         .Default([&](Operator others) {
+            handleChildren(loc,d, others);
+            return others;
          });
    }
-   void handleJoin(::mlir::Location loc,BinaryOperator join, Operator newLeft, Operator newRight, bool joinDependent, bool renameRight, mlir::relalg::ColumnSet& dependentAttributes) {
+   void handleJoin(mlir::Location loc,BinaryOperator join, Operator newLeft, Operator newRight, bool joinDependent, bool renameRight, mlir::relalg::ColumnSet& dependentAttributes) {
       using namespace mlir;
       auto relType = relalg::TupleStreamType::get(&getContext());
       auto& attributeManager = getContext().getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
       Operator joinAsOperator = mlir::dyn_cast_or_null<Operator>(join.getOperation());
-      ::mlir::OpBuilder builder(join.getOperation());
+      mlir::OpBuilder builder(join.getOperation());
       if (joinDependent) {
          Operator toRename = renameRight ? newRight : newLeft;
          std::unordered_map<const relalg::Column*, const relalg::Column*> renamed;
@@ -166,7 +159,7 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
       if (!op.getFreeColumns().intersects(attributes)) {
          return true;
       }
-      return ::llvm::TypeSwitch<::mlir::Operation*, bool>(op.getOperation())
+      return ::llvm::TypeSwitch<mlir::Operation*, bool>(op.getOperation())
          .Case<mlir::relalg::BaseTableOp, mlir::relalg::ConstRelationOp>([&](Operator baserelation) {
             return true;
          })
@@ -185,11 +178,11 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
          .Case<BinaryOperator>([&](BinaryOperator join) {
             return false;
          })
-         .Default([&](auto others) {
+         .Default([&](Operator others) {
             return false;
          });
    }
-   void combine(::mlir::Location loc,std::vector<mlir::relalg::SelectionOp> selectionOps, PredicateOperator lower) {
+   void combine(mlir::Location loc,std::vector<mlir::relalg::SelectionOp> selectionOps, PredicateOperator lower) {
       using namespace mlir;
       auto lowerTerminator = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(lower.getPredicateBlock().getTerminator());
 
@@ -197,27 +190,27 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
       OpBuilder builder(lower);
 
       builder.setInsertionPointToEnd(&lower.getPredicateBlock());
-      std::vector<::mlir::Value> values;
+      std::vector<mlir::Value> values;
       bool nullable = false;
-      if(!lowerTerminator.getResults().empty()) {
-         Value lowerPredVal = lowerTerminator.getResults()[0];
+      if(!lowerTerminator.results().empty()) {
+         Value lowerPredVal = lowerTerminator.results()[0];
          nullable|=lowerPredVal.getType().isa<mlir::db::NullableType>();
          values.push_back(lowerPredVal);
       }
       for (auto selOp : selectionOps) {
          auto higherTerminator = mlir::dyn_cast_or_null<mlir::relalg::ReturnOp>(selOp.getPredicateBlock().getTerminator());
-         Value higherPredVal = higherTerminator.getResults()[0];
-         ::mlir::IRMapping mapping;
+         Value higherPredVal = higherTerminator.results()[0];
+         mlir::BlockAndValueMapping mapping;
          mapping.map(selOp.getPredicateArgument(), lower.getPredicateArgument());
          mlir::relalg::detail::inlineOpIntoBlock(higherPredVal.getDefiningOp(), higherPredVal.getDefiningOp()->getParentOp(), lower.getOperation(), &lower.getPredicateBlock(), mapping);
          nullable |= higherPredVal.getType().isa<mlir::db::NullableType>();
          values.push_back(mapping.lookup(higherPredVal));
       }
-      ::mlir::Type resType=builder.getI1Type();
+      mlir::Type resType=builder.getI1Type();
       if(nullable){
          resType=mlir::db::NullableType::get(builder.getContext(),resType);
       }
-      ::mlir::Value combined = builder.create<mlir::db::AndOp>(loc, resType, values);
+      mlir::Value combined = builder.create<mlir::db::AndOp>(loc, resType, values);
       builder.create<mlir::relalg::ReturnOp>(loc, combined);
       lowerTerminator->erase();
    }
@@ -239,7 +232,7 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
          }
          combine(binaryOperator->getLoc(),selectionOps, predicateOperator);
          for (auto selOp : selectionOps) {
-            selOp.replaceAllUsesWith(selOp.getRel());
+            selOp.replaceAllUsesWith(selOp.rel());
             selOp->erase();
          }
          return true;
@@ -258,7 +251,7 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
          if (!dependentLeft.empty() && !dependentRight.empty()) {
             return;
          }
-         if (trySimpleUnnesting(binaryOperator)) {
+         if (trySimpleUnnesting(binaryOperator.getOperation())) {
             if (!mlir::relalg::detail::isDependentJoin(binaryOperator.getOperation())) return;
          }
          mlir::relalg::ColumnSet dependentAttributes = dependentLeft;
@@ -282,7 +275,6 @@ class Unnesting : public ::mlir::PassWrapper<Unnesting, ::mlir::OperationPass<::
 
 namespace mlir {
 namespace relalg {
-std::unique_ptr<mlir::Pass> createUnnestingPass() { return std::make_unique<Unnesting>(); }
+std::unique_ptr<Pass> createUnnestingPass() { return std::make_unique<Unnesting>(); }
 } // end namespace relalg
 } // end namespace mlir
-

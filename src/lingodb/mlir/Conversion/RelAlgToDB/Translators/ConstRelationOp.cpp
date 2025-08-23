@@ -1,29 +1,25 @@
-#include "lingodb/mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
-#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/mlir/Dialect/util/UtilOps.h"
-#include "pgx-lower/execution/logging.h"
+#include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
+#include "mlir/Conversion/RelAlgToDB/Translator.h"
+#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/util/UtilOps.h"
 class ConstRelTranslator : public mlir::relalg::Translator {
    mlir::relalg::ConstRelationOp constRelationOp;
 
    public:
    ConstRelTranslator(mlir::relalg::ConstRelationOp constRelationOp) : mlir::relalg::Translator(constRelationOp), constRelationOp(constRelationOp) {}
 
-   virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
-      // ConstRelationOp is a leaf node and should never consume from children
-      PGX_ERROR("ConstRelTranslator::consume called - this should not happen for leaf nodes");
-      // Cannot continue processing - just return without producing anything
-      return;
+   virtual void consume(mlir::relalg::Translator* child, mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
+      assert(false && "should not happen");
    }
-   virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+   virtual void produce(mlir::relalg::TranslatorContext& context, mlir::OpBuilder& builder) override {
       auto scope = context.createScope();
       using namespace mlir;
-      mlir::relalg::OrderedAttributes attributes = mlir::relalg::OrderedAttributes::fromRefArr(constRelationOp.getColumns());
+      mlir::relalg::OrderedAttributes attributes = mlir::relalg::OrderedAttributes::fromRefArr(constRelationOp.columns());
       auto tupleType = attributes.getTupleType(builder.getContext());
-      ::mlir::Value vector = builder.create<mlir::dsa::CreateDS>(constRelationOp.getLoc(), mlir::dsa::VectorType::get(builder.getContext(), tupleType));
-      for (auto rowAttr : constRelationOp.getValuesAttr()) {
+      mlir::Value vector = builder.create<mlir::dsa::CreateDS>(constRelationOp.getLoc(), mlir::dsa::VectorType::get(builder.getContext(), tupleType));
+      for (auto rowAttr : constRelationOp.valuesAttr()) {
          auto row = rowAttr.cast<ArrayAttr>();
          std::vector<Value> values;
          size_t i = 0;
@@ -33,7 +29,7 @@ class ConstRelTranslator : public mlir::relalg::Translator {
                values.push_back(entryVal);
                i++;
             } else {
-               ::mlir::Value entryVal = builder.create<mlir::db::ConstantOp>(constRelationOp->getLoc(), getBaseType(tupleType.getType(i)), entryAttr);
+               mlir::Value entryVal = builder.create<mlir::db::ConstantOp>(constRelationOp->getLoc(), getBaseType(tupleType.getType(i)), entryAttr);
                if (tupleType.getType(i).isa<mlir::db::NullableType>()) {
                   entryVal = builder.create<mlir::db::AsNullableOp>(constRelationOp->getLoc(), tupleType.getType(i), entryVal);
                }
@@ -41,19 +37,19 @@ class ConstRelTranslator : public mlir::relalg::Translator {
                i++;
             }
          }
-         ::mlir::Value packed = builder.create<mlir::util::PackOp>(constRelationOp->getLoc(), values);
+         mlir::Value packed = builder.create<mlir::util::PackOp>(constRelationOp->getLoc(), values);
          builder.create<mlir::dsa::Append>(constRelationOp->getLoc(), vector, packed);
       }
       {
-         auto forOp2 = builder.create<mlir::dsa::ForOp>(constRelationOp->getLoc(), ::mlir::TypeRange{}, vector, ::mlir::Value(), ::mlir::ValueRange{});
-         ::mlir::Block* block2 = new ::mlir::Block;
+         auto forOp2 = builder.create<mlir::dsa::ForOp>(constRelationOp->getLoc(), mlir::TypeRange{}, vector, mlir::Value(), mlir::ValueRange{});
+         mlir::Block* block2 = new mlir::Block;
          block2->addArgument(tupleType, constRelationOp->getLoc());
          forOp2.getBodyRegion().push_back(block2);
-         ::mlir::OpBuilder builder2 = mlir::OpBuilder::atBlockBegin(&forOp2.getBodyRegion().front());
+         mlir::OpBuilder builder2(forOp2.getBodyRegion());
          auto unpacked = builder2.create<mlir::util::UnPackOp>(constRelationOp->getLoc(), forOp2.getInductionVar());
          attributes.setValuesForColumns(context, scope, unpacked.getResults());
          consumer->consume(this, builder2, context);
-         builder2.create<mlir::dsa::YieldOp>(constRelationOp->getLoc(), ::mlir::ValueRange{});
+         builder2.create<mlir::dsa::YieldOp>(constRelationOp->getLoc(), mlir::ValueRange{});
       }
       builder.create<mlir::dsa::FreeOp>(constRelationOp->getLoc(), vector);
    }

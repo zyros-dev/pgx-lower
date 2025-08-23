@@ -1,7 +1,7 @@
 #ifndef MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_GOO_H
 #define MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_GOO_H
 #include "QueryGraph.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/SmallVector.h>
 #include <bitset>

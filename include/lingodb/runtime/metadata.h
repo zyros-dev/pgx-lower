@@ -4,10 +4,7 @@
 #include <unordered_map>
 #include<variant>
 
-// Stubbed PostgreSQL includes - no Arrow dependency
-#include <string>
-#include <vector>
-#include <memory>
+#include <arrow/record_batch.h>
 namespace runtime {
 struct ColumnType {
    std::string base;
@@ -30,8 +27,7 @@ class TableMetaData {
    std::vector<std::string> primaryKey;
    std::unordered_map<std::string, std::shared_ptr<ColumnMetaData>> columns;
    std::vector<std::string> orderedColumns;
-   // Stub: PostgreSQL result set (was arrow::RecordBatch)
-   void* sample;  // Placeholder for PostgreSQL SPI result
+   std::shared_ptr<arrow::RecordBatch> sample;
 
    public:
    TableMetaData() : present(false) {}
@@ -54,13 +50,13 @@ class TableMetaData {
    const std::shared_ptr<ColumnMetaData> getColumnMetaData(const std::string& name) const {
       return columns.at(name);
    }
-   void* getSample() const {
-      return sample;  // Stub implementation
+   const std::shared_ptr<arrow::RecordBatch>& getSample() const {
+      return sample;
    }
    const std::vector<std::string>& getOrderedColumns() const;
    static std::shared_ptr<TableMetaData> deserialize(std::string);
    std::string serialize(bool serializeSample=true) const;
-   static std::shared_ptr<TableMetaData> create(const std::string& json, const std::string& name, void* sample);
+   static std::shared_ptr<TableMetaData> create(const std::string& json, const std::string& name, std::shared_ptr<arrow::RecordBatch> sample);
    bool isPresent() const;
 };
 } // end namespace runtime

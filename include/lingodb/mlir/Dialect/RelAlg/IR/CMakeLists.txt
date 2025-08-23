@@ -1,3 +1,4 @@
+
 set(LLVM_TARGET_DEFINITIONS RelAlgOps.td)
 mlir_tablegen(RelAlgOpsDialect.h.inc -gen-dialect-decls)
 mlir_tablegen(RelAlgOpsDialect.cpp.inc -gen-dialect-defs)
@@ -12,5 +13,5 @@ mlir_tablegen(RelAlgOpsAttributes.cpp.inc -gen-attrdef-defs)
 set(LLVM_TARGET_DEFINITIONS RelAlgInterfaces.td)
 mlir_tablegen(RelAlgOpsInterfaces.h.inc -gen-op-interface-decls)
 mlir_tablegen(RelAlgOpsInterfaces.cpp.inc -gen-op-interface-defs)
-add_public_tablegen_target(PGXLowerRelAlgOpsIncGen)
+add_public_tablegen_target(MLIRRelAlgOpsIncGen)
 add_mlir_doc(RelAlgOps RelAlgDialect RelAlg/ -gen-dialect-doc)

@@ -6,6 +6,6 @@
 
 
 #define GET_OP_CLASSES
-#include "lingodb/mlir/Dialect/DB/IR/DBOpsEnums.h.inc"
+#include "mlir/Dialect/DB/IR/DBOpsEnums.h.inc"
 
 #endif // MLIR_DIALECT_DB_IR_DBOPSENUMS_H

@@ -5,6 +5,6 @@
 #include "mlir/IR/OpDefinition.h"
 
 #define GET_OP_CLASSES
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsEnums.h.inc"
+#include "mlir/Dialect/RelAlg/IR/RelAlgOpsEnums.h.inc"
 
 #endif // MLIR_DIALECT_RELALG_IR_RELALGOPSENUMS_H

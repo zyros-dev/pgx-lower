@@ -1,7 +1,7 @@
 #ifndef RUNTIME_HASHTABLE_H
 #define RUNTIME_HASHTABLE_H
-#include "lingodb/runtime/Vector.h"
-#include "lingodb/runtime/helpers.h"
+#include "runtime/Vector.h"
+#include "runtime/helpers.h"
 namespace runtime {
 class Hashtable {
    struct Entry {
