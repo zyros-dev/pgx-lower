@@ -113,17 +113,17 @@ add_subdirectory(tools/build-tools)
 add_library(runtime_funcs_ptr INTERFACE)
 
 # Add include directory for TableGen processing
-add_subdirectory(include/mlir/Dialect/RelAlg/IR)
-add_subdirectory(include/mlir/Dialect/DB/IR)
-add_subdirectory(include/mlir/Dialect/DSA/IR)
+add_subdirectory(include/lingodb/mlir/Dialect/RelAlg/IR)
+add_subdirectory(include/lingodb/mlir/Dialect/DB/IR)
+add_subdirectory(include/lingodb/mlir/Dialect/DSA/IR)
 # Add include directory for util dialect
-add_subdirectory(include/mlir/Dialect/util)
+add_subdirectory(include/lingodb/mlir/Dialect/util)
 
 # Add compiler library (includes dialects)
-add_subdirectory(src/mlir)
+add_subdirectory(src/lingodb/mlir)
 
 # Add mlir-support for both regular and extension-only builds  
-add_subdirectory(src/mlir-support)
+add_subdirectory(src/lingodb/mlir-support)
 
 # Add the main extension
 add_subdirectory(extension)
@@ -139,6 +139,8 @@ FetchContent_MakeAvailable(googletest)
 if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     # Add test subdirectories to build individual unit tests
     add_subdirectory(tests)
+    # Add tools for development and testing
+    add_subdirectory(tools)
     # Clean slate refactor - minimal unit tests for core infrastructure only
     file(GLOB_RECURSE UNIT_TEST_SOURCES 
         "tests/unit/core/*.cpp"
@@ -154,16 +156,16 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
 
     # Build list of additional sources based on configuration
     set(UNIT_TEST_ADDITIONAL_SOURCES
-        src/frontend/SQL/query_analyzer.cpp
-        src/frontend/SQL/postgresql_ast_translator.cpp
-            src/utility/error_handling.cpp
-        src/execution/mlir_runner.cpp
-            src/execution/jit_engine/jit_execution_engine.cpp
-            src/execution/jit_engine/jit_execution_wrapper.cpp
-        src/utility/logging.cpp
-        src/utility/logging_tools.cpp
-        src/runtime/helpers.cpp
-        src/mlir/Passes.cpp
+            src/pgx-lower/frontend/SQL/query_analyzer.cpp
+            src/pgx-lower/frontend/SQL/postgresql_ast_translator.cpp
+            src/lingodb/utility/error_handling.cpp
+            src/pgx-lower/execution/mlir_runner.cpp
+            src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
+            src/pgx-lower/execution/jit_engine/jit_execution_wrapper.cpp
+            src/lingodb/utility/logging.cpp
+            src/lingodb/utility/logging_tools.cpp
+            src/lingodb/runtime/helpers.cpp
+            src/lingodb/mlir/Passes.cpp
     )
     
     

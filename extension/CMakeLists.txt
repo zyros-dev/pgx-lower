@@ -5,27 +5,27 @@ add_postgresql_mixed_extension(
         pgx_lower
         VERSION 1.0
         C_SOURCES
-            ../src/execution/postgres/executor_c.c
+        ../src/pgx-lower/execution/postgres/executor_c.c
         CPP_SOURCES
-            ../src/execution/postgres/my_executor.cpp
-            ../src/execution/postgres/executor_c.cpp
-            ../src/execution/mlir_runner.cpp
-            ../src/execution/mlir_setup/mlir_runner_phases.cpp
-            ../src/execution/mlir_setup/mlir_runner_passes.cpp
-            ../src/execution/mlir_setup/mlir_runner_utils.cpp
-            ../src/execution/jit_engine/jit_execution_engine.cpp
-            ../src/execution/jit_engine/jit_execution_wrapper.cpp
-            ../src/frontend/SQL/postgresql_ast_translator.cpp
-            ../src/frontend/SQL/query_analyzer.cpp
-            ../src/utility/error_handling.cpp
-            ../src/utility/logging.cpp
-            ../src/utility/logging_c.cpp
-            ../src/utility/logging_tools.cpp
-            ../src/runtime/tuple_access.cpp
-            ../src/runtime/PostgreSQLDataSource.cpp
-            ../src/runtime/helpers.cpp
-            ../src/runtime/postgresql_runtime.cpp
-            ../src/runtime/MetaData.cpp
+        ../src/pgx-lower/execution/postgres/my_executor.cpp
+        ../src/pgx-lower/execution/postgres/executor_c.cpp
+        ../src/pgx-lower/execution/mlir_runner.cpp
+        ../src/pgx-lower/execution/mlir_setup/mlir_runner_phases.cpp
+        ../src/pgx-lower/execution/mlir_setup/mlir_runner_passes.cpp
+        ../src/pgx-lower/execution/mlir_setup/mlir_runner_utils.cpp
+        ../src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
+        ../src/pgx-lower/execution/jit_engine/jit_execution_wrapper.cpp
+        ../src/pgx-lower/frontend/SQL/postgresql_ast_translator.cpp
+        ../src/pgx-lower/frontend/SQL/query_analyzer.cpp
+        ../src/lingodb/utility/error_handling.cpp
+        ../src/lingodb/utility/logging.cpp
+        ../src/lingodb/utility/logging_c.cpp
+        ../src/lingodb/utility/logging_tools.cpp
+        ../src/lingodb/runtime/tuple_access.cpp
+        ../src/lingodb/runtime/PostgreSQLDataSource.cpp
+        ../src/lingodb/runtime/helpers.cpp
+        ../src/lingodb/runtime/postgresql_runtime.cpp
+        ../src/lingodb/runtime/MetaData.cpp
         SCRIPTS
             sql/pgx_lower--1.0.sql
         REGRESS
