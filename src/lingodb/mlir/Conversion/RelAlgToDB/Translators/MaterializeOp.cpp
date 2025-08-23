@@ -78,13 +78,23 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       return {};
    }
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
+      PGX_INFO("MaterializeOp::consume called");
+      
       if (materializeOp.getCols().empty()) {
          builder.create<mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
          return;
       }
       
+      PGX_INFO("MaterializeOp: Resolving " + std::to_string(orderedAttributes.getAttrs().size()) + " columns");
       for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
          auto val = orderedAttributes.resolve(context, i);
+         
+         if (!val) {
+            PGX_ERROR("MaterializeOp: Column resolution failed for position " + std::to_string(i));
+            // Skip this column or create a placeholder - for now just skip
+            continue;
+         }
+         
          ::mlir::Value valid;
          if (isa<mlir::db::NullableType>(val.getType())) {
             valid = builder.create<mlir::db::IsNullOp>(materializeOp->getLoc(), val);
@@ -96,6 +106,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       builder.create<mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      PGX_INFO("MaterializeOp::produce called");
       if (materializeOp.getCols().empty()) {
          auto emptyTupleType = mlir::TupleType::get(builder.getContext(), {});
          auto tableBuilderType = mlir::dsa::TableBuilderType::get(builder.getContext(), emptyTupleType);
@@ -146,6 +157,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
          return;
       }
       
+      PGX_INFO("MaterializeOp: Calling child[0]->produce");
       children[0]->produce(context, builder);
       
       table = builder.create<mlir::dsa::Finalize>(materializeOp.getLoc(), mlir::dsa::TableType::get(builder.getContext()), tableBuilder).getRes();

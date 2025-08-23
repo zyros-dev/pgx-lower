@@ -16,6 +16,13 @@ add_executable(test_mlir_lowerings
     ${CMAKE_SOURCE_DIR}/src/lingodb/runtime/MetaData.cpp
 )
 
+add_executable(test_boolean_lowering
+    test_boolean_lowering.cpp
+    ${CMAKE_SOURCE_DIR}/src/lingodb/utility/logging.cpp
+    ${CMAKE_SOURCE_DIR}/src/lingodb/utility/logging_c.cpp
+    ${CMAKE_SOURCE_DIR}/src/lingodb/utility/logging_tools.cpp
+)
+
 # Set the compile definition to enable standalone mode
 target_compile_definitions(test_mlir_lowerings PRIVATE 
     BUILDING_UNIT_TESTS=1
@@ -86,4 +93,41 @@ add_test(NAME MLIRLoweringTests COMMAND test_mlir_lowerings)
 set_tests_properties(MLIRLoweringTests PROPERTIES
     TIMEOUT 600
     LABELS "unit;mlir;lowering"
+)
+
+# Configure boolean lowering test
+target_compile_definitions(test_boolean_lowering PRIVATE 
+    BUILDING_UNIT_TESTS=1
+)
+
+target_include_directories(test_boolean_lowering PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/lingo-db/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${MLIR_INCLUDE_DIRS}
+    ${LLVM_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_boolean_lowering
+    gtest
+    gtest_main
+    ${MLIR_ALL_LIBS}
+    MLIRDBDialect
+    MLIRDSA
+    MLIRUtilDialect
+    MLIRDBToArrowStd
+    MLIRDSAToStd
+    MLIRUtilToLLVM
+    ${llvm_libs}
+)
+
+target_compile_features(test_boolean_lowering PRIVATE cxx_std_20)
+target_compile_definitions(test_boolean_lowering PRIVATE ${LLVM_DEFINITIONS_LIST})
+
+add_test(NAME BooleanLoweringTest COMMAND test_boolean_lowering)
+
+set_tests_properties(BooleanLoweringTest PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;mlir;lowering;boolean"
 )

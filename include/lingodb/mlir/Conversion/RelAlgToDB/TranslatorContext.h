@@ -1,6 +1,7 @@
 #ifndef MLIR_CONVERSION_RELALGTODB_TRANSLATORCONTEXT_H
 #define MLIR_CONVERSION_RELALGTODB_TRANSLATORCONTEXT_H
 #include "llvm/ADT/ScopedHashTable.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
 #include "mlir/IR/Value.h"
@@ -14,7 +15,17 @@ class TranslatorContext {
 
    ::mlir::Value getValueForAttribute(const mlir::relalg::Column* attribute) const {
       auto value = symbolTable.lookup(attribute);
-      assert(value && "Symbol not found in table - check column registration order");
+      if (!value) {
+         // This should work with ScopedHashTable - it searches parent scopes automatically
+         // If we reach here, the column was never registered by any translator
+         llvm::errs() << "ERROR: Column not found in any scope of symbol table\n";
+         llvm::errs() << "  Column pointer: " << (void*)attribute << "\n";
+         
+         // Add stack trace info to understand where this is being called from
+         llvm::errs() << "  getValueForAttribute called from unknown location\n";
+         
+         assert(false && "Column was never registered - check BaseTableOp column registration");
+      }
       return value;
    }
    ::mlir::Value getUnsafeValueForAttribute(const mlir::relalg::Column* attribute) const {

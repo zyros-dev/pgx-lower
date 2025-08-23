@@ -17,6 +17,7 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       return;
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      PGX_INFO("BaseTableOp::produce called - registering columns");
       auto scope = context.createScope();
       using namespace mlir;
       std::vector<::mlir::Type> types;
@@ -85,6 +86,7 @@ class BaseTableTranslator : public mlir::relalg::Translator {
                ::mlir::Value val = builder2.create<mlir::db::AsNullableOp>(baseTableOp->getLoc(), attr->type, atOp.getVal(), isNull);
                context.setValueForAttribute(scope, attr, val);
             } else {
+               PGX_INFO("BaseTableOp: Registering column " + std::to_string(i) + " in scope");
                context.setValueForAttribute(scope, attr, atOp.getVal());
             }
          }

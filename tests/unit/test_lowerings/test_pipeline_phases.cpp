@@ -72,7 +72,8 @@ TEST_F(MLIRLoweringPipelineTest, Test9Arith) {
 }
 
 TEST_F(MLIRLoweringPipelineTest, Test11) {
-    // Very basic test - just constant return
+    // This replicates the relalg from test 11. If you want to change this input, you need to change the AST parser
+    // to produce that as well.
     auto simpleMLIR = R"(
         module {
           func.func @main() {
@@ -83,7 +84,7 @@ TEST_F(MLIRLoweringPipelineTest, Test11) {
               %5 = db.and %3, %4 : i1, i1
               relalg.return %5 : i1
             }
-            %2 = relalg.materialize %1 [@test::@and_result] => ["and_result"] : !dsa.table
+            %2 = relalg.materialize %1 [@map::@and_result] => ["and_result"] : !dsa.table
             return
           }
         }

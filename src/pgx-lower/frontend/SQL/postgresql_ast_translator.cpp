@@ -1007,10 +1007,10 @@ auto PostgreSQLASTTranslator::processTargetEntry(TranslationContext& context,
     try {
         auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
-        // For computed expressions (like addition), use @map scope
+        // For computed expressions (like addition, logical operations), use @map scope
         // For base table columns, use actual table name
         std::string scope;
-        if (tle->expr && tle->expr->type == T_OpExpr) {
+        if (tle->expr && (tle->expr->type == T_OpExpr || tle->expr->type == T_BoolExpr)) {
             scope = "map"; // Computed expressions go to @map:: namespace
         }
         else {

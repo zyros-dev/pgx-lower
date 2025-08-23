@@ -42,12 +42,14 @@ class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::Operatio
       
       getOperation().walk([&](::mlir::Operation* op) {
          if (isTranslationHook(op)) {
+            PGX_INFO("LowerToDB: Found translation hook for " + op->getName().getStringRef().str());
             auto node = mlir::relalg::Translator::createTranslator(op);
             if (!node) {
                op->emitError("No translator found for operation: ") << op->getName();
                return;
             }
             
+            PGX_INFO("LowerToDB: Calling setInfo and produce on translator");
             node->setInfo(nullptr, {});
             ::mlir::OpBuilder builder(op);
             node->produce(loweringContext, builder);

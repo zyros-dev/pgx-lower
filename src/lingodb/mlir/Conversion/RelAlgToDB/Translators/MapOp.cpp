@@ -10,7 +10,9 @@ class MapTranslator : public mlir::relalg::Translator {
    MapTranslator(mlir::relalg::MapOp mapOp) : mlir::relalg::Translator(mapOp), mapOp(mapOp) {}
 
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
+      PGX_INFO("MapOp::consume called - processing map operation");
       auto scope = context.createScope();
+      PGX_INFO("MapOp: Merging relational block to compute map expressions");
       auto computedCols = mergeRelationalBlock(
          builder.getInsertionBlock(), op, [](auto x) { return &x->getRegion(0).front(); }, context, scope);
       if (computedCols.size() != mapOp.getComputedCols().size()) {
@@ -19,13 +21,21 @@ class MapTranslator : public mlir::relalg::Translator {
                  " but got " + std::to_string(computedCols.size()));
          return;
       }
+      PGX_INFO("MapOp: Registering " + std::to_string(computedCols.size()) + " computed columns");
       for (size_t i = 0; i < computedCols.size(); i++) {
          auto& column = cast<mlir::relalg::ColumnDefAttr>(mapOp.getComputedCols()[i]).getColumn();
          context.setValueForAttribute(scope, &column, computedCols[i]);
       }
+      
+      PGX_INFO("MapOp: Calling consumer->consume");
       consumer->consume(this, builder, context);
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
+      PGX_INFO("MapOp::produce called - calling child produce");
+      if (children.empty()) {
+         PGX_ERROR("MapOp::produce - no children!");
+         return;
+      }
       children[0]->produce(context, builder);
    }
 
