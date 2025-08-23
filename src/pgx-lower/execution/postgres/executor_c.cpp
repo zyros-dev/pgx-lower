@@ -2,7 +2,7 @@
 #include <exception>
 #include <sstream>
 #include "mlir/IR/MLIRContext.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/logging.h"
 
 // Global flag to track if extension has been loaded via LOAD command
 // This indicates MLIR context may have been recreated and expressions should be avoided
@@ -21,8 +21,8 @@ bool g_extension_after_load = false;
 #undef dngettext
 #endif
 
-#include "execution/postgres/executor_c.h"
-#include "execution/postgres/my_executor.h"
+#include "pgx-lower/execution/postgres/executor_c.h"
+#include "pgx-lower/execution/postgres/my_executor.h"
 
 extern "C" {
 

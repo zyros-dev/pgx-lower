@@ -1,7 +1,7 @@
 #ifndef PGX_LOWER_RUNTIME_HASHMULTIMAP_H
 #define PGX_LOWER_RUNTIME_HASHMULTIMAP_H
-#include "runtime/Buffer.h"
-#include "runtime/helpers.h"
+#include "lingodb/runtime/Buffer.h"
+#include "lingodb/runtime/helpers.h"
 namespace pgx_lower::compiler::runtime {
 class HashMultiMap {
    struct Value {

@@ -6,6 +6,6 @@
 
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/DSA/IR/DSAOpsEnums.h.inc"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOpsEnums.h.inc"
 
 #endif // MLIR_DIALECT_DSA_IR_DSAOPSENUMS_H

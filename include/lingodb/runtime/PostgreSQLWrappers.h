@@ -1,7 +1,7 @@
 #ifndef PGX_LOWER_RUNTIME_POSTGRESQLWRAPPERS_H
 #define PGX_LOWER_RUNTIME_POSTGRESQLWRAPPERS_H
 
-#include "runtime/helpers.h"
+#include "lingodb/runtime/helpers.h"
 #include <cstdint>
 
 namespace pgx_lower::compiler::runtime {

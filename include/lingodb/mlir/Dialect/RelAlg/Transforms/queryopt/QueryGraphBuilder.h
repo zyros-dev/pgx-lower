@@ -1,7 +1,7 @@
 #ifndef MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_QUERYGRAPHBUILDER_H
 #define MLIR_DIALECT_RELALG_TRANSFORMS_QUERYOPT_QUERYGRAPHBUILDER_H
 #include "QueryGraph.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
 namespace mlir::relalg {
 class QueryGraphBuilder {

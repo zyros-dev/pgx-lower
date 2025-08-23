@@ -1,6 +1,6 @@
 // Lightweight version with minimal MLIR includes
 #include "DSAToStdPatterns.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/logging.h"
 
 // PostgreSQL headers for exception handling
 #ifdef POSTGRESQL_EXTENSION
@@ -15,10 +15,10 @@ extern "C" {
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/util/UtilOps.h"
-#include "mlir/Dialect/util/UtilDialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"

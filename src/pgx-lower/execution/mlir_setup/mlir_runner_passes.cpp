@@ -5,31 +5,27 @@
 
 #include <mlir/InitAllPasses.h>
 
-// Dialect registration includes
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/util/UtilDialect.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 
 // Error handling includes
-#include "execution/error_handling.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/error_handling.h"
+#include "pgx-lower/execution/logging.h"
 
-// RelAlg includes last to avoid interface conflicts
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
-// Pass registration includes
-#include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
-#include "mlir/Conversion/DBToStd/DBToStd.h"
-#include "mlir/Conversion/DSAToStd/DSAToStd.h"
-#include "mlir/Conversion/UtilToLLVM/Passes.h"
-#include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/Transforms/CustomPasses.h"
-#include "mlir/Dialect/DB/Passes.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
+#include "lingodb/mlir/Conversion/DBToStd/DBToStd.h"
+#include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
+#include "lingodb/mlir/Conversion/UtilToLLVM/Passes.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
+#include "lingodb/mlir/Transforms/CustomPasses.h"
+#include "lingodb/mlir/Dialect/DB/Passes.h"
 
-// NOW include headers that may bring in PostgreSQL (after MLIR is safe)
-#include "execution/mlir_runner.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/mlir_runner.h"
+#include "pgx-lower/execution/logging.h"
 
 extern "C" void initialize_mlir_passes() {
     try {

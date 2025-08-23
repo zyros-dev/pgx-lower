@@ -1,4 +1,4 @@
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/DPhyp.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/DPhyp.h"
 #include <unordered_set>
 
 void mlir::relalg::DPHyp::emitCsgCmp(const NodeSet& s1, const NodeSet& s2) {

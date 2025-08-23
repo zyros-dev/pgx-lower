@@ -1,21 +1,21 @@
 #include "llvm/ADT/TypeSwitch.h"
 
-#include "mlir/Conversion/RelAlgToDB/JoinTranslator.h"
-#include "mlir/Conversion/RelAlgToDB/NLJoinTranslator.h"
-#include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
-#include "mlir/Conversion/RelAlgToDB/Translator.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/JoinTranslator.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/NLJoinTranslator.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/util/UtilDialect.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/util/UtilDialect.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
 
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "mlir/Pass/Pass.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/logging.h"
 namespace {
 
 class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::OperationPass<::mlir::func::FuncOp>> {

@@ -1,4 +1,4 @@
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraphBuilder.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraphBuilder.h"
 #include <list>
 
 namespace mlir::relalg {

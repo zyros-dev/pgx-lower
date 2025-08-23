@@ -2,7 +2,7 @@
 #define PGX_LOWER_RUNTIME_POSTGRESQLTABLE_H
 #include "ThreadLocal.h"
 #include "helpers.h"
-#include "runtime/ArrowColumn.h"
+#include "lingodb/runtime/ArrowColumn.h"
 #include <memory>
 
 namespace pgx_lower::compiler::runtime {

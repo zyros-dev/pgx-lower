@@ -3,9 +3,9 @@
 
 #include <functional>
 #include "llvm/Support/Debug.h"
-#include <mlir/Dialect/DB/IR/DBOps.h>
-#include <mlir/Dialect/RelAlg/IR/RelAlgOps.h>
-#include <mlir/Dialect/RelAlg/Transforms/queryopt/utils.h>
+#include <lingodb/mlir/Dialect/DB/IR/DBOps.h>
+#include <lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h>
+#include <lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/utils.h>
 namespace mlir::relalg {
 class QueryGraph {
    public:

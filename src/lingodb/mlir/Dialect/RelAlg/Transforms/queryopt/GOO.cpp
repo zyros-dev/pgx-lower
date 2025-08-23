@@ -1,4 +1,4 @@
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/GOO.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/GOO.h"
 static std::shared_ptr<mlir::relalg::Plan> createInitialPlan(mlir::relalg::QueryGraph::Node& n) {
    std::string description = std::to_string(n.id);
    if (auto baseTableOp = mlir::dyn_cast_or_null<mlir::relalg::BaseTableOp>(n.op.getOperation())) {

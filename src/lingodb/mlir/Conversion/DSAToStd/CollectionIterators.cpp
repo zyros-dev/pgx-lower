@@ -1,19 +1,19 @@
 #include <optional>
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/DSA/IR/DSATypes.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 
-#include "mlir/Conversion/DSAToStd/CollectionIteration.h"
+#include "lingodb/mlir/Conversion/DSAToStd/CollectionIteration.h"
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include "runtime-defs/DataSourceIteration.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/logging.h"
 using namespace mlir;
 
 class WhileIterator {

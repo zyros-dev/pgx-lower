@@ -1,9 +1,9 @@
-#include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 
 class SelectionTranslator : public mlir::relalg::Translator {
    mlir::relalg::SelectionOp selectionOp;

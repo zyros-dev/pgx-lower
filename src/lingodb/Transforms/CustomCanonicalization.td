@@ -1,5 +1,5 @@
 include "mlir/Dialect/Arith/IR/ArithOps.td"
-//include "mlir/Dialect/DB/IR/DBOps.td"
+//include "lingodb/mlir/Dialect/DB/IR/DBOps.td"
 include "mlir/IR/PatternBase.td"
 
 def ConstAddCmpFold :

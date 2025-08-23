@@ -1,5 +1,5 @@
-#include "execution/error_handling.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/error_handling.h"
+#include "pgx-lower/execution/logging.h"
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {

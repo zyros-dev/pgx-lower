@@ -1,10 +1,10 @@
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/RelAlg/Passes.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Pass/Pass.h"
-#include "runtime/Database.h"
+#include "lingodb/runtime/Database.h"
 namespace {
 using mlir::relalg::Operator;
 using mlir::relalg::BinaryOperator;

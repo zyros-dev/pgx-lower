@@ -1,8 +1,8 @@
 #ifndef MLIR_CONVERSION_RELALGTODB_NLJOINTRANSLATOR_H
 #define MLIR_CONVERSION_RELALGTODB_NLJOINTRANSLATOR_H
 #include "JoinTranslator.h"
-#include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
-#include <mlir/Dialect/DB/IR/DBOps.h>
+#include "lingodb/mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
+#include <lingodb/mlir/Dialect/DB/IR/DBOps.h>
 
 namespace mlir::relalg {
 class NLJoinTranslator : public mlir::relalg::JoinTranslator {

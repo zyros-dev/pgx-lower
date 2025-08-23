@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-#include "mlir/Dialect/RelAlg/Passes.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 

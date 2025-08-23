@@ -5,8 +5,8 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Pass/Pass.h"
 #include <iostream>

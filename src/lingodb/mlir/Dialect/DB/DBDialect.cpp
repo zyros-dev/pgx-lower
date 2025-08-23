@@ -1,6 +1,6 @@
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DB/IR/RuntimeFunctions.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/RuntimeFunctions.h"
 #include "mlir/IR/DialectImplementation.h"
 #include <mlir/Transforms/InliningUtils.h>
 using namespace mlir;
@@ -17,10 +17,10 @@ struct DBInlinerInterface : public DialectInlinerInterface {
 void DBDialect::initialize() {
    addOperations<
 #define GET_OP_LIST
-#include "mlir/Dialect/DB/IR/DBOps.cpp.inc"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.cpp.inc"
       >();
    addInterfaces<DBInlinerInterface>();
    registerTypes();
    runtimeFunctionRegistry = mlir::db::RuntimeFunctionRegistry::getBuiltinRegistry(getContext());
 }
-#include "mlir/Dialect/DB/IR/DBOpsDialect.cpp.inc"
+#include "lingodb/mlir/Dialect/DB/IR/DBOpsDialect.cpp.inc"

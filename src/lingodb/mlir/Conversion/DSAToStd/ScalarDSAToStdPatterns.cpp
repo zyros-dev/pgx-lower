@@ -1,7 +1,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Conversion/DSAToStd/DSAToStd.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include <mlir/Dialect/SCF/IR/SCF.h>
 

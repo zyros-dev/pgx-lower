@@ -1,6 +1,6 @@
-#include "mlir/Conversion/UtilToLLVM/Passes.h"
+#include "lingodb/mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 

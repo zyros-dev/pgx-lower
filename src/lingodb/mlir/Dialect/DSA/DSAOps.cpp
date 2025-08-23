@@ -1,5 +1,5 @@
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
 
 #include "mlir/IR/OpImplementation.h"
 #include <unordered_set>
@@ -254,5 +254,5 @@ void dsa::HashtableInsert::print(OpAsmPrinter& p) {
 }
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/DSA/IR/DSAOps.cpp.inc"
-#include "mlir/Dialect/DSA/IR/DSAOpsInterfaces.cpp.inc"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.cpp.inc"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOpsInterfaces.cpp.inc"

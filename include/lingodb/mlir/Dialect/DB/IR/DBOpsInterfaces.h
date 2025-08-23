@@ -6,6 +6,6 @@
 
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/DB/IR/DBOpsInterfaces.h.inc"
+#include "lingodb/mlir/Dialect/DB/IR/DBOpsInterfaces.h.inc"
 
 #endif // MLIR_DIALECT_DB_IR_DBOPSINTERFACES_H

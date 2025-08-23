@@ -1,10 +1,10 @@
-#include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
-#include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
-#include "execution/logging.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
+#include "pgx-lower/execution/logging.h"
 
 class MaterializeTranslator : public mlir::relalg::Translator {
    mlir::relalg::MaterializeOp materializeOp;

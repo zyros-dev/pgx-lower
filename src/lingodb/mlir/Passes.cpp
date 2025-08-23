@@ -1,11 +1,11 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
-#include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
-#include "mlir/Conversion/DBToStd/DBToStd.h"
-#include "mlir/Conversion/DSAToStd/DSAToStd.h"
-#include "mlir/Conversion/UtilToLLVM/Passes.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
+#include "lingodb/mlir/Conversion/DBToStd/DBToStd.h"
+#include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
+#include "lingodb/mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/logging.h"
 #include "llvm/Support/FormatVariadic.h"
 #include <chrono>
 #include <iomanip>

@@ -1,7 +1,7 @@
-#include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include <mlir/Conversion/RelAlgToDB/HashJoinTranslator.h>
-#include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
-#include "execution/logging.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
+#include <lingodb/mlir/Conversion/RelAlgToDB/HashJoinTranslator.h>
+#include <lingodb/mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
+#include "pgx-lower/execution/logging.h"
 
 using namespace ::mlir::relalg;
 std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir::Block* dest, ::mlir::Operation* op, mlir::function_ref<::mlir::Block*(::mlir::Operation*)> getBlockFn, TranslatorContext& context, TranslatorContext::AttributeResolverScope& scope) {

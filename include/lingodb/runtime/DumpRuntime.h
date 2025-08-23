@@ -1,6 +1,6 @@
 #ifndef RUNTIME_DUMPRUNTIME_H
 #define RUNTIME_DUMPRUNTIME_H
-#include "runtime/helpers.h"
+#include "lingodb/runtime/helpers.h"
 #include <cstdint>
 namespace runtime {
 struct DumpRuntime {

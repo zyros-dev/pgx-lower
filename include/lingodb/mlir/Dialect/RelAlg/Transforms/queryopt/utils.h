@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <iomanip>
 #include <iterator>
-#include <mlir/Dialect/RelAlg/IR/RelAlgOps.h>
+#include <lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h>
 
 namespace mlir::relalg {
 class QueryGraph;

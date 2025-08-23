@@ -1,4 +1,4 @@
-#include "mlir-support/parsing.h"
+#include "lingodb/mlir-support/parsing.h"
 #include <stdexcept>
 #include <cstring>
 

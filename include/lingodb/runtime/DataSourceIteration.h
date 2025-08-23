@@ -1,7 +1,7 @@
 #ifndef RUNTIME_DATASOURCEITERATION_H
 #define RUNTIME_DATASOURCEITERATION_H
-#include "runtime/ExecutionContext.h"
-#include "runtime/helpers.h"
+#include "lingodb/runtime/ExecutionContext.h"
+#include "lingodb/runtime/helpers.h"
 namespace runtime {
 class DataSource {
    public:

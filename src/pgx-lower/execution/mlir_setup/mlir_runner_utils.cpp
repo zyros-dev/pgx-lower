@@ -1,6 +1,6 @@
-#include "execution/mlir_runner.h"
-#include "execution/error_handling.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/mlir_runner.h"
+#include "pgx-lower/execution/error_handling.h"
+#include "pgx-lower/execution/logging.h"
 #include <sstream>
 #include <chrono>
 #include <iomanip>

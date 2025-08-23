@@ -195,7 +195,7 @@ int main(int argc, const char** argv) {
    MethodPrinter printer(hStream);
    MatchFinder finder;
    finder.addMatcher(methodMatcher, &printer);
-   hStream << "#include <mlir/Dialect/util/FunctionHelper.h>\n";
+   hStream << "#include <lingodb/mlir/Dialect/util/FunctionHelper.h>\n";
    hStream << "namespace rt {\n";
    tool.run(newFrontendActionFactory(&finder).get());
 

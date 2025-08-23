@@ -1,6 +1,6 @@
-#include "execution/mlir_runner.h"
-#include "execution/error_handling.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/mlir_runner.h"
+#include "pgx-lower/execution/error_handling.h"
+#include "pgx-lower/execution/logging.h"
 #include <sstream>
 #include <csignal>
 
@@ -12,33 +12,32 @@
 #include "llvm/Support/TargetSelect.h"
 
 // Dialect headers
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/util/UtilDialect.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 // AST Translation
-#include "frontend/SQL/postgresql_ast_translator.h"
+#include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
 
 // Conversion passes
-#include "mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
-#include "mlir/Conversion/DBToStd/DBToStd.h"
-#include "mlir/Conversion/DSAToStd/DSAToStd.h"
-#include "mlir/Conversion/UtilToLLVM/Passes.h"
-#include "mlir/Dialect/RelAlg/Passes.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
+#include "lingodb/mlir/Conversion/DBToStd/DBToStd.h"
+#include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
+#include "lingodb/mlir/Conversion/UtilToLLVM/Passes.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Transforms/Passes.h"
-#include "mlir/Passes.h"
+#include "lingodb/mlir/Passes.h"
 
-// PostgreSQL error handling (only include when not building unit tests)
 #ifndef BUILDING_UNIT_TESTS
 extern "C" {
 #include "postgres.h"
@@ -64,9 +63,9 @@ extern "C" {
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 
-#include "execution/jit_execution_interface.h"
-#include "mlir/Transforms/CustomPasses.h"
-#include "mlir/Dialect/DB/Passes.h"
+#include "pgx-lower/execution/jit_execution_interface.h"
+#include "lingodb/mlir/Transforms/CustomPasses.h"
+#include "lingodb/mlir/Dialect/DB/Passes.h"
 
 #include <mlir/InitAllPasses.h>
 #include <fstream>

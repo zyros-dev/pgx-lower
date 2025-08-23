@@ -1,6 +1,6 @@
 #ifndef RUNTIME_EXTERNALPOSTGRESQLDATABASE_H
 #define RUNTIME_EXTERNALPOSTGRESQLDATABASE_H
-#include "runtime/Database.h"
+#include "lingodb/runtime/Database.h"
 
 // PostgreSQL includes
 extern "C" {

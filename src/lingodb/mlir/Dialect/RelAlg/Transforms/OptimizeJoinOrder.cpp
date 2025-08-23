@@ -1,11 +1,11 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/DPhyp.h"
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/GOO.h"
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraphBuilder.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/DPhyp.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/GOO.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraphBuilder.h"
 #include "mlir/Pass/Pass.h"
 
 namespace {

@@ -1,7 +1,7 @@
-#include "frontend/SQL/query_analyzer.h"
+#include "pgx-lower/frontend/SQL/query_analyzer.h"
 
-#include "execution/error_handling.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/error_handling.h"
+#include "pgx-lower/execution/logging.h"
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
@@ -14,7 +14,7 @@ extern "C" {
 
 extern Oid g_jit_table_oid;
 }
-#include "execution/postgres/executor_c.h"
+#include "pgx-lower/execution/postgres/executor_c.h"
 #endif
 
 #include <cstring>

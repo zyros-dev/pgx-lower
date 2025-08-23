@@ -1,7 +1,7 @@
 #include "llvm/ADT/TypeSwitch.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/OpImplementation.h"
 #include <functional>
@@ -372,4 +372,4 @@ void mlir::relalg::detail::moveSubTreeBefore(::mlir::Operation* op, ::mlir::Oper
       moveSubTreeBefore(child, tree);
    }
 }
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.cpp.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.cpp.inc"

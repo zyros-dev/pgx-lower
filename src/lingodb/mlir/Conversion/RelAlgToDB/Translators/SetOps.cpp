@@ -1,9 +1,9 @@
-#include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
-#include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
 class SetOpTranslator : public mlir::relalg::Translator {
    mlir::relalg::Operator unionOp;
    std::unordered_map<const mlir::relalg::Column*, const mlir::relalg::Column*> leftMapping;

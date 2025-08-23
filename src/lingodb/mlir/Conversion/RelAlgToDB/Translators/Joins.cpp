@@ -1,10 +1,10 @@
-#include "mlir/Conversion/RelAlgToDB/HashJoinTranslator.h"
-#include "mlir/Conversion/RelAlgToDB/Translator.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/HashJoinTranslator.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/util/UtilOps.h"
-#include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
-#include <mlir/Dialect/DSA/IR/DSAOps.h>
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
+#include <lingodb/mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
+#include <lingodb/mlir/Dialect/DSA/IR/DSAOps.h>
 #include <mlir/IR/IRMapping.h>
 
 class SimpleInnerJoinImpl : public mlir::relalg::JoinImpl {

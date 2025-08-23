@@ -1,8 +1,8 @@
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h"
 
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include <llvm/ADT/TypeSwitch.h>
@@ -332,4 +332,4 @@ void mlir::relalg::BaseTableOp::print(OpAsmPrinter& p) {
 
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"

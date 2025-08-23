@@ -1,5 +1,5 @@
-#include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -12,14 +12,14 @@ namespace relalg {
 } // end namespace mlir
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.cpp.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.cpp.inc"
 
 namespace mlir::relalg {
 
 void RelAlgDialect::registerTypes() {
    addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.cpp.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsTypes.cpp.inc"
       >();
 }
 

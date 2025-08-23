@@ -1,6 +1,6 @@
-#include "runtime/PostgreSQLDataSource.h"
-#include "runtime/tuple_access.h"
-#include "execution/logging.h"
+#include "lingodb/runtime/PostgreSQLDataSource.h"
+#include "lingodb/runtime/tuple_access.h"
+#include "pgx-lower/execution/logging.h"
 #include <cstring>
 #include <sstream>
 

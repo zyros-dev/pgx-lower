@@ -1,5 +1,5 @@
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/utils.h"
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraph.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/utils.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraph.h"
 #include <unordered_set>
 namespace mlir::relalg {
 void NodeSet::iterateSubsets(const std::function<void(NodeSet)>& fn) const {

@@ -1,15 +1,15 @@
-#include "execution/postgres/my_executor.h"
-#include "execution/mlir_runner.h"
-#include "frontend/SQL/query_analyzer.h"
-#include "execution/error_handling.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/postgres/my_executor.h"
+#include "pgx-lower/execution/mlir_runner.h"
+#include "pgx-lower/frontend/SQL/query_analyzer.h"
+#include "pgx-lower/execution/error_handling.h"
+#include "pgx-lower/execution/logging.h"
 
 namespace mlir_runner {
 auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprContext* econtext, DestReceiver* dest)
     -> bool;
 }
 
-#include "runtime/tuple_access.h"
+#include "lingodb/runtime/tuple_access.h"
 
 #include <vector>
 #include <functional>

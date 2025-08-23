@@ -1,5 +1,5 @@
-#include "execution/logging_c.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/logging_c.h"
+#include "pgx-lower/execution/logging.h"
 
 extern "C" {
 

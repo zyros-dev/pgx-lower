@@ -1,7 +1,7 @@
 
 #ifndef RUNTIME_METADATAONLYDATABASE_H
 #define RUNTIME_METADATAONLYDATABASE_H
-#include "runtime/Database.h"
+#include "lingodb/runtime/Database.h"
 namespace runtime {
 class MetaDataOnlyDatabase : public runtime::Database {
    std::unordered_map<std::string, std::shared_ptr<TableMetaData>> metaData;

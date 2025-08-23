@@ -4,9 +4,9 @@
 #include <memory>
 #include <unordered_map>
 
-#include "helpers.h"
-#include "metadata.h"
-#include <arrow/type_fwd.h>
+#include "lingodb/runtime/helpers.h"
+#include "lingodb/runtime/metadata.h"
+#include <lingodb/arrow/type_fwd.h>
 namespace runtime {
 struct ArrowTable{};
 class Database {

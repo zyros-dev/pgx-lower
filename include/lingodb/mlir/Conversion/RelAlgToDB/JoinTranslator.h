@@ -1,9 +1,9 @@
 #ifndef MLIR_CONVERSION_RELALGTODB_JOINTRANSLATOR_H
 #define MLIR_CONVERSION_RELALGTODB_JOINTRANSLATOR_H
 #include "Translator.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include <mlir/Dialect/RelAlg/IR/Column.h>
-#include <mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h>
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include <lingodb/mlir/Dialect/RelAlg/IR/Column.h>
+#include <lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h>
 
 namespace mlir::relalg {
 

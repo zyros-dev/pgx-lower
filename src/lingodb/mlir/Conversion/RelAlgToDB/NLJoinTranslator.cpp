@@ -1,5 +1,5 @@
-#include <mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
-#include <mlir/Dialect/DSA/IR/DSAOps.h>
+#include <lingodb/mlir/Conversion/RelAlgToDB/NLJoinTranslator.h>
+#include <lingodb/mlir/Dialect/DSA/IR/DSAOps.h>
 using namespace ::mlir::relalg;
 void NLJoinTranslator::setInfo(mlir::relalg::Translator* consumer, mlir::relalg::ColumnSet requiredAttributes) {
    this->consumer = consumer;

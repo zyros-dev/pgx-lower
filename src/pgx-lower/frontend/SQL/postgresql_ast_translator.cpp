@@ -39,9 +39,9 @@ typedef struct Gather Gather;
 #undef ngettext
 #undef dngettext
 
-#include "frontend/SQL/postgresql_ast_translator.h"
-#include "execution/logging.h"
-#include "runtime/tuple_access.h"
+#include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
+#include "pgx-lower/execution/logging.h"
+#include "lingodb/runtime/tuple_access.h"
 #include <cstddef> // for offsetof
 
 #include "mlir/IR/Builders.h"
@@ -52,17 +52,17 @@ typedef struct Gather Gather;
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "mlir/Dialect/RelAlg/IR/Column.h"
-#include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "runtime/metadata.h"
-#include "mlir/Dialect/DSA/IR/DSAOps.h"
-#include "mlir/Dialect/DSA/IR/DSATypes.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DB/IR/DBTypes.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
+#include "lingodb/runtime/metadata.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include <memory>

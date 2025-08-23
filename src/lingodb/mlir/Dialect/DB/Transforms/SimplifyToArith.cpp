@@ -1,10 +1,10 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 #include <iostream>
 
-#include "mlir/Dialect/RelAlg/Passes.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include <variant>

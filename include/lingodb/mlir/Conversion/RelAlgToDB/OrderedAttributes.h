@@ -1,9 +1,9 @@
 #ifndef MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H
 #define MLIR_CONVERSION_RELALGTODB_ORDEREDATTRIBUTES_H
-#include "mlir/Conversion/RelAlgToDB/TranslatorContext.h"
-#include "mlir/Dialect/RelAlg/ColumnSet.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/TranslatorContext.h"
+#include "lingodb/mlir/Dialect/RelAlg/ColumnSet.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/Value.h"
 
 namespace mlir {

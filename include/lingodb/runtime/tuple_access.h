@@ -3,12 +3,12 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include "runtime/helpers.h"
-#include "execution/postgres/my_executor.h"
+#include "lingodb/runtime/helpers.h"
+#include "pgx-lower/execution/postgres/my_executor.h"
 // Removed mlir_runner.h include to avoid DestReceiver conflicts
-#include "frontend/SQL/query_analyzer.h"
-#include "execution/error_handling.h"
-#include "execution/logging.h"
+#include "pgx-lower/frontend/SQL/query_analyzer.h"
+#include "pgx-lower/execution/error_handling.h"
+#include "pgx-lower/execution/logging.h"
 
 #include "executor/executor.h"
 

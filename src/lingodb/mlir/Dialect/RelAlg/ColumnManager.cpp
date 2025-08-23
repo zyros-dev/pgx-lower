@@ -1,4 +1,4 @@
-#include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 namespace mlir::relalg {
 void ColumnManager::setContext(MLIRContext* context) {
    this->context = context;

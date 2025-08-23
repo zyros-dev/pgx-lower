@@ -1,7 +1,7 @@
-#include "runtime/tuple_access.h"
+#include "lingodb/runtime/tuple_access.h"
 #include <vector>
-#include "runtime/PostgreSQLDataSource.h"
-#include "execution/error_handling.h"
+#include "lingodb/runtime/PostgreSQLDataSource.h"
+#include "pgx-lower/execution/error_handling.h"
 #include <array>
 #include <cstring>
 #include <memory>

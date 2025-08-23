@@ -1,6 +1,6 @@
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/util/UtilDialect.h"
+#include "lingodb/mlir/Dialect/util/UtilDialect.h"
 
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -138,4 +138,4 @@ void mlir::util::LoadOp::getEffects(::mlir::SmallVectorImpl<::mlir::SideEffects:
    return mlir::success();
 }
 #define GET_OP_CLASSES
-#include "mlir/Dialect/util/UtilOps.cpp.inc"
+#include "lingodb/mlir/Dialect/util/UtilOps.cpp.inc"

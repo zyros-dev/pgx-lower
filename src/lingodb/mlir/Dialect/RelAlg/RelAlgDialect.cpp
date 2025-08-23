@@ -1,12 +1,12 @@
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
 
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -106,16 +106,16 @@ struct ArithCmpFCmpInterface
    }
 };
 #define GET_ATTRDEF_CLASSES
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.cpp.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.cpp.inc"
 void RelAlgDialect::initialize() {
    addOperations<
 #define GET_OP_LIST
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.cpp.inc"
       >();
    registerTypes();
    addAttributes<
 #define GET_ATTRDEF_LIST
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.cpp.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.cpp.inc"
       >();
    addInterfaces<RelalgInlinerInterface>();
    columnManager.setContext(getContext());
@@ -199,4 +199,4 @@ void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) con
    auto columnRefAttr = parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
    return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.value());
 }
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.cpp.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.cpp.inc"

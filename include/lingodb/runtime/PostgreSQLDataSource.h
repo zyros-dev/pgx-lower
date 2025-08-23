@@ -1,9 +1,9 @@
 #ifndef PGX_LOWER_RUNTIME_POSTGRESQLDATASOURCE_H
 #define PGX_LOWER_RUNTIME_POSTGRESQLDATASOURCE_H
 
-#include "runtime/DataSourceIteration.h"
-#include "runtime/ArrowView.h"
-#include "runtime/helpers.h"
+#include "lingodb/runtime/DataSourceIteration.h"
+#include "lingodb/runtime/ArrowView.h"
+#include "lingodb/runtime/helpers.h"
 #include <string>
 #include <functional>
 

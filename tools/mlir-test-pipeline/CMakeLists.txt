@@ -1,7 +1,6 @@
 # MLIR Pipeline Test Tool
 add_executable(mlir-test-pipeline
     main.cpp
-    mlir_pipeline_standalone.cpp
 )
 
 # Update compile flags for LLVM compatibility

@@ -1,9 +1,9 @@
-#include "mlir/Dialect/util/FunctionHelper.h"
+#include "lingodb/mlir/Dialect/util/FunctionHelper.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/util/UtilDialect.h"
-#include "mlir/Dialect/util/UtilOps.h"
-#include "mlir/Dialect/util/UtilTypes.h"
+#include "lingodb/mlir/Dialect/util/UtilDialect.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Dialect/util/UtilTypes.h"
 #include "llvm/Support/raw_ostream.h"
 static ::mlir::Value convertValue(::mlir::OpBuilder& builder, ::mlir::Value v, ::mlir::Type t,::mlir::Location loc) {
    if (v.getType() == t) return v;

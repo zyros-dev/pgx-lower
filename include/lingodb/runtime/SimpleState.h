@@ -1,7 +1,7 @@
 #ifndef PGX_LOWER_RUNTIME_SIMPLESTATE_H
 #define PGX_LOWER_RUNTIME_SIMPLESTATE_H
-#include "runtime/ExecutionContext.h"
-#include "runtime/ThreadLocal.h"
+#include "lingodb/runtime/ExecutionContext.h"
+#include "lingodb/runtime/ThreadLocal.h"
 
 namespace pgx_lower::compiler::runtime {
 class SimpleState {

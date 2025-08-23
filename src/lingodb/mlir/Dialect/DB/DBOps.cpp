@@ -1,6 +1,6 @@
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DB/IR/RuntimeFunctions.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/mlir/Dialect/DB/IR/RuntimeFunctions.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
 #include <unordered_set>
@@ -250,5 +250,5 @@ LogicalResult mlir::db::AndOp::canonicalize(mlir::db::AndOp andOp, mlir::Pattern
    return failure();
 }
 #define GET_OP_CLASSES
-#include "mlir/Dialect/DB/IR/DBOps.cpp.inc"
-#include "mlir/Dialect/DB/IR/DBOpsInterfaces.cpp.inc"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.cpp.inc"
+#include "lingodb/mlir/Dialect/DB/IR/DBOpsInterfaces.cpp.inc"

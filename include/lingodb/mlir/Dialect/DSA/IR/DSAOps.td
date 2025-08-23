@@ -7,8 +7,8 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
-include "mlir/Dialect/DSA/IR/DSAInterfaces.td"
-include "mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
+include "lingodb/mlir/Dialect/DSA/IR/DSAInterfaces.td"
+include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgInterfaces.td"
 
 // DSA dialect definition.
 def DSA_Dialect : Dialect {

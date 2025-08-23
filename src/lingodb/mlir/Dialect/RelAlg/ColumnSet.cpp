@@ -1,6 +1,6 @@
-#include "mlir/Dialect/RelAlg/ColumnSet.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
+#include "lingodb/mlir/Dialect/RelAlg/ColumnSet.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 
 namespace mlir::relalg {
 

@@ -6,10 +6,10 @@ class hash_code;
 template <typename T>
 llvm::hash_code hash_value(std::shared_ptr<T> arg);
 }
-#include "mlir/Dialect/RelAlg/IR/ColumnManager.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "mlir/IR/Dialect.h"
 
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.h.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.h.inc"
 
 namespace llvm {
 template <typename T>

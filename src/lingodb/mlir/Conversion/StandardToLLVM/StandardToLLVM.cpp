@@ -1,4 +1,4 @@
-#include "mlir/Conversion/StandardToLLVM/StandardToLLVM.h"
+#include "lingodb/mlir/Conversion/StandardToLLVM/StandardToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
@@ -6,7 +6,7 @@
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
-#include "mlir/Conversion/UtilToLLVM/Passes.h"
+#include "lingodb/mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -16,7 +16,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Analysis/DataLayoutAnalysis.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/logging.h"
 
 namespace mlir {
 namespace pgx_lower {

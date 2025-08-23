@@ -1,6 +1,6 @@
-#include "execution/mlir_runner.h"
-#include "execution/error_handling.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/mlir_runner.h"
+#include "pgx-lower/execution/error_handling.h"
+#include "pgx-lower/execution/logging.h"
 
 #include <stdexcept>
 #include <string>
@@ -13,12 +13,12 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/IR/Verifier.h"
 
-#include "mlir/Passes.h"
+#include "lingodb/mlir/Passes.h"
 #include "mlir/Transforms/Passes.h"
 
-#include "mlir/Dialect/DB/IR/DBDialect.h"
-#include "mlir/Dialect/DSA/IR/DSADialect.h"
-#include "mlir/Dialect/util/UtilDialect.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
+#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/util/UtilDialect.h"
 
 class Phase3bMemoryGuard;
 

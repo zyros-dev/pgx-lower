@@ -1,4 +1,4 @@
-include "mlir/Dialect/DB/IR/DBOps.td"
+include "lingodb/mlir/Dialect/DB/IR/DBOps.td"
 include "mlir/Dialect/Arith/IR/ArithOps.td"
 include "mlir/IR/PatternBase.td"
 

@@ -2,12 +2,12 @@
 #define MLIR_CONVERSION_RELALGTODB_HASHJOINTRANSLATOR_H
 #include "JoinTranslator.h"
 #include "Translator.h"
-#include "mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
-#include "mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Conversion/RelAlgToDB/OrderedAttributes.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/RelAlg/ColumnSet.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "mlir/Dialect/util/UtilOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/ColumnSet.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/IRMapping.h"
 #include <tuple>
 

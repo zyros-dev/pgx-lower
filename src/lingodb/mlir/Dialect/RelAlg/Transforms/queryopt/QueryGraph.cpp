@@ -3,9 +3,9 @@
 #define NDEBUG
 #undef NDEBUG
 
-#include "mlir-support/eval.h"
-#include "mlir-support/parsing.h"
-#include "mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraph.h"
+#include "lingodb/mlir-support/eval.h"
+#include "lingodb/mlir-support/parsing.h"
+#include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraph.h"
 
 void mlir::relalg::QueryGraph::print(llvm::raw_ostream& out) {
    out << "QueryGraph:{\n";

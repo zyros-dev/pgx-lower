@@ -4,9 +4,9 @@
 #include <functional>
 #include "llvm/ADT/SmallPtrSet.h"
 
-#include "mlir/Dialect/RelAlg/ColumnSet.h"
-#include "mlir/Dialect/RelAlg/FunctionalDependencies.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
+#include "lingodb/mlir/Dialect/RelAlg/ColumnSet.h"
+#include "lingodb/mlir/Dialect/RelAlg/FunctionalDependencies.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Dialect.h"
@@ -215,6 +215,6 @@ void inlineOpIntoBlock(::mlir::Operation* vop, ::mlir::Operation* includeChildre
 } // namespace mlir::relalg::detail
 class Operator;
 #define GET_OP_CLASSES
-#include "mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h.inc"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsInterfaces.h.inc"
 
 #endif // MLIR_DIALECT_RELALG_IR_RELALGOPSINTERFACES_H

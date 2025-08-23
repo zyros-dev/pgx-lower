@@ -1,8 +1,8 @@
 // It isolates LLVM headers from PostgreSQL headers to avoid conflicts
 
-#include "execution/jit_execution_interface.h"
-#include "execution/jit_execution_engine.h"
-#include "execution/logging.h"
+#include "pgx-lower/execution/jit_execution_interface.h"
+#include "pgx-lower/execution/jit_execution_engine.h"
+#include "pgx-lower/execution/logging.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <memory>
 #include <string>

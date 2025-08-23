@@ -1,11 +1,11 @@
 
-#include "mlir/Dialect/DB/IR/DBOps.h"
-#include "mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
-#include "mlir/Dialect/RelAlg/Passes.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
 
-#include "mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Pass/Pass.h"
 #include <llvm/ADT/TypeSwitch.h>

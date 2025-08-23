@@ -1,6 +1,6 @@
 #ifndef RUNTIME_TABLEBUILDER_H
 #define RUNTIME_TABLEBUILDER_H
-#include "runtime/helpers.h"
+#include "lingodb/runtime/helpers.h"
 
 #include <cassert>
 

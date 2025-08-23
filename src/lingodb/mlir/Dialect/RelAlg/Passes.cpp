@@ -1,8 +1,8 @@
-#include "mlir/Dialect/RelAlg/Passes.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
-#include "runtime/Database.h"
+#include "lingodb/runtime/Database.h"
 
 #include <iostream>
 

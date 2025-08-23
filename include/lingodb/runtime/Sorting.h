@@ -1,6 +1,6 @@
 #ifndef PGX_LOWER_RUNTIME_SORTING_H
 #define PGX_LOWER_RUNTIME_SORTING_H
-#include "runtime/GrowingBuffer.h"
+#include "lingodb/runtime/GrowingBuffer.h"
 
 namespace pgx_lower::compiler::runtime {
 
