@@ -13,7 +13,7 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 #include "runtime-defs/DataSourceIteration.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 using namespace mlir;
 
 class WhileIterator {

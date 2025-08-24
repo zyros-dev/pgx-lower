@@ -7,8 +7,8 @@
 #include "pgx-lower/execution/postgres/my_executor.h"
 // Removed mlir_runner.h include to avoid DestReceiver conflicts
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
-#include "pgx-lower/execution/error_handling.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/error_handling.h"
+#include "pgx-lower/utility/logging.h"
 
 #include "executor/executor.h"
 

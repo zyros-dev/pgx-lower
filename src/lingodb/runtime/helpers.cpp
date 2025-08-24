@@ -1,5 +1,5 @@
 #include "lingodb/runtime/helpers.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 

@@ -164,12 +164,12 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     set(UNIT_TEST_ADDITIONAL_SOURCES
             src/pgx-lower/frontend/SQL/query_analyzer.cpp
             src/pgx-lower/frontend/SQL/postgresql_ast_translator.cpp
-            src/lingodb/utility/error_handling.cpp
+            src/pgx-lower/utility/error_handling.cpp
             src/pgx-lower/execution/mlir_runner.cpp
             src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
             src/pgx-lower/execution/jit_engine/jit_execution_wrapper.cpp
-            src/lingodb/utility/logging.cpp
-            src/lingodb/utility/logging_tools.cpp
+            src/pgx-lower/utility/logging.cpp
+            src/pgx-lower/utility/logging_tools.cpp
             src/lingodb/runtime/helpers.cpp
             src/lingodb/mlir/Passes.cpp
     )

@@ -15,7 +15,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "mlir/Pass/Pass.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 namespace {
 
 class LowerToDBPass : public ::mlir::PassWrapper<LowerToDBPass, ::mlir::OperationPass<::mlir::func::FuncOp>> {

@@ -1,6 +1,6 @@
 // Lightweight version with minimal MLIR includes
 #include "DSAToStdPatterns.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 
 // PostgreSQL headers for exception handling
 #ifdef POSTGRESQL_EXTENSION

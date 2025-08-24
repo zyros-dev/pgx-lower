@@ -1,6 +1,6 @@
 #include "pgx-lower/execution/jit_execution_engine.h"
-#include "pgx-lower/execution/logging.h"
-#include "lingodb/runtime/tuple_access.h"
+#include "pgx-lower/utility/logging.h"
+#include "pgx-lower/runtime/tuple_access.h"
 #include <fstream>
 #include <sstream>
 #include <dlfcn.h>

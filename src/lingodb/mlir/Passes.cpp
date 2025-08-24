@@ -5,7 +5,7 @@
 #include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
 #include "lingodb/mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 #include "llvm/Support/FormatVariadic.h"
 #include <chrono>
 #include <iomanip>

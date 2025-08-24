@@ -6,7 +6,7 @@
 #include <vector>
 #include <json.h>
 #include "lingodb/runtime/helpers.h"
-#include "lingodb/runtime/tuple_access.h"
+#include "pgx-lower/runtime/tuple_access.h"
 
 extern "C" {
 #include "postgres.h"

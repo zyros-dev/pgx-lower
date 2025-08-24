@@ -154,17 +154,12 @@ class ErrorManager {
 
     // Create specific error types
     static auto queryAnalysisError(const std::string& message, const std::string& queryText = "") -> ErrorInfo;
-
     static auto mlirGenerationError(const std::string& message, const std::string& context = "") -> ErrorInfo;
-
     static auto compilationError(const std::string& message, const std::string& context = "") -> ErrorInfo;
-
     static auto executionError(const std::string& message, const std::string& context = "") -> ErrorInfo;
-
     static auto postgresqlError(const std::string& message, const std::string& context = "") -> ErrorInfo;
 };
 
-// Convenience macros for error creation
 #define MAKE_ERROR(severity, category, message)                                                                        \
     pgx_lower::ErrorManager::makeError(pgx_lower::ErrorSeverity::severity, pgx_lower::ErrorCategory::category, message)
 

@@ -1,5 +1,5 @@
 #include "logging_tools.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 
 #include "mlir/IR/Operation.h"
 #include "llvm/Support/raw_ostream.h"

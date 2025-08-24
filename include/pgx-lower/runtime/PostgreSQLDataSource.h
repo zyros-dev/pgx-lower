@@ -27,8 +27,6 @@ public:
 
 } // namespace pgx_lower::compiler::runtime
 
-// This will be called from GetExternalOp lowering
-// Define the get method in the correct namespace
 namespace runtime {
 inline DataSource* DataSource::get(VarLen32 description) {
     return ::pgx_lower::compiler::runtime::PostgreSQLDataSource::createFromDescription(description);

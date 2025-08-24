@@ -11,7 +11,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 #include "runtime-defs/Vector.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 using namespace mlir;
 namespace {
 

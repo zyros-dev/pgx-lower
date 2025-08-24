@@ -1,7 +1,7 @@
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
 
-#include "pgx-lower/execution/error_handling.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/error_handling.h"
+#include "pgx-lower/utility/logging.h"
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {

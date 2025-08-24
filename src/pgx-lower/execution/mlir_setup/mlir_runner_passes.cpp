@@ -10,9 +10,8 @@
 #include "lingodb/mlir/Dialect/util/UtilDialect.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 
-// Error handling includes
-#include "pgx-lower/execution/error_handling.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/error_handling.h"
+#include "pgx-lower/utility/logging.h"
 
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 
@@ -25,7 +24,7 @@
 #include "lingodb/mlir/Dialect/DB/Passes.h"
 
 #include "pgx-lower/execution/mlir_runner.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 
 extern "C" void initialize_mlir_passes() {
     try {

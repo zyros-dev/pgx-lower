@@ -2,7 +2,7 @@
 #include <exception>
 #include <sstream>
 #include "mlir/IR/MLIRContext.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 
 // Global flag to track if extension has been loaded via LOAD command
 // This indicates MLIR context may have been recreated and expressions should be avoided

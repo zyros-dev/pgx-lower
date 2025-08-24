@@ -4,7 +4,7 @@
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 class ConstRelTranslator : public mlir::relalg::Translator {
    mlir::relalg::ConstRelationOp constRelationOp;
 

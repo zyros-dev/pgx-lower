@@ -1,5 +1,5 @@
 #include "pgx-lower/execution/postgres/executor_c.h"
-#include "pgx-lower/execution/logging_c.h"
+#include "pgx-lower/utility/logging_c.h"
 
 #include "executor/execdesc.h"
 #include "executor/executor.h"

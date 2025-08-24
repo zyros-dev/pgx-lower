@@ -1,7 +1,7 @@
 #include "lingodb/mlir/Conversion/RelAlgToDB/Translator.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 
 class MapTranslator : public mlir::relalg::Translator {
    mlir::relalg::MapOp mapOp;

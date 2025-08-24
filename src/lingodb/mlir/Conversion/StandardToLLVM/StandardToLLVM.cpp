@@ -16,7 +16,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Analysis/DataLayoutAnalysis.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 
 namespace mlir {
 namespace pgx_lower {

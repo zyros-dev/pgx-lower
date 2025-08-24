@@ -4,7 +4,6 @@
 extern "C" {
 #endif
 
-// C wrapper functions for PGX logging system
 void pgx_debug_c(const char* message);
 void pgx_info_c(const char* message);
 void pgx_notice_c(const char* message);

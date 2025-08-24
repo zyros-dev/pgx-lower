@@ -2,7 +2,7 @@
 
 #include "pgx-lower/execution/jit_execution_interface.h"
 #include "pgx-lower/execution/jit_execution_engine.h"
-#include "pgx-lower/execution/logging.h"
+#include "pgx-lower/utility/logging.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <memory>
 #include <string>

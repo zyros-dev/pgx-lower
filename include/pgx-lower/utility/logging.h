@@ -16,7 +16,6 @@
 #pragma push_macro("dcgettext")
 #pragma push_macro("restrict")
 
-// Undefine conflicting macros before including PostgreSQL headers
 #undef _
 #undef gettext
 #undef dgettext
@@ -30,7 +29,6 @@ extern "C" {
 #include "utils/elog.h"
 }
 
-// Restore original macros
 #pragma pop_macro("restrict")
 #pragma pop_macro("dcgettext")
 #pragma pop_macro("dngettext")
