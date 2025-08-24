@@ -118,18 +118,142 @@ constexpr const char* COMPUTED_EXPRESSION_SCOPE = "map";
 constexpr const char* AGGREGATION_RESULT_COLUMN = "aggr_result";
 
 // =============================================================================
+// POSTGRESQL INTERNAL CONSTANTS
+// =============================================================================
+
+// PostgreSQL System Constants
+constexpr int POSTGRESQL_VARNO_OFFSET = 1;          // 1-based to 0-based varno conversion
+constexpr int POSTGRESQL_VARHDRSZ = 4;              // PostgreSQL variable header size  
+constexpr int32_t INVALID_TYPMOD = -1;              // Invalid/unspecified typmod
+constexpr int PG_LIST_INDEX_OFFSET = 1;             // PostgreSQL list index adjustment
+
+// PostgreSQL Column Attribute Numbers (1-based)
+constexpr int FIRST_COLUMN_ATTNO = 1;               // First column attribute number
+constexpr int SECOND_COLUMN_ATTNO = 2;              // Second column attribute number  
+constexpr int THIRD_COLUMN_ATTNO = 3;               // Third column attribute number
+constexpr int INVALID_VARNO = 0;                    // Invalid range table entry number
+constexpr int INVALID_VARATTNO = 0;                 // Invalid column attribute number
+
+// =============================================================================
+// POSTGRESQL TYPE SYSTEM CONSTANTS
+// =============================================================================
+
+// Numeric Type Processing
+constexpr int MIN_NUMERIC_PRECISION = 1;            // Minimum NUMERIC precision
+constexpr int DEFAULT_NUMERIC_SCALE = 0;            // Default NUMERIC scale
+constexpr int NUMERIC_PRECISION_SHIFT = 16;         // Bit shift for precision extraction
+constexpr int NUMERIC_PRECISION_MASK = 0xFFFF;      // 16-bit mask for precision
+constexpr int NUMERIC_SCALE_MASK = 0xFFFF;          // 16-bit mask for scale
+
+// String Type Defaults
+constexpr int DEFAULT_VARCHAR_LENGTH = 255;         // Default VARCHAR length when unspecified
+
+// Type Bit Widths (for MLIR type mapping)
+constexpr int INT2_BIT_WIDTH = 16;                  // PostgreSQL INT2/SMALLINT bit width
+constexpr int INT4_BIT_WIDTH = 32;                  // PostgreSQL INT4/INTEGER bit width  
+constexpr int INT8_BIT_WIDTH = 64;                  // PostgreSQL INT8/BIGINT bit width
+constexpr int BOOL_BIT_WIDTH = 1;                   // PostgreSQL BOOLEAN bit width
+
+// Boolean Integer Values
+constexpr int BOOL_TRUE_VALUE = 1;                  // Boolean true as integer
+constexpr int BOOL_FALSE_VALUE = 0;                 // Boolean false as integer
+
+// Timestamp Precision Levels
+constexpr int TIMESTAMP_PRECISION_SECOND = 0;       // Second precision
+constexpr int TIMESTAMP_PRECISION_MILLI_MIN = 1;    // Millisecond min precision
+constexpr int TIMESTAMP_PRECISION_MILLI_MAX = 3;    // Millisecond max precision
+constexpr int TIMESTAMP_PRECISION_MICRO_MIN = 4;    // Microsecond min precision  
+constexpr int TIMESTAMP_PRECISION_MICRO_MAX = 6;    // Microsecond max precision
+constexpr int TIMESTAMP_PRECISION_NANO_MIN = 7;     // Nanosecond min precision
+constexpr int TIMESTAMP_PRECISION_NANO_MAX = 9;     // Nanosecond max precision
+
+// =============================================================================
+// SORT OPERATOR OIDS  
+// =============================================================================
+
+constexpr Oid PG_INT4_GE_ALT_OID = 523;            // int4 >= int4 (alternative)
+constexpr Oid PG_INT8_GE_ALT_OID = 525;            // int8 >= int8 (alternative)
+
+// =============================================================================
 // EXPRESSION TRANSLATION CONSTANTS
 // =============================================================================
 
 // Expression Processing Constants
-constexpr int MAX_BINARY_OPERANDS = 2;  // Maximum operands for binary operations
-constexpr int LEFT_OPERAND_INDEX = 0;   // Left operand array index
-constexpr int RIGHT_OPERAND_INDEX = 1;  // Right operand array index
+constexpr int MAX_BINARY_OPERANDS = 2;              // Maximum operands for binary operations
+constexpr int LEFT_OPERAND_INDEX = 0;               // Left operand array index
+constexpr int RIGHT_OPERAND_INDEX = 1;              // Right operand array index
+constexpr int MIN_ARGUMENT_COUNT = 1;               // Minimum function argument count
+constexpr int UNARY_FUNCTION_ARGS = 1;              // Unary function argument count
+constexpr int BINARY_FUNCTION_ARGS = 2;             // Binary function argument count
+
+// Array and Result Indices
+constexpr int FIRST_RESULT_INDEX = 0;               // First result from operation
+constexpr int FIRST_COLUMN_INDEX = 0;               // First column in iteration
+constexpr int FIRST_LIST_INDEX = 0;                 // First element in list iteration
+constexpr int FIRST_ATTRIBUTE_INDEX = 0;            // First attribute in tuple descriptor
+constexpr int ARRAY_START_INDEX = 0;                // Generic array start index
 
 // Default Placeholder Values
-constexpr int DEFAULT_PLACEHOLDER_INT = 0;       // Default integer placeholder
-constexpr int DEFAULT_PLACEHOLDER_BOOL = 1;      // Default boolean true
-constexpr int DEFAULT_PLACEHOLDER_BOOL_FALSE = 0; // Default boolean false
+constexpr int DEFAULT_PLACEHOLDER_INT = 0;          // Default integer placeholder
+constexpr int DEFAULT_PLACEHOLDER_BOOL = 1;         // Default boolean true
+constexpr int DEFAULT_PLACEHOLDER_BOOL_FALSE = 0;   // Default boolean false
+constexpr double DEFAULT_PLACEHOLDER_FLOAT = 0.0;   // Default float placeholder
+constexpr int DEFAULT_FALLBACK_INT_VALUE = 0;       // Default integer fallback
+
+// =============================================================================
+// QUERY PROCESSING CONSTANTS
+// =============================================================================
+
+// Limit and Offset Constants
+constexpr int64_t DEFAULT_LIMIT_OFFSET = 0;         // Default query offset
+constexpr int64_t UNLIMITED_LIMIT_VALUE = -1;       // Special value for "no limit"
+constexpr int64_t MAX_RESULT_ROWS = INT32_MAX;      // Maximum rows when no limit specified
+
+// Validation Thresholds
+constexpr int MIN_WORKER_COUNT = 0;                 // Minimum parallel worker count
+constexpr int INVALID_RELATION_ID = 0;              // Invalid relation identifier
+constexpr int INVALID_COLUMN_INDEX = 0;             // Invalid column index value
+constexpr int RELATION_ID_OFFSET = 1;               // Offset for relation ID calculations
+constexpr int SCANRELID_OFFSET = 1;                 // Scan relation ID adjustment
+constexpr int MIN_COLUMN_COUNT = 0;                 // Minimum column count threshold
+constexpr int MIN_COLUMN_INDEX = 0;                 // Minimum valid column index
+constexpr int MIN_LIST_LENGTH = 0;                  // Minimum list length
+
+// Table and Schema Constants
+constexpr int INITIAL_ROW_COUNT = 0;                // Initial row count for tables
+constexpr int FALLBACK_TABLE_OID = 0;               // Fallback OID when table not found
+constexpr int EMPTY_SCHEMA_OID = 0;                 // OID for empty/missing schema
+constexpr int DEFAULT_ROW_COUNT = 0;                // Default row count
+constexpr int INVALID_SCAN_RELID = 0;               // Invalid scan relation identifier
+
+// List Processing Constants
+constexpr int EMPTY_LIST_LENGTH = 0;                // Empty list indicator
+constexpr int EMPTY_QUAL_LENGTH = 0;                // Empty qualifier list
+constexpr int EMPTY_TARGET_LIST_LENGTH = 0;         // Empty target list
+constexpr int INVALID_TARGET_LIST_LENGTH = 0;       // Invalid target list length
+
+// =============================================================================
+// STRING CONSTANTS
+// =============================================================================
+
+// Table and Column Prefixes
+constexpr const char* UNIT_TEST_TABLE_PREFIX = "test_table_";
+constexpr const char* FALLBACK_TABLE_PREFIX = "table_";
+constexpr const char* DEFAULT_TABLE_NAME = "test";
+constexpr const char* DEFAULT_COLUMN_NAME = "id";
+constexpr const char* DEFAULT_TABLE_SCOPE = "test";
+
+// Generated Names
+constexpr const char* EXPRESSION_COLUMN_PREFIX = "expr_";
+constexpr const char* TABLE_OID_SEPARATOR = "|oid:";
+constexpr const char* QUERY_FUNCTION_NAME = "main";
+
+// Aggregation Constants
+constexpr const char* AGGREGATION_COUNT_FUNCTION = "count";
+
+// Unit Test Column Configuration
+constexpr bool UNIT_TEST_COLUMN_NOT_NULL = false;
+constexpr bool PG_ATTNAME_NOT_MISSING_OK = false;
 
 // =============================================================================
 // CONFIGURATION LIMITS

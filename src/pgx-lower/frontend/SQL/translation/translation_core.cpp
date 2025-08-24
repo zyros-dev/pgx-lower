@@ -9,7 +9,7 @@ public:
         : context_(context) {}
 
     int32_t extractCharLength(int32_t typmod) {
-    return typmod >= 0 ? typmod - 4 : 255; // PostgreSQL typmod encoding
+    return typmod >= 0 ? typmod - POSTGRESQL_VARHDRSZ : DEFAULT_VARCHAR_LENGTH; // PostgreSQL typmod encoding
     }
 
     std::pair<int32_t, int32_t> extractNumericInfo(int32_t typmod) {
@@ -19,21 +19,21 @@ public:
     }
 
     // Remove VARHDRSZ offset
-    int32_t tmp = typmod - 4;
+    int32_t tmp = typmod - POSTGRESQL_VARHDRSZ;
 
     // Extract precision and scale
-    int32_t precision = (tmp >> 16) & 0xFFFF;
-    int32_t scale = tmp & 0xFFFF;
+    int32_t precision = (tmp >> NUMERIC_PRECISION_SHIFT) & NUMERIC_PRECISION_MASK;
+    int32_t scale = tmp & NUMERIC_SCALE_MASK;
 
-    if (precision < 1 || precision > MAX_NUMERIC_PRECISION) {
+    if (precision < MIN_NUMERIC_PRECISION || precision > MAX_NUMERIC_PRECISION) {
         PGX_WARNING("Invalid NUMERIC precision: " + std::to_string(precision) + " from typmod "
                     + std::to_string(typmod));
-        return {MAX_NUMERIC_PRECISION, 0}; // Safe default
+        return {MAX_NUMERIC_PRECISION, DEFAULT_NUMERIC_SCALE}; // Safe default
     }
 
     if (scale < 0 || scale > precision) {
         PGX_WARNING("Invalid NUMERIC scale: " + std::to_string(scale) + " for precision " + std::to_string(precision));
-        return {precision, 0}; // Use precision, zero scale
+        return {precision, DEFAULT_NUMERIC_SCALE}; // Use precision, zero scale
     }
 
     return {precision, scale};
@@ -45,16 +45,16 @@ public:
     }
 
     switch (typmod) {
-    case 0: return mlir::db::TimeUnitAttr::second;
-    case 1:
+    case TIMESTAMP_PRECISION_SECOND: return mlir::db::TimeUnitAttr::second;
+    case TIMESTAMP_PRECISION_MILLI_MIN:
     case 2:
-    case 3: return mlir::db::TimeUnitAttr::millisecond;
-    case 4:
+    case TIMESTAMP_PRECISION_MILLI_MAX: return mlir::db::TimeUnitAttr::millisecond;
+    case TIMESTAMP_PRECISION_MICRO_MIN:
     case 5:
-    case 6: return mlir::db::TimeUnitAttr::microsecond;
-    case 7:
+    case TIMESTAMP_PRECISION_MICRO_MAX: return mlir::db::TimeUnitAttr::microsecond;
+    case TIMESTAMP_PRECISION_NANO_MIN:
     case 8:
-    case 9: return mlir::db::TimeUnitAttr::nanosecond;
+    case TIMESTAMP_PRECISION_NANO_MAX: return mlir::db::TimeUnitAttr::nanosecond;
     default:
         PGX_WARNING("Invalid TIMESTAMP precision: " + std::to_string(typmod) + ", defaulting to microsecond");
         return mlir::db::TimeUnitAttr::microsecond;
@@ -63,12 +63,12 @@ public:
 
     ::mlir::Type mapPostgreSQLType(unsigned int typeOid, int32_t typmod) {
     switch (typeOid) {
-    case INT4OID: return mlir::IntegerType::get(&context_, 32);
-    case INT8OID: return mlir::IntegerType::get(&context_, 64);
-    case INT2OID: return mlir::IntegerType::get(&context_, 16);
+    case INT4OID: return mlir::IntegerType::get(&context_, INT4_BIT_WIDTH);
+    case INT8OID: return mlir::IntegerType::get(&context_, INT8_BIT_WIDTH);
+    case INT2OID: return mlir::IntegerType::get(&context_, INT2_BIT_WIDTH);
     case FLOAT4OID: return mlir::Float32Type::get(&context_);
     case FLOAT8OID: return mlir::Float64Type::get(&context_);
-    case BOOLOID: return mlir::IntegerType::get(&context_, 1);
+    case BOOLOID: return mlir::IntegerType::get(&context_, BOOL_BIT_WIDTH);
     case TEXTOID:
     case VARCHAROID: return mlir::db::StringType::get(&context_);
     case BPCHAROID: {
@@ -87,7 +87,7 @@ public:
 
     default:
         PGX_WARNING("Unknown PostgreSQL type OID: " + std::to_string(typeOid) + ", defaulting to i32");
-        return mlir::IntegerType::get(&context_, 32);
+        return mlir::IntegerType::get(&context_, INT4_BIT_WIDTH);
     }
     }
 
@@ -102,7 +102,7 @@ auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRCo
     }
 
     if (constNode->constisnull) {
-        auto nullType = mlir::db::NullableType::get(&context, mlir::IntegerType::get(&context, 32));
+        auto nullType = mlir::db::NullableType::get(&context, mlir::IntegerType::get(&context, INT4_BIT_WIDTH));
         return builder.create<mlir::db::NullOp>(builder.getUnknownLoc(), nullType);
     }
 
@@ -137,11 +137,11 @@ auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRCo
     }
     case BOOLOID: {
         bool val = static_cast<bool>(constNode->constvalue);
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val ? 1 : 0, mlirType);
+        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE, mlirType);
     }
     default:
         PGX_WARNING("Unsupported constant type: " + std::to_string(constNode->consttype));
         // Default to i32 zero
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), 0, builder.getI32Type());
+        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), DEFAULT_FALLBACK_INT_VALUE, builder.getI32Type());
     }
 }

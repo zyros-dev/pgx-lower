@@ -93,8 +93,8 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
         std::vector<mlir::Attribute> createdCols;
 
         // For simple COUNT(*) aggregation, create count operation
-        std::string aggName = "aggr_result";
-        auto attrDef = columnManager.createDef(aggName, "count");
+        std::string aggName = AGGREGATION_RESULT_COLUMN;
+        auto attrDef = columnManager.createDef(aggName, AGGREGATION_COUNT_FUNCTION);
         attrDef.getColumn().type = context.builder->getI64Type();
 
         mlir::Value relation = block->getArgument(0);
@@ -166,8 +166,7 @@ auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext
                     if (sortOperators) {
                         Oid sortOp = sortOperators[i];
                         // Common descending operators in PostgreSQL
-                        // INT4: 97 (<), 521 (>), INT8: 412 (<), 413 (>)
-                        descending = (sortOp == 521 || sortOp == 413 || sortOp == 523 || sortOp == 525);
+                        descending = (sortOp == PG_INT4_GT_OID || sortOp == PG_INT8_GT_OID || sortOp == PG_INT4_GE_ALT_OID || sortOp == PG_INT8_GE_ALT_OID);
                     }
 
                     if (nullsFirst) {
@@ -345,7 +344,7 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
             PGX_WARNING("Could not resolve table name for scanrelid: " + std::to_string(seqScan->scan.scanrelid));
             // TODO: This should be a runtime error - the table doesn't exist
             // Only fall back to generic name if catalog lookup fails
-            tableName = "table_" + std::to_string(seqScan->scan.scanrelid);
+            tableName = std::string(FALLBACK_TABLE_PREFIX) + std::to_string(seqScan->scan.scanrelid);
             tableOid = FIRST_NORMAL_OBJECT_ID + seqScan->scan.scanrelid - 1;
         }
     } else {
@@ -353,7 +352,7 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
         return nullptr;
     }
 
-    tableIdentifier = tableName + "|oid:" + std::to_string(tableOid);
+    tableIdentifier = tableName + TABLE_OID_SEPARATOR + std::to_string(tableOid);
 
     auto tableMetaData = std::make_shared<runtime::TableMetaData>();
     tableMetaData->setNumRows(0); // Will be updated from PostgreSQL catalog
@@ -382,7 +381,7 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
         }
 
         tableIdentifier =
-            realTableName + "|oid:"
+            realTableName + TABLE_OID_SEPARATOR
             + std::to_string(
                 getAllTableColumnsFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid).empty()
                     ? 0
@@ -418,7 +417,7 @@ auto PostgreSQLASTTranslator::Impl::createQueryFunction(::mlir::OpBuilder& build
         // This enables proper JITPostgreSQL result communication
 
         auto queryFuncType = builder.getFunctionType({}, {});
-        auto queryFunc = builder.create<::mlir::func::FuncOp>(builder.getUnknownLoc(), "main", queryFuncType);
+        auto queryFunc = builder.create<::mlir::func::FuncOp>(builder.getUnknownLoc(), QUERY_FUNCTION_NAME, queryFuncType);
 
         // CRITICAL FIX: Remove C interface attribute - it generates wrapper that ExecutionEngine can't find
         // queryFunc->setAttr("llvm.emit_c_interface", ::mlir::UnitAttr::get(builder.getContext()));
@@ -508,7 +507,7 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
         return false;
     }
 
-    std::string colName = tle->resname ? tle->resname : "col_" + std::to_string(tle->resno);
+    std::string colName = tle->resname ? tle->resname : std::string(GENERATED_COLUMN_PREFIX) + std::to_string(tle->resno);
     mlir::Type colType = determineColumnType(context, tle->expr);
 
     // Get column manager
@@ -519,7 +518,7 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
         // For base table columns, use actual table name
         std::string scope;
         if (tle->expr && (tle->expr->type == T_OpExpr || tle->expr->type == T_BoolExpr)) {
-            scope = "map"; // Computed expressions go to @map:: namespace
+            scope = COMPUTED_EXPRESSION_SCOPE; // Computed expressions go to @map:: namespace
         }
         else {
             scope = "test"; // Base columns use table scope (TODO: get real table name)
@@ -770,10 +769,10 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
 
     for (auto* entry : targetEntries) {
         if (entry->expr && entry->expr->type != T_Var) {
-            std::string colName = entry->resname ? entry->resname : "expr_" + std::to_string(entry->resno);
+            std::string colName = entry->resname ? entry->resname : std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
 
             // Use "map" as scope name (matching LingoDB's mapName in createMap lambda)
-            auto attrDef = columnManager.createDef("map", colName);
+            auto attrDef = columnManager.createDef(COMPUTED_EXPRESSION_SCOPE, colName);
 
             // The type will be set later when we translate the expression
             attrDef.getColumn().type = context.builder->getI32Type();
