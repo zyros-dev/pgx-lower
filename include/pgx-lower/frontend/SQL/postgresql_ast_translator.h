@@ -95,16 +95,6 @@ private:
     auto extractOpExprOperands(OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool;
     auto translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
     auto translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
-    
-    auto generateTupleIterationLoop(::mlir::OpBuilder& builder, ::mlir::Location location, 
-                                   SeqScan* seqScan, List* targetList) -> void;
-    auto generateAggregateLoop(::mlir::OpBuilder& builder, ::mlir::Location location,
-                              SeqScan* seqScan, List* targetList) -> void;
-    auto getFieldValue64(::mlir::OpBuilder& builder, ::mlir::Location location,
-                         int32_t aggregateFieldIndex, uint32_t aggregateFieldType,
-                         ::mlir::Type ptrType, ::mlir::Type i32Type) -> ::mlir::Value;
-    auto processTargetListWithRealTuple(::mlir::OpBuilder& builder, ::mlir::Location location,
-                                       ::mlir::Value tupleHandle, List* targetList) -> void;
 
     ::mlir::MLIRContext& context_;
     ::mlir::OpBuilder* builder_;
@@ -112,32 +102,10 @@ private:
     ::mlir::Value* currentTupleHandle_;
     PlannedStmt* currentPlannedStmt_;
     bool contextNeedsRecreation_;
-    
-    auto registerDialects() -> void;
-    auto recreateContextAfterLoad() -> void;
-    auto invalidateTypeCache() -> void;
-    auto ensureContextIsolation() -> void;
-    auto createRuntimeFunctionDeclarations(::mlir::ModuleOp& module) -> void;
-    auto getMLIRTypeForPostgreSQLType(Oid typeOid) -> ::mlir::Type;
-    auto getOperatorName(Oid operatorOid) -> const char*;
-    auto canHandleExpression(Node* expr) -> bool;
-    auto logExpressionInfo(Node* expr, const char* context) -> void;
-    
+
     auto getTableNameFromRTE(int varno) -> std::string;
     auto getColumnNameFromSchema(int varno, int varattno) -> std::string;
     auto getAllTableColumnsFromSchema(int scanrelid) -> std::vector<ColumnInfo>;
-
-    auto isArithmeticOperator(const char* opName) -> bool;
-    auto isComparisonOperator(const char* opName) -> bool;
-    auto isLogicalOperator(const char* opName) -> bool;
-    auto isTextOperator(const char* opName) -> bool;
-    
-    auto generateDBDialectExpression(::mlir::OpBuilder& builder, ::mlir::Location location, 
-                                    ::mlir::Value tupleArg, Expr* expr) -> ::mlir::Value;
-    auto generateDBDialectOperand(::mlir::OpBuilder& builder, ::mlir::Location location,
-                                 ::mlir::Value tupleArg, Node* operandNode) -> ::mlir::Value;
-    auto generateDBConstant(::mlir::OpBuilder& builder, ::mlir::Location location,
-                           Datum value, Oid typeOid, ::mlir::Type mlirType) -> ::mlir::Value;
 };
 
 auto createPostgreSQLASTTranslator(::mlir::MLIRContext& context) 
