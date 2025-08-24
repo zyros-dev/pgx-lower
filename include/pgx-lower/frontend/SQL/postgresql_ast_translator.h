@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <vector>
+#include "pgx-lower/frontend/SQL/translation/translation_context.h"
 
 namespace mlir {
 class Attribute;
@@ -46,12 +47,7 @@ typedef uintptr_t Datum;
 namespace postgresql_ast {
 class PostgreSQLASTTranslator {
 public:
-    struct ColumnInfo {
-        std::string name;
-        Oid typeOid;
-        int32_t typmod;
-        bool nullable;
-    };
+    using ColumnInfo = pgx_lower::frontend::sql::ColumnInfo;
 
     explicit PostgreSQLASTTranslator(::mlir::MLIRContext& context);
     ~PostgreSQLASTTranslator();  // Must be defined in .cpp for Pimpl
