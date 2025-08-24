@@ -1343,6 +1343,7 @@ auto PostgreSQLASTTranslator::translateArithmeticOp(Oid opOid, ::mlir::Value lhs
 
     // Modulo operators
     case 529: // int4 % int4 (INT4MODOID)
+    case 530: // int4 % int4 (alternative OID)
     case 690: // int8 % int8
         return builder_->create<mlir::db::ModOp>(builder_->getUnknownLoc(), lhs, rhs);
 
