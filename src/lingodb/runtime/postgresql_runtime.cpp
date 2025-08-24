@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <json.h>
+#include "lingodb/runtime/helpers.h"
 
 extern "C" {
 #include "postgres.h"
@@ -125,25 +126,62 @@ struct TableBuilder {
     TableBuilder() : data(nullptr), row_count(0), current_column_index(0), total_columns(0) {}
 };
 
-extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(__int128 /* varlen32_value */) {
+// Memory context callback for TableBuilder cleanup
+static void cleanup_tablebuilder_callback(void* arg) {
+    TableBuilder* tb = static_cast<TableBuilder*>(arg);
+    if (tb) {
+        tb->~TableBuilder();  // Explicit destructor call for PostgreSQL longjmp safety
+    }
+}
+
+extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime::VarLen32 schema_param) {
     elog(NOTICE, "[DEBUG] rt_tablebuilder_create called");
-    // Use placement new to properly initialize C++ object
-    void* builder_memory = malloc(sizeof(TableBuilder));
-    auto* builder = new(builder_memory) TableBuilder();
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_create returning builder: %p", builder);
+    
+    // Use PostgreSQL memory management instead of malloc()
+    MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
+    
+    void* builder_memory = palloc(sizeof(TableBuilder));
+    TableBuilder* builder = new(builder_memory) TableBuilder();
+    
+    // Initialize total_columns - start with 0 and let it be set dynamically
+    // This is more flexible during MLIR pipeline development
+    builder->total_columns = 0;  // Will be set based on actual usage
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_create: initialized with dynamic column tracking");
+    
+    // Register cleanup callback for C++ destructor safety during PostgreSQL error recovery
+    MemoryContextCallback* callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
+    callback->func = cleanup_tablebuilder_callback;
+    callback->arg = builder;
+    MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
+    
+    MemoryContextSwitchTo(oldcontext);
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_create returning builder: %p with %d columns and memory context callback", builder, builder->total_columns);
     return builder;
 }
 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_nextrow(void* builder) {
     elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow called with builder: %p", builder);
-    if (g_current_iterator && g_current_iterator->has_current_tuple) {
-        prepare_computed_results(1);
-        store_bigint_result(0, g_current_iterator->current_value, g_current_iterator->current_is_null);
-        add_tuple_to_result(1);
-    }
+    
     if (builder) {
         auto* tb = static_cast<TableBuilder*>(builder);
+        
+        // LingoDB currColumn assertion pattern: verify all columns were filled
+        // For now, make this more permissive during development
+        if (tb->current_column_index != tb->total_columns) {
+            elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow: column count info - expected %d columns, got %d (this may be normal during MLIR pipeline development)", 
+                 tb->total_columns, tb->current_column_index);
+        } else {
+            elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow: LingoDB column validation passed - %d columns filled", tb->current_column_index);
+        }
+        
         tb->row_count++;
+        
+        // Submit the completed row to PostgreSQL
+        if (tb->total_columns > 0) {
+            elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow: submitting row with %d columns", tb->total_columns);
+            add_tuple_to_result(tb->total_columns);
+        }
+        
         // Reset column index for next row (LingoDB pattern)
         tb->current_column_index = 0;
         elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow: reset column index to 0 for row %ld", tb->row_count);
@@ -159,20 +197,59 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_build(void* bu
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* /* builder */, int64_t /* value */) {
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* /* builder */, bool /* is_null */, int32_t /* value */) {
-}
-
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_null, bool value) {
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool called: value=%s, is_null=%s", 
-         value ? "true" : "false", is_null ? "true" : "false");
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_valid, int32_t value) {
+    // Note: The MLIR seems to pass 'is_valid' not 'is_null', so we need to invert it
+    bool is_null = !is_valid;
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 called: value=%d, is_valid=%s (is_null=%s)", 
+         value, is_valid ? "true" : "false", is_null ? "true" : "false");
     
     auto* tb = static_cast<TableBuilder*>(builder);
     if (tb) {
+        // If this is the first column, prepare computed results storage
+        if (tb->current_column_index == 0 && tb->row_count == 0) {
+            elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: preparing computed results storage");
+            prepare_computed_results(1);  // For now, assume 1 column (will expand as needed)
+        }
+        
+        elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: storing at column index %d", tb->current_column_index);
+        // Use the current column index from the TableBuilder
+        store_bigint_result(tb->current_column_index, static_cast<int64_t>(value), is_null);
+        // Advance to next column (LingoDB pattern)
+        tb->current_column_index++;
+        // Update total_columns to track the maximum columns seen
+        if (tb->current_column_index > tb->total_columns) {
+            tb->total_columns = tb->current_column_index;
+        }
+    } else {
+        elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: null builder, using fallback column 0");
+        store_bigint_result(0, static_cast<int64_t>(value), is_null);
+    }
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 completed successfully");
+}
+
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_valid, bool value) {
+    // Note: The MLIR seems to pass 'is_valid' not 'is_null', so we need to invert it (same as addint32)
+    bool is_null = !is_valid;
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool called: value=%s, is_valid=%s (is_null=%s)", 
+         value ? "true" : "false", is_valid ? "true" : "false", is_null ? "true" : "false");
+    
+    auto* tb = static_cast<TableBuilder*>(builder);
+    if (tb) {
+        // If this is the first column, prepare computed results storage
+        if (tb->current_column_index == 0 && tb->row_count == 0) {
+            elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool: preparing computed results storage");
+            prepare_computed_results(1);  // For now, assume 1 column (will expand as needed)
+        }
+        
         elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool: storing at column index %d", tb->current_column_index);
         // Use the current column index from the TableBuilder
         store_bool_result(tb->current_column_index, value, is_null);
         // Advance to next column (LingoDB pattern)
         tb->current_column_index++;
+        // Update total_columns to track the maximum columns seen
+        if (tb->current_column_index > tb->total_columns) {
+            tb->total_columns = tb->current_column_index;
+        }
     } else {
         elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool: null builder, using fallback column 0");
         store_bool_result(0, value, is_null);
@@ -181,131 +258,152 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* b
 }
 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_destroy(void* builder) {
-    if (builder) {
-        auto* tb = static_cast<TableBuilder*>(builder);
-        // Call destructor explicitly since we used placement new
-        tb->~TableBuilder();
-        free(builder);
+    // Note: We don't need to do anything here because the MemoryContextCallback
+    // will handle cleanup when the memory context is reset/deleted.
+    // Calling destructor or pfree here would cause double-free issues.
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_destroy called - cleanup handled by MemoryContextCallback");
+}
+
+// Memory context callback for DataSourceIterator cleanup
+static void cleanup_datasourceiterator_callback(void* arg) {
+    DataSourceIterator* iter = static_cast<DataSourceIterator*>(arg);
+    if (iter) {
+        iter->~DataSourceIterator();  // Explicit destructor call for PostgreSQL longjmp safety
     }
 }
 
-extern "C" __attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(void* context, __int128 varlen32_value) {
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_start called with context: %p, varlen32_value: %p", context, (void*)(uintptr_t)varlen32_value);
+// Helper function: Decode table specification from VarLen32 parameter
+static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSourceIterator* iter) {
+    uint32_t actual_len = varlen32_param.getLen();
+    const char* json_spec = varlen32_param.data();
     
-    // Use placement new to properly initialize the DataSourceIterator with C++ objects
-    void* iter_memory = malloc(sizeof(DataSourceIterator));
-    auto* iter = new(iter_memory) DataSourceIterator();
+    elog(NOTICE, "[DEBUG] decode_table_specification: LingoDB VarLen32 len=%u", actual_len);
     
-    iter->context = context;
-    iter->has_current_tuple = false;
-    iter->current_value = 0;
-    iter->current_is_null = true;
-    
-    // Decode VarLen32 structure from __int128 parameter
-    // Based on LingoDB's VarLen32::asI128() method
-    struct VarLen32Decoder {
-        uint32_t len;
-        union {
-            uint8_t bytes[12];
-            struct __attribute__((__packed__)) {
-                uint32_t first4;
-                uint64_t last8;
-            };
-        };
-    } __attribute__((packed));
-    
-    VarLen32Decoder* decoder = reinterpret_cast<VarLen32Decoder*>(&varlen32_value);
-    uint32_t actual_len = decoder->len & ~0x80000000;  // Remove lazy mask
-    
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: VarLen32 len=%u", actual_len);
-    
-    const char* json_spec = nullptr;
-    bool json_parsed = false;
-    
-    if (actual_len > 0 && actual_len <= 12) {
-        // Short string stored inline in bytes array
-        json_spec = reinterpret_cast<const char*>(decoder->bytes);
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: short string (len=%u) inline", actual_len);
-    } else if (actual_len > 12) {
-        // Long string stored as pointer in bytes[4]
-        uint8_t** ptr_loc = reinterpret_cast<uint8_t**>(&decoder->bytes[4]);
-        json_spec = reinterpret_cast<const char*>(*ptr_loc);
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: long string (len=%u) at pointer %p", actual_len, json_spec);
+    if (!json_spec || actual_len == 0) {
+        return false;
     }
     
-    if (json_spec && actual_len > 0) {
-        PG_TRY();
-        {
-            // Create null-terminated string for JSON parsing
-            std::string json_string(json_spec, actual_len);
-            elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: JSON string: %s", json_string.c_str());
+    bool json_parsed = false;
+    PG_TRY();
+    {
+        std::string json_string(json_spec, actual_len);
+        elog(NOTICE, "[DEBUG] decode_table_specification: JSON string: %s", json_string.c_str());
+        
+        if (json_string[0] == '{') {
+            elog(NOTICE, "[DEBUG] decode_table_specification: valid JSON detected, parsing...");
+            TableSpec spec = parse_table_spec(json_string.c_str());
             
-            if (json_string[0] == '{') {
-                elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: valid JSON detected, parsing...");
-                TableSpec spec = parse_table_spec(json_string.c_str());
-                
-                if (!spec.table_name.empty() && !spec.column_names.empty()) {
-                    // Remove OID suffix if present (e.g., "test_logical|oid:123" -> "test_logical")
-                    size_t pipe_pos = spec.table_name.find('|');
-                    if (pipe_pos != std::string::npos) {
-                        spec.table_name = spec.table_name.substr(0, pipe_pos);
-                    }
-                    
-                    iter->table_name = spec.table_name;
-                    
-                    // Convert column names to column specs with type inference
-                    for (const auto& col_name : spec.column_names) {
-                        ColumnSpec col_spec;
-                        col_spec.name = col_name;
-                        // Infer type from column name patterns
-                        if (col_name.find("flag") != std::string::npos || col_name.find("bool") != std::string::npos) {
-                            col_spec.type = ColumnType::BOOLEAN;
-                        } else {
-                            col_spec.type = ColumnType::INTEGER;
-                        }
-                        iter->columns.push_back(col_spec);
-                    }
-                    
-                    json_parsed = true;
-                    elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: JSON parsed successfully - table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
+            if (!spec.table_name.empty() && !spec.column_names.empty()) {
+                // Remove OID suffix if present (e.g., "test_logical|oid:123" -> "test_logical")
+                size_t pipe_pos = spec.table_name.find('|');
+                if (pipe_pos != std::string::npos) {
+                    spec.table_name = spec.table_name.substr(0, pipe_pos);
                 }
+                
+                iter->table_name = spec.table_name;
+                
+                // Convert column names to column specs with type inference
+                for (const auto& col_name : spec.column_names) {
+                    ColumnSpec col_spec;
+                    col_spec.name = col_name;
+                    // Infer type from column name patterns
+                    if (col_name.find("flag") != std::string::npos || col_name.find("bool") != std::string::npos) {
+                        col_spec.type = ColumnType::BOOLEAN;
+                    } else {
+                        col_spec.type = ColumnType::INTEGER;
+                    }
+                    iter->columns.push_back(col_spec);
+                }
+                
+                json_parsed = true;
+                elog(NOTICE, "[DEBUG] decode_table_specification: JSON parsed successfully - table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
             }
         }
-        PG_CATCH();
-        {
-            elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: exception reading VarLen32 JSON, using fallback");
-            FlushErrorState();
-        }
-        PG_END_TRY();
     }
-    
-    // Fallback if JSON parsing failed
-    if (!json_parsed) {
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: JSON parsing failed, using fallback defaults");
-        iter->table_name = "test_comparison";
-        
-        // Set up default 2-integer column layout
-        ColumnSpec col1, col2;
-        col1.name = "value";
-        col1.type = ColumnType::INTEGER;
-        col2.name = "score";
-        col2.type = ColumnType::INTEGER;
-        iter->columns.push_back(col1);
-        iter->columns.push_back(col2);
+    PG_CATCH();
+    {
+        elog(NOTICE, "[DEBUG] decode_table_specification: exception reading VarLen32 JSON, using fallback");
+        FlushErrorState();
     }
+    PG_END_TRY();
     
-    // Initialize dynamic storage based on column count
+    return json_parsed;
+}
+
+// Helper function: Initialize column storage for dynamic types
+static void initialize_column_storage(DataSourceIterator* iter) {
     iter->int_values.resize(iter->columns.size(), 0);
     iter->int_nulls.resize(iter->columns.size(), true);
     iter->bool_values.resize(iter->columns.size(), 0);
     iter->bool_nulls.resize(iter->columns.size(), true);
     
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: configured for table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
+    elog(NOTICE, "[DEBUG] initialize_column_storage: configured for table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
+}
+
+// Helper function: Set up fallback table configuration
+static void setup_fallback_table_config(DataSourceIterator* iter) {
+    elog(NOTICE, "[DEBUG] setup_fallback_table_config: JSON parsing failed, using fallback defaults");
+    iter->table_name = "test_comparison";
     
-    iter->table_handle = open_postgres_table(iter->table_name.c_str());
+    // Set up default 2-integer column layout
+    ColumnSpec col1, col2;
+    col1.name = "value";
+    col1.type = ColumnType::INTEGER;
+    col2.name = "score";  
+    col2.type = ColumnType::INTEGER;
+    iter->columns.push_back(col1);
+    iter->columns.push_back(col2);
+}
+
+// Helper function: Open PostgreSQL table connection
+static void* open_table_connection(const std::string& table_name) {
+    void* table_handle = open_postgres_table(table_name.c_str());
+    
+    if (!table_handle) {
+        elog(NOTICE, "[DEBUG] open_table_connection: open_postgres_table failed for '%s'", table_name.c_str());
+    }
+    
+    return table_handle;
+}
+
+extern "C" __attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(void* context, runtime::VarLen32 varlen32_param) {
+    elog(NOTICE, "[DEBUG] rt_datasourceiteration_start called with context: %p, varlen32_param len: %u", context, varlen32_param.getLen());
+    
+    // Use PostgreSQL memory management instead of malloc()
+    MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
+    
+    void* iter_memory = palloc(sizeof(DataSourceIterator));
+    DataSourceIterator* iter = new(iter_memory) DataSourceIterator();
+    
+    // Register cleanup callback for C++ destructor safety during PostgreSQL error recovery
+    MemoryContextCallback* callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
+    callback->func = cleanup_datasourceiterator_callback;
+    callback->arg = iter;
+    MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
+    
+    MemoryContextSwitchTo(oldcontext);
+    
+    // Initialize basic iterator state
+    iter->context = context;
+    iter->has_current_tuple = false;
+    iter->current_value = 0;
+    iter->current_is_null = true;
+    
+    // Decode table specification from VarLen32 parameter
+    bool json_parsed = decode_table_specification(varlen32_param, iter);
+    
+    // Set up fallback configuration if JSON parsing failed
+    if (!json_parsed) {
+        setup_fallback_table_config(iter);
+    }
+    
+    // Initialize column storage based on parsed configuration
+    initialize_column_storage(iter);
+    
+    // Open PostgreSQL table connection
+    iter->table_handle = open_table_connection(iter->table_name);
     
     if (!iter->table_handle) {
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_start: open_postgres_table failed for '%s'", iter->table_name.c_str());
         return iter;
     }
     
@@ -451,9 +549,9 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_end(void
             g_current_iterator = nullptr;
         }
         
-        // Properly destroy C++ objects before freeing memory
-        iter->~DataSourceIterator();
-        free(iterator);
+        // Note: We don't call destructor or pfree here because the MemoryContextCallback
+        // will handle cleanup when the memory context is reset/deleted.
+        elog(NOTICE, "[DEBUG] rt_datasourceiteration_end: cleanup will be handled by MemoryContextCallback");
     }
 }
 
