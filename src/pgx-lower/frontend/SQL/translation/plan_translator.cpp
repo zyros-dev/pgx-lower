@@ -520,8 +520,18 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
         if (tle->expr && (tle->expr->type == T_OpExpr || tle->expr->type == T_BoolExpr)) {
             scope = COMPUTED_EXPRESSION_SCOPE; // Computed expressions go to @map:: namespace
         }
+        else if (tle->expr && tle->expr->type == T_Var) {
+            // For Var expressions, get the actual table name from RTE
+            Var* var = reinterpret_cast<Var*>(tle->expr);
+            scope = getTableNameFromRTE(context.currentStmt, var->varno);
+            if (scope.empty()) {
+                PGX_ERROR("Failed to resolve table name for varno: " + std::to_string(var->varno));
+                return false;
+            }
+        }
         else {
-            scope = "test"; // Base columns use table scope (TODO: get real table name)
+            PGX_ERROR("Cannot determine scope for expression type: " + std::to_string(tle->expr->type));
+            return false;
         }
 
         auto colRef = columnManager.createRef(scope, colName);
