@@ -1,14 +1,13 @@
 
+// Use PostgreSQL constants namespace for cleaner code
+using namespace pgx_lower::frontend::sql::constants;
+
 auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::Value {
     if (!expr) {
         PGX_ERROR("Expression is null");
         return nullptr;
     }
 
-    if (reinterpret_cast<uintptr_t>(expr) < 0x1000) {
-        PGX_ERROR("Invalid expression pointer");
-        return nullptr;
-    }
 
     switch (expr->type) {
     case T_Var:
@@ -140,31 +139,31 @@ auto PostgreSQLASTTranslator::Impl::extractOpExprOperands(OpExpr* opExpr, ::mlir
 auto PostgreSQLASTTranslator::Impl::translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value {
     switch (opOid) {
     // Addition operators
-    case 551: // int4 + int4 (INT4PLUSOID)
-    case 684: // int8 + int8
+    case PG_INT4_PLUS_OID: // int4 + int4
+    case PG_INT8_PLUS_OID: // int8 + int8
         return builder_->create<mlir::db::AddOp>(builder_->getUnknownLoc(), lhs, rhs);
 
     // Subtraction operators
-    case 552: // int4 - int4 (INT4MINUSOID)
-    case 555: // Alternative int4 - int4 (keeping for compatibility)
-    case 688: // int8 - int8
+    case PG_INT4_MINUS_OID: // int4 - int4
+    case PG_INT4_MINUS_ALT_OID: // Alternative int4 - int4 (keeping for compatibility)
+    case PG_INT8_MINUS_OID: // int8 - int8
         return builder_->create<mlir::db::SubOp>(builder_->getUnknownLoc(), lhs, rhs);
 
     // Multiplication operators
-    case 514: // int4 * int4 (INT4MULOID)
-    case 686: // int8 * int8
+    case PG_INT4_MUL_OID: // int4 * int4
+    case PG_INT8_MUL_OID: // int8 * int8
         return builder_->create<mlir::db::MulOp>(builder_->getUnknownLoc(), lhs, rhs);
 
     // Division operators
-    case 527: // int4 / int4 (alternative)
-    case 528: // int4 / int4 (INT4DIVOID)
-    case 689: // int8 / int8
+    case PG_INT4_DIV_OID: // int4 / int4 (alternative)
+    case PG_INT4_DIV_ALT_OID: // int4 / int4
+    case PG_INT8_DIV_OID: // int8 / int8
         return builder_->create<mlir::db::DivOp>(builder_->getUnknownLoc(), lhs, rhs);
 
     // Modulo operators
-    case 529: // int4 % int4 (INT4MODOID)
-    case 530: // int4 % int4 (alternative OID)
-    case 690: // int8 % int8
+    case PG_INT4_MOD_OID: // int4 % int4
+    case PG_INT4_MOD_ALT_OID: // int4 % int4 (alternative)
+    case PG_INT8_MOD_OID: // int8 % int8
         return builder_->create<mlir::db::ModOp>(builder_->getUnknownLoc(), lhs, rhs);
 
     default: return nullptr;
@@ -175,33 +174,33 @@ auto PostgreSQLASTTranslator::Impl::translateComparisonOp(Oid opOid, ::mlir::Val
     mlir::db::DBCmpPredicate predicate;
 
     switch (opOid) {
-    case 96: // int4 = int4
-    case 410: // int8 = int8
+    case PG_INT4_EQ_OID: // int4 = int4
+    case PG_INT8_EQ_OID: // int8 = int8
         predicate = mlir::db::DBCmpPredicate::eq;
         break;
 
-    case 518: // int4 != int4
-    case 411: // int8 != int8
+    case PG_INT4_NE_OID: // int4 != int4
+    case PG_INT8_NE_OID: // int8 != int8
         predicate = mlir::db::DBCmpPredicate::neq;
         break;
 
-    case 97: // int4 < int4
-    case 412: // int8 < int8
+    case PG_INT4_LT_OID: // int4 < int4
+    case PG_INT8_LT_OID: // int8 < int8
         predicate = mlir::db::DBCmpPredicate::lt;
         break;
 
-    case 523: // int4 <= int4
-    case 414: // int8 <= int8
+    case PG_INT4_LE_OID: // int4 <= int4
+    case PG_INT8_LE_OID: // int8 <= int8
         predicate = mlir::db::DBCmpPredicate::lte;
         break;
 
-    case 521: // int4 > int4
-    case 413: // int8 > int8
+    case PG_INT4_GT_OID: // int4 > int4
+    case PG_INT8_GT_OID: // int8 > int8
         predicate = mlir::db::DBCmpPredicate::gt;
         break;
 
-    case 525: // int4 >= int4
-    case 415: // int8 >= int8
+    case PG_INT4_GE_OID: // int4 >= int4
+    case PG_INT8_GE_OID: // int8 >= int8
         predicate = mlir::db::DBCmpPredicate::gte;
         break;
 
@@ -406,29 +405,14 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
     }
 
     // Map PostgreSQL function OID to MLIR operations
-    // Common PostgreSQL function OIDs (from fmgroids.h)
-    constexpr Oid F_ABS_INT4 = 1397; // abs(int4)
-    constexpr Oid F_ABS_INT8 = 1398; // abs(int8)
-    constexpr Oid F_ABS_FLOAT4 = 1394; // abs(float4)
-    constexpr Oid F_ABS_FLOAT8 = 1395; // abs(float8)
-    constexpr Oid F_UPPER = 871; // upper(text)
-    constexpr Oid F_LOWER = 870; // lower(text)
-    constexpr Oid F_LENGTH = 1317; // length(text)
-    constexpr Oid F_SUBSTR = 877; // substr(text, int, int)
-    constexpr Oid F_CONCAT = 3058; // concat(text, text)
-    constexpr Oid F_SQRT_FLOAT8 = 230; // sqrt(float8)
-    constexpr Oid F_POWER_FLOAT8 = 232; // power(float8, float8)
-    constexpr Oid F_CEIL_FLOAT8 = 2308; // ceil(float8)
-    constexpr Oid F_FLOOR_FLOAT8 = 2309; // floor(float8)
-    constexpr Oid F_ROUND_FLOAT8 = 233; // round(float8)
 
     auto loc = builder_->getUnknownLoc();
 
     switch (funcExpr->funcid) {
-    case F_ABS_INT4:
-    case F_ABS_INT8:
-    case F_ABS_FLOAT4:
-    case F_ABS_FLOAT8:
+    case PG_F_ABS_INT4:
+    case PG_F_ABS_INT8:
+    case PG_F_ABS_FLOAT4:
+    case PG_F_ABS_FLOAT8:
         if (args.size() != 1) {
             PGX_ERROR("ABS requires exactly 1 argument, got " + std::to_string(args.size()));
             return nullptr;
@@ -442,7 +426,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
             return builder_->create<mlir::arith::SelectOp>(loc, cmp, neg, args[0]);
         }
 
-    case F_SQRT_FLOAT8:
+    case PG_F_SQRT_FLOAT8:
         if (args.size() != 1) {
             PGX_ERROR("SQRT requires exactly 1 argument");
             return nullptr;
@@ -451,7 +435,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
         PGX_WARNING("SQRT function not yet implemented in DB dialect");
         return args[0]; // Pass through for now
 
-    case F_POWER_FLOAT8:
+    case PG_F_POW_FLOAT8:
         if (args.size() != 2) {
             PGX_ERROR("POWER requires exactly 2 arguments");
             return nullptr;
@@ -459,8 +443,8 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
         PGX_WARNING("POWER function not yet implemented in DB dialect");
         return args[0]; // Return base for now
 
-    case F_UPPER:
-    case F_LOWER:
+    case PG_F_UPPER:
+    case PG_F_LOWER:
         if (args.size() != 1) {
             PGX_ERROR("String function requires exactly 1 argument");
             return nullptr;
@@ -468,7 +452,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
         PGX_WARNING("String functions not yet implemented");
         return args[0]; // Pass through for now
 
-    case F_LENGTH:
+    case PG_F_LENGTH:
         if (args.size() != 1) {
             PGX_ERROR("LENGTH requires exactly 1 argument");
             return nullptr;
@@ -476,9 +460,9 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
         PGX_WARNING("LENGTH function not yet implemented");
         return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, builder_->getI32Type());
 
-    case F_CEIL_FLOAT8:
-    case F_FLOOR_FLOAT8:
-    case F_ROUND_FLOAT8:
+    case PG_F_CEIL_FLOAT8:
+    case PG_F_FLOOR_FLOAT8:
+    case PG_F_ROUND_FLOAT8:
         if (args.size() != 1) {
             PGX_ERROR("Rounding function requires exactly 1 argument");
             return nullptr;

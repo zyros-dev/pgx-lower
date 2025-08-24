@@ -1,6 +1,8 @@
 // Translation core implementation - included directly into postgresql_ast_translator.cpp
 // Contains type system and constant translation functionality
 
+using namespace pgx_lower::frontend::sql::constants;
+
 class PostgreSQLTypeMapper {
 public:
     explicit PostgreSQLTypeMapper(::mlir::MLIRContext& context)
@@ -23,10 +25,10 @@ public:
     int32_t precision = (tmp >> 16) & 0xFFFF;
     int32_t scale = tmp & 0xFFFF;
 
-    if (precision < 1 || precision > 1000) {
+    if (precision < 1 || precision > MAX_NUMERIC_PRECISION) {
         PGX_WARNING("Invalid NUMERIC precision: " + std::to_string(precision) + " from typmod "
                     + std::to_string(typmod));
-        return {38, 0}; // Safe default
+        return {MAX_NUMERIC_PRECISION, 0}; // Safe default
     }
 
     if (scale < 0 || scale > precision) {

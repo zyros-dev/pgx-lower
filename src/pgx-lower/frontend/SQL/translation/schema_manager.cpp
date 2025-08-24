@@ -7,33 +7,58 @@ auto getTableNameFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> std::str
         PGX_WARNING("Cannot access rtable: currentPlannedStmt="
                     + std::to_string(reinterpret_cast<uintptr_t>(currentPlannedStmt))
                     + " varno=" + std::to_string(varno));
-        return "test_arithmetic"; // Fallback for unit tests
+        return "unknown_table_" + std::to_string(varno);
     }
 
     // Get RangeTblEntry from rtable using varno (1-based index)
     if (varno > list_length(currentPlannedStmt->rtable)) {
         PGX_WARNING("varno " + std::to_string(varno) + " exceeds rtable length "
                     + std::to_string(list_length(currentPlannedStmt->rtable)));
-        return "test_arithmetic"; // Fallback for unit tests
+        return "unknown_table_" + std::to_string(varno);
     }
 
     RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - 1));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for varno " + std::to_string(varno));
-        return "test_arithmetic"; // Fallback for unit tests
+        return "unknown_table_" + std::to_string(varno);
     }
 
 #ifdef BUILDING_UNIT_TESTS
-    // In unit test environment, use fallback table name
-    return "test_arithmetic";
+    // In unit tests, use dynamic fallback based on varno
+    return "test_table_" + std::to_string(varno);
 #else
-    // Get table name from PostgreSQL catalog (only in PostgreSQL environment)
     char* relname = get_rel_name(rte->relid);
-    std::string tableName = relname ? relname : "test_arithmetic";
+    std::string tableName = relname ? relname : ("unknown_table_" + std::to_string(varno));
 
     return tableName;
 #endif
+}
+
+auto getTableOidFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> Oid {
+    if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= 0) {
+        PGX_WARNING("Cannot access rtable: currentPlannedStmt="
+                    + std::to_string(reinterpret_cast<uintptr_t>(currentPlannedStmt))
+                    + " varno=" + std::to_string(varno));
+        return InvalidOid;
+    }
+
+    // Get RangeTblEntry from rtable using varno (1-based index)
+    if (varno > list_length(currentPlannedStmt->rtable)) {
+        PGX_WARNING("varno " + std::to_string(varno) + " exceeds rtable length "
+                    + std::to_string(list_length(currentPlannedStmt->rtable)));
+        return InvalidOid;
+    }
+
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - 1));
+
+    if (!rte) {
+        PGX_WARNING("Invalid RTE for varno " + std::to_string(varno));
+        return InvalidOid;
+    }
+
+    // Return the actual PostgreSQL relation OID
+    return rte->relid;
 }
 
 auto getColumnNameFromSchema(PlannedStmt* currentPlannedStmt, int varno, int varattno) -> std::string {

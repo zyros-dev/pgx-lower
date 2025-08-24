@@ -1,5 +1,5 @@
-// Plan node translation implementation - included directly into postgresql_ast_translator.cpp
-// Contains all PostgreSQL plan node AST to MLIR translation logic
+
+using namespace pgx_lower::frontend::sql::constants;
 
 auto PostgreSQLASTTranslator::Impl::translatePlanNode(Plan* plan, TranslationContext& context) -> ::mlir::Operation* {
     if (!plan) {
@@ -155,11 +155,11 @@ auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext
     Oid* sortOperators = sort->sortOperators;
     bool* nullsFirst = sort->nullsFirst;
 
-    if (numCols > 0 && numCols < 100) {
+    if (numCols > 0 && numCols < MAX_QUERY_COLUMNS) {
         if (sortColIdx) {
             for (int i = 0; i < numCols; i++) {
                 AttrNumber colIdx = sortColIdx[i];
-                if (colIdx > 0 && colIdx < 1000) { // Sanity check
+                if (colIdx > 0 && colIdx < MAX_COLUMN_INDEX) { // Sanity check
                     bool descending = false;
                     bool nullsFirstVal = false;
 
@@ -212,7 +212,7 @@ auto PostgreSQLASTTranslator::Impl::translateLimit(Limit* limit, TranslationCont
     }
 
     // Extract actual limit count and offset from the plan
-    int64_t limitCount = 10; // Default for unit tests
+    int64_t limitCount = DEFAULT_LIMIT_COUNT; // Default for unit tests
     int64_t limitOffset = 0;
 
     Node* limitOffsetNode = limit->limitOffset;
@@ -260,9 +260,9 @@ auto PostgreSQLASTTranslator::Impl::translateLimit(Limit* limit, TranslationCont
 
     if (limitCount < 0) {
         PGX_WARNING("Invalid negative limit count: " + std::to_string(limitCount));
-        limitCount = 10;
+        limitCount = DEFAULT_LIMIT_COUNT;
     }
-    else if (limitCount > 1000000) {
+    else if (limitCount > MAX_LIMIT_COUNT) {
         PGX_WARNING("Very large limit count: " + std::to_string(limitCount));
     }
 
@@ -331,18 +331,26 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
         return nullptr;
     }
 
-    std::string tableName = "test";
-    Oid tableOid = 16384;
+    // Get table name and OID dynamically from PostgreSQL catalogs
+    std::string tableName;
+    Oid tableOid = InvalidOid;
     std::string tableIdentifier;
 
     if (seqScan->scan.scanrelid > 0) {
-        if (seqScan->scan.scanrelid == 1) {
-            tableName = "test"; // Default test table
-        }
-        else {
+        // Use PostgreSQL's Range Table Entry (RTE) to get actual table information
+        tableName = getTableNameFromRTE(context.currentStmt, seqScan->scan.scanrelid);
+        tableOid = getTableOidFromRTE(context.currentStmt, seqScan->scan.scanrelid);
+        
+        if (tableName.empty()) {
+            PGX_WARNING("Could not resolve table name for scanrelid: " + std::to_string(seqScan->scan.scanrelid));
+            // TODO: This should be a runtime error - the table doesn't exist
+            // Only fall back to generic name if catalog lookup fails
             tableName = "table_" + std::to_string(seqScan->scan.scanrelid);
+            tableOid = FIRST_NORMAL_OBJECT_ID + seqScan->scan.scanrelid - 1;
         }
-        tableOid = 16384 + seqScan->scan.scanrelid - 1;
+    } else {
+        PGX_ERROR("Invalid scan relation ID: " + std::to_string(seqScan->scan.scanrelid));
+        return nullptr;
     }
 
     tableIdentifier = tableName + "|oid:" + std::to_string(tableOid);
@@ -434,10 +442,6 @@ auto PostgreSQLASTTranslator::Impl::validatePlanTree(Plan* planTree) -> bool {
         return false;
     }
 
-    if (reinterpret_cast<uintptr_t>(planTree) < 0x1000) {
-        PGX_ERROR("Invalid plan tree pointer");
-        return false;
-    }
 
     return true;
 }
@@ -463,7 +467,7 @@ auto PostgreSQLASTTranslator::Impl::extractTargetListColumns(TranslationContext&
     int listLength = tlist->length;
 
     // Sanity check the list length
-    if (listLength < 0 || listLength > 1000) {
+    if (listLength < 0 || listLength > MAX_LIST_LENGTH) {
         PGX_WARNING("Invalid targetlist length: " + std::to_string(listLength));
         return false;
     }
@@ -499,10 +503,6 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
     }
 
     TargetEntry* tle = static_cast<TargetEntry*>(ptr);
-    if (reinterpret_cast<uintptr_t>(tle) < 0x1000) {
-        PGX_WARNING("Invalid TargetEntry pointer: " + std::to_string(reinterpret_cast<uintptr_t>(tle)));
-        return false;
-    }
 
     if (!tle || !tle->expr) {
         return false;
@@ -646,11 +646,6 @@ auto PostgreSQLASTTranslator::Impl::applySelectionFromQual(::mlir::Operation* in
                     continue;
                 }
 
-                // Check if pointer is valid
-                if (reinterpret_cast<uintptr_t>(qualNode) < 0x1000) {
-                    PGX_WARNING("Invalid qual node pointer at index " + std::to_string(i));
-                    continue;
-                }
 
                 ::mlir::Value condValue = translateExpression(reinterpret_cast<Expr*>(qualNode));
                 if (condValue) {
@@ -752,10 +747,6 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
             }
 
             TargetEntry* tle = static_cast<TargetEntry*>(ptr);
-            if (reinterpret_cast<uintptr_t>(tle) < 0x1000) {
-                PGX_WARNING("Invalid TargetEntry pointer: " + std::to_string(reinterpret_cast<uintptr_t>(tle)));
-                continue;
-            }
 
             // Skip node type check - different values in test vs production
             // Just check that the pointer looks reasonable

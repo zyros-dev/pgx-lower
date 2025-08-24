@@ -35,6 +35,7 @@ typedef struct Gather Gather;
 #undef dngettext
 
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
+#include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
 #include "pgx-lower/utility/logging.h"
 #include "pgx-lower/runtime/tuple_access.h"
 #include <cstddef> // for offsetof
