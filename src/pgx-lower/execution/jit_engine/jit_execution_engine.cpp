@@ -587,14 +587,17 @@ bool PostgreSQLJITExecutionEngine::invokeCompiledFunction(void* funcPtr, void* e
             void* setContextPtr = wrapped->getSetContextPtr();
             if (setContextPtr) {
                 PGX_INFO("Setting execution context via rt_set_execution_context");
+                PGX_INFO("estate pointer value: " + std::to_string(reinterpret_cast<uintptr_t>(estate)));
                 typedef void (*set_context_func)(void*);
                 auto setCtx = (set_context_func)setContextPtr;
                 setCtx(estate);
+                PGX_INFO("Execution context set successfully");
             }
         }
 
         typedef void (*query_func)();
         auto fn = (query_func)funcPtr;
+        PGX_INFO("About to execute JIT-compiled function");
         fn();
         executionSuccess = true;
         PGX_INFO("JIT function execution completed");

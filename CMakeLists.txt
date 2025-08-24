@@ -85,6 +85,7 @@ include(PostgreSQLExtension)
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_SOURCE_DIR}/vendored
     ${PostgreSQL_INCLUDE_DIRS}
     ${PostgreSQL_SERVER_INCLUDE_DIRS}
 )

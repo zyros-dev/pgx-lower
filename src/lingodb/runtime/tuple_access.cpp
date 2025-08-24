@@ -512,6 +512,46 @@ extern "C" int32_t get_int_field(void* tuple_handle, const int32_t field_index, 
     }
 }
 
+extern "C" bool get_bool_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
+    // Critical: Check memory context safety before PostgreSQL tuple access
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("get_bool_field: Memory context unsafe for PostgreSQL operations");
+        *is_null = true;
+        return false;
+    }
+    
+    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
+        *is_null = true;
+        return false;
+    }
+
+    // PostgreSQL uses 1-based attribute indexing
+    const int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
+        *is_null = true;
+        return false;
+    }
+
+    bool isnull;
+    const auto value =
+        heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
+
+    *is_null = isnull;
+    if (isnull) {
+        return false;
+    }
+
+    // Convert to bool based on PostgreSQL type
+    const auto atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
+    switch (atttypid) {
+    case BOOLOID: return DatumGetBool(value);
+    case INT2OID: return DatumGetInt16(value) != 0; // Non-zero is true
+    case INT4OID: return DatumGetInt32(value) != 0; // Non-zero is true
+    case INT8OID: return DatumGetInt64(value) != 0; // Non-zero is true
+    default: *is_null = true; return false;
+    }
+}
+
 extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         *is_null = true;
