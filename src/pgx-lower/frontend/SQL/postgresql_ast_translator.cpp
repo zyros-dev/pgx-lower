@@ -851,6 +851,7 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
     std::vector<mlir::NamedAttribute> columnDefs;
+    std::vector<mlir::Attribute> columnOrder;
     auto allColumns = getAllTableColumnsFromSchema(seqScan->scan.scanrelid);
 
     if (!allColumns.empty()) {
@@ -865,6 +866,7 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
             colDef.getColumn().type = mlirType;
 
             columnDefs.push_back(context.builder->getNamedAttr(colInfo.name, colDef));
+            columnOrder.push_back(context.builder->getStringAttr(colInfo.name));
         }
 
         tableIdentifier =
@@ -879,12 +881,14 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     }
 
     auto columnsAttr = context.builder->getDictionaryAttr(columnDefs);
+    auto columnOrderAttr = context.builder->getArrayAttr(columnOrder);
 
     auto baseTableOp = context.builder->create<mlir::relalg::BaseTableOp>(context.builder->getUnknownLoc(),
                                                                           mlir::relalg::TupleStreamType::get(&context_),
                                                                           context.builder->getStringAttr(tableIdentifier),
                                                                           tableMetaAttr,
-                                                                          columnsAttr);
+                                                                          columnsAttr,
+                                                                          columnOrderAttr);
 
     return baseTableOp;
 }

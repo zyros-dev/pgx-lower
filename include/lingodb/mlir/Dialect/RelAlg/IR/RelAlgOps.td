@@ -150,7 +150,7 @@ def BaseTableOp : RelAlg_Op<"basetable",
          Operator]> {
     let summary = "base table operation";
 
-    let arguments = (ins StrAttr: $table_identifier, TableMetaDataAttr: $meta, DictionaryAttr: $columns);
+    let arguments = (ins StrAttr: $table_identifier, TableMetaDataAttr: $meta, DictionaryAttr: $columns, OptionalAttr<ArrayAttr>: $column_order);
     let results = (outs RelAlg_TupleStream:$result);
 
     let extraClassDeclaration = [{

@@ -28,26 +28,52 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       bool first = true;
       
       auto columnsAttr = baseTableOp.getColumnsAttr();
+      auto columnOrderAttr = baseTableOp->getAttrOfType<mlir::ArrayAttr>("column_order");
+      
       if (!columnsAttr || columnsAttr.empty()) {
          scanDescription += R"("dummy_col")";
          types.push_back(builder.getI32Type());
       } else {
-         for (auto namedAttr : columnsAttr) {
-         auto identifier = namedAttr.getName();
-         auto attr = namedAttr.getValue();
-         auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
-         if (requiredAttributes.empty() || requiredAttributes.contains(&attrDef.getColumn())) {
-            if (!first) {
-               scanDescription += ",";
-            } else {
-               first = false;
+         // If we have column_order, use that order; otherwise fall back to dictionary iteration
+         if (columnOrderAttr && !columnOrderAttr.empty()) {
+            // Use the specified column order
+            for (auto columnNameAttr : columnOrderAttr) {
+               auto columnName = columnNameAttr.cast<mlir::StringAttr>().getValue();
+               auto namedAttr = columnsAttr.getNamed(columnName);
+               if (namedAttr) {
+                  auto attrDef = namedAttr->getValue().dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
+                  if (requiredAttributes.empty() || requiredAttributes.contains(&attrDef.getColumn())) {
+                     if (!first) {
+                        scanDescription += ",";
+                     } else {
+                        first = false;
+                     }
+                     scanDescription += "\"" + columnName.str() + "\"";
+                     columnNames.push_back(builder.getStringAttr(columnName));
+                     types.push_back(getBaseType(attrDef.getColumn().type));
+                     cols.push_back(&attrDef.getColumn());
+                  }
+               }
             }
-            scanDescription += "\"" + identifier.str() + "\"";
-            columnNames.push_back(builder.getStringAttr(identifier.strref()));
-            types.push_back(getBaseType(attrDef.getColumn().type));
-            cols.push_back(&attrDef.getColumn());
+         } else {
+            // Fall back to dictionary iteration (alphabetical order)
+            for (auto namedAttr : columnsAttr) {
+               auto identifier = namedAttr.getName();
+               auto attr = namedAttr.getValue();
+               auto attrDef = attr.dyn_cast_or_null<mlir::relalg::ColumnDefAttr>();
+               if (requiredAttributes.empty() || requiredAttributes.contains(&attrDef.getColumn())) {
+                  if (!first) {
+                     scanDescription += ",";
+                  } else {
+                     first = false;
+                  }
+                  scanDescription += "\"" + identifier.str() + "\"";
+                  columnNames.push_back(builder.getStringAttr(identifier.strref()));
+                  types.push_back(getBaseType(attrDef.getColumn().type));
+                  cols.push_back(&attrDef.getColumn());
+               }
+            }
          }
-      }
       }
       scanDescription += "] }";
 
