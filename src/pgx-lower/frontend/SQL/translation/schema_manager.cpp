@@ -1,20 +1,5 @@
-// PostgreSQL headers - CRITICAL: Must preserve exact API usage
-extern "C" {
-#include "postgres.h"
-#include "nodes/primnodes.h"
-#include "nodes/plannodes.h"
-#include "nodes/parsenodes.h"
-#include "nodes/pg_list.h"
-#include "utils/lsyscache.h"
-#include "access/table.h" // For table_open/table_close
-#include "utils/rel.h" // For get_rel_name, get_attname
-#include "catalog/pg_type.h"
-}
-
-#include "pgx-lower/frontend/SQL/translation/schema_manager.h"
-#include "pgx-lower/utility/logging.h"
-
-namespace pgx_lower::frontend::sql {
+// Schema manager implementation - included directly into postgresql_ast_translator.cpp
+// CRITICAL: Preserves exact PostgreSQL catalog access patterns
 
 // PostgreSQL schema access helpers
 auto getTableNameFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> std::string {
@@ -90,8 +75,8 @@ auto getColumnNameFromSchema(PlannedStmt* currentPlannedStmt, int varno, int var
 }
 
 auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid) 
-    -> std::vector<ColumnInfo> {
-    std::vector<ColumnInfo> columns;
+    -> std::vector<pgx_lower::frontend::sql::ColumnInfo> {
+    std::vector<pgx_lower::frontend::sql::ColumnInfo> columns;
 
 #ifdef BUILDING_UNIT_TESTS
     // In unit test environment, return hardcoded schema for test_arithmetic table
@@ -151,5 +136,3 @@ auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid
     return columns;
 #endif
 }
-
-} // namespace pgx_lower::frontend::sql

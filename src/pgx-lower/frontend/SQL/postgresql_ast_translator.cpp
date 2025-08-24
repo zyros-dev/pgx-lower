@@ -69,13 +69,22 @@ typedef struct Gather Gather;
 #include <stdexcept>
 #include <unordered_map>
 
-#include "pgx-lower/frontend/SQL/translation/type_system.h"
 #include "pgx-lower/frontend/SQL/translation/translation_context.h"
-#include "pgx-lower/frontend/SQL/translation/schema_manager.h"
 
 namespace postgresql_ast {
 
 using TranslationContext = pgx_lower::frontend::sql::TranslationContext;
+
+// Include implementation files directly - no separate compilation units needed
+namespace {
+    #include "translation/translation_core.cpp"
+    #include "translation/schema_manager.cpp"
+    
+    // Wrapper to call anonymous namespace functions  
+    auto callTranslateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRContext& context) -> ::mlir::Value {
+        return translateConst(constNode, builder, context);
+    }
+}
 
 // Forward declaration
 class PostgreSQLASTTranslator::Impl {
@@ -811,16 +820,16 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
 
     std::vector<mlir::NamedAttribute> columnDefs;
     std::vector<mlir::Attribute> columnOrder;
-    auto allColumns = pgx_lower::frontend::sql::getAllTableColumnsFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid);
+    auto allColumns = getAllTableColumnsFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid);
 
     if (!allColumns.empty()) {
-        std::string realTableName = pgx_lower::frontend::sql::getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
+        std::string realTableName = getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
         PGX_INFO("Discovered " + std::to_string(allColumns.size()) + " columns for table " + realTableName);
 
         for (const auto& colInfo : allColumns) {
             auto colDef = columnManager.createDef(realTableName, colInfo.name);
 
-            pgx_lower::frontend::sql::PostgreSQLTypeMapper typeMapper(context_);
+            PostgreSQLTypeMapper typeMapper(context_);
             mlir::Type mlirType = typeMapper.mapPostgreSQLType(colInfo.typeOid, colInfo.typmod);
             colDef.getColumn().type = mlirType;
 
@@ -831,7 +840,7 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
         tableIdentifier =
             realTableName + "|oid:"
             + std::to_string(
-                pgx_lower::frontend::sql::getAllTableColumnsFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid).empty()
+                getAllTableColumnsFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid).empty()
                     ? 0
                     : static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, seqScan->scan.scanrelid - 1))->relid);
     }
@@ -1001,13 +1010,13 @@ auto PostgreSQLASTTranslator::Impl::determineColumnType(TranslationContext& cont
 
     if (expr->type == T_Var) {
         Var* var = reinterpret_cast<Var*>(expr);
-        pgx_lower::frontend::sql::PostgreSQLTypeMapper typeMapper(context_);
+        PostgreSQLTypeMapper typeMapper(context_);
         colType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod);
     }
     else if (expr->type == T_OpExpr) {
         // For arithmetic/comparison operators, use result type from OpExpr
         OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
-        pgx_lower::frontend::sql::PostgreSQLTypeMapper typeMapper(context_);
+        PostgreSQLTypeMapper typeMapper(context_);
         colType = typeMapper.mapPostgreSQLType(opExpr->opresulttype, -1);
     }
     else if (expr->type == T_FuncExpr) {
@@ -1141,8 +1150,8 @@ auto PostgreSQLASTTranslator::Impl::translateVar(Var* var) -> ::mlir::Value {
         // This would typically be inside a MapOp or SelectionOp region
 
         // Get real table and column names from PostgreSQL schema
-        std::string tableName = pgx_lower::frontend::sql::getTableNameFromRTE(currentPlannedStmt_, var->varno);
-        std::string colName = pgx_lower::frontend::sql::getColumnNameFromSchema(currentPlannedStmt_, var->varno, var->varattno);
+        std::string tableName = getTableNameFromRTE(currentPlannedStmt_, var->varno);
+        std::string colName = getColumnNameFromSchema(currentPlannedStmt_, var->varno, var->varattno);
 
         auto colSymRef = mlir::SymbolRefAttr::get(&context_, tableName + "::" + colName);
 
@@ -1156,7 +1165,7 @@ auto PostgreSQLASTTranslator::Impl::translateVar(Var* var) -> ::mlir::Value {
         auto& columnManager = dialect->getColumnManager();
 
         // Map PostgreSQL type to MLIR type
-        pgx_lower::frontend::sql::PostgreSQLTypeMapper typeMapper(context_);
+        PostgreSQLTypeMapper typeMapper(context_);
         auto mlirType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod);
 
         // This ensures proper column tracking and avoids invalid attributes
@@ -1178,54 +1187,12 @@ auto PostgreSQLASTTranslator::Impl::translateVar(Var* var) -> ::mlir::Value {
 }
 
 auto PostgreSQLASTTranslator::Impl::translateConst(Const* constNode) -> ::mlir::Value {
-    if (!constNode || !builder_) {
-        PGX_ERROR("Invalid Const parameters");
+    if (!builder_) {
+        PGX_ERROR("No builder available for constant translation");
         return nullptr;
     }
-
-    if (constNode->constisnull) {
-        auto nullType = mlir::db::NullableType::get(&context_, mlir::IntegerType::get(&context_, 32));
-        return builder_->create<mlir::db::NullOp>(builder_->getUnknownLoc(), nullType);
-    }
-
-    // Map PostgreSQL type to MLIR type
-    pgx_lower::frontend::sql::PostgreSQLTypeMapper typeMapper(context_);
-    auto mlirType = typeMapper.mapPostgreSQLType(constNode->consttype, constNode->consttypmod);
-
-    switch (constNode->consttype) {
-    case INT4OID: {
-        int32_t val = static_cast<int32_t>(constNode->constvalue);
-        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), val, mlirType);
-    }
-    case INT8OID: {
-        int64_t val = static_cast<int64_t>(constNode->constvalue);
-        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), val, mlirType);
-    }
-    case INT2OID: {
-        int16_t val = static_cast<int16_t>(constNode->constvalue);
-        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), val, mlirType);
-    }
-    case FLOAT4OID: {
-        float val = *reinterpret_cast<float*>(&constNode->constvalue);
-        return builder_->create<mlir::arith::ConstantFloatOp>(builder_->getUnknownLoc(),
-                                                              llvm::APFloat(val),
-                                                              mlirType.cast<mlir::FloatType>());
-    }
-    case FLOAT8OID: {
-        double val = *reinterpret_cast<double*>(&constNode->constvalue);
-        return builder_->create<mlir::arith::ConstantFloatOp>(builder_->getUnknownLoc(),
-                                                              llvm::APFloat(val),
-                                                              mlirType.cast<mlir::FloatType>());
-    }
-    case BOOLOID: {
-        bool val = static_cast<bool>(constNode->constvalue);
-        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), val ? 1 : 0, mlirType);
-    }
-    default:
-        PGX_WARNING("Unsupported constant type: " + std::to_string(constNode->consttype));
-        // Default to i32 zero
-        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
-    }
+    // Call the anonymous namespace function through wrapper
+    return callTranslateConst(constNode, *builder_, context_);
 }
 
 auto PostgreSQLASTTranslator::Impl::extractOpExprOperands(OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool {
@@ -1630,7 +1597,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
         PGX_WARNING("Unknown function OID " + std::to_string(funcExpr->funcid) + ", creating placeholder");
 
         // Map result type
-        pgx_lower::frontend::sql::PostgreSQLTypeMapper typeMapper(context_);
+        PostgreSQLTypeMapper typeMapper(context_);
         auto resultType = typeMapper.mapPostgreSQLType(funcExpr->funcresulttype, -1);
 
         // For unknown functions, return first argument or a constant
