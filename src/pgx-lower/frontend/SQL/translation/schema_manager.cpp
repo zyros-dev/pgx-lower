@@ -1,5 +1,3 @@
-// Schema manager implementation - included directly into postgresql_ast_translator.cpp
-// CRITICAL: Preserves exact PostgreSQL catalog access patterns
 
 // PostgreSQL schema access helpers
 auto getTableNameFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> std::string {
@@ -162,5 +160,54 @@ auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid
 
     PGX_INFO("Discovered " + std::to_string(columns.size()) + " columns for scanrelid " + std::to_string(scanrelid));
     return columns;
+#endif
+}
+
+auto isColumnNullable(PlannedStmt* currentPlannedStmt, int varno, int varattno) -> bool {
+    using namespace pgx_lower::frontend::sql::constants;
+    
+    // Default to nullable if we can't determine
+    if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
+        return true;
+    }
+    
+#ifdef BUILDING_UNIT_TESTS
+    // For unit tests, assume nullable
+    return true;
+#else
+    // Get RangeTblEntry
+    if (varno > list_length(currentPlannedStmt->rtable)) {
+        return true;
+    }
+    
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    if (!rte || rte->relid == InvalidOid) {
+        return true;
+    }
+    
+    // Open relation to check column nullability
+    Relation rel = table_open(rte->relid, AccessShareLock);
+    if (!rel) {
+        return true;
+    }
+    
+    TupleDesc tupleDesc = RelationGetDescr(rel);
+    if (!tupleDesc) {
+        table_close(rel, AccessShareLock);
+        return true;
+    }
+    
+    // varattno is 1-based, array is 0-based
+    int attrIndex = varattno - 1;
+    if (attrIndex < 0 || attrIndex >= tupleDesc->natts) {
+        table_close(rel, AccessShareLock);
+        return true;
+    }
+    
+    Form_pg_attribute attr = TupleDescAttr(tupleDesc, attrIndex);
+    bool nullable = !attr->attnotnull;
+    
+    table_close(rel, AccessShareLock);
+    return nullable;
 #endif
 }

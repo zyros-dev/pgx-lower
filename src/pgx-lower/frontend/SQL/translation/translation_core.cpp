@@ -61,34 +61,46 @@ public:
     }
     }
 
-    ::mlir::Type mapPostgreSQLType(unsigned int typeOid, int32_t typmod) {
+    ::mlir::Type mapPostgreSQLType(unsigned int typeOid, int32_t typmod, bool nullable = false) {
+    ::mlir::Type baseType;
+    
     switch (typeOid) {
-    case INT4OID: return mlir::IntegerType::get(&context_, INT4_BIT_WIDTH);
-    case INT8OID: return mlir::IntegerType::get(&context_, INT8_BIT_WIDTH);
-    case INT2OID: return mlir::IntegerType::get(&context_, INT2_BIT_WIDTH);
-    case FLOAT4OID: return mlir::Float32Type::get(&context_);
-    case FLOAT8OID: return mlir::Float64Type::get(&context_);
-    case BOOLOID: return mlir::IntegerType::get(&context_, BOOL_BIT_WIDTH);
+    case INT4OID: baseType = mlir::IntegerType::get(&context_, INT4_BIT_WIDTH); break;
+    case INT8OID: baseType = mlir::IntegerType::get(&context_, INT8_BIT_WIDTH); break;
+    case INT2OID: baseType = mlir::IntegerType::get(&context_, INT2_BIT_WIDTH); break;
+    case FLOAT4OID: baseType = mlir::Float32Type::get(&context_); break;
+    case FLOAT8OID: baseType = mlir::Float64Type::get(&context_); break;
+    case BOOLOID: baseType = mlir::IntegerType::get(&context_, BOOL_BIT_WIDTH); break;
     case TEXTOID:
-    case VARCHAROID: return mlir::db::StringType::get(&context_);
+    case VARCHAROID: baseType = mlir::db::StringType::get(&context_); break;
     case BPCHAROID: {
         int32_t maxlen = extractCharLength(typmod);
-        return mlir::db::CharType::get(&context_, maxlen);
+        baseType = mlir::db::CharType::get(&context_, maxlen);
+        break;
     }
     case NUMERICOID: {
         auto [precision, scale] = extractNumericInfo(typmod);
-        return mlir::db::DecimalType::get(&context_, precision, scale);
+        baseType = mlir::db::DecimalType::get(&context_, precision, scale);
+        break;
     }
-    case DATEOID: return mlir::db::DateType::get(&context_, mlir::db::DateUnitAttr::day);
+    case DATEOID: baseType = mlir::db::DateType::get(&context_, mlir::db::DateUnitAttr::day); break;
     case TIMESTAMPOID: {
         mlir::db::TimeUnitAttr timeUnit = extractTimestampPrecision(typmod);
-        return mlir::db::TimestampType::get(&context_, timeUnit);
+        baseType = mlir::db::TimestampType::get(&context_, timeUnit);
+        break;
     }
 
     default:
         PGX_WARNING("Unknown PostgreSQL type OID: " + std::to_string(typeOid) + ", defaulting to i32");
-        return mlir::IntegerType::get(&context_, INT4_BIT_WIDTH);
+        baseType = mlir::IntegerType::get(&context_, INT4_BIT_WIDTH);
+        break;
     }
+    
+    // Wrap in nullable type if column is nullable
+    if (nullable) {
+        return mlir::db::NullableType::get(&context_, baseType);
+    }
+    return baseType;
     }
 
 private:

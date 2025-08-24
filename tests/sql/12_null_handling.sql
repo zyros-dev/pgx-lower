@@ -31,4 +31,12 @@ SELECT COALESCE(nullable_value, backup_value) AS coalesced_value FROM test_nulls
 SELECT COALESCE(nullable_value, backup_value, third_value) AS triple_coalesce FROM test_nulls;
 SELECT COALESCE(nullable_value, -1) AS coalesce_with_constant FROM test_nulls;
 
+-- Test COALESCE with non-nullable values to isolate null flag issue
+SELECT COALESCE(10, 20) AS coalesce_non_nullable_constants;
+SELECT COALESCE(100, 200, 300) AS coalesce_triple_non_nullable;
+
+-- Test COALESCE with non-nullable column values
+SELECT COALESCE(id, 999) AS coalesce_non_null_column FROM test_nulls;
+SELECT COALESCE(id, id + 1000) AS coalesce_non_null_expr FROM test_nulls;
+
 DROP TABLE test_nulls;

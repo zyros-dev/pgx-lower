@@ -197,12 +197,11 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_build(void* bu
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* /* builder */, int64_t /* value */) {
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_valid, int32_t value) {
-    // Note: The MLIR seems to pass 'is_valid' not 'is_null', so we need to invert it
-    bool is_null = !is_valid;
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 called: value=%d, is_valid=%s (is_null=%s)", 
-         value, is_valid ? "true" : "false", is_null ? "true" : "false");
-    
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_null_flag, int32_t value) {
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 ENTRY: value=%d, is_null_flag=%s",
+         value, is_null_flag ? "true" : "false");
+    bool is_null = is_null_flag;
+
     auto* tb = static_cast<TableBuilder*>(builder);
     if (tb) {
         // Ensure we have enough columns in computed results storage
@@ -230,12 +229,11 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* 
     elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 completed successfully");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_valid, bool value) {
-    // Note: The MLIR seems to pass 'is_valid' not 'is_null', so we need to invert it (same as addint32)
-    bool is_null = !is_valid;
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool called: value=%s, is_valid=%s (is_null=%s)", 
-         value ? "true" : "false", is_valid ? "true" : "false", is_null ? "true" : "false");
-    
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_null_flag, bool value) {
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool called: value=%s, is_null_flag=%s",
+         value ? "true" : "false", is_null_flag ? "true" : "false");
+    bool is_null = is_null_flag;
+
     auto* tb = static_cast<TableBuilder*>(builder);
     if (tb) {
         // Ensure we have enough columns in computed results storage
@@ -548,15 +546,25 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
         size_t* row_data_ptr = (size_t*)row_data;
         row_data_ptr[0] = 1; // numRows = 1
         
-        static uint8_t valid_bitmap = 0xFF; // All bits valid
+        // Create validity bitmaps for each column based on actual null flags
+        static std::vector<uint8_t> valid_bitmaps;
+        valid_bitmaps.resize(num_columns);
         
         for (size_t i = 0; i < num_columns; ++i) {
             const auto& col_spec = iter->columns[i];
             size_t* column_info_ptr = &row_data_ptr[1 + i * 5]; // Each ColumnInfo has 5 fields
             
+            // Set validity bitmap based on whether the value is NULL
+            // Note: In LingoDB, 1 means valid (not null), 0 means null
+            bool is_null = (col_spec.type == ColumnType::BOOLEAN) ? iter->bool_nulls[i] : iter->int_nulls[i];
+            valid_bitmaps[i] = is_null ? 0x00 : 0xFF;  // 0x00 for null, 0xFF for valid
+            
+            elog(NOTICE, "[DEBUG] rt_datasourceiteration_access: column %zu is_null=%s, valid_bitmap=0x%02X", 
+                 i, is_null ? "true" : "false", valid_bitmaps[i]);
+            
             column_info_ptr[0] = 0;                    // offset
             column_info_ptr[1] = 0;                    // validMultiplier
-            column_info_ptr[2] = (size_t)&valid_bitmap; // validBuffer
+            column_info_ptr[2] = (size_t)&valid_bitmaps[i]; // validBuffer - unique per column
             column_info_ptr[4] = 0;                    // varLenBuffer = nullptr
             
             if (col_spec.type == ColumnType::BOOLEAN) {
@@ -605,4 +613,5 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_end(void
     }
 }
 
-} // extern "C"
+}
+

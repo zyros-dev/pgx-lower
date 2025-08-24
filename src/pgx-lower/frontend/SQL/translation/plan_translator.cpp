@@ -217,8 +217,6 @@ auto PostgreSQLASTTranslator::Impl::translateLimit(Limit* limit, TranslationCont
     Node* limitOffsetNode = limit->limitOffset;
     Node* limitCountNode = limit->limitCount;
 
-    PGX_INFO("limitOffset value: " + std::to_string(reinterpret_cast<uintptr_t>(limitOffsetNode)));
-    PGX_INFO("limitCount value: " + std::to_string(reinterpret_cast<uintptr_t>(limitCountNode)));
 
     // In unit tests, limitCountNode might be a mock Const structure
     // In production, it's a real PostgreSQL Node
@@ -367,13 +365,12 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
 
     if (!allColumns.empty()) {
         std::string realTableName = getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
-        PGX_INFO("Discovered " + std::to_string(allColumns.size()) + " columns for table " + realTableName);
 
         for (const auto& colInfo : allColumns) {
             auto colDef = columnManager.createDef(realTableName, colInfo.name);
 
             PostgreSQLTypeMapper typeMapper(context_);
-            mlir::Type mlirType = typeMapper.mapPostgreSQLType(colInfo.typeOid, colInfo.typmod);
+            mlir::Type mlirType = typeMapper.mapPostgreSQLType(colInfo.typeOid, colInfo.typmod, colInfo.nullable);
             colDef.getColumn().type = mlirType;
 
             columnDefs.push_back(context.builder->getNamedAttr(colInfo.name, colDef));
@@ -471,7 +468,6 @@ auto PostgreSQLASTTranslator::Impl::extractTargetListColumns(TranslationContext&
         return false;
     }
 
-    PGX_INFO("Found targetlist with " + std::to_string(listLength) + " entries");
 
     // Safety check for elements array
     if (!tlist->elements) {
@@ -517,7 +513,12 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
         // For computed expressions (like addition, logical operations), use @map scope
         // For base table columns, use actual table name
         std::string scope;
-        if (tle->expr && (tle->expr->type == T_OpExpr || tle->expr->type == T_BoolExpr)) {
+        if (tle->expr && (tle->expr->type == T_OpExpr || 
+                         tle->expr->type == T_BoolExpr ||
+                         tle->expr->type == T_NullTest ||
+                         tle->expr->type == T_CoalesceExpr ||
+                         tle->expr->type == T_FuncExpr ||
+                         tle->expr->type == T_Aggref)) {
             scope = COMPUTED_EXPRESSION_SCOPE; // Computed expressions go to @map:: namespace
         }
         else if (tle->expr && tle->expr->type == T_Var) {
@@ -530,8 +531,10 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
             }
         }
         else {
-            PGX_ERROR("Cannot determine scope for expression type: " + std::to_string(tle->expr->type));
-            return false;
+            // TODO: Should this be a fallover and fail?
+            // For other expression types (like Const), use @map scope
+            PGX_WARNING("Using @map scope for expression type: " + std::to_string(tle->expr->type));
+            scope = COMPUTED_EXPRESSION_SCOPE;
         }
 
         auto colRef = columnManager.createRef(scope, colName);
@@ -774,21 +777,85 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
         return inputOp;
     }
 
-    std::vector<mlir::Attribute> computedColAttrs;
+    // First pass: Create temporary MapOp to establish tuple context for expression type inference
+    std::vector<mlir::Type> expressionTypes;
+    std::vector<std::string> columnNames;
+    std::vector<TargetEntry*> computedEntries;
+    
+    // Create placeholder attributes for temporary MapOp
+    std::vector<mlir::Attribute> placeholderAttrs;
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-
+    
     for (auto* entry : targetEntries) {
         if (entry->expr && entry->expr->type != T_Var) {
             std::string colName = entry->resname ? entry->resname : std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
-
-            // Use "map" as scope name (matching LingoDB's mapName in createMap lambda)
-            auto attrDef = columnManager.createDef(COMPUTED_EXPRESSION_SCOPE, colName);
-
-            // The type will be set later when we translate the expression
-            attrDef.getColumn().type = context.builder->getI32Type();
-
-            computedColAttrs.push_back(attrDef);
+            auto placeholderAttr = columnManager.createDef(COMPUTED_EXPRESSION_SCOPE, colName);
+            
+            
+            placeholderAttr.getColumn().type = context.builder->getI32Type();  // Placeholder type
+            placeholderAttrs.push_back(placeholderAttr);
         }
+    }
+    
+    if (placeholderAttrs.empty()) {
+        return inputOp;  // No computed expressions
+    }
+    
+    // Create temporary MapOp for tuple context
+    auto placeholderCols = context.builder->getArrayAttr(placeholderAttrs);
+    auto tempMapOp = context.builder->create<mlir::relalg::MapOp>(context.builder->getUnknownLoc(), inputValue, placeholderCols);
+    
+    // Set up temporary predicate block with tuple context
+    auto& tempRegion = tempMapOp.getPredicate();
+    auto* tempBlock = new mlir::Block;
+    tempRegion.push_back(tempBlock);
+    auto tempTupleType = mlir::relalg::TupleType::get(&context_);
+    auto tempTupleArg = tempBlock->addArgument(tempTupleType, context.builder->getUnknownLoc());
+    
+    // Set up builder and tuple context for expression translation
+    mlir::OpBuilder tempBuilder(&context_);
+    tempBuilder.setInsertionPointToStart(tempBlock);
+    auto* savedBuilder = builder_;
+    auto* savedTuple = currentTupleHandle_;
+    builder_ = &tempBuilder;
+    currentTupleHandle_ = &tempTupleArg;
+    
+    // Now translate expressions with proper tuple context
+    for (auto* entry : targetEntries) {
+        if (entry->expr && entry->expr->type != T_Var) {
+            std::string colName = entry->resname ? entry->resname : std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
+            
+            // Translate expression to get actual type
+            ::mlir::Value exprValue = translateExpression(reinterpret_cast<Expr*>(entry->expr));
+            if (exprValue) {
+                expressionTypes.push_back(exprValue.getType());
+                columnNames.push_back(colName);
+                computedEntries.push_back(entry);
+            }
+        }
+    }
+    
+    // Restore builder and tuple context
+    builder_ = savedBuilder;
+    currentTupleHandle_ = savedTuple;
+    
+    // Clean up temporary MapOp
+    tempMapOp.erase();
+    
+    // Second pass: Create NEW column attributes with correct types
+    std::vector<mlir::Attribute> computedColAttrs;
+
+    for (size_t i = 0; i < expressionTypes.size(); i++) {
+        // Set the type correctly on the cached Column object
+        auto columnPtr = columnManager.get(COMPUTED_EXPRESSION_SCOPE, columnNames[i]);
+        columnPtr->type = expressionTypes[i];  // Update the type to i1
+        
+        // Use the standard ColumnManager approach to create the ColumnDefAttr
+        auto attrDef = columnManager.createDef(COMPUTED_EXPRESSION_SCOPE, columnNames[i]);
+        
+        // Debug: Verify the type is correct after creation
+        
+        computedColAttrs.push_back(attrDef);
     }
 
     if (computedColAttrs.empty()) {
@@ -796,6 +863,7 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     }
 
     auto computedCols = context.builder->getArrayAttr(computedColAttrs);
+    
 
     auto mapOp = context.builder->create<mlir::relalg::MapOp>(context.builder->getUnknownLoc(), inputValue, computedCols);
 
@@ -804,7 +872,27 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     auto* predicateBlock = new mlir::Block;
     predicateRegion.push_back(predicateBlock);
 
-    // Add tuple argument to the predicate block
+    // Create TupleType with all column types (input + computed expressions)
+    // Get input tuple types from the operation
+    std::vector<mlir::Type> allTupleTypes;
+    
+    // First, get input tuple types from the input operation  
+    if (auto inputTupleType = inputValue.getType().dyn_cast<mlir::TupleType>()) {
+        // Input is already a TupleType - get its component types
+        for (unsigned i = 0; i < inputTupleType.getTypes().size(); i++) {
+            allTupleTypes.push_back(inputTupleType.getTypes()[i]);
+        }
+    } else {
+        // For single values or other types, we might need different handling
+        PGX_WARNING("MapOp input is not a TupleType - skipping input type extraction");
+    }
+    
+    // Then add our computed expression types
+    for (const auto& exprType : expressionTypes) {
+        allTupleTypes.push_back(exprType);
+    }
+    
+    // Create the complete TupleType  
     auto tupleType = mlir::relalg::TupleType::get(&context_);
     auto tupleArg = predicateBlock->addArgument(tupleType, context.builder->getUnknownLoc());
 
@@ -813,28 +901,26 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     predicateBuilder.setInsertionPointToStart(predicateBlock);
 
     // Store current builder and tuple for expression translation
-    auto* savedBuilder = builder_;
-    auto* savedTuple = currentTupleHandle_;
+    auto* savedBuilderForRegion = builder_;
+    auto* savedTupleForRegion = currentTupleHandle_;
     builder_ = &predicateBuilder;
     currentTupleHandle_ = &tupleArg;
 
-    // Translate computed expressions
+    // Translate computed expressions (using pre-computed entries)
     std::vector<mlir::Value> computedValues;
 
-    for (auto* entry : targetEntries) {
-        if (entry->expr && entry->expr->type != T_Var) {
-            // Translate the expression
-            ::mlir::Value exprValue = translateExpression(reinterpret_cast<Expr*>(entry->expr));
-            if (exprValue) {
-                computedValues.push_back(exprValue);
-            }
-            else {
-                // If translation fails, use a placeholder
-                auto placeholder = predicateBuilder.create<mlir::arith::ConstantIntOp>(predicateBuilder.getUnknownLoc(),
-                                                                                       0,
-                                                                                       predicateBuilder.getI32Type());
-                computedValues.push_back(placeholder);
-            }
+    for (auto* entry : computedEntries) {
+        // Translate the expression
+        ::mlir::Value exprValue = translateExpression(reinterpret_cast<Expr*>(entry->expr));
+        if (exprValue) {
+            computedValues.push_back(exprValue);
+        }
+        else {
+            // If translation fails, use a placeholder
+            auto placeholder = predicateBuilder.create<mlir::arith::ConstantIntOp>(predicateBuilder.getUnknownLoc(),
+                                                                                   0,
+                                                                                   predicateBuilder.getI32Type());
+            computedValues.push_back(placeholder);
         }
     }
 
@@ -848,8 +934,8 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     }
 
     // Restore builder and tuple
-    builder_ = savedBuilder;
-    currentTupleHandle_ = savedTuple;
+    builder_ = savedBuilderForRegion;
+    currentTupleHandle_ = savedTupleForRegion;
 
     return mapOp;
 }

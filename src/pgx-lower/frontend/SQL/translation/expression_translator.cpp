@@ -57,9 +57,10 @@ auto PostgreSQLASTTranslator::Impl::translateVar(Var* var) -> ::mlir::Value {
 
         auto& columnManager = dialect->getColumnManager();
 
-        // Map PostgreSQL type to MLIR type
+        // Map PostgreSQL type to MLIR type - check if column is nullable
         PostgreSQLTypeMapper typeMapper(context_);
-        auto mlirType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod);
+        bool nullable = isColumnNullable(currentPlannedStmt_, var->varno, var->varattno);
+        auto mlirType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod, nullable);
 
         // This ensures proper column tracking and avoids invalid attributes
         auto colRef = columnManager.createRef(tableName, colName);
@@ -527,24 +528,172 @@ auto PostgreSQLASTTranslator::Impl::translateNullTest(NullTest* nullTest) -> ::m
         return nullptr;
     }
 
-    auto isNullOp = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), argVal);
-
-    // Handle IS NOT NULL case
-    if (nullTest->nulltesttype == PG_IS_NOT_NULL) { // IS_NOT_NULL
-        return builder_->create<mlir::db::NotOp>(builder_->getUnknownLoc(), isNullOp);
+    // Follow LingoDB's exact pattern: check if type is nullable first
+    if (argVal.getType().isa<mlir::db::NullableType>()) {
+        mlir::Value isNull = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), argVal);
+        if (nullTest->nulltesttype == PG_IS_NOT_NULL) {
+            // LingoDB's clean approach: use NotOp instead of XOrIOp
+            return builder_->create<mlir::db::NotOp>(builder_->getUnknownLoc(), isNull);
+        } else {
+            return isNull;
+        }
+    } else {
+        // Non-nullable types: return constant based on null test type
+        // LingoDB pattern: IS_NOT_NULL returns true, IS_NULL returns false for non-nullable
+        return builder_->create<mlir::db::ConstantOp>(builder_->getUnknownLoc(), 
+            builder_->getI1Type(), 
+            builder_->getIntegerAttr(builder_->getI1Type(), nullTest->nulltesttype == PG_IS_NOT_NULL));
     }
-
-    return isNullOp;
 }
 
 auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value {
+    PGX_INFO("translateCoalesceExpr: Starting COALESCE translation");
     if (!coalesceExpr || !builder_) {
         PGX_ERROR("Invalid CoalesceExpr parameters");
         return nullptr;
     }
 
     // COALESCE returns first non-null argument
-    PGX_WARNING("CoalesceExpr translation not fully implemented");
+    if (!coalesceExpr->args || coalesceExpr->args->length == 0) {
+        PGX_WARNING("COALESCE with no arguments");
+        // No arguments - return NULL with default type
+        auto nullType = mlir::db::NullableType::get(&context_, builder_->getI32Type());
+        return builder_->create<mlir::db::NullOp>(builder_->getUnknownLoc(), nullType);
+    }
+    
+    PGX_INFO("COALESCE has " + std::to_string(coalesceExpr->args->length) + " arguments");
 
-    return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
+    // First, translate all arguments
+    std::vector<::mlir::Value> translatedArgs;
+    
+    ListCell* cell;
+    foreach(cell, coalesceExpr->args) {
+        PGX_INFO("Translating COALESCE argument");
+        Expr* expr = reinterpret_cast<Expr*>(lfirst(cell));
+        ::mlir::Value val = translateExpression(expr);
+        if (val) {
+            PGX_INFO("Argument translated successfully");
+            translatedArgs.push_back(val);
+        } else {
+            PGX_WARNING("Failed to translate COALESCE argument");
+        }
+    }
+    
+    if (translatedArgs.empty()) {
+        PGX_WARNING("All COALESCE arguments failed to translate");
+        auto nullType = mlir::db::NullableType::get(&context_, builder_->getI32Type());
+        return builder_->create<mlir::db::NullOp>(builder_->getUnknownLoc(), nullType);
+    }
+    
+    // Determine common type following LingoDB pattern
+    // Only create nullable result if at least one argument is nullable
+    bool hasNullable = false;
+    mlir::Type baseType = nullptr;
+    
+    for (const auto& arg : translatedArgs) {
+        auto argType = arg.getType();
+        if (auto nullableType = argType.dyn_cast<mlir::db::NullableType>()) {
+            hasNullable = true;
+            if (!baseType) {
+                baseType = nullableType.getType();
+            }
+        } else {
+            if (!baseType) {
+                baseType = argType;
+            }
+        }
+    }
+    
+    // Build common type based on nullability of arguments
+    mlir::Type commonType = hasNullable 
+        ? mlir::Type(mlir::db::NullableType::get(&context_, baseType))
+        : baseType;
+    
+    PGX_INFO("COALESCE common type determined - nullable: " + std::to_string(hasNullable));
+    
+    // Now convert arguments to common type only if necessary
+    for (size_t i = 0; i < translatedArgs.size(); ++i) {
+        auto& val = translatedArgs[i];
+        
+        if (val.getType() != commonType) {
+            // Need to convert to common type
+            if (hasNullable && !val.getType().isa<mlir::db::NullableType>()) {
+                PGX_INFO("Wrapping non-nullable argument " + std::to_string(i) + " to match common nullable type");
+                // Wrap non-nullable value in nullable type with explicit false null flag
+                auto falseFlag = builder_->create<mlir::arith::ConstantIntOp>(
+                    builder_->getUnknownLoc(), 0, 1);
+                val = builder_->create<mlir::db::AsNullableOp>(
+                    builder_->getUnknownLoc(), 
+                    commonType,    // Result type (nullable)
+                    val,           // Value to wrap
+                    falseFlag      // Explicit null flag = false (NOT NULL)
+                );
+                translatedArgs[i] = val;
+            }
+        }
+    }
+    
+    // COALESCE using simplified recursive pattern that's safer
+    // Reverting to working pattern while maintaining LingoDB semantics
+    std::function<mlir::Value(size_t)> buildCoalesceRecursive = [&](size_t index) -> mlir::Value {
+        auto loc = builder_->getUnknownLoc();
+        
+        // Base case: if we're at the last argument, return it
+        if (index >= translatedArgs.size() - 1) {
+            return translatedArgs.back();
+        }
+        
+        // Get current argument  
+        mlir::Value value = translatedArgs[index];
+        
+        // Create null check - follow LingoDB semantics exactly
+        mlir::Value isNull = builder_->create<mlir::db::IsNullOp>(loc, value);
+        mlir::Value isNotNull = builder_->create<mlir::db::NotOp>(loc, isNull);
+        
+        // Create scf.IfOp with automatic region creation (safer than manual blocks)
+        auto ifOp = builder_->create<mlir::scf::IfOp>(loc, commonType, isNotNull, true);
+        
+        // Then block: yield current value
+        auto& thenRegion = ifOp.getThenRegion();
+        auto* thenBlock = &thenRegion.front();
+        builder_->setInsertionPointToEnd(thenBlock);
+        // Cast value if needed
+        mlir::Value thenValue = value;
+        if (value.getType() != commonType && hasNullable && !value.getType().isa<mlir::db::NullableType>()) {
+            auto falseFlag = builder_->create<mlir::arith::ConstantIntOp>(loc, 0, 1);
+            thenValue = builder_->create<mlir::db::AsNullableOp>(loc, commonType, value, falseFlag);
+        }
+        builder_->create<mlir::scf::YieldOp>(loc, thenValue);
+        
+        // Else block: recursive call for remaining arguments
+        auto& elseRegion = ifOp.getElseRegion();
+        auto* elseBlock = &elseRegion.front();
+        builder_->setInsertionPointToEnd(elseBlock);
+        auto elseValue = buildCoalesceRecursive(index + 1);
+        builder_->create<mlir::scf::YieldOp>(loc, elseValue);
+        
+        // Reset insertion point after the ifOp
+        builder_->setInsertionPointAfter(ifOp);
+        
+        return ifOp.getResult(0);
+    };
+    
+    auto result = buildCoalesceRecursive(0);
+    
+    // Log result type info
+    bool resultIsNullable = result.getType().isa<mlir::db::NullableType>();
+    PGX_INFO("COALESCE final result is nullable: " + std::to_string(resultIsNullable) + 
+             ", hasNullable: " + std::to_string(hasNullable));
+    
+    // Unpack nullable result if the common type isn't nullable  
+    // This handles cases where all inputs are non-nullable but the scf.IfOp
+    // still produces a nullable type due to structural type conversion
+    if (result.getType().isa<mlir::db::NullableType>() && !hasNullable) {
+        PGX_INFO("COALESCE: Unpacking nullable result since all inputs were non-nullable");
+        auto baseType = result.getType().cast<mlir::db::NullableType>().getType();
+        result = builder_->create<mlir::db::NullableGetVal>(
+            builder_->getUnknownLoc(), baseType, result);
+    }
+    
+    return result;
 }

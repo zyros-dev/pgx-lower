@@ -123,7 +123,20 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         // Verify the generated module
         auto verifyResult = mlir::verify(*module);
         if (failed(verifyResult)) {
-            PGX_ERROR("Initial RelAlg MLIR module verification failed");
+            // TODO: Swap this for the dump with stats function
+            // Print more detailed error information
+            std::string errorString;
+            llvm::raw_string_ostream errorStream(errorString);
+            module->print(errorStream);
+
+            // Debug: Print the generated MLIR before verification
+            {
+                std::string mlirString;
+                llvm::raw_string_ostream stream(mlirString);
+                module->print(stream);
+                PGX_INFO("Generated RelAlg MLIR:\n" + mlirString);
+            }
+            PGX_ERROR("Initial RelAlg MLIR module verification failed. Module content:\n" + errorString);
             return false;
         }
 
