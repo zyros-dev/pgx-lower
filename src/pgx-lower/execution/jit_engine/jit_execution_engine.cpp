@@ -51,6 +51,50 @@ namespace pgx_lower { namespace execution {
 
 class WrappedExecutionEngine;
 
+// Impl class for PostgreSQLJITExecutionEngine (Pimpl pattern)
+class PostgreSQLJITExecutionEngine::Impl {
+public:
+    Impl() : wrappedEngine(nullptr), initialized(false), 
+             optimizationLevel(llvm::CodeGenOptLevel::None) {}
+    ~Impl();
+    
+    // Public interface methods
+    bool initialize(::mlir::ModuleOp module);
+    bool setupJITOptimizationPipeline();
+    bool compileToLLVMIR(::mlir::ModuleOp module);
+    bool isInitialized() const { return initialized; }
+    void setOptimizationLevel(llvm::CodeGenOptLevel level) { 
+        optimizationLevel = level; 
+    }
+    void registerPostgreSQLRuntimeFunctions();
+    bool setupMemoryContexts();
+    bool executeCompiledQuery(void* estate, void* dest);
+    
+private:
+    void* wrappedEngine;
+    bool initialized;
+    llvm::CodeGenOptLevel optimizationLevel;
+    
+    // Private implementation methods
+    bool validateModuleForCompilation(::mlir::ModuleOp module);
+    void configureLLVMTargetMachine();
+    
+    void registerDSARuntimeFunctions();
+    void registerPostgreSQLSPIFunctions();
+    void registerMemoryManagementFunctions();
+    void registerDataSourceFunctions();
+    void registerRuntimeSupportFunctions();
+    void registerLingoDRuntimeContextFunctions();
+    void registerCRuntimeFunctions();
+    
+    void registerDialectTranslations(::mlir::ModuleOp module);
+    bool createWrappedExecutionEngine(::mlir::ModuleOp module);
+    
+    void* lookupExecutionFunction(WrappedExecutionEngine* wrapped);
+    bool invokeCompiledFunction(void* funcPtr, void* estate, void* dest);
+    void logExecutionMetrics(std::chrono::microseconds duration);
+};
+
 // WrappedExecutionEngine class following LingoDB pattern from lingo-db/lib/runner/runner.cpp:551-634
 class WrappedExecutionEngine {
     std::unique_ptr<mlir::ExecutionEngine> engine;
@@ -276,14 +320,54 @@ class WrappedExecutionEngine {
 };
 
 // Destructor to properly delete WrappedExecutionEngine
-PostgreSQLJITExecutionEngine::~PostgreSQLJITExecutionEngine() {
+// Constructor and destructor for main class (Pimpl pattern)
+PostgreSQLJITExecutionEngine::PostgreSQLJITExecutionEngine() 
+    : pImpl(std::make_unique<Impl>()) {}
+
+PostgreSQLJITExecutionEngine::~PostgreSQLJITExecutionEngine() = default;
+
+// Forward all public methods to Impl
+bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
+    return pImpl->initialize(module);
+}
+
+bool PostgreSQLJITExecutionEngine::setupJITOptimizationPipeline() {
+    return pImpl->setupJITOptimizationPipeline();
+}
+
+bool PostgreSQLJITExecutionEngine::compileToLLVMIR(::mlir::ModuleOp module) {
+    return pImpl->compileToLLVMIR(module);
+}
+
+bool PostgreSQLJITExecutionEngine::isInitialized() const {
+    return pImpl->isInitialized();
+}
+
+void PostgreSQLJITExecutionEngine::setOptimizationLevel(llvm::CodeGenOptLevel level) {
+    pImpl->setOptimizationLevel(level);
+}
+
+void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
+    pImpl->registerPostgreSQLRuntimeFunctions();
+}
+
+bool PostgreSQLJITExecutionEngine::setupMemoryContexts() {
+    return pImpl->setupMemoryContexts();
+}
+
+bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest) {
+    return pImpl->executeCompiledQuery(estate, dest);
+}
+
+// Impl destructor
+PostgreSQLJITExecutionEngine::Impl::~Impl() {
     if (wrappedEngine) {
         delete static_cast<WrappedExecutionEngine*>(wrappedEngine);
         wrappedEngine = nullptr;
     }
 }
 
-void PostgreSQLJITExecutionEngine::configureLLVMTargetMachine() {
+void PostgreSQLJITExecutionEngine::Impl::configureLLVMTargetMachine() {
     static bool llvm_initialized = false;
     if (!llvm_initialized) {
         llvm::InitializeNativeTarget();
@@ -302,7 +386,7 @@ void PostgreSQLJITExecutionEngine::configureLLVMTargetMachine() {
     }
 }
 
-bool PostgreSQLJITExecutionEngine::validateModuleForCompilation(::mlir::ModuleOp module) {
+bool PostgreSQLJITExecutionEngine::Impl::validateModuleForCompilation(::mlir::ModuleOp module) {
     if (!module) {
         PGX_ERROR("Module is null");
         return false;
@@ -323,11 +407,11 @@ bool PostgreSQLJITExecutionEngine::validateModuleForCompilation(::mlir::ModuleOp
     return true;
 }
 
-bool PostgreSQLJITExecutionEngine::setupJITOptimizationPipeline() {
+bool PostgreSQLJITExecutionEngine::Impl::setupJITOptimizationPipeline() {
     return true;
 }
 
-bool PostgreSQLJITExecutionEngine::compileToLLVMIR(::mlir::ModuleOp module) {
+bool PostgreSQLJITExecutionEngine::Impl::compileToLLVMIR(::mlir::ModuleOp module) {
     if (!validateModuleForCompilation(module)) {
         PGX_ERROR("Module validation failed");
         return false;
@@ -336,7 +420,7 @@ bool PostgreSQLJITExecutionEngine::compileToLLVMIR(::mlir::ModuleOp module) {
     return true;
 }
 
-void PostgreSQLJITExecutionEngine::registerDialectTranslations(::mlir::ModuleOp module) {
+void PostgreSQLJITExecutionEngine::Impl::registerDialectTranslations(::mlir::ModuleOp module) {
     mlir::DialectRegistry registry;
     mlir::registerAllToLLVMIRTranslations(registry);
     mlir::registerConvertFuncToLLVMInterface(registry);
@@ -348,7 +432,7 @@ void PostgreSQLJITExecutionEngine::registerDialectTranslations(::mlir::ModuleOp 
     mlir::registerLLVMDialectTranslation(*module->getContext());
 }
 
-bool PostgreSQLJITExecutionEngine::createWrappedExecutionEngine(::mlir::ModuleOp module) {
+bool PostgreSQLJITExecutionEngine::Impl::createWrappedExecutionEngine(::mlir::ModuleOp module) {
     auto* wrapped = new WrappedExecutionEngine(module, optimizationLevel);
     wrappedEngine = wrapped;
 
@@ -369,7 +453,7 @@ bool PostgreSQLJITExecutionEngine::createWrappedExecutionEngine(::mlir::ModuleOp
     return true;
 }
 
-bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
+bool PostgreSQLJITExecutionEngine::Impl::initialize(::mlir::ModuleOp module) {
     if (initialized) {
         PGX_WARNING("Execution engine already initialized");
         return true;
@@ -397,7 +481,7 @@ bool PostgreSQLJITExecutionEngine::initialize(::mlir::ModuleOp module) {
     return true;
 }
 
-void PostgreSQLJITExecutionEngine::registerLingoDRuntimeContextFunctions() {
+void PostgreSQLJITExecutionEngine::Impl::registerLingoDRuntimeContextFunctions() {
     auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
     if (!wrapped || !wrapped->getEngine()) {
         PGX_ERROR("Cannot register functions - engine not initialized");
@@ -489,7 +573,7 @@ auto createSymbolRegistrationLambda() {
     };
 }
 
-void PostgreSQLJITExecutionEngine::registerCRuntimeFunctions() {
+void PostgreSQLJITExecutionEngine::Impl::registerCRuntimeFunctions() {
     PGX_INFO("Registering C runtime functions");
 
     auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
@@ -501,7 +585,7 @@ void PostgreSQLJITExecutionEngine::registerCRuntimeFunctions() {
     wrapped->getEngine()->registerSymbols(createSymbolRegistrationLambda());
 }
 
-void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
+void PostgreSQLJITExecutionEngine::Impl::registerPostgreSQLRuntimeFunctions() {
     PGX_INFO("Registering PostgreSQL runtime functions");
 
     auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
@@ -514,7 +598,7 @@ void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
     registerLingoDRuntimeContextFunctions();
 }
 
-bool PostgreSQLJITExecutionEngine::setupMemoryContexts() {
+bool PostgreSQLJITExecutionEngine::Impl::setupMemoryContexts() {
 #ifdef POSTGRESQL_EXTENSION
     if (!CurrentMemoryContext) {
         PGX_ERROR("No current memory context available");
@@ -551,7 +635,7 @@ bool PostgreSQLJITExecutionEngine::setupMemoryContexts() {
 #endif
 }
 
-void* PostgreSQLJITExecutionEngine::lookupExecutionFunction(WrappedExecutionEngine* wrapped) {
+void* PostgreSQLJITExecutionEngine::Impl::lookupExecutionFunction(WrappedExecutionEngine* wrapped) {
     void* funcPtr = wrapped->getMainFuncPtr();
     if (!funcPtr) {
         PGX_WARNING("No cached function pointer, trying static linking");
@@ -571,7 +655,7 @@ void* PostgreSQLJITExecutionEngine::lookupExecutionFunction(WrappedExecutionEngi
     return funcPtr;
 }
 
-bool PostgreSQLJITExecutionEngine::invokeCompiledFunction(void* funcPtr, void* estate, void* dest) {
+bool PostgreSQLJITExecutionEngine::Impl::invokeCompiledFunction(void* funcPtr, void* estate, void* dest) {
 #ifdef POSTGRESQL_EXTENSION
     bool executionSuccess = false;
 
@@ -636,12 +720,12 @@ bool PostgreSQLJITExecutionEngine::invokeCompiledFunction(void* funcPtr, void* e
 #endif
 }
 
-void PostgreSQLJITExecutionEngine::logExecutionMetrics(std::chrono::microseconds duration) {
+void PostgreSQLJITExecutionEngine::Impl::logExecutionMetrics(std::chrono::microseconds duration) {
     PGX_INFO("JIT execution took " + std::to_string(duration.count() / 1000.0) + " ms");
     PGX_INFO("JIT execution completed successfully");
 }
 
-bool PostgreSQLJITExecutionEngine::executeCompiledQuery(void* estate, void* dest) {
+bool PostgreSQLJITExecutionEngine::Impl::executeCompiledQuery(void* estate, void* dest) {
     PGX_INFO("Executing JIT compiled query using LingoDB pattern");
 
     if (!initialized || !wrappedEngine) {

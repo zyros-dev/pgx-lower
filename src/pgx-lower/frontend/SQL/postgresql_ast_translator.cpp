@@ -71,6 +71,72 @@ typedef struct Gather Gather;
 
 namespace postgresql_ast {
 
+// Forward declaration
+class PostgreSQLASTTranslator::Impl {
+public:
+    explicit Impl(::mlir::MLIRContext& context)
+        : context_(context)
+        , builder_(nullptr)
+        , currentModule_(nullptr)
+        , currentTupleHandle_(nullptr)
+        , currentPlannedStmt_(nullptr)
+        , contextNeedsRecreation_(false) {}
+    
+    // Public interface methods
+    auto translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp>;
+    
+    // All the private methods that were in the header
+    auto translateExpression(Expr* expr) -> ::mlir::Value;
+    auto translateOpExpr(OpExpr* opExpr) -> ::mlir::Value;
+    auto translateVar(Var* var) -> ::mlir::Value;
+    auto translateConst(Const* constNode) -> ::mlir::Value;
+    auto translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::Value;
+    auto translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::Value;
+    auto translateNullTest(NullTest* nullTest) -> ::mlir::Value;
+    auto translateAggref(Aggref* aggref) -> ::mlir::Value;
+    auto translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value;
+    
+    auto translatePlanNode(Plan* plan, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto translateSeqScan(SeqScan* seqScan, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto translateAgg(Agg* agg, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto translateSort(Sort* sort, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto translateLimit(Limit* limit, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto translateGather(Gather* gather, struct TranslationContext& context) -> ::mlir::Operation*;
+    
+    auto createQueryFunction(::mlir::OpBuilder& builder, struct TranslationContext& context) -> ::mlir::func::FuncOp;
+    auto generateRelAlgOperations(::mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, struct TranslationContext& context) -> bool;
+    
+    auto applySelectionFromQual(::mlir::Operation* inputOp, List* qual, struct TranslationContext& context) -> ::mlir::Operation*;
+    auto applyProjectionFromTargetList(::mlir::Operation* inputOp, List* targetList, struct TranslationContext& context) -> ::mlir::Operation*;
+    
+    auto validatePlanTree(Plan* planTree) -> bool;
+    auto extractTargetListColumns(struct TranslationContext& context,
+                                 std::vector<::mlir::Attribute>& columnRefAttrs,
+                                 std::vector<::mlir::Attribute>& columnNameAttrs) -> bool;
+    auto processTargetEntry(struct TranslationContext& context,
+                           List* tlist,
+                           int index,
+                           std::vector<::mlir::Attribute>& columnRefAttrs,
+                           std::vector<::mlir::Attribute>& columnNameAttrs) -> bool;
+    auto determineColumnType(struct TranslationContext& context, Expr* expr) -> ::mlir::Type;
+    auto createMaterializeOp(struct TranslationContext& context, ::mlir::Value tupleStream) -> ::mlir::Operation*;
+    auto extractOpExprOperands(OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool;
+    auto translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
+    auto translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
+    
+    auto getTableNameFromRTE(int varno) -> std::string;
+    auto getColumnNameFromSchema(int varno, int varattno) -> std::string;
+    auto getAllTableColumnsFromSchema(int scanrelid) -> std::vector<PostgreSQLASTTranslator::ColumnInfo>;
+    
+private:
+    ::mlir::MLIRContext& context_;
+    ::mlir::OpBuilder* builder_;
+    ::mlir::ModuleOp* currentModule_;
+    ::mlir::Value* currentTupleHandle_;
+    PlannedStmt* currentPlannedStmt_;
+    bool contextNeedsRecreation_;
+};
+
 // Translation context for managing state
 struct TranslationContext {
     PlannedStmt* currentStmt = nullptr;
@@ -80,13 +146,6 @@ struct TranslationContext {
     // TODO: Add column mapping when BaseTableOp attribute printing is fixed
 };
 
-// Enhanced column information structure
-struct ColumnInfo {
-    std::string name;
-    Oid typeOid;
-    int32_t typmod;
-    bool nullable;
-};
 
 class PostgreSQLTypeMapper {
    public:
@@ -182,14 +241,15 @@ class PostgreSQLTypeMapper {
 };
 
 PostgreSQLASTTranslator::PostgreSQLASTTranslator(::mlir::MLIRContext& context)
-: context_(context)
-, builder_(nullptr)
-, currentModule_(nullptr)
-, currentTupleHandle_(nullptr)
-, currentPlannedStmt_(nullptr)
-, contextNeedsRecreation_(false) {}
+    : pImpl(std::make_unique<Impl>(context)) {}
+
+PostgreSQLASTTranslator::~PostgreSQLASTTranslator() = default;
 
 auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
+    return pImpl->translateQuery(plannedStmt);
+}
+
+auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
     if (!plannedStmt) {
         PGX_ERROR("PlannedStmt is null");
         return nullptr;
@@ -229,7 +289,7 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
     return std::make_unique<::mlir::ModuleOp>(module);
 }
 
-auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::translatePlanNode(Plan* plan, TranslationContext& context) -> ::mlir::Operation* {
     if (!plan) {
         PGX_ERROR("Plan node is null");
         return nullptr;
@@ -265,7 +325,7 @@ auto PostgreSQLASTTranslator::translatePlanNode(Plan* plan, TranslationContext& 
     return result;
 }
 
-auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& context) -> ::mlir::Operation* {
     if (!agg || !context.builder) {
         PGX_ERROR("Invalid Agg parameters");
         return nullptr;
@@ -348,7 +408,7 @@ auto PostgreSQLASTTranslator::translateAgg(Agg* agg, TranslationContext& context
     return childOp;
 }
 
-auto PostgreSQLASTTranslator::translateSort(Sort* sort, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext& context) -> ::mlir::Operation* {
     if (!sort || !context.builder) {
         PGX_ERROR("Invalid Sort parameters");
         return nullptr;
@@ -410,7 +470,7 @@ auto PostgreSQLASTTranslator::translateSort(Sort* sort, TranslationContext& cont
 }
 
 // Helper method to apply WHERE clause conditions
-auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp, List* qual, TranslationContext& context)
+auto PostgreSQLASTTranslator::Impl::applySelectionFromQual(::mlir::Operation* inputOp, List* qual, TranslationContext& context)
     -> ::mlir::Operation* {
     if (!inputOp || !qual || qual->length == 0) {
         return inputOp; // No selection needed
@@ -522,7 +582,7 @@ auto PostgreSQLASTTranslator::applySelectionFromQual(::mlir::Operation* inputOp,
 }
 
 // Helper method to apply projections from target list
-auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* inputOp,
+auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operation* inputOp,
                                                             List* targetList,
                                                             TranslationContext& context) -> ::mlir::Operation* {
     if (!inputOp || !targetList || targetList->length == 0) {
@@ -677,7 +737,7 @@ auto PostgreSQLASTTranslator::applyProjectionFromTargetList(::mlir::Operation* i
     return mapOp;
 }
 
-auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::translateLimit(Limit* limit, TranslationContext& context) -> ::mlir::Operation* {
     if (!limit || !context.builder) {
         PGX_ERROR("Invalid Limit parameters");
         return nullptr;
@@ -780,7 +840,7 @@ auto PostgreSQLASTTranslator::translateLimit(Limit* limit, TranslationContext& c
     return limitOp;
 }
 
-auto PostgreSQLASTTranslator::translateGather(Gather* gather, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::translateGather(Gather* gather, TranslationContext& context) -> ::mlir::Operation* {
     if (!gather || !context.builder) {
         PGX_ERROR("Invalid Gather parameters");
         return nullptr;
@@ -821,7 +881,7 @@ auto PostgreSQLASTTranslator::translateGather(Gather* gather, TranslationContext
     return childOp;
 }
 
-auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, TranslationContext& context) -> ::mlir::Operation* {
     if (!seqScan || !context.builder || !context.currentStmt) {
         PGX_ERROR("Invalid SeqScan parameters");
         return nullptr;
@@ -893,7 +953,7 @@ auto PostgreSQLASTTranslator::translateSeqScan(SeqScan* seqScan, TranslationCont
     return baseTableOp;
 }
 
-auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context)
+auto PostgreSQLASTTranslator::Impl::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context)
     -> ::mlir::func::FuncOp {
     // Safety checks
     if (!context.builder) {
@@ -924,7 +984,7 @@ auto PostgreSQLASTTranslator::createQueryFunction(::mlir::OpBuilder& builder, Tr
     }
 }
 
-auto PostgreSQLASTTranslator::validatePlanTree(Plan* planTree) -> bool {
+auto PostgreSQLASTTranslator::Impl::validatePlanTree(Plan* planTree) -> bool {
     if (!planTree) {
         PGX_ERROR("PlannedStmt planTree is null");
         return false;
@@ -938,7 +998,7 @@ auto PostgreSQLASTTranslator::validatePlanTree(Plan* planTree) -> bool {
     return true;
 }
 
-auto PostgreSQLASTTranslator::extractTargetListColumns(TranslationContext& context,
+auto PostgreSQLASTTranslator::Impl::extractTargetListColumns(TranslationContext& context,
                                                        std::vector<mlir::Attribute>& columnRefAttrs,
                                                        std::vector<mlir::Attribute>& columnNameAttrs) -> bool {
     if (!context.currentStmt || !context.currentStmt->planTree || !context.currentStmt->planTree->targetlist
@@ -982,7 +1042,7 @@ auto PostgreSQLASTTranslator::extractTargetListColumns(TranslationContext& conte
     return !columnRefAttrs.empty();
 }
 
-auto PostgreSQLASTTranslator::processTargetEntry(TranslationContext& context,
+auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& context,
                                                  List* tlist,
                                                  int index,
                                                  std::vector<mlir::Attribute>& columnRefAttrs,
@@ -1037,7 +1097,7 @@ auto PostgreSQLASTTranslator::processTargetEntry(TranslationContext& context,
     }
 }
 
-auto PostgreSQLASTTranslator::determineColumnType(TranslationContext& context, Expr* expr) -> mlir::Type {
+auto PostgreSQLASTTranslator::Impl::determineColumnType(TranslationContext& context, Expr* expr) -> mlir::Type {
     mlir::Type colType = context.builder->getI32Type();
 
     if (expr->type == T_Var) {
@@ -1063,7 +1123,7 @@ auto PostgreSQLASTTranslator::determineColumnType(TranslationContext& context, E
     return colType;
 }
 
-auto PostgreSQLASTTranslator::createMaterializeOp(TranslationContext& context, ::mlir::Value tupleStream)
+auto PostgreSQLASTTranslator::Impl::createMaterializeOp(TranslationContext& context, ::mlir::Value tupleStream)
     -> ::mlir::Operation* {
     std::vector<mlir::Attribute> columnRefAttrs;
     std::vector<mlir::Attribute> columnNameAttrs;
@@ -1087,7 +1147,7 @@ auto PostgreSQLASTTranslator::createMaterializeOp(TranslationContext& context, :
     return materializeOp;
 }
 
-auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp queryFunc,
+auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncOp queryFunc,
                                                        PlannedStmt* plannedStmt,
                                                        TranslationContext& context) -> bool {
     // Safety check for PlannedStmt
@@ -1136,7 +1196,7 @@ auto PostgreSQLASTTranslator::generateRelAlgOperations(::mlir::func::FuncOp quer
 }
 
 // Expression Translation Methods
-auto PostgreSQLASTTranslator::translateExpression(Expr* expr) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::Value {
     if (!expr) {
         PGX_ERROR("Expression is null");
         return nullptr;
@@ -1168,7 +1228,7 @@ auto PostgreSQLASTTranslator::translateExpression(Expr* expr) -> ::mlir::Value {
     }
 }
 
-auto PostgreSQLASTTranslator::translateVar(Var* var) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateVar(Var* var) -> ::mlir::Value {
     if (!var || !builder_ || !currentTupleHandle_) {
         PGX_ERROR("Invalid Var parameters");
         return nullptr;
@@ -1218,7 +1278,7 @@ auto PostgreSQLASTTranslator::translateVar(Var* var) -> ::mlir::Value {
     }
 }
 
-auto PostgreSQLASTTranslator::translateConst(Const* constNode) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateConst(Const* constNode) -> ::mlir::Value {
     if (!constNode || !builder_) {
         PGX_ERROR("Invalid Const parameters");
         return nullptr;
@@ -1269,7 +1329,7 @@ auto PostgreSQLASTTranslator::translateConst(Const* constNode) -> ::mlir::Value 
     }
 }
 
-auto PostgreSQLASTTranslator::extractOpExprOperands(OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool {
+auto PostgreSQLASTTranslator::Impl::extractOpExprOperands(OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool {
     if (!opExpr || !opExpr->args) {
         PGX_ERROR("OpExpr has no arguments");
         return false;
@@ -1317,7 +1377,7 @@ auto PostgreSQLASTTranslator::extractOpExprOperands(OpExpr* opExpr, ::mlir::Valu
     return lhs && rhs;
 }
 
-auto PostgreSQLASTTranslator::translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value {
     switch (opOid) {
     // Addition operators
     case 551: // int4 + int4 (INT4PLUSOID)
@@ -1351,7 +1411,7 @@ auto PostgreSQLASTTranslator::translateArithmeticOp(Oid opOid, ::mlir::Value lhs
     }
 }
 
-auto PostgreSQLASTTranslator::translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value {
     mlir::db::DBCmpPredicate predicate;
 
     switch (opOid) {
@@ -1391,7 +1451,7 @@ auto PostgreSQLASTTranslator::translateComparisonOp(Oid opOid, ::mlir::Value lhs
     return builder_->create<mlir::db::CmpOp>(builder_->getUnknownLoc(), predicate, lhs, rhs);
 }
 
-auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
     if (!opExpr || !builder_) {
         PGX_ERROR("Invalid OpExpr parameters");
         return nullptr;
@@ -1425,7 +1485,7 @@ auto PostgreSQLASTTranslator::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
     return lhs; // Return first operand as placeholder
 }
 
-auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::Value {
     if (!boolExpr || !builder_) {
         PGX_ERROR("Invalid BoolExpr parameters");
         return nullptr;
@@ -1557,7 +1617,7 @@ auto PostgreSQLASTTranslator::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::V
     }
 }
 
-auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::Value {
     if (!funcExpr || !builder_) {
         PGX_ERROR("Invalid FuncExpr parameters");
         return nullptr;
@@ -1700,7 +1760,7 @@ auto PostgreSQLASTTranslator::translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::V
     }
 }
 
-auto PostgreSQLASTTranslator::translateAggref(Aggref* aggref) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateAggref(Aggref* aggref) -> ::mlir::Value {
     if (!aggref || !builder_) {
         PGX_ERROR("Invalid Aggref parameters");
         return nullptr;
@@ -1712,7 +1772,7 @@ auto PostgreSQLASTTranslator::translateAggref(Aggref* aggref) -> ::mlir::Value {
     return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI64Type());
 }
 
-auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateNullTest(NullTest* nullTest) -> ::mlir::Value {
     if (!nullTest || !builder_) {
         PGX_ERROR("Invalid NullTest parameters");
         return nullptr;
@@ -1736,7 +1796,7 @@ auto PostgreSQLASTTranslator::translateNullTest(NullTest* nullTest) -> ::mlir::V
     return isNullOp;
 }
 
-auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value {
     if (!coalesceExpr || !builder_) {
         PGX_ERROR("Invalid CoalesceExpr parameters");
         return nullptr;
@@ -1749,7 +1809,7 @@ auto PostgreSQLASTTranslator::translateCoalesceExpr(CoalesceExpr* coalesceExpr) 
 }
 
 // PostgreSQL schema access helpers
-auto PostgreSQLASTTranslator::getTableNameFromRTE(int varno) -> std::string {
+auto PostgreSQLASTTranslator::Impl::getTableNameFromRTE(int varno) -> std::string {
     if (!currentPlannedStmt_ || !currentPlannedStmt_->rtable || varno <= 0) {
         PGX_WARNING("Cannot access rtable: currentPlannedStmt="
                     + std::to_string(reinterpret_cast<uintptr_t>(currentPlannedStmt_))
@@ -1783,7 +1843,7 @@ auto PostgreSQLASTTranslator::getTableNameFromRTE(int varno) -> std::string {
 #endif
 }
 
-auto PostgreSQLASTTranslator::getColumnNameFromSchema(int varno, int varattno) -> std::string {
+auto PostgreSQLASTTranslator::Impl::getColumnNameFromSchema(int varno, int varattno) -> std::string {
     if (!currentPlannedStmt_ || !currentPlannedStmt_->rtable || varno <= 0 || varattno <= 0) {
         PGX_WARNING("Cannot access schema for column: varno=" + std::to_string(varno)
                     + " varattno=" + std::to_string(varattno));
@@ -1821,8 +1881,8 @@ auto PostgreSQLASTTranslator::getColumnNameFromSchema(int varno, int varattno) -
 #endif
 }
 
-auto PostgreSQLASTTranslator::getAllTableColumnsFromSchema(int scanrelid) -> std::vector<ColumnInfo> {
-    std::vector<ColumnInfo> columns;
+auto PostgreSQLASTTranslator::Impl::getAllTableColumnsFromSchema(int scanrelid) -> std::vector<PostgreSQLASTTranslator::ColumnInfo> {
+    std::vector<PostgreSQLASTTranslator::ColumnInfo> columns;
 
 #ifdef BUILDING_UNIT_TESTS
     // In unit test environment, return hardcoded schema for test_arithmetic table
