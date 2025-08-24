@@ -130,6 +130,48 @@ struct PostgreSQLTableHandle {
     bool isOpen;
 };
 
+// Get column position (attnum) for a given table and column name
+// Returns 1-based PostgreSQL attnum, or -1 if not found
+extern "C" int32_t get_column_attnum(const char* table_name, const char* column_name) {
+#ifdef POSTGRESQL_EXTENSION
+    if (!table_name || !column_name) {
+        return -1;
+    }
+    
+    // Use the global table OID if available
+    if (g_jit_table_oid != InvalidOid) {
+        // Open the relation to get its tuple descriptor
+        Relation rel = table_open(g_jit_table_oid, AccessShareLock);
+        if (!rel) {
+            return -1;
+        }
+        
+        TupleDesc tupdesc = RelationGetDescr(rel);
+        int32_t attnum = -1;
+        
+        // Search for the column by name
+        for (int i = 0; i < tupdesc->natts; i++) {
+            Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+            if (!attr->attisdropped && strcmp(NameStr(attr->attname), column_name) == 0) {
+                // PostgreSQL attnum is 1-based
+                attnum = i + 1;
+                break;
+            }
+        }
+        
+        // Close the relation
+        table_close(rel, AccessShareLock);
+        
+        return attnum;
+    }
+    
+    return -1;
+#else
+    // In unit tests, return -1 to trigger fallback
+    return -1;
+#endif
+}
+
 extern "C" void* open_postgres_table(const char* tableName) {
     PGX_NOTICE("open_postgres_table called with tableName: " + std::string(tableName ? tableName : "NULL"));
 

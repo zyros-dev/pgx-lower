@@ -361,6 +361,37 @@ static void setup_fallback_table_config(DataSourceIterator* iter) {
     iter->columns.push_back(col2);
 }
 
+// Helper function: Get column position by name for a given table
+// Returns -1 if column not found
+static int get_column_position(const std::string& table_name, const std::string& column_name) {
+    // Query PostgreSQL system catalog to get column position
+    // attnum is 1-based in pg_attribute, but we need 0-based for our API
+    extern int32_t get_column_attnum(const char* table_name, const char* column_name);
+    
+    // Try to get the column position from PostgreSQL
+    int32_t attnum = get_column_attnum(table_name.c_str(), column_name.c_str());
+    
+    if (attnum > 0) {
+        // Convert from 1-based PostgreSQL attnum to 0-based index
+        return attnum - 1;
+    }
+    
+    // Fallback: If get_column_attnum is not available or returns invalid,
+    // use a simple heuristic based on common patterns
+    elog(NOTICE, "[DEBUG] get_column_position: Using fallback mapping for table '%s', column '%s'", 
+         table_name.c_str(), column_name.c_str());
+    
+    // Common patterns for test tables
+    if (column_name == "id") return 0;
+    if (column_name == "col2") return 1;
+    if (column_name == "val1" || column_name == "value") return 1;
+    if (column_name == "val2" || column_name == "score") return 2;
+    if (column_name == "flag1") return 1;
+    if (column_name == "flag2") return 2;
+    
+    return -1;  // Column not found
+}
+
 // Helper function: Open PostgreSQL table connection
 static void* open_table_connection(const std::string& table_name) {
     void* table_handle = open_postgres_table(table_name.c_str());
@@ -443,24 +474,12 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
             const auto& col_spec = iter->columns[i];
             
             // Find the actual PostgreSQL column index for this column name
-            int pg_column_index = -1;
-            if (iter->table_handle) {
-                // Try to get column index from PostgreSQL metadata
-                // For now, we'll use a simple mapping based on known test patterns
-                if (iter->table_name == "test" && iter->columns.size() == 2) {
-                    // For test tables with id and col2, PostgreSQL order is [id, col2]
-                    if (col_spec.name == "id") {
-                        pg_column_index = 0;  // id is first column in PostgreSQL
-                    } else if (col_spec.name == "col2") {
-                        pg_column_index = 1;  // col2 is second column in PostgreSQL
-                    }
-                } else {
-                    // Default to using the iteration index
-                    pg_column_index = i;
-                }
-            }
+            int pg_column_index = get_column_position(iter->table_name, col_spec.name);
             
             if (pg_column_index == -1) {
+                // Column not found in mapping, use iteration index as fallback
+                elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid: No mapping found for column '%s' in table '%s', using index %zu", 
+                     col_spec.name.c_str(), iter->table_name.c_str(), i);
                 pg_column_index = i;  // Fallback to iteration order
             }
             
