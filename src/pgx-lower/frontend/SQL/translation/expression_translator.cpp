@@ -11,11 +11,11 @@ auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::V
 
     switch (expr->type) {
     case T_Var:
-    case 402: // T_Var from lingo-db headers (for unit tests)
+    case LINGODB_T_VAR: // T_Var from lingo-db headers (for unit tests)
         return translateVar(reinterpret_cast<Var*>(expr));
     case T_Const: return translateConst(reinterpret_cast<Const*>(expr));
     case T_OpExpr:
-    case 403: // T_OpExpr from lingo-db headers (for unit tests)
+    case LINGODB_T_OPEXPR: // T_OpExpr from lingo-db headers (for unit tests)
         return translateOpExpr(reinterpret_cast<OpExpr*>(expr));
     case T_FuncExpr: return translateFuncExpr(reinterpret_cast<FuncExpr*>(expr));
     case T_BoolExpr: return translateBoolExpr(reinterpret_cast<BoolExpr*>(expr));
@@ -25,7 +25,7 @@ auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::V
     default:
         PGX_WARNING("Unsupported expression type: " + std::to_string(expr->type));
         // Return a placeholder constant for now
-        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
+        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
     }
 }
 
@@ -75,7 +75,7 @@ auto PostgreSQLASTTranslator::Impl::translateVar(Var* var) -> ::mlir::Value {
     else {
         // No tuple context - this shouldn't happen in properly structured queries
         PGX_WARNING("No tuple context for Var translation, using placeholder");
-        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
+        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
     }
 }
 
@@ -107,16 +107,16 @@ auto PostgreSQLASTTranslator::Impl::extractOpExprOperands(OpExpr* opExpr, ::mlir
     }
 
     // Iterate using PostgreSQL 17 style with elements array
-    for (int argIndex = 0; argIndex < opExpr->args->length && argIndex < 2; argIndex++) {
+    for (int argIndex = 0; argIndex < opExpr->args->length && argIndex < MAX_BINARY_OPERANDS; argIndex++) {
         ListCell* lc = &opExpr->args->elements[argIndex];
         Node* argNode = static_cast<Node*>(lfirst(lc));
         if (argNode) {
             ::mlir::Value argValue = translateExpression(reinterpret_cast<Expr*>(argNode));
             if (argValue) {
-                if (argIndex == 0) {
+                if (argIndex == LEFT_OPERAND_INDEX) {
                     lhs = argValue;
                 }
-                else if (argIndex == 1) {
+                else if (argIndex == RIGHT_OPERAND_INDEX) {
                     rhs = argValue;
                 }
             }
@@ -126,11 +126,11 @@ auto PostgreSQLASTTranslator::Impl::extractOpExprOperands(OpExpr* opExpr, ::mlir
     // If we couldn't extract proper operands, create placeholders
     if (!lhs) {
         PGX_WARNING("Failed to translate left operand, using placeholder");
-        lhs = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
+        lhs = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
     }
-    if (!rhs && opExpr->args->length >= 2) {
+    if (!rhs && opExpr->args->length >= MAX_BINARY_OPERANDS) {
         PGX_WARNING("Failed to translate right operand, using placeholder");
-        rhs = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
+        rhs = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
     }
 
     return lhs && rhs;
@@ -255,11 +255,8 @@ auto PostgreSQLASTTranslator::Impl::translateBoolExpr(BoolExpr* boolExpr) -> ::m
         return nullptr;
     }
 
-    // BoolExprType enum values
-    enum BoolExprType { AND_EXPR = 0, OR_EXPR = 1, NOT_EXPR = 2 };
-
     switch (boolExpr->boolop) {
-    case AND_EXPR: {
+    case BOOL_AND_EXPR: {
         ::mlir::Value result = nullptr;
 
         if (boolExpr->args && boolExpr->args->length > 0) {
@@ -296,12 +293,12 @@ auto PostgreSQLASTTranslator::Impl::translateBoolExpr(BoolExpr* boolExpr) -> ::m
 
         if (!result) {
             // Default to true if no valid expression
-            result = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 1, builder_->getI1Type());
+            result = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_BOOL, builder_->getI1Type());
         }
         return result;
     }
 
-    case OR_EXPR: {
+    case BOOL_OR_EXPR: {
         ::mlir::Value result = nullptr;
 
         if (boolExpr->args && boolExpr->args->length > 0) {
@@ -338,12 +335,12 @@ auto PostgreSQLASTTranslator::Impl::translateBoolExpr(BoolExpr* boolExpr) -> ::m
 
         if (!result) {
             // Default to false if no valid expression
-            result = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI1Type());
+            result = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_BOOL_FALSE, builder_->getI1Type());
         }
         return result;
     }
 
-    case NOT_EXPR: {
+    case BOOL_NOT_EXPR: {
         // NOT has single argument
         ::mlir::Value argVal = nullptr;
 
@@ -361,7 +358,7 @@ auto PostgreSQLASTTranslator::Impl::translateBoolExpr(BoolExpr* boolExpr) -> ::m
         if (!argVal) {
             // Default argument if none provided
             PGX_WARNING("NOT expression has no valid argument, using placeholder");
-            argVal = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 1, builder_->getI1Type());
+            argVal = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_BOOL, builder_->getI1Type());
         }
 
         // Ensure argument is boolean
@@ -420,7 +417,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
         // Implement absolute value using comparison and negation
         // Since DB dialect doesn't have AbsOp, use arith operations
         {
-            auto zero = builder_->create<mlir::arith::ConstantIntOp>(loc, 0, args[0].getType());
+            auto zero = builder_->create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, args[0].getType());
             auto cmp = builder_->create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, args[0], zero);
             auto neg = builder_->create<mlir::arith::SubIOp>(loc, zero, args[0]);
             return builder_->create<mlir::arith::SelectOp>(loc, cmp, neg, args[0]);
@@ -458,7 +455,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
             return nullptr;
         }
         PGX_WARNING("LENGTH function not yet implemented");
-        return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, builder_->getI32Type());
+        return builder_->create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
 
     case PG_F_CEIL_FLOAT8:
     case PG_F_FLOOR_FLOAT8:
@@ -488,7 +485,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
         else {
             // No arguments - return a constant of the result type
             if (resultType.isIntOrIndex()) {
-                return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, resultType);
+                return builder_->create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, resultType);
             }
             else if (resultType.isa<mlir::FloatType>()) {
                 return builder_->create<mlir::arith::ConstantFloatOp>(loc,
@@ -497,7 +494,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
             }
             else {
                 // Default to i32 zero
-                return builder_->create<mlir::arith::ConstantIntOp>(loc, 0, builder_->getI32Type());
+                return builder_->create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
             }
         }
     }
@@ -513,7 +510,7 @@ auto PostgreSQLASTTranslator::Impl::translateAggref(Aggref* aggref) -> ::mlir::V
     // Aggregate functions are handled differently - they need to be in aggregation context
     PGX_WARNING("Aggref translation requires aggregation context");
 
-    return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI64Type());
+    return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_INT, builder_->getI64Type());
 }
 
 auto PostgreSQLASTTranslator::Impl::translateNullTest(NullTest* nullTest) -> ::mlir::Value {
@@ -533,7 +530,7 @@ auto PostgreSQLASTTranslator::Impl::translateNullTest(NullTest* nullTest) -> ::m
     auto isNullOp = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), argVal);
 
     // Handle IS NOT NULL case
-    if (nullTest->nulltesttype == 1) { // IS_NOT_NULL
+    if (nullTest->nulltesttype == PG_IS_NOT_NULL) { // IS_NOT_NULL
         return builder_->create<mlir::db::NotOp>(builder_->getUnknownLoc(), isNullOp);
     }
 
@@ -549,5 +546,5 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
     // COALESCE returns first non-null argument
     PGX_WARNING("CoalesceExpr translation not fully implemented");
 
-    return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, builder_->getI32Type());
+    return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
 }

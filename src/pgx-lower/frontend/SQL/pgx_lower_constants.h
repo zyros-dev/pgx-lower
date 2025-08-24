@@ -99,10 +99,37 @@ constexpr Oid PG_F_FLOAT8_TEXT = 233;   // float8 to text
 // PostgreSQL System Constants (defined after PostgreSQL headers are included)
 constexpr Oid FIRST_NORMAL_OBJECT_ID = 16384; // FirstNormalObjectId - defined explicitly to avoid header dependency
 
+// Node Type Constants (for unit test compatibility with lingo-db headers)
+constexpr int LINGODB_T_VAR = 402;      // T_Var from lingo-db headers (unit tests)
+constexpr int LINGODB_T_OPEXPR = 403;   // T_OpExpr from lingo-db headers (unit tests)
+
+// Boolean Expression Type Constants
+constexpr int BOOL_AND_EXPR = 0;        // BoolExprType AND
+constexpr int BOOL_OR_EXPR = 1;         // BoolExprType OR  
+constexpr int BOOL_NOT_EXPR = 2;        // BoolExprType NOT
+
+// PostgreSQL Null Test Constants
+constexpr int PG_IS_NULL = 0;           // IS NULL test
+constexpr int PG_IS_NOT_NULL = 1;       // IS NOT NULL test
+
 // Column naming patterns (only for generated columns, not schema assumptions)
 constexpr const char* GENERATED_COLUMN_PREFIX = "col_";
 constexpr const char* COMPUTED_EXPRESSION_SCOPE = "map";
 constexpr const char* AGGREGATION_RESULT_COLUMN = "aggr_result";
+
+// =============================================================================
+// EXPRESSION TRANSLATION CONSTANTS
+// =============================================================================
+
+// Expression Processing Constants
+constexpr int MAX_BINARY_OPERANDS = 2;  // Maximum operands for binary operations
+constexpr int LEFT_OPERAND_INDEX = 0;   // Left operand array index
+constexpr int RIGHT_OPERAND_INDEX = 1;  // Right operand array index
+
+// Default Placeholder Values
+constexpr int DEFAULT_PLACEHOLDER_INT = 0;       // Default integer placeholder
+constexpr int DEFAULT_PLACEHOLDER_BOOL = 1;      // Default boolean true
+constexpr int DEFAULT_PLACEHOLDER_BOOL_FALSE = 0; // Default boolean false
 
 // =============================================================================
 // CONFIGURATION LIMITS
