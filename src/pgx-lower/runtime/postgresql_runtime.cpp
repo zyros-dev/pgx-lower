@@ -200,7 +200,10 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_null_flag, int32_t value) {
     elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 ENTRY: value=%d, is_null_flag=%s",
          value, is_null_flag ? "true" : "false");
-    bool is_null = is_null_flag;
+    // CRITICAL FIX: MLIR passes validity flag (true = valid/not-null)
+    // but this function expects is_null flag (true = null)
+    // So we must invert the flag!
+    bool is_null = !is_null_flag;  // INVERTED: is_null_flag is actually is_valid_flag from MLIR
 
     auto* tb = static_cast<TableBuilder*>(builder);
     if (tb) {
@@ -232,7 +235,10 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_null_flag, bool value) {
     elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool called: value=%s, is_null_flag=%s",
          value ? "true" : "false", is_null_flag ? "true" : "false");
-    bool is_null = is_null_flag;
+    // CRITICAL FIX: MLIR passes validity flag (true = valid/not-null)
+    // but this function expects is_null flag (true = null)
+    // So we must invert the flag!
+    bool is_null = !is_null_flag;  // INVERTED: is_null_flag is actually is_valid_flag from MLIR
 
     auto* tb = static_cast<TableBuilder*>(builder);
     if (tb) {

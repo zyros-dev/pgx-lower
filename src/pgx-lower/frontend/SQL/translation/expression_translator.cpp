@@ -604,12 +604,12 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
         }
     }
     
-    // Build common type based on nullability of arguments
-    mlir::Type commonType = hasNullable 
-        ? mlir::Type(mlir::db::NullableType::get(&context_, baseType))
-        : baseType;
+    // COALESCE should always produce nullable type in query contexts
+    // Even when all inputs are non-nullable, the result needs nullable wrapper
+    // for proper MaterializeOp handling
+    mlir::Type commonType = mlir::db::NullableType::get(&context_, baseType);
     
-    PGX_INFO("COALESCE common type determined - nullable: " + std::to_string(hasNullable));
+    PGX_INFO("COALESCE common type determined - forcing nullable for query context");
     
     // Now convert arguments to common type only if necessary
     for (size_t i = 0; i < translatedArgs.size(); ++i) {
@@ -617,7 +617,7 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
         
         if (val.getType() != commonType) {
             // Need to convert to common type
-            if (hasNullable && !val.getType().isa<mlir::db::NullableType>()) {
+            if (!val.getType().isa<mlir::db::NullableType>()) {
                 PGX_INFO("Wrapping non-nullable argument " + std::to_string(i) + " to match common nullable type");
                 // Wrap non-nullable value in nullable type with explicit false null flag
                 auto falseFlag = builder_->create<mlir::arith::ConstantIntOp>(
@@ -659,7 +659,7 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
         builder_->setInsertionPointToEnd(thenBlock);
         // Cast value if needed
         mlir::Value thenValue = value;
-        if (value.getType() != commonType && hasNullable && !value.getType().isa<mlir::db::NullableType>()) {
+        if (value.getType() != commonType && !value.getType().isa<mlir::db::NullableType>()) {
             auto falseFlag = builder_->create<mlir::arith::ConstantIntOp>(loc, 0, 1);
             thenValue = builder_->create<mlir::db::AsNullableOp>(loc, commonType, value, falseFlag);
         }
@@ -682,18 +682,10 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
     
     // Log result type info
     bool resultIsNullable = result.getType().isa<mlir::db::NullableType>();
-    PGX_INFO("COALESCE final result is nullable: " + std::to_string(resultIsNullable) + 
-             ", hasNullable: " + std::to_string(hasNullable));
+    PGX_INFO("COALESCE final result is nullable: " + std::to_string(resultIsNullable));
     
-    // Unpack nullable result if the common type isn't nullable  
-    // This handles cases where all inputs are non-nullable but the scf.IfOp
-    // still produces a nullable type due to structural type conversion
-    if (result.getType().isa<mlir::db::NullableType>() && !hasNullable) {
-        PGX_INFO("COALESCE: Unpacking nullable result since all inputs were non-nullable");
-        auto baseType = result.getType().cast<mlir::db::NullableType>().getType();
-        result = builder_->create<mlir::db::NullableGetVal>(
-            builder_->getUnknownLoc(), baseType, result);
-    }
+    // COALESCE always returns nullable type for query context compatibility
+    // No unpacking needed - MaterializeOp requires nullable types
     
     return result;
 }
