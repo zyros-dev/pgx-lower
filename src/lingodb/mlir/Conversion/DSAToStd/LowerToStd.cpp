@@ -138,7 +138,7 @@ struct DSAToStdLoweringPass : public PassWrapper<DSAToStdLoweringPass, Operation
              PGX_ERROR("[DSAToStd] applyFullConversion FAILED");
              conversionSucceeded = false;
           } else {
-             PGX_INFO("[DSAToStd] applyFullConversion SUCCEEDED");  
+             PGX_INFO("[DSAToStd] applyFullConversion SUCCEEDED");
              conversionSucceeded = true;
           }
       #ifdef POSTGRESQL_EXTENSION

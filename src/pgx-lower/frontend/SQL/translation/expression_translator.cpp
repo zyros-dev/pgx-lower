@@ -3,11 +3,12 @@
 using namespace pgx_lower::frontend::sql::constants;
 
 auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::Value {
+    PGX_LOG(AST_TRANSLATE, IO, "translateExpression IN: PostgreSQL Expr type=%d", expr ? expr->type : -1);
+
     if (!expr) {
         PGX_ERROR("Expression is null");
         return nullptr;
     }
-
 
     switch (expr->type) {
     case T_Var:
@@ -22,11 +23,19 @@ auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::V
     case T_Aggref: return translateAggref(reinterpret_cast<Aggref*>(expr));
     case T_NullTest: return translateNullTest(reinterpret_cast<NullTest*>(expr));
     case T_CoalesceExpr: return translateCoalesceExpr(reinterpret_cast<CoalesceExpr*>(expr));
-    default:
-        PGX_WARNING("Unsupported expression type: " + std::to_string(expr->type));
+    default: {
+        PGX_WARNING("Unsupported expression type: %d", expr->type);
         // Return a placeholder constant for now
-        return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
+        auto result = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(),
+                                                                   DEFAULT_PLACEHOLDER_INT,
+                                                                   builder_->getI32Type());
+
+        PGX_LOG(AST_TRANSLATE, IO, "translateExpression OUT: MLIR Value (placeholder for unsupported type %d)", expr->type);
+        return result;
     }
+    }
+
+    PGX_LOG(AST_TRANSLATE, IO, "translateExpression OUT: MLIR Value (expression type %d)", expr->type);
 }
 
 auto PostgreSQLASTTranslator::Impl::translateVar(Var* var) -> ::mlir::Value {
@@ -101,7 +110,7 @@ auto PostgreSQLASTTranslator::Impl::extractOpExprOperands(OpExpr* opExpr, ::mlir
 
     // Safety check for elements array (PostgreSQL 17)
     if (!opExpr->args->elements) {
-        PGX_WARNING("OpExpr args list has length " + std::to_string(opExpr->args->length) + " but no elements array");
+        PGX_WARNING("OpExpr args list has length %d but no elements array", opExpr->args->length);
         PGX_WARNING("This suggests the test setup needs to properly initialize the List structure");
         // This will help us identify when this is happening
         return false;
@@ -241,7 +250,7 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
     }
 
     // Unsupported operator
-    PGX_WARNING("Unsupported operator OID: " + std::to_string(opOid));
+    PGX_WARNING("Unsupported operator OID: %d", opOid);
     return lhs; // Return first operand as placeholder
 }
 
@@ -370,7 +379,7 @@ auto PostgreSQLASTTranslator::Impl::translateBoolExpr(BoolExpr* boolExpr) -> ::m
         return builder_->create<::mlir::db::NotOp>(builder_->getUnknownLoc(), argVal);
     }
 
-    default: PGX_ERROR("Unknown BoolExpr type: " + std::to_string(boolExpr->boolop)); return nullptr;
+    default: PGX_ERROR("Unknown BoolExpr type: %d", boolExpr->boolop); return nullptr;
     }
 }
 
@@ -412,7 +421,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
     case PG_F_ABS_FLOAT4:
     case PG_F_ABS_FLOAT8:
         if (args.size() != 1) {
-            PGX_ERROR("ABS requires exactly 1 argument, got " + std::to_string(args.size()));
+            PGX_ERROR("ABS requires exactly 1 argument, got %d", args.size());
             return nullptr;
         }
         // Implement absolute value using comparison and negation
@@ -470,7 +479,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
 
     default: {
         // Unknown function - try to determine result type from funcresulttype
-        PGX_WARNING("Unknown function OID " + std::to_string(funcExpr->funcid) + ", creating placeholder");
+        PGX_WARNING("Unknown function OID %d, creating placeholder", funcExpr->funcid);
 
         // Map result type
         PostgreSQLTypeMapper typeMapper(context_);
@@ -547,7 +556,9 @@ auto PostgreSQLASTTranslator::Impl::translateNullTest(NullTest* nullTest) -> ::m
 }
 
 auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value {
-    PGX_INFO("translateCoalesceExpr: Starting COALESCE translation");
+    PGX_LOG(AST_TRANSLATE, IO, "translateCoalesceExpr IN: CoalesceExpr with %d arguments",
+            coalesceExpr && coalesceExpr->args ? coalesceExpr->args->length : 0);
+    
     if (!coalesceExpr || !builder_) {
         PGX_ERROR("Invalid CoalesceExpr parameters");
         return nullptr;
@@ -561,18 +572,18 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
         return builder_->create<mlir::db::NullOp>(builder_->getUnknownLoc(), nullType);
     }
     
-    PGX_INFO("COALESCE has " + std::to_string(coalesceExpr->args->length) + " arguments");
+    PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE has %d arguments", coalesceExpr->args->length);
 
     // First, translate all arguments
     std::vector<::mlir::Value> translatedArgs;
     
     ListCell* cell;
     foreach(cell, coalesceExpr->args) {
-        PGX_INFO("Translating COALESCE argument");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating COALESCE argument");
         Expr* expr = reinterpret_cast<Expr*>(lfirst(cell));
         ::mlir::Value val = translateExpression(expr);
         if (val) {
-            PGX_INFO("Argument translated successfully");
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Argument translated successfully");
             translatedArgs.push_back(val);
         } else {
             PGX_WARNING("Failed to translate COALESCE argument");
@@ -609,7 +620,7 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
     // for proper MaterializeOp handling
     mlir::Type commonType = mlir::db::NullableType::get(&context_, baseType);
     
-    PGX_INFO("COALESCE common type determined - forcing nullable for query context");
+    PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE common type determined - forcing nullable for query context");
     
     // Now convert arguments to common type only if necessary
     for (size_t i = 0; i < translatedArgs.size(); ++i) {
@@ -618,7 +629,7 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
         if (val.getType() != commonType) {
             // Need to convert to common type
             if (!val.getType().isa<mlir::db::NullableType>()) {
-                PGX_INFO("Wrapping non-nullable argument " + std::to_string(i) + " to match common nullable type");
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Wrapping non-nullable argument %zu to match common nullable type", i);
                 // Wrap non-nullable value in nullable type with explicit false null flag
                 auto falseFlag = builder_->create<mlir::arith::ConstantIntOp>(
                     builder_->getUnknownLoc(), 0, 1);
@@ -634,7 +645,6 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
     }
     
     // COALESCE using simplified recursive pattern that's safer
-    // Reverting to working pattern while maintaining LingoDB semantics
     std::function<mlir::Value(size_t)> buildCoalesceRecursive = [&](size_t index) -> mlir::Value {
         auto loc = builder_->getUnknownLoc();
         
@@ -682,10 +692,12 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
     
     // Log result type info
     bool resultIsNullable = result.getType().isa<mlir::db::NullableType>();
-    PGX_INFO("COALESCE final result is nullable: " + std::to_string(resultIsNullable));
+    PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE final result is nullable: %d", resultIsNullable);
     
     // COALESCE always returns nullable type for query context compatibility
     // No unpacking needed - MaterializeOp requires nullable types
+    bool resultIsNullableType = result.getType().isa<mlir::db::NullableType>();
+    PGX_LOG(AST_TRANSLATE, IO, "translateCoalesceExpr OUT: MLIR Value (nullable=%d)", resultIsNullableType);
     
     return result;
 }

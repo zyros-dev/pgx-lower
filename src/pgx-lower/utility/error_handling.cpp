@@ -64,11 +64,11 @@ auto ErrorInfo::getFormattedMessage() const -> std::string {
 
 void PostgreSQLErrorHandler::handleError(const ErrorInfo& error) {
     switch (error.severity) {
-    case ErrorSeverity::INFO_LEVEL: PGX_INFO(error.getFormattedMessage()); break;
-    case ErrorSeverity::WARNING_LEVEL: PGX_WARNING(error.getFormattedMessage()); break;
-    case ErrorSeverity::ERROR_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
-    case ErrorSeverity::FATAL_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
-    default: PGX_ERROR(error.getFormattedMessage()); break;
+    case ErrorSeverity::INFO_LEVEL: PGX_INFO(error.getFormattedMessage().c_str()); break;
+    case ErrorSeverity::WARNING_LEVEL: PGX_WARNING("%s", error.getFormattedMessage().c_str()); break;
+    case ErrorSeverity::ERROR_LEVEL: PGX_ERROR("%s", error.getFormattedMessage().c_str()); break;
+    case ErrorSeverity::FATAL_LEVEL: PGX_ERROR("%s", error.getFormattedMessage().c_str()); break;
+    default: PGX_ERROR("%s", error.getFormattedMessage().c_str()); break;
     }
 }
 
@@ -81,11 +81,11 @@ bool PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const {
 void PostgreSQLErrorHandler::handleError(const ErrorInfo& error) {
     // Fallback to PGX logging when not in PostgreSQL extension
     switch (error.severity) {
-    case ErrorSeverity::INFO_LEVEL: PGX_INFO(error.getFormattedMessage()); break;
-    case ErrorSeverity::WARNING_LEVEL: PGX_WARNING(error.getFormattedMessage()); break;
-    case ErrorSeverity::ERROR_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
-    case ErrorSeverity::FATAL_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
-    default: PGX_ERROR(error.getFormattedMessage()); break;
+    case ErrorSeverity::INFO_LEVEL: PGX_INFO(error.getFormattedMessage().c_str()); break;
+    case ErrorSeverity::WARNING_LEVEL: PGX_WARNING("%s", error.getFormattedMessage().c_str()); break;
+    case ErrorSeverity::ERROR_LEVEL: PGX_ERROR("%s", error.getFormattedMessage().c_str()); break;
+    case ErrorSeverity::FATAL_LEVEL: PGX_ERROR("%s", error.getFormattedMessage().c_str()); break;
+    default: PGX_ERROR("%s", error.getFormattedMessage().c_str()); break;
     }
 }
 
@@ -99,11 +99,11 @@ auto PostgreSQLErrorHandler::shouldAbortOnError(const ErrorInfo& error) const ->
 
 void ConsoleErrorHandler::handleError(const ErrorInfo& error) {
     switch (error.severity) {
-    case ErrorSeverity::INFO_LEVEL: PGX_INFO(error.getFormattedMessage()); break;
-    case ErrorSeverity::WARNING_LEVEL: PGX_WARNING(error.getFormattedMessage()); break;
-    case ErrorSeverity::ERROR_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
-    case ErrorSeverity::FATAL_LEVEL: PGX_ERROR(error.getFormattedMessage()); break;
-    default: PGX_ERROR(error.getFormattedMessage()); break;
+    case ErrorSeverity::INFO_LEVEL: PGX_INFO(error.getFormattedMessage().c_str()); break;
+    case ErrorSeverity::WARNING_LEVEL: PGX_WARNING("%s", error.getFormattedMessage().c_str()); break;
+    case ErrorSeverity::ERROR_LEVEL: PGX_ERROR("%s", error.getFormattedMessage().c_str()); break;
+    case ErrorSeverity::FATAL_LEVEL: PGX_ERROR("%s", error.getFormattedMessage().c_str()); break;
+    default: PGX_ERROR("%s", error.getFormattedMessage().c_str()); break;
     }
 }
 

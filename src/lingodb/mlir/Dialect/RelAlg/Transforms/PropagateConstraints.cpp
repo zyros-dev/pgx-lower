@@ -4,8 +4,8 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Pass/Pass.h"
+#include "pgx-lower/utility/logging.h"
 
-#include <iostream>
 #include <unordered_set>
 
 #include "llvm/ADT/EquivalenceClasses.h"
@@ -92,7 +92,7 @@ class ReduceAggrKeyPattern : public mlir::RewritePattern {
             }
             return attr;
          });
-         std::cout << "before: " << keys.size() << " after: " << reducedKeys.size() << std::endl;
+         PGX_LOG(RELALG_LOWER, DEBUG, "Key reduction - before: %zu, after: %zu", keys.size(), reducedKeys.size());
          return mlir::success();
       }
       return mlir::failure();
@@ -146,8 +146,6 @@ class ExpandTransitiveEqualities : public ::mlir::PassWrapper<ExpandTransitiveEq
                auto xName = colManager.getName(xData);
                auto yName = colManager.getName(yData);
                additionalConstrains.push_back(std::make_pair(xData, yData));
-               //std::cout << xName.first << "::" << xName.second << "=" << yName.first << "::" << yName.second << "\n";
-               //std::cout << yData << " < " << xData << std::endl;
             }
          }
       }

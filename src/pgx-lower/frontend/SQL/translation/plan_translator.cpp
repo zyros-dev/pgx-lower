@@ -31,7 +31,7 @@ auto PostgreSQLASTTranslator::Impl::translatePlanNode(Plan* plan, TranslationCon
     case T_Sort: result = translateSort(reinterpret_cast<Sort*>(plan), context); break;
     case T_Limit: result = translateLimit(reinterpret_cast<Limit*>(plan), context); break;
     case T_Gather: result = translateGather(reinterpret_cast<Gather*>(plan), context); break;
-    default: PGX_ERROR("Unsupported plan node type: " + std::to_string(plan->type)); result = nullptr;
+    default: PGX_ERROR("Unsupported plan node type: %d", plan->type); result = nullptr;
     }
 
     return result;
@@ -256,11 +256,11 @@ auto PostgreSQLASTTranslator::Impl::translateLimit(Limit* limit, TranslationCont
     }
 
     if (limitCount < 0) {
-        PGX_WARNING("Invalid negative limit count: " + std::to_string(limitCount));
+        PGX_WARNING("Invalid negative limit count: %d", limitCount);
         limitCount = DEFAULT_LIMIT_COUNT;
     }
     else if (limitCount > MAX_LIMIT_COUNT) {
-        PGX_WARNING("Very large limit count: " + std::to_string(limitCount));
+        PGX_WARNING("Very large limit count: %d", limitCount);
     }
 
     if (limitOffset < 0) {
@@ -339,14 +339,14 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
         tableOid = getTableOidFromRTE(context.currentStmt, seqScan->scan.scanrelid);
         
         if (tableName.empty()) {
-            PGX_WARNING("Could not resolve table name for scanrelid: " + std::to_string(seqScan->scan.scanrelid));
+            PGX_WARNING("Could not resolve table name for scanrelid: %d", seqScan->scan.scanrelid);
             // TODO: This should be a runtime error - the table doesn't exist
             // Only fall back to generic name if catalog lookup fails
             tableName = std::string(FALLBACK_TABLE_PREFIX) + std::to_string(seqScan->scan.scanrelid);
             tableOid = FIRST_NORMAL_OBJECT_ID + seqScan->scan.scanrelid - 1;
         }
     } else {
-        PGX_ERROR("Invalid scan relation ID: " + std::to_string(seqScan->scan.scanrelid));
+        PGX_ERROR("Invalid scan relation ID: %d", seqScan->scan.scanrelid);
         return nullptr;
     }
 
@@ -424,7 +424,7 @@ auto PostgreSQLASTTranslator::Impl::createQueryFunction(::mlir::OpBuilder& build
 
         return queryFunc;
     } catch (const std::exception& e) {
-        PGX_ERROR("Exception creating query function: " + std::string(e.what()));
+        PGX_ERROR("Exception creating query function: %s", e.what());
         return nullptr;
     } catch (...) {
         PGX_ERROR("Unknown exception creating query function");
@@ -464,7 +464,7 @@ auto PostgreSQLASTTranslator::Impl::extractTargetListColumns(TranslationContext&
 
     // Sanity check the list length
     if (listLength < 0 || listLength > MAX_LIST_LENGTH) {
-        PGX_WARNING("Invalid targetlist length: " + std::to_string(listLength));
+        PGX_WARNING("Invalid targetlist length: %d", listLength);
         return false;
     }
 
@@ -493,7 +493,7 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
     ListCell* lc = &tlist->elements[index];
     void* ptr = lfirst(lc);
     if (!ptr) {
-        PGX_WARNING("Null pointer in target list at index " + std::to_string(index));
+        PGX_WARNING("Null pointer in target list at index %d", index);
         return false;
     }
 
@@ -526,14 +526,14 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
             Var* var = reinterpret_cast<Var*>(tle->expr);
             scope = getTableNameFromRTE(context.currentStmt, var->varno);
             if (scope.empty()) {
-                PGX_ERROR("Failed to resolve table name for varno: " + std::to_string(var->varno));
+                PGX_ERROR("Failed to resolve table name for varno: %d", var->varno);
                 return false;
             }
         }
         else {
             // TODO: Should this be a fallover and fail?
             // For other expression types (like Const), use @map scope
-            PGX_WARNING("Using @map scope for expression type: " + std::to_string(tle->expr->type));
+            PGX_WARNING("Using @map scope for expression type: %d", tle->expr->type);
             scope = COMPUTED_EXPRESSION_SCOPE;
         }
 
@@ -545,10 +545,10 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
 
         return true;
     } catch (const std::exception& e) {
-        PGX_ERROR("Exception creating column reference: " + std::string(e.what()));
+        PGX_ERROR("Exception creating column reference: %s", e.what());
         return false;
     } catch (...) {
-        PGX_ERROR("Unknown exception creating column reference for: " + colName);
+        PGX_ERROR("Unknown exception creating column reference for: %s", colName.c_str());
         return false;
     }
 }
@@ -647,14 +647,14 @@ auto PostgreSQLASTTranslator::Impl::applySelectionFromQual(::mlir::Operation* in
             for (int i = 0; i < qual->length; i++) {
                 ListCell* lc = &qual->elements[i];
                 if (!lc) {
-                    PGX_WARNING("Null ListCell at index " + std::to_string(i));
+                    PGX_WARNING("Null ListCell at index %d", i);
                     continue;
                 }
 
                 Node* qualNode = static_cast<Node*>(lfirst(lc));
 
                 if (!qualNode) {
-                    PGX_WARNING("Null qual node at index " + std::to_string(i));
+                    PGX_WARNING("Null qual node at index %d", i);
                     continue;
                 }
 
@@ -679,7 +679,7 @@ auto PostgreSQLASTTranslator::Impl::applySelectionFromQual(::mlir::Operation* in
                     }
                 }
                 else {
-                    PGX_WARNING("Failed to translate qual condition at index " + std::to_string(i));
+                    PGX_WARNING("Failed to translate qual condition at index %d", i);
                 }
             }
         }
@@ -891,7 +891,7 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
         std::string typeStr;
         llvm::raw_string_ostream os(typeStr);
         inputValue.getType().print(os);
-        PGX_WARNING("MapOp input is neither TupleType nor TupleStreamType - type: " + os.str());
+        PGX_WARNING("MapOp input is neither TupleType nor TupleStreamType - type: %s", os.str().c_str());
     }
     
     // Then add our computed expression types

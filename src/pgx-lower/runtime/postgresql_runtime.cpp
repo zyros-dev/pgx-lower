@@ -7,6 +7,7 @@
 #include <json.h>
 #include "lingodb/runtime/helpers.h"
 #include "pgx-lower/runtime/tuple_access.h"
+#include "pgx-lower/utility/logging.h"
 
 extern "C" {
 #include "postgres.h"
@@ -32,9 +33,11 @@ void rt_set_execution_context(void* context_ptr) {
 }
 
 void* rt_get_execution_context() {
-    elog(NOTICE, "[DEBUG] rt_get_execution_context called");
+    PGX_LOG(RUNTIME, IO, "rt_get_execution_context IN");
+    PGX_LOG(RUNTIME, DEBUG, "rt_get_execution_context called");
     if (g_execution_context) {
-        elog(NOTICE, "[DEBUG] rt_get_execution_context returning g_execution_context: %p", g_execution_context);
+        PGX_LOG(RUNTIME, DEBUG, "rt_get_execution_context returning g_execution_context: %p", g_execution_context);
+        PGX_LOG(RUNTIME, IO, "rt_get_execution_context OUT: %p", g_execution_context);
         return g_execution_context;
     }
     static struct {
@@ -42,6 +45,7 @@ void* rt_get_execution_context() {
         int64_t row_count;
     } dummy_context = { nullptr, 1 };
     
+    PGX_LOG(RUNTIME, IO, "rt_get_execution_context OUT: %p (dummy)", &dummy_context);
     return &dummy_context;
 }
 
@@ -88,10 +92,11 @@ struct TableSpec {
 
 // JSON parsing function using nlohmann/json
 TableSpec parse_table_spec(const char* json_str) {
+    PGX_LOG(RUNTIME, IO, "parse_table_spec IN: json_str=%s", json_str ? json_str : "NULL");
     TableSpec spec;
     
     try {
-        elog(NOTICE, "[DEBUG] parse_table_spec: parsing JSON: %s", json_str);
+        PGX_LOG(RUNTIME, DEBUG, "parse_table_spec: parsing JSON: %s", json_str);
         
         using json = nlohmann::json;
         json j = json::parse(json_str);
@@ -108,12 +113,13 @@ TableSpec parse_table_spec(const char* json_str) {
             }
         }
         
-        elog(NOTICE, "[DEBUG] parse_table_spec: table=%s, columns=%zu", spec.table_name.c_str(), spec.column_names.size());
+        PGX_LOG(RUNTIME, DEBUG, "parse_table_spec: table=%s, columns=%zu", spec.table_name.c_str(), spec.column_names.size());
     } catch (const std::exception& e) {
-        elog(NOTICE, "[DEBUG] parse_table_spec: JSON parsing failed: %s", e.what());
+        PGX_LOG(RUNTIME, DEBUG, "parse_table_spec: JSON parsing failed: %s", e.what());
         // Return empty spec on error
     }
     
+    PGX_LOG(RUNTIME, IO, "parse_table_spec OUT: table=%s, columns=%zu", spec.table_name.c_str(), spec.column_names.size());
     return spec;
 }
 
@@ -135,7 +141,8 @@ static void cleanup_tablebuilder_callback(void* arg) {
 }
 
 extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime::VarLen32 schema_param) {
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_create called");
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_create IN: schema_param len=%u", schema_param.getLen());
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_create called");
     
     // Use PostgreSQL memory management instead of malloc()
     MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
@@ -146,7 +153,7 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime
     // Initialize total_columns - start with 0 and let it be set dynamically
     // This is more flexible during MLIR pipeline development
     builder->total_columns = 0;  // Will be set based on actual usage
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_create: initialized with dynamic column tracking");
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_create: initialized with dynamic column tracking");
     
     // Register cleanup callback for C++ destructor safety during PostgreSQL error recovery
     MemoryContextCallback* callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
@@ -155,12 +162,14 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime
     MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
     
     MemoryContextSwitchTo(oldcontext);
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_create returning builder: %p with %d columns and memory context callback", builder, builder->total_columns);
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_create returning builder: %p with %d columns and memory context callback", builder, builder->total_columns);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_create OUT: builder=%p, total_columns=%d", builder, builder->total_columns);
     return builder;
 }
 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_nextrow(void* builder) {
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow called with builder: %p", builder);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow IN: builder=%p", builder);
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow called with builder: %p", builder);
     
     if (builder) {
         auto* tb = static_cast<TableBuilder*>(builder);
@@ -168,24 +177,25 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_nextrow(void* b
         // LingoDB currColumn assertion pattern: verify all columns were filled
         // For now, make this more permissive during development
         if (tb->current_column_index != tb->total_columns) {
-            elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow: column count info - expected %d columns, got %d (this may be normal during MLIR pipeline development)", 
+            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: column count info - expected %d columns, got %d (this may be normal during MLIR pipeline development)", 
                  tb->total_columns, tb->current_column_index);
         } else {
-            elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow: LingoDB column validation passed - %d columns filled", tb->current_column_index);
+            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: LingoDB column validation passed - %d columns filled", tb->current_column_index);
         }
         
         tb->row_count++;
         
         // Submit the completed row to PostgreSQL
         if (tb->total_columns > 0) {
-            elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow: submitting row with %d columns", tb->total_columns);
+            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: submitting row with %d columns", tb->total_columns);
             add_tuple_to_result(tb->total_columns);
         }
         
         // Reset column index for next row (LingoDB pattern)
         tb->current_column_index = 0;
-        elog(NOTICE, "[DEBUG] rt_tablebuilder_nextrow: reset column index to 0 for row %ld", tb->row_count);
+        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: reset column index to 0 for row %ld", tb->row_count);
     }
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow OUT");
 }
 
 
@@ -198,14 +208,15 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* 
 }
 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_valid_flag, int32_t value) {
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 ENTRY: value=%d, is_valid_flag=%s",
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 IN: value=%d, is_valid_flag=%s", value, is_valid_flag ? "true" : "false");
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32 ENTRY: value=%d, is_valid_flag=%s",
          value, is_valid_flag ? "true" : "false");
     // DSAToStd passes a validity flag (could be 0xFF for true from DSA runtime)
     // Normalize to proper boolean and convert to is_null for PostgreSQL internal use
     bool is_valid = (is_valid_flag != 0);  // Normalize any non-zero to true
     bool is_null = !is_valid;
     
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: is_valid_flag=%d -> normalized is_valid=%d -> is_null=%d", 
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32: is_valid_flag=%d -> normalized is_valid=%d -> is_null=%d", 
          (int)(unsigned char)is_valid_flag, (int)is_valid, (int)is_null);
 
     auto* tb = static_cast<TableBuilder*>(builder);
@@ -214,12 +225,12 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* 
         // This handles dynamic column discovery during execution
         if (tb->current_column_index >= g_computed_results.numComputedColumns) {
             int newSize = tb->current_column_index + 1;
-            elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: expanding computed results storage from %d to %d columns", 
+            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32: expanding computed results storage from %d to %d columns", 
                  g_computed_results.numComputedColumns, newSize);
             prepare_computed_results(newSize);
         }
         
-        elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: storing value=%d with is_null=%s at column index %d", 
+        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32: storing value=%d with is_null=%s at column index %d", 
              value, is_null ? "true" : "false", tb->current_column_index);
         // Use the current column index from the TableBuilder
         store_bigint_result(tb->current_column_index, static_cast<int64_t>(value), is_null);
@@ -230,14 +241,16 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* 
             tb->total_columns = tb->current_column_index;
         }
     } else {
-        elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: null builder, using fallback column 0");
+        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32: null builder, using fallback column 0");
         store_bigint_result(0, static_cast<int64_t>(value), is_null);
     }
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 completed successfully");
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32 completed successfully");
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 OUT");
 }
 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_valid_flag, bool value) {
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool called: value=%s, is_valid_flag=%s",
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool IN: value=%s, is_valid_flag=%s", value ? "true" : "false", is_valid_flag ? "true" : "false");
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool called: value=%s, is_valid_flag=%s",
          value ? "true" : "false", is_valid_flag ? "true" : "false");
     // DSAToStd passes a validity flag (true = valid/not-null, false = null)
     // Convert to is_null for PostgreSQL internal use
@@ -249,12 +262,12 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* b
         // This handles dynamic column discovery during execution
         if (tb->current_column_index >= g_computed_results.numComputedColumns) {
             int newSize = tb->current_column_index + 1;
-            elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool: expanding computed results storage from %d to %d columns", 
+            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool: expanding computed results storage from %d to %d columns", 
                  g_computed_results.numComputedColumns, newSize);
             prepare_computed_results(newSize);
         }
         
-        elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool: storing at column index %d", tb->current_column_index);
+        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool: storing at column index %d", tb->current_column_index);
         // Use the current column index from the TableBuilder
         store_bool_result(tb->current_column_index, value, is_null);
         // Advance to next column (LingoDB pattern)
@@ -264,17 +277,20 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* b
             tb->total_columns = tb->current_column_index;
         }
     } else {
-        elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool: null builder, using fallback column 0");
+        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool: null builder, using fallback column 0");
         store_bool_result(0, value, is_null);
     }
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool completed successfully");
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool completed successfully");
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool OUT");
 }
 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_destroy(void* builder) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_destroy IN: builder=%p", builder);
     // Note: We don't need to do anything here because the MemoryContextCallback
     // will handle cleanup when the memory context is reset/deleted.
     // Calling destructor or pfree here would cause double-free issues.
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_destroy called - cleanup handled by MemoryContextCallback");
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_destroy called - cleanup handled by MemoryContextCallback");
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_destroy OUT");
 }
 
 // Memory context callback for DataSourceIterator cleanup
@@ -290,7 +306,7 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
     uint32_t actual_len = varlen32_param.getLen();
     const char* json_spec = varlen32_param.data();
     
-    elog(NOTICE, "[DEBUG] decode_table_specification: LingoDB VarLen32 len=%u", actual_len);
+    PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: LingoDB VarLen32 len=%u", actual_len);
     
     if (!json_spec || actual_len == 0) {
         return false;
@@ -300,10 +316,10 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
     PG_TRY();
     {
         std::string json_string(json_spec, actual_len);
-        elog(NOTICE, "[DEBUG] decode_table_specification: JSON string: %s", json_string.c_str());
+        PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: JSON string: %s", json_string.c_str());
         
         if (json_string[0] == '{') {
-            elog(NOTICE, "[DEBUG] decode_table_specification: valid JSON detected, parsing...");
+            PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: valid JSON detected, parsing...");
             TableSpec spec = parse_table_spec(json_string.c_str());
             
             if (!spec.table_name.empty() && !spec.column_names.empty()) {
@@ -329,13 +345,13 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
                 }
                 
                 json_parsed = true;
-                elog(NOTICE, "[DEBUG] decode_table_specification: JSON parsed successfully - table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
+                PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: JSON parsed successfully - table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
             }
         }
     }
     PG_CATCH();
     {
-        elog(NOTICE, "[DEBUG] decode_table_specification: exception reading VarLen32 JSON, using fallback");
+        PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: exception reading VarLen32 JSON, using fallback");
         FlushErrorState();
     }
     PG_END_TRY();
@@ -350,12 +366,12 @@ static void initialize_column_storage(DataSourceIterator* iter) {
     iter->bool_values.resize(iter->columns.size(), 0);
     iter->bool_nulls.resize(iter->columns.size(), true);
     
-    elog(NOTICE, "[DEBUG] initialize_column_storage: configured for table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
+    PGX_LOG(RUNTIME, DEBUG, "initialize_column_storage: configured for table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
 }
 
 // Helper function: Set up fallback table configuration
 static void setup_fallback_table_config(DataSourceIterator* iter) {
-    elog(NOTICE, "[DEBUG] setup_fallback_table_config: JSON parsing failed, using fallback defaults");
+    PGX_LOG(RUNTIME, DEBUG, "setup_fallback_table_config: JSON parsing failed, using fallback defaults");
     iter->table_name = "test_comparison";
     
     // Set up default 2-integer column layout
@@ -385,7 +401,7 @@ static int get_column_position(const std::string& table_name, const std::string&
     
     // Fallback: If get_column_attnum is not available or returns invalid,
     // use a simple heuristic based on common patterns
-    elog(NOTICE, "[DEBUG] get_column_position: Using fallback mapping for table '%s', column '%s'", 
+    PGX_LOG(RUNTIME, DEBUG, "get_column_position: Using fallback mapping for table '%s', column '%s'", 
          table_name.c_str(), column_name.c_str());
     
     // Common patterns for test tables
@@ -404,14 +420,15 @@ static void* open_table_connection(const std::string& table_name) {
     void* table_handle = open_postgres_table(table_name.c_str());
     
     if (!table_handle) {
-        elog(NOTICE, "[DEBUG] open_table_connection: open_postgres_table failed for '%s'", table_name.c_str());
+        PGX_LOG(RUNTIME, DEBUG, "open_table_connection: open_postgres_table failed for '%s'", table_name.c_str());
     }
     
     return table_handle;
 }
 
 extern "C" __attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(void* context, runtime::VarLen32 varlen32_param) {
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_start called with context: %p, varlen32_param len: %u", context, varlen32_param.getLen());
+    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_start IN: context=%p, varlen32_param len=%u", context, varlen32_param.getLen());
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_start called with context: %p, varlen32_param len: %u", context, varlen32_param.getLen());
     
     // Use PostgreSQL memory management instead of malloc()
     MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
@@ -452,23 +469,26 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(v
     }
     
     g_current_iterator = iter;
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_start returning iterator: %p", iter);
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_start returning iterator: %p", iter);
+    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_start OUT: iterator=%p", iter);
     return iter;
 }
 
 extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(void* iterator) {
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid called with iterator: %p", iterator);
+    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid IN: iterator=%p", iterator);
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid called with iterator: %p", iterator);
     if (!iterator) return false;
     
     auto* iter = (DataSourceIterator*)iterator;
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid: iter=%p, table_handle=%p", iter, iter->table_handle);
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: iter=%p, table_handle=%p", iter, iter->table_handle);
     if (!iter->table_handle) {
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid finished running with: %p branch 1 (no table_handle)", iterator);
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 1 (no table_handle)", iterator);
+        PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid OUT: false (no table_handle)");
         return false;
     }
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid: About to call read_next_tuple_from_table");
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: About to call read_next_tuple_from_table");
     int64_t read_result = read_next_tuple_from_table(iter->table_handle);
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid: read_result = %ld", read_result);
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: read_result = %ld", read_result);
     
     if (read_result == 1) {
         extern int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
@@ -485,7 +505,7 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
             
             if (pg_column_index == -1) {
                 // Column not found in mapping, use iteration index as fallback
-                elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid: No mapping found for column '%s' in table '%s', using index %zu", 
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: No mapping found for column '%s' in table '%s', using index %zu", 
                      col_spec.name.c_str(), iter->table_name.c_str(), i);
                 pg_column_index = i;  // Fallback to iteration order
             }
@@ -495,13 +515,13 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
                 bool bool_value = get_bool_field(iter->table_handle, pg_column_index, &is_null);
                 iter->bool_values[i] = bool_value ? 1 : 0;
                 iter->bool_nulls[i] = is_null;
-                elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %s (null=%s)", 
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %s (null=%s)", 
                      i, col_spec.name.c_str(), pg_column_index, bool_value ? "true" : "false", is_null ? "true" : "false");
             } else {
                 bool is_null = false;
                 iter->int_values[i] = get_int_field(iter->table_handle, pg_column_index, &is_null);
                 iter->int_nulls[i] = is_null;
-                elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", 
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", 
                      i, col_spec.name.c_str(), pg_column_index, iter->int_values[i], is_null ? "true" : "false");
             }
         }
@@ -519,19 +539,22 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
         }
         
         iter->has_current_tuple = true;
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid finished running with: %p branch 2", iterator);
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 2", iterator);
+        PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid OUT: true");
         return true;
     } else {
         iter->has_current_tuple = false;
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_isvalid finished running with: %p branch 3", iterator);
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 3", iterator);
+        PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid OUT: false");
         return false;
     }
 }
 
 extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(void* iterator, void* row_data) {
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_access called with iterator: %p, row_data: %p", iterator, row_data);
+    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_access IN: iterator=%p, row_data=%p", iterator, row_data);
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access called with iterator: %p, row_data: %p", iterator, row_data);
     if (row_data) {
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_access: row_data is valid, proceeding");
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: row_data is valid, proceeding");
         
         struct ColumnInfo {
             size_t offset;            // Offset in buffer
@@ -543,12 +566,12 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
         
         auto* iter = (DataSourceIterator*)iterator;
         if (!iter || !iter->has_current_tuple) {
-            elog(NOTICE, "[DEBUG] rt_datasourceiteration_access: invalid iterator or no current tuple");
+            PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: invalid iterator or no current tuple");
             return;
         }
         
         size_t num_columns = iter->columns.size();
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_access: handling %zu columns", num_columns);
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: handling %zu columns", num_columns);
         
         // The row_data is expected to be a dynamic structure:
         // [numRows: size_t][columnInfo[0]: 5*size_t][columnInfo[1]: 5*size_t]...[columnInfo[n]: 5*size_t]
@@ -568,7 +591,7 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
             bool is_null = (col_spec.type == ColumnType::BOOLEAN) ? iter->bool_nulls[i] : iter->int_nulls[i];
             valid_bitmaps[i] = is_null ? 0x00 : 0xFF;  // 0x00 for null, 0xFF for valid
             
-            elog(NOTICE, "[DEBUG] rt_datasourceiteration_access: column %zu is_null=%s, valid_bitmap=0x%02X", 
+            PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu is_null=%s, valid_bitmap=0x%02X", 
                  i, is_null ? "true" : "false", valid_bitmaps[i]);
             
             column_info_ptr[0] = 0;                    // offset
@@ -578,21 +601,22 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
             
             if (col_spec.type == ColumnType::BOOLEAN) {
                 column_info_ptr[3] = (size_t)&iter->bool_values[i]; // dataBuffer
-                elog(NOTICE, "[DEBUG] rt_datasourceiteration_access: column %zu (%s) boolean = %s at %p", 
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) boolean = %s at %p", 
                      i, col_spec.name.c_str(), iter->bool_values[i] ? "true" : "false", &iter->bool_values[i]);
             } else {
                 column_info_ptr[3] = (size_t)&iter->int_values[i]; // dataBuffer
-                elog(NOTICE, "[DEBUG] rt_datasourceiteration_access: column %zu (%s) integer = %d at %p", 
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) integer = %d at %p", 
                      i, col_spec.name.c_str(), iter->int_values[i], &iter->int_values[i]);
             }
         }
         
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_access: configured %zu columns successfully", num_columns);
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: configured %zu columns successfully", num_columns);
     } else {
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_access: row_data is NULL");
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: row_data is NULL");
     }
     
-    elog(NOTICE, "[DEBUG] rt_datasourceiteration_access completed successfully");
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access completed successfully");
+    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_access OUT");
     __sync_synchronize();
 }
 
@@ -618,7 +642,7 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_end(void
         
         // Note: We don't call destructor or pfree here because the MemoryContextCallback
         // will handle cleanup when the memory context is reset/deleted.
-        elog(NOTICE, "[DEBUG] rt_datasourceiteration_end: cleanup will be handled by MemoryContextCallback");
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_end: cleanup will be handled by MemoryContextCallback");
     }
 }
 

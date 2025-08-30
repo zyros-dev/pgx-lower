@@ -60,16 +60,16 @@ ExprContext* CreateExprContext(EState* estate);
 #include "mlir/Transforms/Passes.h"
 
 void logQueryDebugInfo(const PlannedStmt* stmt) {
-    PGX_INFO("=== run_mlir_with_ast_translation: Query info ===");
-    PGX_INFO("PlannedStmt ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt)));
-    PGX_INFO("planTree ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree)));
+    PGX_LOG(GENERAL, DEBUG, "=== run_mlir_with_ast_translation: Query info ===");
+    PGX_LOG(GENERAL, DEBUG, "PlannedStmt ptr: %p", stmt);
+    PGX_LOG(GENERAL, DEBUG, "planTree ptr: %p", stmt->planTree);
     if (stmt->planTree) {
-        PGX_INFO("planTree->targetlist ptr: " + std::to_string(reinterpret_cast<uintptr_t>(stmt->planTree->targetlist)));
+        PGX_LOG(GENERAL, DEBUG, "planTree->targetlist ptr: %p", stmt->planTree->targetlist);
         if (stmt->planTree->targetlist) {
-            PGX_INFO("targetlist length: " + std::to_string(list_length(stmt->planTree->targetlist)));
+            PGX_LOG(GENERAL, DEBUG, "targetlist length: %d", list_length(stmt->planTree->targetlist));
         }
         else {
-            PGX_INFO("targetlist is NULL!");
+            PGX_LOG(GENERAL, DEBUG, "targetlist is NULL!");
         }
     }
 }
@@ -96,7 +96,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
 
             if (hasComputedExpressions) {
                 selectedColumns = {-1};
-                PGX_INFO("Configured for computed expression results");
+                PGX_LOG(GENERAL, DEBUG, "Configured for computed expression results");
             }
             else {
                 // uses store_int_result which populates g_computed_results
@@ -115,8 +115,7 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
                 for (int i = 0; i < numSelectedColumns; i++) {
                     selectedColumns.push_back(-1);
                 }
-                PGX_INFO("Configured for table column results via computed storage (temporary solution) - "
-                         + std::to_string(numSelectedColumns) + " columns");
+                PGX_LOG(GENERAL, DEBUG, "Configured for table column results via computed storage (temporary solution) - %d columns", numSelectedColumns);
             }
         }
         else {
@@ -151,11 +150,11 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                     if (colIdx == i) {
                         if (tle->resname) {
                             strncpy(NameStr(resultAttr->attname), tle->resname, NAMEDATALEN - 1);
-                            PGX_INFO("Setting column " + std::to_string(i) + " name to: " + std::string(tle->resname));
+                            PGX_LOG(GENERAL, DEBUG, "Setting column %d name to: %s", i, tle->resname);
                         }
                         else {
                             snprintf(NameStr(resultAttr->attname), NAMEDATALEN, "col%d", i);
-                            PGX_INFO("Setting column " + std::to_string(i) + " name to: col" + std::to_string(i));
+                            PGX_LOG(GENERAL, DEBUG, "Setting column %d name to: col%d", i, i);
                         }
 
                         if (tle->expr && nodeTag(tle->expr) == T_Var) {
@@ -171,7 +170,7 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                             typeByVal = typByVal;
                             typeAlign = typAlign;
 
-                            PGX_INFO("Column " + std::to_string(i) + " type OID: " + std::to_string(columnType));
+                            PGX_LOG(GENERAL, DEBUG, "Column %d type OID: %d", i, columnType);
                         }
                         break;
                     }
@@ -196,12 +195,12 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
 
 bool handleMLIRResults(bool mlir_success) {
     if (mlir_success) {
-        PGX_INFO("JIT returned successfully, checking results...");
+        PGX_LOG(JIT, DEBUG, "JIT returned successfully, checking results...");
         extern bool g_jit_results_ready;
-        PGX_INFO("g_jit_results_ready = " + std::string(g_jit_results_ready ? "true" : "false"));
+        PGX_LOG(JIT, DEBUG, "g_jit_results_ready = %s", g_jit_results_ready ? "true" : "false");
         if (g_jit_results_ready) {
-            PGX_INFO("JIT execution successful - results already streamed by JIT");
-            g_jit_results_ready = false; // Reset flag
+            PGX_LOG(JIT, DEBUG, "JIT execution successful - results already streamed by JIT");
+            g_jit_results_ready = false;
         }
     }
     return mlir_success;
@@ -283,7 +282,7 @@ static void cleanupExecutionResources(EState* estate,
 static bool executeMLIRTranslation(PlannedStmt* stmt, EState* estate, ExprContext* econtext, DestReceiver* dest) {
     bool mlir_success = mlir_runner::run_mlir_with_dest_receiver(stmt, estate, econtext, dest);
 
-    PGX_INFO("mlir_runner::run_mlir_with_dest_receiver returned " + std::string(mlir_success ? "true" : "false"));
+    PGX_LOG(GENERAL, DEBUG, "mlir_runner::run_mlir_with_dest_receiver returned %s", mlir_success ? "true" : "false");
 
     if (!mlir_success) {
         PGX_ERROR("MLIR compilation failed, falling back to PostgreSQL standard execution");
@@ -362,7 +361,7 @@ bool run_mlir_with_ast_translation(const QueryDesc* queryDesc) {
     auto final_result = handleMLIRResults(mlir_success);
     cleanupExecutionResources(ctx.estate, ctx.econtext, ctx.slot, ctx.resultTupleDesc, queryDesc->dest, ctx.old_context);
 
-    PGX_INFO("run_mlir_with_ast_translation completed, returning " + std::string(final_result ? "true" : "false"));
+    PGX_LOG(GENERAL, DEBUG, "run_mlir_with_ast_translation completed, returning %s", final_result ? "true" : "false");
 
     return final_result;
 }
@@ -382,19 +381,19 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
 #ifdef POSTGRESQL_EXTENSION
     const auto capabilities = pgx_lower::QueryAnalyzer::analyzePlan(stmt);
 
-    PGX_INFO(" FORCING tree logging for all queries in comprehensive collection mode");
+    PGX_LOG(GENERAL, DEBUG, "FORCING tree logging for all queries in comprehensive collection mode");
     pgx_lower::QueryAnalyzer::validateAndLogPlanStructure(stmt);
 #else
     auto capabilities = pgx_lower::QueryAnalyzer::analyzeForTesting("test query");
 #endif
 
     if (!capabilities.isMLIRCompatible()) {
-        PGX_INFO("Query requires features not yet supported by MLIR");
+        PGX_LOG(GENERAL, DEBUG, "Query requires features not yet supported by MLIR");
         return false;
     }
 
     bool mlir_success = run_mlir_with_ast_translation(plan);
 
-    PGX_INFO("MyCppExecutor::execute completed, returning " + std::string(mlir_success ? "true" : "false"));
+    PGX_LOG(GENERAL, DEBUG, "MyCppExecutor::execute completed, returning %s", mlir_success ? "true" : "false");
     return mlir_success;
 }

@@ -19,7 +19,7 @@ namespace mlir_runner {
 // Module statistics and debugging utilities
 void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
     if (!module) {
-        PGX_WARNING("dumpModuleWithStats: Module is null for title: " + title);
+        PGX_WARNING("dumpModuleWithStats: Module is null for title: %s", title.c_str());
         return;
     }
 
@@ -74,23 +74,22 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
         });
 
         // Log comprehensive statistics
-        PGX_INFO("\n\n======= " + title + " =======");
+        PGX_LOG(GENERAL, DEBUG, "\n\n======= %s =======", title.c_str());
         std::stringstream timeStr;
         timeStr << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
-        PGX_INFO("Timestamp: " + timeStr.str());
-        PGX_INFO("Output file: " + filename.str());
+        PGX_LOG(GENERAL, DEBUG, "Timestamp: %s", timeStr.str().c_str());
+        PGX_LOG(GENERAL, DEBUG, "Output file: %s", filename.str().c_str());
 
-        // Overall statistics
-        PGX_INFO("Module Statistics:");
-        PGX_INFO("  Total Operations: " + std::to_string(totalOperations));
-        PGX_INFO("  Total Blocks: " + std::to_string(totalBlocks));
-        PGX_INFO("  Total Regions: " + std::to_string(totalRegions));
-        PGX_INFO("  Total Values: " + std::to_string(totalValues));
+        PGX_LOG(GENERAL, DEBUG, "Module Statistics:");
+        PGX_LOG(GENERAL, DEBUG, "  Total Operations: %d", totalOperations);
+        PGX_LOG(GENERAL, DEBUG, "  Total Blocks: %d", totalBlocks);
+        PGX_LOG(GENERAL, DEBUG, "  Total Regions: %d", totalRegions);
+        PGX_LOG(GENERAL, DEBUG, "  Total Values: %d", totalValues);
 
         // Dialect breakdown
-        PGX_INFO("Operations by Dialect:");
+        PGX_LOG(GENERAL, DEBUG, "Operations by Dialect:");
         for (const auto& [dialect, count] : dialectCounts) {
-            PGX_INFO("  " + dialect + ": " + std::to_string(count));
+            PGX_LOG(GENERAL, DEBUG, "  %s: %d", dialect.c_str(), count);
         }
 
         // Top 10 most frequent operations
@@ -100,9 +99,9 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
         }
         std::sort(opsByFreq.rbegin(), opsByFreq.rend());
 
-        PGX_INFO("Top Operations by Frequency:");
+        PGX_LOG(GENERAL, DEBUG, "Top Operations by Frequency:");
         for (size_t i = 0; i < std::min(size_t(10), opsByFreq.size()); ++i) {
-            PGX_INFO("  " + opsByFreq[i].second + ": " + std::to_string(opsByFreq[i].first));
+            PGX_LOG(GENERAL, DEBUG, "  %s: %d", opsByFreq[i].second.c_str(), opsByFreq[i].first);
         }
 
         // Type statistics (top 5)
@@ -112,13 +111,13 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
         }
         std::sort(typesByFreq.rbegin(), typesByFreq.rend());
 
-        PGX_INFO("Top Types by Frequency:");
+        PGX_LOG(GENERAL, DEBUG, "Top Types by Frequency:");
         for (size_t i = 0; i < std::min(size_t(5), typesByFreq.size()); ++i) {
-            PGX_INFO("  " + typesByFreq[i].second + ": " + std::to_string(typesByFreq[i].first));
+            PGX_LOG(GENERAL, DEBUG, "  %s: %d", typesByFreq[i].second.c_str(), typesByFreq[i].first);
         }
 
         bool isValid = ::mlir::succeeded(::mlir::verify(module));
-        PGX_INFO("Module Verification: " + std::string(isValid ? "PASSED" : "FAILED"));
+        PGX_LOG(GENERAL, DEBUG, "Module Verification: %s", isValid ? "PASSED" : "FAILED");
 
         // Print the actual MLIR code to logs as a formatted block
         try {
@@ -139,10 +138,10 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
             formattedMLIR << "=== END MLIR MODULE CONTENT ===\n";
 
             // Log the entire formatted block
-            PGX_INFO(formattedMLIR.str());
+            PGX_LOG(GENERAL, DEBUG, "%s", formattedMLIR.str().c_str());
 
         } catch (const std::exception& e) {
-            PGX_ERROR("Failed to print MLIR module: " + std::string(e.what()));
+            PGX_ERROR("Failed to print MLIR module: %s", e.what());
         }
 
         // Write module to file
@@ -161,17 +160,17 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
             file << moduleStr;
             file.close();
 
-            PGX_INFO("Module dumped to: " + filename.str());
+            PGX_LOG(GENERAL, DEBUG, "Module dumped to: %s", filename.str().c_str());
         }
         else {
-            PGX_WARNING("Failed to open file for writing: " + filename.str());
+            PGX_WARNING("Failed to open file for writing: %s", filename.str().c_str());
         }
 
-        PGX_INFO("=== End Module Debug Dump ===");
-        PGX_INFO("\n\n");
+        PGX_LOG(GENERAL, DEBUG, "=== End Module Debug Dump ===");
+        PGX_LOG(GENERAL, DEBUG, "\n\n");
 
     } catch (const std::exception& e) {
-        PGX_ERROR("Exception in dumpModuleWithStats: " + std::string(e.what()));
+        PGX_ERROR("Exception in dumpModuleWithStats: %s", e.what());
     } catch (...) {
         PGX_ERROR("Unknown exception in dumpModuleWithStats");
     }
@@ -179,12 +178,12 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
 
 bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {
     if (!module || !module.getOperation()) {
-        PGX_ERROR(phase + ": Module operation is null");
+        PGX_ERROR("%s: Module operation is null", phase.c_str());
         return false;
     }
 
     if (mlir::failed(mlir::verify(module.getOperation()))) {
-        PGX_ERROR(phase + ": Module verification failed");
+        PGX_ERROR("%s: Module verification failed", phase.c_str());
         return false;
     }
 

@@ -3,23 +3,20 @@
 auto getTableNameFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> std::string {
     using namespace pgx_lower::frontend::sql::constants;
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO) {
-        PGX_WARNING("Cannot access rtable: currentPlannedStmt="
-                    + std::to_string(reinterpret_cast<uintptr_t>(currentPlannedStmt))
-                    + " varno=" + std::to_string(varno));
+        PGX_WARNING("Cannot access rtable: currentPlannedStmt=%p varno=%d", currentPlannedStmt, varno);
         return "unknown_table_" + std::to_string(varno);
     }
 
     // Get RangeTblEntry from rtable using varno (1-based index)
     if (varno > list_length(currentPlannedStmt->rtable)) {
-        PGX_WARNING("varno " + std::to_string(varno) + " exceeds rtable length "
-                    + std::to_string(list_length(currentPlannedStmt->rtable)));
+        PGX_WARNING("varno %d exceeds rtable length %d", varno, list_length(currentPlannedStmt->rtable));
         return "unknown_table_" + std::to_string(varno);
     }
 
     RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
-        PGX_WARNING("Invalid RTE for varno " + std::to_string(varno));
+        PGX_WARNING("Invalid RTE for varno %d", varno);
         return "unknown_table_" + std::to_string(varno);
     }
 
@@ -37,23 +34,20 @@ auto getTableNameFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> std::str
 auto getTableOidFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> Oid {
     using namespace pgx_lower::frontend::sql::constants;
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO) {
-        PGX_WARNING("Cannot access rtable: currentPlannedStmt="
-                    + std::to_string(reinterpret_cast<uintptr_t>(currentPlannedStmt))
-                    + " varno=" + std::to_string(varno));
+        PGX_WARNING("Cannot access rtable: currentPlannedStmt=%p varno=%d", currentPlannedStmt, varno);
         return InvalidOid;
     }
 
     // Get RangeTblEntry from rtable using varno (1-based index)
     if (varno > list_length(currentPlannedStmt->rtable)) {
-        PGX_WARNING("varno " + std::to_string(varno) + " exceeds rtable length "
-                    + std::to_string(list_length(currentPlannedStmt->rtable)));
+        PGX_WARNING("varno %d exceeds rtable length %d", varno, list_length(currentPlannedStmt->rtable));
         return InvalidOid;
     }
 
     RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte) {
-        PGX_WARNING("Invalid RTE for varno " + std::to_string(varno));
+        PGX_WARNING("Invalid RTE for varno %d", varno);
         return InvalidOid;
     }
 
@@ -64,8 +58,7 @@ auto getTableOidFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> Oid {
 auto getColumnNameFromSchema(PlannedStmt* currentPlannedStmt, int varno, int varattno) -> std::string {
     using namespace pgx_lower::frontend::sql::constants;
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
-        PGX_WARNING("Cannot access schema for column: varno=" + std::to_string(varno)
-                    + " varattno=" + std::to_string(varattno));
+        PGX_WARNING("Cannot access schema for column: varno=%d varattno=%d", varno, varattno);
         return "col_" + std::to_string(varattno);
     }
 
@@ -110,7 +103,7 @@ auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid
     return columns;
 #else
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || scanrelid <= 0) {
-        PGX_WARNING("Cannot access rtable for scanrelid " + std::to_string(scanrelid));
+        PGX_WARNING("Cannot access rtable for scanrelid %d", scanrelid);
         return columns;
     }
 
@@ -130,7 +123,7 @@ auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid
     // Open relation to get schema information - CRITICAL: Preserve exact lock pattern
     Relation rel = table_open(rte->relid, AccessShareLock);
     if (!rel) {
-        PGX_ERROR("Failed to open relation " + std::to_string(rte->relid));
+        PGX_ERROR("Failed to open relation %d", rte->relid);
         return columns;
     }
 
@@ -158,7 +151,7 @@ auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid
 
     table_close(rel, AccessShareLock);
 
-    PGX_INFO("Discovered " + std::to_string(columns.size()) + " columns for scanrelid " + std::to_string(scanrelid));
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Discovered %zu columns for scanrelid %d", columns.size(), scanrelid);
     return columns;
 #endif
 }

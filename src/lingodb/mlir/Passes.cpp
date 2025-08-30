@@ -40,7 +40,7 @@ std::unique_ptr<Pass> createStandardToLLVMPass();
 
 // Phase 1: RelAlg→DB lowering pipeline (using LingoDB's pipeline)
 void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
-    PGX_INFO("createRelAlgToDBPipeline: Adding relalg to db pipeline");
+    PGX_LOG(JIT, DEBUG, "createRelAlgToDBPipeline: Adding relalg to db pipeline");
     
     if (enableVerification) {
         pm.enableVerifier(true);
@@ -52,7 +52,7 @@ void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
 
 // Phase 2a: DB→Standard lowering pipeline (using LingoDB's pipeline)
 void createDBToStandardPipeline(PassManager& pm, bool enableVerification) {
-    PGX_INFO("[createDBToStandardPipeline]: Adding DB to Standard pipeline (Phase 2a)");
+    PGX_LOG(JIT, DEBUG, "[createDBToStandardPipeline]: Adding DB to Standard pipeline (Phase 2a)");
     if (enableVerification) {
         pm.enableVerifier(true);
     }
@@ -65,7 +65,7 @@ void createDBToStandardPipeline(PassManager& pm, bool enableVerification) {
 
 // Phase 2b: DSAStandard lowering pipeline (following LingoDB sequential pattern)
 void createDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
-    PGX_INFO("[createDSAToStandardPipeline]: Adding DSA to Standard pipeline (Phase 2b)");
+    PGX_LOG(JIT, DEBUG, "[createDSAToStandardPipeline]: Adding DSA to Standard pipeline (Phase 2b)");
     if (enableVerification) {
         pm.enableVerifier(true);
     }
@@ -80,7 +80,7 @@ void createDSAToStandardPipeline(PassManager& pm, bool enableVerification) {
 }
 
 void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification) {
-    PGX_INFO("[createStandardToLLVMPipeline]: Adding DB DSA to Standard pipeline");
+    PGX_LOG(JIT, DEBUG, "[createStandardToLLVMPipeline]: Adding DB DSA to Standard pipeline");
     if (enableVerification) {
         pm.enableVerifier(true);
     }
@@ -101,7 +101,7 @@ public:
         auto module = getOperation();
         
         if (!module) {
-            PGX_WARNING("ModuleDumpPass: Module is null for phase: " + phaseName);
+            PGX_WARNING("ModuleDumpPass: Module is null for phase: %s", phaseName.c_str());
             return;
         }
 
@@ -112,8 +112,8 @@ public:
             std::ostringstream timestampStr;
             timestampStr << std::put_time(&tm, "%Y%m%d_%H%M%S");
             
-            PGX_INFO(" ");
-            PGX_INFO("=== MLIR MODULE CONTENT: " + phaseName + " ===");
+            PGX_LOG(JIT, DEBUG, " ");
+            PGX_LOG(JIT, DEBUG, "=== MLIR MODULE CONTENT: %s ===", phaseName.c_str());
             
             // Convert module to string and log line by line
             std::string moduleStr;
@@ -125,10 +125,10 @@ public:
             int lineNum = 1;
             while (std::getline(iss, line)) {
                 std::string formattedLine = llvm::formatv("{0,3}: {1}", lineNum++, line);
-                PGX_INFO(formattedLine);
+                PGX_LOG(JIT, DEBUG, "%s", formattedLine.c_str());
             }
             
-            PGX_INFO("=== END MLIR MODULE CONTENT ===");
+            PGX_LOG(JIT, DEBUG, "=== END MLIR MODULE CONTENT ===");
             
             // Optional: Dump to file for external debugging  
             std::string filename = "/tmp/pgx_lower_" + phaseName + "_" + timestampStr.str() + ".mlir";
@@ -139,14 +139,14 @@ public:
             if (file.is_open()) {
                 file << moduleStr;
                 file.close();
-                PGX_INFO("Module dumped to: " + filename);
+                PGX_LOG(JIT, DEBUG, "Module dumped to: %s", filename.c_str());
             }
             
-            PGX_INFO("=== End Module Debug Dump ===");
-            PGX_INFO(" ");
+            PGX_LOG(JIT, DEBUG, "=== End Module Debug Dump ===");
+            PGX_LOG(JIT, DEBUG, " ");
             
         } catch (const std::exception& e) {
-            PGX_ERROR("Exception in ModuleDumpPass: " + std::string(e.what()));
+            PGX_ERROR("Exception in ModuleDumpPass: %s", e.what());
         } catch (...) {
             PGX_ERROR("Unknown exception in ModuleDumpPass");
         }

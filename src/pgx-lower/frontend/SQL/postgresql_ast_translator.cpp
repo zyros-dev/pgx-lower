@@ -158,6 +158,9 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::u
 }
 
 auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
+    PGX_LOG(AST_TRANSLATE, IO, "translateQuery IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
+            plannedStmt ? plannedStmt->commandType : -1, plannedStmt ? plannedStmt->canSetTag : false);
+    
     if (!plannedStmt) {
         PGX_ERROR("PlannedStmt is null");
         return nullptr;
@@ -192,13 +195,20 @@ auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> 
     builder_ = nullptr;
     currentPlannedStmt_ = nullptr;
 
-    return std::make_unique<::mlir::ModuleOp>(module);
+    auto result = std::make_unique<::mlir::ModuleOp>(module);
+    auto numOps = module.getBody()->getOperations().size();
+    PGX_LOG(AST_TRANSLATE, IO, "translateQuery OUT: RelAlg MLIR Module with %zu operations", numOps);
+    
+    return result;
 }
 
 
 auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncOp queryFunc,
                                                        PlannedStmt* plannedStmt,
                                                        TranslationContext& context) -> bool {
+    PGX_LOG(AST_TRANSLATE, IO, "generateRelAlgOperations IN: PlannedStmt with planTree type %d",
+            plannedStmt ? (plannedStmt->planTree ? plannedStmt->planTree->type : -1) : -1);
+    
     if (!plannedStmt) {
         PGX_ERROR("PlannedStmt is null");
         return false;
@@ -216,15 +226,15 @@ auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncO
         return false;
     }
 
-    PGX_INFO("Checking if translated operation has results");
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Checking if translated operation has results");
     if (translatedOp->getNumResults() > 0) {
-        PGX_INFO("Operation has " + std::to_string(translatedOp->getNumResults()) + " results");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Operation has %d results", translatedOp->getNumResults());
         auto result = translatedOp->getResult(0);
-        PGX_INFO("Got result from translated operation");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Got result from translated operation");
 
-        PGX_INFO("Checking result type");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Checking result type");
         if (result.getType().isa<mlir::relalg::TupleStreamType>()) {
-            PGX_INFO("Result is TupleStreamType, creating MaterializeOp");
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Result is TupleStreamType, creating MaterializeOp");
             createMaterializeOp(context, result);
         }
         else {
@@ -235,6 +245,8 @@ auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncO
 
     context.builder->create<mlir::func::ReturnOp>(context.builder->getUnknownLoc());
 
+    PGX_LOG(AST_TRANSLATE, IO, "generateRelAlgOperations OUT: RelAlg operations generated successfully");
+    
     return true;
 }
 

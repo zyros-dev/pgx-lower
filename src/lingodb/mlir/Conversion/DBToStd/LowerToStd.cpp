@@ -1204,15 +1204,15 @@ void DBToStdLoweringPass::runOnOperation() {
    // Validate module before conversion
    module.walk([](Operation* op) {
        if (!op->getContext()) {
-           PGX_ERROR("[DBToStd] CRITICAL: Operation with null context: " +
-                   op->getName().getStringRef().str());
-           PGX_ERROR("DBToStd: Found operation with null context: " + op->getName().getStringRef().str());
+           PGX_ERROR("[DBToStd] CRITICAL: Operation with null context: %s",
+                   op->getName().getStringRef().str().c_str());
+           PGX_ERROR("DBToStd: Found operation with null context: %s", op->getName().getStringRef().str().c_str());
            return WalkResult::interrupt();
        }
        if (!op->getName().getDialect()) {
-           PGX_ERROR("[DBToStd] CRITICAL: Operation with null dialect: " +
-                   op->getName().getStringRef().str());
-           PGX_ERROR("DBToStd: Found operation with null dialect: " + op->getName().getStringRef().str());
+           PGX_ERROR("[DBToStd] CRITICAL: Operation with null dialect: %s",
+                   op->getName().getStringRef().str().c_str());
+           PGX_ERROR("DBToStd: Found operation with null dialect: %s", op->getName().getStringRef().str().c_str());
            return WalkResult::interrupt();
        }
        return WalkResult::advance();

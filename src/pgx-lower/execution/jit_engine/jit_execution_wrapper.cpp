@@ -30,7 +30,7 @@ extern "C" {
 ExecutionHandle* pgx_jit_create_execution_handle(ModuleHandle* module_handle) {
     if (!module_handle) {
         last_error_message = "Null module handle provided";
-        PGX_ERROR("pgx_jit_create_execution_handle: " + last_error_message);
+        PGX_ERROR("pgx_jit_create_execution_handle: %s", last_error_message.c_str());
         return nullptr;
     }
 
@@ -40,7 +40,7 @@ ExecutionHandle* pgx_jit_create_execution_handle(ModuleHandle* module_handle) {
 
         if (!exec_handle->engine->initialize(module_handle->module)) {
             last_error_message = "Failed to initialize JIT execution engine";
-            PGX_ERROR("pgx_jit_create_execution_handle: " + last_error_message);
+            PGX_ERROR("pgx_jit_create_execution_handle: %s", last_error_message.c_str());
             delete exec_handle;
             return nullptr;
         }
@@ -49,21 +49,21 @@ ExecutionHandle* pgx_jit_create_execution_handle(ModuleHandle* module_handle) {
 
         if (!exec_handle->engine->setupMemoryContexts()) {
             last_error_message = "Failed to setup memory contexts";
-            PGX_ERROR("pgx_jit_create_execution_handle: " + last_error_message);
+            PGX_ERROR("pgx_jit_create_execution_handle: %s", last_error_message.c_str());
             delete exec_handle;
             return nullptr;
         }
 
-        PGX_INFO("JIT execution handle created successfully");
+        PGX_LOG(JIT, DEBUG, "JIT execution handle created successfully");
         return exec_handle;
 
     } catch (const std::exception& e) {
         last_error_message = std::string("Exception creating JIT handle: ") + e.what();
-        PGX_ERROR("pgx_jit_create_execution_handle: " + last_error_message);
+        PGX_ERROR("pgx_jit_create_execution_handle: %s", last_error_message.c_str());
         return nullptr;
     } catch (...) {
         last_error_message = "Unknown exception creating JIT handle";
-        PGX_ERROR("pgx_jit_create_execution_handle: " + last_error_message);
+        PGX_ERROR("pgx_jit_create_execution_handle: %s", last_error_message.c_str());
         return nullptr;
     }
 }
@@ -71,13 +71,13 @@ ExecutionHandle* pgx_jit_create_execution_handle(ModuleHandle* module_handle) {
 int pgx_jit_execute_query(ExecutionHandle* exec_handle, void* estate, void* dest) {
     if (!exec_handle) {
         last_error_message = "Null execution handle";
-        PGX_ERROR("pgx_jit_execute_query: " + last_error_message);
+        PGX_ERROR("pgx_jit_execute_query: %s", last_error_message.c_str());
         return -1;
     }
 
     if (!estate || !dest) {
         last_error_message = "Null estate or destination receiver";
-        PGX_ERROR("pgx_jit_execute_query: " + last_error_message);
+        PGX_ERROR("pgx_jit_execute_query: %s", last_error_message.c_str());
         return -2;
     }
 
@@ -86,27 +86,27 @@ int pgx_jit_execute_query(ExecutionHandle* exec_handle, void* estate, void* dest
 
         if (!success) {
             last_error_message = "JIT query execution failed";
-            PGX_ERROR("pgx_jit_execute_query: " + last_error_message);
+            PGX_ERROR("pgx_jit_execute_query: %s", last_error_message.c_str());
             return -3;
         }
 
-        PGX_INFO("JIT query execution completed successfully");
+        PGX_LOG(JIT, DEBUG, "JIT query execution completed successfully");
         return 0;
 
     } catch (const std::exception& e) {
         last_error_message = std::string("Exception during JIT execution: ") + e.what();
-        PGX_ERROR("pgx_jit_execute_query: " + last_error_message);
+        PGX_ERROR("pgx_jit_execute_query: %s", last_error_message.c_str());
         return -4;
     } catch (...) {
         last_error_message = "Unknown exception during JIT execution";
-        PGX_ERROR("pgx_jit_execute_query: " + last_error_message);
+        PGX_ERROR("pgx_jit_execute_query: %s", last_error_message.c_str());
         return -5;
     }
 }
 
 void pgx_jit_destroy_execution_handle(ExecutionHandle* exec_handle) {
     if (exec_handle) {
-        PGX_DEBUG("Destroying JIT execution handle");
+        PGX_LOG(JIT, DEBUG, "Destroying JIT execution handle");
         delete exec_handle;
     }
 }
@@ -151,7 +151,7 @@ bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestRec
         PGX_ERROR("Failed to create module handle for JIT execution");
         auto error = pgx_jit_get_last_error();
         if (error) {
-            PGX_ERROR("JIT error: " + std::string(error));
+            PGX_ERROR("JIT error: %s", error);
         }
         return false;
     }
@@ -163,7 +163,7 @@ bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestRec
         PGX_ERROR("Failed to create JIT execution handle");
         auto error = pgx_jit_get_last_error();
         if (error) {
-            PGX_ERROR("JIT error: " + std::string(error));
+            PGX_ERROR("JIT error: %s", error);
         }
         return false;
     }
@@ -172,10 +172,10 @@ bool executeJITWithDestReceiver(::mlir::ModuleOp module, EState* estate, DestRec
     pgx_jit_destroy_execution_handle(execHandle);
 
     if (result != 0) {
-        PGX_ERROR("JIT query execution failed with code: " + std::to_string(result));
+        PGX_ERROR("JIT query execution failed with code: %d", result);
         auto error = pgx_jit_get_last_error();
         if (error) {
-            PGX_ERROR("JIT error: " + std::string(error));
+            PGX_ERROR("JIT error: %s", error);
         }
         return false;
     }

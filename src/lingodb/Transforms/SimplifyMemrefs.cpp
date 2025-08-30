@@ -2,7 +2,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 
-#include <iostream>
+#include "pgx-lower/utility/logging.h"
 
 #include "lingodb/mlir/Dialect/RelAlg/Passes.h"
 #include "mlir/IR/IRMapping.h"
@@ -39,7 +39,7 @@ class FoldLoadGlobal : public mlir::RewritePattern {
                   if (auto denseAttr = mlir::dyn_cast<mlir::DenseIntOrFPElementsAttr>(initialValue)) {
                      auto values = denseAttr.getValues<float>();
                      auto res = *(values.begin() + indices[0]);
-                     std::cout << res << std::endl;
+                     PGX_LOG(pgx_lower::log::Category::GENERAL, pgx_lower::log::Level::DEBUG, "Folding load with result: %f", res);
                      ::mlir::Value resConstant = rewriter.create<mlir::arith::ConstantOp>(loadOp->getLoc(), loadOp.getType(), rewriter.getF32FloatAttr(res));
                      rewriter.replaceOp(loadOp, resConstant);
                      return mlir::success();

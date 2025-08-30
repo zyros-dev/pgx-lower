@@ -435,7 +435,7 @@ std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterati
       } else if (generic.getIteratorName() == "join_ht_mod_iterator") {
          return std::make_unique<WhileIteratorIterationImpl>(std::make_unique<JoinHtLookupIterator>(loweredCollection, generic.getElementType(), true));
       } else {
-         MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - Unknown GenericIterableType name: " + generic.getIteratorName());
+         PGX_ERROR("CollectionIterationImpl::getImpl - Unknown GenericIterableType name: %s", generic.getIteratorName().c_str());
       }
    } else if (auto vector = collectionType.dyn_cast_or_null<mlir::dsa::VectorType>()) {
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<VectorIterator>(loweredCollection));

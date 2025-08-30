@@ -112,7 +112,7 @@ std::unique_ptr<mlir::relalg::Translator> Translator::createTranslator(::mlir::O
       .Case<TmpOp>([&](auto x) { return createTmpTranslator(x); })
       .Case<UnionOp, IntersectOp, ExceptOp>([&](auto x) { return createSetOpTranslator(x); })
       .Default([](auto x) { 
-         PGX_ERROR("Translator::createTranslator unsupported operation: " + x->getName().getStringRef().str());
+         PGX_ERROR("Translator::createTranslator unsupported operation: %s", x->getName().getStringRef().str().c_str());
          x->emitError("Unsupported operation in RelAlg to DB lowering: ") << x->getName();
          return std::unique_ptr<Translator>(); 
       });

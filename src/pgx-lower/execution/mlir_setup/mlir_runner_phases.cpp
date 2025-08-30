@@ -47,7 +47,7 @@ bool runPhase3a(::mlir::ModuleOp module) {
         throw std::runtime_error("Phase 3a failed: RelAlg → DB+DSA+Util lowering error");
     }
 
-    PGX_INFO("Phase 3a: RelAlg → DB+DSA+Util PassManager run SUCCEEDED");
+    PGX_LOG(JIT, DEBUG, "Phase 3a: RelAlg → DB+DSA+Util PassManager run SUCCEEDED");
 
     if (mlir::failed(mlir::verify(module))) {
         throw std::runtime_error("Phase 3a: Module verification failed after lowering");
@@ -99,14 +99,14 @@ bool runPhase3b(::mlir::ModuleOp module) {
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after dsa->standard canon pass"));
 
-    PGX_INFO("About to run db+dsa->standard pass");
+    PGX_LOG(JIT, DEBUG, "About to run db+dsa->standard pass");
 
     // Run PassManager with pure C++ exception handling
     if (mlir::failed(pm.run(module))) {
         throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
     }
 
-    PGX_INFO("Phase 3b: DB+DSA+Util → Standard PassManager run SUCCEEDED");
+    PGX_LOG(JIT, DEBUG, "Phase 3b: DB+DSA+Util → Standard PassManager run SUCCEEDED");
 
     if (!validateModuleState(module, "Phase 3b output")) {
         throw std::runtime_error("Phase 3b: Module validation failed after lowering");
@@ -170,7 +170,7 @@ bool runPhase3c(::mlir::ModuleOp module) {
         throw std::runtime_error("Phase 3c failed: Module contains non-LLVM operations after lowering");
     }
 
-    PGX_INFO("Phase 3c: Standard → LLVM lowering completed successfully");
+    PGX_LOG(JIT, DEBUG, "Phase 3c: Standard → LLVM lowering completed successfully");
     return true;
 }
 
@@ -181,7 +181,7 @@ bool runCompleteLoweringPipeline(::mlir::ModuleOp module) {
 
     runPhase3c(module);
 
-    PGX_INFO("Complete MLIR lowering pipeline succeeded: RelAlg → DB+DSA+Util → Standard → LLVM");
+    PGX_LOG(JIT, DEBUG, "Complete MLIR lowering pipeline succeeded: RelAlg → DB+DSA+Util → Standard → LLVM");
     return true;
 }
 

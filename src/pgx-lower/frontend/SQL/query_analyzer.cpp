@@ -56,10 +56,10 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         for (size_t i = 1; i < features.size(); ++i) {
             feature_list += "+" + features[i];
         }
-        PGX_INFO(" Query features: " + feature_list);
+        PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: %s", feature_list.c_str());
     }
     else {
-        PGX_INFO(" Query features: None detected");
+        PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: None detected");
     }
 
     //  ENABLE MLIR COMPILATION: Test if pipeline works for basic SELECT+SeqScan queries
@@ -67,11 +67,11 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
                       && !requiresAggregation && !requiresSort && !requiresLimit;
 
     if (compatible) {
-        PGX_INFO(" MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");
+        PGX_LOG(AST_TRANSLATE, DEBUG, " MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");
         return true;
     }
     else {
-        PGX_INFO(" DATA COLLECTION: Query too complex for current MLIR implementation");
+        PGX_LOG(AST_TRANSLATE, DEBUG, " DATA COLLECTION: Query too complex for current MLIR implementation");
         return false;
     }
 }
@@ -399,7 +399,7 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
     std::function<void(Plan*, int, const std::string&)> printPlanTree =
         [&](Plan* plan, int depth, const std::string& prefix) {
             if (!plan) {
-                PGX_INFO(prefix + "NULL");
+                PGX_LOG(AST_TRANSLATE, DEBUG, "%sNULL", prefix.c_str());
                 return;
             }
 
@@ -421,7 +421,7 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
                 nodeInfo += " [num_workers=" + std::to_string(gather->num_workers) + "]";
             }
 
-            PGX_INFO(nodeInfo);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "%s", nodeInfo.c_str());
 
             // Print children with tree formatting
             if (plan->lefttree || plan->righttree) {
@@ -435,9 +435,9 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
         };
 
     // Print the complete execution tree
-    PGX_INFO("=== POSTGRESQL EXECUTION TREE ===");
+    PGX_LOG(AST_TRANSLATE, DEBUG, "=== POSTGRESQL EXECUTION TREE ===");
     printPlanTree(rootPlan, 0, "");
-    PGX_INFO("=== END EXECUTION TREE ===");
+    PGX_LOG(AST_TRANSLATE, DEBUG, "=== END EXECUTION TREE ===");
 }
 
 bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
@@ -447,16 +447,16 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
     // Log the execution tree for analysis
     logExecutionTree(rootPlan);
 
-    // ACCEPT ALL PATTERNS FROM TEST CASES: Handle all observed execution tree patterns
+    // ACCEPT ALL PATTERNS FROM TEST CASES
     if (rootPlan->type == T_SeqScan) {
         // Pattern 1: Simple table scan
         scanPlan = rootPlan;
-        PGX_INFO(" ACCEPTED: Simple SeqScan query");
+        PGX_LOG(AST_TRANSLATE, DEBUG, " ACCEPTED: Simple SeqScan query");
     }
     else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
         // Pattern 2: Aggregation with SeqScan
         scanPlan = rootPlan->lefttree;
-        PGX_INFO(" ACCEPTED: Aggregate query with SeqScan source");
+        PGX_LOG(AST_TRANSLATE, DEBUG, " ACCEPTED: Aggregate query with SeqScan source");
     }
     else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_Gather) {
         // Pattern 3: Parallel aggregation (Agg  Gather  Agg  SeqScan)
@@ -465,17 +465,17 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
             auto* innerAggPlan = gatherPlan->lefttree;
             if (innerAggPlan->lefttree && innerAggPlan->lefttree->type == T_SeqScan) {
                 scanPlan = innerAggPlan->lefttree;
-                PGX_INFO(" ACCEPTED: Parallel aggregate query (AggGatherAggSeqScan)");
+                PGX_LOG(AST_TRANSLATE, DEBUG, " ACCEPTED: Parallel aggregate query (AggGatherAggSeqScan)");
             }
         }
 
         if (!scanPlan) {
-            PGX_INFO(" PARTIAL SUPPORT: Gather pattern recognized but structure unexpected");
+            PGX_LOG(AST_TRANSLATE, DEBUG, " PARTIAL SUPPORT: Gather pattern recognized but structure unexpected");
             // Still accept it for now to allow testing
         }
     }
     else {
-        PGX_INFO(" UNKNOWN PATTERN: Accepting for testing but may need implementation");
+        PGX_LOG(AST_TRANSLATE, DEBUG, " UNKNOWN PATTERN: Accepting for testing but may need implementation");
         // Accept unknown patterns for comprehensive testing
     }
 
@@ -484,18 +484,17 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
         const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
         const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
 
-        PGX_INFO(" Table OID: " + std::to_string(rte->relid));
+        PGX_LOG(AST_TRANSLATE, DEBUG, " Table OID: %d", rte->relid);
 
         // Set the global table OID for JIT runtime access
         g_jit_table_oid = rte->relid;
-        PGX_INFO(" Set g_jit_table_oid to: " + std::to_string(g_jit_table_oid));
+        PGX_LOG(AST_TRANSLATE, DEBUG, " Set g_jit_table_oid to: %d", g_jit_table_oid);
     }
     else {
-        PGX_INFO(" No scan plan extracted - query may not access tables directly");
+        PGX_LOG(AST_TRANSLATE, DEBUG, " No scan plan extracted - query may not access tables directly");
     }
 
-    // ACCEPT ALL PATTERNS from the 30 test cases for comprehensive testing
-    PGX_INFO(" QUERY ACCEPTED: Proceeding to MLIR compilation pipeline");
+    PGX_LOG(AST_TRANSLATE, DEBUG, " QUERY ACCEPTED: Proceeding to MLIR compilation pipeline");
     return true;
 }
 

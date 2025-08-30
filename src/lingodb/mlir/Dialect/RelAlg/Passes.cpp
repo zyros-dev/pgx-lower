@@ -3,12 +3,11 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 #include "lingodb/runtime/Database.h"
-
-#include <iostream>
+#include "pgx-lower/utility/logging.h"
 
 std::shared_ptr<runtime::Database> staticDB = {};
 void mlir::relalg::setStaticDB(std::shared_ptr<runtime::Database> db) {
-   std::cerr << "Warning: setting static database, should only be used in combination with mlir-db-opt" << std::endl;
+   PGX_WARNING("Warning: setting static database, should only be used in combination with mlir-db-opt");
    staticDB = db;
 }
 void mlir::relalg::createQueryOptPipeline(mlir::OpPassManager& pm, runtime::Database* db) {

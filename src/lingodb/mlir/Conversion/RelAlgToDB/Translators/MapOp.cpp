@@ -12,16 +12,15 @@ class MapTranslator : public mlir::relalg::Translator {
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
       PGX_INFO("MapOp::consume called - processing map operation");
       auto scope = context.createScope();
-      PGX_INFO("MapOp: Merging relational block to compute map expressions");
+      PGX_LOG(JIT, DEBUG, "MapOp: Merging relational block to compute map expressions");
       auto computedCols = mergeRelationalBlock(
          builder.getInsertionBlock(), op, [](auto x) { return &x->getRegion(0).front(); }, context, scope);
       if (computedCols.size() != mapOp.getComputedCols().size()) {
-         PGX_ERROR("MapOp: computed columns size mismatch - expected " + 
-                 std::to_string(mapOp.getComputedCols().size()) + 
-                 " but got " + std::to_string(computedCols.size()));
+         PGX_ERROR("MapOp: computed columns size mismatch - expected %zu but got %zu",
+                 mapOp.getComputedCols().size(), computedCols.size());
          return;
       }
-      PGX_INFO("MapOp: Registering " + std::to_string(computedCols.size()) + " computed columns");
+      PGX_LOG(JIT, DEBUG, "MapOp: Registering %zu computed columns", computedCols.size());
       for (size_t i = 0; i < computedCols.size(); i++) {
          auto& column = cast<mlir::relalg::ColumnDefAttr>(mapOp.getComputedCols()[i]).getColumn();
          context.setValueForAttribute(scope, &column, computedCols[i]);

@@ -1,13 +1,16 @@
 #pragma once
 
-#include <iostream>
-#include <fstream>
+#include <cstdarg>
+#include <cstring>
 #include <string>
-#include <cstdlib>
+#include <set>
+
+#ifndef POSTGRESQL_EXTENSION
+#include <iostream>
+#endif
 
 #ifdef POSTGRESQL_EXTENSION
 // Push/pop PostgreSQL macros to avoid conflicts
-// Save PostgreSQL macros that conflict with C++
 #pragma push_macro("_")
 #pragma push_macro("gettext")
 #pragma push_macro("dgettext") 
@@ -27,6 +30,7 @@
 extern "C" {
 #include "postgres.h"
 #include "utils/elog.h"
+#include "utils/guc.h"
 }
 
 #pragma pop_macro("restrict")
@@ -38,162 +42,111 @@ extern "C" {
 #pragma pop_macro("_")
 #endif
 
+namespace pgx_lower {
+namespace log {
 
-enum class LogLevel {
-    TRACE_LVL = 0,
-    DEBUG_LVL = 1,
-    INFO_LVL = 2,
-    WARNING_LVL = 3,
-    ERROR_LVL = 4
+// Categories - WHAT is logging
+enum class Category {
+    AST_TRANSLATE,   // PostgreSQL AST → RelAlg
+    RELALG_LOWER,    // RelAlg → DB+DSA
+    DB_LOWER,        // DB → Standard  
+    DSA_LOWER,       // DSA → Standard
+    UTIL_LOWER,      // Util → LLVM
+    RUNTIME,         // Runtime function calls
+    JIT,             // JIT compilation/execution
+    GENERAL          // General debug messages
 };
 
-class Logger {
-private:
-    LogLevel current_level;
-    std::ofstream debug_file;
-    bool debug_to_file;
-    
-public:
-    Logger();
-    ~Logger();
-    
-    void set_level(LogLevel level);
-    void set_debug_file(const std::string& filename);
-    bool should_log(LogLevel level) const;
-    void log(LogLevel level, const char* file, int line, const std::string& message);
+// Levels - Different types of logs (independent switches)
+enum class Level {
+    IO,              // Input/Output boundaries
+    DEBUG,           // General debug information
+    TRACE            // Detailed trace information
 };
 
-extern Logger& get_logger();
+extern bool log_enable;
+extern bool log_io;
+extern bool log_debug;
+extern bool log_trace;
+extern std::set<Category> enabled_categories;
 
-#define PGX_TRACE(msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::TRACE_LVL)) \
-            get_logger().log(LogLevel::TRACE_LVL, __FILE__, __LINE__, msg); \
-    } while (0)
+// Core logging function
+void log(Category cat, Level level, const char* fmt, ...);
 
-#define PGX_DEBUG(msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::DEBUG_LVL)) \
-            get_logger().log(LogLevel::DEBUG_LVL, __FILE__, __LINE__, msg); \
-    } while (0)
+const char* category_name(Category cat);
+const char* level_name(Level level);
+bool should_log(Category cat, Level level);
 
-#define PGX_INFO(msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::INFO_LVL)) { \
-            get_logger().log(LogLevel::INFO_LVL, __FILE__, __LINE__, msg); \
-        } \
-    } while (0)
+} // namespace log
+} // namespace pgx_lower
 
-#define PGX_WARNING(msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::WARNING_LVL)) \
-            get_logger().log(LogLevel::WARNING_LVL, __FILE__, __LINE__, msg); \
-    } while (0)
-
-#define PGX_ERROR(msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::ERROR_LVL)) \
-            get_logger().log(LogLevel::ERROR_LVL, __FILE__, __LINE__, msg); \
-    } while (0)
-
+// Single macro with printf-style formatting
 #ifdef POSTGRESQL_EXTENSION
-#undef PGX_INFO
-#define PGX_INFO(msg) \
+#define PGX_LOG(category, level, fmt, ...) \
+    ::pgx_lower::log::log(::pgx_lower::log::Category::category, \
+                          ::pgx_lower::log::Level::level, \
+                          fmt, ##__VA_ARGS__)
+#else
+// For unit tests, just print to stdout/stderr
+#define PGX_LOG(category, level, fmt, ...) \
     do { \
-        elog(NOTICE, "[INFO] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
-    } while (0)
-
-#undef PGX_DEBUG
-#define PGX_DEBUG(msg) \
-    do { \
-        elog(LOG, "[DEBUG] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
-    } while (0)
-
-#undef PGX_WARNING
-#define PGX_WARNING(msg) \
-    do { \
-        elog(WARNING, "[WARNING] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
-    } while (0)
-
-#undef PGX_ERROR
-#define PGX_ERROR(msg) \
-    do { \
-        elog(WARNING, "[ERROR] %s (%s:%d)", (std::string(msg)).c_str(), __FILE__, __LINE__); \
-    } while (0)
+        fprintf(stderr, "[%s:%s] " fmt "\n", \
+                #category, #level, ##__VA_ARGS__); \
+    } while(0)
 #endif
+
+// WARNING and ERROR always log - these are critical user-facing messages
+#ifdef POSTGRESQL_EXTENSION
+#define PGX_WARNING(fmt, ...) \
+    elog(WARNING, fmt, ##__VA_ARGS__)
+
+#define PGX_ERROR(fmt, ...) \
+    elog(ERROR, fmt, ##__VA_ARGS__)
+#else
+#define PGX_WARNING(fmt, ...) \
+    fprintf(stderr, "[WARNING] " fmt "\n", ##__VA_ARGS__)
+
+#define PGX_ERROR(fmt, ...) \
+    fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
+#endif
+
+// Legacy macro compatibility - will be removed after migration
+#ifdef POSTGRESQL_EXTENSION
+#define PGX_INFO(msg) \
+    PGX_LOG(GENERAL, DEBUG, "%s", (std::string(msg)).c_str())
+
+#define PGX_DEBUG(msg) \
+    PGX_LOG(GENERAL, DEBUG, "%s", (std::string(msg)).c_str())
 
 #define PGX_NOTICE(msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::INFO_LVL)) \
-            get_logger().log(LogLevel::INFO_LVL, __FILE__, __LINE__, msg); \
-    } while (0)
+    PGX_LOG(GENERAL, DEBUG, "%s", (std::string(msg)).c_str())
 
 #define MLIR_PGX_DEBUG(dialect, msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::DEBUG_LVL)) { \
-            std::string formatted_msg = std::string("[") + dialect + "] " + msg; \
-            get_logger().log(LogLevel::DEBUG_LVL, __FILE__, __LINE__, formatted_msg); \
-        } \
-    } while (0)
+    PGX_LOG(GENERAL, DEBUG, "[%s] %s", dialect, (std::string(msg)).c_str())
 
 #define MLIR_PGX_INFO(dialect, msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::INFO_LVL)) { \
-            std::string formatted_msg = std::string("[") + dialect + "] " + msg; \
-            get_logger().log(LogLevel::INFO_LVL, __FILE__, __LINE__, formatted_msg); \
-        } \
-    } while (0)
+    PGX_LOG(GENERAL, DEBUG, "[%s] %s", dialect, (std::string(msg)).c_str())
 
 #define MLIR_PGX_WARNING(dialect, msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::WARNING_LVL)) { \
-            std::string formatted_msg = std::string("[") + dialect + "] " + msg; \
-            get_logger().log(LogLevel::WARNING_LVL, __FILE__, __LINE__, formatted_msg); \
-        } \
-    } while (0)
+    PGX_WARNING("[%s] %s", dialect, (std::string(msg)).c_str())
 
 #define MLIR_PGX_ERROR(dialect, msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::ERROR_LVL)) { \
-            std::string formatted_msg = std::string("[") + dialect + "] " + msg; \
-            get_logger().log(LogLevel::ERROR_LVL, __FILE__, __LINE__, formatted_msg); \
-        } \
-    } while (0)
-
-// Unit test mode - override all logging macros to avoid PostgreSQL dependencies
-#ifdef BUILDING_UNIT_TESTS
-#undef PGX_INFO
-#undef PGX_DEBUG  
-#undef PGX_ERROR
-#undef PGX_NOTICE
-#undef MLIR_PGX_DEBUG
-#undef MLIR_PGX_INFO
-#undef MLIR_PGX_WARNING
-#undef MLIR_PGX_ERROR
-
-#define PGX_INFO(msg) do { std::cout << "[INFO] " << msg << std::endl; } while(0)
-#define PGX_DEBUG(msg) do { std::cout << "[DEBUG] " << msg << std::endl; } while(0)
-#define PGX_ERROR(msg) do { std::cerr << "[ERROR] " << msg << std::endl; } while(0)
-#define PGX_NOTICE(msg) do { std::cout << "[NOTICE] " << msg << std::endl; } while(0)
-#define MLIR_PGX_DEBUG(dialect, msg) do { std::cout << "[" << dialect << "] [DEBUG] " << msg << std::endl; } while(0)
-#define MLIR_PGX_INFO(dialect, msg) do { std::cout << "[" << dialect << "] [INFO] " << msg << std::endl; } while(0)
-#define MLIR_PGX_WARNING(dialect, msg) do { std::cout << "[" << dialect << "] [WARNING] " << msg << std::endl; } while(0)
-#define MLIR_PGX_ERROR(dialect, msg) do { std::cerr << "[" << dialect << "] [ERROR] " << msg << std::endl; } while(0)
-#endif
+    PGX_ERROR("[%s] %s", dialect, (std::string(msg)).c_str())
 
 #define RUNTIME_PGX_DEBUG(component, msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::DEBUG_LVL)) { \
-            std::string formatted_msg = std::string("[RUNTIME-") + component + "] " + msg; \
-            get_logger().log(LogLevel::DEBUG_LVL, __FILE__, __LINE__, formatted_msg); \
-        } \
-    } while (0)
+    PGX_LOG(RUNTIME, DEBUG, "[%s] %s", component, (std::string(msg)).c_str())
 
 #define RUNTIME_PGX_NOTICE(component, msg) \
-    do { \
-        if (get_logger().should_log(LogLevel::INFO_LVL)) { \
-            std::string formatted_msg = std::string("[RUNTIME-") + component + "] " + msg; \
-            get_logger().log(LogLevel::INFO_LVL, __FILE__, __LINE__, formatted_msg); \
-        } \
-    } while (0)
-
+    PGX_LOG(RUNTIME, DEBUG, "[%s] %s", component, (std::string(msg)).c_str())
+#else
+// Unit test versions
+#define PGX_INFO(msg) std::cout << "[INFO] " << msg << std::endl
+#define PGX_DEBUG(msg) std::cout << "[DEBUG] " << msg << std::endl
+#define PGX_NOTICE(msg) std::cout << "[NOTICE] " << msg << std::endl
+#define MLIR_PGX_DEBUG(dialect, msg) std::cout << "[" << dialect << "] " << msg << std::endl
+#define MLIR_PGX_INFO(dialect, msg) std::cout << "[" << dialect << "] " << msg << std::endl
+#define MLIR_PGX_WARNING(dialect, msg) std::cout << "[" << dialect << "] [WARNING] " << msg << std::endl
+#define MLIR_PGX_ERROR(dialect, msg) std::cerr << "[" << dialect << "] [ERROR] " << msg << std::endl
+#define RUNTIME_PGX_DEBUG(component, msg) std::cout << "[RUNTIME-" << component << "] " << msg << std::endl
+#define RUNTIME_PGX_NOTICE(component, msg) std::cout << "[RUNTIME-" << component << "] " << msg << std::endl
+#endif

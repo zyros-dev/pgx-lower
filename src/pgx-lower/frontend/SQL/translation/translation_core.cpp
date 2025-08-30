@@ -26,13 +26,12 @@ public:
     int32_t scale = tmp & NUMERIC_SCALE_MASK;
 
     if (precision < MIN_NUMERIC_PRECISION || precision > MAX_NUMERIC_PRECISION) {
-        PGX_WARNING("Invalid NUMERIC precision: " + std::to_string(precision) + " from typmod "
-                    + std::to_string(typmod));
+        PGX_WARNING("Invalid NUMERIC precision: %d from typmod %d", precision, typmod);
         return {MAX_NUMERIC_PRECISION, DEFAULT_NUMERIC_SCALE}; // Safe default
     }
 
     if (scale < 0 || scale > precision) {
-        PGX_WARNING("Invalid NUMERIC scale: " + std::to_string(scale) + " for precision " + std::to_string(precision));
+        PGX_WARNING("Invalid NUMERIC scale: %d for precision %d", scale, precision);
         return {precision, DEFAULT_NUMERIC_SCALE}; // Use precision, zero scale
     }
 
@@ -56,7 +55,7 @@ public:
     case 8:
     case TIMESTAMP_PRECISION_NANO_MAX: return mlir::db::TimeUnitAttr::nanosecond;
     default:
-        PGX_WARNING("Invalid TIMESTAMP precision: " + std::to_string(typmod) + ", defaulting to microsecond");
+        PGX_WARNING(("Invalid TIMESTAMP precision: " + std::to_string(typmod) + ", defaulting to microsecond").c_str());
         return mlir::db::TimeUnitAttr::microsecond;
     }
     }
@@ -91,7 +90,7 @@ public:
     }
 
     default:
-        PGX_WARNING("Unknown PostgreSQL type OID: " + std::to_string(typeOid) + ", defaulting to i32");
+        PGX_WARNING(("Unknown PostgreSQL type OID: " + std::to_string(typeOid) + ", defaulting to i32").c_str());
         baseType = mlir::IntegerType::get(&context_, INT4_BIT_WIDTH);
         break;
     }
@@ -152,7 +151,7 @@ auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRCo
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE, mlirType);
     }
     default:
-        PGX_WARNING("Unsupported constant type: " + std::to_string(constNode->consttype));
+        PGX_WARNING("Unsupported constant type: %d", constNode->consttype);
         // Default to i32 zero
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), DEFAULT_FALLBACK_INT_VALUE, builder.getI32Type());
     }

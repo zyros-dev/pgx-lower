@@ -39,7 +39,7 @@ extern "C" void initialize_mlir_passes() {
         ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> { return mlir::createSimplifyArithmeticsPass(); });
         ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> { return mlir::db::createSimplifyToArithPass(); });
     } catch (const std::exception& e) {
-        PGX_ERROR("Pass registration failed: " + std::string(e.what()));
+        PGX_ERROR("Pass registration failed: %s", e.what());
     } catch (...) {
         PGX_ERROR("Pass registration failed with unknown exception");
     }
@@ -80,7 +80,7 @@ bool initialize_mlir_context(::mlir::MLIRContext& context) {
         return true;
 
     } catch (const std::exception& e) {
-        PGX_ERROR("Failed to initialize MLIR context: " + std::string(e.what()));
+        PGX_ERROR("Failed to initialize MLIR context: %s", e.what());
         return false;
     } catch (...) {
         PGX_ERROR("Unknown error during MLIR context initialization");

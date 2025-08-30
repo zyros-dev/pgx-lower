@@ -4,7 +4,7 @@
 #include "lingodb/mlir/Dialect/util/UtilDialect.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "lingodb/mlir/Dialect/util/UtilTypes.h"
-#include "llvm/Support/raw_ostream.h"
+#include "pgx-lower/utility/logging.h"
 static ::mlir::Value convertValue(::mlir::OpBuilder& builder, ::mlir::Value v, ::mlir::Type t,::mlir::Location loc) {
    if (v.getType() == t) return v;
    ::mlir::Type currentType = v.getType();
@@ -31,7 +31,7 @@ mlir::ResultRange mlir::util::FunctionHelper::call(OpBuilder& builder, ::mlir::L
    
    // First check if builder has a valid insertion block
    if (!builder.getInsertionBlock()) {
-      llvm::errs() << "FunctionHelper: Builder has no insertion block set\n";
+      PGX_LOG(UTIL_LOWER, DEBUG, "FunctionHelper: Builder has no insertion block set");
       return mlir::ResultRange(nullptr, 0);
    }
    
@@ -48,7 +48,7 @@ mlir::ResultRange mlir::util::FunctionHelper::call(OpBuilder& builder, ::mlir::L
    
    if (!parentModule) {
       // If we can't find a parent module, the operation is likely not properly nested
-      llvm::errs() << "FunctionHelper: Could not find parent module in operation hierarchy\n";
+      PGX_LOG(UTIL_LOWER, DEBUG, "FunctionHelper: Could not find parent module in operation hierarchy");
       // Return empty ResultRange using proper constructor
       return mlir::ResultRange(nullptr, 0);
    }

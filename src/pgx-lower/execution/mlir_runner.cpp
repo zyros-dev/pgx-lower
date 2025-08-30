@@ -134,9 +134,9 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
                 std::string mlirString;
                 llvm::raw_string_ostream stream(mlirString);
                 module->print(stream);
-                PGX_INFO("Generated RelAlg MLIR:\n" + mlirString);
+                PGX_LOG(JIT, DEBUG, "Generated RelAlg MLIR:\n%s", mlirString.c_str());
             }
-            PGX_ERROR("Initial RelAlg MLIR module verification failed. Module content:\n" + errorString);
+            PGX_ERROR("Initial RelAlg MLIR module verification failed. Module content:\n%s", errorString.c_str());
             return false;
         }
 
@@ -155,7 +155,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
                 runCompleteLoweringPipeline(*module);
                 pipelineSuccess = true;
             } catch (const std::exception& e) {
-                PGX_ERROR("MLIR pipeline exception: " + std::string(e.what()));
+                PGX_ERROR("MLIR pipeline exception: %s", e.what());
 #ifndef BUILDING_UNIT_TESTS
                 ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), 
                                errmsg("MLIR lowering pipeline failed: %s", e.what())));
@@ -185,7 +185,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         return true;
 
     } catch (const std::exception& e) {
-        PGX_ERROR("MLIR runner exception: " + std::string(e.what()));
+        PGX_ERROR("MLIR runner exception: %s", e.what());
 #ifndef BUILDING_UNIT_TESTS
         ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("MLIR compilation failed: %s", e.what())));
 #endif

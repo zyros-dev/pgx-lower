@@ -90,8 +90,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
          auto val = orderedAttributes.resolve(context, i);
          
          if (!val) {
-            PGX_ERROR("MaterializeOp: Column resolution failed for position " + std::to_string(i));
-            // Skip this column or create a placeholder - for now just skip
+            PGX_ERROR("MaterializeOp: Column resolution failed for position %zu", i);
             continue;
          }
          
@@ -140,7 +139,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
          }
          auto colAttr = materializeOp.getColumns()[i];
          if (!colAttr) {
-            PGX_ERROR("MaterializeTranslator::produce column attribute at index " + std::to_string(i) + " is null");
+            PGX_ERROR("MaterializeTranslator::produce column attribute at index %zu is null", i);
             continue;
          }
          

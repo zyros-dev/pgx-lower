@@ -4,23 +4,23 @@
 extern "C" {
 
 void pgx_debug_c(const char* message) {
-    PGX_DEBUG(std::string(message));
+    PGX_DEBUG(message);
 }
 
 void pgx_info_c(const char* message) {
-    PGX_INFO(std::string(message));
+    PGX_INFO(message);
 }
 
 void pgx_notice_c(const char* message) {
-    PGX_NOTICE(std::string(message));
+    PGX_NOTICE(message);
 }
 
 void pgx_warning_c(const char* message) {
-    PGX_WARNING(std::string(message));
+    PGX_WARNING("%s", message);
 }
 
 void pgx_error_c(const char* message) {
-    PGX_ERROR(std::string(message));
+    PGX_ERROR("%s", message);
 }
 
 }
