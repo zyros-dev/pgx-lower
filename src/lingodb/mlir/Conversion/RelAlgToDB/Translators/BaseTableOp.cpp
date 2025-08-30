@@ -108,11 +108,14 @@ class BaseTableTranslator : public mlir::relalg::Translator {
             }
             auto atOp = builder2.create<mlir::dsa::At>(baseTableOp->getLoc(), types, forOp2.getInductionVar(), i++);
             if (isa<mlir::db::NullableType>(attr->type)) {
+               PGX_DEBUG("BaseTableOp: Processing nullable column index " + std::to_string(i-1) +
+                        " - atOp.getValid() will be inverted with NotOp");
+               
                ::mlir::Value isNull = builder2.create<mlir::db::NotOp>(baseTableOp->getLoc(), atOp.getValid());
                ::mlir::Value val = builder2.create<mlir::db::AsNullableOp>(baseTableOp->getLoc(), attr->type, atOp.getVal(), isNull);
                context.setValueForAttribute(scope, attr, val);
             } else {
-               PGX_INFO("BaseTableOp: Registering column " + std::to_string(i) + " in scope");
+               PGX_DEBUG("BaseTableOp: Registering non-nullable column " + std::to_string(i-1) + " in scope");
                context.setValueForAttribute(scope, attr, atOp.getVal());
             }
          }

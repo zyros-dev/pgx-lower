@@ -217,7 +217,6 @@ extern "C" void* open_postgres_table(const char* tableName) {
             PGX_NOTICE("open_postgres_table: scanning relation OID=" + std::to_string(RelationGetRelid(handle->scanDesc->rs_rd)) + ", name=" + std::string(RelationGetRelationName(handle->scanDesc->rs_rd)));
         }
         
-        // IMPORTANT: Reset scan to beginning to ensure we read all tuples  
         // The issue might be snapshot visibility - ensure we see recent INSERT operations
         // Force command counter increment to ensure we see recent changes in the same transaction
         CommandCounterIncrement();
@@ -644,19 +643,18 @@ extern "C" void store_bool_result(int32_t columnIndex, bool value, bool isNull) 
 }
 
 extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull) {
-    PGX_TRACE("store_bigint_result: columnIndex=" + std::to_string(columnIndex) + ", value=" + std::to_string(value) + ", isNull=" + (isNull ? "true" : "false"));
+    PGX_INFO("store_bigint_result: columnIndex=" + std::to_string(columnIndex) + ", value=" + std::to_string(value) + ", isNull=" + (isNull ? "true" : "false"));
     // For test 1, the SERIAL type is actually INT4, not INT8
     // Convert the value to INT4 for proper display
     // INT4 is pass-by-value, no memory context switch needed
     Datum datum = Int32GetDatum((int32_t)value);
     g_computed_results.setResult(columnIndex, datum, isNull, INT4OID);
-    PGX_TRACE("store_bigint_result: stored as INT4 in g_computed_results.numComputedColumns=" + std::to_string(g_computed_results.numComputedColumns));
+    PGX_INFO("store_bigint_result: stored as INT4 in g_computed_results.numComputedColumns=" + std::to_string(g_computed_results.numComputedColumns));
 }
 
 extern "C" void store_text_result(int32_t columnIndex, const char* value, bool isNull) {
     Datum datum = 0;
     if (!isNull && value != nullptr) {
-        // CRITICAL FIX: Use PostgreSQL's memory context to allocate text
         // Switch to a stable memory context (e.g., CurTransactionContext)
         // to ensure the text data survives JIT execution
         MemoryContext oldContext = CurrentMemoryContext;
@@ -888,13 +886,8 @@ extern "C" void* DataSource_get(runtime::VarLen32 description) {
     }
 }
 
-// Pipeline architecture restored - expression computation now flows through:
-// PostgreSQL AST  RelAlg  DB  DSA  LLVM IR  JIT
-// All hardcoded expression shortcuts have been removed
-
 //===----------------------------------------------------------------------===//
-// PostgreSQL SPI Runtime Functions (formerly stubs)
-// These functions integrate with PostgreSQL tables using direct table access
+// PostgreSQL SPI Runtime Functions
 //===----------------------------------------------------------------------===//
 
 extern "C" void* pg_table_open(const char* table_name) {

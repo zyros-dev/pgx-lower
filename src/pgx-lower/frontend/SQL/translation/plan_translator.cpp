@@ -876,15 +876,22 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     // Get input tuple types from the operation
     std::vector<mlir::Type> allTupleTypes;
     
-    // First, get input tuple types from the input operation  
+    // First, try to get input tuple types from the input operation  
     if (auto inputTupleType = inputValue.getType().dyn_cast<mlir::TupleType>()) {
         // Input is already a TupleType - get its component types
         for (unsigned i = 0; i < inputTupleType.getTypes().size(); i++) {
             allTupleTypes.push_back(inputTupleType.getTypes()[i]);
         }
+    } else if (auto tupleStreamType = inputValue.getType().dyn_cast<mlir::relalg::TupleStreamType>()) {
+        // Input is a TupleStreamType (common from BaseTableOp)
+        // Note: We can't extract individual column types from TupleStreamType at this point,
+        // but the generic TupleType created below will work correctly for the MapOp
     } else {
-        // For single values or other types, we might need different handling
-        PGX_WARNING("MapOp input is not a TupleType - skipping input type extraction");
+        // For other types, we might need different handling
+        std::string typeStr;
+        llvm::raw_string_ostream os(typeStr);
+        inputValue.getType().print(os);
+        PGX_WARNING("MapOp input is neither TupleType nor TupleStreamType - type: " + os.str());
     }
     
     // Then add our computed expression types

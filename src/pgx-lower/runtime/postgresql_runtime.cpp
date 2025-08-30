@@ -197,13 +197,16 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_build(void* bu
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* /* builder */, int64_t /* value */) {
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_null_flag, int32_t value) {
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 ENTRY: value=%d, is_null_flag=%s",
-         value, is_null_flag ? "true" : "false");
-    // CRITICAL FIX: MLIR passes validity flag (true = valid/not-null)
-    // but this function expects is_null flag (true = null)
-    // So we must invert the flag!
-    bool is_null = !is_null_flag;  // INVERTED: is_null_flag is actually is_valid_flag from MLIR
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_valid_flag, int32_t value) {
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 ENTRY: value=%d, is_valid_flag=%s",
+         value, is_valid_flag ? "true" : "false");
+    // DSAToStd passes a validity flag (could be 0xFF for true from DSA runtime)
+    // Normalize to proper boolean and convert to is_null for PostgreSQL internal use
+    bool is_valid = (is_valid_flag != 0);  // Normalize any non-zero to true
+    bool is_null = !is_valid;
+    
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: is_valid_flag=%d -> normalized is_valid=%d -> is_null=%d", 
+         (int)(unsigned char)is_valid_flag, (int)is_valid, (int)is_null);
 
     auto* tb = static_cast<TableBuilder*>(builder);
     if (tb) {
@@ -216,7 +219,8 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* 
             prepare_computed_results(newSize);
         }
         
-        elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: storing at column index %d", tb->current_column_index);
+        elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32: storing value=%d with is_null=%s at column index %d", 
+             value, is_null ? "true" : "false", tb->current_column_index);
         // Use the current column index from the TableBuilder
         store_bigint_result(tb->current_column_index, static_cast<int64_t>(value), is_null);
         // Advance to next column (LingoDB pattern)
@@ -232,13 +236,12 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* 
     elog(NOTICE, "[DEBUG] rt_tablebuilder_addint32 completed successfully");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_null_flag, bool value) {
-    elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool called: value=%s, is_null_flag=%s",
-         value ? "true" : "false", is_null_flag ? "true" : "false");
-    // CRITICAL FIX: MLIR passes validity flag (true = valid/not-null)
-    // but this function expects is_null flag (true = null)
-    // So we must invert the flag!
-    bool is_null = !is_null_flag;  // INVERTED: is_null_flag is actually is_valid_flag from MLIR
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_valid_flag, bool value) {
+    elog(NOTICE, "[DEBUG] rt_tablebuilder_addbool called: value=%s, is_valid_flag=%s",
+         value ? "true" : "false", is_valid_flag ? "true" : "false");
+    // DSAToStd passes a validity flag (true = valid/not-null, false = null)
+    // Convert to is_null for PostgreSQL internal use
+    bool is_null = !is_valid_flag;
 
     auto* tb = static_cast<TableBuilder*>(builder);
     if (tb) {
