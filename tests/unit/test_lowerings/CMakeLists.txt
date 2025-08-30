@@ -11,7 +11,6 @@ add_executable(test_mlir_lowerings
 
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_c.cpp
-    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_tools.cpp
 
     ${CMAKE_SOURCE_DIR}/src/lingodb/runtime/MetaData.cpp
 )
@@ -20,7 +19,6 @@ add_executable(test_boolean_lowering
     test_boolean_lowering.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging.cpp
     ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_c.cpp
-    ${CMAKE_SOURCE_DIR}/src/pgx-lower/utility/logging_tools.cpp
 )
 
 # Set the compile definition to enable standalone mode

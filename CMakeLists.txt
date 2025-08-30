@@ -169,7 +169,6 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
             src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
             src/pgx-lower/execution/jit_engine/jit_execution_wrapper.cpp
             src/pgx-lower/utility/logging.cpp
-            src/pgx-lower/utility/logging_tools.cpp
             src/lingodb/runtime/helpers.cpp
             src/lingodb/mlir/Passes.cpp
     )

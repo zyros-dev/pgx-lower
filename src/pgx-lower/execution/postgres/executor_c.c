@@ -24,16 +24,12 @@ custom_executor(QueryDesc *queryDesc, const ScanDirection direction, const uint6
     const bool mlir_handled = try_cpp_executor_internal(queryDesc);
 
     if (!mlir_handled) {
-        PGX_NOTICE_C("MLIR couldn't handle query, falling back to standard executor");
         if (prev_ExecutorRun_hook) {
             prev_ExecutorRun_hook(queryDesc, direction, count, execute_once);
         }
         else {
             standard_ExecutorRun(queryDesc, direction, count, execute_once);
         }
-    }
-    else {
-        PGX_NOTICE_C("MLIR successfully handled the query");
     }
 }
 
