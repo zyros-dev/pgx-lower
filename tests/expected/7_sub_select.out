@@ -1,8 +1,10 @@
 LOAD 'pgx_lower.so';
-NOTICE:  Installing custom executor hook...
-NOTICE:  Registering custom sigsegv handler!
-SET client_min_messages TO WARNING;
+-- CRITICAL: Do not change logging level - required for MLIR pipeline visibility
+-- NOTICE level enables full debugging of PostgreSQL AST  RelAlg  DB  LLVM  JIT pipeline
+-- WARNING level suppresses essential MLIR compilation logs and breaks debugging capability
+SET client_min_messages TO NOTICE;
 DROP TABLE IF EXISTS test;
+NOTICE:  table "test" does not exist, skipping
 CREATE TABLE test (
     id SERIAL PRIMARY KEY,
     col2 BOOLEAN,
@@ -18,212 +20,214 @@ SELECT
     gs % 7 = 0
 FROM generate_series(1, 100) AS gs;
 SELECT col3, col5 FROM test;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  col3 | col5 
 ------+------
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | t
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | t
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
+ f    | f
+ f    | f
  t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | t
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | t
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
+ f    | f
+ f    | f
  t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | t
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | t
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
+ f    | f
+ f    | f
  t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | t
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | t
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
+ f    | f
+ f    | f
  t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | t
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | f
  t    | f
- t    | t
+ f    | f
+ f    | t
  t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
- t    | f
- t    | t
+ f    | f
 (100 rows)
 
 SELECT col4 FROM test;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  col4 
 ------
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
- t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
+ t
+ f
+ f
+ f
+ f
  t
 (100 rows)
 

@@ -1,9 +1,11 @@
 -- Test basic arithmetic operators: PgAddOp, PgSubOp, PgMulOp, PgDivOp, PgModOp
 LOAD 'pgx_lower.so';
-NOTICE:  Installing custom executor hook...
-NOTICE:  Registering custom sigsegv handler!
-SET client_min_messages TO WARNING;
+-- CRITICAL: Do not change logging level - required for MLIR pipeline visibility
+-- NOTICE level enables full debugging of PostgreSQL AST  RelAlg  DB  LLVM  JIT pipeline
+-- WARNING level suppresses essential MLIR compilation logs and breaks debugging capability
+SET client_min_messages TO NOTICE;
 DROP TABLE IF EXISTS test_arithmetic;
+NOTICE:  table "test_arithmetic" does not exist, skipping
 CREATE TABLE test_arithmetic (
     id SERIAL PRIMARY KEY,
     val1 INTEGER,
@@ -18,53 +20,58 @@ INSERT INTO test_arithmetic(val1, val2) VALUES
 -- Test arithmetic operations in SELECT clauses
 -- These should trigger MLIR compilation with arithmetic operators
 SELECT val1 + val2 AS addition FROM test_arithmetic;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  addition 
 ----------
-        1
-        2
-        3
-        4
-        5
+       15
+       24
+       18
+       10
+       31
 (5 rows)
 
 SELECT val1 - val2 AS subtraction FROM test_arithmetic;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  subtraction 
 -------------
-           1
-           2
-           3
-           4
            5
+          16
+          12
+           6
+          19
 (5 rows)
 
 SELECT val1 * val2 AS multiplication FROM test_arithmetic;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  multiplication 
 ----------------
-              1
-              2
-              3
-              4
-              5
+             50
+             80
+             45
+             16
+            150
 (5 rows)
 
 SELECT val1 / val2 AS division FROM test_arithmetic;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  division 
 ----------
-        1
         2
-        3
-        4
         5
+        5
+        4
+        4
 (5 rows)
 
 SELECT val1 % val2 AS modulo FROM test_arithmetic;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  modulo 
 --------
+      0
+      0
+      0
+      0
       1
-      2
-      3
-      4
-      5
 (5 rows)
 
 DROP TABLE test_arithmetic;

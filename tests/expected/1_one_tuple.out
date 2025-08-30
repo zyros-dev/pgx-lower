@@ -1,7 +1,5 @@
 LOAD 'pgx_lower.so';
-NOTICE:  Installing custom executor hook...
-NOTICE:  Registering custom sigsegv handler!
-SET client_min_messages TO WARNING;
+SET client_min_messages TO NOTICE;
 SELECT 'hello';
  ?column? 
 ----------
@@ -9,11 +7,13 @@ SELECT 'hello';
 (1 row)
 
 DROP TABLE IF EXISTS test;
+NOTICE:  table "test" does not exist, skipping
 CREATE TABLE test(id SERIAL);
-INSERT INTO test(id) VALUES (1);
+INSERT INTO test(id) VALUES (42);
 SELECT * FROM test;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  id 
 ----
-  1
+ 42
 (1 row)
 
