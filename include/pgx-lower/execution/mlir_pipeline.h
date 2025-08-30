@@ -24,7 +24,7 @@ bool runPhase3c(::mlir::ModuleOp module);
 bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
 
 // Utility functions for debugging and analysis
-void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title);
+void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_lower::log::Category phase);
 bool validateModuleState(::mlir::ModuleOp module, const std::string& phase);
 
 } // namespace mlir_runner

@@ -93,9 +93,11 @@ void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification) {
 class ModuleDumpPass : public PassWrapper<ModuleDumpPass, OperationPass<ModuleOp>> {
 private:
     std::string phaseName;
+    ::pgx_lower::log::Category phaseCategory;
     
 public:
-    ModuleDumpPass(const std::string& name) : phaseName(name) {}
+    ModuleDumpPass(const std::string& name, ::pgx_lower::log::Category category = ::pgx_lower::log::Category::GENERAL) 
+        : phaseName(name), phaseCategory(category) {}
     
     void runOnOperation() override {
         auto module = getOperation();
@@ -106,14 +108,19 @@ public:
         }
 
         try {
+            // Local logging helper for this phase category
+            auto PHASE_LOG = [&](const char* fmt, auto... args) {
+                ::pgx_lower::log::log(phaseCategory, ::pgx_lower::log::Level::DEBUG, fmt, args...);
+            };
+            
             auto timestamp = std::chrono::system_clock::now();
             auto time_t = std::chrono::system_clock::to_time_t(timestamp);
             auto tm = *std::localtime(&time_t);
             std::ostringstream timestampStr;
             timestampStr << std::put_time(&tm, "%Y%m%d_%H%M%S");
             
-            PGX_LOG(JIT, DEBUG, " ");
-            PGX_LOG(JIT, DEBUG, "=== MLIR MODULE CONTENT: %s ===", phaseName.c_str());
+            PHASE_LOG(" ");
+            PHASE_LOG("=== MLIR MODULE CONTENT: %s ===", phaseName.c_str());
             
             // Convert module to string and log line by line
             std::string moduleStr;
@@ -125,10 +132,10 @@ public:
             int lineNum = 1;
             while (std::getline(iss, line)) {
                 std::string formattedLine = llvm::formatv("{0,3}: {1}", lineNum++, line);
-                PGX_LOG(JIT, DEBUG, "%s", formattedLine.c_str());
+                PHASE_LOG("%s", formattedLine.c_str());
             }
             
-            PGX_LOG(JIT, DEBUG, "=== END MLIR MODULE CONTENT ===");
+            PHASE_LOG("=== END MLIR MODULE CONTENT ===");
             
             // Optional: Dump to file for external debugging  
             std::string filename = "/tmp/pgx_lower_" + phaseName + "_" + timestampStr.str() + ".mlir";
@@ -158,8 +165,8 @@ public:
     }
 };
 
-std::unique_ptr<Pass> createModuleDumpPass(const std::string& phaseName) {
-    return std::make_unique<ModuleDumpPass>(phaseName);
+std::unique_ptr<Pass> createModuleDumpPass(const std::string& phaseName, ::pgx_lower::log::Category category) {
+    return std::make_unique<ModuleDumpPass>(phaseName, category);
 }
 
 } // namespace pgx_lower

@@ -16,13 +16,15 @@
 
 namespace mlir_runner {
 
-// Module statistics and debugging utilities
-void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
+void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_lower::log::Category phase) {
     if (!module) {
         PGX_WARNING("dumpModuleWithStats: Module is null for title: %s", title.c_str());
         return;
     }
 
+    auto PHASE_LOG = [&](const char* fmt, auto... args) {
+        ::pgx_lower::log::log(phase, ::pgx_lower::log::Level::DEBUG, fmt, args...);
+    };
     auto timestamp = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(timestamp);
 
@@ -73,23 +75,23 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
             }
         });
 
-        // Log comprehensive statistics
-        PGX_LOG(GENERAL, DEBUG, "\n\n======= %s =======", title.c_str());
+        // Log comprehensive statistics using the passed phase category
+        PHASE_LOG("\n\n======= %s =======", title.c_str());
         std::stringstream timeStr;
         timeStr << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
-        PGX_LOG(GENERAL, DEBUG, "Timestamp: %s", timeStr.str().c_str());
-        PGX_LOG(GENERAL, DEBUG, "Output file: %s", filename.str().c_str());
+        PHASE_LOG("Timestamp: %s", timeStr.str().c_str());
+        PHASE_LOG("Output file: %s", filename.str().c_str());
 
-        PGX_LOG(GENERAL, DEBUG, "Module Statistics:");
-        PGX_LOG(GENERAL, DEBUG, "  Total Operations: %d", totalOperations);
-        PGX_LOG(GENERAL, DEBUG, "  Total Blocks: %d", totalBlocks);
-        PGX_LOG(GENERAL, DEBUG, "  Total Regions: %d", totalRegions);
-        PGX_LOG(GENERAL, DEBUG, "  Total Values: %d", totalValues);
+        PHASE_LOG("Module Statistics:");
+        PHASE_LOG("  Total Operations: %d", totalOperations);
+        PHASE_LOG("  Total Blocks: %d", totalBlocks);
+        PHASE_LOG("  Total Regions: %d", totalRegions);
+        PHASE_LOG("  Total Values: %d", totalValues);
 
         // Dialect breakdown
-        PGX_LOG(GENERAL, DEBUG, "Operations by Dialect:");
+        PHASE_LOG("Operations by Dialect:");
         for (const auto& [dialect, count] : dialectCounts) {
-            PGX_LOG(GENERAL, DEBUG, "  %s: %d", dialect.c_str(), count);
+            PHASE_LOG("  %s: %d", dialect.c_str(), count);
         }
 
         // Top 10 most frequent operations
@@ -99,9 +101,9 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
         }
         std::sort(opsByFreq.rbegin(), opsByFreq.rend());
 
-        PGX_LOG(GENERAL, DEBUG, "Top Operations by Frequency:");
+        PHASE_LOG("Top Operations by Frequency:");
         for (size_t i = 0; i < std::min(size_t(10), opsByFreq.size()); ++i) {
-            PGX_LOG(GENERAL, DEBUG, "  %s: %d", opsByFreq[i].second.c_str(), opsByFreq[i].first);
+            PHASE_LOG("  %s: %d", opsByFreq[i].second.c_str(), opsByFreq[i].first);
         }
 
         // Type statistics (top 5)
@@ -111,13 +113,13 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
         }
         std::sort(typesByFreq.rbegin(), typesByFreq.rend());
 
-        PGX_LOG(GENERAL, DEBUG, "Top Types by Frequency:");
+        PHASE_LOG("Top Types by Frequency:");
         for (size_t i = 0; i < std::min(size_t(5), typesByFreq.size()); ++i) {
-            PGX_LOG(GENERAL, DEBUG, "  %s: %d", typesByFreq[i].second.c_str(), typesByFreq[i].first);
+            PHASE_LOG("  %s: %d", typesByFreq[i].second.c_str(), typesByFreq[i].first);
         }
 
         bool isValid = ::mlir::succeeded(::mlir::verify(module));
-        PGX_LOG(GENERAL, DEBUG, "Module Verification: %s", isValid ? "PASSED" : "FAILED");
+        PHASE_LOG("Module Verification: %s", isValid ? "PASSED" : "FAILED");
 
         // Print the actual MLIR code to logs as a formatted block
         try {
@@ -138,7 +140,7 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
             formattedMLIR << "=== END MLIR MODULE CONTENT ===\n";
 
             // Log the entire formatted block
-            PGX_LOG(GENERAL, DEBUG, "%s", formattedMLIR.str().c_str());
+            PHASE_LOG("%s", formattedMLIR.str().c_str());
 
         } catch (const std::exception& e) {
             PGX_ERROR("Failed to print MLIR module: %s", e.what());
@@ -160,14 +162,14 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title) {
             file << moduleStr;
             file.close();
 
-            PGX_LOG(GENERAL, DEBUG, "Module dumped to: %s", filename.str().c_str());
+            PHASE_LOG("Module dumped to: %s", filename.str().c_str());
         }
         else {
             PGX_WARNING("Failed to open file for writing: %s", filename.str().c_str());
         }
 
-        PGX_LOG(GENERAL, DEBUG, "=== End Module Debug Dump ===");
-        PGX_LOG(GENERAL, DEBUG, "\n\n");
+        PHASE_LOG("=== End Module Debug Dump ===");
+        PHASE_LOG("\n\n");
 
     } catch (const std::exception& e) {
         PGX_ERROR("Exception in dumpModuleWithStats: %s", e.what());

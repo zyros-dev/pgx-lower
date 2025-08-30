@@ -392,7 +392,7 @@ auto MyCppExecutor::execute(const QueryDesc* plan) -> bool {
         return false;
     }
 
-    elog(NOTICE, "[PGX-LOWER] Attempting MLIR JIT compilation");
+    elog(NOTICE, "[PGX-LOWER] Routing through PGX_LOWER compilation");
     bool mlir_success = run_mlir_with_ast_translation(plan);
 
     PGX_LOG(GENERAL, DEBUG, "MyCppExecutor::execute completed, returning %s", mlir_success ? "true" : "false");

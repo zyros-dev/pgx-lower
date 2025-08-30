@@ -2,6 +2,7 @@
 #define PGX_LOWER_MLIR_PASSES_H
 
 #include "mlir/Pass/Pass.h"
+#include "pgx-lower/utility/logging.h"
 #include <memory>
 
 namespace mlir {
@@ -17,7 +18,7 @@ void createDSAToStandardPipeline(PassManager& pm, bool enableVerification = fals
 void createStandardToLLVMPipeline(PassManager& pm, bool enableVerification = false);
 
 std::unique_ptr<Pass> createConvertToLLVMPass();
-std::unique_ptr<Pass> createModuleDumpPass(const std::string& phaseName);
+std::unique_ptr<Pass> createModuleDumpPass(const std::string& phaseName, ::pgx_lower::log::Category category = ::pgx_lower::log::Category::GENERAL);
 
 void createFunctionOptimizationPipeline(PassManager& pm, bool enableVerification = false);
 
