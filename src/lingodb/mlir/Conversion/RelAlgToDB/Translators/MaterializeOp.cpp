@@ -78,14 +78,14 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       return {};
    }
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
-      PGX_INFO("MaterializeOp::consume called");
+      PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp::consume called");
       
       if (materializeOp.getCols().empty()) {
          builder.create<mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
          return;
       }
       
-      PGX_INFO("MaterializeOp: Resolving " + std::to_string(orderedAttributes.getAttrs().size()) + " columns");
+      PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp: Resolving %zu columns", orderedAttributes.getAttrs().size());
       for (size_t i = 0; i < orderedAttributes.getAttrs().size(); i++) {
          auto val = orderedAttributes.resolve(context, i);
          
@@ -107,7 +107,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       builder.create<mlir::dsa::NextRow>(materializeOp->getLoc(), tableBuilder);
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      PGX_INFO("MaterializeOp::produce called");
+      PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp::produce called");
       if (materializeOp.getCols().empty()) {
          auto emptyTupleType = mlir::TupleType::get(builder.getContext(), {});
          auto tableBuilderType = mlir::dsa::TableBuilderType::get(builder.getContext(), emptyTupleType);
@@ -158,7 +158,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
          return;
       }
       
-      PGX_INFO("MaterializeOp: Calling child[0]->produce");
+      PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp: Calling child[0]->produce");
       children[0]->produce(context, builder);
       
       table = builder.create<mlir::dsa::Finalize>(materializeOp.getLoc(), mlir::dsa::TableType::get(builder.getContext()), tableBuilder).getRes();

@@ -36,11 +36,11 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
    public:
    using OpConversionPattern<mlir::dsa::ScanSource>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::ScanSource op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: ENTRY");
-      MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: Original ScanSource result type check...");
+      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ScanSourceLowering: ENTRY");
+      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ScanSourceLowering: Original ScanSource result type check...");
       auto originalType = op.getResult().getType();
       if (auto genIterType = originalType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
-         MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: Original type is GenericIterableType with name: " + genIterType.getIteratorName());
+         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ScanSourceLowering: Original type is GenericIterableType with name: %s", genIterType.getIteratorName().c_str());
       }
       
       std::vector<Type> types;
@@ -60,15 +60,15 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
       
       // CRITICAL: Ensure rewriter has a valid insertion block before calling runtime functions
       if (!rewriter.getInsertionBlock()) {
-         MLIR_PGX_ERROR("DSA", "ScanSourceLowering: rewriter has no insertion block!");
+         PGX_ERROR("[DSA] ScanSourceLowering: rewriter has no insertion block!");
          return failure();
       }
       
-      MLIR_PGX_DEBUG("DSA", "Calling rt::DataSourceIteration::start");
+      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] Calling rt::DataSourceIteration::start");
       auto rawPtr = rt::DataSourceIteration::start(rewriter, op->getLoc())({executionContext, description})[0];
-      MLIR_PGX_DEBUG("DSA", "Successfully called rt::DataSourceIteration::start");
+      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] Successfully called rt::DataSourceIteration::start");
       
-      MLIR_PGX_DEBUG("DSA", "ScanSourceLowering: Replacing op with i8* pointer");
+      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ScanSourceLowering: Replacing op with i8* pointer");
       rewriter.replaceOp(op, rawPtr);
       return success();
    }
@@ -83,7 +83,7 @@ struct DSAToStdLoweringPass : public PassWrapper<DSAToStdLoweringPass, Operation
    virtual llvm::StringRef getArgument() const override { return "lower-dsa"; }
 
    DSAToStdLoweringPass() {
-      PGX_INFO("DSAToStdLoweringPass: Constructor ENTRY");
+      PGX_LOG(DSA_LOWER, DEBUG, "DSAToStdLoweringPass: Constructor ENTRY");
    }
    
    void getDependentDialects(DialectRegistry& registry) const override {
@@ -138,7 +138,7 @@ struct DSAToStdLoweringPass : public PassWrapper<DSAToStdLoweringPass, Operation
              PGX_ERROR("[DSAToStd] applyFullConversion FAILED");
              conversionSucceeded = false;
           } else {
-             PGX_INFO("[DSAToStd] applyFullConversion SUCCEEDED");
+             PGX_LOG(DSA_LOWER, DEBUG, "[DSAToStd] applyFullConversion SUCCEEDED");
              conversionSucceeded = true;
           }
       #ifdef POSTGRESQL_EXTENSION
@@ -162,8 +162,8 @@ struct DSAToStdLoweringPass : public PassWrapper<DSAToStdLoweringPass, Operation
 } // end anonymous namespace
 
 std::unique_ptr<::mlir::Pass> mlir::dsa::createLowerToStdPass() {
-   PGX_INFO("DSAToStd: ENTRY createLowerToStdPass");
+   PGX_LOG(DSA_LOWER, DEBUG, "DSAToStd: ENTRY createLowerToStdPass");
    auto pass = std::make_unique<DSAToStdLoweringPass>();
-   PGX_INFO("DSAToStd: AFTER DSAToStdLoweringPass constructor - success");
+   PGX_LOG(DSA_LOWER, DEBUG, "DSAToStd: AFTER DSAToStdLoweringPass constructor - success");
    return pass;
 }

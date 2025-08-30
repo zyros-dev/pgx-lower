@@ -49,20 +49,20 @@ void Translator::propagateInfo() {
    }
 }
 mlir::relalg::Translator::Translator(Operator op) : op(op) {
-   PGX_DEBUG("Translator: Base constructor called with Operator");
+   PGX_LOG(RELALG_LOWER, DEBUG, "Translator: Base constructor called with Operator");
    
    if (!op) {
-      PGX_DEBUG("Translator: Operator is null, skipping children initialization");
+      PGX_LOG(RELALG_LOWER, DEBUG, "Translator: Operator is null, skipping children initialization");
       return;
    }
    
-   PGX_DEBUG("Translator: Getting children from operator");
+   PGX_LOG(RELALG_LOWER, DEBUG, "Translator: Getting children from operator");
    for (auto child : op.getChildren()) {
-      PGX_DEBUG("Translator: Creating translator for child operation");
+      PGX_LOG(RELALG_LOWER, DEBUG, "Translator: Creating translator for child operation");
       children.push_back(mlir::relalg::Translator::createTranslator(child.getOperation()));
    }
    
-   PGX_DEBUG("Translator: Base constructor completed, " + std::to_string(children.size()) + " children");
+   PGX_LOG(RELALG_LOWER, DEBUG, "Translator: Base constructor completed, %zu children", children.size());
 }
 
 mlir::relalg::Translator::Translator(::mlir::ValueRange potentialChildren) : op() {
@@ -86,19 +86,19 @@ mlir::relalg::ColumnSet Translator::getAvailableColumns() {
 };
 
 std::unique_ptr<mlir::relalg::Translator> Translator::createTranslator(::mlir::Operation* operation) {
-   PGX_DEBUG("Translator::createTranslator called for operation: " + operation->getName().getStringRef().str());
+   PGX_LOG(RELALG_LOWER, DEBUG, "Translator::createTranslator called for operation: %s", operation->getName().getStringRef().str().c_str());
    
    return ::llvm::TypeSwitch<::mlir::Operation*, std::unique_ptr<mlir::relalg::Translator>>(operation)
       .Case<BaseTableOp>([&](auto x) { 
-         PGX_DEBUG("Translator::createTranslator matched BaseTableOp");
+         PGX_LOG(RELALG_LOWER, DEBUG, "Translator::createTranslator matched BaseTableOp");
          return createBaseTableTranslator(x); 
       })
       .Case<ConstRelationOp>([&](auto x) { 
-         PGX_DEBUG("Translator::createTranslator matched ConstRelationOp");
+         PGX_LOG(RELALG_LOWER, DEBUG, "Translator::createTranslator matched ConstRelationOp");
          return createConstRelTranslator(x); 
       })
       .Case<MaterializeOp>([&](auto x) { 
-         PGX_DEBUG("Translator::createTranslator matched MaterializeOp");
+         PGX_LOG(RELALG_LOWER, DEBUG, "Translator::createTranslator matched MaterializeOp");
          return createMaterializeTranslator(x); 
       })
       .Case<SelectionOp>([&](auto x) { return createSelectionTranslator(x); })

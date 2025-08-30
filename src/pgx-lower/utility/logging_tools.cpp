@@ -10,11 +10,9 @@ namespace pgx_lower {
 namespace utility {
 
 void logMLIRModuleVerbose(::mlir::ModuleOp module, const std::string& context) {
-    // Verbose logging removed - use compact version if needed
 }
 
 void logMLIRModuleFullyExpanded(::mlir::ModuleOp module, const std::string& context) {
-    // Fully expanded logging removed - use compact version if needed
 }
 
 void logMLIRModuleCompact(::mlir::ModuleOp module, const std::string& context) {
@@ -26,7 +24,7 @@ void logMLIRModuleCompact(::mlir::ModuleOp module, const std::string& context) {
     std::istringstream moduleStream(moduleStr);
     std::string line;
     while (std::getline(moduleStream, line)) {
-        MLIR_PGX_DEBUG("MLIR", line);
+        PGX_LOG(GENERAL, DEBUG, "[MLIR] %s", line.c_str());
     }
 }
 
@@ -35,11 +33,10 @@ void logMLIROperation(::mlir::Operation* op, const std::string& context) {
     llvm::raw_string_ostream opStream(opStr);
     op->print(opStream);
     opStream.flush();
-    MLIR_PGX_DEBUG("MLIR", context + ": " + opStr);
+    PGX_LOG(GENERAL, DEBUG, "[MLIR] %s: %s", context.c_str(), opStr.c_str());
 }
 
 void logMLIROperationHierarchy(::mlir::Operation* op, const std::string& context, int depth) {
-    // Hierarchy logging removed - use compact operation logging if needed
 }
 
 } // namespace utility

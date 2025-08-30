@@ -35,17 +35,17 @@ void* PostgreSQLDataSource::getNext() {
 
 PostgreSQLDataSource::~PostgreSQLDataSource() {
     if (scanContext) {
-        RUNTIME_PGX_DEBUG("PostgreSQLDataSource", "Closing PostgreSQL table: " + tableName);
+        PGX_LOG(RUNTIME, DEBUG, "[PostgreSQLDataSource] Closing PostgreSQL table: %s", tableName.c_str());
         close_postgres_table(scanContext);
     }
-    RUNTIME_PGX_DEBUG("PostgreSQLDataSource", "PostgreSQL data source destroyed");
+    PGX_LOG(RUNTIME, DEBUG, "[PostgreSQLDataSource] PostgreSQL data source destroyed");
 }
 
 ::runtime::DataSource* PostgreSQLDataSource::createFromDescription(::runtime::VarLen32 description) {
     // Convert VarLen32 to string
     std::string descStr(description.data(), description.getLen());
     
-    RUNTIME_PGX_DEBUG("PostgreSQLDataSource", "Creating data source from description");
+    PGX_LOG(RUNTIME, DEBUG, "[PostgreSQLDataSource] Creating data source from description");
     // Return PostgreSQL-specific data source
     return new PostgreSQLDataSource(descStr);
 }

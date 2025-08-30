@@ -4,15 +4,15 @@
 extern "C" {
 
 void pgx_debug_c(const char* message) {
-    PGX_DEBUG(message);
+    PGX_LOG(GENERAL, DEBUG, "%s", message);
 }
 
 void pgx_info_c(const char* message) {
-    PGX_INFO(message);
+    PGX_LOG(GENERAL, DEBUG, "%s", message);
 }
 
 void pgx_notice_c(const char* message) {
-    PGX_NOTICE(message);
+    PGX_LOG(GENERAL, DEBUG, "%s", message);
 }
 
 void pgx_warning_c(const char* message) {

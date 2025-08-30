@@ -10,7 +10,7 @@ class MapTranslator : public mlir::relalg::Translator {
    MapTranslator(mlir::relalg::MapOp mapOp) : mlir::relalg::Translator(mapOp), mapOp(mapOp) {}
 
    virtual void consume(mlir::relalg::Translator* child, ::mlir::OpBuilder& builder, mlir::relalg::TranslatorContext& context) override {
-      PGX_INFO("MapOp::consume called - processing map operation");
+      PGX_LOG(RELALG_LOWER, DEBUG, "MapOp::consume called - processing map operation");
       auto scope = context.createScope();
       PGX_LOG(JIT, DEBUG, "MapOp: Merging relational block to compute map expressions");
       auto computedCols = mergeRelationalBlock(
@@ -26,11 +26,11 @@ class MapTranslator : public mlir::relalg::Translator {
          context.setValueForAttribute(scope, &column, computedCols[i]);
       }
       
-      PGX_INFO("MapOp: Calling consumer->consume");
+      PGX_LOG(RELALG_LOWER, DEBUG, "MapOp: Calling consumer->consume");
       consumer->consume(this, builder, context);
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      PGX_INFO("MapOp::produce called - calling child produce");
+      PGX_LOG(RELALG_LOWER, DEBUG, "MapOp::produce called - calling child produce");
       if (children.empty()) {
          PGX_ERROR("MapOp::produce - no children!");
          return;

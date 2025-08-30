@@ -43,7 +43,7 @@ struct DBToStdLoweringPass
    virtual llvm::StringRef getArgument() const override { return "to-arrow-std"; }
 
    DBToStdLoweringPass() {
-      PGX_INFO("DBToStdLoweringPass: Constructor ENTRY");
+      PGX_LOG(DB_LOWER, DEBUG, "DBToStdLoweringPass: Constructor ENTRY");
    }
    void getDependentDialects(DialectRegistry& registry) const override {
       registry.insert<LLVM::LLVMDialect, mlir::db::DBDialect, scf::SCFDialect, mlir::cf::ControlFlowDialect, util::UtilDialect, memref::MemRefDialect, arith::ArithDialect>();
@@ -652,7 +652,7 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
       
       std::stringstream debugMsg;
       debugMsg << "ConstantOp lowering - type OID: " << arrowType << ", param1: " << param1 << ", param2: " << param2;
-      MLIR_PGX_DEBUG("DB", debugMsg.str());
+      PGX_LOG(DB_LOWER, DEBUG, "[DB] %s", debugMsg.str().c_str());
       
       std::variant<int64_t, double, std::string> parseArg;
       if (auto integerAttr = constantOp.getConstantValue().dyn_cast_or_null<IntegerAttr>()) {
@@ -933,59 +933,58 @@ class HashLowering : public ConversionPattern {
    }
 };
 void DBToStdLoweringPass::runOnOperation() {
-   PGX_DEBUG("\n[DBToStd] ===== PASS ENTRY =====\n");
+   PGX_LOG(DB_LOWER, DEBUG, "\n[DBToStd] ===== PASS ENTRY =====\n");
    
-   PGX_INFO("DBToStd: ===== PASS ENTRY =====");
-   MLIR_PGX_DEBUG("DB", "=== DBToStd Pass Entry ===");
-   MLIR_PGX_DEBUG("DB", "Starting DBToStd lowering pass execution");
+   PGX_LOG(DB_LOWER, DEBUG, "DBToStd: ===== PASS ENTRY =====");
+   PGX_LOG(DB_LOWER, DEBUG, "[DB] === DBToStd Pass Entry ===");
+   PGX_LOG(DB_LOWER, DEBUG, "[DB] Starting DBToStd lowering pass execution");
    
    // Add very early checks to isolate crash point
-   MLIR_PGX_DEBUG("DB", "Checking this pointer validity");
+   PGX_LOG(DB_LOWER, DEBUG, "[DB] Checking this pointer validity");
    if (!this) {
       // This should never happen but helps isolate memory corruption
-      MLIR_PGX_ERROR("DB", "CRITICAL: 'this' pointer is null!");
+      PGX_ERROR("[DB] CRITICAL: 'this' pointer is null!");
       return;
    }
    
-   PGX_DEBUG("[DBToStd] Pass object valid, getting module...");
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Pass object valid, getting module...");
    
-   PGX_INFO("DBToStd: Pass object is valid, proceeding...");
+   PGX_LOG(DB_LOWER, DEBUG, "DBToStd: Pass object is valid, proceeding...");
    
    // Add early exit check to debug crash location
-   MLIR_PGX_DEBUG("DB", "Getting module operation");
+   PGX_LOG(DB_LOWER, DEBUG, "[DB] Getting module operation");
    auto module = getOperation();
    if (!module) {
-      MLIR_PGX_ERROR("DB", "Module operation is null!");
+      PGX_ERROR("[DB] Module operation is null!");
       signalPassFailure();
       return;
    }
    
-   PGX_DEBUG("[DBToStd] Module obtained: " + std::to_string(reinterpret_cast<uintptr_t>(module.getOperation())));
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Module obtained: %p", module.getOperation());
    
-   MLIR_PGX_DEBUG("DB", "Module operation obtained successfully");
+   PGX_LOG(DB_LOWER, DEBUG, "[DB] Module operation obtained successfully");
    
    // Check context validity
    auto& context = getContext();
-   MLIR_PGX_DEBUG("DB", "Context obtained, checking loaded dialects");
+   PGX_LOG(DB_LOWER, DEBUG, "[DB] Context obtained, checking loaded dialects");
    
-   PGX_DEBUG("[DBToStd] Context obtained, dialect count: " + 
-           std::to_string(context.getLoadedDialects().size()));
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Context obtained, dialect count: %zu", context.getLoadedDialects().size());
    
    // List all loaded dialects for debugging
-   MLIR_PGX_DEBUG("DB", "Checking loaded dialects count: " + std::to_string(context.getLoadedDialects().size()));
+   PGX_LOG(DB_LOWER, DEBUG, "[DB] Checking loaded dialects count: %zu", context.getLoadedDialects().size());
    
-   MLIR_PGX_DEBUG("DB", "Getting util dialect for function helper");
+   PGX_LOG(DB_LOWER, DEBUG, "[DB] Getting util dialect for function helper");
    auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
    if (!utilDialect) {
       PGX_ERROR("[DBToStd] CRITICAL: UtilDialect not loaded!");
-      MLIR_PGX_ERROR("DB", "Failed to get UtilDialect - not loaded!");
+      PGX_ERROR("[DB] Failed to get UtilDialect - not loaded!");
       signalPassFailure();
       return;
    }
    
-   PGX_DEBUG("[DBToStd] UtilDialect obtained: " + std::to_string(reinterpret_cast<uintptr_t>(utilDialect)));
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] UtilDialect obtained: %p", utilDialect);
    
-   MLIR_PGX_DEBUG("DB", "UtilDialect obtained successfully");
+   PGX_LOG(DB_LOWER, DEBUG, "[DB] UtilDialect obtained successfully");
    
    // Do NOT call setParentModule - causes race conditions
 
@@ -1181,9 +1180,9 @@ void DBToStdLoweringPass::runOnOperation() {
 
    patterns.insert<HashLowering>(typeConverter, ctxt);
 
-   PGX_DEBUG("[DBToStd] Pattern setup complete, starting module conversion");
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Pattern setup complete, starting module conversion");
    
-   PGX_INFO("DBToStd: Starting module conversion");
+   PGX_LOG(DB_LOWER, DEBUG, "DBToStd: Starting module conversion");
    
    // Count operations to convert
    int dbOpsToConvert = 0;
@@ -1192,13 +1191,12 @@ void DBToStdLoweringPass::runOnOperation() {
        if (op->getName().getDialectNamespace() == "db") {
            dbOpsToConvert++;
            dbOpTypes.push_back(op->getName().getStringRef().str());
-           PGX_DEBUG("[DBToStd] Found DB op to convert: " + op->getName().getStringRef().str() + 
-                   " at " + std::to_string(reinterpret_cast<uintptr_t>(op)));
+           PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Found DB op to convert: %s at %p", op->getName().getStringRef().str().c_str(), op);
        }
    });
-   PGX_DEBUG("[DBToStd] Total DB operations to convert: " + std::to_string(dbOpsToConvert));
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Total DB operations to convert: %d", dbOpsToConvert);
    for (const auto& opType : dbOpTypes) {
-       PGX_DEBUG("[DBToStd]   - " + opType);
+       PGX_LOG(DB_LOWER, DEBUG, "[DBToStd]   - %s", opType.c_str());
    }
    
    // Validate module before conversion
@@ -1218,9 +1216,9 @@ void DBToStdLoweringPass::runOnOperation() {
        return WalkResult::advance();
    });
    
-   PGX_DEBUG("[DBToStd] Module validated, calling applyFullConversion...");
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Module validated, calling applyFullConversion...");
    
-   PGX_DEBUG("DBToStd: Module validated, applying conversion patterns...");
+   PGX_LOG(DB_LOWER, DEBUG, "DBToStd: Module validated, applying conversion patterns...");
    
    // Log all operations about to be converted (safer approach)
    size_t dbOpCount = 0;
@@ -1231,22 +1229,20 @@ void DBToStdLoweringPass::runOnOperation() {
        StringRef dialectName = op->getName().getDialectNamespace();
        if (dialectName == "db") {
            dbOpCount++;
-           PGX_DEBUG("[DBToStd] Found DB operation: " + op->getName().getStringRef().str());
+           PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Found DB operation: %s", op->getName().getStringRef().str().c_str());
        } else if (dialectName == "dsa") {
            dsaOpCount++;
-           PGX_DEBUG("[DBToStd] Found DSA operation: " + op->getName().getStringRef().str());
+           PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Found DSA operation: %s", op->getName().getStringRef().str().c_str());
        } else if (dialectName == "util") {
            utilOpCount++;
-           PGX_DEBUG("[DBToStd] Found Util operation: " + op->getName().getStringRef().str());
+           PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Found Util operation: %s", op->getName().getStringRef().str().c_str());
        }
    });
    
-   PGX_DEBUG("[DBToStd] Operation counts - DB: " + std::to_string(dbOpCount) + 
-             ", DSA: " + std::to_string(dsaOpCount) + 
-             ", Util: " + std::to_string(utilOpCount));
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Operation counts - DB: %zu, DSA: %zu, Util: %zu", dbOpCount, dsaOpCount, utilOpCount);
 
    // Safer module dump - skip for now as it might be causing the crash
-   PGX_DEBUG("[DBToStd] Skipping module dump to avoid potential crash");
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] Skipping module dump to avoid potential crash");
    
    // Verify module is valid before applying conversion patterns
    if (failed(verify(module))) {
@@ -1256,8 +1252,7 @@ void DBToStdLoweringPass::runOnOperation() {
    }
    
    // The crash likely happens inside applyFullConversion
-   PGX_DEBUG("[DBToStd] About to call applyFullConversion with " + 
-           std::to_string(patterns.getNativePatterns().size()) + " patterns");
+   PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] About to call applyFullConversion with %zu patterns", patterns.getNativePatterns().size());
    
    // Wrap MLIR conversion in PostgreSQL exception handling to prevent memory corruption
    bool conversionSucceeded = false;
@@ -1270,8 +1265,8 @@ void DBToStdLoweringPass::runOnOperation() {
           PGX_ERROR("DBToStd: Conversion failed during applyFullConversion");
           conversionSucceeded = false;
        } else {
-          PGX_INFO("[DBToStd] applyFullConversion SUCCEEDED");
-          PGX_INFO("DBToStd: Conversion completed successfully");
+          PGX_LOG(DB_LOWER, DEBUG, "[DBToStd] applyFullConversion SUCCEEDED");
+          PGX_LOG(DB_LOWER, DEBUG, "DBToStd: Conversion completed successfully");
           conversionSucceeded = true;
        }
    #ifdef POSTGRESQL_EXTENSION
@@ -1294,9 +1289,9 @@ void DBToStdLoweringPass::runOnOperation() {
 
 std::unique_ptr<::mlir::Pass>
 mlir::db::createLowerToStdPass() {
-   PGX_INFO("DBToStd: ENTRY createLowerToStdPass");
+   PGX_LOG(DB_LOWER, DEBUG, "DBToStd: ENTRY createLowerToStdPass");
    auto pass = std::make_unique<DBToStdLoweringPass>();
-   PGX_INFO("DBToStd: AFTER DBToStdLoweringPass constructor - success");
+   PGX_LOG(DB_LOWER, DEBUG, "DBToStd: AFTER DBToStdLoweringPass constructor - success");
    return pass;
 }
 void mlir::db::createLowerDBPipeline(mlir::OpPassManager& pm) {

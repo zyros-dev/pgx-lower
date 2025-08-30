@@ -60,12 +60,12 @@ struct ComputedResultStorage {
     }
 
     void resize(int numColumns) {
-        PGX_NOTICE("ComputedResultStorage::resize called with numColumns=" + std::to_string(numColumns));
+        PGX_LOG(RUNTIME, DEBUG, "ComputedResultStorage::resize called with numColumns=%d", numColumns);
         numComputedColumns = numColumns;
         computedValues.resize(numColumns, 0);
         computedNulls.resize(numColumns, true);
         computedTypes.resize(numColumns, InvalidOid);
-        PGX_NOTICE("ComputedResultStorage::resize completed, numComputedColumns=" + std::to_string(numComputedColumns));
+        PGX_LOG(RUNTIME, DEBUG, "ComputedResultStorage::resize completed, numComputedColumns=%zu", numComputedColumns);
     }
 
     void setResult(int columnIndex, Datum value, bool isNull, Oid typeOid) {

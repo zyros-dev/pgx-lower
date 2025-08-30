@@ -73,19 +73,19 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
    }
 
    LogicalResult matchAndRewrite(mlir::dsa::ForOp forOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      MLIR_PGX_INFO("DSA", "ForOpLowering: ENTRY");
+      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: ENTRY");
       
       // Print location info to help debug
       auto loc = forOp.getLoc();
       if (auto fileLoc = loc.dyn_cast<FileLineColLoc>()) {
-         MLIR_PGX_INFO("DSA", "ForOpLowering: Processing ForOp at " + fileLoc.getFilename().str());
+         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Processing ForOp at %s", fileLoc.getFilename().str().c_str());
       } else {
-         MLIR_PGX_INFO("DSA", "ForOpLowering: Processing ForOp at unknown location");
+         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Processing ForOp at unknown location");
       }
       
       // Debug: Print the collection operand info
       if (!forOp.getCollection()) {
-         MLIR_PGX_ERROR("DSA", "ForOpLowering: ForOp has null collection!");
+         PGX_ERROR("[DSA] ForOpLowering: ForOp has null collection!");
          return failure();
       }
       
@@ -96,7 +96,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
       std::string typeName = "unknown";
       llvm::raw_string_ostream typeStream(typeName);
       collectionType.print(typeStream);
-      MLIR_PGX_INFO("DSA", "ForOpLowering: Original collection type string: " + typeName);
+      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Original collection type string: %s", typeName.c_str());
       
       // Check the type of the region argument to understand what type this ForOp expects
       if (!forOp.getRegion().empty() && forOp.getRegion().front().getNumArguments() > 0) {
@@ -104,19 +104,19 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          std::string argTypeName = "unknown";
          llvm::raw_string_ostream argTypeStream(argTypeName);
          argType.print(argTypeStream);
-         MLIR_PGX_INFO("DSA", "ForOpLowering: ForOp expects induction variable of type: " + argTypeName);
+         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: ForOp expects induction variable of type: %s", argTypeName.c_str());
          
          // If the collection is already converted but the ForOp expects a DSA type,
          // we need to infer the original DSA collection type
          if (!collectionType.isa<mlir::dsa::CollectionType>()) {
             if (auto recordType = argType.dyn_cast_or_null<mlir::dsa::RecordType>()) {
-               MLIR_PGX_INFO("DSA", "ForOpLowering: Collection already converted, ForOp expects RecordType");
+               PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Collection already converted, ForOp expects RecordType");
                // The ForOp expects to iterate over records, so the collection must have been a RecordBatchType
                auto recordBatchType = mlir::dsa::RecordBatchType::get(forOp.getContext(), recordType.getRowType());
                collectionType = recordBatchType;
-               MLIR_PGX_INFO("DSA", "ForOpLowering: Inferred collection type as RecordBatchType");
+               PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Inferred collection type as RecordBatchType");
             } else if (argType.isa<mlir::dsa::RecordBatchType>()) {
-               MLIR_PGX_INFO("DSA", "ForOpLowering: Collection already converted, but ForOp expects RecordBatchType");
+               PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Collection already converted, but ForOp expects RecordBatchType");
                // Use the argument type directly
                collectionType = argType;
             }
@@ -124,9 +124,9 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
       }
       
       if (auto genIter = collectionType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
-         MLIR_PGX_INFO("DSA", "ForOpLowering: Collection is GenericIterableType: " + genIter.getIteratorName());
+         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Collection is GenericIterableType: %s", genIter.getIteratorName().c_str());
       } else if (auto recordBatch = collectionType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
-         MLIR_PGX_INFO("DSA", "ForOpLowering: Collection is RecordBatchType");
+         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Collection is RecordBatchType");
       } else if (auto record = collectionType.dyn_cast_or_null<mlir::dsa::RecordType>()) {
       } else {
       }

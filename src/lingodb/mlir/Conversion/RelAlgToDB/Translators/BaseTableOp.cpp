@@ -17,7 +17,7 @@ class BaseTableTranslator : public mlir::relalg::Translator {
       return;
    }
    virtual void produce(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      PGX_INFO("BaseTableOp::produce called - registering columns");
+      PGX_LOG(RELALG_LOWER, DEBUG, "BaseTableOp::produce called - registering columns");
       auto scope = context.createScope();
       using namespace mlir;
       std::vector<::mlir::Type> types;
@@ -108,14 +108,13 @@ class BaseTableTranslator : public mlir::relalg::Translator {
             }
             auto atOp = builder2.create<mlir::dsa::At>(baseTableOp->getLoc(), types, forOp2.getInductionVar(), i++);
             if (isa<mlir::db::NullableType>(attr->type)) {
-               PGX_DEBUG("BaseTableOp: Processing nullable column index " + std::to_string(i-1) +
-                        " - atOp.getValid() will be inverted with NotOp");
+               PGX_LOG(RELALG_LOWER, DEBUG, "BaseTableOp: Processing nullable column index %zu - atOp.getValid() will be inverted with NotOp", i-1);
                
                ::mlir::Value isNull = builder2.create<mlir::db::NotOp>(baseTableOp->getLoc(), atOp.getValid());
                ::mlir::Value val = builder2.create<mlir::db::AsNullableOp>(baseTableOp->getLoc(), attr->type, atOp.getVal(), isNull);
                context.setValueForAttribute(scope, attr, val);
             } else {
-               PGX_DEBUG("BaseTableOp: Registering non-nullable column " + std::to_string(i-1) + " in scope");
+               PGX_LOG(RELALG_LOWER, DEBUG, "BaseTableOp: Registering non-nullable column %zu in scope", i-1);
                context.setValueForAttribute(scope, attr, atOp.getVal());
             }
          }

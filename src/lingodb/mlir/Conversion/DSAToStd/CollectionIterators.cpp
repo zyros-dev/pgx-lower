@@ -407,11 +407,11 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
    }
 };
 std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterationImpl::getImpl(Type collectionType, Value loweredCollection) {
-   MLIR_PGX_INFO("DSA", "CollectionIterationImpl::getImpl - ENTRY");
+   PGX_LOG(DSA_LOWER, DEBUG, "[DSA] CollectionIterationImpl::getImpl - ENTRY");
    
    // Add debugging to understand why this fails
    if (!collectionType) {
-      MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - collectionType is null!");
+      PGX_ERROR("[DSA] CollectionIterationImpl::getImpl - collectionType is null!");
       return std::unique_ptr<mlir::dsa::CollectionIterationImpl>();
    }
    
@@ -419,16 +419,16 @@ std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterati
    std::string typeName = "unknown";
    llvm::raw_string_ostream typeStream(typeName);
    collectionType.print(typeStream);
-   MLIR_PGX_INFO("DSA", "CollectionIterationImpl::getImpl - Collection type string: " + typeName);
+   PGX_LOG(DSA_LOWER, DEBUG, "[DSA] CollectionIterationImpl::getImpl - Collection type string: %s", typeName.c_str());
    
    if (auto generic = collectionType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
-      MLIR_PGX_DEBUG("DSA", "CollectionIterationImpl::getImpl - GenericIterableType with name: " + generic.getIteratorName());
+      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] CollectionIterationImpl::getImpl - GenericIterableType with name: %s", generic.getIteratorName().c_str());
       if (generic.getIteratorName() == "table_chunk_iterator") {
          if (auto recordBatchType = generic.getElementType().dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
-            MLIR_PGX_DEBUG("DSA", "CollectionIterationImpl::getImpl - Creating TableIterator2");
+            PGX_LOG(DSA_LOWER, DEBUG, "[DSA] CollectionIterationImpl::getImpl - Creating TableIterator2");
             return std::make_unique<WhileIteratorIterationImpl>(std::make_unique<TableIterator2>(loweredCollection, recordBatchType));
          } else {
-            MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - table_chunk_iterator element type is not RecordBatchType!");
+            PGX_ERROR("[DSA] CollectionIterationImpl::getImpl - table_chunk_iterator element type is not RecordBatchType!");
          }
       } else if (generic.getIteratorName() == "join_ht_iterator") {
          return std::make_unique<WhileIteratorIterationImpl>(std::make_unique<JoinHtLookupIterator>(loweredCollection, generic.getElementType(), false));
@@ -448,10 +448,10 @@ std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterati
    } else if (auto joinHt = collectionType.dyn_cast_or_null<mlir::dsa::JoinHashtableType>()) {
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<JoinHtIterator>(loweredCollection));
    } else if (auto recordBatch = collectionType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
-      MLIR_PGX_INFO("DSA", "CollectionIterationImpl::getImpl - Creating RecordBatchIterator");
+      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] CollectionIterationImpl::getImpl - Creating RecordBatchIterator");
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<RecordBatchIterator>(loweredCollection, recordBatch));
    } else {
-      MLIR_PGX_ERROR("DSA", "CollectionIterationImpl::getImpl - Unknown collection type!");
+      PGX_ERROR("[DSA] CollectionIterationImpl::getImpl - Unknown collection type!");
    }
    return std::unique_ptr<mlir::dsa::CollectionIterationImpl>();
 }
