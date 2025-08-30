@@ -100,6 +100,8 @@ class MaterializeTranslator : public mlir::relalg::Translator {
             valid = builder.create<mlir::db::IsNullOp>(materializeOp->getLoc(), val);
             valid = builder.create<mlir::db::NotOp>(materializeOp->getLoc(), valid);
             val = builder.create<mlir::db::NullableGetVal>(materializeOp->getLoc(), getBaseType(val.getType()), val);
+         } else {
+            valid = builder.create<mlir::arith::ConstantIntOp>(materializeOp->getLoc(), 1, 1);
          }
          builder.create<mlir::dsa::Append>(materializeOp->getLoc(), tableBuilder, val, valid);
       }
