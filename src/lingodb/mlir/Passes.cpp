@@ -38,7 +38,7 @@ std::unique_ptr<Pass> createConvertToLLVMPass();
 std::unique_ptr<Pass> createStandardToLLVMPass();
 
 
-// Phase 1: RelAlgDB lowering pipeline
+// Phase 1: RelAlg→DB lowering pipeline (using LingoDB's pipeline)
 void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
     PGX_INFO("createRelAlgToDBPipeline: Adding relalg to db pipeline");
     
@@ -46,28 +46,20 @@ void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
         pm.enableVerifier(true);
     }
     
-    auto pass = relalg::createLowerToDBPass();
-    if (!pass) {
-        PGX_ERROR("createRelAlgToDBPipeline: Failed to create RelAlg to DB pass!");
-        return;
-    }
-    pm.addNestedPass<func::FuncOp>(std::move(pass));
-    pm.addPass(createCanonicalizerPass());
+    relalg::createLowerRelAlgPipeline(pm);
+    // Note: LingoDB's function already adds canonicalizer, no need to add again
 }
 
-// Phase 2a: DBStandard lowering pipeline (following LingoDB sequential pattern)
+// Phase 2a: DB→Standard lowering pipeline (using LingoDB's pipeline)
 void createDBToStandardPipeline(PassManager& pm, bool enableVerification) {
     PGX_INFO("[createDBToStandardPipeline]: Adding DB to Standard pipeline (Phase 2a)");
     if (enableVerification) {
         pm.enableVerifier(true);
     }
     
-    auto dbPass = db::createLowerToStdPass();
-    if (!dbPass) {
-        PGX_ERROR("createDBToStandardPipeline: DB pass creation returned null!");
-        return;
-    }
-    pm.addPass(std::move(dbPass));
+    db::createLowerDBPipeline(pm);
+    
+    // Add canonicalizer after LingoDB's pipeline
     pm.addPass(createCanonicalizerPass());
 }
 
