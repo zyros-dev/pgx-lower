@@ -231,26 +231,15 @@ auto open_postgres_table(const char* tableName) -> void*;
 
 void close_postgres_table(void* tableHandle);
 
-
-// Typed field access functions for PostgreSQL dialect
-auto get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int32_t;
-auto get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int64_t;
-auto get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) -> double;
-
 // Result storage functions for expressions
-void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
 void prepare_computed_results(int32_t numColumns);
 void mark_results_ready_for_streaming();
 
 // Global flag to indicate results are ready for streaming (defined in tuple_access.cpp)
 extern bool g_jit_results_ready;
-
-
-
-// Critical runtime function for DB dialect (GetExternalOp lowering)
-void* DataSource_get(runtime::VarLen32 description);
 }
 
+// Critical runtime function for DB dialect (GetExternalOp lowering)
 namespace pgx_lower {
 namespace runtime {
 // Memory context safety check for PostgreSQL operations

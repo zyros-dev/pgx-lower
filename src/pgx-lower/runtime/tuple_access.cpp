@@ -762,18 +762,6 @@ extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index,
 }
 
 // MLIR runtime functions for storing computed expression results
-extern "C" void store_int_result(int32_t columnIndex, int32_t value, bool isNull) {
-    PGX_LOG(RUNTIME, IO, "store_int_result IN: columnIndex=%d, value=%d, isNull=%s", columnIndex, value, isNull ? "true" : "false");
-    // INT4 is pass-by-value, no memory context switch needed
-    Datum datum = Int32GetDatum(value);
-    g_computed_results.setResult(columnIndex, datum, isNull, INT4OID);
-    PGX_LOG(RUNTIME, IO, "store_int_result OUT");
-}
-
-extern "C" void store_bool_result(int32_t columnIndex, bool value, bool isNull) {
-    Datum datum = BoolGetDatum(value);
-    g_computed_results.setResult(columnIndex, datum, isNull, BOOLOID);
-}
 
 extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull) {
     PGX_LOG(RUNTIME, IO, "store_bigint_result IN: columnIndex=%d, value=%ld, isNull=%s", columnIndex, value, isNull ? "true" : "false");
@@ -784,23 +772,6 @@ extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isN
     PGX_LOG(RUNTIME, IO, "store_bigint_result OUT");
 }
 
-extern "C" void store_text_result(int32_t columnIndex, const char* value, bool isNull) {
-    Datum datum = 0;
-    if (!isNull && value != nullptr) {
-        // Switch to a stable memory context (e.g., CurTransactionContext)
-        // to ensure the text data survives JIT execution
-        MemoryContext oldContext = CurrentMemoryContext;
-        MemoryContextSwitchTo(CurTransactionContext);
-        
-        // cstring_to_text allocates in the current memory context
-        text* textval = cstring_to_text(value);
-        datum = PointerGetDatum(textval);
-        
-        // Restore original context
-        MemoryContextSwitchTo(oldContext);
-    }
-    g_computed_results.setResult(columnIndex, datum, isNull, TEXTOID);
-}
 
 extern "C" void prepare_computed_results(int32_t numColumns) {
     g_computed_results.resize(numColumns);
@@ -869,42 +840,6 @@ extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, boo
     }
 }
 
-// MLIR-compatible wrapper functions for JIT integration
-// These functions match the signatures expected by our LLVM IR
-
-extern "C" int32_t get_int_field_mlir(int64_t iteration_signal, int32_t field_index) {
-    PGX_LOG(RUNTIME, IO, "get_int_field_mlir IN: iteration_signal=%ld, field_index=%d", iteration_signal, field_index);
-
-    // Critical: Check memory context safety before PostgreSQL tuple access
-    if (!pgx_lower::runtime::check_memory_context_safety()) {
-        PGX_ERROR("get_int_field_mlir: Memory context unsafe for PostgreSQL operations");
-        return 0;
-    }
-    
-    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
-        PGX_LOG(RUNTIME, IO, "get_int_field_mlir OUT: 0 (no tuple)");
-        return 0;
-    }
-    
-    // PostgreSQL uses 1-based attribute indexing
-    const int attr_num = field_index + 1;
-    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
-        PGX_LOG(RUNTIME, IO, "get_int_field_mlir OUT: 0 (field out of range)");
-        return 0;
-    }
-    
-    bool isnull;
-    const auto value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
-    
-    if (isnull) {
-        PGX_LOG(RUNTIME, IO, "get_int_field_mlir OUT: 0 (null)");
-        return 0;
-    }
-    
-    auto result = DatumGetInt32(value);
-    PGX_LOG(RUNTIME, IO, "get_int_field_mlir OUT: %d", result);
-    return result;
-}
 
 // Additional field extraction functions for complete type support
 extern "C" int16_t get_int16_field(void* tuple_handle, int32_t field_index, bool* is_null) {
@@ -948,95 +883,6 @@ extern "C" double get_float64_field_mlir(int64_t iteration_signal, int32_t field
 // Only get_numeric_field is kept here to support both unit tests and extension builds
 
 // Generic field extractor that stores Datum directly based on actual type
-extern "C" void store_field_as_datum(int32_t columnIndex, int64_t iteration_signal, int32_t field_index) {
-    // Critical: Check memory context safety before PostgreSQL tuple access
-    if (!pgx_lower::runtime::check_memory_context_safety()) {
-        PGX_ERROR("store_field_as_datum: Memory context unsafe for PostgreSQL operations");
-        return;
-    }
-    
-    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
-        PGX_WARNING("store_field_as_datum: No tuple available");
-        return;
-    }
-    
-    // TEMPORARY: Use captured field indices only for test 8
-    // Check if this looks like test 8 (26 columns, selecting non-sequential fields)
-    if (!g_field_indices.empty() && columnIndex < g_field_indices.size() && 
-        g_current_tuple_passthrough.tupleDesc->natts == 26) {
-        field_index = g_field_indices[columnIndex];
-    }
-    
-    int attr_num = field_index + 1;
-    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
-        PGX_WARNING("store_field_as_datum: field_index %d out of range", field_index);
-        return;
-    }
-    
-    bool isnull;
-    Datum value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, 
-                              g_current_tuple_passthrough.tupleDesc, &isnull);
-    
-    // Get the type OID for this column
-    Oid typeOid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
-    
-    // MEMORY FIX: For pass-by-reference types, copy to stable memory context
-    MemoryContext oldContext = CurrentMemoryContext;
-    bool needContextSwitch = false;
-    
-    // Check if we need to copy pass-by-reference data
-    if (!isnull && (typeOid == TEXTOID || typeOid == VARCHAROID || typeOid == BPCHAROID)) {
-        needContextSwitch = true;
-        MemoryContextSwitchTo(CurTransactionContext);
-    }
-    
-    // Store with the ORIGINAL type OID - this is critical for proper display
-    // The store_xxx_result functions hardcode their type OIDs, so we bypass them
-    // and call setResult directly to preserve the original column type
-    switch (typeOid) {
-        case INT2OID:
-            g_computed_results.setResult(columnIndex, Int16GetDatum(DatumGetInt16(value)), isnull, typeOid);
-            break;
-        case INT4OID:
-            g_computed_results.setResult(columnIndex, Int32GetDatum(DatumGetInt32(value)), isnull, typeOid);
-            break;
-        case INT8OID:
-            g_computed_results.setResult(columnIndex, Int64GetDatum(DatumGetInt64(value)), isnull, typeOid);
-            break;
-        case BOOLOID:
-            g_computed_results.setResult(columnIndex, BoolGetDatum(DatumGetBool(value)), isnull, typeOid);
-            break;
-        case TEXTOID:
-        case VARCHAROID:
-        case BPCHAROID: { // CHAR type (blank-padded)
-            // MEMORY FIX: Copy text data to stable memory
-            Datum copiedValue = value;
-            if (!isnull) {
-                copiedValue = datumCopy(value, false, -1);
-            }
-            g_computed_results.setResult(columnIndex, copiedValue, isnull, TEXTOID);
-            break;
-        }
-        case FLOAT4OID:
-            // Store original float value with correct type - PostgreSQL will handle display
-            g_computed_results.setResult(columnIndex, Float4GetDatum(DatumGetFloat4(value)), isnull, typeOid);
-            break;
-        case FLOAT8OID:
-            // Store original double value with correct type - PostgreSQL will handle display
-            g_computed_results.setResult(columnIndex, Float8GetDatum(DatumGetFloat8(value)), isnull, typeOid);
-            break;
-        default:
-            // For unsupported complex types, store the original Datum with original type
-            // PostgreSQL will handle display formatting - we just pass through the data
-            g_computed_results.setResult(columnIndex, value, isnull, typeOid);
-            break;
-    }
-    
-    // Restore original context if we switched
-    if (needContextSwitch) {
-        MemoryContextSwitchTo(oldContext);
-    }
-}
 
 // Critical runtime function for DB dialect GetExternalOp lowering
 extern "C" void* DataSource_get(runtime::VarLen32 description) {
@@ -1220,8 +1066,8 @@ extern "C" void pg_store_result(void* result) {
 extern "C" void pg_store_result_i32(int32_t value) {
     PGX_LOG(RUNTIME, IO, "pg_store_result_i32 IN: value=%d", value);
     PGX_LOG(RUNTIME, DEBUG, "pg_store_result_i32 called with value: %d", value);
-    // Use existing store_int_result pattern with columnIndex 0 for single results
-    store_int_result(0, value, false);
+    // Use direct g_computed_results call for int32 storage
+    g_computed_results.setResult(0, Int32GetDatum(value), false, INT4OID);
     PGX_LOG(RUNTIME, IO, "pg_store_result_i32 OUT");
 }
 
@@ -1245,8 +1091,17 @@ extern "C" void pg_store_result_f64(double value) {
 extern "C" void pg_store_result_text(const char* value) {
     PGX_LOG(RUNTIME, IO, "pg_store_result_text IN: value=%s", value ? value : "NULL");
     PGX_LOG(RUNTIME, DEBUG, "pg_store_result_text called with value: %s", value ? value : "NULL");
-    // Use existing store_text_result pattern which now properly copies the string
+    // Use direct g_computed_results call for text storage
     bool isNull = (value == nullptr);
-    store_text_result(0, value, isNull);
+    Datum datum = 0;
+    if (!isNull) {
+        // Switch to a stable memory context for text data
+        MemoryContext oldContext = CurrentMemoryContext;
+        MemoryContextSwitchTo(CurTransactionContext);
+        text* textval = cstring_to_text(value);
+        datum = PointerGetDatum(textval);
+        MemoryContextSwitchTo(oldContext);
+    }
+    g_computed_results.setResult(0, datum, isNull, TEXTOID);
     PGX_LOG(RUNTIME, IO, "pg_store_result_text OUT");
 }
