@@ -150,13 +150,30 @@ void table_builder_add(void* builder, bool is_valid, T value) {
             prepare_computed_results(newSize);
         }
 
+        // LLVM may pass different representations?
+        // - Regular operations (AND/OR): 0 = false, 1 = true  
+        // - CmpIOp operations (NOT): 254 = false, 255 = true
+        T normalized_value = value;
+        if constexpr (std::is_same_v<T, bool>) {
+            unsigned char byte_value = static_cast<unsigned char>(value);
+            // Any non-zero value except 254 (CmpIOp false) is true
+            // 0 = false, 1 = true, 254 = false, 255 = true, others = true
+            normalized_value = (byte_value != 0) && (byte_value != 254);
+            PGX_LOG(RUNTIME,
+                    TRACE,
+                    "table_builder_add<bool>: byte value=0x%02X (%d), normalized=%d",
+                    byte_value,
+                    byte_value,
+                    static_cast<int>(normalized_value));
+        }
+        
         PGX_LOG(RUNTIME,
                 DEBUG,
                 "table_builder_add: storing value at column index %d with is_null=%s",
                 tb->current_column_index,
                 is_null ? "true" : "false");
 
-        Datum datum = is_null ? (Datum)0 : toDatum<T>(value);
+        Datum datum = is_null ? (Datum)0 : toDatum<T>(normalized_value);
         g_computed_results.setResult(tb->current_column_index, datum, is_null, getTypeOid<T>());
         tb->current_column_index++;
         if (tb->current_column_index > tb->total_columns) {
