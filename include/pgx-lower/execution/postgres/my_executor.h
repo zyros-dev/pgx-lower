@@ -25,7 +25,6 @@ extern "C" {
 
 struct MyCppPlan {};
 
-struct TupleScanContext;
 struct PostgreSQLTuplePassthrough;
 struct TupleStreamer;
 
