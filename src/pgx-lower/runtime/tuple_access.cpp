@@ -150,9 +150,12 @@ void table_builder_add(void* builder, bool is_valid, T value) {
             prepare_computed_results(newSize);
         }
 
-        // LLVM may pass different representations?
+        // TODO LLVM may pass different representations?
         // - Regular operations (AND/OR): 0 = false, 1 = true  
         // - CmpIOp operations (NOT): 254 = false, 255 = true
+        // I believe this is because arith.cmpi casts to i8 internally, which causes the i1 to extend into 0xFF and 0xFE
+        // I spent some time attempting to fix it, but it just didn't work. So now we have this:
+        // Either way, this also works with the usual boolean values so... it's probably okay? I dunno.
         T normalized_value = value;
         if constexpr (std::is_same_v<T, bool>) {
             unsigned char byte_value = static_cast<unsigned char>(value);
@@ -173,7 +176,7 @@ void table_builder_add(void* builder, bool is_valid, T value) {
                 tb->current_column_index,
                 is_null ? "true" : "false");
 
-        Datum datum = is_null ? (Datum)0 : toDatum<T>(normalized_value);
+        Datum datum = is_null ? (Datum)0 : toDatum<T>(value);
         g_computed_results.setResult(tb->current_column_index, datum, is_null, getTypeOid<T>());
         tb->current_column_index++;
         if (tb->current_column_index > tb->total_columns) {
