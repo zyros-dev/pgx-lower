@@ -7,11 +7,17 @@
 #include <json.h>
 #include "lingodb/runtime/helpers.h"
 #include "pgx-lower/runtime/tuple_access.h"
+#include "pgx-lower/runtime/runtime_templates.h"
 #include "pgx-lower/utility/logging.h"
+
+// Need access to g_computed_results for decimal handling
+extern ComputedResultStorage g_computed_results;
 
 extern "C" {
 #include "postgres.h"
 #include "utils/elog.h"
+#include "utils/numeric.h"
+#include "fmgr.h"
 }
 
 extern "C" {
@@ -51,6 +57,7 @@ void* rt_get_execution_context() {
 
 enum class ColumnType {
     INTEGER,
+    BIGINT,
     BOOLEAN
 };
 
@@ -61,7 +68,7 @@ struct ColumnSpec {
 
 struct DataSourceIterator {
     void* context;
-    void* table_handle;  // PostgreSQL table handle
+    void* table_handle;
     bool has_current_tuple;
     
     std::string table_name;
@@ -70,6 +77,8 @@ struct DataSourceIterator {
     // Dynamic column data storage
     std::vector<int32_t> int_values;
     std::vector<bool> int_nulls;
+    std::vector<int64_t> bigint_values;
+    std::vector<bool> bigint_nulls;
     std::vector<uint8_t> bool_values;  // Use uint8_t instead of bool for addressability
     std::vector<bool> bool_nulls;
     
@@ -90,7 +99,6 @@ struct TableSpec {
     std::vector<std::string> column_names;
 };
 
-// JSON parsing function using nlohmann/json
 TableSpec parse_table_spec(const char* json_str) {
     PGX_LOG(RUNTIME, IO, "parse_table_spec IN: json_str=%s", json_str ? json_str : "NULL");
     TableSpec spec;
@@ -123,27 +131,14 @@ TableSpec parse_table_spec(const char* json_str) {
     return spec;
 }
 
-struct TableBuilder {
-    void* data;
-    int64_t row_count;
-    int32_t current_column_index;  // Track which column we're currently filling
-    int32_t total_columns;         // Total number of columns in this table
-    
-    TableBuilder() : data(nullptr), row_count(0), current_column_index(0), total_columns(0) {}
-};
-
 // Memory context callback for TableBuilder cleanup
 static void cleanup_tablebuilder_callback(void* arg) {
     TableBuilder* tb = static_cast<TableBuilder*>(arg);
-    if (tb) {
-        tb->~TableBuilder();  // Explicit destructor call for PostgreSQL longjmp safety
-    }
 }
 
 extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime::VarLen32 schema_param) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_create IN: schema_param len=%u", schema_param.getLen());
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_create called");
-    
+
     // Use PostgreSQL memory management instead of malloc()
     MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
     
@@ -162,20 +157,17 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime
     MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
     
     MemoryContextSwitchTo(oldcontext);
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_create returning builder: %p with %d columns and memory context callback", builder, builder->total_columns);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_create OUT: builder=%p, total_columns=%d", builder, builder->total_columns);
     return builder;
 }
 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_nextrow(void* builder) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow IN: builder=%p", builder);
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow called with builder: %p", builder);
-    
+
     if (builder) {
         auto* tb = static_cast<TableBuilder*>(builder);
         
         // LingoDB currColumn assertion pattern: verify all columns were filled
-        // For now, make this more permissive during development
         if (tb->current_column_index != tb->total_columns) {
             PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: column count info - expected %d columns, got %d (this may be normal during MLIR pipeline development)", 
                  tb->total_columns, tb->current_column_index);
@@ -185,13 +177,11 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_nextrow(void* b
         
         tb->row_count++;
         
-        // Submit the completed row to PostgreSQL
         if (tb->total_columns > 0) {
             PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: submitting row with %d columns", tb->total_columns);
             add_tuple_to_result(tb->total_columns);
         }
         
-        // Reset column index for next row (LingoDB pattern)
         tb->current_column_index = 0;
         PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: reset column index to 0 for row %ld", tb->row_count);
     }
@@ -204,84 +194,67 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_build(void* bu
     return builder;
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* /* builder */, int64_t /* value */) {
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* builder, bool is_valid, int64_t value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint64 IN: value=%ld, is_valid=%s", value, is_valid ? "true" : "false");
+    pgx_lower::runtime::table_builder_add<int64_t>(builder, is_valid, value);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint64 OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_valid_flag, int32_t value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 IN: value=%d, is_valid_flag=%s", value, is_valid_flag ? "true" : "false");
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32 ENTRY: value=%d, is_valid_flag=%s",
-         value, is_valid_flag ? "true" : "false");
-    // DSAToStd passes a validity flag (could be 0xFF for true from DSA runtime)
-    // Normalize to proper boolean and convert to is_null for PostgreSQL internal use
-    bool is_valid = (is_valid_flag != 0);  // Normalize any non-zero to true
-    bool is_null = !is_valid;
-    
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32: is_valid_flag=%d -> normalized is_valid=%d -> is_null=%d", 
-         (int)(unsigned char)is_valid_flag, (int)is_valid, (int)is_null);
-
-    auto* tb = static_cast<TableBuilder*>(builder);
-    if (tb) {
-        // Ensure we have enough columns in computed results storage
-        // This handles dynamic column discovery during execution
-        if (tb->current_column_index >= g_computed_results.numComputedColumns) {
-            int newSize = tb->current_column_index + 1;
-            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32: expanding computed results storage from %d to %d columns", 
-                 g_computed_results.numComputedColumns, newSize);
-            prepare_computed_results(newSize);
-        }
-        
-        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32: storing value=%d with is_null=%s at column index %d", 
-             value, is_null ? "true" : "false", tb->current_column_index);
-        // Use the current column index from the TableBuilder
-        store_bigint_result(tb->current_column_index, static_cast<int64_t>(value), is_null);
-        // Advance to next column (LingoDB pattern)
-        tb->current_column_index++;
-        // Update total_columns to track the maximum columns seen
-        if (tb->current_column_index > tb->total_columns) {
-            tb->total_columns = tb->current_column_index;
-        }
-    } else {
-        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32: null builder, using fallback column 0");
-        store_bigint_result(0, static_cast<int64_t>(value), is_null);
-    }
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addint32 completed successfully");
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_valid, int32_t value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
+    pgx_lower::runtime::table_builder_add<int32_t>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_valid_flag, bool value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool IN: value=%s, is_valid_flag=%s", value ? "true" : "false", is_valid_flag ? "true" : "false");
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool called: value=%s, is_valid_flag=%s",
-         value ? "true" : "false", is_valid_flag ? "true" : "false");
-    // DSAToStd passes a validity flag (true = valid/not-null, false = null)
-    // Convert to is_null for PostgreSQL internal use
-    bool is_null = !is_valid_flag;
-
-    auto* tb = static_cast<TableBuilder*>(builder);
-    if (tb) {
-        // Ensure we have enough columns in computed results storage
-        // This handles dynamic column discovery during execution
-        if (tb->current_column_index >= g_computed_results.numComputedColumns) {
-            int newSize = tb->current_column_index + 1;
-            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool: expanding computed results storage from %d to %d columns", 
-                 g_computed_results.numComputedColumns, newSize);
-            prepare_computed_results(newSize);
-        }
-        
-        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool: storing at column index %d", tb->current_column_index);
-        // Use the current column index from the TableBuilder
-        store_bool_result(tb->current_column_index, value, is_null);
-        // Advance to next column (LingoDB pattern)
-        tb->current_column_index++;
-        // Update total_columns to track the maximum columns seen
-        if (tb->current_column_index > tb->total_columns) {
-            tb->total_columns = tb->current_column_index;
-        }
-    } else {
-        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool: null builder, using fallback column 0");
-        store_bool_result(0, value, is_null);
-    }
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_addbool completed successfully");
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_valid, bool value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool IN: value=%s, is_valid=%s", value ? "true" : "false", is_valid ? "true" : "false");
+    pgx_lower::runtime::table_builder_add<bool>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool OUT");
+}
+
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint8(void* builder, bool is_valid, int8_t value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint8 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
+    pgx_lower::runtime::table_builder_add<int8_t>(builder, is_valid, value);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint8 OUT");
+}
+
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint16(void* builder, bool is_valid, int16_t value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint16 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
+    pgx_lower::runtime::table_builder_add<int16_t>(builder, is_valid, value);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint16 OUT");
+}
+
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addfloat32(void* builder, bool is_valid, float value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat32 IN: value=%f, is_valid=%s", value, is_valid ? "true" : "false");
+    pgx_lower::runtime::table_builder_add<float>(builder, is_valid, value);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat32 OUT");
+}
+
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addfloat64(void* builder, bool is_valid, double value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat64 IN: value=%f, is_valid=%s", value, is_valid ? "true" : "false");
+    pgx_lower::runtime::table_builder_add<double>(builder, is_valid, value);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat64 OUT");
+}
+
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbinary(void* builder, bool is_valid, runtime::VarLen32 value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbinary IN: len=%u, is_valid=%s", value.getLen(), is_valid ? "true" : "false");
+    pgx_lower::runtime::table_builder_add<runtime::VarLen32>(builder, is_valid, value);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbinary OUT");
+}
+
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_adddecimal(void* builder, bool is_valid, __int128 value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s", is_valid ? "true" : "false");
+    // Just truncate to int64 for now - proper decimal support can come later
+    // TODO: Implement me!
+    pgx_lower::runtime::table_builder_add<int64_t>(builder, is_valid, static_cast<int64_t>(value));
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal OUT");
+}
+
+// Fixed-size binary type
+extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addfixedsized(void* builder, bool is_valid, int64_t value) {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfixedsized IN: value=%ld, is_valid=%s", value, is_valid ? "true" : "false");
+    pgx_lower::runtime::table_builder_add<int64_t>(builder, is_valid, value);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfixedsized OUT");
 }
 
 extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_destroy(void* builder) {
@@ -301,7 +274,6 @@ static void cleanup_datasourceiterator_callback(void* arg) {
     }
 }
 
-// Helper function: Decode table specification from VarLen32 parameter
 static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSourceIterator* iter) {
     uint32_t actual_len = varlen32_param.getLen();
     const char* json_spec = varlen32_param.data();
@@ -338,6 +310,8 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
                     // Infer type from column name patterns
                     if (col_name.find("flag") != std::string::npos || col_name.find("bool") != std::string::npos) {
                         col_spec.type = ColumnType::BOOLEAN;
+                    } else if (col_name.find("big") != std::string::npos || col_name.find("int8") != std::string::npos) {
+                        col_spec.type = ColumnType::BIGINT;
                     } else {
                         col_spec.type = ColumnType::INTEGER;
                     }
@@ -363,6 +337,8 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
 static void initialize_column_storage(DataSourceIterator* iter) {
     iter->int_values.resize(iter->columns.size(), 0);
     iter->int_nulls.resize(iter->columns.size(), true);
+    iter->bigint_values.resize(iter->columns.size(), 0);
+    iter->bigint_nulls.resize(iter->columns.size(), true);
     iter->bool_values.resize(iter->columns.size(), 0);
     iter->bool_nulls.resize(iter->columns.size(), true);
     
@@ -492,6 +468,7 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
     
     if (read_result == 1) {
         extern int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
+        extern int64_t get_int64_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null);
         
         // Read dynamic columns based on specification
@@ -517,6 +494,12 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
                 iter->bool_nulls[i] = is_null;
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %s (null=%s)", 
                      i, col_spec.name.c_str(), pg_column_index, bool_value ? "true" : "false", is_null ? "true" : "false");
+            } else if (col_spec.type == ColumnType::BIGINT) {
+                bool is_null = false;
+                iter->bigint_values[i] = get_int64_field(iter->table_handle, pg_column_index, &is_null);
+                iter->bigint_nulls[i] = is_null;
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)", 
+                     i, col_spec.name.c_str(), pg_column_index, (long long)iter->bigint_values[i], is_null ? "true" : "false");
             } else {
                 bool is_null = false;
                 iter->int_values[i] = get_int_field(iter->table_handle, pg_column_index, &is_null);
@@ -588,7 +571,14 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
             
             // Set validity bitmap based on whether the value is NULL
             // Note: In LingoDB, 1 means valid (not null), 0 means null
-            bool is_null = (col_spec.type == ColumnType::BOOLEAN) ? iter->bool_nulls[i] : iter->int_nulls[i];
+            bool is_null;
+            if (col_spec.type == ColumnType::BOOLEAN) {
+                is_null = iter->bool_nulls[i];
+            } else if (col_spec.type == ColumnType::BIGINT) {
+                is_null = iter->bigint_nulls[i];
+            } else {
+                is_null = iter->int_nulls[i];
+            }
             valid_bitmaps[i] = is_null ? 0x00 : 0xFF;  // 0x00 for null, 0xFF for valid
             
             PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu is_null=%s, valid_bitmap=0x%02X", 
@@ -603,6 +593,10 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
                 column_info_ptr[3] = (size_t)&iter->bool_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) boolean = %s at %p", 
                      i, col_spec.name.c_str(), iter->bool_values[i] ? "true" : "false", &iter->bool_values[i]);
+            } else if (col_spec.type == ColumnType::BIGINT) {
+                column_info_ptr[3] = (size_t)&iter->bigint_values[i]; // dataBuffer
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) bigint = %lld at %p", 
+                     i, col_spec.name.c_str(), (long long)iter->bigint_values[i], &iter->bigint_values[i]);
             } else {
                 column_info_ptr[3] = (size_t)&iter->int_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) integer = %d at %p", 
