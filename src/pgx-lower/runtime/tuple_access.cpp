@@ -133,7 +133,11 @@ namespace pgx_lower::runtime {
 template<typename T>
 void table_builder_add(void* builder, bool is_valid, T value) {
     auto* tb = static_cast<TableBuilder*>(builder);
-    bool is_null = !is_valid;
+    
+    // LLVM JIT may pass non-standard boolean values (e.g., 255 instead of 1)
+    // Pretty weird.
+    bool normalized_is_valid = (is_valid != 0);
+    bool is_null = !normalized_is_valid;
 
     if (tb) {
         if (tb->current_column_index >= g_computed_results.numComputedColumns) {
@@ -152,7 +156,7 @@ void table_builder_add(void* builder, bool is_valid, T value) {
                 tb->current_column_index,
                 is_null ? "true" : "false");
 
-        Datum datum = toDatum<T>(value);
+        Datum datum = is_null ? (Datum)0 : toDatum<T>(value);
         g_computed_results.setResult(tb->current_column_index, datum, is_null, getTypeOid<T>());
         tb->current_column_index++;
         if (tb->current_column_index > tb->total_columns) {
@@ -161,7 +165,8 @@ void table_builder_add(void* builder, bool is_valid, T value) {
     }
     else {
         PGX_LOG(RUNTIME, DEBUG, "table_builder_add: null builder, using fallback column 0");
-        Datum datum = toDatum<T>(value);
+        // Use normalized is_null value
+        Datum datum = is_null ? (Datum)0 : toDatum<T>(value);
         g_computed_results.setResult(0, datum, is_null, getTypeOid<T>());
     }
 }
