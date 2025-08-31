@@ -22,7 +22,6 @@ extern "C" {
 
 extern "C" {
 
-extern bool g_jit_results_ready;
 extern void mark_results_ready_for_streaming();
 extern void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
 extern void store_bool_result(int32_t columnIndex, bool value, bool isNull);

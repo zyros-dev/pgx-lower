@@ -141,3 +141,36 @@ void log(Category cat, Level level, const char* fmt, ...) {
 
 } // namespace log
 } // namespace pgx_lower
+
+extern "C" void pgx_update_log_settings(bool enable, bool debug, bool io, bool trace, const char* categories) {
+    using namespace pgx_lower::log;
+    
+    log_enable = enable;
+    log_debug = debug;
+    log_io = io;
+    log_trace = trace;
+    
+    // Parse categories
+    enabled_categories.clear();
+    if (categories && strlen(categories) > 0) {
+        std::string cats(categories);
+        std::stringstream ss(cats);
+        std::string cat;
+        while (std::getline(ss, cat, ',')) {
+            cat.erase(0, cat.find_first_not_of(" \t"));
+            cat.erase(cat.find_last_not_of(" \t") + 1);
+            
+            // Convert to lowercase for comparison
+            std::transform(cat.begin(), cat.end(), cat.begin(), ::tolower);
+            
+            if (cat == "ast_translate") enabled_categories.insert(Category::AST_TRANSLATE);
+            else if (cat == "relalg_lower") enabled_categories.insert(Category::RELALG_LOWER);
+            else if (cat == "db_lower") enabled_categories.insert(Category::DB_LOWER);
+            else if (cat == "dsa_lower") enabled_categories.insert(Category::DSA_LOWER);
+            else if (cat == "util_lower") enabled_categories.insert(Category::UTIL_LOWER);
+            else if (cat == "runtime") enabled_categories.insert(Category::RUNTIME);
+            else if (cat == "jit") enabled_categories.insert(Category::JIT);
+            else if (cat == "general") enabled_categories.insert(Category::GENERAL);
+        }
+    }
+}
