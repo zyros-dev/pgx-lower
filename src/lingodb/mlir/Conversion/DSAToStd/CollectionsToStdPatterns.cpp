@@ -11,7 +11,6 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 #include "runtime-defs/Vector.h"
-#include "pgx-lower/utility/logging.h"
 using namespace mlir;
 namespace {
 
@@ -73,71 +72,8 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
    }
 
    LogicalResult matchAndRewrite(mlir::dsa::ForOp forOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: ENTRY");
-      
-      // Print location info to help debug
-      auto loc = forOp.getLoc();
-      if (auto fileLoc = loc.dyn_cast<FileLineColLoc>()) {
-         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Processing ForOp at %s", fileLoc.getFilename().str().c_str());
-      } else {
-         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Processing ForOp at unknown location");
-      }
-      
-      // Debug: Print the collection operand info
-      if (!forOp.getCollection()) {
-         PGX_ERROR("[DSA] ForOpLowering: ForOp has null collection!");
-         return failure();
-      }
-      
-      // Debug: Log collection type early
-      auto collectionType = forOp.getCollection().getType();
-      
-      // Try to print the type name
-      std::string typeName = "unknown";
-      llvm::raw_string_ostream typeStream(typeName);
-      collectionType.print(typeStream);
-      PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Original collection type string: %s", typeName.c_str());
-      
-      // Check the type of the region argument to understand what type this ForOp expects
-      if (!forOp.getRegion().empty() && forOp.getRegion().front().getNumArguments() > 0) {
-         auto argType = forOp.getRegion().front().getArgument(0).getType();
-         std::string argTypeName = "unknown";
-         llvm::raw_string_ostream argTypeStream(argTypeName);
-         argType.print(argTypeStream);
-         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: ForOp expects induction variable of type: %s", argTypeName.c_str());
-         
-         // If the collection is already converted but the ForOp expects a DSA type,
-         // we need to infer the original DSA collection type
-         if (!collectionType.isa<mlir::dsa::CollectionType>()) {
-            if (auto recordType = argType.dyn_cast_or_null<mlir::dsa::RecordType>()) {
-               PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Collection already converted, ForOp expects RecordType");
-               // The ForOp expects to iterate over records, so the collection must have been a RecordBatchType
-               auto recordBatchType = mlir::dsa::RecordBatchType::get(forOp.getContext(), recordType.getRowType());
-               collectionType = recordBatchType;
-               PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Inferred collection type as RecordBatchType");
-            } else if (argType.isa<mlir::dsa::RecordBatchType>()) {
-               PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Collection already converted, but ForOp expects RecordBatchType");
-               // Use the argument type directly
-               collectionType = argType;
-            }
-         }
-      }
-      
-      if (auto genIter = collectionType.dyn_cast_or_null<mlir::dsa::GenericIterableType>()) {
-         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Collection is GenericIterableType: %s", genIter.getIteratorName().c_str());
-      } else if (auto recordBatch = collectionType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
-         PGX_LOG(DSA_LOWER, DEBUG, "[DSA] ForOpLowering: Collection is RecordBatchType");
-      } else if (auto record = collectionType.dyn_cast_or_null<mlir::dsa::RecordType>()) {
-      } else {
-      }
-      
-      if (forOp.getRegion().empty()) {
-         return failure();
-      }
-      
-      Block* originalBody = forOp.getBody();
-      mlir::dsa::YieldOp originalYieldOp = cast<mlir::dsa::YieldOp>(originalBody->getTerminator());
-      
+       auto collectionType = forOp.getCollection().getType();
+
       std::vector<Type> argumentTypes;
       std::vector<Location> argumentLocs;
       for (auto t : forOp.getRegion().getArgumentTypes()) {
@@ -157,7 +93,9 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
       }
 
       using fn_t = std::function<std::vector<Value>(std::function<Value(OpBuilder&)>, ValueRange, OpBuilder)>;
-      fn_t fn1 = [&, originalBody, originalYieldOp](std::function<Value(OpBuilder & b)> getElem, ValueRange iterargs, OpBuilder builder) {
+       Block* originalBody = forOp.getBody();
+       mlir::dsa::YieldOp originalYieldOp = cast<mlir::dsa::YieldOp>(originalBody->getTerminator());
+       fn_t fn1 = [&, originalBody, originalYieldOp](std::function<Value(OpBuilder & b)> getElem, ValueRange iterargs, OpBuilder builder) {
          // Use captured values instead of accessing forOp.getBody()
          auto yieldOp = originalYieldOp;
          std::vector<Type> resTypes;
@@ -242,7 +180,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          return results;
       };
 
-      std::vector<Value> results = iterator->implementLoop(forOp->getLoc(), adaptor.getInitArgs(), forOp.getUntil(), *typeConverter, rewriter, parentModule, containsCondSkip ? fn1 : fn2);
+      std::vector<Value> results = iterator->implementLoop(forOp->getLoc(), adaptor.getInitArgs(), forOp.getUntil(), const_cast<TypeConverter&>(*typeConverter), rewriter, parentModule, containsCondSkip ? fn1 : fn2);
       
       {
          OpBuilder::InsertionGuard insertionGuard(rewriter);

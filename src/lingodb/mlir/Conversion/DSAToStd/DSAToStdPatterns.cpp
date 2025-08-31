@@ -156,20 +156,10 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
          Value two = rewriter.create<arith::ConstantIndexOp>(loc, 2);
 
          Value cmp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, len, capacityInitial);
-         auto ifOp = rewriter.create<scf::IfOp>(loc, TypeRange(), cmp);
-         {
-            // Then branch (empty)
-            OpBuilder::InsertionGuard guard(rewriter);
-            rewriter.setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
-            rewriter.create<scf::YieldOp>(loc);
-         }
-         {
-            // Else branch
-            OpBuilder::InsertionGuard guard(rewriter);
-            rewriter.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
-            rt::Hashtable::resize(rewriter, loc)(adaptor.getHt());
-            rewriter.create<scf::YieldOp>(loc);
-         }
+         rewriter.create<scf::IfOp>(
+            loc, TypeRange(), cmp, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc); }, [&](OpBuilder& b, Location loc) {
+               rt::Hashtable::resize(b,loc)(adaptor.getHt());
+               b.create<scf::YieldOp>(loc); });
 
          Value htAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(rewriter.getContext(), htType), adaptor.getHt(), 0);
          Value ht = rewriter.create<util::LoadOp>(loc, htType, htAddress);
@@ -199,82 +189,64 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
 
             Value currEntryPtr = rewriter.create<util::LoadOp>(loc, bucketPtrType, ptr);
             Value cmp = rewriter.create<util::IsRefValidOp>(loc, rewriter.getI1Type(), currEntryPtr);
-            auto ifOp = rewriter.create<scf::IfOp>(loc, TypeRange({doneType, ptrType}), cmp);
-            {
-               OpBuilder::InsertionGuard guard(rewriter);
-               rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto ifOp = rewriter.create<scf::IfOp>(
+               loc, TypeRange({doneType, ptrType}), cmp,
+               [&](OpBuilder& b, Location loc) {
 
-               Value hashAddress=rewriter.create<util::TupleElementPtrOp>(loc, idxPtrType, currEntryPtr, 1);
-               Value entryHash = rewriter.create<util::LoadOp>(loc, idxType, hashAddress);
-               Value hashMatches = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, entryHash,hashed);
-               auto ifOpH = rewriter.create<scf::IfOp>(loc, TypeRange({doneType,ptrType}), hashMatches);
-               {
-                  OpBuilder::InsertionGuard guard(rewriter);
-                  rewriter.setInsertionPointToStart(&ifOpH.getThenRegion().front());
-                  Value kvAddress=rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, currEntryPtr, 2);
-                  Value entryKeyAddress=rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, kvAddress, 0);
-                  Value entryKey = rewriter.create<util::LoadOp>(loc, keyType, entryKeyAddress);
+                  Value hashAddress=rewriter.create<util::TupleElementPtrOp>(loc, idxPtrType, currEntryPtr, 1);
+                  Value entryHash = rewriter.create<util::LoadOp>(loc, idxType, hashAddress);
+                  Value hashMatches = b.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, entryHash,hashed);
+                  auto ifOpH = b.create<scf::IfOp>(
+                     loc, TypeRange({doneType,ptrType}), hashMatches, [&](OpBuilder& b, Location loc) {
+                        Value kvAddress=rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, currEntryPtr, 2);
+                        Value entryKeyAddress=rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, kvAddress, 0);
+                        Value entryKey = rewriter.create<util::LoadOp>(loc, keyType, entryKeyAddress);
 
-                  Value keyMatches = equalFnBuilder(rewriter,entryKey,adaptor.getKey());
-                  auto ifOp2 = rewriter.create<scf::IfOp>(loc, TypeRange({doneType,ptrType}), keyMatches);
-                  {
-                     OpBuilder::InsertionGuard guard(rewriter);
-                     rewriter.setInsertionPointToStart(&ifOp2.getThenRegion().front());
-                     //          entry.aggr = update(vec.aggr,val)
-                     if(reduceFnBuilder) {
-                        Value entryAggrAddress = rewriter.create<util::TupleElementPtrOp>(loc, aggrPtrType, kvAddress, 1);
-                        Value entryAggr = rewriter.create<util::LoadOp>(loc, aggrType, entryAggrAddress);
-                        Value newAggr = reduceFnBuilder(rewriter, entryAggr, adaptor.getVal());
-                        rewriter.create<util::StoreOp>(loc, newAggr, entryAggrAddress, Value());
-                     }
-                     rewriter.create<scf::YieldOp>(loc, ValueRange{falseValue,ptr});
-                  }
-                  {
-                     OpBuilder::InsertionGuard guard(rewriter);
-                     rewriter.setInsertionPointToStart(&ifOp2.getElseRegion().front());
+                        Value keyMatches = equalFnBuilder(b,entryKey,adaptor.getKey());
+                        auto ifOp2 = b.create<scf::IfOp>(
+                           loc, TypeRange({doneType,ptrType}), keyMatches, [&](OpBuilder& b, Location loc) {
+                              //          entry.aggr = update(vec.aggr,val)
+                              if(reduceFnBuilder) {
+                                 Value entryAggrAddress = rewriter.create<util::TupleElementPtrOp>(loc, aggrPtrType, kvAddress, 1);
+                                 Value entryAggr = rewriter.create<util::LoadOp>(loc, aggrType, entryAggrAddress);
+                                 Value newAggr = reduceFnBuilder(b, entryAggr, adaptor.getVal());
+                                 b.create<util::StoreOp>(loc, newAggr, entryAggrAddress, Value());
+                              }
+                              b.create<scf::YieldOp>(loc, ValueRange{falseValue,ptr});
+                           }, [&](OpBuilder& b, Location loc) {
 
-                     //          ptr = &entry.next
-                     Value newPtr=rewriter.create<util::GenericMemrefCastOp>(loc, ptrType,currEntryPtr);
-                     //          yield ptr,done=false
-                     rewriter.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });
-                  }
-                  rewriter.create<scf::YieldOp>(loc, ifOp2.getResults());
-               }
-               {
-                  OpBuilder::InsertionGuard guard(rewriter);
-                  rewriter.setInsertionPointToStart(&ifOpH.getElseRegion().front());
+                              //          ptr = &entry.next
+                              Value newPtr=b.create<util::GenericMemrefCastOp>(loc, ptrType,currEntryPtr);
+                              //          yield ptr,done=false
+                              b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
+                        b.create<scf::YieldOp>(loc, ifOp2.getResults());
+                     }, [&](OpBuilder& b, Location loc) {
 
-                  //          ptr = &entry.next
-                  Value newPtr=rewriter.create<util::GenericMemrefCastOp>(loc, ptrType,currEntryPtr);
-                  //          yield ptr,done=false
-                  rewriter.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });
-               }
-               rewriter.create<scf::YieldOp>(loc, ifOpH.getResults()); 
-            }
-            {
-               OpBuilder::InsertionGuard guard(rewriter);
-               rewriter.setInsertionPointToStart(&ifOp.getElseRegion().front());
-               Value initValAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(rewriter.getContext(), aggrType), adaptor.getHt(), 5);
-               Value initialVal = rewriter.create<util::LoadOp>(loc, aggrType, initValAddress);
-               Value newAggr = reduceFnBuilder ? reduceFnBuilder(rewriter,initialVal, adaptor.getVal()): initialVal;
-               Value newKVPair = rewriter.create<util::PackOp>(loc,ValueRange({adaptor.getKey(), newAggr}));
-               Value invalidNext  = rewriter.create<util::InvalidRefOp>(loc,i8PtrType);
-               //       %newEntry = ...
-               Value newEntry = rewriter.create<util::PackOp>(loc, ValueRange({invalidNext, hashed, newKVPair}));
-               Value valuesAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(rewriter.getContext(),valuesType), adaptor.getHt(), 3);
-               Value values = rewriter.create<util::LoadOp>(loc, valuesType, valuesAddress);
-               Value newValueLocPtr=rewriter.create<util::ArrayElementPtrOp>(loc,bucketPtrType,values,len);
-               //       append(vec,newEntry)
-               rewriter.create<util::StoreOp>(loc, newEntry, newValueLocPtr,Value());
+                        //          ptr = &entry.next
+                        Value newPtr=b.create<util::GenericMemrefCastOp>(loc, ptrType,currEntryPtr);
+                        //          yield ptr,done=false
+                        b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
+                  b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) {
+                  Value initValAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(rewriter.getContext(), aggrType), adaptor.getHt(), 5);
+                  Value initialVal = b.create<util::LoadOp>(loc, aggrType, initValAddress);
+                  Value newAggr = reduceFnBuilder ? reduceFnBuilder(b,initialVal, adaptor.getVal()): initialVal;
+                  Value newKVPair = b.create<util::PackOp>(loc,ValueRange({adaptor.getKey(), newAggr}));
+                  Value invalidNext  = b.create<util::InvalidRefOp>(loc,i8PtrType);
+                  //       %newEntry = ...
+                  Value newEntry = b.create<util::PackOp>(loc, ValueRange({invalidNext, hashed, newKVPair}));
+                  Value valuesAddress = b.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(b.getContext(),valuesType), adaptor.getHt(), 3);
+                  Value values = b.create<util::LoadOp>(loc, valuesType, valuesAddress);
+                  Value newValueLocPtr=b.create<util::ArrayElementPtrOp>(loc,bucketPtrType,values,len);
+                  //       append(vec,newEntry)
+                  b.create<util::StoreOp>(loc, newEntry, newValueLocPtr,Value());
 
-               //       *ptr=len
-               rewriter.create<util::StoreOp>(loc, newValueLocPtr, ptr, Value());
-               Value newLen = rewriter.create<arith::AddIOp>(loc, len, one);
-               //       yield 0,0,done=true
-               rewriter.create<mlir::util::StoreOp>(loc, newLen, lenAddress, Value());
+                  //       *ptr=len
+                  b.create<util::StoreOp>(loc, newValueLocPtr, ptr, Value());
+                  Value newLen = b.create<arith::AddIOp>(loc, len, one);
+                  //       yield 0,0,done=true
+                  b.create<mlir::util::StoreOp>(loc, newLen, lenAddress, Value());
 
-               rewriter.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); 
-            }
+                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); });
             //       if(compare(entry.key,key)){
 
             Value done = ifOp.getResult(0);
@@ -333,19 +305,11 @@ class LazyJHtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableIns
       auto len = rewriter.create<mlir::util::LoadOp>(loc, idxType, lenAddress, Value());
       auto capacity = rewriter.create<mlir::util::LoadOp>(loc, idxType, capacityAddress, Value());
       Value cmp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, len, capacity);
-      auto ifOp = rewriter.create<scf::IfOp>(loc, TypeRange({}), cmp);
-      {
-         OpBuilder::InsertionGuard guard(rewriter);
-         rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
-         rewriter.create<scf::YieldOp>(loc);
-      }
-      {
-         OpBuilder::InsertionGuard guard(rewriter);
-         rewriter.setInsertionPointToStart(&ifOp.getElseRegion().front());
-         rt::LazyJoinHashtable::resize(rewriter,loc)(adaptor.getHt());
-         rewriter.create<scf::YieldOp>(loc);
-      }
-      Value valuesAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(getContext(), llvm::cast<mlir::TupleType>(llvm::cast<mlir::util::RefType>(adaptor.getHt().getType()).getElementType()).getType(4)), adaptor.getHt(), 4);
+      rewriter.create<scf::IfOp>(
+         loc, TypeRange({}), cmp, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc); }, [&](OpBuilder& b, Location loc) {
+            rt::LazyJoinHashtable::resize(b,loc)(adaptor.getHt());
+            b.create<scf::YieldOp>(loc); });
+      Value valuesAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(getContext(), adaptor.getHt().getType().cast<mlir::util::RefType>().getElementType().cast<mlir::TupleType>().getType(4)), adaptor.getHt(), 4);
       Value castedValuesAddress = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, mlir::util::RefType::get(getContext(), valuesType), valuesAddress);
       auto values = rewriter.create<mlir::util::LoadOp>(loc, valuesType, castedValuesAddress, Value());
       rewriter.create<util::StoreOp>(loc, bucket, values, len);
@@ -402,20 +366,10 @@ class DSAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
       auto len = rewriter.create<mlir::util::LoadOp>(loc, idxType, lenAddress, Value());
       auto capacity = rewriter.create<mlir::util::LoadOp>(loc, idxType, capacityAddress, Value());
       Value cmp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, len, capacity);
-      auto ifOp = rewriter.create<scf::IfOp>(loc, TypeRange({}), cmp);
-      {
-         OpBuilder::InsertionGuard guard(rewriter);
-         rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
-         // Then branch - do nothing
-         rewriter.create<scf::YieldOp>(loc);
-      }
-      {
-         OpBuilder::InsertionGuard guard(rewriter);
-         rewriter.setInsertionPointToStart(&ifOp.getElseRegion().front());
-         // Else branch - resize
-         rt::Vector::resize(rewriter, loc)({builderVal});
-         rewriter.create<scf::YieldOp>(loc);
-      }
+      rewriter.create<scf::IfOp>(
+         loc, TypeRange({}), cmp, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc); }, [&](OpBuilder& b, Location loc) {
+            rt::Vector::resize(b,loc)({builderVal});
+            b.create<scf::YieldOp>(loc); });
       Value valuesAddress = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getContext(), valuesType), builderVal, 2);
       auto values = rewriter.create<mlir::util::LoadOp>(loc, valuesType, valuesAddress, Value());
 
@@ -518,7 +472,7 @@ class FreeLowering : public OpConversionPattern<mlir::dsa::FreeOp> {
 
 } // end namespace
 namespace mlir::dsa {
-void populateDSAToStdPatterns(::mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
+void populateDSAToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
    patterns.insert<CreateDsLowering, HtInsertLowering, FinalizeLowering, DSAppendLowering, LazyJHtInsertLowering, FreeLowering>(typeConverter, patterns.getContext());
    patterns.insert<CreateTableBuilderLowering, TBAppendLowering, FinalizeTBLowering, NextRowLowering>(typeConverter, patterns.getContext());
    typeConverter.addConversion([&typeConverter](mlir::dsa::VectorType vectorType) {

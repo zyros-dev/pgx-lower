@@ -11,6 +11,7 @@
 #include <cxxabi.h>
 
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/IR/Verifier.h"
 
 #include "lingodb/mlir/Passes.h"
@@ -61,6 +62,15 @@ bool runPhase3a(::mlir::ModuleOp module) {
 
 bool runPhase3b(::mlir::ModuleOp module) {
     PGX_LOG(DB_LOWER, TRACE, "runPhase3b: ENTERING Phase 3b DB+DSA->Standard lowering");
+    
+    // Check for MLIR debug environment variables
+    if (getenv("MLIR_PASS_PIPELINE_CRASH_REPRODUCER")) {
+        PGX_LOG(DB_LOWER, DEBUG, "MLIR_PASS_PIPELINE_CRASH_REPRODUCER is set");
+    }
+    if (getenv("MLIR_PASS_PIPELINE_LOCAL_REPRODUCER")) {
+        PGX_LOG(DB_LOWER, DEBUG, "MLIR_PASS_PIPELINE_LOCAL_REPRODUCER is set");
+    }
+    
     auto& context = *module.getContext();
 
     PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Checking loaded dialects");
@@ -99,6 +109,33 @@ bool runPhase3b(::mlir::ModuleOp module) {
     PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Creating PassManager");
     ::mlir::PassManager pm(&context);
     pm.enableVerifier(true);
+    
+    // Enable MLIR's built-in pass debugging
+    pm.enableIRPrinting(
+        /*shouldPrintBeforePass=*/[](mlir::Pass *pass, mlir::Operation *) {
+            PGX_LOG(DB_LOWER, DEBUG, "[PassManager] BEFORE pass: %s", pass->getName().str().c_str());
+            return false; // Return true to actually print IR
+        },
+        /*shouldPrintAfterPass=*/[](mlir::Pass *pass, mlir::Operation *) {
+            PGX_LOG(DB_LOWER, DEBUG, "[PassManager] AFTER pass: %s", pass->getName().str().c_str());
+            // Print IR after DBToStd to debug
+            if (pass->getName().contains("DBToStd")) {
+                PGX_LOG(DB_LOWER, DEBUG, "[PassManager] Printing IR after DBToStd for debugging");
+                return true;
+            }
+            return false;
+        },
+        /*printModuleScope=*/true,
+        /*printAfterOnlyOnChange=*/false,
+        /*printAfterOnlyOnFailure=*/false,
+        llvm::errs()
+    );
+    
+    // Enable crash reproducer generation
+    pm.enableCrashReproducerGeneration("/tmp/pgx_crash_reproducer");
+    
+    // Enable pass timing statistics
+    pm.enableTiming();
 
     PGX_LOG(DB_LOWER, TRACE, "runPhase3b: Adding DB->Standard pipeline to PassManager");
     mlir::pgx_lower::createDBToStandardPipeline(pm, false);
@@ -127,7 +164,7 @@ bool runPhase3b(::mlir::ModuleOp module) {
                 std::string moduleStr;
                 llvm::raw_string_ostream stream(moduleStr);
                 module.print(stream);
-                PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Module state after failure (first 500 chars): %.500s", moduleStr.c_str());
+                PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Module state after failure: %s", moduleStr.c_str());
             } catch (...) {
                 PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Could not dump module after failure");
             }

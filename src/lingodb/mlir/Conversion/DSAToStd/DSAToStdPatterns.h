@@ -2,6 +2,7 @@
 
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 namespace mlir {
 namespace dsa {
@@ -16,7 +17,7 @@ void populateDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet& p
 void populateCollectionsToStdPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns);
 
 // Heavy pattern registration (isolated in PatternRegistry.cpp)
-void registerAllDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns, ConversionTarget& target);
+void registerAllDSAToStdPatterns(TypeConverter& typeConverter, RewritePatternSet& patterns, ConversionTarget& target, MLIRContext* context);
 
 // Main pass creation
 std::unique_ptr<Pass> createLowerToStdPass();
