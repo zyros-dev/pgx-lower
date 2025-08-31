@@ -52,15 +52,38 @@ void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
 
 // Phase 2a: DB→Standard lowering pipeline (using LingoDB's pipeline)
 void createDBToStandardPipeline(PassManager& pm, bool enableVerification) {
+    PGX_LOG(DB_LOWER, TRACE, "[createDBToStandardPipeline]: ENTERING DB to Standard pipeline creation");
     PGX_LOG(JIT, DEBUG, "[createDBToStandardPipeline]: Adding DB to Standard pipeline (Phase 2a)");
     if (enableVerification) {
+        PGX_LOG(DB_LOWER, DEBUG, "[createDBToStandardPipeline]: Enabling verifier");
         pm.enableVerifier(true);
     }
     
-    db::createLowerDBPipeline(pm);
+    PGX_LOG(DB_LOWER, TRACE, "[createDBToStandardPipeline]: About to call db::createLowerDBPipeline");
+    try {
+        db::createLowerDBPipeline(pm);
+        PGX_LOG(DB_LOWER, DEBUG, "[createDBToStandardPipeline]: db::createLowerDBPipeline completed");
+    } catch (const std::exception& e) {
+        PGX_LOG(DB_LOWER, DEBUG, "[createDBToStandardPipeline]: db::createLowerDBPipeline threw exception: %s", e.what());
+        throw;
+    } catch (...) {
+        PGX_LOG(DB_LOWER, DEBUG, "[createDBToStandardPipeline]: db::createLowerDBPipeline threw unknown exception");
+        throw;
+    }
     
     // Add canonicalizer after LingoDB's pipeline
-    pm.addPass(createCanonicalizerPass());
+    PGX_LOG(DB_LOWER, TRACE, "[createDBToStandardPipeline]: Adding canonicalizer pass");
+    try {
+        pm.addPass(createCanonicalizerPass());
+        PGX_LOG(DB_LOWER, DEBUG, "[createDBToStandardPipeline]: Canonicalizer pass added successfully");
+    } catch (const std::exception& e) {
+        PGX_LOG(DB_LOWER, DEBUG, "[createDBToStandardPipeline]: createCanonicalizerPass threw exception: %s", e.what());
+        throw;
+    } catch (...) {
+        PGX_LOG(DB_LOWER, DEBUG, "[createDBToStandardPipeline]: createCanonicalizerPass threw unknown exception");
+        throw;
+    }
+    PGX_LOG(DB_LOWER, DEBUG, "[createDBToStandardPipeline]: EXITING DB to Standard pipeline creation");
 }
 
 // Phase 2b: DSAStandard lowering pipeline (following LingoDB sequential pattern)

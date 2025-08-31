@@ -60,16 +60,23 @@ bool runPhase3a(::mlir::ModuleOp module) {
 }
 
 bool runPhase3b(::mlir::ModuleOp module) {
+    PGX_LOG(DB_LOWER, TRACE, "runPhase3b: ENTERING Phase 3b DB+DSA->Standard lowering");
     auto& context = *module.getContext();
 
+    PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Checking loaded dialects");
     auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
     auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
     auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
 
     if (!dbDialect || !dsaDialect || !utilDialect) {
+        PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Missing dialects - DB:%p DSA:%p Util:%p", 
+                (void*)dbDialect, (void*)dsaDialect, (void*)utilDialect);
         throw std::runtime_error("Phase 3b: Required dialects not loaded");
     }
+    PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: All dialects loaded - DB:%p DSA:%p Util:%p", 
+            (void*)dbDialect, (void*)dsaDialect, (void*)utilDialect);
 
+    PGX_LOG(DB_LOWER, TRACE, "runPhase3b: Validating module state");
     if (!validateModuleState(module, "Phase 3b input")) {
         throw std::runtime_error("Phase 3b: Module validation failed before running passes");
     }
@@ -79,24 +86,61 @@ bool runPhase3b(::mlir::ModuleOp module) {
     }
 
     context.disableMultithreading();
+    PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Multithreading disabled");
 
+    PGX_LOG(DB_LOWER, TRACE, "runPhase3b: Verifying module before pass execution");
     if (mlir::failed(mlir::verify(module))) {
         throw std::runtime_error("Phase 3b: Module verification failed before pass execution");
     }
+    PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Module verification passed");
 
     dumpModuleWithStats(module, "Phase 3b BEFORE: DB+DSA -> Standard", pgx_lower::log::Category::DB_LOWER);
 
+    PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Creating PassManager");
     ::mlir::PassManager pm(&context);
     pm.enableVerifier(true);
 
+    PGX_LOG(DB_LOWER, TRACE, "runPhase3b: Adding DB->Standard pipeline to PassManager");
     mlir::pgx_lower::createDBToStandardPipeline(pm, false);
+    PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: DB->Standard pipeline added");
+    
     pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DBStandard lowering", ::pgx_lower::log::Category::DB_LOWER));
+    
+    PGX_LOG(DB_LOWER, TRACE, "runPhase3b: Adding DSA->Standard pipeline to PassManager");
     mlir::pgx_lower::createDSAToStandardPipeline(pm, false);
+    PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: DSA->Standard pipeline added");
+    
     pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DSAStandard lowering", ::pgx_lower::log::Category::DSA_LOWER));
 
     // Run PassManager with pure C++ exception handling
-    if (mlir::failed(pm.run(module))) {
-        throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
+    PGX_LOG(DB_LOWER, TRACE, "runPhase3b: About to run PassManager with DB+DSA lowering passes");
+    try {
+        PGX_LOG(DB_LOWER, TRACE, "runPhase3b: Calling pm.run(module)...");
+        auto result = pm.run(module);
+        PGX_LOG(DB_LOWER, TRACE, "runPhase3b: pm.run() returned, checking result");
+        
+        if (mlir::failed(result)) {
+            PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: PassManager.run() returned FAILED status!");
+            
+            // Try to dump the module state after failure
+            try {
+                std::string moduleStr;
+                llvm::raw_string_ostream stream(moduleStr);
+                module.print(stream);
+                PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Module state after failure (first 500 chars): %.500s", moduleStr.c_str());
+            } catch (...) {
+                PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: Could not dump module after failure");
+            }
+            
+            throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
+        }
+        PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: PassManager.run() SUCCEEDED");
+    } catch (const std::exception& e) {
+        PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: PassManager.run() threw exception: %s", e.what());
+        throw;
+    } catch (...) {
+        PGX_LOG(DB_LOWER, DEBUG, "runPhase3b: PassManager.run() threw unknown exception");
+        throw;
     }
 
     if (!validateModuleState(module, "Phase 3b output")) {
