@@ -291,7 +291,7 @@ bool QueryAnalyzer::isTypeSupportedByMLIR(Oid postgresType) {
     // PostgreSQL types that MLIR runtime can handle
     // Based on working test cases and available runtime functions
     switch (postgresType) {
-    // Integer types (handled by get_int_field)
+    // Integer types (handled by get_int32_field)
     case BOOLOID:
     case INT2OID:
     case INT4OID:

@@ -467,7 +467,7 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: read_result = %ld", read_result);
     
     if (read_result == 1) {
-        extern int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null);
+        extern int32_t get_int32_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern int64_t get_int64_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null);
         
@@ -502,7 +502,7 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
                      i, col_spec.name.c_str(), pg_column_index, (long long)iter->bigint_values[i], is_null ? "true" : "false");
             } else {
                 bool is_null = false;
-                iter->int_values[i] = get_int_field(iter->table_handle, pg_column_index, &is_null);
+                iter->int_values[i] = get_int32_field(iter->table_handle, pg_column_index, &is_null);
                 iter->int_nulls[i] = is_null;
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", 
                      i, col_spec.name.c_str(), pg_column_index, iter->int_values[i], is_null ? "true" : "false");

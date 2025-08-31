@@ -77,48 +77,6 @@ bool check_memory_context_safety() {
 #endif
 }
 
-struct TupleHandle {
-    HeapTuple heap_tuple;
-    TupleDesc tuple_desc;
-    bool owns_tuple;
-
-    TupleHandle(HeapTuple tuple, TupleDesc desc, bool owns = false)
-    : heap_tuple(tuple)
-    , tuple_desc(desc)
-    , owns_tuple(owns) {}
-
-    ~TupleHandle() {
-        if (owns_tuple && heap_tuple) {
-            heap_freetuple(heap_tuple);
-        }
-    }
-};
-
-double getNumericField(TupleHandle* tuple, int field_index, bool* is_null) {
-    if (!tuple || !is_null) {
-        if (is_null)
-            *is_null = true;
-        return 0.0;
-    }
-
-    if (!tuple->heap_tuple || !tuple->tuple_desc) {
-        *is_null = true;
-        return 0.0;
-    }
-
-    bool isnull = false;
-    Datum value = heap_getattr(tuple->heap_tuple, field_index + 1, tuple->tuple_desc, &isnull);
-
-    *is_null = isnull;
-    if (isnull) {
-        return 0.0;
-    }
-
-    // Convert numeric to double - this is a simplification
-    Datum float8_value = DirectFunctionCall1(numeric_float8, value);
-    return DatumGetFloat8(float8_value);
-}
-
 // ============================================================================
 // Runtime system implementation
 // ============================================================================
@@ -668,23 +626,9 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
     return false;
 }
 
-// Typed field access functions for PostgreSQL dialect
-extern "C" int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
-    return pgx_lower::runtime::extract_field<int32_t>(field_index, is_null);
-}
 
 extern "C" bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     return pgx_lower::runtime::extract_field<bool>(field_index, is_null);
-}
-
-// MLIR runtime functions for storing computed expression results
-extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull) {
-    PGX_LOG(RUNTIME, IO, "store_bigint_result IN: columnIndex=%d, value=%ld, isNull=%s", columnIndex, value, isNull ? "true" : "false");
-    // FIXED: Now properly stores INT8 instead of casting to INT4
-    // INT8 is pass-by-value on 64-bit systems, no memory context switch needed
-    Datum datum = Int64GetDatum(value);
-    g_computed_results.setResult(columnIndex, datum, isNull, INT8OID);
-    PGX_LOG(RUNTIME, IO, "store_bigint_result OUT");
 }
 
 extern "C" void prepare_computed_results(int32_t numColumns) {
@@ -724,6 +668,11 @@ extern "C" int16_t get_int16_field(void* tuple_handle, int32_t field_index, bool
     return pgx_lower::runtime::extract_field<int16_t>(field_index, is_null);
 }
 
+// Typed field access functions for PostgreSQL dialect
+extern "C" int32_t get_int32_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    return pgx_lower::runtime::extract_field<int32_t>(field_index, is_null);
+}
+
 extern "C" int64_t get_int64_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     return pgx_lower::runtime::extract_field<int64_t>(field_index, is_null);
 }
@@ -755,230 +704,4 @@ extern "C" float get_float32_field_mlir(int64_t iteration_signal, int32_t field_
 extern "C" double get_float64_field_mlir(int64_t iteration_signal, int32_t field_index) {
     bool is_null;
     return pgx_lower::runtime::extract_field<double>(field_index, &is_null);
-}
-
-// Note: All other C interface functions are implemented in my_executor.cpp
-// Only get_numeric_field is kept here to support both unit tests and extension builds
-
-// Generic field extractor that stores Datum directly based on actual type
-
-// Critical runtime function for DB dialect GetExternalOp lowering
-extern "C" void* DataSource_get(runtime::VarLen32 description) {
-    try {
-        // Call the PostgreSQL DataSource factory
-        auto* dataSource = runtime::DataSource::get(description);
-        return static_cast<void*>(dataSource);
-    } catch (const std::exception& e) {
-        PGX_ERROR("DataSource_get failed: %s", e.what());
-        return nullptr;
-    } catch (...) {
-        PGX_ERROR("DataSource_get failed: unknown exception");
-        return nullptr;
-    }
-}
-
-//===----------------------------------------------------------------------===//
-// PostgreSQL SPI Runtime Functions
-//===----------------------------------------------------------------------===//
-extern "C" void* pg_table_open(const char* table_name) {
-    PGX_LOG(RUNTIME, IO, "pg_table_open IN: table_name=%s", table_name ? table_name : "NULL");
-    PGX_LOG(RUNTIME, DEBUG, "pg_table_open called for table: %s", table_name ? table_name : "NULL");
-    
-    // Critical: Check memory context safety before PostgreSQL operations
-    if (!pgx_lower::runtime::check_memory_context_safety()) {
-        PGX_ERROR("pg_table_open: Memory context unsafe for PostgreSQL operations");
-        return nullptr;
-    }
-
-    try {
-        auto* handle = new PostgreSQLTableHandle();
-        
-        // Use the table OID passed from the executor (matches open_postgres_table pattern)
-        if (g_jit_table_oid != InvalidOid) {
-            Oid tableOid = g_jit_table_oid;
-            PGX_LOG(RUNTIME, DEBUG, "pg_table_open: Using table OID: %u", tableOid);
-            
-            // Open table using proven pattern from open_postgres_table
-            handle->rel = table_open(tableOid, AccessShareLock);
-            handle->tupleDesc = RelationGetDescr(handle->rel);
-            handle->scanDesc = table_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr);
-            handle->isOpen = true;
-            
-            // Force fresh snapshot for recent changes (from open_postgres_table)
-            CommandCounterIncrement();
-            Snapshot currentSnapshot = GetActiveSnapshot();
-            if (currentSnapshot) {
-                handle->scanDesc->rs_snapshot = currentSnapshot;
-            }
-            
-            // Reset scan to beginning
-            heap_rescan(handle->scanDesc, nullptr, false, false, false, false);
-            
-            PGX_LOG(RUNTIME, DEBUG, "pg_table_open: Successfully opened table");
-            PGX_LOG(RUNTIME, IO, "pg_table_open OUT: handle=%p", handle);
-            return handle;
-        } else {
-            PGX_ERROR("pg_table_open: Cannot determine table to open (g_jit_table_oid not set)");
-            delete handle;
-            return nullptr;
-        }
-    } catch (...) {
-        PGX_ERROR("pg_table_open: Exception caught");
-        return nullptr;
-    }
-}
-
-extern "C" int64_t pg_get_next_tuple(void* table_handle) {
-    PGX_LOG(RUNTIME, IO, "pg_get_next_tuple IN: table_handle=%p", table_handle);
-    PGX_LOG(RUNTIME, DEBUG, "pg_get_next_tuple called");
-    
-    if (!table_handle) {
-        PGX_ERROR("pg_get_next_tuple: Invalid table handle");
-        return -1;
-    }
-    
-    // Critical: Check memory context safety
-    if (!pgx_lower::runtime::check_memory_context_safety()) {
-        PGX_ERROR("pg_get_next_tuple: Memory context unsafe for PostgreSQL operations");
-        return -1;
-    }
-
-    const auto* handle = static_cast<PostgreSQLTableHandle*>(table_handle);
-    if (!handle->isOpen || !handle->scanDesc) {
-        PGX_ERROR("pg_get_next_tuple: Table not open or invalid scan");
-        return -1;
-    }
-    
-    HeapTuple tuple = nullptr;
-    try {
-        // Use proven pattern from read_next_tuple_from_table
-        PG_TRY();
-        {
-            tuple = heap_getnext(handle->scanDesc, ForwardScanDirection);
-        }
-        PG_CATCH();
-        {
-            PGX_ERROR("pg_get_next_tuple: heap_getnext threw PostgreSQL exception");
-            PG_RE_THROW();
-        }
-        PG_END_TRY();
-    } catch (const std::exception& e) {
-        PGX_ERROR("pg_get_next_tuple: heap_getnext threw C++ exception: %s", e.what());
-        return -1;
-    }
-    
-    if (tuple == nullptr) {
-        PGX_LOG(RUNTIME, DEBUG, "pg_get_next_tuple: End of table reached");
-        PGX_LOG(RUNTIME, IO, "pg_get_next_tuple OUT: 0 (end of table)");
-        return 0; // End of scan
-    }
-    
-    // Store tuple for field extraction using global state (proven pattern)
-    if (g_current_tuple_passthrough.originalTuple) {
-        heap_freetuple(g_current_tuple_passthrough.originalTuple);
-    }
-    g_current_tuple_passthrough.originalTuple = heap_copytuple(tuple);
-    g_current_tuple_passthrough.tupleDesc = handle->tupleDesc;
-    
-    PGX_LOG(RUNTIME, IO, "pg_get_next_tuple OUT: 1 (tuple available)");
-    return 1; // Tuple available
-}
-
-extern "C" int32_t pg_extract_field(void* tuple_handle, int32_t field_index) {
-    PGX_LOG(RUNTIME, IO, "pg_extract_field IN: field_index=%d", field_index);
-    PGX_LOG(RUNTIME, DEBUG, "pg_extract_field called for field: %d", field_index);
-    
-    // Critical: Check memory context safety
-    if (!pgx_lower::runtime::check_memory_context_safety()) {
-        PGX_ERROR("pg_extract_field: Memory context unsafe for PostgreSQL operations");
-        return 0;
-    }
-    
-    // Use current tuple from global state (proven pattern from get_int_field)
-    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
-        PGX_ERROR("pg_extract_field: No current tuple available");
-        return 0;
-    }
-    
-    HeapTuple tuple = g_current_tuple_passthrough.originalTuple;
-    TupleDesc tupleDesc = g_current_tuple_passthrough.tupleDesc;
-    
-    // PostgreSQL uses 1-based attribute indexing
-    const int attr_num = field_index + 1;
-    if (attr_num > tupleDesc->natts) {
-        PGX_ERROR("pg_extract_field: field_index out of range");
-        return 0;
-    }
-    
-    // Use proven pattern from get_int_field
-    bool isnull;
-    Datum value = heap_getattr(tuple, attr_num, tupleDesc, &isnull);
-    if (isnull) {
-        PGX_LOG(RUNTIME, DEBUG, "pg_extract_field: Field is null, returning 0");
-        PGX_LOG(RUNTIME, IO, "pg_extract_field OUT: 0 (null)");
-        return 0;
-    }
-    
-    // Type-specific extraction (from get_int_field pattern)
-    const auto atttypid = TupleDescAttr(tupleDesc, field_index)->atttypid;
-    switch (atttypid) {
-        case BOOLOID: return DatumGetBool(value) ? 1 : 0;
-        case INT2OID: return (int32_t)DatumGetInt16(value);
-        case INT4OID: return DatumGetInt32(value);
-        case INT8OID: return static_cast<int32_t>(DatumGetInt64(value));
-        default:
-            PGX_WARNING("pg_extract_field: Unsupported type OID: %d", atttypid);
-            return 0;
-    }
-}
-
-extern "C" void pg_store_result(void* result) {
-    PGX_LOG(RUNTIME, IO, "pg_store_result IN: result=%p", result);
-    PGX_LOG(RUNTIME, DEBUG, "pg_store_result called with result: %p", result);
-    // Use existing computed results storage mechanism
-    // This is a generic store - the value is already stored via other pg_store_result_* calls
-    PGX_LOG(RUNTIME, IO, "pg_store_result OUT");
-}
-
-extern "C" void pg_store_result_i32(int32_t value) {
-    PGX_LOG(RUNTIME, IO, "pg_store_result_i32 IN: value=%d", value);
-    PGX_LOG(RUNTIME, DEBUG, "pg_store_result_i32 called with value: %d", value);
-    // Use direct g_computed_results call for int32 storage
-    g_computed_results.setResult(0, Int32GetDatum(value), false, INT4OID);
-    PGX_LOG(RUNTIME, IO, "pg_store_result_i32 OUT");
-}
-
-extern "C" void pg_store_result_i64(int64_t value) {
-    PGX_LOG(RUNTIME, IO, "pg_store_result_i64 IN: value=%ld", value);
-    PGX_LOG(RUNTIME, DEBUG, "pg_store_result_i64 called with value: %ld", value);
-    // Use existing store_bigint_result pattern
-    store_bigint_result(0, value, false);
-    PGX_LOG(RUNTIME, IO, "pg_store_result_i64 OUT");
-}
-
-extern "C" void pg_store_result_f64(double value) {
-    PGX_LOG(RUNTIME, IO, "pg_store_result_f64 IN: value=%f", value);
-    PGX_LOG(RUNTIME, DEBUG, "pg_store_result_f64 called with value: %f", value);
-    // Store as float8 datum using PostgreSQL pattern
-    Datum datum = Float8GetDatum(value);
-    g_computed_results.setResult(0, datum, false, FLOAT8OID);
-    PGX_LOG(RUNTIME, IO, "pg_store_result_f64 OUT");
-}
-
-extern "C" void pg_store_result_text(const char* value) {
-    PGX_LOG(RUNTIME, IO, "pg_store_result_text IN: value=%s", value ? value : "NULL");
-    PGX_LOG(RUNTIME, DEBUG, "pg_store_result_text called with value: %s", value ? value : "NULL");
-    // Use direct g_computed_results call for text storage
-    bool isNull = (value == nullptr);
-    Datum datum = 0;
-    if (!isNull) {
-        // Switch to a stable memory context for text data
-        MemoryContext oldContext = CurrentMemoryContext;
-        MemoryContextSwitchTo(CurTransactionContext);
-        text* textval = cstring_to_text(value);
-        datum = PointerGetDatum(textval);
-        MemoryContextSwitchTo(oldContext);
-    }
-    g_computed_results.setResult(0, datum, isNull, TEXTOID);
-    PGX_LOG(RUNTIME, IO, "pg_store_result_text OUT");
 }
