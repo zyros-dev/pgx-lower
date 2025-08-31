@@ -176,7 +176,7 @@ void table_builder_add(void* builder, bool is_valid, T value) {
                 tb->current_column_index,
                 is_null ? "true" : "false");
 
-        Datum datum = is_null ? (Datum)0 : toDatum<T>(value);
+        Datum datum = is_null ? (Datum)0 : toDatum<T>(normalized_value);
         g_computed_results.setResult(tb->current_column_index, datum, is_null, getTypeOid<T>());
         tb->current_column_index++;
         if (tb->current_column_index > tb->total_columns) {
