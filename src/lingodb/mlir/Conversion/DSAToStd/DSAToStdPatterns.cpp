@@ -157,7 +157,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
 
          Value cmp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, len, capacityInitial);
          rewriter.create<scf::IfOp>(
-            loc, TypeRange(), cmp, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc); }, [&](OpBuilder& b, Location loc) {
+            loc, cmp, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc); }, [&](OpBuilder& b, Location loc) {
                rt::Hashtable::resize(b,loc)(adaptor.getHt());
                b.create<scf::YieldOp>(loc); });
 
@@ -189,22 +189,28 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
 
             Value currEntryPtr = rewriter.create<util::LoadOp>(loc, bucketPtrType, ptr);
             Value cmp = rewriter.create<util::IsRefValidOp>(loc, rewriter.getI1Type(), currEntryPtr);
-            auto ifOp = rewriter.create<scf::IfOp>(
-               loc, TypeRange({doneType, ptrType}), cmp,
-               [&](OpBuilder& b, Location loc) {
+            auto ifOp = rewriter.create<scf::IfOp>(loc, TypeRange({doneType, ptrType}), cmp);
+            {
+               OpBuilder::InsertionGuard guard(rewriter);
+               rewriter.setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
+               OpBuilder& b = rewriter;  // Keep alias for minimal changes
 
                   Value hashAddress=rewriter.create<util::TupleElementPtrOp>(loc, idxPtrType, currEntryPtr, 1);
                   Value entryHash = rewriter.create<util::LoadOp>(loc, idxType, hashAddress);
                   Value hashMatches = b.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, entryHash,hashed);
-                  auto ifOpH = b.create<scf::IfOp>(
-                     loc, TypeRange({doneType,ptrType}), hashMatches, [&](OpBuilder& b, Location loc) {
+                  auto ifOpH = b.create<scf::IfOp>(loc, TypeRange({doneType,ptrType}), hashMatches);
+                  {
+                     OpBuilder::InsertionGuard guard(b);
+                     b.setInsertionPointToStart(&ifOpH.getThenRegion().emplaceBlock());
                         Value kvAddress=rewriter.create<util::TupleElementPtrOp>(loc, kvPtrType, currEntryPtr, 2);
                         Value entryKeyAddress=rewriter.create<util::TupleElementPtrOp>(loc, keyPtrType, kvAddress, 0);
                         Value entryKey = rewriter.create<util::LoadOp>(loc, keyType, entryKeyAddress);
 
                         Value keyMatches = equalFnBuilder(b,entryKey,adaptor.getKey());
-                        auto ifOp2 = b.create<scf::IfOp>(
-                           loc, TypeRange({doneType,ptrType}), keyMatches, [&](OpBuilder& b, Location loc) {
+                        auto ifOp2 = b.create<scf::IfOp>(loc, TypeRange({doneType,ptrType}), keyMatches);
+                        {
+                           OpBuilder::InsertionGuard guard2(b);
+                           b.setInsertionPointToStart(&ifOp2.getThenRegion().emplaceBlock());
                               //          entry.aggr = update(vec.aggr,val)
                               if(reduceFnBuilder) {
                                  Value entryAggrAddress = rewriter.create<util::TupleElementPtrOp>(loc, aggrPtrType, kvAddress, 1);
@@ -213,20 +219,30 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                                  b.create<util::StoreOp>(loc, newAggr, entryAggrAddress, Value());
                               }
                               b.create<scf::YieldOp>(loc, ValueRange{falseValue,ptr});
-                           }, [&](OpBuilder& b, Location loc) {
-
+                              
+                              // Else branch of ifOp2
+                              b.setInsertionPointToStart(&ifOp2.getElseRegion().emplaceBlock());
                               //          ptr = &entry.next
                               Value newPtr=b.create<util::GenericMemrefCastOp>(loc, ptrType,currEntryPtr);
                               //          yield ptr,done=false
-                              b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
+                              b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });
+                        }
+                        b.setInsertionPointAfter(ifOp2);
                         b.create<scf::YieldOp>(loc, ifOp2.getResults());
-                     }, [&](OpBuilder& b, Location loc) {
-
+                        
+                        // Else branch of ifOpH
+                        b.setInsertionPointToStart(&ifOpH.getElseRegion().emplaceBlock());
                         //          ptr = &entry.next
                         Value newPtr=b.create<util::GenericMemrefCastOp>(loc, ptrType,currEntryPtr);
                         //          yield ptr,done=false
-                        b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });});
-                  b.create<scf::YieldOp>(loc, ifOpH.getResults()); }, [&](OpBuilder& b, Location loc) {
+                        b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });
+                  }
+                  b.setInsertionPointAfter(ifOpH);
+                  b.create<scf::YieldOp>(loc, ifOpH.getResults()); 
+               
+               // Else branch of outer ifOp
+               rewriter.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
+               b = rewriter;  // Keep alias for minimal changes
                   Value initValAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(rewriter.getContext(), aggrType), adaptor.getHt(), 5);
                   Value initialVal = b.create<util::LoadOp>(loc, aggrType, initValAddress);
                   Value newAggr = reduceFnBuilder ? reduceFnBuilder(b,initialVal, adaptor.getVal()): initialVal;
@@ -246,7 +262,8 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                   //       yield 0,0,done=true
                   b.create<mlir::util::StoreOp>(loc, newLen, lenAddress, Value());
 
-                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); });
+                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); 
+            }
             //       if(compare(entry.key,key)){
 
             Value done = ifOp.getResult(0);
@@ -306,7 +323,7 @@ class LazyJHtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableIns
       auto capacity = rewriter.create<mlir::util::LoadOp>(loc, idxType, capacityAddress, Value());
       Value cmp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, len, capacity);
       rewriter.create<scf::IfOp>(
-         loc, TypeRange({}), cmp, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc); }, [&](OpBuilder& b, Location loc) {
+         loc, cmp, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc); }, [&](OpBuilder& b, Location loc) {
             rt::LazyJoinHashtable::resize(b,loc)(adaptor.getHt());
             b.create<scf::YieldOp>(loc); });
       Value valuesAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(getContext(), adaptor.getHt().getType().cast<mlir::util::RefType>().getElementType().cast<mlir::TupleType>().getType(4)), adaptor.getHt(), 4);
@@ -367,7 +384,7 @@ class DSAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
       auto capacity = rewriter.create<mlir::util::LoadOp>(loc, idxType, capacityAddress, Value());
       Value cmp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, len, capacity);
       rewriter.create<scf::IfOp>(
-         loc, TypeRange({}), cmp, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc); }, [&](OpBuilder& b, Location loc) {
+         loc, cmp, [&](OpBuilder& b, Location loc) { b.create<scf::YieldOp>(loc); }, [&](OpBuilder& b, Location loc) {
             rt::Vector::resize(b,loc)({builderVal});
             b.create<scf::YieldOp>(loc); });
       Value valuesAddress = rewriter.create<util::TupleElementPtrOp>(loc, util::RefType::get(rewriter.getContext(), valuesType), builderVal, 2);

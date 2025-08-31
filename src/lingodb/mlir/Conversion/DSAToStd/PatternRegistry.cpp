@@ -2,19 +2,12 @@
 #include "DSAToStdPatterns.h"
 
 // All the heavy MLIR includes isolated here
-#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
-#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
-#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "lingodb/mlir/Conversion/UtilToLLVM/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Func/Transforms/FuncConversions.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "lingodb/mlir/Dialect/util/UtilDialect.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
@@ -52,7 +45,10 @@ class ScanSourceLowering : public OpConversionPattern<mlir::dsa::ScanSource> {
       if (!funcOp) {
          mlir::OpBuilder::InsertionGuard guard(rewriter);
          rewriter.setInsertionPointToStart(parentModule.getBody());
-         funcOp = rewriter.create<mlir::func::FuncOp>(op->getLoc(), "rt_get_execution_context", rewriter.getFunctionType({}, {mlir::util::RefType::get(getContext(), rewriter.getI8Type())}), rewriter.getStringAttr("private"));
+         funcOp = rewriter.create<mlir::func::FuncOp>(op->getLoc(), 
+            llvm::StringRef("rt_get_execution_context"), 
+            rewriter.getFunctionType({}, {mlir::util::RefType::get(getContext(), rewriter.getI8Type())}),
+            llvm::ArrayRef<mlir::NamedAttribute>{rewriter.getNamedAttr("visibility", rewriter.getStringAttr("private"))});
       }
 
       mlir::Value executionContext = rewriter.create<mlir::func::CallOp>(op->getLoc(), funcOp, mlir::ValueRange{}).getResult(0);
