@@ -1,8 +1,5 @@
 -- Test ORDER BY with expressions: calculated values, arithmetic operations
 LOAD 'pgx_lower.so';
--- CRITICAL: Do not change logging level - required for MLIR pipeline visibility
--- NOTICE level enables full debugging of PostgreSQL AST  RelAlg  DB  LLVM  JIT pipeline
--- WARNING level suppresses essential MLIR compilation logs and breaks debugging capability
 SET client_min_messages TO NOTICE;
 
 DROP TABLE IF EXISTS test_order_expr;
