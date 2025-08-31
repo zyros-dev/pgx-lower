@@ -50,26 +50,26 @@ bool check_memory_context_safety() {
         PGX_ERROR("check_memory_context_safety: No current memory context");
         return false;
     }
-    
+
     // Check if the context is valid (not NULL and has valid methods)
     if (CurrentMemoryContext->methods == NULL) {
         PGX_ERROR("check_memory_context_safety: Invalid memory context - no methods");
         return false;
     }
-    
+
     // Verify the context hasn't been reset/deleted by checking its type field
-    if (CurrentMemoryContext->type != T_AllocSetContext && 
-        CurrentMemoryContext->type != T_SlabContext && 
-        CurrentMemoryContext->type != T_GenerationContext) {
+    if (CurrentMemoryContext->type != T_AllocSetContext && CurrentMemoryContext->type != T_SlabContext
+        && CurrentMemoryContext->type != T_GenerationContext)
+    {
         PGX_ERROR("check_memory_context_safety: Unknown memory context type");
         return false;
     }
-    
+
     // If we're in ErrorContext, just log a debug message but allow operations
     if (CurrentMemoryContext == ErrorContext) {
         PGX_LOG(RUNTIME, DEBUG, "check_memory_context_safety: Operating in error recovery context");
     }
-    
+
     return true;
 #else
     // In unit tests, always return true
@@ -127,29 +127,36 @@ template<typename T>
 void table_builder_add(void* builder, bool is_valid, T value) {
     auto* tb = static_cast<TableBuilder*>(builder);
     bool is_null = !is_valid;
-    
+
     if (tb) {
         // Expand storage if needed
         if (tb->current_column_index >= g_computed_results.numComputedColumns) {
             int newSize = tb->current_column_index + 1;
-            PGX_LOG(RUNTIME, DEBUG, "table_builder_add: expanding computed results storage from %d to %d columns", 
-                 g_computed_results.numComputedColumns, newSize);
+            PGX_LOG(RUNTIME,
+                    DEBUG,
+                    "table_builder_add: expanding computed results storage from %d to %d columns",
+                    g_computed_results.numComputedColumns,
+                    newSize);
             prepare_computed_results(newSize);
         }
-        
+
         // Store with proper type
-        PGX_LOG(RUNTIME, DEBUG, "table_builder_add: storing value at column index %d with is_null=%s", 
-             tb->current_column_index, is_null ? "true" : "false");
-        
+        PGX_LOG(RUNTIME,
+                DEBUG,
+                "table_builder_add: storing value at column index %d with is_null=%s",
+                tb->current_column_index,
+                is_null ? "true" : "false");
+
         Datum datum = toDatum<T>(value);
         g_computed_results.setResult(tb->current_column_index, datum, is_null, getTypeOid<T>());
         tb->current_column_index++;
-        
+
         // Update total columns tracking
         if (tb->current_column_index > tb->total_columns) {
             tb->total_columns = tb->current_column_index;
         }
-    } else {
+    }
+    else {
         PGX_LOG(RUNTIME, DEBUG, "table_builder_add: null builder, using fallback column 0");
         Datum datum = toDatum<T>(value);
         g_computed_results.setResult(0, datum, is_null, getTypeOid<T>());
@@ -170,30 +177,31 @@ template<>
 void table_builder_add<::runtime::VarLen32>(void* builder, bool is_valid, ::runtime::VarLen32 value) {
     auto* tb = static_cast<TableBuilder*>(builder);
     bool is_null = !is_valid;
-    
+
     if (tb) {
         // Expand storage if needed
         if (tb->current_column_index >= g_computed_results.numComputedColumns) {
             prepare_computed_results(tb->current_column_index + 1);
         }
-        
+
         if (!is_null && value.getLen() > 0) {
             // Memory context switch for strings
             MemoryContext oldContext = CurrentMemoryContext;
             MemoryContextSwitchTo(CurTransactionContext);
-            
+
             // Convert VarLen32 to PostgreSQL text
             text* textval = cstring_to_text_with_len(reinterpret_cast<const char*>(value.getPtr()), value.getLen());
             Datum datum = PointerGetDatum(textval);
             g_computed_results.setResult(tb->current_column_index, datum, is_null, TEXTOID);
-            
+
             MemoryContextSwitchTo(oldContext);
-        } else {
+        }
+        else {
             g_computed_results.setResult(tb->current_column_index, 0, true, TEXTOID);
         }
-        
+
         tb->current_column_index++;
-        
+
         if (tb->current_column_index > tb->total_columns) {
             tb->total_columns = tb->current_column_index;
         }
@@ -209,33 +217,30 @@ T extract_field(int32_t field_index, bool* is_null) {
         *is_null = true;
         return T{};
     }
-    
+
     if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
         *is_null = true;
         return T{};
     }
-    
+
     // PostgreSQL uses 1-based attribute indexing
     const int attr_num = field_index + 1;
     if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
         *is_null = true;
         return T{};
     }
-    
+
     bool isnull;
-    Datum value = heap_getattr(g_current_tuple_passthrough.originalTuple, 
-                              attr_num, 
-                              g_current_tuple_passthrough.tupleDesc, 
-                              &isnull);
+    Datum value =
+        heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
     *is_null = isnull;
-    if (isnull) return T{};
-    
-    // Convert based on actual PostgreSQL type
+    if (isnull)
+        return T{};
+
     Oid typeOid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
     return fromDatum<T>(value, typeOid);
 }
 
-// Explicit instantiations for field extraction
 template int16_t extract_field<int16_t>(int32_t, bool*);
 template int32_t extract_field<int32_t>(int32_t, bool*);
 template int64_t extract_field<int64_t>(int32_t, bool*);
@@ -243,7 +248,7 @@ template bool extract_field<bool>(int32_t, bool*);
 template float extract_field<float>(int32_t, bool*);
 template double extract_field<double>(int32_t, bool*);
 
-} // namespace pgx_lower::runtime
+}
 
 struct PostgreSQLTableHandle {
     Relation rel;
@@ -259,7 +264,7 @@ extern "C" int32_t get_column_attnum(const char* table_name, const char* column_
     if (!table_name || !column_name) {
         return -1;
     }
-    
+
     // Use the global table OID if available
     if (g_jit_table_oid != InvalidOid) {
         // Open the relation to get its tuple descriptor
@@ -267,10 +272,10 @@ extern "C" int32_t get_column_attnum(const char* table_name, const char* column_
         if (!rel) {
             return -1;
         }
-        
+
         TupleDesc tupdesc = RelationGetDescr(rel);
         int32_t attnum = -1;
-        
+
         // Search for the column by name
         for (int i = 0; i < tupdesc->natts; i++) {
             Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
@@ -280,13 +285,13 @@ extern "C" int32_t get_column_attnum(const char* table_name, const char* column_
                 break;
             }
         }
-        
+
         // Close the relation
         table_close(rel, AccessShareLock);
-        
+
         return attnum;
     }
-    
+
     return -1;
 #else
     // In unit tests, return -1 to trigger fallback
@@ -307,25 +312,29 @@ extern "C" void* open_postgres_table(const char* tableName) {
     try {
         PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Creating PostgreSQLTableHandle...");
         auto* handle = new PostgreSQLTableHandle();
-        
+
         // JIT-managed table access - we need to open the table ourselves
-        PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: JIT-managed table access, opening table: %s", tableName ? tableName : "test");
-        
+        PGX_LOG(RUNTIME,
+                DEBUG,
+                "open_postgres_table: JIT-managed table access, opening table: %s",
+                tableName ? tableName : "test");
+
         // Use the table OID passed from the executor
         if (g_jit_table_oid != InvalidOid) {
             Oid tableOid = g_jit_table_oid;
             PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Using table OID: %u", tableOid);
-            
+
             // Open the table
             handle->rel = table_open(tableOid, AccessShareLock);
             handle->tupleDesc = RelationGetDescr(handle->rel);
-            
+
             // Create a new scan
             handle->scanDesc = table_beginscan(handle->rel, GetActiveSnapshot(), 0, nullptr);
             handle->isOpen = true;
-            
+
             PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Successfully opened table with OID %u", tableOid);
-        } else {
+        }
+        else {
             PGX_ERROR("open_postgres_table: Cannot determine table to open");
             delete handle;
             return nullptr;
@@ -337,22 +346,31 @@ extern "C" void* open_postgres_table(const char* tableName) {
             PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: tupleDesc->natts=%d", handle->tupleDesc->natts);
         }
         if (handle->scanDesc && handle->scanDesc->rs_rd) {
-            PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: scanning relation OID=%u, name=%s", RelationGetRelid(handle->scanDesc->rs_rd), RelationGetRelationName(handle->scanDesc->rs_rd));
+            PGX_LOG(RUNTIME,
+                    DEBUG,
+                    "open_postgres_table: scanning relation OID=%u, name=%s",
+                    RelationGetRelid(handle->scanDesc->rs_rd),
+                    RelationGetRelationName(handle->scanDesc->rs_rd));
         }
-        
+
         // The issue might be snapshot visibility - ensure we see recent INSERT operations
         // Force command counter increment to ensure we see recent changes in the same transaction
         CommandCounterIncrement();
-        
+
         // Get a fresh snapshot to see all committed changes
         Snapshot currentSnapshot = GetActiveSnapshot();
         if (currentSnapshot) {
-            PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Updating scan with fresh snapshot xmin=%u, xmax=%u", currentSnapshot->xmin, currentSnapshot->xmax);
+            PGX_LOG(RUNTIME,
+                    DEBUG,
+                    "open_postgres_table: Updating scan with fresh snapshot xmin=%u, xmax=%u",
+                    currentSnapshot->xmin,
+                    currentSnapshot->xmax);
             // Update the scan's snapshot to see recent changes
             handle->scanDesc->rs_snapshot = currentSnapshot;
         }
-        
-        // PostgreSQL 17.5 heap_rescan signature: heap_rescan(scan, key, set_params, allow_strat, allow_sync, allow_pagemode)
+
+        // PostgreSQL 17.5 heap_rescan signature: heap_rescan(scan, key, set_params, allow_strat, allow_sync,
+        // allow_pagemode)
         heap_rescan(handle->scanDesc, nullptr, false, false, false, false);
 
         PGX_LOG(RUNTIME, DEBUG, "open_postgres_table: Successfully created handle, returning %p", handle);
@@ -376,7 +394,7 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         PGX_LOG(RUNTIME, IO, "read_next_tuple_from_table OUT: -1 (null handle)");
         return -1;
     }
-    
+
     // Critical: Check memory context safety before PostgreSQL heap operations
     if (!pgx_lower::runtime::check_memory_context_safety()) {
         PGX_ERROR("read_next_tuple_from_table: Memory context unsafe for PostgreSQL operations");
@@ -391,8 +409,12 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
     }
 
     PGX_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: About to call heap_getnext with scanDesc=%p", handle->scanDesc);
-    PGX_LOG(RUNTIME, TRACE, "read_next_tuple_from_table: scanDesc->rs_rd=%p, snapshot=%p", handle->scanDesc->rs_rd, handle->scanDesc->rs_snapshot);
-    
+    PGX_LOG(RUNTIME,
+            TRACE,
+            "read_next_tuple_from_table: scanDesc->rs_rd=%p, snapshot=%p",
+            handle->scanDesc->rs_rd,
+            handle->scanDesc->rs_snapshot);
+
     HeapTuple tuple = nullptr;
     try {
         // Add PostgreSQL error handling around heap_getnext
@@ -414,7 +436,7 @@ extern "C" int64_t read_next_tuple_from_table(void* tableHandle) {
         PGX_ERROR("read_next_tuple_from_table: heap_getnext threw unknown exception");
         return -1;
     }
-    
+
     if (tuple == nullptr) {
         PGX_LOG(RUNTIME, DEBUG, "read_next_tuple_from_table: heap_getnext returned null - end of table");
         // End of table reached - return 0 to terminate MLIR loop
@@ -450,7 +472,7 @@ extern "C" void close_postgres_table(void* tableHandle) {
     }
 
     auto* handle = static_cast<PostgreSQLTableHandle*>(tableHandle);
-    
+
     // If we opened the table ourselves (JIT-managed), close it properly
     if (handle->rel) {
         PGX_LOG(RUNTIME, DEBUG, "close_postgres_table: Closing JIT-managed table scan");
@@ -459,10 +481,10 @@ extern "C" void close_postgres_table(void* tableHandle) {
         }
         table_close(handle->rel, AccessShareLock);
     }
-    
+
     handle->isOpen = false;
     delete handle;
-    
+
     // Reset the global table OID for next query
     PGX_LOG(RUNTIME, DEBUG, "close_postgres_table: Resetting g_jit_table_oid from %u to InvalidOid", g_jit_table_oid);
     g_jit_table_oid = InvalidOid;
@@ -472,30 +494,30 @@ extern "C" void close_postgres_table(void* tableHandle) {
 // Helper: Copy a datum to PostgreSQL memory based on its type
 static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNull) {
     if (isNull) {
-        return value;  // NULL values don't need copying
+        return value; // NULL values don't need copying
     }
-    
+
     // Switch on type to determine copy strategy
     switch (typeOid) {
-        case TEXTOID:
-        case VARCHAROID:
-        case BPCHAROID:
-            // Text types need deep copy using datumCopy
-            return datumCopy(value, false, -1);
-            
-        case INT2OID:
-        case INT4OID:
-        case INT8OID:
-        case BOOLOID:
-        case FLOAT4OID:
-        case FLOAT8OID:
-            // Scalar types are pass-by-value, safe to use directly
-            return value;
-            
-        default:
-            // For unknown types, attempt conservative copy
-            // TODO: Add more type-specific handling as needed
-            return value;
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID:
+        // Text types need deep copy using datumCopy
+        return datumCopy(value, false, -1);
+
+    case INT2OID:
+    case INT4OID:
+    case INT8OID:
+    case BOOLOID:
+    case FLOAT4OID:
+    case FLOAT8OID:
+        // Scalar types are pass-by-value, safe to use directly
+        return value;
+
+    default:
+        // For unknown types, attempt conservative copy
+        // TODO: Add more type-specific handling as needed
+        return value;
     }
 }
 
@@ -509,31 +531,29 @@ static bool validate_memory_context_safety(const char* operation) {
 }
 
 // Helper: Stream a tuple to the destination
-static bool stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest,
-                                       Datum* values, bool* nulls, int numColumns) {
+static bool
+stream_tuple_to_destination(TupleTableSlot* slot, DestReceiver* dest, Datum* values, bool* nulls, int numColumns) {
     if (!slot || !dest) {
         PGX_ERROR("stream_tuple_to_destination: Invalid slot or destination");
         return false;
     }
-    
+
     // Clear the slot first
     ExecClearTuple(slot);
-    
+
     // Copy values to slot
     for (int i = 0; i < numColumns; i++) {
         slot->tts_values[i] = values[i];
         slot->tts_isnull[i] = nulls[i];
     }
-    
+
     slot->tts_nvalid = numColumns;
     ExecStoreVirtualTuple(slot);
-    
+
     // Send to destination
     return dest->receiveSlot(slot, dest);
 }
 
-// Helper: Process computed results for streaming
-// Helper: Validate streaming prerequisites
 static bool validate_streaming_context() {
     if (!g_tuple_streamer.isActive || !g_tuple_streamer.dest || !g_tuple_streamer.slot) {
         PGX_LOG(RUNTIME, TRACE, "process_computed_results: Tuple streamer not active");
@@ -545,12 +565,12 @@ static bool validate_streaming_context() {
 // Helper: Setup memory context for processing
 static MemoryContext setup_processing_memory_context(TupleTableSlot* slot) {
     MemoryContext destContext = slot->tts_mcxt ? slot->tts_mcxt : CurrentMemoryContext;
-    
+
     if (!destContext) {
         PGX_ERROR("process_computed_results: Invalid destination memory context");
         return nullptr;
     }
-    
+
     MemoryContextSwitchTo(destContext);
     return CurrentMemoryContext;
 }
@@ -559,26 +579,27 @@ static MemoryContext setup_processing_memory_context(TupleTableSlot* slot) {
 static bool allocate_and_process_columns(Datum** processedValues, bool** processedNulls) {
     *processedValues = (Datum*)palloc(g_computed_results.numComputedColumns * sizeof(Datum));
     *processedNulls = (bool*)palloc(g_computed_results.numComputedColumns * sizeof(bool));
-    
+
     if (!*processedValues || !*processedNulls) {
         PGX_ERROR("process_computed_results: Memory allocation failed");
         return false;
     }
-    
+
     // Process each column
     for (int i = 0; i < g_computed_results.numComputedColumns; i++) {
-        (*processedValues)[i] = copy_datum_to_postgresql_memory(
-            g_computed_results.computedValues[i],
-            g_computed_results.computedTypes[i],
-            g_computed_results.computedNulls[i]
-        );
+        (*processedValues)[i] = copy_datum_to_postgresql_memory(g_computed_results.computedValues[i],
+                                                                g_computed_results.computedTypes[i],
+                                                                g_computed_results.computedNulls[i]);
         (*processedNulls)[i] = g_computed_results.computedNulls[i];
-        
-        PGX_LOG(RUNTIME, TRACE, "process_computed_results: col[%d] type=%u null=%s", 
-                 i, g_computed_results.computedTypes[i], 
-                 (*processedNulls)[i] ? "true" : "false");
+
+        PGX_LOG(RUNTIME,
+                TRACE,
+                "process_computed_results: col[%d] type=%u null=%s",
+                i,
+                g_computed_results.computedTypes[i],
+                (*processedNulls)[i] ? "true" : "false");
     }
-    
+
     return true;
 }
 
@@ -587,37 +608,39 @@ static bool process_computed_results_for_streaming() {
     if (!validate_streaming_context()) {
         return false;
     }
-    
+
     auto slot = g_tuple_streamer.slot;
     MemoryContext oldContext = CurrentMemoryContext;
-    
+
     // Setup memory context for processing
     MemoryContext destContext = setup_processing_memory_context(slot);
     if (!destContext) {
         return false;
     }
-    
+
     // Allocate and process columns
     Datum* processedValues = nullptr;
     bool* processedNulls = nullptr;
-    
+
     if (!allocate_and_process_columns(&processedValues, &processedNulls)) {
         MemoryContextSwitchTo(oldContext);
         return false;
     }
-    
+
     // Stream the processed tuple
-    bool result = stream_tuple_to_destination(slot, g_tuple_streamer.dest,
-                                             processedValues, processedNulls,
-                                             g_computed_results.numComputedColumns);
-    
+    bool result = stream_tuple_to_destination(slot,
+                                              g_tuple_streamer.dest,
+                                              processedValues,
+                                              processedNulls,
+                                              g_computed_results.numComputedColumns);
+
     // Clean up allocated memory
     pfree(processedValues);
     pfree(processedNulls);
-    
+
     // Restore original memory context
     MemoryContextSwitchTo(oldContext);
-    
+
     PGX_LOG(RUNTIME, TRACE, "process_computed_results: streaming returned %s", result ? "true" : "false");
     return result;
 }
@@ -628,141 +651,33 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
     PGX_LOG(RUNTIME, IO, "add_tuple_to_result IN: value=%ld", value);
     PGX_LOG(RUNTIME, TRACE, "add_tuple_to_result: called with value=%ld", value);
     PGX_LOG(RUNTIME, TRACE, "add_tuple_to_result: numComputedColumns=%d", g_computed_results.numComputedColumns);
-    
+
     // Validate memory context safety
     if (!validate_memory_context_safety("add_tuple_to_result")) {
         return false;
     }
-    
+
     // Check if we have computed results to stream
     if (g_computed_results.numComputedColumns > 0) {
         PGX_LOG(RUNTIME, DEBUG, "add_tuple_to_result: Streaming computed results");
         return process_computed_results_for_streaming();
     }
-    
+
     PGX_LOG(RUNTIME, TRACE, "add_tuple_to_result: No computed results available");
     PGX_LOG(RUNTIME, IO, "add_tuple_to_result OUT: false (no computed results)");
     return false;
 }
 
 // Typed field access functions for PostgreSQL dialect
-extern "C" int32_t get_int_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
-    // Critical: Check memory context safety before PostgreSQL tuple access
-    if (!pgx_lower::runtime::check_memory_context_safety()) {
-        PGX_ERROR("get_int_field: Memory context unsafe for PostgreSQL operations");
-        *is_null = true;
-        return 0;
-    }
-    
-    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
-        *is_null = true;
-        return 0;
-    }
-
-    // PostgreSQL uses 1-based attribute indexing
-    const int attr_num = field_index + 1;
-    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
-        *is_null = true;
-        return 0;
-    }
-
-    bool isnull;
-    const auto value =
-        heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
-
-    *is_null = isnull;
-    if (isnull) {
-        return 0;
-    }
-
-    // Convert to int32 based on PostgreSQL type
-    const auto atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
-    switch (atttypid) {
-    case BOOLOID: return DatumGetBool(value) ? 1 : 0; // Convert bool to int32
-    case INT2OID: return (int32_t)DatumGetInt16(value);
-    case INT4OID: return DatumGetInt32(value);
-    case INT8OID: return static_cast<int32_t>(DatumGetInt64(value)); // Truncate to int32
-    default: *is_null = true; return 0;
-    }
+extern "C" int32_t get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    return pgx_lower::runtime::extract_field<int32_t>(field_index, is_null);
 }
 
-extern "C" bool get_bool_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
-    // Critical: Check memory context safety before PostgreSQL tuple access
-    if (!pgx_lower::runtime::check_memory_context_safety()) {
-        PGX_ERROR("get_bool_field: Memory context unsafe for PostgreSQL operations");
-        *is_null = true;
-        return false;
-    }
-    
-    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
-        *is_null = true;
-        return false;
-    }
-
-    // PostgreSQL uses 1-based attribute indexing
-    const int attr_num = field_index + 1;
-    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
-        *is_null = true;
-        return false;
-    }
-
-    bool isnull;
-    const auto value =
-        heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
-
-    *is_null = isnull;
-    if (isnull) {
-        return false;
-    }
-
-    // Convert to bool based on PostgreSQL type
-    const auto atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
-    switch (atttypid) {
-    case BOOLOID: return DatumGetBool(value);
-    case INT2OID: return DatumGetInt16(value) != 0; // Non-zero is true
-    case INT4OID: return DatumGetInt32(value) != 0; // Non-zero is true
-    case INT8OID: return DatumGetInt64(value) != 0; // Non-zero is true
-    default: *is_null = true; return false;
-    }
-}
-
-extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index, bool* is_null) {
-    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
-        *is_null = true;
-        return 0;
-    }
-
-    // PostgreSQL uses 1-based attribute indexing
-    const int attr_num = field_index + 1;
-    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
-        *is_null = true;
-        return 0;
-    }
-
-    bool isnull;
-    const auto value =
-        heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
-
-    *is_null = isnull;
-    if (isnull) {
-        return 0;
-    }
-
-    // For text types, return pointer to the string data
-    const auto atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
-    switch (atttypid) {
-    case TEXTOID:
-    case VARCHAROID:
-    case CHAROID: {
-        auto* textval = DatumGetTextP(value);
-        return reinterpret_cast<int64_t>(VARDATA(textval));
-    }
-    default: *is_null = true; return 0;
-    }
+extern "C" bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null) {
+    return pgx_lower::runtime::extract_field<bool>(field_index, is_null);
 }
 
 // MLIR runtime functions for storing computed expression results
-
 extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull) {
     PGX_LOG(RUNTIME, IO, "store_bigint_result IN: columnIndex=%d, value=%ld, isNull=%s", columnIndex, value, isNull ? "true" : "false");
     // FIXED: Now properly stores INT8 instead of casting to INT4
@@ -771,7 +686,6 @@ extern "C" void store_bigint_result(int32_t columnIndex, int64_t value, bool isN
     g_computed_results.setResult(columnIndex, datum, isNull, INT8OID);
     PGX_LOG(RUNTIME, IO, "store_bigint_result OUT");
 }
-
 
 extern "C" void prepare_computed_results(int32_t numColumns) {
     g_computed_results.resize(numColumns);
@@ -789,7 +703,10 @@ extern "C" void mark_results_ready_for_streaming() {
     // Add some validation
     PGX_LOG(RUNTIME, TRACE, "Validation: g_computed_results.numComputedColumns = %d", g_computed_results.numComputedColumns);
     if (g_computed_results.numComputedColumns > 0) {
-        PGX_LOG(RUNTIME, TRACE, "Validation: First computed value = %ld", DatumGetInt64(g_computed_results.computedValues[0]));
+        PGX_LOG(RUNTIME,
+                TRACE,
+                "Validation: First computed value = %ld",
+                DatumGetInt64(g_computed_results.computedValues[0]));
     }
     PGX_LOG(RUNTIME, IO, "mark_results_ready_for_streaming OUT");
 }
@@ -800,48 +717,9 @@ extern "C" void mark_results_ready_for_streaming() {
 
 // get_numeric_field needs to be available for both unit tests and extension
 extern "C" double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) {
-    // Use global state like get_int_field (ignore tuple_handle parameter)
-    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
-        *is_null = true;
-        return 0.0;
-    }
-
-    // PostgreSQL uses 1-based attribute indexing
-    const int attr_num = field_index + 1;
-    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
-        *is_null = true;
-        return 0.0;
-    }
-
-    bool isnull;
-    const auto value =
-        heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, g_current_tuple_passthrough.tupleDesc, &isnull);
-
-    *is_null = isnull;
-    if (isnull) {
-        return 0.0;
-    }
-
-    // Handle different numeric types based on PostgreSQL type OID
-    const auto atttypid = TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
-    switch (atttypid) {
-    case NUMERICOID: { // 1700 - DECIMAL/NUMERIC type
-        // Convert NUMERIC to double
-        Datum float8_value = DirectFunctionCall1(numeric_float8, value);
-        return DatumGetFloat8(float8_value);
-    }
-    case FLOAT4OID: // 700 - REAL/FLOAT4 type
-        return (double)DatumGetFloat4(value);
-    case FLOAT8OID: // 701 - DOUBLE PRECISION/FLOAT8 type
-        return DatumGetFloat8(value);
-    default:
-        *is_null = true;
-        return 0.0;
-    }
+    return pgx_lower::runtime::extract_field<double>(field_index, is_null);
 }
 
-
-// Additional field extraction functions for complete type support
 extern "C" int16_t get_int16_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     return pgx_lower::runtime::extract_field<int16_t>(field_index, is_null);
 }
@@ -902,7 +780,6 @@ extern "C" void* DataSource_get(runtime::VarLen32 description) {
 //===----------------------------------------------------------------------===//
 // PostgreSQL SPI Runtime Functions
 //===----------------------------------------------------------------------===//
-
 extern "C" void* pg_table_open(const char* table_name) {
     PGX_LOG(RUNTIME, IO, "pg_table_open IN: table_name=%s", table_name ? table_name : "NULL");
     PGX_LOG(RUNTIME, DEBUG, "pg_table_open called for table: %s", table_name ? table_name : "NULL");
