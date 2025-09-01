@@ -23,7 +23,7 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
     }
 
     auto PHASE_LOG = [&](const char* fmt, auto... args) {
-        ::pgx_lower::log::log(phase, ::pgx_lower::log::Level::DEBUG, fmt, args...);
+        ::pgx_lower::log::log(phase, ::pgx_lower::log::Level::DEBUG, __FILE__, __LINE__, fmt, args...);
     };
     auto timestamp = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(timestamp);

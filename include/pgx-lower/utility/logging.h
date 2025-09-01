@@ -70,28 +70,31 @@ extern bool log_debug;
 extern bool log_trace;
 extern std::set<Category> enabled_categories;
 
-// Core logging function
-void log(Category cat, Level level, const char* fmt, ...);
+void log(Category cat, Level level, const char* file, int line, const char* fmt, ...);
 
 const char* category_name(Category cat);
 const char* level_name(Level level);
 bool should_log(Category cat, Level level);
+const char* basename_only(const char* filepath);
 
 } // namespace log
 } // namespace pgx_lower
 
-// Single macro with printf-style formatting
+// Single macro with printf-style formatting and file/line info
 #ifdef POSTGRESQL_EXTENSION
 #define PGX_LOG(category, level, fmt, ...) \
     ::pgx_lower::log::log(::pgx_lower::log::Category::category, \
                           ::pgx_lower::log::Level::level, \
+                          __FILE__, __LINE__, \
                           fmt, ##__VA_ARGS__)
 #else
-// For unit tests, just print to stdout/stderr
+// For unit tests, just print to stdout/stderr with file:line
 #define PGX_LOG(category, level, fmt, ...) \
     do { \
-        fprintf(stderr, "[%s:%s] " fmt "\n", \
-                #category, #level, ##__VA_ARGS__); \
+        const char* _basename = strrchr(__FILE__, '/'); \
+        _basename = _basename ? _basename + 1 : __FILE__; \
+        fprintf(stderr, "[%s:%s] %s:%d: " fmt "\n", \
+                #category, #level, _basename, __LINE__, ##__VA_ARGS__); \
     } while(0)
 #endif
 

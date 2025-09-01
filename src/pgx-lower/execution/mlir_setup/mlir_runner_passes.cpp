@@ -1,7 +1,9 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinDialect.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <mlir/InitAllPasses.h>
 
@@ -53,6 +55,40 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
         PGX_ERROR("Failed to initialize MLIR context and dialects");
         return false;
     }
+
+    context.getDiagEngine().registerHandler([](mlir::Diagnostic &diag) {
+        std::string diagStr;
+        llvm::raw_string_ostream os(diagStr);
+        
+        std::string locStr;
+        llvm::raw_string_ostream locOs(locStr);
+        diag.getLocation().print(locOs);
+        locOs.flush();
+        
+        diag.print(os);
+        os.flush();
+        
+        switch (diag.getSeverity()) {
+            case mlir::DiagnosticSeverity::Error:
+                PGX_LOG(JIT, DEBUG, "MLIR Error at %s: %s", 
+                       locStr.empty() ? "unknown" : locStr.c_str(), 
+                       diagStr.c_str());
+                break;
+            case mlir::DiagnosticSeverity::Warning:
+                PGX_LOG(JIT, DEBUG, "MLIR Warning at %s: %s", 
+                       locStr.empty() ? "unknown" : locStr.c_str(), 
+                       diagStr.c_str());
+                break;
+            case mlir::DiagnosticSeverity::Note:
+            case mlir::DiagnosticSeverity::Remark:
+                PGX_LOG(JIT, TRACE, "MLIR Note at %s: %s", 
+                       locStr.empty() ? "unknown" : locStr.c_str(), 
+                       diagStr.c_str());
+                break;
+        }
+        
+        return mlir::success();
+    });
 
     context.getOrLoadDialect<::mlir::relalg::RelAlgDialect>();
     context.getOrLoadDialect<::mlir::db::DBDialect>();

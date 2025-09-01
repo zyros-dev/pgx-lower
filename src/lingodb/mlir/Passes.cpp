@@ -110,7 +110,7 @@ public:
         try {
             // Local logging helper for this phase category
             auto PHASE_LOG = [&](const char* fmt, auto... args) {
-                ::pgx_lower::log::log(phaseCategory, ::pgx_lower::log::Level::DEBUG, fmt, args...);
+                ::pgx_lower::log::log(phaseCategory, ::pgx_lower::log::Level::DEBUG, __FILE__, __LINE__, fmt, args...);
             };
 
             auto timestamp = std::chrono::system_clock::now();

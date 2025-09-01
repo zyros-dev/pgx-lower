@@ -118,7 +118,12 @@ bool should_log(Category cat, Level level) {
     return true;
 }
 
-void log(Category cat, Level level, const char* fmt, ...) {
+const char* basename_only(const char* filepath) {
+    const char* basename = strrchr(filepath, '/');
+    return basename ? basename + 1 : filepath;
+}
+
+void log(Category cat, Level level, const char* file, int line, const char* fmt, ...) {
     // Check if we should log this
     if (!should_log(cat, level)) return;
     
@@ -129,13 +134,15 @@ void log(Category cat, Level level, const char* fmt, ...) {
     vsnprintf(message, sizeof(message), fmt, args);
     va_end(args);
     
+    const char* filename = basename_only(file);
+    
 #ifdef POSTGRESQL_EXTENSION
     // Output using PostgreSQL's elog at DEBUG1 level
     // This requires client_min_messages = DEBUG1 to be visible
-    elog(DEBUG1, "[%s:%s] %s", category_name(cat), level_name(level), message);
+    elog(DEBUG1, "[%s:%s] %s:%d: %s", category_name(cat), level_name(level), filename, line, message);
 #else
     // For unit tests, output to stderr
-    fprintf(stderr, "[%s:%s] %s\n", category_name(cat), level_name(level), message);
+    fprintf(stderr, "[%s:%s] %s:%d: %s\n", category_name(cat), level_name(level), filename, line, message);
 #endif
 }
 
