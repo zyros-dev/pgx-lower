@@ -25,8 +25,12 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
-set(CMAKE_CXX_FLAGS_DEBUG "-g0 -O0")
-set(CMAKE_C_FLAGS_DEBUG "-g0 -O0")
+
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+set(CMAKE_C_FLAGS_DEBUG "-g -O0")
+
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g -O2")
+set(CMAKE_C_FLAGS_RELWITHDEBINFO "-g -O2")
 
 # Coverage support
 option(ENABLE_COVERAGE "Enable code coverage" OFF)

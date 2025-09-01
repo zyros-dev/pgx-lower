@@ -1,11 +1,24 @@
 #include <gtest/gtest.h>
 #include "standalone_mlir_runner.h"
+#include "pgx-lower/utility/logging.h"
+#include <cstdlib>
 
 using namespace pgx_test;
 
 class MLIRLoweringPipelineTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        pgx_lower::log::log_enable = true;
+        pgx_lower::log::log_debug = true;
+        pgx_lower::log::log_io = true;
+        pgx_lower::log::log_trace = true;
+        pgx_lower::log::enabled_categories.insert(pgx_lower::log::Category::GENERAL);
+        pgx_lower::log::enabled_categories.insert(pgx_lower::log::Category::RELALG_LOWER);
+        pgx_lower::log::enabled_categories.insert(pgx_lower::log::Category::DB_LOWER);
+        pgx_lower::log::enabled_categories.insert(pgx_lower::log::Category::DSA_LOWER);
+        pgx_lower::log::enabled_categories.insert(pgx_lower::log::Category::UTIL_LOWER);
+        pgx_lower::log::enabled_categories.insert(pgx_lower::log::Category::JIT);
+        
         tester = std::make_unique<StandalonePipelineTester>();
     }
     
@@ -29,9 +42,10 @@ TEST_F(MLIRLoweringPipelineTest, SimpleConstantPipeline) {
     
     ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR)) 
         << "Failed to load MLIR module";
-    
-    EXPECT_TRUE(tester->runPhase3a() && tester->runPhase3b() && tester->runPhase3c())
-        << "Complete pipeline failed";
+
+    EXPECT_TRUE(tester->runPhase3a()) << "Phase 3a failed";
+    EXPECT_TRUE(tester->runPhase3b()) << "Phase 3b failed";
+    EXPECT_TRUE(tester->runPhase3c()) << "Phase 3b failed";
 
     EXPECT_TRUE(tester->verifyCurrentModule()) << "Final module should be valid";
     
