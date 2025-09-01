@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CMakeSharedSettings">
+    <configurations>
+      <configuration PROFILE_NAME="Use Existing build-utest" ENABLED="true" GENERATION_DIR="$PROJECT_DIR$/build-utest" CONFIG_NAME="Debug" GENERATION_OPTIONS="-G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILDING_UNIT_TESTS=ON" />
+      <configuration PROFILE_NAME="Use Existing build-ptest" ENABLED="true" GENERATION_DIR="$PROJECT_DIR$/build-ptest" CONFIG_NAME="Debug" GENERATION_OPTIONS="-G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON" />
+      <configuration PROFILE_NAME="Debug-UnitTest" ENABLED="true" GENERATION_DIR="build-utest-debug" CONFIG_NAME="Debug" GENERATION_OPTIONS="-DCMAKE_BUILD_TYPE=Debug -DBUILDING_UNIT_TESTS=ON -DCMAKE_C_COMPILER=/usr/bin/clang-20 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-20 -GNinja" />
+      <configuration PROFILE_NAME="Debug-PostgreSQL" ENABLED="false" GENERATION_DIR="build-ptest" CONFIG_NAME="Debug" GENERATION_OPTIONS="-DCMAKE_BUILD_TYPE=Debug -DBUILD_ONLY_EXTENSION=ON -DCMAKE_C_COMPILER=/usr/bin/clang-20 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-20 -GNinja" />
+      <configuration PROFILE_NAME="Debug-UnitTest-CLion" ENABLED="false" GENERATION_DIR="build-utest-clion" CONFIG_NAME="Debug" GENERATION_OPTIONS="-DCMAKE_BUILD_TYPE=Debug -DBUILDING_UNIT_TESTS=ON -DCMAKE_C_COMPILER=/usr/bin/clang-20 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-20 -GNinja" />
+    </configurations>
+  </component>
+</project>
