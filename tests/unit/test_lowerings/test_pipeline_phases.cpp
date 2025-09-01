@@ -41,6 +41,32 @@ TEST_F(MLIRLoweringPipelineTest, SimpleConstantPipeline) {
         << "Expected LLVM dialect operations in final MLIR";
 }
 
+TEST_F(MLIRLoweringPipelineTest, TestOne) {
+    // Very basic test - just constant return
+    auto simpleMLIR = R"(
+        module {
+          func.func @main() {
+            %0 = relalg.basetable  {column_order = ["id"], table_identifier = "test|oid:11295606"} columns: {id => @test::@id({type = i32})}
+            %1 = relalg.materialize %0 [@test::@id] => ["id"] : !dsa.table
+            return
+          }
+        }
+    )";
+
+    ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR))
+        << "Failed to load MLIR module";
+
+    EXPECT_TRUE(tester->runPhase3a() && tester->runPhase3b() && tester->runPhase3c())
+        << "Complete pipeline failed";
+
+    EXPECT_TRUE(tester->verifyCurrentModule()) << "Final module should be valid";
+
+    // Check that we got LLVM operations in the final result
+    std::string finalMLIR = tester->getCurrentMLIR();
+    EXPECT_TRUE(finalMLIR.find("llvm.") != std::string::npos)
+        << "Expected LLVM dialect operations in final MLIR";
+}
+
 TEST_F(MLIRLoweringPipelineTest, Test9Arith) {
     // Very basic test - just constant return
     auto simpleMLIR = R"(
