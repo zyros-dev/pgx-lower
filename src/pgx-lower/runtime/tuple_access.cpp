@@ -275,6 +275,56 @@ extern "C" int32_t get_column_attnum(const char* table_name, const char* column_
 #endif
 }
 
+extern "C" int32_t get_all_column_metadata(const char* table_name, ColumnMetadata* metadata, int32_t max_columns) {
+#ifdef POSTGRESQL_EXTENSION
+    if (table_name == NULL || metadata == NULL || max_columns <= 0) {
+        PGX_ERROR("get_all_column_metadata: Invalid parameters");
+        return 0;
+    }
+
+    if (g_jit_table_oid == InvalidOid) {
+        PGX_ERROR("get_all_column_metadata: g_jit_table_oid is invalid");
+        return 0;
+    }
+
+    Relation rel = table_open(g_jit_table_oid, AccessShareLock);
+    if (!rel) {
+        PGX_ERROR("get_all_column_metadata: Failed to open table with OID %u", g_jit_table_oid);
+        return 0;
+    }
+
+    TupleDesc tupdesc = RelationGetDescr(rel);
+    int32_t column_count = 0;
+
+    for (int i = 0; i < tupdesc->natts && column_count < max_columns; i++) {
+        Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+        if (!attr->attisdropped) {
+            // Copy column name (64 is the size we defined in the struct)
+            strncpy(metadata[column_count].name, NameStr(attr->attname), 63);
+            metadata[column_count].name[63] = '\0';
+            
+            // Store type OID and attribute number
+            metadata[column_count].type_oid = attr->atttypid;
+            metadata[column_count].attnum = i + 1;  // PostgreSQL uses 1-based indexing
+            
+            PGX_LOG(RUNTIME, DEBUG, "get_all_column_metadata: Column %d: name='%s', type_oid=%d, attnum=%d", 
+                    column_count, metadata[column_count].name, 
+                    metadata[column_count].type_oid, metadata[column_count].attnum);
+            
+            column_count++;
+        }
+    }
+
+    table_close(rel, AccessShareLock);
+    
+    PGX_LOG(RUNTIME, DEBUG, "get_all_column_metadata: Retrieved metadata for %d columns", column_count);
+    return column_count;
+#else
+    return 0;
+#endif
+}
+
+
 extern "C" void* open_postgres_table(const char* tableName) {
     PGX_LOG(RUNTIME, IO, "open_postgres_table IN: tableName=%s", tableName ? tableName : "NULL");
     PGX_LOG(RUNTIME, DEBUG, "open_postgres_table called with tableName: %s", tableName ? tableName : "NULL");

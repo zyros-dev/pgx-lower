@@ -15,6 +15,7 @@ extern ComputedResultStorage g_computed_results;
 
 extern "C" {
 #include "postgres.h"
+#include "access/htup_details.h"
 #include "catalog/pg_type_d.h"
 #include "utils/elog.h"
 #include "utils/numeric.h"
@@ -320,19 +321,41 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
                 
                 iter->table_name = spec.table_name;
                 
-                extern int32_t get_field_type_oid(int32_t field_index);
+                // Get all column metadata in one shot to avoid repeated table opens
+                extern int32_t get_all_column_metadata(const char* table_name, ColumnMetadata* metadata, int32_t max_columns);
                 
+                // Use PostgreSQL's maximum column limit
+                ColumnMetadata metadata[MaxTupleAttributeNumber];
+                int32_t total_columns = get_all_column_metadata(spec.table_name.c_str(), metadata, MaxTupleAttributeNumber);
+                
+                if (total_columns <= 0) {
+                    PGX_ERROR("Failed to get column metadata for table '%s'", spec.table_name.c_str());
+                    throw std::runtime_error("Failed to get table metadata");
+                }
+                
+                PGX_LOG(RUNTIME, DEBUG, "Retrieved metadata for %d columns from table '%s'", 
+                        total_columns, spec.table_name.c_str());
+                
+                // Now match the requested columns with the metadata
                 for (size_t i = 0; i < spec.column_names.size(); ++i) {
                     ColumnSpec col_spec;
                     col_spec.name = spec.column_names[i];
                     
-                    // Get the actual PostgreSQL type OID for this column
-                    int pg_column_index = get_column_position(spec.table_name, col_spec.name);
-                    if (pg_column_index == -1) {
-                        throw std::runtime_error("Failed to find pg column index");
+                    // Find this column in the metadata
+                    int32_t type_oid = 0;
+                    for (int32_t j = 0; j < total_columns; ++j) {
+                        if (strcmp(metadata[j].name, col_spec.name.c_str()) == 0) {
+                            type_oid = metadata[j].type_oid;
+                            break;
+                        }
                     }
                     
-                    int32_t type_oid = get_field_type_oid(pg_column_index);
+                    if (type_oid == 0) {
+                        PGX_ERROR("Column '%s' not found in table '%s' metadata", 
+                                  col_spec.name.c_str(), spec.table_name.c_str());
+                        throw std::runtime_error("Column not found in table");
+                    }
+                    
                     switch (type_oid) {
                     case BOOLOID:
                         col_spec.type = ColumnType::BOOLEAN;
@@ -350,7 +373,7 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
                         col_spec.type = ColumnType::INTEGER;
                         break;
                     default:
-                        PGX_ERROR("Unsupported type %d", type_oid);
+                        PGX_ERROR("Unsupported type %d for column '%s'", type_oid, col_spec.name.c_str());
                         throw std::runtime_error("Failed to parse column type");
                     }
 

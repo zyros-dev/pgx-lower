@@ -30,7 +30,11 @@ extern "C" {
 #endif
 
 // Data Structures
-//==============================================================================
+struct ColumnMetadata {
+    char name[64];      // NAMEDATALEN from PostgreSQL (typically 64)
+    int32_t type_oid;   // PostgreSQL type OID
+    int32_t attnum;     // Attribute number (1-based in PostgreSQL)
+};
 
 struct ComputedResultStorage {
     std::vector<Datum> computedValues;
