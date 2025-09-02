@@ -292,6 +292,8 @@ static void cleanup_datasourceiterator_callback(void* arg) {
     }
 }
 
+// TODO: This function is uhhh... pretty gross. It should be returning iter, not a boolean. I also cannot be bothered fixing
+    // it now since it does its job and its just an abstracted away black box
 static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSourceIterator* iter) {
     uint32_t actual_len = varlen32_param.getLen();
     const char* json_spec = varlen32_param.data();
