@@ -14,6 +14,8 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
+#include <mlir/Pass/Pass.h>
+
 namespace mlir_runner {
 
 void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_lower::log::Category phase) {
@@ -176,6 +178,29 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
     } catch (...) {
         PGX_ERROR("Unknown exception in dumpModuleWithStats");
     }
+}
+
+class ModuleDumpPass : public mlir::PassWrapper<ModuleDumpPass, mlir::OperationPass<mlir::ModuleOp>> {
+private:
+    std::string phaseName;
+    ::pgx_lower::log::Category phaseCategory;
+
+public:
+    ModuleDumpPass(const std::string& name, ::pgx_lower::log::Category category = ::pgx_lower::log::Category::GENERAL)
+        : phaseName(name), phaseCategory(category) {}
+
+    void runOnOperation() override {
+        dumpModuleWithStats(getOperation(), phaseName, phaseCategory);
+    }
+
+    llvm::StringRef getArgument() const override { return "module-dump"; }
+    llvm::StringRef getDescription() const override {
+        return "Dump MLIR module for debugging";
+    }
+};
+
+std::unique_ptr<mlir::Pass> createModuleDumpPass(const std::string& phaseName, ::pgx_lower::log::Category category) {
+    return std::make_unique<ModuleDumpPass>(phaseName, category);
 }
 
 bool validateModuleState(::mlir::ModuleOp module, const std::string& phase) {

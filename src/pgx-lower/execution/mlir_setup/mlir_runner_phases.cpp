@@ -93,8 +93,8 @@ bool runPhase3b(::mlir::ModuleOp module) {
     pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DBStandard lowering", ::pgx_lower::log::Category::DB_LOWER));
     mlir::pgx_lower::createDSAToStandardPipeline(pm, false);
     pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DSAStandard lowering", ::pgx_lower::log::Category::DSA_LOWER));
+    pm.addPass(mlir::createCanonicalizerPass());
 
-    // Run PassManager with pure C++ exception handling
     if (mlir::failed(pm.run(module))) {
         throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
     }

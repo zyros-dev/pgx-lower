@@ -11,13 +11,13 @@ namespace mlir_runner {
 // MLIR Context Management - PostgreSQL-free
 bool setupMLIRContextForJIT(::mlir::MLIRContext& context);
 
-// Phase 3a: RelAlg → DB+DSA+Util lowering
+// Phase 3a: RelAlg -> DB+DSA+Util lowering
 bool runPhase3a(::mlir::ModuleOp module);
 
-// Phase 3b: DB+DSA+Util → Standard lowering  
+// Phase 3b: DB+DSA+Util -> Standard lowering
 bool runPhase3b(::mlir::ModuleOp module);
 
-// Phase 3c: Standard → LLVM lowering
+// Phase 3c: Standard -> LLVM lowering
 bool runPhase3c(::mlir::ModuleOp module);
 
 // Complete pipeline: RelAlg → DB+DSA+Util → Standard → LLVM
