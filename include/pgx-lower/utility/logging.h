@@ -47,21 +47,23 @@ namespace log {
 
 // Categories - WHAT is logging
 enum class Category {
-    AST_TRANSLATE,   // PostgreSQL AST → RelAlg
-    RELALG_LOWER,    // RelAlg → DB+DSA
-    DB_LOWER,        // DB → Standard  
-    DSA_LOWER,       // DSA → Standard
-    UTIL_LOWER,      // Util → LLVM
-    RUNTIME,         // Runtime function calls
-    JIT,             // JIT compilation/execution
-    GENERAL          // General debug messages
+    AST_TRANSLATE,
+    RELALG_LOWER,
+    DB_LOWER,
+    DSA_LOWER,
+    UTIL_LOWER,
+    RUNTIME,
+    JIT,
+    GENERAL,
+    PROBLEM
 };
 
-// Levels - Different types of logs (independent switches)
 enum class Level {
-    IO,              // Input/Output boundaries
-    DEBUG,           // General debug information
-    TRACE            // Detailed trace information
+    IO,
+    DEBUG,
+    TRACE,
+    WARNING_LEVEL,
+    ERROR_LEVEL,
 };
 
 extern bool log_enable;
@@ -101,10 +103,15 @@ const char* basename_only(const char* filepath);
 // WARNING and ERROR always log - these are critical user-facing messages
 #ifdef POSTGRESQL_EXTENSION
 #define PGX_WARNING(fmt, ...) \
-    elog(WARNING, fmt, ##__VA_ARGS__)
-
+    ::pgx_lower::log::log(::pgx_lower::log::Category::PROBLEM, \
+                          ::pgx_lower::log::Level::WARNING_LEVEL, \
+                          __FILE__, __LINE__, \
+                          fmt, ##__VA_ARGS__)
 #define PGX_ERROR(fmt, ...) \
-    elog(ERROR, fmt, ##__VA_ARGS__)
+    ::pgx_lower::log::log(::pgx_lower::log::Category::PROBLEM, \
+                          ::pgx_lower::log::Level::ERROR_LEVEL, \
+                          __FILE__, __LINE__, \
+                          fmt, ##__VA_ARGS__)
 #else
 #define PGX_WARNING(fmt, ...) \
     fprintf(stderr, "[WARNING] " fmt "\n", ##__VA_ARGS__)
