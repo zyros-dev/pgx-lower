@@ -37,26 +37,26 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
    using OpConversionPattern<mlir::dsa::CreateDS>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::CreateDS createOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto loc = createOp->getLoc();
-      if (auto joinHtType = createOp.getDs().getType().dyn_cast_or_null<mlir::dsa::JoinHashtableType>()) {
+      if (auto joinHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::JoinHashtableType>()) {
          auto entryType = mlir::TupleType::get(rewriter.getContext(), {joinHtType.getKeyType(), joinHtType.getValType()});
          auto tupleType = mlir::TupleType::get(rewriter.getContext(), {rewriter.getIndexType(), entryType});
          Value typesize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), typeConverter->convertType(tupleType));
          Value ptr = rt::LazyJoinHashtable::create(rewriter, loc)(typesize)[0];
          rewriter.replaceOpWithNewOp<util::GenericMemrefCastOp>(createOp, typeConverter->convertType(joinHtType), ptr);
          return success();
-      } else if (auto vecType = createOp.getDs().getType().dyn_cast_or_null<mlir::dsa::VectorType>()) {
+      } else if (auto vecType = createOp.getDs().getType().dyn_cast<mlir::dsa::VectorType>()) {
          Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 1024);
          auto elementType = typeConverter->convertType(vecType.getElementType());
          auto typeSize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
          auto ptr = rt::Vector::create(rewriter, loc)({typeSize, initialCapacity})[0];
-         ::mlir::Value createdVector = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, getLoweredVectorType(rewriter.getContext(), elementType), ptr);
+         mlir::Value createdVector = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, getLoweredVectorType(rewriter.getContext(), elementType), ptr);
          rewriter.replaceOp(createOp, createdVector);
          return success();
-      } else if (auto aggrHtType = createOp.getDs().getType().dyn_cast_or_null<mlir::dsa::AggregationHashtableType>()) {
+      } else if (auto aggrHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::AggregationHashtableType>()) {
          TupleType keyType = aggrHtType.getKeyType();
          TupleType aggrType = aggrHtType.getValType();
          if (keyType.getTypes().empty()) {
-            ::mlir::Value ref = rewriter.create<mlir::util::AllocOp>(loc, typeConverter->convertType(createOp.getDs().getType()), ::mlir::Value());
+            ::mlir::Value ref = rewriter.create<mlir::util::AllocOp>(loc, typeConverter->convertType(createOp.getDs().getType()), mlir::Value());
             rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), ref, ::mlir::Value());
             rewriter.replaceOp(createOp, ref);
             return success();
@@ -64,7 +64,7 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
             auto typeSize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), getHashtableEntryType(rewriter.getContext(), keyType, aggrType));
             Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 4);
             auto ptr = rt::Hashtable::create(rewriter, loc)({typeSize, initialCapacity})[0];
-            ::mlir::Value casted = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, getHashtableType(rewriter.getContext(), keyType, aggrType), ptr);
+            mlir::Value casted = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, getHashtableType(rewriter.getContext(), keyType, aggrType), ptr);
             Value initValAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(rewriter.getContext(), adaptor.getInitVal().getType()), casted, 5);
             rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), initValAddress, Value());
             rewriter.replaceOp(createOp, casted);
@@ -84,7 +84,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
       std::function<Value(OpBuilder&, Value, Value)> reduceFnBuilder = insertOp.getReduce().empty() ? std::function<Value(OpBuilder&, Value, Value)>() : [&insertOp](OpBuilder& rewriter, Value left, Value right) {
          Block* sortLambda = &insertOp.getReduce().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         ::mlir::IRMapping mapping;
+         mlir::IRMapping mapping;
          mapping.map(sortLambda->getArgument(0), left);
          mapping.map(sortLambda->getArgument(1), right);
 
@@ -98,7 +98,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
       std::function<Value(OpBuilder&, Value, Value)> equalFnBuilder = insertOp.getEqual().empty() ? std::function<Value(OpBuilder&, Value, Value)>() : [&insertOp](OpBuilder& rewriter, Value left, Value right) {
          Block* sortLambda = &insertOp.getEqual().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         ::mlir::IRMapping mapping;
+         mlir::IRMapping mapping;
          mapping.map(sortLambda->getArgument(0), left);
          mapping.map(sortLambda->getArgument(1), right);
 
@@ -110,17 +110,17 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
          return mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).getResults()[0]);
       };
       auto loc = insertOp->getLoc();
-      if (llvm::cast<mlir::dsa::AggregationHashtableType>(insertOp.getHt().getType()).getKeyType() == mlir::TupleType::get(getContext())) {
-         auto loaded = rewriter.create<mlir::util::LoadOp>(loc, llvm::cast<mlir::util::RefType>(adaptor.getHt().getType()).getElementType(), adaptor.getHt(), ::mlir::Value());
+      if (insertOp.getHt().getType().cast<mlir::dsa::AggregationHashtableType>().getKeyType() == mlir::TupleType::get(getContext())) {
+         auto loaded = rewriter.create<mlir::util::LoadOp>(loc, adaptor.getHt().getType().cast<mlir::util::RefType>().getElementType(), adaptor.getHt(), mlir::Value());
          auto newAggr = reduceFnBuilder(rewriter, loaded, adaptor.getVal());
-         rewriter.create<mlir::util::StoreOp>(loc, newAggr, adaptor.getHt(), ::mlir::Value());
+         rewriter.create<mlir::util::StoreOp>(loc, newAggr, adaptor.getHt(), mlir::Value());
          rewriter.eraseOp(insertOp);
       } else {
          Value hashed;
          {
             Block* sortLambda = &insertOp.getHash().front();
             auto* sortLambdaTerminator = sortLambda->getTerminator();
-            ::mlir::IRMapping mapping;
+            mlir::IRMapping mapping;
             mapping.map(sortLambda->getArgument(0), adaptor.getKey());
 
             for (auto& op : sortLambda->getOperations()) {
@@ -132,7 +132,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
          }
 
          auto keyType = adaptor.getKey().getType();
-         auto aggrType = typeConverter->convertType(llvm::cast<mlir::dsa::AggregationHashtableType>(insertOp.getHt().getType()).getValType());
+         auto aggrType = typeConverter->convertType(insertOp.getHt().getType().cast<mlir::dsa::AggregationHashtableType>().getValType());
          auto* context = rewriter.getContext();
          auto entryType = getHashtableEntryType(context, keyType, aggrType);
          auto i8PtrType = mlir::util::RefType::get(context, IntegerType::get(context, 8));
@@ -305,14 +305,14 @@ class LazyJHtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableIns
          }
          hashed = mapping.lookup(cast<mlir::dsa::YieldOp>(sortLambdaTerminator).getResults()[0]);
       }
-      ::mlir::Value val = adaptor.getVal();
+      mlir::Value val = adaptor.getVal();
       auto loc = insertOp->getLoc();
 
       if (!val) {
          val = rewriter.create<mlir::util::UndefOp>(loc, mlir::TupleType::get(getContext()));
       }
-      auto entry = rewriter.create<mlir::util::PackOp>(loc, ::mlir::ValueRange({adaptor.getKey(), val}));
-      auto bucket = rewriter.create<mlir::util::PackOp>(loc, ::mlir::ValueRange({hashed, entry}));
+      auto entry = rewriter.create<mlir::util::PackOp>(loc, mlir::ValueRange({adaptor.getKey(), val}));
+      auto bucket = rewriter.create<mlir::util::PackOp>(loc, mlir::ValueRange({hashed, entry}));
       auto idxType = rewriter.getIndexType();
       auto idxPtrType = util::RefType::get(rewriter.getContext(), idxType);
       auto valuesType = mlir::util::RefType::get(rewriter.getContext(), bucket.getType());
@@ -358,7 +358,7 @@ class FinalizeTBLowering : public OpConversionPattern<mlir::dsa::Finalize> {
       if (!finalizeOp.getHt().getType().isa<mlir::dsa::TableBuilderType>()) {
          return failure();
       }
-      ::mlir::Value res = rt::TableBuilder::build(rewriter, finalizeOp->getLoc())(adaptor.getHt())[0];
+      mlir::Value res = rt::TableBuilder::build(rewriter, finalizeOp->getLoc())(adaptor.getHt())[0];
       rewriter.replaceOp(finalizeOp, res);
       return success();
    }
@@ -372,7 +372,7 @@ class DSAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
       }
       Value builderVal = adaptor.getDs();
       Value v = adaptor.getVal();
-      auto convertedElementType = typeConverter->convertType(llvm::cast<mlir::dsa::VectorType>(appendOp.getDs().getType()).getElementType());
+      auto convertedElementType = typeConverter->convertType(appendOp.getDs().getType().cast<mlir::dsa::VectorType>().getElementType());
       auto loc = appendOp->getLoc();
       auto idxType = rewriter.getIndexType();
       auto idxPtrType = util::RefType::get(rewriter.getContext(), idxType);
@@ -414,7 +414,7 @@ class TBAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
       if (!isValid) {
          isValid = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1, 1);
       }
-      ::mlir::Type type = getBaseType(val.getType());
+      mlir::Type type = getBaseType(val.getType());
       if (isIntegerType(type, 1)) {
          rt::TableBuilder::addBool(rewriter, loc)({builderVal, isValid, val});
       } else if (auto intWidth = getIntegerWidth(type, false)) {
@@ -431,7 +431,7 @@ class TBAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
             }
 
          }
-      } else if (auto floatType = type.dyn_cast_or_null<::mlir::FloatType>()) {
+      } else if (auto floatType = type.dyn_cast_or_null<mlir::FloatType>()) {
          switch (floatType.getWidth()) {
             case 32: rt::TableBuilder::addFloat32(rewriter, loc)({builderVal, isValid, val}); break;
             case 64: rt::TableBuilder::addFloat64(rewriter, loc)({builderVal, isValid, val}); break;
@@ -460,7 +460,7 @@ class CreateTableBuilderLowering : public OpConversionPattern<mlir::dsa::CreateD
          return failure();
       }
       auto loc = createOp->getLoc();
-      ::mlir::Value schema = rewriter.create<mlir::util::CreateConstVarLen>(loc, mlir::util::VarLen32Type::get(getContext()), llvm::cast<StringAttr>(createOp.getInitAttr().value()).str());
+      mlir::Value schema = rewriter.create<mlir::util::CreateConstVarLen>(loc, mlir::util::VarLen32Type::get(getContext()), createOp.getInitAttr().value().cast<StringAttr>().str());
       Value tableBuilder = rt::TableBuilder::create(rewriter, loc)({schema})[0];
       rewriter.replaceOp(createOp, tableBuilder);
       return success();
@@ -470,7 +470,7 @@ class FreeLowering : public OpConversionPattern<mlir::dsa::FreeOp> {
    public:
    using OpConversionPattern<mlir::dsa::FreeOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::FreeOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      if (auto aggrHtType = op.getVal().getType().dyn_cast_or_null<mlir::dsa::AggregationHashtableType>()) {
+      if (auto aggrHtType = op.getVal().getType().dyn_cast<mlir::dsa::AggregationHashtableType>()) {
          if (aggrHtType.getKeyType().getTypes().empty()) {
          } else {
             rt::Hashtable::destroy(rewriter, op->getLoc())(ValueRange{adaptor.getVal()});
