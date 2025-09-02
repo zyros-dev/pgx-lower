@@ -3,6 +3,8 @@
 #include <vector>
 #include "pgx-lower/runtime/PostgreSQLDataSource.h"
 #include "pgx-lower/utility/error_handling.h"
+#include "pgx-lower/utility/logging_c.h"
+
 #include <array>
 #include <cstring>
 #include <memory>
@@ -11,6 +13,7 @@
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
 #include "postgres.h"
+#include "catalog/pg_type_d.h"
 #include "access/htup_details.h"
 #include "access/heapam.h"
 #include "access/table.h"
@@ -28,6 +31,7 @@ extern "C" {
 #include "utils/datum.h"
 #include "miscadmin.h"
 #include "commands/trigger.h"
+#include "fmgr.h"
 #include "access/xact.h"
 }
 #endif
@@ -595,6 +599,88 @@ extern "C" auto add_tuple_to_result(const int64_t value) -> bool {
 
 extern "C" bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null) {
     return pgx_lower::runtime::extract_field<bool>(field_index, is_null);
+}
+
+extern "C" int32_t get_field_type_oid(int32_t field_index) {
+    // Get the PostgreSQL type OID for a field using the global tuple descriptor
+    if (!g_current_tuple_passthrough.tupleDesc || 
+        field_index < 0 || 
+        field_index >= g_current_tuple_passthrough.tupleDesc->natts) {
+        PGX_INFO_C("g_current_tuple_passthrough seems to be invalid");
+        return 0;  // Invalid OID
+    }
+    
+    return TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
+}
+
+extern "C" const char* get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t* length, int32_t type_oid) {
+#ifdef POSTGRESQL_EXTENSION
+    if (!pgx_lower::runtime::check_memory_context_safety()) {
+        PGX_ERROR("get_string_field: Memory context unsafe for PostgreSQL operations");
+        *is_null = true;
+        *length = 0;
+        return nullptr;
+    }
+
+    if (!g_current_tuple_passthrough.originalTuple || !g_current_tuple_passthrough.tupleDesc) {
+        *is_null = true;
+        *length = 0;
+        return nullptr;
+    }
+
+    const int attr_num = field_index + 1;
+    if (attr_num > g_current_tuple_passthrough.tupleDesc->natts) {
+        *is_null = true;
+        *length = 0;
+        return nullptr;
+    }
+
+    bool isnull;
+    Datum value = heap_getattr(g_current_tuple_passthrough.originalTuple, attr_num, 
+                              g_current_tuple_passthrough.tupleDesc, &isnull);
+    *is_null = isnull;
+    if (isnull) {
+        *length = 0;
+        return nullptr;
+    }
+
+    // Use the type OID passed from caller to determine how to extract the string
+    // This avoids redundant TupleDesc access since caller already has the type OID
+    switch (type_oid) {
+    case TEXTOID: {
+        text* pg_text = DatumGetTextPP(value);
+        *length = VARSIZE_ANY_EXHDR(pg_text);
+        return VARDATA_ANY(pg_text);
+    }
+    case VARCHAROID: {
+        VarChar* pg_varchar = DatumGetVarCharPP(value);
+        *length = VARSIZE_ANY_EXHDR(pg_varchar);
+        return VARDATA_ANY(pg_varchar);
+    }
+    case BPCHAROID: {
+        BpChar* pg_bpchar = DatumGetBpCharPP(value);
+        *length = VARSIZE_ANY_EXHDR(pg_bpchar);
+        return VARDATA_ANY(pg_bpchar);
+    }
+    case NAMEOID: {
+        // Handle name type (fixed 64-byte)
+        Name name = DatumGetName(value);
+        *length = strlen(NameStr(*name));
+        return NameStr(*name);
+    }
+    default:
+        // Unknown type - try to convert to string
+        PGX_WARNING("get_string_field: Unexpected type OID %u for string field", type_oid);
+        *is_null = true;
+        *length = 0;
+        return nullptr;
+    }
+#else
+    // Non-PostgreSQL build - return empty
+    *is_null = true;
+    *length = 0;
+    return nullptr;
+#endif
 }
 
 extern "C" int64_t get_text_field(void* tuple_handle, const int32_t field_index, bool* is_null) {

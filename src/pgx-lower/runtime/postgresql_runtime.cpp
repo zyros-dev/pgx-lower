@@ -15,6 +15,7 @@ extern ComputedResultStorage g_computed_results;
 
 extern "C" {
 #include "postgres.h"
+#include "catalog/pg_type_d.h"
 #include "utils/elog.h"
 #include "utils/numeric.h"
 #include "fmgr.h"
@@ -57,7 +58,10 @@ void* rt_get_execution_context() {
 enum class ColumnType {
     INTEGER,
     BIGINT,
-    BOOLEAN
+    BOOLEAN,
+    STRING,
+    TEXT,
+    VARCHAR
 };
 
 struct ColumnSpec {
@@ -80,6 +84,9 @@ struct DataSourceIterator {
     std::vector<bool> bigint_nulls;
     std::vector<uint8_t> bool_values;  // Use uint8_t instead of bool for addressability
     std::vector<bool> bool_nulls;
+    std::vector<runtime::VarLen32> string_values;  // For TEXT, VARCHAR, CHAR columns
+    std::vector<bool> string_nulls;
+    std::vector<std::string> string_data;  // Persistent storage for actual string data
     
     // Legacy fields for backward compatibility
     int32_t current_id;
@@ -98,7 +105,18 @@ struct TableSpec {
     std::vector<std::string> column_names;
 };
 
-TableSpec parse_table_spec(const char* json_str) {
+static int get_column_position(const std::string& table_name, const std::string& column_name) {
+    extern int32_t get_column_attnum(const char* table_name, const char* column_name);
+    int32_t attnum = get_column_attnum(table_name.c_str(), column_name.c_str());
+    if (attnum > 0) {
+        // Convert from 1-based PostgreSQL attnum to 0-based index
+        return attnum - 1;
+    }
+    
+    return -1;  // Column not found
+}
+
+static TableSpec parse_table_spec(const char* json_str) {
     PGX_LOG(RUNTIME, IO, "parse_table_spec IN: json_str=%s", json_str ? json_str : "NULL");
     TableSpec spec;
     
@@ -119,7 +137,7 @@ TableSpec parse_table_spec(const char* json_str) {
                 }
             }
         }
-        
+
         PGX_LOG(RUNTIME, DEBUG, "parse_table_spec: table=%s, columns=%zu", spec.table_name.c_str(), spec.column_names.size());
     } catch (const std::exception& e) {
         PGX_LOG(RUNTIME, DEBUG, "parse_table_spec: JSON parsing failed: %s", e.what());
@@ -302,18 +320,40 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
                 
                 iter->table_name = spec.table_name;
                 
-                // Convert column names to column specs with type inference
-                for (const auto& col_name : spec.column_names) {
+                extern int32_t get_field_type_oid(int32_t field_index);
+                
+                for (size_t i = 0; i < spec.column_names.size(); ++i) {
                     ColumnSpec col_spec;
-                    col_spec.name = col_name;
-                    // Infer type from column name patterns
-                    if (col_name.find("flag") != std::string::npos || col_name.find("bool") != std::string::npos) {
-                        col_spec.type = ColumnType::BOOLEAN;
-                    } else if (col_name.find("big") != std::string::npos || col_name.find("int8") != std::string::npos) {
-                        col_spec.type = ColumnType::BIGINT;
-                    } else {
-                        col_spec.type = ColumnType::INTEGER;
+                    col_spec.name = spec.column_names[i];
+                    
+                    // Get the actual PostgreSQL type OID for this column
+                    int pg_column_index = get_column_position(spec.table_name, col_spec.name);
+                    if (pg_column_index == -1) {
+                        throw std::runtime_error("Failed to find pg column index");
                     }
+                    
+                    int32_t type_oid = get_field_type_oid(pg_column_index);
+                    switch (type_oid) {
+                    case BOOLOID:
+                        col_spec.type = ColumnType::BOOLEAN;
+                        break;
+                    case INT8OID:
+                        col_spec.type = ColumnType::BIGINT;
+                        break;
+                    case TEXTOID:
+                    case VARCHAROID:
+                    case BPCHAROID:
+                        col_spec.type = ColumnType::STRING;
+                        break;
+                    case INT4OID:
+                    case INT2OID:
+                        col_spec.type = ColumnType::INTEGER;
+                        break;
+                    default:
+                        PGX_ERROR("Unsupported type %d", type_oid);
+                        throw std::runtime_error("Failed to parse column type");
+                    }
+
                     iter->columns.push_back(col_spec);
                 }
                 
@@ -340,6 +380,14 @@ static void initialize_column_storage(DataSourceIterator* iter) {
     iter->bigint_nulls.resize(iter->columns.size(), true);
     iter->bool_values.resize(iter->columns.size(), 0);
     iter->bool_nulls.resize(iter->columns.size(), true);
+
+    iter->string_values.clear();
+    iter->string_data.resize(iter->columns.size(), "");
+    for (size_t i = 0; i < iter->columns.size(); ++i) {
+        const char* empty = "";
+        iter->string_values.push_back(runtime::VarLen32(reinterpret_cast<uint8_t*>(const_cast<char*>(empty)), 0));
+    }
+    iter->string_nulls.resize(iter->columns.size(), true);
     
     PGX_LOG(RUNTIME, DEBUG, "initialize_column_storage: configured for table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
 }
@@ -359,45 +407,14 @@ static void setup_fallback_table_config(DataSourceIterator* iter) {
     iter->columns.push_back(col2);
 }
 
-// Helper function: Get column position by name for a given table
-// Returns -1 if column not found
-static int get_column_position(const std::string& table_name, const std::string& column_name) {
-    // Query PostgreSQL system catalog to get column position
-    // attnum is 1-based in pg_attribute, but we need 0-based for our API
-    extern int32_t get_column_attnum(const char* table_name, const char* column_name);
-    
-    // Try to get the column position from PostgreSQL
-    int32_t attnum = get_column_attnum(table_name.c_str(), column_name.c_str());
-    
-    if (attnum > 0) {
-        // Convert from 1-based PostgreSQL attnum to 0-based index
-        return attnum - 1;
-    }
-    
-    // Fallback: If get_column_attnum is not available or returns invalid,
-    // use a simple heuristic based on common patterns
-    PGX_LOG(RUNTIME, DEBUG, "get_column_position: Using fallback mapping for table '%s', column '%s'", 
-         table_name.c_str(), column_name.c_str());
-    
-    // Common patterns for test tables
-    if (column_name == "id") return 0;
-    if (column_name == "col2") return 1;
-    if (column_name == "val1" || column_name == "value") return 1;
-    if (column_name == "val2" || column_name == "score") return 2;
-    if (column_name == "flag1") return 1;
-    if (column_name == "flag2") return 2;
-    
-    return -1;  // Column not found
-}
-
 // Helper function: Open PostgreSQL table connection
 static void* open_table_connection(const std::string& table_name) {
     void* table_handle = open_postgres_table(table_name.c_str());
-    
+
     if (!table_handle) {
         PGX_LOG(RUNTIME, DEBUG, "open_table_connection: open_postgres_table failed for '%s'", table_name.c_str());
     }
-    
+
     return table_handle;
 }
 
@@ -469,12 +486,14 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
         extern int32_t get_int32_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern int64_t get_int64_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null);
+        extern const char* get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t* length, int32_t type_oid);
+        extern int32_t get_field_type_oid(int32_t field_index);
         
         // Read dynamic columns based on specification
         // We need to map column names to their actual PostgreSQL positions
         // because MLIR may have columns in different order than PostgreSQL physical order
         for (size_t i = 0; i < iter->columns.size(); ++i) {
-            const auto& col_spec = iter->columns[i];
+            auto& col_spec = iter->columns[i];  // Non-const so we can update the type
             
             // Find the actual PostgreSQL column index for this column name
             int pg_column_index = get_column_position(iter->table_name, col_spec.name);
@@ -486,7 +505,12 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
                 pg_column_index = i;  // Fallback to iteration order
             }
             
-            if (col_spec.type == ColumnType::BOOLEAN) {
+            // Get the actual type OID from PostgreSQL
+            int32_t type_oid = get_field_type_oid(pg_column_index);
+            
+            // Determine the column type from the PostgreSQL type OID
+            if (type_oid == 16) {  // BOOLOID
+                col_spec.type = ColumnType::BOOLEAN;
                 bool is_null = false;
                 bool bool_value = get_bool_field(iter->table_handle, pg_column_index, &is_null);
                 iter->bool_values[i] = bool_value ? 1 : 0;
@@ -499,6 +523,27 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
                 iter->bigint_nulls[i] = is_null;
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)", 
                      i, col_spec.name.c_str(), pg_column_index, (long long)iter->bigint_values[i], is_null ? "true" : "false");
+            } else if (col_spec.type == ColumnType::STRING || col_spec.type == ColumnType::TEXT || col_spec.type == ColumnType::VARCHAR) {
+                bool is_null = false;
+                int32_t length = 0;
+                const char* string_value = get_string_field(iter->table_handle, pg_column_index, &is_null, &length, type_oid);
+                
+                if (!is_null && string_value != nullptr && length > 0) {
+                    iter->string_data[i] = std::string(string_value, length);
+                } else {
+                    iter->string_data[i] = "";
+                }
+                
+                // Create VarLen32 from the persistent string storage
+                iter->string_values[i] = runtime::VarLen32(
+                    reinterpret_cast<uint8_t*>(const_cast<char*>(iter->string_data[i].data())), 
+                    iter->string_data[i].length());
+                iter->string_nulls[i] = is_null;
+                
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d string = '%s' len=%u (null=%s)", 
+                     i, col_spec.name.c_str(), pg_column_index, 
+                     iter->string_data[i].c_str(), iter->string_values[i].getLen(), 
+                     is_null ? "true" : "false");
             } else {
                 bool is_null = false;
                 iter->int_values[i] = get_int32_field(iter->table_handle, pg_column_index, &is_null);
@@ -575,6 +620,8 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
                 is_null = iter->bool_nulls[i];
             } else if (col_spec.type == ColumnType::BIGINT) {
                 is_null = iter->bigint_nulls[i];
+            } else if (col_spec.type == ColumnType::STRING || col_spec.type == ColumnType::TEXT || col_spec.type == ColumnType::VARCHAR) {
+                is_null = iter->string_nulls[i];
             } else {
                 is_null = iter->int_nulls[i];
             }
@@ -586,17 +633,24 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
             column_info_ptr[0] = 0;                    // offset
             column_info_ptr[1] = 0;                    // validMultiplier
             column_info_ptr[2] = (size_t)&valid_bitmaps[i]; // validBuffer - unique per column
-            column_info_ptr[4] = 0;                    // varLenBuffer = nullptr
             
             if (col_spec.type == ColumnType::BOOLEAN) {
+                column_info_ptr[4] = 0;                    // varLenBuffer = nullptr for non-string types
                 column_info_ptr[3] = (size_t)&iter->bool_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) boolean = %s at %p", 
                      i, col_spec.name.c_str(), iter->bool_values[i] ? "true" : "false", &iter->bool_values[i]);
             } else if (col_spec.type == ColumnType::BIGINT) {
+                column_info_ptr[4] = 0;                    // varLenBuffer = nullptr for non-string types
                 column_info_ptr[3] = (size_t)&iter->bigint_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) bigint = %lld at %p", 
                      i, col_spec.name.c_str(), (long long)iter->bigint_values[i], &iter->bigint_values[i]);
+            } else if (col_spec.type == ColumnType::STRING || col_spec.type == ColumnType::TEXT || col_spec.type == ColumnType::VARCHAR) {
+                column_info_ptr[3] = (size_t)&iter->string_values[i]; // dataBuffer points to VarLen32
+                column_info_ptr[4] = (size_t)&iter->string_values[i]; // varLenBuffer also points to VarLen32
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) string len=%u at %p", 
+                     i, col_spec.name.c_str(), iter->string_values[i].getLen(), &iter->string_values[i]);
             } else {
+                column_info_ptr[4] = 0;                    // varLenBuffer = nullptr for non-string types
                 column_info_ptr[3] = (size_t)&iter->int_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) integer = %d at %p", 
                      i, col_spec.name.c_str(), iter->int_values[i], &iter->int_values[i]);
