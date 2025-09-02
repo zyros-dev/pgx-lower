@@ -32,11 +32,8 @@
 namespace mlir {
 namespace pgx_lower {
 
-// Forward declarations
 std::unique_ptr<Pass> createConvertToLLVMPass();
 std::unique_ptr<Pass> createStandardToLLVMPass();
-
-
 
 void createRelAlgToDBPipeline(PassManager& pm, bool enableVerification) {
     PGX_LOG(JIT, DEBUG, "createRelAlgToDBPipeline: Adding relalg to db pipeline");

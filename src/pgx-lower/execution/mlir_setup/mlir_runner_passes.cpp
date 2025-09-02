@@ -49,7 +49,6 @@ extern "C" void initialize_mlir_passes() {
 
 namespace mlir_runner {
 
-// Extended MLIR context setup for pipeline execution - loads all required dialects
 bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
     if (!initialize_mlir_context(context)) {
         PGX_ERROR("Failed to initialize MLIR context and dialects");

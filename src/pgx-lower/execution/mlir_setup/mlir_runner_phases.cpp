@@ -18,7 +18,9 @@
 
 #include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
+#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
 #include "lingodb/mlir/Dialect/util/UtilDialect.h"
+#include "lingodb/mlir/Transforms/CustomPasses.h"
 
 class Phase3bMemoryGuard;
 
@@ -31,11 +33,20 @@ bool runPhase3a(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
     context.disableMultithreading();
 
-    if (mlir::failed(mlir::verify(module))) {
-        throw std::runtime_error("Phase 3a: Module verification failed before lowering");
+    if (!validateModuleState(module, "Phase 3a input")) {
+        throw std::runtime_error("Phase 3a: Module validation failed before running passes");
     }
+    dumpModuleWithStats(module, "Phase 3a before optimization", pgx_lower::log::Category::RELALG_LOWER);
 
-    dumpModuleWithStats(module, "Phase 3a BEFORE: RelAlg -> DB+DSA+Util", pgx_lower::log::Category::RELALG_LOWER);
+    mlir::PassManager pm1(&context);
+    pm1.enableVerifier(false);
+    pm1.addPass(mlir::createInlinerPass());
+    pm1.addPass(mlir::createSymbolDCEPass());
+    mlir::relalg::createQueryOptPipeline(pm1/*, &db*/);
+
+    if (!validateModuleState(module, "After optimization")) {
+        throw std::runtime_error("Phase 3a: Module validation failed before running passes");
+    }
 
     ::mlir::PassManager pm(&context);
     pm.enableVerifier(true);
@@ -62,48 +73,37 @@ bool runPhase3a(::mlir::ModuleOp module) {
 bool runPhase3b(::mlir::ModuleOp module) {
     auto& context = *module.getContext();
 
-    auto* dbDialect = context.getLoadedDialect<mlir::db::DBDialect>();
-    auto* dsaDialect = context.getLoadedDialect<mlir::dsa::DSADialect>();
-    auto* utilDialect = context.getLoadedDialect<mlir::util::UtilDialect>();
-
-    if (!dbDialect || !dsaDialect || !utilDialect) {
-        throw std::runtime_error("Phase 3b: Required dialects not loaded");
-    }
-
     if (!validateModuleState(module, "Phase 3b input")) {
         throw std::runtime_error("Phase 3b: Module validation failed before running passes");
     }
-
-    if (!module) {
-        throw std::runtime_error("Phase 3b: Module is null!");
-    }
-
     context.disableMultithreading();
-
-    if (mlir::failed(mlir::verify(module))) {
-        throw std::runtime_error("Phase 3b: Module verification failed before pass execution");
-    }
-
     dumpModuleWithStats(module, "Phase 3b BEFORE: DB+DSA -> Standard", pgx_lower::log::Category::DB_LOWER);
 
-    ::mlir::PassManager pm(&context);
-    pm.enableVerifier(true);
-
-    mlir::pgx_lower::createDBToStandardPipeline(pm, false);
-    pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DBStandard lowering", ::pgx_lower::log::Category::DB_LOWER));
-    mlir::pgx_lower::createDSAToStandardPipeline(pm, false);
-    pm.addPass(mlir::pgx_lower::createModuleDumpPass("MLIR after DSAStandard lowering", ::pgx_lower::log::Category::DSA_LOWER));
-    pm.addPass(mlir::createCanonicalizerPass());
-
-    if (mlir::failed(pm.run(module))) {
+    ::mlir::PassManager pm1(&context);
+    pm1.enableVerifier(true);
+    mlir::pgx_lower::createDBToStandardPipeline(pm1, false);
+    if (mlir::failed(pm1.run(module))) {
         throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
     }
+    dumpModuleWithStats(module, "After db standard pipeline", pgx_lower::log::Category::DSA_LOWER);
+
+    ::mlir::PassManager pm2(&context);
+    pm2.enableVerifier(true);
+    mlir::pgx_lower::createDSAToStandardPipeline(pm2, false);
+    pm2.addPass(mlir::createCanonicalizerPass());
 
     if (!validateModuleState(module, "Phase 3b output")) {
         throw std::runtime_error("Phase 3b: Module validation failed after lowering");
     }
+    dumpModuleWithStats(module, "After dsa standard pipeline", pgx_lower::log::Category::DB_LOWER);
 
-    dumpModuleWithStats(module, "Phase 3b AFTER: DB+DSA -> Standard", pgx_lower::log::Category::DB_LOWER);
+   mlir::PassManager pmFunc(&context, mlir::func::FuncOp::getOperationName());
+   pmFunc.enableVerifier(true);
+   pmFunc.addPass(mlir::createLoopInvariantCodeMotionPass());
+   pmFunc.addPass(mlir::createSinkOpPass());
+   pmFunc.addPass(mlir::createCSEPass());
+
+    dumpModuleWithStats(module, "After func pipeline", pgx_lower::log::Category::DB_LOWER);
 
     return true;
 }
