@@ -1,5 +1,5 @@
-#include "runtime/StringRuntime.h"
-#include "runtime/helpers.h"
+#include "lingodb/runtime/StringRuntime.h"
+#include "lingodb/runtime/helpers.h"
 
 #include <cstdlib>
 #include <cstdio>
@@ -303,7 +303,12 @@ runtime::VarLen32 runtime::StringRuntime::fromDecimal(__int128 val, int32_t scal
    // Convert to string
    std::string result;
    if (val == 0) {
+      // For zero, we just return "0" regardless of scale
       result = "0";
+      size_t len = result.length();
+      uint8_t* data = new uint8_t[len];
+      memcpy(data, result.data(), len);
+      return runtime::VarLen32(data, len);
    } else {
       while (val > 0) {
          result = char('0' + (val % 10)) + result;
@@ -311,7 +316,7 @@ runtime::VarLen32 runtime::StringRuntime::fromDecimal(__int128 val, int32_t scal
       }
    }
    
-   // Add decimal point if needed
+   // Add decimal point if needed (but not for zero which was handled above)
    if (scale > 0) {
       // Pad with zeros if necessary
       while (static_cast<int32_t>(result.length()) <= scale) {
