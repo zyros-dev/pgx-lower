@@ -232,7 +232,6 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
         return nullptr;
     }
 
-    // Extract operands from args list
     ::mlir::Value lhs = nullptr;
     ::mlir::Value rhs = nullptr;
 
@@ -258,86 +257,7 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
     // Try string operators
     switch (opOid) {
     case PG_TEXT_LIKE_OID: {
-        // LIKE operator - use LingoDB's Like/ConstLike implementation
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LIKE operator to db.runtime_call");
-        
-        // LingoDB's Like function expects non-nullable string arguments
-        // We need to handle nullable columns with proper NULL propagation
-        auto lhsType = lhs.getType();
-        auto rhsType = rhs.getType();
-        
-        mlir::Value actualLhs = lhs;
-        mlir::Value actualRhs = rhs;
-        mlir::Value isNull;
-        
-        // Check if left side is nullable and extract the value
-        if (auto nullableType = lhsType.dyn_cast<mlir::db::NullableType>()) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "LIKE: Left operand is nullable, handling NULL propagation");
-            
-            // Extract null flag and value from nullable
-            isNull = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), lhs);
-            actualLhs = builder_->create<mlir::db::NullableGetVal>(builder_->getUnknownLoc(), lhs);
-        }
-        
-        // Check if right side is nullable (less common, but handle it)
-        if (auto nullableType = rhsType.dyn_cast<mlir::db::NullableType>()) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "LIKE: Right operand is nullable");
-            
-            if (!isNull) {
-                isNull = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), rhs);
-            } else {
-                // Both nullable - OR the null flags
-                auto rhsNull = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), rhs);
-                isNull = builder_->create<mlir::db::OrOp>(builder_->getUnknownLoc(), isNull, rhsNull);
-            }
-            actualRhs = builder_->create<mlir::db::NullableGetVal>(builder_->getUnknownLoc(), rhs);
-        }
-        
-        // Create the runtime call with non-nullable arguments
-        // Optimizer will convert to ConstLike if pattern is constant
-        auto likeResult = builder_->create<mlir::db::RuntimeCall>(
-            builder_->getUnknownLoc(),
-            builder_->getI1Type(),
-            builder_->getStringAttr("Like"),
-            mlir::ValueRange{actualLhs, actualRhs});
-        
-        // If we had nullable inputs, wrap result in nullable with NULL propagation
-        if (isNull) {
-            // If input was NULL, result is NULL (represented as nullable false with null flag set)
-            auto falseVal = builder_->create<mlir::arith::ConstantOp>(
-                builder_->getUnknownLoc(), 
-                builder_->getI1Type(),
-                builder_->getIntegerAttr(builder_->getI1Type(), 0));
-            
-            // Create if-then-else: if null then nullable(false, true) else nullable(likeResult, false)
-            auto ifOp = builder_->create<mlir::scf::IfOp>(
-                builder_->getUnknownLoc(),
-                builder_->getType<mlir::db::NullableType>(builder_->getI1Type()),
-                isNull,
-                /*hasElse=*/true);
-            
-            // Then branch - return NULL
-            builder_->setInsertionPointToStart(&ifOp.getThenRegion().front());
-            auto nullResult = builder_->create<mlir::db::NullOp>(
-                builder_->getUnknownLoc(),
-                builder_->getType<mlir::db::NullableType>(builder_->getI1Type()));
-            builder_->create<mlir::scf::YieldOp>(builder_->getUnknownLoc(), nullResult.getResult());
-            
-            // Else branch - return LIKE result as non-null
-            builder_->setInsertionPointToStart(&ifOp.getElseRegion().front());
-            auto wrappedResult = builder_->create<mlir::db::AsNullableOp>(
-                builder_->getUnknownLoc(),
-                builder_->getType<mlir::db::NullableType>(builder_->getI1Type()),
-                likeResult.getRes(),
-                mlir::Value());
-            builder_->create<mlir::scf::YieldOp>(builder_->getUnknownLoc(), wrappedResult.getResult());
-            
-            // Reset insertion point and return the if result
-            builder_->setInsertionPointAfter(ifOp);
-            return ifOp.getResult(0);
-        }
-        
-        return likeResult.getRes();
+        throw std::runtime_error("Implement me! Make sure my output matches what lingodb generates in relalg!!");
     }
     case PG_TEXT_CONCAT_OID: {
         // String concatenation operator ||
