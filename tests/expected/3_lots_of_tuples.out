@@ -1,11 +1,14 @@
-LOAD 'pgx_lower.so';
-SET client_min_messages TO NOTICE;
+LOAD
+'pgx_lower.so';
 DROP TABLE IF EXISTS test;
-CREATE TABLE test(id SERIAL);
--- Insert values 1 through 5000
+CREATE TABLE test
+(
+    id SERIAL
+);
 INSERT INTO test(id)
 SELECT generate_series(1, 5000);
-SELECT * FROM test;
+SELECT *
+FROM test;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   id  
 ------

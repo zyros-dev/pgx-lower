@@ -1,22 +1,22 @@
--- Test logical operators: PgAndOp, PgOrOp, PgNotOp
-LOAD 'pgx_lower.so';
+LOAD
+'pgx_lower.so';
 DROP TABLE IF EXISTS test_logical;
 NOTICE:  table "test_logical" does not exist, skipping
-CREATE TABLE test_logical (
-    id SERIAL PRIMARY KEY,
+CREATE TABLE test_logical
+(
+    id    SERIAL PRIMARY KEY,
     flag1 BOOLEAN,
     flag2 BOOLEAN,
     value INTEGER
 );
-INSERT INTO test_logical(flag1, flag2, value) VALUES 
-    (true, false, 10),
-    (false, true, 20),
-    (true, true, 30),
-    (false, false, 40),
-    (true, false, 50);
--- Test logical operations in SELECT clauses
--- These should trigger MLIR compilation with logical operators
-SELECT (flag1 AND flag2) AS and_result FROM test_logical;
+INSERT INTO test_logical(flag1, flag2, value)
+VALUES (true, false, 10),
+       (false, true, 20),
+       (true, true, 30),
+       (false, false, 40),
+       (true, false, 50);
+SELECT (flag1 AND flag2) AS and_result
+FROM test_logical;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  and_result 
 ------------
@@ -27,7 +27,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
           0
 (5 rows)
 
-SELECT (flag1 OR flag2) AS or_result FROM test_logical;
+SELECT (flag1 OR flag2) AS or_result
+FROM test_logical;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  or_result 
 -----------
@@ -38,7 +39,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
          1
 (5 rows)
 
-SELECT (NOT flag1) AS not_flag1 FROM test_logical;
+SELECT (NOT flag1) AS not_flag1
+FROM test_logical;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  not_flag1 
 -----------
@@ -49,7 +51,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
          0
 (5 rows)
 
-SELECT (NOT flag2) AS not_flag2 FROM test_logical;
+SELECT (NOT flag2) AS not_flag2
+FROM test_logical;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  not_flag2 
 -----------
@@ -60,7 +63,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
          1
 (5 rows)
 
-SELECT (flag1 AND flag2 AND value > 25) AS complex_and FROM test_logical;
+SELECT (flag1 AND flag2 AND value > 25) AS complex_and
+FROM test_logical;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  complex_and 
 -------------
@@ -71,7 +75,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
            0
 (5 rows)
 
-SELECT (flag1 OR flag2 OR value < 15) AS complex_or FROM test_logical;
+SELECT (flag1 OR flag2 OR value < 15) AS complex_or
+FROM test_logical;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  complex_or 
 ------------
