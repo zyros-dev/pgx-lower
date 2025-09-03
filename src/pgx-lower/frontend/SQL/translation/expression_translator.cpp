@@ -23,6 +23,12 @@ auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::V
     case T_Aggref: return translateAggref(reinterpret_cast<Aggref*>(expr));
     case T_NullTest: return translateNullTest(reinterpret_cast<NullTest*>(expr));
     case T_CoalesceExpr: return translateCoalesceExpr(reinterpret_cast<CoalesceExpr*>(expr));
+    case T_RelabelType: {
+        // T_RelabelType is a type coercion wrapper - just unwrap and translate the underlying expression
+        RelabelType* relabel = reinterpret_cast<RelabelType*>(expr);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
+        return translateExpression(relabel->arg);
+    }
     default: {
         PGX_WARNING("Unsupported expression type: %d", expr->type);
         // Return a placeholder constant for now
@@ -249,6 +255,98 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
         return result;
     }
 
+    // Try string operators
+    switch (opOid) {
+    case PG_TEXT_LIKE_OID: {
+        // LIKE operator - use LingoDB's Like/ConstLike implementation
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LIKE operator to db.runtime_call");
+        
+        // LingoDB's Like function expects non-nullable string arguments
+        // We need to handle nullable columns with proper NULL propagation
+        auto lhsType = lhs.getType();
+        auto rhsType = rhs.getType();
+        
+        mlir::Value actualLhs = lhs;
+        mlir::Value actualRhs = rhs;
+        mlir::Value isNull;
+        
+        // Check if left side is nullable and extract the value
+        if (auto nullableType = lhsType.dyn_cast<mlir::db::NullableType>()) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "LIKE: Left operand is nullable, handling NULL propagation");
+            
+            // Extract null flag and value from nullable
+            isNull = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), lhs);
+            actualLhs = builder_->create<mlir::db::NullableGetVal>(builder_->getUnknownLoc(), lhs);
+        }
+        
+        // Check if right side is nullable (less common, but handle it)
+        if (auto nullableType = rhsType.dyn_cast<mlir::db::NullableType>()) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "LIKE: Right operand is nullable");
+            
+            if (!isNull) {
+                isNull = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), rhs);
+            } else {
+                // Both nullable - OR the null flags
+                auto rhsNull = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), rhs);
+                isNull = builder_->create<mlir::db::OrOp>(builder_->getUnknownLoc(), isNull, rhsNull);
+            }
+            actualRhs = builder_->create<mlir::db::NullableGetVal>(builder_->getUnknownLoc(), rhs);
+        }
+        
+        // Create the runtime call with non-nullable arguments
+        // Optimizer will convert to ConstLike if pattern is constant
+        auto likeResult = builder_->create<mlir::db::RuntimeCall>(
+            builder_->getUnknownLoc(),
+            builder_->getI1Type(),
+            builder_->getStringAttr("Like"),
+            mlir::ValueRange{actualLhs, actualRhs});
+        
+        // If we had nullable inputs, wrap result in nullable with NULL propagation
+        if (isNull) {
+            // If input was NULL, result is NULL (represented as nullable false with null flag set)
+            auto falseVal = builder_->create<mlir::arith::ConstantOp>(
+                builder_->getUnknownLoc(), 
+                builder_->getI1Type(),
+                builder_->getIntegerAttr(builder_->getI1Type(), 0));
+            
+            // Create if-then-else: if null then nullable(false, true) else nullable(likeResult, false)
+            auto ifOp = builder_->create<mlir::scf::IfOp>(
+                builder_->getUnknownLoc(),
+                builder_->getType<mlir::db::NullableType>(builder_->getI1Type()),
+                isNull,
+                /*hasElse=*/true);
+            
+            // Then branch - return NULL
+            builder_->setInsertionPointToStart(&ifOp.getThenRegion().front());
+            auto nullResult = builder_->create<mlir::db::NullOp>(
+                builder_->getUnknownLoc(),
+                builder_->getType<mlir::db::NullableType>(builder_->getI1Type()));
+            builder_->create<mlir::scf::YieldOp>(builder_->getUnknownLoc(), nullResult.getResult());
+            
+            // Else branch - return LIKE result as non-null
+            builder_->setInsertionPointToStart(&ifOp.getElseRegion().front());
+            auto wrappedResult = builder_->create<mlir::db::AsNullableOp>(
+                builder_->getUnknownLoc(),
+                builder_->getType<mlir::db::NullableType>(builder_->getI1Type()),
+                likeResult.getRes(),
+                mlir::Value());
+            builder_->create<mlir::scf::YieldOp>(builder_->getUnknownLoc(), wrappedResult.getResult());
+            
+            // Reset insertion point and return the if result
+            builder_->setInsertionPointAfter(ifOp);
+            return ifOp.getResult(0);
+        }
+        
+        return likeResult.getRes();
+    }
+    case PG_TEXT_CONCAT_OID: {
+        // String concatenation operator ||
+        // TODO: Concat is not yet implemented in LingoDB runtime
+        PGX_WARNING("String concatenation (||) not yet implemented in runtime");
+        return lhs; // Return first operand as placeholder
+    }
+    }
+
     // Unsupported operator
     PGX_WARNING("Unsupported operator OID: %d", opOid);
     return lhs; // Return first operand as placeholder
@@ -440,7 +538,7 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
         }
         // Use math dialect sqrt (TODO: may need to add math dialect)
         PGX_WARNING("SQRT function not yet implemented in DB dialect");
-        return args[0]; // Pass through for now
+        return args[0];
 
     case PG_F_POW_FLOAT8:
         if (args.size() != 2) {
@@ -448,16 +546,41 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
             return nullptr;
         }
         PGX_WARNING("POWER function not yet implemented in DB dialect");
-        return args[0]; // Return base for now
+        return args[0];
 
-    case PG_F_UPPER:
-    case PG_F_LOWER:
+    case PG_F_UPPER: {
         if (args.size() != 1) {
-            PGX_ERROR("String function requires exactly 1 argument");
+            PGX_ERROR("UPPER requires exactly 1 argument");
             return nullptr;
         }
-        PGX_WARNING("String functions not yet implemented");
-        return args[0]; // Pass through for now
+        // TODO: Upper is not yet implemented
+        PGX_WARNING("UPPER function not yet implemented in runtime");
+        return args[0];
+    }
+    
+    case PG_F_LOWER: {
+        if (args.size() != 1) {
+            PGX_ERROR("LOWER requires exactly 1 argument");
+            return nullptr;
+        }
+        // TODO: Lower is not yet implemented
+        PGX_WARNING("LOWER function not yet implemented in runtime");
+        return args[0];
+    }
+    
+    case PG_F_SUBSTRING: {
+        if (args.size() < 2 || args.size() > 3) {
+            PGX_ERROR("SUBSTRING requires 2 or 3 arguments, got %d", args.size());
+            return nullptr;
+        }
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating SUBSTRING function to db.runtime_call");
+        auto op = builder_->create<mlir::db::RuntimeCall>(
+            loc,
+            mlir::db::StringType::get(builder_->getContext()),
+            builder_->getStringAttr("Substring"),
+            mlir::ValueRange{args});
+        return op.getRes();
+    }
 
     case PG_F_LENGTH:
         if (args.size() != 1) {
@@ -475,38 +598,11 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
             return nullptr;
         }
         PGX_WARNING("Rounding functions not yet implemented in DB dialect");
-        return args[0]; // Pass through for now
+        return args[0];
 
     default: {
-        // Unknown function - try to determine result type from funcresulttype
-        PGX_WARNING("Unknown function OID %d, creating placeholder", funcExpr->funcid);
-
-        // Map result type
-        PostgreSQLTypeMapper typeMapper(context_);
-        auto resultType = typeMapper.mapPostgreSQLType(funcExpr->funcresulttype, -1);
-
-        // For unknown functions, return first argument or a constant
-        if (!args.empty()) {
-            // Try to cast first argument to result type if needed
-            if (args[0].getType() != resultType) {
-            }
-            return args[0];
-        }
-        else {
-            // No arguments - return a constant of the result type
-            if (resultType.isIntOrIndex()) {
-                return builder_->create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, resultType);
-            }
-            else if (resultType.isa<mlir::FloatType>()) {
-                return builder_->create<mlir::arith::ConstantFloatOp>(loc,
-                                                                      llvm::APFloat(0.0),
-                                                                      resultType.cast<mlir::FloatType>());
-            }
-            else {
-                // Default to i32 zero
-                return builder_->create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, builder_->getI32Type());
-            }
-        }
+        PGX_WARNING("Unknown function OID %d", funcExpr->funcid);
+        throw std::runtime_error("Unknown function OID " + std::to_string(funcExpr->funcid));
     }
     }
 }

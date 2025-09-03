@@ -313,9 +313,25 @@ class RuntimeCallLowering : public OpConversionPattern<mlir::db::RuntimeCall> {
    public:
    using OpConversionPattern<mlir::db::RuntimeCall>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::db::RuntimeCall runtimeCallOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      auto fnName = runtimeCallOp.getFn();
+      if (fnName.empty()) {
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] RuntimeCallLowering: Function name is empty!");
+         return failure();
+      }
+      std::string fnNameStr = fnName.str();
+      PGX_LOG(DB_LOWER, DEBUG, "[DB] RuntimeCallLowering: Processing runtime call: %s (length: %zu)", fnNameStr.c_str(), fnNameStr.length());
+      
       auto reg = getContext()->getLoadedDialect<mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
-      auto* fn = reg->lookup(runtimeCallOp.getFn().str());
-      if (!fn) return failure();
+      if (!reg) {
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] RuntimeCallLowering: Registry is null!");
+         return failure();
+      }
+      
+      auto* fn = reg->lookup(fnNameStr);
+      if (!fn) {
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] RuntimeCallLowering: Function %s not found in registry!", fnNameStr.c_str());
+         return failure();
+      }
       Value result;
       mlir::Type resType = runtimeCallOp->getNumResults() == 1 ? runtimeCallOp->getResultTypes()[0] : mlir::Type();
       if (std::holds_alternative<mlir::util::FunctionSpec>(fn->implementation)) {
@@ -634,14 +650,28 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
       std::variant<int64_t, double, std::string> parseArg;
       if (auto integerAttr = constantOp.getConstantValue().dyn_cast_or_null<IntegerAttr>()) {
          parseArg = integerAttr.getInt();
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: got integer value");
       } else if (auto floatAttr = constantOp.getConstantValue().dyn_cast_or_null<FloatAttr>()) {
          parseArg = floatAttr.getValueAsDouble();
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: got float value");
       } else if (auto stringAttr = constantOp.getConstantValue().dyn_cast_or_null<StringAttr>()) {
          parseArg = stringAttr.str();
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: got string value: %s", std::get<std::string>(parseArg).c_str());
       } else {
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: no valid attribute found");
          return failure();
       }
+      
+      PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: calling support::parse");
       auto parseResult = support::parse(parseArg, arrowType, param1, param2);  // arrowType is already an int (OID)
+      PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: support::parse completed");
+      
+      // Debug the type checking
+      PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: checking stdType");
+      if (!stdType) {
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: stdType is null!");
+      }
+      
       if (auto intType = stdType.dyn_cast_or_null<IntegerType>()) {
          if (auto decimalType = type.dyn_cast_or_null<mlir::db::DecimalType>()) {
             auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());
@@ -653,14 +683,31 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
             return success();
          }
       } else if (auto floatType = stdType.dyn_cast_or_null<FloatType>()) {
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: processing as float type");
          rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getFloatAttr(stdType, std::get<double>(parseResult)));
          return success();
       } else if (type.isa<mlir::db::StringType>()) {
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: processing as string type");
          std::string str = std::get<std::string>(parseResult);
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: got string from parseResult: %s", str.c_str());
 
-         rewriter.replaceOpWithNewOp<mlir::util::CreateConstVarLen>(constantOp, mlir::util::VarLen32Type::get(rewriter.getContext()), rewriter.getStringAttr(str));
+         // Create the string attribute separately
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: Creating string attribute for: %s", str.c_str());
+         mlir::StringAttr strAttr = rewriter.getStringAttr(str);
+         
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: Creating VarLen32Type");
+         auto varLenType = mlir::util::VarLen32Type::get(rewriter.getContext());
+         
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: About to create CreateConstVarLen operation");
+         auto createOp = rewriter.create<mlir::util::CreateConstVarLen>(constantOp.getLoc(), varLenType, strAttr);
+         
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: CreateConstVarLen operation created, replacing original");
+         rewriter.replaceOp(constantOp, createOp.getResult());
+         
+         PGX_LOG(DB_LOWER, DEBUG, "[DB] ConstantOp: About to return success from string constant lowering");
          return success();
       } else {
+         PGX_ERROR("[DB] ConstantOp: no type matched!");
          return failure();
       }
       return failure();

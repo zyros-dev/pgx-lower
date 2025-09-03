@@ -214,3 +214,44 @@ module {
     std::cerr << "\n=== First 1000 chars of final LLVM IR ===" << std::endl;
     std::cerr << finalMLIR.substr(0, 1000) << std::endl;
 }
+
+TEST_F(MLIRLoweringPipelineTest, StringOps) {
+    auto simpleMLIR = R"(
+        module {
+          func.func @main() {
+            %0 = relalg.basetable  {column_order = ["id", "name", "description", "category"], table_identifier = "test_text|oid:11860936"} columns: {category => @test_text::@category({type = !db.nullable<!db.string>}), description => @test_text::@description({type = !db.nullable<!db.string>}), id => @test_text::@id({type = i32}), name => @test_text::@name({type = !db.nullable<!db.string>})}
+            %1 = relalg.map %0 computes : [@map::@starts_with_a({type = i1})] (%arg0: !relalg.tuple){
+              %3 = relalg.getcol %arg0 @test_text::@name : !db.nullable<!db.string>
+              %4 = db.constant("A%") : !db.string
+              %5 = db.runtime_call "Like"(%3, %4) : (!db.nullable<!db.string>, !db.string) -> i1
+              relalg.return %5 : i1
+            }
+            %2 = relalg.materialize %1 [@map::@starts_with_a] => ["starts_with_a"] : !dsa.table
+            return
+          }
+        }
+    )";
+
+    ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR)) << "Failed to load MLIR module";
+
+    // Run each phase and capture intermediate results
+    std::cerr << "\n=== Testing COALESCE null flag propagation ===" << std::endl;
+
+    EXPECT_TRUE(tester->runPhase3a()) << "Phase 3a (RelAlg to DB) failed";
+    std::string afterPhase3a = tester->getCurrentMLIR();
+    std::cerr << "After Phase 3a - checking for db.as_nullable with proper null flags..." << std::endl;
+
+    EXPECT_TRUE(tester->runPhase3b()) << "Phase 3b (DB to Standard) failed";
+    std::string afterPhase3b = tester->getCurrentMLIR();
+    std::cerr << "After Phase 3b - checking standard MLIR representation..." << std::endl;
+
+    EXPECT_TRUE(tester->runPhase3c()) << "Phase 3c (Standard to LLVM) failed";
+    std::string finalMLIR = tester->getCurrentMLIR();
+
+    EXPECT_TRUE(tester->verifyCurrentModule()) << "Final module should be valid";
+
+    EXPECT_TRUE(finalMLIR.find("llvm.") != std::string::npos) << "Expected LLVM dialect operations in final MLIR";
+
+    std::cerr << "\n=== First 20000 chars of final LLVM IR ===" << std::endl;
+    std::cerr << finalMLIR.substr(0, 20000) << std::endl;
+}

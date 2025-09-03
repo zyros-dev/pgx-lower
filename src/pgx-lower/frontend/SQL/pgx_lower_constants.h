@@ -92,6 +92,14 @@ constexpr Oid PG_F_INT4_TEXT = 2308;    // int4 to text
 constexpr Oid PG_F_TEXT_INT4 = 2309;    // text to int4
 constexpr Oid PG_F_FLOAT8_TEXT = 233;   // float8 to text
 
+// String Operator OIDs
+constexpr Oid PG_TEXT_LIKE_OID = 1209;     // text LIKE text
+constexpr Oid PG_TEXT_CONCAT_OID = 654;    // text || text
+
+// String Function OIDs  
+constexpr Oid PG_F_SUBSTRING = 936;        // substring(text, int, int)
+// Note: PG_F_UPPER and PG_F_LOWER already defined above
+
 // =============================================================================
 // POSTGRESQL SYSTEM CONSTANTS (NOT TABLE NAMES - those should be dynamic!)
 // =============================================================================
