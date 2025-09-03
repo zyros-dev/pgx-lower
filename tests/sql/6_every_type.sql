@@ -1,5 +1,4 @@
 LOAD 'pgx_lower.so';
-SET client_min_messages TO NOTICE;
 
 DROP TABLE IF EXISTS test;
 
@@ -29,20 +28,10 @@ FROM generate_series(1, 5) AS s(i);
 -- Test basic integer selections
 SELECT id, integer_value, big_value FROM test;
 -- Enable debug logging for string query - focus on AST translation
-SET client_min_messages TO DEBUG1;
-SET pgx_lower.log_enable = true;
-SET pgx_lower.log_debug = true;
-SET pgx_lower.log_io = true;
-SET pgx_lower.log_trace = true;
-SET pgx_lower.enabled_categories = 'AST_TRANSLATE,RELALG_LOWER,DB_LOWER,DSA_LOWER,UTIL_LOWER,RUNTIME,JIT';
 
 SELECT category_name, text_field FROM test;
 
--- Disable debug logging
-SET client_min_messages TO NOTICE;
-SET pgx_lower.log_enable = false;
-
--- Test boolean and string selections  
+-- Test boolean and string selections
 SELECT id, boolean_flag, text_field FROM test;
 
 

@@ -1,5 +1,4 @@
 LOAD 'pgx_lower.so';
-SET client_min_messages TO NOTICE;
 
 DROP TABLE IF EXISTS all_types_test;
 
