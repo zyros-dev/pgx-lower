@@ -626,7 +626,7 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
         PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: handling %zu columns", num_columns);
         
         // The row_data is expected to be a dynamic structure:
-        // [numRows: size_t][columnInfo[0]: 5*size_t][columnInfo[1]: 5*size_t]...[columnInfo[n]: 5*size_t]
+        // [numRows: size_t][columnInfo[0]: COLUMN_INFO_SIZE*size_t][columnInfo[1]: COLUMN_INFO_SIZE*size_t]...[columnInfo[n]: COLUMN_INFO_SIZE*size_t]
         size_t* row_data_ptr = (size_t*)row_data;
         row_data_ptr[0] = 1; // numRows = 1
         
@@ -635,8 +635,15 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
         valid_bitmaps.resize(num_columns);
         
         for (size_t i = 0; i < num_columns; ++i) {
+            constexpr size_t COLUMN_OFFSET_IDX = 0;
+            constexpr size_t VALID_MULTIPLIER_IDX = 1;
+            constexpr size_t VALID_BUFFER_IDX = 2;
+            constexpr size_t DATA_BUFFER_IDX = 3;
+            constexpr size_t VARLEN_BUFFER_IDX = 4;
+            constexpr size_t COLUMN_INFO_SIZE = 5;
+
             const auto& col_spec = iter->columns[i];
-            size_t* column_info_ptr = &row_data_ptr[1 + i * 5]; // Each ColumnInfo has 5 fields
+            size_t* column_info_ptr = &row_data_ptr[1 + i * COLUMN_INFO_SIZE]; // Each ColumnInfo has COLUMN_INFO_SIZE fields
             
             // Set validity bitmap based on whether the value is NULL
             // Note: In LingoDB, 1 means valid (not null), 0 means null
@@ -655,28 +662,31 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
             PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu is_null=%s, valid_bitmap=0x%02X", 
                  i, is_null ? "true" : "false", valid_bitmaps[i]);
             
-            column_info_ptr[0] = 0;                    // offset
-            column_info_ptr[1] = 0;                    // validMultiplier
-            column_info_ptr[2] = (size_t)&valid_bitmaps[i]; // validBuffer - unique per column
+            column_info_ptr[COLUMN_OFFSET_IDX] = 0;                    // offset
+            column_info_ptr[VALID_MULTIPLIER_IDX] = 0;                 // validMultiplier
+            column_info_ptr[VALID_BUFFER_IDX] = (size_t)&valid_bitmaps[i]; // validBuffer - unique per column
             
             if (col_spec.type == ColumnType::BOOLEAN) {
-                column_info_ptr[4] = 0;                    // varLenBuffer = nullptr for non-string types
-                column_info_ptr[3] = (size_t)&iter->bool_values[i]; // dataBuffer
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0;                    // varLenBuffer = nullptr for non-string types
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->bool_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) boolean = %s at %p", 
                      i, col_spec.name.c_str(), iter->bool_values[i] ? "true" : "false", &iter->bool_values[i]);
             } else if (col_spec.type == ColumnType::BIGINT) {
-                column_info_ptr[4] = 0;                    // varLenBuffer = nullptr for non-string types
-                column_info_ptr[3] = (size_t)&iter->bigint_values[i]; // dataBuffer
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0;                    // varLenBuffer = nullptr for non-string types
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->bigint_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) bigint = %lld at %p", 
                      i, col_spec.name.c_str(), (long long)iter->bigint_values[i], &iter->bigint_values[i]);
             } else if (col_spec.type == ColumnType::STRING || col_spec.type == ColumnType::TEXT || col_spec.type == ColumnType::VARCHAR) {
-                column_info_ptr[3] = (size_t)&iter->string_values[i]; // dataBuffer points to VarLen32
-                column_info_ptr[4] = (size_t)&iter->string_values[i]; // varLenBuffer also points to VarLen32
+                // For strings, DSA expects valueBuffer to be int32 offsets and varLenBuffer to be raw bytes
+                // But since we already have VarLen32 structs, we'll provide them directly
+                // The DSA lowering will need to handle this case
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->string_values[i]; // dataBuffer points to VarLen32 struct
+                column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)&iter->string_values[i]; // varLenBuffer also points to VarLen32 struct 
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) string len=%u at %p", 
                      i, col_spec.name.c_str(), iter->string_values[i].getLen(), &iter->string_values[i]);
             } else {
-                column_info_ptr[4] = 0;                    // varLenBuffer = nullptr for non-string types
-                column_info_ptr[3] = (size_t)&iter->int_values[i]; // dataBuffer
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0;                    // varLenBuffer = nullptr for non-string types
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->int_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) integer = %d at %p", 
                      i, col_spec.name.c_str(), iter->int_values[i], &iter->int_values[i]);
             }

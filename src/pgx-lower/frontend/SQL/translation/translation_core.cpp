@@ -1,6 +1,15 @@
 // Translation core implementation - included directly into postgresql_ast_translator.cpp
 // Contains type system and constant translation functionality
 
+#ifdef POSTGRESQL_EXTENSION
+// PostgreSQL headers for text handling
+extern "C" {
+#include "postgres.h"
+#include "utils/builtins.h"
+#include "fmgr.h"
+}
+#endif
+
 using namespace pgx_lower::frontend::sql::constants;
 
 class PostgreSQLTypeMapper {
@@ -149,6 +158,43 @@ auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRCo
     case BOOLOID: {
         bool val = static_cast<bool>(constNode->constvalue);
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE, mlirType);
+    }
+    case TEXTOID:
+    case VARCHAROID:
+    case BPCHAROID: {
+        // For string constants, constvalue is a pointer to the text data
+        // In psql, text values are stored as varlena structures
+        #ifdef POSTGRESQL_EXTENSION
+        if (constNode->constvalue) {
+            text* textval = DatumGetTextP(constNode->constvalue);
+            char* str = VARDATA(textval);
+            int len = VARSIZE(textval) - VARHDRSZ;
+            std::string stringValue(str, len);
+            
+            return builder.create<mlir::db::ConstantOp>(
+                builder.getUnknownLoc(),
+                mlirType,
+                builder.getStringAttr(stringValue));
+        } else {
+            return builder.create<mlir::db::ConstantOp>(
+                builder.getUnknownLoc(),
+                mlirType,
+                builder.getStringAttr(""));
+        }
+        #else
+        const char* str = reinterpret_cast<const char*>(constNode->constvalue);
+        if (str) {
+            return builder.create<mlir::db::ConstantOp>(
+                builder.getUnknownLoc(),
+                mlirType,
+                builder.getStringAttr(str));
+        } else {
+            return builder.create<mlir::db::ConstantOp>(
+                builder.getUnknownLoc(),
+                mlirType,
+                builder.getStringAttr(""));
+        }
+        #endif
     }
     default:
         PGX_WARNING("Unsupported constant type: %d", constNode->consttype);
