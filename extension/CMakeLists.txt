@@ -22,8 +22,6 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/runtime/tuple_access.cpp
         ../src/pgx-lower/runtime/PostgreSQLDataSource.cpp
         ../src/pgx-lower/runtime/postgresql_runtime.cpp
-        ../src/lingodb/runtime/helpers.cpp
-        ../src/lingodb/runtime/MetaData.cpp
         SCRIPTS
             sql/pgx_lower--1.0.sql
         REGRESS
@@ -74,6 +72,7 @@ target_link_libraries(pgx_lower PRIVATE
     MLIRPasses
     MLIRCustomTransforms
     mlir-support
+    runtime
     -Wl,--no-whole-archive
     MLIRLLVMDialect
     MLIRLLVMCommonConversion

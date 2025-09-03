@@ -118,22 +118,15 @@ add_subdirectory(tools/build-tools)
 
 # Skip runtime header generation for now - we'll use manual wrappers
 # TODO: Fix runtime-header-tool to work with system clang libraries
-
-# Create empty runtime_funcs_ptr library for now
 add_library(runtime_funcs_ptr INTERFACE)
-
-# Add include directory for TableGen processing
 add_subdirectory(include/lingodb/mlir/Dialect/RelAlg/IR)
 add_subdirectory(include/lingodb/mlir/Dialect/DB/IR)
 add_subdirectory(include/lingodb/mlir/Dialect/DSA/IR)
-# Add include directory for util dialect
 add_subdirectory(include/lingodb/mlir/Dialect/util)
-
-# Add compiler library (includes dialects)
 add_subdirectory(src/lingodb/mlir)
-
-# Add mlir-support for both regular and extension-only builds  
 add_subdirectory(src/lingodb/mlir-support)
+
+add_subdirectory(src/lingodb/runtime)
 
 # Add the main extension
 add_subdirectory(extension)

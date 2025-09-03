@@ -384,3 +384,29 @@ size_t runtime::StringRuntime::findMatch(VarLen32 str, VarLen32 needle, size_t s
    if (found == std::string::npos || found + needle.getLen() > end) return invalidPos;
    return found + needle.getLen();
 }
+
+// Export symbols for LLVM JIT resolution
+// These names must match what's generated in runtime-defs/StringRuntime.h
+extern "C" {
+
+EXPORT bool rt_stringruntime_startswith(runtime::VarLen32 str, runtime::VarLen32 pattern) {
+    return runtime::StringRuntime::startsWith(str, pattern);
+}
+
+EXPORT bool rt_stringruntime_endswith(runtime::VarLen32 str, runtime::VarLen32 pattern) {
+    return runtime::StringRuntime::endsWith(str, pattern);
+}
+
+EXPORT bool rt_stringruntime_like(runtime::VarLen32 str, runtime::VarLen32 pattern) {
+    return runtime::StringRuntime::like(str, pattern);
+}
+
+EXPORT size_t rt_stringruntime_findmatch(runtime::VarLen32 str, runtime::VarLen32 needle, size_t start, size_t end) {
+    return runtime::StringRuntime::findMatch(str, needle, start, end);
+}
+
+EXPORT runtime::VarLen32 rt_stringruntime_substr(runtime::VarLen32 str, size_t from, size_t to) {
+    return runtime::StringRuntime::substr(str, from, to);
+}
+
+}
