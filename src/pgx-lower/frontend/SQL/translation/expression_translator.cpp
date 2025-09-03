@@ -242,7 +242,6 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
 
     Oid opOid = opExpr->opno;
 
-    // Try arithmetic operators first
     ::mlir::Value result = translateArithmeticOp(opOid, lhs, rhs);
     if (result) {
         return result;
@@ -257,7 +256,22 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
     // Try string operators
     switch (opOid) {
     case PG_TEXT_LIKE_OID: {
-        throw std::runtime_error("Implement me! Make sure my output matches what lingodb generates in relalg!!");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LIKE operator to db.runtime_call");
+        
+        bool hasNullableOperand = lhs.getType().isa<mlir::db::NullableType>() ||
+                                  rhs.getType().isa<mlir::db::NullableType>();
+        
+        mlir::Type resultType = hasNullableOperand ?
+            mlir::Type(mlir::db::NullableType::get(builder_->getContext(), builder_->getI1Type())) :
+            mlir::Type(builder_->getI1Type());
+        
+        auto op = builder_->create<mlir::db::RuntimeCall>(
+            builder_->getUnknownLoc(),
+            resultType,
+            builder_->getStringAttr("Like"),
+            mlir::ValueRange{lhs, rhs});
+        
+        return op.getRes();
     }
     case PG_TEXT_CONCAT_OID: {
         // String concatenation operator ||
