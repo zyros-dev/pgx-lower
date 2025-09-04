@@ -116,8 +116,6 @@ set(runtime_funcs_ptr_libs "")
 add_subdirectory(tools/build-tools)
 
 
-# Skip runtime header generation for now - we'll use manual wrappers
-# TODO: Fix runtime-header-tool to work with system clang libraries
 add_library(runtime_funcs_ptr INTERFACE)
 add_subdirectory(include/lingodb/mlir/Dialect/RelAlg/IR)
 add_subdirectory(include/lingodb/mlir/Dialect/DB/IR)
