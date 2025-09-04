@@ -1,3 +1,21 @@
+/**
+ * StringRuntime.cpp - String operations runtime for LingoDB/pgx-lower
+ * 
+ * IMPORTANT: DO NOT MODIFY THIS FILE WITHOUT CAREFUL CONSIDERATION
+ * 
+ * This file is a direct port from LingoDB with minimal modifications.
+ * It should maintain compatibility with LingoDB's runtime architecture.
+ * 
+ * Export Policy:
+ * - Only exports the same functions as LingoDB's original StringRuntime.cpp
+ * - Currently exports only: rt_varlen_from_ptr, rt_varlen_to_ref
+ * - String operations (like, startsWith, etc.) are NOT exported as extern "C"
+ * - They work through C++ symbol resolution via --export-dynamic
+ * 
+ * If you need to modify this file, ensure you understand the implications
+ * for the entire MLIR lowering pipeline and runtime function registry.
+ */
+
 #include "lingodb/runtime/StringRuntime.h"
 #include "lingodb/runtime/helpers.h"
 
@@ -385,28 +403,3 @@ size_t runtime::StringRuntime::findMatch(VarLen32 str, VarLen32 needle, size_t s
    return found + needle.getLen();
 }
 
-// Export symbols for LLVM JIT resolution
-// These names must match what's generated in runtime-defs/StringRuntime.h
-extern "C" {
-
-EXPORT bool rt_stringruntime_startswith(runtime::VarLen32 str, runtime::VarLen32 pattern) {
-    return runtime::StringRuntime::startsWith(str, pattern);
-}
-
-EXPORT bool rt_stringruntime_endswith(runtime::VarLen32 str, runtime::VarLen32 pattern) {
-    return runtime::StringRuntime::endsWith(str, pattern);
-}
-
-EXPORT bool rt_stringruntime_like(runtime::VarLen32 str, runtime::VarLen32 pattern) {
-    return runtime::StringRuntime::like(str, pattern);
-}
-
-EXPORT size_t rt_stringruntime_findmatch(runtime::VarLen32 str, runtime::VarLen32 needle, size_t start, size_t end) {
-    return runtime::StringRuntime::findMatch(str, needle, start, end);
-}
-
-EXPORT runtime::VarLen32 rt_stringruntime_substr(runtime::VarLen32 str, size_t from, size_t to) {
-    return runtime::StringRuntime::substr(str, from, to);
-}
-
-}
