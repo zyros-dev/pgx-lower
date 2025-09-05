@@ -9,6 +9,7 @@
 
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/AST/QualTypeNames.h"
 
 #include <cstdio>
 #include <iostream>
@@ -32,12 +33,12 @@ class MethodPrinter : public MatchFinder::MatchCallback {
    std::string translatePointer() {
       return "mlir::util::RefType::get(context,mlir::IntegerType::get(context,8))";
    }
-   std::optional<std::string> translateType(QualType type) {
+   std::optional<std::string> translateType(QualType type, const ASTContext& ctx) {
       //type.dump();
       if (const auto* tdType = type->getAs<TypedefType>()) {
-         return translateType(tdType->desugar());
+         return translateType(tdType->desugar(), ctx);
       }
-      if (const auto* pointerType = type->getAs<PointerType>()) {
+      if (const auto* pointerType = type->getAs<clang::PointerType>()) {
          auto pointeeType = pointerType->desugar()->getPointeeType();
          if (const auto* parenType = pointeeType->getAs<ParenType>()) {
             if (const auto* funcProtoType = parenType->getInnerType()->getAs<FunctionProtoType>()) {
@@ -49,11 +50,11 @@ class MethodPrinter : public MatchFinder::MatchCallback {
                   } else {
                      funcType += ",";
                   }
-                  auto translated = translateType(paramType);
+                  auto translated = translateType(paramType, ctx);
                   if (!translated.has_value()) return {};
                   funcType += translated.value();
                }
-               auto translated = translateType(funcProtoType->getReturnType());
+               auto translated = translateType(funcProtoType->getReturnType(), ctx);
                if (!translated.has_value()) return {};
                funcType += "}, {" + translated.value() + "})";
                return funcType;
@@ -83,8 +84,9 @@ class MethodPrinter : public MatchFinder::MatchCallback {
             default: break;
          }
       }
-      std::string asString = type.getAsString();
-      if (asString.ends_with("runtime::VarLen32")) {
+      
+      std::string fullyQualifiedName = clang::TypeName::getFullyQualifiedName(type, ctx, ctx.getPrintingPolicy());
+      if (fullyQualifiedName == "runtime::VarLen32") {
          return "mlir::util::VarLen32Type::get(context)";
       }
       return std::optional<std::string>();
@@ -138,8 +140,9 @@ class MethodPrinter : public MatchFinder::MatchCallback {
             mangleContext->mangleName(method, mangleStream);
             mangleStream.flush();
             bool unknownTypes = false;
+            const ASTContext& astCtx = md->getASTContext();
             for (const auto& p : method->parameters()) {
-               auto translatedType = translateType(p->getType());
+               auto translatedType = translateType(p->getType(), astCtx);
                if (!translatedType.has_value()) {
                   unknownTypes = true;
                   break;
@@ -148,7 +151,7 @@ class MethodPrinter : public MatchFinder::MatchCallback {
             }
             auto resType = method->getReturnType();
             if (!resType->isVoidType()) {
-               auto translatedType = translateType(resType);
+               auto translatedType = translateType(resType, astCtx);
                if (!translatedType.has_value()) {
                   unknownTypes = true;
                   break;
@@ -156,7 +159,10 @@ class MethodPrinter : public MatchFinder::MatchCallback {
                resTypes.push_back(translatedType.value());
             }
             if (unknownTypes) {
-               std::cerr << "ignoring func " << methodName << std::endl;
+               std::cerr << "ignoring func " << methodName << " (type issue)" << std::endl;
+               for (const auto& p : method->parameters()) {
+                  std::cerr << "  param type: " << p->getType().getAsString() << std::endl;
+               }
                continue;
             }
             hStream << " inline static mlir::util::FunctionSpec " << methodName << " = ";
@@ -191,7 +197,7 @@ int main(int argc, const char** argv) {
    MethodPrinter printer(hStream);
    MatchFinder finder;
    finder.addMatcher(methodMatcher, &printer);
-   hStream << "#include <mlir/Dialect/util/FunctionHelper.h>\n";
+   hStream << "#include <lingodb/mlir/Dialect/util/FunctionHelper.h>\n";
    hStream << "namespace rt {\n";
    tool.run(newFrontendActionFactory(&finder).get());
 
