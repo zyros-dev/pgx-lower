@@ -242,9 +242,7 @@ class WrappedExecutionEngine {
     void* getSetContextPtr() const { return setContextPtr; }
 
     bool compileObjectToSharedLibrary(const std::string& objectFile, const std::string& sharedLibFile) {
-        // Link with undefined symbols allowed - they'll be resolved from the main extension
-        std::string cmd =
-            "g++ -shared -fPIC -Wl,--unresolved-symbols=ignore-all -o " + sharedLibFile + " " + objectFile + " 2>&1";
+        std::string cmd = "g++ -shared -fPIC -o " + sharedLibFile + " " + objectFile + " 2>&1";
 
         auto* pPipe = ::popen(cmd.c_str(), "r");
         if (!pPipe) {

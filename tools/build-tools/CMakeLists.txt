@@ -8,7 +8,7 @@ target_link_libraries(runtime-header-tool
 #--oh=rt-test.h --ocpp=rt-test.cpp /home/michael/projects/code/include/runtime/DumpRuntime.h -- -x c++ -I build/llvm-build/lib/clang/15.0.0/include/ -I include
 function(gen_rt_def target_name header_file)
     add_custom_command(
-            COMMAND $<TARGET_FILE:runtime-header-tool> --oh=${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file} ${CMAKE_SOURCE_DIR}/include/lingodb/runtime/${header_file} -- -x c++ -I /usr/lib/llvm-20/include/ -I ${CMAKE_SOURCE_DIR}/include
+            COMMAND $<TARGET_FILE:runtime-header-tool> --oh=${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file} ${CMAKE_SOURCE_DIR}/include/lingodb/runtime/${header_file} -- -x c++ -I /usr/lib/llvm-20/include/ -I ${CMAKE_SOURCE_DIR}/include -I ${CMAKE_SOURCE_DIR}/include/lingodb
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}            OUTPUT  ${CMAKE_BINARY_DIR}/include/runtime-defs/${header_file}
             DEPENDS $<TARGET_FILE:runtime-header-tool>
             DEPENDS ${CMAKE_SOURCE_DIR}/include/lingodb/runtime/${header_file}
