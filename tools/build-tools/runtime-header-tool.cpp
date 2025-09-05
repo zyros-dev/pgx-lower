@@ -12,8 +12,6 @@
 
 #include <cstdio>
 #include <iostream>
-#include <algorithm>
-#include <cctype>
 
 #include <optional>
 using namespace clang;
@@ -39,10 +37,10 @@ class MethodPrinter : public MatchFinder::MatchCallback {
       if (const auto* tdType = type->getAs<TypedefType>()) {
          return translateType(tdType->desugar());
       }
-      if (const auto* pointerType = type->getAs<clang::PointerType>()) {
+      if (const auto* pointerType = type->getAs<PointerType>()) {
          auto pointeeType = pointerType->desugar()->getPointeeType();
-         if (const auto* parenType = pointeeType->getAs<clang::ParenType>()) {
-            if (const auto* funcProtoType = parenType->getInnerType()->getAs<clang::FunctionProtoType>()) {
+         if (const auto* parenType = pointeeType->getAs<ParenType>()) {
+            if (const auto* funcProtoType = parenType->getInnerType()->getAs<FunctionProtoType>()) {
                std::string funcType = "mlir::FunctionType::get(context, {";
                bool first = true;
                for (auto paramType : funcProtoType->param_types()) {
@@ -79,14 +77,14 @@ class MethodPrinter : public MatchFinder::MatchCallback {
             case clang::BuiltinType::Int: return translateIntegerType(32);
             case clang::BuiltinType::ULong: return translateIntegerType(64);
             case clang::BuiltinType::Long: return translateIntegerType(64);
-            case clang::BuiltinType::Float: return "mlir::Float32Type::get(context)";
-            case clang::BuiltinType::Double: return "mlir::Float64Type::get(context)";
+            case clang::BuiltinType::Float: return "mlir::FloatType::getF32(context)";
+            case clang::BuiltinType::Double: return "mlir::FloatType::getF64(context)";
             case clang::BuiltinType::Int128: return translateIntegerType(128);
             default: break;
          }
       }
       std::string asString = type.getAsString();
-      if (asString.ends_with("runtime::VarLen32") || asString == "VarLen32") {
+      if (asString.ends_with("runtime::VarLen32")) {
          return "mlir::util::VarLen32Type::get(context)";
       }
       return std::optional<std::string>();
@@ -100,7 +98,7 @@ class MethodPrinter : public MatchFinder::MatchCallback {
          } else {
             os << ",";
          }
-         os << "mlir::Type(" << t << ")";
+         os << t;
       }
       os << "};}";
    }
@@ -135,12 +133,10 @@ class MethodPrinter : public MatchFinder::MatchCallback {
             if (!method->isStatic()) {
                types.push_back(translatePointer());
             }
-            // Generate C function name instead of mangled C++ name
-            // Convert to C function naming: rt_classname_methodname (lowercase)
-            std::string cFunctionName = "rt_" + className + "_" + methodName;
-            std::transform(cFunctionName.begin(), cFunctionName.end(), cFunctionName.begin(), ::tolower);
-            
-            std::string mangled = cFunctionName;
+            std::string mangled;
+            llvm::raw_string_ostream mangleStream(mangled);
+            mangleContext->mangleName(method, mangleStream);
+            mangleStream.flush();
             bool unknownTypes = false;
             for (const auto& p : method->parameters()) {
                auto translatedType = translateType(p->getType());
@@ -195,12 +191,14 @@ int main(int argc, const char** argv) {
    MethodPrinter printer(hStream);
    MatchFinder finder;
    finder.addMatcher(methodMatcher, &printer);
-   hStream << "#include <lingodb/mlir/Dialect/util/FunctionHelper.h>\n";
+   hStream << "#include <mlir/Dialect/util/FunctionHelper.h>\n";
    hStream << "namespace rt {\n";
    tool.run(newFrontendActionFactory(&finder).get());
 
    hStream << "}\n";
    hStream.flush();
+   std::cout << "------ .h --------" << std::endl;
+   std::cout << hContent << std::endl;
    std::error_code errorCode;
    llvm::raw_fd_ostream hOStream(headerOutputFile, errorCode);
    hOStream << hContent;

@@ -1,6 +1,6 @@
 #ifndef RUNTIME_STRINGRUNTIME_H
 #define RUNTIME_STRINGRUNTIME_H
-#include "lingodb/runtime/helpers.h"
+#include "runtime/helpers.h"
 namespace runtime {
 struct StringRuntime {
    static bool NO_SIDE_EFFECTS compareEq(VarLen32 l, VarLen32 r);
