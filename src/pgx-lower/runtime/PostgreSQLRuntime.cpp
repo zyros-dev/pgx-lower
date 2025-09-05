@@ -1,3 +1,5 @@
+#include "lingodb/runtime/PostgreSQLRuntime.h"
+#include "lingodb/runtime/DataSourceIteration.h"
 #include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <cstdint>
 #include <cstring>
@@ -23,17 +25,22 @@ extern "C" {
 }
 
 extern "C" {
-
 extern void mark_results_ready_for_streaming();
 extern void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
 extern void store_bool_result(int32_t columnIndex, bool value, bool isNull);
 extern void prepare_computed_results(int32_t numColumns);
 extern bool add_tuple_to_result(int64_t value);
-
 extern void* open_postgres_table(const char* tableName);
 extern int64_t read_next_tuple_from_table(void* tableHandle);
+}
+
+// ============================================================================
+// Internal C implementation functions
+// ============================================================================
 
 static void* g_execution_context = nullptr;
+
+extern "C" {
 
 void rt_set_execution_context(void* context_ptr) {
     g_execution_context = context_ptr;
@@ -154,7 +161,8 @@ static void cleanup_tablebuilder_callback(void* arg) {
     TableBuilder* tb = static_cast<TableBuilder*>(arg);
 }
 
-extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime::VarLen32 schema_param) {
+// Original C implementation functions that do the actual work
+__attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime::VarLen32 schema_param) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_create IN: schema_param len=%u", schema_param.getLen());
 
     // Use PostgreSQL memory management instead of malloc()
@@ -179,7 +187,7 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime
     return builder;
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_nextrow(void* builder) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_nextrow(void* builder) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow IN: builder=%p", builder);
 
     if (builder) {
@@ -206,61 +214,60 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_nextrow(void* b
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow OUT");
 }
 
-
-extern "C" __attribute__((noinline, cdecl)) void* rt_tablebuilder_build(void* builder) {
+__attribute__((noinline, cdecl)) void* rt_tablebuilder_build(void* builder) {
     mark_results_ready_for_streaming();
     return builder;
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* builder, bool is_valid, int64_t value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* builder, bool is_valid, int64_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint64 IN: value=%ld, is_valid=%s", value, is_valid ? "true" : "false");
     pgx_lower::runtime::table_builder_add<int64_t>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint64 OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_valid, int32_t value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_valid, int32_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
     pgx_lower::runtime::table_builder_add<int32_t>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_valid, bool value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_valid, bool value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool IN: value=%s, is_valid=%s", value ? "true" : "false", is_valid ? "true" : "false");
     pgx_lower::runtime::table_builder_add<bool>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint8(void* builder, bool is_valid, int8_t value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_addint8(void* builder, bool is_valid, int8_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint8 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
     pgx_lower::runtime::table_builder_add<int8_t>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint8 OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addint16(void* builder, bool is_valid, int16_t value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_addint16(void* builder, bool is_valid, int16_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint16 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
     pgx_lower::runtime::table_builder_add<int16_t>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint16 OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addfloat32(void* builder, bool is_valid, float value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_addfloat32(void* builder, bool is_valid, float value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat32 IN: value=%f, is_valid=%s", value, is_valid ? "true" : "false");
     pgx_lower::runtime::table_builder_add<float>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat32 OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addfloat64(void* builder, bool is_valid, double value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_addfloat64(void* builder, bool is_valid, double value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat64 IN: value=%f, is_valid=%s", value, is_valid ? "true" : "false");
     pgx_lower::runtime::table_builder_add<double>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat64 OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addbinary(void* builder, bool is_valid, runtime::VarLen32 value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_addbinary(void* builder, bool is_valid, runtime::VarLen32 value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbinary IN: len=%u, is_valid=%s", value.getLen(), is_valid ? "true" : "false");
     pgx_lower::runtime::table_builder_add<runtime::VarLen32>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbinary OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_adddecimal(void* builder, bool is_valid, __int128 value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_adddecimal(void* builder, bool is_valid, __int128 value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s", is_valid ? "true" : "false");
     // Just truncate to int64 for now - proper decimal support can come later
     // TODO: Implement me!
@@ -269,13 +276,13 @@ extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_adddecimal(void
 }
 
 // Fixed-size binary type
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_addfixedsized(void* builder, bool is_valid, int64_t value) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_addfixedsized(void* builder, bool is_valid, int64_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfixedsized IN: value=%ld, is_valid=%s", value, is_valid ? "true" : "false");
     pgx_lower::runtime::table_builder_add<int64_t>(builder, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfixedsized OUT");
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_tablebuilder_destroy(void* builder) {
+__attribute__((noinline, cdecl)) void rt_tablebuilder_destroy(void* builder) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_destroy IN: builder=%p", builder);
     // Note: We don't need to do anything here because the MemoryContextCallback
     // will handle cleanup when the memory context is reset/deleted.
@@ -293,7 +300,7 @@ static void cleanup_datasourceiterator_callback(void* arg) {
 }
 
 // TODO: This function is uhhh... pretty gross. It should be returning iter, not a boolean. I also cannot be bothered fixing
-    // it now since it does its job and its just an abstracted away black box
+// it now since it does its job and its just an abstracted away black box
 static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSourceIterator* iter) {
     uint32_t actual_len = varlen32_param.getLen();
     const char* json_spec = varlen32_param.data();
@@ -443,7 +450,7 @@ static void* open_table_connection(const std::string& table_name) {
     return table_handle;
 }
 
-extern "C" __attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(void* context, runtime::VarLen32 varlen32_param) {
+__attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(void* context, runtime::VarLen32 varlen32_param) {
     PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_start IN: context=%p, varlen32_param len=%u", context, varlen32_param.getLen());
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_start called with context: %p, varlen32_param len: %u", context, varlen32_param.getLen());
 
@@ -491,7 +498,7 @@ extern "C" __attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(v
     return iter;
 }
 
-extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(void* iterator) {
+__attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(void* iterator) {
     PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid IN: iterator=%p", iterator);
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid called with iterator: %p", iterator);
     if (!iterator) return false;
@@ -602,19 +609,11 @@ extern "C" __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(
     }
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(void* iterator, void* row_data) {
+__attribute__((noinline, cdecl)) void rt_datasourceiteration_access(void* iterator, void* row_data) {
     PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_access IN: iterator=%p, row_data=%p", iterator, row_data);
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access called with iterator: %p, row_data: %p", iterator, row_data);
     if (row_data) {
         PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: row_data is valid, proceeding");
-
-        struct ColumnInfo {
-            size_t offset;            // Offset in buffer
-            size_t validMultiplier;   // Validity bitmap multiplier
-            void* validBuffer;        // Validity bitmap buffer
-            void* dataBuffer;         // Data buffer
-            void* varLenBuffer;       // Variable length buffer
-        };
 
         auto* iter = (DataSourceIterator*)iterator;
         if (!iter || !iter->has_current_tuple) {
@@ -702,14 +701,14 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(v
     __sync_synchronize();
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_next(void* iterator) {
+__attribute__((noinline, cdecl)) void rt_datasourceiteration_next(void* iterator) {
     if (iterator) {
         auto* iter = (DataSourceIterator*)iterator;
         iter->has_current_tuple = false;
     }
 }
 
-extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_end(void* iterator) {
+__attribute__((noinline, cdecl)) void rt_datasourceiteration_end(void* iterator) {
     if (iterator) {
         auto* iter = (DataSourceIterator*)iterator;
 
@@ -728,5 +727,127 @@ extern "C" __attribute__((noinline, cdecl)) void rt_datasourceiteration_end(void
     }
 }
 
+} // extern "C"
+
+// ============================================================================
+// C++ namespace runtime implementation
+// ============================================================================
+
+namespace runtime {
+
+// ============================================================================
+// TableBuilder static methods and member functions
+// ============================================================================
+
+void* TableBuilder::create(VarLen32 schema) {
+    return rt_tablebuilder_create(schema);
 }
 
+void TableBuilder::destroy(void* builder) {
+    rt_tablebuilder_destroy(builder);
+}
+
+void* TableBuilder::build() {
+    return rt_tablebuilder_build(this);
+}
+
+void TableBuilder::nextRow() {
+    rt_tablebuilder_nextrow(this);
+}
+
+void TableBuilder::addBool(bool isValid, bool value) {
+    rt_tablebuilder_addbool(this, isValid, value);
+}
+
+void TableBuilder::addInt8(bool isValid, int8_t value) {
+    rt_tablebuilder_addint8(this, isValid, value);
+}
+
+void TableBuilder::addInt16(bool isValid, int16_t value) {
+    rt_tablebuilder_addint16(this, isValid, value);
+}
+
+void TableBuilder::addInt32(bool isValid, int32_t value) {
+    rt_tablebuilder_addint32(this, isValid, value);
+}
+
+void TableBuilder::addInt64(bool isValid, int64_t value) {
+    rt_tablebuilder_addint64(this, isValid, value);
+}
+
+void TableBuilder::addFloat32(bool isValid, float value) {
+    rt_tablebuilder_addfloat32(this, isValid, value);
+}
+
+void TableBuilder::addFloat64(bool isValid, double value) {
+    rt_tablebuilder_addfloat64(this, isValid, value);
+}
+
+void TableBuilder::addDecimal(bool isValid, __int128 value) {
+    rt_tablebuilder_adddecimal(this, isValid, value);
+}
+
+void TableBuilder::addFixedSized(bool isValid, int64_t value) {
+    rt_tablebuilder_addfixedsized(this, isValid, value);
+}
+
+void TableBuilder::addBinary(bool isValid, VarLen32 value) {
+    rt_tablebuilder_addbinary(this, isValid, value);
+}
+
+// ============================================================================
+// DataSourceIteration implementation
+// ============================================================================
+
+DataSourceIteration::DataSourceIteration(const std::shared_ptr<DataSource>& dataSource, const std::vector<size_t>& colIds)
+    : currChunk(nullptr), dataSource(dataSource), colIds(colIds) {
+}
+
+DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionContext, runtime::VarLen32 description) {
+    // Create a wrapper that delegates to our C implementation
+    void* iter = rt_datasourceiteration_start(executionContext, description);
+    
+    // For now, just cast the C iterator as a DataSourceIteration
+    // This is a hack but works since we control both sides
+    return reinterpret_cast<DataSourceIteration*>(iter);
+}
+
+bool DataSourceIteration::isValid() {
+    return rt_datasourceiteration_isvalid(this);
+}
+
+void DataSourceIteration::next() {
+    rt_datasourceiteration_next(this);
+}
+
+void DataSourceIteration::access(RecordBatchInfo* info) {
+    rt_datasourceiteration_access(this, info);
+}
+
+void DataSourceIteration::end(DataSourceIteration* iteration) {
+    rt_datasourceiteration_end(iteration);
+}
+
+// ============================================================================
+// DataSource implementation
+// ============================================================================
+
+DataSource* DataSource::get(VarLen32 description) {
+    // This is a stub - the actual implementation would create a concrete DataSource
+    // For now, return nullptr since we're using the C implementation directly
+    return nullptr;
+}
+
+// ============================================================================
+// Global context functions
+// ============================================================================
+
+void setExecutionContext(void* context) {
+    rt_set_execution_context(context);
+}
+
+void* getExecutionContext() {
+    return rt_get_execution_context();
+}
+
+} // namespace runtime
