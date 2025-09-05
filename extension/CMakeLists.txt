@@ -21,7 +21,7 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/utility/logging_c.cpp
         ../src/pgx-lower/runtime/tuple_access.cpp
         ../src/pgx-lower/runtime/PostgreSQLDataSource.cpp
-        ../src/pgx-lower/runtime/postgresql_runtime.cpp
+        ../src/pgx-lower/runtime/PostgreSQLRuntime.cpp
         SCRIPTS
             sql/pgx_lower--1.0.sql
         REGRESS

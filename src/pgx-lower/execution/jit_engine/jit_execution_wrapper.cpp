@@ -45,8 +45,6 @@ ExecutionHandle* pgx_jit_create_execution_handle(ModuleHandle* module_handle) {
             return nullptr;
         }
 
-        exec_handle->engine->registerPostgreSQLRuntimeFunctions();
-
         if (!exec_handle->engine->setupMemoryContexts()) {
             last_error_message = "Failed to setup memory contexts";
             PGX_ERROR("pgx_jit_create_execution_handle: %s", last_error_message.c_str());

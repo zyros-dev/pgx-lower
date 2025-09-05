@@ -27,7 +27,6 @@ public:
     bool compileToLLVMIR(::mlir::ModuleOp module);
     bool isInitialized() const;
     void setOptimizationLevel(llvm::CodeGenOptLevel level);
-    void registerPostgreSQLRuntimeFunctions();
     bool setupMemoryContexts();
     bool executeCompiledQuery(void* estate, void* dest);
     

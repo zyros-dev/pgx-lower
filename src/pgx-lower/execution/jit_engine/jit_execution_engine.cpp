@@ -66,7 +66,6 @@ public:
     void setOptimizationLevel(llvm::CodeGenOptLevel level) { 
         optimizationLevel = level; 
     }
-    void registerPostgreSQLRuntimeFunctions();
     bool setupMemoryContexts();
     bool executeCompiledQuery(void* estate, void* dest);
     
@@ -84,8 +83,6 @@ private:
     void registerMemoryManagementFunctions();
     void registerDataSourceFunctions();
     void registerRuntimeSupportFunctions();
-    void registerLingoDRuntimeContextFunctions();
-    void registerCRuntimeFunctions();
     
     void registerDialectTranslations(::mlir::ModuleOp module);
     bool createWrappedExecutionEngine(::mlir::ModuleOp module);
@@ -242,7 +239,7 @@ class WrappedExecutionEngine {
     void* getSetContextPtr() const { return setContextPtr; }
 
     bool compileObjectToSharedLibrary(const std::string& objectFile, const std::string& sharedLibFile) {
-        std::string cmd = "g++ -shared -fPIC -o " + sharedLibFile + " " + objectFile + " 2>&1";
+        std::string cmd = "g++ -shared -fPIC -Wl,--unresolved-symbols=ignore-all -o " + sharedLibFile + " " + objectFile + " 2>&1";
 
         auto* pPipe = ::popen(cmd.c_str(), "r");
         if (!pPipe) {
@@ -294,17 +291,17 @@ class WrappedExecutionEngine {
     }
 
     bool linkStatic() {
-        auto currPath = std::filesystem::current_path();
+        std::string tmpDir = "/tmp";
+        std::string objectFile = tmpDir + "/pgx_jit_module.o";
+        std::string sharedLibFile = tmpDir + "/pgx_jit_module.so";
 
-        // Dump JIT object to file
-        engine->dumpToObjectFile("pgx_jit_module.o");
+        engine->dumpToObjectFile(objectFile);
 
-        // Compile to shared library
-        if (!compileObjectToSharedLibrary("pgx_jit_module.o", "pgx_jit_module.so")) {
+        if (!compileObjectToSharedLibrary(objectFile, sharedLibFile)) {
             return false;
         }
 
-        std::string soPath = currPath.string() + "/pgx_jit_module.so";
+        std::string soPath = sharedLibFile;
         void* handle = loadSharedLibrary(soPath);
         if (!handle) {
             return false;
@@ -360,10 +357,6 @@ bool PostgreSQLJITExecutionEngine::isInitialized() const {
 
 void PostgreSQLJITExecutionEngine::setOptimizationLevel(llvm::CodeGenOptLevel level) {
     pImpl->setOptimizationLevel(level);
-}
-
-void PostgreSQLJITExecutionEngine::registerPostgreSQLRuntimeFunctions() {
-    pImpl->registerPostgreSQLRuntimeFunctions();
 }
 
 bool PostgreSQLJITExecutionEngine::setupMemoryContexts() {
@@ -461,10 +454,6 @@ bool PostgreSQLJITExecutionEngine::Impl::createWrappedExecutionEngine(::mlir::Mo
         }
     }
 
-    if (wrapped->getEngine()) {
-        registerPostgreSQLRuntimeFunctions();
-    }
-
     return true;
 }
 
@@ -495,123 +484,6 @@ bool PostgreSQLJITExecutionEngine::Impl::initialize(::mlir::ModuleOp module) {
     PGX_LOG(JIT, IO, "JIT Initialize OUT: ExecutionEngine ready (compilation took %.2f ms)", duration / 1000.0);
 
     return true;
-}
-
-void PostgreSQLJITExecutionEngine::Impl::registerLingoDRuntimeContextFunctions() {
-    auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
-    if (!wrapped || !wrapped->getEngine()) {
-        PGX_ERROR("Cannot register functions - engine not initialized");
-        return;
-    }
-
-    wrapped->getEngine()->registerSymbols([](llvm::orc::MangleAndInterner interner) {
-        llvm::orc::SymbolMap symbolMap;
-
-        // rt_set_execution_context function
-        symbolMap[interner("rt_set_execution_context")] = {
-            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(+[](void* context_ptr) -> void {
-                static thread_local void* global_execution_context = nullptr;
-                global_execution_context = context_ptr;
-            })),
-            llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable};
-
-        // rt_get_execution_context function
-        symbolMap[interner("rt_get_execution_context")] = {
-            llvm::orc::ExecutorAddr::fromPtr(reinterpret_cast<void*>(+[]() -> void* {
-                static thread_local void* global_execution_context = nullptr;
-                return global_execution_context;
-            })),
-            llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable};
-
-        return symbolMap;
-    });
-}
-
-std::vector<std::string> getTableBuilderFunctions() {
-    return {"rt_tablebuilder_create",
-            "rt_tablebuilder_build",
-            "rt_tablebuilder_nextrow",
-            "rt_tablebuilder_addint64",
-            "rt_tablebuilder_addint32",
-            "rt_tablebuilder_addbool",
-            "rt_tablebuilder_destroy"};
-}
-
-std::vector<std::string> getDataSourceIterationFunctions() {
-    return {"rt_datasourceiteration_start",
-            "rt_datasourceiteration_isvalid",
-            "rt_datasourceiteration_next",
-            "rt_datasourceiteration_access",
-            "rt_datasourceiteration_end"};
-}
-
-std::vector<std::string> getContextManagementFunctions() {
-    return {"rt_get_execution_context"};
-}
-
-auto createSymbolRegistrationLambda() {
-    return [](llvm::orc::MangleAndInterner interner) {
-        llvm::orc::SymbolMap symbolMap;
-
-        void* handle = dlopen(nullptr, RTLD_NOW | RTLD_GLOBAL);
-        if (!handle) {
-            PGX_ERROR("Failed to open current process for symbol lookup");
-            return symbolMap;
-        }
-
-        auto registerFunction = [&](const std::string& funcName) {
-            void* funcPtr = dlsym(handle, funcName.c_str());
-            if (funcPtr) {
-                symbolMap[interner(funcName)] = {llvm::orc::ExecutorAddr::fromPtr(funcPtr),
-                                                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable};
-            }
-        };
-
-        auto tableBuilderFuncs = getTableBuilderFunctions();
-        auto dataSourceFuncs = getDataSourceIterationFunctions();
-        auto contextFuncs = getContextManagementFunctions();
-
-        for (const auto& funcName : tableBuilderFuncs) {
-            registerFunction(funcName);
-        }
-        for (const auto& funcName : dataSourceFuncs) {
-            registerFunction(funcName);
-        }
-        for (const auto& funcName : contextFuncs) {
-            registerFunction(funcName);
-        }
-
-        dlclose(handle);
-
-        PGX_LOG(JIT, DEBUG, "Registered %zu runtime functions", symbolMap.size());
-
-        return symbolMap;
-    };
-}
-
-void PostgreSQLJITExecutionEngine::Impl::registerCRuntimeFunctions() {
-    PGX_LOG(JIT, DEBUG, "Registering C runtime functions");
-
-    auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
-    if (!wrapped || !wrapped->getEngine()) {
-        PGX_ERROR("Cannot register functions - engine not initialized");
-        return;
-    }
-
-    wrapped->getEngine()->registerSymbols(createSymbolRegistrationLambda());
-}
-
-void PostgreSQLJITExecutionEngine::Impl::registerPostgreSQLRuntimeFunctions() {
-    PGX_LOG(JIT, DEBUG, "Registering PostgreSQL runtime functions");
-
-    auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
-    if (!wrapped || !wrapped->getEngine()) {
-        PGX_ERROR("Cannot register runtime functions - execution engine not initialized");
-        return;
-    }
-
-    registerCRuntimeFunctions();
-    registerLingoDRuntimeContextFunctions();
 }
 
 bool PostgreSQLJITExecutionEngine::Impl::setupMemoryContexts() {
