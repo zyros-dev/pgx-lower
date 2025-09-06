@@ -1,5 +1,6 @@
 #include "pgx-lower/frontend/SQL/query_analyzer.h"
 
+#include "pgx_lower_constants.h"
 #include "pgx-lower/utility/error_handling.h"
 #include "pgx-lower/utility/logging.h"
 
@@ -251,8 +252,16 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
 
             // Later we can add more sophisticated filtering
             if (IsA(tle->expr, FuncExpr)) {
-                caps.hasCompatibleTypes = false;
-                return;
+                FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
+                if (funcExpr->funcid == frontend::sql::constants::PG_F_UPPER ||
+                    funcExpr->funcid == frontend::sql::constants::PG_F_LOWER ||
+                    funcExpr->funcid == frontend::sql::constants::PG_F_SUBSTRING) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Supported string function in targetlist: %d", funcExpr->funcid);
+                } else {
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Unsupported function in targetlist: %d", funcExpr->funcid);
+                    caps.hasCompatibleTypes = false;
+                    return;
+                }
             }
 
             Oid columnType = exprType(reinterpret_cast<Node*>(tle->expr));
@@ -422,6 +431,32 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
             }
 
             PGX_LOG(AST_TRANSLATE, DEBUG, "%s", nodeInfo.c_str());
+            
+            if (plan->targetlist) {
+                ListCell* lc;
+                int idx = 0;
+                foreach (lc, plan->targetlist) {
+                    TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+                    if (tle && tle->expr) {
+                        NodeTag exprType = nodeTag(tle->expr);
+                        std::string exprTypeName = "Unknown";
+                        switch(exprType) {
+                            case T_Var: exprTypeName = "Var"; break;
+                            case T_Const: exprTypeName = "Const"; break;
+                            case T_OpExpr: exprTypeName = "OpExpr"; break;
+                            case T_FuncExpr: {
+                                exprTypeName = "FuncExpr";
+                                FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
+                                exprTypeName += "(funcid=" + std::to_string(funcExpr->funcid) + ")";
+                                break;
+                            }
+                            default: exprTypeName = "Type" + std::to_string(exprType);
+                        }
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "%s   TargetEntry[%d]: %s", 
+                                indent.c_str(), idx++, exprTypeName.c_str());
+                    }
+                }
+            }
 
             // Print children with tree formatting
             if (plan->lefttree || plan->righttree) {
