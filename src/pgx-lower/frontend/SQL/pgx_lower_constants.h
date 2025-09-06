@@ -2,6 +2,8 @@
 #define PGX_LOWER_CONSTANTS_H
 
 // PostgreSQL catalog headers should already be included by the main translator file
+// TODO: When we have this many constants, maybe we should create like PlusOid<data_type>()
+// rather than a gazillion constants
 
 namespace pgx_lower::frontend::sql::constants {
 
@@ -99,6 +101,44 @@ constexpr Oid PG_TEXT_CONCAT_OID = 654;    // text || text
 // String Function OIDs  
 constexpr Oid PG_F_SUBSTRING = 936;        // substring(text, int, int)
 // Note: PG_F_UPPER and PG_F_LOWER already defined above
+
+// =============================================================================
+// AGGREGATE FUNCTION OIDS
+// =============================================================================
+
+// Core aggregate functions (type-generic, we'll detect the base function)
+constexpr Oid PG_F_SUM_INT2 = 1835;        // sum(int2) -> int8
+constexpr Oid PG_F_SUM_INT4 = 2108;        // sum(int4) -> int8
+constexpr Oid PG_F_SUM_INT8 = 2109;        // sum(int8) -> numeric
+constexpr Oid PG_F_SUM_FLOAT4 = 2110;      // sum(float4) -> float4
+constexpr Oid PG_F_SUM_FLOAT8 = 2111;      // sum(float8) -> float8
+constexpr Oid PG_F_SUM_NUMERIC = 2114;     // sum(numeric) -> numeric
+
+constexpr Oid PG_F_AVG_INT2 = 1836;        // avg(int2) -> numeric
+constexpr Oid PG_F_AVG_INT4 = 2100;        // avg(int4) -> numeric
+constexpr Oid PG_F_AVG_INT8 = 2101;        // avg(int8) -> numeric
+constexpr Oid PG_F_AVG_FLOAT4 = 2102;      // avg(float4) -> float4
+constexpr Oid PG_F_AVG_FLOAT8 = 2103;      // avg(float8) -> float8
+constexpr Oid PG_F_AVG_NUMERIC = 2104;     // avg(numeric) -> numeric
+
+constexpr Oid PG_F_COUNT_STAR = 2147;      // count(*) -> int8
+constexpr Oid PG_F_COUNT_ANY = 2803;       // count(any) -> int8
+
+constexpr Oid PG_F_MIN_INT2 = 2131;        // min(int2) -> int2
+constexpr Oid PG_F_MIN_INT4 = 2132;        // min(int4) -> int4
+constexpr Oid PG_F_MIN_INT8 = 2133;        // min(int8) -> int8
+constexpr Oid PG_F_MIN_FLOAT4 = 2135;      // min(float4) -> float4
+constexpr Oid PG_F_MIN_FLOAT8 = 2136;      // min(float8) -> float8
+constexpr Oid PG_F_MIN_NUMERIC = 2146;     // min(numeric) -> numeric
+constexpr Oid PG_F_MIN_TEXT = 2145;        // min(text) -> text
+
+constexpr Oid PG_F_MAX_INT2 = 2115;        // max(int2) -> int2
+constexpr Oid PG_F_MAX_INT4 = 2116;        // max(int4) -> int4
+constexpr Oid PG_F_MAX_INT8 = 2117;        // max(int8) -> int8
+constexpr Oid PG_F_MAX_FLOAT4 = 2119;      // max(float4) -> float4
+constexpr Oid PG_F_MAX_FLOAT8 = 2120;      // max(float8) -> float8
+constexpr Oid PG_F_MAX_NUMERIC = 2130;     // max(numeric) -> numeric
+constexpr Oid PG_F_MAX_TEXT = 2129;        // max(text) -> text
 
 // =============================================================================
 // POSTGRESQL SYSTEM CONSTANTS (NOT TABLE NAMES - those should be dynamic!)
@@ -258,6 +298,10 @@ constexpr const char* QUERY_FUNCTION_NAME = "main";
 
 // Aggregation Constants
 constexpr const char* AGGREGATION_COUNT_FUNCTION = "count";
+constexpr const char* AGGREGATION_SUM_FUNCTION = "sum";
+constexpr const char* AGGREGATION_AVG_FUNCTION = "avg";
+constexpr const char* AGGREGATION_MIN_FUNCTION = "min";
+constexpr const char* AGGREGATION_MAX_FUNCTION = "max";
 
 // Unit Test Column Configuration
 constexpr bool UNIT_TEST_COLUMN_NOT_NULL = false;

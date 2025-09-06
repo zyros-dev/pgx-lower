@@ -92,18 +92,118 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
         std::vector<mlir::Value> createdValues;
         std::vector<mlir::Attribute> createdCols;
 
-        // For simple COUNT(*) aggregation, create count operation
-        std::string aggName = AGGREGATION_RESULT_COLUMN;
-        auto attrDef = columnManager.createDef(aggName, AGGREGATION_COUNT_FUNCTION);
-        attrDef.getColumn().type = context.builder->getI64Type();
+        // Process each target entry to find aggregate functions
+        ListCell* lc;
+        foreach(lc, agg->plan.targetlist) {
+            TargetEntry* te = (TargetEntry*) lfirst(lc);
+            if (!te || !te->expr) {
+                PGX_WARNING("Invalid TargetEntry in aggregate plan");
+                continue;
+            }
 
-        mlir::Value relation = block->getArgument(0);
-        mlir::Value countResult = aggrBuilder.create<mlir::relalg::CountRowsOp>(context.builder->getUnknownLoc(),
-                                                                                context.builder->getI64Type(),
-                                                                                relation);
-
-        createdCols.push_back(attrDef);
-        createdValues.push_back(countResult);
+            // Check if the target entry contains an Aggref (aggregate function)
+            if (te->expr->type == T_Aggref) {
+                Aggref* aggref = (Aggref*) te->expr;
+                const char* funcName = getAggregateFunctionName(aggref->aggfnoid);
+                
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Found aggregate function: %s (OID %u)", funcName, aggref->aggfnoid);
+                
+                // Create column definition for the aggregate result
+                std::string aggName = te->resname ? std::string(te->resname) : AGGREGATION_RESULT_COLUMN;
+                auto attrDef = columnManager.createDef(aggName, funcName);
+                
+                mlir::Value relation = block->getArgument(0);
+                mlir::Value aggResult;
+                
+                // Handle different aggregate functions
+                if (strcmp(funcName, AGGREGATION_COUNT_FUNCTION) == 0) {
+                    // COUNT(*) - no column reference needed
+                    attrDef.getColumn().type = context.builder->getI64Type();
+                    aggResult = aggrBuilder.create<mlir::relalg::CountRowsOp>(context.builder->getUnknownLoc(),
+                                                                              context.builder->getI64Type(),
+                                                                              relation);
+                } else {
+                    // SUM, AVG, MIN, MAX - need column reference
+                    if (!aggref->args || list_length(aggref->args) == 0) {
+                        PGX_ERROR("Aggregate function %s requires arguments", funcName);
+                        continue;
+                    }
+                    
+                    // Get the first argument (column reference)
+                    TargetEntry* argTE = (TargetEntry*) linitial(aggref->args);
+                    if (!argTE || !argTE->expr || argTE->expr->type != T_Var) {
+                        PGX_ERROR("Aggregate function %s requires column reference", funcName);
+                        continue;
+                    }
+                    
+                    Var* colVar = (Var*) argTE->expr;
+                    
+                    // Handle special case where varno=-2 indicates column from aggregate input
+                    std::string tableName;
+                    std::string columnName;
+                    
+                    if (colVar->varno < 0) {
+                        // For negative varno (like -2), get table info from the child SeqScan
+                        if (leftTree && leftTree->type == T_SeqScan) {
+                            SeqScan* seqScan = (SeqScan*) leftTree;
+                            tableName = getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
+                            columnName = getColumnNameFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid, colVar->varattno);
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved negative varno %d to table: %s, column: %s", 
+                                   colVar->varno, tableName.c_str(), columnName.c_str());
+                        } else {
+                            PGX_ERROR("Cannot resolve negative varno %d without SeqScan child", colVar->varno);
+                            continue;
+                        }
+                    } else {
+                        // Normal positive varno - use standard resolution
+                        tableName = getTableNameFromRTE(currentPlannedStmt_, colVar->varno);
+                        columnName = getColumnNameFromSchema(currentPlannedStmt_, colVar->varno, colVar->varattno);
+                    }
+                    
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Aggregate %s on column: %s.%s", funcName, tableName.c_str(), columnName.c_str());
+                    
+                    // Create column attribute reference using SymbolRefAttr
+                    std::vector<mlir::FlatSymbolRefAttr> nested;
+                    nested.push_back(mlir::FlatSymbolRefAttr::get(context.builder->getContext(), columnName));
+                    auto symbolRef = mlir::SymbolRefAttr::get(context.builder->getContext(), tableName, nested);
+                    
+                    // Create a Column attribute - using column manager pattern
+                    auto& columnManager = context.builder->getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+                    auto columnAttr = columnManager.get(tableName, columnName);
+                    
+                    auto columnRef = mlir::relalg::ColumnRefAttr::get(context.builder->getContext(), symbolRef, columnAttr);
+                    
+                    // Determine result type (for now, keep it as nullable i32 like LingoDB examples)
+                    auto resultType = mlir::db::NullableType::get(context.builder->getContext(), context.builder->getI32Type());
+                    attrDef.getColumn().type = resultType;
+                    
+                    // Create the aggregate function operation using enum instead of string
+                    mlir::relalg::AggrFunc aggrFuncEnum;
+                    if (strcmp(funcName, AGGREGATION_SUM_FUNCTION) == 0) {
+                        aggrFuncEnum = mlir::relalg::AggrFunc::sum;
+                    } else if (strcmp(funcName, AGGREGATION_AVG_FUNCTION) == 0) {
+                        aggrFuncEnum = mlir::relalg::AggrFunc::avg;
+                    } else if (strcmp(funcName, AGGREGATION_MIN_FUNCTION) == 0) {
+                        aggrFuncEnum = mlir::relalg::AggrFunc::min;
+                    } else if (strcmp(funcName, AGGREGATION_MAX_FUNCTION) == 0) {
+                        aggrFuncEnum = mlir::relalg::AggrFunc::max;
+                    } else {
+                        aggrFuncEnum = mlir::relalg::AggrFunc::count; // Default fallback
+                    }
+                    
+                    aggResult = aggrBuilder.create<mlir::relalg::AggrFuncOp>(context.builder->getUnknownLoc(),
+                                                                             resultType,
+                                                                             aggrFuncEnum,
+                                                                             relation,
+                                                                             columnRef);
+                }
+                
+                createdCols.push_back(attrDef);
+                createdValues.push_back(aggResult);
+            } else {
+                PGX_WARNING("Non-aggregate expression in Agg target list: type %d", te->expr->type);
+            }
+        }
 
         aggrBuilder.create<mlir::relalg::ReturnOp>(context.builder->getUnknownLoc(), createdValues);
 
