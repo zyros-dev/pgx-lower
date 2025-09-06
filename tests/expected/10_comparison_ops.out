@@ -19,11 +19,11 @@ FROM test_comparison;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  is_equal 
 ----------
-        0
-        1
-        0
-        0
-        1
+ f
+ t
+ f
+ f
+ t
 (5 rows)
 
 SELECT (value <> score) AS not_equal
@@ -31,11 +31,11 @@ FROM test_comparison;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  not_equal 
 -----------
-         1
-         0
-         1
-         1
-         0
+ t
+ f
+ t
+ t
+ f
 (5 rows)
 
 SELECT (value != score) AS not_equal_alt
@@ -43,11 +43,11 @@ FROM test_comparison;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  not_equal_alt 
 ---------------
-             1
-             0
-             1
-             1
-             0
+ t
+ f
+ t
+ t
+ f
 (5 rows)
 
 SELECT (value < score) AS less_than
@@ -55,11 +55,11 @@ FROM test_comparison;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  less_than 
 -----------
-         1
-         0
-         0
-         0
-         0
+ t
+ f
+ f
+ f
+ f
 (5 rows)
 
 SELECT (value <= score) AS less_equal
@@ -67,11 +67,11 @@ FROM test_comparison;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  less_equal 
 ------------
-          1
-          1
-          0
-          0
-          1
+ t
+ t
+ f
+ f
+ t
 (5 rows)
 
 SELECT (value > score) AS greater_than
@@ -79,11 +79,11 @@ FROM test_comparison;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  greater_than 
 --------------
-            0
-            0
-            1
-            1
-            0
+ f
+ f
+ t
+ t
+ f
 (5 rows)
 
 SELECT (value >= score) AS greater_equal
@@ -91,11 +91,11 @@ FROM test_comparison;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  greater_equal 
 ---------------
-             0
-             1
-             1
-             1
-             1
+ f
+ t
+ t
+ t
+ t
 (5 rows)
 
 DROP TABLE test_comparison;

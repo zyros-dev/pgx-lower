@@ -1,123 +1,138 @@
--- Test text operators: PgLikeOp, PgConcatOp, PgSubstringOp
-LOAD 'pgx_lower';
-NOTICE:  Installing custom executor hook...
-NOTICE:  Registering custom sigsegv handler!
+LOAD
+'pgx_lower';
 DROP TABLE IF EXISTS test_text;
 NOTICE:  table "test_text" does not exist, skipping
-CREATE TABLE test_text (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(50),
+CREATE TABLE test_text
+(
+    id          SERIAL PRIMARY KEY,
+    name        VARCHAR(50),
     description TEXT,
-    category VARCHAR(20)
+    category    VARCHAR(20)
 );
-
-INSERT INTO test_text(name, description, category) VALUES 
-    ('Apple', 'Fresh red apple fruit', 'fruit'),
-    ('Banana', 'Yellow curved banana', 'fruit'),
-    ('Carrot', 'Orange root vegetable', 'vegetable'),
-    ('Avocado', 'Green creamy avocado', 'fruit'),
-    ('Spinach', 'Green leafy vegetable', 'vegetable');
-
--- Test text operations in SELECT clauses
--- These should trigger MLIR compilation with text operators
-SELECT (name LIKE 'A%') AS starts_with_a FROM test_text;
+INSERT INTO test_text(name, description, category)
+VALUES ('Apple', 'Fresh red apple fruit', 'fruit'),
+       ('Banana', 'Yellow curved banana', 'fruit'),
+       ('Carrot', 'Orange root vegetable', 'vegetable'),
+       ('Avocado', 'Green creamy avocado', 'fruit'),
+       ('Spinach', 'Green leafy vegetable', 'vegetable');
+SELECT (name LIKE 'A%') AS starts_with_a
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  starts_with_a 
 ---------------
-             1
-             2
-             3
-             4
-             5
+ t
+ f
+ f
+ t
+ f
 (5 rows)
 
-SELECT (name LIKE '%a%') AS contains_a FROM test_text;
+SELECT (name LIKE '%a%') AS contains_a
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  contains_a 
 ------------
-          1
-          2
-          3
-          4
-          5
+ f
+ t
+ t
+ t
+ t
 (5 rows)
 
-SELECT (description LIKE '%green%') AS contains_green FROM test_text;
+SELECT (description LIKE '%green%') AS contains_green
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  contains_green 
 ----------------
-              1
-              2
-              3
-              4
-              5
+ f
+ f
+ f
+ f
+ f
 (5 rows)
 
-SELECT (category LIKE 'fruit') AS is_fruit FROM test_text;
+SELECT (category LIKE 'fruit') AS is_fruit
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  is_fruit 
 ----------
-        1
-        2
-        3
-        4
-        5
+ t
+ t
+ f
+ t
+ f
 (5 rows)
 
-SELECT (name || ' - ' || description) AS concatenated FROM test_text;
- concatenated 
---------------
-            1
-            2
-            3
-            4
-            5
+SELECT (name || ' - ' || description) AS concatenated
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+          concatenated           
+---------------------------------
+ Apple - Fresh red apple fruit
+ Banana - Yellow curved banana
+ Carrot - Orange root vegetable
+ Avocado - Green creamy avocado
+ Spinach - Green leafy vegetable
 (5 rows)
 
-SELECT (name || ' (' || category || ')') AS name_with_category FROM test_text;
- name_with_category 
---------------------
-                  1
-                  2
-                  3
-                  4
-                  5
+SELECT (name || ' (' || category || ')') AS name_with_category
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name_with_category  
+---------------------
+ Apple (fruit)
+ Banana (fruit)
+ Carrot (vegetable)
+ Avocado (fruit)
+ Spinach (vegetable)
 (5 rows)
 
-SELECT SUBSTRING(name FROM 1 FOR 3) AS name_prefix FROM test_text;
+SELECT SUBSTRING(name FROM 1 FOR 3) AS name_prefix
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  name_prefix 
 -------------
-           1
-           2
-           3
-           4
-           5
+ App
+ Ban
+ Car
+ Avo
+ Spi
 (5 rows)
 
-SELECT SUBSTRING(description FROM 1 FOR 10) AS desc_start FROM test_text;
+SELECT SUBSTRING(description FROM 1 FOR 10) AS desc_start
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  desc_start 
 ------------
-          1
-          2
-          3
-          4
-          5
+ Fresh red 
+ Yellow cur
+ Orange roo
+ Green crea
+ Green leaf
 (5 rows)
 
-SELECT UPPER(name) AS upper_name FROM test_text;
+SELECT UPPER(name) AS upper_name
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  upper_name 
 ------------
-          1
-          2
-          3
-          4
-          5
+ APPLE
+ BANANA
+ CARROT
+ AVOCADO
+ SPINACH
 (5 rows)
 
-SELECT LOWER(description) AS lower_desc FROM test_text;
- lower_desc 
-------------
-          1
-          2
-          3
-          4
-          5
+SELECT LOWER(description) AS lower_desc
+FROM test_text;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+      lower_desc       
+-----------------------
+ fresh red apple fruit
+ yellow curved banana
+ orange root vegetable
+ green creamy avocado
+ green leafy vegetable
 (5 rows)
 
 DROP TABLE test_text;
