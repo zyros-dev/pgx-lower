@@ -21,6 +21,7 @@ using namespace clang::tooling;
 using namespace llvm;
 
 DeclarationMatcher methodMatcher = cxxRecordDecl(isDefinition(), hasParent(namespaceDecl(hasName("runtime"))), isExpansionInMainFile()).bind("class");
+DeclarationMatcher functionMatcher = functionDecl(hasParent(namespaceDecl(hasName("runtime"))), isExpansionInMainFile(), unless(isImplicit())).bind("function");
 
 class MethodPrinter : public MatchFinder::MatchCallback {
    llvm::raw_ostream& hStream;
@@ -109,6 +110,73 @@ class MethodPrinter : public MatchFinder::MatchCallback {
    MethodPrinter(raw_ostream& hStream) : hStream(hStream) {}
    virtual void run(const MatchFinder::MatchResult& result) override {
       //std::cout << "match" << std::endl;
+
+      if (const FunctionDecl* func = result.Nodes.getNodeAs<clang::FunctionDecl>("function")) {
+         if (isa<CXXMethodDecl>(func)) return;
+         
+         ASTContext& astCtx = func->getASTContext();
+         auto* mangleContext = astCtx.createMangleContext();
+         
+         std::string functionName = func->getNameAsString();
+         std::vector<std::string> types;
+         std::vector<std::string> resTypes;
+         
+         std::string mangled;
+         llvm::raw_string_ostream mangleStream(mangled);
+         mangleContext->mangleName(func, mangleStream);
+         mangleStream.flush();
+         
+         bool unknownTypes = false;
+         
+         // Process parameters
+         for (const auto& p : func->parameters()) {
+            auto translatedType = translateType(p->getType(), astCtx);
+            if (!translatedType.has_value()) {
+               unknownTypes = true;
+               break;
+            }
+            types.push_back(translatedType.value());
+         }
+         
+         // Process return type
+         auto resType = func->getReturnType();
+         if (!resType->isVoidType()) {
+            auto translatedType = translateType(resType, astCtx);
+            if (!translatedType.has_value()) {
+               unknownTypes = true;
+            } else {
+               resTypes.push_back(translatedType.value());
+            }
+         }
+         
+         if (unknownTypes) {
+            std::cerr << "ignoring func " << functionName << " (type issue)" << std::endl;
+            return;
+         }
+         
+         // Check for no-side-effect annotation
+         bool noSideEffects = false;
+         for(auto *attr : func->attrs()){
+            if(attr->getKind() == clang::attr::Annotate){
+               if(auto *annotateAttr = llvm::dyn_cast<clang::AnnotateAttr>(attr)){
+                  if(annotateAttr->getAnnotation() == "rt-no-sideffect"){
+                     noSideEffects = true;
+                  }
+               }
+            }
+         }
+         
+         // Generate as standalone function in rt namespace
+         hStream << "inline static mlir::util::FunctionSpec " << functionName << " = ";
+         std::string fullName = "runtime::" + functionName;
+         hStream << " mlir::util::FunctionSpec(\"" << fullName << "\", \"" << mangled << "\", ";
+         emitTypeCreateFn(hStream, types);
+         hStream << ",";
+         emitTypeCreateFn(hStream, resTypes);
+         hStream << "," << (noSideEffects ? "true" : "false") << ");\n";
+         return;
+      }
+      
       if (const CXXRecordDecl* md = result.Nodes.getNodeAs<clang::CXXRecordDecl>("class")) {
          std::string className = md->getNameAsString();
          hStream << "struct " << className << " {\n";
@@ -197,6 +265,7 @@ int main(int argc, const char** argv) {
    MethodPrinter printer(hStream);
    MatchFinder finder;
    finder.addMatcher(methodMatcher, &printer);
+   finder.addMatcher(functionMatcher, &printer);
    hStream << "#include <lingodb/mlir/Dialect/util/FunctionHelper.h>\n";
    hStream << "namespace rt {\n";
    tool.run(newFrontendActionFactory(&finder).get());
