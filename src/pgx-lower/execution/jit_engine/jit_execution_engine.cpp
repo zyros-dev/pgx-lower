@@ -1,7 +1,6 @@
 #include "pgx-lower/execution/jit_execution_engine.h"
 #include "pgx-lower/utility/logging.h"
 #include "pgx-lower/runtime/tuple_access.h"
-
 #include <fstream>
 #include <sstream>
 #include <dlfcn.h>
@@ -46,9 +45,6 @@ void* rt_get_execution_context();
 bool add_tuple_to_result(int64_t value);
 void mark_results_ready_for_streaming();
 void prepare_computed_results(int32_t numColumns);
-}
-namespace runtime {
-    void setExecutionContext(void* context); // fwd decl
 }
 
 namespace pgx_lower { namespace execution {
@@ -100,6 +96,7 @@ class WrappedExecutionEngine {
     std::unique_ptr<mlir::ExecutionEngine> engine;
     size_t jitTime;
     void* mainFuncPtr;
+    void* setContextPtr;
     bool useStaticLinking;
 
    private:
@@ -210,12 +207,22 @@ class WrappedExecutionEngine {
                 PGX_WARNING("Main function not found via ExecutionEngine::lookup, will use static linking");
                 useStaticLinking = true;
             }
+
+            // Lookup setContext function per LingoDB pattern
+            auto setContextResult = engine->lookup("rt_set_execution_context");
+            if (setContextResult) {
+                setContextPtr = setContextResult.get();
+            }
+            else {
+                PGX_WARNING("rt_set_execution_context function not found - context management disabled");
+            }
         }
     }
 
    public:
     WrappedExecutionEngine(mlir::ModuleOp module, llvm::CodeGenOptLevel optLevel, bool forceStatic = false)
     : mainFuncPtr(nullptr)
+    , setContextPtr(nullptr)
     , useStaticLinking(forceStatic) {
         auto start = std::chrono::high_resolution_clock::now();
         initializeEngineWithOptions(module, optLevel);
@@ -225,9 +232,11 @@ class WrappedExecutionEngine {
     }
 
     bool succeeded() const {
-        return mainFuncPtr != nullptr || useStaticLinking;
+        // Per LingoDB pattern: both mainFuncPtr and setContextPtr must be valid
+        return (mainFuncPtr != nullptr && setContextPtr != nullptr) || useStaticLinking;
     }
 
+    void* getSetContextPtr() const { return setContextPtr; }
 
     bool compileObjectToSharedLibrary(const std::string& objectFile, const std::string& sharedLibFile) {
         std::string cmd = "g++ -shared -fPIC -Wl,--unresolved-symbols=ignore-all -o " + sharedLibFile + " " + objectFile + " 2>&1";
@@ -300,7 +309,19 @@ class WrappedExecutionEngine {
 
         // Lookup main function
         mainFuncPtr = lookupMainFunction(handle);
-        return mainFuncPtr != nullptr;
+
+        // Lookup setContext function per LingoDB pattern
+        setContextPtr = dlsym(handle, "rt_set_execution_context");
+        if (!setContextPtr) {
+            const char* dlError = dlerror();
+            PGX_WARNING("Cannot find rt_set_execution_context via dlsym: %s", dlError ? dlError : "unknown");
+        }
+        else {
+            PGX_LOG(JIT, DEBUG, "Found rt_set_execution_context via dlsym at: %p", setContextPtr);
+        }
+
+        // Both functions must be found for success per LingoDB pattern
+        return mainFuncPtr != nullptr && setContextPtr != nullptr;
     }
 
     size_t getJitTime() const { return jitTime; }
@@ -530,9 +551,18 @@ bool PostgreSQLJITExecutionEngine::Impl::invokeCompiledFunction(void* funcPtr, v
 
     PG_TRY();
     {
-        PGX_LOG(JIT, DEBUG, "estate pointer value: %p", estate);
-        ::runtime::setExecutionContext(estate);
-        PGX_LOG(JIT, DEBUG, "Execution context set successfully");
+        if (wrappedEngine) {
+            auto* wrapped = static_cast<WrappedExecutionEngine*>(wrappedEngine);
+            void* setContextPtr = wrapped->getSetContextPtr();
+            if (setContextPtr) {
+                PGX_LOG(JIT, DEBUG, "Setting execution context via rt_set_execution_context");
+                PGX_LOG(JIT, DEBUG, "estate pointer value: %p", estate);
+                typedef void (*set_context_func)(void*);
+                auto setCtx = (set_context_func)setContextPtr;
+                setCtx(estate);
+                PGX_LOG(JIT, DEBUG, "Execution context set successfully");
+            }
+        }
 
         typedef void (*query_func)();
         auto fn = (query_func)funcPtr;
