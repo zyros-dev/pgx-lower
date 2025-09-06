@@ -63,12 +63,12 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: None detected");
     }
 
-    //  ENABLE MLIR COMPILATION: Test if pipeline works for basic SELECT+SeqScan queries
-    bool compatible = isSelectStatement && requiresSeqScan && hasCompatibleTypes && !requiresJoin
-                      && !requiresAggregation && !requiresSort && !requiresLimit;
+    bool compatible = isSelectStatement && hasCompatibleTypes && !requiresJoin
+                      && !requiresSort && !requiresLimit
+                      && (requiresSeqScan || requiresAggregation);
 
     if (compatible) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, " MLIR COMPATIBLE: Basic SELECT+SeqScan query accepted for compilation");
+        PGX_LOG(AST_TRANSLATE, DEBUG, " MLIR COMPATIBLE: Query accepted for compilation");
         return true;
     }
     else {
