@@ -613,12 +613,12 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
         // For computed expressions (like addition, logical operations), use @map scope
         // For base table columns, use actual table name
         std::string scope;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "extractTargetListColumns: expr type = %d", tle->expr ? tle->expr->type : -1);
         if (tle->expr && (tle->expr->type == T_OpExpr || 
                          tle->expr->type == T_BoolExpr ||
                          tle->expr->type == T_NullTest ||
                          tle->expr->type == T_CoalesceExpr ||
-                         tle->expr->type == T_FuncExpr ||
-                         tle->expr->type == T_Aggref)) {
+                         tle->expr->type == T_FuncExpr)) {
             scope = COMPUTED_EXPRESSION_SCOPE; // Computed expressions go to @map:: namespace
         }
         else if (tle->expr && tle->expr->type == T_Var) {
@@ -629,6 +629,17 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
                 PGX_ERROR("Failed to resolve table name for varno: %d", var->varno);
                 return false;
             }
+        }
+        else if (tle->expr && tle->expr->type == T_Aggref) {
+            // For aggregate functions, use the column name as the scope
+            // This creates references like @total_amount_all::@sum which matches
+            // what the AggregationOp translator produces
+            scope = colName;
+            // Also update the column name to be the aggregate function name
+            Aggref* aggref = reinterpret_cast<Aggref*>(tle->expr);
+            const char* funcName = getAggregateFunctionName(aggref->aggfnoid);
+            colName = funcName;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using aggregate column reference: @%s::@%s", scope.c_str(), colName.c_str());
         }
         else {
             // TODO: Should this be a fallover and fail?

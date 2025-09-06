@@ -133,6 +133,7 @@ class MaterializeTranslator : public mlir::relalg::Translator {
       
       std::string descr = "";
       auto tupleType = orderedAttributes.getTupleType(builder.getContext());
+      PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp: Building description for %zu columns", materializeOp.getColumns().size());
       for (size_t i = 0; i < materializeOp.getColumns().size(); i++) {
          if (!descr.empty()) {
             descr += ";";
@@ -148,8 +149,12 @@ class MaterializeTranslator : public mlir::relalg::Translator {
             continue;
          }
          
-         descr += cast<::mlir::StringAttr>(colAttr).str() + ":" + arrowDescrFromType(getBaseType(tupleType.getType(i)));
+         auto colName = cast<::mlir::StringAttr>(colAttr).str();
+         auto typeDescr = arrowDescrFromType(getBaseType(tupleType.getType(i)));
+         PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp: Column %zu: '%s' type '%s'", i, colName.c_str(), typeDescr.c_str());
+         descr += colName + ":" + typeDescr;
       }
+      PGX_LOG(RELALG_LOWER, DEBUG, "MaterializeOp: Final description string: '%s'", descr.c_str());
       
       tableBuilder = builder.create<mlir::dsa::CreateDS>(materializeOp.getLoc(), mlir::dsa::TableBuilderType::get(builder.getContext(), orderedAttributes.getTupleType(builder.getContext())), builder.getStringAttr(descr));
       
