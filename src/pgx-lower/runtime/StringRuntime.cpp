@@ -19,6 +19,11 @@
 #include "pgx-lower/runtime/StringRuntime.h"
 #include "lingodb/runtime/helpers.h"
 
+extern "C" {
+#include "postgres.h"
+#include "utils/memutils.h"
+}
+
 #include <cstdlib>
 #include <cstdio>
 #include <cerrno>
@@ -28,6 +33,20 @@
 #include <algorithm>
 #include <string>
 #include <cctype>
+
+// Helper function to allocate memory using PostgreSQL's memory context
+// This ensures memory is properly tracked and freed by PostgreSQL
+static inline uint8_t* pgx_alloc(size_t size) {
+    if (size == 0) {
+        return nullptr;
+    }
+
+   #ifdef POSTGRESQL_EXTENSION
+       return static_cast<uint8_t*>(MemoryContextAlloc(CurrentMemoryContext, size));
+   #else
+       return new uint8_t[size];
+   #endif
+}
 
 //taken from NoisePage
 // src: https://github.com/cmu-db/noisepage/blob/c2635d3360dd24a9f7a094b4b8bcd131d99f2d4b/src/execution/sql/operators/like_operators.cpp
@@ -276,7 +295,7 @@ runtime::VarLen32 runtime::StringRuntime::fromInt(int64_t value) {
       throw std::runtime_error("Failed to convert int64_t to string");
    }
    
-   uint8_t* data = new uint8_t[len];
+   uint8_t* data = pgx_alloc(len);
    memcpy(data, buffer, len);
    return runtime::VarLen32(data, len);
 }
@@ -291,7 +310,7 @@ runtime::VarLen32 runtime::StringRuntime::fromFloat32(float value) {
       throw std::runtime_error("Failed to convert float to string");
    }
    
-   uint8_t* data = new uint8_t[len];
+   uint8_t* data = pgx_alloc(len);
    memcpy(data, buffer, len);
    return runtime::VarLen32(data, len);
 }
@@ -306,7 +325,7 @@ runtime::VarLen32 runtime::StringRuntime::fromFloat64(double value) {
       throw std::runtime_error("Failed to convert double to string");
    }
    
-   uint8_t* data = new uint8_t[len];
+   uint8_t* data = pgx_alloc(len);
    memcpy(data, buffer, len);
    return runtime::VarLen32(data, len);
 }
@@ -325,7 +344,7 @@ runtime::VarLen32 runtime::StringRuntime::fromDecimal(__int128 val, int32_t scal
       // For zero, we just return "0" regardless of scale
       result = "0";
       size_t len = result.length();
-      uint8_t* data = new uint8_t[len];
+      uint8_t* data = pgx_alloc(len);
       memcpy(data, result.data(), len);
       return runtime::VarLen32(data, len);
    } else {
@@ -351,16 +370,16 @@ runtime::VarLen32 runtime::StringRuntime::fromDecimal(__int128 val, int32_t scal
    }
    
    size_t len = result.length();
-   uint8_t* data = new uint8_t[len];
+   uint8_t* data = pgx_alloc(len);
    memcpy(data, result.data(), len);
    
    return runtime::VarLen32(data, len);
 }
 
 runtime::VarLen32 runtime::StringRuntime::fromChar(uint64_t val, size_t bytes) {
-   char* data = new char[bytes];
+   uint8_t* data = pgx_alloc(bytes);
    memcpy(data, &val, bytes);
-   return runtime::VarLen32((uint8_t*) data, bytes);
+   return runtime::VarLen32(data, bytes);
 }
 
 #define STR_CMP(NAME, OP)                                                                                  \
@@ -408,7 +427,7 @@ size_t runtime::StringRuntime::findMatch(VarLen32 str, VarLen32 needle, size_t s
 runtime::VarLen32 runtime::StringRuntime::concat(runtime::VarLen32 left, runtime::VarLen32 right) {
    // Allocate space for concatenated string
    uint32_t totalLen = left.getLen() + right.getLen();
-   uint8_t* result = new uint8_t[totalLen];
+   uint8_t* result = pgx_alloc(totalLen);
    
    // Copy left string
    memcpy(result, left.getPtr(), left.getLen());
@@ -420,7 +439,7 @@ runtime::VarLen32 runtime::StringRuntime::concat(runtime::VarLen32 left, runtime
 
 runtime::VarLen32 runtime::StringRuntime::concat3(runtime::VarLen32 a, runtime::VarLen32 b, runtime::VarLen32 c) {
    uint32_t totalLen = a.getLen() + b.getLen() + c.getLen();
-   uint8_t* result = new uint8_t[totalLen];
+   uint8_t* result = pgx_alloc(totalLen);
    
    uint32_t offset = 0;
    memcpy(result + offset, a.getPtr(), a.getLen());
@@ -435,7 +454,7 @@ runtime::VarLen32 runtime::StringRuntime::concat3(runtime::VarLen32 a, runtime::
 // Case conversion operations
 runtime::VarLen32 runtime::StringRuntime::upper(runtime::VarLen32 str) {
    uint32_t len = str.getLen();
-   uint8_t* result = new uint8_t[len];
+   uint8_t* result = pgx_alloc(len);
    
    for (uint32_t i = 0; i < len; i++) {
       char ch = static_cast<char>(str.getPtr()[i]);
@@ -447,7 +466,7 @@ runtime::VarLen32 runtime::StringRuntime::upper(runtime::VarLen32 str) {
 
 runtime::VarLen32 runtime::StringRuntime::lower(runtime::VarLen32 str) {
    uint32_t len = str.getLen();
-   uint8_t* result = new uint8_t[len];
+   uint8_t* result = pgx_alloc(len);
    
    for (uint32_t i = 0; i < len; i++) {
       char ch = static_cast<char>(str.getPtr()[i]);
@@ -470,7 +489,7 @@ runtime::VarLen32 runtime::StringRuntime::substring(runtime::VarLen32 str, int32
    
    // Handle out of bounds
    if (startIdx >= strLen || length <= 0) {
-      return runtime::VarLen32(new uint8_t[0], 0);
+      return runtime::VarLen32(pgx_alloc(0), 0);
    }
    
    // Adjust length if it exceeds string length
@@ -478,7 +497,7 @@ runtime::VarLen32 runtime::StringRuntime::substring(runtime::VarLen32 str, int32
       length = strLen - startIdx;
    }
    
-   uint8_t* result = new uint8_t[length];
+   uint8_t* result = pgx_alloc(length);
    memcpy(result, str.getPtr() + startIdx, length);
    
    return runtime::VarLen32(result, length);
@@ -513,10 +532,10 @@ runtime::VarLen32 runtime::StringRuntime::trim(runtime::VarLen32 str) {
    
    int32_t trimmedLen = end - start + 1;
    if (trimmedLen <= 0) {
-      return runtime::VarLen32(new uint8_t[0], 0);
+      return runtime::VarLen32(pgx_alloc(0), 0);
    }
    
-   uint8_t* result = new uint8_t[trimmedLen];
+   uint8_t* result = pgx_alloc(trimmedLen);
    memcpy(result, data + start, trimmedLen);
    
    return runtime::VarLen32(result, trimmedLen);
@@ -534,10 +553,10 @@ runtime::VarLen32 runtime::StringRuntime::ltrim(runtime::VarLen32 str) {
    
    int32_t trimmedLen = len - start;
    if (trimmedLen <= 0) {
-      return runtime::VarLen32(new uint8_t[0], 0);
+      return runtime::VarLen32(pgx_alloc(0), 0);
    }
    
-   uint8_t* result = new uint8_t[trimmedLen];
+   uint8_t* result = pgx_alloc(trimmedLen);
    memcpy(result, data + start, trimmedLen);
    
    return runtime::VarLen32(result, trimmedLen);
@@ -555,10 +574,10 @@ runtime::VarLen32 runtime::StringRuntime::rtrim(runtime::VarLen32 str) {
    
    int32_t trimmedLen = end + 1;
    if (trimmedLen <= 0) {
-      return runtime::VarLen32(new uint8_t[0], 0);
+      return runtime::VarLen32(pgx_alloc(0), 0);
    }
    
-   uint8_t* result = new uint8_t[trimmedLen];
+   uint8_t* result = pgx_alloc(trimmedLen);
    memcpy(result, data, trimmedLen);
    
    return runtime::VarLen32(result, trimmedLen);
@@ -566,17 +585,10 @@ runtime::VarLen32 runtime::StringRuntime::rtrim(runtime::VarLen32 str) {
 
 // Case-insensitive pattern matching
 bool runtime::StringRuntime::ilike(runtime::VarLen32 str, runtime::VarLen32 pattern) {
-   // Convert both strings to lowercase for comparison
    runtime::VarLen32 lowerStr = lower(str);
    runtime::VarLen32 lowerPattern = lower(pattern);
    
-   // Use the existing like function with lowercase strings
    bool result = like(lowerStr, lowerPattern);
-   
-   // Clean up allocated memory
-   delete[] lowerStr.getPtr();
-   delete[] lowerPattern.getPtr();
-   
    return result;
 }
 
