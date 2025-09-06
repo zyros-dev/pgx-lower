@@ -157,9 +157,27 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                             PGX_LOG(GENERAL, DEBUG, "Setting column %d name to: col%d", i, i);
                         }
 
-                        if (tle->expr && nodeTag(tle->expr) == T_Var) {
-                            Var* var = reinterpret_cast<Var*>(tle->expr);
-                            columnType = var->vartype;
+                        if (tle->expr) {
+                            if (nodeTag(tle->expr) == T_Var) {
+                                Var* var = reinterpret_cast<Var*>(tle->expr);
+                                columnType = var->vartype;
+                            }
+                            else if (nodeTag(tle->expr) == T_OpExpr) {
+                                OpExpr* opExpr = reinterpret_cast<OpExpr*>(tle->expr);
+                                columnType = opExpr->opresulttype;
+                            }
+                            else if (nodeTag(tle->expr) == T_FuncExpr) {
+                                FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
+                                columnType = funcExpr->funcresulttype;
+                            }
+                            else if (nodeTag(tle->expr) == T_CoalesceExpr) {
+                                CoalesceExpr* coalesceExpr = reinterpret_cast<CoalesceExpr*>(tle->expr);
+                                columnType = coalesceExpr->coalescetype;
+                            }
+                            else if (nodeTag(tle->expr) == T_Const) {
+                                Const* constExpr = reinterpret_cast<Const*>(tle->expr);
+                                columnType = constExpr->consttype;
+                            }
 
                             int16 typLen;
                             bool typByVal;
@@ -170,7 +188,7 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                             typeByVal = typByVal;
                             typeAlign = typAlign;
 
-                            PGX_LOG(GENERAL, DEBUG, "Column %d type OID: %d", i, columnType);
+                            PGX_LOG(GENERAL, DEBUG, "Column %d type OID: %d (expr type: %d)", i, columnType, nodeTag(tle->expr));
                         }
                         break;
                     }

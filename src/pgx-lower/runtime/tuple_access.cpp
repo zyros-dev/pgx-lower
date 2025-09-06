@@ -216,6 +216,12 @@ void table_builder_add<::runtime::VarLen32>(void* builder, bool is_valid, ::runt
         }
 
         if (!is_null && value.getLen() > 0) {
+            PGX_LOG(RUNTIME, DEBUG,
+                    "VarLen32: len=%u, ptr=%p, first chars: %.10s", 
+                    value.getLen(), 
+                    value.getPtr(),
+                    value.getPtr());
+            
             MemoryContext oldContext = CurrentMemoryContext;
             MemoryContextSwitchTo(CurTransactionContext);
 
