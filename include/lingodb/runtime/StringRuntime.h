@@ -23,6 +23,29 @@ struct StringRuntime {
    static VarLen32 fromDecimal(__int128, int32_t scale);
    static VarLen32 substr(VarLen32 str, size_t from,size_t to);
    static NO_SIDE_EFFECTS size_t findMatch(VarLen32 str,VarLen32 needle, size_t start, size_t end);
+   
+   // String concatenation operations
+   static VarLen32 concat(VarLen32 left, VarLen32 right);
+   static VarLen32 concat3(VarLen32 a, VarLen32 b, VarLen32 c);
+   
+   // Case conversion operations
+   static VarLen32 upper(VarLen32 str);
+   static VarLen32 lower(VarLen32 str);
+   
+   // PostgreSQL-style SUBSTRING (FROM pos FOR length)
+   static VarLen32 substring(VarLen32 str, int32_t start, int32_t length);
+   
+   // Length operations
+   static NO_SIDE_EFFECTS int32_t length(VarLen32 str);
+   static NO_SIDE_EFFECTS int32_t charLength(VarLen32 str);
+   
+   // Trimming operations
+   static VarLen32 trim(VarLen32 str);
+   static VarLen32 ltrim(VarLen32 str);
+   static VarLen32 rtrim(VarLen32 str);
+   
+   // Case-insensitive pattern matching
+   static bool NO_SIDE_EFFECTS ilike(VarLen32 str, VarLen32 pattern);
 };
 } // namespace runtime
 #endif // RUNTIME_STRINGRUNTIME_H

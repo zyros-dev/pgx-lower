@@ -1,9 +1,11 @@
 #include "lingodb/runtime/PostgreSQLRuntime.h"
 #include "lingodb/runtime/DataSourceIteration.h"
+#include "lingodb/runtime/StringRuntime.h"
 #include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
+#include <cctype>
 #include <string>
 #include <vector>
 #include <json.h>
@@ -42,6 +44,7 @@ static void* g_execution_context = nullptr;
 
 extern "C" {
 
+// Keep the original names that JIT expects
 void rt_set_execution_context(void* context_ptr) {
     g_execution_context = context_ptr;
 }
@@ -63,6 +66,7 @@ void* rt_get_execution_context() {
     return &dummy_context;
 }
 
+// ColumnType enum - keep outside namespace runtime for internal use
 enum class ColumnType {
     INTEGER,
     BIGINT,
@@ -158,25 +162,28 @@ static TableSpec parse_table_spec(const char* json_str) {
 
 // Memory context callback for TableBuilder cleanup
 static void cleanup_tablebuilder_callback(void* arg) {
-    TableBuilder* tb = static_cast<TableBuilder*>(arg);
+    runtime::TableBuilder* tb = static_cast<runtime::TableBuilder*>(arg);
 }
 
-// Original C implementation functions that do the actual work
-__attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime::VarLen32 schema_param) {
+namespace runtime {
+
+// Constructor
+TableBuilder::TableBuilder() 
+    : data(nullptr), row_count(0), current_column_index(0), total_columns(0) {
+}
+
+// Static factory method
+TableBuilder* TableBuilder::create(VarLen32 schema_param) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_create IN: schema_param len=%u", schema_param.getLen());
 
-    // Use PostgreSQL memory management instead of malloc()
     MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
-    void* builder_memory = palloc(sizeof(TableBuilder));
-    TableBuilder* builder = new(builder_memory) TableBuilder();
+    void* builder_memory = palloc(sizeof(runtime::TableBuilder));
+    runtime::TableBuilder* builder = new(builder_memory) runtime::TableBuilder();
 
-    // Initialize total_columns - start with 0 and let it be set dynamically
-    // This is more flexible during MLIR pipeline development
-    builder->total_columns = 0;  // Will be set based on actual usage
+    builder->total_columns = 0;
     PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_create: initialized with dynamic column tracking");
 
-    // Register cleanup callback for C++ destructor safety during PostgreSQL error recovery
     MemoryContextCallback* callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
     callback->func = cleanup_tablebuilder_callback;
     callback->arg = builder;
@@ -187,102 +194,100 @@ __attribute__((noinline, cdecl)) void* rt_tablebuilder_create(runtime::VarLen32 
     return builder;
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_nextrow(void* builder) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow IN: builder=%p", builder);
+void TableBuilder::nextRow() {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow IN: builder=%p", this);
 
-    if (builder) {
-        auto* tb = static_cast<TableBuilder*>(builder);
+    // 'this' is the TableBuilder instance
 
-        // LingoDB currColumn assertion pattern: verify all columns were filled
-        if (tb->current_column_index != tb->total_columns) {
-            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: column count info - expected %d columns, got %d (this may be normal during MLIR pipeline development)",
-                 tb->total_columns, tb->current_column_index);
-        } else {
-            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: LingoDB column validation passed - %d columns filled", tb->current_column_index);
-        }
-
-        tb->row_count++;
-
-        if (tb->total_columns > 0) {
-            PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: submitting row with %d columns", tb->total_columns);
-            add_tuple_to_result(tb->total_columns);
-        }
-
-        tb->current_column_index = 0;
-        PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_nextrow: reset column index to 0 for row %ld", tb->row_count);
+    // LingoDB currColumn assertion pattern: verify all columns were filled
+    if (current_column_index != total_columns) {
+        PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: column count info - expected %d columns, got %d (this may be normal during MLIR pipeline development)",
+             total_columns, current_column_index);
+    } else {
+        PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: LingoDB column validation passed - %d columns filled", current_column_index);
     }
+
+    row_count++;
+
+    if (total_columns > 0) {
+        PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: submitting row with %d columns", total_columns);
+        add_tuple_to_result(total_columns);
+    }
+
+    current_column_index = 0;
+    PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: reset column index to 0 for row %ld", row_count);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow OUT");
 }
 
-__attribute__((noinline, cdecl)) void* rt_tablebuilder_build(void* builder) {
+TableBuilder* TableBuilder::build() {
     mark_results_ready_for_streaming();
-    return builder;
+    return this;
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_addint64(void* builder, bool is_valid, int64_t value) {
+void TableBuilder::addInt64(bool is_valid, int64_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint64 IN: value=%ld, is_valid=%s", value, is_valid ? "true" : "false");
-    pgx_lower::runtime::table_builder_add<int64_t>(builder, is_valid, value);
+    pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint64 OUT");
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_addint32(void* builder, bool is_valid, int32_t value) {
+void TableBuilder::addInt32(bool is_valid, int32_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
-    pgx_lower::runtime::table_builder_add<int32_t>(builder, is_valid, value);
+    pgx_lower::runtime::table_builder_add<int32_t>(this, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 OUT");
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_addbool(void* builder, bool is_valid, bool value) {
+void TableBuilder::addBool(bool is_valid, bool value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool IN: value=%s, is_valid=%s", value ? "true" : "false", is_valid ? "true" : "false");
-    pgx_lower::runtime::table_builder_add<bool>(builder, is_valid, value);
+    pgx_lower::runtime::table_builder_add<bool>(this, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool OUT");
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_addint8(void* builder, bool is_valid, int8_t value) {
+void TableBuilder::addInt8(bool is_valid, int8_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint8 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
-    pgx_lower::runtime::table_builder_add<int8_t>(builder, is_valid, value);
+    pgx_lower::runtime::table_builder_add<int8_t>(this, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint8 OUT");
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_addint16(void* builder, bool is_valid, int16_t value) {
+void TableBuilder::addInt16(bool is_valid, int16_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint16 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
-    pgx_lower::runtime::table_builder_add<int16_t>(builder, is_valid, value);
+    pgx_lower::runtime::table_builder_add<int16_t>(this, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint16 OUT");
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_addfloat32(void* builder, bool is_valid, float value) {
+void TableBuilder::addFloat32(bool is_valid, float value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat32 IN: value=%f, is_valid=%s", value, is_valid ? "true" : "false");
-    pgx_lower::runtime::table_builder_add<float>(builder, is_valid, value);
+    pgx_lower::runtime::table_builder_add<float>(this, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat32 OUT");
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_addfloat64(void* builder, bool is_valid, double value) {
+void TableBuilder::addFloat64(bool is_valid, double value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat64 IN: value=%f, is_valid=%s", value, is_valid ? "true" : "false");
-    pgx_lower::runtime::table_builder_add<double>(builder, is_valid, value);
+    pgx_lower::runtime::table_builder_add<double>(this, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat64 OUT");
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_addbinary(void* builder, bool is_valid, runtime::VarLen32 value) {
+void TableBuilder::addBinary(bool is_valid, VarLen32 value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbinary IN: len=%u, is_valid=%s", value.getLen(), is_valid ? "true" : "false");
-    pgx_lower::runtime::table_builder_add<runtime::VarLen32>(builder, is_valid, value);
+    pgx_lower::runtime::table_builder_add<runtime::VarLen32>(this, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbinary OUT");
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_adddecimal(void* builder, bool is_valid, __int128 value) {
+void TableBuilder::addDecimal(bool is_valid, __int128 value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s", is_valid ? "true" : "false");
     // Just truncate to int64 for now - proper decimal support can come later
     // TODO: Implement me!
-    pgx_lower::runtime::table_builder_add<int64_t>(builder, is_valid, static_cast<int64_t>(value));
+    pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, static_cast<int64_t>(value));
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal OUT");
 }
 
 // Fixed-size binary type
-__attribute__((noinline, cdecl)) void rt_tablebuilder_addfixedsized(void* builder, bool is_valid, int64_t value) {
+void TableBuilder::addFixedSized(bool is_valid, int64_t value) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfixedsized IN: value=%ld, is_valid=%s", value, is_valid ? "true" : "false");
-    pgx_lower::runtime::table_builder_add<int64_t>(builder, is_valid, value);
+    pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfixedsized OUT");
 }
 
-__attribute__((noinline, cdecl)) void rt_tablebuilder_destroy(void* builder) {
+void TableBuilder::destroy(void* builder) {
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_destroy IN: builder=%p", builder);
     // Note: We don't need to do anything here because the MemoryContextCallback
     // will handle cleanup when the memory context is reset/deleted.
@@ -305,7 +310,7 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
     uint32_t actual_len = varlen32_param.getLen();
     const char* json_spec = varlen32_param.data();
 
-    PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: LingoDB VarLen32 len=%u", actual_len);
+    PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: LingoDB runtime::VarLen32 len=%u", actual_len);
 
     if (!json_spec || actual_len == 0) {
         return false;
@@ -367,19 +372,19 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
 
                     switch (type_oid) {
                     case BOOLOID:
-                        col_spec.type = ColumnType::BOOLEAN;
+                        col_spec.type = ::ColumnType::BOOLEAN;
                         break;
                     case INT8OID:
-                        col_spec.type = ColumnType::BIGINT;
+                        col_spec.type = ::ColumnType::BIGINT;
                         break;
                     case TEXTOID:
                     case VARCHAROID:
                     case BPCHAROID:
-                        col_spec.type = ColumnType::STRING;
+                        col_spec.type = ::ColumnType::STRING;
                         break;
                     case INT4OID:
                     case INT2OID:
-                        col_spec.type = ColumnType::INTEGER;
+                        col_spec.type = ::ColumnType::INTEGER;
                         break;
                     default:
                         PGX_ERROR("Unsupported type %d for column '%s'", type_oid, col_spec.name.c_str());
@@ -396,7 +401,7 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
     }
     PG_CATCH();
     {
-        PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: exception reading VarLen32 JSON, using fallback");
+        PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: exception reading runtime::VarLen32 JSON, using fallback");
         FlushErrorState();
     }
     PG_END_TRY();
@@ -432,9 +437,9 @@ static void setup_fallback_table_config(DataSourceIterator* iter) {
     // Set up default 2-integer column layout
     ColumnSpec col1, col2;
     col1.name = "value";
-    col1.type = ColumnType::INTEGER;
+    col1.type = ::ColumnType::INTEGER;
     col2.name = "score";
-    col2.type = ColumnType::INTEGER;
+    col2.type = ::ColumnType::INTEGER;
     iter->columns.push_back(col1);
     iter->columns.push_back(col2);
 }
@@ -450,7 +455,7 @@ static void* open_table_connection(const std::string& table_name) {
     return table_handle;
 }
 
-__attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(void* context, runtime::VarLen32 varlen32_param) {
+DataSourceIteration* DataSourceIteration::start(ExecutionContext* context, runtime::VarLen32 varlen32_param) {
     PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_start IN: context=%p, varlen32_param len=%u", context, varlen32_param.getLen());
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_start called with context: %p, varlen32_param len: %u", context, varlen32_param.getLen());
 
@@ -474,7 +479,7 @@ __attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(void* contex
     iter->current_value = 0;
     iter->current_is_null = true;
 
-    // Decode table specification from VarLen32 parameter
+    // Decode table specification from runtime::VarLen32 parameter
     bool json_parsed = decode_table_specification(varlen32_param, iter);
 
     // Set up fallback configuration if JSON parsing failed
@@ -489,24 +494,24 @@ __attribute__((noinline, cdecl)) void* rt_datasourceiteration_start(void* contex
     iter->table_handle = open_table_connection(iter->table_name);
 
     if (!iter->table_handle) {
-        return iter;
+        return reinterpret_cast<DataSourceIteration*>(iter);
     }
 
     g_current_iterator = iter;
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_start returning iterator: %p", iter);
     PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_start OUT: iterator=%p", iter);
-    return iter;
+    return reinterpret_cast<DataSourceIteration*>(iter);
 }
 
-__attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(void* iterator) {
-    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid IN: iterator=%p", iterator);
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid called with iterator: %p", iterator);
-    if (!iterator) return false;
+bool DataSourceIteration::isValid() {
+    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid IN: iterator=%p", this);
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid called with iterator: %p", this);
+    if (!this) return false;
 
-    auto* iter = (DataSourceIterator*)iterator;
+    auto* iter = (DataSourceIterator*)this;
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: iter=%p, table_handle=%p", iter, iter->table_handle);
     if (!iter->table_handle) {
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 1 (no table_handle)", iterator);
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 1 (no table_handle)", this);
         PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid OUT: false (no table_handle)");
         return false;
     }
@@ -542,20 +547,20 @@ __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(void* itera
 
             // Determine the column type from the PostgreSQL type OID
             if (type_oid == 16) {  // BOOLOID
-                col_spec.type = ColumnType::BOOLEAN;
+                col_spec.type = ::ColumnType::BOOLEAN;
                 bool is_null = false;
                 bool bool_value = get_bool_field(iter->table_handle, pg_column_index, &is_null);
                 iter->bool_values[i] = bool_value ? 1 : 0;
                 iter->bool_nulls[i] = is_null;
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %s (null=%s)",
                      i, col_spec.name.c_str(), pg_column_index, bool_value ? "true" : "false", is_null ? "true" : "false");
-            } else if (col_spec.type == ColumnType::BIGINT) {
+            } else if (col_spec.type == ::ColumnType::BIGINT) {
                 bool is_null = false;
                 iter->bigint_values[i] = get_int64_field(iter->table_handle, pg_column_index, &is_null);
                 iter->bigint_nulls[i] = is_null;
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)",
                      i, col_spec.name.c_str(), pg_column_index, (long long)iter->bigint_values[i], is_null ? "true" : "false");
-            } else if (col_spec.type == ColumnType::STRING || col_spec.type == ColumnType::TEXT || col_spec.type == ColumnType::VARCHAR) {
+            } else if (col_spec.type == ::ColumnType::STRING || col_spec.type == ::ColumnType::TEXT || col_spec.type == ::ColumnType::VARCHAR) {
                 bool is_null = false;
                 int32_t length = 0;
                 const char* string_value = get_string_field(iter->table_handle, pg_column_index, &is_null, &length, type_oid);
@@ -566,7 +571,7 @@ __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(void* itera
                     iter->string_data[i] = "";
                 }
 
-                // Create VarLen32 from the persistent string storage
+                // Create runtime::VarLen32 from the persistent string storage
                 iter->string_values[i] = runtime::VarLen32(
                     reinterpret_cast<uint8_t*>(const_cast<char*>(iter->string_data[i].data())),
                     iter->string_data[i].length());
@@ -586,36 +591,37 @@ __attribute__((noinline, cdecl)) bool rt_datasourceiteration_isvalid(void* itera
         }
 
         // Maintain legacy fields for backward compatibility
-        if (iter->columns.size() >= 1 && iter->columns[0].type == ColumnType::INTEGER) {
+        if (iter->columns.size() >= 1 && iter->columns[0].type == ::ColumnType::INTEGER) {
             iter->current_id = iter->int_values[0];
             iter->current_id_is_null = iter->int_nulls[0];
             iter->current_value = iter->current_id;
             iter->current_is_null = iter->current_id_is_null;
         }
-        if (iter->columns.size() >= 2 && iter->columns[1].type == ColumnType::INTEGER) {
+        if (iter->columns.size() >= 2 && iter->columns[1].type == ::ColumnType::INTEGER) {
             iter->current_col2 = iter->int_values[1];
             iter->current_col2_is_null = iter->int_nulls[1];
         }
 
         iter->has_current_tuple = true;
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 2", iterator);
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 2", this);
         PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid OUT: true");
         return true;
     } else {
         iter->has_current_tuple = false;
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 3", iterator);
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 3", this);
         PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid OUT: false");
         return false;
     }
 }
 
-__attribute__((noinline, cdecl)) void rt_datasourceiteration_access(void* iterator, void* row_data) {
-    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_access IN: iterator=%p, row_data=%p", iterator, row_data);
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access called with iterator: %p, row_data: %p", iterator, row_data);
+void DataSourceIteration::access(RecordBatchInfo* info) {
+    auto *row_data = info;
+    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_access IN: iterator=%p, row_data=%p", this, row_data);
+    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access called with iterator: %p, row_data: %p", this, row_data);
     if (row_data) {
         PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: row_data is valid, proceeding");
 
-        auto* iter = (DataSourceIterator*)iterator;
+        auto* iter = (DataSourceIterator*)this;
         if (!iter || !iter->has_current_tuple) {
             PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: invalid iterator or no current tuple");
             return;
@@ -647,11 +653,11 @@ __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(void* iterat
             // Set validity bitmap based on whether the value is NULL
             // Note: In LingoDB, 1 means valid (not null), 0 means null
             bool is_null;
-            if (col_spec.type == ColumnType::BOOLEAN) {
+            if (col_spec.type == ::ColumnType::BOOLEAN) {
                 is_null = iter->bool_nulls[i];
-            } else if (col_spec.type == ColumnType::BIGINT) {
+            } else if (col_spec.type == ::ColumnType::BIGINT) {
                 is_null = iter->bigint_nulls[i];
-            } else if (col_spec.type == ColumnType::STRING || col_spec.type == ColumnType::TEXT || col_spec.type == ColumnType::VARCHAR) {
+            } else if (col_spec.type == ::ColumnType::STRING || col_spec.type == ::ColumnType::TEXT || col_spec.type == ::ColumnType::VARCHAR) {
                 is_null = iter->string_nulls[i];
             } else {
                 is_null = iter->int_nulls[i];
@@ -665,22 +671,22 @@ __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(void* iterat
             column_info_ptr[VALID_MULTIPLIER_IDX] = 0;                 // validMultiplier
             column_info_ptr[VALID_BUFFER_IDX] = (size_t)&valid_bitmaps[i]; // validBuffer - unique per column
 
-            if (col_spec.type == ColumnType::BOOLEAN) {
+            if (col_spec.type == ::ColumnType::BOOLEAN) {
                 column_info_ptr[VARLEN_BUFFER_IDX] = 0;                    // varLenBuffer = nullptr for non-string types
                 column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->bool_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) boolean = %s at %p",
                      i, col_spec.name.c_str(), iter->bool_values[i] ? "true" : "false", &iter->bool_values[i]);
-            } else if (col_spec.type == ColumnType::BIGINT) {
+            } else if (col_spec.type == ::ColumnType::BIGINT) {
                 column_info_ptr[VARLEN_BUFFER_IDX] = 0;                    // varLenBuffer = nullptr for non-string types
                 column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->bigint_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) bigint = %lld at %p",
                      i, col_spec.name.c_str(), (long long)iter->bigint_values[i], &iter->bigint_values[i]);
-            } else if (col_spec.type == ColumnType::STRING || col_spec.type == ColumnType::TEXT || col_spec.type == ColumnType::VARCHAR) {
+            } else if (col_spec.type == ::ColumnType::STRING || col_spec.type == ::ColumnType::TEXT || col_spec.type == ::ColumnType::VARCHAR) {
                 // For strings, DSA expects valueBuffer to be int32 offsets and varLenBuffer to be raw bytes
-                // But since we already have VarLen32 structs, we'll provide them directly
+                // But since we already have runtime::VarLen32 structs, we'll provide them directly
                 // The DSA lowering will need to handle this case
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->string_values[i]; // dataBuffer points to VarLen32 struct
-                column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)&iter->string_values[i]; // varLenBuffer also points to VarLen32 struct
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->string_values[i]; // dataBuffer points to runtime::VarLen32 struct
+                column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)&iter->string_values[i]; // varLenBuffer also points to runtime::VarLen32 struct
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) string len=%u at %p",
                      i, col_spec.name.c_str(), iter->string_values[i].getLen(), &iter->string_values[i]);
             } else {
@@ -701,14 +707,12 @@ __attribute__((noinline, cdecl)) void rt_datasourceiteration_access(void* iterat
     __sync_synchronize();
 }
 
-__attribute__((noinline, cdecl)) void rt_datasourceiteration_next(void* iterator) {
-    if (iterator) {
-        auto* iter = (DataSourceIterator*)iterator;
-        iter->has_current_tuple = false;
-    }
+void DataSourceIteration::next() {
+    auto* iter = (DataSourceIterator*)this;
+    iter->has_current_tuple = false;
 }
 
-__attribute__((noinline, cdecl)) void rt_datasourceiteration_end(void* iterator) {
+void DataSourceIteration::end(DataSourceIteration* iterator) {
     if (iterator) {
         auto* iter = (DataSourceIterator*)iterator;
 
@@ -717,7 +721,7 @@ __attribute__((noinline, cdecl)) void rt_datasourceiteration_end(void* iterator)
             close_postgres_table(iter->table_handle);
             iter->table_handle = nullptr;
         }
-        if (g_current_iterator == iterator) {
+        if (g_current_iterator == (DataSourceIterator*)iterator) {
             g_current_iterator = nullptr;
         }
 
@@ -729,125 +733,215 @@ __attribute__((noinline, cdecl)) void rt_datasourceiteration_end(void* iterator)
 
 } // extern "C"
 
-// ============================================================================
-// C++ namespace runtime implementation
-// ============================================================================
-
-namespace runtime {
-
-// ============================================================================
-// TableBuilder static methods and member functions
-// ============================================================================
-
-void* TableBuilder::create(VarLen32 schema) {
-    return rt_tablebuilder_create(schema);
-}
-
-void TableBuilder::destroy(void* builder) {
-    rt_tablebuilder_destroy(builder);
-}
-
-void* TableBuilder::build() {
-    return rt_tablebuilder_build(this);
-}
-
-void TableBuilder::nextRow() {
-    rt_tablebuilder_nextrow(this);
-}
-
-void TableBuilder::addBool(bool isValid, bool value) {
-    rt_tablebuilder_addbool(this, isValid, value);
-}
-
-void TableBuilder::addInt8(bool isValid, int8_t value) {
-    rt_tablebuilder_addint8(this, isValid, value);
-}
-
-void TableBuilder::addInt16(bool isValid, int16_t value) {
-    rt_tablebuilder_addint16(this, isValid, value);
-}
-
-void TableBuilder::addInt32(bool isValid, int32_t value) {
-    rt_tablebuilder_addint32(this, isValid, value);
-}
-
-void TableBuilder::addInt64(bool isValid, int64_t value) {
-    rt_tablebuilder_addint64(this, isValid, value);
-}
-
-void TableBuilder::addFloat32(bool isValid, float value) {
-    rt_tablebuilder_addfloat32(this, isValid, value);
-}
-
-void TableBuilder::addFloat64(bool isValid, double value) {
-    rt_tablebuilder_addfloat64(this, isValid, value);
-}
-
-void TableBuilder::addDecimal(bool isValid, __int128 value) {
-    rt_tablebuilder_adddecimal(this, isValid, value);
-}
-
-void TableBuilder::addFixedSized(bool isValid, int64_t value) {
-    rt_tablebuilder_addfixedsized(this, isValid, value);
-}
-
-void TableBuilder::addBinary(bool isValid, VarLen32 value) {
-    rt_tablebuilder_addbinary(this, isValid, value);
-}
-
-// ============================================================================
-// DataSourceIteration implementation
-// ============================================================================
-
-DataSourceIteration::DataSourceIteration(const std::shared_ptr<DataSource>& dataSource, const std::vector<size_t>& colIds)
-    : currChunk(nullptr), dataSource(dataSource), colIds(colIds) {
-}
-
-DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionContext, runtime::VarLen32 description) {
-    // Create a wrapper that delegates to our C implementation
-    void* iter = rt_datasourceiteration_start(executionContext, description);
-    
-    // For now, just cast the C iterator as a DataSourceIteration
-    // This is a hack but works since we control both sides
-    return reinterpret_cast<DataSourceIteration*>(iter);
-}
-
-bool DataSourceIteration::isValid() {
-    return rt_datasourceiteration_isvalid(this);
-}
-
-void DataSourceIteration::next() {
-    rt_datasourceiteration_next(this);
-}
-
-void DataSourceIteration::access(RecordBatchInfo* info) {
-    rt_datasourceiteration_access(this, info);
-}
-
-void DataSourceIteration::end(DataSourceIteration* iteration) {
-    rt_datasourceiteration_end(iteration);
-}
-
-// ============================================================================
-// DataSource implementation
-// ============================================================================
-
-DataSource* DataSource::get(VarLen32 description) {
-    // This is a stub - the actual implementation would create a concrete DataSource
-    // For now, return nullptr since we're using the C implementation directly
-    return nullptr;
-}
-
-// ============================================================================
 // Global context functions
-// ============================================================================
+void* getExecutionContext() {
+    return ::rt_get_execution_context();  // Call the global C function
+}
 
 void setExecutionContext(void* context) {
-    rt_set_execution_context(context);
+    ::rt_set_execution_context(context);  // Call the global C function
 }
 
-void* getExecutionContext() {
-    return rt_get_execution_context();
+// ============================================================================
+// StringRuntime implementation for new PostgreSQL operations
+// ============================================================================
+    // TODO: Move these into the stringruntime.cpp
+
+runtime::VarLen32 runtime::StringRuntime::concat(runtime::VarLen32 left, runtime::VarLen32 right) {
+    PGX_LOG(RUNTIME, IO, "StringRuntime::concat IN: left_len=%u, right_len=%u", left.getLen(), right.getLen());
+    
+    // Allocate space for concatenated string
+    uint32_t totalLen = left.getLen() + right.getLen();
+    char* result = static_cast<char*>(palloc(totalLen + 1));
+    
+    // Copy left string
+    memcpy(result, left.getPtr(), left.getLen());
+    // Copy right string
+    memcpy(result + left.getLen(), right.getPtr(), right.getLen());
+    result[totalLen] = '\0';
+    
+    runtime::VarLen32 resultVarLen(reinterpret_cast<uint8_t*>(result), totalLen);
+    PGX_LOG(RUNTIME, IO, "StringRuntime::concat OUT: result_len=%u", totalLen);
+    return resultVarLen;
+}
+
+runtime::VarLen32 runtime::StringRuntime::concat3(runtime::VarLen32 a, runtime::VarLen32 b, runtime::VarLen32 c) {
+    PGX_LOG(RUNTIME, IO, "StringRuntime::concat3 IN: a_len=%u, b_len=%u, c_len=%u", 
+            a.getLen(), b.getLen(), c.getLen());
+    
+    uint32_t totalLen = a.getLen() + b.getLen() + c.getLen();
+    char* result = static_cast<char*>(palloc(totalLen + 1));
+    
+    uint32_t offset = 0;
+    memcpy(result + offset, a.getPtr(), a.getLen());
+    offset += a.getLen();
+    memcpy(result + offset, b.getPtr(), b.getLen());
+    offset += b.getLen();
+    memcpy(result + offset, c.getPtr(), c.getLen());
+    result[totalLen] = '\0';
+    
+    runtime::VarLen32 resultVarLen(reinterpret_cast<uint8_t*>(result), totalLen);
+    PGX_LOG(RUNTIME, IO, "StringRuntime::concat3 OUT: result_len=%u", totalLen);
+    return resultVarLen;
+}
+
+runtime::VarLen32 runtime::StringRuntime::upper(runtime::VarLen32 str) {
+    PGX_LOG(RUNTIME, IO, "StringRuntime::upper IN: str_len=%u", str.getLen());
+    
+    char* result = static_cast<char*>(palloc(str.getLen() + 1));
+    const char* input = reinterpret_cast<const char*>(str.getPtr());
+    
+    for (uint32_t i = 0; i < str.getLen(); i++) {
+        result[i] = toupper(input[i]);
+    }
+    result[str.getLen()] = '\0';
+    
+    runtime::VarLen32 resultVarLen(reinterpret_cast<uint8_t*>(result), str.getLen());
+    PGX_LOG(RUNTIME, IO, "StringRuntime::upper OUT: result_len=%u", str.getLen());
+    return resultVarLen;
+}
+
+runtime::VarLen32 runtime::StringRuntime::lower(runtime::VarLen32 str) {
+    PGX_LOG(RUNTIME, IO, "StringRuntime::lower IN: str_len=%u", str.getLen());
+    
+    char* result = static_cast<char*>(palloc(str.getLen() + 1));
+    const char* input = reinterpret_cast<const char*>(str.getPtr());
+    
+    for (uint32_t i = 0; i < str.getLen(); i++) {
+        result[i] = tolower(input[i]);
+    }
+    result[str.getLen()] = '\0';
+    
+    runtime::VarLen32 resultVarLen(reinterpret_cast<uint8_t*>(result), str.getLen());
+    PGX_LOG(RUNTIME, IO, "StringRuntime::lower OUT: result_len=%u", str.getLen());
+    return resultVarLen;
+}
+
+runtime::VarLen32 runtime::StringRuntime::substring(runtime::VarLen32 str, int32_t start, int32_t length) {
+    PGX_LOG(RUNTIME, IO, "StringRuntime::substring IN: str_len=%u, start=%d, length=%d", 
+            str.getLen(), start, length);
+    
+    // PostgreSQL SUBSTRING uses 1-based indexing
+    // Convert to 0-based for internal use
+    int32_t zeroBasedStart = start - 1;
+    
+    // Handle negative or out of bounds start
+    if (zeroBasedStart < 0) {
+        zeroBasedStart = 0;
+    }
+    if (zeroBasedStart >= static_cast<int32_t>(str.getLen())) {
+        // Return empty string
+        char* empty = static_cast<char*>(palloc(1));
+        empty[0] = '\0';
+        return runtime::VarLen32(reinterpret_cast<uint8_t*>(empty), 0);
+    }
+    
+    // Calculate actual length to copy
+    int32_t maxLen = str.getLen() - zeroBasedStart;
+    int32_t actualLen = (length < 0 || length > maxLen) ? maxLen : length;
+    
+    char* result = static_cast<char*>(palloc(actualLen + 1));
+    memcpy(result, str.getPtr() + zeroBasedStart, actualLen);
+    result[actualLen] = '\0';
+    
+    runtime::VarLen32 resultVarLen(reinterpret_cast<uint8_t*>(result), actualLen);
+    PGX_LOG(RUNTIME, IO, "StringRuntime::substring OUT: result_len=%d", actualLen);
+    return resultVarLen;
+}
+
+int32_t runtime::StringRuntime::length(runtime::VarLen32 str) {
+    return static_cast<int32_t>(str.getLen());
+}
+
+int32_t runtime::StringRuntime::charLength(runtime::VarLen32 str) {
+    // For now, assume single-byte characters
+    // TODO: Handle multi-byte UTF-8 properly
+    return static_cast<int32_t>(str.getLen());
+}
+
+runtime::VarLen32 runtime::StringRuntime::trim(runtime::VarLen32 str) {
+    PGX_LOG(RUNTIME, IO, "StringRuntime::trim IN: str_len=%u", str.getLen());
+    
+    const char* input = reinterpret_cast<const char*>(str.getPtr());
+    uint32_t len = str.getLen();
+    
+    // Find start of non-whitespace
+    uint32_t start = 0;
+    while (start < len && isspace(input[start])) {
+        start++;
+    }
+    
+    // Find end of non-whitespace
+    uint32_t end = len;
+    while (end > start && isspace(input[end - 1])) {
+        end--;
+    }
+    
+    uint32_t resultLen = end - start;
+    char* result = static_cast<char*>(palloc(resultLen + 1));
+    memcpy(result, input + start, resultLen);
+    result[resultLen] = '\0';
+    
+    runtime::VarLen32 resultVarLen(reinterpret_cast<uint8_t*>(result), resultLen);
+    PGX_LOG(RUNTIME, IO, "StringRuntime::trim OUT: result_len=%u", resultLen);
+    return resultVarLen;
+}
+
+runtime::VarLen32 runtime::StringRuntime::ltrim(runtime::VarLen32 str) {
+    PGX_LOG(RUNTIME, IO, "StringRuntime::ltrim IN: str_len=%u", str.getLen());
+    
+    const char* input = reinterpret_cast<const char*>(str.getPtr());
+    uint32_t len = str.getLen();
+    
+    // Find start of non-whitespace
+    uint32_t start = 0;
+    while (start < len && isspace(input[start])) {
+        start++;
+    }
+    
+    uint32_t resultLen = len - start;
+    char* result = static_cast<char*>(palloc(resultLen + 1));
+    memcpy(result, input + start, resultLen);
+    result[resultLen] = '\0';
+    
+    runtime::VarLen32 resultVarLen(reinterpret_cast<uint8_t*>(result), resultLen);
+    PGX_LOG(RUNTIME, IO, "StringRuntime::ltrim OUT: result_len=%u", resultLen);
+    return resultVarLen;
+}
+
+runtime::VarLen32 runtime::StringRuntime::rtrim(runtime::VarLen32 str) {
+    PGX_LOG(RUNTIME, IO, "StringRuntime::rtrim IN: str_len=%u", str.getLen());
+    
+    const char* input = reinterpret_cast<const char*>(str.getPtr());
+    uint32_t len = str.getLen();
+    
+    // Find end of non-whitespace
+    uint32_t end = len;
+    while (end > 0 && isspace(input[end - 1])) {
+        end--;
+    }
+    
+    char* result = static_cast<char*>(palloc(end + 1));
+    memcpy(result, input, end);
+    result[end] = '\0';
+    
+    runtime::VarLen32 resultVarLen(reinterpret_cast<uint8_t*>(result), end);
+    PGX_LOG(RUNTIME, IO, "StringRuntime::rtrim OUT: result_len=%u", end);
+    return resultVarLen;
+}
+
+bool runtime::StringRuntime::ilike(runtime::VarLen32 str, runtime::VarLen32 pattern) {
+    PGX_LOG(RUNTIME, IO, "StringRuntime::ilike IN: str_len=%u, pattern_len=%u", 
+            str.getLen(), pattern.getLen());
+    
+    // Convert both strings to lowercase and then use regular like
+    runtime::VarLen32 lowerStr = lower(str);
+    runtime::VarLen32 lowerPattern = lower(pattern);
+    
+    bool result = like(lowerStr, lowerPattern);
+    
+    PGX_LOG(RUNTIME, IO, "StringRuntime::ilike OUT: result=%d", result);
+    return result;
 }
 
 } // namespace runtime

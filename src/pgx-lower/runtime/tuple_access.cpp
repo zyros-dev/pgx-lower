@@ -1,5 +1,6 @@
 #include "pgx-lower/runtime/tuple_access.h"
 #include "pgx-lower/runtime/runtime_templates.h"
+#include "lingodb/runtime/PostgreSQLRuntime.h"  // For runtime::TableBuilder
 #include <vector>
 #include "pgx-lower/runtime/PostgreSQLDataSource.h"
 #include "pgx-lower/utility/error_handling.h"
@@ -136,7 +137,7 @@ namespace pgx_lower::runtime {
 
 template<typename T>
 void table_builder_add(void* builder, bool is_valid, T value) {
-    auto* tb = static_cast<TableBuilder*>(builder);
+    auto* tb = static_cast<::runtime::TableBuilder*>(builder);
     
     // LLVM JIT may pass non-standard boolean values (e.g., 255 instead of 1)
     // Pretty weird.
@@ -206,7 +207,7 @@ template void table_builder_add<double>(void*, bool, double);
 
 template<>
 void table_builder_add<::runtime::VarLen32>(void* builder, bool is_valid, ::runtime::VarLen32 value) {
-    auto* tb = static_cast<TableBuilder*>(builder);
+    auto* tb = static_cast<::runtime::TableBuilder*>(builder);
     bool is_null = !is_valid;
 
     if (tb) {

@@ -12,14 +12,11 @@ extern "C" {
 }
 #endif
 
-struct TableBuilder {
-    void* data;
-    int64_t row_count;
-    int32_t current_column_index;
-    int32_t total_columns;
-    
-    TableBuilder() : data(nullptr), row_count(0), current_column_index(0), total_columns(0) {}
-};
+// TableBuilder moved to runtime namespace in lingodb/runtime/PostgreSQLRuntime.h
+// Using forward declaration to avoid circular dependencies
+namespace runtime {
+    struct TableBuilder;
+}
 
 namespace pgx_lower::runtime {
 

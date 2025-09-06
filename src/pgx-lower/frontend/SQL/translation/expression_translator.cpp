@@ -257,27 +257,39 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
     switch (opOid) {
     case PG_TEXT_LIKE_OID: {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LIKE operator to db.runtime_call");
-        
-        bool hasNullableOperand = lhs.getType().isa<mlir::db::NullableType>() ||
-                                  rhs.getType().isa<mlir::db::NullableType>();
-        
-        mlir::Type resultType = hasNullableOperand ?
-            mlir::Type(mlir::db::NullableType::get(builder_->getContext(), builder_->getI1Type())) :
-            mlir::Type(builder_->getI1Type());
-        
-        auto op = builder_->create<mlir::db::RuntimeCall>(
-            builder_->getUnknownLoc(),
-            resultType,
-            builder_->getStringAttr("Like"),
-            mlir::ValueRange{lhs, rhs});
-        
+
+        bool hasNullableOperand = lhs.getType().isa<mlir::db::NullableType>()
+                                  || rhs.getType().isa<mlir::db::NullableType>();
+
+        mlir::Type resultType =
+            hasNullableOperand ? mlir::Type(mlir::db::NullableType::get(builder_->getContext(), builder_->getI1Type()))
+                               : mlir::Type(builder_->getI1Type());
+
+        auto op = builder_->create<mlir::db::RuntimeCall>(builder_->getUnknownLoc(),
+                                                          resultType,
+                                                          builder_->getStringAttr("Like"),
+                                                          mlir::ValueRange{lhs, rhs});
+
         return op.getRes();
     }
     case PG_TEXT_CONCAT_OID: {
-        // String concatenation operator ||
-        // TODO: Concat is not yet implemented in LingoDB runtime
-        PGX_WARNING("String concatenation (||) not yet implemented in runtime");
-        return lhs; // Return first operand as placeholder
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating || operator to StringRuntime::concat");
+
+        bool hasNullableOperand = lhs.getType().isa<mlir::db::NullableType>()
+                                  || rhs.getType().isa<mlir::db::NullableType>();
+
+        mlir::Type resultType =
+            hasNullableOperand
+                ? mlir::Type(mlir::db::NullableType::get(builder_->getContext(),
+                                                         mlir::db::StringType::get(builder_->getContext())))
+                : mlir::Type(mlir::db::StringType::get(builder_->getContext()));
+
+        auto op = builder_->create<mlir::db::RuntimeCall>(builder_->getUnknownLoc(),
+                                                          resultType,
+                                                          builder_->getStringAttr("Concat"),
+                                                          mlir::ValueRange{lhs, rhs});
+
+        return op.getRes();
     }
     }
 
@@ -487,32 +499,70 @@ auto PostgreSQLASTTranslator::Impl::translateFuncExpr(FuncExpr* funcExpr) -> ::m
             PGX_ERROR("UPPER requires exactly 1 argument");
             return nullptr;
         }
-        // TODO: Upper is not yet implemented
-        PGX_WARNING("UPPER function not yet implemented in runtime");
-        return args[0];
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating UPPER function to StringRuntime::upper");
+
+        bool hasNullableOperand = args[0].getType().isa<mlir::db::NullableType>();
+        mlir::Type resultType = hasNullableOperand ?
+            mlir::Type(mlir::db::NullableType::get(builder_->getContext(), mlir::db::StringType::get(builder_->getContext()))) :
+            mlir::Type(mlir::db::StringType::get(builder_->getContext()));
+
+        auto op = builder_->create<mlir::db::RuntimeCall>(
+            loc,
+            resultType,
+            builder_->getStringAttr("Upper"),
+            mlir::ValueRange{args[0]});
+        return op.getRes();
     }
-    
+
     case PG_F_LOWER: {
         if (args.size() != 1) {
             PGX_ERROR("LOWER requires exactly 1 argument");
             return nullptr;
         }
-        // TODO: Lower is not yet implemented
-        PGX_WARNING("LOWER function not yet implemented in runtime");
-        return args[0];
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LOWER function to StringRuntime::lower");
+
+        bool hasNullableOperand = args[0].getType().isa<mlir::db::NullableType>();
+        mlir::Type resultType = hasNullableOperand ?
+            mlir::Type(mlir::db::NullableType::get(builder_->getContext(), mlir::db::StringType::get(builder_->getContext()))) :
+            mlir::Type(mlir::db::StringType::get(builder_->getContext()));
+
+        auto op = builder_->create<mlir::db::RuntimeCall>(
+            loc,
+            resultType,
+            builder_->getStringAttr("Lower"),
+            mlir::ValueRange{args[0]});
+        return op.getRes();
     }
-    
+
     case PG_F_SUBSTRING: {
         if (args.size() < 2 || args.size() > 3) {
             PGX_ERROR("SUBSTRING requires 2 or 3 arguments, got %d", args.size());
             return nullptr;
         }
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating SUBSTRING function to db.runtime_call");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating SUBSTRING function to StringRuntime::substring");
+
+        // SUBSTRING(string, start [, length])
+        // If length is not provided, we need to add a default
+        std::vector<mlir::Value> substringArgs = {args[0], args[1]};
+        if (args.size() == 3) {
+            substringArgs.push_back(args[2]);
+        } else {
+            // Default length to max int32 for "rest of string"
+            auto maxLength = builder_->create<mlir::arith::ConstantIntOp>(
+                loc, 2147483647, builder_->getI32Type());
+            substringArgs.push_back(maxLength);
+        }
+
+        bool hasNullableOperand = args[0].getType().isa<mlir::db::NullableType>();
+        mlir::Type resultType = hasNullableOperand ?
+            mlir::Type(mlir::db::NullableType::get(builder_->getContext(), mlir::db::StringType::get(builder_->getContext()))) :
+            mlir::Type(mlir::db::StringType::get(builder_->getContext()));
+
         auto op = builder_->create<mlir::db::RuntimeCall>(
             loc,
-            mlir::db::StringType::get(builder_->getContext()),
+            resultType,
             builder_->getStringAttr("Substring"),
-            mlir::ValueRange{args});
+            mlir::ValueRange{substringArgs});
         return op.getRes();
     }
 
@@ -579,8 +629,8 @@ auto PostgreSQLASTTranslator::Impl::translateNullTest(NullTest* nullTest) -> ::m
     } else {
         // Non-nullable types: return constant based on null test type
         // LingoDB pattern: IS_NOT_NULL returns true, IS_NULL returns false for non-nullable
-        return builder_->create<mlir::db::ConstantOp>(builder_->getUnknownLoc(), 
-            builder_->getI1Type(), 
+        return builder_->create<mlir::db::ConstantOp>(builder_->getUnknownLoc(),
+            builder_->getI1Type(),
             builder_->getIntegerAttr(builder_->getI1Type(), nullTest->nulltesttype == PG_IS_NOT_NULL));
     }
 }
@@ -588,7 +638,7 @@ auto PostgreSQLASTTranslator::Impl::translateNullTest(NullTest* nullTest) -> ::m
 auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value {
     PGX_LOG(AST_TRANSLATE, IO, "translateCoalesceExpr IN: CoalesceExpr with %d arguments",
             coalesceExpr && coalesceExpr->args ? coalesceExpr->args->length : 0);
-    
+
     if (!coalesceExpr || !builder_) {
         PGX_ERROR("Invalid CoalesceExpr parameters");
         return nullptr;
@@ -601,12 +651,12 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
         auto nullType = mlir::db::NullableType::get(&context_, builder_->getI32Type());
         return builder_->create<mlir::db::NullOp>(builder_->getUnknownLoc(), nullType);
     }
-    
+
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE has %d arguments", coalesceExpr->args->length);
 
     // First, translate all arguments
     std::vector<::mlir::Value> translatedArgs;
-    
+
     ListCell* cell;
     foreach(cell, coalesceExpr->args) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating COALESCE argument");
@@ -619,18 +669,18 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
             PGX_WARNING("Failed to translate COALESCE argument");
         }
     }
-    
+
     if (translatedArgs.empty()) {
         PGX_WARNING("All COALESCE arguments failed to translate");
         auto nullType = mlir::db::NullableType::get(&context_, builder_->getI32Type());
         return builder_->create<mlir::db::NullOp>(builder_->getUnknownLoc(), nullType);
     }
-    
+
     // Determine common type following LingoDB pattern
     // Only create nullable result if at least one argument is nullable
     bool hasNullable = false;
     mlir::Type baseType = nullptr;
-    
+
     for (const auto& arg : translatedArgs) {
         auto argType = arg.getType();
         if (auto nullableType = argType.dyn_cast<mlir::db::NullableType>()) {
@@ -644,18 +694,18 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
             }
         }
     }
-    
+
     // COALESCE should always produce nullable type in query contexts
     // Even when all inputs are non-nullable, the result needs nullable wrapper
     // for proper MaterializeOp handling
     mlir::Type commonType = mlir::db::NullableType::get(&context_, baseType);
-    
+
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE common type determined - forcing nullable for query context");
-    
+
     // Now convert arguments to common type only if necessary
     for (size_t i = 0; i < translatedArgs.size(); ++i) {
         auto& val = translatedArgs[i];
-        
+
         if (val.getType() != commonType) {
             // Need to convert to common type
             if (!val.getType().isa<mlir::db::NullableType>()) {
@@ -664,7 +714,7 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
                 auto falseFlag = builder_->create<mlir::arith::ConstantIntOp>(
                     builder_->getUnknownLoc(), 0, 1);
                 val = builder_->create<mlir::db::AsNullableOp>(
-                    builder_->getUnknownLoc(), 
+                    builder_->getUnknownLoc(),
                     commonType,    // Result type (nullable)
                     val,           // Value to wrap
                     falseFlag      // Explicit null flag = false (NOT NULL)
@@ -673,26 +723,26 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
             }
         }
     }
-    
+
     // COALESCE using simplified recursive pattern that's safer
     std::function<mlir::Value(size_t)> buildCoalesceRecursive = [&](size_t index) -> mlir::Value {
         auto loc = builder_->getUnknownLoc();
-        
+
         // Base case: if we're at the last argument, return it
         if (index >= translatedArgs.size() - 1) {
             return translatedArgs.back();
         }
-        
-        // Get current argument  
+
+        // Get current argument
         mlir::Value value = translatedArgs[index];
-        
+
         // Create null check - follow LingoDB semantics exactly
         mlir::Value isNull = builder_->create<mlir::db::IsNullOp>(loc, value);
         mlir::Value isNotNull = builder_->create<mlir::db::NotOp>(loc, isNull);
-        
+
         // Create scf.IfOp with automatic region creation (safer than manual blocks)
         auto ifOp = builder_->create<mlir::scf::IfOp>(loc, commonType, isNotNull, true);
-        
+
         // Then block: yield current value
         auto& thenRegion = ifOp.getThenRegion();
         auto* thenBlock = &thenRegion.front();
@@ -704,30 +754,30 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
             thenValue = builder_->create<mlir::db::AsNullableOp>(loc, commonType, value, falseFlag);
         }
         builder_->create<mlir::scf::YieldOp>(loc, thenValue);
-        
+
         // Else block: recursive call for remaining arguments
         auto& elseRegion = ifOp.getElseRegion();
         auto* elseBlock = &elseRegion.front();
         builder_->setInsertionPointToEnd(elseBlock);
         auto elseValue = buildCoalesceRecursive(index + 1);
         builder_->create<mlir::scf::YieldOp>(loc, elseValue);
-        
+
         // Reset insertion point after the ifOp
         builder_->setInsertionPointAfter(ifOp);
-        
+
         return ifOp.getResult(0);
     };
-    
+
     auto result = buildCoalesceRecursive(0);
-    
+
     // Log result type info
     bool resultIsNullable = result.getType().isa<mlir::db::NullableType>();
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE final result is nullable: %d", resultIsNullable);
-    
+
     // COALESCE always returns nullable type for query context compatibility
     // No unpacking needed - MaterializeOp requires nullable types
     bool resultIsNullableType = result.getType().isa<mlir::db::NullableType>();
     PGX_LOG(AST_TRANSLATE, IO, "translateCoalesceExpr OUT: MLIR Value (nullable=%d)", resultIsNullableType);
-    
+
     return result;
 }

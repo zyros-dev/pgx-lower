@@ -1,14 +1,31 @@
 #ifndef RUNTIME_POSTGRESQLRUNTIME_H
 #define RUNTIME_POSTGRESQLRUNTIME_H
 #include "lingodb/runtime/helpers.h"
+#include <cstdint>
 
 namespace runtime {
+
+// Forward declarations for integration with DataSourceIteration
+class DataSourceIteration;
+class ExecutionContext;
+struct RecordBatchInfo;
+
 struct TableBuilder {
+   // Data members - matching the internal structure from runtime_templates.h
+   void* data;
+   int64_t row_count;
+   int32_t current_column_index;
+   int32_t total_columns;
+   
+   // Constructor/Destructor
+   TableBuilder();
+   ~TableBuilder() = default;
+   
    // Table building functions
-   static void* create(VarLen32 schema);  // Static factory method
-   static void destroy(void* builder);     // Static cleanup method
-   void* build();                          // Member function
-   void nextRow();                         // Member function
+   static TableBuilder* create(VarLen32 schema);  // Static factory method
+   static void destroy(void* builder);            // Static cleanup method
+   TableBuilder* build();                         // Member function returning this
+   void nextRow();                                // Member function
    
    // Add data functions - non-static member functions
    void addBool(bool isValid, bool value);
@@ -23,10 +40,10 @@ struct TableBuilder {
    void addBinary(bool isValid, VarLen32 value);
 };
 
-// DataSourceIteration is already defined in DataSourceIteration.h
-// We just need to implement its static methods in our .cpp file
+// DataSourceIteration is defined in DataSourceIteration.h
+// We just add our static method implementations in the .cpp file
 
-// Global context functions (not in a struct as they're standalone)
+// Global context functions (standalone in runtime namespace)
 void setExecutionContext(void* context);
 void* getExecutionContext();
 
