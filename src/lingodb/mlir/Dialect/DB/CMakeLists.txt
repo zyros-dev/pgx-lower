@@ -8,9 +8,9 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_BINARY_DIR}/include)
 
 gen_rt_def(dump-rt-defs "DumpRuntime.h")
-gen_rt_def(string-rt-defs "StringRuntime.h")
+gen_rt_def(string-rt-defs "StringRuntime.h" "pgx-lower")
 gen_rt_def(date-rt-defs "DateRuntime.h")
-gen_rt_def(postgresql-rt-defs "PostgreSQLRuntime.h")
+gen_rt_def(postgresql-rt-defs "PostgreSQLRuntime.h" "pgx-lower")
 
 add_mlir_dialect_library(MLIRDBDialect
         DBDialect.cpp

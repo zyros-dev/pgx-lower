@@ -1,7 +1,7 @@
 add_library(runtime OBJECT
         helpers.cpp
         MetaData.cpp
-        StringRuntime.cpp
+        ../../pgx-lower/runtime/StringRuntime.cpp
         Hash.cpp)
 
 target_include_directories(runtime PUBLIC ${CMAKE_SOURCE_DIR}/vendored)

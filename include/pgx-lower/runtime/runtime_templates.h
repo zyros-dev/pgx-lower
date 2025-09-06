@@ -12,7 +12,6 @@ extern "C" {
 }
 #endif
 
-// TableBuilder moved to runtime namespace in lingodb/runtime/PostgreSQLRuntime.h
 // Using forward declaration to avoid circular dependencies
 namespace runtime {
     struct TableBuilder;

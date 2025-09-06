@@ -16,7 +16,7 @@
  * for the entire MLIR lowering pipeline and runtime function registry.
  */
 
-#include "lingodb/runtime/StringRuntime.h"
+#include "pgx-lower/runtime/StringRuntime.h"
 #include "lingodb/runtime/helpers.h"
 
 #include <cstdlib>
@@ -27,6 +27,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <string>
+#include <cctype>
 
 //taken from NoisePage
 // src: https://github.com/cmu-db/noisepage/blob/c2635d3360dd24a9f7a094b4b8bcd131d99f2d4b/src/execution/sql/operators/like_operators.cpp
@@ -401,5 +402,181 @@ size_t runtime::StringRuntime::findMatch(VarLen32 str, VarLen32 needle, size_t s
 
    if (found == std::string::npos || found + needle.getLen() > end) return invalidPos;
    return found + needle.getLen();
+}
+
+// String concatenation operations
+runtime::VarLen32 runtime::StringRuntime::concat(runtime::VarLen32 left, runtime::VarLen32 right) {
+   // Allocate space for concatenated string
+   uint32_t totalLen = left.getLen() + right.getLen();
+   uint8_t* result = new uint8_t[totalLen];
+   
+   // Copy left string
+   memcpy(result, left.getPtr(), left.getLen());
+   // Copy right string
+   memcpy(result + left.getLen(), right.getPtr(), right.getLen());
+   
+   return runtime::VarLen32(result, totalLen);
+}
+
+runtime::VarLen32 runtime::StringRuntime::concat3(runtime::VarLen32 a, runtime::VarLen32 b, runtime::VarLen32 c) {
+   uint32_t totalLen = a.getLen() + b.getLen() + c.getLen();
+   uint8_t* result = new uint8_t[totalLen];
+   
+   uint32_t offset = 0;
+   memcpy(result + offset, a.getPtr(), a.getLen());
+   offset += a.getLen();
+   memcpy(result + offset, b.getPtr(), b.getLen());
+   offset += b.getLen();
+   memcpy(result + offset, c.getPtr(), c.getLen());
+   
+   return runtime::VarLen32(result, totalLen);
+}
+
+// Case conversion operations
+runtime::VarLen32 runtime::StringRuntime::upper(runtime::VarLen32 str) {
+   uint32_t len = str.getLen();
+   uint8_t* result = new uint8_t[len];
+   
+   for (uint32_t i = 0; i < len; i++) {
+      char ch = static_cast<char>(str.getPtr()[i]);
+      result[i] = static_cast<uint8_t>(std::toupper(ch));
+   }
+   
+   return runtime::VarLen32(result, len);
+}
+
+runtime::VarLen32 runtime::StringRuntime::lower(runtime::VarLen32 str) {
+   uint32_t len = str.getLen();
+   uint8_t* result = new uint8_t[len];
+   
+   for (uint32_t i = 0; i < len; i++) {
+      char ch = static_cast<char>(str.getPtr()[i]);
+      result[i] = static_cast<uint8_t>(std::tolower(ch));
+   }
+   
+   return runtime::VarLen32(result, len);
+}
+
+// PostgreSQL-style SUBSTRING (FROM pos FOR length)
+runtime::VarLen32 runtime::StringRuntime::substring(runtime::VarLen32 str, int32_t start, int32_t length) {
+   // PostgreSQL uses 1-based indexing
+   if (start <= 0) {
+      start = 1;
+   }
+   
+   // Convert to 0-based index
+   int32_t startIdx = start - 1;
+   int32_t strLen = static_cast<int32_t>(str.getLen());
+   
+   // Handle out of bounds
+   if (startIdx >= strLen || length <= 0) {
+      return runtime::VarLen32(new uint8_t[0], 0);
+   }
+   
+   // Adjust length if it exceeds string length
+   if (startIdx + length > strLen) {
+      length = strLen - startIdx;
+   }
+   
+   uint8_t* result = new uint8_t[length];
+   memcpy(result, str.getPtr() + startIdx, length);
+   
+   return runtime::VarLen32(result, length);
+}
+
+// Length operations
+int32_t runtime::StringRuntime::length(runtime::VarLen32 str) {
+   return static_cast<int32_t>(str.getLen());
+}
+
+int32_t runtime::StringRuntime::charLength(runtime::VarLen32 str) {
+   // For now, assume single-byte encoding (UTF-8 support would need more work)
+   return static_cast<int32_t>(str.getLen());
+}
+
+// Trimming operations
+runtime::VarLen32 runtime::StringRuntime::trim(runtime::VarLen32 str) {
+   const uint8_t* data = str.getPtr();
+   int32_t len = str.getLen();
+   
+   // Find first non-space
+   int32_t start = 0;
+   while (start < len && data[start] == ' ') {
+      start++;
+   }
+   
+   // Find last non-space
+   int32_t end = len - 1;
+   while (end >= start && data[end] == ' ') {
+      end--;
+   }
+   
+   int32_t trimmedLen = end - start + 1;
+   if (trimmedLen <= 0) {
+      return runtime::VarLen32(new uint8_t[0], 0);
+   }
+   
+   uint8_t* result = new uint8_t[trimmedLen];
+   memcpy(result, data + start, trimmedLen);
+   
+   return runtime::VarLen32(result, trimmedLen);
+}
+
+runtime::VarLen32 runtime::StringRuntime::ltrim(runtime::VarLen32 str) {
+   const uint8_t* data = str.getPtr();
+   int32_t len = str.getLen();
+   
+   // Find first non-space
+   int32_t start = 0;
+   while (start < len && data[start] == ' ') {
+      start++;
+   }
+   
+   int32_t trimmedLen = len - start;
+   if (trimmedLen <= 0) {
+      return runtime::VarLen32(new uint8_t[0], 0);
+   }
+   
+   uint8_t* result = new uint8_t[trimmedLen];
+   memcpy(result, data + start, trimmedLen);
+   
+   return runtime::VarLen32(result, trimmedLen);
+}
+
+runtime::VarLen32 runtime::StringRuntime::rtrim(runtime::VarLen32 str) {
+   const uint8_t* data = str.getPtr();
+   int32_t len = str.getLen();
+   
+   // Find last non-space
+   int32_t end = len - 1;
+   while (end >= 0 && data[end] == ' ') {
+      end--;
+   }
+   
+   int32_t trimmedLen = end + 1;
+   if (trimmedLen <= 0) {
+      return runtime::VarLen32(new uint8_t[0], 0);
+   }
+   
+   uint8_t* result = new uint8_t[trimmedLen];
+   memcpy(result, data, trimmedLen);
+   
+   return runtime::VarLen32(result, trimmedLen);
+}
+
+// Case-insensitive pattern matching
+bool runtime::StringRuntime::ilike(runtime::VarLen32 str, runtime::VarLen32 pattern) {
+   // Convert both strings to lowercase for comparison
+   runtime::VarLen32 lowerStr = lower(str);
+   runtime::VarLen32 lowerPattern = lower(pattern);
+   
+   // Use the existing like function with lowercase strings
+   bool result = like(lowerStr, lowerPattern);
+   
+   // Clean up allocated memory
+   delete[] lowerStr.getPtr();
+   delete[] lowerPattern.getPtr();
+   
+   return result;
 }
 

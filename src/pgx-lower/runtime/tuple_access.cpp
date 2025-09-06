@@ -1,6 +1,6 @@
 #include "pgx-lower/runtime/tuple_access.h"
 #include "pgx-lower/runtime/runtime_templates.h"
-#include "lingodb/runtime/PostgreSQLRuntime.h"  // For runtime::TableBuilder
+#include "pgx-lower/runtime/PostgreSQLRuntime.h"  // For runtime::TableBuilder
 #include <vector>
 #include "pgx-lower/runtime/PostgreSQLDataSource.h"
 #include "pgx-lower/utility/error_handling.h"
