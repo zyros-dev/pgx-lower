@@ -95,6 +95,8 @@ public:
     auto translateAggref(Aggref* aggref) -> ::mlir::Value;
     auto translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value;
     auto translateScalarArrayOpExpr(ScalarArrayOpExpr* scalarArrayOp) -> ::mlir::Value;
+    auto translateCaseExpr(CaseExpr* caseExpr) -> ::mlir::Value;
+    auto translateExpressionWithCaseTest(Expr* expr, ::mlir::Value caseTestValue) -> ::mlir::Value;
     
     auto translatePlanNode(Plan* plan, TranslationContext& context) -> ::mlir::Operation*;
     auto translateSeqScan(SeqScan* seqScan, TranslationContext& context) -> ::mlir::Operation*;

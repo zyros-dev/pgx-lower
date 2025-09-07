@@ -24,6 +24,11 @@ auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::V
     case T_NullTest: return translateNullTest(reinterpret_cast<NullTest*>(expr));
     case T_CoalesceExpr: return translateCoalesceExpr(reinterpret_cast<CoalesceExpr*>(expr));
     case T_ScalarArrayOpExpr: return translateScalarArrayOpExpr(reinterpret_cast<ScalarArrayOpExpr*>(expr));
+    case T_CaseExpr: return translateCaseExpr(reinterpret_cast<CaseExpr*>(expr));
+    case T_CaseTestExpr: {
+        PGX_WARNING("CaseTestExpr encountered outside of CASE expression context");
+        return nullptr;
+    }
     case T_RelabelType: {
         // T_RelabelType is a type coercion wrapper - just unwrap and translate the underlying expression
         RelabelType* relabel = reinterpret_cast<RelabelType*>(expr);
@@ -926,4 +931,191 @@ auto PostgreSQLASTTranslator::Impl::translateScalarArrayOpExpr(ScalarArrayOpExpr
     
     PGX_LOG(AST_TRANSLATE, IO, "translateScalarArrayOpExpr OUT: MLIR Value");
     return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translateCaseExpr(CaseExpr* caseExpr) -> ::mlir::Value {
+    PGX_LOG(AST_TRANSLATE, IO, "translateCaseExpr IN: CaseExpr with %d WHEN clauses",
+            caseExpr && caseExpr->args ? caseExpr->args->length : 0);
+    
+    if (!caseExpr || !builder_) {
+        PGX_ERROR("Invalid CaseExpr parameters");
+        return nullptr;
+    }
+    
+    // CASE expressions in PostgreSQL come in two forms:
+    // 1. Simple: CASE expr WHEN val1 THEN result1 WHEN val2 THEN result2 ELSE default END
+    // 2. Searched: CASE WHEN cond1 THEN result1 WHEN cond2 THEN result2 ELSE default END
+    
+    // Check if this is a simple CASE (has an arg) or searched CASE (no arg)
+    ::mlir::Value caseArg = nullptr;
+    if (caseExpr->arg) {
+        caseArg = translateExpression(caseExpr->arg);
+        if (!caseArg) {
+            PGX_ERROR("Failed to translate CASE argument expression");
+            return nullptr;
+        }
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Simple CASE expression with comparison argument");
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Searched CASE expression (no comparison argument)");
+    }
+    
+    // Build nested if-then-else structure from WHEN clauses
+    // We'll build this bottom-up, starting with the ELSE clause
+    ::mlir::Value elseResult = nullptr;
+    if (caseExpr->defresult) {
+        elseResult = translateExpression(caseExpr->defresult);
+        if (!elseResult) {
+            PGX_ERROR("Failed to translate CASE ELSE expression");
+            return nullptr;
+        }
+    } else {
+        // If no ELSE clause, use NULL as default
+        // Create a nullable i32 type for the NULL result
+        auto baseType = builder_->getI32Type();
+        auto nullableType = mlir::db::NullableType::get(builder_->getContext(), baseType);
+        elseResult = builder_->create<mlir::db::NullOp>(builder_->getUnknownLoc(), nullableType);
+    }
+    
+    // Process WHEN clauses in reverse order to build nested if-else chain
+    ::mlir::Value result = elseResult;
+    
+    if (caseExpr->args && caseExpr->args->length > 0) {
+        // Process from last to first WHEN clause
+        for (int i = caseExpr->args->length - 1; i >= 0; i--) {
+            Node* whenNode = static_cast<Node*>(lfirst(&caseExpr->args->elements[i]));
+            if (nodeTag(whenNode) != T_CaseWhen) {
+                PGX_ERROR("Expected CaseWhen node in CASE args, got %d", nodeTag(whenNode));
+                continue;
+            }
+            
+            CaseWhen* whenClause = reinterpret_cast<CaseWhen*>(whenNode);
+            
+            // Translate the WHEN condition
+            ::mlir::Value condition = nullptr;
+            if (caseArg) {
+                // Simple CASE: whenClause->expr may contain CaseTestExpr that needs to be replaced
+                // We need to translate the expression with CaseTestExpr replaced by caseArg
+                ::mlir::Value whenCondition = translateExpressionWithCaseTest(whenClause->expr, caseArg);
+                if (!whenCondition) {
+                    PGX_ERROR("Failed to translate WHEN condition in simple CASE");
+                    continue;
+                }
+                condition = whenCondition;
+            } else {
+                // Searched CASE: whenClause->expr is the condition itself
+                condition = translateExpression(whenClause->expr);
+                if (!condition) {
+                    PGX_ERROR("Failed to translate WHEN condition");
+                    continue;
+                }
+            }
+            
+            // Ensure condition is boolean
+            auto conditionType = condition.getType();
+            if (!conditionType.isa<mlir::IntegerType>() || 
+                conditionType.cast<mlir::IntegerType>().getWidth() != 1) {
+                // Need to convert to boolean using db.derive_truth
+                condition = builder_->create<mlir::db::DeriveTruth>(
+                    builder_->getUnknownLoc(), condition);
+            }
+            
+            // Translate the THEN result
+            ::mlir::Value thenResult = translateExpression(whenClause->result);
+            if (!thenResult) {
+                PGX_ERROR("Failed to translate THEN result");
+                continue;
+            }
+            
+            // Ensure both branches return the same type
+            // If types don't match, we need to ensure they're compatible
+            auto resultType = result.getType();
+            auto thenType = thenResult.getType();
+            
+            // If one is nullable and the other isn't, make both nullable
+            if (resultType != thenType) {
+                // Check if one is nullable and the other isn't
+                bool resultIsNullable = resultType.isa<mlir::db::NullableType>();
+                bool thenIsNullable = thenType.isa<mlir::db::NullableType>();
+                
+                if (resultIsNullable && !thenIsNullable) {
+                    // Wrap thenResult in nullable
+                    auto nullableType = mlir::db::NullableType::get(builder_->getContext(), thenType);
+                    thenResult = builder_->create<mlir::db::AsNullableOp>(
+                        builder_->getUnknownLoc(), nullableType, thenResult);
+                } else if (!resultIsNullable && thenIsNullable) {
+                    // Wrap result in nullable
+                    auto nullableType = mlir::db::NullableType::get(builder_->getContext(), resultType);
+                    result = builder_->create<mlir::db::AsNullableOp>(
+                        builder_->getUnknownLoc(), nullableType, result);
+                    resultType = nullableType;
+                }
+            }
+            
+            // Create if-then-else for this WHEN clause
+            auto ifOp = builder_->create<mlir::scf::IfOp>(
+                builder_->getUnknownLoc(),
+                thenResult.getType(),
+                condition,
+                true);  // Has else region
+            
+            // Build THEN region
+            builder_->setInsertionPointToStart(&ifOp.getThenRegion().front());
+            builder_->create<mlir::scf::YieldOp>(builder_->getUnknownLoc(), thenResult);
+            
+            // Build ELSE region (contains the previous result)
+            builder_->setInsertionPointToStart(&ifOp.getElseRegion().front());
+            builder_->create<mlir::scf::YieldOp>(builder_->getUnknownLoc(), result);
+            
+            // Move insertion point after the if operation
+            builder_->setInsertionPointAfter(ifOp);
+            
+            // The if operation's result becomes our new result
+            result = ifOp.getResult(0);
+        }
+    }
+    
+    PGX_LOG(AST_TRANSLATE, IO, "translateCaseExpr OUT: MLIR Value (CASE expression)");
+    return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translateExpressionWithCaseTest(Expr* expr, ::mlir::Value caseTestValue) -> ::mlir::Value {
+    if (!expr) {
+        return nullptr;
+    }
+    
+    // If this is a CaseTestExpr, return the case test value
+    if (expr->type == T_CaseTestExpr) {
+        return caseTestValue;
+    }
+    
+    // For other expression types, we need to recursively replace CaseTestExpr
+    // For now, handle the most common case: direct comparison expressions
+    if (expr->type == T_OpExpr) {
+        OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
+        
+        // Translate the operation, but replace any CaseTestExpr with the case test value
+        if (!opExpr->args || opExpr->args->length != 2) {
+            PGX_ERROR("OpExpr in CASE requires exactly 2 arguments");
+            return nullptr;
+        }
+        
+        Node* leftNode = static_cast<Node*>(lfirst(&opExpr->args->elements[0]));
+        Node* rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
+        
+        ::mlir::Value leftValue = (leftNode && leftNode->type == T_CaseTestExpr) ? 
+            caseTestValue : translateExpression(reinterpret_cast<Expr*>(leftNode));
+        ::mlir::Value rightValue = (rightNode && rightNode->type == T_CaseTestExpr) ? 
+            caseTestValue : translateExpression(reinterpret_cast<Expr*>(rightNode));
+            
+        if (!leftValue || !rightValue) {
+            PGX_ERROR("Failed to translate operands in CASE OpExpr");
+            return nullptr;
+        }
+        
+        // Create the comparison operation
+        return translateComparisonOp(opExpr->opno, leftValue, rightValue);
+    }
+    
+    // For other types, just translate normally (no CaseTestExpr replacement needed)
+    return translateExpression(expr);
 }

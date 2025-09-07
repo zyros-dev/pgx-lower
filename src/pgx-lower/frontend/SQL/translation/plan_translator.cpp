@@ -619,7 +619,8 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
                          tle->expr->type == T_NullTest ||
                          tle->expr->type == T_CoalesceExpr ||
                          tle->expr->type == T_FuncExpr ||
-                         tle->expr->type == T_ScalarArrayOpExpr)) {
+                         tle->expr->type == T_ScalarArrayOpExpr ||
+                         tle->expr->type == T_CaseExpr)) {
             scope = COMPUTED_EXPRESSION_SCOPE; // Computed expressions go to @map:: namespace
         }
         else if (tle->expr && tle->expr->type == T_Var) {
