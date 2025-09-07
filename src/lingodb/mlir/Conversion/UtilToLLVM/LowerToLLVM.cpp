@@ -178,7 +178,7 @@ class AllocOpLowering : public OpConversionPattern<mlir::util::AllocOp> {
    LogicalResult matchAndRewrite(mlir::util::AllocOp allocOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
       auto loc = allocOp->getLoc();
 
-      auto genericMemrefType = llvm::cast<mlir::util::RefType>(allocOp.getRef().getType());
+      auto genericMemrefType = allocOp.getRef().getType().cast<mlir::util::RefType>();
       Value entries;
       if (allocOp.getSize()) {
          entries = allocOp.getSize();
@@ -187,10 +187,13 @@ class AllocOpLowering : public OpConversionPattern<mlir::util::AllocOp> {
          entries = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(staticSize));
       }
 
-      auto bytesPerEntry = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getI64Type(), genericMemrefType.getElementType());
-      Value sizeInBytes = rewriter.create<mlir::arith::MulIOp>(loc, rewriter.getI64Type(), entries, bytesPerEntry);
-      Value sizeInBytesI64 = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.getI64Type(), sizeInBytes);
-
+      DataLayout defaultLayout;
+      const DataLayout* layout = &defaultLayout;
+      Type elemType = typeConverter->convertType(genericMemrefType.getElementType());
+      size_t typeSize = layout->getTypeSize(elemType);
+      auto bytesPerEntry = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(typeSize));
+      
+      Value sizeInBytes = rewriter.create<mlir::arith::MulIOp>(loc, entries, bytesPerEntry);
       auto mallocFuncResult = LLVM::lookupOrCreateMallocFn(allocOp->getParentOfType<ModuleOp>(), rewriter.getI64Type());
       if (failed(mallocFuncResult)) {
          return failure();
@@ -199,7 +202,7 @@ class AllocOpLowering : public OpConversionPattern<mlir::util::AllocOp> {
       auto callOp = rewriter.create<LLVM::CallOp>(loc, 
                                     TypeRange{LLVM::LLVMPointerType::get(rewriter.getContext())},
                                     SymbolRefAttr::get(mallocFunc), 
-                                    ValueRange{sizeInBytesI64});
+                                    ValueRange{sizeInBytes});
       ::mlir::Value castedPointer = rewriter.create<LLVM::BitcastOp>(loc, LLVM::LLVMPointerType::get(rewriter.getContext()), callOp.getResult());
       rewriter.replaceOp(allocOp, castedPointer);
 
