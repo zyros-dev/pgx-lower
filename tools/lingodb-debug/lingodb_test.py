@@ -107,15 +107,16 @@ def run_lingodb_query(sql, database="test", output_dir="./tools/lingodb-debug"):
             log_content.append(f"ERROR: {result['error']}")
         log_content.append("")
         
-        # Get all pipeline stages
+        # Get all pipeline stages (using correct LingoDB stage names)
         stages = [
-            ("Stage 2: RelAlg -> DB+DSA+Util", "1"),      # Phase 1: RelAlg lowering
-            ("Stage 3a: DB -> Standard", "2"),           # Phase 2: DB lowering  
-            ("Stage 3b: DSA -> Standard", "3"),          # Phase 3a: DSA lowering
-            ("Stage 3c: Util -> LLVM", "4"),             # Phase 3b: Util lowering
-            ("Stage 4: Standard -> LLVM", "5"),          # Phase 3c: Standard->LLVM
-            ("Stage 5: LLVM Optimization", "6"),         # Phase 4: LLVM opt
-            ("Stage 6: Final LLVM IR", "7")              # Phase 5: Final
+            ("Stage 2: RelAlg Pushdown", "2_relalg_pushdown"),
+            ("Stage 3: RelAlg Optimize Join", "3_relalg_optimize_join"), 
+            ("Stage 4: RelAlg Simplify", "4_relalg_simplify"),
+            ("Stage 5: RelAlg Unnesting", "5_relalg_unnesting"),
+            ("Stage 6: RelAlg -> DB+DSA+Util", "6_lower_relalg"),
+            ("Stage 7: DB -> Standard", "7_lower_db"),
+            ("Stage 8: DSA -> Standard", "8_lower_dsa"),
+            ("Stage 9: Standard -> LLVM", "9_convert_to_llvm")
         ]
         
         for stage_name, stage_id in stages:
