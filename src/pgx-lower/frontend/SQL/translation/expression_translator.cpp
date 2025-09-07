@@ -258,9 +258,22 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
     case PG_TEXT_LIKE_OID: {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LIKE operator to db.runtime_call");
 
-        bool hasNullableOperand = lhs.getType().isa<mlir::db::NullableType>()
-                                  || rhs.getType().isa<mlir::db::NullableType>();
+        mlir::Value convertedLhs = lhs;
+        mlir::Value convertedRhs = rhs;
+        
+        // If one operand is nullable and the other isn't, make both nullable
+        bool lhsNullable = lhs.getType().isa<mlir::db::NullableType>();
+        bool rhsNullable = rhs.getType().isa<mlir::db::NullableType>();
+        
+        if (lhsNullable && !rhsNullable) {
+            mlir::Type nullableRhsType = mlir::db::NullableType::get(builder_->getContext(), rhs.getType());
+            convertedRhs = builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), nullableRhsType, rhs);
+        } else if (!lhsNullable && rhsNullable) {
+            mlir::Type nullableLhsType = mlir::db::NullableType::get(builder_->getContext(), lhs.getType());
+            convertedLhs = builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), nullableLhsType, lhs);
+        }
 
+        bool hasNullableOperand = lhsNullable || rhsNullable;
         mlir::Type resultType =
             hasNullableOperand ? mlir::Type(mlir::db::NullableType::get(builder_->getContext(), builder_->getI1Type()))
                                : mlir::Type(builder_->getI1Type());
@@ -268,7 +281,7 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
         auto op = builder_->create<mlir::db::RuntimeCall>(builder_->getUnknownLoc(),
                                                           resultType,
                                                           builder_->getStringAttr("Like"),
-                                                          mlir::ValueRange{lhs, rhs});
+                                                          mlir::ValueRange{convertedLhs, convertedRhs});
 
         return op.getRes();
     }
