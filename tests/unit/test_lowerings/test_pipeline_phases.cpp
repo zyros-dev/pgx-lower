@@ -260,8 +260,8 @@ TEST_F(MLIRLoweringPipelineTest, SumOp) {
     auto simpleMLIR = R"(
         module {
           func.func @main() {
-            %0 = relalg.basetable  {column_order = ["id", "category", "amount", "quantity", "price"], table_identifier = "test_aggregates|oid:12762065"} columns: {amount => @test_aggregates::@amount({type = !db.nullable<i32>}), category => @test_aggregates::@category({type = !db.nullable<i32>}), id => @test_aggregates::@id({type = i32}), price => @test_aggregates::@price({type = !db.nullable<i32>}), quantity => @test_aggregates::@quantity({type = !db.nullable<i32>})}
-            %1 = relalg.aggregation %0 [] computes : [@total_amount_all::@sum({type = i64})] (%arg0: !relalg.tuplestream,%arg1: !relalg.tuple){
+            %0 = relalg.basetable  {column_order = ["id", "category", "amount", "quantity", "price"], table_identifier = "test_aggregates|oid:12925905"} columns: {amount => @test_aggregates::@amount({type = i32}), category => @test_aggregates::@category({type = !db.nullable<i32>}), id => @test_aggregates::@id({type = i32}), price => @test_aggregates::@price({type = !db.nullable<i32>}), quantity => @test_aggregates::@quantity({type = !db.nullable<i32>})}
+            %1 = relalg.aggregation %0 [] computes : [@total_amount_all::@sum({type = !db.nullable<i32>})] (%arg0: !relalg.tuplestream,%arg1: !relalg.tuple){
               %3 = relalg.aggrfn sum @test_aggregates::@amount %arg0 : !db.nullable<i32>
               relalg.return %3 : !db.nullable<i32>
             }
