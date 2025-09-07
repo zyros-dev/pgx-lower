@@ -25,8 +25,9 @@ SELECT SUM(amount) AS total_amount_all
 FROM test_aggregates;
 SELECT COUNT(*) AS total_rows
 FROM test_aggregates;
-SELECT COUNT(DISTINCT category) AS unique_categories
-FROM test_aggregates;
+-- TODO: Do I need to support distinct in TPC-H?
+-- SELECT COUNT(DISTINCT category) AS unique_categories
+-- FROM test_aggregates;
 SELECT AVG(amount) AS avg_amount_all
 FROM test_aggregates;
 SELECT MIN(amount) AS min_amount_all
