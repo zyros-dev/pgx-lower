@@ -45,8 +45,10 @@ constexpr Oid PG_INT8_EQ_OID = 410;     // int8 = int8
 constexpr Oid PG_TEXT_EQ_OID = 98;      // text = text
 
 // Integer Inequality Operators
+constexpr Oid PG_INT2_NE_OID = 519;     // int2 != int2
 constexpr Oid PG_INT4_NE_OID = 518;     // int4 != int4
 constexpr Oid PG_INT8_NE_OID = 411;     // int8 != int8
+constexpr Oid PG_TEXT_NE_OID = 531;     // text != text
 
 // Integer Less Than Operators
 constexpr Oid PG_INT4_LT_OID = 97;      // int4 < int4

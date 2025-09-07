@@ -887,8 +887,16 @@ auto PostgreSQLASTTranslator::Impl::translateScalarArrayOpExpr(ScalarArrayOpExpr
                 builder_->getUnknownLoc(),
                 mlir::db::DBCmpPredicate::eq,
                 leftValue, elemValue);
+        } else if (scalarArrayOp->opno == PG_INT4_NE_OID ||
+                   scalarArrayOp->opno == PG_INT8_NE_OID ||
+                   scalarArrayOp->opno == PG_INT2_NE_OID ||
+                   scalarArrayOp->opno == PG_TEXT_NE_OID) {
+            cmp = builder_->create<mlir::db::CmpOp>(
+                builder_->getUnknownLoc(),
+                mlir::db::DBCmpPredicate::neq,
+                leftValue, elemValue);
         } else {
-            PGX_WARNING("Unsupported operator OID %u in IN expression, using equality", scalarArrayOp->opno);
+            PGX_WARNING("Unsupported operator OID %u in IN expression, defaulting to equality", scalarArrayOp->opno);
             cmp = builder_->create<mlir::db::CmpOp>(
                 builder_->getUnknownLoc(),
                 mlir::db::DBCmpPredicate::eq,
