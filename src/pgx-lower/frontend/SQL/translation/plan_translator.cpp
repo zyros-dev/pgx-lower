@@ -679,12 +679,12 @@ auto PostgreSQLASTTranslator::Impl::determineColumnType(TranslationContext& cont
         colType = typeMapper.mapPostgreSQLType(opExpr->opresulttype, -1);
     }
     else if (expr->type == T_FuncExpr) {
-        // For aggregate functions, use appropriate result type
-        colType = context.builder->getI64Type(); // Use BIGINT for aggregate functions
+        // For aggregate functions, match LingoDB pattern: use nullable i32
+        colType = mlir::db::NullableType::get(context.builder->getContext(), context.builder->getI32Type());
     }
     else if (expr->type == T_Aggref) {
-        // Direct Aggref reference
-        colType = context.builder->getI64Type(); // Use BIGINT for aggregate results
+        // Direct Aggref reference - match LingoDB pattern: use nullable i32
+        colType = mlir::db::NullableType::get(context.builder->getContext(), context.builder->getI32Type());
     }
 
     return colType;
