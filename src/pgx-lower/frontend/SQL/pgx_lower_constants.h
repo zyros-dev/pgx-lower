@@ -39,8 +39,10 @@ constexpr Oid PG_INT8_MOD_OID = 690;    // int8 % int8
 // =============================================================================
 
 // Integer Equality Operators
+constexpr Oid PG_INT2_EQ_OID = 92;      // int2 = int2
 constexpr Oid PG_INT4_EQ_OID = 96;      // int4 = int4
 constexpr Oid PG_INT8_EQ_OID = 410;     // int8 = int8
+constexpr Oid PG_TEXT_EQ_OID = 98;      // text = text
 
 // Integer Inequality Operators
 constexpr Oid PG_INT4_NE_OID = 518;     // int4 != int4

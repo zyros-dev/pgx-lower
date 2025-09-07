@@ -23,6 +23,7 @@ auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::V
     case T_Aggref: return translateAggref(reinterpret_cast<Aggref*>(expr));
     case T_NullTest: return translateNullTest(reinterpret_cast<NullTest*>(expr));
     case T_CoalesceExpr: return translateCoalesceExpr(reinterpret_cast<CoalesceExpr*>(expr));
+    case T_ScalarArrayOpExpr: return translateScalarArrayOpExpr(reinterpret_cast<ScalarArrayOpExpr*>(expr));
     case T_RelabelType: {
         // T_RelabelType is a type coercion wrapper - just unwrap and translate the underlying expression
         RelabelType* relabel = reinterpret_cast<RelabelType*>(expr);
@@ -792,5 +793,129 @@ auto PostgreSQLASTTranslator::Impl::translateCoalesceExpr(CoalesceExpr* coalesce
     bool resultIsNullableType = result.getType().isa<mlir::db::NullableType>();
     PGX_LOG(AST_TRANSLATE, IO, "translateCoalesceExpr OUT: MLIR Value (nullable=%d)", resultIsNullableType);
 
+    return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translateScalarArrayOpExpr(ScalarArrayOpExpr* scalarArrayOp) -> ::mlir::Value {
+    PGX_LOG(AST_TRANSLATE, IO, "translateScalarArrayOpExpr IN: ScalarArrayOp with opno=%u, useOr=%d", 
+            scalarArrayOp->opno, scalarArrayOp->useOr);
+
+    if (!scalarArrayOp || !builder_) {
+        PGX_ERROR("Invalid ScalarArrayOpExpr parameters");
+        return nullptr;
+    }
+
+    List* args = scalarArrayOp->args;
+    if (!args || args->length != 2) {
+        PGX_ERROR("ScalarArrayOpExpr: Expected 2 arguments, got %d", args ? args->length : 0);
+        return nullptr;
+    }
+
+    Node* leftNode = static_cast<Node*>(lfirst(&args->elements[0]));
+    ::mlir::Value leftValue = translateExpression(reinterpret_cast<Expr*>(leftNode));
+    if (!leftValue) {
+        PGX_ERROR("Failed to translate left operand of IN expression");
+        return nullptr;
+    }
+
+    Node* rightNode = static_cast<Node*>(lfirst(&args->elements[1]));
+    
+    PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr: Right operand nodeTag = %d", nodeTag(rightNode));
+    
+    // Extract array elements into a common format
+    std::vector<::mlir::Value> arrayElements;
+    
+    if (nodeTag(rightNode) == T_ArrayExpr) {
+        ArrayExpr* arrayExpr = reinterpret_cast<ArrayExpr*>(rightNode);
+        List* elements = arrayExpr->elements;
+        
+        if (elements) {
+            for (int i = 0; i < elements->length; i++) {
+                Node* elemNode = static_cast<Node*>(lfirst(&elements->elements[i]));
+                ::mlir::Value elemValue = translateExpression(reinterpret_cast<Expr*>(elemNode));
+                if (elemValue) {
+                    arrayElements.push_back(elemValue);
+                }
+            }
+        }
+    } else if (nodeTag(rightNode) == T_Const) {
+        Const* constNode = reinterpret_cast<Const*>(rightNode);
+        
+        if (constNode->consttype == INT4ARRAYOID) {
+            ArrayType* array = DatumGetArrayTypeP(constNode->constvalue);
+            int nitems;
+            Datum* values;
+            bool* nulls;
+            
+            deconstruct_array(array, INT4OID, sizeof(int32), true, TYPALIGN_INT, 
+                            &values, &nulls, &nitems);
+            
+            for (int i = 0; i < nitems; i++) {
+                if (!nulls || !nulls[i]) {
+                    int32 intValue = DatumGetInt32(values[i]);
+                    auto elemValue = builder_->create<mlir::arith::ConstantIntOp>(
+                        builder_->getUnknownLoc(), intValue, builder_->getI32Type());
+                    arrayElements.push_back(elemValue);
+                }
+            }
+        } else {
+            PGX_WARNING("ScalarArrayOpExpr: Unsupported const array type %u", constNode->consttype);
+        }
+    } else {
+        PGX_WARNING("ScalarArrayOpExpr: Unexpected right operand type %d", nodeTag(rightNode));
+    }
+    
+    // Handle empty array
+    if (arrayElements.empty()) {
+        return builder_->create<mlir::arith::ConstantIntOp>(
+            builder_->getUnknownLoc(), 
+            scalarArrayOp->useOr ? 0 : 1,
+            builder_->getI1Type());
+    }
+    
+    // Build comparison chain
+    ::mlir::Value result = nullptr;
+    
+    for (auto elemValue : arrayElements) {
+        ::mlir::Value cmp = nullptr;
+        
+        if (scalarArrayOp->opno == PG_INT4_EQ_OID ||
+            scalarArrayOp->opno == PG_INT8_EQ_OID ||
+            scalarArrayOp->opno == PG_INT2_EQ_OID ||
+            scalarArrayOp->opno == PG_TEXT_EQ_OID) {
+            cmp = builder_->create<mlir::db::CmpOp>(
+                builder_->getUnknownLoc(),
+                mlir::db::DBCmpPredicate::eq,
+                leftValue, elemValue);
+        } else {
+            PGX_WARNING("Unsupported operator OID %u in IN expression, using equality", scalarArrayOp->opno);
+            cmp = builder_->create<mlir::db::CmpOp>(
+                builder_->getUnknownLoc(),
+                mlir::db::DBCmpPredicate::eq,
+                leftValue, elemValue);
+        }
+        
+        if (!cmp.getType().isInteger(1)) {
+            cmp = builder_->create<mlir::db::DeriveTruth>(builder_->getUnknownLoc(), cmp);
+        }
+        
+        if (!result) {
+            result = cmp;
+        } else {
+            if (scalarArrayOp->useOr) {
+                result = builder_->create<mlir::db::OrOp>(
+                    builder_->getUnknownLoc(),
+                    builder_->getI1Type(),
+                    mlir::ValueRange{result, cmp});
+            } else {
+                result = builder_->create<mlir::db::AndOp>(
+                    builder_->getUnknownLoc(),
+                    builder_->getI1Type(),
+                    mlir::ValueRange{result, cmp});
+            }
+        }
+    }
+    
+    PGX_LOG(AST_TRANSLATE, IO, "translateScalarArrayOpExpr OUT: MLIR Value");
     return result;
 }

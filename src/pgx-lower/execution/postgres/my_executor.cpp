@@ -181,6 +181,9 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                             else if (nodeTag(tle->expr) == T_BoolExpr) {
                                 columnType = BOOLOID;
                             }
+                            else if (nodeTag(tle->expr) == T_ScalarArrayOpExpr) {
+                                columnType = BOOLOID;
+                            }
 
                             int16 typLen;
                             bool typByVal;

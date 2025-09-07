@@ -4,16 +4,17 @@ extern "C" {
 #include "nodes/primnodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/parsenodes.h"
-#include "nodes/nodeFuncs.h" // For exprType
-#include "nodes/pg_list.h" // For list iteration macros
+#include "nodes/nodeFuncs.h"
+#include "nodes/pg_list.h"
 #include "utils/lsyscache.h"
 #include "utils/builtins.h"
-#include "utils/memutils.h" // For MemoryContext management
+#include "utils/memutils.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_type.h"
 #include "catalog/namespace.h"
-#include "access/table.h" // For table_open/table_close
-#include "utils/rel.h" // For get_rel_name, get_attname
+#include "access/table.h"
+#include "utils/rel.h"
+#include "utils/array.h"
 
 typedef int16 AttrNumber;
 typedef struct Bitmapset Bitmapset;
@@ -93,6 +94,7 @@ public:
     auto translateNullTest(NullTest* nullTest) -> ::mlir::Value;
     auto translateAggref(Aggref* aggref) -> ::mlir::Value;
     auto translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value;
+    auto translateScalarArrayOpExpr(ScalarArrayOpExpr* scalarArrayOp) -> ::mlir::Value;
     
     auto translatePlanNode(Plan* plan, TranslationContext& context) -> ::mlir::Operation*;
     auto translateSeqScan(SeqScan* seqScan, TranslationContext& context) -> ::mlir::Operation*;
