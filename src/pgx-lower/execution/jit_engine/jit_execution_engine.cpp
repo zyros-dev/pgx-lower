@@ -307,10 +307,8 @@ class WrappedExecutionEngine {
             return false;
         }
 
-        // Lookup main function
         mainFuncPtr = lookupMainFunction(handle);
 
-        // Lookup setContext function per LingoDB pattern
         setContextPtr = dlsym(handle, "rt_set_execution_context");
         if (!setContextPtr) {
             const char* dlError = dlerror();
@@ -566,8 +564,13 @@ bool PostgreSQLJITExecutionEngine::Impl::invokeCompiledFunction(void* funcPtr, v
 
         typedef void (*query_func)();
         auto fn = (query_func)funcPtr;
-        PGX_LOG(JIT, DEBUG, "About to execute JIT-compiled function");
+        PGX_LOG(JIT, DEBUG, "About to execute JIT-compiled function at address %p", funcPtr);
+        if (!fn) {
+            PGX_ERROR("FATAL: JIT function pointer is NULL!");
+            return false;
+        }
         fn();
+        PGX_LOG(JIT, DEBUG, "JIT function call returned successfully");
         executionSuccess = true;
         PGX_LOG(JIT, DEBUG, "JIT function execution completed");
 

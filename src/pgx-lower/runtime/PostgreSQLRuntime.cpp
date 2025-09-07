@@ -344,7 +344,7 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
             PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: valid JSON detected, parsing...");
             TableSpec spec = parse_table_spec(json_string.c_str());
 
-            if (!spec.table_name.empty() && !spec.column_names.empty()) {
+            if (!spec.table_name.empty()) {
                 // Remove OID suffix if present (e.g., "test_logical|oid:123" -> "test_logical")
                 size_t pipe_pos = spec.table_name.find('|');
                 if (pipe_pos != std::string::npos) {
@@ -368,12 +368,15 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
                 PGX_LOG(RUNTIME, DEBUG, "Retrieved metadata for %d columns from table '%s'",
                         total_columns, spec.table_name.c_str());
 
-                // Now match the requested columns with the metadata
-                for (size_t i = 0; i < spec.column_names.size(); ++i) {
+                if (spec.column_names.empty()) {
+                    PGX_LOG(RUNTIME, DEBUG, "No specific columns requested (e.g., COUNT(*)), skipping column metadata processing");
+                    json_parsed = true;
+                    iter->table_name = spec.table_name;
+                } else {
+                    for (size_t i = 0; i < spec.column_names.size(); ++i) {
                     ColumnSpec col_spec;
                     col_spec.name = spec.column_names[i];
 
-                    // Find this column in the metadata
                     int32_t type_oid = 0;
                     for (int32_t j = 0; j < total_columns; ++j) {
                         if (strcmp(metadata[j].name, col_spec.name.c_str()) == 0) {
@@ -410,10 +413,11 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
                     }
 
                     iter->columns.push_back(col_spec);
-                }
+                    }
 
-                json_parsed = true;
-                PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: JSON parsed successfully - table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
+                    json_parsed = true;
+                    PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: JSON parsed successfully - table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
+                }
             }
         }
     }
