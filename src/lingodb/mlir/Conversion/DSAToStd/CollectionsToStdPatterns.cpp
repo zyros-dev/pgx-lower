@@ -229,13 +229,6 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
 
    public:
    LogicalResult matchAndRewrite(mlir::dsa::At atOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      // Column info tuple indices - must match PostgreSQL runtime layout
-      constexpr size_t COLUMN_OFFSET_IDX = 0;        // Column offset in buffer
-      constexpr size_t VALID_MULTIPLIER_IDX = 1;     // Validity bitmap multiplier  
-      constexpr size_t VALID_BUFFER_IDX = 2;         // Pointer to validity bitmap
-      constexpr size_t DATA_BUFFER_IDX = 3;          // Pointer to actual data
-      constexpr size_t VARLEN_BUFFER_IDX = 4;        // Pointer to variable length data (strings)
-      constexpr size_t COLUMN_INFO_SIZE = 5;         // Total fields per column
       auto loc = atOp->getLoc();
       auto baseType = getBaseType(atOp.getType(0));
       mlir::Value index;
@@ -255,26 +248,27 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
          index = unpacked.getResult(0);
          auto info = unpacked.getResult(1);
          size_t column = atOp.getPos();
-         size_t baseOffset = 1 + column * COLUMN_INFO_SIZE;
-         columnOffset = rewriter.create<mlir::util::GetTupleOp>(loc, rewriter.getIndexType(), info, baseOffset + COLUMN_OFFSET_IDX);
-         validityBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + VALID_BUFFER_IDX), info, baseOffset + VALID_BUFFER_IDX);
-         originalValueBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + DATA_BUFFER_IDX), info, baseOffset + DATA_BUFFER_IDX);
+         size_t baseOffset = 1 + column * 5;
+         columnOffset = rewriter.create<mlir::util::GetTupleOp>(loc, rewriter.getIndexType(), info, baseOffset);
+         validityBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + 2), info, baseOffset + 2);
+         originalValueBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + 3), info, baseOffset + 3);
          valueBuffer = rewriter.create<mlir::util::ArrayElementPtrOp>(loc, originalValueBuffer.getType(), originalValueBuffer, columnOffset);
-         varLenBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + VARLEN_BUFFER_IDX), info, baseOffset + VARLEN_BUFFER_IDX);
-         nullMultiplier = rewriter.create<mlir::util::GetTupleOp>(loc, rewriter.getIndexType(), info, baseOffset + VALID_MULTIPLIER_IDX);
+         varLenBuffer = rewriter.create<mlir::util::GetTupleOp>(loc, info.getType().cast<TupleType>().getType(baseOffset + 4), info, baseOffset + 4);
+         nullMultiplier = rewriter.create<mlir::util::GetTupleOp>(loc, rewriter.getIndexType(), info, baseOffset + 1);
       }
       Value val;
       auto* context = rewriter.getContext();
       if (baseType.isa<util::VarLen32Type>()) {
-         // For psql , we store VarLen32 structs directly
-         // Since we can't distinguish at compile time, we'll assume PostgreSQL case
-         // and load the VarLen32 directly from the valueBuffer
-         Value varLenPtr = rewriter.create<util::ArrayElementPtrOp>(loc,
-            util::RefType::get(context, mlir::util::VarLen32Type::get(context)), 
-            valueBuffer, index);
-         val = rewriter.create<util::LoadOp>(loc, 
-            mlir::util::VarLen32Type::get(context), varLenPtr);
-         val.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());
+         Value pos1 = rewriter.create<util::LoadOp>(loc, rewriter.getI32Type(), valueBuffer, index);
+         pos1.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());
+         Value const1 = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+         Value ip1 = rewriter.create<arith::AddIOp>(loc, indexType, index, const1);
+         Value pos2 = rewriter.create<util::LoadOp>(loc, rewriter.getI32Type(), valueBuffer, ip1);
+         pos2.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());
+         Value len = rewriter.create<arith::SubIOp>(loc, rewriter.getI32Type(), pos2, pos1);
+         Value pos1AsIndex = rewriter.create<arith::IndexCastOp>(loc, indexType, pos1);
+         Value ptr = rewriter.create<util::ArrayElementPtrOp>(loc, util::RefType::get(context, rewriter.getI8Type()), varLenBuffer, pos1AsIndex);
+         val = rewriter.create<mlir::util::CreateVarLen>(loc, mlir::util::VarLen32Type::get(rewriter.getContext()), ptr, len);
       } else if (isIntegerType(baseType, 1)) {
          Value realPos = rewriter.create<arith::AddIOp>(loc, indexType, columnOffset, index);
          val = getBit(rewriter, loc, originalValueBuffer, realPos);
