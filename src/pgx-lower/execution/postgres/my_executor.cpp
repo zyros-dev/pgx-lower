@@ -178,6 +178,9 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                                 Const* constExpr = reinterpret_cast<Const*>(tle->expr);
                                 columnType = constExpr->consttype;
                             }
+                            else if (nodeTag(tle->expr) == T_BoolExpr) {
+                                columnType = BOOLOID;
+                            }
 
                             int16 typLen;
                             bool typByVal;
