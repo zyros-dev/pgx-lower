@@ -220,7 +220,25 @@ void TableBuilder::nextRow() {
 }
 
 TableBuilder* TableBuilder::build() {
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_build IN: builder=%p", this);
+    
+
     mark_results_ready_for_streaming();
+
+    PGX_LOG(RUNTIME, DEBUG, "TableBuilder state before return:");
+    PGX_LOG(RUNTIME, DEBUG, "\t- builder address: %p", this);
+    PGX_LOG(RUNTIME, DEBUG, "\t- row_count: %ld", row_count);
+    PGX_LOG(RUNTIME, DEBUG, "\t- total_columns: %d", total_columns);
+    PGX_LOG(RUNTIME, DEBUG, "\t- current_column_index: %d", current_column_index);
+    if (g_computed_results.numComputedColumns > 0) {
+        PGX_LOG(RUNTIME, DEBUG, "\t- computed columns: %d", g_computed_results.numComputedColumns);
+        for (int i = 0; i < g_computed_results.numComputedColumns && i < 10; i++) {
+            PGX_LOG(RUNTIME, DEBUG, "\t\t- col[%d]: type=%d, null=%d",
+                    i, g_computed_results.computedTypes[i], g_computed_results.computedNulls[i]);
+        }
+    }
+
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_build OUT: returning builder=%p", this);
     return this;
 }
 
@@ -401,8 +419,9 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
     }
     PG_CATCH();
     {
-        PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: exception reading runtime::VarLen32 JSON, using fallback");
+        PGX_ERROR( "decode_table_specification: exception reading runtime::VarLen32 JSON");
         FlushErrorState();
+        throw std::runtime_error("Failed to decode table specification");
     }
     PG_END_TRY();
 
@@ -427,21 +446,6 @@ static void initialize_column_storage(DataSourceIterator* iter) {
     iter->string_nulls.resize(iter->columns.size(), true);
 
     PGX_LOG(RUNTIME, DEBUG, "initialize_column_storage: configured for table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
-}
-
-// Helper function: Set up fallback table configuration
-static void setup_fallback_table_config(DataSourceIterator* iter) {
-    PGX_LOG(RUNTIME, DEBUG, "setup_fallback_table_config: JSON parsing failed, using fallback defaults");
-    iter->table_name = "test_comparison";
-
-    // Set up default 2-integer column layout
-    ColumnSpec col1, col2;
-    col1.name = "value";
-    col1.type = ::ColumnType::INTEGER;
-    col2.name = "score";
-    col2.type = ::ColumnType::INTEGER;
-    iter->columns.push_back(col1);
-    iter->columns.push_back(col2);
 }
 
 // Helper function: Open PostgreSQL table connection
@@ -482,9 +486,9 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* context, runti
     // Decode table specification from runtime::VarLen32 parameter
     bool json_parsed = decode_table_specification(varlen32_param, iter);
 
-    // Set up fallback configuration if JSON parsing failed
     if (!json_parsed) {
-        setup_fallback_table_config(iter);
+        PGX_ERROR("JSON parsing failed");
+        throw std::runtime_error("Failed to parse the json");
     }
 
     // Initialize column storage based on parsed configuration
@@ -536,10 +540,9 @@ bool DataSourceIteration::isValid() {
             int pg_column_index = get_column_position(iter->table_name, col_spec.name);
 
             if (pg_column_index == -1) {
-                // Column not found in mapping, use iteration index as fallback
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: No mapping found for column '%s' in table '%s', using index %zu",
-                     col_spec.name.c_str(), iter->table_name.c_str(), i);
-                pg_column_index = i;  // Fallback to iteration order
+                PGX_ERROR("rt_datasourceiteration_isvalid: No mapping found for column '%s' in table '%s', crashing",
+                     col_spec.name.c_str(), iter->table_name.c_str());
+                pg_column_index = i;
             }
 
             // Get the actual type OID from PostgreSQL
