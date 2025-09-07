@@ -86,7 +86,10 @@ build-utest
 !.idea/*.iml
 llm_documentation
 chroma_db
-*.py
+# Python bytecode and generated files (but allow our tools)
+__pycache__/
+*.pyc
+*.pyo
 *.gguf
 *-log
 .mcp.json
@@ -106,6 +109,9 @@ Testing
 claude_temp_permissions
 
 # Dummy comment for testing - enabling workflow execution
+
+# LingoDB test tool output
+tools/lingodb-debug/lingodb_debug.log
 
 build-ptest
 build-viz
