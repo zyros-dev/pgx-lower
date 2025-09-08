@@ -109,8 +109,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
 
             auto term = builder.create<mlir::scf::YieldOp>(forOp->getLoc());
             builder.setInsertionPoint(term);
-            rewriter.moveBlockBefore(forOp.getBody(), builder.getInsertionBlock());
-            forOp.getBody()->getArguments().front().replaceAllUsesWith(values[0]);
+            rewriter.inlineBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
 
             std::vector<Value> results(yieldOp.getResults().begin(), yieldOp.getResults().end());
             rewriter.eraseOp(yieldOp);
@@ -161,7 +160,7 @@ class ForOpLowering : public OpConversionPattern<mlir::dsa::ForOp> {
          values.insert(values.end(), iterargs.begin(), iterargs.end());
          auto term = builder.create<mlir::scf::YieldOp>(forOp->getLoc());
          builder.setInsertionPoint(term);
-         rewriter.inlineBlockBefore(forOp.getBody(), builder.getInsertionBlock(), builder.getInsertionPoint(), values);
+         rewriter.inlineBlockBefore(forOp.getBody(), &*builder.getInsertionPoint(), values);
 
          std::vector<Value> results(yieldOp.getResults().begin(), yieldOp.getResults().end());
          rewriter.eraseOp(yieldOp);
