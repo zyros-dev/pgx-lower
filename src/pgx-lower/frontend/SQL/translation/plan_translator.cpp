@@ -651,8 +651,6 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
         }
 
         auto colRef = columnManager.createRef(scope, colName);
-        colRef.getColumn().type = colType;
-
         columnRefAttrs.push_back(colRef);
         columnNameAttrs.push_back(context.builder->getStringAttr(colName));
 
@@ -672,7 +670,21 @@ auto PostgreSQLASTTranslator::Impl::determineColumnType(TranslationContext& cont
     if (expr->type == T_Var) {
         Var* var = reinterpret_cast<Var*>(expr);
         PostgreSQLTypeMapper typeMapper(context_);
-        colType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod);
+        
+        bool nullable = false;
+        if (context.currentStmt && var->varno > 0) {
+            std::string columnName = getColumnNameFromSchema(context.currentStmt, var->varno, var->varattno);
+            
+            auto allColumns = getAllTableColumnsFromSchema(context.currentStmt, var->varno);
+            for (const auto& colInfo : allColumns) {
+                if (colInfo.name == columnName) {
+                    nullable = colInfo.nullable;
+                    break;
+                }
+            }
+        }
+        
+        colType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod, nullable);
     }
     else if (expr->type == T_OpExpr) {
         // For arithmetic/comparison operators, use result type from OpExpr
