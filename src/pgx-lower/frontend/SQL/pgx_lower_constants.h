@@ -104,11 +104,15 @@ constexpr Oid PG_F_FLOAT8_TEXT = 233;   // float8 to text
 
 // String Operator OIDs
 constexpr Oid PG_TEXT_LIKE_OID = 1209;     // text LIKE text
+constexpr Oid PG_TEXT_NOT_LIKE_OID = 1210; // text NOT LIKE text (!~~)
 constexpr Oid PG_TEXT_CONCAT_OID = 654;    // text || text
 
 // String Function OIDs  
 constexpr Oid PG_F_SUBSTRING = 936;        // substring(text, int, int)
 // Note: PG_F_UPPER and PG_F_LOWER already defined above
+
+// Array Type OIDs
+constexpr Oid PG_TEXT_ARRAY_OID = 1009;    // _text (text array type)
 
 // =============================================================================
 // AGGREGATE FUNCTION OIDS

@@ -315,6 +315,40 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
 
         return op.getRes();
     }
+    case PG_TEXT_NOT_LIKE_OID: {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NOT LIKE operator to negated db.runtime_call");
+        mlir::Value convertedLhs = lhs;
+        mlir::Value convertedRhs = rhs;
+        
+        // If one operand is nullable and the other isn't, make both nullable
+        bool lhsNullable = lhs.getType().isa<mlir::db::NullableType>();
+        bool rhsNullable = rhs.getType().isa<mlir::db::NullableType>();
+        
+        if (lhsNullable && !rhsNullable) {
+            mlir::Type nullableRhsType = mlir::db::NullableType::get(builder_->getContext(), rhs.getType());
+            convertedRhs = builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), nullableRhsType, rhs);
+        } else if (!lhsNullable && rhsNullable) {
+            mlir::Type nullableLhsType = mlir::db::NullableType::get(builder_->getContext(), lhs.getType());
+            convertedLhs = builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), nullableLhsType, lhs);
+        }
+        
+        // Create the LIKE operation
+        mlir::Type boolType = builder_->getI1Type();
+        mlir::Type resultType = (lhsNullable || rhsNullable) ? 
+            mlir::Type(mlir::db::NullableType::get(builder_->getContext(), boolType)) : boolType;
+        
+        auto likeOp = builder_->create<mlir::db::RuntimeCall>(builder_->getUnknownLoc(),
+                                                               resultType,
+                                                               builder_->getStringAttr("Like"),
+                                                               mlir::ValueRange{convertedLhs, convertedRhs});
+        
+        // Negate the result using NotOp
+        auto notOp = builder_->create<mlir::db::NotOp>(builder_->getUnknownLoc(), 
+                                                        resultType, 
+                                                        likeOp.getRes());
+        
+        return notOp.getResult();
+    }
     case PG_TEXT_CONCAT_OID: {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating || operator to StringRuntime::concat");
 
@@ -884,6 +918,28 @@ auto PostgreSQLASTTranslator::Impl::translateScalarArrayOpExpr(ScalarArrayOpExpr
                     int32 intValue = DatumGetInt32(values[i]);
                     auto elemValue = builder_->create<mlir::arith::ConstantIntOp>(
                         builder_->getUnknownLoc(), intValue, builder_->getI32Type());
+                    arrayElements.push_back(elemValue);
+                }
+            }
+        } else if (constNode->consttype == PG_TEXT_ARRAY_OID) {
+            // Handle text array for IN ('string1', 'string2', ...)
+            ArrayType* array = DatumGetArrayTypeP(constNode->constvalue);
+            int nitems;
+            Datum* values;
+            bool* nulls;
+            
+            deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT, 
+                            &values, &nulls, &nitems);
+            
+            for (int i = 0; i < nitems; i++) {
+                if (!nulls || !nulls[i]) {
+                    text* textValue = DatumGetTextP(values[i]);
+                    std::string strValue(VARDATA(textValue), VARSIZE(textValue) - VARHDRSZ);
+                    
+                    auto elemValue = builder_->create<mlir::db::ConstantOp>(
+                        builder_->getUnknownLoc(), 
+                        builder_->getType<mlir::db::StringType>(), 
+                        builder_->getStringAttr(strValue));
                     arrayElements.push_back(elemValue);
                 }
             }
