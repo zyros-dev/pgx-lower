@@ -44,6 +44,11 @@ bool runPhase3a(::mlir::ModuleOp module) {
     pm1.addPass(mlir::createSymbolDCEPass());
     mlir::relalg::createQueryOptPipeline(pm1/*, &db*/);
 
+    // TODO: Currently this optimises everything away...
+    // if (mlir::failed(pm1.run(module))) {
+    //     throw std::runtime_error("Phase 3a failed: RelAlg → DB+DSA+Util lowering error");
+    // }
+
     if (!validateModuleState(module, "After optimization")) {
         throw std::runtime_error("Phase 3a: Module validation failed before running passes");
     }
