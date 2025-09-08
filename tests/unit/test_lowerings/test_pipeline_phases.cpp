@@ -234,7 +234,6 @@ TEST_F(MLIRLoweringPipelineTest, StringOps) {
 
     ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR)) << "Failed to load MLIR module";
 
-    // Run each phase and capture intermediate results
     std::cerr << "\n=== Testing COALESCE null flag propagation ===" << std::endl;
 
     EXPECT_TRUE(tester->runPhase3a()) << "Phase 3a (RelAlg to DB) failed";
@@ -273,7 +272,40 @@ TEST_F(MLIRLoweringPipelineTest, SumOp) {
 
     ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR)) << "Failed to load MLIR module";
 
-    // Run each phase and capture intermediate results
+    std::cerr << "\n=== Testing COALESCE null flag propagation ===" << std::endl;
+
+    EXPECT_TRUE(tester->runPhase3a()) << "Phase 3a (RelAlg to DB) failed";
+    std::string afterPhase3a = tester->getCurrentMLIR();
+    std::cerr << "After Phase 3a - checking for db.as_nullable with proper null flags..." << std::endl;
+
+    EXPECT_TRUE(tester->runPhase3b()) << "Phase 3b (DB to Standard) failed";
+    std::string afterPhase3b = tester->getCurrentMLIR();
+    std::cerr << "After Phase 3b - checking standard MLIR representation..." << std::endl;
+
+    EXPECT_TRUE(tester->runPhase3c()) << "Phase 3c (Standard to LLVM) failed";
+    std::string finalMLIR = tester->getCurrentMLIR();
+
+    EXPECT_TRUE(tester->verifyCurrentModule()) << "Final module should be valid";
+
+    EXPECT_TRUE(finalMLIR.find("llvm.") != std::string::npos) << "Expected LLVM dialect operations in final MLIR";
+
+    std::cerr << "\n=== First 20000 chars of final LLVM IR ===" << std::endl;
+    std::cerr << finalMLIR.substr(0, 20000) << std::endl;
+}
+
+TEST_F(MLIRLoweringPipelineTest, CharOp) {
+    auto simpleMLIR = R"(
+        module {
+          func.func @main() {
+            %0 = relalg.basetable  {column_order = ["ch"], table_identifier = "char_only|oid:13261790"} columns: {ch => @char_only::@ch({type = !db.char<10>})}
+            %1 = relalg.materialize %0 [@char_only::@ch] => ["ch"] : !dsa.table
+            return
+          }
+        }
+    )";
+
+    ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR)) << "Failed to load MLIR module";
+
     std::cerr << "\n=== Testing COALESCE null flag propagation ===" << std::endl;
 
     EXPECT_TRUE(tester->runPhase3a()) << "Phase 3a (RelAlg to DB) failed";

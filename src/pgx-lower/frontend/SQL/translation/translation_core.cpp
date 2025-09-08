@@ -17,9 +17,6 @@ public:
     explicit PostgreSQLTypeMapper(::mlir::MLIRContext& context)
         : context_(context) {}
 
-    int32_t extractCharLength(int32_t typmod) {
-    return typmod >= 0 ? typmod - POSTGRESQL_VARHDRSZ : DEFAULT_VARCHAR_LENGTH; // PostgreSQL typmod encoding
-    }
 
     std::pair<int32_t, int32_t> extractNumericInfo(int32_t typmod) {
     if (typmod < 0) {
@@ -80,12 +77,8 @@ public:
     case FLOAT8OID: baseType = mlir::Float64Type::get(&context_); break;
     case BOOLOID: baseType = mlir::IntegerType::get(&context_, BOOL_BIT_WIDTH); break;
     case TEXTOID:
-    case VARCHAROID: baseType = mlir::db::StringType::get(&context_); break;
-    case BPCHAROID: {
-        int32_t maxlen = extractCharLength(typmod);
-        baseType = mlir::db::CharType::get(&context_, maxlen);
-        break;
-    }
+    case VARCHAROID:
+    case BPCHAROID: baseType = mlir::db::StringType::get(&context_); break;
     case NUMERICOID: {
         auto [precision, scale] = extractNumericInfo(typmod);
         baseType = mlir::db::DecimalType::get(&context_, precision, scale);
