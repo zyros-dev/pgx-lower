@@ -229,7 +229,25 @@ auto PostgreSQLASTTranslator::Impl::translateComparisonOp(Oid opOid, ::mlir::Val
     default: return nullptr;
     }
 
-    return builder_->create<mlir::db::CmpOp>(builder_->getUnknownLoc(), predicate, lhs, rhs);
+    mlir::Value convertedLhs = lhs;
+    mlir::Value convertedRhs = rhs;
+    
+    bool lhsNullable = lhs.getType().isa<mlir::db::NullableType>();
+    bool rhsNullable = rhs.getType().isa<mlir::db::NullableType>();
+    
+    if (lhsNullable && !rhsNullable) {
+        mlir::Type nullableRhsType = mlir::db::NullableType::get(builder_->getContext(), rhs.getType());
+        auto falseVal = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, 1);
+        convertedRhs = builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), 
+                                                                nullableRhsType, rhs, falseVal);
+    } else if (!lhsNullable && rhsNullable) {
+        mlir::Type nullableLhsType = mlir::db::NullableType::get(builder_->getContext(), lhs.getType());
+        auto falseVal = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, 1);
+        convertedLhs = builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), 
+                                                                nullableLhsType, lhs, falseVal);
+    }
+
+    return builder_->create<mlir::db::CmpOp>(builder_->getUnknownLoc(), predicate, convertedLhs, convertedRhs);
 }
 
 auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::Value {
