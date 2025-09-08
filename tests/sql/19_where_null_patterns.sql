@@ -1,5 +1,5 @@
 LOAD
-'pgx_lower';
+'pgx_lower.so';
 
 DROP TABLE IF EXISTS test_where_nulls;
 
