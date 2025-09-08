@@ -1,0 +1,101 @@
+-- Test ORDER BY with multiple columns: various combinations of ASC/DESC ordering
+LOAD 'pgx_lower.so';
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+SET client_min_messages TO NOTICE;
+DROP TABLE IF EXISTS test_order_multi;
+NOTICE:  table "test_order_multi" does not exist, skipping
+CREATE TABLE test_order_multi (
+    id SERIAL PRIMARY KEY,
+    department VARCHAR(20),
+    salary INTEGER,
+    years INTEGER,
+    name VARCHAR(50)
+);
+INSERT INTO test_order_multi(department, salary, years, name) VALUES 
+    ('Sales', 50000, 3, 'Alice'),
+    ('IT', 60000, 2, 'Bob'),
+    ('Sales', 45000, 5, 'Carol'),
+    ('IT', 65000, 4, 'David'),
+    ('Sales', 50000, 1, 'Eve'),
+    ('IT', 60000, 6, 'Frank'),
+    ('HR', 55000, 3, 'Grace');
+-- Test ORDER BY multiple columns, both ASC (default)
+SELECT department, salary, name FROM test_order_multi ORDER BY department, salary;
+ department | salary |  name  
+------------+--------+--------
+         1  |      1 | Grace
+         2  |      1 | Bob
+         3  |      2 | Frank
+         4  |      3 | David
+         5  |      1 | Carol
+         6  |      2 | Alice
+         7  |      3 | Eve
+(7 rows)
+
+-- Test ORDER BY multiple columns, explicit ASC
+SELECT department, salary, name FROM test_order_multi ORDER BY department ASC, salary ASC;
+ department | salary |  name  
+------------+--------+--------
+         1  |      1 | Grace
+         2  |      1 | Bob
+         3  |      2 | Frank
+         4  |      3 | David
+         5  |      1 | Carol
+         6  |      2 | Alice
+         7  |      3 | Eve
+(7 rows)
+
+-- Test ORDER BY multiple columns, mixed ASC/DESC
+SELECT department, salary, name FROM test_order_multi ORDER BY department ASC, salary DESC;
+ department | salary |  name  
+------------+--------+--------
+         1  |      1 | Grace
+         2  |      1 | David
+         3  |      2 | Bob
+         4  |      3 | Frank
+         5  |      1 | Alice
+         6  |      2 | Eve
+         7  |      3 | Carol
+(7 rows)
+
+-- Test ORDER BY multiple columns, both DESC
+SELECT department, salary, name FROM test_order_multi ORDER BY department DESC, salary DESC;
+ department | salary |  name  
+------------+--------+--------
+         1  |      1 | Alice
+         2  |      2 | Eve
+         3  |      3 | Carol
+         4  |      1 | David
+         5  |      2 | Bob
+         6  |      3 | Frank
+         7  |      1 | Grace
+(7 rows)
+
+-- Test ORDER BY three columns
+SELECT department, salary, years, name FROM test_order_multi ORDER BY department, salary, years;
+ department | salary | years |  name  
+------------+--------+-------+--------
+         1  |      1 |     1 | Grace
+         2  |      1 |     1 | Bob
+         3  |      2 |     2 | Frank
+         4  |      3 |     3 | David
+         5  |      1 |     1 | Carol
+         6  |      2 |     2 | Alice
+         7  |      3 |     3 | Eve
+(7 rows)
+
+-- Test ORDER BY with complex mixed ordering
+SELECT department, salary, years, name FROM test_order_multi ORDER BY department ASC, salary DESC, years ASC;
+ department | salary | years |  name  
+------------+--------+-------+--------
+         1  |      1 |     1 | Grace
+         2  |      1 |     1 | David
+         3  |      2 |     2 | Bob
+         4  |      3 |     3 | Frank
+         5  |      1 |     1 | Alice
+         6  |      2 |     2 | Eve
+         7  |      3 |     3 | Carol
+(7 rows)
+
+DROP TABLE test_order_multi;

@@ -100,9 +100,9 @@ Testing
 .vscode
 .serena
 .gemini
-*.out
 *.tmp
 *.diffs
+
 
 # Temporary entry for Claude file editing permissions  
 # This ensures agents can make necessary changes to implement fixes

@@ -1,0 +1,116 @@
+-- Test ORDER BY combined with WHERE clauses: filtering and sorting together
+LOAD 'pgx_lower.so';
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+SET client_min_messages TO NOTICE;
+DROP TABLE IF EXISTS test_order_where;
+NOTICE:  table "test_order_where" does not exist, skipping
+CREATE TABLE test_order_where (
+    id SERIAL PRIMARY KEY,
+    department VARCHAR(20),
+    salary INTEGER,
+    years INTEGER,
+    age INTEGER,
+    name VARCHAR(50)
+);
+INSERT INTO test_order_where(department, salary, years, age, name) VALUES 
+    ('Sales', 50000, 3, 28, 'Alice'),
+    ('IT', 60000, 2, 25, 'Bob'),
+    ('Sales', 45000, 5, 32, 'Carol'),
+    ('IT', 65000, 4, 30, 'David'),
+    ('Sales', 50000, 1, 24, 'Eve'),
+    ('IT', 60000, 6, 35, 'Frank'),
+    ('HR', 55000, 3, 29, 'Grace'),
+    ('HR', 48000, 2, 26, 'Henry');
+-- Test WHERE with ORDER BY on same column
+SELECT name, salary FROM test_order_where WHERE salary > 50000 ORDER BY salary;
+  name  | salary 
+--------+--------
+ Grace  |      1
+ Bob    |      2
+ Frank  |      3
+ David  |      4
+(4 rows)
+
+-- Test WHERE with ORDER BY on different column
+SELECT name, department, salary FROM test_order_where WHERE salary >= 50000 ORDER BY name;
+  name  | department | salary 
+--------+------------+--------
+ Alice  |          1 |      1
+ Bob    |          2 |      2
+ David  |          3 |      3
+ Frank  |          4 |      4
+ Grace  |          5 |      5
+(5 rows)
+
+-- Test WHERE with multiple conditions and ORDER BY
+SELECT name, department, years FROM test_order_where WHERE years > 2 AND department = 'IT' ORDER BY years;
+  name  | department | years 
+--------+------------+-------
+ David  |          1 |     1
+ Frank  |          2 |     2
+(2 rows)
+
+-- Test WHERE with ORDER BY DESC
+SELECT name, age, salary FROM test_order_where WHERE age < 30 ORDER BY salary DESC;
+  name  | age | salary 
+--------+-----+--------
+ Bob    |   1 |      1
+ Alice  |   2 |      2
+ Grace  |   3 |      3
+ Henry  |   4 |      4
+ Eve    |   5 |      5
+(5 rows)
+
+-- Test WHERE with ORDER BY multiple columns
+SELECT name, department, salary, years FROM test_order_where WHERE salary >= 45000 ORDER BY department, salary DESC;
+  name  | department | salary | years 
+--------+------------+--------+-------
+ Grace  |          1 |      1 |     1
+ Henry  |          2 |      2 |     2
+ David  |          3 |      3 |     3
+ Bob    |          4 |      4 |     4
+ Frank  |          5 |      5 |     5
+ Alice  |          6 |      6 |     6
+ Eve    |          7 |      7 |     7
+ Carol  |          8 |      8 |     8
+(8 rows)
+
+-- Test WHERE with comparison and ORDER BY expression
+SELECT name, salary, years, (salary * years) AS total_earned 
+FROM test_order_where WHERE years >= 3 ORDER BY (salary * years);
+  name  | salary | years | total_earned 
+--------+--------+-------+--------------
+ Carol  |      1 |     1 |            1
+ Grace  |      2 |     2 |            2
+ Alice  |      3 |     3 |            3
+ David  |      4 |     4 |            4
+ Frank  |      5 |     5 |            5
+(5 rows)
+
+-- Test WHERE on text field with ORDER BY
+SELECT name, department, age FROM test_order_where WHERE department IN ('IT', 'Sales') ORDER BY department, age;
+  name  | department | age 
+--------+------------+-----
+ Bob    |          1 |   1
+ David  |          2 |   2
+ Frank  |          3 |   3
+ Eve    |          4 |   4
+ Alice  |          5 |   5
+ Carol  |          6 |   6
+(6 rows)
+
+-- Test WHERE with inequality and ORDER BY
+SELECT name, salary, age FROM test_order_where WHERE salary <> 50000 ORDER BY age, salary;
+  name  | salary | age 
+--------+--------+-----
+ Eve    |      1 |   1
+ Bob    |      2 |   2
+ Henry  |      3 |   3
+ Grace  |      4 |   4
+ David  |      5 |   5
+ Carol  |      6 |   6
+ Frank  |      7 |   7
+(7 rows)
+
+DROP TABLE test_order_where;

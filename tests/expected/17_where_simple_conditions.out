@@ -1,0 +1,136 @@
+LOAD
+'pgx_lower.so';
+DROP TABLE IF EXISTS test_where_simple;
+NOTICE:  table "test_where_simple" does not exist, skipping
+CREATE TABLE test_where_simple
+(
+    id    SERIAL PRIMARY KEY,
+    age   INTEGER,
+    score INTEGER,
+    name  INTEGER
+);
+INSERT INTO test_where_simple(age, score, name)
+VALUES (25, 85, 1),
+       (30, 92, 2),
+       (22, 78, 3),
+       (35, 88, 4),
+       (28, 95, 5);
+SELECT name, age
+FROM test_where_simple
+WHERE age = 25;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name | age 
+------+-----
+    1 |  25
+(1 row)
+
+SELECT name, score
+FROM test_where_simple
+WHERE score = 92;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name | score 
+------+-------
+    2 |    92
+(1 row)
+
+SELECT id, name
+FROM test_where_simple
+WHERE name = 3;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name 
+----+------
+  3 |    3
+(1 row)
+
+SELECT name, age
+FROM test_where_simple
+WHERE age <> 25;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name | age 
+------+-----
+    2 |  30
+    3 |  22
+    4 |  35
+    5 |  28
+(4 rows)
+
+SELECT name, score
+FROM test_where_simple
+WHERE score != 88;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name | score 
+------+-------
+    1 |    85
+    2 |    92
+    3 |    78
+    5 |    95
+(4 rows)
+
+SELECT name, age
+FROM test_where_simple
+WHERE age > 25;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name | age 
+------+-----
+    2 |  30
+    4 |  35
+    5 |  28
+(3 rows)
+
+SELECT name, age
+FROM test_where_simple
+WHERE age >= 30;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name | age 
+------+-----
+    2 |  30
+    4 |  35
+(2 rows)
+
+SELECT name, score
+FROM test_where_simple
+WHERE score < 90;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name | score 
+------+-------
+    1 |    85
+    3 |    78
+    4 |    88
+(3 rows)
+
+SELECT name, score
+FROM test_where_simple
+WHERE score <= 85;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name | score 
+------+-------
+    1 |    85
+    3 |    78
+(2 rows)
+
+SELECT name
+FROM test_where_simple
+WHERE age > 20;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name 
+------
+    1
+    2
+    3
+    4
+    5
+(5 rows)
+
+SELECT name
+FROM test_where_simple
+WHERE score >= 85;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ name 
+------
+    1
+    2
+    4
+    5
+(4 rows)
+
+DROP TABLE test_where_simple;

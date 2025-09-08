@@ -1,0 +1,63 @@
+-- Test basic ORDER BY functionality: ASC and DESC ordering
+LOAD 'pgx_lower.so';
+NOTICE:  Installing custom executor hook...
+NOTICE:  Registering custom sigsegv handler!
+SET client_min_messages TO NOTICE;
+DROP TABLE IF EXISTS test_order_basic;
+NOTICE:  table "test_order_basic" does not exist, skipping
+CREATE TABLE test_order_basic (
+    id SERIAL PRIMARY KEY,
+    value INTEGER,
+    name TEXT
+);
+INSERT INTO test_order_basic(value, name) VALUES 
+    (30, 'Charlie'),
+    (10, 'Alice'),
+    (20, 'Bob'),
+    (40, 'David'),
+    (15, 'Eve');
+-- Test basic ORDER BY ASC (default)
+SELECT value, name FROM test_order_basic ORDER BY value;
+ value |  name   
+-------+---------
+     1 | Alice
+     2 | Eve
+     3 | Bob
+     4 | Charlie
+     5 | David
+(5 rows)
+
+-- Test explicit ORDER BY ASC  
+SELECT value, name FROM test_order_basic ORDER BY value ASC;
+ value |  name   
+-------+---------
+     1 | Alice
+     2 | Eve
+     3 | Bob
+     4 | Charlie
+     5 | David
+(5 rows)
+
+-- Test ORDER BY DESC
+SELECT value, name FROM test_order_basic ORDER BY value DESC;
+ value |  name   
+-------+---------
+     1 | David
+     2 | Charlie
+     3 | Bob
+     4 | Eve
+     5 | Alice
+(5 rows)
+
+-- Test ORDER BY on text column
+SELECT value, name FROM test_order_basic ORDER BY name;
+ value |  name   
+-------+---------
+     1 | Alice
+     2 | Bob
+     3 | Charlie
+     4 | David
+     5 | Eve
+(5 rows)
+
+DROP TABLE test_order_basic;
