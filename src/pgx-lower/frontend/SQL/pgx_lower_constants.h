@@ -53,18 +53,22 @@ constexpr Oid PG_TEXT_NE_OID = 531;     // text != text
 // Integer Less Than Operators
 constexpr Oid PG_INT4_LT_OID = 97;      // int4 < int4
 constexpr Oid PG_INT8_LT_OID = 412;     // int8 < int8
+constexpr Oid PG_TEXT_LT_OID = 664;     // text < text
 
 // Integer Greater Than Operators
 constexpr Oid PG_INT4_GT_OID = 521;     // int4 > int4
 constexpr Oid PG_INT8_GT_OID = 413;     // int8 > int8
+constexpr Oid PG_TEXT_GT_OID = 666;     // text > text
 
 // Integer Less Than or Equal Operators
 constexpr Oid PG_INT4_LE_OID = 523;     // int4 <= int4
 constexpr Oid PG_INT8_LE_OID = 414;     // int8 <= int8
+constexpr Oid PG_TEXT_LE_OID = 665;     // text <= text
 
 // Integer Greater Than or Equal Operators
 constexpr Oid PG_INT4_GE_OID = 525;     // int4 >= int4
 constexpr Oid PG_INT8_GE_OID = 415;     // int8 >= int8
+constexpr Oid PG_TEXT_GE_OID = 667;     // text >= text
 
 // =============================================================================
 // FUNCTION OIDS (Complete mapping for expression translation)

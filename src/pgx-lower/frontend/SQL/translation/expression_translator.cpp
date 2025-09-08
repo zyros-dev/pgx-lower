@@ -198,31 +198,37 @@ auto PostgreSQLASTTranslator::Impl::translateComparisonOp(Oid opOid, ::mlir::Val
     switch (opOid) {
     case PG_INT4_EQ_OID: // int4 = int4
     case PG_INT8_EQ_OID: // int8 = int8
+    case PG_TEXT_EQ_OID: // text = text
         predicate = mlir::db::DBCmpPredicate::eq;
         break;
 
     case PG_INT4_NE_OID: // int4 != int4
     case PG_INT8_NE_OID: // int8 != int8
+    case PG_TEXT_NE_OID: // text != text
         predicate = mlir::db::DBCmpPredicate::neq;
         break;
 
     case PG_INT4_LT_OID: // int4 < int4
     case PG_INT8_LT_OID: // int8 < int8
+    case PG_TEXT_LT_OID: // text < text
         predicate = mlir::db::DBCmpPredicate::lt;
         break;
 
     case PG_INT4_LE_OID: // int4 <= int4
     case PG_INT8_LE_OID: // int8 <= int8
+    case PG_TEXT_LE_OID: // text <= text
         predicate = mlir::db::DBCmpPredicate::lte;
         break;
 
     case PG_INT4_GT_OID: // int4 > int4
     case PG_INT8_GT_OID: // int8 > int8
+    case PG_TEXT_GT_OID: // text > text
         predicate = mlir::db::DBCmpPredicate::gt;
         break;
 
     case PG_INT4_GE_OID: // int4 >= int4
     case PG_INT8_GE_OID: // int8 >= int8
+    case PG_TEXT_GE_OID: // text >= text
         predicate = mlir::db::DBCmpPredicate::gte;
         break;
 
