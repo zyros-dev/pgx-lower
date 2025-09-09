@@ -345,10 +345,16 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
             TableSpec spec = parse_table_spec(json_string.c_str());
 
             if (!spec.table_name.empty()) {
-                // Remove OID suffix if present (e.g., "test_logical|oid:123" -> "test_logical")
-                size_t pipe_pos = spec.table_name.find('|');
+                size_t pipe_pos = spec.table_name.find("|oid:");
                 if (pipe_pos != std::string::npos) {
+                    std::string oid_str = spec.table_name.substr(pipe_pos + 5); // Skip "|oid:"
+                    Oid table_oid = static_cast<Oid>(std::stoul(oid_str));
+                    ::g_jit_table_oid = table_oid;
+                    PGX_LOG(RUNTIME, DEBUG, "Extracted table OID %u from spec", table_oid);
+                    
                     spec.table_name = spec.table_name.substr(0, pipe_pos);
+                } else {
+                    PGX_LOG(RUNTIME, DEBUG, "No OID in table spec, g_jit_table_oid unchanged");
                 }
 
                 iter->table_name = spec.table_name;

@@ -13,17 +13,21 @@ PostgreSQLDataSource::PostgreSQLDataSource(const std::string& description) : sca
         tablePos += 10; // Skip past "table": "
         size_t endPos = description.find("\"", tablePos);
         if (endPos != std::string::npos) {
-            tableName = description.substr(tablePos, endPos - tablePos);
-        }
-    }
-    size_t oidPos = description.find("\"oid\": \"");
-    if (oidPos != std::string::npos) {
-        oidPos += 8; // Skip past "oid": "
-        size_t endPos = description.find("\"", oidPos);
-        if (endPos != std::string::npos) {
-            std::string oidStr = description.substr(oidPos, endPos - oidPos);
-            Oid tableOid = static_cast<Oid>(std::stoul(oidStr));
-            ::g_jit_table_oid = tableOid;
+            std::string fullTableSpec = description.substr(tablePos, endPos - tablePos);
+            
+            size_t pipePos = fullTableSpec.find("|oid:");
+            if (pipePos != std::string::npos) {
+                tableName = fullTableSpec.substr(0, pipePos);
+                std::string oidStr = fullTableSpec.substr(pipePos + 5);
+                Oid tableOid = static_cast<Oid>(std::stoul(oidStr));
+                ::g_jit_table_oid = tableOid;
+                PGX_LOG(RUNTIME, DEBUG, "Extracted table='%s', OID=%u from spec='%s'", 
+                        tableName.c_str(), tableOid, fullTableSpec.c_str());
+            } else {
+                // No OID in spec, just use the table name
+                tableName = fullTableSpec;
+                PGX_LOG(RUNTIME, DEBUG, "No OID in table spec, using table='%s'", tableName.c_str());
+            }
         }
     }
     scanContext = open_postgres_table(tableName.c_str());
