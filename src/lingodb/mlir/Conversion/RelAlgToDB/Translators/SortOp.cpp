@@ -23,12 +23,12 @@ class SortTranslator : public mlir::relalg::Translator {
          ::mlir::Value lt = builder.create<mlir::db::CmpOp>(sortOp->getLoc(), mlir::db::DBCmpPredicate::lt, sortCriteria[pos].first, sortCriteria[pos].second);
          lt = builder.create<mlir::db::DeriveTruth>(sortOp->getLoc(), lt);
          auto ifOp = builder.create<mlir::scf::IfOp>(
-            sortOp->getLoc(), lt, [&](::mlir::OpBuilder& builder, ::mlir::Location loc) { builder.create<mlir::scf::YieldOp>(loc, trueVal); }, [&](::mlir::OpBuilder& builder, ::mlir::Location loc) {
-               ::mlir::Value eq = builder.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, sortCriteria[pos].first, sortCriteria[pos].second);
+            sortOp->getLoc(), builder.getI1Type(), lt, [&](mlir::OpBuilder& builder, mlir::Location loc) { builder.create<mlir::scf::YieldOp>(loc, trueVal); }, [&](mlir::OpBuilder& builder, mlir::Location loc) {
+               mlir::Value eq = builder.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, sortCriteria[pos].first, sortCriteria[pos].second);
                eq=builder.create<mlir::db::DeriveTruth>(sortOp->getLoc(),eq);
-               auto ifOp2 = builder.create<mlir::scf::IfOp>(loc, eq,[&](::mlir::OpBuilder& builder, ::mlir::Location loc) {
+               auto ifOp2 = builder.create<mlir::scf::IfOp>(loc, builder.getI1Type(), eq,[&](mlir::OpBuilder& builder, mlir::Location loc) {
                   builder.create<mlir::scf::YieldOp>(loc, createSortPredicate(builder, sortCriteria, trueVal, falseVal, pos + 1));
-                  },[&](::mlir::OpBuilder& builder, ::mlir::Location loc) {
+                  },[&](mlir::OpBuilder& builder, mlir::Location loc) {
                      builder.create<mlir::scf::YieldOp>(loc, falseVal);
                });
                builder.create<mlir::scf::YieldOp>(loc, ifOp2.getResult(0)); });
