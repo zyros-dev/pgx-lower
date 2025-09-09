@@ -22,16 +22,37 @@ class SortTranslator : public mlir::relalg::Translator {
       if (pos < sortCriteria.size()) {
          ::mlir::Value lt = builder.create<mlir::db::CmpOp>(sortOp->getLoc(), mlir::db::DBCmpPredicate::lt, sortCriteria[pos].first, sortCriteria[pos].second);
          lt = builder.create<mlir::db::DeriveTruth>(sortOp->getLoc(), lt);
-         auto ifOp = builder.create<mlir::scf::IfOp>(
-            sortOp->getLoc(), builder.getI1Type(), lt, [&](mlir::OpBuilder& builder, mlir::Location loc) { builder.create<mlir::scf::YieldOp>(loc, trueVal); }, [&](mlir::OpBuilder& builder, mlir::Location loc) {
-               mlir::Value eq = builder.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, sortCriteria[pos].first, sortCriteria[pos].second);
-               eq=builder.create<mlir::db::DeriveTruth>(sortOp->getLoc(),eq);
-               auto ifOp2 = builder.create<mlir::scf::IfOp>(loc, builder.getI1Type(), eq,[&](mlir::OpBuilder& builder, mlir::Location loc) {
-                  builder.create<mlir::scf::YieldOp>(loc, createSortPredicate(builder, sortCriteria, trueVal, falseVal, pos + 1));
-                  },[&](mlir::OpBuilder& builder, mlir::Location loc) {
-                     builder.create<mlir::scf::YieldOp>(loc, falseVal);
-               });
-               builder.create<mlir::scf::YieldOp>(loc, ifOp2.getResult(0)); });
+         auto ifOp =
+             builder.create<mlir::scf::IfOp>(sortOp->getLoc(), mlir::TypeRange{builder.getI1Type()}, lt, true, true);
+         {
+             auto& thenBlock = ifOp.getThenRegion().front();
+             mlir::OpBuilder thenBuilder(&thenBlock, thenBlock.begin());
+             thenBuilder.create<mlir::scf::YieldOp>(sortOp->getLoc(), trueVal);
+         }
+         {
+             auto& elseBlock = ifOp.getElseRegion().front();
+             mlir::OpBuilder elseBuilder(&elseBlock, elseBlock.begin());
+             mlir::Value eq = elseBuilder.create<mlir::db::CmpOp>(sortOp->getLoc(),
+                                                                  mlir::db::DBCmpPredicate::eq,
+                                                                  sortCriteria[pos].first,
+                                                                  sortCriteria[pos].second);
+             eq = elseBuilder.create<mlir::db::DeriveTruth>(sortOp->getLoc(), eq);
+             auto ifOp2 =
+                 elseBuilder.create<mlir::scf::IfOp>(sortOp->getLoc(), mlir::TypeRange{builder.getI1Type()}, eq, true, true);
+             {
+                 auto& thenBlock2 = ifOp2.getThenRegion().front();
+                 mlir::OpBuilder thenBuilder2(&thenBlock2, thenBlock2.begin());
+                 thenBuilder2.create<mlir::scf::YieldOp>(
+                     sortOp->getLoc(),
+                     createSortPredicate(thenBuilder2, sortCriteria, trueVal, falseVal, pos + 1));
+             }
+             {
+                 auto& elseBlock2 = ifOp2.getElseRegion().front();
+                 mlir::OpBuilder elseBuilder2(&elseBlock2, elseBlock2.begin());
+                 elseBuilder2.create<mlir::scf::YieldOp>(sortOp->getLoc(), falseVal);
+             }
+             elseBuilder.create<mlir::scf::YieldOp>(sortOp->getLoc(), ifOp2.getResult(0));
+         }
          return ifOp.getResult(0);
       } else {
          return falseVal;
