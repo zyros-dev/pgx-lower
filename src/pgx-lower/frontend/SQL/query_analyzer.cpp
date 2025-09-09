@@ -64,7 +64,7 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
     }
 
     bool compatible = isSelectStatement && hasCompatibleTypes && !requiresJoin
-                      && !requiresSort && !requiresLimit
+                      && !requiresLimit
                       && (requiresSeqScan || requiresAggregation);
 
     if (compatible) {

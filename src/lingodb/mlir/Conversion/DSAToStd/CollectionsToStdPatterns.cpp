@@ -43,9 +43,7 @@ class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
          auto terminator = rewriter.create<mlir::func::ReturnOp>(sortOp.getLoc());
          Block* sortLambda = &sortOp.getRegion().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         rewriter.moveBlockBefore(sortLambda, terminator.getOperation()->getBlock());
-         sortLambda->getArgument(0).replaceAllUsesWith(tupleLeft);
-         sortLambda->getArgument(1).replaceAllUsesWith(tupleRight);
+         rewriter.inlineBlockBefore(sortLambda, terminator, {tupleLeft, tupleRight});
          mlir::dsa::YieldOp yieldOp = mlir::cast<mlir::dsa::YieldOp>(terminator->getPrevNode());
          Value x = yieldOp.getResults()[0];
          rewriter.create<mlir::func::ReturnOp>(sortOp.getLoc(), x);

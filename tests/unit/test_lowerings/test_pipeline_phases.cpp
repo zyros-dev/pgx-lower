@@ -33,13 +33,9 @@ TEST_F(MLIRLoweringPipelineTest, TestRelAlg) {
     auto simpleMLIR = R"(
         module {
           func.func @main() {
-            %0 = relalg.basetable  {column_order = ["id", "name", "age", "email", "score"], table_identifier = "test_where_nulls|oid:13442615"} columns: {age => @test_where_nulls::@age({type = !db.nullable<i32>}), email => @test_where_nulls::@email({type = !db.nullable<!db.string>}), id => @test_where_nulls::@id({type = i32}), name => @test_where_nulls::@name({type = !db.string}), score => @test_where_nulls::@score({type = !db.nullable<i32>})}
-            %1 = relalg.selection %0 (%arg0: !relalg.tuple){
-              %3 = relalg.getcol %arg0 @test_where_nulls::@age : !db.nullable<i32>
-              %4 = db.isnull %3 : <i32>
-              relalg.return %4 : i1
-            }
-            %2 = relalg.materialize %1 [@test_where_nulls::@id,@test_where_nulls::@name,@test_where_nulls::@age] => ["id", "name", "age"] : !dsa.table
+            %0 = relalg.basetable  {column_order = ["id", "value", "name"], table_identifier = "test_order_basic|oid:13892606"} columns: {id => @test_order_basic::@id({type = i32}), name => @test_order_basic::@name({type = !db.nullable<i32>}), value => @test_order_basic::@value({type = !db.nullable<i32>})}
+            %1 = relalg.sort %0 [(@test_order_basic::@value,asc)]
+            %2 = relalg.materialize %1 [@test_order_basic::@value,@test_order_basic::@name] => ["value", "name"] : !dsa.table
             return
           }
         }

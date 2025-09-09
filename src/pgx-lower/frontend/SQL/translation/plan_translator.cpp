@@ -237,6 +237,21 @@ auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext
             PGX_ERROR("Failed to translate Sort child plan");
             return nullptr;
         }
+        
+        // Map varno=-2 to the actual table columns from child
+        // Sort nodes use varno=-2 to reference columns from their input
+        if (leftTree->type == T_SeqScan) {
+            SeqScan* seqScan = (SeqScan*) leftTree;
+            // Copy mappings from child's varno to -2
+            for (const auto& mapping : context.columnMappings) {
+                if (mapping.first.first == seqScan->scan.scanrelid) {
+                    // Map (-2, varattno) -> (table_name, column_name)
+                    context.columnMappings[{-2, mapping.first.second}] = mapping.second;
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Sort: Mapped (-2, %d) -> (%s, %s)", 
+                           mapping.first.second, mapping.second.first.c_str(), mapping.second.second.c_str());
+                }
+            }
+        }
     }
     else {
         PGX_WARNING("Sort node has no child plan");
@@ -255,28 +270,79 @@ auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext
     Oid* sortOperators = sort->sortOperators;
     bool* nullsFirst = sort->nullsFirst;
 
-    if (numCols > 0 && numCols < MAX_QUERY_COLUMNS) {
-        if (sortColIdx) {
-            for (int i = 0; i < numCols; i++) {
-                AttrNumber colIdx = sortColIdx[i];
-                if (colIdx > 0 && colIdx < MAX_COLUMN_INDEX) { // Sanity check
-                    bool descending = false;
-                    bool nullsFirstVal = false;
-
-                    if (sortOperators) {
-                        Oid sortOp = sortOperators[i];
-                        // Common descending operators in PostgreSQL
-                        descending = (sortOp == PG_INT4_GT_OID || sortOp == PG_INT8_GT_OID || sortOp == PG_INT4_GE_ALT_OID || sortOp == PG_INT8_GE_ALT_OID);
+    // Build sort specifications
+    std::vector<mlir::Attribute> sortSpecs;
+    
+    if (numCols > 0 && numCols < MAX_QUERY_COLUMNS && sortColIdx) {
+        // Get the column manager and attribute manager
+        auto* relalgDialect = context.builder->getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+        if (!relalgDialect) {
+            PGX_ERROR("Failed to load RelAlg dialect");
+            return nullptr;
+        }
+        auto& attrManager = relalgDialect->getColumnManager();
+        
+        for (int i = 0; i < numCols; i++) {
+            AttrNumber colIdx = sortColIdx[i];
+            if (colIdx > 0 && colIdx < MAX_COLUMN_INDEX) {
+                // Determine sort direction
+                mlir::relalg::SortSpec spec = mlir::relalg::SortSpec::asc;
+                if (sortOperators) {
+                    Oid sortOp = sortOperators[i];
+                    // Common descending operators in PostgreSQL
+                    bool descending = (sortOp == PG_INT4_GT_OID || sortOp == PG_INT8_GT_OID || 
+                                     sortOp == PG_INT4_GE_ALT_OID || sortOp == PG_INT8_GE_ALT_OID);
+                    if (descending) {
+                        spec = mlir::relalg::SortSpec::desc;
                     }
-
-                    if (nullsFirst) {
-                        nullsFirstVal = nullsFirst[i];
+                }
+                
+                // Get column name from target list
+                std::string columnName;
+                if (sort->plan.targetlist) {
+                    ListCell* lc;
+                    int targetIndex = 0;
+                    foreach(lc, sort->plan.targetlist) {
+                        targetIndex++;
+                        if (targetIndex == colIdx) {
+                            TargetEntry* tle = (TargetEntry*)lfirst(lc);
+                            if (tle->resname) {
+                                columnName = tle->resname;
+                            } else if (IsA(tle->expr, Var)) {
+                                Var* var = (Var*)tle->expr;
+                                columnName = getColumnNameFromSchema(context.currentStmt, var->varno, var->varattno);
+                            }
+                            break;
+                        }
                     }
+                }
+                
+                if (!columnName.empty()) {
+                    // Get table name for scope
+                    std::string tableName = getTableNameFromRTE(context.currentStmt, 1);  // Assuming single table for now
+                    
+                    // Create column reference with scope
+                    auto columnAttr = attrManager.createRef(tableName, columnName);
+                    
+                    // Create sort specification
+                    auto sortSpecAttr = mlir::relalg::SortSpecificationAttr::get(
+                        context.builder->getContext(), columnAttr, spec);
+                    sortSpecs.push_back(sortSpecAttr);
                 }
             }
         }
     }
-
+    
+    // Create the SortOp if we have sort specifications
+    if (!sortSpecs.empty()) {
+        auto sortSpecsArray = context.builder->getArrayAttr(sortSpecs);
+        auto tupleStreamType = mlir::relalg::TupleStreamType::get(context.builder->getContext());
+        auto sortOp = context.builder->create<mlir::relalg::SortOp>(
+            context.builder->getUnknownLoc(), tupleStreamType, childResult, sortSpecsArray);
+        return sortOp;
+    }
+    
+    // If no sort specs, just return the child
     return childOp;
 }
 
@@ -466,7 +532,14 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
     if (!allColumns.empty()) {
         std::string realTableName = getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
 
+        // Populate column mappings for this table
+        int varattno = 1;  // PostgreSQL column numbering starts at 1
         for (const auto& colInfo : allColumns) {
+            // Map (scanrelid, varattno) -> (table_name, column_name)
+            context.columnMappings[{seqScan->scan.scanrelid, varattno}] = {realTableName, colInfo.name};
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped (%d, %d) -> (%s, %s)", 
+                   seqScan->scan.scanrelid, varattno, realTableName.c_str(), colInfo.name.c_str());
+            
             auto colDef = columnManager.createDef(realTableName, colInfo.name);
 
             PostgreSQLTypeMapper typeMapper(context_);
@@ -475,6 +548,8 @@ auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, Translati
 
             columnDefs.push_back(context.builder->getNamedAttr(colInfo.name, colDef));
             columnOrder.push_back(context.builder->getStringAttr(colInfo.name));
+            
+            varattno++;
         }
 
         tableIdentifier =
@@ -545,8 +620,14 @@ auto PostgreSQLASTTranslator::Impl::validatePlanTree(Plan* planTree) -> bool {
 auto PostgreSQLASTTranslator::Impl::extractTargetListColumns(TranslationContext& context,
                                                        std::vector<mlir::Attribute>& columnRefAttrs,
                                                        std::vector<mlir::Attribute>& columnNameAttrs) -> bool {
-    if (!context.currentStmt || !context.currentStmt->planTree || !context.currentStmt->planTree->targetlist
-        || context.currentStmt->planTree->targetlist->length <= 0)
+    // For Sort nodes, we need to look at the original plan's targetlist
+    // The Sort node inherits its targetlist from the query
+    Plan* planToUse = context.currentStmt->planTree;
+    
+    // If this is a Sort node, look at its own targetlist
+    // (Sort nodes should have the correct targetlist from the query)
+    if (!context.currentStmt || !planToUse || !planToUse->targetlist
+        || planToUse->targetlist->length <= 0)
     {
         // Default case: include 'id' column
         auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
@@ -559,7 +640,7 @@ auto PostgreSQLASTTranslator::Impl::extractTargetListColumns(TranslationContext&
         return true;
     }
 
-    List* tlist = context.currentStmt->planTree->targetlist;
+    List* tlist = planToUse->targetlist;
     int listLength = tlist->length;
 
     // Sanity check the list length
@@ -603,7 +684,39 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
         return false;
     }
 
-    std::string colName = tle->resname ? tle->resname : std::string(GENERATED_COLUMN_PREFIX) + std::to_string(tle->resno);
+    // Initial column name extraction - prioritize resname from the TargetEntry
+    // as it represents the actual SELECT clause column names
+    std::string colName;
+    if (tle->resname) {
+        // resname is the column name from the SELECT clause
+        colName = tle->resname;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using resname from targetlist: %s", colName.c_str());
+    } else {
+        // Fall back to generated name if no resname
+        colName = std::string(GENERATED_COLUMN_PREFIX) + std::to_string(tle->resno);
+    }
+    
+    // Check if this is a Var that might need mapping for the table scope
+    if (tle->expr && tle->expr->type == T_Var) {
+        Var* var = reinterpret_cast<Var*>(tle->expr);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "processTargetEntry: Var with varno=%d, varattno=%d, resno=%d, resname=%s", 
+               var->varno, var->varattno, tle->resno, tle->resname ? tle->resname : "NULL");
+        
+        // Only use mapping if we don't have a resname
+        if (!tle->resname) {
+            auto mappingIt = context.columnMappings.find({var->varno, var->varattno});
+            if (mappingIt != context.columnMappings.end()) {
+                // Use the mapped column name since we don't have resname
+                colName = mappingIt->second.second;  // column_name from mapping
+                PGX_LOG(AST_TRANSLATE, DEBUG, "No resname, using mapped column name for (%d, %d): %s", 
+                       var->varno, var->varattno, colName.c_str());
+            } else {
+                // No mapping and no resname, try to get from schema
+                colName = getColumnNameFromSchema(context.currentStmt, var->varno, var->varattno);
+            }
+        }
+    }
+    
     mlir::Type colType = determineColumnType(context, tle->expr);
 
     // Get column manager
@@ -626,10 +739,24 @@ auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& conte
         else if (tle->expr && tle->expr->type == T_Var) {
             // For Var expressions, get the actual table name from RTE
             Var* var = reinterpret_cast<Var*>(tle->expr);
-            scope = getTableNameFromRTE(context.currentStmt, var->varno);
-            if (scope.empty()) {
-                PGX_ERROR("Failed to resolve table name for varno: %d", var->varno);
-                return false;
+            
+            // First try to look up in column mappings
+            auto mappingIt = context.columnMappings.find({var->varno, var->varattno});
+            if (mappingIt != context.columnMappings.end()) {
+                scope = mappingIt->second.first;  // table_name
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Found column mapping for (%d, %d) -> (%s, %s)", 
+                       var->varno, var->varattno, scope.c_str(), colName.c_str());
+            } else if (var->varno > 0) {
+                // Positive varno - standard RTE lookup
+                scope = getTableNameFromRTE(context.currentStmt, var->varno);
+                if (scope.empty()) {
+                    PGX_ERROR("Failed to resolve table name for varno: %d", var->varno);
+                    return false;
+                }
+            } else {
+                // Negative varno without mapping - this shouldn't happen with our new approach
+                PGX_WARNING("No mapping found for varno %d, varattno %d", var->varno, var->varattno);
+                scope = "unknown_table";
             }
         }
         else if (tle->expr && tle->expr->type == T_Aggref) {
