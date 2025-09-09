@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <algorithm>
+#include <vector>
 
 namespace pgx_lower { namespace log {
 
@@ -138,23 +139,30 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
     if (!should_log(cat, level))
         return;
 
-    char message[8192];
+    // Adjust the buffer size per message so that we can log really long things
+    va_list args_size;
+    va_start(args_size, fmt);
+    int size_needed = vsnprintf(nullptr, 0, fmt, args_size) + 1;
+    va_end(args_size);
+
+    std::vector<char> message(size_needed * 2);
+    
     va_list args;
     va_start(args, fmt);
-    vsnprintf(message, sizeof(message), fmt, args);
+    vsnprintf(message.data(), size_needed, fmt, args);
     va_end(args);
 
     const char* filename = basename_only(file);
 
 #ifdef POSTGRESQL_EXTENSION
     if (cat == Category::PROBLEM) {
-        elog(WARNING, "[%s:%s] %s:%d: %s", category_name(cat), level_name(level), filename, line, message);
+        elog(WARNING, "[%s:%s] %s:%d: %s", category_name(cat), level_name(level), filename, line, message.data());
     } else {
-        elog(DEBUG1, "[%s:%s] %s:%d: %s", category_name(cat), level_name(level), filename, line, message);
+        elog(DEBUG1, "[%s:%s] %s:%d: %s", category_name(cat), level_name(level), filename, line, message.data());
     }
 #else
     // For unit tests, output to stderr
-    fprintf(stderr, "[%s:%s] %s:%d: %s\n", category_name(cat), level_name(level), filename, line, message);
+    fprintf(stderr, "[%s:%s] %s:%d: %s\n", category_name(cat), level_name(level), filename, line, message.data());
 #endif
 }
 
