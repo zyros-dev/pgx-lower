@@ -13,11 +13,12 @@ extern bool g_extension_after_load;
 
 static bool pgx_lower_log_enable = false;
 static bool pgx_lower_log_debug = false;
+static bool pgx_lower_log_ir = false;
 static bool pgx_lower_log_io = false;
 static bool pgx_lower_log_trace = false;
 static char *pgx_lower_enabled_categories = NULL;
 
-extern void pgx_update_log_settings(bool enable, bool debug, bool io, bool trace, const char *categories);
+extern void pgx_update_log_settings(bool enable, bool debug, bool ir, bool io, bool trace, const char *categories);
 
 static ExecutorRun_hook_type prev_ExecutorRun_hook = NULL;
 
@@ -43,7 +44,7 @@ custom_executor(QueryDesc *queryDesc, const ScanDirection direction, const uint6
 }
 
 static void update_logging(bool newval, void *extra) {
-    pgx_update_log_settings(pgx_lower_log_enable, pgx_lower_log_debug, pgx_lower_log_io,
+    pgx_update_log_settings(pgx_lower_log_enable, pgx_lower_log_debug, pgx_lower_log_ir, pgx_lower_log_io,
                            pgx_lower_log_trace, pgx_lower_enabled_categories);
 }
 
@@ -66,6 +67,7 @@ void _PG_init(void) {
 
     register_bool_guc("pgx_lower.log_enable", "Enable PGX-Lower logging", &pgx_lower_log_enable);
     register_bool_guc("pgx_lower.log_debug", "Enable debug logging", &pgx_lower_log_debug);
+    register_bool_guc("pgx_lower.log_ir", "Enable IR (intermediate representation) logging", &pgx_lower_log_ir);
     register_bool_guc("pgx_lower.log_io", "Enable I/O boundary logging", &pgx_lower_log_io);
     register_bool_guc("pgx_lower.log_trace", "Enable trace logging", &pgx_lower_log_trace);
     register_string_guc("pgx_lower.enabled_categories", "Comma-separated list of enabled log categories", 

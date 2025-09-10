@@ -94,21 +94,20 @@ bool runPhase3b(::mlir::ModuleOp module) {
         if (!validateModuleState(module, "Phase 3b output")) {
             throw std::runtime_error("Phase 3b: Module validation failed after lowering");
         }
-        dumpModuleWithStats(module, "After dsa standard pipeline", pgx_lower::log::Category::DB_LOWER);
+        dumpModuleWithStats(module, "After dsa standard pipeline pm1", pgx_lower::log::Category::DB_LOWER);
     }
 
     {
         ::mlir::PassManager pm2(&context);
         pm2.enableVerifier(true);
         mlir::pgx_lower::createDSAToStandardPipeline(pm2, false);
-        pm2.addPass(mlir::createCanonicalizerPass());
         if (mlir::failed(pm2.run(module))) {
             throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
         }
         if (!validateModuleState(module, "Phase 3b output")) {
             throw std::runtime_error("Phase 3b: Module validation failed after lowering");
         }
-        dumpModuleWithStats(module, "After dsa standard pipeline", pgx_lower::log::Category::DB_LOWER);
+        dumpModuleWithStats(module, "After dsa standard pipeline pm2", pgx_lower::log::Category::DB_LOWER);
     }
 
     {

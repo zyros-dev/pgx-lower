@@ -25,7 +25,7 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
     }
 
     auto PHASE_LOG = [&](const char* fmt, auto... args) {
-        ::pgx_lower::log::log(phase, ::pgx_lower::log::Level::DEBUG, __FILE__, __LINE__, fmt, args...);
+        ::pgx_lower::log::log(phase, ::pgx_lower::log::Level::IR, __FILE__, __LINE__, fmt, args...);
     };
     auto timestamp = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(timestamp);
@@ -90,40 +90,6 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
         PHASE_LOG("  Total Regions: %d", totalRegions);
         PHASE_LOG("  Total Values: %d", totalValues);
 
-        // Dialect breakdown
-        PHASE_LOG("Operations by Dialect:");
-        for (const auto& [dialect, count] : dialectCounts) {
-            PHASE_LOG("  %s: %d", dialect.c_str(), count);
-        }
-
-        // Top 10 most frequent operations
-        std::vector<std::pair<int, std::string>> opsByFreq;
-        for (const auto& [op, count] : operationCounts) {
-            opsByFreq.emplace_back(count, op);
-        }
-        std::sort(opsByFreq.rbegin(), opsByFreq.rend());
-
-        PHASE_LOG("Top Operations by Frequency:");
-        for (size_t i = 0; i < std::min(size_t(10), opsByFreq.size()); ++i) {
-            PHASE_LOG("  %s: %d", opsByFreq[i].second.c_str(), opsByFreq[i].first);
-        }
-
-        // Type statistics (top 5)
-        std::vector<std::pair<int, std::string>> typesByFreq;
-        for (const auto& [type, count] : typeCounts) {
-            typesByFreq.emplace_back(count, type);
-        }
-        std::sort(typesByFreq.rbegin(), typesByFreq.rend());
-
-        PHASE_LOG("Top Types by Frequency:");
-        for (size_t i = 0; i < std::min(size_t(5), typesByFreq.size()); ++i) {
-            PHASE_LOG("  %s: %d", typesByFreq[i].second.c_str(), typesByFreq[i].first);
-        }
-
-        bool isValid = ::mlir::succeeded(::mlir::verify(module));
-        PHASE_LOG("Module Verification: %s", isValid ? "PASSED" : "FAILED");
-
-        // Print the actual MLIR code to logs as a formatted block
         try {
             std::string moduleStr;
             llvm::raw_string_ostream stream(moduleStr);

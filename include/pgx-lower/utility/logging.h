@@ -61,6 +61,7 @@ enum class Category {
 enum class Level {
     IO,
     DEBUG,
+    IR,
     TRACE,
     WARNING_LEVEL,
     ERROR_LEVEL,
@@ -69,6 +70,7 @@ enum class Level {
 extern bool log_enable;
 extern bool log_io;
 extern bool log_debug;
+extern bool log_ir;
 extern bool log_trace;
 extern std::set<Category> enabled_categories;
 

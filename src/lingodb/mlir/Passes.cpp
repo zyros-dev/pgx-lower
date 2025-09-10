@@ -52,7 +52,6 @@ void createDBToStandardPipeline(PassManager& pm, bool enableVerification) {
     }
 
     db::createLowerDBPipeline(pm);
-    pm.addPass(createCanonicalizerPass());
 }
 
 void createDSAToStandardPipeline(PassManager& pm, bool enableVerification) {

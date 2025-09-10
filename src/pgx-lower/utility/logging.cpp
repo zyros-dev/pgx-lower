@@ -7,12 +7,12 @@
 
 namespace pgx_lower { namespace log {
 
-// GUC variables - initialized with defaults
-bool log_enable = false; // Master switch (off by default)
-bool log_io = true; // Show IO when enabled
-bool log_debug = false; // Don't show debug by default
-bool log_trace = false; // Don't show trace by default
-std::set<Category> enabled_categories; // Empty = all categories
+bool log_enable = false;
+bool log_io = true;
+bool log_debug = false;
+bool log_ir = false;
+bool log_trace = false;
+std::set<Category> enabled_categories;
 
 static bool initialized = false;
 
@@ -34,6 +34,11 @@ static void initialize_if_needed() {
     const char* debug_env = std::getenv("PGX_LOWER_LOG_DEBUG");
     if (debug_env && strcmp(debug_env, "true") == 0) {
         log_debug = true;
+    }
+
+    const char* ir_env = std::getenv("PGX_LOWER_LOG_IR");
+    if (ir_env && strcmp(ir_env, "true") == 0) {
+        log_ir = true;
     }
 
     const char* trace_env = std::getenv("PGX_LOWER_LOG_TRACE");
@@ -91,6 +96,7 @@ const char* level_name(Level level) {
     switch (level) {
     case Level::IO: return "IO";
     case Level::DEBUG: return "DEBUG";
+    case Level::IR: return "IR";
     case Level::TRACE: return "TRACE";
     case Level::WARNING_LEVEL: return "WARNING_LEVEL";
     case Level::ERROR_LEVEL: return "ERROR_LEVEL";
@@ -114,11 +120,18 @@ bool should_log(Category cat, Level level) {
         if (!log_debug)
             return false;
         break;
+    case Level::IR:
+        if (!log_ir)
+            return false;
+        break;
     case Level::TRACE:
         if (!log_trace)
             return false;
         break;
-    default: throw std::runtime_error("Unknown logging level");
+    case Level::WARNING_LEVEL:
+    case Level::ERROR_LEVEL:
+        // Always log warnings and errors when logging is enabled
+        break;
     }
 
     if (!enabled_categories.empty()) {
@@ -168,11 +181,12 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
 
 }} // namespace pgx_lower::log
 
-extern "C" void pgx_update_log_settings(bool enable, bool debug, bool io, bool trace, const char* categories) {
+extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool io, bool trace, const char* categories) {
     using namespace pgx_lower::log;
 
     log_enable = enable;
     log_debug = debug;
+    log_ir = ir;
     log_io = io;
     log_trace = trace;
 

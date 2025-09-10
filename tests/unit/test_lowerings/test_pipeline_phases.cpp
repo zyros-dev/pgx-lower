@@ -10,6 +10,7 @@ protected:
     void SetUp() override {
         pgx_lower::log::log_enable = true;
         pgx_lower::log::log_debug = true;
+        pgx_lower::log::log_ir = true;
         pgx_lower::log::log_io = true;
         pgx_lower::log::log_trace = true;
         pgx_lower::log::enabled_categories.insert(pgx_lower::log::Category::GENERAL);
@@ -33,9 +34,9 @@ TEST_F(MLIRLoweringPipelineTest, TestRelAlg) {
     auto simpleMLIR = R"(
         module {
           func.func @main() {
-            %0 = relalg.basetable  {column_order = ["id", "value", "name"], table_identifier = "test_order_basic|oid:13892606"} columns: {id => @test_order_basic::@id({type = i32}), name => @test_order_basic::@name({type = !db.nullable<i32>}), value => @test_order_basic::@value({type = !db.nullable<i32>})}
-            %1 = relalg.sort %0 [(@test_order_basic::@value,asc)]
-            %2 = relalg.materialize %1 [@test_order_basic::@value,@test_order_basic::@name] => ["value", "name"] : !dsa.table
+            %0 = relalg.basetable  {column_order = ["id", "name"], table_identifier = "test_order_string|oid:14212101"} columns: {id => @test_order_string::@id({type = i32}), name => @test_order_string::@name({type = !db.nullable<!db.string>})}
+            %1 = relalg.sort %0 [(@test_order_string::@name,asc)]
+            %2 = relalg.materialize %1 [@test_order_string::@name] => ["name"] : !dsa.table
             return
           }
         }
