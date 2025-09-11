@@ -263,15 +263,16 @@ class AtLowering  : public OpConversionPattern<mlir::dsa::At> {
       Value val;
       auto* context = rewriter.getContext();
       if (baseType.isa<util::VarLen32Type>()) {
-         // For psql , we store VarLen32 structs directly
-         // Since we can't distinguish at compile time, we'll assume PostgreSQL case
-         // and load the VarLen32 directly from the valueBuffer
-         Value varLenPtr = rewriter.create<util::ArrayElementPtrOp>(loc,
-            util::RefType::get(context, mlir::util::VarLen32Type::get(context)), 
-            valueBuffer, index);
-         val = rewriter.create<util::LoadOp>(loc, 
-            mlir::util::VarLen32Type::get(context), varLenPtr);
-         val.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());
+         Value pos1 = rewriter.create<util::LoadOp>(loc, rewriter.getI32Type(), valueBuffer, index);
+         pos1.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());
+         Value const1 = rewriter.create<mlir::arith::ConstantIndexOp>(loc, 1);
+         Value ip1 = rewriter.create<arith::AddIOp>(loc, indexType, index, const1);
+         Value pos2 = rewriter.create<util::LoadOp>(loc, rewriter.getI32Type(), valueBuffer, ip1);
+         pos2.getDefiningOp()->setAttr("nosideffect", rewriter.getUnitAttr());
+         Value len = rewriter.create<arith::SubIOp>(loc, rewriter.getI32Type(), pos2, pos1);
+         Value pos1AsIndex = rewriter.create<arith::IndexCastOp>(loc, indexType, pos1);
+         Value ptr = rewriter.create<util::ArrayElementPtrOp>(loc, util::RefType::get(context, rewriter.getI8Type()), varLenBuffer, pos1AsIndex);
+         val = rewriter.create<mlir::util::CreateVarLen>(loc, mlir::util::VarLen32Type::get(rewriter.getContext()), ptr, len);
       } else if (isIntegerType(baseType, 1)) {
          Value realPos = rewriter.create<arith::AddIOp>(loc, indexType, columnOffset, index);
          val = getBit(rewriter, loc, originalValueBuffer, realPos);

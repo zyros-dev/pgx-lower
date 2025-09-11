@@ -96,9 +96,11 @@ struct DataSourceIterator {
     std::vector<bool> bigint_nulls;
     std::vector<uint8_t> bool_values;  // Use uint8_t instead of bool for addressability
     std::vector<bool> bool_nulls;
-    std::vector<runtime::VarLen32> string_values;  // For TEXT, VARCHAR, CHAR columns
+    
+    std::vector<int32_t> string_offsets;
+    std::vector<uint8_t> string_data_buffer;
     std::vector<bool> string_nulls;
-    std::vector<std::string> string_data;  // Persistent storage for actual string data
+    std::vector<std::string> string_data;
 
     // Legacy fields for backward compatibility
     int32_t current_id;
@@ -447,13 +449,13 @@ static void initialize_column_storage(DataSourceIterator* iter) {
     iter->bool_values.resize(iter->columns.size(), 0);
     iter->bool_nulls.resize(iter->columns.size(), true);
 
-    iter->string_values.clear();
     iter->string_data.resize(iter->columns.size(), "");
-    for (size_t i = 0; i < iter->columns.size(); ++i) {
-        const char* empty = "";
-        iter->string_values.push_back(runtime::VarLen32(reinterpret_cast<uint8_t*>(const_cast<char*>(empty)), 0));
-    }
     iter->string_nulls.resize(iter->columns.size(), true);
+    
+    iter->string_offsets.clear();
+    iter->string_offsets.resize(iter->columns.size() + 1, 0);
+    
+    iter->string_data_buffer.clear();
 
     PGX_LOG(RUNTIME, DEBUG, "initialize_column_storage: configured for table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
 }
@@ -584,15 +586,11 @@ bool DataSourceIteration::isValid() {
                     iter->string_data[i] = "";
                 }
 
-                // Create runtime::VarLen32 from the persistent string storage
-                iter->string_values[i] = runtime::VarLen32(
-                    reinterpret_cast<uint8_t*>(const_cast<char*>(iter->string_data[i].data())),
-                    iter->string_data[i].length());
                 iter->string_nulls[i] = is_null;
 
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d string = '%s' len=%u (null=%s)",
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d string = '%s' len=%zu (null=%s)",
                      i, col_spec.name.c_str(), pg_column_index,
-                     iter->string_data[i].c_str(), iter->string_values[i].getLen(),
+                     iter->string_data[i].c_str(), iter->string_data[i].length(),
                      is_null ? "true" : "false");
             } else {
                 bool is_null = false;
@@ -602,6 +600,30 @@ bool DataSourceIteration::isValid() {
                      i, col_spec.name.c_str(), pg_column_index, iter->int_values[i], is_null ? "true" : "false");
             }
         }
+        
+        // for string columns
+        iter->string_data_buffer.clear();
+        int32_t current_offset = 0;
+        
+        for (size_t i = 0; i < iter->columns.size(); ++i) {
+            iter->string_offsets[i] = current_offset;
+            
+            if ((iter->columns[i].type == ::ColumnType::STRING || 
+                 iter->columns[i].type == ::ColumnType::TEXT || 
+                 iter->columns[i].type == ::ColumnType::VARCHAR) && 
+                !iter->string_data[i].empty()) {
+                
+                // Append string data to the buffer
+                iter->string_data_buffer.insert(
+                    iter->string_data_buffer.end(),
+                    iter->string_data[i].begin(),
+                    iter->string_data[i].end()
+                );
+                current_offset += iter->string_data[i].length();
+            }
+        }
+        // Set the final offset
+        iter->string_offsets[iter->columns.size()] = current_offset;
 
         // Maintain legacy fields for backward compatibility
         if (iter->columns.size() >= 1 && iter->columns[0].type == ::ColumnType::INTEGER) {
@@ -695,13 +717,10 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) bigint = %lld at %p",
                      i, col_spec.name.c_str(), (long long)iter->bigint_values[i], &iter->bigint_values[i]);
             } else if (col_spec.type == ::ColumnType::STRING || col_spec.type == ::ColumnType::TEXT || col_spec.type == ::ColumnType::VARCHAR) {
-                // For strings, DSA expects valueBuffer to be int32 offsets and varLenBuffer to be raw bytes
-                // But since we already have runtime::VarLen32 structs, we'll provide them directly
-                // The DSA lowering will need to handle this case
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->string_values[i]; // dataBuffer points to runtime::VarLen32 struct
-                column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)&iter->string_values[i]; // varLenBuffer also points to runtime::VarLen32 struct
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) string len=%u at %p",
-                     i, col_spec.name.c_str(), iter->string_values[i].getLen(), &iter->string_values[i]);
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->string_offsets[i]; // dataBuffer points to this column's offset
+                column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)iter->string_data_buffer.data(); // varLenBuffer points to raw string bytes
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) string offset[%zu]=%d at %p, data at %p",
+                     i, col_spec.name.c_str(), i, iter->string_offsets[i], &iter->string_offsets[i], iter->string_data_buffer.data());
             } else {
                 column_info_ptr[VARLEN_BUFFER_IDX] = 0;                    // varLenBuffer = nullptr for non-string types
                 column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->int_values[i]; // dataBuffer
