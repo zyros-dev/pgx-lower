@@ -56,8 +56,8 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
          TupleType keyType = aggrHtType.getKeyType();
          TupleType aggrType = aggrHtType.getValType();
          if (keyType.getTypes().empty()) {
-            mlir::Value ref = rewriter.create<mlir::util::AllocOp>(loc, typeConverter->convertType(createOp.getDs().getType()), mlir::Value());
-            rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), ref, mlir::Value());
+            ::mlir::Value ref = rewriter.create<mlir::util::AllocOp>(loc, typeConverter->convertType(createOp.getDs().getType()), mlir::Value());
+            rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), ref, ::mlir::Value());
             rewriter.replaceOp(createOp, ref);
             return success();
          } else {
@@ -218,7 +218,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                                  b.create<util::StoreOp>(loc, newAggr, entryAggrAddress, Value());
                               }
                               b.create<scf::YieldOp>(loc, ValueRange{falseValue,ptr});
-
+                              
                               // Else branch of ifOp2
                               b.setInsertionPointToStart(&ifOp2.getElseRegion().emplaceBlock());
                               //          ptr = &entry.next
@@ -228,7 +228,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                         }
                         b.setInsertionPointAfter(ifOp2);
                         b.create<scf::YieldOp>(loc, ifOp2.getResults());
-
+                        
                         // Else branch of ifOpH
                         b.setInsertionPointToStart(&ifOpH.getElseRegion().emplaceBlock());
                         //          ptr = &entry.next
@@ -237,8 +237,8 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                         b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });
                   }
                   b.setInsertionPointAfter(ifOpH);
-                  b.create<scf::YieldOp>(loc, ifOpH.getResults());
-
+                  b.create<scf::YieldOp>(loc, ifOpH.getResults()); 
+               
                // Else branch of outer ifOp
                rewriter.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
                b = rewriter;  // Keep alias for minimal changes
@@ -261,7 +261,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                   //       yield 0,0,done=true
                   b.create<mlir::util::StoreOp>(loc, newLen, lenAddress, Value());
 
-                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr});
+                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); 
             }
 
             Value done = ifOp.getResult(0);
@@ -293,7 +293,7 @@ class LazyJHtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableIns
       {
          Block* sortLambda = &insertOp.getHash().front();
          auto* sortLambdaTerminator = sortLambda->getTerminator();
-         mlir::IRMapping mapping;
+         ::mlir::IRMapping mapping;
          mapping.map(sortLambda->getArgument(0), adaptor.getKey());
 
          for (auto& op : sortLambda->getOperations()) {
