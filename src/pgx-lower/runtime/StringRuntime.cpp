@@ -382,10 +382,24 @@ runtime::VarLen32 runtime::StringRuntime::fromChar(uint64_t val, size_t bytes) {
    return runtime::VarLen32(data, bytes);
 }
 
-#define STR_CMP(NAME, OP)                                                                                  \
-   bool runtime::StringRuntime::compare##NAME(runtime::VarLen32 str1, runtime::VarLen32 str2) {            \
-      return std::string_view(str1.data(), str1.getLen()) OP std::string_view(str2.data(), str2.getLen()); \
-   }
+#include "pgx-lower/utility/logging.h"
+
+#define STR_CMP(NAME, OP)                                                                                              \
+    bool runtime::StringRuntime::compare##NAME(runtime::VarLen32 str1, runtime::VarLen32 str2) {                       \
+        PGX_LOG(RUNTIME, DEBUG, "compareLt called - str1.len=%u, str2.len=%u", str1.getLen(), str2.getLen());          \
+        std::string_view sv1(str1.data(), str1.getLen());                                                              \
+        std::string_view sv2(str2.data(), str2.getLen());                                                              \
+        bool result = sv1 OP sv2;                                                                                      \
+        PGX_LOG(RUNTIME,                                                                                               \
+                DEBUG,                                                                                                 \
+                "StringRuntime::compare" #NAME ": '%.*s' " #OP " '%.*s' = %s",                                         \
+                (int)sv1.length(),                                                                                     \
+                sv1.data(),                                                                                            \
+                (int)sv2.length(),                                                                                     \
+                sv2.data(),                                                                                            \
+                result ? "true" : "false");                                                                            \
+        return result;                                                                                                 \
+    }
 
 STR_CMP(Lt, <)
 STR_CMP(Lte, <=)

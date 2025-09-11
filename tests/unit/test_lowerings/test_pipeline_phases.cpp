@@ -34,7 +34,7 @@ TEST_F(MLIRLoweringPipelineTest, TestRelAlg) {
     auto simpleMLIR = R"(
         module {
           func.func @main() {
-            %0 = relalg.basetable  {column_order = ["id", "name"], table_identifier = "test_order_string|oid:14212101"} columns: {id => @test_order_string::@id({type = i32}), name => @test_order_string::@name({type = !db.nullable<!db.string>})}
+            %0 = relalg.basetable  {column_order = ["id", "name"], table_identifier = "test_order_string|oid:14564357"} columns: {id => @test_order_string::@id({type = i32}), name => @test_order_string::@name({type = !db.nullable<!db.string>})}
             %1 = relalg.sort %0 [(@test_order_string::@name,asc)]
             %2 = relalg.materialize %1 [@test_order_string::@name] => ["name"] : !dsa.table
             return

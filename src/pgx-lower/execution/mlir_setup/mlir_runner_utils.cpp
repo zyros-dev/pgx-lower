@@ -77,7 +77,6 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
             }
         });
 
-        // Log comprehensive statistics using the passed phase category
         PHASE_LOG("\n\n======= %s =======", title.c_str());
         std::stringstream timeStr;
         timeStr << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
@@ -107,14 +106,13 @@ void dumpModuleWithStats(::mlir::ModuleOp module, const std::string& title, pgx_
             }
             formattedMLIR << "=== END MLIR MODULE CONTENT ===\n";
 
-            // Log the entire formatted block
             PHASE_LOG("%s", formattedMLIR.str().c_str());
 
         } catch (const std::exception& e) {
             PGX_ERROR("Failed to print MLIR module: %s", e.what());
         }
 
-        // Write module to file
+        bool isValid = ::mlir::succeeded(::mlir::verify(module));
         std::ofstream file(filename.str());
         if (file.is_open()) {
             file << "// MLIR Module Debug Dump: " << title << "\n";
