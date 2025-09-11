@@ -324,7 +324,7 @@ class ForIteratorIterationImpl : public mlir::dsa::CollectionIterationImpl {
       iterator->setTypeConverter(&typeConverter);
       iterator->init(builder);
       iterator->setLoc(loc);
-      auto forOp = builder.create<scf::ForOp>(loc, iterator->lower(builder), iterator->upper(builder), iterator->step(builder), iterArgs.size() ? iterArgs : std::nullopt);
+      auto forOp = builder.create<scf::ForOp>(loc, iterator->lower(builder), iterator->upper(builder), iterator->step(builder), iterArgs.size() ? iterArgs : llvm::None);
       if (iterArgs.size()) {
          builder.setInsertionPointToStart(forOp.getBody());
          builder.create<scf::YieldOp>(loc);
