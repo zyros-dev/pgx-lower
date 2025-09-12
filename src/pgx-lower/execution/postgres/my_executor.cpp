@@ -82,41 +82,20 @@ std::vector<int> analyzeColumnSelection(const PlannedStmt* stmt) {
         if (rte && stmt->planTree && stmt->planTree->targetlist) {
             auto* targetList = stmt->planTree->targetlist;
 
-            bool hasComputedExpressions = false;
+            int numSelectedColumns = 0;
             ListCell* lc;
             foreach (lc, targetList) {
                 auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-                if (tle && !tle->resjunk && tle->expr) {
-                    if (nodeTag(tle->expr) != T_Var) {
-                        hasComputedExpressions = true;
-                        break;
-                    }
+                if (tle && !tle->resjunk) {
+                    numSelectedColumns++;
                 }
             }
 
-            if (hasComputedExpressions) {
-                selectedColumns = {-1};
-                PGX_LOG(GENERAL, DEBUG, "Configured for computed expression results");
+            selectedColumns.clear();
+            for (int i = 0; i < numSelectedColumns; i++) {
+                selectedColumns.push_back(-1);
             }
-            else {
-                // uses store_int_result which populates g_computed_results
-                // TODO Phase 6: Eventually fix this to use table columns directly
-
-                int numSelectedColumns = 0;
-                ListCell* lc2;
-                foreach (lc2, targetList) {
-                    auto* tle = static_cast<TargetEntry*>(lfirst(lc2));
-                    if (tle && !tle->resjunk) {
-                        numSelectedColumns++;
-                    }
-                }
-
-                selectedColumns.clear();
-                for (int i = 0; i < numSelectedColumns; i++) {
-                    selectedColumns.push_back(-1);
-                }
-                PGX_LOG(GENERAL, DEBUG, "Configured for table column results via computed storage (temporary solution) - %d columns", numSelectedColumns);
-            }
+            PGX_LOG(GENERAL, DEBUG, "Configured for %d result columns", numSelectedColumns);
         }
         else {
             selectedColumns = {0};
