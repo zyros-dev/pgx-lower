@@ -97,10 +97,13 @@ struct DataSourceIterator {
     std::vector<uint8_t> bool_values;  // Use uint8_t instead of bool for addressability
     std::vector<bool> bool_nulls;
     
-    std::vector<int32_t> string_offsets;
-    std::vector<uint8_t> string_data_buffer;
+    // Per-column string storage with accumulation for operations like ORDER BY
+    std::vector<std::vector<int32_t>> string_offsets_per_column;
+    std::vector<std::vector<uint8_t>> string_data_buffers_per_column;
     std::vector<bool> string_nulls;
     std::vector<std::string> string_data;
+    
+    int32_t current_row_index = 0;
 
     // Legacy fields for backward compatibility
     int32_t current_id;
@@ -442,6 +445,14 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
 
 // Helper function: Initialize column storage for dynamic types
 static void initialize_column_storage(DataSourceIterator* iter) {
+    // Reserve capacity to prevent reallocation during iteration
+    iter->int_values.reserve(10000);
+    iter->int_nulls.reserve(10000);
+    iter->bigint_values.reserve(10000);
+    iter->bigint_nulls.reserve(10000);
+    iter->bool_values.reserve(10000);
+    iter->bool_nulls.reserve(10000);
+
     iter->int_values.resize(iter->columns.size(), 0);
     iter->int_nulls.resize(iter->columns.size(), true);
     iter->bigint_values.resize(iter->columns.size(), 0);
@@ -452,10 +463,19 @@ static void initialize_column_storage(DataSourceIterator* iter) {
     iter->string_data.resize(iter->columns.size(), "");
     iter->string_nulls.resize(iter->columns.size(), true);
     
-    iter->string_offsets.clear();
-    iter->string_offsets.resize(iter->columns.size() + 1, 0);
+    // Initialize per-column string storage
+    iter->string_offsets_per_column.resize(iter->columns.size());
+    iter->string_data_buffers_per_column.resize(iter->columns.size());
     
-    iter->string_data_buffer.clear();
+    // Reserve capacity for each string column
+    for (size_t i = 0; i < iter->columns.size(); ++i) {
+        if (iter->columns[i].type == ::ColumnType::STRING || 
+            iter->columns[i].type == ::ColumnType::TEXT || 
+            iter->columns[i].type == ::ColumnType::VARCHAR) {
+            iter->string_offsets_per_column[i].reserve(10000);  // Reserve for up to 10k rows
+            iter->string_data_buffers_per_column[i].reserve(100000);  // Reserve 100KB per column
+        }
+    }
 
     PGX_LOG(RUNTIME, DEBUG, "initialize_column_storage: configured for table '%s' with %zu columns", iter->table_name.c_str(), iter->columns.size());
 }
@@ -492,6 +512,15 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* context, runti
     // Initialize basic iterator state
     iter->context = context;
     iter->has_current_tuple = false;
+    
+    PGX_LOG(RUNTIME, DEBUG, "Before clear: string_offsets_per_column.size()=%zu", iter->string_offsets_per_column.size());
+    iter->current_row_index = 0;
+    iter->string_offsets_per_column.clear();
+    iter->string_data_buffers_per_column.clear();
+    iter->string_data.clear();
+    iter->string_nulls.clear();
+    PGX_LOG(RUNTIME, DEBUG, "After clear: string_offsets_per_column.size()=%zu", iter->string_offsets_per_column.size());
+    
     iter->current_value = 0;
     iter->current_is_null = true;
 
@@ -601,29 +630,54 @@ bool DataSourceIteration::isValid() {
             }
         }
         
-        // for string columns
-        iter->string_data_buffer.clear();
-        int32_t current_offset = 0;
-        
-        for (size_t i = 0; i < iter->columns.size(); ++i) {
-            iter->string_offsets[i] = current_offset;
-            
-            if ((iter->columns[i].type == ::ColumnType::STRING || 
-                 iter->columns[i].type == ::ColumnType::TEXT || 
-                 iter->columns[i].type == ::ColumnType::VARCHAR) && 
-                !iter->string_data[i].empty()) {
-                
-                // Append string data to the buffer
-                iter->string_data_buffer.insert(
-                    iter->string_data_buffer.end(),
-                    iter->string_data[i].begin(),
-                    iter->string_data[i].end()
-                );
-                current_offset += iter->string_data[i].length();
+        // Build per-column offset arrays and data buffers for string columns
+        if (iter->current_row_index == 0) {
+            for (size_t i = 0; i < iter->columns.size(); ++i) {
+                if (iter->columns[i].type == ::ColumnType::STRING || 
+                    iter->columns[i].type == ::ColumnType::TEXT || 
+                    iter->columns[i].type == ::ColumnType::VARCHAR) {
+                    if (iter->string_offsets_per_column[i].empty()) {
+                        iter->string_offsets_per_column[i].push_back(0);
+                        PGX_LOG(RUNTIME, DEBUG, "Added initial offset 0 for column %zu (%s)", 
+                                i, iter->columns[i].name.c_str());
+                    }
+                }
             }
         }
-        // Set the final offset
-        iter->string_offsets[iter->columns.size()] = current_offset;
+        
+        for (size_t i = 0; i < iter->columns.size(); ++i) {
+            if ((iter->columns[i].type == ::ColumnType::STRING || 
+                 iter->columns[i].type == ::ColumnType::TEXT || 
+                 iter->columns[i].type == ::ColumnType::VARCHAR)) {
+                
+                if (!iter->string_data[i].empty()) {
+                    iter->string_data_buffers_per_column[i].insert(
+                        iter->string_data_buffers_per_column[i].end(),
+                        iter->string_data[i].begin(),
+                        iter->string_data[i].end()
+                    );
+                }
+                
+                iter->string_offsets_per_column[i].push_back(iter->string_data_buffers_per_column[i].size());
+                
+                size_t offset_count = iter->string_offsets_per_column[i].size();
+                PGX_LOG(RUNTIME, DEBUG, "Column %zu (%s) after row %d: offset_count=%zu, data_buffer.size()=%zu",
+                        i, iter->columns[i].name.c_str(), iter->current_row_index, 
+                        offset_count, iter->string_data_buffers_per_column[i].size());
+                
+                if (offset_count >= 2) {
+                    size_t curr_idx = iter->current_row_index;
+                    if (curr_idx < offset_count - 1) {
+                        PGX_LOG(RUNTIME, DEBUG, "Column %zu offsets for row %d: offsets[%zu]=%d, offsets[%zu]=%d",
+                                i, iter->current_row_index,
+                                curr_idx, iter->string_offsets_per_column[i][curr_idx],
+                                curr_idx + 1, iter->string_offsets_per_column[i][curr_idx + 1]);
+                    }
+                }
+            }
+        }
+        
+        iter->current_row_index++;
 
         // Maintain legacy fields for backward compatibility
         if (iter->columns.size() >= 1 && iter->columns[0].type == ::ColumnType::INTEGER) {
@@ -717,10 +771,26 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) bigint = %lld at %p",
                      i, col_spec.name.c_str(), (long long)iter->bigint_values[i], &iter->bigint_values[i]);
             } else if (col_spec.type == ::ColumnType::STRING || col_spec.type == ::ColumnType::TEXT || col_spec.type == ::ColumnType::VARCHAR) {
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->string_offsets[i]; // dataBuffer points to this column's offset
-                column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)iter->string_data_buffer.data(); // varLenBuffer points to raw string bytes
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) string offset[%zu]=%d at %p, data at %p",
-                     i, col_spec.name.c_str(), i, iter->string_offsets[i], &iter->string_offsets[i], iter->string_data_buffer.data());
+                // For string columns, provide a pointer to the CURRENT ROW's offset in the array
+                // The row index tells us which pair of offsets to use
+                size_t row_offset_index = iter->current_row_index - 1;  // -1 because we already incremented
+                
+                // Point to the offset for the current row (not the base of the array)
+                // This gives LingoDB access to [start_offset, end_offset] for this row's string
+                int32_t* row_offset_ptr = &iter->string_offsets_per_column[i][row_offset_index];
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)row_offset_ptr;
+                column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)iter->string_data_buffers_per_column[i].data();
+
+                if (row_offset_index < iter->string_offsets_per_column[i].size() - 1) {
+                    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) providing row %zu offset ptr at %p (offsets[%zu]=%d, offsets[%zu]=%d), data at %p",
+                         i, col_spec.name.c_str(), row_offset_index,
+                         row_offset_ptr,
+                         row_offset_index, iter->string_offsets_per_column[i][row_offset_index],
+                         row_offset_index + 1, iter->string_offsets_per_column[i][row_offset_index + 1],
+                         iter->string_data_buffers_per_column[i].data());
+                } else {
+                    PGX_LOG(RUNTIME, DEBUG, "WARNING: Invalid row offset index %zu for string column %s", row_offset_index, col_spec.name.c_str());
+                }
             } else {
                 column_info_ptr[VARLEN_BUFFER_IDX] = 0;                    // varLenBuffer = nullptr for non-string types
                 column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->int_values[i]; // dataBuffer
