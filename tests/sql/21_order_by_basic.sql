@@ -30,3 +30,29 @@ SELECT value, name
 FROM test_order_basic
 ORDER BY name;
 DROP TABLE test_order_basic;
+
+DROP TABLE IF EXISTS test_order_string;
+CREATE TABLE test_order_string
+(
+    id   SERIAL PRIMARY KEY,
+    name VARCHAR(20)
+);
+
+INSERT INTO test_order_string(name)
+VALUES ('Charlie'),
+       ('Alice'),
+       ('Bob'),
+       ('David'),
+       ('Eve');
+
+SET client_min_messages TO DEBUG1;
+
+SELECT name
+FROM test_order_string
+ORDER BY name;
+
+SET client_min_messages TO NOTICE;
+
+SELECT name
+FROM test_order_string
+ORDER BY name DESC;
