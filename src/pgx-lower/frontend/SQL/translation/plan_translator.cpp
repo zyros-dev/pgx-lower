@@ -1,6 +1,32 @@
 
 using namespace pgx_lower::frontend::sql::constants;
 
+// Helper function to map PostgreSQL aggregate function OIDs to function names
+static const char* getAggregateFunctionName(Oid aggfnoid) {
+    switch (aggfnoid) {
+        case PG_F_COUNT_STAR:
+        case PG_F_COUNT_ANY:
+            return AGGREGATION_COUNT_FUNCTION;
+        case PG_F_SUM_INT2:
+        case PG_F_SUM_INT4:
+        case PG_F_SUM_INT8:
+        case PG_F_SUM_FLOAT4:
+        case PG_F_SUM_FLOAT8:
+        case PG_F_SUM_NUMERIC:
+            return AGGREGATION_SUM_FUNCTION;
+        case PG_F_AVG_INT2:
+        case PG_F_AVG_INT4:
+        case PG_F_AVG_INT8:
+        case PG_F_AVG_FLOAT4:
+        case PG_F_AVG_FLOAT8:
+        case PG_F_AVG_NUMERIC:
+            return AGGREGATION_AVG_FUNCTION;
+        default:
+            PGX_WARNING("Unknown aggregate function OID: %u", aggfnoid);
+            return "unknown";
+    }
+}
+
 auto PostgreSQLASTTranslator::Impl::translatePlanNode(Plan* plan, TranslationContext& context) -> ::mlir::Operation* {
     if (!plan) {
         PGX_ERROR("Plan node is null");
@@ -104,6 +130,12 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
                 context.columnMappings[{-2, colIdx}] = {tableName, columnName};
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped GROUP BY result (-2, %d) -> (%s, %s)", 
                        colIdx, tableName.c_str(), columnName.c_str());
+                
+                // also map based on result position (group by columns appear first in result)
+                // postgresql renumbers columns in the result based on their position in select list
+                context.columnMappings[{-2, i + 1}] = {tableName, columnName};
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Also mapped GROUP BY result position (-2, %d) -> (%s, %s)", 
+                       i + 1, tableName.c_str(), columnName.c_str());
             }
         } else {
             PGX_WARNING("GROUP BY without SeqScan child - cannot determine table context");
@@ -205,8 +237,9 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
                     
                     auto columnRef = mlir::relalg::ColumnRefAttr::get(context.builder->getContext(), symbolRef, columnAttr);
                     
-                    // Determine result type (for now, keep it as nullable i32 like LingoDB examples)
-                    auto resultType = mlir::db::NullableType::get(context.builder->getContext(), context.builder->getI32Type());
+                    // use the actual column type from the column attribute
+                    // the columnattr is a std::shared_ptr<column>, so use -> to access type
+                    auto resultType = columnAttr->type;
                     attrDef.getColumn().type = resultType;
                     
                     // Create the aggregate function operation using enum instead of string
