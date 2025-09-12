@@ -44,10 +44,6 @@ SELECT name, department, salary, years
 FROM test_order_where
 WHERE salary >= 45000
 ORDER BY department, salary DESC;
-SELECT name, salary, years, (salary * years) AS total_earned
-FROM test_order_where
-WHERE years >= 3
-ORDER BY (salary * years);
 
 SELECT name, department, age
 FROM test_order_where
