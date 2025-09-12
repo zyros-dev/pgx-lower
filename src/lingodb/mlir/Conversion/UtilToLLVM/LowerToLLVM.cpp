@@ -24,6 +24,10 @@ static mlir::LLVM::LLVMStructType convertTuple(TupleType tupleType, const TypeCo
    for (auto t : tupleType.getTypes()) {
       types.push_back(typeConverter.convertType(t));
    }
+    // TODO: NV: This isPacked=true is here on purpose. Took quite long for me to find. So with nullable strings we add
+    //       and i1 at the front, and if it isn't packed this causes misalignment issues later on... however, I think
+    //       we should leave this unpacked and fix the size of operator. It's a problem for another day though. I'd
+    //       rather keep moving forwards and probably solve strings being stored in ram first
    return mlir::LLVM::LLVMStructType::getLiteral(tupleType.getContext(), types, /*isPacked=*/true);
 }
 
