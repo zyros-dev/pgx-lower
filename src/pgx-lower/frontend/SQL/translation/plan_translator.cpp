@@ -78,6 +78,38 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
     int numCols = agg->numCols;
     AttrNumber* grpColIdx = agg->grpColIdx;
 
+    // group by
+    if (numCols > 0 && grpColIdx) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Processing %d GROUP BY columns", numCols);
+        
+        std::string tableName;
+        if (leftTree && leftTree->type == T_SeqScan) {
+            SeqScan* seqScan = (SeqScan*) leftTree;
+            tableName = getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
+            
+            for (int i = 0; i < numCols; i++) {
+                AttrNumber colIdx = grpColIdx[i];
+                std::string columnName = getColumnNameFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid, colIdx);
+                
+                PGX_LOG(AST_TRANSLATE, DEBUG, "GROUP BY column %d: %s.%s (index %d)", 
+                       i, tableName.c_str(), columnName.c_str(), colIdx);
+                
+                // create column reference attribute for the group by column
+                auto columnAttr = columnManager.get(tableName, columnName);
+                auto columnRef = columnManager.createRef(columnAttr.get());
+                groupByAttrs.push_back(columnRef);
+                
+                // map the group by column for materializeop
+                // postgresql uses varno=-2 to reference columns from aggregation results
+                context.columnMappings[{-2, colIdx}] = {tableName, columnName};
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped GROUP BY result (-2, %d) -> (%s, %s)", 
+                       colIdx, tableName.c_str(), columnName.c_str());
+            }
+        } else {
+            PGX_WARNING("GROUP BY without SeqScan child - cannot determine table context");
+        }
+    }
+
     std::vector<mlir::Attribute> aggCols;
     auto tupleStreamType = mlir::relalg::TupleStreamType::get(context.builder->getContext());
 
