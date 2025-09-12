@@ -24,7 +24,7 @@ static mlir::LLVM::LLVMStructType convertTuple(TupleType tupleType, const TypeCo
    for (auto t : tupleType.getTypes()) {
       types.push_back(typeConverter.convertType(t));
    }
-   return mlir::LLVM::LLVMStructType::getLiteral(tupleType.getContext(), types);
+   return mlir::LLVM::LLVMStructType::getLiteral(tupleType.getContext(), types, /*isPacked=*/true);
 }
 
 class PackOpLowering : public OpConversionPattern<mlir::util::PackOp> {
