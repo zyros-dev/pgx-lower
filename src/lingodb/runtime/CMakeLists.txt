@@ -3,6 +3,7 @@ add_library(runtime OBJECT
         MetaData.cpp
         ../../pgx-lower/runtime/StringRuntime.cpp
         Hash.cpp
+        Hashtable.cpp
         Vector.cpp
 )
 

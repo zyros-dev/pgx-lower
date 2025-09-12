@@ -60,6 +60,8 @@ class WrapWithNullCheck : public mlir::RewritePattern {
          return;
       } else {
          auto ifOp = rewriter.create<mlir::scf::IfOp>(op->getLoc(), op->getResultTypes(), isAnyNull, true);
+         ifOp.getThenRegion().emplaceBlock();
+         ifOp.getElseRegion().emplaceBlock();
          {
             auto& thenRegion = ifOp.getThenRegion();
             thenRegion.push_back(new mlir::Block());
