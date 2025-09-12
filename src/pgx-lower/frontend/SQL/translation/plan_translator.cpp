@@ -266,7 +266,8 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
                 createdCols.push_back(attrDef);
                 createdValues.push_back(aggResult);
             } else {
-                PGX_WARNING("Non-aggregate expression in Agg target list: type %d", te->expr->type);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Non-aggregate expression in target list: type %d (%s)",
+                       te->expr->type, te->resname ? te->resname : "unnamed");
             }
         }
 
