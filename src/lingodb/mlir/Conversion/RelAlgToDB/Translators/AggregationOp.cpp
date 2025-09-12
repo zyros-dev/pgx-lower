@@ -42,6 +42,8 @@ class AggregationTranslator : public mlir::relalg::Translator {
             ::mlir::Value anyNull = rewriter.create<mlir::arith::OrIOp>(loc, isNull1, isNull2);
             ::mlir::Value bothNull = rewriter.create<mlir::arith::AndIOp>(loc, isNull1, isNull2);
             auto ifOp = rewriter.create<mlir::scf::IfOp>(loc, mlir::TypeRange{rewriter.getI1Type()}, anyNull);
+            ifOp.getThenRegion().emplaceBlock();
+            ifOp.getElseRegion().emplaceBlock();
             {
                mlir::OpBuilder::InsertionGuard guard(rewriter);
                rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
