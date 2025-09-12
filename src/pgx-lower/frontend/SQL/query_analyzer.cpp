@@ -175,7 +175,10 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
     case T_MergeJoin:
     case T_HashJoin: caps.requiresJoin = true; break;
 
-    case T_Sort: caps.requiresSort = true; break;
+    case T_Sort:
+        // TODO: NV: This permits sort nodes with expressions in them. It isn't supposed to, and they just crash.
+        //           They should be disabled here because lingodb doesn't support them either.
+        caps.requiresSort = true; break;
 
     case T_Limit: caps.requiresLimit = true; break;
 
