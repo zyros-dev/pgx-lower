@@ -289,9 +289,9 @@ auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext
                 mlir::relalg::SortSpec spec = mlir::relalg::SortSpec::asc;
                 if (sortOperators) {
                     Oid sortOp = sortOperators[i];
-                    // Common descending operators in PostgreSQL
-                    bool descending = (sortOp == PG_INT4_GT_OID || sortOp == PG_INT8_GT_OID || 
-                                     sortOp == PG_INT4_GE_ALT_OID || sortOp == PG_INT8_GE_ALT_OID);
+                    bool descending = (sortOp == PG_INT4_GT_OID || sortOp == PG_INT8_GT_OID ||
+                                     sortOp == PG_INT4_GE_ALT_OID || sortOp == PG_INT8_GE_ALT_OID ||
+                                     sortOp == PG_TEXT_GT_OID || sortOp == PG_TEXT_GE_OID);
                     if (descending) {
                         spec = mlir::relalg::SortSpec::desc;
                     }
