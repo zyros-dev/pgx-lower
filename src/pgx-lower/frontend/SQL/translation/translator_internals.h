@@ -5,21 +5,8 @@ extern "C" {
 #include "nodes/nodes.h"
 #include "nodes/primnodes.h"
 #include "nodes/plannodes.h"
-#include "nodes/parsenodes.h"
-#include "nodes/nodeFuncs.h"
 #include "nodes/pg_list.h"
 #include "utils/lsyscache.h"
-#include "utils/builtins.h"
-#include "utils/memutils.h"
-#include "catalog/pg_operator.h"
-#include "catalog/pg_type.h"
-#include "catalog/namespace.h"
-#include "access/table.h"
-#include "utils/rel.h"
-#include "utils/array.h"
-#include "utils/syscache.h"
-#include "access/htup_details.h"
-#include "fmgr.h"
 
 typedef int16 AttrNumber;
 typedef struct Bitmapset Bitmapset;
@@ -41,33 +28,16 @@ typedef struct Gather Gather;
 #undef dngettext
 
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
-#include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
-#include "pgx-lower/utility/logging.h"
 #include "pgx-lower/runtime/tuple_access.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/MLIRContext.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgTypes.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "lingodb/runtime/metadata.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 
 #include <memory>
-#include <stdexcept>
 #include <unordered_map>
 #include <map>
 #include <string>
@@ -152,8 +122,10 @@ class PostgreSQLASTTranslator::Impl {
     auto translateGather(const Gather* gather, TranslationContext& context) -> ::mlir::Operation*;
 
     // Query function generation
-    static auto createQueryFunction(::mlir::OpBuilder& builder, const TranslationContext& context) -> ::mlir::func::FuncOp;
-    auto generateRelAlgOperations(::mlir::func::FuncOp queryFunc, const PlannedStmt* plannedStmt, TranslationContext& context)
+    static auto createQueryFunction(::mlir::OpBuilder& builder, const TranslationContext& context)
+        -> ::mlir::func::FuncOp;
+    auto
+    generateRelAlgOperations(::mlir::func::FuncOp queryFunc, const PlannedStmt* plannedStmt, TranslationContext& context)
         -> bool;
 
     // Relational operation helpers

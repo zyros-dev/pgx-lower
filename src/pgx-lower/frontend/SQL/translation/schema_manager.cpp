@@ -1,5 +1,38 @@
-
 #include "translator_internals.h"
+extern "C" {
+#include "postgres.h"
+#include "nodes/nodes.h"
+#include "nodes/primnodes.h"
+#include "nodes/plannodes.h"
+#include "nodes/parsenodes.h"
+#include "nodes/pg_list.h"
+#include "utils/lsyscache.h"
+#include "catalog/pg_operator.h"
+#include "catalog/namespace.h"
+#include "access/table.h"
+#include "utils/rel.h"
+#include "utils/array.h"
+#include "utils/syscache.h"
+#include "fmgr.h"
+}
+
+#include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
+#include "pgx-lower/utility/logging.h"
+#include "pgx-lower/runtime/tuple_access.h"
+
+#include "mlir/IR/Builders.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+
+#include <memory>
+#include <unordered_map>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace postgresql_ast {
 
@@ -17,7 +50,8 @@ auto getTableNameFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> std::str
         return "unknown_table_" + std::to_string(varno);
     }
 
-    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    RangeTblEntry* rte =
+        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for varno %d", varno);
@@ -48,7 +82,8 @@ auto getTableOidFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> Oid {
         return InvalidOid;
     }
 
-    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    RangeTblEntry* rte =
+        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte) {
         PGX_WARNING("Invalid RTE for varno %d", varno);
@@ -71,7 +106,8 @@ auto getColumnNameFromSchema(const PlannedStmt* currentPlannedStmt, int varno, A
         return "col_" + std::to_string(varattno);
     }
 
-    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    RangeTblEntry* rte =
+        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for column lookup");
@@ -116,7 +152,8 @@ auto getAllTableColumnsFromSchema(const PlannedStmt* currentPlannedStmt, int sca
         return columns;
     }
 
-    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, scanrelid - POSTGRESQL_VARNO_OFFSET));
+    RangeTblEntry* rte =
+        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, scanrelid - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for table schema discovery");
@@ -160,12 +197,11 @@ auto getAllTableColumnsFromSchema(const PlannedStmt* currentPlannedStmt, int sca
 }
 
 auto isColumnNullable(const PlannedStmt* currentPlannedStmt, int varno, const AttrNumber varattno) -> bool {
-    
     // Default to nullable if we can't determine
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
         return true;
     }
-    
+
 #ifdef BUILDING_UNIT_TESTS
     // For unit tests, assume nullable
     return true;
@@ -174,34 +210,35 @@ auto isColumnNullable(const PlannedStmt* currentPlannedStmt, int varno, const At
     if (varno > list_length(currentPlannedStmt->rtable)) {
         return true;
     }
-    
-    RangeTblEntry* rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+
+    RangeTblEntry* rte =
+        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
     if (!rte || rte->relid == InvalidOid) {
         return true;
     }
-    
+
     // Open relation to check column nullability
     Relation rel = table_open(rte->relid, AccessShareLock);
     if (!rel) {
         return true;
     }
-    
+
     TupleDesc tupleDesc = RelationGetDescr(rel);
     if (!tupleDesc) {
         table_close(rel, AccessShareLock);
         return true;
     }
-    
+
     // varattno is 1-based, array is 0-based
     int attrIndex = varattno - 1;
     if (attrIndex < 0 || attrIndex >= tupleDesc->natts) {
         table_close(rel, AccessShareLock);
         return true;
     }
-    
+
     Form_pg_attribute attr = TupleDescAttr(tupleDesc, attrIndex);
     bool nullable = !attr->attnotnull;
-    
+
     table_close(rel, AccessShareLock);
     return nullable;
 #endif

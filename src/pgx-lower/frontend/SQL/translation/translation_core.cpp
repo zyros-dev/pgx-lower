@@ -1,4 +1,39 @@
 #include "translator_internals.h"
+extern "C" {
+#include "postgres.h"
+#include "nodes/nodes.h"
+#include "nodes/primnodes.h"
+#include "nodes/plannodes.h"
+#include "nodes/parsenodes.h"
+#include "nodes/pg_list.h"
+#include "catalog/pg_type.h"
+#include "utils/rel.h"
+#include "utils/array.h"
+#include "utils/syscache.h"
+#include "fmgr.h"
+}
+
+#include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
+#include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
+#include "pgx-lower/utility/logging.h"
+#include "pgx-lower/runtime/tuple_access.h"
+
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
+
+#include <memory>
+#include <unordered_map>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace postgresql_ast {
 
@@ -6,11 +41,7 @@ namespace postgresql_ast {
 
 #ifdef POSTGRESQL_EXTENSION
 // PostgreSQL headers for text handling
-extern "C" {
-#include "postgres.h"
-#include "utils/builtins.h"
-#include "fmgr.h"
-}
+extern "C" {}
 #endif
 
 using namespace pgx_lower::frontend::sql::constants;
