@@ -106,8 +106,6 @@ auto PostgreSQLASTTranslator::Impl::translateVar(Var* var) -> ::mlir::Value {
         std::string tableName = getTableNameFromRTE(currentPlannedStmt_, var->varno);
         std::string colName = getColumnNameFromSchema(currentPlannedStmt_, var->varno, var->varattno);
 
-        auto colSymRef = mlir::SymbolRefAttr::get(&context_, tableName + "::" + colName);
-
         // Get column manager from RelAlg dialect
         auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
         if (!dialect) {
@@ -270,8 +268,8 @@ auto PostgreSQLASTTranslator::Impl::translateComparisonOp(Oid opOid, ::mlir::Val
     mlir::Value convertedLhs = lhs;
     mlir::Value convertedRhs = rhs;
 
-    bool lhsNullable = lhs.getType().isa<mlir::db::NullableType>();
-    bool rhsNullable = rhs.getType().isa<mlir::db::NullableType>();
+    const bool lhsNullable = isa<mlir::db::NullableType>(lhs.getType());
+    const bool rhsNullable = isa<mlir::db::NullableType>(rhs.getType());
 
     if (lhsNullable && !rhsNullable) {
         mlir::Type nullableRhsType = mlir::db::NullableType::get(builder_->getContext(), rhs.getType());

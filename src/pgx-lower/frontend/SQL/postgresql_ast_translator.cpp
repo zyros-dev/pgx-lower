@@ -1,3 +1,4 @@
+#include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
 #include "pgx-lower/frontend/SQL/translation/translator_internals.h"
 
 namespace postgresql_ast {
@@ -6,7 +7,7 @@ using TranslationContext = pgx_lower::frontend::sql::TranslationContext;
 // Implementation of PostgreSQLASTTranslator public interface
 
 PostgreSQLASTTranslator::PostgreSQLASTTranslator(::mlir::MLIRContext& context)
-    : pImpl(std::make_unique<Impl>(context)) {}
+: pImpl(std::make_unique<Impl>(context)) {}
 
 PostgreSQLASTTranslator::~PostgreSQLASTTranslator() = default;
 
@@ -15,9 +16,12 @@ auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) const -> 
 }
 
 auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
-    PGX_LOG(AST_TRANSLATE, IO, "translateQuery IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
-            plannedStmt ? plannedStmt->commandType : -1, plannedStmt ? plannedStmt->canSetTag : false);
-    
+    PGX_LOG(AST_TRANSLATE,
+            IO,
+            "translateQuery IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
+            plannedStmt ? plannedStmt->commandType : -1,
+            plannedStmt ? plannedStmt->canSetTag : false);
+
     if (!plannedStmt) {
         PGX_ERROR("PlannedStmt is null");
         return nullptr;
@@ -55,16 +59,18 @@ auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> 
     auto result = std::make_unique<::mlir::ModuleOp>(module);
     auto numOps = module.getBody()->getOperations().size();
     PGX_LOG(AST_TRANSLATE, IO, "translateQuery OUT: RelAlg MLIR Module with %zu operations", numOps);
-    
+
     return result;
 }
 
 auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncOp queryFunc,
                                                              const PlannedStmt* plannedStmt,
-                                                       TranslationContext& context) -> bool {
-    PGX_LOG(AST_TRANSLATE, IO, "generateRelAlgOperations IN: PlannedStmt with planTree type %d",
+                                                             TranslationContext& context) -> bool {
+    PGX_LOG(AST_TRANSLATE,
+            IO,
+            "generateRelAlgOperations IN: PlannedStmt with planTree type %d",
             plannedStmt ? (plannedStmt->planTree ? plannedStmt->planTree->type : -1) : -1);
-    
+
     if (!plannedStmt) {
         PGX_ERROR("PlannedStmt is null");
         return false;
@@ -102,10 +108,9 @@ auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncO
     context.builder->create<mlir::func::ReturnOp>(context.builder->getUnknownLoc());
 
     PGX_LOG(AST_TRANSLATE, IO, "generateRelAlgOperations OUT: RelAlg operations generated successfully");
-    
+
     return true;
 }
-
 
 auto createPostgreSQLASTTranslator(::mlir::MLIRContext& context) -> std::unique_ptr<PostgreSQLASTTranslator> {
     return std::make_unique<PostgreSQLASTTranslator>(context);
