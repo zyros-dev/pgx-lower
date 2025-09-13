@@ -84,10 +84,10 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(int32_t
     }
     }
 
-::mlir::Type PostgreSQLTypeMapper::map_postgre_sqltype(Oid typeOid, int32_t typmod, bool nullable) {
+::mlir::Type PostgreSQLTypeMapper::map_postgre_sqltype(Oid type_oid, int32_t typmod, bool nullable) {
     ::mlir::Type baseType;
     
-    switch (typeOid) {
+    switch (type_oid) {
     case INT4OID: baseType = mlir::IntegerType::get(&context_, INT4_BIT_WIDTH); break;
     case INT8OID: baseType = mlir::IntegerType::get(&context_, INT8_BIT_WIDTH); break;
     case INT2OID: baseType = mlir::IntegerType::get(&context_, INT2_BIT_WIDTH); break;
@@ -110,7 +110,7 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(int32_t
     }
 
     default:
-        PGX_WARNING(("Unknown PostgreSQL type OID: " + std::to_string(typeOid) + ", defaulting to i32").c_str());
+        PGX_WARNING(("Unknown PostgreSQL type OID: " + std::to_string(type_oid) + ", defaulting to i32").c_str());
         baseType = mlir::IntegerType::get(&context_, INT4_BIT_WIDTH);
         break;
     }

@@ -38,20 +38,20 @@ namespace postgresql_ast {
 
 using namespace pgx_lower::frontend::sql::constants;
 
-auto get_table_name_from_rte(PlannedStmt* currentPlannedStmt, int varno) -> std::string {
-    if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO) {
-        PGX_WARNING("Cannot access rtable: currentPlannedStmt=%p varno=%d", currentPlannedStmt, varno);
+auto get_table_name_from_rte(PlannedStmt* current_planned_stmt, int varno) -> std::string {
+    if (!current_planned_stmt || !current_planned_stmt->rtable || varno <= INVALID_VARNO) {
+        PGX_WARNING("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, varno);
         return "unknown_table_" + std::to_string(varno);
     }
 
     // Get RangeTblEntry from rtable using varno (1-based index)
-    if (varno > list_length(currentPlannedStmt->rtable)) {
-        PGX_WARNING("varno %d exceeds rtable length %d", varno, list_length(currentPlannedStmt->rtable));
+    if (varno > list_length(current_planned_stmt->rtable)) {
+        PGX_WARNING("varno %d exceeds rtable length %d", varno, list_length(current_planned_stmt->rtable));
         return "unknown_table_" + std::to_string(varno);
     }
 
     RangeTblEntry* rte =
-        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+        static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for varno %d", varno);
@@ -69,21 +69,21 @@ auto get_table_name_from_rte(PlannedStmt* currentPlannedStmt, int varno) -> std:
 #endif
 }
 
-auto get_table_oid_from_rte(PlannedStmt* currentPlannedStmt, int varno) -> Oid {
+auto get_table_oid_from_rte(PlannedStmt* current_planned_stmt, int varno) -> Oid {
     using namespace pgx_lower::frontend::sql::constants;
-    if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO) {
-        PGX_WARNING("Cannot access rtable: currentPlannedStmt=%p varno=%d", currentPlannedStmt, varno);
+    if (!current_planned_stmt || !current_planned_stmt->rtable || varno <= INVALID_VARNO) {
+        PGX_WARNING("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, varno);
         return InvalidOid;
     }
 
     // Get RangeTblEntry from rtable using varno (1-based index)
-    if (varno > list_length(currentPlannedStmt->rtable)) {
-        PGX_WARNING("varno %d exceeds rtable length %d", varno, list_length(currentPlannedStmt->rtable));
+    if (varno > list_length(current_planned_stmt->rtable)) {
+        PGX_WARNING("varno %d exceeds rtable length %d", varno, list_length(current_planned_stmt->rtable));
         return InvalidOid;
     }
 
     RangeTblEntry* rte =
-        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+        static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte) {
         PGX_WARNING("Invalid RTE for varno %d", varno);
@@ -132,7 +132,7 @@ auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, int varn
 #endif
 }
 
-auto get_all_table_columns_from_schema(const PlannedStmt* currentPlannedStmt, int scanrelid)
+auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, int scanrelid)
     -> std::vector<pgx_lower::frontend::sql::ColumnInfo> {
     std::vector<pgx_lower::frontend::sql::ColumnInfo> columns;
 
@@ -141,19 +141,19 @@ auto get_all_table_columns_from_schema(const PlannedStmt* currentPlannedStmt, in
     columns.emplace_back("id", INT4OID, INVALID_TYPMOD, UNIT_TEST_COLUMN_NOT_NULL);
     return columns;
 #else
-    if (!currentPlannedStmt || !currentPlannedStmt->rtable || scanrelid <= 0) {
+    if (!current_planned_stmt || !current_planned_stmt->rtable || scanrelid <= 0) {
         PGX_WARNING("Cannot access rtable for scanrelid %d", scanrelid);
         return columns;
     }
 
     // Get RangeTblEntry
-    if (scanrelid > list_length(currentPlannedStmt->rtable)) {
+    if (scanrelid > list_length(current_planned_stmt->rtable)) {
         PGX_WARNING("scanrelid exceeds rtable length");
         return columns;
     }
 
     RangeTblEntry* rte =
-        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, scanrelid - POSTGRESQL_VARNO_OFFSET));
+        static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, scanrelid - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for table schema discovery");

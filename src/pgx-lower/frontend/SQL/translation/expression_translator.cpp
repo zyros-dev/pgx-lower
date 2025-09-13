@@ -87,8 +87,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(Expr* expr) -> mlir::Va
     PGX_LOG(AST_TRANSLATE, IO, "translate_expression OUT: MLIR Value (expression type %d)", expr->type);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_op_expr(const OpExpr* opExpr) -> mlir::Value {
-    if (!opExpr || !builder_) {
+auto PostgreSQLASTTranslator::Impl::translate_op_expr(const OpExpr* op_expr) -> mlir::Value {
+    if (!op_expr || !builder_) {
         PGX_ERROR("Invalid OpExpr parameters");
         return nullptr;
     }
@@ -96,12 +96,12 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const OpExpr* opExpr) -> m
     mlir::Value lhs = nullptr;
     mlir::Value rhs = nullptr;
 
-    if (!extract_op_expr_operands(opExpr, lhs, rhs)) {
+    if (!extract_op_expr_operands(op_expr, lhs, rhs)) {
         PGX_ERROR("Failed to extract OpExpr operands");
         return nullptr;
     }
 
-    const Oid opOid = opExpr->opno;
+    const Oid opOid = op_expr->opno;
 
     mlir::Value result = translate_arithmetic_op(opOid, lhs, rhs);
     if (result) {
@@ -200,7 +200,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const OpExpr* opExpr) -> m
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_var(const Var* var) const -> mlir::Value {
-    if (!var || !builder_ || !currentTupleHandle_) {
+    if (!var || !builder_ || !current_tuple_handle_) {
         PGX_ERROR("Invalid Var parameters");
         return nullptr;
     }
@@ -208,13 +208,13 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const Var* var) const -> mlir:
     // For RelAlg operations, we need to generate a GetColumnOp
     // This requires the current tuple value and column reference
 
-    if (currentTupleHandle_) {
+    if (current_tuple_handle_) {
         // We have a tuple handle - use it to get the column value
         // This would typically be inside a MapOp or SelectionOp region
 
         // Get real table and column names from PostgreSQL schema
-        const auto tableName = get_table_name_from_rte(currentPlannedStmt_, var->varno);
-        const auto colName = get_column_name_from_schema(currentPlannedStmt_, var->varno, var->varattno);
+        const auto tableName = get_table_name_from_rte(current_planned_stmt_, var->varno);
+        const auto colName = get_column_name_from_schema(current_planned_stmt_, var->varno, var->varattno);
 
         // Get column manager from RelAlg dialect
         auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
@@ -227,7 +227,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const Var* var) const -> mlir:
 
         // Map PostgreSQL type to MLIR type - check if column is nullable
         PostgreSQLTypeMapper type_mapper(context_);
-        const bool nullable = is_column_nullable(currentPlannedStmt_, var->varno, var->varattno);
+        const bool nullable = is_column_nullable(current_planned_stmt_, var->varno, var->varattno);
         auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
 
         // This ensures proper column tracking and avoids invalid attributes
@@ -237,7 +237,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const Var* var) const -> mlir:
         colRef.getColumn().type = mlirType;
 
         auto getColOp =
-            builder_->create<mlir::relalg::GetColumnOp>(builder_->getUnknownLoc(), mlirType, colRef, *currentTupleHandle_);
+            builder_->create<mlir::relalg::GetColumnOp>(builder_->getUnknownLoc(), mlirType, colRef, *current_tuple_handle_);
 
         return getColOp.getRes();
     }
@@ -250,32 +250,32 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const Var* var) const -> mlir:
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_const(Const* constNode) const -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_const(Const* const_node) const -> mlir::Value {
     if (!builder_) {
         PGX_ERROR("No builder available for constant translation");
         return nullptr;
     }
-    return postgresql_ast::translate_const(constNode, *builder_, context_);
+    return postgresql_ast::translate_const(const_node, *builder_, context_);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_func_expr(const FuncExpr* funcExpr) -> mlir::Value {
-    if (!funcExpr || !builder_) {
+auto PostgreSQLASTTranslator::Impl::translate_func_expr(const FuncExpr* func_expr) -> mlir::Value {
+    if (!func_expr || !builder_) {
         PGX_ERROR("Invalid FuncExpr parameters");
         return nullptr;
     }
 
     // Translate function arguments first
     auto args = std::vector<mlir::Value>{};
-    if (funcExpr->args && funcExpr->args->length > 0) {
+    if (func_expr->args && func_expr->args->length > 0) {
         // Safety check for elements array (PostgreSQL 17)
-        if (!funcExpr->args->elements) {
+        if (!func_expr->args->elements) {
             PGX_WARNING("FuncExpr args list has length but no elements array");
             return nullptr;
         }
 
         // Iterate through arguments
-        for (int i = 0; i < funcExpr->args->length; i++) {
-            const ListCell* lc = &funcExpr->args->elements[i];
+        for (int i = 0; i < func_expr->args->length; i++) {
+            const ListCell* lc = &func_expr->args->elements[i];
             if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                 if (mlir::Value argValue = translate_expression(reinterpret_cast<Expr*>(argNode))) {
                     args.push_back(argValue);
@@ -288,7 +288,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const FuncExpr* funcExpr
 
     const auto loc = builder_->getUnknownLoc();
 
-    switch (funcExpr->funcid) {
+    switch (func_expr->funcid) {
     case PG_F_ABS_INT4:
     case PG_F_ABS_INT8:
     case PG_F_ABS_FLOAT4:
@@ -417,35 +417,35 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const FuncExpr* funcExpr
         return args[0];
 
     default: {
-        PGX_WARNING("Unknown function OID %d", funcExpr->funcid);
-        throw std::runtime_error("Unknown function OID " + std::to_string(funcExpr->funcid));
+        PGX_WARNING("Unknown function OID %d", func_expr->funcid);
+        throw std::runtime_error("Unknown function OID " + std::to_string(func_expr->funcid));
     }
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const BoolExpr* boolExpr) -> mlir::Value {
-    if (!boolExpr || !builder_) {
+auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const BoolExpr* bool_expr) -> mlir::Value {
+    if (!bool_expr || !builder_) {
         PGX_ERROR("Invalid BoolExpr parameters");
         return nullptr;
     }
 
-    if (!boolExpr->args || boolExpr->args->length == 0) {
+    if (!bool_expr->args || bool_expr->args->length == 0) {
         PGX_ERROR("BoolExpr has no arguments");
         return nullptr;
     }
 
-    switch (boolExpr->boolop) {
+    switch (bool_expr->boolop) {
     case BOOL_AND_EXPR: {
         mlir::Value result = nullptr;
 
-        if (boolExpr->args && boolExpr->args->length > 0) {
-            if (!boolExpr->args->elements) {
+        if (bool_expr->args && bool_expr->args->length > 0) {
+            if (!bool_expr->args->elements) {
                 PGX_WARNING("BoolExpr AND args list has length but no elements array");
                 return nullptr;
             }
 
-            for (int i = 0; i < boolExpr->args->length; i++) {
-                const ListCell* lc = &boolExpr->args->elements[i];
+            for (int i = 0; i < bool_expr->args->length; i++) {
+                const ListCell* lc = &bool_expr->args->elements[i];
                 if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                     if (mlir::Value argValue = translate_expression(reinterpret_cast<Expr*>(argNode))) {
                         // Ensure boolean type
@@ -476,16 +476,16 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const BoolExpr* boolExpr
     case BOOL_OR_EXPR: {
         mlir::Value result = nullptr;
 
-        if (boolExpr->args && boolExpr->args->length > 0) {
+        if (bool_expr->args && bool_expr->args->length > 0) {
             // Safety check for elements array (PostgreSQL 17)
-            if (!boolExpr->args->elements) {
+            if (!bool_expr->args->elements) {
                 PGX_WARNING("BoolExpr OR args list has length but no elements array");
                 return nullptr;
             }
 
             // Iterate using PostgreSQL 17 style with elements array
-            for (int i = 0; i < boolExpr->args->length; i++) {
-                const ListCell* lc = &boolExpr->args->elements[i];
+            for (int i = 0; i < bool_expr->args->length; i++) {
+                const ListCell* lc = &bool_expr->args->elements[i];
                 if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                     if (mlir::Value argValue = translate_expression(reinterpret_cast<Expr*>(argNode))) {
                         // Ensure boolean type
@@ -519,9 +519,9 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const BoolExpr* boolExpr
         // NOT has single argument
         mlir::Value argVal = nullptr;
 
-        if (boolExpr->args && boolExpr->args->length > 0) {
+        if (bool_expr->args && bool_expr->args->length > 0) {
             // Get first argument
-            if (const ListCell* lc = list_head(boolExpr->args)) {
+            if (const ListCell* lc = list_head(bool_expr->args)) {
                 if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                     argVal = translate_expression(reinterpret_cast<Expr*>(argNode));
                 }
@@ -544,18 +544,18 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const BoolExpr* boolExpr
         return builder_->create<mlir::db::NotOp>(builder_->getUnknownLoc(), argVal);
     }
 
-    default: PGX_ERROR("Unknown BoolExpr type: %d", boolExpr->boolop); return nullptr;
+    default: PGX_ERROR("Unknown BoolExpr type: %d", bool_expr->boolop); return nullptr;
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_null_test(const NullTest* nullTest) -> mlir::Value {
-    if (!nullTest || !builder_) {
+auto PostgreSQLASTTranslator::Impl::translate_null_test(const NullTest* null_test) -> mlir::Value {
+    if (!null_test || !builder_) {
         PGX_ERROR("Invalid NullTest parameters");
         return nullptr;
     }
 
     // Translate the argument expression
-    auto* argNode = reinterpret_cast<Node*>(nullTest->arg);
+    auto* argNode = reinterpret_cast<Node*>(null_test->arg);
     auto argVal = translate_expression(reinterpret_cast<Expr*>(argNode));
     if (!argVal) {
         PGX_ERROR("Failed to translate NullTest argument");
@@ -565,7 +565,7 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const NullTest* nullTest
     // Follow LingoDB's exact pattern: check if type is nullable first
     if (isa<mlir::db::NullableType>(argVal.getType())) {
         mlir::Value isNull = builder_->create<mlir::db::IsNullOp>(builder_->getUnknownLoc(), argVal);
-        if (nullTest->nulltesttype == PG_IS_NOT_NULL) {
+        if (null_test->nulltesttype == PG_IS_NOT_NULL) {
             // LingoDB's clean approach: use NotOp instead of XOrIOp
             return builder_->create<mlir::db::NotOp>(builder_->getUnknownLoc(), isNull);
         }
@@ -579,7 +579,7 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const NullTest* nullTest
         return builder_->create<mlir::db::ConstantOp>(
             builder_->getUnknownLoc(),
             builder_->getI1Type(),
-            builder_->getIntegerAttr(builder_->getI1Type(), nullTest->nulltesttype == PG_IS_NOT_NULL));
+            builder_->getIntegerAttr(builder_->getI1Type(), null_test->nulltesttype == PG_IS_NOT_NULL));
     }
 }
 
@@ -597,32 +597,32 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const Aggref* aggref) const
                                                         builder_->getI64Type());
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const CoalesceExpr* coalesceExpr) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const CoalesceExpr* coalesce_expr) -> mlir::Value {
     PGX_LOG(AST_TRANSLATE,
             IO,
             "translate_coalesce_expr IN: CoalesceExpr with %d arguments",
-            coalesceExpr && coalesceExpr->args ? coalesceExpr->args->length : 0);
+            coalesce_expr && coalesce_expr->args ? coalesce_expr->args->length : 0);
 
-    if (!coalesceExpr || !builder_) {
+    if (!coalesce_expr || !builder_) {
         PGX_ERROR("Invalid CoalesceExpr parameters");
         return nullptr;
     }
 
     // COALESCE returns first non-null argument
-    if (!coalesceExpr->args || coalesceExpr->args->length == 0) {
+    if (!coalesce_expr->args || coalesce_expr->args->length == 0) {
         PGX_WARNING("COALESCE with no arguments");
         // No arguments - return NULL with default type
         auto nullType = mlir::db::NullableType::get(&context_, builder_->getI32Type());
         return builder_->create<mlir::db::NullOp>(builder_->getUnknownLoc(), nullType);
     }
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE has %d arguments", coalesceExpr->args->length);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE has %d arguments", coalesce_expr->args->length);
 
     // First, translate all arguments
     std::vector<mlir::Value> translatedArgs;
 
     ListCell* cell;
-    foreach (cell, coalesceExpr->args) {
+    foreach (cell, coalesce_expr->args) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating COALESCE argument");
         const auto expr = static_cast<Expr*>(lfirst(cell));
         if (mlir::Value val = translate_expression(expr)) {
@@ -741,19 +741,19 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const CoalesceExpr* 
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const ScalarArrayOpExpr* scalarArrayOp) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const ScalarArrayOpExpr* scalar_array_op) -> mlir::Value {
     PGX_LOG(AST_TRANSLATE,
             IO,
             "translate_scalar_array_op_expr IN: ScalarArrayOp with opno=%u, useOr=%d",
-            scalarArrayOp->opno,
-            scalarArrayOp->useOr);
+            scalar_array_op->opno,
+            scalar_array_op->useOr);
 
-    if (!scalarArrayOp || !builder_) {
+    if (!scalar_array_op || !builder_) {
         PGX_ERROR("Invalid ScalarArrayOpExpr parameters");
         return nullptr;
     }
 
-    const List* args = scalarArrayOp->args;
+    const List* args = scalar_array_op->args;
     if (!args || args->length != 2) {
         PGX_ERROR("ScalarArrayOpExpr: Expected 2 arguments, got %d", args ? args->length : 0);
         return nullptr;
@@ -837,7 +837,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const ScalarA
     // Handle empty array
     if (arrayElements.empty()) {
         return builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(),
-                                                            scalarArrayOp->useOr ? 0 : 1,
+                                                            scalar_array_op->useOr ? 0 : 1,
                                                             builder_->getI1Type());
     }
 
@@ -847,16 +847,16 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const ScalarA
     for (auto elemValue : arrayElements) {
         mlir::Value cmp = nullptr;
 
-        if (scalarArrayOp->opno == PG_INT4_EQ_OID || scalarArrayOp->opno == PG_INT8_EQ_OID
-            || scalarArrayOp->opno == PG_INT2_EQ_OID || scalarArrayOp->opno == PG_TEXT_EQ_OID)
+        if (scalar_array_op->opno == PG_INT4_EQ_OID || scalar_array_op->opno == PG_INT8_EQ_OID
+            || scalar_array_op->opno == PG_INT2_EQ_OID || scalar_array_op->opno == PG_TEXT_EQ_OID)
         {
             cmp = builder_->create<mlir::db::CmpOp>(builder_->getUnknownLoc(),
                                                     mlir::db::DBCmpPredicate::eq,
                                                     leftValue,
                                                     elemValue);
         }
-        else if (scalarArrayOp->opno == PG_INT4_NE_OID || scalarArrayOp->opno == PG_INT8_NE_OID
-                 || scalarArrayOp->opno == PG_INT2_NE_OID || scalarArrayOp->opno == PG_TEXT_NE_OID)
+        else if (scalar_array_op->opno == PG_INT4_NE_OID || scalar_array_op->opno == PG_INT8_NE_OID
+                 || scalar_array_op->opno == PG_INT2_NE_OID || scalar_array_op->opno == PG_TEXT_NE_OID)
         {
             cmp = builder_->create<mlir::db::CmpOp>(builder_->getUnknownLoc(),
                                                     mlir::db::DBCmpPredicate::neq,
@@ -864,7 +864,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const ScalarA
                                                     elemValue);
         }
         else {
-            PGX_WARNING("Unsupported operator OID %u in IN expression, defaulting to equality", scalarArrayOp->opno);
+            PGX_WARNING("Unsupported operator OID %u in IN expression, defaulting to equality", scalar_array_op->opno);
             cmp = builder_->create<mlir::db::CmpOp>(builder_->getUnknownLoc(),
                                                     mlir::db::DBCmpPredicate::eq,
                                                     leftValue,
@@ -879,7 +879,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const ScalarA
             result = cmp;
         }
         else {
-            if (scalarArrayOp->useOr) {
+            if (scalar_array_op->useOr) {
                 result = builder_->create<mlir::db::OrOp>(builder_->getUnknownLoc(),
                                                           builder_->getI1Type(),
                                                           mlir::ValueRange{result, cmp});
@@ -896,13 +896,13 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const ScalarA
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_case_expr(const CaseExpr* caseExpr) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_case_expr(const CaseExpr* case_expr) -> mlir::Value {
     PGX_LOG(AST_TRANSLATE,
             IO,
             "translate_case_expr IN: CaseExpr with %d WHEN clauses",
-            caseExpr && caseExpr->args ? caseExpr->args->length : 0);
+            case_expr && case_expr->args ? case_expr->args->length : 0);
 
-    if (!caseExpr || !builder_) {
+    if (!case_expr || !builder_) {
         PGX_ERROR("Invalid CaseExpr parameters");
         return nullptr;
     }
@@ -913,8 +913,8 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const CaseExpr* caseExpr
 
     // Check if this is a simple CASE (has an arg) or searched CASE (no arg)
     mlir::Value caseArg = nullptr;
-    if (caseExpr->arg) {
-        caseArg = translate_expression(caseExpr->arg);
+    if (case_expr->arg) {
+        caseArg = translate_expression(case_expr->arg);
         if (!caseArg) {
             PGX_ERROR("Failed to translate CASE argument expression");
             return nullptr;
@@ -928,8 +928,8 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const CaseExpr* caseExpr
     // Build nested if-then-else structure from WHEN clauses
     // We'll build this bottom-up, starting with the ELSE clause
     mlir::Value elseResult = nullptr;
-    if (caseExpr->defresult) {
-        elseResult = translate_expression(caseExpr->defresult);
+    if (case_expr->defresult) {
+        elseResult = translate_expression(case_expr->defresult);
         if (!elseResult) {
             PGX_ERROR("Failed to translate CASE ELSE expression");
             return nullptr;
@@ -946,10 +946,10 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const CaseExpr* caseExpr
     // Process WHEN clauses in reverse order to build nested if-else chain
     mlir::Value result = elseResult;
 
-    if (caseExpr->args && caseExpr->args->length > 0) {
+    if (case_expr->args && case_expr->args->length > 0) {
         // Process from last to first WHEN clause
-        for (int i = caseExpr->args->length - 1; i >= 0; i--) {
-            const auto whenNode = static_cast<Node*>(lfirst(&caseExpr->args->elements[i]));
+        for (int i = case_expr->args->length - 1; i >= 0; i--) {
+            const auto whenNode = static_cast<Node*>(lfirst(&case_expr->args->elements[i]));
             if (nodeTag(whenNode) != T_CaseWhen) {
                 PGX_ERROR("Expected CaseWhen node in CASE args, got %d", nodeTag(whenNode));
                 continue;
@@ -1043,7 +1043,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const CaseExpr* caseExpr
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(Expr* expr, const mlir::Value caseTestValue)
+auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(Expr* expr, const mlir::Value case_test_value)
     -> mlir::Value {
     if (!expr) {
         return nullptr;
@@ -1051,7 +1051,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(Expr* ex
 
     // If this is a CaseTestExpr, return the case test value
     if (expr->type == T_CaseTestExpr) {
-        return caseTestValue;
+        return case_test_value;
     }
 
     // For other expression types, we need to recursively replace CaseTestExpr
@@ -1069,10 +1069,10 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(Expr* ex
         const auto rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
 
         const mlir::Value leftValue = (leftNode && leftNode->type == T_CaseTestExpr)
-                                          ? caseTestValue
+                                          ? case_test_value
                                           : translate_expression(reinterpret_cast<Expr*>(leftNode));
         const mlir::Value rightValue = (rightNode && rightNode->type == T_CaseTestExpr)
-                                           ? caseTestValue
+                                           ? case_test_value
                                            : translate_expression(reinterpret_cast<Expr*>(rightNode));
 
         if (!leftValue || !rightValue) {
@@ -1088,28 +1088,28 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(Expr* ex
     return translate_expression(expr);
 }
 
-auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const OpExpr* opExpr, mlir::Value& lhs, mlir::Value& rhs)
+auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const OpExpr* op_expr, mlir::Value& lhs, mlir::Value& rhs)
     -> bool {
-    if (!opExpr || !opExpr->args) {
+    if (!op_expr || !op_expr->args) {
         PGX_ERROR("OpExpr has no arguments");
         return false;
     }
 
-    if (opExpr->args->length < 1) {
+    if (op_expr->args->length < 1) {
         return false;
     }
 
     // Safety check for elements array (PostgreSQL 17)
-    if (!opExpr->args->elements) {
-        PGX_WARNING("OpExpr args list has length %d but no elements array", opExpr->args->length);
+    if (!op_expr->args->elements) {
+        PGX_WARNING("OpExpr args list has length %d but no elements array", op_expr->args->length);
         PGX_WARNING("This suggests the test setup needs to properly initialize the List structure");
         // This will help us identify when this is happening
         return false;
     }
 
     // Iterate using PostgreSQL 17 style with elements array
-    for (int argIndex = 0; argIndex < opExpr->args->length && argIndex < MAX_BINARY_OPERANDS; argIndex++) {
-        const ListCell* lc = &opExpr->args->elements[argIndex];
+    for (int argIndex = 0; argIndex < op_expr->args->length && argIndex < MAX_BINARY_OPERANDS; argIndex++) {
+        const ListCell* lc = &op_expr->args->elements[argIndex];
         if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
             if (const mlir::Value argValue = translate_expression(reinterpret_cast<Expr*>(argNode))) {
                 if (argIndex == LEFT_OPERAND_INDEX) {
@@ -1129,7 +1129,7 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const OpExpr* opExp
                                                            DEFAULT_PLACEHOLDER_INT,
                                                            builder_->getI32Type());
     }
-    if (!rhs && opExpr->args->length >= MAX_BINARY_OPERANDS) {
+    if (!rhs && op_expr->args->length >= MAX_BINARY_OPERANDS) {
         PGX_WARNING("Failed to translate right operand, using placeholder");
         rhs = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(),
                                                            DEFAULT_PLACEHOLDER_INT,
@@ -1139,9 +1139,9 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const OpExpr* opExp
     return lhs && rhs;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const Oid opOid, mlir::Value lhs, mlir::Value rhs) const
+auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const Oid op_oid, mlir::Value lhs, mlir::Value rhs) const
     -> mlir::Value {
-    switch (opOid) {
+    switch (op_oid) {
     // Addition operators
     case PG_INT4_PLUS_OID:
     case PG_INT8_PLUS_OID: return builder_->create<mlir::db::AddOp>(builder_->getUnknownLoc(), lhs, rhs);
@@ -1165,11 +1165,11 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const Oid opOid, mli
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const Oid opOid, mlir::Value lhs, mlir::Value rhs) const
+auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const Oid op_oid, mlir::Value lhs, mlir::Value rhs) const
     -> mlir::Value {
     mlir::db::DBCmpPredicate predicate;
 
-    switch (opOid) {
+    switch (op_oid) {
     case PG_INT4_EQ_OID:
     case PG_INT8_EQ_OID:
     case PG_TEXT_EQ_OID: predicate = mlir::db::DBCmpPredicate::eq; break;

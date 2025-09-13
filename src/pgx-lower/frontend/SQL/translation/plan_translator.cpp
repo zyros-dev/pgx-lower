@@ -127,10 +127,10 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(SeqScan* seqScan, Transla
 
     std::vector<mlir::NamedAttribute> columnDefs;
     std::vector<mlir::Attribute> columnOrder;
-    auto allColumns = get_all_table_columns_from_schema(currentPlannedStmt_, seqScan->scan.scanrelid);
+    auto allColumns = get_all_table_columns_from_schema(current_planned_stmt_, seqScan->scan.scanrelid);
 
     if (!allColumns.empty()) {
-        std::string realTableName = get_table_name_from_rte(currentPlannedStmt_, seqScan->scan.scanrelid);
+        std::string realTableName = get_table_name_from_rte(current_planned_stmt_, seqScan->scan.scanrelid);
 
         // Populate column mappings for this table
         int varattno = 1; // PostgreSQL column numbering starts at 1
@@ -160,9 +160,9 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(SeqScan* seqScan, Transla
         tableIdentifier =
             realTableName + TABLE_OID_SEPARATOR
             + std::to_string(
-                get_all_table_columns_from_schema(currentPlannedStmt_, seqScan->scan.scanrelid).empty()
+                get_all_table_columns_from_schema(current_planned_stmt_, seqScan->scan.scanrelid).empty()
                     ? 0
-                    : static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, seqScan->scan.scanrelid - 1))->relid);
+                    : static_cast<RangeTblEntry*>(list_nth(current_planned_stmt_->rtable, seqScan->scan.scanrelid - 1))->relid);
     }
     else {
         PGX_ERROR("Could not discover table schema");
@@ -229,11 +229,11 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(Agg* agg, TranslationContext& 
         std::string tableName;
         if (leftTree && leftTree->type == T_SeqScan) {
             SeqScan* seqScan = reinterpret_cast<SeqScan*>(leftTree);
-            tableName = get_table_name_from_rte(currentPlannedStmt_, seqScan->scan.scanrelid);
+            tableName = get_table_name_from_rte(current_planned_stmt_, seqScan->scan.scanrelid);
 
             for (int i = 0; i < numCols; i++) {
                 AttrNumber colIdx = grpColIdx[i];
-                std::string columnName = get_column_name_from_schema(currentPlannedStmt_, seqScan->scan.scanrelid, colIdx);
+                std::string columnName = get_column_name_from_schema(current_planned_stmt_, seqScan->scan.scanrelid, colIdx);
 
                 PGX_LOG(AST_TRANSLATE,
                         DEBUG,
@@ -343,9 +343,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(Agg* agg, TranslationContext& 
                         // For negative varno (like -2), get table info from the child SeqScan
                         if (leftTree && leftTree->type == T_SeqScan) {
                             SeqScan* seqScan = reinterpret_cast<SeqScan*>(leftTree);
-                            tableName = get_table_name_from_rte(currentPlannedStmt_, seqScan->scan.scanrelid);
+                            tableName = get_table_name_from_rte(current_planned_stmt_, seqScan->scan.scanrelid);
                             columnName =
-                                get_column_name_from_schema(currentPlannedStmt_, seqScan->scan.scanrelid, colVar->varattno);
+                                get_column_name_from_schema(current_planned_stmt_, seqScan->scan.scanrelid, colVar->varattno);
                             PGX_LOG(AST_TRANSLATE,
                                     DEBUG,
                                     "Resolved negative varno %d to table: %s, column: %s",
@@ -360,8 +360,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(Agg* agg, TranslationContext& 
                     }
                     else {
                         // Normal positive varno - use standard resolution
-                        tableName = get_table_name_from_rte(currentPlannedStmt_, colVar->varno);
-                        columnName = get_column_name_from_schema(currentPlannedStmt_, colVar->varno, colVar->varattno);
+                        tableName = get_table_name_from_rte(current_planned_stmt_, colVar->varno);
+                        columnName = get_column_name_from_schema(current_planned_stmt_, colVar->varno, colVar->varattno);
                     }
 
                     PGX_LOG(AST_TRANSLATE,
@@ -742,17 +742,17 @@ auto PostgreSQLASTTranslator::Impl::create_query_function(::mlir::OpBuilder& bui
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(::mlir::Operation* inputOp,
+auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(::mlir::Operation* input_op,
                                                            const List* qual,
                                                            const TranslationContext& context) -> ::mlir::Operation* {
-    if (!inputOp || !qual || qual->length == 0) {
-        return inputOp; // No selection needed
+    if (!input_op || !qual || qual->length == 0) {
+        return input_op; // No selection needed
     }
 
-    auto inputValue = inputOp->getResult(0);
+    auto inputValue = input_op->getResult(0);
     if (!inputValue) {
         PGX_ERROR("Input operation has no result");
-        return inputOp;
+        return input_op;
     }
 
     auto selectionOp = context.builder->create<mlir::relalg::SelectionOp>(context.builder->getUnknownLoc(), inputValue);
@@ -772,9 +772,9 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(::mlir::Operation*
 
     // Store current builder and tuple for expression translation
     auto* savedBuilder = builder_;
-    auto* savedTuple = currentTupleHandle_;
+    auto* savedTuple = current_tuple_handle_;
     builder_ = &predicate_builder;
-    currentTupleHandle_ = &tupleArg;
+    current_tuple_handle_ = &tupleArg;
 
     // Translate qual conditions and combine with AND
     ::mlir::Value predicateResult = nullptr;
@@ -842,22 +842,22 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(::mlir::Operation*
 
     // Restore builder and tuple
     builder_ = savedBuilder;
-    currentTupleHandle_ = savedTuple;
+    current_tuple_handle_ = savedTuple;
 
     return selectionOp;
 }
 
-auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Operation* inputOp,
-                                                                  List* targetList,
+auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Operation* input_op,
+                                                                  List* target_list,
                                                                   TranslationContext& context) -> ::mlir::Operation* {
-    if (!inputOp || !targetList || targetList->length == 0) {
-        return inputOp; // No projection needed
+    if (!input_op || !target_list || target_list->length == 0) {
+        return input_op; // No projection needed
     }
 
-    auto inputValue = inputOp->getResult(0);
+    auto inputValue = input_op->getResult(0);
     if (!inputValue) {
         PGX_ERROR("Input operation has no result");
-        return inputOp;
+        return input_op;
     }
 
     // Check if we have computed expressions in target list
@@ -867,29 +867,29 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Op
     // Extract target entries from the list
     // Iterate through target list to check for computed columns
     // Safety check: ensure the List is properly initialized
-    if (!targetList) {
-        return inputOp;
+    if (!target_list) {
+        return input_op;
     }
 
     // Check if this is a properly initialized List
     // In PostgreSQL 17, Lists use elements array, not head/tail
-    if (targetList->length <= 0) {
+    if (target_list->length <= 0) {
         // For test compatibility: if length is 0 but there might be data,
         // we skip to avoid accessing invalid memory
-        return inputOp;
+        return input_op;
     }
 
-    if (targetList->length > 0) {
+    if (target_list->length > 0) {
         // Safety check: ensure elements pointer is valid
-        if (!targetList->elements) {
+        if (!target_list->elements) {
             PGX_WARNING("Target list has length but no elements array");
-            return inputOp;
+            return input_op;
         }
 
         // PostgreSQL 17 uses elements array for Lists
         // We need to iterate using the new style
-        for (int i = 0; i < targetList->length; i++) {
-            ListCell* lc = &targetList->elements[i];
+        for (int i = 0; i < target_list->length; i++) {
+            ListCell* lc = &target_list->elements[i];
             if (!lc)
                 break; // Safety check for iteration
 
@@ -915,7 +915,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Op
     }
 
     if (!hasComputedColumns) {
-        return inputOp;
+        return input_op;
     }
 
     // First pass: Create temporary MapOp to establish tuple context for expression type inference
@@ -939,7 +939,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Op
     }
 
     if (placeholderAttrs.empty()) {
-        return inputOp; // No computed expressions
+        return input_op; // No computed expressions
     }
 
     // Create temporary MapOp for tuple context
@@ -958,9 +958,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Op
     mlir::OpBuilder temp_builder(&context_);
     temp_builder.setInsertionPointToStart(tempBlock);
     auto* savedBuilder = builder_;
-    auto* savedTuple = currentTupleHandle_;
+    auto* savedTuple = current_tuple_handle_;
     builder_ = &temp_builder;
-    currentTupleHandle_ = &tempTupleArg;
+    current_tuple_handle_ = &tempTupleArg;
 
     // Now translate expressions with proper tuple context
     for (auto* entry : targetEntries) {
@@ -979,7 +979,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Op
 
     // Restore builder and tuple context
     builder_ = savedBuilder;
-    currentTupleHandle_ = savedTuple;
+    current_tuple_handle_ = savedTuple;
 
     // Clean up temporary MapOp
     tempMapOp.erase();
@@ -1001,7 +1001,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Op
     }
 
     if (computedColAttrs.empty()) {
-        return inputOp;
+        return input_op;
     }
 
     auto computedCols = context.builder->getArrayAttr(computedColAttrs);
@@ -1052,9 +1052,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Op
 
     // Store current builder and tuple for expression translation
     auto* savedBuilderForRegion = builder_;
-    auto* savedTupleForRegion = currentTupleHandle_;
+    auto* savedTupleForRegion = current_tuple_handle_;
     builder_ = &predicate_builder;
-    currentTupleHandle_ = &tupleArg;
+    current_tuple_handle_ = &tupleArg;
 
     // Translate computed expressions (using pre-computed entries)
     std::vector<mlir::Value> computedValues;
@@ -1084,13 +1084,13 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(::mlir::Op
 
     // Restore builder and tuple
     builder_ = savedBuilderForRegion;
-    currentTupleHandle_ = savedTupleForRegion;
+    current_tuple_handle_ = savedTupleForRegion;
 
     return mapOp;
 }
 
-auto PostgreSQLASTTranslator::Impl::validate_plan_tree(const Plan* planTree) -> bool {
-    if (!planTree) {
+auto PostgreSQLASTTranslator::Impl::validate_plan_tree(const Plan* plan_tree) -> bool {
+    if (!plan_tree) {
         PGX_ERROR("PlannedStmt planTree is null");
         return false;
     }
@@ -1099,8 +1099,8 @@ auto PostgreSQLASTTranslator::Impl::validate_plan_tree(const Plan* planTree) -> 
 }
 
 auto PostgreSQLASTTranslator::Impl::extract_target_list_columns(TranslationContext& context,
-                                                             std::vector<mlir::Attribute>& columnRefAttrs,
-                                                             std::vector<mlir::Attribute>& columnNameAttrs) const
+                                                             std::vector<mlir::Attribute>& column_ref_attrs,
+                                                             std::vector<mlir::Attribute>& column_name_attrs) const
     -> bool {
     // For Sort nodes, we need to look at the original plan's targetlist
     // The Sort node inherits its targetlist from the query
@@ -1115,8 +1115,8 @@ auto PostgreSQLASTTranslator::Impl::extract_target_list_columns(TranslationConte
         auto colRef = columnManager.createRef("test", "id");
         colRef.getColumn().type = context.builder->getI32Type();
 
-        columnRefAttrs.push_back(colRef);
-        columnNameAttrs.push_back(context.builder->getStringAttr("id"));
+        column_ref_attrs.push_back(colRef);
+        column_name_attrs.push_back(context.builder->getStringAttr("id"));
         return true;
     }
 
@@ -1137,20 +1137,20 @@ auto PostgreSQLASTTranslator::Impl::extract_target_list_columns(TranslationConte
 
     // Iterate using PostgreSQL 17 style with elements array
     for (int i = 0; i < tlist->length; i++) {
-        if (!process_target_entry(context, tlist, i, columnRefAttrs, columnNameAttrs)) {
+        if (!process_target_entry(context, tlist, i, column_ref_attrs, column_name_attrs)) {
             continue; // Skip failed entries
         }
     }
 
-    return !columnRefAttrs.empty();
+    return !column_ref_attrs.empty();
 }
 
 auto PostgreSQLASTTranslator::Impl::process_target_entry(TranslationContext& context,
-                                                       const List* tlist,
+                                                       const List* t_list,
                                                        int index,
-                                                       std::vector<mlir::Attribute>& columnRefAttrs,
-                                                       std::vector<mlir::Attribute>& columnNameAttrs) const -> bool {
-    ListCell* lc = &tlist->elements[index];
+                                                       std::vector<mlir::Attribute>& column_ref_attrs,
+                                                       std::vector<mlir::Attribute>& column_name_attrs) const -> bool {
+    ListCell* lc = &t_list->elements[index];
     void* ptr = lfirst(lc);
     if (!ptr) {
         PGX_WARNING("Null pointer in target list at index %d", index);
@@ -1271,8 +1271,8 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(TranslationContext& con
         }
 
         auto colRef = columnManager.createRef(scope, colName);
-        columnRefAttrs.push_back(colRef);
-        columnNameAttrs.push_back(context.builder->getStringAttr(colName));
+        column_ref_attrs.push_back(colRef);
+        column_name_attrs.push_back(context.builder->getStringAttr(colName));
 
         return true;
     } catch (const std::exception& e) {
@@ -1324,7 +1324,7 @@ auto PostgreSQLASTTranslator::Impl::determine_column_type(const TranslationConte
     return colType;
 }
 
-auto PostgreSQLASTTranslator::Impl::create_materialize_op(TranslationContext& context, ::mlir::Value tupleStream) const
+auto PostgreSQLASTTranslator::Impl::create_materialize_op(TranslationContext& context, ::mlir::Value tuple_stream) const
     -> ::mlir::Operation* {
     std::vector<mlir::Attribute> columnRefAttrs;
     std::vector<mlir::Attribute> columnNameAttrs;
@@ -1341,7 +1341,7 @@ auto PostgreSQLASTTranslator::Impl::create_materialize_op(TranslationContext& co
 
     auto materializeOp = context.builder->create<mlir::relalg::MaterializeOp>(context.builder->getUnknownLoc(),
                                                                               tableType,
-                                                                              tupleStream,
+                                                                              tuple_stream,
                                                                               columnRefs,
                                                                               columnNames);
 

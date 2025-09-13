@@ -15,14 +15,14 @@ auto PostgreSQLASTTranslator::translate_query(PlannedStmt* plannedStmt) const ->
     return pImpl->translate_query(plannedStmt);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
+auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -> std::unique_ptr<::mlir::ModuleOp> {
     PGX_LOG(AST_TRANSLATE,
             IO,
             "translate_query IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
-            plannedStmt ? plannedStmt->commandType : -1,
-            plannedStmt ? plannedStmt->canSetTag : false);
+            planned_stmt ? planned_stmt->commandType : -1,
+            planned_stmt ? planned_stmt->canSetTag : false);
 
-    if (!plannedStmt) {
+    if (!planned_stmt) {
         PGX_ERROR("PlannedStmt is null");
         return nullptr;
     }
@@ -32,29 +32,29 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* plannedStmt) ->
     builder.setInsertionPointToStart(module.getBody());
 
     builder_ = &builder;
-    currentPlannedStmt_ = plannedStmt;
+    current_planned_stmt_ = planned_stmt;
 
     TranslationContext context;
-    context.currentStmt = plannedStmt;
+    context.currentStmt = planned_stmt;
     context.builder = &builder;
 
     auto queryFunc = create_query_function(builder, context);
     if (!queryFunc) {
         PGX_ERROR("Failed to create query function");
         builder_ = nullptr;
-        currentPlannedStmt_ = nullptr;
+        current_planned_stmt_ = nullptr;
         return nullptr;
     }
 
-    if (!generate_rel_alg_operations(queryFunc, plannedStmt, context)) {
+    if (!generate_rel_alg_operations(queryFunc, planned_stmt, context)) {
         PGX_ERROR("Failed to generate RelAlg operations");
         builder_ = nullptr;
-        currentPlannedStmt_ = nullptr;
+        current_planned_stmt_ = nullptr;
         return nullptr;
     }
 
     builder_ = nullptr;
-    currentPlannedStmt_ = nullptr;
+    current_planned_stmt_ = nullptr;
 
     auto result = std::make_unique<::mlir::ModuleOp>(module);
     auto numOps = module.getBody()->getOperations().size();
@@ -63,20 +63,20 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* plannedStmt) ->
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(::mlir::func::FuncOp queryFunc,
-                                                                const PlannedStmt* plannedStmt,
+auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(::mlir::func::FuncOp query_func,
+                                                                const PlannedStmt* planned_stmt,
                                                                 TranslationContext& context) -> bool {
     PGX_LOG(AST_TRANSLATE,
             IO,
             "generate_rel_alg_operations IN: PlannedStmt with planTree type %d",
-            plannedStmt ? (plannedStmt->planTree ? plannedStmt->planTree->type : -1) : -1);
+            planned_stmt ? (planned_stmt->planTree ? planned_stmt->planTree->type : -1) : -1);
 
-    if (!plannedStmt) {
+    if (!planned_stmt) {
         PGX_ERROR("PlannedStmt is null");
         return false;
     }
 
-    Plan* planTree = plannedStmt->planTree;
+    Plan* planTree = planned_stmt->planTree;
 
     if (!validate_plan_tree(planTree)) {
         return false;

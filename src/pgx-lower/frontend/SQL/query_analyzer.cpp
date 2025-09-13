@@ -63,8 +63,7 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: None detected");
     }
 
-    bool compatible = isSelectStatement && hasCompatibleTypes && !requiresJoin
-                      && !requiresLimit
+    bool compatible = isSelectStatement && hasCompatibleTypes && !requiresJoin && !requiresLimit
                       && (requiresSeqScan || requiresAggregation);
 
     if (compatible) {
@@ -178,7 +177,8 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
     case T_Sort:
         // TODO: NV: This permits sort nodes with expressions in them. It isn't supposed to, and they just crash.
         //           They should be disabled here because lingodb doesn't support them either.
-        caps.requiresSort = true; break;
+        caps.requiresSort = true;
+        break;
 
     case T_Limit: caps.requiresLimit = true; break;
 
@@ -256,11 +256,13 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
             // Later we can add more sophisticated filtering
             if (IsA(tle->expr, FuncExpr)) {
                 FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
-                if (funcExpr->funcid == frontend::sql::constants::PG_F_UPPER ||
-                    funcExpr->funcid == frontend::sql::constants::PG_F_LOWER ||
-                    funcExpr->funcid == frontend::sql::constants::PG_F_SUBSTRING) {
+                if (funcExpr->funcid == frontend::sql::constants::PG_F_UPPER
+                    || funcExpr->funcid == frontend::sql::constants::PG_F_LOWER
+                    || funcExpr->funcid == frontend::sql::constants::PG_F_SUBSTRING)
+                {
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Supported string function in targetlist: %d", funcExpr->funcid);
-                } else {
+                }
+                else {
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Unsupported function in targetlist: %d", funcExpr->funcid);
                     caps.hasCompatibleTypes = false;
                     return;
@@ -408,69 +410,69 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
     };
 
     // Recursively print execution tree
-    std::function<void(Plan*, int, const std::string&)> printPlanTree =
-        [&](Plan* plan, int depth, const std::string& prefix) {
-            if (!plan) {
-                PGX_LOG(AST_TRANSLATE, DEBUG, "%sNULL", prefix.c_str());
-                return;
-            }
+    std::function<void(Plan*, int, const std::string&)> printPlanTree = [&](Plan* plan,
+                                                                            int depth,
+                                                                            const std::string& prefix) {
+        if (!plan) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "%sNULL", prefix.c_str());
+            return;
+        }
 
-            std::string indent(depth * 2, ' ');
-            std::string nodeName = getNodeTypeName(static_cast<NodeTag>(plan->type));
-            std::string nodeInfo = prefix + nodeName + " (type=" + std::to_string(plan->type) + ")";
+        std::string indent(depth * 2, ' ');
+        std::string nodeName = getNodeTypeName(static_cast<NodeTag>(plan->type));
+        std::string nodeInfo = prefix + nodeName + " (type=" + std::to_string(plan->type) + ")";
 
-            // Add node-specific details
-            if (plan->type == T_SeqScan) {
-                auto* seqScan = reinterpret_cast<SeqScan*>(plan);
-                nodeInfo += " [scanrelid=" + std::to_string(seqScan->scan.scanrelid) + "]";
-            }
-            else if (plan->type == T_Agg) {
-                auto* agg = reinterpret_cast<Agg*>(plan);
-                nodeInfo += " [strategy=" + std::to_string(agg->aggstrategy) + "]";
-            }
-            else if (plan->type == T_Gather) {
-                auto* gather = reinterpret_cast<Gather*>(plan);
-                nodeInfo += " [num_workers=" + std::to_string(gather->num_workers) + "]";
-            }
+        // Add node-specific details
+        if (plan->type == T_SeqScan) {
+            auto* seqScan = reinterpret_cast<SeqScan*>(plan);
+            nodeInfo += " [scanrelid=" + std::to_string(seqScan->scan.scanrelid) + "]";
+        }
+        else if (plan->type == T_Agg) {
+            auto* agg = reinterpret_cast<Agg*>(plan);
+            nodeInfo += " [strategy=" + std::to_string(agg->aggstrategy) + "]";
+        }
+        else if (plan->type == T_Gather) {
+            auto* gather = reinterpret_cast<Gather*>(plan);
+            nodeInfo += " [num_workers=" + std::to_string(gather->num_workers) + "]";
+        }
 
-            PGX_LOG(AST_TRANSLATE, DEBUG, "%s", nodeInfo.c_str());
-            
-            if (plan->targetlist) {
-                ListCell* lc;
-                int idx = 0;
-                foreach (lc, plan->targetlist) {
-                    TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
-                    if (tle && tle->expr) {
-                        NodeTag exprType = nodeTag(tle->expr);
-                        std::string exprTypeName = "Unknown";
-                        switch(exprType) {
-                            case T_Var: exprTypeName = "Var"; break;
-                            case T_Const: exprTypeName = "Const"; break;
-                            case T_OpExpr: exprTypeName = "OpExpr"; break;
-                            case T_FuncExpr: {
-                                exprTypeName = "FuncExpr";
-                                FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
-                                exprTypeName += "(funcid=" + std::to_string(funcExpr->funcid) + ")";
-                                break;
-                            }
-                            default: exprTypeName = "Type" + std::to_string(exprType);
-                        }
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "%s   TargetEntry[%d]: %s", 
-                                indent.c_str(), idx++, exprTypeName.c_str());
+        PGX_LOG(AST_TRANSLATE, DEBUG, "%s", nodeInfo.c_str());
+
+        if (plan->targetlist) {
+            ListCell* lc;
+            int idx = 0;
+            foreach (lc, plan->targetlist) {
+                TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+                if (tle && tle->expr) {
+                    NodeTag exprType = nodeTag(tle->expr);
+                    std::string exprTypeName = "Unknown";
+                    switch (exprType) {
+                    case T_Var: exprTypeName = "Var"; break;
+                    case T_Const: exprTypeName = "Const"; break;
+                    case T_OpExpr: exprTypeName = "OpExpr"; break;
+                    case T_FuncExpr: {
+                        exprTypeName = "FuncExpr";
+                        FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
+                        exprTypeName += "(funcid=" + std::to_string(funcExpr->funcid) + ")";
+                        break;
                     }
+                    default: exprTypeName = "Type" + std::to_string(exprType);
+                    }
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "%s   TargetEntry[%d]: %s", indent.c_str(), idx++, exprTypeName.c_str());
                 }
             }
+        }
 
-            // Print children with tree formatting
-            if (plan->lefttree || plan->righttree) {
-                if (plan->lefttree) {
-                    printPlanTree(plan->lefttree, depth + 1, indent + " ");
-                }
-                if (plan->righttree) {
-                    printPlanTree(plan->righttree, depth + 1, indent + " ");
-                }
+        // Print children with tree formatting
+        if (plan->lefttree || plan->righttree) {
+            if (plan->lefttree) {
+                printPlanTree(plan->lefttree, depth + 1, indent + " ");
             }
-        };
+            if (plan->righttree) {
+                printPlanTree(plan->righttree, depth + 1, indent + " ");
+            }
+        }
+    };
 
     // Print the complete execution tree
     PGX_LOG(AST_TRANSLATE, DEBUG, "=== POSTGRESQL EXECUTION TREE ===");
