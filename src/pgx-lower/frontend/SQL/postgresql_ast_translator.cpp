@@ -6,16 +6,16 @@ namespace postgresql_ast {
 using TranslationContext = pgx_lower::frontend::sql::TranslationContext;
 // Implementation of PostgreSQLASTTranslator public interface
 
-PostgreSQLASTTranslator::PostgreSQLASTTranslator(::mlir::MLIRContext& context)
+PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context)
 : pImpl(std::make_unique<Impl>(context)) {}
 
 PostgreSQLASTTranslator::~PostgreSQLASTTranslator() = default;
 
-auto PostgreSQLASTTranslator::translate_query(PlannedStmt* plannedStmt) const -> std::unique_ptr<::mlir::ModuleOp> {
+auto PostgreSQLASTTranslator::translate_query(PlannedStmt* plannedStmt) const -> std::unique_ptr<mlir::ModuleOp> {
     return pImpl->translate_query(plannedStmt);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -> std::unique_ptr<::mlir::ModuleOp> {
+auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp> {
     PGX_LOG(AST_TRANSLATE,
             IO,
             "translate_query IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
@@ -27,8 +27,8 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -
         return nullptr;
     }
 
-    auto module = ::mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
-    ::mlir::OpBuilder builder(&context_);
+    auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
+    mlir::OpBuilder builder(&context_);
     builder.setInsertionPointToStart(module.getBody());
 
     builder_ = &builder;
@@ -56,14 +56,14 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -
     builder_ = nullptr;
     current_planned_stmt_ = nullptr;
 
-    auto result = std::make_unique<::mlir::ModuleOp>(module);
+    auto result = std::make_unique<mlir::ModuleOp>(module);
     auto numOps = module.getBody()->getOperations().size();
     PGX_LOG(AST_TRANSLATE, IO, "translate_query OUT: RelAlg MLIR Module with %zu operations", numOps);
 
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(::mlir::func::FuncOp query_func,
+auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(mlir::func::FuncOp query_func,
                                                                 const PlannedStmt* planned_stmt,
                                                                 TranslationContext& context) -> bool {
     PGX_LOG(AST_TRANSLATE,
@@ -112,7 +112,7 @@ auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(::mlir::func::Fu
     return true;
 }
 
-auto create_postgresql_ast_translator(::mlir::MLIRContext& context) -> std::unique_ptr<PostgreSQLASTTranslator> {
+auto create_postgresql_ast_translator(mlir::MLIRContext& context) -> std::unique_ptr<PostgreSQLASTTranslator> {
     return std::make_unique<PostgreSQLASTTranslator>(context);
 }
 

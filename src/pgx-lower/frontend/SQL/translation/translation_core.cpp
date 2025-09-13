@@ -84,8 +84,8 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(int32_t
     }
     }
 
-::mlir::Type PostgreSQLTypeMapper::map_postgre_sqltype(Oid type_oid, int32_t typmod, bool nullable) {
-    ::mlir::Type baseType;
+auto PostgreSQLTypeMapper::map_postgre_sqltype(Oid type_oid, int32_t typmod, bool nullable) const -> mlir::Type {
+    mlir::Type baseType;
     
     switch (type_oid) {
     case INT4OID: baseType = mlir::IntegerType::get(&context_, INT4_BIT_WIDTH); break;
@@ -122,7 +122,7 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(int32_t
     return baseType;
 }
 
-auto translate_const(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRContext& context) -> ::mlir::Value {
+auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRContext& context) -> mlir::Value {
     if (!constNode) {
         PGX_ERROR("Invalid Const parameters");
         return nullptr;
@@ -173,7 +173,7 @@ auto translate_const(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRC
         // In psql, text values are stored as varlena structures
         #ifdef POSTGRESQL_EXTENSION
         if (constNode->constvalue) {
-            text* textval = DatumGetTextP(constNode->constvalue);
+            auto* textval = DatumGetTextP(constNode->constvalue);
             char* str = VARDATA(textval);
             int len = VARSIZE(textval) - VARHDRSZ;
             std::string string_value(str, len);

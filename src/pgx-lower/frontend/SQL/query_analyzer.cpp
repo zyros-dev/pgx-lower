@@ -53,17 +53,17 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         features.emplace_back("CompatibleTypes");
 
     if (!features.empty()) {
-        std::string feature_list = features[0];
-        for (size_t i = 1; i < features.size(); ++i) {
-            feature_list += "+" + features[i];
-        }
+        auto feature_list = std::string();
+        for (const auto& f : features)
+            feature_list += f + ", ";
         PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: %s", feature_list.c_str());
     }
+
     else {
         PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: None detected");
     }
 
-    bool compatible = isSelectStatement && hasCompatibleTypes && !requiresJoin && !requiresLimit
+    const auto compatible = isSelectStatement && hasCompatibleTypes && !requiresJoin && !requiresLimit
                       && (requiresSeqScan || requiresAggregation);
 
     if (compatible) {
@@ -80,7 +80,7 @@ auto QueryCapabilities::getDescription() const -> std::string {
     if (isMLIRCompatible())
         return "Sequential scan with optional aggregation - MLIR compatible";
 
-    std::vector<std::string> requirements;
+    auto requirements = std::vector<std::string>{};
 
     if (requiresSeqScan)
         requirements.emplace_back("SeqScan");
@@ -97,24 +97,18 @@ auto QueryCapabilities::getDescription() const -> std::string {
     if (requiresLimit)
         requirements.emplace_back("Limit");
 
-    if (hasExpressions) {
 #ifdef POSTGRESQL_EXTENSION
-        if (::g_extension_after_load) {
+    if (hasExpressions) {
+        if (g_extension_after_load) {
             requirements.emplace_back("Expressions (disabled after LOAD)");
         }
-#endif
     }
+#endif
 
     std::ostringstream oss;
     oss << "Requires: ";
-
-    for (size_t i = 0; i < requirements.size(); ++i) {
-        if (i > 0) {
-            oss << ", ";
-        }
-        oss << requirements[i];
-    }
-
+    for (const auto& r : requirements)
+        oss << r << ", ";
     oss << " - Not yet supported by MLIR";
 
     return oss.str();
@@ -122,39 +116,34 @@ auto QueryCapabilities::getDescription() const -> std::string {
 
 #ifdef POSTGRESQL_EXTENSION
 
-QueryCapabilities QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) {
-    QueryCapabilities caps;
+auto QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) -> QueryCapabilities {
+    auto caps = QueryCapabilities{};
 
     if (!stmt || !stmt->planTree) {
-        auto error = ErrorManager::queryAnalysisError("No plan tree to analyze");
+        const auto error = ErrorManager::queryAnalysisError("No plan tree to analyze");
         ErrorManager::reportError(error);
         return caps;
     }
 
     try {
-        // 1. Check command type first (CMD_SELECT only)
         caps.isSelectStatement = checkCommandType(stmt);
-        if (!caps.isSelectStatement) {
+        if (!caps.isSelectStatement)
             return caps;
-        }
 
-        // 2. Analyze plan structure and requirements
         caps = analyzeNode(stmt->planTree);
         caps.isSelectStatement = true; // Preserve the SELECT check
-
-        // 3. Analyze column types from plan metadata (no table access)
         analyzeTypes(stmt->planTree, caps);
 
         return caps;
     } catch (const std::exception& e) {
-        auto error = ErrorManager::queryAnalysisError("Exception during plan analysis: " + std::string(e.what()));
+        const auto error = ErrorManager::queryAnalysisError("Exception during plan analysis: " + std::string(e.what()));
         ErrorManager::reportError(error);
         return caps;
     }
 }
 
 QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
-    QueryCapabilities caps;
+    auto caps = QueryCapabilities{};
 
     if (!plan) {
         return caps;
@@ -166,9 +155,7 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
 
     case T_IndexScan:
     case T_IndexOnlyScan:
-    case T_BitmapHeapScan:
-        caps.requiresSeqScan = false; // This is an index scan, not seq scan
-        break;
+    case T_BitmapHeapScan: caps.requiresSeqScan = false; break;
 
     case T_NestLoop:
     case T_MergeJoin:
@@ -183,17 +170,15 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
     case T_Limit: caps.requiresLimit = true; break;
 
     case T_Agg: caps.requiresAggregation = true; break;
+    // default:
+        // TODO: NV: Temporarily commented out while I;'m doing this refactor
+        // PGX_ERROR("Failed to match node %d", nodeTag(plan)); throw std::runtime_error("Failed to match node!");
     }
 
-    // Check for filters
     analyzeFilter(plan, caps);
-
-    // Check for projections
     analyzeProjection(plan, caps);
-
-    // Recursively analyze child nodes
     if (plan->lefttree) {
-        QueryCapabilities leftCaps = analyzeNode(plan->lefttree);
+        const auto leftCaps = analyzeNode(plan->lefttree);
         caps.requiresSeqScan |= leftCaps.requiresSeqScan;
         caps.requiresFilter |= leftCaps.requiresFilter;
         caps.requiresProjection |= leftCaps.requiresProjection;
@@ -204,7 +189,7 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
     }
 
     if (plan->righttree) {
-        QueryCapabilities rightCaps = analyzeNode(plan->righttree);
+        const auto rightCaps = analyzeNode(plan->righttree);
         caps.requiresSeqScan |= rightCaps.requiresSeqScan;
         caps.requiresFilter |= rightCaps.requiresFilter;
         caps.requiresProjection |= rightCaps.requiresProjection;
@@ -228,11 +213,8 @@ void QueryAnalyzer::analyzeFilter(const Plan* plan, QueryCapabilities& caps) {
 }
 
 void QueryAnalyzer::analyzeProjection(const Plan* plan, QueryCapabilities& caps) {
-    // In the future, we can be more sophisticated about this
-    if (plan->targetlist) {
-        // Simple heuristic: if we have a target list, we might need projection
-        // since our current MLIR implementation handles basic projections
-    }
+    // TODO: NV: Uncomment after refactoring
+    // PGX_LOG(AST_TRANSLATE, DEBUG, "No logic in analyze projection!");
 }
 
 void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
@@ -241,12 +223,12 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
         return;
     }
 
-    std::vector<Oid> columnTypes;
+    auto columnTypes = std::vector<Oid>{};
     ListCell* lc;
 
     // Extract types from plan's target list (no table access needed)
     foreach (lc, plan->targetlist) {
-        TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
         if (tle && !tle->resjunk && tle->expr) {
             // Check if this is a computed expression (not just a simple Var)
             if (nodeTag(tle->expr) != T_Var) {
@@ -255,7 +237,7 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
 
             // Later we can add more sophisticated filtering
             if (IsA(tle->expr, FuncExpr)) {
-                FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
+                auto* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
                 if (funcExpr->funcid == frontend::sql::constants::PG_F_UPPER
                     || funcExpr->funcid == frontend::sql::constants::PG_F_LOWER
                     || funcExpr->funcid == frontend::sql::constants::PG_F_SUBSTRING)
@@ -279,14 +261,8 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
         return;
     }
 
-    // Analyze type compatibility using built-in system
     auto [supportedCount, unsupportedCount] = analyzeTypeCompatibility(columnTypes);
-
-    // In the future, we could allow partial support with fallbacks
     caps.hasCompatibleTypes = (unsupportedCount == 0);
-
-    if (!caps.hasCompatibleTypes) {
-    }
 }
 
 bool QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) {
@@ -294,7 +270,7 @@ bool QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) {
         return false;
     }
 
-    bool isSelect = (stmt->commandType == CMD_SELECT);
+    const auto isSelect = (stmt->commandType == CMD_SELECT);
     if (!isSelect) {
     }
 
@@ -345,7 +321,7 @@ bool QueryAnalyzer::isTypeSupportedByMLIR(Oid postgresType) {
     }
 }
 
-std::pair<int, int> QueryAnalyzer::analyzeTypeCompatibility(const std::vector<Oid>& types) {
+auto QueryAnalyzer::analyzeTypeCompatibility(const std::vector<Oid>& types) -> std::pair<int, int> {
     int supportedCount = 0;
     int unsupportedCount = 0;
 
@@ -418,9 +394,9 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
             return;
         }
 
-        std::string indent(depth * 2, ' ');
-        std::string nodeName = getNodeTypeName(static_cast<NodeTag>(plan->type));
-        std::string nodeInfo = prefix + nodeName + " (type=" + std::to_string(plan->type) + ")";
+        auto indent = std::string(depth * 2, ' ');
+        auto nodeName = getNodeTypeName(static_cast<NodeTag>(plan->type));
+        auto nodeInfo = prefix + nodeName + " (type=" + std::to_string(plan->type) + ")";
 
         // Add node-specific details
         if (plan->type == T_SeqScan) {
