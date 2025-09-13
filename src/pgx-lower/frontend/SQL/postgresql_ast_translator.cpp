@@ -11,14 +11,14 @@ PostgreSQLASTTranslator::PostgreSQLASTTranslator(::mlir::MLIRContext& context)
 
 PostgreSQLASTTranslator::~PostgreSQLASTTranslator() = default;
 
-auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) const -> std::unique_ptr<::mlir::ModuleOp> {
-    return pImpl->translateQuery(plannedStmt);
+auto PostgreSQLASTTranslator::translate_query(PlannedStmt* plannedStmt) const -> std::unique_ptr<::mlir::ModuleOp> {
+    return pImpl->translate_query(plannedStmt);
 }
 
-auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
+auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
     PGX_LOG(AST_TRANSLATE,
             IO,
-            "translateQuery IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
+            "translate_query IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
             plannedStmt ? plannedStmt->commandType : -1,
             plannedStmt ? plannedStmt->canSetTag : false);
 
@@ -38,7 +38,7 @@ auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> 
     context.currentStmt = plannedStmt;
     context.builder = &builder;
 
-    auto queryFunc = createQueryFunction(builder, context);
+    auto queryFunc = create_query_function(builder, context);
     if (!queryFunc) {
         PGX_ERROR("Failed to create query function");
         builder_ = nullptr;
@@ -46,7 +46,7 @@ auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> 
         return nullptr;
     }
 
-    if (!generateRelAlgOperations(queryFunc, plannedStmt, context)) {
+    if (!generate_rel_alg_operations(queryFunc, plannedStmt, context)) {
         PGX_ERROR("Failed to generate RelAlg operations");
         builder_ = nullptr;
         currentPlannedStmt_ = nullptr;
@@ -58,17 +58,17 @@ auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> 
 
     auto result = std::make_unique<::mlir::ModuleOp>(module);
     auto numOps = module.getBody()->getOperations().size();
-    PGX_LOG(AST_TRANSLATE, IO, "translateQuery OUT: RelAlg MLIR Module with %zu operations", numOps);
+    PGX_LOG(AST_TRANSLATE, IO, "translate_query OUT: RelAlg MLIR Module with %zu operations", numOps);
 
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncOp queryFunc,
-                                                             const PlannedStmt* plannedStmt,
-                                                             TranslationContext& context) -> bool {
+auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(::mlir::func::FuncOp queryFunc,
+                                                                const PlannedStmt* plannedStmt,
+                                                                TranslationContext& context) -> bool {
     PGX_LOG(AST_TRANSLATE,
             IO,
-            "generateRelAlgOperations IN: PlannedStmt with planTree type %d",
+            "generate_rel_alg_operations IN: PlannedStmt with planTree type %d",
             plannedStmt ? (plannedStmt->planTree ? plannedStmt->planTree->type : -1) : -1);
 
     if (!plannedStmt) {
@@ -78,11 +78,11 @@ auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncO
 
     Plan* planTree = plannedStmt->planTree;
 
-    if (!validatePlanTree(planTree)) {
+    if (!validate_plan_tree(planTree)) {
         return false;
     }
 
-    auto translatedOp = translatePlanNode(planTree, context);
+    auto translatedOp = translate_plan_node(planTree, context);
     if (!translatedOp) {
         PGX_ERROR("Failed to translate plan node");
         return false;
@@ -97,7 +97,7 @@ auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncO
         PGX_LOG(AST_TRANSLATE, DEBUG, "Checking result type");
         if (mlir::isa<mlir::relalg::TupleStreamType>(result.getType())) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Result is TupleStreamType, creating MaterializeOp");
-            createMaterializeOp(context, result);
+            create_materialize_op(context, result);
         }
         else {
         }
@@ -107,12 +107,12 @@ auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncO
 
     context.builder->create<mlir::func::ReturnOp>(context.builder->getUnknownLoc());
 
-    PGX_LOG(AST_TRANSLATE, IO, "generateRelAlgOperations OUT: RelAlg operations generated successfully");
+    PGX_LOG(AST_TRANSLATE, IO, "generate_rel_alg_operations OUT: RelAlg operations generated successfully");
 
     return true;
 }
 
-auto createPostgreSQLASTTranslator(::mlir::MLIRContext& context) -> std::unique_ptr<PostgreSQLASTTranslator> {
+auto create_postgresql_ast_translator(::mlir::MLIRContext& context) -> std::unique_ptr<PostgreSQLASTTranslator> {
     return std::make_unique<PostgreSQLASTTranslator>(context);
 }
 

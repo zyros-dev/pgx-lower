@@ -49,7 +49,7 @@ public:
     explicit PostgreSQLASTTranslator(::mlir::MLIRContext& context);
     ~PostgreSQLASTTranslator();  // Must be defined in .cpp for Pimpl
 
-    auto translateQuery(PlannedStmt* plannedStmt) const -> std::unique_ptr<::mlir::ModuleOp>;
+    auto translate_query(PlannedStmt* plannedStmt) const -> std::unique_ptr<::mlir::ModuleOp>;
     
 private:
 
@@ -57,7 +57,7 @@ private:
     std::unique_ptr<Impl> pImpl;
 };
 
-auto createPostgreSQLASTTranslator(::mlir::MLIRContext& context) 
+auto create_postgresql_ast_translator(::mlir::MLIRContext& context)
     -> std::unique_ptr<PostgreSQLASTTranslator>;
 
 }

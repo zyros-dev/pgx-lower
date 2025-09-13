@@ -1,42 +1,14 @@
 #include "pgx-lower/execution/mlir_runner.h"
 #include "pgx-lower/utility/error_handling.h"
 #include "pgx-lower/utility/logging.h"
-#include <sstream>
-#include <csignal>
 
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/Pass/PassManager.h"
 #include "mlir/IR/Verifier.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/TargetSelect.h"
-
-// Dialect headers
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBDialect.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/util/UtilDialect.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 
 // AST Translation
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
 
-// Conversion passes
-#include "lingodb/mlir/Conversion/RelAlgToDB/RelAlgToDBPass.h"
-#include "lingodb/mlir/Conversion/DBToStd/DBToStd.h"
-#include "lingodb/mlir/Conversion/DSAToStd/DSAToStd.h"
-#include "lingodb/mlir/Conversion/UtilToLLVM/Passes.h"
-#include "lingodb/mlir/Dialect/RelAlg/Passes.h"
-#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
-#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
-#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
-#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
-#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
-#include "mlir/Transforms/Passes.h"
-#include "lingodb/mlir/Passes.h"
 
 #ifndef BUILDING_UNIT_TESTS
 extern "C" {
@@ -58,19 +30,10 @@ extern "C" {
 
 // Include MLIR diagnostic infrastructure
 
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
-
 #include "pgx-lower/execution/jit_execution_interface.h"
-#include "lingodb/mlir/Transforms/CustomPasses.h"
-#include "lingodb/mlir/Dialect/DB/Passes.h"
 
 #include <mlir/InitAllPasses.h>
-#include <fstream>
 #include <chrono>
-#include <iomanip>
 
 // Restore PostgreSQL's restrict macro after MLIR includes
 #ifndef BUILDING_UNIT_TESTS
@@ -108,13 +71,13 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         }
 
         // Phase 1: PostgreSQL AST to RelAlg translation
-        auto translator = postgresql_ast::createPostgreSQLASTTranslator(context);
+        auto translator = postgresql_ast::create_postgresql_ast_translator(context);
         if (!translator) {
             PGX_ERROR("Failed to create PostgreSQL AST translator");
             return false;
         }
 
-        auto module = translator->translateQuery(plannedStmt);
+        auto module = translator->translate_query(plannedStmt);
         if (!module) {
             PGX_ERROR("Failed to translate PostgreSQL AST to RelAlg MLIR");
             return false;

@@ -28,7 +28,7 @@ extern "C" {}
 
 using namespace pgx_lower::frontend::sql::constants;
 
-std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extractNumericInfo(int32_t typmod) {
+std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(int32_t typmod) {
     if (typmod < 0) {
         // PostgreSQL default for unconstrained NUMERIC
         return {-1, -1};
@@ -54,7 +54,7 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extractNumericInfo(int32_t typ
     return {precision, scale};
     }
 
-int32_t PostgreSQLTypeMapper::extractVarcharLength(int32_t typmod) {
+int32_t PostgreSQLTypeMapper::extract_varchar_length(int32_t typmod) {
     if (typmod < 0) {
         return -1; // No length constraint
     }
@@ -62,7 +62,7 @@ int32_t PostgreSQLTypeMapper::extractVarcharLength(int32_t typmod) {
     return typmod - 4;
 }
 
-mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extractTimestampPrecision(int32_t typmod) {
+mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(int32_t typmod) {
     if (typmod < 0) {
         return mlir::db::TimeUnitAttr::microsecond;
     }
@@ -84,7 +84,7 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extractTimestampPrecision(int32_t t
     }
     }
 
-::mlir::Type PostgreSQLTypeMapper::mapPostgreSQLType(Oid typeOid, int32_t typmod, bool nullable) {
+::mlir::Type PostgreSQLTypeMapper::map_postgre_sqltype(Oid typeOid, int32_t typmod, bool nullable) {
     ::mlir::Type baseType;
     
     switch (typeOid) {
@@ -98,13 +98,13 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extractTimestampPrecision(int32_t t
     case VARCHAROID:
     case BPCHAROID: baseType = mlir::db::StringType::get(&context_); break;
     case NUMERICOID: {
-        auto [precision, scale] = extractNumericInfo(typmod);
+        auto [precision, scale] = extract_numeric_info(typmod);
         baseType = mlir::db::DecimalType::get(&context_, precision, scale);
         break;
     }
     case DATEOID: baseType = mlir::db::DateType::get(&context_, mlir::db::DateUnitAttr::day); break;
     case TIMESTAMPOID: {
-        mlir::db::TimeUnitAttr timeUnit = extractTimestampPrecision(typmod);
+        mlir::db::TimeUnitAttr timeUnit = extract_timestamp_precision(typmod);
         baseType = mlir::db::TimestampType::get(&context_, timeUnit);
         break;
     }
@@ -122,7 +122,7 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extractTimestampPrecision(int32_t t
     return baseType;
 }
 
-auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRContext& context) -> ::mlir::Value {
+auto translate_const(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRContext& context) -> ::mlir::Value {
     if (!constNode) {
         PGX_ERROR("Invalid Const parameters");
         return nullptr;
@@ -134,8 +134,8 @@ auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRCo
     }
 
     // Map PostgreSQL type to MLIR type
-    PostgreSQLTypeMapper typeMapper(context);
-    auto mlirType = typeMapper.mapPostgreSQLType(constNode->consttype, constNode->consttypmod);
+    PostgreSQLTypeMapper type_mapper(context);
+    auto mlirType = type_mapper.map_postgre_sqltype(constNode->consttype, constNode->consttypmod);
 
     switch (constNode->consttype) {
     case INT4OID: {
@@ -176,12 +176,12 @@ auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRCo
             text* textval = DatumGetTextP(constNode->constvalue);
             char* str = VARDATA(textval);
             int len = VARSIZE(textval) - VARHDRSZ;
-            std::string stringValue(str, len);
+            std::string string_value(str, len);
             
             return builder.create<mlir::db::ConstantOp>(
                 builder.getUnknownLoc(),
                 mlirType,
-                builder.getStringAttr(stringValue));
+                builder.getStringAttr(string_value));
         } else {
             return builder.create<mlir::db::ConstantOp>(
                 builder.getUnknownLoc(),
