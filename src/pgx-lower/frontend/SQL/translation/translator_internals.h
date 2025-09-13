@@ -101,16 +101,16 @@ class PostgreSQLASTTranslator::Impl {
     auto translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp>;
 
     auto translateExpression(Expr* expr) -> ::mlir::Value;
-    auto translateOpExpr(OpExpr* opExpr) -> ::mlir::Value;
-    auto translateVar(Var* var) -> ::mlir::Value;
-    auto translateConst(Const* constNode) -> ::mlir::Value;
-    auto translateFuncExpr(FuncExpr* funcExpr) -> ::mlir::Value;
-    auto translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::Value;
-    auto translateNullTest(NullTest* nullTest) -> ::mlir::Value;
-    auto translateAggref(Aggref* aggref) -> ::mlir::Value;
-    auto translateCoalesceExpr(CoalesceExpr* coalesceExpr) -> ::mlir::Value;
-    auto translateScalarArrayOpExpr(ScalarArrayOpExpr* scalarArrayOp) -> ::mlir::Value;
-    auto translateCaseExpr(CaseExpr* caseExpr) -> ::mlir::Value;
+    auto translateOpExpr(const OpExpr* opExpr) -> ::mlir::Value;
+    auto translateVar(const Var* var) const -> ::mlir::Value;
+    auto translateConst(Const* constNode) const -> ::mlir::Value;
+    auto translateFuncExpr(const FuncExpr* funcExpr) -> ::mlir::Value;
+    auto translateBoolExpr(const BoolExpr* boolExpr) -> ::mlir::Value;
+    auto translateNullTest(const NullTest* nullTest) -> ::mlir::Value;
+    auto translateAggref(const Aggref* aggref) const -> ::mlir::Value;
+    auto translateCoalesceExpr(const CoalesceExpr* coalesceExpr) -> ::mlir::Value;
+    auto translateScalarArrayOpExpr(const ScalarArrayOpExpr* scalarArrayOp) -> ::mlir::Value;
+    auto translateCaseExpr(const CaseExpr* caseExpr) -> ::mlir::Value;
     auto translateExpressionWithCaseTest(Expr* expr, ::mlir::Value caseTestValue) -> ::mlir::Value;
 
     // Plan node translation methods
@@ -148,9 +148,9 @@ class PostgreSQLASTTranslator::Impl {
     auto createMaterializeOp(TranslationContext& context, ::mlir::Value tupleStream) const -> ::mlir::Operation*;
 
     // Operation translation helpers
-    auto extractOpExprOperands(OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool;
-    auto translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
-    auto translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
+    auto extractOpExprOperands(const OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool;
+    auto translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) const -> ::mlir::Value;
+    auto translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) const -> ::mlir::Value;
 
    private:
     // Helper to map PostgreSQL aggregate function OIDs to LingoDB function names
