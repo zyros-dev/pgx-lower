@@ -133,9 +133,9 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(const OpExpr* opExpr) -> mli
         }
 
         const bool hasNullableOperand = lhsNullable || rhsNullable;
-        auto resultType =
-            hasNullableOperand ? mlir::Type(mlir::db::NullableType::get(builder_->getContext(), builder_->getI1Type()))
-                               : mlir::Type(builder_->getI1Type());
+        auto resultType = hasNullableOperand
+                              ? mlir::Type(mlir::db::NullableType::get(builder_->getContext(), builder_->getI1Type()))
+                              : mlir::Type(builder_->getI1Type());
 
         auto op = builder_->create<mlir::db::RuntimeCall>(builder_->getUnknownLoc(),
                                                           resultType,
@@ -164,8 +164,8 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(const OpExpr* opExpr) -> mli
         // Create the LIKE operation
         const mlir::Type boolType = builder_->getI1Type();
         auto resultType = (lhsNullable || rhsNullable)
-                                    ? mlir::Type(mlir::db::NullableType::get(builder_->getContext(), boolType))
-                                    : boolType;
+                              ? mlir::Type(mlir::db::NullableType::get(builder_->getContext(), boolType))
+                              : boolType;
 
         auto likeOp = builder_->create<mlir::db::RuntimeCall>(builder_->getUnknownLoc(),
                                                               resultType,
@@ -181,13 +181,12 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(const OpExpr* opExpr) -> mli
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating || operator to StringRuntime::concat");
 
         const bool hasNullableOperand = isa<mlir::db::NullableType>(lhs.getType())
-                                  || isa<mlir::db::NullableType>(rhs.getType());
+                                        || isa<mlir::db::NullableType>(rhs.getType());
 
-        auto resultType =
-            hasNullableOperand
-                ? mlir::Type(mlir::db::NullableType::get(builder_->getContext(),
-                                                         mlir::db::StringType::get(builder_->getContext())))
-                : mlir::Type(mlir::db::StringType::get(builder_->getContext()));
+        auto resultType = hasNullableOperand
+                              ? mlir::Type(mlir::db::NullableType::get(builder_->getContext(),
+                                                                       mlir::db::StringType::get(builder_->getContext())))
+                              : mlir::Type(mlir::db::StringType::get(builder_->getContext()));
 
         auto op = builder_->create<mlir::db::RuntimeCall>(builder_->getUnknownLoc(),
                                                           resultType,
@@ -981,7 +980,8 @@ auto PostgreSQLASTTranslator::Impl::translateCaseExpr(const CaseExpr* caseExpr) 
 
             // Ensure condition is boolean
             if (auto conditionType = condition.getType();
-                !isa<mlir::IntegerType>(conditionType) || cast<mlir::IntegerType>(conditionType).getWidth() != 1) {
+                !isa<mlir::IntegerType>(conditionType) || cast<mlir::IntegerType>(conditionType).getWidth() != 1)
+            {
                 // Need to convert to boolean using db.derive_truth
                 condition = builder_->create<mlir::db::DeriveTruth>(builder_->getUnknownLoc(), condition);
             }
@@ -1002,7 +1002,8 @@ auto PostgreSQLASTTranslator::Impl::translateCaseExpr(const CaseExpr* caseExpr) 
                 // Check if one is nullable and the other isn't
                 const bool resultIsNullable = isa<mlir::db::NullableType>(resultType);
 
-                if (const bool thenIsNullable = isa<mlir::db::NullableType>(thenType); resultIsNullable && !thenIsNullable) {
+                if (const bool thenIsNullable = isa<mlir::db::NullableType>(thenType); resultIsNullable && !thenIsNullable)
+                {
                     // Wrap thenResult in nullable
                     auto nullableType = mlir::db::NullableType::get(builder_->getContext(), thenType);
                     thenResult =
@@ -1068,11 +1069,11 @@ auto PostgreSQLASTTranslator::Impl::translateExpressionWithCaseTest(Expr* expr, 
         const auto rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
 
         const mlir::Value leftValue = (leftNode && leftNode->type == T_CaseTestExpr)
-                                    ? caseTestValue
-                                    : translateExpression(reinterpret_cast<Expr*>(leftNode));
+                                          ? caseTestValue
+                                          : translateExpression(reinterpret_cast<Expr*>(leftNode));
         const mlir::Value rightValue = (rightNode && rightNode->type == T_CaseTestExpr)
-                                     ? caseTestValue
-                                     : translateExpression(reinterpret_cast<Expr*>(rightNode));
+                                           ? caseTestValue
+                                           : translateExpression(reinterpret_cast<Expr*>(rightNode));
 
         if (!leftValue || !rightValue) {
             PGX_ERROR("Failed to translate operands in CASE OpExpr");
