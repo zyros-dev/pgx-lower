@@ -1,4 +1,8 @@
 
+#include "translator_internals.h"
+
+namespace postgresql_ast {
+
 // Use PostgreSQL constants namespace for cleaner code
 using namespace pgx_lower::frontend::sql::constants;
 
@@ -106,8 +110,7 @@ auto PostgreSQLASTTranslator::Impl::translateConst(Const* constNode) -> ::mlir::
         PGX_ERROR("No builder available for constant translation");
         return nullptr;
     }
-    // Call the anonymous namespace function through wrapper
-    return callTranslateConst(constNode, *builder_, context_);
+    return postgresql_ast::translateConst(constNode, *builder_, context_);
 }
 
 auto PostgreSQLASTTranslator::Impl::extractOpExprOperands(OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool {
@@ -1199,3 +1202,5 @@ auto PostgreSQLASTTranslator::Impl::translateExpressionWithCaseTest(Expr* expr, 
     // For other types, just translate normally (no CaseTestExpr replacement needed)
     return translateExpression(expr);
 }
+
+} // namespace postgresql_ast

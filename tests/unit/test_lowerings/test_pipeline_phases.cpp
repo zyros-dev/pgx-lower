@@ -34,9 +34,13 @@ TEST_F(MLIRLoweringPipelineTest, TestRelAlg) {
     auto simpleMLIR = R"(
         module {
           func.func @main() {
-            %0 = relalg.basetable  {column_order = ["id", "name"], table_identifier = "test_order_string|oid:14564357"} columns: {id => @test_order_string::@id({type = i32}), name => @test_order_string::@name({type = !db.nullable<!db.string>})}
-            %1 = relalg.sort %0 [(@test_order_string::@name,asc)]
-            %2 = relalg.materialize %1 [@test_order_string::@name] => ["name"] : !dsa.table
+            %0 = relalg.basetable  {column_order = ["id", "department", "product", "amount", "quantity", "sales_date"], table_identifier = "sales_data|oid:15694888"} columns: {amount => @sales_data::@amount({type = !db.nullable<!db.decimal<10, 2>>}), department => @sales_data::@department({type = !db.nullable<!db.string>}), id => @sales_data::@id({type = i32}), product => @sales_data::@product({type = !db.nullable<!db.string>}), quantity => @sales_data::@quantity({type = !db.nullable<i32>}), sales_date => @sales_data::@sales_date({type = !db.nullable<!db.date<day>>})}
+            %1 = relalg.aggregation %0 [@sales_data::@department] computes : [@total_sales::@sum({type = !db.nullable<!db.decimal<10, 2>>})] (%arg0: !relalg.tuplestream,%arg1: !relalg.tuple){
+              %4 = relalg.aggrfn sum @sales_data::@amount %arg0 : !db.nullable<!db.decimal<10, 2>>
+              relalg.return %4 : !db.nullable<!db.decimal<10, 2>>
+            }
+            %2 = relalg.sort %1 [(@sales_data::@department,asc)]
+            %3 = relalg.materialize %2 [@sales_data::@department,@total_sales::@sum] => ["department", "total_sales"] : !dsa.table
             return
           }
         }

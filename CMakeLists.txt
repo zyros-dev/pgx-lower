@@ -159,6 +159,10 @@ if(NOT DEFINED BUILD_ONLY_EXTENSION OR NOT BUILD_ONLY_EXTENSION)
     set(UNIT_TEST_ADDITIONAL_SOURCES
             src/pgx-lower/frontend/SQL/query_analyzer.cpp
             src/pgx-lower/frontend/SQL/postgresql_ast_translator.cpp
+            src/pgx-lower/frontend/SQL/translation/expression_translator.cpp
+            src/pgx-lower/frontend/SQL/translation/plan_translator.cpp
+            src/pgx-lower/frontend/SQL/translation/schema_manager.cpp
+            src/pgx-lower/frontend/SQL/translation/translation_core.cpp
             src/pgx-lower/utility/error_handling.cpp
             src/pgx-lower/execution/mlir_runner.cpp
             src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp

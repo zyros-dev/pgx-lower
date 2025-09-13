@@ -1,5 +1,8 @@
-// Translation core implementation - included directly into postgresql_ast_translator.cpp
-// Contains type system and constant translation functionality
+#include "translator_internals.h"
+
+namespace postgresql_ast {
+
+// Translation core implementation - type system and constant translation functionality
 
 #ifdef POSTGRESQL_EXTENSION
 // PostgreSQL headers for text handling
@@ -12,13 +15,7 @@ extern "C" {
 
 using namespace pgx_lower::frontend::sql::constants;
 
-class PostgreSQLTypeMapper {
-public:
-    explicit PostgreSQLTypeMapper(::mlir::MLIRContext& context)
-        : context_(context) {}
-
-
-    std::pair<int32_t, int32_t> extractNumericInfo(int32_t typmod) {
+std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extractNumericInfo(int32_t typmod) {
     if (typmod < 0) {
         // PostgreSQL default for unconstrained NUMERIC
         return {-1, -1};
@@ -44,7 +41,15 @@ public:
     return {precision, scale};
     }
 
-    mlir::db::TimeUnitAttr extractTimestampPrecision(int32_t typmod) {
+int32_t PostgreSQLTypeMapper::extractVarcharLength(int32_t typmod) {
+    if (typmod < 0) {
+        return -1; // No length constraint
+    }
+    // PostgreSQL stores varchar length as (typmod - 4)
+    return typmod - 4;
+}
+
+mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extractTimestampPrecision(int32_t typmod) {
     if (typmod < 0) {
         return mlir::db::TimeUnitAttr::microsecond;
     }
@@ -66,7 +71,7 @@ public:
     }
     }
 
-    ::mlir::Type mapPostgreSQLType(unsigned int typeOid, int32_t typmod, bool nullable = false) {
+::mlir::Type PostgreSQLTypeMapper::mapPostgreSQLType(Oid typeOid, int32_t typmod, bool nullable) {
     ::mlir::Type baseType;
     
     switch (typeOid) {
@@ -102,11 +107,7 @@ public:
         return mlir::db::NullableType::get(&context_, baseType);
     }
     return baseType;
-    }
-
-private:
-    ::mlir::MLIRContext& context_;
-};
+}
 
 auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRContext& context) -> ::mlir::Value {
     if (!constNode) {
@@ -195,3 +196,5 @@ auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRCo
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), DEFAULT_FALLBACK_INT_VALUE, builder.getI32Type());
     }
 }
+
+} // namespace postgresql_ast

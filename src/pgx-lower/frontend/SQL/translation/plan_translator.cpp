@@ -1,12 +1,18 @@
 
+#include "translator_internals.h"
+
+namespace postgresql_ast {
+
 using namespace pgx_lower::frontend::sql::constants;
 
-// Helper function to map PostgreSQL aggregate function OIDs to function names
-static const char* getAggregateFunctionName(Oid aggfnoid) {
+auto PostgreSQLASTTranslator::Impl::getAggregateFunctionName(Oid aggfnoid) -> const char* {
+    return ::postgresql_ast::getAggregateFunctionName(aggfnoid);
+}
+
+auto getAggregateFunctionName(Oid aggfnoid) -> const char* {
+    using namespace pgx_lower::frontend::sql::constants;
+
     switch (aggfnoid) {
-        case PG_F_COUNT_STAR:
-        case PG_F_COUNT_ANY:
-            return AGGREGATION_COUNT_FUNCTION;
         case PG_F_SUM_INT2:
         case PG_F_SUM_INT4:
         case PG_F_SUM_INT8:
@@ -14,6 +20,7 @@ static const char* getAggregateFunctionName(Oid aggfnoid) {
         case PG_F_SUM_FLOAT8:
         case PG_F_SUM_NUMERIC:
             return AGGREGATION_SUM_FUNCTION;
+
         case PG_F_AVG_INT2:
         case PG_F_AVG_INT4:
         case PG_F_AVG_INT8:
@@ -21,9 +28,33 @@ static const char* getAggregateFunctionName(Oid aggfnoid) {
         case PG_F_AVG_FLOAT8:
         case PG_F_AVG_NUMERIC:
             return AGGREGATION_AVG_FUNCTION;
+
+        case PG_F_COUNT_STAR:
+        case PG_F_COUNT_ANY:
+            return AGGREGATION_COUNT_FUNCTION;
+
+        // MIN functions
+        case PG_F_MIN_INT2:
+        case PG_F_MIN_INT4:
+        case PG_F_MIN_INT8:
+        case PG_F_MIN_FLOAT4:
+        case PG_F_MIN_FLOAT8:
+        case PG_F_MIN_NUMERIC:
+        case PG_F_MIN_TEXT:
+            return AGGREGATION_MIN_FUNCTION;
+
+        case PG_F_MAX_INT2:
+        case PG_F_MAX_INT4:
+        case PG_F_MAX_INT8:
+        case PG_F_MAX_FLOAT4:
+        case PG_F_MAX_FLOAT8:
+        case PG_F_MAX_NUMERIC:
+        case PG_F_MAX_TEXT:
+            return AGGREGATION_MAX_FUNCTION;
+
         default:
-            PGX_WARNING("Unknown aggregate function OID: %u", aggfnoid);
-            return "unknown";
+            PGX_WARNING("Unknown aggregate function OID: %u, defaulting to count", aggfnoid);
+            return AGGREGATION_COUNT_FUNCTION;
     }
 }
 
@@ -1264,3 +1295,5 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
 
     return mapOp;
 }
+
+} // namespace postgresql_ast

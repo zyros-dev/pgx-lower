@@ -1,7 +1,11 @@
 
-// PostgreSQL schema access helpers
+#include "translator_internals.h"
+
+namespace postgresql_ast {
+
+using namespace pgx_lower::frontend::sql::constants;
+
 auto getTableNameFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> std::string {
-    using namespace pgx_lower::frontend::sql::constants;
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO) {
         PGX_WARNING("Cannot access rtable: currentPlannedStmt=%p varno=%d", currentPlannedStmt, varno);
         return "unknown_table_" + std::to_string(varno);
@@ -55,8 +59,7 @@ auto getTableOidFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> Oid {
     return rte->relid;
 }
 
-auto getColumnNameFromSchema(PlannedStmt* currentPlannedStmt, int varno, int varattno) -> std::string {
-    using namespace pgx_lower::frontend::sql::constants;
+auto getColumnNameFromSchema(PlannedStmt* currentPlannedStmt, int varno, AttrNumber varattno) -> std::string {
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
         PGX_WARNING("Cannot access schema for column: varno=%d varattno=%d", varno, varattno);
         return "col_" + std::to_string(varattno);
@@ -156,8 +159,7 @@ auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid
 #endif
 }
 
-auto isColumnNullable(PlannedStmt* currentPlannedStmt, int varno, int varattno) -> bool {
-    using namespace pgx_lower::frontend::sql::constants;
+auto isColumnNullable(PlannedStmt* currentPlannedStmt, int varno, AttrNumber varattno) -> bool {
     
     // Default to nullable if we can't determine
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
@@ -204,3 +206,5 @@ auto isColumnNullable(PlannedStmt* currentPlannedStmt, int varno, int varattno) 
     return nullable;
 #endif
 }
+
+} // namespace postgresql_ast
