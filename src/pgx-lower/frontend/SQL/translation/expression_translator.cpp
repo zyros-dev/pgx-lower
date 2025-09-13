@@ -2,8 +2,6 @@
 #include "translator_internals.h"
 
 namespace postgresql_ast {
-
-// Use PostgreSQL constants namespace for cleaner code
 using namespace pgx_lower::frontend::sql::constants;
 
 auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::Value {
@@ -16,11 +14,11 @@ auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::V
 
     switch (expr->type) {
     case T_Var:
-    case LINGODB_T_VAR: // T_Var from lingo-db headers (for unit tests)
+    case LINGODB_T_VAR:
         return translateVar(reinterpret_cast<Var*>(expr));
     case T_Const: return translateConst(reinterpret_cast<Const*>(expr));
     case T_OpExpr:
-    case LINGODB_T_OPEXPR: // T_OpExpr from lingo-db headers (for unit tests)
+    case LINGODB_T_OPEXPR:
         return translateOpExpr(reinterpret_cast<OpExpr*>(expr));
     case T_FuncExpr: return translateFuncExpr(reinterpret_cast<FuncExpr*>(expr));
     case T_BoolExpr: return translateBoolExpr(reinterpret_cast<BoolExpr*>(expr));
@@ -34,20 +32,13 @@ auto PostgreSQLASTTranslator::Impl::translateExpression(Expr* expr) -> ::mlir::V
         return nullptr;
     }
     case T_RelabelType: {
-        // T_RelabelType is a type coercion wrapper - just unwrap and translate the underlying expression
-        RelabelType* relabel = reinterpret_cast<RelabelType*>(expr);
+        auto* relabel = reinterpret_cast<RelabelType*>(expr);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
         return translateExpression(relabel->arg);
     }
     default: {
-        PGX_WARNING("Unsupported expression type: %d", expr->type);
-        // Return a placeholder constant for now
-        auto result = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(),
-                                                                   DEFAULT_PLACEHOLDER_INT,
-                                                                   builder_->getI32Type());
-
-        PGX_LOG(AST_TRANSLATE, IO, "translateExpression OUT: MLIR Value (placeholder for unsupported type %d)", expr->type);
-        return result;
+        PGX_ERROR("Unsupported expression type: %d", expr->type);
+        throw std::runtime_error("Unsupported expression type - read the logs");
     }
     }
 
@@ -164,74 +155,69 @@ auto PostgreSQLASTTranslator::Impl::extractOpExprOperands(OpExpr* opExpr, ::mlir
 auto PostgreSQLASTTranslator::Impl::translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value {
     switch (opOid) {
     // Addition operators
-    case PG_INT4_PLUS_OID: // int4 + int4
-    case PG_INT8_PLUS_OID: // int8 + int8
+    case PG_INT4_PLUS_OID:
+    case PG_INT8_PLUS_OID:
         return builder_->create<mlir::db::AddOp>(builder_->getUnknownLoc(), lhs, rhs);
 
-    // Subtraction operators
-    case PG_INT4_MINUS_OID: // int4 - int4
-    case PG_INT4_MINUS_ALT_OID: // Alternative int4 - int4 (keeping for compatibility)
-    case PG_INT8_MINUS_OID: // int8 - int8
+
+    case PG_INT4_MINUS_OID:
+    case PG_INT4_MINUS_ALT_OID:
+    case PG_INT8_MINUS_OID:
         return builder_->create<mlir::db::SubOp>(builder_->getUnknownLoc(), lhs, rhs);
 
-    // Multiplication operators
-    case PG_INT4_MUL_OID: // int4 * int4
-    case PG_INT8_MUL_OID: // int8 * int8
+
+    case PG_INT4_MUL_OID:
+    case PG_INT8_MUL_OID:
         return builder_->create<mlir::db::MulOp>(builder_->getUnknownLoc(), lhs, rhs);
 
-    // Division operators
-    case PG_INT4_DIV_OID: // int4 / int4 (alternative)
-    case PG_INT4_DIV_ALT_OID: // int4 / int4
-    case PG_INT8_DIV_OID: // int8 / int8
+
+    case PG_INT4_DIV_OID:
+    case PG_INT4_DIV_ALT_OID:
+    case PG_INT8_DIV_OID:
         return builder_->create<mlir::db::DivOp>(builder_->getUnknownLoc(), lhs, rhs);
 
-    // Modulo operators
-    case PG_INT4_MOD_OID: // int4 % int4
-    case PG_INT4_MOD_ALT_OID: // int4 % int4 (alternative)
-    case PG_INT8_MOD_OID: // int8 % int8
+
+    case PG_INT4_MOD_OID:
+    case PG_INT4_MOD_ALT_OID:
+    case PG_INT8_MOD_OID:
         return builder_->create<mlir::db::ModOp>(builder_->getUnknownLoc(), lhs, rhs);
 
     default: return nullptr;
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs)
+    -> ::mlir::Value {
     mlir::db::DBCmpPredicate predicate;
 
     switch (opOid) {
-    case PG_INT4_EQ_OID: // int4 = int4
-    case PG_INT8_EQ_OID: // int8 = int8
-    case PG_TEXT_EQ_OID: // text = text
-        predicate = mlir::db::DBCmpPredicate::eq;
-        break;
+    case PG_INT4_EQ_OID:
+    case PG_INT8_EQ_OID:
+    case PG_TEXT_EQ_OID: predicate = mlir::db::DBCmpPredicate::eq; break;
 
-    case PG_INT4_NE_OID: // int4 != int4
-    case PG_INT8_NE_OID: // int8 != int8
-    case PG_TEXT_NE_OID: // text != text
-        predicate = mlir::db::DBCmpPredicate::neq;
-        break;
+    case PG_INT4_NE_OID:
+    case PG_INT8_NE_OID:
+    case PG_TEXT_NE_OID: predicate = mlir::db::DBCmpPredicate::neq; break;
 
-    case PG_INT4_LT_OID: // int4 < int4
-    case PG_INT8_LT_OID: // int8 < int8
-    case PG_TEXT_LT_OID: // text < text
-        predicate = mlir::db::DBCmpPredicate::lt;
-        break;
+    case PG_INT4_LT_OID:
+    case PG_INT8_LT_OID:
+    case PG_TEXT_LT_OID: predicate = mlir::db::DBCmpPredicate::lt; break;
 
-    case PG_INT4_LE_OID: // int4 <= int4
-    case PG_INT8_LE_OID: // int8 <= int8
-    case PG_TEXT_LE_OID: // text <= text
+    case PG_INT4_LE_OID:
+    case PG_INT8_LE_OID:
+    case PG_TEXT_LE_OID:
         predicate = mlir::db::DBCmpPredicate::lte;
         break;
 
-    case PG_INT4_GT_OID: // int4 > int4
-    case PG_INT8_GT_OID: // int8 > int8
-    case PG_TEXT_GT_OID: // text > text
+    case PG_INT4_GT_OID:
+    case PG_INT8_GT_OID:
+    case PG_TEXT_GT_OID:
         predicate = mlir::db::DBCmpPredicate::gt;
         break;
 
-    case PG_INT4_GE_OID: // int4 >= int4
-    case PG_INT8_GE_OID: // int8 >= int8
-    case PG_TEXT_GE_OID: // text >= text
+    case PG_INT4_GE_OID:
+    case PG_INT8_GE_OID:
+    case PG_TEXT_GE_OID:
         predicate = mlir::db::DBCmpPredicate::gte;
         break;
 
@@ -240,20 +226,21 @@ auto PostgreSQLASTTranslator::Impl::translateComparisonOp(Oid opOid, ::mlir::Val
 
     mlir::Value convertedLhs = lhs;
     mlir::Value convertedRhs = rhs;
-    
+
     bool lhsNullable = lhs.getType().isa<mlir::db::NullableType>();
     bool rhsNullable = rhs.getType().isa<mlir::db::NullableType>();
-    
+
     if (lhsNullable && !rhsNullable) {
         mlir::Type nullableRhsType = mlir::db::NullableType::get(builder_->getContext(), rhs.getType());
         auto falseVal = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, 1);
-        convertedRhs = builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), 
-                                                                nullableRhsType, rhs, falseVal);
-    } else if (!lhsNullable && rhsNullable) {
+        convertedRhs =
+            builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), nullableRhsType, rhs, falseVal);
+    }
+    else if (!lhsNullable && rhsNullable) {
         mlir::Type nullableLhsType = mlir::db::NullableType::get(builder_->getContext(), lhs.getType());
         auto falseVal = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), 0, 1);
-        convertedLhs = builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), 
-                                                                nullableLhsType, lhs, falseVal);
+        convertedLhs =
+            builder_->create<mlir::db::AsNullableOp>(builder_->getUnknownLoc(), nullableLhsType, lhs, falseVal);
     }
 
     return builder_->create<mlir::db::CmpOp>(builder_->getUnknownLoc(), predicate, convertedLhs, convertedRhs);
@@ -280,13 +267,13 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
         return result;
     }
 
-    // Try comparison operators
+
     result = translateComparisonOp(opOid, lhs, rhs);
     if (result) {
         return result;
     }
 
-    // Try string operators
+
     switch (opOid) {
     case PG_TEXT_LIKE_OID: {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LIKE operator to db.runtime_call");
@@ -294,7 +281,7 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
         mlir::Value convertedLhs = lhs;
         mlir::Value convertedRhs = rhs;
         
-        // If one operand is nullable and the other isn't, make both nullable
+
         bool lhsNullable = lhs.getType().isa<mlir::db::NullableType>();
         bool rhsNullable = rhs.getType().isa<mlir::db::NullableType>();
         
@@ -323,7 +310,7 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
         mlir::Value convertedLhs = lhs;
         mlir::Value convertedRhs = rhs;
         
-        // If one operand is nullable and the other isn't, make both nullable
+
         bool lhsNullable = lhs.getType().isa<mlir::db::NullableType>();
         bool rhsNullable = rhs.getType().isa<mlir::db::NullableType>();
         
@@ -373,9 +360,8 @@ auto PostgreSQLASTTranslator::Impl::translateOpExpr(OpExpr* opExpr) -> ::mlir::V
     }
     }
 
-    // Unsupported operator
-    PGX_WARNING("Unsupported operator OID: %d", opOid);
-    return lhs; // Return first operand as placeholder
+    PGX_ERROR("Unsupported operator OID: %d", opOid);
+    throw std::runtime_error("Unsupported operator OID - check the logs");
 }
 
 auto PostgreSQLASTTranslator::Impl::translateBoolExpr(BoolExpr* boolExpr) -> ::mlir::Value {
@@ -394,13 +380,11 @@ auto PostgreSQLASTTranslator::Impl::translateBoolExpr(BoolExpr* boolExpr) -> ::m
         ::mlir::Value result = nullptr;
 
         if (boolExpr->args && boolExpr->args->length > 0) {
-            // Safety check for elements array (PostgreSQL 17)
             if (!boolExpr->args->elements) {
                 PGX_WARNING("BoolExpr AND args list has length but no elements array");
                 return nullptr;
             }
 
-            // Iterate using PostgreSQL 17 style with elements array
             for (int i = 0; i < boolExpr->args->length; i++) {
                 ListCell* lc = &boolExpr->args->elements[i];
                 Node* argNode = static_cast<Node*>(lfirst(lc));
@@ -426,8 +410,8 @@ auto PostgreSQLASTTranslator::Impl::translateBoolExpr(BoolExpr* boolExpr) -> ::m
         }
 
         if (!result) {
-            // Default to true if no valid expression
-            result = builder_->create<mlir::arith::ConstantIntOp>(builder_->getUnknownLoc(), DEFAULT_PLACEHOLDER_BOOL, builder_->getI1Type());
+            PGX_ERROR("Failed to match an operator");
+            throw std::runtime_error("Failed to match an operator");
         }
         return result;
     }

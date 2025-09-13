@@ -3,7 +3,6 @@
 
 #include <memory>
 #include <vector>
-#include "pgx-lower/frontend/SQL/translation/translation_context.h"
 
 namespace mlir {
 class Attribute;
@@ -47,12 +46,10 @@ typedef uintptr_t Datum;
 namespace postgresql_ast {
 class PostgreSQLASTTranslator {
 public:
-    using ColumnInfo = pgx_lower::frontend::sql::ColumnInfo;
-
     explicit PostgreSQLASTTranslator(::mlir::MLIRContext& context);
     ~PostgreSQLASTTranslator();  // Must be defined in .cpp for Pimpl
 
-    auto translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp>;
+    auto translateQuery(PlannedStmt* plannedStmt) const -> std::unique_ptr<::mlir::ModuleOp>;
     
 private:
 

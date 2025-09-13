@@ -8,7 +8,7 @@
 namespace pgx_lower::frontend::sql::constants {
 
 // =============================================================================
-// ARITHMETIC OPERATOR OIDS
+// ARITHMETIC OPERATOR OIDs
 // =============================================================================
 
 // Integer Addition Operators
@@ -35,7 +35,7 @@ constexpr Oid PG_INT4_MOD_ALT_OID = 530; // int4 % int4 (alternative)
 constexpr Oid PG_INT8_MOD_OID = 690;    // int8 % int8
 
 // =============================================================================
-// COMPARISON OPERATOR OIDS
+// COMPARISON OPERATOR OIDs
 // =============================================================================
 
 // Integer Equality Operators
@@ -71,7 +71,7 @@ constexpr Oid PG_INT8_GE_OID = 415;     // int8 >= int8
 constexpr Oid PG_TEXT_GE_OID = 667;     // text >= text
 
 // =============================================================================
-// FUNCTION OIDS (Complete mapping for expression translation)
+// FUNCTION OIDs (
 // =============================================================================
 
 // Mathematical Functions
@@ -115,7 +115,7 @@ constexpr Oid PG_F_SUBSTRING = 936;        // substring(text, int, int)
 constexpr Oid PG_TEXT_ARRAY_OID = 1009;    // _text (text array type)
 
 // =============================================================================
-// AGGREGATE FUNCTION OIDS
+// AGGREGATE FUNCTION OIDs
 // =============================================================================
 
 // Core aggregate functions (type-generic, we'll detect the base function)

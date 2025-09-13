@@ -59,7 +59,7 @@ auto getTableOidFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> Oid {
     return rte->relid;
 }
 
-auto getColumnNameFromSchema(PlannedStmt* currentPlannedStmt, int varno, AttrNumber varattno) -> std::string {
+auto getColumnNameFromSchema(const PlannedStmt* currentPlannedStmt, int varno, AttrNumber varattno) -> std::string {
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
         PGX_WARNING("Cannot access schema for column: varno=%d varattno=%d", varno, varattno);
         return "col_" + std::to_string(varattno);
@@ -96,7 +96,7 @@ auto getColumnNameFromSchema(PlannedStmt* currentPlannedStmt, int varno, AttrNum
 #endif
 }
 
-auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid) 
+auto getAllTableColumnsFromSchema(const PlannedStmt* currentPlannedStmt, int scanrelid)
     -> std::vector<pgx_lower::frontend::sql::ColumnInfo> {
     std::vector<pgx_lower::frontend::sql::ColumnInfo> columns;
 
@@ -159,7 +159,7 @@ auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid
 #endif
 }
 
-auto isColumnNullable(PlannedStmt* currentPlannedStmt, int varno, AttrNumber varattno) -> bool {
+auto isColumnNullable(const PlannedStmt* currentPlannedStmt, int varno, const AttrNumber varattno) -> bool {
     
     // Default to nullable if we can't determine
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {

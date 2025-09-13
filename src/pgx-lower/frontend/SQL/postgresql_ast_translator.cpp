@@ -10,7 +10,7 @@ PostgreSQLASTTranslator::PostgreSQLASTTranslator(::mlir::MLIRContext& context)
 
 PostgreSQLASTTranslator::~PostgreSQLASTTranslator() = default;
 
-auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp> {
+auto PostgreSQLASTTranslator::translateQuery(PlannedStmt* plannedStmt) const -> std::unique_ptr<::mlir::ModuleOp> {
     return pImpl->translateQuery(plannedStmt);
 }
 
@@ -60,7 +60,7 @@ auto PostgreSQLASTTranslator::Impl::translateQuery(PlannedStmt* plannedStmt) -> 
 }
 
 auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncOp queryFunc,
-                                                       PlannedStmt* plannedStmt,
+                                                             const PlannedStmt* plannedStmt,
                                                        TranslationContext& context) -> bool {
     PGX_LOG(AST_TRANSLATE, IO, "generateRelAlgOperations IN: PlannedStmt with planTree type %d",
             plannedStmt ? (plannedStmt->planTree ? plannedStmt->planTree->type : -1) : -1);
@@ -89,7 +89,7 @@ auto PostgreSQLASTTranslator::Impl::generateRelAlgOperations(::mlir::func::FuncO
         PGX_LOG(AST_TRANSLATE, DEBUG, "Got result from translated operation");
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Checking result type");
-        if (result.getType().isa<mlir::relalg::TupleStreamType>()) {
+        if (mlir::isa<mlir::relalg::TupleStreamType>(result.getType())) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Result is TupleStreamType, creating MaterializeOp");
             createMaterializeOp(context, result);
         }

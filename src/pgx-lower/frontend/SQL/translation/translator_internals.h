@@ -42,7 +42,6 @@ typedef struct Gather Gather;
 
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
 #include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
-#include "pgx-lower/frontend/SQL/translation/translation_context.h"
 #include "pgx-lower/utility/logging.h"
 #include "pgx-lower/runtime/tuple_access.h"
 
@@ -70,25 +69,64 @@ typedef struct Gather Gather;
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
+#include <map>
 #include <string>
 #include <vector>
+
+// ===========================================================================
+// Translation Context Types
+// ===========================================================================
+
+namespace pgx_lower::frontend::sql {
+
+// Type aliases for column mapping clarity
+using varno_t = int;
+using varattno_t = int;
+using table_t = std::string;
+using column_t = std::string;
+using ColumnMapping = std::map<std::pair<varno_t, varattno_t>, std::pair<table_t, column_t>>;
+
+// Column information structure for schema discovery
+struct ColumnInfo {
+    std::string name;
+    unsigned int typeOid; // PostgreSQL type OID
+    int32_t typmod; // Type modifier
+    bool nullable;
+
+    ColumnInfo(std::string n, unsigned int t, int32_t m, bool null)
+    : name(std::move(n))
+    , typeOid(t)
+    , typmod(m)
+    , nullable(null) {}
+};
+
+// Translation context for managing state during AST translation
+struct TranslationContext {
+    PlannedStmt* currentStmt = nullptr;
+    ::mlir::OpBuilder* builder = nullptr;
+    std::unordered_map<unsigned int, ::mlir::Type> typeCache; // Oid -> Type mapping
+    ::mlir::Value currentTuple = nullptr;
+    ColumnMapping columnMappings; // Maps (varno, varattno) -> (table_name, column_name)
+};
+
+} // namespace pgx_lower::frontend::sql
 
 namespace postgresql_ast {
 
 using TranslationContext = pgx_lower::frontend::sql::TranslationContext;
 
 // ===========================================================================
-// PostgreSQLASTTranslator::Impl Class
+// PostgreSQLASTTranslator::Impl
 // ===========================================================================
 class PostgreSQLASTTranslator::Impl {
-public:
+   public:
     explicit Impl(::mlir::MLIRContext& context)
-        : context_(context)
-        , builder_(nullptr)
-        , currentModule_(nullptr)
-        , currentTupleHandle_(nullptr)
-        , currentPlannedStmt_(nullptr)
-        , contextNeedsRecreation_(false) {}
+    : context_(context)
+    , builder_(nullptr)
+    , currentModule_(nullptr)
+    , currentTupleHandle_(nullptr)
+    , currentPlannedStmt_(nullptr)
+    , contextNeedsRecreation_(false) {}
 
     auto translateQuery(PlannedStmt* plannedStmt) -> std::unique_ptr<::mlir::ModuleOp>;
 
@@ -107,41 +145,44 @@ public:
 
     // Plan node translation methods
     auto translatePlanNode(Plan* plan, TranslationContext& context) -> ::mlir::Operation*;
-    auto translateSeqScan(SeqScan* seqScan, TranslationContext& context) -> ::mlir::Operation*;
+    auto translateSeqScan(SeqScan* seqScan, TranslationContext& context) const -> ::mlir::Operation*;
     auto translateAgg(Agg* agg, TranslationContext& context) -> ::mlir::Operation*;
-    auto translateSort(Sort* sort, TranslationContext& context) -> ::mlir::Operation*;
-    auto translateLimit(Limit* limit, TranslationContext& context) -> ::mlir::Operation*;
-    auto translateGather(Gather* gather, TranslationContext& context) -> ::mlir::Operation*;
+    auto translateSort(const Sort* sort, TranslationContext& context) -> ::mlir::Operation*;
+    auto translateLimit(const Limit* limit, TranslationContext& context) -> ::mlir::Operation*;
+    auto translateGather(const Gather* gather, TranslationContext& context) -> ::mlir::Operation*;
 
     // Query function generation
-    auto createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context) -> ::mlir::func::FuncOp;
-    auto generateRelAlgOperations(::mlir::func::FuncOp queryFunc, PlannedStmt* plannedStmt, TranslationContext& context) -> bool;
+    static auto createQueryFunction(::mlir::OpBuilder& builder, const TranslationContext& context) -> ::mlir::func::FuncOp;
+    auto generateRelAlgOperations(::mlir::func::FuncOp queryFunc, const PlannedStmt* plannedStmt, TranslationContext& context)
+        -> bool;
 
     // Relational operation helpers
-    auto applySelectionFromQual(::mlir::Operation* inputOp, List* qual, TranslationContext& context) -> ::mlir::Operation*;
-    auto applyProjectionFromTargetList(::mlir::Operation* inputOp, List* targetList, TranslationContext& context) -> ::mlir::Operation*;
+    auto applySelectionFromQual(::mlir::Operation* inputOp, const List* qual, const TranslationContext& context)
+        -> ::mlir::Operation*;
+    auto applyProjectionFromTargetList(::mlir::Operation* inputOp, List* targetList, TranslationContext& context)
+        -> ::mlir::Operation*;
 
     // Validation and column processing
-    auto validatePlanTree(Plan* planTree) -> bool;
+    static auto validatePlanTree(const Plan* planTree) -> bool;
     auto extractTargetListColumns(TranslationContext& context,
-                                 std::vector<::mlir::Attribute>& columnRefAttrs,
-                                 std::vector<::mlir::Attribute>& columnNameAttrs) -> bool;
+                                  std::vector<::mlir::Attribute>& columnRefAttrs,
+                                  std::vector<::mlir::Attribute>& columnNameAttrs) const -> bool;
     auto processTargetEntry(TranslationContext& context,
-                           List* tlist,
-                           int index,
-                           std::vector<::mlir::Attribute>& columnRefAttrs,
-                           std::vector<::mlir::Attribute>& columnNameAttrs) -> bool;
-    auto determineColumnType(TranslationContext& context, Expr* expr) -> ::mlir::Type;
-    auto createMaterializeOp(TranslationContext& context, ::mlir::Value tupleStream) -> ::mlir::Operation*;
+                            const List* tlist,
+                            int index,
+                            std::vector<::mlir::Attribute>& columnRefAttrs,
+                            std::vector<::mlir::Attribute>& columnNameAttrs) const -> bool;
+    auto determineColumnType(const TranslationContext& context, Expr* expr) const -> ::mlir::Type;
+    auto createMaterializeOp(TranslationContext& context, ::mlir::Value tupleStream) const -> ::mlir::Operation*;
 
     // Operation translation helpers
     auto extractOpExprOperands(OpExpr* opExpr, ::mlir::Value& lhs, ::mlir::Value& rhs) -> bool;
     auto translateArithmeticOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
     auto translateComparisonOp(Oid opOid, ::mlir::Value lhs, ::mlir::Value rhs) -> ::mlir::Value;
 
-private:
+   private:
     // Helper to map PostgreSQL aggregate function OIDs to LingoDB function names
-    auto getAggregateFunctionName(Oid aggfnoid) -> const char*;
+    static auto getAggregateFunctionName(Oid aggfnoid) -> const char*;
 
     ::mlir::MLIRContext& context_;
     ::mlir::OpBuilder* builder_;
@@ -152,12 +193,12 @@ private:
 };
 
 // ===========================================================================
-// PostgreSQLTypeMapper Class
+// PostgreSQLTypeMapper
 // ===========================================================================
 class PostgreSQLTypeMapper {
-public:
+   public:
     explicit PostgreSQLTypeMapper(::mlir::MLIRContext& context)
-        : context_(context) {}
+    : context_(context) {}
 
     // Main type mapping function
     auto mapPostgreSQLType(Oid typeOid, int32_t typmod, bool nullable = false) -> ::mlir::Type;
@@ -167,17 +208,17 @@ public:
     auto extractTimestampPrecision(int32_t typmod) -> mlir::db::TimeUnitAttr;
     auto extractVarcharLength(int32_t typmod) -> int32_t;
 
-private:
+   private:
     ::mlir::MLIRContext& context_;
 };
 
 // ===========================================================================
-// SchemaManager Class
+// SchemaManager
 // ===========================================================================
 class SchemaManager {
-public:
+   public:
     explicit SchemaManager(PlannedStmt* plannedStmt)
-        : plannedStmt_(plannedStmt) {}
+    : plannedStmt_(plannedStmt) {}
 
     // Table and column metadata access
     auto getTableNameFromRTE(int varno) -> std::string;
@@ -185,7 +226,7 @@ public:
     auto getTableOidFromRTE(int varno) -> Oid;
     auto isColumnNullable(int rtindex, AttrNumber attnum) -> bool;
 
-private:
+   private:
     PlannedStmt* plannedStmt_;
 };
 
@@ -198,15 +239,15 @@ auto getAggregateFunctionName(Oid aggfnoid) -> const char*;
 
 // Schema access helpers (standalone functions for backwards compatibility)
 auto getTableNameFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> std::string;
-auto getColumnNameFromSchema(PlannedStmt* plannedStmt, int rtindex, AttrNumber attnum) -> std::string;
+auto getColumnNameFromSchema(const PlannedStmt* plannedStmt, int rtindex, AttrNumber attnum) -> std::string;
 auto getTableOidFromRTE(PlannedStmt* currentPlannedStmt, int varno) -> Oid;
-auto isColumnNullable(PlannedStmt* plannedStmt, int rtindex, AttrNumber attnum) -> bool;
+auto isColumnNullable(const PlannedStmt* plannedStmt, int rtindex, AttrNumber attnum) -> bool;
 
 // Translation helper for constants
 auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRContext& context) -> ::mlir::Value;
 
 // Get all columns from a table
-auto getAllTableColumnsFromSchema(PlannedStmt* currentPlannedStmt, int scanrelid)
+auto getAllTableColumnsFromSchema(const PlannedStmt* currentPlannedStmt, int scanrelid)
     -> std::vector<pgx_lower::frontend::sql::ColumnInfo>;
 
 } // namespace postgresql_ast

@@ -5,59 +5,6 @@ namespace postgresql_ast {
 
 using namespace pgx_lower::frontend::sql::constants;
 
-auto PostgreSQLASTTranslator::Impl::getAggregateFunctionName(Oid aggfnoid) -> const char* {
-    return ::postgresql_ast::getAggregateFunctionName(aggfnoid);
-}
-
-auto getAggregateFunctionName(Oid aggfnoid) -> const char* {
-    using namespace pgx_lower::frontend::sql::constants;
-
-    switch (aggfnoid) {
-        case PG_F_SUM_INT2:
-        case PG_F_SUM_INT4:
-        case PG_F_SUM_INT8:
-        case PG_F_SUM_FLOAT4:
-        case PG_F_SUM_FLOAT8:
-        case PG_F_SUM_NUMERIC:
-            return AGGREGATION_SUM_FUNCTION;
-
-        case PG_F_AVG_INT2:
-        case PG_F_AVG_INT4:
-        case PG_F_AVG_INT8:
-        case PG_F_AVG_FLOAT4:
-        case PG_F_AVG_FLOAT8:
-        case PG_F_AVG_NUMERIC:
-            return AGGREGATION_AVG_FUNCTION;
-
-        case PG_F_COUNT_STAR:
-        case PG_F_COUNT_ANY:
-            return AGGREGATION_COUNT_FUNCTION;
-
-        // MIN functions
-        case PG_F_MIN_INT2:
-        case PG_F_MIN_INT4:
-        case PG_F_MIN_INT8:
-        case PG_F_MIN_FLOAT4:
-        case PG_F_MIN_FLOAT8:
-        case PG_F_MIN_NUMERIC:
-        case PG_F_MIN_TEXT:
-            return AGGREGATION_MIN_FUNCTION;
-
-        case PG_F_MAX_INT2:
-        case PG_F_MAX_INT4:
-        case PG_F_MAX_INT8:
-        case PG_F_MAX_FLOAT4:
-        case PG_F_MAX_FLOAT8:
-        case PG_F_MAX_NUMERIC:
-        case PG_F_MAX_TEXT:
-            return AGGREGATION_MAX_FUNCTION;
-
-        default:
-            PGX_WARNING("Unknown aggregate function OID: %u, defaulting to count", aggfnoid);
-            return AGGREGATION_COUNT_FUNCTION;
-    }
-}
-
 auto PostgreSQLASTTranslator::Impl::translatePlanNode(Plan* plan, TranslationContext& context) -> ::mlir::Operation* {
     if (!plan) {
         PGX_ERROR("Plan node is null");
@@ -92,6 +39,100 @@ auto PostgreSQLASTTranslator::Impl::translatePlanNode(Plan* plan, TranslationCon
     }
 
     return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, TranslationContext& context) const
+    -> ::mlir::Operation* {
+    if (!seqScan || !context.builder || !context.currentStmt) {
+        PGX_ERROR("Invalid SeqScan parameters");
+        return nullptr;
+    }
+
+    // Get table name and OID dynamically from PostgreSQL catalogs
+    std::string tableName;
+    Oid tableOid = InvalidOid;
+
+    if (seqScan->scan.scanrelid > 0) {
+        // Use PostgreSQL's Range Table Entry (RTE) to get actual table information
+        tableName = getTableNameFromRTE(context.currentStmt, seqScan->scan.scanrelid);
+        tableOid = getTableOidFromRTE(context.currentStmt, seqScan->scan.scanrelid);
+
+        if (tableName.empty()) {
+            PGX_WARNING("Could not resolve table name for scanrelid: %d", seqScan->scan.scanrelid);
+            // TODO: This should be a runtime error - the table doesn't exist
+            // Only fall back to generic name if catalog lookup fails
+            tableName = std::string(FALLBACK_TABLE_PREFIX) + std::to_string(seqScan->scan.scanrelid);
+            tableOid = FIRST_NORMAL_OBJECT_ID + seqScan->scan.scanrelid - 1;
+        }
+    }
+    else {
+        PGX_ERROR("Invalid scan relation ID: %d", seqScan->scan.scanrelid);
+        return nullptr;
+    }
+
+    std::string tableIdentifier = tableName + TABLE_OID_SEPARATOR + std::to_string(tableOid);
+
+    auto tableMetaData = std::make_shared<runtime::TableMetaData>();
+    tableMetaData->setNumRows(0); // Will be updated from PostgreSQL catalog
+
+    auto tableMetaAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
+
+    auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+
+    std::vector<mlir::NamedAttribute> columnDefs;
+    std::vector<mlir::Attribute> columnOrder;
+    auto allColumns = getAllTableColumnsFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid);
+
+    if (!allColumns.empty()) {
+        std::string realTableName = getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
+
+        // Populate column mappings for this table
+        int varattno = 1; // PostgreSQL column numbering starts at 1
+        for (const auto& colInfo : allColumns) {
+            // Map (scanrelid, varattno) -> (table_name, column_name)
+            context.columnMappings[{seqScan->scan.scanrelid, varattno}] = {realTableName, colInfo.name};
+            PGX_LOG(AST_TRANSLATE,
+                    DEBUG,
+                    "Mapped (%d, %d) -> (%s, %s)",
+                    seqScan->scan.scanrelid,
+                    varattno,
+                    realTableName.c_str(),
+                    colInfo.name.c_str());
+
+            auto colDef = columnManager.createDef(realTableName, colInfo.name);
+
+            PostgreSQLTypeMapper typeMapper(context_);
+            mlir::Type mlirType = typeMapper.mapPostgreSQLType(colInfo.typeOid, colInfo.typmod, colInfo.nullable);
+            colDef.getColumn().type = mlirType;
+
+            columnDefs.push_back(context.builder->getNamedAttr(colInfo.name, colDef));
+            columnOrder.push_back(context.builder->getStringAttr(colInfo.name));
+
+            varattno++;
+        }
+
+        tableIdentifier =
+            realTableName + TABLE_OID_SEPARATOR
+            + std::to_string(
+                getAllTableColumnsFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid).empty()
+                    ? 0
+                    : static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, seqScan->scan.scanrelid - 1))->relid);
+    }
+    else {
+        PGX_ERROR("Could not discover table schema");
+    }
+
+    auto columnsAttr = context.builder->getDictionaryAttr(columnDefs);
+    auto columnOrderAttr = context.builder->getArrayAttr(columnOrder);
+
+    auto baseTableOp = context.builder->create<mlir::relalg::BaseTableOp>(context.builder->getUnknownLoc(),
+                                                                          mlir::relalg::TupleStreamType::get(&context_),
+                                                                          context.builder->getStringAttr(tableIdentifier),
+                                                                          tableMetaAttr,
+                                                                          columnsAttr,
+                                                                          columnOrderAttr);
+
+    return baseTableOp;
 }
 
 auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& context) -> ::mlir::Operation* {
@@ -138,37 +179,51 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
     // group by
     if (numCols > 0 && grpColIdx) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Processing %d GROUP BY columns", numCols);
-        
+
         std::string tableName;
         if (leftTree && leftTree->type == T_SeqScan) {
-            SeqScan* seqScan = (SeqScan*) leftTree;
+            SeqScan* seqScan = reinterpret_cast<SeqScan*>(leftTree);
             tableName = getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
-            
+
             for (int i = 0; i < numCols; i++) {
                 AttrNumber colIdx = grpColIdx[i];
                 std::string columnName = getColumnNameFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid, colIdx);
-                
-                PGX_LOG(AST_TRANSLATE, DEBUG, "GROUP BY column %d: %s.%s (index %d)", 
-                       i, tableName.c_str(), columnName.c_str(), colIdx);
-                
+
+                PGX_LOG(AST_TRANSLATE,
+                        DEBUG,
+                        "GROUP BY column %d: %s.%s (index %d)",
+                        i,
+                        tableName.c_str(),
+                        columnName.c_str(),
+                        colIdx);
+
                 // create column reference attribute for the group by column
                 auto columnAttr = columnManager.get(tableName, columnName);
                 auto columnRef = columnManager.createRef(columnAttr.get());
                 groupByAttrs.push_back(columnRef);
-                
+
                 // map the group by column for materializeop
                 // postgresql uses varno=-2 to reference columns from aggregation results
                 context.columnMappings[{-2, colIdx}] = {tableName, columnName};
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped GROUP BY result (-2, %d) -> (%s, %s)", 
-                       colIdx, tableName.c_str(), columnName.c_str());
-                
+                PGX_LOG(AST_TRANSLATE,
+                        DEBUG,
+                        "Mapped GROUP BY result (-2, %d) -> (%s, %s)",
+                        colIdx,
+                        tableName.c_str(),
+                        columnName.c_str());
+
                 // also map based on result position (group by columns appear first in result)
                 // postgresql renumbers columns in the result based on their position in select list
                 context.columnMappings[{-2, i + 1}] = {tableName, columnName};
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Also mapped GROUP BY result position (-2, %d) -> (%s, %s)", 
-                       i + 1, tableName.c_str(), columnName.c_str());
+                PGX_LOG(AST_TRANSLATE,
+                        DEBUG,
+                        "Also mapped GROUP BY result position (-2, %d) -> (%s, %s)",
+                        i + 1,
+                        tableName.c_str(),
+                        columnName.c_str());
             }
-        } else {
+        }
+        else {
             PGX_WARNING("GROUP BY without SeqScan child - cannot determine table context");
         }
     }
@@ -189,8 +244,8 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
 
         // Process each target entry to find aggregate functions
         ListCell* lc;
-        foreach(lc, agg->plan.targetlist) {
-            TargetEntry* te = (TargetEntry*) lfirst(lc);
+        foreach (lc, agg->plan.targetlist) {
+            TargetEntry* te = static_cast<TargetEntry*>(lfirst(lc));
             if (!te || !te->expr) {
                 PGX_WARNING("Invalid TargetEntry in aggregate plan");
                 continue;
@@ -198,18 +253,18 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
 
             // Check if the target entry contains an Aggref (aggregate function)
             if (te->expr->type == T_Aggref) {
-                Aggref* aggref = (Aggref*) te->expr;
+                Aggref* aggref = reinterpret_cast<Aggref*>(te->expr);
                 const char* funcName = getAggregateFunctionName(aggref->aggfnoid);
-                
+
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Found aggregate function: %s (OID %u)", funcName, aggref->aggfnoid);
-                
+
                 // Create column definition for the aggregate result
                 std::string aggName = te->resname ? std::string(te->resname) : AGGREGATION_RESULT_COLUMN;
                 auto attrDef = columnManager.createDef(aggName, funcName);
-                
+
                 mlir::Value relation = block->getArgument(0);
                 mlir::Value aggResult;
-                
+
                 // Handle different aggregate functions
                 if (strcmp(funcName, AGGREGATION_COUNT_FUNCTION) == 0) {
                     // COUNT(*) - no column reference needed
@@ -217,88 +272,111 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
                     aggResult = aggrBuilder.create<mlir::relalg::CountRowsOp>(context.builder->getUnknownLoc(),
                                                                               context.builder->getI64Type(),
                                                                               relation);
-                } else {
+                }
+                else {
                     // SUM, AVG, MIN, MAX - need column reference
                     if (!aggref->args || list_length(aggref->args) == 0) {
                         PGX_ERROR("Aggregate function %s requires arguments", funcName);
                         continue;
                     }
-                    
+
                     // Get the first argument (column reference)
-                    TargetEntry* argTE = (TargetEntry*) linitial(aggref->args);
+                    TargetEntry* argTE = static_cast<TargetEntry*>(linitial(aggref->args));
                     if (!argTE || !argTE->expr || argTE->expr->type != T_Var) {
                         PGX_ERROR("Aggregate function %s requires column reference", funcName);
                         continue;
                     }
-                    
-                    Var* colVar = (Var*) argTE->expr;
-                    
+
+                    Var* colVar = reinterpret_cast<Var*>(argTE->expr);
+
                     // Handle special case where varno=-2 indicates column from aggregate input
                     std::string tableName;
                     std::string columnName;
-                    
+
                     if (colVar->varno < 0) {
                         // For negative varno (like -2), get table info from the child SeqScan
                         if (leftTree && leftTree->type == T_SeqScan) {
-                            SeqScan* seqScan = (SeqScan*) leftTree;
+                            SeqScan* seqScan = reinterpret_cast<SeqScan*>(leftTree);
                             tableName = getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
-                            columnName = getColumnNameFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid, colVar->varattno);
-                            PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved negative varno %d to table: %s, column: %s", 
-                                   colVar->varno, tableName.c_str(), columnName.c_str());
-                        } else {
+                            columnName =
+                                getColumnNameFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid, colVar->varattno);
+                            PGX_LOG(AST_TRANSLATE,
+                                    DEBUG,
+                                    "Resolved negative varno %d to table: %s, column: %s",
+                                    colVar->varno,
+                                    tableName.c_str(),
+                                    columnName.c_str());
+                        }
+                        else {
                             PGX_ERROR("Cannot resolve negative varno %d without SeqScan child", colVar->varno);
                             continue;
                         }
-                    } else {
+                    }
+                    else {
                         // Normal positive varno - use standard resolution
                         tableName = getTableNameFromRTE(currentPlannedStmt_, colVar->varno);
                         columnName = getColumnNameFromSchema(currentPlannedStmt_, colVar->varno, colVar->varattno);
                     }
-                    
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Aggregate %s on column: %s.%s", funcName, tableName.c_str(), columnName.c_str());
-                    
+
+                    PGX_LOG(AST_TRANSLATE,
+                            DEBUG,
+                            "Aggregate %s on column: %s.%s",
+                            funcName,
+                            tableName.c_str(),
+                            columnName.c_str());
+
                     // Create column attribute reference using SymbolRefAttr
                     std::vector<mlir::FlatSymbolRefAttr> nested;
                     nested.push_back(mlir::FlatSymbolRefAttr::get(context.builder->getContext(), columnName));
                     auto symbolRef = mlir::SymbolRefAttr::get(context.builder->getContext(), tableName, nested);
-                    
+
                     // Create a Column attribute - using column manager pattern
-                    auto& columnManager = context.builder->getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-                    auto columnAttr = columnManager.get(tableName, columnName);
-                    
-                    auto columnRef = mlir::relalg::ColumnRefAttr::get(context.builder->getContext(), symbolRef, columnAttr);
-                    
+                    auto& columnManagerM =
+                        context.builder->getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+                    auto columnAttr = columnManagerM.get(tableName, columnName);
+
+                    auto columnRef =
+                        mlir::relalg::ColumnRefAttr::get(context.builder->getContext(), symbolRef, columnAttr);
+
                     // use the actual column type from the column attribute
-                    // the columnattr is a std::shared_ptr<column>, so use -> to access type
+                    // the column attr is a std::shared_ptr<column>, so use -> to access type
                     auto resultType = columnAttr->type;
                     attrDef.getColumn().type = resultType;
-                    
+
                     // Create the aggregate function operation using enum instead of string
                     mlir::relalg::AggrFunc aggrFuncEnum;
                     if (strcmp(funcName, AGGREGATION_SUM_FUNCTION) == 0) {
                         aggrFuncEnum = mlir::relalg::AggrFunc::sum;
-                    } else if (strcmp(funcName, AGGREGATION_AVG_FUNCTION) == 0) {
+                    }
+                    else if (strcmp(funcName, AGGREGATION_AVG_FUNCTION) == 0) {
                         aggrFuncEnum = mlir::relalg::AggrFunc::avg;
-                    } else if (strcmp(funcName, AGGREGATION_MIN_FUNCTION) == 0) {
+                    }
+                    else if (strcmp(funcName, AGGREGATION_MIN_FUNCTION) == 0) {
                         aggrFuncEnum = mlir::relalg::AggrFunc::min;
-                    } else if (strcmp(funcName, AGGREGATION_MAX_FUNCTION) == 0) {
+                    }
+                    else if (strcmp(funcName, AGGREGATION_MAX_FUNCTION) == 0) {
                         aggrFuncEnum = mlir::relalg::AggrFunc::max;
-                    } else {
+                    }
+                    else {
                         aggrFuncEnum = mlir::relalg::AggrFunc::count; // Default fallback
                     }
-                    
+
                     aggResult = aggrBuilder.create<mlir::relalg::AggrFuncOp>(context.builder->getUnknownLoc(),
                                                                              resultType,
                                                                              aggrFuncEnum,
                                                                              relation,
                                                                              columnRef);
                 }
-                
+
                 createdCols.push_back(attrDef);
                 createdValues.push_back(aggResult);
-            } else {
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Non-aggregate expression in target list: type %d (%s)",
-                       te->expr->type, te->resname ? te->resname : "unnamed");
+            }
+            else {
+                PGX_LOG(AST_TRANSLATE,
+                        DEBUG,
+                        "Non-aggregate expression in target list: type %d (%s)",
+                        te->expr->type,
+                        te->resname ? te->resname : "unnamed");
             }
         }
 
@@ -317,7 +395,7 @@ auto PostgreSQLASTTranslator::Impl::translateAgg(Agg* agg, TranslationContext& c
     return childOp;
 }
 
-auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::translateSort(const Sort* sort, TranslationContext& context) -> ::mlir::Operation* {
     if (!sort || !context.builder) {
         PGX_ERROR("Invalid Sort parameters");
         return nullptr;
@@ -326,26 +404,28 @@ auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext
     // Translate child plan - single code path for tests and production
     ::mlir::Operation* childOp = nullptr;
 
-    Plan* leftTree = sort->plan.lefttree;
-
-    if (leftTree) {
+    if (Plan* leftTree = sort->plan.lefttree) {
         childOp = translatePlanNode(leftTree, context);
         if (!childOp) {
             PGX_ERROR("Failed to translate Sort child plan");
             return nullptr;
         }
-        
+
         // Map varno=-2 to the actual table columns from child
         // Sort nodes use varno=-2 to reference columns from their input
         if (leftTree->type == T_SeqScan) {
-            SeqScan* seqScan = (SeqScan*) leftTree;
+            SeqScan* seqScan = reinterpret_cast<SeqScan*>(leftTree);
             // Copy mappings from child's varno to -2
             for (const auto& mapping : context.columnMappings) {
                 if (mapping.first.first == seqScan->scan.scanrelid) {
                     // Map (-2, varattno) -> (table_name, column_name)
                     context.columnMappings[{-2, mapping.first.second}] = mapping.second;
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Sort: Mapped (-2, %d) -> (%s, %s)", 
-                           mapping.first.second, mapping.second.first.c_str(), mapping.second.second.c_str());
+                    PGX_LOG(AST_TRANSLATE,
+                            DEBUG,
+                            "Sort: Mapped (-2, %d) -> (%s, %s)",
+                            mapping.first.second,
+                            mapping.second.first.c_str(),
+                            mapping.second.second.c_str());
                 }
             }
         }
@@ -365,11 +445,10 @@ auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext
     int numCols = sort->numCols;
     AttrNumber* sortColIdx = sort->sortColIdx;
     Oid* sortOperators = sort->sortOperators;
-    bool* nullsFirst = sort->nullsFirst;
 
     // Build sort specifications
     std::vector<mlir::Attribute> sortSpecs;
-    
+
     if (numCols > 0 && numCols < MAX_QUERY_COLUMNS && sortColIdx) {
         // Get the column manager and attribute manager
         auto* relalgDialect = context.builder->getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>();
@@ -378,7 +457,7 @@ auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext
             return nullptr;
         }
         auto& attrManager = relalgDialect->getColumnManager();
-        
+
         for (int i = 0; i < numCols; i++) {
             AttrNumber colIdx = sortColIdx[i];
             if (colIdx > 0 && colIdx < MAX_COLUMN_INDEX) {
@@ -386,64 +465,69 @@ auto PostgreSQLASTTranslator::Impl::translateSort(Sort* sort, TranslationContext
                 mlir::relalg::SortSpec spec = mlir::relalg::SortSpec::asc;
                 if (sortOperators) {
                     Oid sortOp = sortOperators[i];
-                    bool descending = (sortOp == PG_INT4_GT_OID || sortOp == PG_INT8_GT_OID ||
-                                     sortOp == PG_INT4_GE_ALT_OID || sortOp == PG_INT8_GE_ALT_OID ||
-                                     sortOp == PG_TEXT_GT_OID || sortOp == PG_TEXT_GE_OID);
+                    bool descending = (sortOp == PG_INT4_GT_OID || sortOp == PG_INT8_GT_OID
+                                       || sortOp == PG_INT4_GE_ALT_OID || sortOp == PG_INT8_GE_ALT_OID
+                                       || sortOp == PG_TEXT_GT_OID || sortOp == PG_TEXT_GE_OID);
                     if (descending) {
                         spec = mlir::relalg::SortSpec::desc;
                     }
                 }
-                
+
                 // Get column name from target list
                 std::string columnName;
                 if (sort->plan.targetlist) {
                     ListCell* lc;
                     int targetIndex = 0;
-                    foreach(lc, sort->plan.targetlist) {
+                    foreach (lc, sort->plan.targetlist) {
                         targetIndex++;
                         if (targetIndex == colIdx) {
-                            TargetEntry* tle = (TargetEntry*)lfirst(lc);
+                            TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
                             if (tle->resname) {
                                 columnName = tle->resname;
-                            } else if (IsA(tle->expr, Var)) {
-                                Var* var = (Var*)tle->expr;
+                            }
+                            else if (IsA(tle->expr, Var)) {
+                                Var* var = reinterpret_cast<Var*>(tle->expr);
                                 columnName = getColumnNameFromSchema(context.currentStmt, var->varno, var->varattno);
                             }
                             break;
                         }
                     }
                 }
-                
+
                 if (!columnName.empty()) {
                     // Get table name for scope
-                    std::string tableName = getTableNameFromRTE(context.currentStmt, 1);  // Assuming single table for now
-                    
+                    std::string tableName = getTableNameFromRTE(context.currentStmt, 1); // Assuming single table for
+                                                                                         // now
+
                     // Create column reference with scope
                     auto columnAttr = attrManager.createRef(tableName, columnName);
-                    
+
                     // Create sort specification
-                    auto sortSpecAttr = mlir::relalg::SortSpecificationAttr::get(
-                        context.builder->getContext(), columnAttr, spec);
+                    auto sortSpecAttr =
+                        mlir::relalg::SortSpecificationAttr::get(context.builder->getContext(), columnAttr, spec);
                     sortSpecs.push_back(sortSpecAttr);
                 }
             }
         }
     }
-    
+
     // Create the SortOp if we have sort specifications
     if (!sortSpecs.empty()) {
         auto sortSpecsArray = context.builder->getArrayAttr(sortSpecs);
         auto tupleStreamType = mlir::relalg::TupleStreamType::get(context.builder->getContext());
-        auto sortOp = context.builder->create<mlir::relalg::SortOp>(
-            context.builder->getUnknownLoc(), tupleStreamType, childResult, sortSpecsArray);
+        auto sortOp = context.builder->create<mlir::relalg::SortOp>(context.builder->getUnknownLoc(),
+                                                                    tupleStreamType,
+                                                                    childResult,
+                                                                    sortSpecsArray);
         return sortOp;
     }
-    
+
     // If no sort specs, just return the child
     return childOp;
 }
 
-auto PostgreSQLASTTranslator::Impl::translateLimit(Limit* limit, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::translateLimit(const Limit* limit, TranslationContext& context)
+    -> ::mlir::Operation* {
     if (!limit || !context.builder) {
         PGX_ERROR("Invalid Limit parameters");
         return nullptr;
@@ -452,9 +536,7 @@ auto PostgreSQLASTTranslator::Impl::translateLimit(Limit* limit, TranslationCont
     // Translate child plan - single code path for tests and production
     ::mlir::Operation* childOp = nullptr;
 
-    Plan* leftTree = limit->plan.lefttree;
-
-    if (leftTree) {
+    if (Plan* leftTree = limit->plan.lefttree) {
         childOp = translatePlanNode(leftTree, context);
         if (!childOp) {
             PGX_ERROR("Failed to translate Limit child plan");
@@ -478,13 +560,11 @@ auto PostgreSQLASTTranslator::Impl::translateLimit(Limit* limit, TranslationCont
     int64_t limitOffset = 0;
 
     Node* limitOffsetNode = limit->limitOffset;
-    Node* limitCountNode = limit->limitCount;
-
 
     // In unit tests, limitCountNode might be a mock Const structure
     // In production, it's a real PostgreSQL Node
     // We can safely check the structure and extract values
-    if (limitCountNode) {
+    if (Node* limitCountNode = limit->limitCount) {
         // Check if this looks like a Const node
         Node* node = limitCountNode;
         if (node->type == T_Const) {
@@ -544,7 +624,8 @@ auto PostgreSQLASTTranslator::Impl::translateLimit(Limit* limit, TranslationCont
     return limitOp;
 }
 
-auto PostgreSQLASTTranslator::Impl::translateGather(Gather* gather, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::translateGather(const Gather* gather, TranslationContext& context)
+    -> ::mlir::Operation* {
     if (!gather || !context.builder) {
         PGX_ERROR("Invalid Gather parameters");
         return nullptr;
@@ -563,9 +644,7 @@ auto PostgreSQLASTTranslator::Impl::translateGather(Gather* gather, TranslationC
     // Translate child plan - single code path for tests and production
     ::mlir::Operation* childOp = nullptr;
 
-    Plan* leftTree = gather->plan.lefttree;
-
-    if (leftTree) {
+    if (Plan* leftTree = gather->plan.lefttree) {
         childOp = translatePlanNode(leftTree, context);
         if (!childOp) {
             PGX_ERROR("Failed to translate Gather child plan");
@@ -585,95 +664,7 @@ auto PostgreSQLASTTranslator::Impl::translateGather(Gather* gather, TranslationC
     return childOp;
 }
 
-auto PostgreSQLASTTranslator::Impl::translateSeqScan(SeqScan* seqScan, TranslationContext& context) -> ::mlir::Operation* {
-    if (!seqScan || !context.builder || !context.currentStmt) {
-        PGX_ERROR("Invalid SeqScan parameters");
-        return nullptr;
-    }
-
-    // Get table name and OID dynamically from PostgreSQL catalogs
-    std::string tableName;
-    Oid tableOid = InvalidOid;
-    std::string tableIdentifier;
-
-    if (seqScan->scan.scanrelid > 0) {
-        // Use PostgreSQL's Range Table Entry (RTE) to get actual table information
-        tableName = getTableNameFromRTE(context.currentStmt, seqScan->scan.scanrelid);
-        tableOid = getTableOidFromRTE(context.currentStmt, seqScan->scan.scanrelid);
-        
-        if (tableName.empty()) {
-            PGX_WARNING("Could not resolve table name for scanrelid: %d", seqScan->scan.scanrelid);
-            // TODO: This should be a runtime error - the table doesn't exist
-            // Only fall back to generic name if catalog lookup fails
-            tableName = std::string(FALLBACK_TABLE_PREFIX) + std::to_string(seqScan->scan.scanrelid);
-            tableOid = FIRST_NORMAL_OBJECT_ID + seqScan->scan.scanrelid - 1;
-        }
-    } else {
-        PGX_ERROR("Invalid scan relation ID: %d", seqScan->scan.scanrelid);
-        return nullptr;
-    }
-
-    tableIdentifier = tableName + TABLE_OID_SEPARATOR + std::to_string(tableOid);
-
-    auto tableMetaData = std::make_shared<runtime::TableMetaData>();
-    tableMetaData->setNumRows(0); // Will be updated from PostgreSQL catalog
-
-    auto tableMetaAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
-
-    auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-
-    std::vector<mlir::NamedAttribute> columnDefs;
-    std::vector<mlir::Attribute> columnOrder;
-    auto allColumns = getAllTableColumnsFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid);
-
-    if (!allColumns.empty()) {
-        std::string realTableName = getTableNameFromRTE(currentPlannedStmt_, seqScan->scan.scanrelid);
-
-        // Populate column mappings for this table
-        int varattno = 1;  // PostgreSQL column numbering starts at 1
-        for (const auto& colInfo : allColumns) {
-            // Map (scanrelid, varattno) -> (table_name, column_name)
-            context.columnMappings[{seqScan->scan.scanrelid, varattno}] = {realTableName, colInfo.name};
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped (%d, %d) -> (%s, %s)", 
-                   seqScan->scan.scanrelid, varattno, realTableName.c_str(), colInfo.name.c_str());
-            
-            auto colDef = columnManager.createDef(realTableName, colInfo.name);
-
-            PostgreSQLTypeMapper typeMapper(context_);
-            mlir::Type mlirType = typeMapper.mapPostgreSQLType(colInfo.typeOid, colInfo.typmod, colInfo.nullable);
-            colDef.getColumn().type = mlirType;
-
-            columnDefs.push_back(context.builder->getNamedAttr(colInfo.name, colDef));
-            columnOrder.push_back(context.builder->getStringAttr(colInfo.name));
-            
-            varattno++;
-        }
-
-        tableIdentifier =
-            realTableName + TABLE_OID_SEPARATOR
-            + std::to_string(
-                getAllTableColumnsFromSchema(currentPlannedStmt_, seqScan->scan.scanrelid).empty()
-                    ? 0
-                    : static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt_->rtable, seqScan->scan.scanrelid - 1))->relid);
-    }
-    else {
-        PGX_ERROR("Could not discover table schema");
-    }
-
-    auto columnsAttr = context.builder->getDictionaryAttr(columnDefs);
-    auto columnOrderAttr = context.builder->getArrayAttr(columnOrder);
-
-    auto baseTableOp = context.builder->create<mlir::relalg::BaseTableOp>(context.builder->getUnknownLoc(),
-                                                                          mlir::relalg::TupleStreamType::get(&context_),
-                                                                          context.builder->getStringAttr(tableIdentifier),
-                                                                          tableMetaAttr,
-                                                                          columnsAttr,
-                                                                          columnOrderAttr);
-
-    return baseTableOp;
-}
-
-auto PostgreSQLASTTranslator::Impl::createQueryFunction(::mlir::OpBuilder& builder, TranslationContext& context)
+auto PostgreSQLASTTranslator::Impl::createQueryFunction(::mlir::OpBuilder& builder, const TranslationContext& context)
     -> ::mlir::func::FuncOp {
     // Safety checks
     if (!context.builder) {
@@ -686,7 +677,8 @@ auto PostgreSQLASTTranslator::Impl::createQueryFunction(::mlir::OpBuilder& build
         // This enables proper JITPostgreSQL result communication
 
         auto queryFuncType = builder.getFunctionType({}, {});
-        auto queryFunc = builder.create<::mlir::func::FuncOp>(builder.getUnknownLoc(), QUERY_FUNCTION_NAME, queryFuncType);
+        auto queryFunc =
+            builder.create<::mlir::func::FuncOp>(builder.getUnknownLoc(), QUERY_FUNCTION_NAME, queryFuncType);
 
         // CRITICAL FIX: Remove C interface attribute - it generates wrapper that ExecutionEngine can't find
         // queryFunc->setAttr("llvm.emit_c_interface", ::mlir::UnitAttr::get(builder.getContext()));
@@ -704,255 +696,9 @@ auto PostgreSQLASTTranslator::Impl::createQueryFunction(::mlir::OpBuilder& build
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::validatePlanTree(Plan* planTree) -> bool {
-    if (!planTree) {
-        PGX_ERROR("PlannedStmt planTree is null");
-        return false;
-    }
-
-
-    return true;
-}
-
-auto PostgreSQLASTTranslator::Impl::extractTargetListColumns(TranslationContext& context,
-                                                       std::vector<mlir::Attribute>& columnRefAttrs,
-                                                       std::vector<mlir::Attribute>& columnNameAttrs) -> bool {
-    // For Sort nodes, we need to look at the original plan's targetlist
-    // The Sort node inherits its targetlist from the query
-    Plan* planToUse = context.currentStmt->planTree;
-    
-    // If this is a Sort node, look at its own targetlist
-    // (Sort nodes should have the correct targetlist from the query)
-    if (!context.currentStmt || !planToUse || !planToUse->targetlist
-        || planToUse->targetlist->length <= 0)
-    {
-        // Default case: include 'id' column
-        auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-
-        auto colRef = columnManager.createRef("test", "id");
-        colRef.getColumn().type = context.builder->getI32Type();
-
-        columnRefAttrs.push_back(colRef);
-        columnNameAttrs.push_back(context.builder->getStringAttr("id"));
-        return true;
-    }
-
-    List* tlist = planToUse->targetlist;
-    int listLength = tlist->length;
-
-    // Sanity check the list length
-    if (listLength < 0 || listLength > MAX_LIST_LENGTH) {
-        PGX_WARNING("Invalid targetlist length: %d", listLength);
-        return false;
-    }
-
-
-    // Safety check for elements array
-    if (!tlist->elements) {
-        PGX_WARNING("Target list has length but no elements array");
-        return false;
-    }
-
-    // Iterate using PostgreSQL 17 style with elements array
-    for (int i = 0; i < tlist->length; i++) {
-        if (!processTargetEntry(context, tlist, i, columnRefAttrs, columnNameAttrs)) {
-            continue; // Skip failed entries
-        }
-    }
-
-    return !columnRefAttrs.empty();
-}
-
-auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& context,
-                                                 List* tlist,
-                                                 int index,
-                                                 std::vector<mlir::Attribute>& columnRefAttrs,
-                                                 std::vector<mlir::Attribute>& columnNameAttrs) -> bool {
-    ListCell* lc = &tlist->elements[index];
-    void* ptr = lfirst(lc);
-    if (!ptr) {
-        PGX_WARNING("Null pointer in target list at index %d", index);
-        return false;
-    }
-
-    TargetEntry* tle = static_cast<TargetEntry*>(ptr);
-
-    if (!tle || !tle->expr) {
-        return false;
-    }
-
-    // Initial column name extraction - prioritize resname from the TargetEntry
-    // as it represents the actual SELECT clause column names
-    std::string colName;
-    if (tle->resname) {
-        // resname is the column name from the SELECT clause
-        colName = tle->resname;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Using resname from targetlist: %s", colName.c_str());
-    } else {
-        // Fall back to generated name if no resname
-        colName = std::string(GENERATED_COLUMN_PREFIX) + std::to_string(tle->resno);
-    }
-    
-    // Check if this is a Var that might need mapping for the table scope
-    if (tle->expr && tle->expr->type == T_Var) {
-        Var* var = reinterpret_cast<Var*>(tle->expr);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "processTargetEntry: Var with varno=%d, varattno=%d, resno=%d, resname=%s", 
-               var->varno, var->varattno, tle->resno, tle->resname ? tle->resname : "NULL");
-        
-        // Only use mapping if we don't have a resname
-        if (!tle->resname) {
-            auto mappingIt = context.columnMappings.find({var->varno, var->varattno});
-            if (mappingIt != context.columnMappings.end()) {
-                // Use the mapped column name since we don't have resname
-                colName = mappingIt->second.second;  // column_name from mapping
-                PGX_LOG(AST_TRANSLATE, DEBUG, "No resname, using mapped column name for (%d, %d): %s", 
-                       var->varno, var->varattno, colName.c_str());
-            } else {
-                // No mapping and no resname, try to get from schema
-                colName = getColumnNameFromSchema(context.currentStmt, var->varno, var->varattno);
-            }
-        }
-    }
-    
-    mlir::Type colType = determineColumnType(context, tle->expr);
-
-    // Get column manager
-    try {
-        auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-
-        // For computed expressions (like addition, logical operations), use @map scope
-        // For base table columns, use actual table name
-        std::string scope;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "extractTargetListColumns: expr type = %d", tle->expr ? tle->expr->type : -1);
-        if (tle->expr && (tle->expr->type == T_OpExpr || 
-                         tle->expr->type == T_BoolExpr ||
-                         tle->expr->type == T_NullTest ||
-                         tle->expr->type == T_CoalesceExpr ||
-                         tle->expr->type == T_FuncExpr ||
-                         tle->expr->type == T_ScalarArrayOpExpr ||
-                         tle->expr->type == T_CaseExpr)) {
-            scope = COMPUTED_EXPRESSION_SCOPE; // Computed expressions go to @map:: namespace
-        }
-        else if (tle->expr && tle->expr->type == T_Var) {
-            // For Var expressions, get the actual table name from RTE
-            Var* var = reinterpret_cast<Var*>(tle->expr);
-            
-            // First try to look up in column mappings
-            auto mappingIt = context.columnMappings.find({var->varno, var->varattno});
-            if (mappingIt != context.columnMappings.end()) {
-                scope = mappingIt->second.first;  // table_name
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Found column mapping for (%d, %d) -> (%s, %s)", 
-                       var->varno, var->varattno, scope.c_str(), colName.c_str());
-            } else if (var->varno > 0) {
-                // Positive varno - standard RTE lookup
-                scope = getTableNameFromRTE(context.currentStmt, var->varno);
-                if (scope.empty()) {
-                    PGX_ERROR("Failed to resolve table name for varno: %d", var->varno);
-                    return false;
-                }
-            } else {
-                // Negative varno without mapping - this shouldn't happen with our new approach
-                PGX_WARNING("No mapping found for varno %d, varattno %d", var->varno, var->varattno);
-                scope = "unknown_table";
-            }
-        }
-        else if (tle->expr && tle->expr->type == T_Aggref) {
-            // For aggregate functions, use the column name as the scope
-            // This creates references like @total_amount_all::@sum which matches
-            // what the AggregationOp translator produces
-            scope = colName;
-            // Also update the column name to be the aggregate function name
-            Aggref* aggref = reinterpret_cast<Aggref*>(tle->expr);
-            const char* funcName = getAggregateFunctionName(aggref->aggfnoid);
-            colName = funcName;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Using aggregate column reference: @%s::@%s", scope.c_str(), colName.c_str());
-        }
-        else {
-            // TODO: Should this be a fallover and fail?
-            // For other expression types (like Const), use @map scope
-            PGX_WARNING("Using @map scope for expression type: %d", tle->expr->type);
-            scope = COMPUTED_EXPRESSION_SCOPE;
-        }
-
-        auto colRef = columnManager.createRef(scope, colName);
-        columnRefAttrs.push_back(colRef);
-        columnNameAttrs.push_back(context.builder->getStringAttr(colName));
-
-        return true;
-    } catch (const std::exception& e) {
-        PGX_ERROR("Exception creating column reference: %s", e.what());
-        return false;
-    } catch (...) {
-        PGX_ERROR("Unknown exception creating column reference for: %s", colName.c_str());
-        return false;
-    }
-}
-
-auto PostgreSQLASTTranslator::Impl::determineColumnType(TranslationContext& context, Expr* expr) -> mlir::Type {
-    mlir::Type colType = context.builder->getI32Type();
-
-    if (expr->type == T_Var) {
-        Var* var = reinterpret_cast<Var*>(expr);
-        PostgreSQLTypeMapper typeMapper(context_);
-        
-        bool nullable = false;
-        if (context.currentStmt && var->varno > 0) {
-            std::string columnName = getColumnNameFromSchema(context.currentStmt, var->varno, var->varattno);
-            
-            auto allColumns = getAllTableColumnsFromSchema(context.currentStmt, var->varno);
-            for (const auto& colInfo : allColumns) {
-                if (colInfo.name == columnName) {
-                    nullable = colInfo.nullable;
-                    break;
-                }
-            }
-        }
-        
-        colType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod, nullable);
-    }
-    else if (expr->type == T_OpExpr) {
-        // For arithmetic/comparison operators, use result type from OpExpr
-        OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
-        PostgreSQLTypeMapper typeMapper(context_);
-        colType = typeMapper.mapPostgreSQLType(opExpr->opresulttype, -1);
-    }
-    else if (expr->type == T_FuncExpr) {
-        // For aggregate functions, match LingoDB pattern: use nullable i32
-        colType = mlir::db::NullableType::get(context.builder->getContext(), context.builder->getI32Type());
-    }
-    else if (expr->type == T_Aggref) {
-        // Direct Aggref reference - match LingoDB pattern: use nullable i32
-        colType = mlir::db::NullableType::get(context.builder->getContext(), context.builder->getI32Type());
-    }
-
-    return colType;
-}
-
-auto PostgreSQLASTTranslator::Impl::createMaterializeOp(TranslationContext& context, ::mlir::Value tupleStream)
-    -> ::mlir::Operation* {
-    std::vector<mlir::Attribute> columnRefAttrs;
-    std::vector<mlir::Attribute> columnNameAttrs;
-
-    if (!extractTargetListColumns(context, columnRefAttrs, columnNameAttrs)) {
-        PGX_WARNING("Failed to extract target list columns, using defaults");
-        // Already populated with defaults in extractTargetListColumns
-    }
-
-    auto columnRefs = context.builder->getArrayAttr(columnRefAttrs);
-    auto columnNames = context.builder->getArrayAttr(columnNameAttrs);
-
-    auto tableType = mlir::dsa::TableType::get(&context_);
-
-    auto materializeOp = context.builder->create<mlir::relalg::MaterializeOp>(context.builder->getUnknownLoc(),
-                                                                              tableType,
-                                                                              tupleStream,
-                                                                              columnRefs,
-                                                                              columnNames);
-
-    return materializeOp;
-}
-
-auto PostgreSQLASTTranslator::Impl::applySelectionFromQual(::mlir::Operation* inputOp, List* qual, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::applySelectionFromQual(::mlir::Operation* inputOp,
+                                                           const List* qual,
+                                                           const TranslationContext& context) -> ::mlir::Operation* {
     if (!inputOp || !qual || qual->length == 0) {
         return inputOp; // No selection needed
     }
@@ -1007,9 +753,7 @@ auto PostgreSQLASTTranslator::Impl::applySelectionFromQual(::mlir::Operation* in
                     continue;
                 }
 
-
-                ::mlir::Value condValue = translateExpression(reinterpret_cast<Expr*>(qualNode));
-                if (condValue) {
+                if (::mlir::Value condValue = translateExpression(reinterpret_cast<Expr*>(qualNode))) {
                     // Ensure boolean type
                     if (!condValue.getType().isInteger(1)) {
                         condValue =
@@ -1057,7 +801,9 @@ auto PostgreSQLASTTranslator::Impl::applySelectionFromQual(::mlir::Operation* in
     return selectionOp;
 }
 
-auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operation* inputOp, List* targetList, TranslationContext& context) -> ::mlir::Operation* {
+auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operation* inputOp,
+                                                                  List* targetList,
+                                                                  TranslationContext& context) -> ::mlir::Operation* {
     if (!inputOp || !targetList || targetList->length == 0) {
         return inputOp; // No projection needed
     }
@@ -1109,7 +855,7 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
 
             TargetEntry* tle = static_cast<TargetEntry*>(ptr);
 
-            // Skip node type check - different values in test vs production
+            // Skip the node type check - different values in test vs production
             // Just check that the pointer looks reasonable
 
             if (tle->expr) {
@@ -1130,37 +876,38 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     std::vector<mlir::Type> expressionTypes;
     std::vector<std::string> columnNames;
     std::vector<TargetEntry*> computedEntries;
-    
+
     // Create placeholder attributes for temporary MapOp
     std::vector<mlir::Attribute> placeholderAttrs;
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-    
+
     for (auto* entry : targetEntries) {
         if (entry->expr && entry->expr->type != T_Var) {
-            std::string colName = entry->resname ? entry->resname : std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
+            std::string colName = entry->resname ? entry->resname
+                                                 : std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
             auto placeholderAttr = columnManager.createDef(COMPUTED_EXPRESSION_SCOPE, colName);
-            
-            
-            placeholderAttr.getColumn().type = context.builder->getI32Type();  // Placeholder type
+
+            placeholderAttr.getColumn().type = context.builder->getI32Type(); // Placeholder type
             placeholderAttrs.push_back(placeholderAttr);
         }
     }
-    
+
     if (placeholderAttrs.empty()) {
-        return inputOp;  // No computed expressions
+        return inputOp; // No computed expressions
     }
-    
+
     // Create temporary MapOp for tuple context
     auto placeholderCols = context.builder->getArrayAttr(placeholderAttrs);
-    auto tempMapOp = context.builder->create<mlir::relalg::MapOp>(context.builder->getUnknownLoc(), inputValue, placeholderCols);
-    
+    auto tempMapOp =
+        context.builder->create<mlir::relalg::MapOp>(context.builder->getUnknownLoc(), inputValue, placeholderCols);
+
     // Set up temporary predicate block with tuple context
     auto& tempRegion = tempMapOp.getPredicate();
     auto* tempBlock = new mlir::Block;
     tempRegion.push_back(tempBlock);
     auto tempTupleType = mlir::relalg::TupleType::get(&context_);
     auto tempTupleArg = tempBlock->addArgument(tempTupleType, context.builder->getUnknownLoc());
-    
+
     // Set up builder and tuple context for expression translation
     mlir::OpBuilder tempBuilder(&context_);
     tempBuilder.setInsertionPointToStart(tempBlock);
@@ -1168,42 +915,42 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     auto* savedTuple = currentTupleHandle_;
     builder_ = &tempBuilder;
     currentTupleHandle_ = &tempTupleArg;
-    
+
     // Now translate expressions with proper tuple context
     for (auto* entry : targetEntries) {
         if (entry->expr && entry->expr->type != T_Var) {
-            std::string colName = entry->resname ? entry->resname : std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
-            
+            std::string colName = entry->resname ? entry->resname
+                                                 : std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
+
             // Translate expression to get actual type
-            ::mlir::Value exprValue = translateExpression(reinterpret_cast<Expr*>(entry->expr));
-            if (exprValue) {
+            if (::mlir::Value exprValue = translateExpression(reinterpret_cast<Expr*>(entry->expr))) {
                 expressionTypes.push_back(exprValue.getType());
                 columnNames.push_back(colName);
                 computedEntries.push_back(entry);
             }
         }
     }
-    
+
     // Restore builder and tuple context
     builder_ = savedBuilder;
     currentTupleHandle_ = savedTuple;
-    
+
     // Clean up temporary MapOp
     tempMapOp.erase();
-    
+
     // Second pass: Create NEW column attributes with correct types
     std::vector<mlir::Attribute> computedColAttrs;
 
     for (size_t i = 0; i < expressionTypes.size(); i++) {
         // Set the type correctly on the cached Column object
         auto columnPtr = columnManager.get(COMPUTED_EXPRESSION_SCOPE, columnNames[i]);
-        columnPtr->type = expressionTypes[i];  // Update the type to i1
-        
+        columnPtr->type = expressionTypes[i]; // Update the type to i1
+
         // Use the standard ColumnManager approach to create the ColumnDefAttr
         auto attrDef = columnManager.createDef(COMPUTED_EXPRESSION_SCOPE, columnNames[i]);
-        
+
         // Debug: Verify the type is correct after creation
-        
+
         computedColAttrs.push_back(attrDef);
     }
 
@@ -1212,7 +959,6 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     }
 
     auto computedCols = context.builder->getArrayAttr(computedColAttrs);
-    
 
     auto mapOp = context.builder->create<mlir::relalg::MapOp>(context.builder->getUnknownLoc(), inputValue, computedCols);
 
@@ -1224,31 +970,33 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     // Create TupleType with all column types (input + computed expressions)
     // Get input tuple types from the operation
     std::vector<mlir::Type> allTupleTypes;
-    
-    // First, try to get input tuple types from the input operation  
-    if (auto inputTupleType = inputValue.getType().dyn_cast<mlir::TupleType>()) {
+
+    // First, try to get input tuple types from the input operation
+    if (auto inputTupleType = mlir::dyn_cast<mlir::TupleType>(inputValue.getType())) {
         // Input is already a TupleType - get its component types
         for (unsigned i = 0; i < inputTupleType.getTypes().size(); i++) {
             allTupleTypes.push_back(inputTupleType.getTypes()[i]);
         }
-    } else if (auto tupleStreamType = inputValue.getType().dyn_cast<mlir::relalg::TupleStreamType>()) {
+    }
+    else if (auto _ = mlir::dyn_cast<mlir::relalg::TupleStreamType>(inputValue.getType())) {
         // Input is a TupleStreamType (common from BaseTableOp)
         // Note: We can't extract individual column types from TupleStreamType at this point,
         // but the generic TupleType created below will work correctly for the MapOp
-    } else {
+    }
+    else {
         // For other types, we might need different handling
         std::string typeStr;
         llvm::raw_string_ostream os(typeStr);
         inputValue.getType().print(os);
         PGX_WARNING("MapOp input is neither TupleType nor TupleStreamType - type: %s", os.str().c_str());
     }
-    
+
     // Then add our computed expression types
     for (const auto& exprType : expressionTypes) {
         allTupleTypes.push_back(exprType);
     }
-    
-    // Create the complete TupleType  
+
+    // Create the complete TupleType
     auto tupleType = mlir::relalg::TupleType::get(&context_);
     auto tupleArg = predicateBlock->addArgument(tupleType, context.builder->getUnknownLoc());
 
@@ -1267,8 +1015,7 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
 
     for (auto* entry : computedEntries) {
         // Translate the expression
-        ::mlir::Value exprValue = translateExpression(reinterpret_cast<Expr*>(entry->expr));
-        if (exprValue) {
+        if (::mlir::Value exprValue = translateExpression(reinterpret_cast<Expr*>(entry->expr))) {
             computedValues.push_back(exprValue);
         }
         else {
@@ -1294,6 +1041,313 @@ auto PostgreSQLASTTranslator::Impl::applyProjectionFromTargetList(::mlir::Operat
     currentTupleHandle_ = savedTupleForRegion;
 
     return mapOp;
+}
+
+auto PostgreSQLASTTranslator::Impl::validatePlanTree(const Plan* planTree) -> bool {
+    if (!planTree) {
+        PGX_ERROR("PlannedStmt planTree is null");
+        return false;
+    }
+
+    return true;
+}
+
+auto PostgreSQLASTTranslator::Impl::extractTargetListColumns(TranslationContext& context,
+                                                             std::vector<mlir::Attribute>& columnRefAttrs,
+                                                             std::vector<mlir::Attribute>& columnNameAttrs) const
+    -> bool {
+    // For Sort nodes, we need to look at the original plan's targetlist
+    // The Sort node inherits its targetlist from the query
+    Plan* planToUse = context.currentStmt->planTree;
+
+    // If this is a Sort node, look at its own targetlist
+    // (Sort nodes should have the correct targetlist from the query)
+    if (!context.currentStmt || !planToUse || !planToUse->targetlist || planToUse->targetlist->length <= 0) {
+        // Default case: include 'id' column
+        auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+
+        auto colRef = columnManager.createRef("test", "id");
+        colRef.getColumn().type = context.builder->getI32Type();
+
+        columnRefAttrs.push_back(colRef);
+        columnNameAttrs.push_back(context.builder->getStringAttr("id"));
+        return true;
+    }
+
+    List* tlist = planToUse->targetlist;
+    int listLength = tlist->length;
+
+    // Sanity check the list length
+    if (listLength < 0 || listLength > MAX_LIST_LENGTH) {
+        PGX_WARNING("Invalid targetlist length: %d", listLength);
+        return false;
+    }
+
+    // Safety check for elements array
+    if (!tlist->elements) {
+        PGX_WARNING("Target list has length but no elements array");
+        return false;
+    }
+
+    // Iterate using PostgreSQL 17 style with elements array
+    for (int i = 0; i < tlist->length; i++) {
+        if (!processTargetEntry(context, tlist, i, columnRefAttrs, columnNameAttrs)) {
+            continue; // Skip failed entries
+        }
+    }
+
+    return !columnRefAttrs.empty();
+}
+
+auto PostgreSQLASTTranslator::Impl::processTargetEntry(TranslationContext& context,
+                                                       const List* tlist,
+                                                       int index,
+                                                       std::vector<mlir::Attribute>& columnRefAttrs,
+                                                       std::vector<mlir::Attribute>& columnNameAttrs) const -> bool {
+    ListCell* lc = &tlist->elements[index];
+    void* ptr = lfirst(lc);
+    if (!ptr) {
+        PGX_WARNING("Null pointer in target list at index %d", index);
+        return false;
+    }
+
+    TargetEntry* tle = static_cast<TargetEntry*>(ptr);
+
+    if (!tle || !tle->expr) {
+        return false;
+    }
+
+    // Initial column name extraction - prioritize resname from the TargetEntry
+    // as it represents the actual SELECT clause column names
+    std::string colName;
+    if (tle->resname) {
+        // resname is the column name from the SELECT clause
+        colName = tle->resname;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using resname from targetlist: %s", colName.c_str());
+    }
+    else {
+        // Fall back to generated name if no resname
+        colName = std::string(GENERATED_COLUMN_PREFIX) + std::to_string(tle->resno);
+    }
+
+    // Check if this is a Var that might need mapping for the table scope
+    if (tle->expr && tle->expr->type == T_Var) {
+        Var* var = reinterpret_cast<Var*>(tle->expr);
+        PGX_LOG(AST_TRANSLATE,
+                DEBUG,
+                "processTargetEntry: Var with varno=%d, varattno=%d, resno=%d, resname=%s",
+                var->varno,
+                var->varattno,
+                tle->resno,
+                tle->resname ? tle->resname : "NULL");
+
+        // Only use mapping if we don't have a resname
+        if (!tle->resname) {
+            auto mappingIt = context.columnMappings.find({var->varno, var->varattno});
+            if (mappingIt != context.columnMappings.end()) {
+                // Use the mapped column name since we don't have resname
+                colName = mappingIt->second.second; // column_name from mapping
+                PGX_LOG(AST_TRANSLATE,
+                        DEBUG,
+                        "No resname, using mapped column name for (%d, %d): %s",
+                        var->varno,
+                        var->varattno,
+                        colName.c_str());
+            }
+            else {
+                // No mapping and no resname, try to get from schema
+                colName = getColumnNameFromSchema(context.currentStmt, var->varno, var->varattno);
+            }
+        }
+    }
+
+    // Get column manager
+    try {
+        auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+
+        // For computed expressions (like addition, logical operations), use @map scope
+        // For base table columns, use actual table name
+        std::string scope;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "extractTargetListColumns: expr type = %d", tle->expr ? tle->expr->type : -1);
+        if (tle->expr
+            && (tle->expr->type == T_OpExpr || tle->expr->type == T_BoolExpr || tle->expr->type == T_NullTest
+                || tle->expr->type == T_CoalesceExpr || tle->expr->type == T_FuncExpr
+                || tle->expr->type == T_ScalarArrayOpExpr || tle->expr->type == T_CaseExpr))
+        {
+            scope = COMPUTED_EXPRESSION_SCOPE; // Computed expressions go to @map:: namespace
+        }
+        else if (tle->expr && tle->expr->type == T_Var) {
+            // For Var expressions, get the actual table name from RTE
+            Var* var = reinterpret_cast<Var*>(tle->expr);
+
+            // First try to look up in column mappings
+            auto mappingIt = context.columnMappings.find({var->varno, var->varattno});
+            if (mappingIt != context.columnMappings.end()) {
+                scope = mappingIt->second.first; // table_name
+                PGX_LOG(AST_TRANSLATE,
+                        DEBUG,
+                        "Found column mapping for (%d, %d) -> (%s, %s)",
+                        var->varno,
+                        var->varattno,
+                        scope.c_str(),
+                        colName.c_str());
+            }
+            else if (var->varno > 0) {
+                // Positive varno - standard RTE lookup
+                scope = getTableNameFromRTE(context.currentStmt, var->varno);
+                if (scope.empty()) {
+                    PGX_ERROR("Failed to resolve table name for varno: %d", var->varno);
+                    return false;
+                }
+            }
+            else {
+                // Negative varno without mapping - this shouldn't happen with our new approach
+                PGX_WARNING("No mapping found for varno %d, varattno %d", var->varno, var->varattno);
+                scope = "unknown_table";
+            }
+        }
+        else if (tle->expr && tle->expr->type == T_Aggref) {
+            // For aggregate functions, use the column name as the scope
+            // This creates references like @total_amount_all::@sum which matches
+            // what the AggregationOp translator produces
+            scope = colName;
+            // Also update the column name to be the aggregate function name
+            Aggref* aggref = reinterpret_cast<Aggref*>(tle->expr);
+            const char* funcName = getAggregateFunctionName(aggref->aggfnoid);
+            colName = funcName;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using aggregate column reference: @%s::@%s", scope.c_str(), colName.c_str());
+        }
+        else {
+            // TODO: Should this be a fallover and fail?
+            // For other expression types (like Const), use @map scope
+            PGX_WARNING("Using @map scope for expression type: %d", tle->expr->type);
+            scope = COMPUTED_EXPRESSION_SCOPE;
+        }
+
+        auto colRef = columnManager.createRef(scope, colName);
+        columnRefAttrs.push_back(colRef);
+        columnNameAttrs.push_back(context.builder->getStringAttr(colName));
+
+        return true;
+    } catch (const std::exception& e) {
+        PGX_ERROR("Exception creating column reference: %s", e.what());
+        return false;
+    } catch (...) {
+        PGX_ERROR("Unknown exception creating column reference for: %s", colName.c_str());
+        return false;
+    }
+}
+
+auto PostgreSQLASTTranslator::Impl::determineColumnType(const TranslationContext& context, Expr* expr) const -> mlir::Type {
+    mlir::Type colType = context.builder->getI32Type();
+
+    if (expr->type == T_Var) {
+        Var* var = reinterpret_cast<Var*>(expr);
+        PostgreSQLTypeMapper typeMapper(context_);
+
+        bool nullable = false;
+        if (context.currentStmt && var->varno > 0) {
+            std::string columnName = getColumnNameFromSchema(context.currentStmt, var->varno, var->varattno);
+
+            auto allColumns = getAllTableColumnsFromSchema(context.currentStmt, var->varno);
+            for (const auto& colInfo : allColumns) {
+                if (colInfo.name == columnName) {
+                    nullable = colInfo.nullable;
+                    break;
+                }
+            }
+        }
+
+        colType = typeMapper.mapPostgreSQLType(var->vartype, var->vartypmod, nullable);
+    }
+    else if (expr->type == T_OpExpr) {
+        // For arithmetic/comparison operators, use result type from OpExpr
+        OpExpr* opExpr = reinterpret_cast<OpExpr*>(expr);
+        PostgreSQLTypeMapper typeMapper(context_);
+        colType = typeMapper.mapPostgreSQLType(opExpr->opresulttype, -1);
+    }
+    else if (expr->type == T_FuncExpr) {
+        // For aggregate functions, match LingoDB pattern: use nullable i32
+        colType = mlir::db::NullableType::get(context.builder->getContext(), context.builder->getI32Type());
+    }
+    else if (expr->type == T_Aggref) {
+        // Direct Aggref reference - match LingoDB pattern: use nullable i32
+        colType = mlir::db::NullableType::get(context.builder->getContext(), context.builder->getI32Type());
+    }
+
+    return colType;
+}
+
+auto PostgreSQLASTTranslator::Impl::createMaterializeOp(TranslationContext& context, ::mlir::Value tupleStream) const
+    -> ::mlir::Operation* {
+    std::vector<mlir::Attribute> columnRefAttrs;
+    std::vector<mlir::Attribute> columnNameAttrs;
+
+    if (!extractTargetListColumns(context, columnRefAttrs, columnNameAttrs)) {
+        PGX_WARNING("Failed to extract target list columns, using defaults");
+        // Already populated with defaults in extractTargetListColumns
+    }
+
+    auto columnRefs = context.builder->getArrayAttr(columnRefAttrs);
+    auto columnNames = context.builder->getArrayAttr(columnNameAttrs);
+
+    auto tableType = mlir::dsa::TableType::get(&context_);
+
+    auto materializeOp = context.builder->create<mlir::relalg::MaterializeOp>(context.builder->getUnknownLoc(),
+                                                                              tableType,
+                                                                              tupleStream,
+                                                                              columnRefs,
+                                                                              columnNames);
+
+    return materializeOp;
+}
+
+auto PostgreSQLASTTranslator::Impl::getAggregateFunctionName(Oid aggfnoid) -> const char* {
+    return ::postgresql_ast::getAggregateFunctionName(aggfnoid);
+}
+
+auto getAggregateFunctionName(Oid aggfnoid) -> const char* {
+    using namespace pgx_lower::frontend::sql::constants;
+
+    switch (aggfnoid) {
+    case PG_F_SUM_INT2:
+    case PG_F_SUM_INT4:
+    case PG_F_SUM_INT8:
+    case PG_F_SUM_FLOAT4:
+    case PG_F_SUM_FLOAT8:
+    case PG_F_SUM_NUMERIC: return AGGREGATION_SUM_FUNCTION;
+
+    case PG_F_AVG_INT2:
+    case PG_F_AVG_INT4:
+    case PG_F_AVG_INT8:
+    case PG_F_AVG_FLOAT4:
+    case PG_F_AVG_FLOAT8:
+    case PG_F_AVG_NUMERIC: return AGGREGATION_AVG_FUNCTION;
+
+    case PG_F_COUNT_STAR:
+    case PG_F_COUNT_ANY: return AGGREGATION_COUNT_FUNCTION;
+
+    // MIN functions
+    case PG_F_MIN_INT2:
+    case PG_F_MIN_INT4:
+    case PG_F_MIN_INT8:
+    case PG_F_MIN_FLOAT4:
+    case PG_F_MIN_FLOAT8:
+    case PG_F_MIN_NUMERIC:
+    case PG_F_MIN_TEXT: return AGGREGATION_MIN_FUNCTION;
+
+    case PG_F_MAX_INT2:
+    case PG_F_MAX_INT4:
+    case PG_F_MAX_INT8:
+    case PG_F_MAX_FLOAT4:
+    case PG_F_MAX_FLOAT8:
+    case PG_F_MAX_NUMERIC:
+    case PG_F_MAX_TEXT: return AGGREGATION_MAX_FUNCTION;
+
+    default:
+        PGX_WARNING("Unknown aggregate function OID: %u, defaulting to count", aggfnoid);
+        return AGGREGATION_COUNT_FUNCTION;
+    }
 }
 
 } // namespace postgresql_ast

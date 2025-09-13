@@ -141,13 +141,13 @@ auto translateConst(Const* constNode, ::mlir::OpBuilder& builder, ::mlir::MLIRCo
         float val = *reinterpret_cast<float*>(&constNode->constvalue);
         return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(),
                                                             llvm::APFloat(val),
-                                                            mlirType.cast<mlir::FloatType>());
+                                                            mlir::cast<mlir::FloatType>(mlirType));
     }
     case FLOAT8OID: {
         double val = *reinterpret_cast<double*>(&constNode->constvalue);
         return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(),
                                                             llvm::APFloat(val),
-                                                            mlirType.cast<mlir::FloatType>());
+                                                            mlir::cast<mlir::FloatType>(mlirType));
     }
     case BOOLOID: {
         bool val = static_cast<bool>(constNode->constvalue);
