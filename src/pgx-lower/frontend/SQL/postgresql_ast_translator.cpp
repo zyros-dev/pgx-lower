@@ -17,11 +17,8 @@ auto PostgreSQLASTTranslator::translate_query(PlannedStmt* planned_stmt) const -
 
 auto PostgreSQLASTTranslator::Impl::translate_query(const PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp> {
     PGX_IO(AST_TRANSLATE);
-    PGX_LOG(AST_TRANSLATE,
-            IO,
-            "translate_query IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
-            planned_stmt ? planned_stmt->commandType : -1,
-            planned_stmt ? planned_stmt->canSetTag : false);
+    PGX_LOG(AST_TRANSLATE, IO, "translate_query IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
+            planned_stmt ? planned_stmt->commandType : -1, planned_stmt ? planned_stmt->canSetTag : false);
 
     if (!planned_stmt) {
         PGX_ERROR("PlannedStmt is null");
@@ -52,12 +49,10 @@ auto PostgreSQLASTTranslator::Impl::translate_query(const PlannedStmt* planned_s
 }
 
 auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const mlir::func::FuncOp query_func,
-                                                                const PlannedStmt* planned_stmt,
-                                                                QueryCtxT& context) -> bool {
+                                                                const PlannedStmt* planned_stmt, QueryCtxT& context)
+    -> bool {
     PGX_IO(AST_TRANSLATE);
-    PGX_LOG(AST_TRANSLATE,
-            IO,
-            "generate_rel_alg_operations IN: PlannedStmt with planTree type %d",
+    PGX_LOG(AST_TRANSLATE, IO, "generate_rel_alg_operations IN: PlannedStmt with planTree type %d",
             planned_stmt ? (planned_stmt->planTree ? planned_stmt->planTree->type : -1) : -1);
     assert(planned_stmt);
     auto* plan_tree = planned_stmt->planTree;
@@ -82,11 +77,9 @@ auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const mlir::func
         if (mlir::isa<mlir::relalg::TupleStreamType>(result.getType())) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Result is TupleStreamType, creating MaterializeOp");
             create_materialize_op(context, result);
+        } else {
         }
-        else {
-        }
-    }
-    else {
+    } else {
     }
 
     context.builder.create<mlir::func::ReturnOp>(context.builder.getUnknownLoc());

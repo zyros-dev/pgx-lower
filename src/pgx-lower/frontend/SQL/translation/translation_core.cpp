@@ -158,21 +158,18 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     }
     case FLOAT4OID: {
         float val = *reinterpret_cast<float*>(&constNode->constvalue);
-        return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(),
-                                                            llvm::APFloat(val),
+        return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(val),
                                                             mlir::cast<mlir::FloatType>(mlirType));
     }
     case FLOAT8OID: {
         double val = *reinterpret_cast<double*>(&constNode->constvalue);
-        return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(),
-                                                            llvm::APFloat(val),
+        return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(val),
                                                             mlir::cast<mlir::FloatType>(mlirType));
     }
     case BOOLOID: {
         bool val = static_cast<bool>(constNode->constvalue);
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(),
-                                                          val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE,
-                                                          mlirType);
+                                                          val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE, mlirType);
     }
     case TEXTOID:
     case VARCHAROID:
@@ -186,19 +183,16 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
             int len = VARSIZE(textval) - VARHDRSZ;
             std::string string_value(str, len);
 
-            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(),
-                                                        mlirType,
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
                                                         builder.getStringAttr(string_value));
-        }
-        else {
+        } else {
             return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(""));
         }
 #else
         const char* str = reinterpret_cast<const char*>(constNode->constvalue);
         if (str) {
             return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(str));
-        }
-        else {
+        } else {
             return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(""));
         }
 #endif
@@ -206,8 +200,7 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     default:
         PGX_WARNING("Unsupported constant type: %d", constNode->consttype);
         // Default to i32 zero
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(),
-                                                          DEFAULT_FALLBACK_INT_VALUE,
+        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), DEFAULT_FALLBACK_INT_VALUE,
                                                           builder.getI32Type());
     }
 }

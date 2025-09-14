@@ -46,7 +46,7 @@ AlignConsecutiveMacros: false
 AlignEscapedNewlines: Right
 AlignOperands: true
 AlignTrailingComments: false
-AllowAllArgumentsOnNextLine: false
+AllowAllArgumentsOnNextLine: true
 AllowAllConstructorInitializersOnNextLine: false
 AllowAllParametersOfDeclarationOnNextLine: false
 AllowShortBlocksOnASingleLine: false
@@ -55,8 +55,8 @@ AllowShortLambdasOnASingleLine: All
 AlwaysBreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: false
 AlwaysBreakTemplateDeclarations: Yes
-BinPackArguments: false
-BinPackParameters: false
+BinPackArguments: true
+BinPackParameters: true
 BreakBeforeBinaryOperators: NonAssignment
 BreakBeforeBraces: Custom
 BraceWrapping:
@@ -70,7 +70,7 @@ BraceWrapping:
   AfterUnion: false
   AfterExternBlock: false
   BeforeCatch: false
-  BeforeElse: true
+  BeforeElse: false
   BeforeLambdaBody: false
   IndentBraces: false
   SplitEmptyFunction: false
@@ -94,7 +94,7 @@ IndentPPDirectives: None
 IndentWrappedFunctionNames: false
 KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
-PenaltyBreakAssignment: 10
+PenaltyBreakAssignment: 1000
 PenaltyBreakBeforeFirstCallParameter: 10
 PenaltyBreakComment: 10
 PenaltyBreakFirstLessLess: 10

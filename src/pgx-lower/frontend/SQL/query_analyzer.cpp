@@ -59,7 +59,8 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: %s", feature_list.c_str());
     }
 
-    else {
+    else
+    {
         PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: None detected");
     }
 
@@ -69,8 +70,7 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
     if (compatible) {
         PGX_LOG(AST_TRANSLATE, DEBUG, " MLIR COMPATIBLE: Query accepted for compilation");
         return true;
-    }
-    else {
+    } else {
         PGX_LOG(AST_TRANSLATE, DEBUG, " DATA COLLECTION: Query too complex for current MLIR implementation");
         return false;
     }
@@ -243,8 +243,7 @@ auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> v
                     || funcExpr->funcid == frontend::sql::constants::PG_F_SUBSTRING)
                 {
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Supported string function in targetlist: %d", funcExpr->funcid);
-                }
-                else {
+                } else {
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Unsupported function in targetlist: %d", funcExpr->funcid);
                     caps.hasCompatibleTypes = false;
                     return;
@@ -376,8 +375,7 @@ auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {
         }
     };
 
-    std::function<void(Plan*, int, const std::string&)> printPlanTree = [&](Plan* plan,
-                                                                            const int depth,
+    std::function<void(Plan*, int, const std::string&)> printPlanTree = [&](Plan* plan, const int depth,
                                                                             const std::string& prefix) {
         if (!plan) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "%sNULL", prefix.c_str());
@@ -392,12 +390,10 @@ auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {
         if (plan->type == T_SeqScan) {
             const auto* seqScan = reinterpret_cast<SeqScan*>(plan);
             nodeInfo += " [scanrelid=" + std::to_string(seqScan->scan.scanrelid) + "]";
-        }
-        else if (plan->type == T_Agg) {
+        } else if (plan->type == T_Agg) {
             const auto* agg = reinterpret_cast<Agg*>(plan);
             nodeInfo += " [strategy=" + std::to_string(agg->aggstrategy) + "]";
-        }
-        else if (plan->type == T_Gather) {
+        } else if (plan->type == T_Gather) {
             const auto* gather = reinterpret_cast<Gather*>(plan);
             nodeInfo += " [num_workers=" + std::to_string(gather->num_workers) + "]";
         }
@@ -424,7 +420,8 @@ auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {
                     }
                     default: exprTypeName = "Type" + std::to_string(exprType);
                     }
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "%s   TargetEntry[%d]: %s", indent.c_str(), idx++, exprTypeName.c_str());
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "%s   TargetEntry[%d]: %s", indent.c_str(), idx++,
+                            exprTypeName.c_str());
                 }
             }
         }
@@ -453,13 +450,11 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
         // Pattern 1: Simple table scan
         scanPlan = rootPlan;
         PGX_LOG(AST_TRANSLATE, DEBUG, " ACCEPTED: Simple SeqScan query");
-    }
-    else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
+    } else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_SeqScan) {
         // Pattern 2: Aggregation with SeqScan
         scanPlan = rootPlan->lefttree;
         PGX_LOG(AST_TRANSLATE, DEBUG, " ACCEPTED: Aggregate query with SeqScan source");
-    }
-    else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_Gather) {
+    } else if (rootPlan->type == T_Agg && rootPlan->lefttree && rootPlan->lefttree->type == T_Gather) {
         // Pattern 3: Parallel aggregation (Agg  Gather  Agg  SeqScan)
         auto* gatherPlan = rootPlan->lefttree;
         if (gatherPlan->lefttree && gatherPlan->lefttree->type == T_Agg) {
@@ -474,8 +469,7 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
             PGX_LOG(AST_TRANSLATE, DEBUG, " PARTIAL SUPPORT: Gather pattern recognized but structure unexpected");
             // Still accept it for now to allow testing
         }
-    }
-    else {
+    } else {
         // TODO: NV haha this should be a warning, but it triggers so many integration tests... really makes you
         // wonder what's the point of this file...
         // Accept unknown patterns for comprehensive testing
@@ -489,8 +483,7 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
         PGX_LOG(AST_TRANSLATE, DEBUG, " Table OID: %d", rte->relid);
         g_jit_table_oid = rte->relid;
         PGX_LOG(AST_TRANSLATE, DEBUG, " Set g_jit_table_oid to: %d", g_jit_table_oid);
-    }
-    else {
+    } else {
         PGX_LOG(AST_TRANSLATE, DEBUG, " No scan plan extracted - query may not access tables directly");
     }
 

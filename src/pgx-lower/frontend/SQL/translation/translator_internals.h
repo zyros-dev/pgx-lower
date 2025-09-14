@@ -113,9 +113,8 @@ class PostgreSQLASTTranslator::Impl {
 
     // Query function generation
     static auto create_query_function(mlir::OpBuilder& builder, const QueryCtxT& context) -> mlir::func::FuncOp;
-    auto
-    generate_rel_alg_operations(const mlir::func::FuncOp query_func, const PlannedStmt* planned_stmt, QueryCtxT& context)
-        -> bool;
+    auto generate_rel_alg_operations(const mlir::func::FuncOp query_func, const PlannedStmt* planned_stmt,
+                                     QueryCtxT& context) -> bool;
 
     // Relational operation helpers
     auto apply_selection_from_qual(const QueryCtxT& ctx, mlir::Operation* input_op, const List* qual) -> mlir::Operation*;
@@ -124,12 +123,9 @@ class PostgreSQLASTTranslator::Impl {
 
     // Validation and column processing
     static auto validate_plan_tree(const Plan* plan_tree) -> bool;
-    auto extract_target_list_columns(const QueryCtxT& context,
-                                     std::vector<mlir::Attribute>& column_ref_attrs,
+    auto extract_target_list_columns(const QueryCtxT& context, std::vector<mlir::Attribute>& column_ref_attrs,
                                      std::vector<mlir::Attribute>& column_name_attrs) const -> bool;
-    auto process_target_entry(const QueryCtxT& context,
-                              const List* t_list,
-                              int index,
+    auto process_target_entry(const QueryCtxT& context, const List* t_list, int index,
                               std::vector<mlir::Attribute>& column_ref_attrs,
                               std::vector<mlir::Attribute>& column_name_attrs) const -> bool;
     auto determine_column_type(const QueryCtxT& context, Expr* expr) const -> mlir::Type;
@@ -138,12 +134,10 @@ class PostgreSQLASTTranslator::Impl {
     // Operation translation helpers
     auto extract_op_expr_operands(const QueryCtxT& context, const OpExpr* op_expr)
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
-    static auto
-    translate_arithmetic_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs, const mlir::Value rhs)
-        -> mlir::Value;
-    static auto
-    translate_comparison_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs, const mlir::Value rhs)
-        -> mlir::Value;
+    static auto translate_arithmetic_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs,
+                                        const mlir::Value rhs) -> mlir::Value;
+    static auto translate_comparison_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs,
+                                        const mlir::Value rhs) -> mlir::Value;
 
    private:
     static auto get_aggregate_function_name(const Oid aggfnoid) -> const char*;

@@ -51,8 +51,8 @@ auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int 
         return "unknown_table_" + std::to_string(varno);
     }
 
-    RangeTblEntry* rte =
-        static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(
+        list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for varno %d", varno);
@@ -84,8 +84,8 @@ auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, const int v
         return InvalidOid;
     }
 
-    RangeTblEntry* rte =
-        static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(
+        list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte) {
         PGX_WARNING("Invalid RTE for varno %d", varno);
@@ -110,8 +110,8 @@ auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, const in
         return "col_" + std::to_string(varattno);
     }
 
-    RangeTblEntry* rte =
-        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(
+        list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for column lookup");
@@ -157,8 +157,8 @@ auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, 
         return columns;
     }
 
-    RangeTblEntry* rte =
-        static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, scanrelid - POSTGRESQL_VARNO_OFFSET));
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(
+        list_nth(current_planned_stmt->rtable, scanrelid - POSTGRESQL_VARNO_OFFSET));
 
     if (!rte || rte->relid == InvalidOid) {
         PGX_WARNING("Invalid RTE for table schema discovery");
@@ -217,8 +217,8 @@ auto is_column_nullable(const PlannedStmt* currentPlannedStmt, const int varno, 
         return true;
     }
 
-    RangeTblEntry* rte =
-        static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+    RangeTblEntry* rte = static_cast<RangeTblEntry*>(
+        list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
     if (!rte || rte->relid == InvalidOid) {
         return true;
     }
