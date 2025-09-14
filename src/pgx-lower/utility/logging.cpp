@@ -75,6 +75,7 @@ static void initialize_if_needed() {
                 enabled_categories.insert(Category::GENERAL);
         }
     }
+    initialized = true;
 }
 
 const char* category_name(Category cat) {
@@ -104,12 +105,16 @@ const char* level_name(Level level) {
     return "UNKNOWN";
 }
 
-bool should_log(Category cat, Level level) {
+bool should_log(const Category cat, const Level level) {
     initialize_if_needed();
     if (cat == Category::PROBLEM) return true;
 
     if (!log_enable)
         return false;
+
+    if (!enabled_categories.contains(cat)) {
+        return false;
+    }
 
     switch (level) {
     case Level::IO:
@@ -128,16 +133,7 @@ bool should_log(Category cat, Level level) {
         if (!log_trace)
             return false;
         break;
-    case Level::WARNING_LEVEL:
-    case Level::ERROR_LEVEL:
-        // Always log warnings and errors when logging is enabled
-        break;
-    }
-
-    if (!enabled_categories.empty()) {
-        if (!enabled_categories.contains(cat)) {
-            return false;
-        }
+    default:;
     }
 
     return true;
@@ -194,11 +190,17 @@ ScopeLogger::~ScopeLogger() {
 extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool io, bool trace, const char* categories) {
     using namespace pgx_lower::log;
 
+    initialized = true;
+
     log_enable = enable;
     log_debug = debug;
     log_ir = ir;
     log_io = io;
     log_trace = trace;
+
+#ifdef POSTGRESQL_EXTENSION
+    elog(DEBUG1, "pgx_update_log_settings: categories = '%s'", categories ? categories : "NULL");
+#endif
 
     // Parse categories
     enabled_categories.clear();
@@ -212,6 +214,9 @@ extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool i
 
             // Convert to lowercase for comparison
             std::transform(cat.begin(), cat.end(), cat.begin(), ::tolower);
+#ifdef POSTGRESQL_EXTENSION
+            elog(DEBUG1, "parsing cat  = '%s'", cat.data());
+#endif
 
             if (cat == "ast_translate")
                 enabled_categories.insert(Category::AST_TRANSLATE);
@@ -231,4 +236,10 @@ extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool i
                 enabled_categories.insert(Category::GENERAL);
         }
     }
+
+#ifdef POSTGRESQL_EXTENSION
+    for (auto v : enabled_categories) {
+        elog(DEBUG1, "pgx_update_log_settings: categories enabled = '%d'", v);
+    }
+#endif
 }

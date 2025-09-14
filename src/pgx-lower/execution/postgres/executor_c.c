@@ -43,18 +43,22 @@ custom_executor(QueryDesc *queryDesc, const ScanDirection direction, const uint6
     }
 }
 
-static void update_logging(bool newval, void *extra) {
+static void update_logging_bool(bool newval, void *extra) {
     pgx_update_log_settings(pgx_lower_log_enable, pgx_lower_log_debug, pgx_lower_log_ir, pgx_lower_log_io,
-                           pgx_lower_log_trace, pgx_lower_enabled_categories);
+                            pgx_lower_log_trace, pgx_lower_enabled_categories);
+}
+
+static void update_logging_string(const char *newval, void *extra) {
+    pgx_update_log_settings(pgx_lower_log_enable, pgx_lower_log_debug, pgx_lower_log_ir, pgx_lower_log_io,
+                            pgx_lower_log_trace, newval);
 }
 
 static void register_bool_guc(const char *name, const char *desc, bool *var) {
-    DefineCustomBoolVariable(name, desc, NULL, var, false, PGC_USERSET, 0, NULL, update_logging, NULL);
+    DefineCustomBoolVariable(name, desc, NULL, var, false, PGC_USERSET, 0, NULL, update_logging_bool, NULL);
 }
 
 static void register_string_guc(const char *name, const char *desc, char **var) {
-    DefineCustomStringVariable(name, desc, NULL, var, "", PGC_USERSET, 0, NULL, 
-                              (GucStringAssignHook)update_logging, NULL);
+    DefineCustomStringVariable(name, desc, NULL, var, "", PGC_USERSET, 0, NULL, update_logging_string, NULL);
 }
 
 void _PG_init(void) {

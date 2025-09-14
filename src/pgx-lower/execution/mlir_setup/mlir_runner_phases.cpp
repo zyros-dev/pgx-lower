@@ -36,13 +36,13 @@ bool runPhase3a(::mlir::ModuleOp module) {
     if (!validateModuleState(module, "Phase 3a input")) {
         throw std::runtime_error("Phase 3a: Module validation failed before running passes");
     }
-    dumpModuleWithStats(module, "Phase 3a before optimization", pgx_lower::log::Category::RELALG_LOWER);
+    dumpModuleWithStats(module, "Phase 3a before optimization", pgx_lower::log::Category::AST_TRANSLATE);
 
     mlir::PassManager pm1(&context);
     pm1.enableVerifier(false);
     pm1.addPass(mlir::createInlinerPass());
     pm1.addPass(mlir::createSymbolDCEPass());
-    mlir::relalg::createQueryOptPipeline(pm1/*, &db*/);
+    mlir::relalg::createQueryOptPipeline(pm1 /*, &db*/);
 
     // TODO: Currently this optimises everything away...
     // if (mlir::failed(pm1.run(module))) {
