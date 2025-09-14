@@ -515,8 +515,8 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     // If aggno didn't work, search by function name
     if (it == ctx.column_mappings.end()) {
         const char* funcName = get_aggregate_function_name(aggref->aggfnoid);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Searching for Aggref with function %s (OID %u, aggno=%d)",
-                funcName, aggref->aggfnoid, aggref->aggno);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Searching for Aggref with function %s (OID %u, aggno=%d)", funcName,
+                aggref->aggfnoid, aggref->aggno);
 
         // Search through all mappings with varno=-2 to find matching function
         for (auto mapIt = ctx.column_mappings.begin(); mapIt != ctx.column_mappings.end(); ++mapIt) {
@@ -1101,32 +1101,68 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     case PG_INT8_GE_OID:
     case PG_TEXT_GE_OID: predicate = mlir::db::DBCmpPredicate::gte; break;
 
-    // TODO: NV Unsure of why this routes to here. this is probably not a good way to handle it. Pretty sure it shouldn't even be here though
+    // TODO: NV Unsure of why this routes to here. this is probably not a good way to handle it. Pretty sure it
+    // shouldn't even be here though
     case PG_TEXT_NOT_LIKE_OID:
     case PG_TEXT_CONCAT_OID:
     case PG_TEXT_LIKE_OID: return nullptr;
 
-    default:
-        PGX_ERROR("Unknown op_oid %d", op_oid);
-        throw std::runtime_error("Unknown op_oid");
+    default: PGX_ERROR("Unknown op_oid %d", op_oid); throw std::runtime_error("Unknown op_oid");
     }
 
-    mlir::Value convertedLhs = lhs;
-    mlir::Value convertedRhs = rhs;
+    auto convertedLhs = lhs;
+    auto convertedRhs = rhs;
 
-    const bool lhsNullable = isa<mlir::db::NullableType>(lhs.getType());
-    const bool rhsNullable = isa<mlir::db::NullableType>(rhs.getType());
+    // --- Handle integer width mismatches - upcast narrower type to wider type ---
+    {
+        auto getLhsBaseType = lhs.getType();
+        auto getRhsBaseType = rhs.getType();
 
-    if (lhsNullable && !rhsNullable) {
-        mlir::Type nullableRhsType = mlir::db::NullableType::get(ctx.builder.getContext(), rhs.getType());
-        auto falseVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
-        convertedRhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableRhsType, rhs,
-                                                                  falseVal);
-    } else if (!lhsNullable && rhsNullable) {
-        mlir::Type nullableLhsType = mlir::db::NullableType::get(ctx.builder.getContext(), lhs.getType());
-        auto falseVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
-        convertedLhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableLhsType, lhs,
-                                                                  falseVal);
+        if (const auto nullableType = dyn_cast<mlir::db::NullableType>(getLhsBaseType))
+            getLhsBaseType = nullableType.getType();
+        if (const auto nullableType = dyn_cast<mlir::db::NullableType>(getRhsBaseType))
+            getRhsBaseType = nullableType.getType();
+
+        if (const auto lhsIntType = dyn_cast<mlir::IntegerType>(getLhsBaseType)) {
+            if (const auto rhsIntType = dyn_cast<mlir::IntegerType>(getRhsBaseType)) {
+                const unsigned lhsWidth = lhsIntType.getWidth();
+                const unsigned rhsWidth = rhsIntType.getWidth();
+
+                if (lhsWidth != rhsWidth) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Integer width mismatch in comparison: i%u vs i%u, upcasting",
+                            lhsWidth, rhsWidth);
+
+                    // Upcast the narrower type to match the wider type
+                    if (lhsWidth < rhsWidth) {
+                        auto targetType = ctx.builder.getIntegerType(rhsWidth);
+                        convertedLhs = ctx.builder.create<mlir::arith::ExtSIOp>(ctx.builder.getUnknownLoc(), targetType,
+                                                                                convertedLhs);
+                    } else {
+                        auto targetType = ctx.builder.getIntegerType(lhsWidth);
+                        convertedRhs = ctx.builder.create<mlir::arith::ExtSIOp>(ctx.builder.getUnknownLoc(), targetType,
+                                                                                convertedRhs);
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Handle nullable type conversions ---
+    {
+        const bool lhsNullable = isa<mlir::db::NullableType>(lhs.getType());
+        const bool rhsNullable = isa<mlir::db::NullableType>(rhs.getType());
+
+        if (lhsNullable && !rhsNullable) {
+            mlir::Type nullableRhsType = mlir::db::NullableType::get(ctx.builder.getContext(), convertedRhs.getType());
+            auto falseVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
+            convertedRhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableRhsType,
+                                                                      convertedRhs, falseVal);
+        } else if (!lhsNullable && rhsNullable) {
+            mlir::Type nullableLhsType = mlir::db::NullableType::get(ctx.builder.getContext(), convertedLhs.getType());
+            auto falseVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
+            convertedLhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableLhsType,
+                                                                      convertedLhs, falseVal);
+        }
     }
 
     return ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), predicate, convertedLhs, convertedRhs);
