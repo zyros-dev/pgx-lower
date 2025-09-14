@@ -3,7 +3,7 @@
 
 namespace postgresql_ast {
 
-using TranslationContextT = pgx_lower::frontend::sql::TranslationContext;
+using QueryCtxT = pgx_lower::frontend::sql::TranslationContext;
 
 PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context)
 : p_impl_(std::make_unique<Impl>(context)) {}
@@ -26,34 +26,26 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -
         return nullptr;
     }
 
+    auto context = QueryCtxT{};
+
     auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
     auto builder = mlir::OpBuilder(&context_);
     builder.setInsertionPointToStart(module.getBody());
 
-    builder_ = &builder;
-    current_planned_stmt_ = planned_stmt;
-
-    TranslationContextT context;
-    context.currentStmt = planned_stmt;
+    context.current_stmt = planned_stmt;
     context.builder = &builder;
+    context.current_module = &module;
 
     auto query_func = create_query_function(builder, context);
     if (!query_func) {
         PGX_ERROR("Failed to create query function");
-        builder_ = nullptr;
-        current_planned_stmt_ = nullptr;
         return nullptr;
     }
 
     if (!generate_rel_alg_operations(query_func, planned_stmt, context)) {
         PGX_ERROR("Failed to generate RelAlg operations");
-        builder_ = nullptr;
-        current_planned_stmt_ = nullptr;
         return nullptr;
     }
-
-    builder_ = nullptr;
-    current_planned_stmt_ = nullptr;
 
     auto result = std::make_unique<mlir::ModuleOp>(module);
     const auto num_ops = module.getBody()->getOperations().size();
@@ -64,7 +56,7 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -
 
 auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(mlir::func::FuncOp query_func,
                                                                 const PlannedStmt* planned_stmt,
-                                                                TranslationContextT& context) -> bool {
+                                                                QueryCtxT& context) -> bool {
     PGX_LOG(AST_TRANSLATE,
             IO,
             "generate_rel_alg_operations IN: PlannedStmt with planTree type %d",
@@ -76,7 +68,7 @@ auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(mlir::func::Func
         return false;
     }
 
-    const auto translated_op = translate_plan_node(plan_tree, context);
+    const auto translated_op = translate_plan_node(context, plan_tree);
     if (!translated_op) {
         PGX_ERROR("Failed to translate plan node");
         return false;

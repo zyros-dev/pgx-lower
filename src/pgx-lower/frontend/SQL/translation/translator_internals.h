@@ -53,29 +53,34 @@ using ColumnMapping = std::map<std::pair<varno_t, varattno_t>, std::pair<table_t
 
 struct ColumnInfo {
     std::string name;
-    unsigned int typeOid;
+    unsigned int type_oid;
     int32_t typmod;
     bool nullable;
 
     ColumnInfo(std::string n, const unsigned int t, const int32_t m, const bool null)
     : name(std::move(n))
-    , typeOid(t)
+    , type_oid(t)
     , typmod(m)
     , nullable(null) {}
 };
 
 struct TranslationContext {
-    PlannedStmt* currentStmt = nullptr;
+    PlannedStmt* current_stmt = nullptr;
     mlir::OpBuilder* builder = nullptr;
-    mlir::Value currentTuple = nullptr;
-    ColumnMapping columnMappings;
+    mlir::ModuleOp* current_module = nullptr;
+
+    mlir::Value current_tuple = nullptr;
+
+    ColumnMapping column_mappings;
+
+    bool contextNeedsRecreation = false;
 };
 
 } // namespace pgx_lower::frontend::sql
 
 namespace postgresql_ast {
 
-using TranslationContextT = pgx_lower::frontend::sql::TranslationContext;
+using QueryCtxT = pgx_lower::frontend::sql::TranslationContext;
 
 // ===========================================================================
 // PostgreSQLASTTranslator::Impl
@@ -83,76 +88,69 @@ using TranslationContextT = pgx_lower::frontend::sql::TranslationContext;
 class PostgreSQLASTTranslator::Impl {
    public:
     explicit Impl(mlir::MLIRContext& context)
-    : context_(context)
-    , builder_(nullptr)
-    , current_module_(nullptr)
-    , current_tuple_handle_(nullptr)
-    , current_planned_stmt_(nullptr)
-    , context_needs_recreation_(false) {}
+    : context_(context) {}
 
     auto translate_query(PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp>;
 
-    auto translate_expression(Expr* expr) -> mlir::Value;
-    auto translate_op_expr(const OpExpr* op_expr) -> mlir::Value;
-    auto translate_var(const Var* var) const -> mlir::Value;
-    auto translate_const(Const* const_node) const -> mlir::Value;
-    auto translate_func_expr(const FuncExpr* func_expr) -> mlir::Value;
-    auto translate_bool_expr(const BoolExpr* bool_expr) -> mlir::Value;
-    auto translate_null_test(const NullTest* null_test) -> mlir::Value;
-    auto translate_aggref(const Aggref* aggref) const -> mlir::Value;
-    auto translate_coalesce_expr(const CoalesceExpr* coalesce_expr) -> mlir::Value;
-    auto translate_scalar_array_op_expr(const ScalarArrayOpExpr* scalar_array_op) -> mlir::Value;
-    auto translate_case_expr(const CaseExpr* case_expr) -> mlir::Value;
-    auto translate_expression_with_case_test(Expr* expr, mlir::Value case_test_value) -> mlir::Value;
+    auto translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value;
+    auto translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value;
+    auto translate_var(const QueryCtxT& ctx, const Var* var) const -> mlir::Value;
+    auto translate_const(const QueryCtxT& ctx, Const* const_node) const -> mlir::Value;
+    auto translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr) -> mlir::Value;
+    auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value;
+    auto translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value;
+    static auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) -> mlir::Value;
+    auto translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr) -> mlir::Value;
+    auto translate_scalar_array_op_expr(const QueryCtxT& ctx, const ScalarArrayOpExpr* scalar_array_op) -> mlir::Value;
+    auto translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value;
+    auto translate_expression_with_case_test(const QueryCtxT& ctx, Expr* expr, mlir::Value case_test_value)
+        -> mlir::Value;
 
     // Plan node translation methods
-    auto translate_plan_node(Plan* plan, TranslationContextT& context) -> mlir::Operation*;
-    auto translate_seq_scan(SeqScan* seqScan, TranslationContextT& context) const -> mlir::Operation*;
-    auto translate_agg(Agg* agg, TranslationContextT& context) -> mlir::Operation*;
-    auto translate_sort(const Sort* sort, TranslationContextT& context) -> mlir::Operation*;
-    auto translate_limit(const Limit* limit, TranslationContextT& context) -> mlir::Operation*;
-    auto translate_gather(const Gather* gather, TranslationContextT& context) -> mlir::Operation*;
+    auto translate_plan_node(QueryCtxT& ctx, Plan* plan) -> mlir::Operation*;
+    auto translate_seq_scan(QueryCtxT& ctx, SeqScan* seqScan) const -> mlir::Operation*;
+    auto translate_agg(QueryCtxT& ctx, Agg* agg) -> mlir::Operation*;
+    auto translate_sort(QueryCtxT& ctx, const Sort* sort) -> mlir::Operation*;
+    auto translate_limit(QueryCtxT& ctx, const Limit* limit) -> mlir::Operation*;
+    auto translate_gather(QueryCtxT& ctx, const Gather* gather) -> mlir::Operation*;
 
     // Query function generation
-    static auto create_query_function(mlir::OpBuilder& builder, const TranslationContextT& context) -> mlir::func::FuncOp;
-    auto generate_rel_alg_operations(mlir::func::FuncOp query_func,
-                                     const PlannedStmt* planned_stmt,
-                                     TranslationContextT& context) -> bool;
+    static auto create_query_function(mlir::OpBuilder& builder, const QueryCtxT& context) -> mlir::func::FuncOp;
+    auto generate_rel_alg_operations(mlir::func::FuncOp query_func, const PlannedStmt* planned_stmt, QueryCtxT& context)
+        -> bool;
 
     // Relational operation helpers
-    auto apply_selection_from_qual(mlir::Operation* input_op, const List* qual, const TranslationContextT& context)
+    auto apply_selection_from_qual(const QueryCtxT& ctx, mlir::Operation* input_op, const List* qual)
         -> mlir::Operation*;
-    auto apply_projection_from_target_list(mlir::Operation* input_op, List* target_list, TranslationContextT& context)
+    auto apply_projection_from_target_list(const QueryCtxT& ctx, mlir::Operation* input_op, List* target_list)
         -> mlir::Operation*;
 
     // Validation and column processing
     static auto validate_plan_tree(const Plan* plan_tree) -> bool;
-    auto extract_target_list_columns(TranslationContextT& context,
+    auto extract_target_list_columns(const QueryCtxT& context,
                                      std::vector<mlir::Attribute>& column_ref_attrs,
                                      std::vector<mlir::Attribute>& column_name_attrs) const -> bool;
-    auto process_target_entry(TranslationContextT& context,
+    auto process_target_entry(const QueryCtxT& context,
                               const List* t_list,
                               int index,
                               std::vector<mlir::Attribute>& column_ref_attrs,
                               std::vector<mlir::Attribute>& column_name_attrs) const -> bool;
-    auto determine_column_type(const TranslationContextT& context, Expr* expr) const -> mlir::Type;
-    auto create_materialize_op(TranslationContextT& context, mlir::Value tuple_stream) const -> mlir::Operation*;
+    auto determine_column_type(const QueryCtxT& context, Expr* expr) const -> mlir::Type;
+    auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream) const -> mlir::Operation*;
 
     // Operation translation helpers
-    auto extract_op_expr_operands(const OpExpr* op_expr, mlir::Value& lhs, mlir::Value& rhs) -> bool;
-    auto translate_arithmetic_op(Oid op_oid, mlir::Value lhs, mlir::Value rhs) const -> mlir::Value;
-    auto translate_comparison_op(Oid op_oid, mlir::Value lhs, mlir::Value rhs) const -> mlir::Value;
+    auto extract_op_expr_operands(const QueryCtxT& context, const OpExpr* op_expr, mlir::Value& lhs, mlir::Value& rhs)
+        -> bool;
+    auto translate_arithmetic_op(const QueryCtxT& context, Oid op_oid, mlir::Value lhs, mlir::Value rhs) const
+        -> mlir::Value;
+    auto translate_comparison_op(const QueryCtxT& context, Oid op_oid, mlir::Value lhs, mlir::Value rhs) const
+        -> mlir::Value;
 
    private:
     // Helper to map PostgreSQL aggregate function OIDs to LingoDB function names
     static auto get_aggregate_function_name(Oid aggfnoid) -> const char*;
 
     mlir::MLIRContext& context_;
-    mlir::OpBuilder* builder_;
-    mlir::ModuleOp* current_module_;
-    mlir::Value* current_tuple_handle_;
-    PlannedStmt* current_planned_stmt_;
-    bool context_needs_recreation_;
 };
 
 // ===========================================================================
