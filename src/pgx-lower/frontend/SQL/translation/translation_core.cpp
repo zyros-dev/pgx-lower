@@ -147,16 +147,21 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     auto mlirType = type_mapper.map_postgre_sqltype(constNode->consttype, constNode->consttypmod);
 
     switch (constNode->consttype) {
+    case BOOLOID: {
+        bool val = static_cast<bool>(constNode->constvalue);
+        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(),
+                                                          val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE, mlirType);
+    }
+    case INT2OID: {
+        const int16_t val = static_cast<int16_t>(constNode->constvalue);
+        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
+    }
     case INT4OID: {
         const int32_t val = static_cast<int32_t>(constNode->constvalue);
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
     }
     case INT8OID: {
         const int64_t val = static_cast<int64_t>(constNode->constvalue);
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
-    }
-    case INT2OID: {
-        const int16_t val = static_cast<int16_t>(constNode->constvalue);
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
     }
     case FLOAT4OID: {
@@ -169,16 +174,28 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
         return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(val),
                                                             mlir::cast<mlir::FloatType>(mlirType));
     }
-    case BOOLOID: {
-        bool val = static_cast<bool>(constNode->constvalue);
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(),
-                                                          val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE, mlirType);
+    case NUMERICOID: {
+        // For now, create a placeholder numeric constant
+        // TODO: Properly extract numeric value from PostgreSQL's internal format
+        PGX_WARNING("NUMERIC constant translation not fully implemented, using placeholder");
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI64IntegerAttr(0));
+    }
+    case DATEOID: {
+        // Date is stored as days since 2000-01-01 in PostgreSQL
+        int32_t days = static_cast<int32_t>(constNode->constvalue);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI32IntegerAttr(days));
+    }
+    case INTERVALOID: {
+        // Interval requires special handling - PostgreSQL stores it as a complex structure
+        // TODO: Properly extract interval value from PostgreSQL's internal format
+        PGX_WARNING("INTERVAL constant translation not fully implemented, using placeholder");
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI64IntegerAttr(0));
     }
     case TEXTOID:
     case VARCHAROID:
     case BPCHAROID: {
-// For string constants, constvalue is a pointer to the text data
-// In psql, text values are stored as varlena structures
+        // For string constants, constvalue is a pointer to the text data
+        // In psql, text values are stored as varlena structures
 #ifdef POSTGRESQL_EXTENSION
         if (constNode->constvalue) {
             auto* textval = DatumGetTextP(constNode->constvalue);
@@ -201,7 +218,7 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
 #endif
     }
     default:
-        PGX_WARNING("Unsupported constant type: %d", constNode->consttype);
+        PGX_ERROR("Unsupported constant type: %d", constNode->consttype);
         throw std::runtime_error("Unsupported constant type");
     }
 }
