@@ -1135,12 +1135,12 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
                     // Upcast the narrower type to match the wider type
                     if (lhsWidth < rhsWidth) {
                         auto targetType = ctx.builder.getIntegerType(rhsWidth);
-                        convertedLhs = ctx.builder.create<mlir::arith::ExtSIOp>(ctx.builder.getUnknownLoc(), targetType,
-                                                                                convertedLhs);
+                        convertedLhs = ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType,
+                                                                            convertedLhs);
                     } else {
                         auto targetType = ctx.builder.getIntegerType(lhsWidth);
-                        convertedRhs = ctx.builder.create<mlir::arith::ExtSIOp>(ctx.builder.getUnknownLoc(), targetType,
-                                                                                convertedRhs);
+                        convertedRhs = ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType,
+                                                                            convertedRhs);
                     }
                 }
             }

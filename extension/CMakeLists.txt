@@ -54,6 +54,7 @@ if(NOT BUILDING_UNIT_TESTS)
             23_order_by_expressions
             24_order_by_with_where
             25_group_by_simple
+            26_before_check_types
             26_group_by_having
             27_group_by_with_where
             28_complete_sql_patterns

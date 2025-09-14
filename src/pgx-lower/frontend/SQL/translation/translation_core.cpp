@@ -145,19 +145,19 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
 
     switch (constNode->consttype) {
     case INT4OID: {
-        int32_t val = static_cast<int32_t>(constNode->constvalue);
+        const int32_t val = static_cast<int32_t>(constNode->constvalue);
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
     }
     case INT8OID: {
-        int64_t val = static_cast<int64_t>(constNode->constvalue);
+        const int64_t val = static_cast<int64_t>(constNode->constvalue);
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
     }
     case INT2OID: {
-        int16_t val = static_cast<int16_t>(constNode->constvalue);
+        const int16_t val = static_cast<int16_t>(constNode->constvalue);
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
     }
     case FLOAT4OID: {
-        float val = *reinterpret_cast<float*>(&constNode->constvalue);
+        const float val = *reinterpret_cast<float*>(&constNode->constvalue);
         return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(val),
                                                             mlir::cast<mlir::FloatType>(mlirType));
     }
@@ -199,9 +199,7 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     }
     default:
         PGX_WARNING("Unsupported constant type: %d", constNode->consttype);
-        // Default to i32 zero
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), DEFAULT_FALLBACK_INT_VALUE,
-                                                          builder.getI32Type());
+        throw std::runtime_error("Unsupported constant type");
     }
 }
 
