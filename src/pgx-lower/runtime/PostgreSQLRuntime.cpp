@@ -55,11 +55,10 @@ void rt_set_execution_context(void* context_ptr) {
 }
 
 void* rt_get_execution_context() {
-    PGX_LOG(RUNTIME, IO, "rt_get_execution_context IN");
+    PGX_IO(RUNTIME);
     PGX_LOG(RUNTIME, DEBUG, "rt_get_execution_context called");
     if (g_execution_context) {
         PGX_LOG(RUNTIME, DEBUG, "rt_get_execution_context returning g_execution_context: %p", g_execution_context);
-        PGX_LOG(RUNTIME, IO, "rt_get_execution_context OUT: %p", g_execution_context);
         return g_execution_context;
     }
     static struct {
@@ -67,7 +66,6 @@ void* rt_get_execution_context() {
         int64_t row_count;
     } dummy_context = {nullptr, 1};
 
-    PGX_LOG(RUNTIME, IO, "rt_get_execution_context OUT: %p (dummy)", &dummy_context);
     return &dummy_context;
 }
 
@@ -129,6 +127,7 @@ struct TableSpec {
 };
 
 static int get_column_position(const std::string& table_name, const std::string& column_name) {
+    PGX_IO(RUNTIME);
     extern int32_t get_column_attnum(const char* table_name, const char* column_name);
     int32_t attnum = get_column_attnum(table_name.c_str(), column_name.c_str());
     if (attnum > 0) {
@@ -140,7 +139,7 @@ static int get_column_position(const std::string& table_name, const std::string&
 }
 
 static TableSpec parse_table_spec(const char* json_str) {
-    PGX_LOG(RUNTIME, IO, "parse_table_spec IN: json_str=%s", json_str ? json_str : "NULL");
+    PGX_IO(RUNTIME);
     TableSpec spec;
 
     try {
@@ -168,13 +167,12 @@ static TableSpec parse_table_spec(const char* json_str) {
         // Return empty spec on error
     }
 
-    PGX_LOG(RUNTIME, IO, "parse_table_spec OUT: table=%s, columns=%zu", spec.table_name.c_str(),
-            spec.column_names.size());
     return spec;
 }
 
 // Memory context callback for TableBuilder cleanup
 static void cleanup_tablebuilder_callback(void* arg) {
+    PGX_IO(RUNTIME);
     runtime::TableBuilder* tb = static_cast<runtime::TableBuilder*>(arg);
 }
 
@@ -189,7 +187,7 @@ TableBuilder::TableBuilder()
 
 // Static factory method
 TableBuilder* TableBuilder::create(VarLen32 schema_param) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_create IN: schema_param len=%u", schema_param.getLen());
+    PGX_IO(RUNTIME);
 
     MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
@@ -205,12 +203,11 @@ TableBuilder* TableBuilder::create(VarLen32 schema_param) {
     MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
 
     MemoryContextSwitchTo(oldcontext);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_create OUT: builder=%p, total_columns=%d", builder, builder->total_columns);
     return builder;
 }
 
 void TableBuilder::nextRow() {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow IN: builder=%p", this);
+    PGX_IO(RUNTIME);
 
     // 'this' is the TableBuilder instance
 
@@ -234,11 +231,10 @@ void TableBuilder::nextRow() {
 
     current_column_index = 0;
     PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: reset column index to 0 for row %ld", row_count);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_nextrow OUT");
 }
 
 TableBuilder* TableBuilder::build() {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_build IN: builder=%p", this);
+    PGX_IO(RUNTIME);
 
     mark_results_ready_for_streaming();
 
@@ -255,86 +251,79 @@ TableBuilder* TableBuilder::build() {
         }
     }
 
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_build OUT: returning builder=%p", this);
     return this;
 }
 
 void TableBuilder::addInt64(bool is_valid, int64_t value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint64 IN: value=%ld, is_valid=%s", value, is_valid ? "true" : "false");
+    PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint64 OUT");
 }
 
 void TableBuilder::addInt32(bool is_valid, int32_t value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
+    PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<int32_t>(this, is_valid, value);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint32 OUT");
 }
 
 void TableBuilder::addBool(bool is_valid, bool value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool IN: value=%s, is_valid=%s", value ? "true" : "false",
-            is_valid ? "true" : "false");
+    PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<bool>(this, is_valid, value);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbool OUT");
 }
 
 void TableBuilder::addInt8(bool is_valid, int8_t value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint8 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
+    PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<int8_t>(this, is_valid, value);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint8 OUT");
 }
 
 void TableBuilder::addInt16(bool is_valid, int16_t value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint16 IN: value=%d, is_valid=%s", value, is_valid ? "true" : "false");
+    PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<int16_t>(this, is_valid, value);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addint16 OUT");
 }
 
 void TableBuilder::addFloat32(bool is_valid, float value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat32 IN: value=%f, is_valid=%s", value, is_valid ? "true" : "false");
+    PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<float>(this, is_valid, value);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat32 OUT");
 }
 
 void TableBuilder::addFloat64(bool is_valid, double value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat64 IN: value=%f, is_valid=%s", value, is_valid ? "true" : "false");
+    PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<double>(this, is_valid, value);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfloat64 OUT");
 }
 
 void TableBuilder::addBinary(bool is_valid, VarLen32 value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbinary IN: len=%u, is_valid=%s", value.getLen(),
-            is_valid ? "true" : "false");
+    PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<runtime::VarLen32>(this, is_valid, value);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addbinary OUT");
 }
 
 void TableBuilder::addDecimal(bool is_valid, __int128 value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s", is_valid ? "true" : "false");
-    // Just truncate to int64 for now - proper decimal support can come later
-    // TODO: Implement me!
+    PGX_IO(RUNTIME);
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s, value=%lld",
+            is_valid ? "true" : "false", static_cast<long long>(value));
+
+    // For now, just use int64_t until we have proper NUMERIC support
+    // This avoids the type mismatch that causes crashes
+    // TODO: Implement proper NUMERIC/DECIMAL handling with NUMERICOID
     pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, static_cast<int64_t>(value));
+
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal OUT");
 }
 
 // Fixed-size binary type
 void TableBuilder::addFixedSized(bool is_valid, int64_t value) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfixedsized IN: value=%ld, is_valid=%s", value, is_valid ? "true" : "false");
+    PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_addfixedsized OUT");
 }
 
 void TableBuilder::destroy(void* builder) {
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_destroy IN: builder=%p", builder);
+    PGX_IO(RUNTIME);
     // Note: We don't need to do anything here because the MemoryContextCallback
     // will handle cleanup when the memory context is reset/deleted.
     // Calling destructor or pfree here would cause double-free issues.
     PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_destroy called - cleanup handled by MemoryContextCallback");
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_destroy OUT");
 }
 
 // Memory context callback for DataSourceIterator cleanup
 static void cleanup_datasourceiterator_callback(void* arg) {
+    PGX_IO(RUNTIME);
     DataSourceIterator* iter = static_cast<DataSourceIterator*>(arg);
     if (iter) {
         iter->~DataSourceIterator(); // Explicit destructor call for PostgreSQL longjmp safety
@@ -344,6 +333,7 @@ static void cleanup_datasourceiterator_callback(void* arg) {
 // TODO: This function is uhhh... pretty gross. It should be returning iter, not a boolean. I also cannot be bothered
 // fixing it now since it does its job and its just an abstracted away black box
 static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSourceIterator* iter) {
+    PGX_IO(RUNTIME);
     uint32_t actual_len = varlen32_param.getLen();
     const char* json_spec = varlen32_param.data();
 
@@ -457,6 +447,7 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
 
 // Helper function: Initialize column storage for dynamic types
 static void initialize_column_storage(DataSourceIterator* iter) {
+    PGX_IO(RUNTIME);
     // Reserve capacity to prevent reallocation during iteration
     iter->int_values.reserve(10000);
     iter->int_nulls.reserve(10000);
@@ -498,6 +489,7 @@ static void initialize_column_storage(DataSourceIterator* iter) {
 
 // Helper function: Open PostgreSQL table connection
 static void* open_table_connection(const std::string& table_name) {
+    PGX_IO(RUNTIME);
     void* table_handle = open_postgres_table(table_name.c_str());
 
     if (!table_handle) {
@@ -508,8 +500,7 @@ static void* open_table_connection(const std::string& table_name) {
 }
 
 DataSourceIteration* DataSourceIteration::start(ExecutionContext* context, runtime::VarLen32 varlen32_param) {
-    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_start IN: context=%p, varlen32_param len=%u", context,
-            varlen32_param.getLen());
+    PGX_IO(RUNTIME);
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_start called with context: %p, varlen32_param len: %u", context,
             varlen32_param.getLen());
 
@@ -562,12 +553,11 @@ DataSourceIteration* DataSourceIteration::start(ExecutionContext* context, runti
 
     g_current_iterator = iter;
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_start returning iterator: %p", iter);
-    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_start OUT: iterator=%p", iter);
     return reinterpret_cast<DataSourceIteration*>(iter);
 }
 
 bool DataSourceIteration::isValid() {
-    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid IN: iterator=%p", this);
+    PGX_IO(RUNTIME);
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid called with iterator: %p", this);
     if (!this)
         return false;
@@ -577,7 +567,6 @@ bool DataSourceIteration::isValid() {
     if (!iter->table_handle) {
         PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 1 (no table_handle)",
                 this);
-        PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid OUT: false (no table_handle)");
         return false;
     }
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: About to call read_next_tuple_from_table");
@@ -743,19 +732,17 @@ bool DataSourceIteration::isValid() {
 
         iter->has_current_tuple = true;
         PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 2", this);
-        PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid OUT: true");
         return true;
     } else {
         iter->has_current_tuple = false;
         PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 3", this);
-        PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_isvalid OUT: false");
         return false;
     }
 }
 
 void DataSourceIteration::access(RecordBatchInfo* info) {
+    PGX_IO(RUNTIME);
     auto* row_data = info;
-    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_access IN: iterator=%p, row_data=%p", this, row_data);
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access called with iterator: %p, row_data: %p", this, row_data);
     if (row_data) {
         PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: row_data is valid, proceeding");
@@ -875,16 +862,17 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
     }
 
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access completed successfully");
-    PGX_LOG(RUNTIME, IO, "rt_datasourceiteration_access OUT");
     __sync_synchronize();
 }
 
 void DataSourceIteration::next() {
+    PGX_IO(RUNTIME);
     auto* iter = (DataSourceIterator*)this;
     iter->has_current_tuple = false;
 }
 
 void DataSourceIteration::end(DataSourceIteration* iterator) {
+    PGX_IO(RUNTIME);
     if (iterator) {
         auto* iter = (DataSourceIterator*)iterator;
 
@@ -907,10 +895,12 @@ void DataSourceIteration::end(DataSourceIteration* iterator) {
 
 // Global context functions
 void* getExecutionContext() {
+    PGX_IO(RUNTIME);
     return ::rt_get_execution_context(); // Call the global C function
 }
 
 void setExecutionContext(void* context) {
+    PGX_IO(RUNTIME);
     ::rt_set_execution_context(context); // Call the global C function
 }
 
