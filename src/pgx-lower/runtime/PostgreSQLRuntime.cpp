@@ -619,7 +619,11 @@ bool DataSourceIteration::isValid() {
     int64_t read_result = read_next_tuple_from_table(iter->table_handle);
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: read_result = %ld", read_result);
 
-    if (read_result == 1) {
+    if (read_result != 1) {
+        iter->has_current_tuple = false;
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 3", this);
+        return false;
+    } else {
         extern int32_t get_int32_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern int64_t get_int64_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null);
@@ -877,10 +881,6 @@ bool DataSourceIteration::isValid() {
         iter->has_current_tuple = true;
         PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 2", this);
         return true;
-    } else {
-        iter->has_current_tuple = false;
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 3", this);
-        return false;
     }
 }
 

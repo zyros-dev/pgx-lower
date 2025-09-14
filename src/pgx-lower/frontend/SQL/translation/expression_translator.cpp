@@ -1047,7 +1047,6 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
                                                             const mlir::Value lhs, const mlir::Value rhs) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     switch (op_oid) {
-    // Addition operators
     case PG_INT4_PLUS_OID:
     case PG_INT8_PLUS_OID: return ctx.builder.create<mlir::db::AddOp>(ctx.builder.getUnknownLoc(), lhs, rhs);
 
@@ -1076,33 +1075,57 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     mlir::db::DBCmpPredicate predicate;
 
     switch (op_oid) {
+    case PG_INT2_EQ_OID:
     case PG_INT4_EQ_OID:
     case PG_INT8_EQ_OID:
+    case PG_FLOAT4_EQ_OID:
+    case PG_FLOAT8_EQ_OID:
+    case PG_NUMERIC_EQ_OID:
     case PG_TEXT_EQ_OID: predicate = mlir::db::DBCmpPredicate::eq; break;
 
+    case PG_INT2_NE_OID:
     case PG_INT4_NE_OID:
     case PG_INT8_NE_OID:
+    case PG_FLOAT4_NE_OID:
+    case PG_FLOAT8_NE_OID:
+    case PG_NUMERIC_NE_OID:
     case PG_TEXT_NE_OID: predicate = mlir::db::DBCmpPredicate::neq; break;
 
+    case PG_INT2_LT_OID:
     case PG_INT4_LT_OID:
     case PG_INT8_LT_OID:
+    case PG_FLOAT4_LT_OID:
+    case PG_FLOAT8_LT_OID:
+    case PG_NUMERIC_LT_OID:
     case PG_TEXT_LT_OID: predicate = mlir::db::DBCmpPredicate::lt; break;
 
+    case PG_INT2_LE_OID:
     case PG_INT4_LE_OID:
     case PG_INT8_LE_OID:
+    case PG_FLOAT4_LE_OID:
+    case PG_FLOAT8_LE_OID:
+    case PG_NUMERIC_LE_OID:
     case PG_TEXT_LE_OID: predicate = mlir::db::DBCmpPredicate::lte; break;
 
+    case PG_INT2_GT_OID:
     case PG_INT4_GT_OID:
     case PG_INT8_GT_OID:
     case PG_INT8_INT4_GT_OID:
+    case PG_FLOAT4_GT_OID:
+    case PG_FLOAT8_GT_OID:
+    case PG_NUMERIC_GT_OID:
     case PG_TEXT_GT_OID: predicate = mlir::db::DBCmpPredicate::gt; break;
 
+    case PG_INT2_GE_OID:
     case PG_INT4_GE_OID:
     case PG_INT8_GE_OID:
+    case PG_FLOAT4_GE_OID:
+    case PG_FLOAT8_GE_OID:
+    case PG_NUMERIC_GE_OID:
     case PG_TEXT_GE_OID: predicate = mlir::db::DBCmpPredicate::gte; break;
 
     // TODO: NV Unsure of why this routes to here. this is probably not a good way to handle it. Pretty sure it
-    // shouldn't even be here though
+    //      shouldn't even be here though. Considering  it goes on after this to be fine...
     case PG_TEXT_NOT_LIKE_OID:
     case PG_TEXT_CONCAT_OID:
     case PG_TEXT_LIKE_OID: return nullptr;

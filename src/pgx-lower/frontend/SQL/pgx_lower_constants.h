@@ -51,27 +51,73 @@ constexpr Oid PG_INT8_NE_OID = 411;
 constexpr Oid PG_TEXT_NE_OID = 531;
 
 // Integer Less Than Operators
+constexpr Oid PG_INT2_LT_OID = 95;
 constexpr Oid PG_INT4_LT_OID = 97;
 constexpr Oid PG_INT8_LT_OID = 412;
 constexpr Oid PG_TEXT_LT_OID = 664;
 
 // Integer Greater Than Operators
+constexpr Oid PG_INT2_GT_OID = 520;
 constexpr Oid PG_INT4_GT_OID = 521;
 constexpr Oid PG_INT8_GT_OID = 413;
 constexpr Oid PG_TEXT_GT_OID = 666;
 
 // Integer Less Than or Equal Operators
+constexpr Oid PG_INT2_LE_OID = 522;
 constexpr Oid PG_INT4_LE_OID = 523;
 constexpr Oid PG_INT8_LE_OID = 414;
 constexpr Oid PG_TEXT_LE_OID = 665;
 
 // Integer Greater Than or Equal Operators
+constexpr Oid PG_INT2_GE_OID = 524;
 constexpr Oid PG_INT4_GE_OID = 525;
 constexpr Oid PG_INT8_GE_OID = 415;
 constexpr Oid PG_TEXT_GE_OID = 667;
 
 // Mixed Type Comparison Operators
 constexpr Oid PG_INT8_INT4_GT_OID = 419;
+
+// Float Equality Operators
+constexpr Oid PG_FLOAT4_EQ_OID = 620;
+constexpr Oid PG_FLOAT8_EQ_OID = 670;
+
+// Float Inequality Operators
+constexpr Oid PG_FLOAT4_NE_OID = 621;
+constexpr Oid PG_FLOAT8_NE_OID = 671;
+
+// Float Less Than Operators
+constexpr Oid PG_FLOAT4_LT_OID = 622;
+constexpr Oid PG_FLOAT8_LT_OID = 672;
+
+// Float Greater Than Operators
+constexpr Oid PG_FLOAT4_GT_OID = 623;
+constexpr Oid PG_FLOAT8_GT_OID = 674;
+
+// Float Less Than or Equal Operators
+constexpr Oid PG_FLOAT4_LE_OID = 624;
+constexpr Oid PG_FLOAT8_LE_OID = 673;
+
+// Float Greater Than or Equal Operators
+constexpr Oid PG_FLOAT4_GE_OID = 625;
+constexpr Oid PG_FLOAT8_GE_OID = 675;
+
+// Numeric/Decimal Equality Operators
+constexpr Oid PG_NUMERIC_EQ_OID = 1752;
+
+// Numeric/Decimal Inequality Operators
+constexpr Oid PG_NUMERIC_NE_OID = 1753;
+
+// Numeric/Decimal Less Than Operators
+constexpr Oid PG_NUMERIC_LT_OID = 1754;
+
+// Numeric/Decimal Greater Than Operators
+constexpr Oid PG_NUMERIC_GT_OID = 1756;
+
+// Numeric/Decimal Less Than or Equal Operators
+constexpr Oid PG_NUMERIC_LE_OID = 1755;
+
+// Numeric/Decimal Greater Than or Equal Operators
+constexpr Oid PG_NUMERIC_GE_OID = 1757;
 
 // =============================================================================
 // FUNCTION OIDs (
