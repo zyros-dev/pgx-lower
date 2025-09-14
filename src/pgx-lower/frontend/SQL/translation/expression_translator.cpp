@@ -549,17 +549,17 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     const auto& [scopeName, funcName] = it->second;
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating Aggref to GetColumnOp: scope=%s, func=%s", scopeName.c_str(),
             funcName.c_str());
-
     auto colRef = columnManager.createRef(scopeName, funcName);
 
-    // Aggregate results are always nullable i32 in LingoDB's pattern
-    // TODO: Support more than i32
-    auto resultType = mlir::db::NullableType::get(ctx.builder.getContext(), ctx.builder.getI32Type());
-    colRef.getColumn().type = resultType;
+    // Get the actual type from the column that was created during aggregation
+    auto resultType = colRef.getColumn().type;
+    if (!resultType) {
+        PGX_ERROR("Aggregate column type not found in column manager");
+        throw std::runtime_error("Aggregate column type not found in column manager");
+    }
 
     auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), resultType, colRef,
                                                                   ctx.current_tuple);
-
     return getColOp.getRes();
 }
 
@@ -1101,7 +1101,14 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     case PG_INT8_GE_OID:
     case PG_TEXT_GE_OID: predicate = mlir::db::DBCmpPredicate::gte; break;
 
-    default: return nullptr;
+    // TODO: NV Unsure of why this routes to here. this is probably not a good way to handle it. Pretty sure it shouldn't even be here though
+    case PG_TEXT_NOT_LIKE_OID:
+    case PG_TEXT_CONCAT_OID:
+    case PG_TEXT_LIKE_OID: return nullptr;
+
+    default:
+        PGX_ERROR("Unknown op_oid %d", op_oid);
+        throw std::runtime_error("Unknown op_oid");
     }
 
     mlir::Value convertedLhs = lhs;

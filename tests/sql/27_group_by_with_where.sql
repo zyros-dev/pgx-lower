@@ -32,11 +32,13 @@ FROM product_orders
 WHERE category = 'Electronics'
   AND order_amount > 100
 GROUP BY category;
+
 SELECT region, SUM(order_amount) AS total_sales
 FROM product_orders
 WHERE customer_type = 'Premium'
 GROUP BY region
 ORDER BY region;
+
 SELECT category,
        COUNT(*)          AS order_count,
        SUM(order_amount) AS total_sales,
@@ -46,6 +48,7 @@ WHERE order_amount >= 100
   AND quantity <= 3
 GROUP BY category
 ORDER BY category;
+
 SELECT customer_type,
        COUNT(*)          AS order_count,
        SUM(order_amount) AS total_sales
@@ -53,6 +56,7 @@ FROM product_orders
 WHERE order_date >= '2024-01-05'
 GROUP BY customer_type
 ORDER BY customer_type;
+
 SELECT region,
        category,
        COUNT(*)          AS order_count,
@@ -64,6 +68,7 @@ WHERE (category = 'Electronics' OR category = 'Furniture')
   AND order_amount BETWEEN 100 AND 1000
 GROUP BY region, category
 ORDER BY region, category;
+
 SELECT customer_type,
        COUNT(*)          AS order_count,
        AVG(order_amount) AS avg_order_amount
@@ -72,4 +77,5 @@ WHERE quantity >= 2
 GROUP BY customer_type
 HAVING COUNT(*) >= 2
 ORDER BY customer_type;
+
 DROP TABLE product_orders;
