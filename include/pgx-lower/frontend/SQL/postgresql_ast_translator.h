@@ -47,14 +47,14 @@ namespace postgresql_ast {
 class PostgreSQLASTTranslator {
 public:
     explicit PostgreSQLASTTranslator(::mlir::MLIRContext& context);
-    ~PostgreSQLASTTranslator();  // Must be defined in .cpp for Pimpl
+    ~PostgreSQLASTTranslator();
 
-    auto translate_query(PlannedStmt* plannedStmt) const -> std::unique_ptr<::mlir::ModuleOp>;
+    auto translate_query(PlannedStmt* planned_stmt) const -> std::unique_ptr<::mlir::ModuleOp>;
     
 private:
 
     class Impl;
-    std::unique_ptr<Impl> pImpl;
+    std::unique_ptr<Impl> p_impl_;
 };
 
 auto create_postgresql_ast_translator(::mlir::MLIRContext& context)

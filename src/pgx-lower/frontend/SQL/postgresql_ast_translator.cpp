@@ -3,16 +3,15 @@
 
 namespace postgresql_ast {
 
-using TranslationContext = pgx_lower::frontend::sql::TranslationContext;
-// Implementation of PostgreSQLASTTranslator public interface
+using TranslationContextT = pgx_lower::frontend::sql::TranslationContext;
 
 PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context)
-: pImpl(std::make_unique<Impl>(context)) {}
+: p_impl_(std::make_unique<Impl>(context)) {}
 
 PostgreSQLASTTranslator::~PostgreSQLASTTranslator() = default;
 
-auto PostgreSQLASTTranslator::translate_query(PlannedStmt* plannedStmt) const -> std::unique_ptr<mlir::ModuleOp> {
-    return pImpl->translate_query(plannedStmt);
+auto PostgreSQLASTTranslator::translate_query(PlannedStmt* planned_stmt) const -> std::unique_ptr<mlir::ModuleOp> {
+    return p_impl_->translate_query(planned_stmt);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp> {
@@ -28,25 +27,25 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -
     }
 
     auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
-    mlir::OpBuilder builder(&context_);
+    auto builder = mlir::OpBuilder(&context_);
     builder.setInsertionPointToStart(module.getBody());
 
     builder_ = &builder;
     current_planned_stmt_ = planned_stmt;
 
-    TranslationContext context;
+    TranslationContextT context;
     context.currentStmt = planned_stmt;
     context.builder = &builder;
 
-    auto queryFunc = create_query_function(builder, context);
-    if (!queryFunc) {
+    auto query_func = create_query_function(builder, context);
+    if (!query_func) {
         PGX_ERROR("Failed to create query function");
         builder_ = nullptr;
         current_planned_stmt_ = nullptr;
         return nullptr;
     }
 
-    if (!generate_rel_alg_operations(queryFunc, planned_stmt, context)) {
+    if (!generate_rel_alg_operations(query_func, planned_stmt, context)) {
         PGX_ERROR("Failed to generate RelAlg operations");
         builder_ = nullptr;
         current_planned_stmt_ = nullptr;
@@ -57,41 +56,36 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -
     current_planned_stmt_ = nullptr;
 
     auto result = std::make_unique<mlir::ModuleOp>(module);
-    auto numOps = module.getBody()->getOperations().size();
-    PGX_LOG(AST_TRANSLATE, IO, "translate_query OUT: RelAlg MLIR Module with %zu operations", numOps);
+    const auto num_ops = module.getBody()->getOperations().size();
+    PGX_LOG(AST_TRANSLATE, IO, "translate_query OUT: RelAlg MLIR Module with %zu operations", num_ops);
 
     return result;
 }
 
 auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(mlir::func::FuncOp query_func,
                                                                 const PlannedStmt* planned_stmt,
-                                                                TranslationContext& context) -> bool {
+                                                                TranslationContextT& context) -> bool {
     PGX_LOG(AST_TRANSLATE,
             IO,
             "generate_rel_alg_operations IN: PlannedStmt with planTree type %d",
             planned_stmt ? (planned_stmt->planTree ? planned_stmt->planTree->type : -1) : -1);
+    assert(planned_stmt);
+    auto* plan_tree = planned_stmt->planTree;
 
-    if (!planned_stmt) {
-        PGX_ERROR("PlannedStmt is null");
+    if (!validate_plan_tree(plan_tree)) {
         return false;
     }
 
-    Plan* planTree = planned_stmt->planTree;
-
-    if (!validate_plan_tree(planTree)) {
-        return false;
-    }
-
-    auto translatedOp = translate_plan_node(planTree, context);
-    if (!translatedOp) {
+    const auto translated_op = translate_plan_node(plan_tree, context);
+    if (!translated_op) {
         PGX_ERROR("Failed to translate plan node");
         return false;
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Checking if translated operation has results");
-    if (translatedOp->getNumResults() > 0) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Operation has %d results", translatedOp->getNumResults());
-        auto result = translatedOp->getResult(0);
+    if (translated_op->getNumResults() > 0) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Operation has %d results", translated_op->getNumResults());
+        const auto result = translated_op->getResult(0);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Got result from translated operation");
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Checking result type");

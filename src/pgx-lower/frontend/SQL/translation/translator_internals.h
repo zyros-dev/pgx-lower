@@ -75,7 +75,7 @@ struct TranslationContext {
 
 namespace postgresql_ast {
 
-using TranslationContext = pgx_lower::frontend::sql::TranslationContext;
+using TranslationContextT = pgx_lower::frontend::sql::TranslationContext;
 
 // ===========================================================================
 // PostgreSQLASTTranslator::Impl
@@ -106,37 +106,37 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_expression_with_case_test(Expr* expr, mlir::Value case_test_value) -> mlir::Value;
 
     // Plan node translation methods
-    auto translate_plan_node(Plan* plan, TranslationContext& context) -> mlir::Operation*;
-    auto translate_seq_scan(SeqScan* seqScan, TranslationContext& context) const -> mlir::Operation*;
-    auto translate_agg(Agg* agg, TranslationContext& context) -> mlir::Operation*;
-    auto translate_sort(const Sort* sort, TranslationContext& context) -> mlir::Operation*;
-    auto translate_limit(const Limit* limit, TranslationContext& context) -> mlir::Operation*;
-    auto translate_gather(const Gather* gather, TranslationContext& context) -> mlir::Operation*;
+    auto translate_plan_node(Plan* plan, TranslationContextT& context) -> mlir::Operation*;
+    auto translate_seq_scan(SeqScan* seqScan, TranslationContextT& context) const -> mlir::Operation*;
+    auto translate_agg(Agg* agg, TranslationContextT& context) -> mlir::Operation*;
+    auto translate_sort(const Sort* sort, TranslationContextT& context) -> mlir::Operation*;
+    auto translate_limit(const Limit* limit, TranslationContextT& context) -> mlir::Operation*;
+    auto translate_gather(const Gather* gather, TranslationContextT& context) -> mlir::Operation*;
 
     // Query function generation
-    static auto create_query_function(mlir::OpBuilder& builder, const TranslationContext& context) -> mlir::func::FuncOp;
+    static auto create_query_function(mlir::OpBuilder& builder, const TranslationContextT& context) -> mlir::func::FuncOp;
     auto generate_rel_alg_operations(mlir::func::FuncOp query_func,
                                      const PlannedStmt* planned_stmt,
-                                     TranslationContext& context) -> bool;
+                                     TranslationContextT& context) -> bool;
 
     // Relational operation helpers
-    auto apply_selection_from_qual(mlir::Operation* input_op, const List* qual, const TranslationContext& context)
+    auto apply_selection_from_qual(mlir::Operation* input_op, const List* qual, const TranslationContextT& context)
         -> mlir::Operation*;
-    auto apply_projection_from_target_list(mlir::Operation* input_op, List* target_list, TranslationContext& context)
+    auto apply_projection_from_target_list(mlir::Operation* input_op, List* target_list, TranslationContextT& context)
         -> mlir::Operation*;
 
     // Validation and column processing
     static auto validate_plan_tree(const Plan* plan_tree) -> bool;
-    auto extract_target_list_columns(TranslationContext& context,
+    auto extract_target_list_columns(TranslationContextT& context,
                                      std::vector<mlir::Attribute>& column_ref_attrs,
                                      std::vector<mlir::Attribute>& column_name_attrs) const -> bool;
-    auto process_target_entry(TranslationContext& context,
+    auto process_target_entry(TranslationContextT& context,
                               const List* t_list,
                               int index,
                               std::vector<mlir::Attribute>& column_ref_attrs,
                               std::vector<mlir::Attribute>& column_name_attrs) const -> bool;
-    auto determine_column_type(const TranslationContext& context, Expr* expr) const -> mlir::Type;
-    auto create_materialize_op(TranslationContext& context, mlir::Value tuple_stream) const -> mlir::Operation*;
+    auto determine_column_type(const TranslationContextT& context, Expr* expr) const -> mlir::Type;
+    auto create_materialize_op(TranslationContextT& context, mlir::Value tuple_stream) const -> mlir::Operation*;
 
     // Operation translation helpers
     auto extract_op_expr_operands(const OpExpr* op_expr, mlir::Value& lhs, mlir::Value& rhs) -> bool;
