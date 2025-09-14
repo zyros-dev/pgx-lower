@@ -28,7 +28,7 @@ extern "C" {}
 
 using namespace pgx_lower::frontend::sql::constants;
 
-std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(int32_t typmod) {
+std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int32_t typmod) {
     if (typmod < 0) {
         // PostgreSQL default for unconstrained NUMERIC
         return {-1, -1};
@@ -52,7 +52,7 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(int32_t t
     }
 
     return {precision, scale};
-    }
+}
 
 int32_t PostgreSQLTypeMapper::extract_varchar_length(int32_t typmod) {
     if (typmod < 0) {
@@ -62,7 +62,7 @@ int32_t PostgreSQLTypeMapper::extract_varchar_length(int32_t typmod) {
     return typmod - 4;
 }
 
-mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(int32_t typmod) {
+mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(const int32_t typmod) {
     if (typmod < 0) {
         return mlir::db::TimeUnitAttr::microsecond;
     }
@@ -82,11 +82,12 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(int32_t
         PGX_WARNING(("Invalid TIMESTAMP precision: " + std::to_string(typmod) + ", defaulting to microsecond").c_str());
         return mlir::db::TimeUnitAttr::microsecond;
     }
-    }
+}
 
-auto PostgreSQLTypeMapper::map_postgre_sqltype(Oid type_oid, int32_t typmod, bool nullable) const -> mlir::Type {
+auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const bool nullable) const
+    -> mlir::Type {
     mlir::Type baseType;
-    
+
     switch (type_oid) {
     case INT4OID: baseType = mlir::IntegerType::get(&context_, INT4_BIT_WIDTH); break;
     case INT8OID: baseType = mlir::IntegerType::get(&context_, INT8_BIT_WIDTH); break;
@@ -114,7 +115,7 @@ auto PostgreSQLTypeMapper::map_postgre_sqltype(Oid type_oid, int32_t typmod, boo
         baseType = mlir::IntegerType::get(&context_, INT4_BIT_WIDTH);
         break;
     }
-    
+
     // Wrap in nullable type if column is nullable
     if (nullable) {
         return mlir::db::NullableType::get(&context_, baseType);
@@ -164,49 +165,45 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     }
     case BOOLOID: {
         bool val = static_cast<bool>(constNode->constvalue);
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE, mlirType);
+        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(),
+                                                          val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE,
+                                                          mlirType);
     }
     case TEXTOID:
     case VARCHAROID:
     case BPCHAROID: {
-        // For string constants, constvalue is a pointer to the text data
-        // In psql, text values are stored as varlena structures
-        #ifdef POSTGRESQL_EXTENSION
+// For string constants, constvalue is a pointer to the text data
+// In psql, text values are stored as varlena structures
+#ifdef POSTGRESQL_EXTENSION
         if (constNode->constvalue) {
             auto* textval = DatumGetTextP(constNode->constvalue);
             char* str = VARDATA(textval);
             int len = VARSIZE(textval) - VARHDRSZ;
             std::string string_value(str, len);
-            
-            return builder.create<mlir::db::ConstantOp>(
-                builder.getUnknownLoc(),
-                mlirType,
-                builder.getStringAttr(string_value));
-        } else {
-            return builder.create<mlir::db::ConstantOp>(
-                builder.getUnknownLoc(),
-                mlirType,
-                builder.getStringAttr(""));
+
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(),
+                                                        mlirType,
+                                                        builder.getStringAttr(string_value));
         }
-        #else
+        else {
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(""));
+        }
+#else
         const char* str = reinterpret_cast<const char*>(constNode->constvalue);
         if (str) {
-            return builder.create<mlir::db::ConstantOp>(
-                builder.getUnknownLoc(),
-                mlirType,
-                builder.getStringAttr(str));
-        } else {
-            return builder.create<mlir::db::ConstantOp>(
-                builder.getUnknownLoc(),
-                mlirType,
-                builder.getStringAttr(""));
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(str));
         }
-        #endif
+        else {
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(""));
+        }
+#endif
     }
     default:
         PGX_WARNING("Unsupported constant type: %d", constNode->consttype);
         // Default to i32 zero
-        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), DEFAULT_FALLBACK_INT_VALUE, builder.getI32Type());
+        return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(),
+                                                          DEFAULT_FALLBACK_INT_VALUE,
+                                                          builder.getI32Type());
     }
 }
 

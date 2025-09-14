@@ -54,7 +54,7 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(mlir::func::FuncOp query_func,
+auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const mlir::func::FuncOp query_func,
                                                                 const PlannedStmt* planned_stmt,
                                                                 QueryCtxT& context) -> bool {
     PGX_LOG(AST_TRANSLATE,

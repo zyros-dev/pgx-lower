@@ -94,14 +94,13 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
         return nullptr;
     }
 
-    mlir::Value lhs = nullptr;
-    mlir::Value rhs = nullptr;
-
-    if (!extract_op_expr_operands(ctx, op_expr, lhs, rhs)) {
+    auto operands = extract_op_expr_operands(ctx, op_expr);
+    if (!operands) {
         PGX_ERROR("Failed to extract OpExpr operands");
         return nullptr;
     }
 
+    auto [lhs, rhs] = *operands;
     const Oid opOid = op_expr->opno;
 
     mlir::Value result = translate_arithmetic_op(ctx, opOid, lhs, rhs);
@@ -210,7 +209,10 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     if (!var || !ctx.builder || !ctx.current_tuple) {
         const auto trace = pgx_lower::utility::capture_stacktrace();
         PGX_ERROR("Invalid Var parameters: var=%p, builder=%p, tuple=%p\n%s",
-                  var, ctx.builder, ctx.current_tuple.getAsOpaquePointer(), trace.c_str());
+                  var,
+                  ctx.builder,
+                  ctx.current_tuple.getAsOpaquePointer(),
+                  trace.c_str());
         throw std::runtime_error("Invalid Var parameters");
     }
 
@@ -1107,26 +1109,26 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
     return translate_expression(ctx, expr);
 }
 
-auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ctx,
-                                                             const OpExpr* op_expr,
-                                                             mlir::Value& lhs,
-                                                             mlir::Value& rhs) -> bool {
+auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)
+    -> std::optional<std::pair<mlir::Value, mlir::Value>> {
     if (!op_expr || !op_expr->args) {
         PGX_ERROR("OpExpr has no arguments");
-        return false;
+        return std::nullopt;
     }
 
     if (op_expr->args->length < 1) {
-        return false;
+        return std::nullopt;
     }
 
     // Safety check for elements array (PostgreSQL 17)
     if (!op_expr->args->elements) {
         PGX_WARNING("OpExpr args list has length %d but no elements array", op_expr->args->length);
         PGX_WARNING("This suggests the test setup needs to properly initialize the List structure");
-        // This will help us identify when this is happening
-        return false;
+        return std::nullopt;
     }
+
+    mlir::Value lhs;
+    mlir::Value rhs;
 
     // Iterate using PostgreSQL 17 style with elements array
     for (int argIndex = 0; argIndex < op_expr->args->length && argIndex < MAX_BINARY_OPERANDS; argIndex++) {
@@ -1157,13 +1159,17 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
                                                               ctx.builder->getI32Type());
     }
 
-    return lhs && rhs;
+    if (!lhs || !rhs) {
+        return std::nullopt;
+    }
+
+    return std::make_pair(lhs, rhs);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx,
                                                             const Oid op_oid,
-                                                            mlir::Value lhs,
-                                                            mlir::Value rhs) const -> mlir::Value {
+                                                            const mlir::Value lhs,
+                                                            const mlir::Value rhs) const -> mlir::Value {
     switch (op_oid) {
     // Addition operators
     case PG_INT4_PLUS_OID:
@@ -1190,8 +1196,8 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
 
 auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx,
                                                             const Oid op_oid,
-                                                            mlir::Value lhs,
-                                                            mlir::Value rhs) const -> mlir::Value {
+                                                            const mlir::Value lhs,
+                                                            const mlir::Value rhs) const -> mlir::Value {
     mlir::db::DBCmpPredicate predicate;
 
     switch (op_oid) {
