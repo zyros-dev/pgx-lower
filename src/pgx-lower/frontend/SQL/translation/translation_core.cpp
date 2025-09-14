@@ -1,4 +1,6 @@
 #include "translator_internals.h"
+
+#include <utils/timestamp.h>
 extern "C" {
 #include "nodes/primnodes.h"
 #include "fmgr.h"
@@ -19,11 +21,12 @@ extern "C" {
 
 namespace postgresql_ast {
 
-// Translation core implementation - type system and constant translation functionality
-
 #ifdef POSTGRESQL_EXTENSION
-// PostgreSQL headers for text handling
-extern "C" {}
+extern "C" {
+#include "utils/numeric.h"
+#include "utils/date.h"
+#include "datatype/timestamp.h"
+}
 #endif
 
 using namespace pgx_lower::frontend::sql::constants;
@@ -87,8 +90,8 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(const i
     }
 }
 
-auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const bool nullable) const
-    -> mlir::Type {
+auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const bool nullable,
+                                               const std::optional<Datum> value) const -> mlir::Type {
     PGX_IO(AST_TRANSLATE);
     mlir::Type baseType;
 
@@ -115,9 +118,26 @@ auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t
         baseType = mlir::db::TimestampType::get(&context_, timeUnit);
         break;
     }
-    case INTERVALOID:
-        baseType = mlir::db::IntervalType::get(&context_, mlir::db::IntervalUnitAttr::months);
+    case INTERVALOID: {
+        if (!value.has_value()) {
+            PGX_ERROR("INTERVALOID type mapping requires actual value data to determine month vs daytime type");
+            throw std::runtime_error("INTERVALOID type mapping requires actual value data to determine month vs "
+                                     "daytime type");
+        }
+
+#ifdef POSTGRESQL_EXTENSION
+        const auto* interval = DatumGetIntervalP(value.value());
+        if (interval->day == 0 && interval->time == 0 && interval->month != 0) {
+            baseType = mlir::db::IntervalType::get(&context_, mlir::db::IntervalUnitAttr::months);
+        } else {
+            baseType = mlir::db::IntervalType::get(&context_, mlir::db::IntervalUnitAttr::daytime);
+        }
+#else
+        // For unit tests, default to daytime
+        baseType = mlir::db::IntervalType::get(&context_, mlir::db::IntervalUnitAttr::daytime);
+#endif
         break;
+    }
 
     default:
         PGX_ERROR("Unknown PostgreSQL type OID: %d", type_oid);
@@ -134,7 +154,7 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     PGX_IO(AST_TRANSLATE);
     if (!constNode) {
         PGX_ERROR("Invalid Const parameters");
-        return nullptr;
+        throw std::runtime_error("Invalid const parameters");
     }
 
     if (constNode->constisnull) {
@@ -142,13 +162,14 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
         return builder.create<mlir::db::NullOp>(builder.getUnknownLoc(), nullType);
     }
 
-    // Map PostgreSQL type to MLIR type
-    PostgreSQLTypeMapper type_mapper(context);
-    auto mlirType = type_mapper.map_postgre_sqltype(constNode->consttype, constNode->consttypmod);
+    const auto type_mapper = PostgreSQLTypeMapper(context);
+    // Only pass the value for non-null constants
+    const auto mlirType = type_mapper.map_postgre_sqltype(constNode->consttype, constNode->consttypmod, false,
+                                                          std::make_optional(constNode->constvalue));
 
     switch (constNode->consttype) {
     case BOOLOID: {
-        bool val = static_cast<bool>(constNode->constvalue);
+        const bool val = static_cast<bool>(constNode->constvalue);
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(),
                                                           val ? BOOL_TRUE_VALUE : BOOL_FALSE_VALUE, mlirType);
     }
@@ -165,31 +186,76 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
         return builder.create<mlir::arith::ConstantIntOp>(builder.getUnknownLoc(), val, mlirType);
     }
     case FLOAT4OID: {
+        // goofy, C++ doesn't support float32_t and float64_t until C++23... we're on 20. unsure of how to handle this tbh
         const float val = *reinterpret_cast<float*>(&constNode->constvalue);
         return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(val),
                                                             mlir::cast<mlir::FloatType>(mlirType));
     }
     case FLOAT8OID: {
-        double val = *reinterpret_cast<double*>(&constNode->constvalue);
+        const double val = *reinterpret_cast<double*>(&constNode->constvalue);
         return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(val),
                                                             mlir::cast<mlir::FloatType>(mlirType));
     }
     case NUMERICOID: {
-        // For now, create a placeholder numeric constant
-        // TODO: Properly extract numeric value from PostgreSQL's internal format
-        PGX_WARNING("NUMERIC constant translation not fully implemented, using placeholder");
-        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI64IntegerAttr(0));
+#ifdef POSTGRESQL_EXTENSION
+        // PostgreSQL stores NUMERIC as a pointer to a variable-length structure
+        // LingoDB stores decimals as string attributes for exact precision
+        // Use PostgreSQL's numeric_out function to get the exact string representation
+        const auto numericDatum = constNode->constvalue;
+        char* numericStr = DatumGetCString(DirectFunctionCall1(numeric_out, numericDatum));
+        const auto numStr = std::string(numericStr);
+        pfree(numericStr);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(numStr));
+#else
+        int64_t val = static_cast<int64_t>(constNode->constvalue);
+        std::string numStr = std::to_string(val);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(numStr));
+#endif
     }
     case DATEOID: {
-        // Date is stored as days since 2000-01-01 in PostgreSQL
-        int32_t days = static_cast<int32_t>(constNode->constvalue);
-        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI32IntegerAttr(days));
+        const int64_t days = static_cast<int64_t>(static_cast<int32_t>(constNode->constvalue));
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI64IntegerAttr(days));
+    }
+    case TIMESTAMPOID: {
+        const int64_t microseconds = static_cast<int64_t>(constNode->constvalue);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
+                                                    builder.getI64IntegerAttr(microseconds));
     }
     case INTERVALOID: {
-        // Interval requires special handling - PostgreSQL stores it as a complex structure
-        // TODO: Properly extract interval value from PostgreSQL's internal format
-        PGX_WARNING("INTERVAL constant translation not fully implemented, using placeholder");
-        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI64IntegerAttr(0));
+#ifdef POSTGRESQL_EXTENSION
+        // Intervals are stored as (months | days + micros), we convert this to (days | micros)
+        const auto* interval = DatumGetIntervalP(constNode->constvalue);
+        auto intervalType = mlirType.cast<mlir::db::IntervalType>();
+
+        if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
+            int32_t months = interval->month;
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
+                                                        builder.getI32IntegerAttr(months));
+        } else {
+            int64_t totalMicroseconds = interval->time;
+            totalMicroseconds += static_cast<int64_t>(interval->day) * USECS_PER_DAY;
+
+            if (interval->month != 0) {
+                PGX_ERROR("Mixed interval with months in daytime type");
+                throw std::runtime_error("Mixed interval with months in daytime type");
+            }
+
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
+                                                        builder.getI64IntegerAttr(totalMicroseconds));
+        }
+#else
+        auto intervalType = mlirType.cast<mlir::db::IntervalType>();
+
+        if (intervalType.getUnit() == mlir::db::IntervalUnitAttr::months) {
+            int32_t months = static_cast<int32_t>(constNode->constvalue);
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
+                                                        builder.getI32IntegerAttr(months));
+        } else {
+            int64_t microseconds = static_cast<int64_t>(constNode->constvalue);
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
+                                                        builder.getI64IntegerAttr(microseconds));
+        }
+#endif
     }
     case TEXTOID:
     case VARCHAROID:

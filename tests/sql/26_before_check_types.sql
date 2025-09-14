@@ -136,4 +136,6 @@ SELECT COUNT(*) AS total_rows,
        COUNT(interval_col) AS non_null_interval
 FROM type_test_table;
 
+SELECT * FROM type_test_table;
+
 DROP TABLE type_test_table;

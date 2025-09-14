@@ -1324,6 +1324,7 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(const QueryCtxT& contex
 }
 
 auto PostgreSQLASTTranslator::Impl::determine_column_type(const QueryCtxT& context, Expr* expr) const -> mlir::Type {
+    // TODO: NV: this looks horribly wrong to me
     PGX_IO(AST_TRANSLATE);
     mlir::Type colType = context.builder.getI32Type();
 
