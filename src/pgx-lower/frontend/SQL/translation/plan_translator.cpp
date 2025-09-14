@@ -179,17 +179,16 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         return nullptr;
     }
 
-    mlir::Operation* childOp = nullptr;
     Plan* leftTree = agg->plan.lefttree;
-    if (leftTree) {
-        childOp = translate_plan_node(ctx, leftTree);
-        if (!childOp) {
-            PGX_ERROR("Failed to translate Agg child plan");
-            throw std::runtime_error("Failed to translate Agg child plan");
-        }
-    } else {
+    if (!leftTree) {
         PGX_ERROR("Agg node has no child plan");
         throw std::runtime_error("Agg node has no child plan");
+    }
+
+    mlir::Operation* childOp = translate_plan_node(ctx, leftTree);
+    if (!childOp) {
+        PGX_ERROR("Failed to translate Agg child plan");
+        throw std::runtime_error("Failed to translate Agg child plan");
     }
 
     if (!childOp->getNumResults()) {
@@ -197,27 +196,20 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         throw std::runtime_error("Child operation has no results");
     }
     auto childResult = childOp->getResult(0);
-    if (!childResult) {
-        PGX_ERROR("Child operation result 0 is null");
-        throw std::runtime_error("Child operation result 0 is null");
-    }
-
     auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-
     auto groupByAttrs = std::vector<mlir::Attribute>{};
-    const auto numCols = agg->numCols;
-    const auto* grpColIdx = agg->grpColIdx;
 
-    if (numCols > 0 && grpColIdx != nullptr) { // group by query
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Processing %d GROUP BY columns", numCols);
+    // Group by
+    if (agg->numCols > 0 && agg->grpColIdx) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Processing %d GROUP BY columns", agg->numCols);
 
         auto tableName = std::string();
         if (leftTree && leftTree->type == T_SeqScan) {
             auto* seqScan = reinterpret_cast<SeqScan*>(leftTree);
             tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
 
-            for (int i = 0; i < numCols; i++) {
-                auto colIdx = grpColIdx[i];
+            for (int i = 0; i < agg->numCols; i++) {
+                auto colIdx = agg->grpColIdx[i];
                 auto columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid, colIdx);
 
                 PGX_LOG(AST_TRANSLATE, DEBUG, "GROUP BY %d: %s.%s (index %d)", i, tableName.c_str(), columnName.c_str(),
@@ -245,6 +237,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         }
     }
 
+    // Process aggregation!
     auto aggCols = std::vector<mlir::Attribute>{};
     auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
 
@@ -340,8 +333,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     auto resultType = columnAttr->type;
                     attrDef.getColumn().type = resultType;
 
-                    // Create the aggregate function operation using enum instead of string
-                    mlir::relalg::AggrFunc aggrFuncEnum;
+                    // Map function name to aggregate enum
+                    auto aggrFuncEnum = mlir::relalg::AggrFunc::count; // Default
                     if (strcmp(funcName, AGGREGATION_SUM_FUNCTION) == 0) {
                         aggrFuncEnum = mlir::relalg::AggrFunc::sum;
                     } else if (strcmp(funcName, AGGREGATION_AVG_FUNCTION) == 0) {
@@ -350,12 +343,15 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         aggrFuncEnum = mlir::relalg::AggrFunc::min;
                     } else if (strcmp(funcName, AGGREGATION_MAX_FUNCTION) == 0) {
                         aggrFuncEnum = mlir::relalg::AggrFunc::max;
-                    } else {
-                        aggrFuncEnum = mlir::relalg::AggrFunc::count; // Default fallback
                     }
 
                     aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(ctx.builder.getUnknownLoc(), resultType,
                                                                               aggrFuncEnum, relation, columnRef);
+                }
+
+                if (attrDef == nullptr || aggResult == nullptr) {
+                    PGX_ERROR("Failed to generated attr def or agg result");
+                    throw std::runtime_error("Failed to generated attr def or agg result");
                 }
 
                 createdCols.push_back(attrDef);
