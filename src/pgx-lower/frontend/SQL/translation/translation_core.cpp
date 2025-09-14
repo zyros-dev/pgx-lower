@@ -29,6 +29,7 @@ extern "C" {}
 using namespace pgx_lower::frontend::sql::constants;
 
 std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int32_t typmod) {
+    PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
         // PostgreSQL default for unconstrained NUMERIC
         return {-1, -1};
@@ -55,6 +56,7 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int
 }
 
 int32_t PostgreSQLTypeMapper::extract_varchar_length(int32_t typmod) {
+    PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
         return -1; // No length constraint
     }
@@ -63,6 +65,7 @@ int32_t PostgreSQLTypeMapper::extract_varchar_length(int32_t typmod) {
 }
 
 mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(const int32_t typmod) {
+    PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
         return mlir::db::TimeUnitAttr::microsecond;
     }
@@ -86,6 +89,7 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(const i
 
 auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const bool nullable) const
     -> mlir::Type {
+    PGX_IO(AST_TRANSLATE);
     mlir::Type baseType;
 
     switch (type_oid) {
@@ -124,6 +128,7 @@ auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t
 }
 
 auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRContext& context) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
     if (!constNode) {
         PGX_ERROR("Invalid Const parameters");
         return nullptr;

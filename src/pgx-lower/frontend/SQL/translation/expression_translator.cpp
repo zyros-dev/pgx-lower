@@ -50,7 +50,7 @@ namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
 auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value {
-    PGX_IO(AST_TRANSLATE, "translate_expression");
+    PGX_IO(AST_TRANSLATE);
 
     if (!expr) {
         PGX_ERROR("Expression is null");
@@ -87,6 +87,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
+
     if (!op_expr) {
         PGX_ERROR("Invalid OpExpr parameters");
         return nullptr;
@@ -199,6 +201,8 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Var* var) const -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
+
     if (!var || !ctx.current_tuple) {
         const auto trace = pgx_lower::utility::capture_stacktrace();
         PGX_ERROR("Invalid Var parameters: var=%p, builder=%p, tuple=%p\n%s",
@@ -255,10 +259,12 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const* const_node) const -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
     return postgresql_ast::translate_const(const_node, ctx.builder, context_);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
     if (!func_expr) {
         PGX_ERROR("Invalid FuncExpr parameters");
         return nullptr;
@@ -424,6 +430,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
     if (!bool_expr) {
         PGX_ERROR("Invalid BoolExpr parameters");
         return nullptr;
@@ -549,6 +556,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
     if (!null_test) {
         PGX_ERROR("Invalid NullTest parameters");
         return nullptr;
@@ -584,6 +592,7 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
     if (!aggref) {
         PGX_ERROR("Invalid Aggref parameters");
         return nullptr;
@@ -599,10 +608,7 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
 
 auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr)
     -> mlir::Value {
-    PGX_LOG(AST_TRANSLATE,
-            IO,
-            "translate_coalesce_expr IN: CoalesceExpr with %d arguments",
-            coalesce_expr && coalesce_expr->args ? coalesce_expr->args->length : 0);
+    PGX_IO(AST_TRANSLATE);
 
     if (!coalesce_expr) {
         PGX_ERROR("Invalid CoalesceExpr parameters");
@@ -745,11 +751,7 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
 auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCtxT& ctx,
                                                                    const ScalarArrayOpExpr* scalar_array_op)
     -> mlir::Value {
-    PGX_LOG(AST_TRANSLATE,
-            IO,
-            "translate_scalar_array_op_expr IN: ScalarArrayOp with opno=%u, useOr=%d",
-            scalar_array_op->opno,
-            scalar_array_op->useOr);
+    PGX_IO(AST_TRANSLATE);
 
     if (!scalar_array_op) {
         PGX_ERROR("Invalid ScalarArrayOpExpr parameters");
@@ -900,10 +902,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value {
-    PGX_LOG(AST_TRANSLATE,
-            IO,
-            "translate_case_expr IN: CaseExpr with %d WHEN clauses",
-            case_expr && case_expr->args ? case_expr->args->length : 0);
+    PGX_IO(AST_TRANSLATE);
 
     if (!case_expr) {
         PGX_ERROR("Invalid CaseExpr parameters");
@@ -1051,6 +1050,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
                                                                         Expr* expr,
                                                                         const mlir::Value case_test_value)
     -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
     if (!expr) {
         return nullptr;
     }
@@ -1096,6 +1096,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
 
 auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)
     -> std::optional<std::pair<mlir::Value, mlir::Value>> {
+    PGX_IO(AST_TRANSLATE);
     if (!op_expr || !op_expr->args) {
         PGX_ERROR("OpExpr has no arguments");
         return std::nullopt;
@@ -1155,6 +1156,7 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
                                                             const Oid op_oid,
                                                             const mlir::Value lhs,
                                                             const mlir::Value rhs) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
     switch (op_oid) {
     // Addition operators
     case PG_INT4_PLUS_OID:
@@ -1183,6 +1185,7 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
                                                             const Oid op_oid,
                                                             const mlir::Value lhs,
                                                             const mlir::Value rhs) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
     mlir::db::DBCmpPredicate predicate;
 
     switch (op_oid) {

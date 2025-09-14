@@ -39,6 +39,7 @@ namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
 auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string {
+    PGX_IO(AST_TRANSLATE);
     if (!current_planned_stmt || !current_planned_stmt->rtable || varno <= INVALID_VARNO) {
         PGX_WARNING("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, varno);
         return "unknown_table_" + std::to_string(varno);
@@ -70,6 +71,7 @@ auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int 
 }
 
 auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> Oid {
+    PGX_IO(AST_TRANSLATE);
     using namespace pgx_lower::frontend::sql::constants;
     if (!current_planned_stmt || !current_planned_stmt->rtable || varno <= INVALID_VARNO) {
         PGX_WARNING("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, varno);
@@ -96,6 +98,7 @@ auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, const int v
 
 auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, const int varno, const AttrNumber varattno)
     -> std::string {
+    PGX_IO(AST_TRANSLATE);
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
         PGX_WARNING("Cannot access schema for column: varno=%d varattno=%d", varno, varattno);
         return "col_" + std::to_string(varattno);
@@ -135,6 +138,7 @@ auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, const in
 
 auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, const int scanrelid)
     -> std::vector<pgx_lower::frontend::sql::ColumnInfo> {
+    PGX_IO(AST_TRANSLATE);
     std::vector<pgx_lower::frontend::sql::ColumnInfo> columns;
 
 #ifdef BUILDING_UNIT_TESTS
@@ -198,6 +202,7 @@ auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, 
 }
 
 auto is_column_nullable(const PlannedStmt* currentPlannedStmt, const int varno, const AttrNumber varattno) -> bool {
+    PGX_IO(AST_TRANSLATE);
     // Default to nullable if we can't determine
     if (!currentPlannedStmt || !currentPlannedStmt->rtable || varno <= INVALID_VARNO || varattno <= INVALID_VARATTNO) {
         return true;

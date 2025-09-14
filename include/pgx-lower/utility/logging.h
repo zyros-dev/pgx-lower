@@ -139,9 +139,9 @@ private:
     fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
 #endif
 
-#define PGX_IO(category, function_name) \
+#define PGX_IO(category) \
     ::pgx_lower::log::ScopeLogger _pgx_io_logger( \
         ::pgx_lower::log::Category::category, \
         __FILE__, __LINE__, \
-        function_name)
+        __func__)
 

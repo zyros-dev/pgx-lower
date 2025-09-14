@@ -152,13 +152,12 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
     if (!should_log(cat, level))
         return;
 
-    // Adjust the buffer size per message so that we can log really long things
     va_list args_size;
     va_start(args_size, fmt);
-    int size_needed = vsnprintf(nullptr, 0, fmt, args_size) + 1;
+    const auto size_needed = vsnprintf(nullptr, 0, fmt, args_size) + 1;
     va_end(args_size);
 
-    std::vector<char> message(size_needed * 2);
+    auto message = std::vector<char>(size_needed * 2);
     
     va_list args;
     va_start(args, fmt);
@@ -174,7 +173,6 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
         elog(DEBUG1, "[%s:%s] %s:%d: %s", category_name(cat), level_name(level), filename, line, message.data());
     }
 #else
-    // For unit tests, output to stderr
     fprintf(stderr, "[%s:%s] %s:%d: %s\n", category_name(cat), level_name(level), filename, line, message.data());
 #endif
 }
@@ -184,11 +182,11 @@ ScopeLogger::ScopeLogger(Category cat, const char* file, int line, const char* f
     , file_(file)
     , line_(line)
     , function_name_(function_name) {
-    log(category_, Level::IO, file_, line_, "%s IN", function_name);
+    log(category_, Level::IO, file_, line_, "---> %s IN", function_name);
 }
 
 ScopeLogger::~ScopeLogger() {
-    log(category_, Level::IO, file_, line_, "%s OUT", function_name_.c_str());
+    log(category_, Level::IO, file_, line_, "---> %s OUT", function_name_.c_str());
 }
 
 }} // namespace pgx_lower::log

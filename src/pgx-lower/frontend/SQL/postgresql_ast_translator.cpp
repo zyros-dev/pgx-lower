@@ -11,10 +11,12 @@ PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context)
 PostgreSQLASTTranslator::~PostgreSQLASTTranslator() = default;
 
 auto PostgreSQLASTTranslator::translate_query(PlannedStmt* planned_stmt) const -> std::unique_ptr<mlir::ModuleOp> {
+    PGX_IO(AST_TRANSLATE);
     return p_impl_->translate_query(planned_stmt);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp> {
+    PGX_IO(AST_TRANSLATE);
     PGX_LOG(AST_TRANSLATE,
             IO,
             "translate_query IN: PostgreSQL PlannedStmt (cmd=%d, canSetTag=%d)",
@@ -52,6 +54,7 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -
 auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const mlir::func::FuncOp query_func,
                                                                 const PlannedStmt* planned_stmt,
                                                                 QueryCtxT& context) -> bool {
+    PGX_IO(AST_TRANSLATE);
     PGX_LOG(AST_TRANSLATE,
             IO,
             "generate_rel_alg_operations IN: PlannedStmt with planTree type %d",
@@ -93,6 +96,7 @@ auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const mlir::func
 }
 
 auto create_postgresql_ast_translator(mlir::MLIRContext& context) -> std::unique_ptr<PostgreSQLASTTranslator> {
+    PGX_IO(AST_TRANSLATE);
     return std::make_unique<PostgreSQLASTTranslator>(context);
 }
 

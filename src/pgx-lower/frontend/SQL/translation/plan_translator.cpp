@@ -52,6 +52,7 @@ namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
 auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* plan) -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
     if (!plan) {
         PGX_ERROR("Plan node is null");
         return nullptr;
@@ -88,6 +89,7 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* seqScan) const -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
     if (!seqScan) {
         PGX_ERROR("Invalid SeqScan parameters");
         return nullptr;
@@ -181,6 +183,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg) -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
     if (!agg) {
         PGX_ERROR("Invalid Agg parameters");
         return nullptr;
@@ -439,6 +442,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* sort) -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
     if (!sort) {
         PGX_ERROR("Invalid Sort parameters");
         return nullptr;
@@ -570,6 +574,7 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit* limit) -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
     if (!limit) {
         PGX_ERROR("Invalid Limit parameters");
         return nullptr;
@@ -667,6 +672,7 @@ auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit*
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_gather(QueryCtxT& ctx, const Gather* gather) -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
     if (!gather) {
         PGX_ERROR("Invalid Gather parameters");
         return nullptr;
@@ -707,6 +713,7 @@ auto PostgreSQLASTTranslator::Impl::translate_gather(QueryCtxT& ctx, const Gathe
 
 auto PostgreSQLASTTranslator::Impl::create_query_function(mlir::OpBuilder& builder, const QueryCtxT& context)
     -> mlir::func::FuncOp {
+    PGX_IO(AST_TRANSLATE);
     try {
         // FIXED: Use void return type and call mark_results_ready_for_streaming()
         // This enables proper JITPostgreSQL result communication
@@ -733,6 +740,7 @@ auto PostgreSQLASTTranslator::Impl::create_query_function(mlir::OpBuilder& build
 auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& ctx,
                                                               mlir::Operation* input_op,
                                                               const List* qual) -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
     if (!input_op || !qual || qual->length == 0) {
         return input_op; // No selection needed
     }
@@ -839,6 +847,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const QueryCtxT& ctx,
                                                                       mlir::Operation* input_op,
                                                                       const List* target_list) -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
     if (!input_op || !target_list || target_list->length == 0) {
         return input_op; // No projection needed
     }
@@ -1076,6 +1085,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
 }
 
 auto PostgreSQLASTTranslator::Impl::validate_plan_tree(const Plan* plan_tree) -> bool {
+    PGX_IO(AST_TRANSLATE);
     if (!plan_tree) {
         PGX_ERROR("PlannedStmt planTree is null");
         return false;
@@ -1089,6 +1099,7 @@ auto PostgreSQLASTTranslator::Impl::extract_target_list_columns(const QueryCtxT&
                                                                 std::vector<mlir::Attribute>& column_ref_attrs,
                                                                 std::vector<mlir::Attribute>& column_name_attrs) const
     -> bool {
+    PGX_IO(AST_TRANSLATE);
     // For Sort nodes, we need to look at the original plan's targetlist
     // The Sort node inherits its targetlist from the query
     const Plan* planToUse = context.current_stmt.planTree;
@@ -1138,6 +1149,7 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(const QueryCtxT& contex
                                                          const int index,
                                                          std::vector<mlir::Attribute>& column_ref_attrs,
                                                          std::vector<mlir::Attribute>& column_name_attrs) const -> bool {
+    PGX_IO(AST_TRANSLATE);
     const ListCell* lc = &t_list->elements[index];
     void* ptr = lfirst(lc);
     if (!ptr) {
@@ -1273,6 +1285,7 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(const QueryCtxT& contex
 }
 
 auto PostgreSQLASTTranslator::Impl::determine_column_type(const QueryCtxT& context, Expr* expr) const -> mlir::Type {
+    PGX_IO(AST_TRANSLATE);
     mlir::Type colType = context.builder.getI32Type();
 
     if (expr->type == T_Var) {
@@ -1314,6 +1327,7 @@ auto PostgreSQLASTTranslator::Impl::determine_column_type(const QueryCtxT& conte
 
 auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& context, const mlir::Value tuple_stream) const
     -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
     std::vector<mlir::Attribute> columnRefAttrs;
     std::vector<mlir::Attribute> columnNameAttrs;
 
@@ -1337,10 +1351,12 @@ auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& conte
 }
 
 auto PostgreSQLASTTranslator::Impl::get_aggregate_function_name(const Oid aggfnoid) -> const char* {
+    PGX_IO(AST_TRANSLATE);
     return ::postgresql_ast::get_aggregate_function_name(aggfnoid);
 }
 
 auto get_aggregate_function_name(const Oid aggfnoid) -> const char* {
+    PGX_IO(AST_TRANSLATE);
     using namespace pgx_lower::frontend::sql::constants;
 
     switch (aggfnoid) {

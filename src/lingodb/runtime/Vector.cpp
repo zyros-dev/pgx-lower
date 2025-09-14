@@ -44,18 +44,15 @@ size_t runtime::Vector::getTypeSize() const {
    return typeSize;
 }
 void runtime::Vector::sort(bool (*compareFn)(uint8_t*, uint8_t*)) {
-   PGX_LOG(RUNTIME, IO, "Vector::sort IN: this=%p, compareFn=%p, len=%zu, typeSize=%zu", 
-           this, (void*)compareFn, len, typeSize);
-   
+   PGX_IO(RUNTIME);
+
    if (!compareFn) {
       PGX_LOG(RUNTIME, DEBUG, "Vector::sort: compareFn is NULL, aborting sort");
-      PGX_LOG(RUNTIME, IO, "Vector::sort OUT: aborted (null compareFn)");
       return;
    }
    
    if (len == 0) {
       PGX_LOG(RUNTIME, DEBUG, "Vector::sort: empty vector, nothing to sort");
-      PGX_LOG(RUNTIME, IO, "Vector::sort OUT: success (empty vector)");
       return;
    }
    
