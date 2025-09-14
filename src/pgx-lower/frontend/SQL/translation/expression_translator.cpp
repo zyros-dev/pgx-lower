@@ -498,11 +498,69 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
         return nullptr;
     }
 
-    // Aggregate functions are handled differently - they need to be in aggregation context
-    PGX_WARNING("Aggref translation requires aggregation context");
+    // Aggrefs in HAVING clauses reference already-computed aggregate results
+    // These are mapped with varno=-2 during Agg node processing
 
-    return ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), DEFAULT_PLACEHOLDER_INT,
-                                                          ctx.builder.getI64Type());
+    auto it = ctx.column_mappings.end();
+    if (aggref->aggno > 0) {
+        // aggno is the unique ID within the Agg node, try using it as the key
+        const auto mapping_key = std::make_pair(-2, aggref->aggno);
+        it = ctx.column_mappings.find(mapping_key);
+
+        if (it != ctx.column_mappings.end()) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Found Aggref mapping using aggno=%d", aggref->aggno);
+        }
+    }
+
+    // If aggno didn't work, search by function name
+    if (it == ctx.column_mappings.end()) {
+        const char* funcName = get_aggregate_function_name(aggref->aggfnoid);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Searching for Aggref with function %s (OID %u, aggno=%d)",
+                funcName, aggref->aggfnoid, aggref->aggno);
+
+        // Search through all mappings with varno=-2 to find matching function
+        for (auto mapIt = ctx.column_mappings.begin(); mapIt != ctx.column_mappings.end(); ++mapIt) {
+            if (mapIt->first.first == -2) {
+                // Check if function name matches
+                if (mapIt->second.second == funcName) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Found Aggref mapping by function name: (-2,%d) -> (%s,%s)",
+                            mapIt->first.second, mapIt->second.first.c_str(), mapIt->second.second.c_str());
+                    it = mapIt;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (it == ctx.column_mappings.end()) {
+        PGX_ERROR("Aggref with function %s (aggno=%d) not found in column mappings",
+                  get_aggregate_function_name(aggref->aggfnoid), aggref->aggno);
+        throw std::runtime_error("Aggref not found in column mappings");
+    }
+
+    auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+    if (!dialect) {
+        PGX_ERROR("RelAlg dialect not registered");
+        throw std::runtime_error("RelAlg dialect not registered");
+    }
+    auto& columnManager = dialect->getColumnManager();
+
+    // Create column reference using the mapped scope and function name
+    const auto& [scopeName, funcName] = it->second;
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating Aggref to GetColumnOp: scope=%s, func=%s", scopeName.c_str(),
+            funcName.c_str());
+
+    auto colRef = columnManager.createRef(scopeName, funcName);
+
+    // Aggregate results are always nullable i32 in LingoDB's pattern
+    // TODO: Support more than i32
+    auto resultType = mlir::db::NullableType::get(ctx.builder.getContext(), ctx.builder.getI32Type());
+    colRef.getColumn().type = resultType;
+
+    auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), resultType, colRef,
+                                                                  ctx.current_tuple);
+
+    return getColOp.getRes();
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr)
@@ -1036,6 +1094,7 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
 
     case PG_INT4_GT_OID:
     case PG_INT8_GT_OID:
+    case PG_INT8_INT4_GT_OID:
     case PG_TEXT_GT_OID: predicate = mlir::db::DBCmpPredicate::gt; break;
 
     case PG_INT4_GE_OID:

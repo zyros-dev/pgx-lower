@@ -1,93 +1,137 @@
--- Test GROUP BY with basic aggregate functions: COUNT, SUM, AVG, MIN, MAX
-LOAD 'pgx_lower.so';
-NOTICE:  Installing custom executor hook...
-NOTICE:  Registering custom sigsegv handler!
+LOAD
+'pgx_lower.so';
+DROP TABLE IF EXISTS simple_group_by;
+NOTICE:  table "simple_group_by" does not exist, skipping
+CREATE TABLE simple_group_by
+(
+    id         SERIAL PRIMARY KEY,
+    amount     INTEGER NOT NULL,
+    quantity   INTEGER NOT NULL
+);
+INSERT INTO simple_group_by(amount, quantity)
+VALUES (1200.00, 2),
+       (25.50, 3),
+       (85.75, 2),
+       (29.99, 3),
+       (49.99, 2),
+       (300.00, 3),
+       (89.99, 2),
+       (15.99, 2),
+       (125.00, 3),
+       (450.00, 2);
+SELECT quantity, COUNT(*) AS item_count
+FROM simple_group_by
+GROUP BY quantity;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ quantity | item_count 
+----------+------------
+        2 |          6
+        3 |          4
+(2 rows)
+
+SELECT quantity, COUNT(*) AS item_count
+FROM simple_group_by
+GROUP BY quantity
+ORDER BY quantity;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ quantity | item_count 
+----------+------------
+        2 |          6
+        3 |          4
+(2 rows)
+
+SELECT quantity, COUNT(*) AS item_count
+FROM simple_group_by
+GROUP BY quantity
+ORDER BY COUNT(*);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ quantity | item_count 
+----------+------------
+        3 |          4
+        2 |          6
+(2 rows)
+
 DROP TABLE IF EXISTS sales_data;
 NOTICE:  table "sales_data" does not exist, skipping
-
-CREATE TABLE sales_data (
-    id SERIAL PRIMARY KEY,
+CREATE TABLE sales_data
+(
+    id         SERIAL PRIMARY KEY,
     department VARCHAR(20),
-    product VARCHAR(30),
-    amount DECIMAL(10,2),
-    quantity INTEGER,
-    sales_date DATE
+    product    VARCHAR(30),
+    amount     INTEGER,
+    quantity   INTEGER
 );
-
-INSERT INTO sales_data(department, product, amount, quantity, sales_date) VALUES 
-    ('Electronics', 'Laptop', 1200.00, 2, '2024-01-15'),
-    ('Electronics', 'Mouse', 25.50, 10, '2024-01-16'),
-    ('Electronics', 'Keyboard', 85.75, 5, '2024-01-17'),
-    ('Clothing', 'Shirt', 29.99, 15, '2024-01-18'),
-    ('Clothing', 'Pants', 49.99, 8, '2024-01-19'),
-    ('Electronics', 'Monitor', 300.00, 3, '2024-01-20'),
-    ('Clothing', 'Shoes', 89.99, 6, '2024-01-21'),
-    ('Books', 'Novel', 15.99, 20, '2024-01-22'),
-    ('Books', 'Textbook', 125.00, 4, '2024-01-23'),
-    ('Electronics', 'Tablet', 450.00, 2, '2024-01-24');
-
--- Test GROUP BY with COUNT
--- Should trigger MLIR compilation with GroupByOp and aggregate operators
-SELECT department, COUNT(*) AS item_count 
-FROM sales_data 
-GROUP BY department 
-ORDER BY department;
- department | item_count 
-------------+------------
- Books      |          1
- Clothing   |          1
- Electronics|          1
+INSERT INTO sales_data(department, product, amount, quantity)
+VALUES ('Electronics', 'Laptop', 1200, 2),
+       ('Electronics', 'Mouse', 25, 10),
+       ('Electronics', 'Keyboard', 85, 5),
+       ('Clothing', 'Shirt', 29, 15),
+       ('Clothing', 'Pants', 49, 8),
+       ('Electronics', 'Monitor', 300, 3),
+       ('Clothing', 'Shoes', 89, 6),
+       ('Books', 'Novel', 15, 20),
+       ('Books', 'Textbook', 125, 4),
+       ('Electronics', 'Tablet', 450, 2);
+SELECT department, COUNT(*) AS item_count
+FROM sales_data
+GROUP BY department;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department  | item_count 
+-------------+------------
+ Electronics |          5
+ Clothing    |          3
+ Books       |          2
 (3 rows)
 
--- Test GROUP BY with SUM
-SELECT department, SUM(amount) AS total_sales 
-FROM sales_data 
-GROUP BY department 
+SELECT department, SUM(amount) AS total_sales
+FROM sales_data
+GROUP BY department
 ORDER BY department;
- department | total_sales 
-------------+-------------
- Books      |           1
- Clothing   |           1
- Electronics|           1
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department  | total_sales 
+-------------+-------------
+ Books       |         140
+ Clothing    |         167
+ Electronics |        2060
 (3 rows)
 
--- Test GROUP BY with AVG
-SELECT department, AVG(amount) AS avg_amount 
-FROM sales_data 
-GROUP BY department 
+SELECT department, AVG(amount) AS avg_amount
+FROM sales_data
+GROUP BY department
 ORDER BY department;
- department | avg_amount 
-------------+------------
- Books      |          1
- Clothing   |          1
- Electronics|          1
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department  | avg_amount 
+-------------+------------
+ Books       |         70
+ Clothing    |         55
+ Electronics |        412
 (3 rows)
 
--- Test GROUP BY with MIN and MAX
-SELECT department, MIN(amount) AS min_amount, MAX(amount) AS max_amount 
-FROM sales_data 
-GROUP BY department 
+SELECT department, MIN(amount) AS min_amount, MAX(amount) AS max_amount
+FROM sales_data
+GROUP BY department
 ORDER BY department;
- department | min_amount | max_amount 
-------------+------------+------------
- Books      |          1 |          1
- Clothing   |          1 |          1
- Electronics|          1 |          1
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department  | min_amount | max_amount 
+-------------+------------+------------
+ Books       |         15 |        125
+ Clothing    |         29 |         89
+ Electronics |         25 |       1200
 (3 rows)
 
--- Test GROUP BY with multiple aggregates
-SELECT department, 
-       COUNT(*) AS item_count,
-       SUM(amount) AS total_sales,
+SELECT department,
+       COUNT(*)      AS item_count,
+       SUM(amount)   AS total_sales,
        AVG(quantity) AS avg_quantity
-FROM sales_data 
-GROUP BY department 
+FROM sales_data
+GROUP BY department
 ORDER BY department;
- department | item_count | total_sales | avg_quantity 
-------------+------------+-------------+--------------
- Books      |          1 |           1 |            1
- Clothing   |          1 |           1 |            1
- Electronics|          1 |           1 |            1
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department  | item_count | total_sales | avg_quantity 
+-------------+------------+-------------+--------------
+ Books       |          2 |         140 |           12
+ Clothing    |          3 |         167 |            9
+ Electronics |          5 |        2060 |            4
 (3 rows)
 
 DROP TABLE sales_data;

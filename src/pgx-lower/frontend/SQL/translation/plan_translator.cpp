@@ -394,6 +394,15 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                                                      ctx.builder.getArrayAttr(createdCols));
         aggOp.getAggrFunc().push_back(block);
 
+        // Check for HAVING clause (stored in agg->plan.qual)
+        if (agg->plan.qual && agg->plan.qual->length > 0) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Processing HAVING clause with %d conditions",
+                    agg->plan.qual->length);
+
+            auto havingOp = apply_selection_from_qual(ctx, aggOp, agg->plan.qual);
+            return havingOp;
+        }
+
         return aggOp;
     }
 

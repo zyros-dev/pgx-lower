@@ -565,12 +565,28 @@ bool PostgreSQLJITExecutionEngine::Impl::invokeCompiledFunction(void* funcPtr, v
         typedef void (*query_func)();
         auto fn = (query_func)funcPtr;
         PGX_LOG(JIT, DEBUG, "About to execute JIT-compiled function at address %p", funcPtr);
+
+        // Check slot state before execution
+        if (g_tuple_streamer.slot) {
+            PGX_LOG(JIT, DEBUG, "Before JIT execution: slot=%p, tts_nvalid=%d, tts_tupleDescriptor=%p",
+                    g_tuple_streamer.slot, g_tuple_streamer.slot->tts_nvalid,
+                    g_tuple_streamer.slot->tts_tupleDescriptor);
+        }
+
         if (!fn) {
             PGX_ERROR("FATAL: JIT function pointer is NULL!");
             return false;
         }
         fn();
         PGX_LOG(JIT, DEBUG, "JIT function call returned successfully");
+
+        // Check slot state after execution
+        if (g_tuple_streamer.slot) {
+            PGX_LOG(JIT, DEBUG, "After JIT execution: slot=%p, tts_nvalid=%d, tts_tupleDescriptor=%p",
+                    g_tuple_streamer.slot, g_tuple_streamer.slot->tts_nvalid,
+                    g_tuple_streamer.slot->tts_tupleDescriptor);
+        }
+
         executionSuccess = true;
         PGX_LOG(JIT, DEBUG, "JIT function execution completed");
 

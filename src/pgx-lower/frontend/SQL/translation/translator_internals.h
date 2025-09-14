@@ -96,7 +96,7 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr) -> mlir::Value;
     auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value;
     auto translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value;
-    static auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) -> mlir::Value;
+    auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) -> mlir::Value;
     auto translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr) -> mlir::Value;
     auto translate_scalar_array_op_expr(const QueryCtxT& ctx, const ScalarArrayOpExpr* scalar_array_op) -> mlir::Value;
     auto translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value;

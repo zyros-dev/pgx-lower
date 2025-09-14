@@ -70,6 +70,9 @@ constexpr Oid PG_INT4_GE_OID = 525; // int4 >= int4
 constexpr Oid PG_INT8_GE_OID = 415; // int8 >= int8
 constexpr Oid PG_TEXT_GE_OID = 667; // text >= text
 
+// Mixed Type Comparison Operators
+constexpr Oid PG_INT8_INT4_GT_OID = 419; // int8 > int4
+
 // =============================================================================
 // FUNCTION OIDs (
 // =============================================================================

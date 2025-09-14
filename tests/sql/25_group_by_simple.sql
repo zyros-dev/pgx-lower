@@ -1,6 +1,41 @@
 LOAD
 'pgx_lower.so';
 
+DROP TABLE IF EXISTS simple_group_by;
+
+CREATE TABLE simple_group_by
+(
+    id         SERIAL PRIMARY KEY,
+    amount     INTEGER NOT NULL,
+    quantity   INTEGER NOT NULL
+);
+
+INSERT INTO simple_group_by(amount, quantity)
+VALUES (1200.00, 2),
+       (25.50, 3),
+       (85.75, 2),
+       (29.99, 3),
+       (49.99, 2),
+       (300.00, 3),
+       (89.99, 2),
+       (15.99, 2),
+       (125.00, 3),
+       (450.00, 2);
+
+SELECT quantity, COUNT(*) AS item_count
+FROM simple_group_by
+GROUP BY quantity;
+
+SELECT quantity, COUNT(*) AS item_count
+FROM simple_group_by
+GROUP BY quantity
+ORDER BY quantity;
+
+SELECT quantity, COUNT(*) AS item_count
+FROM simple_group_by
+GROUP BY quantity
+ORDER BY COUNT(*);
+
 DROP TABLE IF EXISTS sales_data;
 
 CREATE TABLE sales_data
@@ -8,27 +43,25 @@ CREATE TABLE sales_data
     id         SERIAL PRIMARY KEY,
     department VARCHAR(20),
     product    VARCHAR(30),
-    amount     DECIMAL(10, 2),
-    quantity   INTEGER,
-    sales_date DATE
+    amount     INTEGER,
+    quantity   INTEGER
 );
 
-INSERT INTO sales_data(department, product, amount, quantity, sales_date)
-VALUES ('Electronics', 'Laptop', 1200.00, 2, '2024-01-15'),
-       ('Electronics', 'Mouse', 25.50, 10, '2024-01-16'),
-       ('Electronics', 'Keyboard', 85.75, 5, '2024-01-17'),
-       ('Clothing', 'Shirt', 29.99, 15, '2024-01-18'),
-       ('Clothing', 'Pants', 49.99, 8, '2024-01-19'),
-       ('Electronics', 'Monitor', 300.00, 3, '2024-01-20'),
-       ('Clothing', 'Shoes', 89.99, 6, '2024-01-21'),
-       ('Books', 'Novel', 15.99, 20, '2024-01-22'),
-       ('Books', 'Textbook', 125.00, 4, '2024-01-23'),
-       ('Electronics', 'Tablet', 450.00, 2, '2024-01-24');
+INSERT INTO sales_data(department, product, amount, quantity)
+VALUES ('Electronics', 'Laptop', 1200, 2),
+       ('Electronics', 'Mouse', 25, 10),
+       ('Electronics', 'Keyboard', 85, 5),
+       ('Clothing', 'Shirt', 29, 15),
+       ('Clothing', 'Pants', 49, 8),
+       ('Electronics', 'Monitor', 300, 3),
+       ('Clothing', 'Shoes', 89, 6),
+       ('Books', 'Novel', 15, 20),
+       ('Books', 'Textbook', 125, 4),
+       ('Electronics', 'Tablet', 450, 2);
 
 SELECT department, COUNT(*) AS item_count
 FROM sales_data
-GROUP BY department
-ORDER BY department;
+GROUP BY department;
 SELECT department, SUM(amount) AS total_sales
 FROM sales_data
 GROUP BY department
