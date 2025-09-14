@@ -89,7 +89,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value {
-    if (!op_expr || !ctx.builder) {
+    if (!op_expr) {
         PGX_ERROR("Invalid OpExpr parameters");
         return nullptr;
     }
@@ -124,26 +124,23 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
         const auto rhsNullable = isa<mlir::db::NullableType>(rhs.getType());
 
         if (lhsNullable && !rhsNullable) {
-            auto nullableRhsType = mlir::db::NullableType::get(ctx.builder->getContext(), rhs.getType());
-            convertedRhs =
-                ctx.builder->create<mlir::db::AsNullableOp>(ctx.builder->getUnknownLoc(), nullableRhsType, rhs);
+            auto nullableRhsType = mlir::db::NullableType::get(ctx.builder.getContext(), rhs.getType());
+            convertedRhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableRhsType, rhs);
         }
         else if (!lhsNullable && rhsNullable) {
-            auto nullableLhsType = mlir::db::NullableType::get(ctx.builder->getContext(), lhs.getType());
-            convertedLhs =
-                ctx.builder->create<mlir::db::AsNullableOp>(ctx.builder->getUnknownLoc(), nullableLhsType, lhs);
+            auto nullableLhsType = mlir::db::NullableType::get(ctx.builder.getContext(), lhs.getType());
+            convertedLhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableLhsType, lhs);
         }
 
         const bool hasNullableOperand = lhsNullable || rhsNullable;
-        auto resultType =
-            hasNullableOperand
-                ? mlir::Type(mlir::db::NullableType::get(ctx.builder->getContext(), ctx.builder->getI1Type()))
-                : mlir::Type(ctx.builder->getI1Type());
+        auto resultType = hasNullableOperand
+                              ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), ctx.builder.getI1Type()))
+                              : mlir::Type(ctx.builder.getI1Type());
 
-        auto op = ctx.builder->create<mlir::db::RuntimeCall>(ctx.builder->getUnknownLoc(),
-                                                             resultType,
-                                                             ctx.builder->getStringAttr("Like"),
-                                                             mlir::ValueRange{convertedLhs, convertedRhs});
+        auto op = ctx.builder.create<mlir::db::RuntimeCall>(ctx.builder.getUnknownLoc(),
+                                                            resultType,
+                                                            ctx.builder.getStringAttr("Like"),
+                                                            mlir::ValueRange{convertedLhs, convertedRhs});
 
         return op.getRes();
     }
@@ -156,29 +153,27 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
         const bool rhsNullable = isa<mlir::db::NullableType>(rhs.getType());
 
         if (lhsNullable && !rhsNullable) {
-            auto nullableRhsType = mlir::db::NullableType::get(ctx.builder->getContext(), rhs.getType());
-            convertedRhs =
-                ctx.builder->create<mlir::db::AsNullableOp>(ctx.builder->getUnknownLoc(), nullableRhsType, rhs);
+            auto nullableRhsType = mlir::db::NullableType::get(ctx.builder.getContext(), rhs.getType());
+            convertedRhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableRhsType, rhs);
         }
         else if (!lhsNullable && rhsNullable) {
-            auto nullableLhsType = mlir::db::NullableType::get(ctx.builder->getContext(), lhs.getType());
-            convertedLhs =
-                ctx.builder->create<mlir::db::AsNullableOp>(ctx.builder->getUnknownLoc(), nullableLhsType, lhs);
+            auto nullableLhsType = mlir::db::NullableType::get(ctx.builder.getContext(), lhs.getType());
+            convertedLhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableLhsType, lhs);
         }
 
         // Create the LIKE operation
-        const mlir::Type boolType = ctx.builder->getI1Type();
+        const mlir::Type boolType = ctx.builder.getI1Type();
         auto resultType = (lhsNullable || rhsNullable)
-                              ? mlir::Type(mlir::db::NullableType::get(ctx.builder->getContext(), boolType))
+                              ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), boolType))
                               : boolType;
 
-        auto likeOp = ctx.builder->create<mlir::db::RuntimeCall>(ctx.builder->getUnknownLoc(),
-                                                                 resultType,
-                                                                 ctx.builder->getStringAttr("Like"),
-                                                                 mlir::ValueRange{convertedLhs, convertedRhs});
+        auto likeOp = ctx.builder.create<mlir::db::RuntimeCall>(ctx.builder.getUnknownLoc(),
+                                                                resultType,
+                                                                ctx.builder.getStringAttr("Like"),
+                                                                mlir::ValueRange{convertedLhs, convertedRhs});
 
         // Negate the result using NotOp
-        auto notOp = ctx.builder->create<mlir::db::NotOp>(ctx.builder->getUnknownLoc(), resultType, likeOp.getRes());
+        auto notOp = ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), resultType, likeOp.getRes());
 
         return notOp.getResult();
     }
@@ -190,14 +185,14 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
 
         auto resultType =
             hasNullableOperand
-                ? mlir::Type(mlir::db::NullableType::get(ctx.builder->getContext(),
-                                                         mlir::db::StringType::get(ctx.builder->getContext())))
-                : mlir::Type(mlir::db::StringType::get(ctx.builder->getContext()));
+                ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(),
+                                                         mlir::db::StringType::get(ctx.builder.getContext())))
+                : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
 
-        auto op = ctx.builder->create<mlir::db::RuntimeCall>(ctx.builder->getUnknownLoc(),
-                                                             resultType,
-                                                             ctx.builder->getStringAttr("Concat"),
-                                                             mlir::ValueRange{lhs, rhs});
+        auto op = ctx.builder.create<mlir::db::RuntimeCall>(ctx.builder.getUnknownLoc(),
+                                                            resultType,
+                                                            ctx.builder.getStringAttr("Concat"),
+                                                            mlir::ValueRange{lhs, rhs});
 
         return op.getRes();
     }
@@ -206,7 +201,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Var* var) const -> mlir::Value {
-    if (!var || !ctx.builder || !ctx.current_tuple) {
+    if (!var || !ctx.current_tuple) {
         const auto trace = pgx_lower::utility::capture_stacktrace();
         PGX_ERROR("Invalid Var parameters: var=%p, builder=%p, tuple=%p\n%s",
                   var,
@@ -247,32 +242,26 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         // Set the column type
         colRef.getColumn().type = mlirType;
 
-        auto getColOp = ctx.builder->create<mlir::relalg::GetColumnOp>(ctx.builder->getUnknownLoc(),
-                                                                       mlirType,
-                                                                       colRef,
-                                                                       ctx.current_tuple);
+        auto getColOp =
+            ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), mlirType, colRef, ctx.current_tuple);
 
         return getColOp.getRes();
     }
     else {
         // No tuple context - this shouldn't happen in properly structured queries
         PGX_WARNING("No tuple context for Var translation, using placeholder");
-        return ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(),
-                                                               DEFAULT_PLACEHOLDER_INT,
-                                                               ctx.builder->getI32Type());
+        return ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                              DEFAULT_PLACEHOLDER_INT,
+                                                              ctx.builder.getI32Type());
     }
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const* const_node) const -> mlir::Value {
-    if (!ctx.builder) {
-        PGX_ERROR("No builder available for constant translation");
-        return nullptr;
-    }
-    return postgresql_ast::translate_const(const_node, *ctx.builder, context_);
+    return postgresql_ast::translate_const(const_node, ctx.builder, context_);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr) -> mlir::Value {
-    if (!func_expr || !ctx.builder) {
+    if (!func_expr) {
         PGX_ERROR("Invalid FuncExpr parameters");
         return nullptr;
     }
@@ -299,7 +288,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
     // Map PostgreSQL function OID to MLIR operations
 
-    const auto loc = ctx.builder->getUnknownLoc();
+    const auto loc = ctx.builder.getUnknownLoc();
 
     switch (func_expr->funcid) {
     case PG_F_ABS_INT4:
@@ -313,10 +302,10 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         // Implement absolute value using comparison and negation
         // Since DB dialect doesn't have AbsOp, use arith operations
         {
-            auto zero = ctx.builder->create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, args[0].getType());
-            auto cmp = ctx.builder->create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, args[0], zero);
-            auto neg = ctx.builder->create<mlir::arith::SubIOp>(loc, zero, args[0]);
-            return ctx.builder->create<mlir::arith::SelectOp>(loc, cmp, neg, args[0]);
+            auto zero = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, args[0].getType());
+            auto cmp = ctx.builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, args[0], zero);
+            auto neg = ctx.builder.create<mlir::arith::SubIOp>(loc, zero, args[0]);
+            return ctx.builder.create<mlir::arith::SelectOp>(loc, cmp, neg, args[0]);
         }
 
     case PG_F_SQRT_FLOAT8:
@@ -346,14 +335,14 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
         mlir::Type resultType =
             hasNullableOperand
-                ? mlir::Type(mlir::db::NullableType::get(ctx.builder->getContext(),
-                                                         mlir::db::StringType::get(ctx.builder->getContext())))
-                : mlir::Type(mlir::db::StringType::get(ctx.builder->getContext()));
+                ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(),
+                                                         mlir::db::StringType::get(ctx.builder.getContext())))
+                : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
 
-        auto op = ctx.builder->create<mlir::db::RuntimeCall>(loc,
-                                                             resultType,
-                                                             ctx.builder->getStringAttr("Upper"),
-                                                             mlir::ValueRange{args[0]});
+        auto op = ctx.builder.create<mlir::db::RuntimeCall>(loc,
+                                                            resultType,
+                                                            ctx.builder.getStringAttr("Upper"),
+                                                            mlir::ValueRange{args[0]});
         return op.getRes();
     }
 
@@ -367,14 +356,14 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
         mlir::Type resultType =
             hasNullableOperand
-                ? mlir::Type(mlir::db::NullableType::get(ctx.builder->getContext(),
-                                                         mlir::db::StringType::get(ctx.builder->getContext())))
-                : mlir::Type(mlir::db::StringType::get(ctx.builder->getContext()));
+                ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(),
+                                                         mlir::db::StringType::get(ctx.builder.getContext())))
+                : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
 
-        auto op = ctx.builder->create<mlir::db::RuntimeCall>(loc,
-                                                             resultType,
-                                                             ctx.builder->getStringAttr("Lower"),
-                                                             mlir::ValueRange{args[0]});
+        auto op = ctx.builder.create<mlir::db::RuntimeCall>(loc,
+                                                            resultType,
+                                                            ctx.builder.getStringAttr("Lower"),
+                                                            mlir::ValueRange{args[0]});
         return op.getRes();
     }
 
@@ -393,21 +382,21 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         }
         else {
             // Default length to max int32 for "rest of string"
-            auto maxLength = ctx.builder->create<mlir::arith::ConstantIntOp>(loc, 2147483647, ctx.builder->getI32Type());
+            auto maxLength = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, 2147483647, ctx.builder.getI32Type());
             substringArgs.push_back(maxLength);
         }
 
         const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
         mlir::Type resultType =
             hasNullableOperand
-                ? mlir::Type(mlir::db::NullableType::get(ctx.builder->getContext(),
-                                                         mlir::db::StringType::get(ctx.builder->getContext())))
-                : mlir::Type(mlir::db::StringType::get(ctx.builder->getContext()));
+                ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(),
+                                                         mlir::db::StringType::get(ctx.builder.getContext())))
+                : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
 
-        auto op = ctx.builder->create<mlir::db::RuntimeCall>(loc,
-                                                             resultType,
-                                                             ctx.builder->getStringAttr("Substring"),
-                                                             mlir::ValueRange{substringArgs});
+        auto op = ctx.builder.create<mlir::db::RuntimeCall>(loc,
+                                                            resultType,
+                                                            ctx.builder.getStringAttr("Substring"),
+                                                            mlir::ValueRange{substringArgs});
         return op.getRes();
     }
 
@@ -417,7 +406,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
             return nullptr;
         }
         PGX_WARNING("LENGTH function not yet implemented");
-        return ctx.builder->create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, ctx.builder->getI32Type());
+        return ctx.builder.create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, ctx.builder.getI32Type());
 
     case PG_F_CEIL_FLOAT8:
     case PG_F_FLOOR_FLOAT8:
@@ -437,7 +426,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value {
-    if (!bool_expr || !ctx.builder) {
+    if (!bool_expr) {
         PGX_ERROR("Invalid BoolExpr parameters");
         return nullptr;
     }
@@ -463,16 +452,16 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
                     if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                         // Ensure boolean type
                         if (!argValue.getType().isInteger(1)) {
-                            argValue = ctx.builder->create<mlir::db::DeriveTruth>(ctx.builder->getUnknownLoc(), argValue);
+                            argValue = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argValue);
                         }
 
                         if (!result) {
                             result = argValue;
                         }
                         else {
-                            result = ctx.builder->create<mlir::db::AndOp>(ctx.builder->getUnknownLoc(),
-                                                                          ctx.builder->getI1Type(),
-                                                                          mlir::ValueRange{result, argValue});
+                            result = ctx.builder.create<mlir::db::AndOp>(ctx.builder.getUnknownLoc(),
+                                                                         ctx.builder.getI1Type(),
+                                                                         mlir::ValueRange{result, argValue});
                         }
                     }
                 }
@@ -503,16 +492,16 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
                     if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                         // Ensure boolean type
                         if (!argValue.getType().isInteger(1)) {
-                            argValue = ctx.builder->create<mlir::db::DeriveTruth>(ctx.builder->getUnknownLoc(), argValue);
+                            argValue = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argValue);
                         }
 
                         if (!result) {
                             result = argValue;
                         }
                         else {
-                            result = ctx.builder->create<mlir::db::OrOp>(ctx.builder->getUnknownLoc(),
-                                                                         ctx.builder->getI1Type(),
-                                                                         mlir::ValueRange{result, argValue});
+                            result = ctx.builder.create<mlir::db::OrOp>(ctx.builder.getUnknownLoc(),
+                                                                        ctx.builder.getI1Type(),
+                                                                        mlir::ValueRange{result, argValue});
                         }
                     }
                 }
@@ -521,9 +510,9 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
 
         if (!result) {
             // Default to false if no valid expression
-            result = ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(),
-                                                                     DEFAULT_PLACEHOLDER_BOOL_FALSE,
-                                                                     ctx.builder->getI1Type());
+            result = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                                    DEFAULT_PLACEHOLDER_BOOL_FALSE,
+                                                                    ctx.builder.getI1Type());
         }
         return result;
     }
@@ -544,17 +533,17 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
         if (!argVal) {
             // Default argument if none provided
             PGX_WARNING("NOT expression has no valid argument, using placeholder");
-            argVal = ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(),
-                                                                     DEFAULT_PLACEHOLDER_BOOL,
-                                                                     ctx.builder->getI1Type());
+            argVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                                    DEFAULT_PLACEHOLDER_BOOL,
+                                                                    ctx.builder.getI1Type());
         }
 
         // Ensure argument is boolean
         if (!argVal.getType().isInteger(1)) {
-            argVal = ctx.builder->create<mlir::db::DeriveTruth>(ctx.builder->getUnknownLoc(), argVal);
+            argVal = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argVal);
         }
 
-        return ctx.builder->create<mlir::db::NotOp>(ctx.builder->getUnknownLoc(), argVal);
+        return ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), argVal);
     }
 
     default: PGX_ERROR("Unknown BoolExpr type: %d", bool_expr->boolop); return nullptr;
@@ -562,7 +551,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value {
-    if (!null_test || !ctx.builder) {
+    if (!null_test) {
         PGX_ERROR("Invalid NullTest parameters");
         return nullptr;
     }
@@ -577,10 +566,10 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
 
     // Follow LingoDB's exact pattern: check if type is nullable first
     if (isa<mlir::db::NullableType>(argVal.getType())) {
-        mlir::Value isNull = ctx.builder->create<mlir::db::IsNullOp>(ctx.builder->getUnknownLoc(), argVal);
+        mlir::Value isNull = ctx.builder.create<mlir::db::IsNullOp>(ctx.builder.getUnknownLoc(), argVal);
         if (null_test->nulltesttype == PG_IS_NOT_NULL) {
             // LingoDB's clean approach: use NotOp instead of XOrIOp
-            return ctx.builder->create<mlir::db::NotOp>(ctx.builder->getUnknownLoc(), isNull);
+            return ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), isNull);
         }
         else {
             return isNull;
@@ -589,15 +578,15 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
     else {
         // Non-nullable types: return constant based on null test type
         // LingoDB pattern: IS_NOT_NULL returns true, IS_NULL returns false for non-nullable
-        return ctx.builder->create<mlir::db::ConstantOp>(
-            ctx.builder->getUnknownLoc(),
-            ctx.builder->getI1Type(),
-            ctx.builder->getIntegerAttr(ctx.builder->getI1Type(), null_test->nulltesttype == PG_IS_NOT_NULL));
+        return ctx.builder.create<mlir::db::ConstantOp>(
+            ctx.builder.getUnknownLoc(),
+            ctx.builder.getI1Type(),
+            ctx.builder.getIntegerAttr(ctx.builder.getI1Type(), null_test->nulltesttype == PG_IS_NOT_NULL));
     }
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) -> mlir::Value {
-    if (!aggref || !ctx.builder) {
+    if (!aggref) {
         PGX_ERROR("Invalid Aggref parameters");
         return nullptr;
     }
@@ -605,9 +594,9 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     // Aggregate functions are handled differently - they need to be in aggregation context
     PGX_WARNING("Aggref translation requires aggregation context");
 
-    return ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(),
-                                                           DEFAULT_PLACEHOLDER_INT,
-                                                           ctx.builder->getI64Type());
+    return ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                          DEFAULT_PLACEHOLDER_INT,
+                                                          ctx.builder.getI64Type());
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr)
@@ -617,7 +606,7 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
             "translate_coalesce_expr IN: CoalesceExpr with %d arguments",
             coalesce_expr && coalesce_expr->args ? coalesce_expr->args->length : 0);
 
-    if (!coalesce_expr || !ctx.builder) {
+    if (!coalesce_expr) {
         PGX_ERROR("Invalid CoalesceExpr parameters");
         return nullptr;
     }
@@ -626,8 +615,8 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
     if (!coalesce_expr->args || coalesce_expr->args->length == 0) {
         PGX_WARNING("COALESCE with no arguments");
         // No arguments - return NULL with default type
-        auto nullType = mlir::db::NullableType::get(&context_, ctx.builder->getI32Type());
-        return ctx.builder->create<mlir::db::NullOp>(ctx.builder->getUnknownLoc(), nullType);
+        auto nullType = mlir::db::NullableType::get(&context_, ctx.builder.getI32Type());
+        return ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullType);
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE has %d arguments", coalesce_expr->args->length);
@@ -650,8 +639,8 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
 
     if (translatedArgs.empty()) {
         PGX_WARNING("All COALESCE arguments failed to translate");
-        auto nullType = mlir::db::NullableType::get(&context_, ctx.builder->getI32Type());
-        return ctx.builder->create<mlir::db::NullOp>(ctx.builder->getUnknownLoc(), nullType);
+        auto nullType = mlir::db::NullableType::get(&context_, ctx.builder.getI32Type());
+        return ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullType);
     }
 
     // Determine common type following LingoDB pattern
@@ -686,11 +675,11 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
             if (!isa<mlir::db::NullableType>(val.getType())) {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Wrapping non-nullable argument %zu to match common nullable type", i);
                 // Wrap non-nullable value in nullable type with explicit false null flag
-                auto falseFlag = ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(), 0, 1);
-                val = ctx.builder->create<mlir::db::AsNullableOp>(ctx.builder->getUnknownLoc(),
-                                                                  commonType, // Result type (nullable)
-                                                                  val, // Value to wrap
-                                                                  falseFlag // Explicit null flag = false (NOT NULL)
+                auto falseFlag = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
+                val = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(),
+                                                                 commonType, // Result type (nullable)
+                                                                 val, // Value to wrap
+                                                                 falseFlag // Explicit null flag = false (NOT NULL)
                 );
                 translatedArgs[i] = val;
             }
@@ -699,7 +688,7 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
 
     // COALESCE using simplified recursive pattern that's safer
     std::function<mlir::Value(size_t)> buildCoalesceRecursive = [&](const size_t index) -> mlir::Value {
-        const auto loc = ctx.builder->getUnknownLoc();
+        const auto loc = ctx.builder.getUnknownLoc();
 
         // Base case: if we're at the last argument, return it
         if (index >= translatedArgs.size() - 1) {
@@ -710,33 +699,33 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
         mlir::Value value = translatedArgs[index];
 
         // Create null check - follow LingoDB semantics exactly
-        mlir::Value isNull = ctx.builder->create<mlir::db::IsNullOp>(loc, value);
-        mlir::Value isNotNull = ctx.builder->create<mlir::db::NotOp>(loc, isNull);
+        mlir::Value isNull = ctx.builder.create<mlir::db::IsNullOp>(loc, value);
+        mlir::Value isNotNull = ctx.builder.create<mlir::db::NotOp>(loc, isNull);
 
         // Create scf.IfOp with automatic region creation (safer than manual blocks)
-        auto ifOp = ctx.builder->create<mlir::scf::IfOp>(loc, commonType, isNotNull, true);
+        auto ifOp = ctx.builder.create<mlir::scf::IfOp>(loc, commonType, isNotNull, true);
 
         // Then block: yield current value
         auto& thenRegion = ifOp.getThenRegion();
         auto* thenBlock = &thenRegion.front();
-        ctx.builder->setInsertionPointToEnd(thenBlock);
+        ctx.builder.setInsertionPointToEnd(thenBlock);
         // Cast value if needed
         mlir::Value thenValue = value;
         if (value.getType() != commonType && !isa<mlir::db::NullableType>(value.getType())) {
-            auto falseFlag = ctx.builder->create<mlir::arith::ConstantIntOp>(loc, 0, 1);
-            thenValue = ctx.builder->create<mlir::db::AsNullableOp>(loc, commonType, value, falseFlag);
+            auto falseFlag = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, 0, 1);
+            thenValue = ctx.builder.create<mlir::db::AsNullableOp>(loc, commonType, value, falseFlag);
         }
-        ctx.builder->create<mlir::scf::YieldOp>(loc, thenValue);
+        ctx.builder.create<mlir::scf::YieldOp>(loc, thenValue);
 
         // Else block: recursive call for remaining arguments
         auto& elseRegion = ifOp.getElseRegion();
         auto* elseBlock = &elseRegion.front();
-        ctx.builder->setInsertionPointToEnd(elseBlock);
+        ctx.builder.setInsertionPointToEnd(elseBlock);
         auto elseValue = buildCoalesceRecursive(index + 1);
-        ctx.builder->create<mlir::scf::YieldOp>(loc, elseValue);
+        ctx.builder.create<mlir::scf::YieldOp>(loc, elseValue);
 
         // Reset insertion point after the ifOp
-        ctx.builder->setInsertionPointAfter(ifOp);
+        ctx.builder.setInsertionPointAfter(ifOp);
 
         return ifOp.getResult(0);
     };
@@ -764,7 +753,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             scalar_array_op->opno,
             scalar_array_op->useOr);
 
-    if (!scalar_array_op || !ctx.builder) {
+    if (!scalar_array_op) {
         PGX_ERROR("Invalid ScalarArrayOpExpr parameters");
         return nullptr;
     }
@@ -814,9 +803,9 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             for (int i = 0; i < nitems; i++) {
                 if (!nulls || !nulls[i]) {
                     int32 intValue = DatumGetInt32(values[i]);
-                    auto elemValue = ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(),
-                                                                                     intValue,
-                                                                                     ctx.builder->getI32Type());
+                    auto elemValue = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                                                    intValue,
+                                                                                    ctx.builder.getI32Type());
                     arrayElements.push_back(elemValue);
                 }
             }
@@ -835,10 +824,9 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
                     const auto textValue = DatumGetTextP(values[i]);
                     std::string str_value(VARDATA(textValue), VARSIZE(textValue) - VARHDRSZ);
 
-                    auto elemValue =
-                        ctx.builder->create<mlir::db::ConstantOp>(ctx.builder->getUnknownLoc(),
-                                                                  ctx.builder->getType<mlir::db::StringType>(),
-                                                                  ctx.builder->getStringAttr(str_value));
+                    auto elemValue = ctx.builder.create<mlir::db::ConstantOp>(ctx.builder.getUnknownLoc(),
+                                                                              ctx.builder.getType<mlir::db::StringType>(),
+                                                                              ctx.builder.getStringAttr(str_value));
                     arrayElements.push_back(elemValue);
                 }
             }
@@ -853,9 +841,9 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
 
     // Handle empty array
     if (arrayElements.empty()) {
-        return ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(),
-                                                               scalar_array_op->useOr ? 0 : 1,
-                                                               ctx.builder->getI1Type());
+        return ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                              scalar_array_op->useOr ? 0 : 1,
+                                                              ctx.builder.getI1Type());
     }
 
     // Build comparison chain
@@ -867,29 +855,29 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         if (scalar_array_op->opno == PG_INT4_EQ_OID || scalar_array_op->opno == PG_INT8_EQ_OID
             || scalar_array_op->opno == PG_INT2_EQ_OID || scalar_array_op->opno == PG_TEXT_EQ_OID)
         {
-            cmp = ctx.builder->create<mlir::db::CmpOp>(ctx.builder->getUnknownLoc(),
-                                                       mlir::db::DBCmpPredicate::eq,
-                                                       leftValue,
-                                                       elemValue);
+            cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(),
+                                                      mlir::db::DBCmpPredicate::eq,
+                                                      leftValue,
+                                                      elemValue);
         }
         else if (scalar_array_op->opno == PG_INT4_NE_OID || scalar_array_op->opno == PG_INT8_NE_OID
                  || scalar_array_op->opno == PG_INT2_NE_OID || scalar_array_op->opno == PG_TEXT_NE_OID)
         {
-            cmp = ctx.builder->create<mlir::db::CmpOp>(ctx.builder->getUnknownLoc(),
-                                                       mlir::db::DBCmpPredicate::neq,
-                                                       leftValue,
-                                                       elemValue);
+            cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(),
+                                                      mlir::db::DBCmpPredicate::neq,
+                                                      leftValue,
+                                                      elemValue);
         }
         else {
             PGX_WARNING("Unsupported operator OID %u in IN expression, defaulting to equality", scalar_array_op->opno);
-            cmp = ctx.builder->create<mlir::db::CmpOp>(ctx.builder->getUnknownLoc(),
-                                                       mlir::db::DBCmpPredicate::eq,
-                                                       leftValue,
-                                                       elemValue);
+            cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(),
+                                                      mlir::db::DBCmpPredicate::eq,
+                                                      leftValue,
+                                                      elemValue);
         }
 
         if (!cmp.getType().isInteger(1)) {
-            cmp = ctx.builder->create<mlir::db::DeriveTruth>(ctx.builder->getUnknownLoc(), cmp);
+            cmp = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), cmp);
         }
 
         if (!result) {
@@ -897,14 +885,14 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         }
         else {
             if (scalar_array_op->useOr) {
-                result = ctx.builder->create<mlir::db::OrOp>(ctx.builder->getUnknownLoc(),
-                                                             ctx.builder->getI1Type(),
-                                                             mlir::ValueRange{result, cmp});
+                result = ctx.builder.create<mlir::db::OrOp>(ctx.builder.getUnknownLoc(),
+                                                            ctx.builder.getI1Type(),
+                                                            mlir::ValueRange{result, cmp});
             }
             else {
-                result = ctx.builder->create<mlir::db::AndOp>(ctx.builder->getUnknownLoc(),
-                                                              ctx.builder->getI1Type(),
-                                                              mlir::ValueRange{result, cmp});
+                result = ctx.builder.create<mlir::db::AndOp>(ctx.builder.getUnknownLoc(),
+                                                             ctx.builder.getI1Type(),
+                                                             mlir::ValueRange{result, cmp});
             }
         }
     }
@@ -919,7 +907,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
             "translate_case_expr IN: CaseExpr with %d WHEN clauses",
             case_expr && case_expr->args ? case_expr->args->length : 0);
 
-    if (!case_expr || !ctx.builder) {
+    if (!case_expr) {
         PGX_ERROR("Invalid CaseExpr parameters");
         return nullptr;
     }
@@ -955,9 +943,9 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
     else {
         // If no ELSE clause, use NULL as default
         // Create a nullable i32 type for the NULL result
-        const auto baseType = ctx.builder->getI32Type();
-        auto nullableType = mlir::db::NullableType::get(ctx.builder->getContext(), baseType);
-        elseResult = ctx.builder->create<mlir::db::NullOp>(ctx.builder->getUnknownLoc(), nullableType);
+        const auto baseType = ctx.builder.getI32Type();
+        auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), baseType);
+        elseResult = ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullableType);
     }
 
     // Process WHEN clauses in reverse order to build nested if-else chain
@@ -1000,7 +988,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
                 !isa<mlir::IntegerType>(conditionType) || cast<mlir::IntegerType>(conditionType).getWidth() != 1)
             {
                 // Need to convert to boolean using db.derive_truth
-                condition = ctx.builder->create<mlir::db::DeriveTruth>(ctx.builder->getUnknownLoc(), condition);
+                condition = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), condition);
             }
 
             // Translate the THEN result
@@ -1022,36 +1010,35 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
                 if (const bool thenIsNullable = isa<mlir::db::NullableType>(thenType); resultIsNullable && !thenIsNullable)
                 {
                     // Wrap thenResult in nullable
-                    auto nullableType = mlir::db::NullableType::get(ctx.builder->getContext(), thenType);
-                    thenResult = ctx.builder->create<mlir::db::AsNullableOp>(ctx.builder->getUnknownLoc(),
-                                                                             nullableType,
-                                                                             thenResult);
+                    auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), thenType);
+                    thenResult =
+                        ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableType, thenResult);
                 }
                 else if (!resultIsNullable && thenIsNullable) {
                     // Wrap result in nullable
-                    auto nullableType = mlir::db::NullableType::get(ctx.builder->getContext(), resultType);
+                    auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), resultType);
                     result =
-                        ctx.builder->create<mlir::db::AsNullableOp>(ctx.builder->getUnknownLoc(), nullableType, result);
+                        ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableType, result);
                     resultType = nullableType;
                 }
             }
 
             // Create if-then-else for this WHEN clause
-            auto ifOp = ctx.builder->create<mlir::scf::IfOp>(ctx.builder->getUnknownLoc(),
-                                                             thenResult.getType(),
-                                                             condition,
-                                                             true); // Has else region
+            auto ifOp = ctx.builder.create<mlir::scf::IfOp>(ctx.builder.getUnknownLoc(),
+                                                            thenResult.getType(),
+                                                            condition,
+                                                            true); // Has else region
 
             // Build THEN region
-            ctx.builder->setInsertionPointToStart(&ifOp.getThenRegion().front());
-            ctx.builder->create<mlir::scf::YieldOp>(ctx.builder->getUnknownLoc(), thenResult);
+            ctx.builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), thenResult);
 
             // Build ELSE region (contains the previous result)
-            ctx.builder->setInsertionPointToStart(&ifOp.getElseRegion().front());
-            ctx.builder->create<mlir::scf::YieldOp>(ctx.builder->getUnknownLoc(), result);
+            ctx.builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), result);
 
             // Move insertion point after if operation
-            ctx.builder->setInsertionPointAfter(ifOp);
+            ctx.builder.setInsertionPointAfter(ifOp);
 
             // If operation's result becomes our new result
             result = ifOp.getResult(0);
@@ -1148,15 +1135,15 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
     // If we couldn't extract proper operands, create placeholders
     if (!lhs) {
         PGX_WARNING("Failed to translate left operand, using placeholder");
-        lhs = ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(),
-                                                              DEFAULT_PLACEHOLDER_INT,
-                                                              ctx.builder->getI32Type());
+        lhs = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                             DEFAULT_PLACEHOLDER_INT,
+                                                             ctx.builder.getI32Type());
     }
     if (!rhs && op_expr->args->length >= MAX_BINARY_OPERANDS) {
         PGX_WARNING("Failed to translate right operand, using placeholder");
-        rhs = ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(),
-                                                              DEFAULT_PLACEHOLDER_INT,
-                                                              ctx.builder->getI32Type());
+        rhs = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
+                                                             DEFAULT_PLACEHOLDER_INT,
+                                                             ctx.builder.getI32Type());
     }
 
     if (!lhs || !rhs) {
@@ -1169,26 +1156,26 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
 auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx,
                                                             const Oid op_oid,
                                                             const mlir::Value lhs,
-                                                            const mlir::Value rhs) const -> mlir::Value {
+                                                            const mlir::Value rhs) -> mlir::Value {
     switch (op_oid) {
     // Addition operators
     case PG_INT4_PLUS_OID:
-    case PG_INT8_PLUS_OID: return ctx.builder->create<mlir::db::AddOp>(ctx.builder->getUnknownLoc(), lhs, rhs);
+    case PG_INT8_PLUS_OID: return ctx.builder.create<mlir::db::AddOp>(ctx.builder.getUnknownLoc(), lhs, rhs);
 
     case PG_INT4_MINUS_OID:
     case PG_INT4_MINUS_ALT_OID:
-    case PG_INT8_MINUS_OID: return ctx.builder->create<mlir::db::SubOp>(ctx.builder->getUnknownLoc(), lhs, rhs);
+    case PG_INT8_MINUS_OID: return ctx.builder.create<mlir::db::SubOp>(ctx.builder.getUnknownLoc(), lhs, rhs);
 
     case PG_INT4_MUL_OID:
-    case PG_INT8_MUL_OID: return ctx.builder->create<mlir::db::MulOp>(ctx.builder->getUnknownLoc(), lhs, rhs);
+    case PG_INT8_MUL_OID: return ctx.builder.create<mlir::db::MulOp>(ctx.builder.getUnknownLoc(), lhs, rhs);
 
     case PG_INT4_DIV_OID:
     case PG_INT4_DIV_ALT_OID:
-    case PG_INT8_DIV_OID: return ctx.builder->create<mlir::db::DivOp>(ctx.builder->getUnknownLoc(), lhs, rhs);
+    case PG_INT8_DIV_OID: return ctx.builder.create<mlir::db::DivOp>(ctx.builder.getUnknownLoc(), lhs, rhs);
 
     case PG_INT4_MOD_OID:
     case PG_INT4_MOD_ALT_OID:
-    case PG_INT8_MOD_OID: return ctx.builder->create<mlir::db::ModOp>(ctx.builder->getUnknownLoc(), lhs, rhs);
+    case PG_INT8_MOD_OID: return ctx.builder.create<mlir::db::ModOp>(ctx.builder.getUnknownLoc(), lhs, rhs);
 
     default: return nullptr;
     }
@@ -1197,7 +1184,7 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
 auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx,
                                                             const Oid op_oid,
                                                             const mlir::Value lhs,
-                                                            const mlir::Value rhs) const -> mlir::Value {
+                                                            const mlir::Value rhs) -> mlir::Value {
     mlir::db::DBCmpPredicate predicate;
 
     switch (op_oid) {
@@ -1235,19 +1222,19 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     const bool rhsNullable = isa<mlir::db::NullableType>(rhs.getType());
 
     if (lhsNullable && !rhsNullable) {
-        mlir::Type nullableRhsType = mlir::db::NullableType::get(ctx.builder->getContext(), rhs.getType());
-        auto falseVal = ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(), 0, 1);
+        mlir::Type nullableRhsType = mlir::db::NullableType::get(ctx.builder.getContext(), rhs.getType());
+        auto falseVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
         convertedRhs =
-            ctx.builder->create<mlir::db::AsNullableOp>(ctx.builder->getUnknownLoc(), nullableRhsType, rhs, falseVal);
+            ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableRhsType, rhs, falseVal);
     }
     else if (!lhsNullable && rhsNullable) {
-        mlir::Type nullableLhsType = mlir::db::NullableType::get(ctx.builder->getContext(), lhs.getType());
-        auto falseVal = ctx.builder->create<mlir::arith::ConstantIntOp>(ctx.builder->getUnknownLoc(), 0, 1);
+        mlir::Type nullableLhsType = mlir::db::NullableType::get(ctx.builder.getContext(), lhs.getType());
+        auto falseVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
         convertedLhs =
-            ctx.builder->create<mlir::db::AsNullableOp>(ctx.builder->getUnknownLoc(), nullableLhsType, lhs, falseVal);
+            ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableLhsType, lhs, falseVal);
     }
 
-    return ctx.builder->create<mlir::db::CmpOp>(ctx.builder->getUnknownLoc(), predicate, convertedLhs, convertedRhs);
+    return ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), predicate, convertedLhs, convertedRhs);
 }
 
 } // namespace postgresql_ast

@@ -26,12 +26,10 @@ auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -
         return nullptr;
     }
 
-
     auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
     auto builder = mlir::OpBuilder(&context_);
     builder.setInsertionPointToStart(module.getBody());
-
-    auto context = QueryCtxT{*planned_stmt, &builder, module, nullptr, {}};
+    auto context = QueryCtxT{*planned_stmt, builder, module, nullptr, {}};
 
     auto query_func = create_query_function(builder, context);
     if (!query_func) {
@@ -88,8 +86,7 @@ auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const mlir::func
     else {
     }
 
-    context.builder->create<mlir::func::ReturnOp>(context.builder->getUnknownLoc());
-
+    context.builder.create<mlir::func::ReturnOp>(context.builder.getUnknownLoc());
     PGX_LOG(AST_TRANSLATE, IO, "generate_rel_alg_operations OUT: RelAlg operations generated successfully");
 
     return true;

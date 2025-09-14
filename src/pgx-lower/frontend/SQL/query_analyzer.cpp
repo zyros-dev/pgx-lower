@@ -515,7 +515,7 @@ auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilitie
         const char* selectPos = strstr(queryText, "SELECT");
         const char* fromPos = strstr(queryText, "FROM");
         if (selectPos && fromPos) {
-            const char* selectContent = selectPos + 6;  // "select"
+            const char* selectContent = selectPos + 6; // "select"
             while (*selectContent == ' ') {
                 selectContent++;
             }

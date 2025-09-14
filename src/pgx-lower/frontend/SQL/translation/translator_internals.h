@@ -66,7 +66,7 @@ struct ColumnInfo {
 
 struct TranslationContext {
     const PlannedStmt current_stmt;
-    mlir::OpBuilder* builder;
+    mlir::OpBuilder& builder;
     const mlir::ModuleOp current_module;
     const mlir::Value current_tuple;
 
@@ -113,7 +113,8 @@ class PostgreSQLASTTranslator::Impl {
 
     // Query function generation
     static auto create_query_function(mlir::OpBuilder& builder, const QueryCtxT& context) -> mlir::func::FuncOp;
-    auto generate_rel_alg_operations(const mlir::func::FuncOp query_func, const PlannedStmt* planned_stmt, QueryCtxT& context)
+    auto
+    generate_rel_alg_operations(const mlir::func::FuncOp query_func, const PlannedStmt* planned_stmt, QueryCtxT& context)
         -> bool;
 
     // Relational operation helpers
@@ -137,11 +138,11 @@ class PostgreSQLASTTranslator::Impl {
     // Operation translation helpers
     auto extract_op_expr_operands(const QueryCtxT& context, const OpExpr* op_expr)
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
-    auto
-    translate_arithmetic_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs, const mlir::Value rhs) const
+    static auto
+    translate_arithmetic_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs, const mlir::Value rhs)
         -> mlir::Value;
-    auto
-    translate_comparison_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs, const mlir::Value rhs) const
+    static auto
+    translate_comparison_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs, const mlir::Value rhs)
         -> mlir::Value;
 
    private:
@@ -202,8 +203,7 @@ auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, const int v
 auto is_column_nullable(const PlannedStmt* planned_stmt, const int rt_index, const AttrNumber attnum) -> bool;
 
 // Translation helper for constants
-auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRContext& context)
-    -> mlir::Value;
+auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRContext& context) -> mlir::Value;
 
 // Get all columns from a table
 auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, const int scanrelid)
