@@ -64,7 +64,7 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
     }
 
     const auto compatible = isSelectStatement && hasCompatibleTypes && !requiresJoin && !requiresLimit
-                      && (requiresSeqScan || requiresAggregation);
+                            && (requiresSeqScan || requiresAggregation);
 
     if (compatible) {
         PGX_LOG(AST_TRANSLATE, DEBUG, " MLIR COMPATIBLE: Query accepted for compilation");
@@ -142,14 +142,13 @@ auto QueryAnalyzer::analyzePlan(const PlannedStmt* stmt) -> QueryCapabilities {
     }
 }
 
-QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
+auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
     auto caps = QueryCapabilities{};
 
     if (!plan) {
         return caps;
     }
 
-    // Analyze this node
     switch (nodeTag(plan)) {
     case T_SeqScan: analyzeSeqScan(reinterpret_cast<const SeqScan*>(plan), caps); break;
 
@@ -169,8 +168,10 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
 
     case T_Limit: caps.requiresLimit = true; break;
 
-    case T_Agg: caps.requiresAggregation = true; break;
-    // default:
+    case T_Agg:
+        caps.requiresAggregation = true;
+        break;
+        // default:
         // TODO: NV: Temporarily commented out while I;'m doing this refactor
         // PGX_ERROR("Failed to match node %d", nodeTag(plan)); throw std::runtime_error("Failed to match node!");
     }
@@ -202,22 +203,20 @@ QueryCapabilities QueryAnalyzer::analyzeNode(const Plan* plan) {
     return caps;
 }
 
-void QueryAnalyzer::analyzeSeqScan(const SeqScan* seqScan, QueryCapabilities& caps) {
+auto QueryAnalyzer::analyzeSeqScan(const SeqScan* seqScan, QueryCapabilities& caps) -> void {
     caps.requiresSeqScan = true;
 }
 
-void QueryAnalyzer::analyzeFilter(const Plan* plan, QueryCapabilities& caps) {
+auto QueryAnalyzer::analyzeFilter(const Plan* plan, QueryCapabilities& caps) -> void {
     if (plan->qual) {
         caps.requiresFilter = true;
     }
 }
 
-void QueryAnalyzer::analyzeProjection(const Plan* plan, QueryCapabilities& caps) {
-    // TODO: NV: Uncomment after refactoring
-    // PGX_LOG(AST_TRANSLATE, DEBUG, "No logic in analyze projection!");
+auto QueryAnalyzer::analyzeProjection(const Plan* plan, QueryCapabilities& caps) -> void {
 }
 
-void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
+auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> void {
     if (!plan || !plan->targetlist) {
         caps.hasCompatibleTypes = false;
         return;
@@ -226,9 +225,9 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
     auto columnTypes = std::vector<Oid>{};
     ListCell* lc;
 
-    // Extract types from plan's target list (no table access needed)
+    // Extract types from plan's target list
     foreach (lc, plan->targetlist) {
-        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
         if (tle && !tle->resjunk && tle->expr) {
             // Check if this is a computed expression (not just a simple Var)
             if (nodeTag(tle->expr) != T_Var) {
@@ -237,7 +236,7 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
 
             // Later we can add more sophisticated filtering
             if (IsA(tle->expr, FuncExpr)) {
-                auto* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
+                const auto* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
                 if (funcExpr->funcid == frontend::sql::constants::PG_F_UPPER
                     || funcExpr->funcid == frontend::sql::constants::PG_F_LOWER
                     || funcExpr->funcid == frontend::sql::constants::PG_F_SUBSTRING)
@@ -265,23 +264,17 @@ void QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) {
     caps.hasCompatibleTypes = (unsupportedCount == 0);
 }
 
-bool QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) {
-    if (!stmt) {
+auto QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) -> bool {
+    if (!stmt)
         return false;
-    }
-
-    const auto isSelect = (stmt->commandType == CMD_SELECT);
-    if (!isSelect) {
-    }
-
-    return isSelect;
+    return (stmt->commandType == CMD_SELECT);
 }
 
-bool QueryAnalyzer::isTypeSupportedByMLIR(Oid postgresType) {
+auto QueryAnalyzer::isTypeSupportedByMLIR(const Oid postgresType) -> bool {
+    // TODO: NV This is wrong now. We only support what lingodb supports
     // PostgreSQL types that MLIR runtime can handle
     // Based on working test cases and available runtime functions
     switch (postgresType) {
-    // Integer types (handled by get_int32_field)
     case BOOLOID:
     case INT2OID:
     case INT4OID:
@@ -294,7 +287,6 @@ bool QueryAnalyzer::isTypeSupportedByMLIR(Oid postgresType) {
     case VARCHAROID:
     case CHAROID: return true;
 
-    case MONEYOID:
     case DATEOID:
     case TIMEOID:
     case TIMETZOID:
@@ -322,25 +314,21 @@ bool QueryAnalyzer::isTypeSupportedByMLIR(Oid postgresType) {
 }
 
 auto QueryAnalyzer::analyzeTypeCompatibility(const std::vector<Oid>& types) -> std::pair<int, int> {
-    int supportedCount = 0;
-    int unsupportedCount = 0;
+    auto supportedCount = 0;
+    auto unsupportedCount = 0;
 
-    for (Oid type : types) {
-        if (isTypeSupportedByMLIR(type)) {
+    for (const auto type : types) {
+        if (isTypeSupportedByMLIR(type))
             supportedCount++;
-        }
-        else {
+        else
             unsupportedCount++;
-        }
     }
 
     return {supportedCount, unsupportedCount};
 }
 
-// Helper function to log PostgreSQL execution trees with nice formatting
-void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
-    // Get readable node type names
-    auto getNodeTypeName = [](NodeTag nodeType) -> std::string {
+auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {
+    auto getNodeTypeName = [](auto nodeType) -> std::string {
         switch (nodeType) {
         case T_SeqScan: return "SeqScan";
         case T_IndexScan: return "IndexScan";
@@ -385,30 +373,29 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
         }
     };
 
-    // Recursively print execution tree
     std::function<void(Plan*, int, const std::string&)> printPlanTree = [&](Plan* plan,
-                                                                            int depth,
+                                                                            const int depth,
                                                                             const std::string& prefix) {
         if (!plan) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "%sNULL", prefix.c_str());
             return;
         }
 
-        auto indent = std::string(depth * 2, ' ');
-        auto nodeName = getNodeTypeName(static_cast<NodeTag>(plan->type));
+        const auto indent = std::string(depth * 2, ' ');
+        const auto nodeName = getNodeTypeName(plan->type);
         auto nodeInfo = prefix + nodeName + " (type=" + std::to_string(plan->type) + ")";
 
         // Add node-specific details
         if (plan->type == T_SeqScan) {
-            auto* seqScan = reinterpret_cast<SeqScan*>(plan);
+            const auto* seqScan = reinterpret_cast<SeqScan*>(plan);
             nodeInfo += " [scanrelid=" + std::to_string(seqScan->scan.scanrelid) + "]";
         }
         else if (plan->type == T_Agg) {
-            auto* agg = reinterpret_cast<Agg*>(plan);
+            const auto* agg = reinterpret_cast<Agg*>(plan);
             nodeInfo += " [strategy=" + std::to_string(agg->aggstrategy) + "]";
         }
         else if (plan->type == T_Gather) {
-            auto* gather = reinterpret_cast<Gather*>(plan);
+            const auto* gather = reinterpret_cast<Gather*>(plan);
             nodeInfo += " [num_workers=" + std::to_string(gather->num_workers) + "]";
         }
 
@@ -418,17 +405,17 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
             ListCell* lc;
             int idx = 0;
             foreach (lc, plan->targetlist) {
-                TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+                const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
                 if (tle && tle->expr) {
-                    NodeTag exprType = nodeTag(tle->expr);
-                    std::string exprTypeName = "Unknown";
+                    const auto exprType = nodeTag(tle->expr);
+                    auto exprTypeName = std::string{"Unknown"};
                     switch (exprType) {
                     case T_Var: exprTypeName = "Var"; break;
                     case T_Const: exprTypeName = "Const"; break;
                     case T_OpExpr: exprTypeName = "OpExpr"; break;
                     case T_FuncExpr: {
                         exprTypeName = "FuncExpr";
-                        FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
+                        const auto* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
                         exprTypeName += "(funcid=" + std::to_string(funcExpr->funcid) + ")";
                         break;
                     }
@@ -439,7 +426,6 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
             }
         }
 
-        // Print children with tree formatting
         if (plan->lefttree || plan->righttree) {
             if (plan->lefttree) {
                 printPlanTree(plan->lefttree, depth + 1, indent + " ");
@@ -450,20 +436,16 @@ void QueryAnalyzer::logExecutionTree(Plan* rootPlan) {
         }
     };
 
-    // Print the complete execution tree
     PGX_LOG(AST_TRANSLATE, DEBUG, "=== POSTGRESQL EXECUTION TREE ===");
     printPlanTree(rootPlan, 0, "");
     PGX_LOG(AST_TRANSLATE, DEBUG, "=== END EXECUTION TREE ===");
 }
 
-bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
+auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool {
     const auto rootPlan = stmt->planTree;
     Plan* scanPlan = nullptr;
 
-    // Log the execution tree for analysis
     logExecutionTree(rootPlan);
-
-    // ACCEPT ALL PATTERNS FROM TEST CASES
     if (rootPlan->type == T_SeqScan) {
         // Pattern 1: Simple table scan
         scanPlan = rootPlan;
@@ -491,18 +473,17 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
         }
     }
     else {
-        PGX_LOG(AST_TRANSLATE, DEBUG, " UNKNOWN PATTERN: Accepting for testing but may need implementation");
+        // TODO: NV haha this should be a warning, but it triggers so many integration tests... really makes you
+        // wonder what's the point of this file...
         // Accept unknown patterns for comprehensive testing
+        PGX_LOG(AST_TRANSLATE, DEBUG, " UNKNOWN PATTERN: Accepting for testing but may need implementation");
     }
 
-    // Extract table information if we found a scan plan
     if (scanPlan) {
         const auto scan = reinterpret_cast<SeqScan*>(scanPlan);
         const auto rte = static_cast<RangeTblEntry*>(list_nth(stmt->rtable, scan->scan.scanrelid - 1));
 
         PGX_LOG(AST_TRANSLATE, DEBUG, " Table OID: %d", rte->relid);
-
-        // Set the global table OID for JIT runtime access
         g_jit_table_oid = rte->relid;
         PGX_LOG(AST_TRANSLATE, DEBUG, " Set g_jit_table_oid to: %d", g_jit_table_oid);
     }
@@ -517,11 +498,10 @@ bool QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) {
 #endif // POSTGRESQL_EXTENSION
 
 auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilities {
-    QueryCapabilities caps;
+    auto caps = QueryCapabilities{};
 
-    if (queryText == nullptr) {
+    if (!queryText)
         return caps;
-    }
 
     if ((strstr(queryText, "SELECT") != nullptr) && (strstr(queryText, "FROM") != nullptr)) {
         caps.isSelectStatement = true;
@@ -530,14 +510,14 @@ auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilitie
     }
 
     // Check for projection (specific columns rather than *)
+    // TODO: NV: Errr... yeah... hmm... this looks sus. TODO: Delete this entire method!
     if ((strstr(queryText, "SELECT") != nullptr) && (strstr(queryText, "SELECT *") == nullptr)) {
         const char* selectPos = strstr(queryText, "SELECT");
         const char* fromPos = strstr(queryText, "FROM");
-        if ((selectPos != nullptr) && (fromPos != nullptr) && fromPos > selectPos) {
-            // Check if there are specific column names between SELECT and FROM
-            const char* selectContent = selectPos + 6; // Skip "SELECT"
+        if (selectPos && fromPos) {
+            const char* selectContent = selectPos + 6;  // "select"
             while (*selectContent == ' ') {
-                selectContent++; // Skip whitespace
+                selectContent++;
             }
             if (selectContent < fromPos && *selectContent != '*') {
                 caps.requiresProjection = true;
@@ -545,32 +525,19 @@ auto QueryAnalyzer::analyzeForTesting(const char* queryText) -> QueryCapabilitie
         }
     }
 
-    if (strstr(queryText, "WHERE") != nullptr) {
+    if (strstr(queryText, "WHERE") != nullptr)
         caps.requiresFilter = true;
-    }
-
-    if (strstr(queryText, "JOIN") != nullptr) {
+    if (strstr(queryText, "JOIN") != nullptr)
         caps.requiresJoin = true;
-    }
-
-    if (strstr(queryText, "ORDER BY") != nullptr) {
+    if (strstr(queryText, "ORDER BY") != nullptr)
         caps.requiresSort = true;
-    }
-
-    if (strstr(queryText, "LIMIT") != nullptr) {
+    if (strstr(queryText, "LIMIT") != nullptr)
         caps.requiresLimit = true;
-    }
-
     if ((strstr(queryText, "COUNT") != nullptr) || (strstr(queryText, "SUM") != nullptr)
         || (strstr(queryText, "AVG") != nullptr) || (strstr(queryText, "GROUP BY") != nullptr))
-    {
         caps.requiresAggregation = true;
-    }
-
-    // Check for nested queries (subqueries)
-    if (strstr(queryText, "(SELECT") != nullptr) {
+    if (strstr(queryText, "(SELECT") != nullptr)
         caps.requiresJoin = true; // Treat nested queries as requiring joins for now
-    }
 
     return caps;
 }
