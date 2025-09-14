@@ -506,6 +506,7 @@ static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNu
     }
 
     switch (typeOid) {
+    case NUMERICOID:
     case TEXTOID:
     case VARCHAROID:
     case BPCHAROID: return datumCopy(value, false, -1);
@@ -516,12 +517,15 @@ static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNu
     case BOOLOID:
     case FLOAT4OID:
     case FLOAT8OID:
-    case NUMERICOID:  // For now, treat NUMERIC as pass-through until we have proper support
+    case DATEOID:
+    case TIMESTAMPOID:
+    case TIMESTAMPTZOID:
+    case INTERVALOID:
         return value;
 
     default:
-        PGX_LOG(RUNTIME, DEBUG, "copy_datum_to_postgresql_memory: Unhandled type OID %u, passing through", typeOid);
-        return value;
+        PGX_ERROR("copy_datum_to_postgresql_memory: Unhandled type OID %u", typeOid);
+        throw std::runtime_error("Unhandled type");
     }
 }
 
