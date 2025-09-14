@@ -3,27 +3,28 @@ LOAD 'pgx_lower.so';
 DROP TABLE IF EXISTS type_test_table;
 
 CREATE TABLE type_test_table (
-    bool_col BOOLEAN,
-    int2_col SMALLINT,
-    int4_col INTEGER,
-    int8_col BIGINT,
-    float4_col REAL,
-    float8_col DOUBLE PRECISION,
-    string_col VARCHAR(100),
-    char_col CHAR(10),
-    text_col TEXT,
-    decimal_col DECIMAL(10, 2),
-    numeric_col NUMERIC(15, 5),
-    date_col DATE,
-    interval_col INTERVAL
+    bool_col BOOLEAN,           -- BOOLOID 16
+    int2_col SMALLINT,          -- INT2OID 21
+    int4_col INTEGER,           -- INT4OID 23
+    int8_col BIGINT,            -- INT8OID 20
+    float4_col REAL,            -- FLOAT4OID 700
+    float8_col DOUBLE PRECISION, -- FLOAT8OID 701
+    string_col VARCHAR(100),    -- VARCHAROID 1043
+    char_col CHAR(10),          -- BPCHAROID 1042
+    text_col TEXT,              -- TEXTOID 25
+    decimal_col DECIMAL(10, 2), -- NUMERICOID 1700
+    numeric_col NUMERIC(15, 5), -- NUMERICOID 1700
+    date_col DATE,              -- DATEOID 1082
+    timestamp_col TIMESTAMP,    -- TIMESTAMPOID 1114
+    interval_col INTERVAL       -- INTERVALOID 1186
 );
 
 INSERT INTO type_test_table VALUES
-    (true, 100, 1000, 100000, 3.14, 3.14159265359, 'hello', 'fixed     ', 'longer text here', 12345.67, 98765.43210, '2024-01-15', INTERVAL '5 days'),
-    (false, -200, -2000, -200000, -2.71, -2.71828182846, 'world', 'test      ', 'another text', -9999.99, -12345.67890, '2024-06-30', INTERVAL '3 months'),
-    (true, 32767, 2147483647, 9223372036854775807, 1.23e10, 1.23e100, 'special!@#', 'chars$%^  ', 'unicode αβγ', 99999.99, 99999.99999, '2024-12-31', INTERVAL '1 year 2 months'),
-    (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-    (false, 0, 0, 0, 0.0, 0.0, '', '          ', '', 0.00, 0.00000, '2024-02-29', INTERVAL '0 days');
+    (true, 100, 1000, 100000, 3.14, 3.14159265359, 'hello', 'fixed     ', 'longer text here', 12345.67, 98765.43210, '2024-01-15', '2024-01-15 10:30:00', INTERVAL '5 days'),
+    (false, -200, -2000, -200000, -2.71, -2.71828182846, 'world', 'test      ', 'another text', -9999.99, -12345.67890, '2024-06-30', '2024-06-30 14:45:30.123', INTERVAL '3 months'),
+    (true, 32767, 2147483647, 9223372036854775807, 1.23e10, 1.23e100, 'special!@#', 'chars$%^  ', 'unicode αβγ', 99999.99, 99999.99999, '2024-12-31', '2024-12-31 23:59:59.999999', INTERVAL '1 year 2 months'),
+    (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+    (false, 0, 0, 0, 0.0, 0.0, '', '          ', '', 0.00, 0.00000, '2024-02-29', '2024-02-29 00:00:00', INTERVAL '0 days');
 
 SELECT bool_col,
        bool_col = true AS is_true,
@@ -103,6 +104,17 @@ SELECT MIN(date_col) AS earliest_date,
        COUNT(DISTINCT date_col) AS unique_dates
 FROM type_test_table;
 
+SELECT timestamp_col,
+       timestamp_col > '2024-06-01 00:00:00' AS after_june,
+       timestamp_col < '2024-12-01 00:00:00' AS before_december,
+       timestamp_col = '2024-01-15 10:30:00' AS exact_match
+FROM type_test_table;
+
+SELECT MIN(timestamp_col) AS earliest_timestamp,
+       MAX(timestamp_col) AS latest_timestamp,
+       COUNT(DISTINCT timestamp_col) AS unique_timestamps
+FROM type_test_table;
+
 SELECT interval_col,
        interval_col > INTERVAL '1 day' AS more_than_day,
        interval_col < INTERVAL '1 year' AS less_than_year
@@ -120,6 +132,7 @@ SELECT COUNT(*) AS total_rows,
        COUNT(string_col) AS non_null_string,
        COUNT(decimal_col) AS non_null_decimal,
        COUNT(date_col) AS non_null_date,
+       COUNT(timestamp_col) AS non_null_timestamp,
        COUNT(interval_col) AS non_null_interval
 FROM type_test_table;
 
