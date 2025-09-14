@@ -54,7 +54,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
 
     if (!expr) {
         PGX_ERROR("Expression is null");
-        return nullptr;
+        throw std::runtime_error("Expression cannot be null");
     }
 
     switch (expr->type) {
@@ -91,13 +91,13 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
 
     if (!op_expr) {
         PGX_ERROR("Invalid OpExpr parameters");
-        return nullptr;
+        throw std::runtime_error("Invalid OpExpr parameters");
     }
 
     auto operands = extract_op_expr_operands(ctx, op_expr);
     if (!operands) {
         PGX_ERROR("Failed to extract OpExpr operands");
-        return nullptr;
+        throw std::runtime_error("Invalid OpExpr parameters");
     }
 
     auto [lhs, rhs] = *operands;
@@ -204,22 +204,14 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     PGX_IO(AST_TRANSLATE);
 
     if (!var || !ctx.current_tuple) {
-        const auto trace = pgx_lower::utility::capture_stacktrace();
         PGX_ERROR("Invalid Var parameters: var=%p, builder=%p, tuple=%p\n%s",
                   var,
                   ctx.builder,
-                  ctx.current_tuple.getAsOpaquePointer(),
-                  trace.c_str());
+                  ctx.current_tuple.getAsOpaquePointer());
         throw std::runtime_error("Invalid Var parameters");
     }
 
-    // For RelAlg operations, we need to generate a GetColumnOp
-    // This requires the current tuple value and column reference
-
     if (ctx.current_tuple) {
-        // We have a tuple handle - use it to get the column value
-        // This would typically be inside a MapOp or SelectionOp region
-
         // Get real table and column names from PostgreSQL schema
         const auto tableName = get_table_name_from_rte(&ctx.current_stmt, var->varno);
         const auto colName = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
@@ -234,7 +226,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         auto& columnManager = dialect->getColumnManager();
 
         // Map PostgreSQL type to MLIR type - check if column is nullable
-        PostgreSQLTypeMapper type_mapper(context_);
+        auto type_mapper = PostgreSQLTypeMapper(context_);
         const bool nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
         auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
 

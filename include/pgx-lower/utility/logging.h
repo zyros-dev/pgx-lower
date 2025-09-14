@@ -4,6 +4,10 @@
 #include <cstring>
 #include <string>
 #include <set>
+#include <sstream>
+#include <execinfo.h>
+#include <cxxabi.h>
+#include <memory>
 
 #ifndef POSTGRESQL_EXTENSION
 #include <iostream>
@@ -81,6 +85,53 @@ const char* level_name(Level level);
 bool should_log(Category cat, Level level);
 const char* basename_only(const char* filepath);
 
+inline auto capture_stacktrace(int skip_frames = 1, int max_frames = 20) -> std::string {
+    void* buffer[max_frames];
+    const int n_frames = backtrace(buffer, max_frames);
+
+    if (n_frames <= skip_frames)
+        return "failed to get stacktrace";
+
+    std::unique_ptr<char*, decltype(&free)> symbols(
+        backtrace_symbols(buffer, n_frames),
+        &free
+    );
+
+    if (!symbols) {
+        return "failed to get stacktrace";
+    }
+
+    auto oss = std::ostringstream{};
+    oss << "\nStack trace:";
+
+    for (int i = skip_frames; i < n_frames; ++i) {
+        std::string symbol_str(symbols.get()[i]);
+        size_t start_paren = symbol_str.find('(');
+        size_t plus_sign = symbol_str.find('+', start_paren);
+
+        if (start_paren != std::string::npos && plus_sign != std::string::npos) {
+            std::string mangled_name = symbol_str.substr(start_paren + 1, plus_sign - start_paren - 1);
+
+            int status = 0;
+            std::unique_ptr<char, decltype(&free)> demangled(
+                abi::__cxa_demangle(mangled_name.c_str(), nullptr, nullptr, &status),
+                &free
+            );
+
+            if (status == 0 && demangled) {
+                // Replace mangled name with demangled one
+                symbol_str = symbol_str.substr(0, start_paren + 1) +
+                            std::string(demangled.get()) +
+                            symbol_str.substr(plus_sign);
+            }
+        }
+
+        oss << "\n  #" << (i - skip_frames) << " " << symbol_str;
+    }
+
+    return oss.str();
+}
+
 class ScopeLogger {
 public:
     ScopeLogger(Category cat, const char* file, int line, const char* function_name);
@@ -127,16 +178,22 @@ private:
                           __FILE__, __LINE__, \
                           fmt, ##__VA_ARGS__)
 #define PGX_ERROR(fmt, ...) \
-    ::pgx_lower::log::log(::pgx_lower::log::Category::PROBLEM, \
-                          ::pgx_lower::log::Level::ERROR_LEVEL, \
-                          __FILE__, __LINE__, \
-                          fmt, ##__VA_ARGS__)
+    do { \
+        auto _pgx_stacktrace = ::pgx_lower::log::capture_stacktrace(2); \
+        ::pgx_lower::log::log(::pgx_lower::log::Category::PROBLEM, \
+                              ::pgx_lower::log::Level::ERROR_LEVEL, \
+                              __FILE__, __LINE__, \
+                              fmt "%s", ##__VA_ARGS__, _pgx_stacktrace.c_str()); \
+    } while(0)
 #else
 #define PGX_WARNING(fmt, ...) \
     fprintf(stderr, "[WARNING] " fmt "\n", ##__VA_ARGS__)
 
 #define PGX_ERROR(fmt, ...) \
-    fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
+    do { \
+        auto _pgx_stacktrace = ::pgx_lower::log::capture_stacktrace(2); \
+        fprintf(stderr, "[ERROR] " fmt "%s\n", ##__VA_ARGS__, _pgx_stacktrace.c_str()); \
+    } while(0)
 #endif
 
 #define PGX_IO(category) \

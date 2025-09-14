@@ -87,7 +87,7 @@ class PostgreSQLASTTranslator::Impl {
     explicit Impl(mlir::MLIRContext& context)
     : context_(context) {}
 
-    auto translate_query(PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp>;
+    auto translate_query(const PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp>;
 
     auto translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value;
     auto translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value;

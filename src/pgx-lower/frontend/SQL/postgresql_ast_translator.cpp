@@ -15,7 +15,7 @@ auto PostgreSQLASTTranslator::translate_query(PlannedStmt* planned_stmt) const -
     return p_impl_->translate_query(planned_stmt);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp> {
+auto PostgreSQLASTTranslator::Impl::translate_query(const PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp> {
     PGX_IO(AST_TRANSLATE);
     PGX_LOG(AST_TRANSLATE,
             IO,
