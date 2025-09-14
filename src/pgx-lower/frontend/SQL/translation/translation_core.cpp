@@ -99,6 +99,8 @@ auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t
     case FLOAT4OID: baseType = mlir::Float32Type::get(&context_); break;
     case FLOAT8OID: baseType = mlir::Float64Type::get(&context_); break;
     case BOOLOID: baseType = mlir::IntegerType::get(&context_, BOOL_BIT_WIDTH); break;
+    // TODO: NV BPCHAROID is supposed to map to a !db.char<X>, but its kind of high effort to add. so I'm just
+    //       mapping both of them to strings for the time being.
     case TEXTOID:
     case VARCHAROID:
     case BPCHAROID: baseType = mlir::db::StringType::get(&context_); break;
@@ -113,14 +115,15 @@ auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t
         baseType = mlir::db::TimestampType::get(&context_, timeUnit);
         break;
     }
+    case INTERVALOID:
+        baseType = mlir::db::IntervalType::get(&context_, mlir::db::IntervalUnitAttr::months);
+        break;
 
     default:
-        PGX_WARNING(("Unknown PostgreSQL type OID: " + std::to_string(type_oid) + ", defaulting to i32").c_str());
-        baseType = mlir::IntegerType::get(&context_, INT4_BIT_WIDTH);
-        break;
+        PGX_ERROR("Unknown PostgreSQL type OID: %d", type_oid);
+        throw std::runtime_error("Unknown PostgreSQL type OID");
     }
 
-    // Wrap in nullable type if column is nullable
     if (nullable) {
         return mlir::db::NullableType::get(&context_, baseType);
     }

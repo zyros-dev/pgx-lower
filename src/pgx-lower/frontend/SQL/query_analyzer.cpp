@@ -273,43 +273,20 @@ auto QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) -> bool {
 }
 
 auto QueryAnalyzer::isTypeSupportedByMLIR(const Oid postgresType) -> bool {
-    // TODO: NV This is wrong now. We only support what lingodb supports
-    // PostgreSQL types that MLIR runtime can handle
-    // Based on working test cases and available runtime functions
     switch (postgresType) {
-    case BOOLOID:
-    case INT2OID:
     case INT4OID:
     case INT8OID:
-    case NUMERICOID:
+    case INT2OID:
     case FLOAT4OID:
-    case FLOAT8OID: return true;
-
+    case FLOAT8OID:
+    case BOOLOID:
     case TEXTOID:
     case VARCHAROID:
-    case CHAROID: return true;
-
-    case DATEOID:
-    case TIMEOID:
-    case TIMETZOID:
-    case TIMESTAMPOID:
-    case TIMESTAMPTZOID:
-    case INTERVALOID:
-    case UUIDOID:
-    case INETOID:
-    case CIDROID:
-    case MACADDROID:
-    case BITOID:
-    case VARBITOID:
-    case BYTEAOID:
-    case NAMEOID:
-    case OIDOID:
-    case JSONOID:
-    case JSONBOID:
-    case XMLOID:
     case BPCHAROID:
-    case MACADDR8OID:
-    case PG_LSNOID: return true;
+    case NUMERICOID:
+    case DATEOID:
+    case TIMESTAMPOID:
+    case INTERVALOID: return true;
 
     default: return false;
     }

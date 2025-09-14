@@ -9,15 +9,19 @@ extern "C" {
 }
 #else
 #define BOOLOID     16
-#define INT2OID     21
-#define INT4OID     23
-#define INT8OID     20
-#define FLOAT4OID   700
-#define FLOAT8OID   701
-#define TEXTOID     25
-#define NUMERICOID  1700
-#define DATEOID     1082
-#define TIMESTAMPOID 1114
+#define CHAROID     18      // Single character type
+#define INT8OID     20      // 64-bit integer (bigint)
+#define INT2OID     21      // 16-bit integer (smallint)
+#define INT4OID     23      // 32-bit integer (integer)
+#define TEXTOID     25      // Text type
+#define FLOAT4OID   700     // 32-bit float (real)
+#define FLOAT8OID   701     // 64-bit float (double precision)
+#define BPCHAROID   1042    // Blank-padded char(n)
+#define VARCHAROID  1043    // Variable-length character
+#define DATEOID     1082    // Date type
+#define TIMESTAMPOID 1114   // Timestamp without timezone
+#define INTERVALOID 1186    // Interval type
+#define NUMERICOID  1700    // Numeric/Decimal type
 #endif
 int32_t parseDate32(std::string str) {
    // Simple date parsing - convert to days since epoch
