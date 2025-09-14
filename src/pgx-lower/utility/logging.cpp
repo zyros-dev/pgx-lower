@@ -179,6 +179,18 @@ void log(Category cat, Level level, const char* file, int line, const char* fmt,
 #endif
 }
 
+ScopeLogger::ScopeLogger(Category cat, const char* file, int line, const char* function_name)
+    : category_(cat)
+    , file_(file)
+    , line_(line)
+    , function_name_(function_name) {
+    log(category_, Level::IO, file_, line_, "%s IN", function_name);
+}
+
+ScopeLogger::~ScopeLogger() {
+    log(category_, Level::IO, file_, line_, "%s OUT", function_name_.c_str());
+}
+
 }} // namespace pgx_lower::log
 
 extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool io, bool trace, const char* categories) {

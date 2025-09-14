@@ -3,6 +3,7 @@
 #include "pgx_lower_constants.h"
 #include "pgx-lower/utility/error_handling.h"
 #include "pgx-lower/utility/logging.h"
+#include "pgx-lower/utility/stacktrace.h"
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
@@ -219,7 +220,8 @@ auto QueryAnalyzer::analyzeProjection(const Plan* plan, QueryCapabilities& caps)
 auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> void {
     if (!plan || !plan->targetlist) {
         caps.hasCompatibleTypes = false;
-        return;
+        PGX_ERROR_WITH_TRACE("don't pass in a nullable plan thanks");
+        throw std::runtime_error("don't pass in a nullable plan thanks");
     }
 
     auto columnTypes = std::vector<Oid>{};
@@ -265,8 +267,10 @@ auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> v
 }
 
 auto QueryAnalyzer::checkCommandType(const PlannedStmt* stmt) -> bool {
-    if (!stmt)
-        return false;
+    if (!stmt) {
+        PGX_ERROR_WITH_TRACE("don't pass in a nullable stmt thanks");
+        throw std::runtime_error("don't pass in a nullable stmt thanks");
+    }
     return (stmt->commandType == CMD_SELECT);
 }
 

@@ -50,7 +50,7 @@ namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
 auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value {
-    PGX_LOG(AST_TRANSLATE, IO, "translate_expression IN: PostgreSQL Expr type=%d", expr ? expr->type : -1);
+    PGX_IO(AST_TRANSLATE, "translate_expression");
 
     if (!expr) {
         PGX_ERROR("Expression is null");
@@ -84,8 +84,6 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
         throw std::runtime_error("Unsupported expression type - read the logs");
     }
     }
-
-    PGX_LOG(AST_TRANSLATE, IO, "translate_expression OUT: MLIR Value (expression type %d)", expr->type);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value {

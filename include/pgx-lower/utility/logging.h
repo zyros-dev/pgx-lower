@@ -81,6 +81,23 @@ const char* level_name(Level level);
 bool should_log(Category cat, Level level);
 const char* basename_only(const char* filepath);
 
+class ScopeLogger {
+public:
+    ScopeLogger(Category cat, const char* file, int line, const char* function_name);
+    ~ScopeLogger();
+
+    ScopeLogger(const ScopeLogger&) = delete;
+    ScopeLogger& operator=(const ScopeLogger&) = delete;
+    ScopeLogger(ScopeLogger&&) = delete;
+    ScopeLogger& operator=(ScopeLogger&&) = delete;
+
+private:
+    Category category_;
+    const char* file_;
+    int line_;
+    std::string function_name_;
+};
+
 } // namespace log
 } // namespace pgx_lower
 
@@ -121,4 +138,10 @@ const char* basename_only(const char* filepath);
 #define PGX_ERROR(fmt, ...) \
     fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
 #endif
+
+#define PGX_IO(category, function_name) \
+    ::pgx_lower::log::ScopeLogger _pgx_io_logger( \
+        ::pgx_lower::log::Category::category, \
+        __FILE__, __LINE__, \
+        function_name)
 
