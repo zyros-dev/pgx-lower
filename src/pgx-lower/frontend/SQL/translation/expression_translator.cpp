@@ -16,6 +16,7 @@ extern "C" {
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
 #include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
 #include "pgx-lower/utility/logging.h"
+#include "pgx-lower/utility/util_functions.h"
 #include "pgx-lower/runtime/tuple_access.h"
 
 #include "mlir/IR/Builders.h"
@@ -45,6 +46,7 @@ extern "C" {
 namespace mlir::relalg {
 class GetColumnOp;
 } // namespace mlir::relalg
+
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
@@ -102,14 +104,14 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
     const auto [lhs, rhs] = *operands;
     const Oid opOid = op_expr->opno;
 
-    mlir::Value result = translate_arithmetic_op(ctx, opOid, lhs, rhs);
-    if (result) {
-        return result;
+    {
+        if (auto result = translate_arithmetic_op(ctx, opOid, lhs, rhs))
+            return result;
     }
 
-    result = translate_comparison_op(ctx, opOid, lhs, rhs);
-    if (result) {
-        return result;
+    {
+        if (auto result = translate_comparison_op(ctx, opOid, lhs, rhs))
+            return result;
     }
 
     switch (opOid) {
@@ -211,11 +213,9 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     }
 
     if (ctx.current_tuple) {
-        // Get real table and column names from PostgreSQL schema
         const auto tableName = get_table_name_from_rte(&ctx.current_stmt, var->varno);
         const auto colName = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
 
-        // Get column manager from RelAlg dialect
         auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
         if (!dialect) {
             PGX_ERROR("RelAlg dialect not registered");
@@ -224,15 +224,12 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
         auto& columnManager = dialect->getColumnManager();
 
-        // Map PostgreSQL type to MLIR type - check if column is nullable
-        auto type_mapper = PostgreSQLTypeMapper(context_);
+        // Map PostgreSQL type to MLIR type
+        const auto type_mapper = PostgreSQLTypeMapper(context_);
         const bool nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
         auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
 
-        // This ensures proper column tracking and avoids invalid attributes
         auto colRef = columnManager.createRef(tableName, colName);
-
-        // Set the column type
         colRef.getColumn().type = mlirType;
 
         auto getColOp =
@@ -241,11 +238,8 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         return getColOp.getRes();
     }
     else {
-        // No tuple context - this shouldn't happen in properly structured queries
-        PGX_WARNING("No tuple context for Var translation, using placeholder");
-        return ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
-                                                              DEFAULT_PLACEHOLDER_INT,
-                                                              ctx.builder.getI32Type());
+        PGX_ERROR("No tuple context for Var translation");
+        throw std::runtime_error("No tuple context for Var translation");
     }
 }
 
@@ -261,18 +255,15 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         return nullptr;
     }
 
-    // Translate function arguments first
     auto args = std::vector<mlir::Value>{};
     if (func_expr->args && func_expr->args->length > 0) {
-        // Safety check for elements array (PostgreSQL 17)
         if (!func_expr->args->elements) {
             PGX_WARNING("FuncExpr args list has length but no elements array");
             return nullptr;
         }
 
-        // Iterate through arguments
-        for (int i = 0; i < func_expr->args->length; i++) {
-            const ListCell* lc = &func_expr->args->elements[i];
+        ListCell* lc;
+        foreach (lc, func_expr->args) {
             if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                 if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                     args.push_back(argValue);
@@ -281,44 +272,21 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         }
     }
 
-    // Map PostgreSQL function OID to MLIR operations
-
     const auto loc = ctx.builder.getUnknownLoc();
-
     switch (func_expr->funcid) {
     case PG_F_ABS_INT4:
     case PG_F_ABS_INT8:
     case PG_F_ABS_FLOAT4:
-    case PG_F_ABS_FLOAT8:
+    case PG_F_ABS_FLOAT8: {
         if (args.size() != 1) {
             PGX_ERROR("ABS requires exactly 1 argument, got %d", args.size());
-            return nullptr;
+            throw std::runtime_error("ABS requires exactly 1 argument");
         }
-        // Implement absolute value using comparison and negation
-        // Since DB dialect doesn't have AbsOp, use arith operations
-        {
-            auto zero = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, args[0].getType());
-            auto cmp = ctx.builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, args[0], zero);
-            auto neg = ctx.builder.create<mlir::arith::SubIOp>(loc, zero, args[0]);
-            return ctx.builder.create<mlir::arith::SelectOp>(loc, cmp, neg, args[0]);
-        }
-
-    case PG_F_SQRT_FLOAT8:
-        if (args.size() != 1) {
-            PGX_ERROR("SQRT requires exactly 1 argument");
-            return nullptr;
-        }
-        // Use math dialect sqrt (TODO: may need to add math dialect)
-        PGX_WARNING("SQRT function not yet implemented in DB dialect");
-        return args[0];
-
-    case PG_F_POW_FLOAT8:
-        if (args.size() != 2) {
-            PGX_ERROR("POWER requires exactly 2 arguments");
-            return nullptr;
-        }
-        PGX_WARNING("POWER function not yet implemented in DB dialect");
-        return args[0];
+        auto zero = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, 0, args[0].getType());
+        auto cmp = ctx.builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, args[0], zero);
+        auto neg = ctx.builder.create<mlir::arith::SubIOp>(loc, zero, args[0]);
+        return ctx.builder.create<mlir::arith::SelectOp>(loc, cmp, neg, args[0]);
+    }
 
     case PG_F_UPPER: {
         if (args.size() != 1) {
@@ -369,20 +337,20 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         }
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating SUBSTRING function to StringRuntime::substring");
 
-        // SUBSTRING(string, start [, length])
-        // If length is not provided, we need to add a default
+        // SUBSTRING(string, start [, length]
         auto substringArgs = std::vector{args[0], args[1]};
         if (args.size() == 3) {
             substringArgs.push_back(args[2]);
         }
         else {
-            // Default length to max int32 for "rest of string"
-            auto maxLength = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, 2147483647, ctx.builder.getI32Type());
+            auto maxLength = ctx.builder.create<mlir::arith::ConstantIntOp>(loc,
+                                                                            std::numeric_limits<int32_t>::max(),
+                                                                            ctx.builder.getI32Type());
             substringArgs.push_back(maxLength);
         }
 
         const bool hasNullableOperand = isa<mlir::db::NullableType>(args[0].getType());
-        mlir::Type resultType =
+        const auto resultType =
             hasNullableOperand
                 ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(),
                                                          mlir::db::StringType::get(ctx.builder.getContext())))
@@ -394,27 +362,8 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
                                                             mlir::ValueRange{substringArgs});
         return op.getRes();
     }
-
-    case PG_F_LENGTH:
-        if (args.size() != 1) {
-            PGX_ERROR("LENGTH requires exactly 1 argument");
-            return nullptr;
-        }
-        PGX_WARNING("LENGTH function not yet implemented");
-        return ctx.builder.create<mlir::arith::ConstantIntOp>(loc, DEFAULT_PLACEHOLDER_INT, ctx.builder.getI32Type());
-
-    case PG_F_CEIL_FLOAT8:
-    case PG_F_FLOOR_FLOAT8:
-    case PG_F_ROUND_FLOAT8:
-        if (args.size() != 1) {
-            PGX_ERROR("Rounding function requires exactly 1 argument");
-            return nullptr;
-        }
-        PGX_WARNING("Rounding functions not yet implemented in DB dialect");
-        return args[0];
-
     default: {
-        PGX_WARNING("Unknown function OID %d", func_expr->funcid);
+        PGX_ERROR("Unknown function OID %d", func_expr->funcid);
         throw std::runtime_error("Unknown function OID " + std::to_string(func_expr->funcid));
     }
     }
@@ -424,12 +373,12 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
     PGX_IO(AST_TRANSLATE);
     if (!bool_expr) {
         PGX_ERROR("Invalid BoolExpr parameters");
-        return nullptr;
+        throw std::runtime_error("Invalid BoolExpr parameters");
     }
 
     if (!bool_expr->args || bool_expr->args->length == 0) {
         PGX_ERROR("BoolExpr has no arguments");
-        return nullptr;
+        throw std::runtime_error("Invalid BoolExpr parameters");
     }
 
     switch (bool_expr->boolop) {
@@ -438,15 +387,14 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
 
         if (bool_expr->args && bool_expr->args->length > 0) {
             if (!bool_expr->args->elements) {
-                PGX_WARNING("BoolExpr AND args list has length but no elements array");
-                return nullptr;
+                PGX_ERROR("BoolExpr AND args list has length but no elements array");
+                throw std::runtime_error("Invalid BoolExpr parameters");
             }
 
-            for (int i = 0; i < bool_expr->args->length; i++) {
-                const ListCell* lc = &bool_expr->args->elements[i];
+            ListCell* lc;
+            foreach (lc, bool_expr->args) {
                 if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                     if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
-                        // Ensure boolean type
                         if (!argValue.getType().isInteger(1)) {
                             argValue = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argValue);
                         }
@@ -475,15 +423,13 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
         mlir::Value result = nullptr;
 
         if (bool_expr->args && bool_expr->args->length > 0) {
-            // Safety check for elements array (PostgreSQL 17)
             if (!bool_expr->args->elements) {
-                PGX_WARNING("BoolExpr OR args list has length but no elements array");
-                return nullptr;
+                PGX_ERROR("BoolExpr OR args list has length but no elements array");
+                throw std::runtime_error("BoolExpr OR args list has length but no elements array");
             }
 
-            // Iterate using PostgreSQL 17 style with elements array
-            for (int i = 0; i < bool_expr->args->length; i++) {
-                const ListCell* lc = &bool_expr->args->elements[i];
+            ListCell* lc;
+            foreach (lc, bool_expr->args) {
                 if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                     if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                         // Ensure boolean type
@@ -505,20 +451,16 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
         }
 
         if (!result) {
-            // Default to false if no valid expression
-            result = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
-                                                                    DEFAULT_PLACEHOLDER_BOOL_FALSE,
-                                                                    ctx.builder.getI1Type());
+            PGX_ERROR("Failed BoolExpr");
+            throw std::runtime_error("Failed BoolExpr");
         }
         return result;
     }
 
     case BOOL_NOT_EXPR: {
-        // NOT has single argument
         mlir::Value argVal = nullptr;
 
         if (bool_expr->args && bool_expr->args->length > 0) {
-            // Get first argument
             if (const ListCell* lc = list_head(bool_expr->args)) {
                 if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                     argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode));
@@ -527,14 +469,12 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
         }
 
         if (!argVal) {
-            // Default argument if none provided
             PGX_WARNING("NOT expression has no valid argument, using placeholder");
             argVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
                                                                     DEFAULT_PLACEHOLDER_BOOL,
                                                                     ctx.builder.getI1Type());
         }
 
-        // Ensure argument is boolean
         if (!argVal.getType().isInteger(1)) {
             argVal = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argVal);
         }
@@ -542,7 +482,10 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
         return ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), argVal);
     }
 
-    default: PGX_ERROR("Unknown BoolExpr type: %d", bool_expr->boolop); return nullptr;
+    default: {
+        PGX_ERROR("Unknown BoolExpr type: %d", bool_expr->boolop);
+        throw std::runtime_error("Unknown BoolExpr type");
+    }
     }
 }
 
@@ -550,7 +493,7 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
     PGX_IO(AST_TRANSLATE);
     if (!null_test) {
         PGX_ERROR("Invalid NullTest parameters");
-        return nullptr;
+        throw std::runtime_error("Invalid NullTest parameters");
     }
 
     // Translate the argument expression
@@ -558,23 +501,17 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
     auto argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode));
     if (!argVal) {
         PGX_ERROR("Failed to translate NullTest argument");
-        return nullptr;
+        throw std::runtime_error("Failed to translate NullTest argument");
     }
 
-    // Follow LingoDB's exact pattern: check if type is nullable first
     if (isa<mlir::db::NullableType>(argVal.getType())) {
-        mlir::Value isNull = ctx.builder.create<mlir::db::IsNullOp>(ctx.builder.getUnknownLoc(), argVal);
-        if (null_test->nulltesttype == PG_IS_NOT_NULL) {
-            // LingoDB's clean approach: use NotOp instead of XOrIOp
+        auto isNull = ctx.builder.create<mlir::db::IsNullOp>(ctx.builder.getUnknownLoc(), argVal);
+        if (null_test->nulltesttype == PG_IS_NOT_NULL)
             return ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), isNull);
-        }
-        else {
+        else
             return isNull;
-        }
     }
     else {
-        // Non-nullable types: return constant based on null test type
-        // LingoDB pattern: IS_NOT_NULL returns true, IS_NULL returns false for non-nullable
         return ctx.builder.create<mlir::db::ConstantOp>(
             ctx.builder.getUnknownLoc(),
             ctx.builder.getI1Type(),
@@ -603,12 +540,10 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
 
     if (!coalesce_expr) {
         PGX_ERROR("Invalid CoalesceExpr parameters");
-        return nullptr;
+        throw std::runtime_error("Invalid CoalesceExpr parameters");
     }
 
-    // COALESCE returns first non-null argument
     if (!coalesce_expr->args || coalesce_expr->args->length == 0) {
-        PGX_WARNING("COALESCE with no arguments");
         // No arguments - return NULL with default type
         auto nullType = mlir::db::NullableType::get(&context_, ctx.builder.getI32Type());
         return ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullType);
@@ -616,86 +551,64 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE has %d arguments", coalesce_expr->args->length);
 
-    // First, translate all arguments
-    std::vector<mlir::Value> translatedArgs;
+    auto translatedArgs = std::vector<mlir::Value>{};
 
     ListCell* cell;
     foreach (cell, coalesce_expr->args) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating COALESCE argument");
         const auto expr = static_cast<Expr*>(lfirst(cell));
         if (mlir::Value val = translate_expression(ctx, expr)) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Argument translated successfully");
             translatedArgs.push_back(val);
         }
         else {
-            PGX_WARNING("Failed to translate COALESCE argument");
+            PGX_ERROR("Failed to translate COALESCE argument");
+            throw std::runtime_error("Failed to translate COALESCE argument");
         }
     }
 
     if (translatedArgs.empty()) {
-        PGX_WARNING("All COALESCE arguments failed to translate");
-        auto nullType = mlir::db::NullableType::get(&context_, ctx.builder.getI32Type());
-        return ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullType);
+        PGX_ERROR("All COALESCE arguments failed to translate");
+        throw std::runtime_error("All COALESCE arguments failed to translate");
     }
 
-    // Determine common type following LingoDB pattern
-    // Only create nullable result if at least one argument is nullable
+    // Determine common type - Only create nullable result if at least one argument is nullable
     mlir::Type baseType = nullptr;
-
     for (const auto& arg : translatedArgs) {
-        auto argType = arg.getType();
+        const auto argType = arg.getType();
         if (auto nullableType = dyn_cast<mlir::db::NullableType>(argType)) {
             if (!baseType) {
                 baseType = nullableType.getType();
             }
         }
-        else {
-            if (!baseType) {
-                baseType = argType;
-            }
+        else if (!baseType) {
+            baseType = argType;
         }
     }
 
     // COALESCE should always produce nullable type in query contexts
     // Even when all inputs are non-nullable, the result needs nullable wrapper
-    // for proper MaterializeOp handling
-    mlir::Type commonType = mlir::db::NullableType::get(&context_, baseType);
-
+    auto commonType = mlir::db::NullableType::get(&context_, baseType);
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE common type determined - forcing nullable for query context");
-
-    // Now convert arguments to common type only if necessary
-    for (size_t i = 0; i < translatedArgs.size(); ++i) {
-        if (auto& val = translatedArgs[i]; val.getType() != commonType) {
+    for (auto& val : translatedArgs) {
+        if (val.getType() != commonType) {
             // Need to convert to common type
             if (!isa<mlir::db::NullableType>(val.getType())) {
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Wrapping non-nullable argument %zu to match common nullable type", i);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Wrapping non-nullable argument to match common nullable type");
                 // Wrap non-nullable value in nullable type with explicit false null flag
                 auto falseFlag = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
-                val = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(),
-                                                                 commonType, // Result type (nullable)
-                                                                 val, // Value to wrap
-                                                                 falseFlag // Explicit null flag = false (NOT NULL)
-                );
-                translatedArgs[i] = val;
+                val = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), commonType, val, falseFlag);
             }
         }
     }
 
-    // COALESCE using simplified recursive pattern that's safer
     std::function<mlir::Value(size_t)> buildCoalesceRecursive = [&](const size_t index) -> mlir::Value {
         const auto loc = ctx.builder.getUnknownLoc();
-
-        // Base case: if we're at the last argument, return it
         if (index >= translatedArgs.size() - 1) {
             return translatedArgs.back();
         }
 
-        // Get current argument
-        mlir::Value value = translatedArgs[index];
-
-        // Create null check - follow LingoDB semantics exactly
-        mlir::Value isNull = ctx.builder.create<mlir::db::IsNullOp>(loc, value);
-        mlir::Value isNotNull = ctx.builder.create<mlir::db::NotOp>(loc, isNull);
+        auto value = translatedArgs[index];
+        auto isNull = ctx.builder.create<mlir::db::IsNullOp>(loc, value);
+        auto isNotNull = ctx.builder.create<mlir::db::NotOp>(loc, isNull);
 
         // Create scf.IfOp with automatic region creation (safer than manual blocks)
         auto ifOp = ctx.builder.create<mlir::scf::IfOp>(loc, commonType, isNotNull, true);
@@ -704,6 +617,7 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
         auto& thenRegion = ifOp.getThenRegion();
         auto* thenBlock = &thenRegion.front();
         ctx.builder.setInsertionPointToEnd(thenBlock);
+
         // Cast value if needed
         mlir::Value thenValue = value;
         if (value.getType() != commonType && !isa<mlir::db::NullableType>(value.getType())) {
@@ -727,13 +641,11 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
 
     const auto result = buildCoalesceRecursive(0);
 
-    // Log result type info
     const bool resultIsNullable = mlir::isa<mlir::db::NullableType>(result.getType());
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE final result is nullable: %d", resultIsNullable);
 
     // COALESCE always returns nullable type for query context compatibility
-    // No unpacking needed - MaterializeOp requires nullable types
-    const bool resultIsNullableType = isa<mlir::db::NullableType>(result.getType());
+    const auto resultIsNullableType = isa<mlir::db::NullableType>(result.getType());
     PGX_LOG(AST_TRANSLATE, IO, "translate_coalesce_expr OUT: MLIR Value (nullable=%d)", resultIsNullableType);
 
     return result;
@@ -749,14 +661,14 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         return nullptr;
     }
 
-    const List* args = scalar_array_op->args;
+    const auto* args = scalar_array_op->args;
     if (!args || args->length != 2) {
         PGX_ERROR("ScalarArrayOpExpr: Expected 2 arguments, got %d", args ? args->length : 0);
         return nullptr;
     }
 
     const auto leftNode = static_cast<Node*>(lfirst(&args->elements[0]));
-    mlir::Value leftValue = translate_expression(ctx, reinterpret_cast<Expr*>(leftNode));
+    auto leftValue = translate_expression(ctx, reinterpret_cast<Expr*>(leftNode));
     if (!leftValue) {
         PGX_ERROR("Failed to translate left operand of IN expression");
         return nullptr;
@@ -765,17 +677,14 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     const auto rightNode = static_cast<Node*>(lfirst(&args->elements[1]));
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr: Right operand nodeTag = %d", nodeTag(rightNode));
-
-    // Extract array elements into a common format
-    std::vector<mlir::Value> arrayElements;
+    auto arrayElements = std::vector<mlir::Value>{};
 
     if (nodeTag(rightNode) == T_ArrayExpr) {
         const auto arrayExpr = reinterpret_cast<ArrayExpr*>(rightNode);
-        const List* elements = arrayExpr->elements;
-
-        if (elements) {
-            for (int i = 0; i < elements->length; i++) {
-                const auto elemNode = static_cast<Node*>(lfirst(&elements->elements[i]));
+        if (const auto* elements = arrayExpr->elements) {
+            ListCell* lc;
+            foreach (lc, elements) {
+                const auto elemNode = static_cast<Node*>(lfirst(lc));
                 if (mlir::Value elemValue = translate_expression(ctx, reinterpret_cast<Expr*>(elemNode))) {
                     arrayElements.push_back(elemValue);
                 }
@@ -802,7 +711,6 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             }
         }
         else if (constNode->consttype == PG_TEXT_ARRAY_OID) {
-            // Handle text array for IN ('string1', 'string2', ...)
             const auto array = DatumGetArrayTypeP(constNode->constvalue);
             int nitems;
             Datum* values;
@@ -830,30 +738,23 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         PGX_WARNING("ScalarArrayOpExpr: Unexpected right operand type %d", nodeTag(rightNode));
     }
 
-    // Handle empty array
     if (arrayElements.empty()) {
         return ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
                                                               scalar_array_op->useOr ? 0 : 1,
                                                               ctx.builder.getI1Type());
     }
 
-    // Build comparison chain
     mlir::Value result = nullptr;
-
-    for (auto elemValue : arrayElements) {
+    for (const auto& elemValue : arrayElements) {
         mlir::Value cmp = nullptr;
 
-        if (scalar_array_op->opno == PG_INT4_EQ_OID || scalar_array_op->opno == PG_INT8_EQ_OID
-            || scalar_array_op->opno == PG_INT2_EQ_OID || scalar_array_op->opno == PG_TEXT_EQ_OID)
-        {
+        if (pgx::is_in(scalar_array_op->opno, {PG_INT4_EQ_OID, PG_INT8_EQ_OID, PG_INT2_EQ_OID, PG_TEXT_EQ_OID})) {
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(),
                                                       mlir::db::DBCmpPredicate::eq,
                                                       leftValue,
                                                       elemValue);
         }
-        else if (scalar_array_op->opno == PG_INT4_NE_OID || scalar_array_op->opno == PG_INT8_NE_OID
-                 || scalar_array_op->opno == PG_INT2_NE_OID || scalar_array_op->opno == PG_TEXT_NE_OID)
-        {
+        else if (pgx::is_in(scalar_array_op->opno, {PG_INT4_NE_OID, PG_INT8_NE_OID, PG_INT2_NE_OID, PG_TEXT_NE_OID})) {
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(),
                                                       mlir::db::DBCmpPredicate::neq,
                                                       leftValue,
