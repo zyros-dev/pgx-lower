@@ -27,10 +27,6 @@ extern "C" {
 #include "fmgr.h"
 }
 
-#ifndef NUMERICOID
-#define NUMERICOID 1700
-#endif
-
 extern "C" {
 extern void mark_results_ready_for_streaming();
 extern void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
@@ -69,8 +65,21 @@ void* rt_get_execution_context() {
     return &dummy_context;
 }
 
-// ColumnType enum - keep outside namespace runtime for internal use
-enum class ColumnType { INTEGER, BIGINT, BOOLEAN, STRING, TEXT, VARCHAR, DECIMAL };
+enum class ColumnType {
+    SMALLINT, // INT2OID (16-bit)
+    INTEGER, // INT4OID (32-bit)
+    BIGINT, // INT8OID (64-bit)
+    BOOLEAN, // BOOLOID
+    STRING, // TEXTOID, VARCHAROID, BPCHAROID, CHAROID
+    TEXT, // Legacy - maps to STRING
+    VARCHAR, // Legacy - maps to STRING
+    DECIMAL, // NUMERICOID
+    FLOAT, // FLOAT4OID
+    DOUBLE, // FLOAT8OID
+    DATE, // DATEOID
+    TIMESTAMP, // TIMESTAMPOID, TIMESTAMPTZOID
+    INTERVAL // INTERVALOID
+};
 
 struct ColumnSpec {
     std::string name;
@@ -86,6 +95,8 @@ struct DataSourceIterator {
     std::vector<ColumnSpec> columns;
 
     // Dynamic column data storage
+    std::vector<int16_t> smallint_values;
+    std::vector<bool> smallint_nulls;
     std::vector<int32_t> int_values;
     std::vector<bool> int_nulls;
     std::vector<int64_t> bigint_values;
@@ -106,6 +117,18 @@ struct DataSourceIterator {
     };
     std::vector<Decimal128> decimal_values;
     std::vector<bool> decimal_nulls;
+
+    // Additional type storage
+    std::vector<float> real_values;
+    std::vector<bool> real_nulls;
+    std::vector<double> double_values;
+    std::vector<bool> double_nulls;
+    std::vector<int32_t> date_values; // Days since epoch
+    std::vector<bool> date_nulls;
+    std::vector<int64_t> timestamp_values; // Microseconds since epoch
+    std::vector<bool> timestamp_nulls;
+    std::vector<int64_t> interval_values; // Microseconds
+    std::vector<bool> interval_nulls;
 
     int32_t current_row_index = 0;
 
@@ -128,7 +151,7 @@ struct TableSpec {
 
 static int get_column_position(const std::string& table_name, const std::string& column_name) {
     PGX_IO(RUNTIME);
-    extern int32_t get_column_attnum(const char* table_name, const char* column_name);
+    extern int32_t get_column_attnum(const char* p_table_name, const char* p_column_name);
     int32_t attnum = get_column_attnum(table_name.c_str(), column_name.c_str());
     if (attnum > 0) {
         // Convert from 1-based PostgreSQL attnum to 0-based index
@@ -296,8 +319,8 @@ void TableBuilder::addBinary(bool is_valid, VarLen32 value) {
 
 void TableBuilder::addDecimal(bool is_valid, __int128 value) {
     PGX_IO(RUNTIME);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s, value=%lld",
-            is_valid ? "true" : "false", static_cast<long long>(value));
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s, value=%lld", is_valid ? "true" : "false",
+            static_cast<long long>(value));
 
     // For now, just use int64_t until we have proper NUMERIC support
     // This avoids the type mismatch that causes crashes
@@ -411,13 +434,20 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
 
                         switch (type_oid) {
                         case BOOLOID: col_spec.type = ::ColumnType::BOOLEAN; break;
+                        case INT2OID: col_spec.type = ::ColumnType::SMALLINT; break;
+                        case INT4OID: col_spec.type = ::ColumnType::INTEGER; break;
                         case INT8OID: col_spec.type = ::ColumnType::BIGINT; break;
+                        case FLOAT4OID: col_spec.type = ::ColumnType::FLOAT; break;
+                        case FLOAT8OID: col_spec.type = ::ColumnType::DOUBLE; break;
                         case TEXTOID:
                         case VARCHAROID:
-                        case BPCHAROID: col_spec.type = ::ColumnType::STRING; break;
-                        case INT4OID:
-                        case INT2OID: col_spec.type = ::ColumnType::INTEGER; break;
+                        case BPCHAROID:
+                        case CHAROID: col_spec.type = ::ColumnType::STRING; break;
                         case NUMERICOID: col_spec.type = ::ColumnType::DECIMAL; break;
+                        case DATEOID: col_spec.type = ::ColumnType::DATE; break;
+                        case TIMESTAMPOID:
+                        case TIMESTAMPTZOID: col_spec.type = ::ColumnType::TIMESTAMP; break;
+                        case INTERVALOID: col_spec.type = ::ColumnType::INTERVAL; break;
                         default:
                             PGX_ERROR("Unsupported type %d for column '%s'", type_oid, col_spec.name.c_str());
                             throw std::runtime_error("Failed to parse column type");
@@ -449,25 +479,36 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
 static void initialize_column_storage(DataSourceIterator* iter) {
     PGX_IO(RUNTIME);
     // Reserve capacity to prevent reallocation during iteration
+    iter->smallint_values.reserve(10000);
+    iter->smallint_nulls.reserve(10000);
     iter->int_values.reserve(10000);
     iter->int_nulls.reserve(10000);
     iter->bigint_values.reserve(10000);
     iter->bigint_nulls.reserve(10000);
     iter->bool_values.reserve(10000);
     iter->bool_nulls.reserve(10000);
-
+    iter->smallint_values.resize(iter->columns.size(), 0);
+    iter->smallint_nulls.resize(iter->columns.size(), true);
     iter->int_values.resize(iter->columns.size(), 0);
     iter->int_nulls.resize(iter->columns.size(), true);
     iter->bigint_values.resize(iter->columns.size(), 0);
     iter->bigint_nulls.resize(iter->columns.size(), true);
     iter->bool_values.resize(iter->columns.size(), 0);
     iter->bool_nulls.resize(iter->columns.size(), true);
-
     iter->string_data.resize(iter->columns.size(), "");
     iter->string_nulls.resize(iter->columns.size(), true);
-
     iter->decimal_values.resize(iter->columns.size(), {0, 0, 0});
     iter->decimal_nulls.resize(iter->columns.size(), true);
+    iter->real_values.resize(iter->columns.size(), 0.0f);
+    iter->real_nulls.resize(iter->columns.size(), true);
+    iter->double_values.resize(iter->columns.size(), 0.0);
+    iter->double_nulls.resize(iter->columns.size(), true);
+    iter->date_values.resize(iter->columns.size(), 0);
+    iter->date_nulls.resize(iter->columns.size(), true);
+    iter->timestamp_values.resize(iter->columns.size(), 0);
+    iter->timestamp_nulls.resize(iter->columns.size(), true);
+    iter->interval_values.resize(iter->columns.size(), 0);
+    iter->interval_nulls.resize(iter->columns.size(), true);
 
     // Initialize per-column string storage
     iter->string_offsets_per_column.resize(iter->columns.size());
@@ -478,6 +519,11 @@ static void initialize_column_storage(DataSourceIterator* iter) {
         if (iter->columns[i].type == ::ColumnType::STRING || iter->columns[i].type == ::ColumnType::TEXT
             || iter->columns[i].type == ::ColumnType::VARCHAR)
         {
+            // TODO: If this array grows its going to reallocate. This needs to be solved otherwise we can't handle
+            // queries
+            //       longer than 10k or so. Ideally we end up with a linked list of chunks or something
+            //       i.e. instead of realloc, alloc double the size somewhere else, put a pointer at the back, support
+            //       iterators... haha...
             iter->string_offsets_per_column[i].reserve(10000); // Reserve for up to 10k rows
             iter->string_data_buffers_per_column[i].reserve(100000); // Reserve 100KB per column
         }
@@ -600,76 +646,174 @@ bool DataSourceIteration::isValid() {
             // Get the actual type OID from PostgreSQL
             int32_t type_oid = get_field_type_oid(pg_column_index);
 
-            // Determine the column type from the PostgreSQL type OID
-            if (type_oid == 16) { // BOOLOID
+            // Determine the column type from the PostgreSQL type OID and process data
+            switch (type_oid) {
+            case BOOLOID:
                 col_spec.type = ::ColumnType::BOOLEAN;
-                bool is_null = false;
-                bool bool_value = get_bool_field(iter->table_handle, pg_column_index, &is_null);
-                iter->bool_values[i] = bool_value ? 1 : 0;
-                iter->bool_nulls[i] = is_null;
-                PGX_LOG(RUNTIME, DEBUG,
-                        "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %s (null=%s)", i,
-                        col_spec.name.c_str(), pg_column_index, bool_value ? "true" : "false",
-                        is_null ? "true" : "false");
-            } else if (col_spec.type == ::ColumnType::BIGINT) {
-                bool is_null = false;
-                iter->bigint_values[i] = get_int64_field(iter->table_handle, pg_column_index, &is_null);
-                iter->bigint_nulls[i] = is_null;
-                PGX_LOG(RUNTIME, DEBUG,
-                        "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)", i,
-                        col_spec.name.c_str(), pg_column_index, (long long)iter->bigint_values[i],
-                        is_null ? "true" : "false");
-            } else if (col_spec.type == ::ColumnType::STRING || col_spec.type == ::ColumnType::TEXT
-                       || col_spec.type == ::ColumnType::VARCHAR)
-            {
-                bool is_null = false;
-                int32_t length = 0;
-                const char* string_value = get_string_field(iter->table_handle, pg_column_index, &is_null, &length,
-                                                            type_oid);
-
-                if (!is_null && string_value != nullptr && length > 0) {
-                    iter->string_data[i] = std::string(string_value, length);
-                } else {
-                    iter->string_data[i] = "";
+                {
+                    bool is_null = false;
+                    bool bool_value = get_bool_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->bool_values[i] = bool_value ? 1 : 0;
+                    iter->bool_nulls[i] = is_null;
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %s (null=%s)", i,
+                            col_spec.name.c_str(), pg_column_index, bool_value ? "true" : "false",
+                            is_null ? "true" : "false");
                 }
+                break;
+            case INT2OID:
+                col_spec.type = ::ColumnType::SMALLINT;
+                {
+                    bool is_null = false;
+                    extern int16_t get_int16_field(void* tuple_handle, int32_t field_index, bool* is_null);
+                    iter->smallint_values[i] = get_int16_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->smallint_nulls[i] = is_null;
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", i,
+                            col_spec.name.c_str(), pg_column_index, iter->smallint_values[i], is_null ? "true" : "false");
+                }
+                break;
+            case INT4OID:
+                col_spec.type = ::ColumnType::INTEGER;
+                {
+                    bool is_null = false;
+                    iter->int_values[i] = get_int32_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->int_nulls[i] = is_null;
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", i,
+                            col_spec.name.c_str(), pg_column_index, iter->int_values[i], is_null ? "true" : "false");
+                }
+                break;
+            case INT8OID:
+                col_spec.type = ::ColumnType::BIGINT;
+                {
+                    bool is_null = false;
+                    iter->bigint_values[i] = get_int64_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->bigint_nulls[i] = is_null;
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)", i,
+                            col_spec.name.c_str(), pg_column_index, (long long)iter->bigint_values[i],
+                            is_null ? "true" : "false");
+                }
+                break;
+            case TEXTOID:
+            case VARCHAROID:
+            case BPCHAROID:
+            case CHAROID:
+                col_spec.type = ::ColumnType::STRING;
+                {
+                    bool is_null = false;
+                    int32_t length = 0;
+                    const char* string_value = get_string_field(iter->table_handle, pg_column_index, &is_null, &length,
+                                                                type_oid);
 
-                iter->string_nulls[i] = is_null;
+                    if (!is_null && string_value != nullptr && length > 0) {
+                        iter->string_data[i] = std::string(string_value, length);
+                    } else {
+                        iter->string_data[i] = "";
+                    }
 
-                PGX_LOG(RUNTIME, DEBUG,
-                        "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d string = '%s' len=%zu "
-                        "(null=%s)",
-                        i, col_spec.name.c_str(), pg_column_index, iter->string_data[i].c_str(),
-                        iter->string_data[i].length(), is_null ? "true" : "false");
-            } else if (col_spec.type == ::ColumnType::DECIMAL) {
-                // Handle DECIMAL/NUMERIC - for now convert from double
-                // TODO: Get proper precision/scale from PostgreSQL NUMERIC
-                bool is_null = false;
-                double decimal_value = get_numeric_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->string_nulls[i] = is_null;
 
-                // Convert double to 128-bit representation
-                // For now, assume scale of 2 (common for money/price columns)
-                int32_t scale = 2;
-                int64_t scaled_value = static_cast<int64_t>(decimal_value * std::pow(10, scale));
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d string = '%s' len=%zu "
+                            "(null=%s)",
+                            i, col_spec.name.c_str(), pg_column_index, iter->string_data[i].c_str(),
+                            iter->string_data[i].length(), is_null ? "true" : "false");
+                }
+                break;
+            case NUMERICOID:
+                col_spec.type = ::ColumnType::DECIMAL;
+                {
+                    // Handle DECIMAL/NUMERIC - for now convert from double
+                    // TODO: Get proper precision/scale from PostgreSQL NUMERIC
+                    bool is_null = false;
+                    double decimal_value = get_numeric_field(iter->table_handle, pg_column_index, &is_null);
 
-                // Split into high and low parts
-                iter->decimal_values[i].low = static_cast<uint64_t>(scaled_value);
-                iter->decimal_values[i].high = (scaled_value < 0) ? static_cast<uint64_t>(-1) : 0;
-                iter->decimal_values[i].scale = scale;
-                iter->decimal_nulls[i] = is_null;
+                    // Convert double to 128-bit representation
+                    // For now, assume scale of 2 (common for money/price columns)
+                    int32_t scale = 2;
+                    int64_t scaled_value = static_cast<int64_t>(decimal_value * std::pow(10, scale));
 
-                PGX_LOG(RUNTIME, DEBUG,
-                        "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d decimal = %.2f (as i128: "
-                        "%llu/%llu, scale=%d, null=%s)",
-                        i, col_spec.name.c_str(), pg_column_index, decimal_value,
-                        (unsigned long long)iter->decimal_values[i].low,
-                        (unsigned long long)iter->decimal_values[i].high, scale, is_null ? "true" : "false");
-            } else {
-                bool is_null = false;
-                iter->int_values[i] = get_int32_field(iter->table_handle, pg_column_index, &is_null);
-                iter->int_nulls[i] = is_null;
-                PGX_LOG(RUNTIME, DEBUG,
-                        "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", i,
-                        col_spec.name.c_str(), pg_column_index, iter->int_values[i], is_null ? "true" : "false");
+                    // Split into high and low parts
+                    iter->decimal_values[i].low = static_cast<uint64_t>(scaled_value);
+                    iter->decimal_values[i].high = (scaled_value < 0) ? static_cast<uint64_t>(-1) : 0;
+                    iter->decimal_values[i].scale = scale;
+                    iter->decimal_nulls[i] = is_null;
+
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d decimal = %.2f (as "
+                            "i128: "
+                            "%llu/%llu, scale=%d, null=%s)",
+                            i, col_spec.name.c_str(), pg_column_index, decimal_value,
+                            (unsigned long long)iter->decimal_values[i].low,
+                            (unsigned long long)iter->decimal_values[i].high, scale, is_null ? "true" : "false");
+                }
+                break;
+            case FLOAT4OID:
+                col_spec.type = ::ColumnType::FLOAT;
+                {
+                    bool is_null = false;
+                    extern float get_float32_field(void* tuple_handle, int32_t field_index, bool* is_null);
+                    iter->real_values[i] = get_float32_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->real_nulls[i] = is_null;
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %f (null=%s)", i,
+                            col_spec.name.c_str(), pg_column_index, iter->real_values[i], is_null ? "true" : "false");
+                }
+                break;
+            case FLOAT8OID:
+                col_spec.type = ::ColumnType::DOUBLE;
+                {
+                    bool is_null = false;
+                    extern double get_float64_field(void* tuple_handle, int32_t field_index, bool* is_null);
+                    iter->double_values[i] = get_float64_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->double_nulls[i] = is_null;
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %f (null=%s)", i,
+                            col_spec.name.c_str(), pg_column_index, iter->double_values[i], is_null ? "true" : "false");
+                }
+                break;
+            case DATEOID:
+                col_spec.type = ::ColumnType::DATE;
+                {
+                    bool is_null = false;
+                    iter->date_values[i] = get_int32_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->date_nulls[i] = is_null;
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", i,
+                            col_spec.name.c_str(), pg_column_index, iter->date_values[i], is_null ? "true" : "false");
+                }
+                break;
+            case TIMESTAMPOID:
+            case TIMESTAMPTZOID:
+                col_spec.type = ::ColumnType::TIMESTAMP;
+                {
+                    bool is_null = false;
+                    iter->timestamp_values[i] = get_int64_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->timestamp_nulls[i] = is_null;
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)", i,
+                            col_spec.name.c_str(), pg_column_index, (long long)iter->timestamp_values[i],
+                            is_null ? "true" : "false");
+                }
+                break;
+            case INTERVALOID:
+                col_spec.type = ::ColumnType::INTERVAL;
+                {
+                    bool is_null = false;
+                    iter->interval_values[i] = get_int64_field(iter->table_handle, pg_column_index, &is_null);
+                    iter->interval_nulls[i] = is_null;
+                    PGX_LOG(RUNTIME, DEBUG,
+                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)", i,
+                            col_spec.name.c_str(), pg_column_index, (long long)iter->interval_values[i],
+                            is_null ? "true" : "false");
+                }
+                break;
+            default:
+                PGX_ERROR("Unsupported PostgreSQL type OID %d for column '%s' in table '%s'", type_oid,
+                          col_spec.name.c_str(), iter->table_name.c_str());
+                throw std::runtime_error("Unsupported PostgreSQL type OID encountered");
             }
         }
 
@@ -781,18 +925,21 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
             // Set validity bitmap based on whether the value is NULL
             // Note: In LingoDB, 1 means valid (not null), 0 means null
             bool is_null;
-            if (col_spec.type == ::ColumnType::BOOLEAN) {
-                is_null = iter->bool_nulls[i];
-            } else if (col_spec.type == ::ColumnType::BIGINT) {
-                is_null = iter->bigint_nulls[i];
-            } else if (col_spec.type == ::ColumnType::STRING || col_spec.type == ::ColumnType::TEXT
-                       || col_spec.type == ::ColumnType::VARCHAR)
-            {
-                is_null = iter->string_nulls[i];
-            } else if (col_spec.type == ::ColumnType::DECIMAL) {
-                is_null = iter->decimal_nulls[i];
-            } else {
-                is_null = iter->int_nulls[i];
+            switch (col_spec.type) {
+            case ::ColumnType::BOOLEAN: is_null = iter->bool_nulls[i]; break;
+            case ::ColumnType::SMALLINT: is_null = iter->smallint_nulls[i]; break;
+            case ::ColumnType::INTEGER: is_null = iter->int_nulls[i]; break;
+            case ::ColumnType::BIGINT: is_null = iter->bigint_nulls[i]; break;
+            case ::ColumnType::STRING:
+            case ::ColumnType::TEXT:
+            case ::ColumnType::VARCHAR: is_null = iter->string_nulls[i]; break;
+            case ::ColumnType::DECIMAL: is_null = iter->decimal_nulls[i]; break;
+            case ::ColumnType::FLOAT: is_null = iter->real_nulls[i]; break;
+            case ::ColumnType::DOUBLE: is_null = iter->double_nulls[i]; break;
+            case ::ColumnType::DATE: is_null = iter->date_nulls[i]; break;
+            case ::ColumnType::TIMESTAMP: is_null = iter->timestamp_nulls[i]; break;
+            case ::ColumnType::INTERVAL: is_null = iter->interval_nulls[i]; break;
+            default: is_null = iter->int_nulls[i]; break;
             }
             valid_bitmaps[i] = is_null ? 0x00 : 0xFF; // 0x00 for null, 0xFF for valid
 
@@ -808,6 +955,11 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
                 column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->bool_values[i]; // dataBuffer
                 PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) boolean = %s at %p", i,
                         col_spec.name.c_str(), iter->bool_values[i] ? "true" : "false", &iter->bool_values[i]);
+            } else if (col_spec.type == ::ColumnType::SMALLINT) {
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->smallint_values[i]; // dataBuffer
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) smallint = %d at %p", i,
+                        col_spec.name.c_str(), iter->smallint_values[i], &iter->smallint_values[i]);
             } else if (col_spec.type == ::ColumnType::BIGINT) {
                 column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
                 column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->bigint_values[i]; // dataBuffer
@@ -848,6 +1000,31 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
                         i, col_spec.name.c_str(), (unsigned long long)iter->decimal_values[i].low,
                         (unsigned long long)iter->decimal_values[i].high, iter->decimal_values[i].scale,
                         &iter->decimal_values[i]);
+            } else if (col_spec.type == ::ColumnType::FLOAT) {
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->real_values[i]; // dataBuffer
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) real = %f at %p", i,
+                        col_spec.name.c_str(), iter->real_values[i], &iter->real_values[i]);
+            } else if (col_spec.type == ::ColumnType::DOUBLE) {
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->double_values[i]; // dataBuffer
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) double = %f at %p", i,
+                        col_spec.name.c_str(), iter->double_values[i], &iter->double_values[i]);
+            } else if (col_spec.type == ::ColumnType::DATE) {
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->date_values[i]; // dataBuffer
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) date = %d at %p", i,
+                        col_spec.name.c_str(), iter->date_values[i], &iter->date_values[i]);
+            } else if (col_spec.type == ::ColumnType::TIMESTAMP) {
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->timestamp_values[i]; // dataBuffer
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) timestamp = %lld at %p", i,
+                        col_spec.name.c_str(), (long long)iter->timestamp_values[i], &iter->timestamp_values[i]);
+            } else if (col_spec.type == ::ColumnType::INTERVAL) {
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
+                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->interval_values[i]; // dataBuffer
+                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) interval = %lld at %p", i,
+                        col_spec.name.c_str(), (long long)iter->interval_values[i], &iter->interval_values[i]);
             } else {
                 column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
                 column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->int_values[i]; // dataBuffer
