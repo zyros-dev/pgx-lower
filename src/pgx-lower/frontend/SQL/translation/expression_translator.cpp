@@ -1,5 +1,4 @@
 #include "translator_internals.h"
-#include "pgx-lower/utility/stacktrace.h"
 extern "C" {
 #include "postgres.h"
 #include "nodes/nodes.h"
@@ -100,7 +99,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
         throw std::runtime_error("Invalid OpExpr parameters");
     }
 
-    auto [lhs, rhs] = *operands;
+    const auto [lhs, rhs] = *operands;
     const Oid opOid = op_expr->opno;
 
     mlir::Value result = translate_arithmetic_op(ctx, opOid, lhs, rhs);
