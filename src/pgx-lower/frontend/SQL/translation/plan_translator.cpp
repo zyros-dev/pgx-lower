@@ -220,17 +220,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 const auto columnRef = columnManager.createRef(columnAttr.get());
                 groupByAttrs.push_back(columnRef);
 
-                // map the group by column for materializeop
-                // postgresql uses varno=-2 to reference columns from aggregation results
-                ctx.column_mappings[{-2, colIdx}] = {tableName, columnName};
-                PGX_LOG(AST_TRANSLATE, DEBUG, "GROUP BY result (-2, %d) -> (%s, %s)", colIdx, tableName.c_str(),
-                        columnName.c_str());
-
-                // also map based on result position (group by columns appear first in result)
-                // postgresql renumbers columns in the result based on their position in select list
-                ctx.column_mappings[{-2, i + 1}] = {tableName, columnName};
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Also mapped GROUP BY result position (-2, %d) -> (%s, %s)", i + 1,
-                        tableName.c_str(), columnName.c_str());
+                // Note: We do NOT map the column here - we'll map it when we encounter it
+                // in the targetlist iteration below, using its actual resno
             }
         } else {
             PGX_WARNING("GROUP BY without SeqScan child - cannot determine table context");
@@ -240,6 +231,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     // Process aggregation!
     auto aggCols = std::vector<mlir::Attribute>{};
     auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
+
+    // Static counter for aggregate scope names (like LingoDB's groupById)
+    static size_t aggrId = 0;
+    std::string aggrScopeName = "aggr" + std::to_string(aggrId++);
 
     if (agg->plan.targetlist && agg->plan.targetlist->length > 0) {
         auto* block = new mlir::Block;
@@ -267,7 +262,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Found aggregate function: %s (OID %u)", funcName, aggref->aggfnoid);
 
                 auto aggName = te->resname ? std::string(te->resname) : AGGREGATION_RESULT_COLUMN;
-                auto attrDef = columnManager.createDef(aggName, funcName);
+                // Use the aggrN scope pattern like LingoDB
+                auto attrDef = columnManager.createDef(aggrScopeName, funcName);
 
                 auto relation = block->getArgument(0);
                 mlir::Value aggResult;
@@ -356,9 +352,38 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                 createdCols.push_back(attrDef);
                 createdValues.push_back(aggResult);
+
+                // Map the aggregate result column for materialize operation
+                // PostgreSQL uses varno=-2 for all columns from Agg output
+                // Use the aggregate scope name and function name for the mapping
+                ctx.column_mappings[{-2, te->resno}] = {aggrScopeName, funcName};
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped aggregate result (-2, %d) -> (%s, %s)",
+                        te->resno, aggrScopeName.c_str(), funcName);
             } else {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Non-aggregate expression in target list: type %d (%s)", te->expr->type,
                         te->resname ? te->resname : "unnamed");
+
+                // This is likely a GROUP BY column that appears in the SELECT list
+                // Map it with its actual resno from the targetlist
+                if (te->expr && te->expr->type == T_Var) {
+                    auto var = reinterpret_cast<Var*>(te->expr);
+
+                    // For GROUP BY columns after aggregation, they come from the child with varno < 0
+                    if (var->varno < 0) {
+                        // Get table info from the child SeqScan
+                        if (leftTree && leftTree->type == T_SeqScan) {
+                            auto seqScan = reinterpret_cast<SeqScan*>(leftTree);
+                            auto tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
+                            auto columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
+                                                                         var->varattno);
+
+                            // Map this GROUP BY column with its targetlist resno
+                            ctx.column_mappings[{-2, te->resno}] = {tableName, columnName};
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped GROUP BY column (-2, %d) -> (%s, %s)",
+                                    te->resno, tableName.c_str(), columnName.c_str());
+                        }
+                    }
+                }
             }
         }
 
@@ -394,15 +419,113 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
 
         // Map varno=-2 to the actual table columns from child
         // Sort nodes use varno=-2 to reference columns from their input
+        // IMPORTANT: Map all columns in Sort's targetlist, maintaining their positions
         if (leftTree->type == T_SeqScan) {
             const SeqScan* seqScan = reinterpret_cast<SeqScan*>(leftTree);
-            // Copy mappings from child's varno to -2
-            for (const auto& [fst, snd] : ctx.column_mappings) {
-                if (fst.first == seqScan->scan.scanrelid) {
-                    // Map (-2, varattno) -> (table_name, column_name)
-                    ctx.column_mappings[{-2, fst.second}] = snd;
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Sort: Mapped (-2, %d) -> (%s, %s)", fst.second, snd.first.c_str(),
-                            snd.second.c_str());
+            const std::string tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
+
+            // Process Sort's targetlist to create mappings
+            if (sort->plan.targetlist) {
+                ListCell* lc;
+                int resno = 0;
+                foreach (lc, sort->plan.targetlist) {
+                    resno++;
+                    const TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+
+                    if (IsA(tle->expr, Var)) {
+                        const Var* var = reinterpret_cast<Var*>(tle->expr);
+
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Sort targetlist[%d]: Var(varno=%d, varattno=%d), resname=%s",
+                                resno, var->varno, var->varattno, tle->resname ? tle->resname : "NULL");
+
+                        // Get the column name from the child
+                        std::string columnName;
+
+                        // Use resname if available (it should contain the actual column name)
+                        if (tle->resname) {
+                            columnName = tle->resname;
+                        } else if (var->varno > 0 && var->varno == seqScan->scan.scanrelid) {
+                            // Direct reference to table column
+                            columnName = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
+                        } else if (var->varno == -2) {
+                            // The var is using -2, but varattno might be wrong
+                            // Try to look in the child's targetlist
+                            if (leftTree->targetlist) {
+                                ListCell* childLc;
+                                int childIdx = 0;
+                                foreach (childLc, leftTree->targetlist) {
+                                    childIdx++;
+                                    if (childIdx == var->varattno) {
+                                        const TargetEntry* childTle = static_cast<TargetEntry*>(lfirst(childLc));
+                                        if (childTle->resname) {
+                                            columnName = childTle->resname;
+                                        } else if (IsA(childTle->expr, Var)) {
+                                            const Var* childVar = reinterpret_cast<Var*>(childTle->expr);
+                                            columnName = get_column_name_from_schema(&ctx.current_stmt,
+                                                                                    seqScan->scan.scanrelid,
+                                                                                    childVar->varattno);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!columnName.empty()) {
+                            // Map Sort's output position to the actual column
+                            ctx.column_mappings[{-2, resno}] = {tableName, columnName};
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "Sort: Mapped (-2, %d) -> (%s, %s) from child var(%d, %d)",
+                                    resno, tableName.c_str(), columnName.c_str(),
+                                    var->varno, var->varattno);
+                        } else {
+                            PGX_WARNING("Sort: Could not find column name for var(%d, %d) at position %d",
+                                      var->varno, var->varattno, resno);
+                        }
+                    }
+                }
+            }
+        } else if (leftTree->type == T_Agg) {
+            // When Sort's child is an Agg node, we need to remap based on Sort's targetlist
+            // The Agg creates mappings with varno=-2, but Sort's targetlist may reorder them
+            if (sort->plan.targetlist) {
+                // First, save existing -2 mappings from Agg
+                std::map<std::pair<int, int>, std::pair<std::string, std::string>> aggMappings;
+                for (const auto& [fst, snd] : ctx.column_mappings) {
+                    if (fst.first == -2) {
+                        aggMappings[fst] = snd;
+                    }
+                }
+
+                // Clear old -2 mappings
+                auto it = ctx.column_mappings.begin();
+                while (it != ctx.column_mappings.end()) {
+                    if (it->first.first == -2) {
+                        it = ctx.column_mappings.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+
+                // Create new mappings based on Sort's targetlist
+                ListCell* lc;
+                int resno = 0;
+                foreach (lc, sort->plan.targetlist) {
+                    resno++;
+                    const TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
+
+                    if (IsA(tle->expr, Var)) {
+                        const Var* var = reinterpret_cast<Var*>(tle->expr);
+                        // Look up in saved Agg mappings
+                        auto aggKey = std::make_pair(var->varno, var->varattno);
+                        auto aggIt = aggMappings.find(aggKey);
+                        if (aggIt != aggMappings.end()) {
+                            // Map Sort's output position to the actual column
+                            ctx.column_mappings[{-2, resno}] = aggIt->second;
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "Sort: Remapped (-2, %d) -> (%s, %s) from Agg (%d, %d)",
+                                    resno, aggIt->second.first.c_str(), aggIt->second.second.c_str(),
+                                    var->varno, var->varattno);
+                        }
+                    }
                 }
             }
         }
@@ -449,8 +572,11 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
                     }
                 }
 
-                // Get column name from target list
+                // Look up the column from mappings
+                std::string scope;
                 std::string columnName;
+
+                // Find the column in the Sort's targetlist
                 if (sort->plan.targetlist) {
                     ListCell* lc;
                     int targetIndex = 0;
@@ -458,29 +584,47 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
                         targetIndex++;
                         if (targetIndex == colIdx) {
                             const TargetEntry* tle = static_cast<TargetEntry*>(lfirst(lc));
-                            if (tle->resname) {
-                                columnName = tle->resname;
-                            } else if (IsA(tle->expr, Var)) {
+
+                            // For Sort nodes, the targetlist contains Vars with varno=-2
+                            // We need to look up the actual column from our mappings
+                            if (IsA(tle->expr, Var)) {
                                 const Var* var = reinterpret_cast<Var*>(tle->expr);
-                                columnName = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
+
+                                // Look up in column mappings
+                                auto mappingKey = std::make_pair(var->varno, var->varattno);
+                                auto mappingIt = ctx.column_mappings.find(mappingKey);
+
+                                if (mappingIt != ctx.column_mappings.end()) {
+                                    scope = mappingIt->second.first;
+                                    columnName = mappingIt->second.second;
+                                    PGX_LOG(AST_TRANSLATE, DEBUG, "Sort spec: Found mapping for (%d, %d) -> (%s, %s)",
+                                            var->varno, var->varattno, scope.c_str(), columnName.c_str());
+                                } else {
+                                    // Fallback to resname if no mapping found
+                                    if (tle->resname) {
+                                        columnName = tle->resname;
+                                        scope = get_table_name_from_rte(&ctx.current_stmt, 1);
+                                        PGX_LOG(AST_TRANSLATE, DEBUG, "Sort spec: Using resname %s with table scope %s",
+                                                columnName.c_str(), scope.c_str());
+                                    }
+                                }
                             }
                             break;
                         }
                     }
                 }
 
-                if (!columnName.empty()) {
-                    // Get table name for scope
-                    std::string tableName = get_table_name_from_rte(&ctx.current_stmt, 1); // Assuming single table for
-                                                                                           // now
-
-                    // Create column reference with scope
-                    const auto columnAttr = attrManager.createRef(tableName, columnName);
+                if (!columnName.empty() && !scope.empty()) {
+                    // Create column reference with proper scope
+                    const auto columnAttr = attrManager.createRef(scope, columnName);
 
                     // Create sort specification
                     auto sortSpecAttr = mlir::relalg::SortSpecificationAttr::get(ctx.builder.getContext(), columnAttr,
                                                                                  spec);
                     sortSpecs.push_back(sortSpecAttr);
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Created sort spec for @%s::@%s", scope.c_str(), columnName.c_str());
+                } else {
+                    PGX_WARNING("Failed to create sort spec for column index %d", colIdx);
                 }
             }
         }
@@ -1107,11 +1251,17 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(const QueryCtxT& contex
             const auto var = reinterpret_cast<Var*>(tle->expr);
 
             // First try to look up in column mappings
-            const auto mappingIt = context.column_mappings.find({var->varno, var->varattno});
+            // For negative varno (from Agg output), use resno instead of varattno
+            const auto lookupKey = (var->varno < 0)
+                ? std::make_pair(var->varno, tle->resno)
+                : std::make_pair(var->varno, var->varattno);
+
+            const auto mappingIt = context.column_mappings.find(lookupKey);
             if (mappingIt != context.column_mappings.end()) {
                 scope = mappingIt->second.first; // table_name
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Found column mapping for (%d, %d) -> (%s, %s)", var->varno,
-                        var->varattno, scope.c_str(), colName.c_str());
+                colName = mappingIt->second.second; // column_name - CRITICAL: must update both!
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Found column mapping for (%d, %d) -> (%s, %s)",
+                        lookupKey.first, lookupKey.second, scope.c_str(), colName.c_str());
             } else if (var->varno > 0) {
                 // Positive varno - standard RTE lookup
                 scope = get_table_name_from_rte(&context.current_stmt, var->varno);
@@ -1121,18 +1271,27 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(const QueryCtxT& contex
                 }
             } else {
                 // Negative varno without mapping - this shouldn't happen with our new approach
-                PGX_WARNING("No mapping found for varno %d, varattno %d", var->varno, var->varattno);
+                PGX_ERROR("No mapping found for varno %d, varattno %d", var->varno, var->varattno);
+                throw std::runtime_error("No mapping found for varno, varattno");
                 scope = "unknown_table";
             }
         } else if (tle->expr && tle->expr->type == T_Aggref) {
-            // For aggregate functions, use the column name as the scope
-            // This creates references like @total_amount_all::@sum which matches
-            // what the AggregationOp translator produces
-            scope = colName;
-            // Also update the column name to be the aggregate function name
-            const Aggref* aggref = reinterpret_cast<Aggref*>(tle->expr);
-            const char* funcName = get_aggregate_function_name(aggref->aggfnoid);
-            colName = funcName;
+            // For aggregate functions, look up the mapping we created in translate_agg
+            // Aggregates are mapped with varno=-2 and their resno
+            const auto mappingIt = context.column_mappings.find({-2, tle->resno});
+            if (mappingIt != context.column_mappings.end()) {
+                scope = mappingIt->second.first;  // Should be "aggrN"
+                colName = mappingIt->second.second;  // Should be the function name (sum, count, etc.)
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Found aggregate mapping for (-2, %d) -> (%s, %s)",
+                        tle->resno, scope.c_str(), colName.c_str());
+            } else {
+                // Fallback if no mapping found
+                PGX_WARNING("No mapping found for aggregate at resno %d", tle->resno);
+                const Aggref* aggref = reinterpret_cast<Aggref*>(tle->expr);
+                const char* funcName = get_aggregate_function_name(aggref->aggfnoid);
+                scope = "unmapped_aggr";
+                colName = funcName;
+            }
             PGX_LOG(AST_TRANSLATE, DEBUG, "Using aggregate column reference: @%s::@%s", scope.c_str(), colName.c_str());
         } else {
             // TODO: Should this be a fallover and fail?

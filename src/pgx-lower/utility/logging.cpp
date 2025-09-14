@@ -198,25 +198,16 @@ extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool i
     log_io = io;
     log_trace = trace;
 
-#ifdef POSTGRESQL_EXTENSION
-    elog(DEBUG1, "pgx_update_log_settings: categories = '%s'", categories ? categories : "NULL");
-#endif
-
-    // Parse categories
     enabled_categories.clear();
     if (categories && strlen(categories) > 0) {
-        std::string cats(categories);
-        std::stringstream ss(cats);
-        std::string cat;
+        auto cats = std::string(categories);
+        auto ss = std::stringstream(cats);
+        auto cat = std::string();
         while (std::getline(ss, cat, ',')) {
             cat.erase(0, cat.find_first_not_of(" \t"));
             cat.erase(cat.find_last_not_of(" \t") + 1);
 
-            // Convert to lowercase for comparison
-            std::transform(cat.begin(), cat.end(), cat.begin(), ::tolower);
-#ifdef POSTGRESQL_EXTENSION
-            elog(DEBUG1, "parsing cat  = '%s'", cat.data());
-#endif
+            std::ranges::transform(cat, cat.begin(), ::tolower);
 
             if (cat == "ast_translate")
                 enabled_categories.insert(Category::AST_TRANSLATE);
@@ -236,10 +227,4 @@ extern "C" void pgx_update_log_settings(bool enable, bool debug, bool ir, bool i
                 enabled_categories.insert(Category::GENERAL);
         }
     }
-
-#ifdef POSTGRESQL_EXTENSION
-    for (auto v : enabled_categories) {
-        elog(DEBUG1, "pgx_update_log_settings: categories enabled = '%d'", v);
-    }
-#endif
 }
