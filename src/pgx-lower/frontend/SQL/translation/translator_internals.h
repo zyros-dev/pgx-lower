@@ -65,15 +65,12 @@ struct ColumnInfo {
 };
 
 struct TranslationContext {
-    PlannedStmt* current_stmt = nullptr;
-    mlir::OpBuilder* builder = nullptr;
-    mlir::ModuleOp* current_module = nullptr;
-
-    mlir::Value current_tuple = nullptr;
+    const PlannedStmt current_stmt;
+    mlir::OpBuilder* builder;
+    const mlir::ModuleOp current_module;
+    const mlir::Value current_tuple;
 
     ColumnMapping column_mappings;
-
-    bool contextNeedsRecreation = false;
 };
 
 } // namespace pgx_lower::frontend::sql

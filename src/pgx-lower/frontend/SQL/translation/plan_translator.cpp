@@ -88,7 +88,7 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* seqScan) const -> mlir::Operation* {
-    if (!seqScan || !ctx.builder || !ctx.current_stmt) {
+    if (!seqScan || !ctx.builder) {
         PGX_ERROR("Invalid SeqScan parameters");
         return nullptr;
     }
@@ -98,8 +98,8 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 
     if (seqScan->scan.scanrelid > 0) {
         // Use PostgreSQL's Range Table Entry (RTE) to get actual table information
-        tableName = get_table_name_from_rte(ctx.current_stmt, seqScan->scan.scanrelid);
-        tableOid = get_table_oid_from_rte(ctx.current_stmt, seqScan->scan.scanrelid);
+        tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
+        tableOid = get_table_oid_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
 
         if (tableName.empty()) {
             PGX_WARNING("Could not resolve table name for scanrelid: %d", seqScan->scan.scanrelid);
@@ -125,10 +125,10 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 
     auto columnDefs = std::vector<mlir::NamedAttribute>{};
     auto columnOrder = std::vector<mlir::Attribute>{};
-    const auto allColumns = get_all_table_columns_from_schema(ctx.current_stmt, seqScan->scan.scanrelid);
+    const auto allColumns = get_all_table_columns_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid);
 
     if (!allColumns.empty()) {
-        std::string realTableName = get_table_name_from_rte(ctx.current_stmt, seqScan->scan.scanrelid);
+        std::string realTableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
 
         // Populate column mappings for this table
         int varattno = 1; // PostgreSQL column numbering starts at 1
@@ -159,9 +159,9 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
         tableIdentifier =
             realTableName + TABLE_OID_SEPARATOR
             + std::to_string(
-                get_all_table_columns_from_schema(ctx.current_stmt, seqScan->scan.scanrelid).empty()
+                get_all_table_columns_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid).empty()
                     ? 0
-                    : static_cast<RangeTblEntry*>(list_nth(ctx.current_stmt->rtable, seqScan->scan.scanrelid - 1))->relid);
+                    : static_cast<RangeTblEntry*>(list_nth(ctx.current_stmt.rtable, seqScan->scan.scanrelid - 1))->relid);
     }
     else {
         PGX_ERROR("Could not discover table schema");
@@ -227,11 +227,11 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         auto tableName = std::string();
         if (leftTree && leftTree->type == T_SeqScan) {
             auto* seqScan = reinterpret_cast<SeqScan*>(leftTree);
-            tableName = get_table_name_from_rte(ctx.current_stmt, seqScan->scan.scanrelid);
+            tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
 
             for (int i = 0; i < numCols; i++) {
                 AttrNumber colIdx = grpColIdx[i];
-                std::string columnName = get_column_name_from_schema(ctx.current_stmt, seqScan->scan.scanrelid, colIdx);
+                std::string columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid, colIdx);
 
                 PGX_LOG(AST_TRANSLATE,
                         DEBUG,
@@ -341,9 +341,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         // For negative varno (like -2), get table info from the child SeqScan
                         if (leftTree && leftTree->type == T_SeqScan) {
                             auto seqScan = reinterpret_cast<SeqScan*>(leftTree);
-                            tableName = get_table_name_from_rte(ctx.current_stmt, seqScan->scan.scanrelid);
+                            tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
                             columnName =
-                                get_column_name_from_schema(ctx.current_stmt, seqScan->scan.scanrelid, colVar->varattno);
+                                get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid, colVar->varattno);
                             PGX_LOG(AST_TRANSLATE,
                                     DEBUG,
                                     "Resolved negative varno %d to table: %s, column: %s",
@@ -358,8 +358,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     }
                     else {
                         // Normal positive varno - use standard resolution
-                        tableName = get_table_name_from_rte(ctx.current_stmt, colVar->varno);
-                        columnName = get_column_name_from_schema(ctx.current_stmt, colVar->varno, colVar->varattno);
+                        tableName = get_table_name_from_rte(&ctx.current_stmt, colVar->varno);
+                        columnName = get_column_name_from_schema(&ctx.current_stmt, colVar->varno, colVar->varattno);
                     }
 
                     PGX_LOG(AST_TRANSLATE,
@@ -530,7 +530,7 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
                             }
                             else if (IsA(tle->expr, Var)) {
                                 const Var* var = reinterpret_cast<Var*>(tle->expr);
-                                columnName = get_column_name_from_schema(ctx.current_stmt, var->varno, var->varattno);
+                                columnName = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
                             }
                             break;
                         }
@@ -539,7 +539,7 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
 
                 if (!columnName.empty()) {
                     // Get table name for scope
-                    std::string tableName = get_table_name_from_rte(ctx.current_stmt, 1); // Assuming single table for
+                    std::string tableName = get_table_name_from_rte(&ctx.current_stmt, 1); // Assuming single table for
                                                                                           // now
 
                     // Create column reference with scope
@@ -1097,11 +1097,11 @@ auto PostgreSQLASTTranslator::Impl::extract_target_list_columns(const QueryCtxT&
     -> bool {
     // For Sort nodes, we need to look at the original plan's targetlist
     // The Sort node inherits its targetlist from the query
-    const Plan* planToUse = context.current_stmt->planTree;
+    const Plan* planToUse = context.current_stmt.planTree;
 
     // If this is a Sort node, look at its own targetlist
     // (Sort nodes should have the correct targetlist from the query)
-    if (!context.current_stmt || !planToUse || !planToUse->targetlist || planToUse->targetlist->length <= 0) {
+    if (!planToUse || !planToUse->targetlist || planToUse->targetlist->length <= 0) {
         // Default case: include 'id' column
         auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
@@ -1196,7 +1196,7 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(const QueryCtxT& contex
             }
             else {
                 // No mapping and no resname, try to get from schema
-                colName = get_column_name_from_schema(context.current_stmt, var->varno, var->varattno);
+                colName = get_column_name_from_schema(&context.current_stmt, var->varno, var->varattno);
             }
         }
     }
@@ -1234,7 +1234,7 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(const QueryCtxT& contex
             }
             else if (var->varno > 0) {
                 // Positive varno - standard RTE lookup
-                scope = get_table_name_from_rte(context.current_stmt, var->varno);
+                scope = get_table_name_from_rte(&context.current_stmt, var->varno);
                 if (scope.empty()) {
                     PGX_ERROR("Failed to resolve table name for varno: %d", var->varno);
                     return false;
@@ -1286,10 +1286,10 @@ auto PostgreSQLASTTranslator::Impl::determine_column_type(const QueryCtxT& conte
         const PostgreSQLTypeMapper type_mapper(context_);
 
         bool nullable = false;
-        if (context.current_stmt && var->varno > 0) {
-            const std::string columnName = get_column_name_from_schema(context.current_stmt, var->varno, var->varattno);
+        if (var->varno > 0) {
+            const std::string columnName = get_column_name_from_schema(&context.current_stmt, var->varno, var->varattno);
 
-            const auto allColumns = get_all_table_columns_from_schema(context.current_stmt, var->varno);
+            const auto allColumns = get_all_table_columns_from_schema(&context.current_stmt, var->varno);
             for (const auto& colInfo : allColumns) {
                 if (colInfo.name == columnName) {
                     nullable = colInfo.nullable;

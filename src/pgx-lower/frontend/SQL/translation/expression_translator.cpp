@@ -224,8 +224,8 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         // This would typically be inside a MapOp or SelectionOp region
 
         // Get real table and column names from PostgreSQL schema
-        const auto tableName = get_table_name_from_rte(ctx.current_stmt, var->varno);
-        const auto colName = get_column_name_from_schema(ctx.current_stmt, var->varno, var->varattno);
+        const auto tableName = get_table_name_from_rte(&ctx.current_stmt, var->varno);
+        const auto colName = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
 
         // Get column manager from RelAlg dialect
         auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
@@ -238,7 +238,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
         // Map PostgreSQL type to MLIR type - check if column is nullable
         PostgreSQLTypeMapper type_mapper(context_);
-        const bool nullable = is_column_nullable(ctx.current_stmt, var->varno, var->varattno);
+        const bool nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
         auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
 
         // This ensures proper column tracking and avoids invalid attributes
