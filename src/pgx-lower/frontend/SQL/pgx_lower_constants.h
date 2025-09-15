@@ -118,6 +118,21 @@ constexpr Oid PG_INT8_INT2_GT_OID = 1871;  // int82gt
 constexpr Oid PG_INT8_INT2_LE_OID = 1872;  // int82le
 constexpr Oid PG_INT8_INT2_GE_OID = 1873;  // int82ge
 
+// Mixed Type Comparison Operators (FLOAT4/FLOAT8)
+constexpr Oid PG_FLOAT4_FLOAT8_EQ_OID = 1120;  // float48eq
+constexpr Oid PG_FLOAT4_FLOAT8_NE_OID = 1121;  // float48ne
+constexpr Oid PG_FLOAT4_FLOAT8_LT_OID = 1122;  // float48lt
+constexpr Oid PG_FLOAT4_FLOAT8_GT_OID = 1123;  // float48gt (real > double)
+constexpr Oid PG_FLOAT4_FLOAT8_LE_OID = 1124;  // float48le
+constexpr Oid PG_FLOAT4_FLOAT8_GE_OID = 1125;  // float48ge
+
+constexpr Oid PG_FLOAT8_FLOAT4_EQ_OID = 1130;  // float84eq
+constexpr Oid PG_FLOAT8_FLOAT4_NE_OID = 1131;  // float84ne
+constexpr Oid PG_FLOAT8_FLOAT4_LT_OID = 1132;  // float84lt
+constexpr Oid PG_FLOAT8_FLOAT4_GT_OID = 1133;  // float84gt
+constexpr Oid PG_FLOAT8_FLOAT4_LE_OID = 1134;  // float84le
+constexpr Oid PG_FLOAT8_FLOAT4_GE_OID = 1135;  // float84ge
+
 // Float Equality Operators
 constexpr Oid PG_FLOAT4_EQ_OID = 620;
 constexpr Oid PG_FLOAT8_EQ_OID = 670;

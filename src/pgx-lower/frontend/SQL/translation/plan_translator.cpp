@@ -1429,8 +1429,8 @@ auto get_aggregate_function_name(const Oid aggfnoid) -> const char* {
     case PG_F_MAX_TEXT: return AGGREGATION_MAX_FUNCTION;
 
     default:
-        PGX_WARNING("Unknown aggregate function OID: %u, defaulting to count", aggfnoid);
-        return AGGREGATION_COUNT_FUNCTION;
+        PGX_ERROR("fnknown aggregate function OID: %u, defaulting to count", aggfnoid);
+        throw std::runtime_error("Unknown aggregate function OID");
     }
 }
 
