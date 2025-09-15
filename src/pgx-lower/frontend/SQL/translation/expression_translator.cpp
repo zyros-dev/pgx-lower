@@ -1103,8 +1103,11 @@ struct SQLTypeInference {
                 }
             }
             if (auto nullOp = mlir::dyn_cast_or_null<mlir::db::NullOp>(defOp)) {
-                nullOp.getResult().setType(t);
-                return nullOp;
+                if (nullOp.getResult().getType() == t) { // This was changed from lingodb, unsure if it's going to be
+                                                         // problematic...
+                    return nullOp;
+                }
+                return builder.create<mlir::db::NullOp>(builder.getUnknownLoc(), t);
             }
         }
         if (v.getType() == getBaseType(t)) {
@@ -1176,56 +1179,26 @@ auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx
     auto convertedLhs = lhs;
     auto convertedRhs = rhs;
 
-    // --- Handle numeric type mismatches - upcast to common type ---
-    {
-        // Get base types, stripping any nullable wrappers
-        mlir::Type lhsBaseType = getBaseType(convertedLhs.getType());
-        mlir::Type rhsBaseType = getBaseType(convertedRhs.getType());
+    const auto lhsBaseType = getBaseType(convertedLhs.getType());
+    const auto rhsBaseType = getBaseType(convertedRhs.getType());
 
-        // Check if base types differ (e.g., int32 vs float64)
-        if (lhsBaseType != rhsBaseType) {
-            // Determine the common type to cast to
-            mlir::Type commonBaseType = SQLTypeInference::getCommonBaseType(lhsBaseType, rhsBaseType);
+    if (lhsBaseType != rhsBaseType) {
+        const auto commonBaseType = SQLTypeInference::getCommonBaseType(lhsBaseType, rhsBaseType);
 
-            // Cast left operand if its type needs to change
-            if (lhsBaseType != commonBaseType) {
-                // If the value is nullable, cast to nullable version of common type
-                mlir::Type targetType = mlir::isa<mlir::db::NullableType>(convertedLhs.getType())
-                    ? mlir::db::NullableType::get(ctx.builder.getContext(), commonBaseType)
-                    : commonBaseType;
+        if (lhsBaseType != commonBaseType) {
+            const auto targetType = mlir::isa<mlir::db::NullableType>(convertedLhs.getType())
+                                        ? mlir::db::NullableType::get(ctx.builder.getContext(), commonBaseType)
+                                        : commonBaseType;
 
-                convertedLhs = ctx.builder.create<mlir::db::CastOp>(
-                    ctx.builder.getUnknownLoc(), targetType, convertedLhs);
-            }
-
-            // Cast right operand if its type needs to change
-            if (rhsBaseType != commonBaseType) {
-                // If the value is nullable, cast to nullable version of common type
-                mlir::Type targetType = mlir::isa<mlir::db::NullableType>(convertedRhs.getType())
-                    ? mlir::db::NullableType::get(ctx.builder.getContext(), commonBaseType)
-                    : commonBaseType;
-
-                convertedRhs = ctx.builder.create<mlir::db::CastOp>(
-                    ctx.builder.getUnknownLoc(), targetType, convertedRhs);
-            }
+            convertedLhs = ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType, convertedLhs);
         }
-    }
 
-    // --- Handle nullable type conversions ---
-    {
-        const bool lhsNullable = isa<mlir::db::NullableType>(lhs.getType());
-        const bool rhsNullable = isa<mlir::db::NullableType>(rhs.getType());
+        if (rhsBaseType != commonBaseType) {
+            mlir::Type targetType = mlir::isa<mlir::db::NullableType>(convertedRhs.getType())
+                                        ? mlir::db::NullableType::get(ctx.builder.getContext(), commonBaseType)
+                                        : commonBaseType;
 
-        if (lhsNullable && !rhsNullable) {
-            mlir::Type nullableRhsType = mlir::db::NullableType::get(ctx.builder.getContext(), convertedRhs.getType());
-            auto falseVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
-            convertedRhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableRhsType,
-                                                                      convertedRhs, falseVal);
-        } else if (!lhsNullable && rhsNullable) {
-            mlir::Type nullableLhsType = mlir::db::NullableType::get(ctx.builder.getContext(), convertedLhs.getType());
-            auto falseVal = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
-            convertedLhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableLhsType,
-                                                                      convertedLhs, falseVal);
+            convertedRhs = ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType, convertedRhs);
         }
     }
 
