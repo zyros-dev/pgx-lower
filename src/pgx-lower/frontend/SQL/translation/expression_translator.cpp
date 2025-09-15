@@ -1075,13 +1075,21 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     mlir::db::DBCmpPredicate predicate;
 
     switch (op_oid) {
+        // TODO: NV: Yep. This is disgusting.
     case PG_INT2_EQ_OID:
     case PG_INT4_EQ_OID:
     case PG_INT8_EQ_OID:
     case PG_FLOAT4_EQ_OID:
     case PG_FLOAT8_EQ_OID:
     case PG_NUMERIC_EQ_OID:
-    case PG_TEXT_EQ_OID: predicate = mlir::db::DBCmpPredicate::eq; break;
+    case PG_TEXT_EQ_OID:
+    // Mixed-type integer equality
+    case PG_INT4_INT8_EQ_OID:
+    case PG_INT8_INT4_EQ_OID:
+    case PG_INT2_INT4_EQ_OID:
+    case PG_INT4_INT2_EQ_OID:
+    case PG_INT2_INT8_EQ_OID:
+    case PG_INT8_INT2_EQ_OID: predicate = mlir::db::DBCmpPredicate::eq; break;
 
     case PG_INT2_NE_OID:
     case PG_INT4_NE_OID:
@@ -1089,7 +1097,13 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     case PG_FLOAT4_NE_OID:
     case PG_FLOAT8_NE_OID:
     case PG_NUMERIC_NE_OID:
-    case PG_TEXT_NE_OID: predicate = mlir::db::DBCmpPredicate::neq; break;
+    case PG_TEXT_NE_OID:
+    case PG_INT4_INT8_NE_OID:
+    case PG_INT8_INT4_NE_OID:
+    case PG_INT2_INT4_NE_OID:
+    case PG_INT4_INT2_NE_OID:
+    case PG_INT2_INT8_NE_OID:
+    case PG_INT8_INT2_NE_OID: predicate = mlir::db::DBCmpPredicate::neq; break;
 
     case PG_INT2_LT_OID:
     case PG_INT4_LT_OID:
@@ -1097,7 +1111,13 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     case PG_FLOAT4_LT_OID:
     case PG_FLOAT8_LT_OID:
     case PG_NUMERIC_LT_OID:
-    case PG_TEXT_LT_OID: predicate = mlir::db::DBCmpPredicate::lt; break;
+    case PG_TEXT_LT_OID:
+    case PG_INT4_INT8_LT_OID:
+    case PG_INT8_INT4_LT_OID:
+    case PG_INT2_INT4_LT_OID:
+    case PG_INT4_INT2_LT_OID:
+    case PG_INT2_INT8_LT_OID:
+    case PG_INT8_INT2_LT_OID: predicate = mlir::db::DBCmpPredicate::lt; break;
 
     case PG_INT2_LE_OID:
     case PG_INT4_LE_OID:
@@ -1105,7 +1125,13 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     case PG_FLOAT4_LE_OID:
     case PG_FLOAT8_LE_OID:
     case PG_NUMERIC_LE_OID:
-    case PG_TEXT_LE_OID: predicate = mlir::db::DBCmpPredicate::lte; break;
+    case PG_TEXT_LE_OID:
+    case PG_INT4_INT8_LE_OID:
+    case PG_INT8_INT4_LE_OID:
+    case PG_INT2_INT4_LE_OID:
+    case PG_INT4_INT2_LE_OID:
+    case PG_INT2_INT8_LE_OID:
+    case PG_INT8_INT2_LE_OID: predicate = mlir::db::DBCmpPredicate::lte; break;
 
     case PG_INT2_GT_OID:
     case PG_INT4_GT_OID:
@@ -1114,7 +1140,12 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     case PG_FLOAT4_GT_OID:
     case PG_FLOAT8_GT_OID:
     case PG_NUMERIC_GT_OID:
-    case PG_TEXT_GT_OID: predicate = mlir::db::DBCmpPredicate::gt; break;
+    case PG_TEXT_GT_OID:
+    case PG_INT4_INT8_GT_OID:
+    case PG_INT2_INT4_GT_OID:
+    case PG_INT4_INT2_GT_OID:
+    case PG_INT2_INT8_GT_OID:
+    case PG_INT8_INT2_GT_OID: predicate = mlir::db::DBCmpPredicate::gt; break;
 
     case PG_INT2_GE_OID:
     case PG_INT4_GE_OID:
@@ -1122,7 +1153,13 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     case PG_FLOAT4_GE_OID:
     case PG_FLOAT8_GE_OID:
     case PG_NUMERIC_GE_OID:
-    case PG_TEXT_GE_OID: predicate = mlir::db::DBCmpPredicate::gte; break;
+    case PG_TEXT_GE_OID:
+    case PG_INT4_INT8_GE_OID:
+    case PG_INT8_INT4_GE_OID:
+    case PG_INT2_INT4_GE_OID:
+    case PG_INT4_INT2_GE_OID:
+    case PG_INT2_INT8_GE_OID:
+    case PG_INT8_INT2_GE_OID: predicate = mlir::db::DBCmpPredicate::gte; break;
 
     // TODO: NV Unsure of why this routes to here. this is probably not a good way to handle it. Pretty sure it
     //      shouldn't even be here though. Considering  it goes on after this to be fine...

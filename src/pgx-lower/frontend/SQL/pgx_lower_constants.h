@@ -74,8 +74,49 @@ constexpr Oid PG_INT4_GE_OID = 525;
 constexpr Oid PG_INT8_GE_OID = 415;
 constexpr Oid PG_TEXT_GE_OID = 667;
 
-// Mixed Type Comparison Operators
-constexpr Oid PG_INT8_INT4_GT_OID = 419;
+// Mixed Type Comparison Operators (INT4/INT8)
+constexpr Oid PG_INT4_INT8_EQ_OID = 15;    // int48eq
+constexpr Oid PG_INT4_INT8_NE_OID = 36;    // int48ne
+constexpr Oid PG_INT4_INT8_LT_OID = 37;    // int48lt
+constexpr Oid PG_INT4_INT8_GT_OID = 76;    // int48gt
+constexpr Oid PG_INT4_INT8_LE_OID = 80;    // int48le
+constexpr Oid PG_INT4_INT8_GE_OID = 82;    // int48ge
+
+constexpr Oid PG_INT8_INT4_EQ_OID = 416;   // int84eq
+constexpr Oid PG_INT8_INT4_NE_OID = 417;   // int84ne
+constexpr Oid PG_INT8_INT4_LT_OID = 418;   // int84lt
+constexpr Oid PG_INT8_INT4_GT_OID = 419;   // int84gt
+constexpr Oid PG_INT8_INT4_LE_OID = 420;   // int84le
+constexpr Oid PG_INT8_INT4_GE_OID = 430;   // int84ge
+
+// Mixed Type Comparison Operators (INT2/INT4)
+constexpr Oid PG_INT2_INT4_EQ_OID = 532;   // int24eq
+constexpr Oid PG_INT4_INT2_EQ_OID = 533;   // int42eq
+constexpr Oid PG_INT2_INT4_LT_OID = 534;   // int24lt
+constexpr Oid PG_INT4_INT2_LT_OID = 535;   // int42lt
+constexpr Oid PG_INT2_INT4_GT_OID = 536;   // int24gt
+constexpr Oid PG_INT4_INT2_GT_OID = 537;   // int42gt
+constexpr Oid PG_INT2_INT4_NE_OID = 538;   // int24ne
+constexpr Oid PG_INT4_INT2_NE_OID = 539;   // int42ne
+constexpr Oid PG_INT2_INT4_LE_OID = 540;   // int24le
+constexpr Oid PG_INT4_INT2_LE_OID = 541;   // int42le
+constexpr Oid PG_INT2_INT4_GE_OID = 542;   // int24ge
+constexpr Oid PG_INT4_INT2_GE_OID = 543;   // int42ge
+
+// Mixed Type Comparison Operators (INT2/INT8)
+constexpr Oid PG_INT2_INT8_EQ_OID = 1862;  // int28eq
+constexpr Oid PG_INT2_INT8_NE_OID = 1863;  // int28ne
+constexpr Oid PG_INT2_INT8_LT_OID = 1864;  // int28lt
+constexpr Oid PG_INT2_INT8_GT_OID = 1865;  // int28gt
+constexpr Oid PG_INT2_INT8_LE_OID = 1866;  // int28le
+constexpr Oid PG_INT2_INT8_GE_OID = 1867;  // int28ge
+
+constexpr Oid PG_INT8_INT2_EQ_OID = 1868;  // int82eq
+constexpr Oid PG_INT8_INT2_NE_OID = 1869;  // int82ne
+constexpr Oid PG_INT8_INT2_LT_OID = 1870;  // int82lt
+constexpr Oid PG_INT8_INT2_GT_OID = 1871;  // int82gt
+constexpr Oid PG_INT8_INT2_LE_OID = 1872;  // int82le
+constexpr Oid PG_INT8_INT2_GE_OID = 1873;  // int82ge
 
 // Float Equality Operators
 constexpr Oid PG_FLOAT4_EQ_OID = 620;
