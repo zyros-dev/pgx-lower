@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "lingodb/runtime/helpers.h"
+#include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
 
 #ifdef POSTGRESQL_EXTENSION
 extern "C" {
@@ -141,7 +142,20 @@ template<>
 inline int64_t fromDatum<int64_t>(const Datum value, const Oid typeOid) {
     switch (typeOid) {
     case INT8OID: return DatumGetInt64(value);
-    case TIMESTAMPOID: return DatumGetTimestamp(value); // Timestamp is int64
+    case TIMESTAMPOID: return DatumGetTimestamp(value);
+    case INTERVALOID: {
+        const auto* interval = DatumGetIntervalP(value);
+        int64_t totalMicroseconds = interval->time + (static_cast<int64_t>(interval->day) * USECS_PER_DAY);
+
+        // TODO: NV This is obviously not good
+        // Convert months to microseconds
+        if (interval->month != 0) {
+            int64_t monthMicroseconds = static_cast<int64_t>(
+                interval->month * frontend::sql::constants::AVERAGE_DAYS_PER_MONTH * USECS_PER_DAY);
+            totalMicroseconds += monthMicroseconds;
+        }
+        return totalMicroseconds;
+    }
     default: throw std::runtime_error("Cannot convert type OID " + std::to_string(typeOid) + " to int64");
     }
 }

@@ -206,16 +206,13 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
 #ifdef POSTGRESQL_EXTENSION
         // TODO Don't, thanks.
         // Convert all intervals to daytime representation for column homogeneity
-        // Using 29.53 days per month approximation as suggested in the
         const auto* interval = DatumGetIntervalP(constNode->constvalue);
 
         int64_t totalMicroseconds = interval->time; // Start with time component
         totalMicroseconds += static_cast<int64_t>(interval->day) * USECS_PER_DAY;
 
-        // Convert months to microseconds using 29.53 days/month approximation
+        // Convert months to microseconds using the standard approximation
         if (interval->month != 0) {
-            // 29.53 days * 24 hours * 60 minutes * 60 seconds * 1,000,000 microseconds
-            constexpr double AVERAGE_DAYS_PER_MONTH = 29.53;
             int64_t monthMicroseconds = static_cast<int64_t>(interval->month * AVERAGE_DAYS_PER_MONTH * USECS_PER_DAY);
             totalMicroseconds += monthMicroseconds;
         }

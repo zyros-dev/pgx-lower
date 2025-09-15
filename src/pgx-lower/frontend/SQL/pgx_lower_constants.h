@@ -298,6 +298,8 @@ constexpr int NUMERIC_SCALE_MASK = 0xFFFF;
 // String Type Defaults
 constexpr int DEFAULT_VARCHAR_LENGTH = 255;
 
+constexpr double AVERAGE_DAYS_PER_MONTH = 29.53;
+
 // Type Bit Widths (for MLIR type mapping)
 constexpr int BOOL_BIT_WIDTH = 1;
 constexpr int INT2_BIT_WIDTH = 16;
