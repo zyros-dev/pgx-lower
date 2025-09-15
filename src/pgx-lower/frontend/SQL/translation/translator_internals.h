@@ -153,9 +153,7 @@ class PostgreSQLTypeMapper {
     explicit PostgreSQLTypeMapper(mlir::MLIRContext& context)
     : context_(context) {}
 
-    // Main type mapping function
-    auto map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const bool nullable = false,
-                             const std::optional<Datum> value = std::nullopt) const -> mlir::Type;
+    auto map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const bool nullable = false) const -> mlir::Type;
 
     // Type modifier extraction functions
     static auto extract_numeric_info(const int32_t typmod) -> std::pair<int32_t, int32_t>;
