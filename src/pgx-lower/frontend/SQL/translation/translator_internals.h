@@ -136,6 +136,8 @@ class PostgreSQLASTTranslator::Impl {
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
     static auto translate_arithmetic_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs,
                                         const mlir::Value rhs) -> mlir::Value;
+    static auto upcast_binary_operation(const QueryCtxT& ctx, mlir::Value lhs, mlir::Value rhs)
+        -> std::pair<mlir::Value, mlir::Value>;
     static auto translate_comparison_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs,
                                         const mlir::Value rhs) -> mlir::Value;
 

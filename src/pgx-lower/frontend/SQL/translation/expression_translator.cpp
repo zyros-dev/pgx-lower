@@ -1025,7 +1025,6 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
                                                             const mlir::Value lhs, const mlir::Value rhs) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
-    // Use PostgreSQL's catalog lookup to get operator name
     char* oprname = get_opname(op_oid);
     if (!oprname) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unknown arithmetic operator OID: %d", op_oid);
@@ -1033,57 +1032,33 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
     }
 
     const std::string op(oprname);
-    pfree(oprname); // PostgreSQL memory management
+    pfree(oprname);
 
     const auto loc = ctx.builder.getUnknownLoc();
 
-    // Map operator name to MLIR operation (like LingoDB does)
-    if (op == "+")
-        return ctx.builder.create<mlir::db::AddOp>(loc, lhs, rhs);
-    if (op == "-")
-        return ctx.builder.create<mlir::db::SubOp>(loc, lhs, rhs);
-    if (op == "*")
-        return ctx.builder.create<mlir::db::MulOp>(loc, lhs, rhs);
-    if (op == "/")
-        return ctx.builder.create<mlir::db::DivOp>(loc, lhs, rhs);
-    if (op == "%")
-        return ctx.builder.create<mlir::db::ModOp>(loc, lhs, rhs);
+    auto [convertedLhs, convertedRhs] = upcast_binary_operation(ctx, lhs, rhs);
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Unhandled arithmetic operator: %s (OID: %d)", op.c_str(), op_oid);
+    if (op == "+")
+        return ctx.builder.create<mlir::db::AddOp>(loc, convertedLhs, convertedRhs);
+    if (op == "-")
+        return ctx.builder.create<mlir::db::SubOp>(loc, convertedLhs, convertedRhs);
+    if (op == "*")
+        return ctx.builder.create<mlir::db::MulOp>(loc, convertedLhs, convertedRhs);
+    if (op == "/")
+        return ctx.builder.create<mlir::db::DivOp>(loc, convertedLhs, convertedRhs);
+    if (op == "%")
+        return ctx.builder.create<mlir::db::ModOp>(loc, convertedLhs, convertedRhs);
+    if (op == "%")
+        return ctx.builder.create<mlir::db::ModOp>(loc, convertedLhs, convertedRhs);
+
+    // TODO: This logs for '=' operator... that should be a comparison, not arithmetic. unsure of why it routes to here.
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Unhandled comparison operator: %s (OID: %d)", op.c_str(), op_oid);
     return nullptr;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx, const Oid op_oid,
-                                                            const mlir::Value lhs, const mlir::Value rhs) -> mlir::Value {
-    PGX_IO(AST_TRANSLATE);
-
-    char* oprname = get_opname(op_oid);
-    if (!oprname) {
-        PGX_ERROR("Failed to translate comparison operator OID: %d", op_oid);
-        throw std::runtime_error("Failed to translate comparison operator OID");
-    }
-
-    const std::string op(oprname);
-    pfree(oprname);
-
-    mlir::db::DBCmpPredicate predicate;
-    if (op == "=") {
-        predicate = mlir::db::DBCmpPredicate::eq;
-    } else if (op == "<>" || op == "!=") {
-        predicate = mlir::db::DBCmpPredicate::neq;
-    } else if (op == "<") {
-        predicate = mlir::db::DBCmpPredicate::lt;
-    } else if (op == "<=") {
-        predicate = mlir::db::DBCmpPredicate::lte;
-    } else if (op == ">") {
-        predicate = mlir::db::DBCmpPredicate::gt;
-    } else if (op == ">=") {
-        predicate = mlir::db::DBCmpPredicate::gte;
-    } else {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Unhandled comparison operator: %s (OID: %d)", op.c_str(), op_oid);
-        return nullptr;
-    }
-
+auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx, const mlir::Value lhs,
+                                                            const mlir::Value rhs)
+    -> std::pair<mlir::Value, mlir::Value> {
     auto convertedLhs = lhs;
     auto convertedRhs = rhs;
 
@@ -1138,6 +1113,42 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
                                                                       convertedLhs, falseVal);
         }
     }
+
+    return {convertedLhs, convertedRhs};
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx, const Oid op_oid,
+                                                            const mlir::Value lhs, const mlir::Value rhs) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
+
+    char* oprname = get_opname(op_oid);
+    if (!oprname) {
+        PGX_ERROR("Failed to translate comparison operator OID: %d", op_oid);
+        throw std::runtime_error("Failed to translate comparison operator OID");
+    }
+
+    const std::string op(oprname);
+    pfree(oprname);
+
+    mlir::db::DBCmpPredicate predicate;
+    if (op == "=") {
+        predicate = mlir::db::DBCmpPredicate::eq;
+    } else if (op == "<>" || op == "!=") {
+        predicate = mlir::db::DBCmpPredicate::neq;
+    } else if (op == "<") {
+        predicate = mlir::db::DBCmpPredicate::lt;
+    } else if (op == "<=") {
+        predicate = mlir::db::DBCmpPredicate::lte;
+    } else if (op == ">") {
+        predicate = mlir::db::DBCmpPredicate::gt;
+    } else if (op == ">=") {
+        predicate = mlir::db::DBCmpPredicate::gte;
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Unhandled comparison operator: %s (OID: %d)", op.c_str(), op_oid);
+        return nullptr;
+    }
+
+    auto [convertedLhs, convertedRhs] = upcast_binary_operation(ctx, lhs, rhs);
 
     return ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), predicate, convertedLhs, convertedRhs);
 }
