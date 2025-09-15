@@ -1056,42 +1056,157 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
     return nullptr;
 }
 
+struct SQLTypeInference {
+    static mlir::FloatType getHigherFloatType(mlir::Type left, mlir::Type right) {
+        mlir::FloatType leftFloat = left.dyn_cast_or_null<mlir::FloatType>();
+        if (auto rightFloat = right.dyn_cast_or_null<mlir::FloatType>()) {
+            if (!leftFloat || rightFloat.getWidth() > leftFloat.getWidth()) {
+                return rightFloat;
+            }
+        }
+        return leftFloat;
+    }
+    static mlir::IntegerType getHigherIntType(mlir::Type left, mlir::Type right) {
+        mlir::IntegerType leftInt = left.dyn_cast_or_null<mlir::IntegerType>();
+        if (auto rightInt = right.dyn_cast_or_null<mlir::IntegerType>()) {
+            if (!leftInt || rightInt.getWidth() > leftInt.getWidth()) {
+                return rightInt;
+            }
+        }
+        return leftInt;
+    }
+    static mlir::db::DecimalType getHigherDecimalType(mlir::Type left, mlir::Type right) {
+        auto a = left.dyn_cast_or_null<mlir::db::DecimalType>();
+        if (auto b = right.dyn_cast_or_null<mlir::db::DecimalType>()) {
+            if (!a)
+                return b;
+            int hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
+            int maxs = std::max(a.getS(), b.getS());
+            return mlir::db::DecimalType::get(a.getContext(), hidig + maxs, maxs);
+        }
+        return a;
+    }
+    static mlir::Value castValueToType(mlir::OpBuilder& builder, mlir::Value v, mlir::Type t) {
+        bool isNullable = v.getType().isa<mlir::db::NullableType>();
+        if (isNullable && !t.isa<mlir::db::NullableType>()) {
+            t = mlir::db::NullableType::get(builder.getContext(), t);
+        }
+        bool onlyTargetIsNullable = !isNullable && t.isa<mlir::db::NullableType>();
+        if (v.getType() == t) {
+            return v;
+        }
+        if (auto* defOp = v.getDefiningOp()) {
+            if (auto constOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(defOp)) {
+                if (!t.isa<mlir::db::NullableType>()) {
+                    constOp.getResult().setType(t);
+                    return constOp;
+                }
+            }
+            if (auto nullOp = mlir::dyn_cast_or_null<mlir::db::NullOp>(defOp)) {
+                nullOp.getResult().setType(t);
+                return nullOp;
+            }
+        }
+        if (v.getType() == getBaseType(t)) {
+            return builder.create<mlir::db::AsNullableOp>(builder.getUnknownLoc(), t, v);
+        }
+        if (onlyTargetIsNullable) {
+            mlir::Value casted = builder.create<mlir::db::CastOp>(builder.getUnknownLoc(), getBaseType(t), v);
+            return builder.create<mlir::db::AsNullableOp>(builder.getUnknownLoc(), t, casted);
+        } else {
+            return builder.create<mlir::db::CastOp>(builder.getUnknownLoc(), t, v);
+        }
+    }
+    static mlir::Type getCommonBaseType(mlir::Type left, mlir::Type right) {
+        left = getBaseType(left);
+        right = getBaseType(right);
+        bool stringPresent = left.isa<mlir::db::StringType>() || right.isa<mlir::db::StringType>();
+        bool intPresent = left.isa<mlir::IntegerType>() || right.isa<mlir::IntegerType>();
+        bool floatPresent = left.isa<mlir::FloatType>() || right.isa<mlir::FloatType>();
+        bool decimalPresent = left.isa<mlir::db::DecimalType>() || right.isa<mlir::db::DecimalType>();
+        if (stringPresent)
+            return mlir::db::StringType::get(left.getContext());
+        if (decimalPresent)
+            return getHigherDecimalType(left, right);
+        if (floatPresent)
+            return getHigherFloatType(left, right);
+        if (intPresent)
+            return getHigherIntType(left, right);
+        return left;
+    }
+    static mlir::Type getCommonType(mlir::Type left, mlir::Type right) {
+        bool isNullable = left.isa<mlir::db::NullableType>() || right.isa<mlir::db::NullableType>();
+        auto commonBaseType = getCommonBaseType(left, right);
+        if (isNullable) {
+            return mlir::db::NullableType::get(left.getContext(), commonBaseType);
+        } else {
+            return commonBaseType;
+        }
+    }
+    static mlir::Type getCommonBaseType(mlir::TypeRange types) {
+        mlir::Type commonType = types.front();
+        for (auto t : types) {
+            commonType = getCommonBaseType(commonType, t);
+        }
+        return commonType;
+    }
+    static std::vector<mlir::Value> toCommonBaseTypes(mlir::OpBuilder& builder, mlir::ValueRange values) {
+        auto commonType = getCommonBaseType(values.getTypes());
+        std::vector<mlir::Value> res;
+        for (auto val : values) {
+            res.push_back(castValueToType(builder, val, commonType));
+        }
+        return res;
+    }
+    static std::vector<mlir::Value> toCommonBaseTypesExceptDecimals(mlir::OpBuilder& builder, mlir::ValueRange values) {
+        std::vector<mlir::Value> res;
+        for (auto val : values) {
+            if (!getBaseType(val.getType()).isa<mlir::db::DecimalType>()) {
+                return toCommonBaseTypes(builder, values);
+            }
+            res.push_back(val);
+        }
+        return res;
+    }
+};
+
 auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx, const mlir::Value lhs,
                                                             const mlir::Value rhs)
     -> std::pair<mlir::Value, mlir::Value> {
     auto convertedLhs = lhs;
     auto convertedRhs = rhs;
 
-    // --- Handle integer width mismatches - upcast narrower type to wider type ---
+    // --- Handle numeric type mismatches - upcast to common type ---
     {
-        auto getLhsBaseType = lhs.getType();
-        auto getRhsBaseType = rhs.getType();
+        // Get base types, stripping any nullable wrappers
+        mlir::Type lhsBaseType = getBaseType(convertedLhs.getType());
+        mlir::Type rhsBaseType = getBaseType(convertedRhs.getType());
 
-        if (const auto nullableType = dyn_cast<mlir::db::NullableType>(getLhsBaseType))
-            getLhsBaseType = nullableType.getType();
-        if (const auto nullableType = dyn_cast<mlir::db::NullableType>(getRhsBaseType))
-            getRhsBaseType = nullableType.getType();
+        // Check if base types differ (e.g., int32 vs float64)
+        if (lhsBaseType != rhsBaseType) {
+            // Determine the common type to cast to
+            mlir::Type commonBaseType = SQLTypeInference::getCommonBaseType(lhsBaseType, rhsBaseType);
 
-        if (const auto lhsIntType = dyn_cast<mlir::IntegerType>(getLhsBaseType)) {
-            if (const auto rhsIntType = dyn_cast<mlir::IntegerType>(getRhsBaseType)) {
-                const unsigned lhsWidth = lhsIntType.getWidth();
-                const unsigned rhsWidth = rhsIntType.getWidth();
+            // Cast left operand if its type needs to change
+            if (lhsBaseType != commonBaseType) {
+                // If the value is nullable, cast to nullable version of common type
+                mlir::Type targetType = mlir::isa<mlir::db::NullableType>(convertedLhs.getType())
+                    ? mlir::db::NullableType::get(ctx.builder.getContext(), commonBaseType)
+                    : commonBaseType;
 
-                if (lhsWidth != rhsWidth) {
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Integer width mismatch in comparison: i%u vs i%u, upcasting",
-                            lhsWidth, rhsWidth);
+                convertedLhs = ctx.builder.create<mlir::db::CastOp>(
+                    ctx.builder.getUnknownLoc(), targetType, convertedLhs);
+            }
 
-                    // Upcast the narrower type to match the wider type
-                    if (lhsWidth < rhsWidth) {
-                        auto targetType = ctx.builder.getIntegerType(rhsWidth);
-                        convertedLhs = ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType,
-                                                                            convertedLhs);
-                    } else {
-                        auto targetType = ctx.builder.getIntegerType(lhsWidth);
-                        convertedRhs = ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType,
-                                                                            convertedRhs);
-                    }
-                }
+            // Cast right operand if its type needs to change
+            if (rhsBaseType != commonBaseType) {
+                // If the value is nullable, cast to nullable version of common type
+                mlir::Type targetType = mlir::isa<mlir::db::NullableType>(convertedRhs.getType())
+                    ? mlir::db::NullableType::get(ctx.builder.getContext(), commonBaseType)
+                    : commonBaseType;
+
+                convertedRhs = ctx.builder.create<mlir::db::CastOp>(
+                    ctx.builder.getUnknownLoc(), targetType, convertedRhs);
             }
         }
     }
