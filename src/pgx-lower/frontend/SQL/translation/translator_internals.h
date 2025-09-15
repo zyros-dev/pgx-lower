@@ -96,7 +96,7 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr) -> mlir::Value;
     auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value;
     auto translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value;
-    auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) -> mlir::Value;
+    auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) const -> mlir::Value;
     auto translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr) -> mlir::Value;
     auto translate_scalar_array_op_expr(const QueryCtxT& ctx, const ScalarArrayOpExpr* scalar_array_op) -> mlir::Value;
     auto translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value;
@@ -132,7 +132,7 @@ class PostgreSQLASTTranslator::Impl {
     auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream) const -> mlir::Operation*;
 
     // Operation translation helpers
-    auto extract_op_expr_operands(const QueryCtxT& context, const OpExpr* op_expr)
+    auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
     static auto translate_arithmetic_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs,
                                         const mlir::Value rhs) -> mlir::Value;
@@ -140,8 +140,6 @@ class PostgreSQLASTTranslator::Impl {
                                         const mlir::Value rhs) -> mlir::Value;
 
    private:
-    static auto get_aggregate_function_name(const Oid aggfnoid) -> const char*;
-
     mlir::MLIRContext& context_;
 };
 
@@ -185,9 +183,6 @@ class SchemaManager {
 // ===========================================================================
 // Helper Functions
 // ===========================================================================
-
-// Aggregate function name mapping
-auto get_aggregate_function_name(Oid aggfnoid) -> const char*;
 
 // Schema access helpers (standalone functions for backwards compatibility)
 auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string;

@@ -238,13 +238,19 @@ auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> v
             // Later we can add more sophisticated filtering
             if (IsA(tle->expr, FuncExpr)) {
                 const auto* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
-                if (funcExpr->funcid == frontend::sql::constants::PG_F_UPPER
-                    || funcExpr->funcid == frontend::sql::constants::PG_F_LOWER
-                    || funcExpr->funcid == frontend::sql::constants::PG_F_SUBSTRING)
-                {
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Supported string function in targetlist: %d", funcExpr->funcid);
+                char* funcName = get_func_name(funcExpr->funcid);
+                if (funcName) {
+                    std::string func(funcName);
+                    pfree(funcName);
+                    if (func == "upper" || func == "lower" || func == "substring") {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Supported string function in targetlist: %s", func.c_str());
+                    } else {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Unsupported function in targetlist: %s", func.c_str());
+                        caps.hasCompatibleTypes = false;
+                        return;
+                    }
                 } else {
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Unsupported function in targetlist: %d", funcExpr->funcid);
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Unknown function in targetlist: %d", funcExpr->funcid);
                     caps.hasCompatibleTypes = false;
                     return;
                 }

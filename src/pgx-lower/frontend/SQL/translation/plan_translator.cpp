@@ -9,6 +9,7 @@ extern "C" {
 #include "utils/rel.h"
 #include "utils/array.h"
 #include "utils/syscache.h"
+#include "utils/lsyscache.h"
 #include "fmgr.h"
 }
 
@@ -95,23 +96,19 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     }
 
     std::string tableName;
-    Oid tableOid = InvalidOid;
+    auto tableOid = InvalidOid;
 
     if (seqScan->scan.scanrelid > 0) {
-        // Use PostgreSQL's Range Table Entry (RTE) to get actual table information
         tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
         tableOid = get_table_oid_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
 
         if (tableName.empty()) {
-            PGX_WARNING("Could not resolve table name for scanrelid: %d", seqScan->scan.scanrelid);
-            // TODO: This should be a runtime error - the table doesn't exist
-            // Only fall back to generic name if catalog lookup fails
-            tableName = std::string(FALLBACK_TABLE_PREFIX) + std::to_string(seqScan->scan.scanrelid);
-            tableOid = FIRST_NORMAL_OBJECT_ID + seqScan->scan.scanrelid - 1;
+            PGX_ERROR("Could not resolve table name for scanrelid: %d", seqScan->scan.scanrelid);
+            throw std::runtime_error("Could not resolve table name for scanrelid");
         }
     } else {
         PGX_ERROR("Invalid scan relation ID: %d", seqScan->scan.scanrelid);
-        return nullptr;
+        throw std::runtime_error("Could not resolve table name for scanrelid");
     }
 
     std::string tableIdentifier = tableName + TABLE_OID_SEPARATOR + std::to_string(tableOid);
@@ -257,31 +254,37 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
             if (te->expr->type == T_Aggref) {
                 auto aggref = reinterpret_cast<Aggref*>(te->expr);
-                const char* funcName = get_aggregate_function_name(aggref->aggfnoid);
+                char* rawFuncName = get_func_name(aggref->aggfnoid);
+                if (!rawFuncName) {
+                    PGX_ERROR("Unknown aggregate function OID: %u", aggref->aggfnoid);
+                    throw std::runtime_error("Unknown aggregate function OID");
+                }
+                std::string funcName(rawFuncName);
+                pfree(rawFuncName);
 
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Found aggregate function: %s (OID %u)", funcName, aggref->aggfnoid);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Found aggregate function: %s (OID %u)", funcName.c_str(), aggref->aggfnoid);
 
                 auto aggName = te->resname ? std::string(te->resname) : AGGREGATION_RESULT_COLUMN;
                 // Use the aggrN scope pattern like LingoDB
-                auto attrDef = columnManager.createDef(aggrScopeName, funcName);
+                auto attrDef = columnManager.createDef(aggrScopeName, funcName.c_str());
 
                 auto relation = block->getArgument(0);
                 mlir::Value aggResult;
 
-                if (strcmp(funcName, AGGREGATION_COUNT_FUNCTION) == 0) { // COUNT(*) - no column reference needed
+                if (funcName == "count") { // COUNT(*) - no column reference needed
                     attrDef.getColumn().type = ctx.builder.getI64Type();
                     aggResult = aggr_builder.create<mlir::relalg::CountRowsOp>(ctx.builder.getUnknownLoc(),
                                                                                ctx.builder.getI64Type(), relation);
                 } else { // SUM, AVG, MIN, MAX - need column reference
                     if (!aggref->args || list_length(aggref->args) == 0) {
-                        PGX_ERROR("Aggregate function %s requires arguments", funcName);
+                        PGX_ERROR("Aggregate function %s requires arguments", funcName.c_str());
                         continue;
                     }
 
                     // Get the first argument (column reference)
                     auto argTE = static_cast<TargetEntry*>(linitial(aggref->args));
                     if (!argTE || !argTE->expr || argTE->expr->type != T_Var) {
-                        PGX_ERROR("Aggregate function %s requires column reference", funcName);
+                        PGX_ERROR("Aggregate function %s requires column reference", funcName.c_str());
                         continue;
                     }
 
@@ -309,7 +312,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         columnName = get_column_name_from_schema(&ctx.current_stmt, colVar->varno, colVar->varattno);
                     }
 
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Aggregate %s on column: %s.%s", funcName, tableName.c_str(),
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Aggregate %s on column: %s.%s", funcName.c_str(), tableName.c_str(),
                             columnName.c_str());
 
                     // Create column attribute reference using SymbolRefAttr
@@ -331,13 +334,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                     // Map function name to aggregate enum
                     auto aggrFuncEnum = mlir::relalg::AggrFunc::count; // Default
-                    if (strcmp(funcName, AGGREGATION_SUM_FUNCTION) == 0) {
+                    if (funcName == "sum") {
                         aggrFuncEnum = mlir::relalg::AggrFunc::sum;
-                    } else if (strcmp(funcName, AGGREGATION_AVG_FUNCTION) == 0) {
+                    } else if (funcName == "avg") {
                         aggrFuncEnum = mlir::relalg::AggrFunc::avg;
-                    } else if (strcmp(funcName, AGGREGATION_MIN_FUNCTION) == 0) {
+                    } else if (funcName == "min") {
                         aggrFuncEnum = mlir::relalg::AggrFunc::min;
-                    } else if (strcmp(funcName, AGGREGATION_MAX_FUNCTION) == 0) {
+                    } else if (funcName == "max") {
                         aggrFuncEnum = mlir::relalg::AggrFunc::max;
                     }
 
@@ -356,9 +359,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 // Map the aggregate result column for materialize operation
                 // PostgreSQL uses varno=-2 for all columns from Agg output
                 // Use the aggregate scope name and function name for the mapping
-                ctx.column_mappings[{-2, te->resno}] = {aggrScopeName, funcName};
+                ctx.column_mappings[{-2, te->resno}] = {aggrScopeName, funcName.c_str()};
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped aggregate result (-2, %d) -> (%s, %s)",
-                        te->resno, aggrScopeName.c_str(), funcName);
+                        te->resno, aggrScopeName.c_str(), funcName.c_str());
             } else {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Non-aggregate expression in target list: type %d (%s)", te->expr->type,
                         te->resname ? te->resname : "unnamed");
@@ -569,15 +572,22 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
         for (int i = 0; i < numCols; i++) {
             const AttrNumber colIdx = sortColIdx[i];
             if (colIdx > 0 && colIdx < MAX_COLUMN_INDEX) {
-                // Determine sort direction
+                // Determine sort direction using operator name lookup
                 auto spec = mlir::relalg::SortSpec::asc;
                 if (sortOperators) {
                     const Oid sortOp = sortOperators[i];
-                    const bool descending = (sortOp == PG_INT4_GT_OID || sortOp == PG_INT8_GT_OID
-                                             || sortOp == PG_INT4_GE_ALT_OID || sortOp == PG_INT8_GE_ALT_OID
-                                             || sortOp == PG_TEXT_GT_OID || sortOp == PG_TEXT_GE_OID);
-                    if (descending) {
-                        spec = mlir::relalg::SortSpec::desc;
+
+                    // Use get_opname() to determine sort direction semantically
+                    char* oprname = get_opname(sortOp);
+                    if (oprname) {
+                        std::string op(oprname);
+                        pfree(oprname);
+
+                        // Descending sorts use greater-than operators
+                        const bool descending = (op == ">" || op == ">=");
+                        if (descending) {
+                            spec = mlir::relalg::SortSpec::desc;
+                        }
                     }
                 }
 
@@ -1297,7 +1307,13 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(const QueryCtxT& contex
                 // Fallback if no mapping found
                 PGX_WARNING("No mapping found for aggregate at resno %d", tle->resno);
                 const Aggref* aggref = reinterpret_cast<Aggref*>(tle->expr);
-                const char* funcName = get_aggregate_function_name(aggref->aggfnoid);
+                char* rawFuncName = get_func_name(aggref->aggfnoid);
+                if (!rawFuncName) {
+                    PGX_ERROR("Unknown aggregate function OID: %u", aggref->aggfnoid);
+                    throw std::runtime_error("Unknown aggregate function OID");
+                }
+                std::string funcName(rawFuncName);
+                pfree(rawFuncName);
                 scope = "unmapped_aggr";
                 colName = funcName;
             }
@@ -1384,54 +1400,5 @@ auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& conte
     return materializeOp;
 }
 
-auto PostgreSQLASTTranslator::Impl::get_aggregate_function_name(const Oid aggfnoid) -> const char* {
-    PGX_IO(AST_TRANSLATE);
-    return ::postgresql_ast::get_aggregate_function_name(aggfnoid);
-}
-
-auto get_aggregate_function_name(const Oid aggfnoid) -> const char* {
-    PGX_IO(AST_TRANSLATE);
-    using namespace pgx_lower::frontend::sql::constants;
-
-    switch (aggfnoid) {
-    case PG_F_SUM_INT2:
-    case PG_F_SUM_INT4:
-    case PG_F_SUM_INT8:
-    case PG_F_SUM_FLOAT4:
-    case PG_F_SUM_FLOAT8:
-    case PG_F_SUM_NUMERIC: return AGGREGATION_SUM_FUNCTION;
-
-    case PG_F_AVG_INT2:
-    case PG_F_AVG_INT4:
-    case PG_F_AVG_INT8:
-    case PG_F_AVG_FLOAT4:
-    case PG_F_AVG_FLOAT8:
-    case PG_F_AVG_NUMERIC: return AGGREGATION_AVG_FUNCTION;
-
-    case PG_F_COUNT_STAR:
-    case PG_F_COUNT_ANY: return AGGREGATION_COUNT_FUNCTION;
-
-    // MIN functions
-    case PG_F_MIN_INT2:
-    case PG_F_MIN_INT4:
-    case PG_F_MIN_INT8:
-    case PG_F_MIN_FLOAT4:
-    case PG_F_MIN_FLOAT8:
-    case PG_F_MIN_NUMERIC:
-    case PG_F_MIN_TEXT: return AGGREGATION_MIN_FUNCTION;
-
-    case PG_F_MAX_INT2:
-    case PG_F_MAX_INT4:
-    case PG_F_MAX_INT8:
-    case PG_F_MAX_FLOAT4:
-    case PG_F_MAX_FLOAT8:
-    case PG_F_MAX_NUMERIC:
-    case PG_F_MAX_TEXT: return AGGREGATION_MAX_FUNCTION;
-
-    default:
-        PGX_ERROR("fnknown aggregate function OID: %u, defaulting to count", aggfnoid);
-        throw std::runtime_error("Unknown aggregate function OID");
-    }
-}
 
 } // namespace postgresql_ast

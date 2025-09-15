@@ -119,12 +119,11 @@ auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, const in
     }
 
 #ifdef BUILDING_UNIT_TESTS
-    // In unit test environment, use hardcoded column names for test_arithmetic table
-    if (varattno == FIRST_COLUMN_ATTNO)
+    if (varattno == 1)
         return "id";
-    if (varattno == SECOND_COLUMN_ATTNO)
+    if (varattno == 2)
         return "val1";
-    if (varattno == THIRD_COLUMN_ATTNO)
+    if (varattno == 3)
         return "val2";
     return "col_" + std::to_string(varattno);
 #else
@@ -180,7 +179,7 @@ auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, 
     }
 
     // Iterate through all table columns
-    for (int i = FIRST_ATTRIBUTE_INDEX; i < tupleDesc->natts; i++) {
+    for (int i = 0; i < tupleDesc->natts; i++) {
         Form_pg_attribute attr = TupleDescAttr(tupleDesc, i);
         if (attr->attisdropped) {
             continue; // Skip dropped columns
