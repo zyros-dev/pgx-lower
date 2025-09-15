@@ -25,6 +25,7 @@ extern "C" {
 #include "utils/elog.h"
 #include "utils/numeric.h"
 #include "fmgr.h"
+#include "utils/builtins.h"
 }
 
 extern "C" {
@@ -627,7 +628,7 @@ bool DataSourceIteration::isValid() {
         extern int32_t get_int32_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern int64_t get_int64_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null);
-        extern double get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null);
+        extern Numeric get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null);
         extern const char* get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t* length,
                                             int32_t type_oid);
         extern int32_t get_field_type_oid(int32_t field_index);
@@ -729,10 +730,20 @@ bool DataSourceIteration::isValid() {
             case NUMERICOID:
                 col_spec.type = ::ColumnType::DECIMAL;
                 {
-                    // Handle DECIMAL/NUMERIC - for now convert from double
+                    // Handle DECIMAL/NUMERIC - get the actual Numeric value
                     // TODO: Get proper precision/scale from PostgreSQL NUMERIC
                     bool is_null = false;
-                    double decimal_value = get_numeric_field(iter->table_handle, pg_column_index, &is_null);
+                    Numeric numeric_value = get_numeric_field(iter->table_handle, pg_column_index, &is_null);
+
+                    // Convert Numeric to double for now (still loses precision, but at least we have the Numeric)
+                    // In the future, we should handle Numeric directly without conversion
+                    double decimal_value = 0.0;
+                    if (!is_null && numeric_value) {
+                        // Use PostgreSQL's built-in numeric to float8 conversion
+                        Datum numeric_datum = NumericGetDatum(numeric_value);
+                        Datum float8_datum = DirectFunctionCall1(numeric_float8, numeric_datum);
+                        decimal_value = DatumGetFloat8(float8_datum);
+                    }
 
                     // Convert double to 128-bit representation
                     // For now, assume scale of 2 (common for money/price columns)

@@ -166,7 +166,10 @@ template<>
 inline double fromDatum<double>(const Datum value, const Oid typeOid) {
     switch (typeOid) {
     case FLOAT8OID: return DatumGetFloat8(value);
-    default: throw std::runtime_error("Cannot convert type OID " + std::to_string(typeOid) + " to double");
+    default: {
+        PGX_ERROR("Cannot convert type OID %d to double", typeOid);
+        throw std::runtime_error("Cannot convert type OID " + std::to_string(typeOid) + " to double");
+    }
     }
 }
 

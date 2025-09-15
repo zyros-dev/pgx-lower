@@ -26,14 +26,15 @@ extern "C" {
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/builtins.h"
+#include "utils/numeric.h"
 }
 #endif
 
 // Data Structures
 struct ColumnMetadata {
-    char name[64];      // NAMEDATALEN from PostgreSQL (typically 64)
-    int32_t type_oid;   // PostgreSQL type OID
-    int32_t attnum;     // Attribute number (1-based in PostgreSQL)
+    char name[64];
+    int32_t type_oid;
+    int32_t attnum;
 };
 
 struct ComputedResultStorage {
@@ -126,7 +127,7 @@ struct TupleStreamer {
         if (!isActive || !dest || !slot) {
             return false;
         }
-        
+
         bool hasComputedResults = false;
         for (int col : selectedColumns) {
             if (col == -1) {
@@ -134,7 +135,7 @@ struct TupleStreamer {
                 break;
             }
         }
-        
+
         if (!hasComputedResults && !passthrough.originalTuple) {
             return false;
         }
@@ -152,21 +153,18 @@ struct TupleStreamer {
                     const int origColumnIndex = selectedColumns[i];
 
                     if (origColumnIndex >= 0 && origTupleDesc && origColumnIndex < origTupleDesc->natts) {
-                        const auto value =
-                            heap_getattr(passthrough.originalTuple, origColumnIndex + 1, origTupleDesc, &isnull);
+                        const auto value = heap_getattr(passthrough.originalTuple, origColumnIndex + 1, origTupleDesc,
+                                                        &isnull);
                         slot->tts_values[i] = value;
                         slot->tts_isnull[i] = isnull;
-                    }
-                    else if (origColumnIndex == -1 && i < g_computed_results.numComputedColumns) {
+                    } else if (origColumnIndex == -1 && i < g_computed_results.numComputedColumns) {
                         slot->tts_values[i] = g_computed_results.computedValues[i];
                         slot->tts_isnull[i] = g_computed_results.computedNulls[i];
-                    }
-                    else {
+                    } else {
                         slot->tts_values[i] = static_cast<Datum>(0);
                         slot->tts_isnull[i] = true;
                     }
-                }
-                else {
+                } else {
                     slot->tts_values[i] = static_cast<Datum>(0);
                     slot->tts_isnull[i] = true;
                 }
@@ -206,7 +204,7 @@ void close_postgres_table(void* tableHandle);
 // C Interface - Field Access
 auto get_int_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int32_t;
 auto get_text_field(void* tuple_handle, int32_t field_index, bool* is_null) -> int64_t;
-auto get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) -> double;
+auto get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null) -> Numeric;
 
 // C Interface - Result Storage
 void store_bigint_result(int32_t columnIndex, int64_t value, bool isNull);
@@ -218,10 +216,6 @@ void* DataSource_get(runtime::VarLen32 description);
 } // extern "C"
 
 // C++ Interface
-//==============================================================================
-
-namespace pgx_lower {
-namespace runtime {
+namespace pgx_lower { namespace runtime {
 bool check_memory_context_safety();
-}
-}
+}} // namespace pgx_lower::runtime
