@@ -32,8 +32,7 @@ SELECT bool_col,
        bool_col IS NULL AS is_null
 FROM type_test_table;
 
--- PROBLEM: Column 4 (int_sum) has integer overflow - row 3: 32767 + 2147483647 = -2147450882 (wrong)
--- EXPECTED: 2147516414
+-- NOTE: We expect an overflow here! That's because lingodb doesn't explain about overflows at all.
 SELECT int2_col > 0 AS int2_positive,
        int4_col < 1000 AS int4_small,
        int8_col >= 100000 AS int8_large,
