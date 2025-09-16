@@ -777,6 +777,18 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             value = rewriter.create<arith::MulFOp>(loc, convertedSourceType, value, multiplier);
             rewriter.replaceOpWithNewOp<arith::FPToSIOp>(op, convertedTargetType, value);
             return success();
+         } else if (auto targetFloatType = scalarTargetType.dyn_cast_or_null<FloatType>()) {
+             // PGX-LOWER edit: Lingodb didn't have type cast for float -> float implemented
+            const auto sourceWidth = floatType.getWidth();
+            const auto targetWidth = targetFloatType.getWidth();
+            if (sourceWidth < targetWidth) {
+               rewriter.replaceOpWithNewOp<arith::ExtFOp>(op, convertedTargetType, value);
+            } else if (sourceWidth > targetWidth) {
+               rewriter.replaceOpWithNewOp<arith::TruncFOp>(op, convertedTargetType, value);
+            } else {
+               rewriter.replaceOp(op, value);
+            }
+            return success();
          }
       } else if (auto decimalSourceType = scalarSourceType.dyn_cast_or_null<db::DecimalType>()) {
          if (auto decimalTargetType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
