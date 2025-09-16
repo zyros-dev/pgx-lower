@@ -820,6 +820,30 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             return success();
          }
       }
+
+      // PGX-LOWER added log: log when we fail to cast, since it's a common problem and a pain to figure out what cast it
+      // was
+      {
+         std::string opDump;
+         llvm::raw_string_ostream os(opDump);
+         op->print(os);
+         os.flush();
+
+         std::string fromType;
+         llvm::raw_string_ostream fromOs(fromType);
+         op.getVal().getType().print(fromOs);
+         fromOs.flush();
+
+         std::string toType;
+         llvm::raw_string_ostream toOs(toType);
+         op.getType().print(toOs);
+         toOs.flush();
+
+         PGX_WARNING("Failed to lower db.cast operation - From type: %s, To type: %s",
+                     fromType.c_str(), toType.c_str());
+         PGX_WARNING("Full operation dump: %s", opDump.c_str());
+      }
+
       return failure();
    }
 };
