@@ -129,7 +129,7 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         }
         PG_CATCH();
         {
-            PGX_ERROR("PostgreSQL exception during MLIR pipeline execution");
+            PGX_WARNING("PostgreSQL exception during MLIR pipeline execution");
             pipelineSuccess = false;
             PG_RE_THROW();
         }

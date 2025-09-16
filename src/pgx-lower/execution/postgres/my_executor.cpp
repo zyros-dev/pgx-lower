@@ -347,7 +347,7 @@ static bool executeWithExceptionHandling(ExecutionContext& ctx, PlannedStmt* stm
     }
     PG_CATCH();
     {
-        PGX_ERROR("PostgreSQL exception during MLIR execution");
+        PGX_WARNING("PostgreSQL exception during MLIR execution");
         if (ctx.initialized) {
             cleanupExecutionResources(ctx.estate, ctx.econtext, ctx.slot, ctx.resultTupleDesc, dest, ctx.old_context);
         }

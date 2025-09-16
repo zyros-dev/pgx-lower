@@ -69,18 +69,10 @@ bool setupMLIRContextForJIT(::mlir::MLIRContext& context) {
         
         switch (diag.getSeverity()) {
             case mlir::DiagnosticSeverity::Error:
-                PGX_LOG(JIT, DEBUG, "MLIR Error at %s: %s", 
-                       locStr.empty() ? "unknown" : locStr.c_str(), 
-                       diagStr.c_str());
-                break;
             case mlir::DiagnosticSeverity::Warning:
-                PGX_LOG(JIT, DEBUG, "MLIR Warning at %s: %s", 
-                       locStr.empty() ? "unknown" : locStr.c_str(), 
-                       diagStr.c_str());
-                break;
             case mlir::DiagnosticSeverity::Note:
             case mlir::DiagnosticSeverity::Remark:
-                PGX_LOG(JIT, TRACE, "MLIR Note at %s: %s", 
+                PGX_WARNING("MLIR Note at %s: %s",
                        locStr.empty() ? "unknown" : locStr.c_str(), 
                        diagStr.c_str());
                 break;
