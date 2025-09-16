@@ -327,9 +327,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     auto columnAttr = columnManagerM.get(tableName, columnName);
                     auto columnRef = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, columnAttr);
 
-                    // use the actual column type from the column attribute
-                    // the column attr is a std::shared_ptr<column>, so use -> to access type
-                    auto resultType = columnAttr->type;
+                    PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
+                    auto resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
                     attrDef.getColumn().type = resultType;
 
                     // Map function name to aggregate enum
