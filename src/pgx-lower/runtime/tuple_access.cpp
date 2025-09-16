@@ -27,6 +27,7 @@ extern "C" {
 #include "utils/numeric.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
+#include "utils/timestamp.h"
 #include "storage/lockdefs.h"
 #include "utils/memutils.h"
 #include "utils/datum.h"
@@ -185,7 +186,6 @@ void table_builder_add(void* builder, bool is_valid, T value) {
     }
 }
 
-// Explicit instantiations
 template void table_builder_add<int8_t>(void*, bool, int8_t);
 template void table_builder_add<int16_t>(void*, bool, int16_t);
 template void table_builder_add<int32_t>(void*, bool, int32_t);
@@ -490,7 +490,19 @@ static Datum copy_datum_to_postgresql_memory(Datum value, Oid typeOid, bool isNu
     case DATEOID:
     case TIMESTAMPOID:
     case TIMESTAMPTZOID:
-    case INTERVALOID: return value;
+        return value;
+
+    case INTERVALOID: {
+        // Since psql stores intervals in a different way to how we do, we need to
+        // build their representation. At some point we're going to have to do some
+        // overhaul of how we store intervals internally.
+        int64_t totalMicroseconds = DatumGetInt64(value);
+        auto* interval = (Interval*)palloc(sizeof(Interval));
+        interval->month = 0;
+        interval->day = 0;
+        interval->time = totalMicroseconds;
+        return IntervalPGetDatum(interval);
+    }
 
     default:
         PGX_ERROR("copy_datum_to_postgresql_memory: Unhandled type OID %u", typeOid);

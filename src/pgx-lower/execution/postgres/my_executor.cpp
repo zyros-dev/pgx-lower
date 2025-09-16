@@ -247,6 +247,16 @@ setupResultProcessing(const PlannedStmt* stmt, DestReceiver* dest, TupleTableSlo
 
     TupleDesc resultTupleDesc = setupTupleDescriptor(stmt, selectedColumns);
 
+    for (auto i = 0; i < resultTupleDesc->natts; i++) {
+        const auto attr = TupleDescAttr(resultTupleDesc, i);
+        if (i < g_computed_results.numComputedColumns) {
+            g_computed_results.computedTypes[i] = attr->atttypid;
+            PGX_LOG(GENERAL, DEBUG, "Initialized computed result column %d with type OID %d", i, attr->atttypid);
+        } else {
+            PGX_WARNING("Managed to access a natt out of range");
+        }
+    }
+
     *slot = MakeSingleTupleTableSlot(resultTupleDesc, &TTSOpsVirtual);
     PGX_LOG(GENERAL, DEBUG, "Created slot=%p with tupleDesc=%p, tts_nvalid=%d",
             *slot, (*slot)->tts_tupleDescriptor, (*slot)->tts_nvalid);

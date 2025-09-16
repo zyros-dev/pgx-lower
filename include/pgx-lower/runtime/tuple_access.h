@@ -59,11 +59,15 @@ struct ComputedResultStorage {
         PGX_LOG(RUNTIME, DEBUG, "ComputedResultStorage::resize completed, numComputedColumns=%zu", numComputedColumns);
     }
 
-    void setResult(int columnIndex, Datum value, bool isNull, Oid typeOid) {
+    void setResult(const int columnIndex, const Datum value, const bool isNull, const Oid typeOid) {
         if (columnIndex >= 0 && columnIndex < numComputedColumns) {
             computedValues[columnIndex] = value;
             computedNulls[columnIndex] = isNull;
-            computedTypes[columnIndex] = typeOid;
+            if (computedTypes[columnIndex] == InvalidOid) {
+                // unsure when this even triggers tbh... but if I get rid of it, things do seem to fail...
+                PGX_WARNING("Had an invalid OID");
+                computedTypes[columnIndex] = typeOid;
+            }
         }
     }
 };
