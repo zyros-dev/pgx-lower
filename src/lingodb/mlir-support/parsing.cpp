@@ -145,12 +145,18 @@ std::variant<int64_t, double, std::string> parseString(std::variant<int64_t, dou
    return str;
 }
 std::variant<int64_t, double, std::string> parseDate(std::variant<int64_t, double, std::string> val, bool parse64 = false) {
-   if (!std::holds_alternative<std::string>(val)) {
-      throw std::runtime_error("can not parse date");
+   int64_t date64;
+   if (std::holds_alternative<int64_t>(val)) {
+      // Already have the date as days since epoch (PostgreSQL internal format)
+      int64_t days = std::get<int64_t>(val);
+      date64 = days * 24 * 60 * 60 * 1000000000ll;
+   } else if (std::holds_alternative<std::string>(val)) {
+      std::string str = std::get<std::string>(val);
+      int64_t parsed = parseDate32(str);
+      date64 = parsed * 24 * 60 * 60 * 1000000000ll;
+   } else {
+      throw std::runtime_error("can not parse date from double");
    }
-   std::string str = std::get<std::string>(val);
-   int64_t parsed = parseDate32(str);
-   int64_t date64 = parsed * 24 * 60 * 60 * 1000000000ll;
    return date64;
 }
 std::variant<int64_t, double, std::string> toI64(std::variant<int64_t, double, std::string> val) {
