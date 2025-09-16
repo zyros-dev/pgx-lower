@@ -599,17 +599,16 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
             case 64: typeConstant = FLOAT8OID; break;  // float8 OID = 701
          }
       } else if (auto stringType = type.dyn_cast_or_null<mlir::db::StringType>()) {
-         typeConstant = TEXTOID;  // PostgreSQL text OID = 25
+         typeConstant = TEXTOID;
       } else if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
-         typeConstant = DATEOID;  // PostgreSQL date OID = 1082 (both units map to same OID)
+         typeConstant = DATEOID;
       } else if (auto charType = type.dyn_cast_or_null<mlir::db::CharType>()) {
-         typeConstant = TEXTOID;  // Map fixed-size char to text for now
+         typeConstant = TEXTOID;
          param1 = charType.getBytes();
       } else if (auto intervalType = type.dyn_cast_or_null<mlir::db::IntervalType>()) {
-         // PostgreSQL doesn't have separate interval types, use numeric for now
-         typeConstant = NUMERICOID;
+         typeConstant = INTERVALOID;
       } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
-         typeConstant = TIMESTAMPOID;  // PostgreSQL timestamp OID = 1114
+         typeConstant = TIMESTAMPOID;
          param1 = static_cast<uint32_t>(timestampType.getUnit());
       }
       // Note: typeConstant will be 0 for unsupported types, handled by caller

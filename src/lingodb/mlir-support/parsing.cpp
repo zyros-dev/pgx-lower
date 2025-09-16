@@ -1,4 +1,7 @@
 #include "lingodb/mlir-support/parsing.h"
+
+#include "pgx-lower/utility/logging.h"
+
 #include <stdexcept>
 #include <cstring>
 
@@ -197,26 +200,18 @@ std::variant<int64_t, double, std::string> parseTimestamp(std::variant<int64_t, 
 }
 std::variant<int64_t, double, std::string> support::parse(std::variant<int64_t, double, std::string> val, int type, uint32_t param1, uint32_t param2) {
    // Use PostgreSQL type OIDs instead of Arrow types
-   switch (type) {
-      case INT2OID:
-      case INT4OID:
-      case INT8OID:
-         return parseInt(val);
-      case BOOLOID: 
-         return parseBool(val);
-      case FLOAT4OID:
-      case FLOAT8OID: 
-         return parseDouble(val);
-      case NUMERICOID: 
-         return parseString(val, true);
-      case TEXTOID: 
-         return parseString(val, true);
-      case DATEOID: 
-         return parseDate(val, false);
-      case TIMESTAMPOID: 
-         return parseTimestamp(val, static_cast<TimeUnit>(param1));
-      default:
-         // For unknown types, try to parse as string
-         return parseString(val, true);
-   }
+    switch (type) {
+    case INT2OID:
+    case INT4OID:
+    case INT8OID: return parseInt(val);
+    case BOOLOID: return parseBool(val);
+    case FLOAT4OID:
+    case FLOAT8OID: return parseDouble(val);
+    case NUMERICOID: return parseString(val, true);
+    case TEXTOID: return parseString(val, true);
+    case DATEOID: return parseDate(val, false);
+    case TIMESTAMPOID: return parseTimestamp(val, static_cast<TimeUnit>(param1));
+    case INTERVALOID: return parseInterval(val);
+    default: PGX_ERROR("Failed to parse type"); throw std::runtime_error("can not parse type");
+    }
 }
