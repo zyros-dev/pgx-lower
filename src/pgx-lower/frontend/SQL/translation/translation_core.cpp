@@ -26,6 +26,8 @@ extern "C" {
 #include "utils/numeric.h"
 #include "utils/date.h"
 #include "datatype/timestamp.h"
+#include "utils/timestamp.h"
+#include "utils/builtins.h"
 }
 #endif
 
@@ -198,9 +200,21 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
         return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI64IntegerAttr(days));
     }
     case TIMESTAMPOID: {
+#ifdef POSTGRESQL_EXTENSION
+        // Postgres hands us the time as a int64_t, but lingodb stores it as a string. We have two options here...
+        // hand lingodb the string and don't worry, or adjust lingodb to handle int64s... I will rather rely on
+        // lingodb's solution.
+        const Timestamp timestamp = static_cast<Timestamp>(constNode->constvalue);
+        char* timestampStr = DatumGetCString(DirectFunctionCall1(timestamp_out, TimestampGetDatum(timestamp)));
+        const auto timeStr = std::string(timestampStr);
+        pfree(timestampStr);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(timeStr));
+#else
+        // For unit tests, just pass the microseconds as before
         const int64_t microseconds = static_cast<int64_t>(constNode->constvalue);
         return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
                                                     builder.getI64IntegerAttr(microseconds));
+#endif
     }
     case INTERVALOID: {
 #ifdef POSTGRESQL_EXTENSION
