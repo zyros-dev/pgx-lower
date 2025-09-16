@@ -26,7 +26,6 @@ INSERT INTO type_test_table VALUES
     (NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
     (false, 0, 0, 0, 0.0, 0.0, '', '          ', '', 0.00, 0.00000, '2024-02-29', '2024-02-29 00:00:00', INTERVAL '0 days');
 
--- PROBLEM: Column 4 (is_null) outputs 0/1 instead of t/f for boolean results
 SELECT bool_col,
        bool_col = true AS is_true,
        bool_col = false AS is_false,

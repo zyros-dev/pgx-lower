@@ -20,11 +20,11 @@ FROM test_nulls;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  is_null_check 
 ---------------
-             1
-             0
-             1
-             0
-             0
+ t
+ f
+ t
+ f
+ f
 (5 rows)
 
 SELECT (nullable_value IS NOT NULL) AS is_not_null_check
@@ -32,11 +32,11 @@ FROM test_nulls;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  is_not_null_check 
 -------------------
-                 0
-                 1
-                 0
-                 1
-                 1
+ f
+ t
+ f
+ t
+ t
 (5 rows)
 
 SELECT (backup_value IS NULL) AS backup_is_null
@@ -44,11 +44,11 @@ FROM test_nulls;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  backup_is_null 
 ----------------
-              0
-              0
-              0
-              1
-              0
+ f
+ f
+ f
+ t
+ f
 (5 rows)
 
 SELECT (backup_value IS NOT NULL) AS backup_is_not_null
@@ -56,11 +56,11 @@ FROM test_nulls;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  backup_is_not_null 
 --------------------
-                  1
-                  1
-                  1
-                  0
-                  1
+ t
+ t
+ t
+ f
+ t
 (5 rows)
 
 SELECT COALESCE(nullable_value, backup_value) AS coalesced_value

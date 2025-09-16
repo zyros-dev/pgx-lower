@@ -26,6 +26,7 @@ extern "C" {
 #include "nodes/plannodes.h"
 #include "nodes/primnodes.h"
 #include "nodes/execnodes.h"
+#include "nodes/nodeFuncs.h"
 #include "tcop/dest.h"
 #include "utils/elog.h"
 #include "utils/lsyscache.h"
@@ -137,31 +138,11 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                         }
 
                         if (tle->expr) {
-                            if (nodeTag(tle->expr) == T_Var) {
-                                Var* var = reinterpret_cast<Var*>(tle->expr);
-                                columnType = var->vartype;
-                            }
-                            else if (nodeTag(tle->expr) == T_OpExpr) {
-                                OpExpr* opExpr = reinterpret_cast<OpExpr*>(tle->expr);
-                                columnType = opExpr->opresulttype;
-                            }
-                            else if (nodeTag(tle->expr) == T_FuncExpr) {
-                                FuncExpr* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
-                                columnType = funcExpr->funcresulttype;
-                            }
-                            else if (nodeTag(tle->expr) == T_CoalesceExpr) {
-                                CoalesceExpr* coalesceExpr = reinterpret_cast<CoalesceExpr*>(tle->expr);
-                                columnType = coalesceExpr->coalescetype;
-                            }
-                            else if (nodeTag(tle->expr) == T_Const) {
-                                Const* constExpr = reinterpret_cast<Const*>(tle->expr);
-                                columnType = constExpr->consttype;
-                            }
-                            else if (nodeTag(tle->expr) == T_BoolExpr) {
-                                columnType = BOOLOID;
-                            }
-                            else if (nodeTag(tle->expr) == T_ScalarArrayOpExpr) {
-                                columnType = BOOLOID;
+                            columnType = exprType((Node*)tle->expr);
+
+                            if (columnType == InvalidOid) {
+                                PGX_ERROR("Failed to determine type for expression node type: %d", nodeTag(tle->expr));
+                                throw std::runtime_error("Failed to determine type for expression node type");
                             }
 
                             int16 typLen;
