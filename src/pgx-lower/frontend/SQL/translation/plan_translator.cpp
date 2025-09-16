@@ -233,6 +233,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     static size_t aggrId = 0;
     std::string aggrScopeName = "aggr" + std::to_string(aggrId++);
 
+    auto savedSortMappings = pgx_lower::frontend::sql::ColumnMapping();
+    for (const auto& [fst, snd] : ctx.column_mappings) {
+        if (fst.first == -2) {
+            savedSortMappings[fst] = snd;
+        }
+    }
+
     if (agg->plan.targetlist && agg->plan.targetlist->length > 0) {
         auto* block = new mlir::Block;
         block->addArgument(tupleStreamType, ctx.builder.getUnknownLoc());
@@ -289,22 +296,53 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     }
 
                     auto colVar = reinterpret_cast<Var*>(argTE->expr);
+
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Aggregate %s argument: Var(varno=%d, varattno=%d)",
+                            funcName.c_str(), colVar->varno, colVar->varattno);
+
                     // Handle special case where varno=-2 indicates column from aggregate input
                     auto tableName = std::string();
                     auto columnName = std::string();
 
+                    // TODO: NV... yeah... I dunno if I'm a fan...
                     if (colVar->varno < 0) {
-                        // For negative varno (like -2), get table info from the child SeqScan
-                        if (leftTree && leftTree->type == T_SeqScan) {
-                            auto seqScan = reinterpret_cast<SeqScan*>(leftTree);
-                            tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
-                            columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
-                                                                     colVar->varattno);
-                            PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved negative varno %d to table: %s, column: %s",
-                                    colVar->varno, tableName.c_str(), columnName.c_str());
+                        // If the child is a Sort, we need to check the Sort's targetlist first because varattno refers
+                        // to the Sort's output column position
+                        if (leftTree && leftTree->type == T_Sort) {
+                            auto mappingKey = std::make_pair(-2, colVar->varattno);
+                            auto mappingIt = savedSortMappings.find(mappingKey);
+                            if (mappingIt != savedSortMappings.end()) {
+                                tableName = mappingIt->second.first;
+                                columnName = mappingIt->second.second;
+                                PGX_LOG(AST_TRANSLATE, DEBUG, "Found mapping for aggregate column (-2, %d) -> (%s, %s)",
+                                        colVar->varattno, tableName.c_str(), columnName.c_str());
+                            } else {
+                                PGX_ERROR("No mapping found for aggregate column at (-2, %d)", colVar->varattno);
+                                continue;
+                            }
                         } else {
-                            PGX_ERROR("Cannot resolve negative varno %d without SeqScan child", colVar->varno);
-                            continue;
+                            // No Sort, traverse down to find the SeqScan
+                            auto* scanPlan = leftTree;
+                            while (scanPlan && scanPlan->type != T_SeqScan) {
+                                if (scanPlan->type == T_Sort) {
+                                    scanPlan = scanPlan->lefttree;
+                                } else {
+                                    scanPlan = nullptr;
+                                    break;
+                                }
+                            }
+
+                            if (scanPlan && scanPlan->type == T_SeqScan) {
+                                auto seqScan = reinterpret_cast<SeqScan*>(scanPlan);
+                                tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
+                                columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
+                                                                         colVar->varattno);
+                                PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved negative varno %d to table: %s, column: %s",
+                                        colVar->varno, tableName.c_str(), columnName.c_str());
+                            } else {
+                                PGX_ERROR("Cannot resolve negative varno %d - no SeqScan found in plan tree", colVar->varno);
+                                continue;
+                            }
                         }
                     } else {
                         // Normal positive varno - use standard resolution
@@ -329,6 +367,18 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                     PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
                     auto resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+
+                    {
+                        // Log the type mapping
+                        std::string typeStr = "NULL";
+                        if (resultType) {
+                            llvm::raw_string_ostream stream(typeStr);
+                            resultType.print(stream);
+                        }
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Aggregate function %s: aggtype OID=%u, mapped resultType=%s",
+                                funcName.c_str(), aggref->aggtype, typeStr.c_str());
+                    }
+
                     attrDef.getColumn().type = resultType;
 
                     // Map function name to aggregate enum
@@ -365,24 +415,33 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Non-aggregate expression in target list: type %d (%s)", te->expr->type,
                         te->resname ? te->resname : "unnamed");
 
-                // This is likely a GROUP BY column that appears in the SELECT list
-                // Map it with its actual resno from the targetlist
                 if (te->expr && te->expr->type == T_Var) {
                     auto var = reinterpret_cast<Var*>(te->expr);
 
                     // For GROUP BY columns after aggregation, they come from the child with varno < 0
                     if (var->varno < 0) {
                         // Get table info from the child SeqScan
-                        if (leftTree && leftTree->type == T_SeqScan) {
-                            auto seqScan = reinterpret_cast<SeqScan*>(leftTree);
+                        auto* scanPlan = leftTree;
+                        while (scanPlan && scanPlan->type != T_SeqScan) {
+                            if (scanPlan->type == T_Sort) {
+                                scanPlan = scanPlan->lefttree;
+                            } else {
+                                scanPlan = nullptr;
+                                break;
+                            }
+                        }
+
+                        if (scanPlan && scanPlan->type == T_SeqScan) {
+                            auto seqScan = reinterpret_cast<SeqScan*>(scanPlan);
                             auto tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
                             auto columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
                                                                          var->varattno);
 
-                            // Map this GROUP BY column with its targetlist resno
                             ctx.column_mappings[{-2, te->resno}] = {tableName, columnName};
                             PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped GROUP BY column (-2, %d) -> (%s, %s)",
                                     te->resno, tableName.c_str(), columnName.c_str());
+                        } else {
+                            PGX_WARNING("Failed to find seq scan child");
                         }
                     }
                 }
