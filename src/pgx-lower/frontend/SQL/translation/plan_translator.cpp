@@ -366,6 +366,16 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
                     auto resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
 
+                    if (aggref->aggtype == NUMERICOID) {
+                        auto [precision, scale] = PostgreSQLTypeMapper::extract_numeric_info(colVar->vartypmod);
+                        // ... just add one here... for safe measures... hahahah
+                        auto decimalType = mlir::db::DecimalType::get(ctx.builder.getContext(), precision + 1, scale + 1);
+                        auto nullableDecimal = mlir::db::NullableType::get(ctx.builder.getContext(), decimalType);
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "aggref on column '%s': using dynamic decimal<%d,%d> from typmod %d",
+                                columnName.c_str(), precision, scale, colVar->vartypmod);
+                        resultType = nullableDecimal;
+                    }
+
                     {
                         // Log the type mapping
                         std::string typeStr = "NULL";

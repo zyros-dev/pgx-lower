@@ -4,6 +4,8 @@
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "lingodb/mlir-support/parsing.h"
+#include "mlir/Support/LLVM.h"
 
 #include "runtime-defs/Hashtable.h"
 #include "runtime-defs/LazyJoinHashtable.h"
@@ -421,7 +423,9 @@ class TBAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
             case 16: rt::TableBuilder::addInt16(rewriter, loc)({builderVal, isValid, val}); break;
             case 32: rt::TableBuilder::addInt32(rewriter, loc)({builderVal, isValid, val}); break;
             case 64: rt::TableBuilder::addInt64(rewriter, loc)({builderVal, isValid, val}); break;
-            case 128: rt::TableBuilder::addDecimal(rewriter, loc)({builderVal, isValid, val}); break;
+            case 128:
+             // TODO: cast the type so it becomes <15, 10>
+             rt::TableBuilder::addDecimal(rewriter, loc)({builderVal, isValid, val}); break;
             default: {
                val=rewriter.create<arith::ExtUIOp>(loc,rewriter.getI64Type(),val);
                rt::TableBuilder::addFixedSized(rewriter, loc)({builderVal, isValid, val});

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
 #include <cctype>
 #include <cmath>
 #include <string>
@@ -320,13 +321,75 @@ void TableBuilder::addBinary(bool is_valid, VarLen32 value) {
 
 void TableBuilder::addDecimal(bool is_valid, __int128 value) {
     PGX_IO(RUNTIME);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s, value=%lld", is_valid ? "true" : "false",
-            static_cast<long long>(value));
+    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s", is_valid ? "true" : "false");
 
-    // For now, just use int64_t until we have proper NUMERIC support
-    // This avoids the type mismatch that causes crashes
-    // TODO: Implement proper NUMERIC/DECIMAL handling with NUMERICOID
-    pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, static_cast<int64_t>(value));
+    // PGX-LOWER: The incoming value is a scaled integer from the original decimal type
+    // TODO: Pass scale information through the pipeline properly, or at least cast
+    // to a specific size before passing through
+
+    if (!is_valid) {
+        pgx_lower::runtime::table_builder_add_numeric(this, true, nullptr);
+    } else {
+        // Convert the scaled integer to a decimal string
+        const uint64_t low = value & 0xFFFFFFFFFFFFFFFF;
+        const uint64_t high = (value >> 64) & 0xFFFFFFFFFFFFFFFF;
+        PGX_LOG(RUNTIME, DEBUG, "addDecimal: raw value = 0x%016lx%016lx", high, low);
+        const bool is_negative = (value < 0);
+        const __int128 abs_value = is_negative ? -value : value;
+
+
+        int original_scale = 15;
+        __int128 scale_divisor = 1;
+        for (int i = 0; i < original_scale; i++) {
+            scale_divisor *= 10;
+        }
+
+        __int128 integer_part = abs_value / scale_divisor;
+        __int128 decimal_part = abs_value % scale_divisor;
+
+        // Format as string with decimal point
+        // PGX-LOWER: Handle __int128 values that may exceed int64_t range
+        char buffer[256];
+        if (integer_part <= LLONG_MAX) {
+            snprintf(buffer, sizeof(buffer), "%s%lld.%0*lld",
+                    is_negative ? "-" : "",
+                    (long long)integer_part,
+                    original_scale,
+                    (long long)decimal_part);
+        } else {
+            char int_str[50];
+            int idx = 49;
+            int_str[idx] = '\0';
+            __uint128_t temp = integer_part;
+
+            if (temp == 0) {
+                int_str[--idx] = '0';
+            } else {
+                while (temp > 0 && idx > 0) {
+                    int_str[--idx] = '0' + (temp % 10);
+                    temp /= 10;
+                }
+            }
+
+            // Format with decimal part
+            snprintf(buffer, sizeof(buffer), "%s%s.%0*lld",
+                    is_negative ? "-" : "",
+                    &int_str[idx],
+                    original_scale,
+                    (long long)decimal_part);
+        }
+
+        PGX_LOG(RUNTIME, DEBUG, "Decimal string representation: %s (scale=%d)",
+                buffer, original_scale);
+
+        const auto numeric_datum = DirectFunctionCall3(numeric_in,
+                                                  CStringGetDatum(buffer),
+                                                  ObjectIdGetDatum(InvalidOid),
+                                                  Int32GetDatum(-1));
+        const auto numeric_value = DatumGetNumeric(numeric_datum);
+
+        pgx_lower::runtime::table_builder_add_numeric(this, false, numeric_value);
+    }
 
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal OUT");
 }

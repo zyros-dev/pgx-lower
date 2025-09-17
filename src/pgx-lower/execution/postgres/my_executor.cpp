@@ -155,16 +155,6 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                             typeAlign = typAlign;
 
                             PGX_LOG(GENERAL, DEBUG, "Column %d type OID: %d (expr type: %d)", i, columnType, nodeTag(tle->expr));
-
-                            // TEMPORARY WORKAROUND: Until we support NUMERIC types properly,
-                            // convert NUMERIC to INT4 for aggregation results
-                            if (columnType == NUMERICOID) {
-                                PGX_LOG(GENERAL, DEBUG, "Converting NUMERIC column %d to INT4 (temporary workaround)", i);
-                                columnType = INT4OID;
-                                typeLen = sizeof(int32);
-                                typeByVal = true;
-                                typeAlign = TYPALIGN_INT;
-                            }
                         }
                         break;
                     }

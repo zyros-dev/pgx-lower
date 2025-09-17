@@ -37,6 +37,7 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int
     PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
         // Hardcoded. On purpose
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Falling to default decimal precision - this is probably an aggregation");
         return {20, 15};
     }
 

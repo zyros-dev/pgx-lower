@@ -6,6 +6,7 @@
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include <llvm/ADT/TypeSwitch.h>
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "pgx-lower/utility/logging.h"
 
 class AggregationTranslator : public mlir::relalg::Translator {
    mlir::relalg::AggregationOp aggregationOp;
@@ -305,7 +306,25 @@ class AggregationTranslator : public mlir::relalg::Translator {
             } else if (aggrFn.getFn() == mlir::relalg::AggrFunc::avg) {
                aggrTypes.push_back(resultingType);
                aggrTypes.push_back(counterType);
-               mlir::Value initVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), getBaseType(resultingType), builder.getI64IntegerAttr(0));
+                // PGX-LOWER: Using a proper base constant here instead of only an int64
+               auto zeroAttr = mlir::Attribute();
+               auto baseType = getBaseType(resultingType);
+               if (baseType.isa<mlir::db::DecimalType>()) {
+                  zeroAttr = builder.getIntegerAttr(mlir::IntegerType::get(builder.getContext(), 128), mlir::APInt(128, 0));
+               } else if (baseType.isa<mlir::FloatType>()) {
+                  auto floatType = baseType.cast<mlir::FloatType>();
+                  if (floatType.getWidth() == 32) {
+                     zeroAttr = builder.getF32FloatAttr(0.0f);
+                  } else {
+                     zeroAttr = builder.getF64FloatAttr(0.0);
+                  }
+               } else if (baseType.isa<mlir::IntegerType>()) {
+                  zeroAttr = builder.getI64IntegerAttr(0);
+               } else {
+                   PGX_WARNING("Unsupported base type in averaging operation");
+               }
+               // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+               mlir::Value initVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), baseType, zeroAttr);
                mlir::Value initCounterVal = builder.create<mlir::db::ConstantOp>(aggregationOp.getLoc(), counterType, builder.getI64IntegerAttr(0));
                mlir::Value defaultVal = resultingType.isa<mlir::db::NullableType>() ? builder.create<mlir::db::AsNullableOp>(aggregationOp.getLoc(), resultingType, initVal) : initVal;
                defaultValues.push_back(defaultVal);

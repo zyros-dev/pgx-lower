@@ -2,6 +2,7 @@
 
 #include "pgx-lower/utility/logging.h"
 
+#include <cmath>
 #include <stdexcept>
 #include <cstring>
 
@@ -52,14 +53,16 @@ int convertTimeUnit(support::TimeUnit unit) {
    return 0;
 }
 
-std::pair<uint64_t, uint64_t> support::getDecimalScaleMultiplier(int32_t scale) {
-   // Calculate scale multiplier for decimals (10^scale)
-   uint64_t multiplier = 1;
-   for (int i = 0; i < scale; i++) {
-       multiplier *= 10;
-   }
-   // Return as high/low 64-bit parts (simplified - high part is 0)
-   return {multiplier, 0};
+std::pair<uint64_t, uint64_t> support::getDecimalScaleMultiplier(const int32_t scale) {
+    __uint128_t result = 1;
+    result *= std::pow<__uint128_t>(static_cast<__uint128_t>(10), static_cast<__uint128_t>(scale));
+
+    uint64_t low = static_cast<uint64_t>(result);
+    uint64_t high = static_cast<uint64_t>(result >> 64);
+
+    PGX_LOG(DB_LOWER, DEBUG, "getDecimalScaleMultiplier(scale=%d): low=0x%lx, high=0x%lx", scale, low, high);
+
+    return {low, high};
 }
 
 std::pair<uint64_t, uint64_t> support::parseDecimal(std::string str, int32_t reqScale) {

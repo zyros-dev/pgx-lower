@@ -228,6 +228,36 @@ void table_builder_add<::runtime::VarLen32>(void* builder, bool is_valid, ::runt
     }
 }
 
+void table_builder_add_numeric(void* builder, bool is_null, Numeric value) {
+    auto* tb = static_cast<::runtime::TableBuilder*>(builder);
+
+    if (tb) {
+        if (tb->current_column_index >= g_computed_results.numComputedColumns) {
+            prepare_computed_results(tb->current_column_index + 1);
+        }
+
+        auto datum = Datum();
+        if (is_null || !value) {
+            datum = static_cast<Datum>(0);
+            is_null = true;
+        } else {
+            datum = NumericGetDatum(value);
+        }
+
+        PGX_LOG(RUNTIME, DEBUG, "table_builder_add_numeric: storing numeric at column index %d with is_null=%s",
+                tb->current_column_index, is_null ? "true" : "false");
+
+        g_computed_results.setResult(tb->current_column_index, datum, is_null, NUMERICOID);
+        tb->current_column_index++;
+        if (tb->current_column_index > tb->total_columns) {
+            tb->total_columns = tb->current_column_index;
+        }
+    } else {
+        const auto datum = is_null ? static_cast<Datum>(0) : NumericGetDatum(value);
+        g_computed_results.setResult(0, datum, is_null, NUMERICOID);
+    }
+}
+
 } // namespace pgx_lower::runtime
 
 //==============================================================================

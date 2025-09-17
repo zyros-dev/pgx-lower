@@ -209,4 +209,6 @@ void table_builder_add(void* builder, bool is_valid, T value);
 template<typename T>
 T extract_field(int32_t field_index, bool* is_null);
 
+void table_builder_add_numeric(void* builder, bool is_null, Numeric value);
+
 } // namespace pgx_lower::runtime
