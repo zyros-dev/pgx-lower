@@ -36,14 +36,12 @@ using namespace pgx_lower::frontend::sql::constants;
 std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int32_t typmod) {
     PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
-        // PostgreSQL default for unconstrained NUMERIC
-        return {-1, -1};
+        // postgres uses a flexible precision, but lingodb requires a specific precision...
+        return {38, 10};
     }
 
     // Remove VARHDRSZ offset
     int32_t tmp = typmod - POSTGRESQL_VARHDRSZ;
-
-    // Extract precision and scale
     int32_t precision = (tmp >> NUMERIC_PRECISION_SHIFT) & NUMERIC_PRECISION_MASK;
     int32_t scale = tmp & NUMERIC_SCALE_MASK;
 

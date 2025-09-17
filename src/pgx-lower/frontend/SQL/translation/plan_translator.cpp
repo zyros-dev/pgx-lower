@@ -251,6 +251,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         auto createdValues = std::vector<mlir::Value>{};
         auto createdCols = std::vector<mlir::Attribute>{};
 
+        size_t aggIndex = 0;
         ListCell* lc;
         foreach (lc, agg->plan.targetlist) {
             auto te = static_cast<TargetEntry*>(lfirst(lc));
@@ -271,10 +272,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Found aggregate function: %s (OID %u)", funcName.c_str(), aggref->aggfnoid);
 
-                auto aggName = te->resname ? std::string(te->resname) : AGGREGATION_RESULT_COLUMN;
-                // Use the aggrN scope pattern like LingoDB
-                auto attrDef = columnManager.createDef(aggrScopeName, funcName.c_str());
-
+                const auto uniqueFuncName = funcName + "_" + std::to_string(aggIndex++);
+                auto attrDef = columnManager.createDef(aggrScopeName, uniqueFuncName.c_str());
                 auto relation = block->getArgument(0);
                 mlir::Value aggResult;
 
@@ -288,7 +287,6 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         continue;
                     }
 
-                    // Get the first argument (column reference)
                     auto argTE = static_cast<TargetEntry*>(linitial(aggref->args));
                     if (!argTE || !argTE->expr || argTE->expr->type != T_Var) {
                         PGX_ERROR("Aggregate function %s requires column reference", funcName.c_str());
@@ -407,10 +405,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                 // Map the aggregate result column for materialize operation
                 // PostgreSQL uses varno=-2 for all columns from Agg output
-                // Use the aggregate scope name and function name for the mapping
-                ctx.column_mappings[{-2, te->resno}] = {aggrScopeName, funcName.c_str()};
+                // Use the aggregate scope name and unique function name for the mapping
+                ctx.column_mappings[{-2, te->resno}] = {aggrScopeName, uniqueFuncName.c_str()};
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped aggregate result (-2, %d) -> (%s, %s)",
-                        te->resno, aggrScopeName.c_str(), funcName.c_str());
+                        te->resno, aggrScopeName.c_str(), uniqueFuncName.c_str());
             } else {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Non-aggregate expression in target list: type %d (%s)", te->expr->type,
                         te->resname ? te->resname : "unnamed");
