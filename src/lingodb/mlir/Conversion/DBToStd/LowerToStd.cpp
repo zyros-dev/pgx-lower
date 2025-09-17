@@ -957,12 +957,9 @@ void DBToStdLoweringPass::runOnOperation() {
       return mlir::IntegerType::get(ctxt, 64);
    });
    typeConverter.addConversion([&](::mlir::db::DecimalType t) {
-      if (t.getP() < 19) {
-         return mlir::IntegerType::get(ctxt, 64);
-
-      } else {
-         return mlir::IntegerType::get(ctxt, 128);
-      }
+       // PGX-LOWER: LingoDB had a switch here that swapped between i128 and i64. I'm replacing that with only i128.
+       // Tbh, I'm not a fan of their approach of this either way. It should be properly handled...
+       return mlir::IntegerType::get(ctxt, 128);
    });
    typeConverter.addConversion([&](::mlir::db::CharType t) {
       if (t.getBytes() > 8) return mlir::Type();

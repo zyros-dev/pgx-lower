@@ -36,8 +36,8 @@ using namespace pgx_lower::frontend::sql::constants;
 std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int32_t typmod) {
     PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
-        // postgres uses a flexible precision, but lingodb requires a specific precision...
-        return {38, 10};
+        // Hardcoded. On purpose
+        return {20, 15};
     }
 
     // Remove VARHDRSZ offset
