@@ -16,7 +16,8 @@ struct TableBuilder {
    int64_t row_count;
    int32_t current_column_index;
    int32_t total_columns;
-   
+   int32_t next_decimal_scale = 15;  // Default scale for decimals
+
    // Constructor/Destructor
    TableBuilder();
    ~TableBuilder() = default;
@@ -38,6 +39,7 @@ struct TableBuilder {
    void addDecimal(bool isValid, __int128 value);
    void addFixedSized(bool isValid, int64_t value);
    void addBinary(bool isValid, VarLen32 value);
+   void setNextDecimalScale(int32_t scale);
 };
 
 // DataSourceIteration is defined in DataSourceIteration.h

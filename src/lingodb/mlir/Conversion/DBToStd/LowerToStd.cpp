@@ -1122,6 +1122,7 @@ mlir::db::createLowerToStdPass() {
 void mlir::db::createLowerDBPipeline(mlir::OpPassManager& pm) {
    pm.addPass(mlir::db::createEliminateNullsPass());
    pm.addPass(mlir::db::createOptimizeRuntimeFunctionsPass());
+   pm.addPass(mlir::db::createInjectDecimalScalePass());
    pm.addPass(mlir::db::createLowerToStdPass());
 }
 void mlir::db::registerDBConversionPasses() {

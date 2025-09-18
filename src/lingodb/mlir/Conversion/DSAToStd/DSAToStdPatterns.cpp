@@ -489,11 +489,22 @@ class FreeLowering : public OpConversionPattern<mlir::dsa::FreeOp> {
    }
 };
 
+class SetDecimalScaleLowering : public OpConversionPattern<mlir::dsa::SetDecimalScaleOp> {
+   public:
+   using OpConversionPattern<mlir::dsa::SetDecimalScaleOp>::OpConversionPattern;
+   LogicalResult matchAndRewrite(mlir::dsa::SetDecimalScaleOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      auto loc = op->getLoc();
+      rt::TableBuilder::setNextDecimalScale(rewriter, loc)({adaptor.getBuilder(), adaptor.getScale()});
+      rewriter.eraseOp(op);
+      return success();
+   }
+};
+
 } // end namespace
 namespace mlir::dsa {
 void populateDSAToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
    patterns.insert<CreateDsLowering, HtInsertLowering, FinalizeLowering, DSAppendLowering, LazyJHtInsertLowering, FreeLowering>(typeConverter, patterns.getContext());
-   patterns.insert<CreateTableBuilderLowering, TBAppendLowering, FinalizeTBLowering, NextRowLowering>(typeConverter, patterns.getContext());
+   patterns.insert<CreateTableBuilderLowering, TBAppendLowering, FinalizeTBLowering, NextRowLowering, SetDecimalScaleLowering>(typeConverter, patterns.getContext());
    typeConverter.addConversion([&typeConverter](mlir::dsa::VectorType vectorType) {
       return getLoweredVectorType(vectorType.getContext(), typeConverter.convertType(vectorType.getElementType()));
    });

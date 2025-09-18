@@ -1,5 +1,6 @@
 add_mlir_conversion_library(MLIRDBToArrowStd
         LowerToStd.cpp
+        InjectDecimalScalePass.cpp
 
         ADDITIONAL_HEADER_DIRS
         ../../Conversion/DBToArrowStd

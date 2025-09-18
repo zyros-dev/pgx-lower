@@ -319,6 +319,12 @@ void TableBuilder::addBinary(bool is_valid, VarLen32 value) {
     pgx_lower::runtime::table_builder_add<runtime::VarLen32>(this, is_valid, value);
 }
 
+void TableBuilder::setNextDecimalScale(int32_t scale) {
+    PGX_IO(RUNTIME);
+    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_setnextdecimalscale: scale=%d", scale);
+    this->next_decimal_scale = scale;
+}
+
 void TableBuilder::addDecimal(bool is_valid, __int128 value) {
     PGX_IO(RUNTIME);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s", is_valid ? "true" : "false");
@@ -338,7 +344,7 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
         const __int128 abs_value = is_negative ? -value : value;
 
 
-        int original_scale = 15;
+        int original_scale = this->next_decimal_scale;
         __int128 scale_divisor = 1;
         for (int i = 0; i < original_scale; i++) {
             scale_divisor *= 10;

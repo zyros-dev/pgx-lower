@@ -264,4 +264,11 @@ def FreeOp : DSA_Op<"free"> {
     let assemblyFormat = "$val `:` type($val) attr-dict";
 }
 
+def SetDecimalScaleOp : DSA_Op<"set_decimal_scale"> {
+    let summary = "Set scale for next decimal append operation";
+
+    let arguments = (ins DSA_TableBuilder:$builder, I32:$scale);
+    let assemblyFormat = "$builder `:` type($builder) `,` $scale attr-dict";
+}
+
 #endif// OPS

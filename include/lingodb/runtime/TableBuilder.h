@@ -53,6 +53,7 @@ class TableBuilder {
    void addDecimal(bool isValid, __int128);
    void addFixedSized(bool isValid, int64_t);
    void addBinary(bool isValid, runtime::VarLen32);
+   void setNextDecimalScale(int32_t scale);
    void nextRow();
 };
 } // end namespace runtime
