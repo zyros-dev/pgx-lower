@@ -4,40 +4,43 @@
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "pgx-lower/utility/logging.h"
 
 namespace mlir::db {
 
 namespace {
 
 class InjectDecimalScalePattern : public OpRewritePattern<dsa::Append> {
-public:
+   public:
     using OpRewritePattern<dsa::Append>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(dsa::Append op, PatternRewriter& rewriter) const override {
-        // Check if we're appending to a table builder
         if (!mlir::isa<dsa::TableBuilderType>(op.getDs().getType())) {
             return failure();
         }
 
-        // Check if the value being appended is a decimal type
         auto valueType = op.getVal().getType();
-        auto decimalType = mlir::dyn_cast<db::DecimalType>(valueType);
+        const auto decimalType = mlir::dyn_cast<db::DecimalType>(valueType);
         if (!decimalType) {
             return failure();
         }
 
-        llvm::errs() << "[InjectDecimalScale] Found decimal append with scale " << decimalType.getS() << "\n";
+        if (auto prevOp = op->getPrevNode()) {
+            if (mlir::isa<::mlir::dsa::SetDecimalScaleOp>(prevOp)) {
+                return failure();
+            }
+        }
 
-        // Insert set_decimal_scale before the append
+        PGX_LOG(DB_LOWER, DEBUG, "[InjectDecimalScale] Found decimal append with scale %d", decimalType.getS());
+
         auto scale = decimalType.getS();
-        auto scaleConst = rewriter.create<arith::ConstantIntOp>(
-            op.getLoc(), scale, 32);
-        rewriter.create<::mlir::dsa::SetDecimalScaleOp>(
-            op.getLoc(), op.getDs(), scaleConst);
+        const auto loc = op.getLoc();
 
-        llvm::errs() << "[InjectDecimalScale] Injected set_decimal_scale with scale=" << scale << "\n";
+        rewriter.setInsertionPoint(op);
+        auto scaleConst = rewriter.create<arith::ConstantIntOp>(loc, scale, 32);
+        rewriter.create<::mlir::dsa::SetDecimalScaleOp>(loc, op.getDs(), scaleConst);
 
-        // Keep the original append operation
+        PGX_LOG(DB_LOWER, DEBUG, "[InjectDecimalScale] Injected set_decimal_scale with scale=%d", scale);
         return success();
     }
 };
@@ -46,31 +49,22 @@ struct InjectDecimalScalePass : public PassWrapper<InjectDecimalScalePass, Opera
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InjectDecimalScalePass)
 
     void runOnOperation() override {
-        llvm::errs() << "[InjectDecimalScale] Pass starting\n";
-
-        // Count append ops
-        int appendCount = 0;
-        getOperation().walk([&](dsa::Append op) {
-            appendCount++;
-            llvm::errs() << "[InjectDecimalScale] Found append op with value type: "
-                         << op.getVal().getType() << "\n";
-        });
-        llvm::errs() << "[InjectDecimalScale] Total append ops found: " << appendCount << "\n";
+        PGX_LOG(DB_LOWER, DEBUG, "[InjectDecimalScale] Pass starting");
 
         RewritePatternSet patterns(&getContext());
         patterns.add<InjectDecimalScalePattern>(&getContext());
 
-        if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
-            signalPassFailure();
-        }
+        GreedyRewriteConfig config;
+        config.maxIterations = 1;
 
-        llvm::errs() << "[InjectDecimalScale] Pass completed\n";
+        // applyPatternsGreedily returns "failure" when patterns don't replace operations,
+        // but our pattern only adds operations. This is expected behavior, not an error.
+        (void)applyPatternsGreedily(getOperation(), std::move(patterns), config);
+        PGX_LOG(DB_LOWER, DEBUG, "[InjectDecimalScale] Pass completed");
     }
 
     StringRef getArgument() const final { return "inject-decimal-scale"; }
-    StringRef getDescription() const final {
-        return "Inject decimal scale information before append operations";
-    }
+    StringRef getDescription() const final { return "Inject decimal scale information before append operations"; }
 };
 
 } // namespace

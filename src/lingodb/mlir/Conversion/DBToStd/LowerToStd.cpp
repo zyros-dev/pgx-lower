@@ -1133,6 +1133,9 @@ void mlir::db::registerDBConversionPasses() {
       return mlir::db::createEliminateNullsPass();
    });
    ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
+      return mlir::db::createInjectDecimalScalePass();
+   });
+   ::mlir::registerPass([]() -> std::unique_ptr<::mlir::Pass> {
       return mlir::db::createLowerToStdPass();
    });
    mlir::PassPipelineRegistration<EmptyPipelineOptions>(
