@@ -365,18 +365,15 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     auto columnRef = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, columnAttr);
 
                     PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
-                    auto resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+                    mlir::Type resultType;
 
                     if (funcName == "count") {
                         resultType = ctx.builder.getI64Type();
-                    } else if (aggref->aggtype == NUMERICOID) {
-                        auto [precision, scale] = PostgreSQLTypeMapper::extract_numeric_info(colVar->vartypmod);
-                        // ... just add one here... for safe measures... hahahah
-                        auto decimalType = mlir::db::DecimalType::get(ctx.builder.getContext(), precision + 1, scale + 1);
-                        auto nullableDecimal = mlir::db::NullableType::get(ctx.builder.getContext(), decimalType);
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "aggref on column '%s': using dynamic decimal<%d,%d> from typmod %d",
-                                columnName.c_str(), precision, scale, colVar->vartypmod);
-                        resultType = nullableDecimal;
+                    } else {
+                        resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Using PostgreSQL's aggregate result type for %s: OID=%u",
+                                funcName.c_str(), aggref->aggtype);
                     }
 
                     {

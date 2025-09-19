@@ -338,7 +338,7 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
             PGX_ERROR("Never set the decimal scale");
             throw std::runtime_error("Have no decimal scale");
         }
-        const auto scale = this->next_decimal_scale.value();
+        auto scale = this->next_decimal_scale.value();
 
         char value_str[45];
         bool is_negative = (value < 0);
@@ -355,11 +355,20 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
             *--p = '-';
         }
 
-        // Format as scientific notation: value.0e-scale
-        // This tells PostgreSQL to divide by 10^scale
+        const size_t len = strlen(p);
+        char* end = p + len - 1;
+        int zeros_removed = 0;
+        while (end > p && *end == '0' && zeros_removed < scale) {
+            *end-- = '\0';
+            zeros_removed++;
+        }
+        scale -= zeros_removed;
+
+        // Format the numeric string
         char buffer[64];
         snprintf(buffer, sizeof(buffer), "%se-%d", p, scale);
-        PGX_LOG(RUNTIME, DEBUG, "Decimal string representation: %s (original value: %s, scale=%d)", buffer, p, scale);
+        PGX_LOG(RUNTIME, DEBUG, "Decimal numeric: %s (scale=%d, removed %d trailing zeros)",
+                buffer, scale, zeros_removed);
 
         const auto numeric_datum = DirectFunctionCall3(numeric_in, CStringGetDatum(buffer),
                                                        ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));

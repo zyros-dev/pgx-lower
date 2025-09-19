@@ -36,9 +36,9 @@ using namespace pgx_lower::frontend::sql::constants;
 std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int32_t typmod) {
     PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
-        // Hardcoded. On purpose
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Falling to default decimal precision - this is probably an aggregation");
-        return {20, 15};
+        // No typmod means PostgreSQL NUMERIC without constraints
+        PGX_LOG(AST_TRANSLATE, DEBUG, "No typmod specified - using flexible precision for numeric type");
+        return {MAX_NUMERIC_PRECISION, 16};
     }
 
     // Remove VARHDRSZ offset

@@ -82,7 +82,7 @@ constexpr auto PG_ATTNAME_NOT_MISSING_OK = false;
 constexpr auto MAX_QUERY_COLUMNS = 1000;
 constexpr auto MAX_COLUMN_INDEX = 1000;
 constexpr auto MAX_LIST_LENGTH = 1000;
-constexpr auto MAX_NUMERIC_PRECISION = 1000;
+constexpr auto MAX_NUMERIC_PRECISION = 38;
 constexpr auto MAX_LIMIT_COUNT = 1000000;
 constexpr auto DEFAULT_LIMIT_COUNT = 10;
 
