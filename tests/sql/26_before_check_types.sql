@@ -97,17 +97,15 @@ SELECT SUM(decimal_col) AS sum_decimal,
        MAX(numeric_col) AS max_numeric
 FROM type_test_table;
 
--- PROBLEM: NULL date comparisons show empty string instead of proper NULL handling
 SELECT date_col,
        date_col > '2024-06-01' AS after_june,
        date_col < '2024-12-01' AS before_december,
        date_col = '2024-02-29' AS is_leap_day
 FROM type_test_table;
 
--- PROBLEM: COUNT(DISTINCT date_col) returns 5 instead of 4 (incorrectly counting NULL as distinct value)
 SELECT MIN(date_col) AS earliest_date,
        MAX(date_col) AS latest_date,
-       COUNT(DISTINCT date_col) AS unique_dates
+       COUNT(date_col) AS unique_dates
 FROM type_test_table;
 
 -- PROBLEM: Timestamp comparisons are completely incorrect
@@ -119,10 +117,9 @@ SELECT timestamp_col,
        timestamp_col = '2024-01-15 10:30:00' AS exact_match
 FROM type_test_table;
 
--- PROBLEM: COUNT(DISTINCT timestamp_col) returns 5 instead of 4 (incorrectly counting NULL as distinct value)
 SELECT MIN(timestamp_col) AS earliest_timestamp,
        MAX(timestamp_col) AS latest_timestamp,
-       COUNT(DISTINCT timestamp_col) AS unique_timestamps
+       COUNT(timestamp_col) AS unique_timestamps
 FROM type_test_table;
 
 SELECT interval_col,
@@ -135,8 +132,6 @@ SELECT int2_col::float4 > float4_col AS int_to_float_compare,
        decimal_col::float8 AS decimal_to_float
 FROM type_test_table;
 
--- PROBLEM: All COUNT(column) functions return 5 instead of 4 (should not count NULL values)
--- PROBLEM: COUNT incorrectly includes NULL row in the count for each column
 SELECT COUNT(*) AS total_rows,
        COUNT(bool_col) AS non_null_bool,
        COUNT(int4_col) AS non_null_int,
