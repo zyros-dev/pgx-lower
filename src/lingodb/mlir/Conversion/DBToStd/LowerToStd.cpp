@@ -140,9 +140,9 @@ class AtLowering : public OpConversionPattern<mlir::dsa::At> {
             multiplier = dateType.getUnit() == mlir::db::DateUnitAttr::day ? 86400000000000 : 1000000;
          } else if (auto timeStampType = t.dyn_cast_or_null<mlir::db::TimestampType>()) {
             switch (timeStampType.getUnit()) {
-               case mlir::db::TimeUnitAttr::second: multiplier = 1000000000; break;
-               case mlir::db::TimeUnitAttr::millisecond: multiplier = 1000000; break;
-               case mlir::db::TimeUnitAttr::microsecond: multiplier = 1000; break;
+               case mlir::db::TimeUnitAttr::second: multiplier = 1000000; break;
+               case mlir::db::TimeUnitAttr::millisecond: multiplier = 1000; break;
+               case mlir::db::TimeUnitAttr::microsecond: multiplier = 1; break;
                default: multiplier = 1;
             }
          }
@@ -193,9 +193,9 @@ class AppendTBLowering : public ConversionPattern {
             multiplier = dateType.getUnit() == mlir::db::DateUnitAttr::day ? 86400000000000 : 1000000;
          } else if (auto timeStampType = t.dyn_cast_or_null<mlir::db::TimestampType>()) {
             switch (timeStampType.getUnit()) {
-               case mlir::db::TimeUnitAttr::second: multiplier = 1000000000; break;
-               case mlir::db::TimeUnitAttr::millisecond: multiplier = 1000000; break;
-               case mlir::db::TimeUnitAttr::microsecond: multiplier = 1000; break;
+               case mlir::db::TimeUnitAttr::second: multiplier = 1000000; break;
+               case mlir::db::TimeUnitAttr::millisecond: multiplier = 1000; break;
+               case mlir::db::TimeUnitAttr::microsecond: multiplier = 1; break;
                default: multiplier = 1;
             }
          }
@@ -646,6 +646,9 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
             auto [low, high] = support::parseDecimal(std::get<std::string>(parseResult), decimalType.getS());
             std::vector<uint64_t> parts = {low, high};
             rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, APInt(llvm::cast<mlir::IntegerType>(stdType).getWidth(), parts)));
+            return success();
+         } else if (type.isa<mlir::db::TimestampType>() || type.isa<mlir::db::DateType>()) {
+            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, std::get<int64_t>(parseResult)));
             return success();
          } else {
             rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, std::get<int64_t>(parseResult)));

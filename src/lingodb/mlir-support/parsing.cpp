@@ -10,6 +10,9 @@
 extern "C" {
 #include "postgres.h"
 #include "catalog/pg_type.h"
+#include "utils/timestamp.h"
+#include "utils/builtins.h"
+#include "fmgr.h"
 }
 #else
 #define BOOLOID     16
@@ -179,27 +182,27 @@ std::variant<int64_t, double, std::string> parseTimestamp(std::variant<int64_t, 
       throw std::runtime_error("can not parse timestamp");
    }
    std::string str = std::get<std::string>(val);
-   
-   // Simple timestamp parsing - convert ISO format to microseconds since epoch
-   // Format: YYYY-MM-DD HH:MM:SS
-   // For now, just use a simple approximation
-   int64_t res = 0;
-   if (str.length() >= 19) {
-       // Extract date part and convert to days
-       std::string date_part = str.substr(0, 10);
-       int32_t days = parseDate32(date_part);
-       res = days * 24 * 60 * 60 * 1000000LL; // Convert to microseconds
-       
-       // Add time part (simplified)
-       if (str.length() >= 19) {
-           int hour = std::stoi(str.substr(11, 2));
-           int minute = std::stoi(str.substr(14, 2)); 
-           int second = std::stoi(str.substr(17, 2));
-           res += (hour * 3600 + minute * 60 + second) * 1000000LL;
-       }
-   }
-   
+
+#ifdef POSTGRESQL_EXTENSION
+   // Use PostgreSQL's built-in timestamp parsing
+   extern Datum timestamp_in(PG_FUNCTION_ARGS);
+   char* cstr = (char*)palloc(str.length() + 1);
+   strcpy(cstr, str.c_str());
+   Datum timestampDatum = DirectFunctionCall3(timestamp_in,
+                                              CStringGetDatum(cstr),
+                                              ObjectIdGetDatum(InvalidOid),
+                                              Int32GetDatum(-1));
+   Timestamp timestamp = DatumGetTimestamp(timestampDatum);
+
+   // PostgreSQL timestamps are microseconds since 2000-01-01
+   // Keep them in that format - don't convert to Unix epoch
+   int64_t res = timestamp;
+
+   pfree(cstr);
    return res;
+#else
+   return 0LL;
+#endif
 }
 std::variant<int64_t, double, std::string> support::parse(std::variant<int64_t, double, std::string> val, int type, uint32_t param1, uint32_t param2) {
    // Use PostgreSQL type OIDs instead of Arrow types
