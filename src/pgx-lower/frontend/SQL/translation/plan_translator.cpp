@@ -277,11 +277,12 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 auto relation = block->getArgument(0);
                 mlir::Value aggResult;
 
-                if (funcName == "count") { // COUNT(*) - no column reference needed
+                if (funcName == "count" && (!aggref->args || list_length(aggref->args) == 0)) {
+                    // COUNT(*) - no column reference needed, counts all rows including NULLs
                     attrDef.getColumn().type = ctx.builder.getI64Type();
                     aggResult = aggr_builder.create<mlir::relalg::CountRowsOp>(ctx.builder.getUnknownLoc(),
                                                                                ctx.builder.getI64Type(), relation);
-                } else { // SUM, AVG, MIN, MAX - need column reference
+                } else { // COUNT(column), SUM, AVG, MIN, MAX - need column reference
                     if (!aggref->args || list_length(aggref->args) == 0) {
                         PGX_ERROR("Aggregate function %s requires arguments", funcName.c_str());
                         continue;
@@ -366,7 +367,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
                     auto resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
 
-                    if (aggref->aggtype == NUMERICOID) {
+                    if (funcName == "count") {
+                        resultType = ctx.builder.getI64Type();
+                    } else if (aggref->aggtype == NUMERICOID) {
                         auto [precision, scale] = PostgreSQLTypeMapper::extract_numeric_info(colVar->vartypmod);
                         // ... just add one here... for safe measures... hahahah
                         auto decimalType = mlir::db::DecimalType::get(ctx.builder.getContext(), precision + 1, scale + 1);
@@ -399,6 +402,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         aggrFuncEnum = mlir::relalg::AggrFunc::min;
                     } else if (funcName == "max") {
                         aggrFuncEnum = mlir::relalg::AggrFunc::max;
+                    } else if (funcName == "count") {
+                        aggrFuncEnum = mlir::relalg::AggrFunc::count;
                     }
 
                     aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(ctx.builder.getUnknownLoc(), resultType,
