@@ -2,6 +2,7 @@
 #define RUNTIME_POSTGRESQLRUNTIME_H
 #include "lingodb/runtime/helpers.h"
 #include <cstdint>
+#include <optional>
 
 namespace runtime {
 
@@ -16,7 +17,7 @@ struct TableBuilder {
    int64_t row_count;
    int32_t current_column_index;
    int32_t total_columns;
-   int32_t next_decimal_scale = 15;  // Default scale for decimals
+   std::optional<int32_t> next_decimal_scale;
 
    // Constructor/Destructor
    TableBuilder();

@@ -329,75 +329,45 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
     PGX_IO(RUNTIME);
     PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s", is_valid ? "true" : "false");
 
-    // PGX-LOWER: The incoming value is a scaled integer from the original decimal type
-    // TODO: Pass scale information through the pipeline properly, or at least cast
-    // to a specific size before passing through
-
     if (!is_valid) {
         pgx_lower::runtime::table_builder_add_numeric(this, true, nullptr);
     } else {
-        // Convert the scaled integer to a decimal string
-        const uint64_t low = value & 0xFFFFFFFFFFFFFFFF;
-        const uint64_t high = (value >> 64) & 0xFFFFFFFFFFFFFFFF;
-        PGX_LOG(RUNTIME, DEBUG, "addDecimal: raw value = 0x%016lx%016lx", high, low);
-        const bool is_negative = (value < 0);
-        const __int128 abs_value = is_negative ? -value : value;
+        // TODO: This obviously isn't perfect... converting into a string then relying on postgres constructors
+        //       is far from ideal. also, since its a uin128_t I can't just sprintf because it overflows. So...
+        if (!this->next_decimal_scale.has_value()) {
+            PGX_ERROR("Never set the decimal scale");
+            throw std::runtime_error("Have no decimal scale");
+        }
+        const auto scale = this->next_decimal_scale.value();
 
+        char value_str[45];
+        bool is_negative = (value < 0);
+        __uint128_t abs_value = is_negative ? -static_cast<__uint128_t>(value) : static_cast<__uint128_t>(value);
 
-        int original_scale = this->next_decimal_scale;
-        __int128 scale_divisor = 1;
-        for (int i = 0; i < original_scale; i++) {
-            scale_divisor *= 10;
+        char* p = value_str + sizeof(value_str) - 1;
+        *p = '\0';
+        do {
+            *--p = '0' + (abs_value % 10);
+            abs_value /= 10;
+        } while (abs_value > 0 && p > value_str);
+
+        if (is_negative && p > value_str) {
+            *--p = '-';
         }
 
-        __int128 integer_part = abs_value / scale_divisor;
-        __int128 decimal_part = abs_value % scale_divisor;
+        // Format as scientific notation: value.0e-scale
+        // This tells PostgreSQL to divide by 10^scale
+        char buffer[64];
+        snprintf(buffer, sizeof(buffer), "%se-%d", p, scale);
+        PGX_LOG(RUNTIME, DEBUG, "Decimal string representation: %s (original value: %s, scale=%d)", buffer, p, scale);
 
-        // Format as string with decimal point
-        // PGX-LOWER: Handle __int128 values that may exceed int64_t range
-        char buffer[256];
-        if (integer_part <= LLONG_MAX) {
-            snprintf(buffer, sizeof(buffer), "%s%lld.%0*lld",
-                    is_negative ? "-" : "",
-                    (long long)integer_part,
-                    original_scale,
-                    (long long)decimal_part);
-        } else {
-            char int_str[50];
-            int idx = 49;
-            int_str[idx] = '\0';
-            __uint128_t temp = integer_part;
-
-            if (temp == 0) {
-                int_str[--idx] = '0';
-            } else {
-                while (temp > 0 && idx > 0) {
-                    int_str[--idx] = '0' + (temp % 10);
-                    temp /= 10;
-                }
-            }
-
-            // Format with decimal part
-            snprintf(buffer, sizeof(buffer), "%s%s.%0*lld",
-                    is_negative ? "-" : "",
-                    &int_str[idx],
-                    original_scale,
-                    (long long)decimal_part);
-        }
-
-        PGX_LOG(RUNTIME, DEBUG, "Decimal string representation: %s (scale=%d)",
-                buffer, original_scale);
-
-        const auto numeric_datum = DirectFunctionCall3(numeric_in,
-                                                  CStringGetDatum(buffer),
-                                                  ObjectIdGetDatum(InvalidOid),
-                                                  Int32GetDatum(-1));
+        const auto numeric_datum = DirectFunctionCall3(numeric_in, CStringGetDatum(buffer),
+                                                       ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
         const auto numeric_value = DatumGetNumeric(numeric_datum);
 
         pgx_lower::runtime::table_builder_add_numeric(this, false, numeric_value);
+        this->next_decimal_scale = std::nullopt;
     }
-
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal OUT");
 }
 
 // Fixed-size binary type
