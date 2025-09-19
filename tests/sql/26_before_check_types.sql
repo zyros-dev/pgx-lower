@@ -1,3 +1,7 @@
+-- Known issues
+--      The decimal maths is wrong for multiplication and division
+--      Decimal display fails when the value is exactly 0
+--      I still can't do like SUM(val) / 4.0. Just crashes.
 LOAD 'pgx_lower.so';
 
 DROP TABLE IF EXISTS type_test_table;
@@ -38,8 +42,6 @@ SELECT int2_col > 0 AS int2_positive,
        int2_col + int4_col AS int_sum
 FROM type_test_table;
 
--- PROBLEM: SUM(int8_col) returns decimal format (922237203.0000000000000000) instead of integer
--- PROBLEM: AVG(int8_col) returns incorrect value (17997.1610641910035637 instead of 230559300.75)
 SELECT SUM(int2_col) AS sum_int2,
        SUM(int4_col) AS sum_int4,
        SUM(int8_col) AS sum_int8,
@@ -87,8 +89,6 @@ SELECT decimal_col,
        decimal_col * 2 AS decimal_doubled
 FROM type_test_table;
 
--- PROBLEM: Decimal precision formatting issues (shows 3 decimal places instead of 2 for decimal_col)
--- PROBLEM: Numeric precision reduced (shows 6 decimal places instead of maintaining full precision)
 SELECT SUM(decimal_col) AS sum_decimal,
        SUM(numeric_col) AS sum_numeric,
        AVG(decimal_col) AS avg_decimal,
@@ -108,9 +108,6 @@ SELECT MIN(date_col) AS earliest_date,
        COUNT(date_col) AS unique_dates
 FROM type_test_table;
 
--- PROBLEM: Timestamp comparisons are completely incorrect
--- PROBLEM: All rows incorrectly show 't' for after_june when dates like '2024-01-15' are before June
--- PROBLEM: All rows show 'f' for before_december when dates like '2024-01-15' should be 't'
 SELECT timestamp_col,
        timestamp_col > '2024-06-01 00:00:00' AS after_june,
        timestamp_col < '2024-12-01 00:00:00' AS before_december,
