@@ -141,9 +141,9 @@ FROM type_test_table;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  decimal_col | numeric_col | decimal_positive | numeric_small | sum_decimals |          decimal_doubled           
 -------------+-------------+------------------+---------------+--------------+------------------------------------
-     1245.67 |     9.86543 | t                | t             |   1255.53543 |                            2491.34
-    -9999.99 |    -1.24567 | f                | t             | -10001.23567 |                          -19999.98
-     9999.99 |     9.99999 | t                | t             |  10009.98999 |                           19999.98
+     1245.67 |   9865.4321 | t                | t             |   11111.1021 |                            2491.34
+    -9999.99 |  -1245.6789 | f                | t             |  -11245.6689 |                          -19999.98
+     9999.99 |  9999.99999 | t                | t             |  19999.98999 |                           19999.98
              |             |                  |               |              |                                   
         0.00 |     0.00000 | f                | t             |      0.00000 | 0.00000000000000000000000000000000
 (5 rows)
@@ -156,9 +156,9 @@ SELECT SUM(decimal_col) AS sum_decimal,
        MAX(numeric_col) AS max_numeric
 FROM type_test_table;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- sum_decimal | sum_numeric | avg_decimal | avg_numeric | min_decimal | max_numeric 
--------------+-------------+-------------+-------------+-------------+-------------
-     1245.67 |    18.61975 |    311.4175 |   4.6549375 |    -9999.99 |     9.99999
+ sum_decimal | sum_numeric | avg_decimal | avg_numeric  | min_decimal | max_numeric 
+-------------+-------------+-------------+--------------+-------------+-------------
+     1245.67 | 18619.75319 |    311.4175 | 4654.9382975 |    -9999.99 |  9999.99999
 (1 row)
 
 SELECT date_col,
@@ -258,9 +258,9 @@ SELECT * FROM type_test_table;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  bool_col | int2_col | int4_col | int8_col  | float4_col |   float8_col   | string_col |  char_col  |     text_col     | decimal_col | numeric_col |  date_col  |          timestamp_col          |        interval_col         
 ----------+----------+----------+-----------+------------+----------------+------------+------------+------------------+-------------+-------------+------------+---------------------------------+-----------------------------
- t        |      100 |     1000 |    100000 |       3.14 |  3.14159265359 | hello      | fixed      | longer text here |     1245.67 |     9.86543 | 01-15-2024 | Mon Jan 15 10:30:00 2024        | @ 120 hours
- f        |     -200 |    -2000 |   -200000 |      -2.71 | -2.71828182846 | world      | test       | another text     |    -9999.99 |    -1.24567 | 06-30-2024 | Sun Jun 30 14:45:30.123 2024    | @ 2126 hours 9 mins 36 secs
- t        |      322 |    21474 | 922337203 |   1.23e+10 |       1.23e+20 | special!@# | chars$%^   | unicode αβγ      |     9999.99 |     9.99999 | 12-31-2024 | Tue Dec 31 23:59:59.999999 2024 | @ 9922 hours 4 mins 48 secs
+ t        |      100 |     1000 |    100000 |       3.14 |  3.14159265359 | hello      | fixed      | longer text here |     1245.67 |   9865.4321 | 01-15-2024 | Mon Jan 15 10:30:00 2024        | @ 120 hours
+ f        |     -200 |    -2000 |   -200000 |      -2.71 | -2.71828182846 | world      | test       | another text     |    -9999.99 |  -1245.6789 | 06-30-2024 | Sun Jun 30 14:45:30.123 2024    | @ 2126 hours 9 mins 36 secs
+ t        |      322 |    21474 | 922337203 |   1.23e+10 |       1.23e+20 | special!@# | chars$%^   | unicode αβγ      |     9999.99 |  9999.99999 | 12-31-2024 | Tue Dec 31 23:59:59.999999 2024 | @ 9922 hours 4 mins 48 secs
           |          |          |           |            |                |            |            |                  |             |             |            |                                 | 
  f        |        0 |        0 |         0 |          0 |              0 |            |            |                  |        0.00 |     0.00000 | 02-29-2024 | Thu Feb 29 00:00:00 2024        | @ 0
 (5 rows)
