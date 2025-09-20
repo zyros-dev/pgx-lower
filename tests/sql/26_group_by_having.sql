@@ -30,16 +30,19 @@ FROM employee_sales
 GROUP BY department
 HAVING COUNT(*) > 2
 ORDER BY department;
+
 SELECT employee_name, SUM(sale_amount) AS total_sales
 FROM employee_sales
 GROUP BY employee_name
 HAVING SUM(sale_amount) > 8000
 ORDER BY employee_name;
+
 SELECT department, AVG(sale_amount) AS avg_sale
 FROM employee_sales
 GROUP BY department
 HAVING AVG(sale_amount) > 3000
 ORDER BY department;
+
 SELECT department,
        COUNT(*)         AS sale_count,
        SUM(sale_amount) AS total_sales,
@@ -49,6 +52,7 @@ GROUP BY department
 HAVING COUNT(*) >= 2
    AND SUM(sale_amount) > 5000
 ORDER BY department;
+
 SELECT employee_name,
        COUNT(*)         AS sale_count,
        MIN(sale_amount) AS min_sale,
@@ -58,4 +62,5 @@ GROUP BY employee_name
 HAVING MIN(sale_amount) > 2000
    AND MAX(sale_amount) < 6000
 ORDER BY employee_name;
+
 DROP TABLE employee_sales;
