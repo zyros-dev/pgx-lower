@@ -112,12 +112,7 @@ struct DataSourceIterator {
     std::vector<bool> string_nulls;
     std::vector<std::string> string_data;
 
-    struct Decimal128 {
-        uint64_t low;
-        uint64_t high;
-        int32_t scale;
-    };
-    std::vector<Decimal128> decimal_values;
+    std::vector<__int128> decimal_values;
     std::vector<bool> decimal_nulls;
 
     // Additional type storage
@@ -355,7 +350,7 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
             *--p = '-';
         }
 
-        const size_t len = strlen(p);
+        size_t len = strlen(p);
         char* end = p + len - 1;
         int zeros_removed = 0;
         while (end > p && *end == '0' && zeros_removed < scale) {
@@ -363,10 +358,33 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
             zeros_removed++;
         }
         scale -= zeros_removed;
+        len = strlen(p);
 
-        // Format the numeric string
-        char buffer[64];
-        snprintf(buffer, sizeof(buffer), "%se-%d", p, scale);
+        // Format the numeric string with proper decimal point placement
+        char buffer[128];
+        if (scale > 0) {
+            // Need to insert decimal point
+            if (len <= scale) {
+                // Number is less than 1, need leading zeros
+                int leading_zeros = scale - len + 1;
+                buffer[0] = '0';
+                buffer[1] = '.';
+                int pos = 2;
+                for (int i = 1; i < leading_zeros; i++) {
+                    buffer[pos++] = '0';
+                }
+                strcpy(buffer + pos, p);
+            } else {
+                // Number >= 1, insert decimal point at appropriate position
+                size_t integer_len = len - scale;
+                strncpy(buffer, p, integer_len);
+                buffer[integer_len] = '.';
+                strcpy(buffer + integer_len + 1, p + integer_len);
+            }
+        } else {
+            // No decimal point needed
+            strcpy(buffer, p);
+        }
         PGX_LOG(RUNTIME, DEBUG, "Decimal numeric: %s (scale=%d, removed %d trailing zeros)",
                 buffer, scale, zeros_removed);
 
@@ -546,7 +564,7 @@ static void initialize_column_storage(DataSourceIterator* iter) {
     iter->bool_nulls.resize(iter->columns.size(), true);
     iter->string_data.resize(iter->columns.size(), "");
     iter->string_nulls.resize(iter->columns.size(), true);
-    iter->decimal_values.resize(iter->columns.size(), {0, 0, 0});
+    iter->decimal_values.resize(iter->columns.size(), 0);
     iter->decimal_nulls.resize(iter->columns.size(), true);
     iter->real_values.resize(iter->columns.size(), 0.0f);
     iter->real_nulls.resize(iter->columns.size(), true);
@@ -680,6 +698,7 @@ bool DataSourceIteration::isValid() {
         extern const char* get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t* length,
                                             int32_t type_oid);
         extern int32_t get_field_type_oid(int32_t field_index);
+        extern int32_t get_field_typmod(int32_t field_index);
 
         // Read dynamic columns based on specification
         // We need to map column names to their actual PostgreSQL positions
@@ -778,39 +797,77 @@ bool DataSourceIteration::isValid() {
             case NUMERICOID:
                 col_spec.type = ::ColumnType::DECIMAL;
                 {
-                    // Handle DECIMAL/NUMERIC - get the actual Numeric value
-                    // TODO: Get proper precision/scale from PostgreSQL NUMERIC
                     bool is_null = false;
                     Numeric numeric_value = get_numeric_field(iter->table_handle, pg_column_index, &is_null);
 
-                    // Convert Numeric to double for now (still loses precision, but at least we have the Numeric)
-                    // In the future, we should handle Numeric directly without conversion
-                    double decimal_value = 0.0;
-                    if (!is_null && numeric_value) {
-                        // Use PostgreSQL's built-in numeric to float8 conversion
-                        Datum numeric_datum = NumericGetDatum(numeric_value);
-                        Datum float8_datum = DirectFunctionCall1(numeric_float8, numeric_datum);
-                        decimal_value = DatumGetFloat8(float8_datum);
+                    if (is_null || !numeric_value) {
+                        iter->decimal_values[i] = 0;
+                        iter->decimal_nulls[i] = true;
+                        PGX_LOG(RUNTIME, DEBUG, "Column %zu (%s) decimal is NULL", i, col_spec.name.c_str());
+                        break;
                     }
 
-                    // Convert double to 128-bit representation
-                    // For now, assume scale of 2 (common for money/price columns)
-                    int32_t scale = 2;
-                    int64_t scaled_value = static_cast<int64_t>(decimal_value * std::pow(10, scale));
+                    // Get the TYPE scale from typmod
+                    int32_t typmod = get_field_typmod(pg_column_index);
+                    int32_t type_scale = 0;
 
-                    // Split into high and low parts
-                    iter->decimal_values[i].low = static_cast<uint64_t>(scaled_value);
-                    iter->decimal_values[i].high = (scaled_value < 0) ? static_cast<uint64_t>(-1) : 0;
-                    iter->decimal_values[i].scale = scale;
-                    iter->decimal_nulls[i] = is_null;
+                    if (typmod >= 0) {
+                        // typmod encoding: ((precision << 16) | scale) + 4
+                        int32_t adjusted = typmod - 4; // VARHDRSZ = 4
+                        type_scale = adjusted & 0xFFFF;
+                        PGX_LOG(RUNTIME, DEBUG, "Extracted type scale %d from typmod %d", type_scale, typmod);
+                    } else {
+                        // No typmod means unconstrained NUMERIC, use default
+                        type_scale = 6; // Default scale
+                        PGX_LOG(RUNTIME, DEBUG, "No typmod, using default scale %d", type_scale);
+                    }
 
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d decimal = %.2f (as "
-                            "i128: "
-                            "%llu/%llu, scale=%d, null=%s)",
-                            i, col_spec.name.c_str(), pg_column_index, decimal_value,
-                            (unsigned long long)iter->decimal_values[i].low,
-                            (unsigned long long)iter->decimal_values[i].high, scale, is_null ? "true" : "false");
+                    // Convert numeric to string and parse directly to int128
+                    Datum numeric_datum = NumericGetDatum(numeric_value);
+                    char* numeric_str = DatumGetCString(DirectFunctionCall1(numeric_out, numeric_datum));
+
+                    // Parse the string to int128, scaling as we go
+                    __int128 scaled_value = 0;
+                    const char* p = numeric_str;
+                    bool negative = (*p == '-');
+                    if (negative) p++;
+
+                    int digits_after_decimal = 0;
+                    bool seen_decimal = false;
+
+                    // Parse the numeric string
+                    while (*p) {
+                        if (*p == '.') {
+                            seen_decimal = true;
+                        } else if (*p >= '0' && *p <= '9') {
+                            scaled_value = scaled_value * 10 + (*p - '0');
+                            if (seen_decimal) {
+                                digits_after_decimal++;
+                            }
+                        }
+                        p++;
+                    }
+
+                    // Apply additional scaling if needed
+                    // If we had 2 digits after decimal but need scale 6, multiply by 10^4
+                    int scale_diff = type_scale - digits_after_decimal;
+                    while (scale_diff > 0) {
+                        scaled_value *= 10;
+                        scale_diff--;
+                    }
+
+                    if (negative) {
+                        scaled_value = -scaled_value;
+                    }
+
+                    pfree(numeric_str);
+
+                    // Store directly as __int128
+                    iter->decimal_values[i] = scaled_value;
+                    iter->decimal_nulls[i] = false;
+
+                    PGX_LOG(RUNTIME, DEBUG, "Column %zu (%s) decimal scaled to %lld with type_scale=%d", i,
+                            col_spec.name.c_str(), (long long)scaled_value, type_scale);
                 }
                 break;
             case FLOAT4OID:
@@ -1050,15 +1107,12 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
                             row_offset_index, col_spec.name.c_str());
                 }
             } else if (col_spec.type == ::ColumnType::DECIMAL) {
-                // For decimal, provide pointer to the Decimal128 struct
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // No varlen buffer for decimal
+                // Decimal values are just __int128 now
+                column_info_ptr[VARLEN_BUFFER_IDX] = 0;
                 column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->decimal_values[i];
                 PGX_LOG(RUNTIME, DEBUG,
-                        "rt_datasourceiteration_access: column %zu (%s) decimal = (low=%llu, high=%llu, scale=%d) at "
-                        "%p",
-                        i, col_spec.name.c_str(), (unsigned long long)iter->decimal_values[i].low,
-                        (unsigned long long)iter->decimal_values[i].high, iter->decimal_values[i].scale,
-                        &iter->decimal_values[i]);
+                        "rt_datasourceiteration_access: column %zu (%s) decimal at %p",
+                        i, col_spec.name.c_str(), &iter->decimal_values[i]);
             } else if (col_spec.type == ::ColumnType::FLOAT) {
                 column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
                 column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->real_values[i]; // dataBuffer

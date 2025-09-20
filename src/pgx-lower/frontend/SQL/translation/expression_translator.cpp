@@ -18,6 +18,9 @@ extern "C" {
 #include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
 #include "pgx-lower/utility/logging.h"
 #include "pgx-lower/utility/util_functions.h"
+
+#include <algorithm>
+#include <vector>
 #include "pgx-lower/runtime/tuple_access.h"
 
 #include "mlir/IR/Builders.h"
@@ -491,45 +494,56 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) const -> mlir::Value {
+    // TODO: NV: This whole function is terrible. What if someone just calls the columns mycolumn_3?
+    // ... it might be acceptable now that we've unique-ified the names...
     PGX_IO(AST_TRANSLATE);
     if (!aggref) {
         PGX_ERROR("Invalid Aggref parameters");
-        return nullptr;
+        throw std::runtime_error("Invalid Aggref parameters");
     }
 
     auto it = ctx.column_mappings.end();
-    if (aggref->aggno > 0) {
-        const auto mapping_key = std::make_pair(-2, aggref->aggno);
-        it = ctx.column_mappings.find(mapping_key);
 
-        if (it != ctx.column_mappings.end()) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Found Aggref mapping using aggno=%d", aggref->aggno);
-        }
+    char* rawFuncName = get_func_name(aggref->aggfnoid);
+    if (rawFuncName == nullptr) {
+        PGX_ERROR("Unknown aggregate function OID: %u", aggref->aggfnoid);
+        throw std::runtime_error("Unknown aggregate function OID");
     }
+    const std::string funcName(rawFuncName);
+    pfree(rawFuncName);
 
-    if (it == ctx.column_mappings.end()) {
-        char* rawFuncName = get_func_name(aggref->aggfnoid);
-        if (!rawFuncName) {
-            PGX_ERROR("Unknown aggregate function OID: %u", aggref->aggfnoid);
-            throw std::runtime_error("Unknown aggregate function OID");
-        }
-        const std::string funcName(rawFuncName);
-        pfree(rawFuncName);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Searching for Aggref with function %s (OID %u, aggno=%d)", funcName.c_str(),
-                aggref->aggfnoid, aggref->aggno);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Looking for Aggref with function %s (OID %u, aggno=%d)",
+            funcName.c_str(), aggref->aggfnoid, aggref->aggno);
 
-        // Search through all mappings with varno=-2 to find matching function
-        for (auto mapIt = ctx.column_mappings.begin(); mapIt != ctx.column_mappings.end(); ++mapIt) {
-            if (mapIt->first.first == -2) {
-                // Check if function name matches
-                if (mapIt->second.second == funcName.c_str()) {
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Found Aggref mapping by function name: (-2,%d) -> (%s,%s)",
-                            mapIt->first.second, mapIt->second.first.c_str(), mapIt->second.second.c_str());
-                    it = mapIt;
-                    break;
+    // Look for aggregate functions in column mappings
+    std::vector<std::pair<int, decltype(ctx.column_mappings.begin())>> aggregateMappings;
+    for (auto mapIt = ctx.column_mappings.begin(); mapIt != ctx.column_mappings.end(); ++mapIt) {
+        if (mapIt->first.first == -2) {
+            const std::string& mappedName = mapIt->second.second;
+            // Check if this is an aggregate function (has underscore followed by number)
+            const auto underscorePos = mappedName.rfind('_');
+            if (underscorePos != std::string::npos && underscorePos > 0) {
+                // Extract the numeric suffix to get the original aggregate index
+                std::string suffix = mappedName.substr(underscorePos + 1);
+                try {
+                    int aggIndex = std::stoi(suffix);
+                    aggregateMappings.push_back({aggIndex, mapIt});
+                } catch (...) {
+                    // Not a valid aggregate mapping, skip
                 }
             }
         }
+    }
+
+    // Sort by aggregate index to ensure correct ordering
+    std::sort(aggregateMappings.begin(), aggregateMappings.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    // Now use aggno to index into our sorted aggregate mappings
+    if (aggref->aggno >= 0 && static_cast<size_t>(aggref->aggno) < aggregateMappings.size()) {
+        it = aggregateMappings[aggref->aggno].second;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Found Aggref mapping by index %d: (-2,%d) -> (%s,%s)",
+                aggref->aggno, it->first.second, it->second.first.c_str(), it->second.second.c_str());
     }
 
     if (it == ctx.column_mappings.end()) {
@@ -549,10 +563,10 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     auto& columnManager = dialect->getColumnManager();
 
     // Create column reference using the mapped scope and function name
-    const auto& [scopeName, funcName] = it->second;
+    const auto& [scopeName, mappedFuncName] = it->second;
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating Aggref to GetColumnOp: scope=%s, func=%s", scopeName.c_str(),
-            funcName.c_str());
-    auto colRef = columnManager.createRef(scopeName, funcName);
+            mappedFuncName.c_str());
+    auto colRef = columnManager.createRef(scopeName, mappedFuncName);
 
     // Get the actual type from the column that was created during aggregation
     auto resultType = colRef.getColumn().type;
@@ -1220,14 +1234,29 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
                                                             const mlir::Value lhs, const mlir::Value rhs) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
+    if (!lhs || !rhs) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: nullptr operands for OID %d", op_oid);
+        throw std::runtime_error("invalid state");
+    }
+
     char* oprname = get_opname(op_oid);
     if (!oprname) {
-        PGX_ERROR("Failed to translate comparison operator OID: %d", op_oid);
-        throw std::runtime_error("Failed to translate comparison operator OID");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: Failed to get operator name for OID %d", op_oid);
+        throw std::runtime_error("invalid state");
     }
 
     const std::string op(oprname);
     pfree(oprname);
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: Processing operator '%s' (OID %d)", op.c_str(), op_oid);
+
+    {
+        std::string lhsTypeStr, rhsTypeStr;
+        llvm::raw_string_ostream lhsOS(lhsTypeStr), rhsOS(rhsTypeStr);
+        lhs.getType().print(lhsOS);
+        rhs.getType().print(rhsOS);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Comparing types: LHS=%s, RHS=%s", lhsTypeStr.c_str(), rhsTypeStr.c_str());
+    }
 
     mlir::db::DBCmpPredicate predicate;
     if (op == "=") {
@@ -1243,12 +1272,13 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     } else if (op == ">=") {
         predicate = mlir::db::DBCmpPredicate::gte;
     } else {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Unhandled comparison operator: %s (OID: %d)", op.c_str(), op_oid);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: Unhandled operator: %s (OID: %d)", op.c_str(), op_oid);
         return nullptr;
     }
 
     auto [convertedLhs, convertedRhs] = upcast_binary_operation(ctx, lhs, rhs);
 
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: Creating CmpOp with predicate %d", static_cast<int>(predicate));
     return ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), predicate, convertedLhs, convertedRhs);
 }
 

@@ -942,6 +942,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
                     }
 
                     if (mlir::Value condValue = translate_expression(tmp_ctx, reinterpret_cast<Expr*>(qualNode))) {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully translated HAVING condition %d", i);
                         // Ensure boolean type
                         if (!condValue.getType().isInteger(1)) {
                             condValue = predicate_builder.create<mlir::db::DeriveTruth>(
@@ -950,11 +951,13 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
 
                         if (!predicateResult) {
                             predicateResult = condValue;
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "Set first HAVING predicate");
                         } else {
                             // AND multiple conditions together
                             predicateResult = predicate_builder.create<mlir::db::AndOp>(
                                 predicate_builder.getUnknownLoc(), predicate_builder.getI1Type(),
                                 mlir::ValueRange{predicateResult, condValue});
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "ANDed HAVING predicate %d", i);
                         }
                     } else {
                         PGX_WARNING("Failed to translate qual condition at index %d", i);
@@ -965,6 +968,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
 
         // If no valid predicate was created, default to true
         if (!predicateResult) {
+            PGX_WARNING("No valid HAVING predicate created, defaulting to true (allowing all rows)");
             predicateResult = predicate_builder.create<mlir::arith::ConstantIntOp>(predicate_builder.getUnknownLoc(), 1,
                                                                                    predicate_builder.getI1Type());
         }
@@ -1063,13 +1067,20 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
     std::vector<mlir::Attribute> placeholderAttrs;
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
+    auto counter = 0;
     for (auto* entry : targetEntries) {
         if (entry->expr && entry->expr->type != T_Var) {
-            std::string colName = entry->resname ? entry->resname
-                                                 : std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
+            // Use resname if available, otherwise use position-based name
+            std::string colName;
+            if (entry->resname) {
+                colName = std::string(entry->resname) + "_" + std::to_string(counter);
+            } else {
+                colName = std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno) + "_" + std::to_string(counter);
+            }
+            counter++;
             auto placeholderAttr = columnManager.createDef(COMPUTED_EXPRESSION_SCOPE, colName);
 
-            placeholderAttr.getColumn().type = ctx.builder.getI32Type(); // Placeholder type
+            placeholderAttr.getColumn().type = ctx.builder.getI32Type();
             placeholderAttrs.push_back(placeholderAttr);
         }
     }
@@ -1100,9 +1111,17 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
         // Now translate expressions with proper tuple context
         for (auto* entry : targetEntries) {
             if (entry->expr && entry->expr->type != T_Var) {
-                std::string colName = entry->resname
-                                          ? entry->resname
-                                          : std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
+                // Use resname if available, otherwise use position-based name
+                std::string colName;
+                if (entry->resname) {
+                    colName = entry->resname;
+                } else {
+                    colName = std::string(EXPRESSION_COLUMN_PREFIX) + std::to_string(entry->resno);
+                }
+                // Ensure unique names for generic columns
+                if (colName == "?column?" || colName.empty()) {
+                    colName = std::string("col_") + std::to_string(entry->resno);
+                }
 
                 // Translate expression to get actual type
                 if (mlir::Value exprValue = translate_expression(tmp_ctx, entry->expr)) {
@@ -1389,12 +1408,20 @@ auto PostgreSQLASTTranslator::Impl::process_target_entry(const QueryCtxT& contex
         } else {
             // TODO: Should this be a fallover and fail?
             // For other expression types (like Const), use @map scope
-            PGX_WARNING("Using @map scope for expression type: %d", tle->expr->type);
+            PGX_ERROR("Using @map scope for expression type: %d", tle->expr->type);
+            throw std::runtime_error("Using @map scope for expression type: %d");
             scope = COMPUTED_EXPRESSION_SCOPE;
         }
 
-        const auto colRef = columnManager.createRef(scope, colName);
+        // TODO: NV I dislike this
+        std::string uniqueColName = colName;
+        if (colName == "?column?" || colName.empty()) {
+            uniqueColName = std::string("col_") + std::to_string(tle->resno);
+        }
+
+        const auto colRef = columnManager.createRef(scope, uniqueColName);
         column_ref_attrs.push_back(colRef);
+        // Keep original name for display purposes
         column_name_attrs.push_back(context.builder.getStringAttr(colName));
 
         return true;

@@ -32,8 +32,8 @@ class InjectDecimalScalePattern : public OpRewritePattern<dsa::Append> {
         }
 
         PGX_LOG(DB_LOWER, DEBUG, "[InjectDecimalScale] Found decimal append with scale %d", decimalType.getS());
-
         auto scale = decimalType.getS();
+
         const auto loc = op.getLoc();
 
         rewriter.setInsertionPoint(op);

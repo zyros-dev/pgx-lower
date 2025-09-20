@@ -702,6 +702,18 @@ extern "C" int32_t get_field_type_oid(int32_t field_index) {
     return TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypid;
 }
 
+extern "C" int32_t get_field_typmod(int32_t field_index) {
+    // Get the PostgreSQL typmod for a field using the global tuple descriptor
+    if (!g_current_tuple_passthrough.tupleDesc || field_index < 0
+        || field_index >= g_current_tuple_passthrough.tupleDesc->natts)
+    {
+        PGX_INFO_C("g_current_tuple_passthrough seems to be invalid for typmod");
+        return -1; // Invalid typmod
+    }
+
+    return TupleDescAttr(g_current_tuple_passthrough.tupleDesc, field_index)->atttypmod;
+}
+
 extern "C" const char*
 get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t* length, int32_t type_oid) {
     PGX_IO(RUNTIME);

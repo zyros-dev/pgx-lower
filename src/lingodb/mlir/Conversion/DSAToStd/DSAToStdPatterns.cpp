@@ -424,7 +424,6 @@ class TBAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
             case 32: rt::TableBuilder::addInt32(rewriter, loc)({builderVal, isValid, val}); break;
             case 64: rt::TableBuilder::addInt64(rewriter, loc)({builderVal, isValid, val}); break;
             case 128:
-             // TODO: cast the type so it becomes <15, 10>
              rt::TableBuilder::addDecimal(rewriter, loc)({builderVal, isValid, val}); break;
             default: {
                val=rewriter.create<arith::ExtUIOp>(loc,rewriter.getI64Type(),val);
