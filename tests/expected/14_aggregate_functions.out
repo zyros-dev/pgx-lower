@@ -40,9 +40,9 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT AVG(amount) AS avg_amount_all
 FROM test_aggregates;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- avg_amount_all 
-----------------
-          18618
+     avg_amount_all     
+------------------------
+ 18618.5714285714285714
 (1 row)
 
 SELECT MIN(amount) AS min_amount_all
@@ -72,9 +72,9 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT AVG(price) AS avg_price
 FROM test_aggregates;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- avg_price 
------------
-      8196
+       avg_price       
+-----------------------
+ 8196.5714285714285714
 (1 row)
 
 DROP TABLE test_aggregates;

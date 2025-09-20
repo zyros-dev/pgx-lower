@@ -100,11 +100,11 @@ FROM sales_data
 GROUP BY department
 ORDER BY department;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department  | avg_amount 
--------------+------------
- Books       |         70
- Clothing    |         55
- Electronics |        412
+ department  |     avg_amount      
+-------------+---------------------
+ Books       |                  70
+ Clothing    | 55.6666666666666666
+ Electronics |                 412
 (3 rows)
 
 SELECT department, MIN(amount) AS min_amount, MAX(amount) AS max_amount
@@ -127,11 +127,11 @@ FROM sales_data
 GROUP BY department
 ORDER BY department;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department  | item_count | total_sales | avg_quantity 
--------------+------------+-------------+--------------
- Books       |          2 |         140 |           12
- Clothing    |          3 |         167 |            9
- Electronics |          5 |        2060 |            4
+ department  | item_count | total_sales |    avg_quantity    
+-------------+------------+-------------+--------------------
+ Books       |          2 |         140 |                 12
+ Clothing    |          3 |         167 | 9.6666666666666666
+ Electronics |          5 |        2060 |                4.4
 (3 rows)
 
 DROP TABLE sales_data;
