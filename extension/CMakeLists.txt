@@ -55,9 +55,9 @@ if(NOT BUILDING_UNIT_TESTS)
             24_order_by_with_where
             25_group_by_simple
             26_before_check_types
-            26_group_by_having
-            27_group_by_with_where
-            28_complete_sql_patterns
+            27_group_by_having
+            28_group_by_with_where
+            29_complete_sql_patterns
 )
 
 # MLIR dialect libraries for TypeID resolution  
