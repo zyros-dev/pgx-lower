@@ -25,6 +25,16 @@ static ::mlir::Value absIntImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange 
    ::mlir::Value ltZero = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, val, zero);
    return rewriter.create<mlir::arith::SelectOp>(loc, ltZero, negated, val);
 }
+
+static ::mlir::Value absDecimalImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments, ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType, ::mlir::TypeConverter* typeConverter,::mlir::Location loc) {
+   using namespace mlir;
+   ::mlir::Value val = loweredArguments[0];
+   auto decimalType = originalArgumentTypes[0].cast<mlir::db::DecimalType>();
+   ::mlir::Value zero = rewriter.create<mlir::db::ConstantOp>(loc, decimalType, rewriter.getStringAttr("0"));
+   ::mlir::Value negated = rewriter.create<mlir::arith::SubIOp>(loc, zero, val);
+   ::mlir::Value ltZero = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::lt, val, zero);
+   return rewriter.create<mlir::arith::SelectOp>(loc, ltZero, negated, val);
+}
 static ::mlir::Value dateSubImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments, ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType, ::mlir::TypeConverter* typeConverter,::mlir::Location loc) {
    using namespace mlir;
    if (llvm::cast<mlir::db::IntervalType>(originalArgumentTypes[1]).getUnit() == mlir::db::IntervalUnitAttr::daytime) {
@@ -200,6 +210,7 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    builtinRegistry->add("ExtractDayFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractDay);
    builtinRegistry->add("DateAdd").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument()).implementedAs(dateAddImpl);
    builtinRegistry->add("AbsInt").handlesInvalid().matchesTypes({RuntimeFunction::intLike}, RuntimeFunction::matchesArgument()).implementedAs(absIntImpl);
+   builtinRegistry->add("AbsDecimal").handlesInvalid().matchesTypes({RuntimeFunction::decimalLike}, RuntimeFunction::matchesArgument()).implementedAs(absDecimalImpl);
    builtinRegistry->add("DateSubtract").handlesInvalid().matchesTypes({RuntimeFunction::dateLike, RuntimeFunction::dateInterval}, RuntimeFunction::matchesArgument()).implementedAs(dateSubImpl);
    return builtinRegistry;
 }

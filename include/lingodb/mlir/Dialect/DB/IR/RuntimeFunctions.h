@@ -27,6 +27,7 @@ struct RuntimeFunction {
    using ResTypeMatcher = std::function<bool(mlir::Type, mlir::TypeRange)>;
    static inline auto anyType = [](mlir::Type) { return true; };
    static inline auto intLike = [](mlir::Type t) { return getBaseType(t).isIntOrIndex(); };
+   static inline auto decimalLike = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::DecimalType>(); };
    static inline auto stringLike = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::StringType,mlir::db::CharType>(); };
    static inline auto dateLike = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::DateType>(); };
    static inline auto dateInterval = [](mlir::Type t) { return getBaseType(t).isa<mlir::db::IntervalType>(); };

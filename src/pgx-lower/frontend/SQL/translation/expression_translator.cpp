@@ -21,6 +21,7 @@ extern "C" {
 
 #include <algorithm>
 #include <vector>
+#include <sstream>
 #include "pgx-lower/runtime/tuple_access.h"
 
 #include "mlir/IR/Builders.h"
@@ -56,6 +57,7 @@ using namespace pgx_lower::frontend::sql::constants;
 
 auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Parsing %d", expr->type);
 
     if (!expr) {
         PGX_ERROR("Expression is null");
@@ -73,10 +75,6 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
     case T_CoalesceExpr: return translate_coalesce_expr(ctx, reinterpret_cast<CoalesceExpr*>(expr));
     case T_ScalarArrayOpExpr: return translate_scalar_array_op_expr(ctx, reinterpret_cast<ScalarArrayOpExpr*>(expr));
     case T_CaseExpr: return translate_case_expr(ctx, reinterpret_cast<CaseExpr*>(expr));
-    case T_CaseTestExpr: {
-        PGX_WARNING("CaseTestExpr encountered outside of CASE expression context");
-        return nullptr;
-    }
     case T_RelabelType: {
         const auto* relabel = reinterpret_cast<RelabelType*>(expr);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
@@ -302,15 +300,33 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     //     func = reinterpret_cast<value*>(funcCall->funcname_->tail->data.ptr_value)->val_.str_;
     // }
 
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating function %s", func.c_str());
     if (func == "abs") {
         if (args.size() != 1) {
             PGX_ERROR("ABS requires exactly 1 argument, got %d", args.size());
             throw std::runtime_error("ABS requires exactly 1 argument");
         }
-        auto zero = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, 0, args[0].getType());
-        auto cmp = ctx.builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, args[0], zero);
-        auto neg = ctx.builder.create<mlir::arith::SubIOp>(loc, zero, args[0]);
-        return ctx.builder.create<mlir::arith::SelectOp>(loc, cmp, neg, args[0]);
+
+        std::string valueStr;
+        llvm::raw_string_ostream stream(valueStr);
+        args[0].print(stream);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "ABS argument: %s", valueStr.c_str());
+
+        std::string typeStr;
+        llvm::raw_string_ostream typeStream(typeStr);
+        args[0].getType().print(typeStream);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "ABS argument type: %s", typeStr.c_str());
+
+        // Choose the right abs function based on type
+        auto baseType = getBaseType(args[0].getType());
+        auto absFunctionName = "AbsInt";
+        if (mlir::isa<mlir::db::DecimalType>(baseType)) {
+            absFunctionName = "AbsDecimal";
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using AbsDecimal for decimal type");
+        }
+
+        auto runtimeCall = ctx.builder.create<mlir::db::RuntimeCall>(loc, args[0].getType(), absFunctionName, args[0]);
+        return runtimeCall.getRes();
     } else if (func == "upper") {
         if (args.size() != 1) {
             PGX_ERROR("UPPER requires exactly 1 argument");
@@ -369,8 +385,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         auto op = ctx.builder.create<mlir::db::RuntimeCall>(loc, resultType, ctx.builder.getStringAttr("Substring"),
                                                             mlir::ValueRange{substringArgs});
         return op.getRes();
-    }
-    else if (func == "date_part") {
+    } else if (func == "date_part") {
         // date_part('field', timestamp) extracts a field from a date/timestamp
         // e.g., date_part('year', TIMESTAMP '2024-01-15') returns 2024
         if (args.size() != 2) {
@@ -394,15 +409,10 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
             resultType = mlir::db::NullableType::get(ctx.builder.getContext(), resultType);
         }
         auto op = ctx.builder.create<mlir::db::RuntimeCall>(
-            loc,
-            resultType,
-            ctx.builder.getStringAttr("ExtractFromDate"),
-            mlir::ValueRange{args[0], args[1]}
-        );
+            loc, resultType, ctx.builder.getStringAttr("ExtractFromDate"), mlir::ValueRange{args[0], args[1]});
 
         return op.getRes();
-    }
-    else if (func == "numeric") {
+    } else if (func == "numeric") {
         // numeric() function (OID 1740) is used for casting to numeric/decimal type
         // For now, we'll pass through integer values. I hit this when I was testing some random expressions.
         if (args.size() < 1 || args.size() > 3) {
@@ -412,8 +422,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NUMERIC cast - passing through value for now");
         return args[0];
-    }
-    else {
+    } else {
         PGX_ERROR("Unsupported function '%s' (OID %d)", func.c_str(), func_expr->funcid);
         throw std::runtime_error("Unsupported function: " + func);
     }
@@ -991,6 +1000,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!expr) {
+        throw std::runtime_error("Invalid expression");
         return nullptr;
     }
 
@@ -1388,6 +1398,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
                               ctx.get_all_column_mappings()};
 
     auto exprValue = translate_expression(blockCtx, expr);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Finished translating expression");
     if (!exprValue) {
         PGX_ERROR("Failed to translate expression in MapOp");
         throw std::runtime_error("Failed to translate expression in MapOp");
