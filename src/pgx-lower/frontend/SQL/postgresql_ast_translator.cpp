@@ -4,6 +4,7 @@
 namespace postgresql_ast {
 
 using QueryCtxT = pgx_lower::frontend::sql::TranslationContext;
+using TranslationResult = pgx_lower::frontend::sql::TranslationResult;
 
 PostgreSQLASTTranslator::PostgreSQLASTTranslator(mlir::MLIRContext& context)
 : p_impl_(std::make_unique<Impl>(context)) {}
@@ -30,13 +31,13 @@ auto PostgreSQLASTTranslator::Impl::translate_query(const PlannedStmt* planned_s
     builder.setInsertionPointToStart(module.getBody());
     auto context = QueryCtxT{*planned_stmt, builder, module, nullptr, {}};
 
-    auto query_func = create_query_function(builder, context);
+    auto query_func = create_query_function(builder);
     if (!query_func) {
         PGX_ERROR("Failed to create query function");
         return nullptr;
     }
 
-    if (!generate_rel_alg_operations(query_func, planned_stmt, context)) {
+    if (!generate_rel_alg_operations(planned_stmt, context)) {
         PGX_ERROR("Failed to generate RelAlg operations");
         return nullptr;
     }
@@ -48,8 +49,7 @@ auto PostgreSQLASTTranslator::Impl::translate_query(const PlannedStmt* planned_s
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const mlir::func::FuncOp query_func,
-                                                                const PlannedStmt* planned_stmt, QueryCtxT& context)
+auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const PlannedStmt* planned_stmt, QueryCtxT& context)
     -> bool {
     PGX_IO(AST_TRANSLATE);
     PGX_LOG(AST_TRANSLATE, IO, "generate_rel_alg_operations IN: PlannedStmt with planTree type %d",
@@ -57,29 +57,18 @@ auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const mlir::func
     assert(planned_stmt);
     auto* plan_tree = planned_stmt->planTree;
 
-    if (!validate_plan_tree(plan_tree)) {
-        return false;
-    }
-
-    const auto translated_op = translate_plan_node(context, plan_tree);
-    if (!translated_op) {
+    const auto translationResult = translate_plan_node(context, plan_tree);
+    if (!translationResult.op) {
         PGX_ERROR("Failed to translate plan node");
         return false;
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Checking if translated operation has results");
-    if (translated_op->getNumResults() > 0) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Operation has %d results", translated_op->getNumResults());
-        const auto result = translated_op->getResult(0);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Got result from translated operation");
-
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Checking result type");
+    if (translationResult.op->getNumResults() > 0) {
+        const auto result = translationResult.op->getResult(0);
         if (mlir::isa<mlir::relalg::TupleStreamType>(result.getType())) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Result is TupleStreamType, creating MaterializeOp");
-            create_materialize_op(context, result);
-        } else {
+            create_materialize_op(context, result, translationResult);
         }
-    } else {
     }
 
     context.builder.create<mlir::func::ReturnOp>(context.builder.getUnknownLoc());

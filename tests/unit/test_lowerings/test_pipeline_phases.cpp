@@ -34,16 +34,26 @@ TEST_F(MLIRLoweringPipelineTest, TestRelAlg) {
     auto simpleMLIR = R"(
         module {
           func.func @main() {
-            %0 = relalg.basetable  {column_order = ["bool_col", "int2_col", "int4_col", "int8_col", "float4_col", "float8_col", "string_col", "char_col", "text_col", "decimal_col", "numeric_col", "date_col", "timestamp_col", "interval_col"], table_identifier = "type_test_table|oid:19528750"} columns: {bool_col => @type_test_table::@bool_col({type = !db.nullable<i1>}), char_col => @type_test_table::@char_col({type = !db.nullable<!db.string>}), date_col => @type_test_table::@date_col({type = !db.nullable<!db.date<day>>}), decimal_col => @type_test_table::@decimal_col({type = !db.nullable<!db.decimal<10, 2>>}), float4_col => @type_test_table::@float4_col({type = !db.nullable<f32>}), float8_col => @type_test_table::@float8_col({type = !db.nullable<f64>}), int2_col => @type_test_table::@int2_col({type = !db.nullable<i16>}), int4_col => @type_test_table::@int4_col({type = !db.nullable<i32>}), int8_col => @type_test_table::@int8_col({type = !db.nullable<i64>}), interval_col => @type_test_table::@interval_col({type = !db.nullable<!db.interval<daytime>>}), numeric_col => @type_test_table::@numeric_col({type = !db.nullable<!db.decimal<15, 5>>}), string_col => @type_test_table::@string_col({type = !db.nullable<!db.string>}), text_col => @type_test_table::@text_col({type = !db.nullable<!db.string>}), timestamp_col => @type_test_table::@timestamp_col({type = !db.nullable<!db.timestamp<microsecond>>})}
-            %1 = relalg.aggregation %0 [] computes : [@aggr0::@sum_0({type = !db.nullable<!db.decimal<21, 16>>})] (%arg0: !relalg.tuplestream,%arg1: !relalg.tuple){
-              %3 = relalg.aggrfn sum @type_test_table::@int8_col %arg0 : !db.nullable<!db.decimal<21, 16>>
-              relalg.return %3 : !db.nullable<!db.decimal<21, 16>>
+            %0 = relalg.basetable  {column_order = ["id", "product_name", "category", "order_amount", "quantity", "customer_type", "order_date", "region"], table_identifier = "product_orders|oid:20929595"} columns: {category => @product_orders::@category({type = !db.nullable<!db.string>}), customer_type => @product_orders::@customer_type({type = !db.nullable<!db.string>}), id => @product_orders::@id({type = i32}), order_amount => @product_orders::@order_amount({type = !db.nullable<!db.decimal<10, 2>>}), order_date => @product_orders::@order_date({type = !db.nullable<!db.date<day>>}), product_name => @product_orders::@product_name({type = !db.nullable<!db.string>}), quantity => @product_orders::@quantity({type = !db.nullable<i32>}), region => @product_orders::@region({type = !db.nullable<!db.string>})}
+            %1 = relalg.selection %0 (%arg0: !relalg.tuple){
+              %5 = relalg.getcol %arg0 @product_orders::@customer_type : !db.nullable<!db.string>
+              %6 = db.constant("Premium") : !db.string
+              %7 = db.as_nullable %6 : !db.string -> <!db.string>
+              %8 = db.as_nullable %6 : !db.string -> <!db.string>
+              %9 = db.compare eq %5 : !db.nullable<!db.string>, %8 : !db.nullable<!db.string>
+              %10 = db.derive_truth %9 : !db.nullable<i1>
+              relalg.return %10 : i1
             }
-            %2 = relalg.materialize %1 [@aggr0::@sum_0] => ["sum_0"] : !dsa.table
+            %2 = relalg.sort %1 [(@product_orders::@region,asc)]
+            %3 = relalg.aggregation %2 [@product_orders::@id] computes : [@aggr1::@sum_0({type = !db.nullable<!db.decimal<38, 16>>})] (%arg0: !relalg.tuplestream,%arg1: !relalg.tuple){
+              %5 = relalg.aggrfn sum @product_orders::@order_amount %arg0 : !db.nullable<!db.decimal<38, 16>>
+              relalg.return %5 : !db.nullable<!db.decimal<38, 16>>
+            }
+            %4 = relalg.materialize %3 [@product_orders::@id,@aggr1::@sum_0] => ["id", "sum_0"] : !dsa.table
             return
           }
         }
-    )";
+        )";
 
     ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR)) << "Failed to load MLIR module";
 

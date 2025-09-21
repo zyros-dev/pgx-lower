@@ -73,11 +73,45 @@ struct TranslationContext {
     ColumnMapping column_mappings;
 };
 
+struct TranslationResult {
+    mlir::Operation* op = nullptr;
+
+    struct ColumnSchema {
+        std::string table_name;
+        std::string column_name;
+        Oid type_oid;
+        int32_t typmod;
+        mlir::Type mlir_type;
+        bool nullable;
+
+        std::string toString() const {
+            return "ColumnSchema(table='" + table_name + "', column='" + column_name +
+                   "', oid=" + std::to_string(type_oid) + ", typmod=" + std::to_string(typmod) +
+                   ", nullable=" + (nullable ? "true" : "false") + ")";
+        }
+    };
+
+    std::vector<ColumnSchema> columns;
+
+    std::string toString() const {
+        std::string result = "TranslationResult(op=" +
+                            (op ? std::to_string(reinterpret_cast<uintptr_t>(op)) : "null") +
+                            ", columns=[";
+        for (size_t i = 0; i < columns.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += columns[i].toString();
+        }
+        result += "])";
+        return result;
+    }
+};
+
 } // namespace pgx_lower::frontend::sql
 
 namespace postgresql_ast {
 
 using QueryCtxT = pgx_lower::frontend::sql::TranslationContext;
+using TranslationResult = pgx_lower::frontend::sql::TranslationResult;
 
 // ===========================================================================
 // PostgreSQLASTTranslator::Impl
@@ -104,32 +138,23 @@ class PostgreSQLASTTranslator::Impl {
         -> mlir::Value;
 
     // Plan node translation methods
-    auto translate_plan_node(QueryCtxT& ctx, Plan* plan) -> mlir::Operation*;
-    auto translate_seq_scan(QueryCtxT& ctx, SeqScan* seqScan) const -> mlir::Operation*;
-    auto translate_agg(QueryCtxT& ctx, const Agg* agg) -> mlir::Operation*;
-    auto translate_sort(QueryCtxT& ctx, const Sort* sort) -> mlir::Operation*;
-    auto translate_limit(QueryCtxT& ctx, const Limit* limit) -> mlir::Operation*;
-    auto translate_gather(QueryCtxT& ctx, const Gather* gather) -> mlir::Operation*;
+    auto translate_plan_node(QueryCtxT& ctx, Plan* plan) -> TranslationResult;
+    auto translate_seq_scan(QueryCtxT& ctx, SeqScan* seqScan) const -> TranslationResult;
+    auto translate_agg(QueryCtxT& ctx, const Agg* agg) -> TranslationResult;
+    auto translate_sort(QueryCtxT& ctx, const Sort* sort) -> TranslationResult;
+    auto translate_limit(QueryCtxT& ctx, const Limit* limit) -> TranslationResult;
+    auto translate_gather(QueryCtxT& ctx, const Gather* gather) -> TranslationResult;
 
     // Query function generation
-    static auto create_query_function(mlir::OpBuilder& builder, const QueryCtxT& context) -> mlir::func::FuncOp;
-    auto generate_rel_alg_operations(const mlir::func::FuncOp query_func, const PlannedStmt* planned_stmt,
-                                     QueryCtxT& context) -> bool;
+    static auto create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp;
+    auto generate_rel_alg_operations(const PlannedStmt* planned_stmt, QueryCtxT& context) -> bool;
 
     // Relational operation helpers
-    auto apply_selection_from_qual(const QueryCtxT& ctx, mlir::Operation* input_op, const List* qual) -> mlir::Operation*;
-    auto apply_projection_from_target_list(const QueryCtxT& ctx, mlir::Operation* input_op, const List* target_list)
-        -> mlir::Operation*;
+    auto apply_selection_from_qual(const QueryCtxT& ctx, const TranslationResult& input, const List* qual) -> TranslationResult;
+    auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input, const List* target_list)
+        -> TranslationResult;
 
-    // Validation and column processing
-    static auto validate_plan_tree(const Plan* plan_tree) -> bool;
-    auto extract_target_list_columns(const QueryCtxT& context, std::vector<mlir::Attribute>& column_ref_attrs,
-                                     std::vector<mlir::Attribute>& column_name_attrs) const -> bool;
-    auto process_target_entry(const QueryCtxT& context, const List* t_list, int index,
-                              std::vector<mlir::Attribute>& column_ref_attrs,
-                              std::vector<mlir::Attribute>& column_name_attrs) const -> bool;
-    auto determine_column_type(const QueryCtxT& context, Expr* expr) const -> mlir::Type;
-    auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream) const -> mlir::Operation*;
+    auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream, const TranslationResult& translation_result) const -> void;
 
     // Operation translation helpers
     auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)

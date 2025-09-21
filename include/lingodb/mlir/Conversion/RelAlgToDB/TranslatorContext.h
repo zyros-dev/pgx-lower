@@ -5,6 +5,7 @@
 
 #include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
 #include "mlir/IR/Value.h"
+#include "pgx-lower/utility/logging.h"
 namespace mlir {
 namespace relalg {
 class TranslatorContext {
@@ -14,17 +15,16 @@ class TranslatorContext {
    using AttributeResolverScope = llvm::ScopedHashTableScope<const mlir::relalg::Column*, ::mlir::Value>;
 
    ::mlir::Value getValueForAttribute(const mlir::relalg::Column* attribute) const {
-      auto value = symbolTable.lookup(attribute);
+       const auto value = symbolTable.lookup(attribute);
       if (!value) {
-         // This should work with ScopedHashTable - it searches parent scopes automatically
-         // If we reach here, the column was never registered by any translator
-         llvm::errs() << "ERROR: Column not found in any scope of symbol table\n";
-         llvm::errs() << "  Column pointer: " << (void*)attribute << "\n";
-         
-         // Add stack trace info to understand where this is being called from
-         llvm::errs() << "  getValueForAttribute called from unknown location\n";
-         
-         assert(false && "Column was never registered - check BaseTableOp column registration");
+          std::string typeStr = "unknown";
+          if (attribute && attribute->type) {
+              llvm::raw_string_ostream os(typeStr);
+              attribute->type.print(os);
+          }
+          PGX_ERROR("Column lookup failed - type: %s, ptr: %p. Check that child operations properly populate column schemas.",
+                   typeStr.c_str(), attribute);
+          assert(false);
       }
       return value;
    }

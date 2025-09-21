@@ -11,6 +11,7 @@ extern "C" {
 #include "nodes/execnodes.h"
 #include "nodes/primnodes.h"
 #include "nodes/nodeFuncs.h"
+#include "nodes/print.h"
 #include "utils/lsyscache.h"
 
 extern Oid g_jit_table_oid;
@@ -313,115 +314,17 @@ auto QueryAnalyzer::analyzeTypeCompatibility(const std::vector<Oid>& types) -> s
 }
 
 auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {
-    auto getNodeTypeName = [](auto nodeType) -> std::string {
-        switch (nodeType) {
-        case T_SeqScan: return "SeqScan";
-        case T_IndexScan: return "IndexScan";
-        case T_IndexOnlyScan: return "IndexOnlyScan";
-        case T_BitmapIndexScan: return "BitmapIndexScan";
-        case T_BitmapHeapScan: return "BitmapHeapScan";
-        case T_TidScan: return "TidScan";
-        case T_SubqueryScan: return "SubqueryScan";
-        case T_FunctionScan: return "FunctionScan";
-        case T_ValuesScan: return "ValuesScan";
-        case T_TableFuncScan: return "TableFuncScan";
-        case T_CteScan: return "CteScan";
-        case T_NamedTuplestoreScan: return "NamedTuplestoreScan";
-        case T_WorkTableScan: return "WorkTableScan";
-        case T_ForeignScan: return "ForeignScan";
-        case T_CustomScan: return "CustomScan";
-        case T_NestLoop: return "NestLoop";
-        case T_MergeJoin: return "MergeJoin";
-        case T_HashJoin: return "HashJoin";
-        case T_Material: return "Material";
-        case T_Sort: return "Sort";
-        case T_Group: return "Group";
-        case T_Agg: return "Agg";
-        case T_WindowAgg: return "WindowAgg";
-        case T_Unique: return "Unique";
-        case T_Gather: return "Gather";
-        case T_GatherMerge: return "GatherMerge";
-        case T_Hash: return "Hash";
-        case T_SetOp: return "SetOp";
-        case T_LockRows: return "LockRows";
-        case T_Limit: return "Limit";
-        case T_Result: return "Result";
-        case T_ProjectSet: return "ProjectSet";
-        case T_ModifyTable: return "ModifyTable";
-        case T_Append: return "Append";
-        case T_MergeAppend: return "MergeAppend";
-        case T_RecursiveUnion: return "RecursiveUnion";
-        case T_BitmapAnd: return "BitmapAnd";
-        case T_BitmapOr: return "BitmapOr";
-        case T_Memoize: return "Memoize";
-        default: return "Unknown(" + std::to_string(nodeType) + ")";
-        }
-    };
-
-    std::function<void(Plan*, int, const std::string&)> printPlanTree = [&](Plan* plan, const int depth,
-                                                                            const std::string& prefix) {
-        if (!plan) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "%sNULL", prefix.c_str());
-            return;
-        }
-
-        const auto indent = std::string(depth * 2, ' ');
-        const auto nodeName = getNodeTypeName(plan->type);
-        auto nodeInfo = prefix + nodeName + " (type=" + std::to_string(plan->type) + ")";
-
-        // Add node-specific details
-        if (plan->type == T_SeqScan) {
-            const auto* seqScan = reinterpret_cast<SeqScan*>(plan);
-            nodeInfo += " [scanrelid=" + std::to_string(seqScan->scan.scanrelid) + "]";
-        } else if (plan->type == T_Agg) {
-            const auto* agg = reinterpret_cast<Agg*>(plan);
-            nodeInfo += " [strategy=" + std::to_string(agg->aggstrategy) + "]";
-        } else if (plan->type == T_Gather) {
-            const auto* gather = reinterpret_cast<Gather*>(plan);
-            nodeInfo += " [num_workers=" + std::to_string(gather->num_workers) + "]";
-        }
-
-        PGX_LOG(AST_TRANSLATE, DEBUG, "%s", nodeInfo.c_str());
-
-        if (plan->targetlist) {
-            ListCell* lc;
-            int idx = 0;
-            foreach (lc, plan->targetlist) {
-                const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-                if (tle && tle->expr) {
-                    const auto exprType = nodeTag(tle->expr);
-                    auto exprTypeName = std::string{"Unknown"};
-                    switch (exprType) {
-                    case T_Var: exprTypeName = "Var"; break;
-                    case T_Const: exprTypeName = "Const"; break;
-                    case T_OpExpr: exprTypeName = "OpExpr"; break;
-                    case T_FuncExpr: {
-                        exprTypeName = "FuncExpr";
-                        const auto* funcExpr = reinterpret_cast<FuncExpr*>(tle->expr);
-                        exprTypeName += "(funcid=" + std::to_string(funcExpr->funcid) + ")";
-                        break;
-                    }
-                    default: exprTypeName = "Type" + std::to_string(exprType);
-                    }
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "%s   TargetEntry[%d]: %s", indent.c_str(), idx++,
-                            exprTypeName.c_str());
-                }
-            }
-        }
-
-        if (plan->lefttree || plan->righttree) {
-            if (plan->lefttree) {
-                printPlanTree(plan->lefttree, depth + 1, indent + " ");
-            }
-            if (plan->righttree) {
-                printPlanTree(plan->righttree, depth + 1, indent + " ");
-            }
-        }
-    };
-
+    if (!rootPlan) return;
     PGX_LOG(AST_TRANSLATE, DEBUG, "=== POSTGRESQL EXECUTION TREE ===");
-    printPlanTree(rootPlan, 0, "");
-    PGX_LOG(AST_TRANSLATE, DEBUG, "=== END EXECUTION TREE ===");
+
+    char* plan_str = nodeToString(rootPlan);
+    char* pretty_str = pretty_format_node_dump(plan_str);
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "\n%s", pretty_str);
+
+    pfree(pretty_str);
+    pfree(plan_str);
+    PGX_LOG(AST_TRANSLATE, TRACE, "=== END EXECUTION TREE ===");
 }
 
 auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool {
