@@ -297,6 +297,11 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     std::string func(funcname);
     pfree(funcname);
 
+    // // TODO - This is implemented in lingodb
+    // if (func == "pg_catalog") {
+    //     func = reinterpret_cast<value*>(funcCall->funcname_->tail->data.ptr_value)->val_.str_;
+    // }
+
     if (func == "abs") {
         if (args.size() != 1) {
             PGX_ERROR("ABS requires exactly 1 argument, got %d", args.size());
@@ -364,7 +369,51 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         auto op = ctx.builder.create<mlir::db::RuntimeCall>(loc, resultType, ctx.builder.getStringAttr("Substring"),
                                                             mlir::ValueRange{substringArgs});
         return op.getRes();
-    } else {
+    }
+    else if (func == "date_part") {
+        // date_part('field', timestamp) extracts a field from a date/timestamp
+        // e.g., date_part('year', TIMESTAMP '2024-01-15') returns 2024
+        if (args.size() != 2) {
+            PGX_ERROR("DATE_PART requires exactly 2 arguments, got %zu", args.size());
+            return nullptr;
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating DATE_PART function to ExtractFromDate runtime call");
+
+        // args[0] is the field to extract (e.g., 'year', 'month', 'day')
+        // args[1] is the date/timestamp value
+        mlir::Type resultType = ctx.builder.getI64Type();
+        bool hasNullableOperand = false;
+        for (const auto& arg : args) {
+            if (isa<mlir::db::NullableType>(arg.getType())) {
+                hasNullableOperand = true;
+                break;
+            }
+        }
+        if (hasNullableOperand) {
+            resultType = mlir::db::NullableType::get(ctx.builder.getContext(), resultType);
+        }
+        auto op = ctx.builder.create<mlir::db::RuntimeCall>(
+            loc,
+            resultType,
+            ctx.builder.getStringAttr("ExtractFromDate"),
+            mlir::ValueRange{args[0], args[1]}
+        );
+
+        return op.getRes();
+    }
+    else if (func == "numeric") {
+        // numeric() function (OID 1740) is used for casting to numeric/decimal type
+        // For now, we'll pass through integer values. I hit this when I was testing some random expressions.
+        if (args.size() < 1 || args.size() > 3) {
+            PGX_ERROR("NUMERIC cast requires 1-3 arguments, got %zu", args.size());
+            return nullptr;
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NUMERIC cast - passing through value for now");
+        return args[0];
+    }
+    else {
         PGX_ERROR("Unsupported function '%s' (OID %d)", func.c_str(), func_expr->funcid);
         throw std::runtime_error("Unsupported function: " + func);
     }
