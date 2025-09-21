@@ -1,233 +1,430 @@
-LOAD
-'pgx_lower.so';
-DROP TABLE IF EXISTS comprehensive_data;
-NOTICE:  table "comprehensive_data" does not exist, skipping
-CREATE TABLE comprehensive_data
-(
-    id                SERIAL PRIMARY KEY,
-    department        VARCHAR(25),
-    employee_name     VARCHAR(30),
-    salary            DECIMAL(10, 2),
-    bonus             DECIMAL(8, 2),
-    years_experience  INTEGER,
-    performance_score DECIMAL(3, 1),
-    hire_date         DATE,
-    is_manager        BOOLEAN
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS expr_test_data;
+NOTICE:  table "expr_test_data" does not exist, skipping
+CREATE TABLE expr_test_data (
+    id INTEGER PRIMARY KEY,
+    value1 INTEGER,
+    value2 INTEGER,
+    text1 VARCHAR(20),
+    text2 VARCHAR(20),
+    flag BOOLEAN
 );
-INSERT INTO comprehensive_data(department, employee_name, salary, bonus, years_experience, performance_score, hire_date,
-                               is_manager)
-VALUES ('Engineering', 'Alice Johnson', 95000.00, 8000.00, 5, 4.2, '2019-03-15', false),
-       ('Engineering', 'Bob Smith', 105000.00, 12000.00, 8, 4.5, '2016-07-22', true),
-       ('Sales', 'Carol Davis', 75000.00, 15000.00, 3, 4.8, '2021-01-10', false),
-       ('Sales', 'David Wilson', 85000.00, 18000.00, 6, 4.6, '2018-05-14', true),
-       ('Marketing', 'Eve Brown', 70000.00, 5000.00, 2, 3.9, '2022-09-01', false),
-       ('Engineering', 'Frank Miller', 92000.00, 7500.00, 4, 4.1, '2020-02-28', false),
-       ('HR', 'Grace Lee', 65000.00, 4000.00, 7, 4.3, '2017-11-05', true),
-       ('Sales', 'Henry Taylor', 78000.00, 14000.00, 4, 4.4, '2020-06-18', false),
-       ('Marketing', 'Iris Chen', 72000.00, 6000.00, 3, 4.0, '2021-08-12', false),
-       ('Engineering', 'Jack Anderson', 110000.00, 13000.00, 10, 4.7, '2014-04-30', true);
-SELECT SUM(salary + bonus) AS total_compensation FROM comprehensive_data;
+INSERT INTO expr_test_data (id, value1, value2, text1, text2, flag)
+VALUES
+    (1, 10, 5, 'hello', 'world', true),
+    (2, 20, 15, 'test', 'data', false),
+    (3, 30, 25, 'example', 'text', true),
+    (4, 40, 35, 'sample', 'string', false),
+    (5, 50, 45, 'demo', 'value', true);
+-- Test T_Integer in WHERE clause (direct integer constants)
+SELECT id FROM expr_test_data WHERE 42 > 10;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- total_compensation 
---------------------
-             949500
-(1 row)
+ id 
+----
+  1
+  2
+  3
+  4
+  5
+(5 rows)
 
-SELECT
-    AVG(salary / 1000) AS avg_salary_thousands,
-    SUM(bonus * 2) AS double_bonus_total,
-    MAX(salary - 50000) AS max_above_baseline
-FROM comprehensive_data;
+SELECT id FROM expr_test_data WHERE 100 = 100;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- avg_salary_thousands | double_bonus_total | max_above_baseline 
-----------------------+--------------------+--------------------
-                 84.7 |             205000 |              60000
-(1 row)
+ id 
+----
+  1
+  2
+  3
+  4
+  5
+(5 rows)
 
-SELECT
-    COUNT(salary + bonus) AS comp_count,
-    MIN(years_experience * 10000) AS min_exp_value,
-    MAX(years_experience + 100) AS max_exp_plus
-FROM comprehensive_data;
+-- Test T_A_Expr - arithmetic operations in SELECT
+SELECT value1 + value2 AS sum_values FROM expr_test_data;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- comp_count | min_exp_value | max_exp_plus 
-------------+---------------+--------------
-         10 |         20000 |          110
-(1 row)
+ sum_values 
+------------
+         15
+         35
+         55
+         75
+         95
+(5 rows)
 
-SELECT
-    department,
-    AVG(salary + bonus) AS avg_total_comp,
-    SUM(salary / 4) AS quarterly_salary_sum
-FROM comprehensive_data
-GROUP BY department
-ORDER BY department;
+SELECT value1 - value2 AS diff_values FROM expr_test_data;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department  | avg_total_comp | quarterly_salary_sum 
--------------+----------------+----------------------
- Engineering |         110625 |               100500
- HR          |          69000 |                16250
- Marketing   |          76500 |                35500
- Sales       |          95000 |                59500
-(4 rows)
+ diff_values 
+-------------
+           5
+           5
+           5
+           5
+           5
+(5 rows)
 
-SELECT
-    SUM((salary + bonus) / 5) AS weighted_comp,
-    AVG(years_experience * 1000) AS experience_value
-FROM comprehensive_data;
+SELECT value1 * 2 AS double_value FROM expr_test_data;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- weighted_comp | experience_value 
----------------+------------------
-        189900 |             5200
-(1 row)
+ double_value 
+--------------
+           20
+           40
+           60
+           80
+          100
+(5 rows)
 
-SELECT
-    AVG(salary / years_experience) AS salary_per_year_exp,
-    SUM(bonus / 12) AS monthly_bonus_total,
-    MAX(salary / 7) AS max_weekly_estimate
-FROM comprehensive_data
-WHERE years_experience > 0;
+SELECT value1 / 10 AS tenth_value FROM expr_test_data WHERE value1 > 0;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- salary_per_year_exp |  monthly_bonus_total  |  max_weekly_estimate   
----------------------+-----------------------+------------------------
-           19307.737 | 8541.6666666666666664 | 15714.2857142857142857
-(1 row)
+ tenth_value 
+-------------
+           1
+           2
+           3
+           4
+           5
+(5 rows)
 
-SELECT
-    department,
-    SUM(salary + (bonus * 2)) AS total_with_double_bonus,
-    AVG(years_experience * 25) AS avg_exp_quarter
-FROM comprehensive_data
-WHERE salary > 70000
-GROUP BY department
-ORDER BY department;
+SELECT value1 % 7 AS modulo_result FROM expr_test_data;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department  | total_with_double_bonus |   avg_exp_quarter    
--------------+-------------------------+----------------------
- Engineering | 483000.0000000000079934 |               168.75
- Marketing   |  84000.0000000000014316 |                   75
- Sales       | 332000.0000000000047324 | 108.3333333333333333
+ modulo_result 
+---------------
+             3
+             6
+             2
+             5
+             1
+(5 rows)
+
+-- Test T_A_Expr - comparison operations in WHERE
+SELECT id FROM expr_test_data WHERE value1 > 25;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  3
+  4
+  5
 (3 rows)
 
-SELECT
-    COUNT(*) AS total_employees,
-    SUM(salary - 60000) AS total_above_minimum,
-    AVG((salary + bonus) / 12) AS avg_monthly_comp,
-    MAX(years_experience * 100) AS max_exp_hundred,
-    MIN(bonus / 100) AS min_bonus_hundred
-FROM comprehensive_data;
+SELECT id FROM expr_test_data WHERE value2 < 30;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- total_employees | total_above_minimum |   avg_monthly_comp    | max_exp_hundred | min_bonus_hundred 
------------------+---------------------+-----------------------+-----------------+-------------------
-              10 |              247000 | 7912.4999999999999999 |            1000 |                40
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+SELECT id FROM expr_test_data WHERE value1 >= 30;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  3
+  4
+  5
+(3 rows)
+
+SELECT id FROM expr_test_data WHERE value2 <= 25;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+SELECT id FROM expr_test_data WHERE value1 = 30;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  3
 (1 row)
 
-SELECT
-    department,
-    AVG(salary + bonus) AS avg_compensation,
-    SUM(years_experience * 1000) AS total_exp_points
-FROM comprehensive_data
-GROUP BY department
-HAVING AVG(salary + bonus) > 80000
-ORDER BY avg_compensation DESC;
+SELECT id FROM expr_test_data WHERE value1 != 20;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department  | avg_compensation | total_exp_points 
--------------+------------------+------------------
- Engineering |           110625 |            27000
- Sales       |            95000 |            13000
+ id 
+----
+  1
+  3
+  4
+  5
+(4 rows)
+
+SELECT id FROM expr_test_data WHERE value2 <> 15;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  1
+  3
+  4
+  5
+(4 rows)
+
+-- Test T_A_Expr - logical operations
+SELECT id FROM expr_test_data WHERE flag AND true;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  1
+  3
+  5
+(3 rows)
+
+SELECT id FROM expr_test_data WHERE flag OR false;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  1
+  3
+  5
+(3 rows)
+
+SELECT id FROM expr_test_data WHERE NOT flag;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  2
+  4
 (2 rows)
 
-SELECT
-    SUM((salary + bonus) - (salary / 5)) AS net_after_tax_estimate,
-    AVG(years_experience * 10000) AS exp_adjusted_value
-FROM comprehensive_data
-WHERE years_experience > 3;
+-- Test T_A_Expr - string concatenation
+SELECT text1 || ' ' || text2 AS combined_text FROM expr_test_data;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- net_after_tax_estimate |   exp_adjusted_value   
-------------------------+------------------------
-                 580500 | 62857.1428571428571428
+ combined_text 
+---------------
+ hello world
+ test data
+ example text
+ sample string
+ demo value
+(5 rows)
+
+-- Test T_A_Expr - LIKE operations
+SELECT id, text1 FROM expr_test_data WHERE text1 LIKE 'h%';
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | text1 
+----+-------
+  1 | hello
 (1 row)
 
-SELECT
-    SUM(salary + COALESCE(bonus, 0)) AS total_with_null_handling,
-    AVG(COALESCE(bonus, 0) / COALESCE(years_experience, 1)) AS avg_bonus_per_year
-FROM comprehensive_data;
+SELECT id, text1 FROM expr_test_data WHERE text1 NOT LIKE '%xyz%';
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- total_with_null_handling | avg_bonus_per_year 
---------------------------+--------------------
-                   949500 |           2284.642
-(1 row)
+ id |  text1  
+----+---------
+  1 | hello
+  2 | test
+  3 | example
+  4 | sample
+  5 | demo
+(5 rows)
 
-SELECT
-    department,
-    COUNT(employee_name || ' - ' || department) AS name_dept_combinations
-FROM comprehensive_data
-GROUP BY department
-ORDER BY department;
+-- Test T_A_Expr - NULL operations
+SELECT id FROM expr_test_data WHERE NULL IS NULL;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department  | name_dept_combinations 
--------------+------------------------
- Engineering |                      4
- HR          |                      1
- Marketing   |                      2
- Sales       |                      3
+ id 
+----
+  1
+  2
+  3
+  4
+  5
+(5 rows)
+
+SELECT id FROM expr_test_data WHERE value1 IS NOT NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  1
+  2
+  3
+  4
+  5
+(5 rows)
+
+-- Test T_A_Expr - IN operations
+SELECT id FROM expr_test_data WHERE value1 IN (10, 20, 30);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  1
+  2
+  3
+(3 rows)
+
+SELECT id FROM expr_test_data WHERE value1 NOT IN (15, 25, 35);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  1
+  2
+  3
+  4
+  5
+(5 rows)
+
+-- Test T_A_Expr - BETWEEN operations
+SELECT id FROM expr_test_data WHERE value1 BETWEEN 20 AND 40;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  2
+  3
+  4
+(3 rows)
+
+SELECT id FROM expr_test_data WHERE value2 NOT BETWEEN 10 AND 20;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+  1
+  3
+  4
+  5
 (4 rows)
 
+-- Test T_A_Expr - Complex expressions
 SELECT
-    department,
-    SUM(salary + bonus - 1000) AS adjusted_compensation,
-    AVG(salary / 10000) AS salary_factor,
-    MAX(bonus + 1000) AS max_bonus_plus_thousand
-FROM comprehensive_data
-GROUP BY department
-ORDER BY department;
+    value1 + 10 AS plus_ten,
+    value1 - 5 AS minus_five,
+    value1 * value2 AS product,
+    (value1 + value2) / 2 AS average
+FROM expr_test_data
+WHERE value1 > 10;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department  | adjusted_compensation |   salary_factor    | max_bonus_plus_thousand 
--------------+-----------------------+--------------------+-------------------------
- Engineering |                438500 |              10.05 |                   14000
- HR          |                 68000 |                6.5 |                    5000
- Marketing   |                151000 |                7.1 |                    7000
- Sales       |                282000 | 7.9333333333333333 |                   19000
+ plus_ten | minus_five | product | average 
+----------+------------+---------+---------
+       30 |         15 |     300 |      17
+       40 |         25 |     750 |      27
+       50 |         35 |    1400 |      37
+       60 |         45 |    2250 |      47
 (4 rows)
 
+-- Test combinations of expressions
 SELECT
-    SUM(years_experience % 10) AS exp_remainders,
-    AVG((bonus + 1000) * 2) AS adjusted_bonus_avg,
-    MIN(years_experience + 10) AS min_exp_plus_ten
-FROM comprehensive_data;
+    id,
+    value1 + value2 * 2 AS complex_calc,
+    (value1 - 10) / 5 AS adjusted_value
+FROM expr_test_data
+WHERE (value1 > 20 AND value2 < 40) OR flag = true;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- exp_remainders | adjusted_bonus_avg | min_exp_plus_ten 
-----------------+--------------------+------------------
-             42 |              22500 |               12
-(1 row)
+ id | complex_calc | adjusted_value 
+----+--------------+----------------
+  1 |           20 |              0
+  3 |           80 |              4
+  4 |          110 |              6
+  5 |          140 |              8
+(4 rows)
 
-SELECT
-    AVG(salary - 85000) AS avg_distance_from_median,
-    SUM(bonus - 10000) AS total_bonus_deviation
-FROM comprehensive_data;
+-- Test T_ColumnRef - basic column references (already working but let's verify)
+SELECT value1 FROM expr_test_data;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- avg_distance_from_median | total_bonus_deviation 
---------------------------+-----------------------
-                     -300 |                  2500
-(1 row)
+ value1 
+--------
+     10
+     20
+     30
+     40
+     50
+(5 rows)
 
-SELECT
-    ABS(AVG(salary - 85000)) AS avg_distance_from_median,
-    ABS(SUM(bonus - 10000)) AS total_bonus_deviation
-FROM comprehensive_data;
- avg_distance_from_median | total_bonus_deviation 
---------------------------+-----------------------
-     300.0000000000000000 |               2500.00
-(1 row)
-
-SELECT
-    AVG(ABS(salary - 85000)) AS avg_distance_from_median,
-    SUM(ABS(bonus - 10000)) AS total_bonus_deviation
-FROM comprehensive_data;
+SELECT id, value1, value2 FROM expr_test_data WHERE id > 2;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- avg_distance_from_median | total_bonus_deviation 
---------------------------+-----------------------
-                    12700 |                 41500
-(1 row)
+ id | value1 | value2 
+----+--------+--------
+  3 |     30 |     25
+  4 |     40 |     35
+  5 |     50 |     45
+(3 rows)
 
-DROP TABLE comprehensive_data;
+-- Test T_TypeCast - explicit type casting
+SELECT CAST(value1 AS BIGINT) AS bigint_value FROM expr_test_data;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ bigint_value 
+--------------
+           10
+           20
+           30
+           40
+           50
+(5 rows)
+
+SELECT CAST(value1 AS DECIMAL(10,2)) AS decimal_value FROM expr_test_data;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ decimal_value 
+---------------
+            10
+            20
+            30
+            40
+            50
+(5 rows)
+
+SELECT CAST(value1 AS VARCHAR(10)) AS string_value FROM expr_test_data;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ string_value 
+--------------
+ 10
+ 20
+ 30
+ 40
+ 50
+(5 rows)
+
+SELECT value1::bigint AS bigint_cast FROM expr_test_data;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ bigint_cast 
+-------------
+          10
+          20
+          30
+          40
+          50
+(5 rows)
+
+SELECT value2::decimal(5,1) AS decimal_cast FROM expr_test_data;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ decimal_cast 
+--------------
+            5
+           15
+           25
+           35
+           45
+(5 rows)
+
+SELECT id::text AS text_cast FROM expr_test_data;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ text_cast 
+-----------
+ 1
+ 2
+ 3
+ 4
+ 5
+(5 rows)
+
+-- Test T_ParamRef - parameter references (prepared statements)
+-- These use $1, $2 style parameters
+PREPARE test_param_stmt (int) AS
+  SELECT id, value1 FROM expr_test_data WHERE value1 > $1;
+EXECUTE test_param_stmt(25);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | value1 
+----+--------
+  3 |     30
+  4 |     40
+  5 |     50
+(3 rows)
+
+DEALLOCATE test_param_stmt;
+PREPARE test_multi_param (int, int) AS
+  SELECT id, value1, value2 FROM expr_test_data WHERE value1 > $1 AND value2 < $2;
+EXECUTE test_multi_param(15, 30);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | value1 | value2 
+----+--------+--------
+  2 |     20 |     15
+  3 |     30 |     25
+(2 rows)
+
+DEALLOCATE test_multi_param;
+DROP TABLE expr_test_data;

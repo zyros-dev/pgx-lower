@@ -229,6 +229,7 @@ SELECT int2_col::float4 > float4_col AS int_to_float_compare,
        int4_col + float4_col AS int_plus_float,
        decimal_col::float8 AS decimal_to_float
 FROM type_test_table;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  int_to_float_compare |   int_plus_float   | decimal_to_float 
 ----------------------+--------------------+------------------
  t                    | 1003.1400001049042 |          1245.67

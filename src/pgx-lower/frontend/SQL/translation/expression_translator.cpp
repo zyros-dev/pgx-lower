@@ -424,36 +424,91 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         return op.getRes();
     } else if (func == "numeric") {
-        // numeric() function (OID 1740) is used for casting to numeric/decimal type
-        // For now, we'll pass through integer values. I hit this when I was testing some random expressions.
+        // numeric() function is used for casting to numeric/decimal type
         if (args.size() < 1 || args.size() > 3) {
             PGX_ERROR("NUMERIC cast requires 1-3 arguments, got %zu", args.size());
             return nullptr;
         }
 
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NUMERIC cast - passing through value for now");
-        return args[0];
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NUMERIC cast");
+
+        int precision = 38;
+        int scale = 0;
+
+        // PostgreSQL passes typmod as second argument which encodes (precision, scale)
+        // The typmod encoding is: ((precision - 1) << 16) | (scale + VARHDRSZ)
+        // where VARHDRSZ = 4
+        if (args.size() >= 2) {
+            if (auto* defOp = args[1].getDefiningOp()) {
+                if (auto constOp = mlir::dyn_cast<mlir::arith::ConstantIntOp>(defOp)) {
+                    int32_t typmod = constOp.value();
+
+                    // Decode PostgreSQL numeric typmod
+                    if (typmod >= 0) {
+                        scale = (typmod & 0xFFFF) - 4;
+                        precision = (typmod >> 16) & 0xFFFF;
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Decoded NUMERIC typmod %d to precision=%d, scale=%d", typmod,
+                                precision, scale);
+                    }
+                }
+            }
+        }
+
+        auto decimalType = mlir::db::DecimalType::get(ctx.builder.getContext(), precision, scale);
+        const bool isNullable = mlir::isa<mlir::db::NullableType>(args[0].getType());
+        auto targetType = isNullable ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), decimalType))
+                                     : mlir::Type(decimalType);
+        return ctx.builder.create<mlir::db::CastOp>(loc, targetType, args[0]);
     } else if (func == "varchar" || func == "text" || func == "char" || func == "bpchar") {
         if (args.empty()) {
             PGX_ERROR("%s requires at least 1 argument", func.c_str());
             return nullptr;
         }
 
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating %s type conversion - using first argument", func.c_str());
-        // The first argument is the actual value (already coerced via CoerceViaIO)
-        // Additional arguments are for typmod (length) and other constraints
-        // For now, we just pass through the already-coerced value
-        return args[0];
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating %s type conversion", func.c_str());
+
+        auto inputType = args[0].getType();
+        auto baseInputType = getBaseType(inputType);
+
+        if (mlir::isa<mlir::db::StringType>(baseInputType)) {
+            return args[0];
+        } else {
+            const bool isNullable = mlir::isa<mlir::db::NullableType>(inputType);
+            auto stringType = mlir::db::StringType::get(ctx.builder.getContext());
+            auto resultType = isNullable ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), stringType))
+                                         : mlir::Type(stringType);
+
+            auto op = ctx.builder.create<mlir::db::RuntimeCall>(loc, resultType, ctx.builder.getStringAttr("ToString"),
+                                                                mlir::ValueRange{args[0]});
+            return op.getRes();
+        }
     } else if (func == "int4" || func == "int8" || func == "float4" || func == "float8") {
-        // Numeric type conversion functions
         if (args.empty()) {
             PGX_ERROR("%s requires at least 1 argument", func.c_str());
             return nullptr;
         }
 
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating %s type conversion - using first argument", func.c_str());
-        // Similar to string types, these wrap already-coerced values
-        return args[0];
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating %s type conversion", func.c_str());
+
+        mlir::Type targetBaseType;
+        if (func == "int4") {
+            targetBaseType = ctx.builder.getI32Type();
+        } else if (func == "int8") {
+            targetBaseType = ctx.builder.getI64Type();
+        } else if (func == "float4") {
+            targetBaseType = ctx.builder.getF32Type();
+        } else if (func == "float8") {
+            targetBaseType = ctx.builder.getF64Type();
+        } else {
+            PGX_ERROR("Unknown numeric conversion function: %s", func.c_str());
+            throw std::runtime_error("Unknown numeric conversion function");
+        }
+
+        const bool isNullable = mlir::isa<mlir::db::NullableType>(args[0].getType());
+        auto targetType = isNullable ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), targetBaseType))
+                                     : targetBaseType;
+
+        return ctx.builder.create<mlir::db::CastOp>(loc, targetType, args[0]);
     } else {
         PGX_ERROR("Unsupported function '%s' (OID %d)", func.c_str(), func_expr->funcid);
         throw std::runtime_error("Unsupported function: " + func);
