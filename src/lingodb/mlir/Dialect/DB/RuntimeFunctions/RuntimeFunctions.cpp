@@ -2,6 +2,7 @@
 #include "lingodb/mlir/Dialect/util/FunctionHelper.h"
 #include "lingodb/mlir/Dialect/DB/IR/RuntimeFunctions.h"
 #include "lingodb/mlir/Dialect/DB/Passes.h"
+#include "pgx-lower/utility/logging.h"
 #include "runtime-defs/DateRuntime.h"
 #include "runtime-defs/DumpRuntime.h"
 #include "runtime-defs/StringRuntime.h"
@@ -29,10 +30,11 @@ static ::mlir::Value absIntImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange 
 static ::mlir::Value absDecimalImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments, ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType, ::mlir::TypeConverter* typeConverter,::mlir::Location loc) {
    using namespace mlir;
    ::mlir::Value val = loweredArguments[0];
-   auto decimalType = originalArgumentTypes[0].cast<mlir::db::DecimalType>();
-   ::mlir::Value zero = rewriter.create<mlir::db::ConstantOp>(loc, decimalType, rewriter.getStringAttr("0"));
+   auto valType = val.getType();
+   ::mlir::Value zero = rewriter.create<mlir::arith::ConstantOp>(loc, valType, rewriter.getIntegerAttr(valType, 0));
+
+   ::mlir::Value ltZero = rewriter.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, val, zero);
    ::mlir::Value negated = rewriter.create<mlir::arith::SubIOp>(loc, zero, val);
-   ::mlir::Value ltZero = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::lt, val, zero);
    return rewriter.create<mlir::arith::SelectOp>(loc, ltZero, negated, val);
 }
 static ::mlir::Value dateSubImpl(::mlir::OpBuilder& rewriter, ::mlir::ValueRange loweredArguments, ::mlir::TypeRange originalArgumentTypes, ::mlir::Type resType, ::mlir::TypeConverter* typeConverter,::mlir::Location loc) {
@@ -199,7 +201,7 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    builtinRegistry->add("Substring").implementedAs(rt::StringRuntime::substr).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::matchesArgument());
    builtinRegistry->add("Like").implementedAs(rt::StringRuntime::like).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool);
    builtinRegistry->add("ConstLike").matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, resTypeIsBool).implementedAs(constLikeImpl).needsWrapping();
-   
+
    builtinRegistry->add("Concat").implementedAs(rt::StringRuntime::concat).matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::stringLike}, RuntimeFunction::matchesArgument());
    builtinRegistry->add("Upper").implementedAs(rt::StringRuntime::upper).matchesTypes({RuntimeFunction::stringLike}, RuntimeFunction::matchesArgument());
    builtinRegistry->add("Lower").implementedAs(rt::StringRuntime::lower).matchesTypes({RuntimeFunction::stringLike}, RuntimeFunction::matchesArgument());

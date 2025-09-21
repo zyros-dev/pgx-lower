@@ -75,19 +75,13 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
     case T_CoalesceExpr: return translate_coalesce_expr(ctx, reinterpret_cast<CoalesceExpr*>(expr));
     case T_ScalarArrayOpExpr: return translate_scalar_array_op_expr(ctx, reinterpret_cast<ScalarArrayOpExpr*>(expr));
     case T_CaseExpr: return translate_case_expr(ctx, reinterpret_cast<CaseExpr*>(expr));
+    case T_CoerceViaIO: return translate_coerce_via_io(ctx, expr);
     case T_RelabelType: {
         const auto* relabel = reinterpret_cast<RelabelType*>(expr);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
         return translate_expression(ctx, relabel->arg);
     }
-    case T_A_Const:
-    case T_TypeCast:
-    case T_A_Expr:
-    case T_ColumnRef:
-    case T_FuncCall:
-    case T_ParamRef:
-    case T_SubLink:
-    case T_Integer:
+    case T_SubLink: // Subqueries - TODO later
         PGX_WARNING("This expression type isn't currently supported, but will be in the future %d");
         throw std::runtime_error("Unsupported expression type - read the logs");
     default: {
@@ -95,6 +89,23 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
         throw std::runtime_error("Unsupported expression type - read the logs");
     }
     }
+}
+mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr) {
+    // Handle type coercion via I/O functions (e.g., int::text)
+    const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Processing T_CoerceViaIO to type OID %d", coerce->resulttype);
+
+    auto argValue = translate_expression(ctx, coerce->arg);
+    if (!argValue) {
+        PGX_ERROR("Failed to translate CoerceViaIO argument");
+        throw std::runtime_error("Failed to translate CoerceViaIO argument");
+    }
+
+    const bool isNullable = mlir::isa<mlir::db::NullableType>(argValue.getType());
+    const auto type_mapper = PostgreSQLTypeMapper(context_);
+    auto targetType = type_mapper.map_postgre_sqltype(coerce->resulttype, -1, isNullable);
+
+    return ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType, argValue);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value {

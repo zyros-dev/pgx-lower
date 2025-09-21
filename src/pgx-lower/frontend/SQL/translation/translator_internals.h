@@ -167,6 +167,7 @@ class PostgreSQLASTTranslator::Impl {
 
     auto translate_query(const PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp>;
 
+    mlir::Value translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr);
     auto translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value;
     auto translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr, mlir::Value input_stream,
                                          const std::string& suggested_name,

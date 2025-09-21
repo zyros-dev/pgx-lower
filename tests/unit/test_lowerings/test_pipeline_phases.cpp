@@ -34,22 +34,31 @@ TEST_F(MLIRLoweringPipelineTest, TestRelAlg) {
     auto simpleMLIR = R"(
         module {
           func.func @main() {
-            %0 = relalg.basetable  {column_order = ["id", "product_name", "category", "order_amount", "quantity", "customer_type", "order_date", "region"], table_identifier = "product_orders|oid:20929595"} columns: {category => @product_orders::@category({type = !db.nullable<!db.string>}), customer_type => @product_orders::@customer_type({type = !db.nullable<!db.string>}), id => @product_orders::@id({type = i32}), order_amount => @product_orders::@order_amount({type = !db.nullable<!db.decimal<10, 2>>}), order_date => @product_orders::@order_date({type = !db.nullable<!db.date<day>>}), product_name => @product_orders::@product_name({type = !db.nullable<!db.string>}), quantity => @product_orders::@quantity({type = !db.nullable<i32>}), region => @product_orders::@region({type = !db.nullable<!db.string>})}
-            %1 = relalg.selection %0 (%arg0: !relalg.tuple){
-              %5 = relalg.getcol %arg0 @product_orders::@customer_type : !db.nullable<!db.string>
-              %6 = db.constant("Premium") : !db.string
-              %7 = db.as_nullable %6 : !db.string -> <!db.string>
-              %8 = db.as_nullable %6 : !db.string -> <!db.string>
-              %9 = db.compare eq %5 : !db.nullable<!db.string>, %8 : !db.nullable<!db.string>
-              %10 = db.derive_truth %9 : !db.nullable<i1>
-              relalg.return %10 : i1
+            %0 = relalg.basetable  {column_order = ["id", "department", "employee_name", "salary", "bonus", "years_experience", "performance_score", "hire_date", "is_manager"], table_identifier = "comprehensive_data|oid:22142210"} columns: {bonus => @comprehensive_data::@bonus({type = !db.nullable<!db.decimal<8, 2>>}), department => @comprehensive_data::@department({type = !db.nullable<!db.string>}), employee_name => @comprehensive_data::@employee_name({type = !db.nullable<!db.string>}), hire_date => @comprehensive_data::@hire_date({type = !db.nullable<!db.date<day>>}), id => @comprehensive_data::@id({type = i32}), is_manager => @comprehensive_data::@is_manager({type = !db.nullable<i1>}), performance_score => @comprehensive_data::@performance_score({type = !db.nullable<!db.decimal<3, 1>>}), salary => @comprehensive_data::@salary({type = !db.nullable<!db.decimal<10, 2>>}), years_experience => @comprehensive_data::@years_experience({type = !db.nullable<i32>})}
+            %1 = relalg.map %0 computes : [@map_expr::@agg_expr_0({type = !db.nullable<!db.decimal<38, 16>>})] (%arg0: !relalg.tuple){
+              %5 = relalg.getcol %arg0 @comprehensive_data::@salary : !db.nullable<!db.decimal<10, 2>>
+              %6 = db.constant("85000") : !db.decimal<38, 16>
+              %7 = db.cast %5 : !db.nullable<!db.decimal<10, 2>> -> !db.nullable<!db.decimal<38, 16>>
+              %8 = db.as_nullable %6 : !db.decimal<38, 16> -> <!db.decimal<38, 16>>
+              %9 = db.sub %7 : !db.nullable<!db.decimal<38, 16>>, %8 : !db.nullable<!db.decimal<38, 16>>
+              %10 = db.runtime_call "AbsDecimal"(%9) : (!db.nullable<!db.decimal<38, 16>>) -> !db.nullable<!db.decimal<38, 16>>
+              relalg.return %10 : !db.nullable<!db.decimal<38, 16>>
             }
-            %2 = relalg.sort %1 [(@product_orders::@region,asc)]
-            %3 = relalg.aggregation %2 [@product_orders::@id] computes : [@aggr1::@sum_0({type = !db.nullable<!db.decimal<38, 16>>})] (%arg0: !relalg.tuplestream,%arg1: !relalg.tuple){
-              %5 = relalg.aggrfn sum @product_orders::@order_amount %arg0 : !db.nullable<!db.decimal<38, 16>>
-              relalg.return %5 : !db.nullable<!db.decimal<38, 16>>
+            %2 = relalg.map %1 computes : [@map_expr::@agg_expr_1({type = !db.nullable<!db.decimal<38, 16>>})] (%arg0: !relalg.tuple){
+              %5 = relalg.getcol %arg0 @comprehensive_data::@bonus : !db.nullable<!db.decimal<8, 2>>
+              %6 = db.constant("10000") : !db.decimal<38, 16>
+              %7 = db.cast %5 : !db.nullable<!db.decimal<8, 2>> -> !db.nullable<!db.decimal<38, 16>>
+              %8 = db.as_nullable %6 : !db.decimal<38, 16> -> <!db.decimal<38, 16>>
+              %9 = db.sub %7 : !db.nullable<!db.decimal<38, 16>>, %8 : !db.nullable<!db.decimal<38, 16>>
+              %10 = db.runtime_call "AbsDecimal"(%9) : (!db.nullable<!db.decimal<38, 16>>) -> !db.nullable<!db.decimal<38, 16>>
+              relalg.return %10 : !db.nullable<!db.decimal<38, 16>>
             }
-            %4 = relalg.materialize %3 [@product_orders::@id,@aggr1::@sum_0] => ["id", "sum_0"] : !dsa.table
+            %3 = relalg.aggregation %2 [] computes : [@aggr15::@avg_distance_from_median({type = !db.nullable<!db.decimal<38, 16>>}),@aggr15::@total_bonus_deviation({type = !db.nullable<!db.decimal<38, 16>>})] (%arg0: !relalg.tuplestream,%arg1: !relalg.tuple){
+              %5 = relalg.aggrfn avg @map_expr::@agg_expr_0 %arg0 : !db.nullable<!db.decimal<38, 16>>
+              %6 = relalg.aggrfn sum @map_expr::@agg_expr_1 %arg0 : !db.nullable<!db.decimal<38, 16>>
+              relalg.return %5, %6 : !db.nullable<!db.decimal<38, 16>>, !db.nullable<!db.decimal<38, 16>>
+            }
+            %4 = relalg.materialize %3 [@aggr15::@avg_distance_from_median,@aggr15::@total_bonus_deviation] => ["avg_distance_from_median", "total_bonus_deviation"] : !dsa.table
             return
           }
         }
