@@ -404,9 +404,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
                     auto childCol = childResult.columns[var->varattno - 1];
                     auto originalName = childCol.column_name;
-                    if (te->resname) {
+                    if (te->resname && childCol.column_name != te->resname) {
                         childCol.column_name = te->resname;
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Renaming column in targetlist from '%s' to '%s' (varattno=%d)",
+                        PGX_WARNING("Agg: Renaming column in targetlist from '%s' to '%s' (varattno=%d)",
                                 originalName.c_str(), te->resname, var->varattno);
                     } else {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Keeping original column name '%s' in targetlist (varattno=%d)",
@@ -772,12 +772,12 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                 if (colName == "?column?")
                     colName = "col_" + std::to_string(entry->resno);
 
-                // For DISTINCT queries with expressions, look for the final name in parent Agg's targetlist
+                // TODO: NV: This is bad. This should be using the TranslationResult to find the name. Actually, most of this function
+                //           seems kind of bad to me. But oh well, it's working for now I guess.
                 if (!entry->resname && ctx.current_stmt.planTree) {
                     const Plan* topPlan = ctx.current_stmt.planTree;
                     const Agg* aggNode = nullptr;
 
-                    // Find the Agg node (might be top-level or child of Sort)
                     if (topPlan->type == T_Agg) {
                         aggNode = reinterpret_cast<const Agg*>(topPlan);
                     } else if (topPlan->type == T_Sort && topPlan->lefttree && topPlan->lefttree->type == T_Agg) {
@@ -785,13 +785,12 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                     }
 
                     if (aggNode && aggNode->plan.targetlist) {
-                        // Check if Agg's targetlist has a name for this expression
                         ListCell* lc;
                         int idx = 0;
                         foreach (lc, aggNode->plan.targetlist) {
                             idx++;
                             if (idx == entry->resno) {
-                                const TargetEntry* aggTe = static_cast<const TargetEntry*>(lfirst(lc));
+                                const auto* aggTe = static_cast<const TargetEntry*>(lfirst(lc));
                                 if (aggTe->resname) {
                                     colName = aggTe->resname;
                                     PGX_LOG(AST_TRANSLATE, DEBUG, "MapOp: Using name '%s' from parent Agg's targetlist for expression",
