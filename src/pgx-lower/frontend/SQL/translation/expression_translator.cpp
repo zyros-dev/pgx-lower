@@ -433,6 +433,27 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NUMERIC cast - passing through value for now");
         return args[0];
+    } else if (func == "varchar" || func == "text" || func == "char" || func == "bpchar") {
+        if (args.empty()) {
+            PGX_ERROR("%s requires at least 1 argument", func.c_str());
+            return nullptr;
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating %s type conversion - using first argument", func.c_str());
+        // The first argument is the actual value (already coerced via CoerceViaIO)
+        // Additional arguments are for typmod (length) and other constraints
+        // For now, we just pass through the already-coerced value
+        return args[0];
+    } else if (func == "int4" || func == "int8" || func == "float4" || func == "float8") {
+        // Numeric type conversion functions
+        if (args.empty()) {
+            PGX_ERROR("%s requires at least 1 argument", func.c_str());
+            return nullptr;
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating %s type conversion - using first argument", func.c_str());
+        // Similar to string types, these wrap already-coerced values
+        return args[0];
     } else {
         PGX_ERROR("Unsupported function '%s' (OID %d)", func.c_str(), func_expr->funcid);
         throw std::runtime_error("Unsupported function: " + func);

@@ -243,8 +243,10 @@ auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> v
                 if (funcName) {
                     std::string func(funcName);
                     pfree(funcName);
-                    if (func == "upper" || func == "lower" || func == "substring") {
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Supported string function in targetlist: %s", func.c_str());
+                    if (func == "upper" || func == "lower" || func == "substring" ||
+                        func == "varchar" || func == "text" || func == "char" || func == "bpchar" ||
+                        func == "int4" || func == "int8" || func == "numeric" || func == "float4" || func == "float8") {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Supported function in targetlist: %s", func.c_str());
                     } else {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "Unsupported function in targetlist: %s", func.c_str());
                         caps.hasCompatibleTypes = false;
