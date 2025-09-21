@@ -131,10 +131,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
         // Populate column mappings for this table
         int varattno = 1; // column numbering starts at 1
         for (const auto& colInfo : allColumns) {
-            // Map (scanrelid, varattno) -> (table_name, column_name)
-            ctx.column_mappings[{seqScan->scan.scanrelid, varattno}] = {realTableName, colInfo.name};
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped (%d, %d) -> (%s, %s)", seqScan->scan.scanrelid, varattno,
-                    realTableName.c_str(), colInfo.name.c_str());
+            // Column mappings removed - schema flows through TranslationResult
 
             auto colDef = columnManager.createDef(realTableName, colInfo.name);
 
@@ -226,6 +223,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     PGX_IO(AST_TRANSLATE);
     if (!agg || !agg->plan.lefttree)
         throw std::runtime_error("invalid input");
+
     auto childResult = translate_plan_node(ctx, agg->plan.lefttree);
     if (!childResult.op || !childResult.op->getNumResults())
         throw std::runtime_error("Failed to translate Agg child plan");
@@ -234,112 +232,43 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
     auto groupByAttrs = std::vector<mlir::Attribute>{};
 
-    // Group by
+    // Build GROUP BY columns from grpColIdx
     if (agg->numCols > 0 && agg->grpColIdx) {
-        Plan* scanPlan = agg->plan.lefttree;
-        while (scanPlan && scanPlan->type != T_SeqScan)
-            scanPlan = scanPlan->lefttree;
-
-        if (scanPlan) {
-            auto* seqScan = reinterpret_cast<SeqScan*>(scanPlan);
-            auto tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
-
-            for (int i = 0; i < agg->numCols; i++) {
-                int tlIndex = agg->grpColIdx[i] - 1;
-                if (tlIndex >= 0 && tlIndex < list_length(agg->plan.targetlist)) {
-                    auto* tle = static_cast<TargetEntry*>(list_nth(agg->plan.targetlist, tlIndex));
-
-                    if (tle && tle->expr && IsA(tle->expr, Var)) {
-                        auto* var = reinterpret_cast<Var*>(tle->expr);
-
-                        auto columnName = std::string();
-                        if (tle->resorigcol > 0) {
-                            columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
-                                                                     tle->resorigcol);
-                        } else if (var->varattnosyn > 0) {
-                            columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
-                                                                     var->varattnosyn);
-                        } else if (var->varattno > 0) {
-                            columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
-                                                                     var->varattno);
-                        }
-
-                        if (!columnName.empty()) {
-                            PGX_LOG(AST_TRANSLATE, DEBUG, "GROUP BY col %d: %s.%s (from targetlist pos %d)", i,
-                                    tableName.c_str(), columnName.c_str(), tlIndex);
-                            groupByAttrs.push_back(
-                                columnManager.createRef(columnManager.get(tableName, columnName).get()));
-                        } else {
-                            PGX_WARNING("GROUP BY col %d: couldn't get column name from Var", i);
-                        }
-                    } else {
-                        // Fallback: try direct column indexing if targetlist doesn't contain a Var
-                        PGX_LOG(AST_TRANSLATE, DEBUG,
-                                "GROUP BY col %d: targetlist entry not a Var, using direct indexing", i);
-                        auto columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
-                                                                      agg->grpColIdx[i]);
-                        if (!columnName.empty()) {
-                            groupByAttrs.push_back(
-                                columnManager.createRef(columnManager.get(tableName, columnName).get()));
-                        }
-                    }
-                } else {
-                    // TODO: NV Uncomment this
-                    // PGX_WARNING("GROUP BY index %d exceeds targetlist length %d - using direct column indexing",
-                    //            agg->grpColIdx[i], list_length(agg->plan.targetlist));
-                    PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "GROUP BY col %d: index %d exceeds targetlist (len %d), using as column index", i,
-                            agg->grpColIdx[i], list_length(agg->plan.targetlist));
-                    auto columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
-                                                                  agg->grpColIdx[i]);
-                    if (!columnName.empty()) {
-                        groupByAttrs.push_back(columnManager.createRef(columnManager.get(tableName, columnName).get()));
-                    }
-                }
+        for (int i = 0; i < agg->numCols; i++) {
+            int colIdx = agg->grpColIdx[i];
+            if (colIdx > 0 && colIdx <= static_cast<int>(childResult.columns.size())) {
+                const auto& childCol = childResult.columns[colIdx - 1];
+                auto colRef = columnManager.createRef(childCol.table_name, childCol.column_name);
+                colRef.getColumn().type = childCol.mlir_type;
+                groupByAttrs.push_back(colRef);
             }
         }
     } else {
+        // Alternative GROUP BY handling - look for TargetEntries with ressortgroupref
+        // These couple of lines caused me so much pain you would not believe it
         ListCell* lc;
         foreach (lc, agg->plan.targetlist) {
             auto* tle = static_cast<TargetEntry*>(lfirst(lc));
             if (tle && tle->ressortgroupref > 0 && !tle->resjunk && IsA(tle->expr, Var)) {
                 auto* var = reinterpret_cast<Var*>(tle->expr);
-                std::string tableName, columnName;
 
-                if (var->varno < 0) {
-                    Plan* scanPlan = agg->plan.lefttree;
-                    while (scanPlan && scanPlan->type != T_SeqScan)
-                        scanPlan = scanPlan->lefttree;
-                    if (scanPlan) {
-                        auto* seqScan = reinterpret_cast<SeqScan*>(scanPlan);
-                        tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
-                        columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
-                                                                 var->varattnosyn ? var->varattnosyn : var->varattno);
-                    } else
-                        continue;
-                } else {
-                    tableName = get_table_name_from_rte(&ctx.current_stmt, var->varno);
-                    columnName = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
+                    const auto& childCol = childResult.columns[var->varattno - 1];
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "GROUP BY (via ressortgroupref): %s.%s", childCol.table_name.c_str(),
+                            childCol.column_name.c_str());
+
+                    auto colRef = columnManager.createRef(childCol.table_name, childCol.column_name);
+                    colRef.getColumn().type = childCol.mlir_type;
+                    groupByAttrs.push_back(colRef);
                 }
-                groupByAttrs.push_back(columnManager.createRef(columnManager.get(tableName, columnName).get()));
             }
         }
     }
 
-    // Process aggregation
-    auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
-
-    // Static counter for aggregate scope names (like LingoDB's groupById)
+    // Create aggregate scope
     static size_t aggrId = 0;
     std::string aggrScopeName = "aggr" + std::to_string(aggrId++);
-
-    auto savedSortMappings = pgx_lower::frontend::sql::ColumnMapping();
-    for (const auto& [fst, snd] : ctx.column_mappings) {
-        if (fst.first == -2) {
-            savedSortMappings[fst] = snd;
-        }
-    }
-
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
     if (agg->plan.targetlist && agg->plan.targetlist->length > 0) {
         auto* block = new mlir::Block;
         block->addArgument(tupleStreamType, ctx.builder.getUnknownLoc());
@@ -351,80 +280,68 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         auto createdValues = std::vector<mlir::Value>{};
         auto createdCols = std::vector<mlir::Attribute>{};
 
-        size_t aggIndex = 0;
         ListCell* lc;
         foreach (lc, agg->plan.targetlist) {
             auto te = static_cast<TargetEntry*>(lfirst(lc));
-            if (!te || !te->expr) {
-                PGX_ERROR("Invalid TargetEntry in aggregate plan");
-                throw std::runtime_error("Invalid TargetEntry in aggregate plan");
-            }
+            if (!te || !te->expr) continue;
 
             if (te->expr->type == T_Aggref) {
                 auto aggref = reinterpret_cast<Aggref*>(te->expr);
                 char* rawFuncName = get_func_name(aggref->aggfnoid);
-                if (!rawFuncName) {
-                    PGX_ERROR("Unknown aggregate function OID: %u", aggref->aggfnoid);
-                    throw std::runtime_error("Unknown aggregate function OID");
-                }
+                if (!rawFuncName) continue;
                 std::string funcName(rawFuncName);
                 pfree(rawFuncName);
 
-                // Use the resname from targetlist if available, otherwise generate a name
-                std::string aggColumnName = te->resname ? te->resname : funcName + "_" + std::to_string(aggIndex++);
+                std::string aggColumnName = te->resname ? te->resname : funcName + "_" + std::to_string(aggref->aggno);
                 auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
                 auto relation = block->getArgument(0);
                 mlir::Value aggResult;
 
+                ctx.set_column_mapping(-2, aggref->aggno, aggrScopeName, aggColumnName);
+
                 if (funcName == "count" && (!aggref->args || list_length(aggref->args) == 0)) {
-                    // COUNT(*) - no column reference needed, counts all rows including NULLs
+                    // COUNT(*)
                     attrDef.getColumn().type = ctx.builder.getI64Type();
                     aggResult = aggr_builder.create<mlir::relalg::CountRowsOp>(ctx.builder.getUnknownLoc(),
                                                                                ctx.builder.getI64Type(), relation);
-                } else { // COUNT(column), SUM, AVG, MIN, MAX - need column reference
-                    if (!aggref->args || list_length(aggref->args) == 0) {
-                        PGX_ERROR("Aggregate function %s requires arguments", funcName.c_str());
-                        continue;
-                    }
+                } else {
+                    if (!aggref->args || list_length(aggref->args) == 0) continue;
 
                     auto argTE = static_cast<TargetEntry*>(linitial(aggref->args));
-                    if (!argTE || !argTE->expr || argTE->expr->type != T_Var) {
-                        PGX_ERROR("Aggregate function %s requires column reference", funcName.c_str());
-                        continue;
+                    if (!argTE || !argTE->expr) continue;
+
+                    // For aggregate expressions, we need a special context
+                    auto childCtx = QueryCtxT{
+                        ctx.current_stmt,
+                        ctx.builder,
+                        ctx.current_module,
+                        mlir::Value{},
+                        ctx.get_all_column_mappings()
+                    };
+
+                    auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
+                        childCtx, argTE->expr, childOutput, "agg_expr_" + std::to_string(aggref->aggno),
+                        childResult.columns);
+
+                    // If a new column was created, it means the child node provided more data than thought
+                    if (stream != childOutput) {
+                        childOutput = stream.cast<mlir::OpResult>();
+
+                        const auto exprOid = exprType(reinterpret_cast<Node*>(argTE->expr));
+                        auto type_mapper = PostgreSQLTypeMapper(*ctx.builder.getContext());
+                        auto mlirExprType = type_mapper.map_postgre_sqltype(exprOid, -1, true);
+
+                        childResult.columns.push_back({
+                            .table_name = table_name,
+                            .column_name = column_name,
+                            .type_oid = exprOid,
+                            .typmod = -1,
+                            .mlir_type = mlirExprType,
+                            .nullable = true
+                        });
                     }
 
-                    auto colVar = reinterpret_cast<Var*>(argTE->expr);
-                    std::string tableName, columnName;
-                    if (colVar->varno < 0) {
-                        if (agg->plan.lefttree && agg->plan.lefttree->type == T_Sort) {
-                            auto mappingKey = std::make_pair(-2, colVar->varattno);
-                            auto mappingIt = savedSortMappings.find(mappingKey);
-                            if (mappingIt != savedSortMappings.end()) {
-                                tableName = mappingIt->second.first;
-                                columnName = mappingIt->second.second;
-                            } else
-                                continue;
-                        } else {
-                            auto* scanPlan = agg->plan.lefttree;
-                            while (scanPlan && scanPlan->type != T_SeqScan)
-                                scanPlan = scanPlan->lefttree;
-                            if (scanPlan) {
-                                auto seqScan = reinterpret_cast<SeqScan*>(scanPlan);
-                                tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
-                                columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
-                                                                         colVar->varattno);
-                            } else
-                                continue;
-                        }
-                    } else {
-                        tableName = get_table_name_from_rte(&ctx.current_stmt, colVar->varno);
-                        columnName = get_column_name_from_schema(&ctx.current_stmt, colVar->varno, colVar->varattno);
-                    }
-
-                    auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
-                    auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), tableName, nested);
-                    auto columnRef = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef,
-                                                                      columnManager.get(tableName, columnName));
+                    auto columnRef = column_ref;
 
                     PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
                     auto resultType = (funcName == "count") ? ctx.builder.getI64Type()
@@ -442,34 +359,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                                                               aggrFuncEnum, relation, columnRef);
                 }
 
-                if (!attrDef || !aggResult)
-                    throw std::runtime_error("Failed to generate aggregate");
-
-                createdCols.push_back(attrDef);
-                createdValues.push_back(aggResult);
-
-                ctx.column_mappings[{-2, te->resno}] = {aggrScopeName, aggColumnName.c_str()};
-            } else if (te->expr && te->expr->type == T_Var) {
-                auto var = reinterpret_cast<Var*>(te->expr);
-                if (var->varno < 0) {
-                    auto* scanPlan = agg->plan.lefttree;
-                    while (scanPlan && scanPlan->type != T_SeqScan)
-                        scanPlan = scanPlan->lefttree;
-                    if (scanPlan) {
-                        auto seqScan = reinterpret_cast<SeqScan*>(scanPlan);
-
-                        // Use resorigcol if available (for GROUP BY columns), otherwise use var->varattno
-                        auto columnIdx = (te->resorigcol > 0) ? te->resorigcol : var->varattno;
-                        auto columnName = get_column_name_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid,
-                                                                      columnIdx);
-
-                        ctx.column_mappings[{-2, te->resno}] = {
-                            get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid), columnName};
-
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Agg output mapping: (-2, %d) -> (%s, %s) using col index %d",
-                                te->resno, get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid).c_str(),
-                                columnName.c_str(), columnIdx);
-                    }
+                if (attrDef && aggResult) {
+                    createdCols.push_back(attrDef);
+                    createdValues.push_back(aggResult);
                 }
             }
         }
@@ -481,27 +373,24 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                                                      ctx.builder.getArrayAttr(createdCols));
         aggOp.getAggrFunc().push_back(block);
 
-        // Build output schema from GROUP BY columns and aggregates
+        // Build output schema
         TranslationResult result;
         result.op = aggOp;
 
-        // Build output schema based on targetlist
-        ListCell* lc2;
-        foreach (lc2, agg->plan.targetlist) {
-            auto* te = static_cast<TargetEntry*>(lfirst(lc2));
+        foreach (lc, agg->plan.targetlist) {
+            auto* te = static_cast<TargetEntry*>(lfirst(lc));
             if (!te || !te->expr) continue;
 
             if (te->expr->type == T_Aggref) {
                 auto* aggref = reinterpret_cast<Aggref*>(te->expr);
                 PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
-                auto resultType = (aggref->aggfnoid == 2803 || aggref->aggfnoid == 2147)  // COUNT OIDs
+                auto resultType = (aggref->aggfnoid == 2803 || aggref->aggfnoid == 2147)
                                 ? ctx.builder.getI64Type()
                                 : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
 
-                std::string columnName = te->resname ? te->resname : "agg_" + std::to_string(te->resno);
                 result.columns.push_back({
                     .table_name = aggrScopeName,
-                    .column_name = columnName,
+                    .column_name = te->resname ? te->resname : "agg_" + std::to_string(te->resno),
                     .type_oid = aggref->aggtype,
                     .typmod = -1,
                     .mlir_type = resultType,
@@ -511,9 +400,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 auto* var = reinterpret_cast<Var*>(te->expr);
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
                     auto childCol = childResult.columns[var->varattno - 1];
-                    if (te->resname) {
-                        childCol.column_name = te->resname;
-                    }
+                    if (te->resname) childCol.column_name = te->resname;
                     result.columns.push_back(childCol);
                 }
             }
@@ -606,21 +493,19 @@ auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit*
     PGX_IO(AST_TRANSLATE);
     if (!limit) {
         PGX_ERROR("Invalid Limit parameters");
-        return TranslationResult{};  // Return empty result
+        return TranslationResult{};
     }
 
-    // Translate child plan - single code path for tests and production
     TranslationResult childResult;
 
     if (Plan* leftTree = limit->plan.lefttree) {
         childResult = translate_plan_node(ctx, leftTree);
         if (!childResult.op) {
             PGX_ERROR("Failed to translate Limit child plan");
-            return childResult;  // Return empty result
+            return childResult;
         }
     } else {
         PGX_WARNING("Limit node has no child plan");
-        // For unit tests, return empty result and handle gracefully
         return TranslationResult{};
     }
 
@@ -630,36 +515,23 @@ auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit*
         return childResult;
     }
 
-    // Extract actual limit count and offset from the plan
-    int64_t limitCount = DEFAULT_LIMIT_COUNT; // Default for unit tests
+    int64_t limitCount = DEFAULT_LIMIT_COUNT;
     int64_t limitOffset = 0;
 
     Node* limitOffsetNode = limit->limitOffset;
 
-    // In unit tests, limitCountNode might be a mock Const structure
-    // In production, it's a real PostgreSQL Node
-    // We can safely check the structure and extract values
     if (Node* limitCountNode = limit->limitCount) {
-        // Check if this looks like a Const node
         Node* node = limitCountNode;
         if (node->type == T_Const) {
             const Const* constNode = reinterpret_cast<Const*>(node);
-
-            // For unit tests, constvalue directly holds the value
-            // For production PostgreSQL, it would be a Datum
             if (!constNode->constisnull) {
-                // In unit tests, constvalue is directly the integer value
-                // In production, we'd use DatumGetInt32/64
                 limitCount = static_cast<int64_t>(constNode->constvalue);
-            } else {
             }
-        } else if (node->type == T_Param) {
         } else {
             PGX_WARNING("Limit count is not a Const or Param node");
         }
     }
 
-    // Similar handling for offset
     if (limitOffsetNode) {
         Node* node = limitOffsetNode;
         if (node->type == T_Const) {
@@ -682,7 +554,6 @@ auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit*
         limitOffset = 0;
     }
 
-    // Handle special cases
     if (limitCount == -1) {
         limitCount = INT32_MAX; // Use max for "no limit"
     }
@@ -690,10 +561,9 @@ auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit*
     const auto limitOp = ctx.builder.create<mlir::relalg::LimitOp>(
         ctx.builder.getUnknownLoc(), ctx.builder.getI32IntegerAttr(static_cast<int32_t>(limitCount)), childOutput);
 
-    // Limit doesn't change the schema - pass through child's columns
     TranslationResult result;
     result.op = limitOp;
-    result.columns = childResult.columns;  // Inherit child's schema unchanged
+    result.columns = childResult.columns;
     return result;
 }
 
@@ -701,31 +571,19 @@ auto PostgreSQLASTTranslator::Impl::translate_gather(QueryCtxT& ctx, const Gathe
     PGX_IO(AST_TRANSLATE);
     if (!gather) {
         PGX_ERROR("Invalid Gather parameters");
-        return TranslationResult{};  // Return empty result
+        return TranslationResult{};
     }
 
-    // Access Gather-specific fields with direct field access
-    const int num_workers = gather->num_workers;
-    const bool single_copy = gather->single_copy;
-
-    // Extract Gather-specific information
-    if (num_workers > 0) {
-    }
-    if (single_copy) {
-    }
-
-    // Translate child plan - single code path for tests and production
     TranslationResult childResult;
 
     if (Plan* leftTree = gather->plan.lefttree) {
         childResult = translate_plan_node(ctx, leftTree);
         if (!childResult.op) {
             PGX_ERROR("Failed to translate Gather child plan");
-            return childResult;  // Return empty result
+            return childResult;
         }
     } else {
         PGX_WARNING("Gather node has no child plan");
-        // For unit tests, return empty result and handle gracefully
         return TranslationResult{};
     }
 
@@ -755,7 +613,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
     // GROUP BY HAVING statement for instance.
     PGX_IO(AST_TRANSLATE);
     if (!input.op || !qual || qual->length == 0) {
-        return input;  // Pass through unchanged
+        return input;
     }
 
     auto inputValue = input.op->getResult(0);
@@ -779,9 +637,9 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        // Store current builder and tuple for expression translation
-        const auto tmp_ctx = QueryCtxT{
-            ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.column_mappings,
+        // Create new context preserving column mappings
+        auto tmp_ctx = QueryCtxT{
+            ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.get_all_column_mappings()
         };
 
         mlir::Value predicateResult = nullptr;
@@ -840,10 +698,9 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
                                                          mlir::ValueRange{predicateResult});
     }
 
-    // Selection doesn't change the schema - pass through input's columns
     TranslationResult result;
     result.op = selectionOp;
-    result.columns = input.columns;  // Inherit input's schema unchanged
+    result.columns = input.columns;
     return result;
 }
 
@@ -851,13 +708,13 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                                                                       const List* target_list) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!input.op || !target_list || target_list->length <= 0 || !target_list->elements) {
-        return input;  // Pass through unchanged
+        return input;
     }
 
     auto inputValue = input.op->getResult(0);
     if (!inputValue) {
         PGX_ERROR("Input operation has no result");
-        return input;  // Pass through unchanged
+        return input;
     }
 
     auto computedEntries = std::vector<TargetEntry*>();
@@ -869,7 +726,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
     }
 
     if (computedEntries.empty()) {
-        return input;  // No computed columns, pass through unchanged
+        return input;
     }
 
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
@@ -890,7 +747,6 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
         auto tempMapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), inputValue,
                                                                  ctx.builder.getArrayAttr(placeholderAttrs));
 
-        // Translate expressions in temporary context to discover types
         {
             auto& tempRegion = tempMapOp.getPredicate();
             auto* tempBlock = &tempRegion.emplaceBlock();
@@ -898,7 +754,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
 
             mlir::OpBuilder temp_builder(&context_);
             temp_builder.setInsertionPointToStart(tempBlock);
-            auto tmp_ctx = QueryCtxT{ctx.current_stmt, temp_builder, ctx.current_module, tupleArg, ctx.column_mappings};
+            auto tmp_ctx = QueryCtxT{ctx.current_stmt, temp_builder, ctx.current_module, tupleArg, ctx.get_all_column_mappings()};
 
             for (auto* entry : computedEntries) {
                 auto colName = entry->resname ? entry->resname : "col_" + std::to_string(entry->resno);
@@ -916,7 +772,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
         tempMapOp.erase();
 
         if (expressionTypes.empty()) {
-            return input;  // Failed to compute types, pass through unchanged
+            return input;
         }
     }
 
@@ -941,7 +797,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
 
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
-        auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.column_mappings};
+        auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.get_all_column_mappings()};
 
         std::vector<mlir::Value> computedValues;
         for (auto* entry : computedEntries) {

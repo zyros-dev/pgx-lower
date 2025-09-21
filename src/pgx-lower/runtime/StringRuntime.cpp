@@ -18,6 +18,7 @@
 
 #include "pgx-lower/runtime/StringRuntime.h"
 #include "lingodb/runtime/helpers.h"
+#include "pgx-lower/utility/logging.h"
 
 extern "C" {
 #include "postgres.h"
@@ -232,7 +233,10 @@ double runtime::StringRuntime::toFloat64(runtime::VarLen32 str) {
 // String to decimal conversion
 __int128 runtime::StringRuntime::toDecimal(runtime::VarLen32 string, int32_t reqScale) {
    std::string str = string.str();
-   
+
+   PGX_LOG(RUNTIME, DEBUG, "StringRuntime::toDecimal: Converting string '%s' to decimal with reqScale=%d",
+           str.c_str(), reqScale);
+
    // Find the decimal point
    size_t decimal_pos = str.find('.');
    
@@ -263,6 +267,8 @@ __int128 runtime::StringRuntime::toDecimal(runtime::VarLen32 string, int32_t req
    
    for (size_t i = start; i < digits_str.length(); i++) {
       if (digits_str[i] < '0' || digits_str[i] > '9') {
+         PGX_ERROR("StringRuntime::toDecimal: Invalid character '%c' at position %zu in string '%s'",
+                   digits_str[i], i, str.c_str());
          throw std::runtime_error("could not cast decimal");
       }
       value = value * 10 + (digits_str[i] - '0');

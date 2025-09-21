@@ -82,6 +82,16 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
         return translate_expression(ctx, relabel->arg);
     }
+    case T_A_Const:
+    case T_TypeCast:
+    case T_A_Expr:
+    case T_ColumnRef:
+    case T_FuncCall:
+    case T_ParamRef:
+    case T_SubLink:
+    case T_Integer:
+        PGX_WARNING("This expression type isn't currently supported, but will be in the future %d");
+        throw std::runtime_error("Unsupported expression type - read the logs");
     default: {
         PGX_ERROR("Unsupported expression type: %d", expr->type);
         throw std::runtime_error("Unsupported expression type - read the logs");
@@ -211,8 +221,16 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     }
 
     if (ctx.current_tuple) {
-        const auto tableName = get_table_name_from_rte(&ctx.current_stmt, var->varno);
-        const auto colName = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
+        // Handle OUTER_VAR references (varno = -2)
+        // In aggregate expressions, OUTER_VAR refers to the base table (varno = 1)
+        int actualVarno = var->varno;
+        if (var->varno == OUTER_VAR) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Handling OUTER_VAR reference, mapping to varno=1");
+            actualVarno = 1;
+        }
+
+        const auto tableName = get_table_name_from_rte(&ctx.current_stmt, actualVarno);
+        const auto colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
 
         auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
         if (!dialect) {
@@ -222,9 +240,8 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
         auto& columnManager = dialect->getColumnManager();
 
-        // Map PostgreSQL type to MLIR type
         const auto type_mapper = PostgreSQLTypeMapper(context_);
-        const bool nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
+        const bool nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
         auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
 
         auto colRef = columnManager.createRef(tableName, colName);
@@ -494,15 +511,11 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) const -> mlir::Value {
-    // TODO: NV: This whole function is terrible. What if someone just calls the columns mycolumn_3?
-    // ... it might be acceptable now that we've unique-ified the names...
     PGX_IO(AST_TRANSLATE);
     if (!aggref) {
         PGX_ERROR("Invalid Aggref parameters");
         throw std::runtime_error("Invalid Aggref parameters");
     }
-
-    auto it = ctx.column_mappings.end();
 
     char* rawFuncName = get_func_name(aggref->aggfnoid);
     if (rawFuncName == nullptr) {
@@ -512,48 +525,20 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     const std::string funcName(rawFuncName);
     pfree(rawFuncName);
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Looking for Aggref with function %s (OID %u, aggno=%d)",
-            funcName.c_str(), aggref->aggfnoid, aggref->aggno);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Looking for Aggref with function %s (OID %u, aggno=%d)", funcName.c_str(),
+            aggref->aggfnoid, aggref->aggno);
 
-    // Look for aggregate functions in column mappings
-    std::vector<std::pair<int, decltype(ctx.column_mappings.begin())>> aggregateMappings;
-    for (auto mapIt = ctx.column_mappings.begin(); mapIt != ctx.column_mappings.end(); ++mapIt) {
-        if (mapIt->first.first == -2) {
-            const std::string& mappedName = mapIt->second.second;
-            // Check if this is an aggregate function (has underscore followed by number)
-            const auto underscorePos = mappedName.rfind('_');
-            if (underscorePos != std::string::npos && underscorePos > 0) {
-                // Extract the numeric suffix to get the original aggregate index
-                std::string suffix = mappedName.substr(underscorePos + 1);
-                try {
-                    int aggIndex = std::stoi(suffix);
-                    aggregateMappings.push_back({aggIndex, mapIt});
-                } catch (...) {
-                    // Not a valid aggregate mapping, skip
-                }
-            }
-        }
+    auto mapping = ctx.get_column_mapping(-2, aggref->aggno);
+    if (!mapping) {
+        PGX_ERROR("No mapping found for aggregate aggno=%d", aggref->aggno);
+        throw std::runtime_error("Aggregate reference not found in column mappings");
     }
 
-    // Sort by aggregate index to ensure correct ordering
-    std::sort(aggregateMappings.begin(), aggregateMappings.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::string scopeName = mapping->first;
+    std::string columnName = mapping->second;
 
-    // Now use aggno to index into our sorted aggregate mappings
-    if (aggref->aggno >= 0 && static_cast<size_t>(aggref->aggno) < aggregateMappings.size()) {
-        it = aggregateMappings[aggref->aggno].second;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Found Aggref mapping by index %d: (-2,%d) -> (%s,%s)",
-                aggref->aggno, it->first.second, it->second.first.c_str(), it->second.second.c_str());
-    }
-
-    if (it == ctx.column_mappings.end()) {
-        char* rawFuncName2 = get_func_name(aggref->aggfnoid);
-        const std::string funcName2 = rawFuncName2 ? rawFuncName2 : "unknown";
-        if (rawFuncName2)
-            pfree(rawFuncName2);
-        PGX_ERROR("Aggref with function %s (aggno=%d) not found in column mappings", funcName2.c_str(), aggref->aggno);
-        throw std::runtime_error("Aggref not found in column mappings");
-    }
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Found Aggref mapping: aggno=%d -> scope=%s, column=%s", aggref->aggno,
+            scopeName.c_str(), columnName.c_str());
 
     auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
     if (!dialect) {
@@ -562,11 +547,10 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     }
     auto& columnManager = dialect->getColumnManager();
 
-    // Create column reference using the mapped scope and function name
-    const auto& [scopeName, mappedFuncName] = it->second;
+    // Create column reference using the constructed scope and column name
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating Aggref to GetColumnOp: scope=%s, func=%s", scopeName.c_str(),
-            mappedFuncName.c_str());
-    auto colRef = columnManager.createRef(scopeName, mappedFuncName);
+            columnName.c_str());
+    auto colRef = columnManager.createRef(scopeName, columnName);
 
     // Get the actual type from the column that was created during aggregation
     auto resultType = colRef.getColumn().type;
@@ -1190,7 +1174,6 @@ struct SQLTypeInference {
 auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx, const mlir::Value lhs,
                                                             const mlir::Value rhs)
     -> std::pair<mlir::Value, mlir::Value> {
-
     auto convertToType = [&ctx](mlir::Value value, mlir::Type targetBaseType, bool needsNullable) -> mlir::Value {
         const auto currentType = value.getType();
         const auto currentBaseType = getBaseType(currentType);
@@ -1207,8 +1190,7 @@ auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx
         }
 
         if (needsNullable && !mlir::isa<mlir::db::NullableType>(value.getType())) {
-            const auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(),
-                                                                  getBaseType(value.getType()));
+            const auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), getBaseType(value.getType()));
             value = ctx.builder.create<mlir::db::AsNullableOp>(loc, nullableType, value);
         }
 
@@ -1218,11 +1200,11 @@ auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx
     const auto lhsBaseType = getBaseType(lhs.getType());
     const auto rhsBaseType = getBaseType(rhs.getType());
     const auto targetBaseType = (lhsBaseType != rhsBaseType)
-        ? SQLTypeInference::getCommonBaseType(lhsBaseType, rhsBaseType)
-        : lhsBaseType;
+                                    ? SQLTypeInference::getCommonBaseType(lhsBaseType, rhsBaseType)
+                                    : lhsBaseType;
 
-    const bool needsNullable = mlir::isa<mlir::db::NullableType>(lhs.getType()) ||
-                              mlir::isa<mlir::db::NullableType>(rhs.getType());
+    const bool needsNullable = mlir::isa<mlir::db::NullableType>(lhs.getType())
+                               || mlir::isa<mlir::db::NullableType>(rhs.getType());
 
     auto convertedLhs = convertToType(lhs, targetBaseType, needsNullable);
     auto convertedRhs = convertToType(rhs, targetBaseType, needsNullable);
@@ -1278,8 +1260,120 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
 
     auto [convertedLhs, convertedRhs] = upcast_binary_operation(ctx, lhs, rhs);
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: Creating CmpOp with predicate %d", static_cast<int>(predicate));
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: Creating CmpOp with predicate %d",
+            static_cast<int>(predicate));
     return ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), predicate, convertedLhs, convertedRhs);
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
+    const QueryCtxT& ctx, Expr* expr, mlir::Value input_stream, const std::string& suggested_name,
+    const std::vector<TranslationResult::ColumnSchema>& child_columns)
+    -> pgx_lower::frontend::sql::StreamExpressionResult {
+    PGX_IO(AST_TRANSLATE);
+
+    if (!expr || !input_stream) {
+        PGX_ERROR("Invalid parameters for translate_expression_for_stream");
+        throw std::runtime_error("Invalid parameters for translate_expression_for_stream");
+    }
+
+    auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+    if (!dialect) {
+        PGX_ERROR("RelAlg dialect not registered");
+        throw std::runtime_error("RelAlg dialect not registered");
+    }
+    auto& columnManager = dialect->getColumnManager();
+
+    if (expr->type == T_Var) {
+        // We can trivially pass the MLIR value through
+        const auto var = reinterpret_cast<Var*>(expr);
+
+        std::string tableName;
+        std::string columnName;
+
+        // When child_columns is provided, use it for column resolution (aggregate context)
+        // Both OUTER_VAR (-2) and regular vars should use child output positions
+        if (var->varattno > 0 && var->varattno <= static_cast<int>(child_columns.size())) {
+            const auto& childCol = child_columns[var->varattno - 1];
+            tableName = childCol.table_name;
+            columnName = childCol.column_name;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Var (varno=%d) resolved to child output column %d: %s.%s", var->varno,
+                    var->varattno, tableName.c_str(), columnName.c_str());
+        } else {
+            throw std::runtime_error("bad situation");
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Expression is already a column reference: %s.%s", tableName.c_str(),
+                columnName.c_str());
+
+        auto colRef = columnManager.createRef(tableName, columnName);
+
+        auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
+        auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), tableName, nested);
+        auto columnRefAttr = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, colRef.getColumnPtr());
+
+        return {.stream = input_stream, .column_ref = columnRefAttr, .column_name = columnName, .table_name = tableName};
+    }
+
+    // For complex expressions, we need to create a MapOp - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Creating MapOp for complex expression (type=%d)", expr->type);
+    static size_t exprId = 0;
+    const std::string scopeName = "map_expr";
+    const std::string columnName = suggested_name.empty() ? "expr_" + std::to_string(exprId++) : suggested_name;
+
+    auto colDef = columnManager.createDef(scopeName, columnName);
+
+    auto tempMapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
+                                                             ctx.builder.getArrayAttr({colDef}));
+
+    auto& predicateRegion = tempMapOp.getPredicate();
+    auto* block = new mlir::Block;
+    predicateRegion.push_back(block);
+
+    auto tupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
+    auto tupleArg = block->addArgument(tupleType, ctx.builder.getUnknownLoc());
+
+    auto blockBuilder = mlir::OpBuilder(ctx.builder.getContext());
+    blockBuilder.setInsertionPointToStart(block);
+
+    auto blockCtx = QueryCtxT{ctx.current_stmt, blockBuilder, ctx.current_module, tupleArg,
+                              ctx.get_all_column_mappings()};
+
+    auto exprValue = translate_expression(blockCtx, expr);
+    if (!exprValue) {
+        PGX_ERROR("Failed to translate expression in MapOp");
+        throw std::runtime_error("Failed to translate expression in MapOp");
+    }
+
+    mlir::Type exprType = exprValue.getType();
+    blockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{exprValue});
+    tempMapOp.erase();
+
+    // Create the mapop
+    colDef.getColumn().type = exprType;
+    auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
+                                                         ctx.builder.getArrayAttr({colDef}));
+    auto& realRegion = mapOp.getPredicate();
+    auto* realBlock = new mlir::Block;
+    realRegion.push_back(realBlock);
+
+    auto realTupleArg = realBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
+
+    mlir::OpBuilder realBlockBuilder(ctx.builder.getContext());
+    realBlockBuilder.setInsertionPointToStart(realBlock);
+
+    auto realBlockCtx = QueryCtxT{ctx.current_stmt, realBlockBuilder, ctx.current_module, realTupleArg,
+                                  ctx.get_all_column_mappings()};
+    auto realExprValue = translate_expression(realBlockCtx, expr);
+    realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
+
+    // col ref
+    auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
+    auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), scopeName, nested);
+    auto columnRef = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, colDef.getColumnPtr());
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Created MapOp with computed column: %s.%s", scopeName.c_str(), columnName.c_str());
+
+    return {.stream = mapOp.getResult(), .column_ref = columnRef, .column_name = columnName, .table_name = scopeName};
 }
 
 } // namespace postgresql_ast
