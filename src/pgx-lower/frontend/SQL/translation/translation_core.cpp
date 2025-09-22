@@ -37,7 +37,7 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int
     PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "No typmod specified - using flexible precision for numeric type");
-        return {21, 16};
+        return {MAX_NUMERIC_PRECISION, MAX_NUMERIC_UNCONSTRAINED_SCALE};
     }
 
     // Remove VARHDRSZ offset
@@ -47,15 +47,15 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int
 
     if (precision < MIN_NUMERIC_PRECISION || precision > MAX_NUMERIC_PRECISION) {
         PGX_WARNING("Invalid NUMERIC precision: %d from typmod %d", precision, typmod);
-        return {MAX_NUMERIC_PRECISION, DEFAULT_NUMERIC_SCALE}; // Safe default
+        return {MAX_NUMERIC_PRECISION, MAX_NUMERIC_UNCONSTRAINED_SCALE};
     }
 
     if (scale < 0 || scale > precision) {
         PGX_WARNING("Invalid NUMERIC scale: %d for precision %d", scale, precision);
-        return {precision, DEFAULT_NUMERIC_SCALE}; // Use precision, zero scale
+        return {precision, MAX_NUMERIC_UNCONSTRAINED_SCALE};
     }
 
-    return {precision, scale};
+    return {std::min(precision, MAX_NUMERIC_PRECISION), std::min(scale, MAX_NUMERIC_UNCONSTRAINED_SCALE)};
 }
 
 int32_t PostgreSQLTypeMapper::extract_varchar_length(int32_t typmod) {

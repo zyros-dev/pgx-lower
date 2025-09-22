@@ -499,22 +499,41 @@ class DecimalBinOpLowering : public ConversionPattern {
    public:
    explicit DecimalBinOpLowering(TypeConverter& typeConverter, MLIRContext* context)
       : ConversionPattern(typeConverter, DBOp::getOperationName(), 1, context) {}
-   
+
    LogicalResult matchAndRewrite(Operation* op, ArrayRef<Value> operands, ConversionPatternRewriter& rewriter) const override {
-      auto mulOp = mlir::cast<DBOp>(op);
+      auto binOp = mlir::cast<DBOp>(op);
       typename DBOp::Adaptor adaptor(operands);
-      if (auto decimalType = mulOp.getType().template dyn_cast_or_null<mlir::db::DecimalType>()) {
+      if (auto decimalType = binOp.getType().template dyn_cast_or_null<mlir::db::DecimalType>()) {
          auto stdType = this->typeConverter->convertType(decimalType);
          mlir::Value left = adaptor.getLeft();
          mlir::Value right = adaptor.getRight();
          if (stdType != left.getType()) {
-            left = rewriter.create<mlir::arith::ExtSIOp>(mulOp->getLoc(), stdType, left);
+            left = rewriter.create<mlir::arith::ExtSIOp>(binOp->getLoc(), stdType, left);
          }
          if (stdType != right.getType()) {
-            right = rewriter.create<mlir::arith::ExtSIOp>(mulOp->getLoc(), stdType, right);
+            right = rewriter.create<mlir::arith::ExtSIOp>(binOp->getLoc(), stdType, right);
          }
-         mlir::Value multiplied = rewriter.create<ArithOp>(mulOp->getLoc(), stdType, left, right);
-         rewriter.replaceOp(mulOp, multiplied);
+         mlir::Value result = rewriter.create<ArithOp>(binOp->getLoc(), stdType, left, right);
+
+         if (mlir::isa<mlir::db::MulOp>(op)) {
+            auto leftType = binOp.getLeft().getType();
+            auto rightType = binOp.getRight().getType();
+            auto leftDecimalType = getBaseType(leftType).template dyn_cast_or_null<mlir::db::DecimalType>();
+            auto rightDecimalType = getBaseType(rightType).template dyn_cast_or_null<mlir::db::DecimalType>();
+
+            if (leftDecimalType && rightDecimalType) {
+               const int32_t inputScaleSum = leftDecimalType.getS() + rightDecimalType.getS();
+               const int32_t outputScale = decimalType.getS();
+
+               if (inputScaleSum > outputScale) {
+                  int32_t scaleDiff = inputScaleSum - outputScale;
+                  auto divisor = getDecimalScaleMultiplierConstant(rewriter, scaleDiff, stdType, binOp->getLoc());
+                  result = rewriter.create<mlir::arith::DivSIOp>(binOp->getLoc(), stdType, result, divisor);
+               }
+            }
+         }
+
+         rewriter.replaceOp(binOp, result);
          return success();
       }
       return failure();

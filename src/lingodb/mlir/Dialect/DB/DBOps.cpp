@@ -8,6 +8,10 @@
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/Support/Debug.h>
 #include <queue>
+
+constexpr auto MAX_NUMERIC_PRECISION = 21;
+constexpr auto MAX_NUMERIC_UNCONSTRAINED_SCALE = 16;
+
 using namespace mlir;
 bool mlir::db::CmpOp::isEqualityPred() { return getPredicate() == mlir::db::DBCmpPredicate::eq; }
 bool mlir::db::CmpOp::isLessPred(bool eq) { return getPredicate() == (eq ? mlir::db::DBCmpPredicate::lte : mlir::db::DBCmpPredicate::lt); }
@@ -44,9 +48,12 @@ LogicalResult inferReturnType(MLIRContext* context, std::optional<Location> loca
       auto b = baseTypeRight.dyn_cast_or_null<mlir::db::DecimalType>();
       auto hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
       auto maxs = std::max(a.getS(), b.getS());
+      const auto sump = std::min(hidig + maxs, MAX_NUMERIC_PRECISION);
+      const auto sums = std::min(maxs, MAX_NUMERIC_UNCONSTRAINED_SCALE);
+
       // Addition is super-type of both, with larger precision for carry.
       // TODO: actually add carry precision (+1).
-      baseType = mlir::db::DecimalType::get(a.getContext(), hidig + maxs, maxs);
+      baseType = mlir::db::DecimalType::get(a.getContext(), sump, sums);
    }
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
    return success();
@@ -60,6 +67,10 @@ LogicalResult inferMulReturnType(MLIRContext* context, std::optional<Location> l
       auto b = baseTypeRight.dyn_cast_or_null<mlir::db::DecimalType>();
       auto sump = a.getP() + b.getP();
       auto sums = a.getS() + b.getS();
+
+      sump = std::min(sump, MAX_NUMERIC_PRECISION);
+      sums = std::min(sums, MAX_NUMERIC_UNCONSTRAINED_SCALE);
+
       baseType = mlir::db::DecimalType::get(a.getContext(), sump, sums);
    }
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
@@ -72,7 +83,11 @@ LogicalResult inferDivReturnType(MLIRContext* context, std::optional<Location> l
    if(baseTypeLeft.isa<mlir::db::DecimalType>()){
       auto leftDecType=baseTypeLeft.dyn_cast_or_null<mlir::db::DecimalType>();
       auto rightDecType=baseTypeRight.dyn_cast_or_null<mlir::db::DecimalType>();
-      baseType=mlir::db::DecimalType::get(baseType.getContext(),std::max(leftDecType.getP(),rightDecType.getP()),std::max(leftDecType.getS(),rightDecType.getS()));
+
+      const auto precision = std::min(std::max(leftDecType.getP(),rightDecType.getP()), MAX_NUMERIC_PRECISION);
+      const auto scale = std::min(std::max(leftDecType.getS(),rightDecType.getS()), MAX_NUMERIC_UNCONSTRAINED_SCALE);
+
+      baseType=mlir::db::DecimalType::get(baseType.getContext(), precision, scale);
    }
    inferredReturnTypes.push_back(wrapNullableType(context, baseType, operands));
    return success();

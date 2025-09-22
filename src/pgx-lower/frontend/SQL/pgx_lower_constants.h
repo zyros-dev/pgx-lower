@@ -36,7 +36,6 @@ constexpr auto PG_IS_NOT_NULL = 1;
 // =============================================================================
 
 constexpr auto MIN_NUMERIC_PRECISION = 1;
-constexpr auto DEFAULT_NUMERIC_SCALE = 0;
 constexpr auto NUMERIC_PRECISION_SHIFT = 16;
 constexpr auto NUMERIC_PRECISION_MASK = 0xFFFF;
 constexpr auto NUMERIC_SCALE_MASK = 0xFFFF;
@@ -86,10 +85,11 @@ constexpr auto PG_ATTNAME_NOT_MISSING_OK = false;
 constexpr auto MAX_QUERY_COLUMNS = 1000;
 constexpr auto MAX_COLUMN_INDEX = 1000;
 constexpr auto MAX_LIST_LENGTH = 1000;
-constexpr auto MAX_NUMERIC_PRECISION = 38;
 constexpr auto MAX_LIMIT_COUNT = 1000000;
 constexpr auto DEFAULT_LIMIT_COUNT = 10;
 
+constexpr auto MAX_NUMERIC_PRECISION = 21;
+constexpr auto MAX_NUMERIC_UNCONSTRAINED_SCALE = 16;
 } // namespace pgx_lower::frontend::sql::constants
 
 #endif // PGX_LOWER_CONSTANTS_H
