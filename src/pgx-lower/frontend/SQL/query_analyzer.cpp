@@ -65,8 +65,8 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: None detected");
     }
 
-    const auto compatible = isSelectStatement && hasCompatibleTypes && !requiresJoin && !requiresLimit
-                            && (requiresSeqScan || requiresAggregation);
+    const auto compatible = isSelectStatement && hasCompatibleTypes && !requiresLimit
+                            && (requiresSeqScan || requiresAggregation || requiresJoin);
 
     if (compatible) {
         PGX_LOG(AST_TRANSLATE, DEBUG, " MLIR COMPATIBLE: Query accepted for compilation");
