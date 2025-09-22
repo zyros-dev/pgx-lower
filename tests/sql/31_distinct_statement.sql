@@ -37,15 +37,6 @@ SELECT DISTINCT category, status
 FROM test_distinct
 ORDER BY category, status;
 
-SET client_min_messages TO DEBUG1;
-SET pgx_lower.log_enable = true;
-SET pgx_lower.log_debug = true;
-SET pgx_lower.log_io = true;
-SET pgx_lower.log_ir = true;
-SET pgx_lower.log_trace = true;
-SET pgx_lower.log_verbose = true;
-SET pgx_lower.enabled_categories = 'AST_TRANSLATE,RELALG_LOWER,DB_LOWER,DSA_LOWER,UTIL_LOWER,RUNTIME,JIT,GENERAL';
-
 SELECT DISTINCT category + status AS combined
 FROM test_distinct
 ORDER BY combined;
@@ -73,11 +64,9 @@ FROM test_distinct
 ORDER BY category;
 
 SELECT SUM(category)
-FROM test_distinct
-ORDER BY category;
+FROM test_distinct;
 
 SELECT SUM(DISTINCT category)
-FROM test_distinct
-ORDER BY category;
+FROM test_distinct;
 
 DROP TABLE test_distinct;
