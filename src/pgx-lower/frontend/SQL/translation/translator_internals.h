@@ -205,7 +205,7 @@ class PostgreSQLASTTranslator::Impl {
         -> TranslationResult;
 
     auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream,
-                               const TranslationResult& translation_result) const -> void;
+                               const TranslationResult& translation_result) const -> mlir::Value;
 
     // Operation translation helpers
     auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)

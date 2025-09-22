@@ -64,14 +64,19 @@ auto PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(const PlannedStm
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Checking if translated operation has results");
+    mlir::Value returnValue;
     if (translationResult.op->getNumResults() > 0) {
         const auto result = translationResult.op->getResult(0);
         if (mlir::isa<mlir::relalg::TupleStreamType>(result.getType())) {
-            create_materialize_op(context, result, translationResult);
+            returnValue = create_materialize_op(context, result, translationResult);
         }
     }
 
-    context.builder.create<mlir::func::ReturnOp>(context.builder.getUnknownLoc());
+    if (returnValue) {
+        context.builder.create<mlir::func::ReturnOp>(context.builder.getUnknownLoc(), returnValue);
+    } else {
+        context.builder.create<mlir::func::ReturnOp>(context.builder.getUnknownLoc());
+    }
     PGX_LOG(AST_TRANSLATE, IO, "generate_rel_alg_operations OUT: RelAlg operations generated successfully");
 
     return true;

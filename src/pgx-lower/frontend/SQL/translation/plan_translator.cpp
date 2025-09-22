@@ -358,8 +358,27 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                         : (funcName == "max") ? mlir::relalg::AggrFunc::max
                                                               : mlir::relalg::AggrFunc::count;
 
-                    aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(ctx.builder.getUnknownLoc(), resultType,
-                                                                              aggrFuncEnum, relation, columnRef);
+                    // I thought this would be a child node, but turns out its a flag/list... neat!
+                    if (aggref->aggdistinct) {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Processing %s(DISTINCT) aggregate", funcName.c_str());
+
+                        auto distinctStream = aggr_builder.create<mlir::relalg::ProjectionOp>(
+                            ctx.builder.getUnknownLoc(),
+                            mlir::relalg::TupleStreamType::get(ctx.builder.getContext()),
+                            mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(),
+                                                              mlir::relalg::SetSemantic::distinct),
+                            relation,
+                            ctx.builder.getArrayAttr({columnRef})
+                        );
+
+                        aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
+                            ctx.builder.getUnknownLoc(), resultType,
+                            aggrFuncEnum, distinctStream.getResult(), columnRef
+                        );
+                    } else {
+                        aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(ctx.builder.getUnknownLoc(), resultType,
+                                                                                  aggrFuncEnum, relation, columnRef);
+                    }
                 }
 
                 if (attrDef && aggResult) {
@@ -609,7 +628,8 @@ auto PostgreSQLASTTranslator::Impl::translate_gather(QueryCtxT& ctx, const Gathe
 
 auto PostgreSQLASTTranslator::Impl::create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp {
     PGX_IO(AST_TRANSLATE);
-    auto queryFuncType = builder.getFunctionType({}, {});
+    auto tableType = mlir::dsa::TableType::get(builder.getContext());
+    auto queryFuncType = builder.getFunctionType({}, {tableType});
     auto queryFunc = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), QUERY_FUNCTION_NAME, queryFuncType);
 
     auto& queryBody = queryFunc.getBody().emplaceBlock();
@@ -872,7 +892,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
 }
 
 auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& context, const mlir::Value tuple_stream, const TranslationResult& translation_result) const
-    -> void {
+    -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!translation_result.columns.empty()) {
         auto& columnManager = context.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
@@ -894,11 +914,13 @@ auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& conte
         auto columnNames = context.builder.getArrayAttr(columnNameAttrs);
         auto tableType = mlir::dsa::TableType::get(&context_);
 
-        context.builder.create<mlir::relalg::MaterializeOp>(context.builder.getUnknownLoc(), tableType, tuple_stream,
+        auto materializeOp = context.builder.create<mlir::relalg::MaterializeOp>(context.builder.getUnknownLoc(), tableType, tuple_stream,
                                                             columnRefs, columnNames);
+        return materializeOp.getResult();
     } else {
         throw std::runtime_error("Should be impossible");
     }
+    return mlir::Value();
 }
 
 } // namespace postgresql_ast
