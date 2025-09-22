@@ -1,159 +1,267 @@
 LOAD 'pgx_lower.so';
-DROP TABLE IF EXISTS test_distinct;
-NOTICE:  table "test_distinct" does not exist, skipping
-CREATE TABLE test_distinct
+DROP TABLE IF EXISTS test_decimal_maths;
+NOTICE:  table "test_decimal_maths" does not exist, skipping
+CREATE TABLE test_decimal_maths
 (
     id       SERIAL PRIMARY KEY,
-    category INTEGER,
-    status   INTEGER,
-    value    INTEGER,
-    name     TEXT
+    price    DECIMAL(10, 2),
+    quantity DECIMAL(8, 3),
+    rate     DECIMAL(5, 4),
+    discount DECIMAL(4, 2)
 );
-INSERT INTO test_distinct(category, status, value, name)
-VALUES (1, 10, 100, 'apple'),
-       (2, 20, 200, 'banana'),
-       (1, 10, 150, 'apple'),
-       (3, 30, 300, 'cherry'),
-       (2, 20, 250, 'banana'),
-       (1, 15, 100, 'apricot'),
-       (3, 30, 300, 'cherry'),
-       (4, 40, 400, 'date'),
-       (2, 25, 200, 'blueberry'),
-       (1, 10, 100, 'apple');
-SELECT DISTINCT category
-FROM test_distinct;
+INSERT INTO test_decimal_maths(price, quantity, rate, discount)
+VALUES (99.99, 2.500, 0.1575, 10.50),
+       (149.95, 1.750, 0.2250, 15.00),
+       (29.50, 5.333, 0.0825, 5.25),
+       (199.00, 0.500, 0.3000, 20.00),
+       (75.25, 3.125, 0.1000, 12.75);
+-- Basic arithmetic operations
+SELECT price + discount AS price_plus_discount
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- category 
-----------
-        1
-        2
-        3
-        4
-(4 rows)
+ price_plus_discount 
+---------------------
+              110.49
+              164.95
+               34.75
+                 219
+                  88
+(5 rows)
 
-SELECT DISTINCT category
-FROM test_distinct
-ORDER BY category;
+SELECT price - discount AS price_minus_discount
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- category 
-----------
-        1
-        2
-        3
-        4
-(4 rows)
+ price_minus_discount 
+----------------------
+                89.49
+               134.95
+                24.25
+                  179
+                 62.5
+(5 rows)
 
-SELECT DISTINCT category, status
-FROM test_distinct
-ORDER BY category, status;
+SELECT price * quantity AS total_value
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- category | status 
-----------+--------
-        1 |     10
-        1 |     15
-        2 |     20
-        2 |     25
-        3 |     30
-        4 |     40
-(6 rows)
+ total_value 
+-------------
+     249.975
+    262.4125
+    157.3235
+        99.5
+   235.15625
+(5 rows)
 
-SELECT DISTINCT category + status AS combined
-FROM test_distinct
-ORDER BY combined;
+SELECT price / quantity AS price_per_unit
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- combined 
-----------
-       11
-       16
-       22
-       27
-       33
-       44
-(6 rows)
+ price_per_unit 
+----------------
+         39.996
+         85.685
+          5.531
+            398
+          24.08
+(5 rows)
 
-SELECT DISTINCT name
-FROM test_distinct
-ORDER BY name;
+-- Mixed precision operations
+SELECT price * rate AS tax_amount
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-   name    
------------
- apple
- apricot
- banana
- blueberry
- cherry
- date
-(6 rows)
+ tax_amount 
+------------
+  15.748425
+   33.73875
+    2.43375
+       59.7
+      7.525
+(5 rows)
 
-SELECT DISTINCT category
-FROM test_distinct
-WHERE value >= 200
-ORDER BY category;
+SELECT (price * quantity) AS total_before_discount
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- category 
-----------
-        2
-        3
-        4
-(3 rows)
+ total_before_discount 
+-----------------------
+               249.975
+              262.4125
+              157.3235
+                  99.5
+             235.15625
+(5 rows)
 
-SELECT DISTINCT category, value
-FROM test_distinct
-WHERE status <= 20
-ORDER BY category, value;
+SELECT (price * quantity * (1 - discount / 100)) AS total_after_discount
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- category | value 
-----------+-------
-        1 |   100
-        1 |   150
-        2 |   200
-        2 |   250
-(4 rows)
+ total_after_discount 
+----------------------
+           223.727625
+           223.050625
+         149.06401625
+                 79.6
+        205.173828125
+(5 rows)
 
-SELECT DISTINCT value / 100 AS hundreds
-FROM test_distinct
-ORDER BY hundreds;
+-- Division with different scales
+SELECT discount / 100 AS discount_rate
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- hundreds 
-----------
-        1
-        2
-        3
-        4
-(4 rows)
+ discount_rate 
+---------------
+         0.105
+          0.15
+        0.0525
+           0.2
+        0.1275
+(5 rows)
 
-SELECT ALL category
-FROM test_distinct
-ORDER BY category;
+SELECT price / 2 AS half_price
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- category 
-----------
-        1
-        1
-        1
-        1
-        2
-        2
-        2
-        3
-        3
-        4
-(10 rows)
+ half_price 
+------------
+     49.995
+     74.975
+      14.75
+       99.5
+     37.625
+(5 rows)
 
-SELECT SUM(category)
-FROM test_distinct;
+SELECT quantity / 3 AS third_quantity
+FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- sum 
------
-  20
+   third_quantity   
+--------------------
+ 0.8333333333333333
+ 0.5833333333333333
+ 1.7776666666666666
+ 0.1666666666666666
+ 1.0416666666666666
+(5 rows)
+
+-- Complex expressions
+SELECT ((price + 10) * quantity) / (1 + rate) AS complex_calc
+FROM test_decimal_maths;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+     complex_calc     
+----------------------
+ 237.5593952483801295
+                228.5
+ 194.5990762124711316
+  80.3846153846153846
+             242.1875
+(5 rows)
+
+SELECT price * quantity * rate AS tax_on_total
+FROM test_decimal_maths;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ tax_on_total 
+--------------
+   39.3710625
+   59.0428125
+  12.97918875
+        29.85
+    23.515625
+(5 rows)
+
+-- Edge cases
+SELECT 1.0 / 3.0 AS one_third;
+       one_third        
+------------------------
+ 0.33333333333333333333
 (1 row)
 
-SELECT SUM(DISTINCT category)
-FROM test_distinct;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- sum 
------
-  10
+SELECT 10.0 / 3.0 AS ten_thirds;
+     ten_thirds     
+--------------------
+ 3.3333333333333333
 (1 row)
 
-DROP TABLE test_distinct;
+SELECT 100.00 / 7.00 AS hundred_sevenths;
+  hundred_sevenths   
+---------------------
+ 14.2857142857142857
+(1 row)
+
+-- Operations with integer literals
+SELECT price * 2 AS double_price
+FROM test_decimal_maths;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ double_price 
+--------------
+       199.98
+        299.9
+           59
+          398
+        150.5
+(5 rows)
+
+SELECT price / 10 AS tenth_price
+FROM test_decimal_maths;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ tenth_price 
+-------------
+       9.999
+      14.995
+        2.95
+        19.9
+       7.525
+(5 rows)
+
+SELECT quantity + 1 AS quantity_plus_one
+FROM test_decimal_maths;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ quantity_plus_one 
+-------------------
+               3.5
+              2.75
+             6.333
+               1.5
+             4.125
+(5 rows)
+
+-- Precision preservation tests
+SELECT CAST(1.23456789 AS DECIMAL(10, 8)) AS high_precision;
+ high_precision 
+----------------
+     1.23456789
+(1 row)
+
+SELECT CAST(1.23456789 AS DECIMAL(10, 2)) AS low_precision;
+ low_precision 
+---------------
+          1.23
+(1 row)
+
+-- Division by small numbers (precision test)
+SELECT 1.00 / 0.01 AS hundred;
+       hundred        
+----------------------
+ 100.0000000000000000
+(1 row)
+
+SELECT 1.00 / 0.001 AS thousand;
+       thousand        
+-----------------------
+ 1000.0000000000000000
+(1 row)
+
+SELECT 10.00 / 0.1 AS hundred_alt;
+     hundred_alt      
+----------------------
+ 100.0000000000000000
+(1 row)
+
+-- Large number operations
+SELECT CAST(999999.99 AS DECIMAL(10, 2)) * CAST(0.01 AS DECIMAL(5, 2)) AS large_times_small;
+ large_times_small 
+-------------------
+         9999.9999
+(1 row)
+
+SELECT CAST(999999.99 AS DECIMAL(10, 2)) / CAST(1000.00 AS DECIMAL(10, 2)) AS large_div_thousand;
+  large_div_thousand  
+----------------------
+ 999.9999900000000000
+(1 row)
+
+DROP TABLE test_decimal_maths;

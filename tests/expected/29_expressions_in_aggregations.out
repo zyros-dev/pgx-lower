@@ -104,9 +104,9 @@ ORDER BY department;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  department  | total_with_double_bonus |   avg_exp_quarter    
 -------------+-------------------------+----------------------
- Engineering | 483000.0000000000079934 |               168.75
- Marketing   |  84000.0000000000014316 |                   75
- Sales       | 332000.0000000000047324 | 108.3333333333333333
+ Engineering |                  483000 |               168.75
+ Marketing   |                   84000 |                   75
+ Sales       |                  332000 | 108.3333333333333333
 (3 rows)
 
 SELECT
