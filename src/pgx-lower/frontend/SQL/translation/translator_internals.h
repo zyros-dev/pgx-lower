@@ -137,9 +137,7 @@ struct TranslationResult {
         std::string result = "TranslationResult(op=" + (op ? std::to_string(reinterpret_cast<uintptr_t>(op)) : "null")
                              + ", columns=[";
         for (size_t i = 0; i < columns.size(); ++i) {
-            if (i > 0)
-                result += ", ";
-            result += columns[i].toString();
+            result += "\n\t" + columns[i].toString();
         }
         result += "])";
         return result;
@@ -207,6 +205,9 @@ class PostgreSQLASTTranslator::Impl {
         -> TranslationResult;
     auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input, const List* target_list)
         -> TranslationResult;
+    auto apply_projection_from_translation_result(const QueryCtxT& ctx, const TranslationResult& input,
+                                                  const TranslationResult& left_child, const TranslationResult& right_child,
+                                                  const List* target_list) -> TranslationResult;
 
     auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream,
                                const TranslationResult& translation_result) const -> mlir::Value;

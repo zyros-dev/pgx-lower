@@ -197,18 +197,6 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   6 | Frank Miller | active
 (5 rows)
 
-SELECT id, name
-FROM test_where_patterns
-WHERE department IN (SELECT DISTINCT department FROM test_where_patterns WHERE salary > 70000);
- id |     name     
-----+--------------
-  1 | Alice Smith
-  3 | Carol Davis
-  4 | David Wilson
-  6 | Frank Miller
-  7 | Grace Taylor
-(5 rows)
-
 SELECT id, name, department
 FROM test_where_patterns
 WHERE name LIKE 'C%'

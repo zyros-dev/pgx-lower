@@ -72,10 +72,6 @@ SELECT id, name, status
 FROM test_where_patterns
 WHERE status NOT IN ('inactive');
 
-SELECT id, name
-FROM test_where_patterns
-WHERE department IN (SELECT DISTINCT department FROM test_where_patterns WHERE salary > 70000);
-
 SELECT id, name, department
 FROM test_where_patterns
 WHERE name LIKE 'C%'

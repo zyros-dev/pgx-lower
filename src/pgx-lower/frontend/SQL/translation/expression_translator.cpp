@@ -230,13 +230,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     }
 
     if (ctx.current_tuple) {
-        // Handle OUTER_VAR references (varno = -2)
-        // In aggregate expressions, OUTER_VAR refers to the base table (varno = 1)
         int actualVarno = var->varno;
-        if (var->varno == OUTER_VAR) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Handling OUTER_VAR reference, mapping to varno=1");
-            actualVarno = 1;
-        }
 
         std::string tableName, colName;
         auto mappingOpt = ctx.get_column_mapping(actualVarno, var->varattno);
@@ -246,8 +240,12 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
             colName = mappedColumn;
             PGX_LOG(AST_TRANSLATE, DEBUG, "Using column mapping for varno=%d, varattno=%d -> (%s, %s)",
                     actualVarno, var->varattno, tableName.c_str(), colName.c_str());
+        } else if (var->varno == OUTER_VAR) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Handling OUTER_VAR reference without mapping, using varno=1");
+            actualVarno = 1;
+            tableName = get_table_name_from_rte(&ctx.current_stmt, actualVarno);
+            colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
         } else {
-            // Fall back to RTE lookup for regular table references
             tableName = get_table_name_from_rte(&ctx.current_stmt, actualVarno);
             colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
         }
