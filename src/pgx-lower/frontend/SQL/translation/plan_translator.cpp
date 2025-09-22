@@ -83,6 +83,15 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_Sort: result = translate_sort(ctx, reinterpret_cast<Sort*>(plan)); break;
     case T_Limit: result = translate_limit(ctx, reinterpret_cast<Limit*>(plan)); break;
     case T_Gather: result = translate_gather(ctx, reinterpret_cast<Gather*>(plan)); break;
+    case T_MergeJoin: result = translate_merge_join(ctx, reinterpret_cast<MergeJoin*>(plan)); break;
+    case T_HashJoin:
+        PGX_ERROR("HashJoin not implemented yet");
+        throw std::runtime_error("HashJoin translation not implemented");
+        break;
+    case T_NestLoop:
+        PGX_ERROR("NestLoop not implemented yet");
+        throw std::runtime_error("NestLoop translation not implemented");
+        break;
     default: PGX_ERROR("Unsupported plan node type: %d", plan->type); result.op = nullptr;
     }
 
@@ -886,6 +895,86 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
             .mlir_type = expressionTypes[i],
             .nullable = true
         });
+    }
+
+    return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJoin* mergeJoin) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!mergeJoin) {
+        PGX_ERROR("Invalid MergeJoin parameters");
+        throw std::runtime_error("Invalid MergeJoin parameters");
+    }
+
+    auto* leftPlan = mergeJoin->join.plan.lefttree;
+    auto* rightPlan = mergeJoin->join.plan.righttree;
+
+    if (!leftPlan || !rightPlan) {
+        PGX_ERROR("MergeJoin missing left or right child");
+        throw std::runtime_error("MergeJoin missing children");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating MergeJoin - left child type: %d, right child type: %d",
+            leftPlan->type, rightPlan->type);
+
+    const auto [leftOp, leftColumns] = translate_plan_node(ctx, leftPlan);
+    if (!leftOp) {
+        PGX_ERROR("Failed to translate left child of MergeJoin");
+        throw std::runtime_error("Failed to translate left child of MergeJoin");
+    }
+
+    auto [rightOp, rightColumns] = translate_plan_node(ctx, rightPlan);
+    if (!rightOp) {
+        PGX_ERROR("Failed to translate right child of MergeJoin");
+        throw std::runtime_error("Failed to translate right child of MergeJoin");
+    }
+
+    auto leftValue = leftOp->getResult(0);
+    auto rightValue = rightOp->getResult(0);
+    const auto crossProductOp = ctx.builder.create<mlir::relalg::CrossProductOp>(
+        ctx.builder.getUnknownLoc(),
+        leftValue,
+        rightValue
+    );
+
+    TranslationResult result;
+    result.op = crossProductOp;
+    result.columns = leftColumns;
+    result.columns.insert(result.columns.end(), rightColumns.begin(), rightColumns.end());
+
+    // Set up column mappings for join context
+    // PostgreSQL uses negative varnos for join references:
+    // varno = -2 refers to left child, varno = -1 refers to right child
+    // Map all columns from each side
+    int colIdx = 1;
+    for (const auto& col : leftColumns) {
+        ctx.set_column_mapping(-2, colIdx, col.table_name, col.column_name);
+        colIdx++;
+    }
+
+    colIdx = 1;
+    for (const auto& col : rightColumns) {
+        ctx.set_column_mapping(-1, colIdx, col.table_name, col.column_name);
+        colIdx++;
+    }
+
+    if (mergeJoin->mergeclauses) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying merge join conditions from mergeclauses");
+        result = apply_selection_from_qual(ctx, result, mergeJoin->mergeclauses);
+    } else if (mergeJoin->join.joinqual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying merge join conditions from joinqual");
+        result = apply_selection_from_qual(ctx, result, mergeJoin->join.joinqual);
+    }
+
+    if (mergeJoin->join.plan.qual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
+        result = apply_selection_from_qual(ctx, result, mergeJoin->join.plan.qual);
+    }
+
+    if (mergeJoin->join.plan.targetlist) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list");
+        result = apply_projection_from_target_list(ctx, result, mergeJoin->join.plan.targetlist);
     }
 
     return result;

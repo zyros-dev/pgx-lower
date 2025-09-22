@@ -238,8 +238,19 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
             actualVarno = 1;
         }
 
-        const auto tableName = get_table_name_from_rte(&ctx.current_stmt, actualVarno);
-        const auto colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
+        std::string tableName, colName;
+        auto mappingOpt = ctx.get_column_mapping(actualVarno, var->varattno);
+        if (mappingOpt.has_value()) {
+            const auto& [mappedTable, mappedColumn] = mappingOpt.value();
+            tableName = mappedTable;
+            colName = mappedColumn;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using column mapping for varno=%d, varattno=%d -> (%s, %s)",
+                    actualVarno, var->varattno, tableName.c_str(), colName.c_str());
+        } else {
+            // Fall back to RTE lookup for regular table references
+            tableName = get_table_name_from_rte(&ctx.current_stmt, actualVarno);
+            colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
+        }
 
         auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
         if (!dialect) {

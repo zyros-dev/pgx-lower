@@ -16,6 +16,9 @@ struct Agg;
 struct Sort;
 struct Limit;
 struct Gather;
+struct MergeJoin;
+struct HashJoin;
+struct NestLoop;
 
 #undef gettext
 #undef dgettext
@@ -193,6 +196,7 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_sort(QueryCtxT& ctx, const Sort* sort) -> TranslationResult;
     auto translate_limit(QueryCtxT& ctx, const Limit* limit) -> TranslationResult;
     auto translate_gather(QueryCtxT& ctx, const Gather* gather) -> TranslationResult;
+    auto translate_merge_join(QueryCtxT& ctx, MergeJoin* mergeJoin) -> TranslationResult;
 
     // Query function generation
     static auto create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp;
