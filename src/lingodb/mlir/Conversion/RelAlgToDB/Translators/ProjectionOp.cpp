@@ -83,12 +83,12 @@ class DistinctProjectionTranslator : public mlir::relalg::Translator {
             ifOp.getElseRegion().emplaceBlock();
             {
                ::mlir::OpBuilder::InsertionGuard guard(rewriter);
-               rewriter.setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
+               rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
                rewriter.create<mlir::scf::YieldOp>(loc, bothNull);
             }
             {
                ::mlir::OpBuilder::InsertionGuard guard(rewriter);
-               rewriter.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
+               rewriter.setInsertionPointToStart(&ifOp.getElseRegion().front());
                ::mlir::Value left = rewriter.create<mlir::db::NullableGetVal>(loc, leftUnpacked->getResult(i));
                ::mlir::Value right = rewriter.create<mlir::db::NullableGetVal>(loc, rightUnpacked->getResult(i));
                ::mlir::Value cmpRes = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, left, right);
