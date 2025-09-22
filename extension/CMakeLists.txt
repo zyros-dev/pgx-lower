@@ -60,6 +60,7 @@ if(NOT BUILDING_UNIT_TESTS)
             29_expressions_in_aggregations
             30_test_missing_expressions
             31_distinct_statement
+            32_decimal_maths
 )
 
 # MLIR dialect libraries for TypeID resolution  

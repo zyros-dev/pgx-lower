@@ -1,0 +1,159 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS test_distinct;
+NOTICE:  table "test_distinct" does not exist, skipping
+CREATE TABLE test_distinct
+(
+    id       SERIAL PRIMARY KEY,
+    category INTEGER,
+    status   INTEGER,
+    value    INTEGER,
+    name     TEXT
+);
+INSERT INTO test_distinct(category, status, value, name)
+VALUES (1, 10, 100, 'apple'),
+       (2, 20, 200, 'banana'),
+       (1, 10, 150, 'apple'),
+       (3, 30, 300, 'cherry'),
+       (2, 20, 250, 'banana'),
+       (1, 15, 100, 'apricot'),
+       (3, 30, 300, 'cherry'),
+       (4, 40, 400, 'date'),
+       (2, 25, 200, 'blueberry'),
+       (1, 10, 100, 'apple');
+SELECT DISTINCT category
+FROM test_distinct;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ category 
+----------
+        1
+        2
+        3
+        4
+(4 rows)
+
+SELECT DISTINCT category
+FROM test_distinct
+ORDER BY category;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ category 
+----------
+        1
+        2
+        3
+        4
+(4 rows)
+
+SELECT DISTINCT category, status
+FROM test_distinct
+ORDER BY category, status;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ category | status 
+----------+--------
+        1 |     10
+        1 |     15
+        2 |     20
+        2 |     25
+        3 |     30
+        4 |     40
+(6 rows)
+
+SELECT DISTINCT category + status AS combined
+FROM test_distinct
+ORDER BY combined;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ combined 
+----------
+       11
+       16
+       22
+       27
+       33
+       44
+(6 rows)
+
+SELECT DISTINCT name
+FROM test_distinct
+ORDER BY name;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+   name    
+-----------
+ apple
+ apricot
+ banana
+ blueberry
+ cherry
+ date
+(6 rows)
+
+SELECT DISTINCT category
+FROM test_distinct
+WHERE value >= 200
+ORDER BY category;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ category 
+----------
+        2
+        3
+        4
+(3 rows)
+
+SELECT DISTINCT category, value
+FROM test_distinct
+WHERE status <= 20
+ORDER BY category, value;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ category | value 
+----------+-------
+        1 |   100
+        1 |   150
+        2 |   200
+        2 |   250
+(4 rows)
+
+SELECT DISTINCT value / 100 AS hundreds
+FROM test_distinct
+ORDER BY hundreds;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ hundreds 
+----------
+        1
+        2
+        3
+        4
+(4 rows)
+
+SELECT ALL category
+FROM test_distinct
+ORDER BY category;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ category 
+----------
+        1
+        1
+        1
+        1
+        2
+        2
+        2
+        3
+        3
+        4
+(10 rows)
+
+SELECT SUM(category)
+FROM test_distinct;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ sum 
+-----
+  20
+(1 row)
+
+SELECT SUM(DISTINCT category)
+FROM test_distinct;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ sum 
+-----
+  10
+(1 row)
+
+DROP TABLE test_distinct;
