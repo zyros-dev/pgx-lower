@@ -38,6 +38,42 @@ namespace postgresql_ast {
 
 using namespace pgx_lower::frontend::sql::constants;
 
+auto get_table_alias_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string {
+    PGX_IO(AST_TRANSLATE);
+    if (!current_planned_stmt || !current_planned_stmt->rtable || varno <= INVALID_VARNO) {
+        PGX_ERROR("Cannot access rtable: currentPlannedStmt=%p varno=%d", current_planned_stmt, varno);
+        throw std::runtime_error("Invalid RTE");
+    }
+
+    if (varno > list_length(current_planned_stmt->rtable)) {
+        PGX_ERROR("varno %d exceeds rtable length %d", varno, list_length(current_planned_stmt->rtable));
+        throw std::runtime_error("Invalid RTE");
+    }
+
+    const auto rte = static_cast<RangeTblEntry*>(list_nth(current_planned_stmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
+
+    if (!rte) {
+        PGX_ERROR("Invalid RTE for varno %d", varno);
+        throw std::runtime_error("Invalid RTE");
+    }
+
+#ifdef BUILDING_UNIT_TESTS
+    return std::string(UNIT_TEST_TABLE_PREFIX) + std::to_string(varno);
+#else
+    if (rte->eref && rte->eref->aliasname) {
+        return std::string(rte->eref->aliasname);
+    }
+
+    if (rte->relid == InvalidOid) {
+        PGX_ERROR("Invalid RTE for varno %d", varno);
+        throw std::runtime_error("Invalid RTE");
+    }
+
+    char* relname = get_rel_name(rte->relid);
+    return relname ? relname : ("unknown_table_" + std::to_string(varno));
+#endif
+}
+
 auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string {
     PGX_IO(AST_TRANSLATE);
     if (!current_planned_stmt || !current_planned_stmt->rtable || varno <= INVALID_VARNO) {

@@ -281,6 +281,7 @@ class PostgreSQLTypeMapper {
 
 // Schema access helpers (standalone functions for backwards compatibility)
 auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string;
+auto get_table_alias_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string;
 auto get_column_name_from_schema(const PlannedStmt* planned_stmt, const int rt_index, AttrNumber attnum) -> std::string;
 auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> Oid;
 auto is_column_nullable(const PlannedStmt* planned_stmt, const int rt_index, const AttrNumber attnum) -> bool;

@@ -102,14 +102,16 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
         throw std::runtime_error("Invalid SeqScan parameters");
     }
 
-    std::string tableName;
+    auto physicalTableName = std::string();
+    auto aliasName = std::string();
     auto tableOid = InvalidOid;
 
     if (seqScan->scan.scanrelid > 0) {
-        tableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
+        physicalTableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
+        aliasName = get_table_alias_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
         tableOid = get_table_oid_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
 
-        if (tableName.empty()) {
+        if (physicalTableName.empty()) {
             PGX_ERROR("Could not resolve table name for scanrelid: %d", seqScan->scan.scanrelid);
             throw std::runtime_error("Could not resolve table name for scanrelid");
         }
@@ -118,7 +120,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
         throw std::runtime_error("Could not resolve table name for scanrelid");
     }
 
-    std::string tableIdentifier = tableName + TABLE_OID_SEPARATOR + std::to_string(tableOid);
+    auto tableIdentifier = physicalTableName + TABLE_OID_SEPARATOR + std::to_string(tableOid);
 
     const auto tableMetaData = std::make_shared<runtime::TableMetaData>();
     tableMetaData->setNumRows(0); // Will be updated from PostgreSQL catalog
@@ -132,14 +134,9 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     const auto allColumns = get_all_table_columns_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid);
 
     if (!allColumns.empty()) {
-        std::string realTableName = get_table_name_from_rte(&ctx.current_stmt, seqScan->scan.scanrelid);
-
-        // Populate column mappings for this table
-        int varattno = 1; // column numbering starts at 1
+        int varattno = 1;
         for (const auto& colInfo : allColumns) {
-            // Column mappings removed - schema flows through TranslationResult
-
-            auto colDef = columnManager.createDef(realTableName, colInfo.name);
+            auto colDef = columnManager.createDef(aliasName, colInfo.name);
 
             PostgreSQLTypeMapper type_mapper(context_);
             const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
@@ -151,14 +148,6 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 
             varattno++;
         }
-
-        tableIdentifier = realTableName + TABLE_OID_SEPARATOR
-                          + std::to_string(
-                              get_all_table_columns_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid).empty()
-                                  ? 0
-                                  : static_cast<RangeTblEntry*>(
-                                        list_nth(ctx.current_stmt.rtable, seqScan->scan.scanrelid - 1))
-                                        ->relid);
     } else {
         PGX_ERROR("Could not discover table schema");
         throw std::runtime_error("Could not discover table schema");
@@ -194,7 +183,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
                                                                                 colInfo.nullable);
 
                     result.columns.push_back({
-                        .table_name = tableName,
+                        .table_name = aliasName,
                         .column_name = colInfo.name,
                         .type_oid = colInfo.type_oid,
                         .typmod = colInfo.typmod,
@@ -212,7 +201,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
                                                                         colInfo.nullable);
 
             result.columns.push_back({
-                .table_name = tableName,
+                .table_name = aliasName,
                 .column_name = colInfo.name,
                 .type_oid = colInfo.type_oid,
                 .typmod = colInfo.typmod,
@@ -1441,15 +1430,30 @@ auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& conte
         std::vector<mlir::Attribute> columnRefAttrs;
         std::vector<mlir::Attribute> columnNameAttrs;
 
+        const auto* topPlan = context.current_stmt.planTree;
+        const auto* targetList = topPlan ? topPlan->targetlist : nullptr;
+
+        size_t colIndex = 0;
         for (const auto& column : translation_result.columns) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "MaterializeOp using result column: table=%s, name=%s, oid=%d",
-                    column.table_name.c_str(), column.column_name.c_str(), column.type_oid);
+            auto outputName = column.column_name;
+
+            if (targetList && colIndex < (size_t)list_length(targetList)) {
+                const auto* tle = static_cast<TargetEntry*>(list_nth(targetList, colIndex));
+                if (tle && tle->resname && !tle->resjunk) {
+                    outputName = tle->resname;
+                }
+            }
+
+            PGX_LOG(AST_TRANSLATE, DEBUG, "MaterializeOp column %zu: %s.%s -> output name '%s'",
+                    colIndex, column.table_name.c_str(), column.column_name.c_str(), outputName.c_str());
 
             auto colRef = columnManager.createRef(column.table_name, column.column_name);
             columnRefAttrs.push_back(colRef);
 
-            auto nameAttr = context.builder.getStringAttr(column.column_name);
+            auto nameAttr = context.builder.getStringAttr(outputName);
             columnNameAttrs.push_back(nameAttr);
+
+            colIndex++;
         }
 
         auto columnRefs = context.builder.getArrayAttr(columnRefAttrs);
