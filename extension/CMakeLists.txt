@@ -62,6 +62,7 @@ if(NOT BUILDING_UNIT_TESTS)
             31_distinct_statement
             32_decimal_maths
             33_basic_joins
+            34_advanced_joins
 )
 
 # MLIR dialect libraries for TypeID resolution  
