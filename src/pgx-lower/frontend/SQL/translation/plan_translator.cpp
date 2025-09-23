@@ -82,6 +82,10 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
         break;
     case T_Agg: result = translate_agg(ctx, reinterpret_cast<Agg*>(plan)); break;
     case T_Sort: result = translate_sort(ctx, reinterpret_cast<Sort*>(plan)); break;
+    case T_IncrementalSort:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Treating IncrementalSort as regular Sort"); // TODO: NV: Do I need to deal with this?
+        result = translate_sort(ctx, reinterpret_cast<Sort*>(plan));
+        break;
     case T_Limit: result = translate_limit(ctx, reinterpret_cast<Limit*>(plan)); break;
     case T_Gather: result = translate_gather(ctx, reinterpret_cast<Gather*>(plan)); break;
     case T_MergeJoin: result = translate_merge_join(ctx, reinterpret_cast<MergeJoin*>(plan)); break;
@@ -1090,6 +1094,228 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
     }
 }
 
+static auto create_outer_join_with_nullable_mapping(
+    QueryCtxT& ctx,
+    mlir::Value primaryValue,
+    mlir::Value outerValue,
+    const TranslationResult& outerTranslation,
+    bool isRightJoin = false
+) -> mlir::Operation* {
+    PGX_IO(AST_TRANSLATE);
+
+    auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+    std::vector<mlir::Attribute> mappingAttrs;
+
+    for (const auto& col : outerTranslation.columns) {
+        mlir::Type nullableType;
+        if (col.mlir_type.isa<mlir::db::NullableType>()) {
+            nullableType = col.mlir_type;
+        } else {
+            nullableType = mlir::db::NullableType::get(col.mlir_type);
+        }
+
+        auto nullableColName = col.column_name + "_nullable";
+        auto originalColRef = columnManager.createRef(col.table_name, col.column_name);
+
+        auto fromExistingAttr = ctx.builder.getArrayAttr({originalColRef});
+        auto nullableColDef = columnManager.createDef(col.table_name, nullableColName, fromExistingAttr);
+
+        auto nullableColPtr = columnManager.get(col.table_name, nullableColName);
+        nullableColPtr->type = nullableType;
+
+        mappingAttrs.push_back(nullableColDef);
+    }
+
+    auto mappingAttr = ctx.builder.getArrayAttr(mappingAttrs);
+
+    auto outerJoinOp = ctx.builder.create<mlir::relalg::OuterJoinOp>(
+        ctx.builder.getUnknownLoc(),
+        primaryValue,
+        outerValue,
+        mappingAttr
+    );
+
+    // TODO: I dislike this in terms of correctness
+    // OuterJoinOp needs a predicate region (empty for now - conditions applied separately)
+    auto& predicateRegion = outerJoinOp.getPredicate();
+    auto* predicateBlock = new mlir::Block;
+    predicateRegion.push_back(predicateBlock);
+
+    auto tupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
+    predicateBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
+
+    mlir::OpBuilder predicateBuilder(ctx.builder.getContext());
+    predicateBuilder.setInsertionPointToStart(predicateBlock);
+    auto trueVal = predicateBuilder.create<mlir::arith::ConstantOp>(
+        predicateBuilder.getUnknownLoc(),
+        predicateBuilder.getI1Type(),
+        predicateBuilder.getIntegerAttr(predicateBuilder.getI1Type(), 1)
+    );
+    predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), mlir::ValueRange{trueVal});
+
+    return outerJoinOp;
+}
+
+static auto create_join_operation(
+    QueryCtxT& ctx,
+    JoinType jointype,
+    mlir::Value leftValue,
+    mlir::Value rightValue,
+    const TranslationResult& leftTranslation,
+    const TranslationResult& rightTranslation
+) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+
+    TranslationResult result;
+
+    const char* joinTypeName = nullptr;
+    switch (jointype) {
+        case JOIN_INNER: joinTypeName = "INNER"; break;
+        case JOIN_LEFT: joinTypeName = "LEFT"; break;
+        case JOIN_RIGHT: joinTypeName = "RIGHT"; break;
+        case JOIN_FULL: joinTypeName = "FULL"; break;
+        case JOIN_SEMI: joinTypeName = "SEMI"; break;
+        case JOIN_ANTI: joinTypeName = "ANTI"; break;
+        default: joinTypeName = "UNKNOWN"; break;
+    }
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Creating join operation of type: %s", joinTypeName);
+
+    switch (jointype) {
+        case JOIN_INNER: {
+            const auto crossProductOp = ctx.builder.create<mlir::relalg::CrossProductOp>(
+                ctx.builder.getUnknownLoc(),
+                leftValue,
+                rightValue
+            );
+            result.op = crossProductOp;
+            result.columns = leftTranslation.columns;
+            result.columns.insert(result.columns.end(), rightTranslation.columns.begin(), rightTranslation.columns.end());
+            break;
+        }
+
+        case JOIN_LEFT: {
+            // LEFT OUTER JOIN - right side becomes nullable
+            auto outerJoinOp = create_outer_join_with_nullable_mapping(ctx, leftValue, rightValue, rightTranslation, false);
+            result.op = outerJoinOp;
+            result.columns = leftTranslation.columns;
+
+            for (auto col : rightTranslation.columns) {
+                col.column_name = col.column_name + "_nullable";
+                col.nullable = true;
+                if (!col.mlir_type.isa<mlir::db::NullableType>()) {
+                    col.mlir_type = mlir::db::NullableType::get(col.mlir_type);
+                }
+                result.columns.push_back(col);
+            }
+            break;
+        }
+
+        case JOIN_RIGHT: {
+            // RIGHT OUTER JOIN - swap inputs and make left side nullable
+            auto outerJoinOp = create_outer_join_with_nullable_mapping(ctx, rightValue, leftValue, leftTranslation, true);
+            result.op = outerJoinOp;
+
+            for (auto col : leftTranslation.columns) {
+                col.column_name = col.column_name + "_nullable";
+                col.nullable = true;
+                if (!col.mlir_type.isa<mlir::db::NullableType>()) {
+                    col.mlir_type = mlir::db::NullableType::get(col.mlir_type);
+                }
+                result.columns.push_back(col);
+            }
+            result.columns.insert(result.columns.end(), rightTranslation.columns.begin(), rightTranslation.columns.end());
+            break;
+        }
+
+        case JOIN_FULL: {
+            // FULL OUTER JOIN - both sides become nullable
+            PGX_WARNING("FULL OUTER JOIN not yet fully implemented - using CrossProductOp as placeholder");
+            // TODO: Implement FullOuterJoinOp with proper nullable mapping for both sides
+            const auto crossProductOp = ctx.builder.create<mlir::relalg::CrossProductOp>(
+                ctx.builder.getUnknownLoc(),
+                leftValue,
+                rightValue
+            );
+            result.op = crossProductOp;
+
+            for (auto col : leftTranslation.columns) {
+                col.nullable = true;
+                col.mlir_type = mlir::db::NullableType::get(col.mlir_type);
+                result.columns.push_back(col);
+            }
+            for (auto col : rightTranslation.columns) {
+                col.nullable = true;
+                col.mlir_type = mlir::db::NullableType::get(col.mlir_type);
+                result.columns.push_back(col);
+            }
+            break;
+        }
+
+        case JOIN_SEMI: {
+            // SEMI JOIN - only return left columns
+            auto semiJoinOp = ctx.builder.create<mlir::relalg::SemiJoinOp>(
+                ctx.builder.getUnknownLoc(),
+                leftValue,
+                rightValue
+            );
+
+            auto& semiPredicateRegion = semiJoinOp.getPredicate();
+            auto* semiPredicateBlock = new mlir::Block;
+            semiPredicateRegion.push_back(semiPredicateBlock);
+            auto semiTupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
+            semiPredicateBlock->addArgument(semiTupleType, ctx.builder.getUnknownLoc());
+
+            mlir::OpBuilder semiPredicateBuilder(ctx.builder.getContext());
+            semiPredicateBuilder.setInsertionPointToStart(semiPredicateBlock);
+            auto semiTrueVal = semiPredicateBuilder.create<mlir::arith::ConstantOp>(
+                semiPredicateBuilder.getUnknownLoc(),
+                semiPredicateBuilder.getI1Type(),
+                semiPredicateBuilder.getIntegerAttr(semiPredicateBuilder.getI1Type(), 1)
+            );
+            semiPredicateBuilder.create<mlir::relalg::ReturnOp>(semiPredicateBuilder.getUnknownLoc(), mlir::ValueRange{semiTrueVal});
+
+            result.op = semiJoinOp;
+            result.columns = leftTranslation.columns; // Only left columns
+            break;
+        }
+
+        case JOIN_ANTI: {
+            // ANTI SEMI JOIN - only return left columns
+            auto antiSemiJoinOp = ctx.builder.create<mlir::relalg::AntiSemiJoinOp>(
+                ctx.builder.getUnknownLoc(),
+                leftValue,
+                rightValue
+            );
+
+            // Add predicate region
+            auto& antiPredicateRegion = antiSemiJoinOp.getPredicate();
+            auto* antiPredicateBlock = new mlir::Block;
+            antiPredicateRegion.push_back(antiPredicateBlock);
+            auto antiTupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
+            antiPredicateBlock->addArgument(antiTupleType, ctx.builder.getUnknownLoc());
+
+            mlir::OpBuilder antiPredicateBuilder(ctx.builder.getContext());
+            antiPredicateBuilder.setInsertionPointToStart(antiPredicateBlock);
+            auto antiTrueVal = antiPredicateBuilder.create<mlir::arith::ConstantOp>(
+                antiPredicateBuilder.getUnknownLoc(),
+                antiPredicateBuilder.getI1Type(),
+                antiPredicateBuilder.getIntegerAttr(antiPredicateBuilder.getI1Type(), 1)
+            );
+            antiPredicateBuilder.create<mlir::relalg::ReturnOp>(antiPredicateBuilder.getUnknownLoc(), mlir::ValueRange{antiTrueVal});
+
+            result.op = antiSemiJoinOp;
+            result.columns = leftTranslation.columns;
+            break;
+        }
+
+        default:
+            PGX_ERROR("Unsupported join type: %d", jointype);
+            throw std::runtime_error("Unsupported join type");
+    }
+
+    return result;
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJoin* mergeJoin) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!mergeJoin) {
@@ -1127,16 +1353,15 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
 
     auto leftValue = leftOp->getResult(0);
     auto rightValue = rightOp->getResult(0);
-    const auto crossProductOp = ctx.builder.create<mlir::relalg::CrossProductOp>(
-        ctx.builder.getUnknownLoc(),
-        leftValue,
-        rightValue
-    );
 
-    TranslationResult result;
-    result.op = crossProductOp;
-    result.columns = leftColumns;
-    result.columns.insert(result.columns.end(), rightColumns.begin(), rightColumns.end());
+    TranslationResult result = create_join_operation(
+        ctx,
+        mergeJoin->join.jointype,
+        leftValue,
+        rightValue,
+        leftTranslation,
+        rightTranslation
+    );
 
     if (mergeJoin->mergeclauses) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying merge join conditions from mergeclauses");
@@ -1200,16 +1425,15 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
 
     auto leftValue = leftOp->getResult(0);
     auto rightValue = rightOp->getResult(0);
-    const auto crossProductOp = ctx.builder.create<mlir::relalg::CrossProductOp>(
-        ctx.builder.getUnknownLoc(),
-        leftValue,
-        rightValue
-    );
 
-    TranslationResult result;
-    result.op = crossProductOp;
-    result.columns = leftColumns;
-    result.columns.insert(result.columns.end(), rightColumns.begin(), rightColumns.end());
+    TranslationResult result = create_join_operation(
+        ctx,
+        hashJoin->join.jointype,
+        leftValue,
+        rightValue,
+        leftTranslation,
+        rightTranslation
+    );
 
     if (hashJoin->hashclauses) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying hash join conditions from hashclauses");
@@ -1290,16 +1514,15 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
 
     auto leftValue = leftOp->getResult(0);
     auto rightValue = rightOp->getResult(0);
-    const auto crossProductOp = ctx.builder.create<mlir::relalg::CrossProductOp>(
-        ctx.builder.getUnknownLoc(),
-        leftValue,
-        rightValue
-    );
 
-    TranslationResult result;
-    result.op = crossProductOp;
-    result.columns = leftColumns;
-    result.columns.insert(result.columns.end(), rightColumns.begin(), rightColumns.end());
+    TranslationResult result = create_join_operation(
+        ctx,
+        nestLoop->join.jointype,
+        leftValue,
+        rightValue,
+        leftTranslation,
+        rightTranslation
+    );
 
     if (nestLoop->join.joinqual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying nested loop join conditions from joinqual");
