@@ -156,6 +156,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(
                          var->varattno, right_child->columns.size());
                 return nullptr;
             }
+        } else {
+            return translate_var(ctx, var);
         }
     }
 
@@ -197,13 +199,91 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(
 
     const auto op_oid = op_expr->opno;
 
-    // TODO: NV I dislike this. It should contain ALL the operators, or route directly through the translate
-    //       expressions function
-    if (op_oid >= 91 && op_oid <= 99) { // Comparison operators
-        return translate_comparison_op(ctx, op_oid, lhs, rhs);
-    } else {
-        return translate_arithmetic_op(ctx, op_oid, lhs, rhs);
+    if (const auto result = translate_arithmetic_op(ctx, op_oid, lhs, rhs)) {
+        return result;
     }
+
+    if (const auto result = translate_comparison_op(ctx, op_oid, lhs, rhs)) {
+        return result;
+    }
+
+    if (auto* oprname = get_opname(op_oid)) {
+        std::string op(oprname);
+        pfree(oprname);
+
+        if (op == "~~") {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LIKE operator to db.runtime_call");
+
+            auto convertedLhs = lhs;
+            auto convertedRhs = rhs;
+
+            const auto lhsNullable = isa<mlir::db::NullableType>(lhs.getType());
+            const auto rhsNullable = isa<mlir::db::NullableType>(rhs.getType());
+
+            if (lhsNullable && !rhsNullable) {
+                auto nullableRhsType = mlir::db::NullableType::get(ctx.builder.getContext(), rhs.getType());
+                convertedRhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableRhsType, rhs);
+            } else if (!lhsNullable && rhsNullable) {
+                auto nullableLhsType = mlir::db::NullableType::get(ctx.builder.getContext(), lhs.getType());
+                convertedLhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableLhsType, lhs);
+            }
+
+            const bool hasNullableOperand = lhsNullable || rhsNullable;
+            auto resultType = hasNullableOperand
+                ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), ctx.builder.getI1Type()))
+                : mlir::Type(ctx.builder.getI1Type());
+
+            auto op2 = ctx.builder.create<mlir::db::RuntimeCall>(ctx.builder.getUnknownLoc(), resultType,
+                                                                 ctx.builder.getStringAttr("Like"),
+                                                                 mlir::ValueRange{convertedLhs, convertedRhs});
+            return op2.getRes();
+        } else if (op == "!~~") {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NOT LIKE operator to negated db.runtime_call");
+
+            auto convertedLhs = lhs;
+            auto convertedRhs = rhs;
+
+            const auto lhsNullable = isa<mlir::db::NullableType>(lhs.getType());
+            const auto rhsNullable = isa<mlir::db::NullableType>(rhs.getType());
+
+            if (lhsNullable && !rhsNullable) {
+                auto nullableRhsType = mlir::db::NullableType::get(ctx.builder.getContext(), rhs.getType());
+                convertedRhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableRhsType, rhs);
+            } else if (!lhsNullable && rhsNullable) {
+                auto nullableLhsType = mlir::db::NullableType::get(ctx.builder.getContext(), lhs.getType());
+                convertedLhs = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableLhsType, lhs);
+            }
+
+            const bool hasNullableOperand = lhsNullable || rhsNullable;
+            auto resultType = hasNullableOperand
+                ? mlir::Type(mlir::db::NullableType::get(ctx.builder.getContext(), ctx.builder.getI1Type()))
+                : mlir::Type(ctx.builder.getI1Type());
+
+            auto likeOp = ctx.builder.create<mlir::db::RuntimeCall>(ctx.builder.getUnknownLoc(), resultType,
+                                                                    ctx.builder.getStringAttr("Like"),
+                                                                    mlir::ValueRange{convertedLhs, convertedRhs});
+            auto notOp = ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), resultType, likeOp.getRes());
+            return notOp.getRes();
+        } else if (op == "||") {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Translating || operator to StringRuntime::concat");
+
+            const bool hasNullableOperand = isa<mlir::db::NullableType>(lhs.getType())
+                                            || isa<mlir::db::NullableType>(rhs.getType());
+
+            auto resultType = hasNullableOperand
+                                  ? mlir::Type(mlir::db::NullableType::get(
+                                        ctx.builder.getContext(), mlir::db::StringType::get(ctx.builder.getContext())))
+                                  : mlir::Type(mlir::db::StringType::get(ctx.builder.getContext()));
+
+            auto op2 = ctx.builder.create<mlir::db::RuntimeCall>(
+                ctx.builder.getUnknownLoc(), resultType, ctx.builder.getStringAttr("Concat"), mlir::ValueRange{lhs, rhs});
+
+            return op2.getRes();
+        }
+    }
+
+    PGX_ERROR("Unsupported operator OID: %u", op_oid);
+    return nullptr;
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(

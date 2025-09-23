@@ -70,7 +70,7 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
             result = translate_seq_scan(ctx, seqScan);
 
             if (result.op && plan->qual) {
-                result = apply_selection_from_qual(ctx, result, plan->qual);
+                result = apply_selection_from_qual_with_columns(ctx, result, plan->qual, nullptr, nullptr);
             }
 
             if (result.op && plan->targetlist) {
@@ -812,7 +812,8 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
 
                     if (mlir::Value condValue = translate_expression_with_join_context(
                             tmp_ctx, reinterpret_cast<Expr*>(qualNode), left_child, right_child)) {
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully translated join condition %d", i);
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully translated condition %d (join context: %s)",
+                                i, (left_child || right_child) ? "yes" : "no");
                         if (!condValue.getType().isInteger(1)) {
                             condValue = predicate_builder.create<mlir::db::DeriveTruth>(
                                 predicate_builder.getUnknownLoc(), condValue);
