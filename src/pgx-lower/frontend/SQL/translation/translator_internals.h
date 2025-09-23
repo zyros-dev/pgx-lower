@@ -189,10 +189,15 @@ class PostgreSQLASTTranslator::Impl {
                                          const std::string& suggested_name,
                                          const std::vector<TranslationResult::ColumnSchema>& child_columns)
         -> pgx_lower::frontend::sql::StreamExpressionResult;
+
+    [[deprecated("Use translate_op_expr_with_join_context() for join contexts")]]
     auto translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value;
+
     auto translate_var(const QueryCtxT& ctx, const Var* var) const -> mlir::Value;
     auto translate_const(const QueryCtxT& ctx, Const* const_node) const -> mlir::Value;
     auto translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr) -> mlir::Value;
+
+    [[deprecated("Use translate_bool_expr_with_join_context() for join contexts")]]
     auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value;
     auto translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value;
     auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) const -> mlir::Value;
@@ -220,8 +225,11 @@ class PostgreSQLASTTranslator::Impl {
     auto generate_rel_alg_operations(const PlannedStmt* planned_stmt, QueryCtxT& context) -> bool;
 
     // Relational operation helpers
+
+    [[deprecated("Use apply_selection_from_qual_with_columns() for better join support")]]
     auto apply_selection_from_qual(const QueryCtxT& ctx, const TranslationResult& input, const List* qual)
         -> TranslationResult;
+
     auto apply_selection_from_qual_with_columns(const QueryCtxT& ctx, const TranslationResult& input, const List* qual,
                                                  const TranslationResult* left_child, const TranslationResult* right_child)
         -> TranslationResult;
