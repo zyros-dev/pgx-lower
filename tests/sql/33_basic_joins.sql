@@ -43,15 +43,50 @@ VALUES (1, 1, 1),
        (3, 2, 1),
        (4, 2, 0);
 
-SET client_min_messages TO DEBUG1;
-SET pgx_lower.log_enable = true;
-SET pgx_lower.log_debug = true;
-SET pgx_lower.log_io = true;
-SET pgx_lower.log_ir = true;
-SET pgx_lower.log_trace = true;
-SET pgx_lower.log_verbose = true;
-SET pgx_lower.enabled_categories = 'AST_TRANSLATE,RELALG_LOWER,DB_LOWER,DSA_LOWER,UTIL_LOWER,RUNTIME,JIT,GENERAL';
+SELECT *
+FROM table_a, table_b
+WHERE table_a.id = table_b.id;
+
+SELECT table_a.name, table_b.amount
+FROM table_a, table_b
+WHERE table_a.id = table_b.id;
+
+SELECT table_a.name, table_b.amount, table_b.status
+FROM table_a, table_b
+WHERE table_a.id = table_b.id AND table_b.status = 'active';
+
+SELECT table_a.name, table_b.amount, table_c.category
+FROM table_a, table_b, table_c
+WHERE table_a.id = table_b.id AND table_a.id = table_c.id;
+
+SELECT table_a.name, table_a.value, table_b.amount
+FROM table_a, table_b
+WHERE table_a.id = table_b.id AND table_a.value > table_b.amount * 5;
+
+SELECT table_a.name, table_b.amount
+FROM table_a, table_b
+WHERE table_a.id = table_b.id
+ORDER BY table_b.amount DESC;
+
+SELECT table_a.id AS a_id, table_b.id AS b_id
+FROM table_a, table_b
+ORDER BY a_id, b_id;
 
 SELECT table_a.name, table_a.value + table_b.amount AS total
 FROM table_a, table_b
 WHERE table_a.id = table_b.id;
+
+SELECT table_c.category, SUM(table_a.value) AS total_value
+FROM table_a, table_c
+WHERE table_a.id = table_c.id
+GROUP BY table_c.category
+ORDER BY table_c.category;
+
+SELECT a1.name AS name1, a2.name AS name2
+FROM table_a a1, table_a a2
+WHERE a1.value < a2.value AND a1.id < a2.id
+ORDER BY a1.name, a2.name;
+
+DROP TABLE table_c;
+DROP TABLE table_b;
+DROP TABLE table_a;

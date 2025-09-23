@@ -867,15 +867,28 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
         return input;
     }
 
+    // When we have join context, we need to handle ALL target entries, not just computed ones
+    // This ensures we project only the requested columns, not all input columns
+    bool handleAllEntries = (left_child != nullptr || right_child != nullptr);
+
+    auto targetEntries = std::vector<TargetEntry*>();
     auto computedEntries = std::vector<TargetEntry*>();
+
     for (int i = 0; i < target_list->length; i++) {
         auto* tle = static_cast<TargetEntry*>(lfirst(&target_list->elements[i]));
-        if (tle && tle->expr && tle->expr->type != T_Var) {
-            computedEntries.push_back(tle);
+        if (tle && !tle->resjunk) {
+            if (handleAllEntries) {
+                targetEntries.push_back(tle);
+                if (tle->expr && tle->expr->type != T_Var) {
+                    computedEntries.push_back(tle);
+                }
+            } else if (tle->expr && tle->expr->type != T_Var) {
+                computedEntries.push_back(tle);
+            }
         }
     }
 
-    if (computedEntries.empty()) {
+    if (!handleAllEntries && computedEntries.empty()) {
         return input;
     }
 
@@ -1009,12 +1022,12 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
         predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(), computedValues);
     }
 
-    // Build result with updated schema
-    TranslationResult result;
-    result.op = mapOp;
-    result.columns = input.columns;
+    // Build intermediate result with MapOp
+    TranslationResult intermediateResult;
+    intermediateResult.op = mapOp;
+    intermediateResult.columns = input.columns;
     for (size_t i = 0; i < expressionTypes.size(); i++) {
-        result.columns.push_back({
+        intermediateResult.columns.push_back({
             .table_name = COMPUTED_EXPRESSION_SCOPE,
             .column_name = columnNames[i],
             .type_oid = expressionOids[i],
@@ -1024,7 +1037,68 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
         });
     }
 
-    return result;
+    if (handleAllEntries) {
+        // When handling all entries (join context), we need to add a ProjectionOp
+        // to select only the columns from the target list
+        std::vector<mlir::Attribute> projectedColumnRefs;
+        std::vector<TranslationResult::ColumnSchema> projectedColumns;
+
+        // Build the projection based on target list
+        size_t computedIdx = 0;
+        for (auto* tle : targetEntries) {
+            if (tle->expr && tle->expr->type == T_Var) {
+                // This is a simple column reference
+                const auto* var = reinterpret_cast<const Var*>(tle->expr);
+
+                // Find the column in intermediateResult
+                size_t columnIndex = SIZE_MAX;
+                if (var->varno == OUTER_VAR && left_child) {
+                    if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child->columns.size())) {
+                        columnIndex = var->varattno - 1;
+                    }
+                } else if (var->varno == INNER_VAR && right_child) {
+                    if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size())) {
+                        columnIndex = left_child->columns.size() + (var->varattno - 1);
+                    }
+                }
+
+                if (columnIndex < intermediateResult.columns.size()) {
+                    const auto& col = intermediateResult.columns[columnIndex];
+                    auto colRef = columnManager.createRef(col.table_name, col.column_name);
+                    projectedColumnRefs.push_back(colRef);
+                    projectedColumns.push_back(col);
+                }
+            } else {
+                // This is a computed expression - it's at the end of intermediateResult.columns
+                size_t columnIndex = input.columns.size() + computedIdx;
+                if (columnIndex < intermediateResult.columns.size()) {
+                    const auto& col = intermediateResult.columns[columnIndex];
+                    auto colRef = columnManager.createRef(col.table_name, col.column_name);
+                    projectedColumnRefs.push_back(colRef);
+                    projectedColumns.push_back(col);
+                    computedIdx++;
+                }
+            }
+        }
+
+        // Create ProjectionOp
+        auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
+        const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
+            ctx.builder.getUnknownLoc(),
+            tupleStreamType,
+            mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all),
+            mapOp.getResult(),
+            ctx.builder.getArrayAttr(projectedColumnRefs)
+        );
+
+        TranslationResult result;
+        result.op = projectionOp;
+        result.columns = projectedColumns;
+        return result;
+    } else {
+        // Original behavior: return the intermediate result
+        return intermediateResult;
+    }
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJoin* mergeJoin) -> TranslationResult {
