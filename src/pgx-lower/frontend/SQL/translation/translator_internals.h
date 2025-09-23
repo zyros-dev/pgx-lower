@@ -276,24 +276,6 @@ class PostgreSQLTypeMapper {
 };
 
 // ===========================================================================
-// SchemaManager
-// ===========================================================================
-class SchemaManager {
-   public:
-    explicit SchemaManager(PlannedStmt* planned_stmt)
-    : planned_stmt_(planned_stmt) {}
-
-    // Table and column metadata access
-    auto get_table_name_from_rte(const int varno) -> std::string;
-    auto get_column_name_from_schema(const int rt_index, AttrNumber attnum) -> std::string;
-    auto get_table_oid_from_rte(const int varno) -> Oid;
-    auto is_column_nullable(const int rtindex, const AttrNumber attnum) -> bool;
-
-   private:
-    PlannedStmt* planned_stmt_;
-};
-
-// ===========================================================================
 // Helper Functions
 // ===========================================================================
 
