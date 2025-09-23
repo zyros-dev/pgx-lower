@@ -85,10 +85,8 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_Limit: result = translate_limit(ctx, reinterpret_cast<Limit*>(plan)); break;
     case T_Gather: result = translate_gather(ctx, reinterpret_cast<Gather*>(plan)); break;
     case T_MergeJoin: result = translate_merge_join(ctx, reinterpret_cast<MergeJoin*>(plan)); break;
-    case T_HashJoin:
-        PGX_ERROR("HashJoin not implemented yet");
-        throw std::runtime_error("HashJoin translation not implemented");
-        break;
+    case T_HashJoin: result = translate_hash_join(ctx, reinterpret_cast<HashJoin*>(plan)); break;
+    case T_Hash: result = translate_hash(ctx, reinterpret_cast<Hash*>(plan)); break;
     case T_NestLoop:
         PGX_ERROR("NestLoop not implemented yet");
         throw std::runtime_error("NestLoop translation not implemented");
@@ -868,7 +866,6 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
         }
     }
 
-    // Second pass: Create real MapOp with correct types
     mlir::relalg::MapOp mapOp;
     {
         std::vector<mlir::Attribute> computedColAttrs;
@@ -1004,6 +1001,102 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
     return result;
 }
 
+auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin* hashJoin) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!hashJoin) {
+        PGX_ERROR("Invalid HashJoin parameters");
+        throw std::runtime_error("Invalid HashJoin parameters");
+    }
+
+    auto* leftPlan = hashJoin->join.plan.lefttree;
+    auto* rightPlan = hashJoin->join.plan.righttree;
+
+    if (!leftPlan || !rightPlan) {
+        PGX_ERROR("HashJoin missing left or right child");
+        throw std::runtime_error("HashJoin missing children");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating HashJoin - left child type: %d, right child type: %d",
+            leftPlan->type, rightPlan->type);
+
+    const auto leftTranslation = translate_plan_node(ctx, leftPlan);
+    const auto [leftOp, leftColumns] = leftTranslation;
+    if (!leftOp) {
+        PGX_ERROR("Failed to translate left child of HashJoin");
+        throw std::runtime_error("Failed to translate left child of HashJoin");
+    }
+
+    auto rightTranslation = translate_plan_node(ctx, rightPlan);
+    auto [rightOp, rightColumns] = rightTranslation;
+    if (!rightOp) {
+        PGX_ERROR("Failed to translate right child of HashJoin");
+        throw std::runtime_error("Failed to translate right child of HashJoin");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin left child %s", leftTranslation.toString().data());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin right child %s", rightTranslation.toString().data());
+
+    auto leftValue = leftOp->getResult(0);
+    auto rightValue = rightOp->getResult(0);
+    const auto crossProductOp = ctx.builder.create<mlir::relalg::CrossProductOp>(
+        ctx.builder.getUnknownLoc(),
+        leftValue,
+        rightValue
+    );
+
+    TranslationResult result;
+    result.op = crossProductOp;
+    result.columns = leftColumns;
+    result.columns.insert(result.columns.end(), rightColumns.begin(), rightColumns.end());
+
+    for (size_t i = 0; i < leftColumns.size(); i++) {
+        const auto& col = leftColumns[i];
+        ctx.set_column_mapping(OUTER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin: Mapping OUTER_VAR varattno=%d to %s.%s",
+                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
+    }
+
+    for (size_t i = 0; i < rightColumns.size(); i++) {
+        const auto& col = rightColumns[i];
+        ctx.set_column_mapping(INNER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin: Mapping INNER_VAR varattno=%d to %s.%s",
+                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
+    }
+
+    if (hashJoin->hashclauses) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying hash join conditions from hashclauses");
+        result = apply_selection_from_qual(ctx, result, hashJoin->hashclauses);
+    } else if (hashJoin->join.joinqual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying hash join conditions from joinqual");
+        result = apply_selection_from_qual(ctx, result, hashJoin->join.joinqual);
+    }
+
+    if (hashJoin->join.plan.qual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
+        result = apply_selection_from_qual(ctx, result, hashJoin->join.plan.qual);
+    }
+
+    if (hashJoin->join.plan.targetlist) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
+        result = apply_projection_from_translation_result(ctx, result, leftTranslation, rightTranslation,
+                                                         hashJoin->join.plan.targetlist);
+    }
+
+    return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_hash(QueryCtxT& ctx, Hash* hash) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!hash || !hash->plan.lefttree) {
+        PGX_ERROR("Invalid Hash parameters");
+        throw std::runtime_error("Invalid Hash parameters");
+    }
+
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating Hash node - passing through to child - it just prepares its child for hashing");
+    return translate_plan_node(ctx, hash->plan.lefttree);
+}
+
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
     const QueryCtxT& ctx, const TranslationResult& input,
     const TranslationResult& left_child, const TranslationResult& right_child,
@@ -1020,7 +1113,6 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
         return input;
     }
 
-    // Collect the columns we want to project
     std::vector<TranslationResult::ColumnSchema> projectedColumns;
     std::vector<mlir::Attribute> columnRefs;
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
@@ -1032,26 +1124,21 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
 
         if (tle->expr && tle->expr->type == T_Var) {
             auto* var = reinterpret_cast<Var*>(tle->expr);
-
-            // Calculate the position in the combined result
             size_t columnIndex = SIZE_MAX;
 
             if (var->varno == OUTER_VAR) {
-                // Reference to left child's output
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child.columns.size())) {
                     columnIndex = var->varattno - 1; // Convert to 0-based
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: OUTER_VAR varattno=%d maps to position %zu",
                             var->varattno, columnIndex);
                 }
             } else if (var->varno == INNER_VAR) {
-                // Reference to right child's output
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child.columns.size())) {
                     columnIndex = left_child.columns.size() + (var->varattno - 1);
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: INNER_VAR varattno=%d maps to position %zu",
                             var->varattno, columnIndex);
                 }
             } else {
-                // Regular varno - might be from a single table query that went through join
                 PGX_WARNING("Unexpected varno %d in join projection", var->varno);
                 continue;
             }
@@ -1060,7 +1147,6 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
                 const auto& col = input.columns[columnIndex];
                 projectedColumns.push_back(col);
 
-                // Create column reference for the projection
                 auto colRef = columnManager.createRef(col.table_name, col.column_name);
                 columnRefs.push_back(colRef);
 
@@ -1071,7 +1157,6 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
                          columnIndex, input.columns.size());
             }
         } else if (tle->expr) {
-            // Non-Var expression - delegate to existing function
             PGX_LOG(AST_TRANSLATE, DEBUG, "Non-Var expression in join projection, delegating to apply_projection_from_target_list");
             return apply_projection_from_target_list(ctx, input, target_list);
         }
