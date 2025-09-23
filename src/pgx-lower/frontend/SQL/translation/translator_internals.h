@@ -19,6 +19,7 @@ struct Gather;
 struct MergeJoin;
 struct HashJoin;
 struct NestLoop;
+struct Material;
 
 #undef gettext
 #undef dgettext
@@ -197,6 +198,8 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_merge_join(QueryCtxT& ctx, MergeJoin* mergeJoin) -> TranslationResult;
     auto translate_hash_join(QueryCtxT& ctx, HashJoin* hashJoin) -> TranslationResult;
     auto translate_hash(QueryCtxT& ctx, Hash* hash) -> TranslationResult;
+    auto translate_nest_loop(QueryCtxT& ctx, NestLoop* nestLoop) -> TranslationResult;
+    auto translate_material(QueryCtxT& ctx, Material* material) -> TranslationResult;
 
     // Query function generation
     static auto create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp;

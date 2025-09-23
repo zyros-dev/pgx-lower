@@ -87,10 +87,8 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_MergeJoin: result = translate_merge_join(ctx, reinterpret_cast<MergeJoin*>(plan)); break;
     case T_HashJoin: result = translate_hash_join(ctx, reinterpret_cast<HashJoin*>(plan)); break;
     case T_Hash: result = translate_hash(ctx, reinterpret_cast<Hash*>(plan)); break;
-    case T_NestLoop:
-        PGX_ERROR("NestLoop not implemented yet");
-        throw std::runtime_error("NestLoop translation not implemented");
-        break;
+    case T_NestLoop: result = translate_nest_loop(ctx, reinterpret_cast<NestLoop*>(plan)); break;
+    case T_Material: result = translate_material(ctx, reinterpret_cast<Material*>(plan)); break;
     default: PGX_ERROR("Unsupported plan node type: %d", plan->type); result.op = nullptr;
     }
 
@@ -1095,6 +1093,103 @@ auto PostgreSQLASTTranslator::Impl::translate_hash(QueryCtxT& ctx, Hash* hash) -
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating Hash node - passing through to child - it just prepares its child for hashing");
     return translate_plan_node(ctx, hash->plan.lefttree);
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop* nestLoop) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!nestLoop) {
+        PGX_ERROR("Invalid NestLoop parameters");
+        throw std::runtime_error("Invalid NestLoop parameters");
+    }
+
+    auto* leftPlan = nestLoop->join.plan.lefttree;
+    auto* rightPlan = nestLoop->join.plan.righttree;
+
+    if (!leftPlan || !rightPlan) {
+        PGX_ERROR("NestLoop missing left or right child");
+        throw std::runtime_error("NestLoop missing children");
+    }
+
+    if (nestLoop->nestParams && nestLoop->nestParams->length > 0) {
+        PGX_WARNING("Parameterized nested loops not yet supported - treating as simple nested loop");
+        // TODO: Support parameterized nested loops
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NestLoop - left child type: %d, right child type: %d",
+            leftPlan->type, rightPlan->type);
+
+    const auto leftTranslation = translate_plan_node(ctx, leftPlan);
+    const auto [leftOp, leftColumns] = leftTranslation;
+    if (!leftOp) {
+        PGX_ERROR("Failed to translate left child of NestLoop");
+        throw std::runtime_error("Failed to translate left child of NestLoop");
+    }
+
+    auto rightTranslation = translate_plan_node(ctx, rightPlan);
+    auto [rightOp, rightColumns] = rightTranslation;
+    if (!rightOp) {
+        PGX_ERROR("Failed to translate right child of NestLoop");
+        throw std::runtime_error("Failed to translate right child of NestLoop");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "NestLoop left child %s", leftTranslation.toString().data());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "NestLoop right child %s", rightTranslation.toString().data());
+
+    auto leftValue = leftOp->getResult(0);
+    auto rightValue = rightOp->getResult(0);
+    const auto crossProductOp = ctx.builder.create<mlir::relalg::CrossProductOp>(
+        ctx.builder.getUnknownLoc(),
+        leftValue,
+        rightValue
+    );
+
+    TranslationResult result;
+    result.op = crossProductOp;
+    result.columns = leftColumns;
+    result.columns.insert(result.columns.end(), rightColumns.begin(), rightColumns.end());
+
+    for (size_t i = 0; i < leftColumns.size(); i++) {
+        const auto& col = leftColumns[i];
+        ctx.set_column_mapping(OUTER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "NestLoop: Mapping OUTER_VAR varattno=%d to %s.%s",
+                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
+    }
+
+    for (size_t i = 0; i < rightColumns.size(); i++) {
+        const auto& col = rightColumns[i];
+        ctx.set_column_mapping(INNER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "NestLoop: Mapping INNER_VAR varattno=%d to %s.%s",
+                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
+    }
+
+    if (nestLoop->join.joinqual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying nested loop join conditions from joinqual");
+        result = apply_selection_from_qual(ctx, result, nestLoop->join.joinqual);
+    }
+
+    if (nestLoop->join.plan.qual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
+        result = apply_selection_from_qual(ctx, result, nestLoop->join.plan.qual);
+    }
+
+    if (nestLoop->join.plan.targetlist) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
+        result = apply_projection_from_translation_result(ctx, result, leftTranslation, rightTranslation,
+                                                         nestLoop->join.plan.targetlist);
+    }
+
+    return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_material(QueryCtxT& ctx, Material* material) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!material || !material->plan.lefttree) {
+        PGX_ERROR("Invalid Material parameters");
+        throw std::runtime_error("Invalid Material parameters");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Material node is a pass-through, translating its child");
+    return translate_plan_node(ctx, material->plan.lefttree);
 }
 
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
