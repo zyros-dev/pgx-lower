@@ -853,8 +853,9 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input,
-                                                                      const List* target_list) -> TranslationResult {
+auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
+    const QueryCtxT& ctx, const TranslationResult& input, const List* target_list, const TranslationResult* left_child,
+    const TranslationResult* right_child) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!input.op || !target_list || target_list->length <= 0 || !target_list->elements) {
         return input;
@@ -943,11 +944,20 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                 PGX_LOG(AST_TRANSLATE, DEBUG, "MapOp: Creating computed column '%s' from targetentry resno=%d resname='%s'",
                         colName.c_str(), entry->resno, entry->resname ? entry->resname : "<null>");
 
-                if (auto exprValue = translate_expression(tmp_ctx, entry->expr)) {
+                mlir::Value exprValue;
+                if (left_child != nullptr || right_child != nullptr) {
+                    exprValue = translate_expression_with_join_context(tmp_ctx, entry->expr, left_child, right_child);
+                } else {
+                    exprValue = translate_expression(tmp_ctx, entry->expr);
+                }
+
+                if (exprValue) {
                     expressionTypes.push_back(exprValue.getType());
                     columnNames.push_back(colName);
                     Oid typeOid = exprType(reinterpret_cast<Node*>(entry->expr));
                     expressionOids.push_back(typeOid);
+                } else {
+                    PGX_WARNING("Failed to get expression!!");
                 }
             }
         }
@@ -982,8 +992,17 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
 
         std::vector<mlir::Value> computedValues;
         for (auto* entry : computedEntries) {
-            if (auto exprValue = translate_expression(tmp_ctx, entry->expr)) {
+            mlir::Value exprValue;
+            if (left_child != nullptr || right_child != nullptr) {
+                exprValue = translate_expression_with_join_context(tmp_ctx, entry->expr, left_child, right_child);
+            } else {
+                exprValue = translate_expression(tmp_ctx, entry->expr);
+            }
+
+            if (exprValue) {
                 computedValues.push_back(exprValue);
+            } else {
+                PGX_WARNING("Failed to get expression!!");
             }
         }
 
@@ -1312,7 +1331,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
             }
         } else if (tle->expr) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Non-Var expression in join projection, delegating to apply_projection_from_target_list");
-            return apply_projection_from_target_list(ctx, input, target_list);
+            return apply_projection_from_target_list(ctx, input, target_list, &left_child, &right_child);
         }
     }
 

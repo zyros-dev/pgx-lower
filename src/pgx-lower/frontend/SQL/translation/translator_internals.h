@@ -231,10 +231,10 @@ class PostgreSQLASTTranslator::Impl {
         -> TranslationResult;
 
     auto apply_selection_from_qual_with_columns(const QueryCtxT& ctx, const TranslationResult& input, const List* qual,
-                                                 const TranslationResult* left_child, const TranslationResult* right_child)
-        -> TranslationResult;
-    auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input, const List* target_list)
-        -> TranslationResult;
+                                                 const TranslationResult* left_child, const TranslationResult* right_child) -> TranslationResult;
+    auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input,
+                                           const List* target_list, const TranslationResult* left_child = nullptr,
+                                           const TranslationResult* right_child = nullptr) -> TranslationResult;
     auto apply_projection_from_translation_result(const QueryCtxT& ctx, const TranslationResult& input,
                                                   const TranslationResult& left_child, const TranslationResult& right_child,
                                                   const List* target_list) -> TranslationResult;
