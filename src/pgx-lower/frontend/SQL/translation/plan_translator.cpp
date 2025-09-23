@@ -526,11 +526,11 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
         result.columns.clear();
         ListCell* lc;
         foreach (lc, sort->plan.targetlist) {
-            auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+            const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
             if (!tle || tle->resjunk) continue;
 
             if (tle->expr && tle->expr->type == T_Var) {
-                auto* var = reinterpret_cast<Var*>(tle->expr);
+                const auto* var = reinterpret_cast<Var*>(tle->expr);
                 if (var->varattno > 0 && var->varattno <= childResult.columns.size()) {
                     result.columns.push_back(childResult.columns[var->varattno - 1]);
                 }
@@ -693,7 +693,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
         // Create new context preserving column mappings
-        auto tmp_ctx = QueryCtxT{
+        const auto tmp_ctx = QueryCtxT{
             ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.get_all_column_mappings()
         };
 
@@ -745,6 +745,99 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
             throw std::runtime_error("We parsed that there were predicates, but got nothing out of it!");
         }
         if (!predicateResult.getType().isInteger(1)) { // is boolean
+            predicateResult = predicate_builder.create<mlir::db::DeriveTruth>(predicate_builder.getUnknownLoc(),
+                                                                              predicateResult);
+        }
+
+        predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(),
+                                                         mlir::ValueRange{predicateResult});
+    }
+
+    TranslationResult result;
+    result.op = selectionOp;
+    result.columns = input.columns;
+    return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
+    const QueryCtxT& ctx, const TranslationResult& input, const List* qual,
+    const TranslationResult* left_child, const TranslationResult* right_child) -> TranslationResult {
+
+    PGX_IO(AST_TRANSLATE);
+    if (!input.op || !qual || qual->length == 0) {
+        return input;
+    }
+
+    auto inputValue = input.op->getResult(0);
+    if (!inputValue) {
+        PGX_ERROR("Input operation has no result");
+        throw std::runtime_error("Input operation has no result");
+    }
+
+    auto selectionOp = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), inputValue);
+
+    {
+        auto& predicateRegion = selectionOp.getPredicate();
+        auto* predicateBlock = new mlir::Block;
+        predicateRegion.push_back(predicateBlock);
+
+        const auto tupleType = mlir::relalg::TupleType::get(&context_);
+        const auto tupleArg = predicateBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
+
+        mlir::OpBuilder predicate_builder(&context_);
+        predicate_builder.setInsertionPointToStart(predicateBlock);
+
+        const auto tmp_ctx = QueryCtxT{
+            ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, {}
+        };
+
+        mlir::Value predicateResult = nullptr;
+        if (qual && qual->length > 0) {
+            if (!qual->elements) {
+                PGX_WARNING("Qual list has length but no elements array - continuing without filter");
+            } else {
+                for (int i = 0; i < qual->length; i++) {
+                    const ListCell* lc = &qual->elements[i];
+                    if (!lc) {
+                        PGX_WARNING("Null ListCell at index %d", i);
+                        continue;
+                    }
+
+                    const auto qualNode = static_cast<Node*>(lfirst(lc));
+
+                    if (!qualNode) {
+                        PGX_WARNING("Null qual node at index %d", i);
+                        continue;
+                    }
+
+                    if (mlir::Value condValue = translate_expression_with_join_context(
+                            tmp_ctx, reinterpret_cast<Expr*>(qualNode), left_child, right_child)) {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully translated join condition %d", i);
+                        if (!condValue.getType().isInteger(1)) {
+                            condValue = predicate_builder.create<mlir::db::DeriveTruth>(
+                                predicate_builder.getUnknownLoc(), condValue);
+                        }
+
+                        if (!predicateResult) {
+                            predicateResult = condValue;
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "Set first join predicate");
+                        } else {
+                            predicateResult = predicate_builder.create<mlir::db::AndOp>(
+                                predicate_builder.getUnknownLoc(), predicate_builder.getI1Type(),
+                                mlir::ValueRange{predicateResult, condValue});
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "ANDed join predicate %d", i);
+                        }
+                    } else {
+                        PGX_WARNING("Failed to translate qual condition at index %d", i);
+                    }
+                }
+            }
+        }
+
+        if (!predicateResult) {
+            throw std::runtime_error("We parsed that there were predicates, but got nothing out of it!");
+        }
+        if (!predicateResult.getType().isInteger(1)) {
             predicateResult = predicate_builder.create<mlir::db::DeriveTruth>(predicate_builder.getUnknownLoc(),
                                                                               predicateResult);
         }
@@ -962,32 +1055,20 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
     result.columns = leftColumns;
     result.columns.insert(result.columns.end(), rightColumns.begin(), rightColumns.end());
 
-    // These are still needed for WHERE clause resolution - I want to get rid of them though.
-    for (size_t i = 0; i < leftColumns.size(); i++) {
-        const auto& col = leftColumns[i];
-        ctx.set_column_mapping(OUTER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "MergeJoin: Mapping OUTER_VAR varattno=%d to %s.%s",
-                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
-    }
-
-    for (size_t i = 0; i < rightColumns.size(); i++) {
-        const auto& col = rightColumns[i];
-        ctx.set_column_mapping(INNER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "MergeJoin: Mapping INNER_VAR varattno=%d to %s.%s",
-                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
-    }
-
     if (mergeJoin->mergeclauses) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying merge join conditions from mergeclauses");
-        result = apply_selection_from_qual(ctx, result, mergeJoin->mergeclauses);
+        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->mergeclauses,
+                                                       &leftTranslation, &rightTranslation);
     } else if (mergeJoin->join.joinqual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying merge join conditions from joinqual");
-        result = apply_selection_from_qual(ctx, result, mergeJoin->join.joinqual);
+        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->join.joinqual,
+                                                       &leftTranslation, &rightTranslation);
     }
 
     if (mergeJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual(ctx, result, mergeJoin->join.plan.qual);
+        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->join.plan.qual,
+                                                       &leftTranslation, &rightTranslation);
     }
 
     if (mergeJoin->join.plan.targetlist) {
@@ -1047,31 +1128,20 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
     result.columns = leftColumns;
     result.columns.insert(result.columns.end(), rightColumns.begin(), rightColumns.end());
 
-    for (size_t i = 0; i < leftColumns.size(); i++) {
-        const auto& col = leftColumns[i];
-        ctx.set_column_mapping(OUTER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin: Mapping OUTER_VAR varattno=%d to %s.%s",
-                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
-    }
-
-    for (size_t i = 0; i < rightColumns.size(); i++) {
-        const auto& col = rightColumns[i];
-        ctx.set_column_mapping(INNER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin: Mapping INNER_VAR varattno=%d to %s.%s",
-                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
-    }
-
     if (hashJoin->hashclauses) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying hash join conditions from hashclauses");
-        result = apply_selection_from_qual(ctx, result, hashJoin->hashclauses);
+        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->hashclauses,
+                                                       &leftTranslation, &rightTranslation);
     } else if (hashJoin->join.joinqual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying hash join conditions from joinqual");
-        result = apply_selection_from_qual(ctx, result, hashJoin->join.joinqual);
+        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.joinqual,
+                                                       &leftTranslation, &rightTranslation);
     }
 
     if (hashJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual(ctx, result, hashJoin->join.plan.qual);
+        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.plan.qual,
+                                                       &leftTranslation, &rightTranslation);
     }
 
     if (hashJoin->join.plan.targetlist) {
@@ -1148,28 +1218,16 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     result.columns = leftColumns;
     result.columns.insert(result.columns.end(), rightColumns.begin(), rightColumns.end());
 
-    for (size_t i = 0; i < leftColumns.size(); i++) {
-        const auto& col = leftColumns[i];
-        ctx.set_column_mapping(OUTER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "NestLoop: Mapping OUTER_VAR varattno=%d to %s.%s",
-                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
-    }
-
-    for (size_t i = 0; i < rightColumns.size(); i++) {
-        const auto& col = rightColumns[i];
-        ctx.set_column_mapping(INNER_VAR, static_cast<int>(i + 1), col.table_name, col.column_name);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "NestLoop: Mapping INNER_VAR varattno=%d to %s.%s",
-                static_cast<int>(i + 1), col.table_name.c_str(), col.column_name.c_str());
-    }
-
     if (nestLoop->join.joinqual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying nested loop join conditions from joinqual");
-        result = apply_selection_from_qual(ctx, result, nestLoop->join.joinqual);
+        result = apply_selection_from_qual_with_columns(ctx, result, nestLoop->join.joinqual,
+                                                       &leftTranslation, &rightTranslation);
     }
 
     if (nestLoop->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual(ctx, result, nestLoop->join.plan.qual);
+        result = apply_selection_from_qual_with_columns(ctx, result, nestLoop->join.plan.qual,
+                                                       &leftTranslation, &rightTranslation);
     }
 
     if (nestLoop->join.plan.targetlist) {
@@ -1214,11 +1272,11 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
 
     ListCell* lc;
     foreach (lc, target_list) {
-        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
         if (!tle || tle->resjunk) continue;
 
         if (tle->expr && tle->expr->type == T_Var) {
-            auto* var = reinterpret_cast<Var*>(tle->expr);
+            const auto* var = reinterpret_cast<Var*>(tle->expr);
             size_t columnIndex = SIZE_MAX;
 
             if (var->varno == OUTER_VAR) {
@@ -1260,7 +1318,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
     // If we only have simple column projections, create a ProjectionOp
     if (!projectedColumns.empty() && projectedColumns.size() < input.columns.size()) {
         auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
-        auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
+        const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
             ctx.builder.getUnknownLoc(),
             tupleStreamType,
             mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all),

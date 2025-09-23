@@ -90,6 +90,176 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
     }
     }
 }
+
+auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(
+    const QueryCtxT& ctx, Expr* expr,
+    const TranslationResult* left_child, const TranslationResult* right_child) -> mlir::Value {
+
+    PGX_IO(AST_TRANSLATE);
+    if (!expr) {
+        PGX_ERROR("Null expression");
+        return nullptr;
+    }
+
+    if (expr->type == T_Var) {
+        const auto* var = reinterpret_cast<const Var*>(expr);
+
+        if (var->varno == OUTER_VAR && left_child) {
+            if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child->columns.size())) {
+                const auto& col = left_child->columns[var->varattno - 1];
+
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving OUTER_VAR varattno=%d to %s.%s from left child",
+                        var->varattno, col.table_name.c_str(), col.column_name.c_str());
+
+                auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+                if (!dialect) {
+                    PGX_ERROR("RelAlg dialect not registered");
+                    return nullptr;
+                }
+
+                auto& columnManager = dialect->getColumnManager();
+                auto colRef = columnManager.createRef(col.table_name, col.column_name);
+                colRef.getColumn().type = col.mlir_type;
+
+                auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(
+                    ctx.builder.getUnknownLoc(), col.mlir_type, colRef, ctx.current_tuple);
+
+                return getColOp.getRes();
+            } else {
+                PGX_ERROR("OUTER_VAR varattno %d out of range (have %zu columns)",
+                         var->varattno, left_child->columns.size());
+                return nullptr;
+            }
+        } else if (var->varno == INNER_VAR && right_child) {
+            if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size())) {
+                const auto& col = right_child->columns[var->varattno - 1];
+
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving INNER_VAR varattno=%d to %s.%s from right child",
+                        var->varattno, col.table_name.c_str(), col.column_name.c_str());
+
+                auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+                if (!dialect) {
+                    PGX_ERROR("RelAlg dialect not registered");
+                    return nullptr;
+                }
+
+                auto& columnManager = dialect->getColumnManager();
+                auto colRef = columnManager.createRef(col.table_name, col.column_name);
+                colRef.getColumn().type = col.mlir_type;
+
+                auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(
+                    ctx.builder.getUnknownLoc(), col.mlir_type, colRef, ctx.current_tuple);
+
+                return getColOp.getRes();
+            } else {
+                PGX_ERROR("INNER_VAR varattno %d out of range (have %zu columns)",
+                         var->varattno, right_child->columns.size());
+                return nullptr;
+            }
+        }
+    }
+
+    // For non-var, rely on the expression translator
+    switch (expr->type) {
+    case T_OpExpr: {
+        const auto* op_expr = reinterpret_cast<const OpExpr*>(expr);
+        return translate_op_expr_with_join_context(ctx, op_expr, left_child, right_child);
+    }
+    case T_BoolExpr: {
+        const auto* bool_expr = reinterpret_cast<const BoolExpr*>(expr);
+        return translate_bool_expr_with_join_context(ctx, bool_expr, left_child, right_child);
+    }
+    default:
+        return translate_expression(ctx, expr);
+    }
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(
+    const QueryCtxT& ctx, const OpExpr* op_expr,
+    const TranslationResult* left_child, const TranslationResult* right_child) -> mlir::Value {
+
+    PGX_IO(AST_TRANSLATE);
+    if (!op_expr->args || op_expr->args->length != 2) {
+        PGX_ERROR("OpExpr should have exactly 2 arguments, got %d", op_expr->args ? op_expr->args->length : 0);
+        return nullptr;
+    }
+
+    auto* leftExpr = static_cast<Expr*>(lfirst(list_nth_cell(op_expr->args, 0)));
+    auto* rightExpr = static_cast<Expr*>(lfirst(list_nth_cell(op_expr->args, 1)));
+
+    const auto lhs = translate_expression_with_join_context(ctx, leftExpr, left_child, right_child);
+    const auto rhs = translate_expression_with_join_context(ctx, rightExpr, left_child, right_child);
+
+    if (!lhs || !rhs) {
+        PGX_ERROR("Failed to translate OpExpr operands");
+        return nullptr;
+    }
+
+    const auto op_oid = op_expr->opno;
+
+    // TODO: NV I dislike this. It should contain ALL the operators, or route directly through the translate
+    //       expressions function
+    if (op_oid >= 91 && op_oid <= 99) { // Comparison operators
+        return translate_comparison_op(ctx, op_oid, lhs, rhs);
+    } else {
+        return translate_arithmetic_op(ctx, op_oid, lhs, rhs);
+    }
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(
+    const QueryCtxT& ctx, const BoolExpr* bool_expr,
+    const TranslationResult* left_child, const TranslationResult* right_child) -> mlir::Value {
+
+    PGX_IO(AST_TRANSLATE);
+    if (!bool_expr->args || bool_expr->args->length == 0) {
+        PGX_ERROR("BoolExpr has no arguments");
+        return nullptr;
+    }
+
+    std::vector<mlir::Value> operands;
+    ListCell* lc;
+    foreach (lc, bool_expr->args) {
+        auto* arg = static_cast<Expr*>(lfirst(lc));
+        if (auto operand = translate_expression_with_join_context(ctx, arg, left_child, right_child)) {
+            if (!operand.getType().isInteger(1)) {
+                operand = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), operand);
+            }
+            operands.push_back(operand);
+        } else {
+            PGX_ERROR("Failed to translate BoolExpr argument");
+            return nullptr;
+        }
+    }
+
+    if (operands.empty()) {
+        PGX_ERROR("No valid operands for BoolExpr");
+        return nullptr;
+    }
+
+    mlir::Value result = operands[0];
+    for (size_t i = 1; i < operands.size(); ++i) {
+        switch (bool_expr->boolop) {
+        case AND_EXPR:
+            result = ctx.builder.create<mlir::db::AndOp>(ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(),
+                                                         mlir::ValueRange{result, operands[i]});
+            break;
+        case OR_EXPR:
+            result = ctx.builder.create<mlir::db::OrOp>(ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(),
+                                                        mlir::ValueRange{result, operands[i]});
+            break;
+        default:
+            PGX_ERROR("Unsupported BoolExpr type: %d", bool_expr->boolop);
+            return nullptr;
+        }
+    }
+
+    if (bool_expr->boolop == NOT_EXPR && operands.size() == 1) {
+        result = ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(), operands[0]);
+    }
+
+    return result;
+}
+
 mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr) {
     // Handle type coercion via I/O functions (e.g., int::text)
     const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
@@ -1220,8 +1390,8 @@ struct SQLTypeInference {
         return leftFloat;
     }
     static mlir::IntegerType getHigherIntType(mlir::Type left, mlir::Type right) {
-        mlir::IntegerType leftInt = left.dyn_cast_or_null<mlir::IntegerType>();
-        if (auto rightInt = right.dyn_cast_or_null<mlir::IntegerType>()) {
+        const mlir::IntegerType leftInt = left.dyn_cast_or_null<mlir::IntegerType>();
+        if (const auto rightInt = right.dyn_cast_or_null<mlir::IntegerType>()) {
             if (!leftInt || rightInt.getWidth() > leftInt.getWidth()) {
                 return rightInt;
             }
@@ -1229,22 +1399,22 @@ struct SQLTypeInference {
         return leftInt;
     }
     static mlir::db::DecimalType getHigherDecimalType(mlir::Type left, mlir::Type right) {
-        auto a = left.dyn_cast_or_null<mlir::db::DecimalType>();
-        if (auto b = right.dyn_cast_or_null<mlir::db::DecimalType>()) {
+        const auto a = left.dyn_cast_or_null<mlir::db::DecimalType>();
+        if (const auto b = right.dyn_cast_or_null<mlir::db::DecimalType>()) {
             if (!a)
                 return b;
-            int hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
-            int maxs = std::max(a.getS(), b.getS());
+            const int hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
+            const int maxs = std::max(a.getS(), b.getS());
             return mlir::db::DecimalType::get(a.getContext(), hidig + maxs, maxs);
         }
         return a;
     }
     static mlir::Value castValueToType(mlir::OpBuilder& builder, mlir::Value v, mlir::Type t) {
-        bool isNullable = v.getType().isa<mlir::db::NullableType>();
+        const bool isNullable = v.getType().isa<mlir::db::NullableType>();
         if (isNullable && !t.isa<mlir::db::NullableType>()) {
             t = mlir::db::NullableType::get(builder.getContext(), t);
         }
-        bool onlyTargetIsNullable = !isNullable && t.isa<mlir::db::NullableType>();
+        const bool onlyTargetIsNullable = !isNullable && t.isa<mlir::db::NullableType>();
         if (v.getType() == t) {
             return v;
         }
@@ -1276,10 +1446,10 @@ struct SQLTypeInference {
     static mlir::Type getCommonBaseType(mlir::Type left, mlir::Type right) {
         left = getBaseType(left);
         right = getBaseType(right);
-        bool stringPresent = left.isa<mlir::db::StringType>() || right.isa<mlir::db::StringType>();
-        bool intPresent = left.isa<mlir::IntegerType>() || right.isa<mlir::IntegerType>();
-        bool floatPresent = left.isa<mlir::FloatType>() || right.isa<mlir::FloatType>();
-        bool decimalPresent = left.isa<mlir::db::DecimalType>() || right.isa<mlir::db::DecimalType>();
+        const bool stringPresent = left.isa<mlir::db::StringType>() || right.isa<mlir::db::StringType>();
+        const bool intPresent = left.isa<mlir::IntegerType>() || right.isa<mlir::IntegerType>();
+        const bool floatPresent = left.isa<mlir::FloatType>() || right.isa<mlir::FloatType>();
+        const bool decimalPresent = left.isa<mlir::db::DecimalType>() || right.isa<mlir::db::DecimalType>();
         if (stringPresent)
             return mlir::db::StringType::get(left.getContext());
         if (decimalPresent)
@@ -1291,8 +1461,8 @@ struct SQLTypeInference {
         return left;
     }
     static mlir::Type getCommonType(mlir::Type left, mlir::Type right) {
-        bool isNullable = left.isa<mlir::db::NullableType>() || right.isa<mlir::db::NullableType>();
-        auto commonBaseType = getCommonBaseType(left, right);
+        const bool isNullable = left.isa<mlir::db::NullableType>() || right.isa<mlir::db::NullableType>();
+        const auto commonBaseType = getCommonBaseType(left, right);
         if (isNullable) {
             return mlir::db::NullableType::get(left.getContext(), commonBaseType);
         } else {
@@ -1301,15 +1471,15 @@ struct SQLTypeInference {
     }
     static mlir::Type getCommonBaseType(mlir::TypeRange types) {
         mlir::Type commonType = types.front();
-        for (auto t : types) {
+        for (const auto t : types) {
             commonType = getCommonBaseType(commonType, t);
         }
         return commonType;
     }
     static std::vector<mlir::Value> toCommonBaseTypes(mlir::OpBuilder& builder, mlir::ValueRange values) {
-        auto commonType = getCommonBaseType(values.getTypes());
+        const auto commonType = getCommonBaseType(values.getTypes());
         std::vector<mlir::Value> res;
-        for (auto val : values) {
+        for (const auto val : values) {
             res.push_back(castValueToType(builder, val, commonType));
         }
         return res;

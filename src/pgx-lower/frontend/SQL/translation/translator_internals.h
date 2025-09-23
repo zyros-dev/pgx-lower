@@ -65,6 +65,11 @@ struct ColumnInfo {
 
 using ColumnMapping = std::map<std::pair<int, int>, std::pair<std::string, std::string>>;
 
+/**
+ * This class aims to contain IMMUTABLE state except for the OpBuilder. Since the OpBuilder is effectively our primary
+ * goal in this crawl, its ok to constantly mutate it. However, everything else here should be immutable.
+ * I'm aiming to remove the column_mappings over time -
+ */
 struct TranslationContext {
     const PlannedStmt current_stmt;
     mlir::OpBuilder& builder;
@@ -171,6 +176,15 @@ class PostgreSQLASTTranslator::Impl {
 
     mlir::Value translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr);
     auto translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value;
+    auto translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr,
+                                                const TranslationResult* left_child, const TranslationResult* right_child)
+        -> mlir::Value;
+    auto translate_op_expr_with_join_context(const QueryCtxT& ctx, const OpExpr* op_expr,
+                                             const TranslationResult* left_child, const TranslationResult* right_child)
+        -> mlir::Value;
+    auto translate_bool_expr_with_join_context(const QueryCtxT& ctx, const BoolExpr* bool_expr,
+                                               const TranslationResult* left_child,
+                                               const TranslationResult* right_child) -> mlir::Value;
     auto translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr, mlir::Value input_stream,
                                          const std::string& suggested_name,
                                          const std::vector<TranslationResult::ColumnSchema>& child_columns)
@@ -207,6 +221,9 @@ class PostgreSQLASTTranslator::Impl {
 
     // Relational operation helpers
     auto apply_selection_from_qual(const QueryCtxT& ctx, const TranslationResult& input, const List* qual)
+        -> TranslationResult;
+    auto apply_selection_from_qual_with_columns(const QueryCtxT& ctx, const TranslationResult& input, const List* qual,
+                                                 const TranslationResult* left_child, const TranslationResult* right_child)
         -> TranslationResult;
     auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input, const List* target_list)
         -> TranslationResult;
