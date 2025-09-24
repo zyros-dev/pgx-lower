@@ -33,33 +33,18 @@ protected:
 TEST_F(MLIRLoweringPipelineTest, TestRelAlg) {
     auto simpleMLIR = R"(
         module {
-          func.func @main() {
-            %0 = relalg.basetable  {column_order = ["id", "department", "employee_name", "salary", "bonus", "years_experience", "performance_score", "hire_date", "is_manager"], table_identifier = "comprehensive_data|oid:22142210"} columns: {bonus => @comprehensive_data::@bonus({type = !db.nullable<!db.decimal<8, 2>>}), department => @comprehensive_data::@department({type = !db.nullable<!db.string>}), employee_name => @comprehensive_data::@employee_name({type = !db.nullable<!db.string>}), hire_date => @comprehensive_data::@hire_date({type = !db.nullable<!db.date<day>>}), id => @comprehensive_data::@id({type = i32}), is_manager => @comprehensive_data::@is_manager({type = !db.nullable<i1>}), performance_score => @comprehensive_data::@performance_score({type = !db.nullable<!db.decimal<3, 1>>}), salary => @comprehensive_data::@salary({type = !db.nullable<!db.decimal<10, 2>>}), years_experience => @comprehensive_data::@years_experience({type = !db.nullable<i32>})}
-            %1 = relalg.map %0 computes : [@map_expr::@agg_expr_0({type = !db.nullable<!db.decimal<38, 16>>})] (%arg0: !relalg.tuple){
-              %5 = relalg.getcol %arg0 @comprehensive_data::@salary : !db.nullable<!db.decimal<10, 2>>
-              %6 = db.constant("85000") : !db.decimal<38, 16>
-              %7 = db.cast %5 : !db.nullable<!db.decimal<10, 2>> -> !db.nullable<!db.decimal<38, 16>>
-              %8 = db.as_nullable %6 : !db.decimal<38, 16> -> <!db.decimal<38, 16>>
-              %9 = db.sub %7 : !db.nullable<!db.decimal<38, 16>>, %8 : !db.nullable<!db.decimal<38, 16>>
-              %10 = db.runtime_call "AbsDecimal"(%9) : (!db.nullable<!db.decimal<38, 16>>) -> !db.nullable<!db.decimal<38, 16>>
-              relalg.return %10 : !db.nullable<!db.decimal<38, 16>>
-            }
-            %2 = relalg.map %1 computes : [@map_expr::@agg_expr_1({type = !db.nullable<!db.decimal<38, 16>>})] (%arg0: !relalg.tuple){
-              %5 = relalg.getcol %arg0 @comprehensive_data::@bonus : !db.nullable<!db.decimal<8, 2>>
-              %6 = db.constant("10000") : !db.decimal<38, 16>
-              %7 = db.cast %5 : !db.nullable<!db.decimal<8, 2>> -> !db.nullable<!db.decimal<38, 16>>
-              %8 = db.as_nullable %6 : !db.decimal<38, 16> -> <!db.decimal<38, 16>>
-              %9 = db.sub %7 : !db.nullable<!db.decimal<38, 16>>, %8 : !db.nullable<!db.decimal<38, 16>>
-              %10 = db.runtime_call "AbsDecimal"(%9) : (!db.nullable<!db.decimal<38, 16>>) -> !db.nullable<!db.decimal<38, 16>>
-              relalg.return %10 : !db.nullable<!db.decimal<38, 16>>
-            }
-            %3 = relalg.aggregation %2 [] computes : [@aggr15::@avg_distance_from_median({type = !db.nullable<!db.decimal<38, 16>>}),@aggr15::@total_bonus_deviation({type = !db.nullable<!db.decimal<38, 16>>})] (%arg0: !relalg.tuplestream,%arg1: !relalg.tuple){
-              %5 = relalg.aggrfn avg @map_expr::@agg_expr_0 %arg0 : !db.nullable<!db.decimal<38, 16>>
-              %6 = relalg.aggrfn sum @map_expr::@agg_expr_1 %arg0 : !db.nullable<!db.decimal<38, 16>>
-              relalg.return %5, %6 : !db.nullable<!db.decimal<38, 16>>, !db.nullable<!db.decimal<38, 16>>
-            }
-            %4 = relalg.materialize %3 [@aggr15::@avg_distance_from_median,@aggr15::@total_bonus_deviation] => ["avg_distance_from_median", "total_bonus_deviation"] : !dsa.table
-            return
+          func.func @main() -> !dsa.table {
+            %0 = relalg.basetable  {column_order = ["dept_id", "dept_name", "location"], table_identifier = "departments|oid:22617391"} columns: {dept_id => @d::@dept_id({type = !db.nullable<i32>}), dept_name => @d::@dept_name({type = !db.nullable<!db.string>}), location => @d::@location({type = !db.nullable<!db.string>})}
+            %1 = relalg.sort %0 [(@d::@dept_id,asc)]
+            %2 = relalg.basetable  {column_order = ["emp_id", "emp_name", "dept_id", "salary"], table_identifier = "employees|oid:22617386"} columns: {dept_id => @e::@dept_id({type = !db.nullable<i32>}), emp_id => @e::@emp_id({type = !db.nullable<i32>}), emp_name => @e::@emp_name({type = !db.nullable<!db.string>}), salary => @e::@salary({type = !db.nullable<i32>})}
+            %3 = relalg.sort %2 [(@e::@dept_id,asc)]
+            %4 = relalg.outerjoin %1, %3 (%arg0: !relalg.tuple){
+              %true = arith.constant true
+              relalg.return %true : i1
+            }  mapping: {@e::@emp_name_nullable({type = !db.nullable<!db.string>})=[@e::@emp_name], @e::@salary_nullable({type = !db.nullable<i32>})=[@e::@salary], @e::@emp_id_nullable({type = !db.nullable<i32>})=[@e::@emp_id], @e::@dept_id_nullable({type = !db.nullable<i32>})=[@e::@dept_id]}
+            %5 = relalg.projection all [@e::@emp_name_nullable,@e::@salary_nullable,@d::@dept_name,@d::@location] %4
+            %6 = relalg.materialize %5 [@e::@emp_name_nullable,@e::@salary_nullable,@d::@dept_name,@d::@location] => ["emp_name", "salary", "dept_name", "location"] : !dsa.table
+            return %6 : !dsa.table
           }
         }
         )";

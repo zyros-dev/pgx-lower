@@ -139,6 +139,10 @@ struct TranslationResult {
 
     std::vector<ColumnSchema> columns;
 
+    // Mapping from original column references to their nullable versions after outer join
+    // Key: "table_name.column_name", Value: "table_name.column_name_nullable"
+    std::map<std::string, std::string> outerJoinColumnMappings;
+
     std::string toString() const {
         std::string result = "TranslationResult(op=" + (op ? std::to_string(reinterpret_cast<uintptr_t>(op)) : "null")
                              + ", columns=[";
@@ -241,6 +245,34 @@ class PostgreSQLASTTranslator::Impl {
 
     auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream,
                                const TranslationResult& translation_result) const -> mlir::Value;
+
+    // Join helper functions
+    void translate_join_predicate_to_region(
+        const QueryCtxT& ctx,
+        mlir::Block* predicateBlock,
+        mlir::Value tupleArg,
+        List* joinClauses,
+        const TranslationResult& leftTranslation,
+        const TranslationResult& rightTranslation);
+
+    mlir::Operation* create_outer_join_with_nullable_mapping(
+        QueryCtxT& ctx,
+        mlir::Value primaryValue,
+        mlir::Value outerValue,
+        const TranslationResult& outerTranslation,
+        List* joinClauses,
+        const TranslationResult* leftTranslation,
+        const TranslationResult* rightTranslation,
+        bool isRightJoin);
+
+    TranslationResult create_join_operation(
+        QueryCtxT& ctx,
+        JoinType jointype,
+        mlir::Value leftValue,
+        mlir::Value rightValue,
+        const TranslationResult& leftTranslation,
+        const TranslationResult& rightTranslation,
+        List* joinClauses);
 
     // Operation translation helpers
     auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)

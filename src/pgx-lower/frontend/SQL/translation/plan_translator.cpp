@@ -846,6 +846,86 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
     return result;
 }
 
+void PostgreSQLASTTranslator::Impl::translate_join_predicate_to_region(const QueryCtxT& ctx, mlir::Block* predicateBlock,
+                                                                       mlir::Value tupleArg, List* joinClauses,
+                                                                       const TranslationResult& leftTranslation,
+                                                                       const TranslationResult& rightTranslation) {
+    PGX_IO(AST_TRANSLATE);
+
+    if (!joinClauses || joinClauses->length == 0) {
+        // No join clauses - create constant true
+        mlir::OpBuilder predicateBuilder(ctx.builder.getContext());
+        predicateBuilder.setInsertionPointToStart(predicateBlock);
+        auto trueVal = predicateBuilder.create<mlir::arith::ConstantOp>(
+            predicateBuilder.getUnknownLoc(), predicateBuilder.getI1Type(),
+            predicateBuilder.getIntegerAttr(predicateBuilder.getI1Type(), 1));
+        predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), mlir::ValueRange{trueVal});
+        return;
+    }
+
+    // Create a new builder for the predicate block
+    mlir::OpBuilder predicateBuilder(ctx.builder.getContext());
+    predicateBuilder.setInsertionPointToStart(predicateBlock);
+
+    // Create a new QueryCtxT with the tuple argument as current_tuple
+    // For join predicates, we don't need column mappings as we use direct translation
+    pgx_lower::frontend::sql::ColumnMapping emptyMappings;
+    QueryCtxT predicateCtx(ctx.current_stmt, predicateBuilder, ctx.current_module,
+                           tupleArg, // Use the tuple argument as current_tuple
+                           emptyMappings);
+
+    // Translate each join clause
+    std::vector<mlir::Value> conditions;
+    ListCell* lc;
+    foreach (lc, joinClauses) {
+        Expr* clause = (Expr*)lfirst(lc);
+
+        if (clause->type == T_OpExpr) {
+            OpExpr* opExpr = (OpExpr*)clause;
+
+            // For join predicates, we need to translate with join context
+            mlir::Value conditionValue = translate_expression_with_join_context(predicateCtx, clause, &leftTranslation,
+                                                                                &rightTranslation);
+
+            if (conditionValue) {
+                conditions.push_back(conditionValue);
+            } else {
+                PGX_WARNING("Failed to translate join clause");
+            }
+        } else {
+            // Handle other expression types if needed
+            mlir::Value conditionValue = translate_expression_with_join_context(predicateCtx, clause, &leftTranslation,
+                                                                                &rightTranslation);
+
+            if (conditionValue) {
+                conditions.push_back(conditionValue);
+            }
+        }
+    }
+
+    // Combine conditions with AND if multiple
+    mlir::Value finalCondition;
+    if (conditions.empty()) {
+        // No valid conditions translated - return true
+        finalCondition = predicateBuilder.create<mlir::arith::ConstantOp>(
+            predicateBuilder.getUnknownLoc(), predicateBuilder.getI1Type(),
+            predicateBuilder.getIntegerAttr(predicateBuilder.getI1Type(), 1));
+    } else if (conditions.size() == 1) {
+        finalCondition = conditions[0];
+    } else {
+        // Combine with AND
+        finalCondition = conditions[0];
+        for (size_t i = 1; i < conditions.size(); ++i) {
+            finalCondition = predicateBuilder.create<mlir::db::AndOp>(predicateBuilder.getUnknownLoc(),
+                                                                      predicateBuilder.getI1Type(),
+                                                                      mlir::ValueRange{finalCondition, conditions[i]});
+        }
+    }
+
+    // Return the final condition
+    predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), mlir::ValueRange{finalCondition});
+}
+
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
     const QueryCtxT& ctx, const TranslationResult& input, const List* target_list, const TranslationResult* left_child,
     const TranslationResult* right_child) -> TranslationResult {
@@ -1094,13 +1174,16 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
     }
 }
 
-static auto create_outer_join_with_nullable_mapping(
+mlir::Operation* PostgreSQLASTTranslator::Impl::create_outer_join_with_nullable_mapping(
     QueryCtxT& ctx,
     mlir::Value primaryValue,
     mlir::Value outerValue,
     const TranslationResult& outerTranslation,
-    bool isRightJoin = false
-) -> mlir::Operation* {
+    List* joinClauses,
+    const TranslationResult* leftTranslation,
+    const TranslationResult* rightTranslation,
+    bool isRightJoin
+) {
     PGX_IO(AST_TRANSLATE);
 
     auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
@@ -1108,7 +1191,7 @@ static auto create_outer_join_with_nullable_mapping(
 
     for (const auto& col : outerTranslation.columns) {
         mlir::Type nullableType;
-        if (col.mlir_type.isa<mlir::db::NullableType>()) {
+        if (mlir::isa<mlir::db::NullableType>(col.mlir_type)) {
             nullableType = col.mlir_type;
         } else {
             nullableType = mlir::db::NullableType::get(col.mlir_type);
@@ -1135,35 +1218,40 @@ static auto create_outer_join_with_nullable_mapping(
         mappingAttr
     );
 
-    // TODO: I dislike this in terms of correctness
-    // OuterJoinOp needs a predicate region (empty for now - conditions applied separately)
+    // Create predicate region with actual join conditions
     auto& predicateRegion = outerJoinOp.getPredicate();
     auto* predicateBlock = new mlir::Block;
     predicateRegion.push_back(predicateBlock);
 
     auto tupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
-    predicateBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
+    auto tupleArg = predicateBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
 
-    mlir::OpBuilder predicateBuilder(ctx.builder.getContext());
-    predicateBuilder.setInsertionPointToStart(predicateBlock);
-    auto trueVal = predicateBuilder.create<mlir::arith::ConstantOp>(
-        predicateBuilder.getUnknownLoc(),
-        predicateBuilder.getI1Type(),
-        predicateBuilder.getIntegerAttr(predicateBuilder.getI1Type(), 1)
-    );
-    predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), mlir::ValueRange{trueVal});
+    // Translate the actual join predicates into the predicate region
+    // For RIGHT JOIN, we need to swap the left/right translations since we swapped the inputs
+    if (isRightJoin) {
+        translate_join_predicate_to_region(
+            ctx, predicateBlock, tupleArg, joinClauses,
+            *rightTranslation, *leftTranslation
+        );
+    } else {
+        translate_join_predicate_to_region(
+            ctx, predicateBlock, tupleArg, joinClauses,
+            *leftTranslation, *rightTranslation
+        );
+    }
 
     return outerJoinOp;
 }
 
-static auto create_join_operation(
+TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(
     QueryCtxT& ctx,
     JoinType jointype,
     mlir::Value leftValue,
     mlir::Value rightValue,
     const TranslationResult& leftTranslation,
-    const TranslationResult& rightTranslation
-) -> TranslationResult {
+    const TranslationResult& rightTranslation,
+    List* joinClauses
+) {
     PGX_IO(AST_TRANSLATE);
 
     TranslationResult result;
@@ -1182,12 +1270,27 @@ static auto create_join_operation(
 
     switch (jointype) {
         case JOIN_INNER: {
-            const auto crossProductOp = ctx.builder.create<mlir::relalg::CrossProductOp>(
+            // Create proper InnerJoinOp with predicate region
+            auto joinOp = ctx.builder.create<mlir::relalg::InnerJoinOp>(
                 ctx.builder.getUnknownLoc(),
                 leftValue,
                 rightValue
             );
-            result.op = crossProductOp;
+
+            // Add predicate region with join conditions
+            auto& predicateRegion = joinOp.getPredicate();
+            auto* predicateBlock = new mlir::Block;
+            predicateRegion.push_back(predicateBlock);
+            auto tupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
+            auto tupleArg = predicateBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
+
+            // Translate join conditions into the predicate region
+            translate_join_predicate_to_region(
+                ctx, predicateBlock, tupleArg, joinClauses,
+                leftTranslation, rightTranslation
+            );
+
+            result.op = joinOp;
             result.columns = leftTranslation.columns;
             result.columns.insert(result.columns.end(), rightTranslation.columns.begin(), rightTranslation.columns.end());
             break;
@@ -1195,33 +1298,49 @@ static auto create_join_operation(
 
         case JOIN_LEFT: {
             // LEFT OUTER JOIN - right side becomes nullable
-            auto outerJoinOp = create_outer_join_with_nullable_mapping(ctx, leftValue, rightValue, rightTranslation, false);
+            auto outerJoinOp = create_outer_join_with_nullable_mapping(ctx, leftValue, rightValue, rightTranslation,
+                                                                      joinClauses, &leftTranslation, &rightTranslation, false);
             result.op = outerJoinOp;
             result.columns = leftTranslation.columns;
 
             for (auto col : rightTranslation.columns) {
+                // Store the original column name for mapping
+                std::string originalName = col.table_name + "." + col.column_name;
+
                 col.column_name = col.column_name + "_nullable";
                 col.nullable = true;
-                if (!col.mlir_type.isa<mlir::db::NullableType>()) {
+                if (!mlir::isa<mlir::db::NullableType>(col.mlir_type)) {
                     col.mlir_type = mlir::db::NullableType::get(col.mlir_type);
                 }
                 result.columns.push_back(col);
+
+                // Track the column remapping
+                std::string mappedName = col.table_name + "." + col.column_name;
+                result.outerJoinColumnMappings[originalName] = mappedName;
             }
             break;
         }
 
         case JOIN_RIGHT: {
             // RIGHT OUTER JOIN - swap inputs and make left side nullable
-            auto outerJoinOp = create_outer_join_with_nullable_mapping(ctx, rightValue, leftValue, leftTranslation, true);
+            auto outerJoinOp = create_outer_join_with_nullable_mapping(ctx, rightValue, leftValue, leftTranslation,
+                                                                      joinClauses, &rightTranslation, &leftTranslation, true);
             result.op = outerJoinOp;
 
             for (auto col : leftTranslation.columns) {
+                // Store the original column name for mapping
+                std::string originalName = col.table_name + "." + col.column_name;
+
                 col.column_name = col.column_name + "_nullable";
                 col.nullable = true;
-                if (!col.mlir_type.isa<mlir::db::NullableType>()) {
+                if (!mlir::isa<mlir::db::NullableType>(col.mlir_type)) {
                     col.mlir_type = mlir::db::NullableType::get(col.mlir_type);
                 }
                 result.columns.push_back(col);
+
+                // Track the column remapping
+                std::string mappedName = col.table_name + "." + col.column_name;
+                result.outerJoinColumnMappings[originalName] = mappedName;
             }
             result.columns.insert(result.columns.end(), rightTranslation.columns.begin(), rightTranslation.columns.end());
             break;
@@ -1335,14 +1454,16 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
             leftPlan->type, rightPlan->type);
 
     const auto leftTranslation = translate_plan_node(ctx, leftPlan);
-    const auto [leftOp, leftColumns] = leftTranslation;
+    const auto leftOp = leftTranslation.op;
+    const auto& leftColumns = leftTranslation.columns;
     if (!leftOp) {
         PGX_ERROR("Failed to translate left child of MergeJoin");
         throw std::runtime_error("Failed to translate left child of MergeJoin");
     }
 
     auto rightTranslation = translate_plan_node(ctx, rightPlan);
-    auto [rightOp, rightColumns] = rightTranslation;
+    auto rightOp = rightTranslation.op;
+    auto& rightColumns = rightTranslation.columns;
     if (!rightOp) {
         PGX_ERROR("Failed to translate right child of MergeJoin");
         throw std::runtime_error("Failed to translate right child of MergeJoin");
@@ -1360,18 +1481,12 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
         leftValue,
         rightValue,
         leftTranslation,
-        rightTranslation
+        rightTranslation,
+        mergeJoin->mergeclauses
     );
 
-    if (mergeJoin->mergeclauses) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying merge join conditions from mergeclauses");
-        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->mergeclauses,
-                                                       &leftTranslation, &rightTranslation);
-    } else if (mergeJoin->join.joinqual) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying merge join conditions from joinqual");
-        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->join.joinqual,
-                                                       &leftTranslation, &rightTranslation);
-    }
+    // Join conditions are now handled inside the join predicate region
+    // No need to apply them as separate selections
 
     if (mergeJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
@@ -1407,14 +1522,16 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
             leftPlan->type, rightPlan->type);
 
     const auto leftTranslation = translate_plan_node(ctx, leftPlan);
-    const auto [leftOp, leftColumns] = leftTranslation;
+    const auto leftOp = leftTranslation.op;
+    const auto& leftColumns = leftTranslation.columns;
     if (!leftOp) {
         PGX_ERROR("Failed to translate left child of HashJoin");
         throw std::runtime_error("Failed to translate left child of HashJoin");
     }
 
     auto rightTranslation = translate_plan_node(ctx, rightPlan);
-    auto [rightOp, rightColumns] = rightTranslation;
+    auto rightOp = rightTranslation.op;
+    auto& rightColumns = rightTranslation.columns;
     if (!rightOp) {
         PGX_ERROR("Failed to translate right child of HashJoin");
         throw std::runtime_error("Failed to translate right child of HashJoin");
@@ -1432,18 +1549,12 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
         leftValue,
         rightValue,
         leftTranslation,
-        rightTranslation
+        rightTranslation,
+        hashJoin->hashclauses ? hashJoin->hashclauses : hashJoin->join.joinqual
     );
 
-    if (hashJoin->hashclauses) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying hash join conditions from hashclauses");
-        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->hashclauses,
-                                                       &leftTranslation, &rightTranslation);
-    } else if (hashJoin->join.joinqual) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying hash join conditions from joinqual");
-        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.joinqual,
-                                                       &leftTranslation, &rightTranslation);
-    }
+    // Join conditions are now handled inside the join predicate region
+    // No need to apply them as separate selections
 
     if (hashJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
@@ -1496,14 +1607,16 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
             leftPlan->type, rightPlan->type);
 
     const auto leftTranslation = translate_plan_node(ctx, leftPlan);
-    const auto [leftOp, leftColumns] = leftTranslation;
+    const auto leftOp = leftTranslation.op;
+    const auto& leftColumns = leftTranslation.columns;
     if (!leftOp) {
         PGX_ERROR("Failed to translate left child of NestLoop");
         throw std::runtime_error("Failed to translate left child of NestLoop");
     }
 
     auto rightTranslation = translate_plan_node(ctx, rightPlan);
-    auto [rightOp, rightColumns] = rightTranslation;
+    auto rightOp = rightTranslation.op;
+    auto& rightColumns = rightTranslation.columns;
     if (!rightOp) {
         PGX_ERROR("Failed to translate right child of NestLoop");
         throw std::runtime_error("Failed to translate right child of NestLoop");
@@ -1521,14 +1634,9 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         leftValue,
         rightValue,
         leftTranslation,
-        rightTranslation
+        rightTranslation,
+        nestLoop->join.joinqual
     );
-
-    if (nestLoop->join.joinqual) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying nested loop join conditions from joinqual");
-        result = apply_selection_from_qual_with_columns(ctx, result, nestLoop->join.joinqual,
-                                                       &leftTranslation, &rightTranslation);
-    }
 
     if (nestLoop->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
