@@ -50,6 +50,9 @@ ColumnDefAttr ColumnManager::createDef(const Column* attr) {
 }
 
 std::pair<std::string, std::string> ColumnManager::getName(const Column* attr) {
+    if (!attributesRev.contains(attr)) {
+        PGX_ERROR("Did a lookup for %p but it isn't here!", attr);
+    }
    return attributesRev.at(attr);
 }
 } // namespace mlir::relalg

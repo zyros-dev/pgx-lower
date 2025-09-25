@@ -1,4 +1,7 @@
 #include "lingodb/mlir/Dialect/RelAlg/Transforms/queryopt/QueryGraphBuilder.h"
+
+#include "pgx-lower/utility/logging.h"
+
 #include <list>
 
 namespace mlir::relalg {
@@ -160,6 +163,9 @@ NodeSet QueryGraphBuilder::calcTES(Operator op) {
 NodeSet QueryGraphBuilder::calcSES(Operator op) const {
    NodeSet res = NodeSet(numNodes);
    for (const auto* attr : op.getUsedColumns()) {
+       if (!attrToNodes.contains(attr)) {
+           PGX_ERROR("Tried to look up %p, but it isn't here!", attr);
+       }
       res.set(attrToNodes.at(attr));
    }
    return res;

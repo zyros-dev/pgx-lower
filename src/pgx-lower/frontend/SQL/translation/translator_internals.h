@@ -9,7 +9,6 @@ extern "C" {
 }
 
 using AttrNumber = int16;
-using Bitmapset = struct Bitmapset;
 
 // fwd
 struct Agg;
@@ -36,6 +35,8 @@ struct Material;
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
+#include <optional>
+#include <functional>
 
 #include <memory>
 #include <map>
@@ -50,6 +51,9 @@ struct Material;
 
 namespace pgx_lower::frontend::sql {
 
+template<typename T>
+using OptRefT = std::optional<std::reference_wrapper<T>>;
+
 struct ColumnInfo {
     std::string name;
     unsigned int type_oid;
@@ -63,8 +67,6 @@ struct ColumnInfo {
     , nullable(null) {}
 };
 
-using ColumnMapping = std::map<std::pair<int, int>, std::pair<std::string, std::string>>;
-
 /**
  * This class aims to contain IMMUTABLE state except for the OpBuilder. Since the OpBuilder is effectively our primary
  * goal in this crawl, its ok to constantly mutate it. However, everything else here should be immutable.
@@ -75,49 +77,10 @@ struct TranslationContext {
     mlir::OpBuilder& builder;
     const mlir::ModuleOp current_module;
     const mlir::Value current_tuple;
-
-    TranslationContext(const PlannedStmt& current_stmt, mlir::OpBuilder& builder, const mlir::ModuleOp& current_module,
-                       const mlir::Value& current_tuple, const ColumnMapping& mappings)
-    : current_stmt(current_stmt)
-    , builder(builder)
-    , current_module(current_module)
-    , current_tuple(current_tuple)
-    , column_mappings(mappings) {}
-
-    void set_column_mapping(int varno, int varattno, const std::string& table_name, const std::string& column_name) {
-        const auto key = std::make_pair(varno, varattno);
-        const auto value = std::make_pair(table_name, column_name);
-        const auto it = column_mappings.find(key);
-        if (it != column_mappings.end()) {
-            if (it->second != value) {
-                PGX_ERROR("Attempted to overwrite column mapping for varno=%d, varattno=%d: "
-                          "existing=(%s, %s), new=(%s, %s)",
-                          varno, varattno, it->second.first.c_str(), it->second.second.c_str(), table_name.c_str(),
-                          column_name.c_str());
-                throw std::runtime_error("Column mapping conflict - attempted to overwrite with different value");
-            }
-            return;
-        }
-        column_mappings[key] = value;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Set column mapping: varno=%d, varattno=%d -> (%s, %s)", varno, varattno,
-                table_name.c_str(), column_name.c_str());
-    }
-
-    std::optional<std::pair<std::string, std::string>> get_column_mapping(int varno, int varattno) const {
-        const auto key = std::make_pair(varno, varattno);
-        const auto it = column_mappings.find(key);
-        if (it != column_mappings.end()) {
-            return it->second;
-        }
-        return std::nullopt;
-    }
-
-    // Get a copy of all column mappings for context propagation
-    ColumnMapping get_all_column_mappings() const { return column_mappings; }
-
-   private:
-    ColumnMapping column_mappings;
+    static int outer_join_counter;
 };
+
+inline int TranslationContext::outer_join_counter = 0;
 
 struct TranslationResult {
     mlir::Operation* op = nullptr;
@@ -129,8 +92,7 @@ struct TranslationResult {
         int32_t typmod;
         mlir::Type mlir_type;
         bool nullable;
-
-        std::string toString() const {
+        auto toString() const -> std::string {
             return "ColumnSchema(table='" + table_name + "', column='" + column_name
                    + "', oid=" + std::to_string(type_oid) + ", typmod=" + std::to_string(typmod)
                    + ", nullable=" + (nullable ? "true" : "false") + ")";
@@ -138,18 +100,34 @@ struct TranslationResult {
     };
 
     std::vector<ColumnSchema> columns;
+    std::string current_scope;
+    std::map<std::pair<int, int>, std::pair<std::string, std::string>> varno_resolution;
 
-    // Mapping from original column references to their nullable versions after outer join
-    // Key: "table_name.column_name", Value: "table_name.column_name_nullable"
-    std::map<std::string, std::string> outerJoinColumnMappings;
+    [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {
+        const auto key = std::make_pair(varno, varattno);
+        const auto it = varno_resolution.find(key);
+        if (it != varno_resolution.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
 
-    std::string toString() const {
+    auto toString() const -> std::string {
         std::string result = "TranslationResult(op=" + (op ? std::to_string(reinterpret_cast<uintptr_t>(op)) : "null")
-                             + ", columns=[";
+                             + ", scope=" + current_scope + ", columns=[";
         for (size_t i = 0; i < columns.size(); ++i) {
             result += "\n\t" + columns[i].toString();
         }
-        result += "])";
+        result += "]";
+        if (!varno_resolution.empty()) {
+            result += ", varno_mappings=[";
+            for (const auto& [key, value] : varno_resolution) {
+                result += "\n\t(" + std::to_string(key.first) + "," + std::to_string(key.second) + ") -> ("
+                          + value.first + ", " + value.second + ")";
+            }
+            result += "]";
+        }
+        result += ")";
         return result;
     }
 };
@@ -167,6 +145,8 @@ namespace postgresql_ast {
 
 using QueryCtxT = pgx_lower::frontend::sql::TranslationContext;
 using TranslationResult = pgx_lower::frontend::sql::TranslationResult;
+template<typename T>
+using OptRefT = pgx_lower::frontend::sql::OptRefT<T>;
 
 // ===========================================================================
 // PostgreSQLASTTranslator::Impl
@@ -179,10 +159,10 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_query(const PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp>;
 
     mlir::Value translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr);
-    auto translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value;
-    auto translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr,
-                                                const TranslationResult* left_child, const TranslationResult* right_child)
-        -> mlir::Value;
+    auto translate_expression(const QueryCtxT& ctx, Expr* expr,
+                              OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
+    auto translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr, const TranslationResult* left_child,
+                                                const TranslationResult* right_child) -> mlir::Value;
     auto translate_op_expr_with_join_context(const QueryCtxT& ctx, const OpExpr* op_expr,
                                              const TranslationResult* left_child, const TranslationResult* right_child)
         -> mlir::Value;
@@ -195,16 +175,22 @@ class PostgreSQLASTTranslator::Impl {
         -> pgx_lower::frontend::sql::StreamExpressionResult;
 
     [[deprecated("Use translate_op_expr_with_join_context() for join contexts")]]
-    auto translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value;
+    auto translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr,
+                           OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
 
-    auto translate_var(const QueryCtxT& ctx, const Var* var) const -> mlir::Value;
-    auto translate_const(const QueryCtxT& ctx, Const* const_node) const -> mlir::Value;
-    auto translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr) -> mlir::Value;
+    auto translate_var(const QueryCtxT& ctx, const Var* var,
+                       OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
+    auto translate_const(const QueryCtxT& ctx, Const* const_node,
+                         OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
+    auto translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr,
+                             OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
 
     [[deprecated("Use translate_bool_expr_with_join_context() for join contexts")]]
-    auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value;
+    auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr,
+                             OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
     auto translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value;
-    auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) const -> mlir::Value;
+    auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref,
+                          OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
     auto translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr) -> mlir::Value;
     auto translate_scalar_array_op_expr(const QueryCtxT& ctx, const ScalarArrayOpExpr* scalar_array_op) -> mlir::Value;
     auto translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value;
@@ -235,47 +221,31 @@ class PostgreSQLASTTranslator::Impl {
         -> TranslationResult;
 
     auto apply_selection_from_qual_with_columns(const QueryCtxT& ctx, const TranslationResult& input, const List* qual,
-                                                 const TranslationResult* left_child, const TranslationResult* right_child) -> TranslationResult;
+                                                const TranslationResult* left_child,
+                                                const TranslationResult* right_child) -> TranslationResult;
     auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input,
                                            const List* target_list, const TranslationResult* left_child = nullptr,
                                            const TranslationResult* right_child = nullptr) -> TranslationResult;
     auto apply_projection_from_translation_result(const QueryCtxT& ctx, const TranslationResult& input,
-                                                  const TranslationResult& left_child, const TranslationResult& right_child,
-                                                  const List* target_list) -> TranslationResult;
+                                                  const TranslationResult& left_child,
+                                                  const TranslationResult& right_child, const List* target_list)
+        -> TranslationResult;
 
     auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream,
                                const TranslationResult& translation_result) const -> mlir::Value;
 
     // Join helper functions
-    void translate_join_predicate_to_region(
-        const QueryCtxT& ctx,
-        mlir::Block* predicateBlock,
-        mlir::Value tupleArg,
-        List* joinClauses,
-        const TranslationResult& leftTranslation,
-        const TranslationResult& rightTranslation);
+    void translate_join_predicate_to_region(const QueryCtxT& ctx, mlir::Block* predicateBlock, mlir::Value tupleArg,
+                                            List* joinClauses, const TranslationResult& leftTranslation,
+                                            const TranslationResult& rightTranslation);
 
-    mlir::Operation* create_outer_join_with_nullable_mapping(
-        QueryCtxT& ctx,
-        mlir::Value primaryValue,
-        mlir::Value outerValue,
-        const TranslationResult& outerTranslation,
-        List* joinClauses,
-        const TranslationResult* leftTranslation,
-        const TranslationResult* rightTranslation,
-        bool isRightJoin);
-
-    TranslationResult create_join_operation(
-        QueryCtxT& ctx,
-        JoinType jointype,
-        mlir::Value leftValue,
-        mlir::Value rightValue,
-        const TranslationResult& leftTranslation,
-        const TranslationResult& rightTranslation,
-        List* joinClauses);
+    auto create_join_operation(QueryCtxT& ctx, JoinType join_type, mlir::Value left_value, mlir::Value right_value,
+                               const TranslationResult& left_translation, const TranslationResult& right_translation,
+                               List* join_clauses) -> TranslationResult;
 
     // Operation translation helpers
-    auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)
+    auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr,
+                                  OptRefT<const TranslationResult> current_result = std::nullopt)
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
     static auto translate_arithmetic_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs,
                                         const mlir::Value rhs) -> mlir::Value;
