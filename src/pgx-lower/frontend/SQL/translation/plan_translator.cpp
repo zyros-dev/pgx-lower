@@ -1222,12 +1222,15 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     PGX_IO(AST_TRANSLATE);
 
     TranslationResult result;
+    const bool isRightJoin = (join_type == JOIN_RIGHT);
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 1] LEFT input: %s", left_translation.toString().c_str());
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 1] RIGHT input: %s", right_translation.toString().c_str());
 
-    auto translateExpressionFn = [this](const QueryCtxT& ctx_p, Expr* expr, const TranslationResult* left_child,
-                                        const TranslationResult* right_child) -> mlir::Value {
-        return translate_expression_with_join_context(ctx_p, expr, left_child, right_child);
+    auto translateExpressionFn = [this, isRightJoin](const QueryCtxT& ctx_p, Expr* expr,
+                                                     const TranslationResult* left_child,
+                                                     const TranslationResult* right_child) -> mlir::Value {
+        return isRightJoin ? translate_expression_with_join_context(ctx_p, expr, right_child, left_child)
+                           : translate_expression_with_join_context(ctx_p, expr, left_child, right_child);
     };
 
     auto translateJoinPredicateToRegion = [translateExpressionFn](
@@ -1426,7 +1429,6 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
 
     case JOIN_LEFT:
     case JOIN_RIGHT: {
-        const bool isRightJoin = (join_type == JOIN_RIGHT);
 
         const auto [op, scope] = isRightJoin ? createOuterJoinWithNullableMapping(right_value, left_value,
                                                                                   left_translation, true, ctx)
