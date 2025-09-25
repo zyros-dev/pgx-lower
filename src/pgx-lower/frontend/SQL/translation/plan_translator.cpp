@@ -1725,6 +1725,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
                     "Non-Var expression in join projection, delegating to apply_projection_from_target_list");
             auto result = apply_projection_from_target_list(ctx, input, target_list, &left_child, &right_child);
             PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 2] RESULT: %s", result.toString().c_str());
+            return result;
         }
     }
 
