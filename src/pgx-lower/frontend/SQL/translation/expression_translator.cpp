@@ -99,25 +99,34 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
     PGX_IO(AST_TRANSLATE);
     if (!expr) {
         PGX_ERROR("Null expression");
-        return nullptr;
+        throw std::runtime_error("check logs");
     }
 
     if (expr->type == T_Var) {
         const auto* var = reinterpret_cast<const Var*>(expr);
 
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] Processing Var: varno=%d, varattno=%d, varattnosyn=%d, vartype=%d",
+                var->varno, var->varattno, var->varattnosyn, var->vartype);
+
         if (var->varno == OUTER_VAR && left_child) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] OUTER_VAR: left_child has %zu columns", left_child->columns.size());
+            for (size_t i = 0; i < left_child->columns.size(); ++i) {
+                const auto& c = left_child->columns[i];
+                PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] %s.%s (oid=%d)", i + 1, c.table_name.c_str(), c.column_name.c_str(), c.type_oid);
+            }
+
             if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child->columns.size())) {
                 const auto& col = left_child->columns[var->varattno - 1];
 
-                PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 6] Resolving OUTER_VAR varattno=%d to %s.%s from left child",
-                        var->varattno, col.table_name.c_str(), col.column_name.c_str());
-                PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 6] Left child has %zu columns, looking at position %d",
-                        left_child->columns.size(), var->varattno - 1);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] OUTER_VAR varattno=%d resolved to %s.%s (position %d)",
+                        var->varattno, col.table_name.c_str(), col.column_name.c_str(), var->varattno - 1);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] Column details: type_oid=%d, nullable=%d",
+                        col.type_oid, col.nullable);
 
                 auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
                 if (!dialect) {
                     PGX_ERROR("RelAlg dialect not registered");
-                    return nullptr;
+                    throw std::runtime_error("Check logs");
                 }
 
                 auto& columnManager = dialect->getColumnManager();
@@ -131,19 +140,27 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
             } else {
                 PGX_ERROR("OUTER_VAR varattno %d out of range (have %zu columns)", var->varattno,
                           left_child->columns.size());
-                return nullptr;
+                throw std::runtime_error("Check logs");
             }
         } else if (var->varno == INNER_VAR && right_child) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] INNER_VAR: right_child has %zu columns", right_child->columns.size());
+            for (size_t i = 0; i < right_child->columns.size(); ++i) {
+                const auto& c = right_child->columns[i];
+                PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] %s.%s (oid=%d)", i + 1, c.table_name.c_str(), c.column_name.c_str(), c.type_oid);
+            }
+
             if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size())) {
                 const auto& col = right_child->columns[var->varattno - 1];
 
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving INNER_VAR varattno=%d to %s.%s from right child",
-                        var->varattno, col.table_name.c_str(), col.column_name.c_str());
+                PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] INNER_VAR varattno=%d resolved to %s.%s (position %d)",
+                        var->varattno, col.table_name.c_str(), col.column_name.c_str(), var->varattno - 1);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] Column details: type_oid=%d, nullable=%d",
+                        col.type_oid, col.nullable);
 
                 auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
                 if (!dialect) {
                     PGX_ERROR("RelAlg dialect not registered");
-                    return nullptr;
+                    throw std::runtime_error("Check logs");
                 }
 
                 auto& columnManager = dialect->getColumnManager();
@@ -157,7 +174,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
             } else {
                 PGX_ERROR("INNER_VAR varattno %d out of range (have %zu columns)", var->varattno,
                           right_child->columns.size());
-                return nullptr;
+                throw std::runtime_error("Check logs");
             }
         } else {
             return translate_var(ctx, var);
@@ -183,21 +200,30 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
                                                                         const TranslationResult* right_child)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[OPEXPR] Processing OpExpr with opno=%d, opfuncid=%d",
+            op_expr->opno, op_expr->opfuncid);
+
     if (!op_expr->args || op_expr->args->length != 2) {
         PGX_ERROR("OpExpr should have exactly 2 arguments, got %d", op_expr->args ? op_expr->args->length : 0);
-        return nullptr;
+        throw std::runtime_error("Check logs");
     }
 
     auto* leftExpr = static_cast<Expr*>(lfirst(list_nth_cell(op_expr->args, 0)));
     auto* rightExpr = static_cast<Expr*>(lfirst(list_nth_cell(op_expr->args, 1)));
 
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[OPEXPR] Left operand type: %d, Right operand type: %d",
+            leftExpr ? leftExpr->type : -1, rightExpr ? rightExpr->type : -1);
+
     const auto lhs = translate_expression_with_join_context(ctx, leftExpr, left_child, right_child);
     const auto rhs = translate_expression_with_join_context(ctx, rightExpr, left_child, right_child);
 
     if (!lhs || !rhs) {
-        PGX_ERROR("Failed to translate OpExpr operands");
-        return nullptr;
+        PGX_ERROR("Failed to translate OpExpr operands - lhs=%p, rhs=%p", lhs.getAsOpaquePointer(), rhs.getAsOpaquePointer());
+        throw std::runtime_error("Check logs");
     }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[OPEXPR] Successfully translated both operands");
 
     const auto op_oid = op_expr->opno;
 
@@ -289,7 +315,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
     }
 
     PGX_ERROR("Unsupported operator OID: %u", op_oid);
-    return nullptr;
+    throw std::runtime_error("Check logs");
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const QueryCtxT& ctx, const BoolExpr* bool_expr,
@@ -299,7 +325,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const 
     PGX_IO(AST_TRANSLATE);
     if (!bool_expr->args || bool_expr->args->length == 0) {
         PGX_ERROR("BoolExpr has no arguments");
-        return nullptr;
+        throw std::runtime_error("Check logs");
     }
 
     std::vector<mlir::Value> operands;
@@ -313,13 +339,13 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const 
             operands.push_back(operand);
         } else {
             PGX_ERROR("Failed to translate BoolExpr argument");
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
     }
 
     if (operands.empty()) {
         PGX_ERROR("No valid operands for BoolExpr");
-        return nullptr;
+        throw std::runtime_error("Check logs");
     }
 
     mlir::Value result = operands[0];
@@ -333,7 +359,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const 
             result = ctx.builder.create<mlir::db::OrOp>(ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(),
                                                         mlir::ValueRange{result, operands[i]});
             break;
-        default: PGX_ERROR("Unsupported BoolExpr type: %d", bool_expr->boolop); return nullptr;
+        default: PGX_ERROR("Unsupported BoolExpr type: %d", bool_expr->boolop); throw std::runtime_error("Check logs");
         }
     }
 
@@ -511,7 +537,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
         if (!dialect) {
             PGX_ERROR("RelAlg dialect not registered");
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
 
         auto& columnManager = dialect->getColumnManager();
@@ -612,7 +638,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     } else if (func == "upper") {
         if (args.size() != 1) {
             PGX_ERROR("UPPER requires exactly 1 argument");
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating UPPER function to StringRuntime::upper");
 
@@ -628,7 +654,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     } else if (func == "lower") {
         if (args.size() != 1) {
             PGX_ERROR("LOWER requires exactly 1 argument");
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating LOWER function to StringRuntime::lower");
 
@@ -644,7 +670,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     } else if (func == "substring" || func == "substr") {
         if (args.size() < 2 || args.size() > 3) {
             PGX_ERROR("SUBSTRING requires 2 or 3 arguments, got %d", args.size());
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating SUBSTRING function to StringRuntime::substring");
 
@@ -672,7 +698,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         // e.g., date_part('year', TIMESTAMP '2024-01-15') returns 2024
         if (args.size() != 2) {
             PGX_ERROR("DATE_PART requires exactly 2 arguments, got %zu", args.size());
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating DATE_PART function to ExtractFromDate runtime call");
@@ -698,7 +724,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         // numeric() function is used for casting to numeric/decimal type
         if (args.size() < 1 || args.size() > 3) {
             PGX_ERROR("NUMERIC cast requires 1-3 arguments, got %zu", args.size());
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NUMERIC cast");
@@ -733,7 +759,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     } else if (func == "varchar" || func == "text" || func == "char" || func == "bpchar") {
         if (args.empty()) {
             PGX_ERROR("%s requires at least 1 argument", func.c_str());
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating %s type conversion", func.c_str());
@@ -756,7 +782,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     } else if (func == "int4" || func == "int8" || func == "float4" || func == "float8") {
         if (args.empty()) {
             PGX_ERROR("%s requires at least 1 argument", func.c_str());
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Translating %s type conversion", func.c_str());
@@ -1262,7 +1288,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
 
     if (!case_expr) {
         PGX_ERROR("Invalid CaseExpr parameters");
-        return nullptr;
+        throw std::runtime_error("Check logs");
     }
 
     // CASE expressions in PostgreSQL come in two forms:
@@ -1273,7 +1299,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
         caseArg = translate_expression(ctx, case_expr->arg);
         if (!caseArg) {
             PGX_ERROR("Failed to translate CASE argument expression");
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
         PGX_LOG(AST_TRANSLATE, DEBUG, "Simple CASE expression with comparison argument");
     } else {
@@ -1286,7 +1312,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
         elseResult = translate_expression(ctx, case_expr->defresult);
         if (!elseResult) {
             PGX_ERROR("Failed to translate CASE ELSE expression");
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
     } else {
         // If no ELSE clause, use NULL as default
@@ -1304,7 +1330,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
             const auto whenNode = static_cast<Node*>(lfirst(&case_expr->args->elements[i]));
             if (nodeTag(whenNode) != T_CaseWhen) {
                 PGX_ERROR("Expected CaseWhen node in CASE args, got %d", nodeTag(whenNode));
-                continue;
+                throw std::runtime_error("Check logs");
             }
 
             const auto whenClause = reinterpret_cast<CaseWhen*>(whenNode);
@@ -1317,14 +1343,14 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
                 const mlir::Value whenCondition = translate_expression_with_case_test(ctx, whenClause->expr, caseArg);
                 if (!whenCondition) {
                     PGX_ERROR("Failed to translate WHEN condition in simple CASE");
-                    continue;
+                    throw std::runtime_error("Check logs");
                 }
                 condition = whenCondition;
             } else {
                 condition = translate_expression(ctx, whenClause->expr);
                 if (!condition) {
                     PGX_ERROR("Failed to translate WHEN condition");
-                    continue;
+                    throw std::runtime_error("Check logs");
                 }
             }
 
@@ -1338,7 +1364,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
             mlir::Value thenResult = translate_expression(ctx, whenClause->result);
             if (!thenResult) {
                 PGX_ERROR("Failed to translate THEN result");
-                continue;
+                throw std::runtime_error("Check logs");
             }
 
             // Ensure both branches return the same type
@@ -1387,7 +1413,6 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
     PGX_IO(AST_TRANSLATE);
     if (!expr) {
         throw std::runtime_error("Invalid expression");
-        return nullptr;
     }
 
     if (expr->type == T_CaseTestExpr) {
@@ -1414,7 +1439,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
 
         if (!leftValue || !rightValue) {
             PGX_ERROR("Failed to translate operands in CASE OpExpr");
-            return nullptr;
+            throw std::runtime_error("Check logs");
         }
 
         return translate_comparison_op(ctx, opExpr->opno, leftValue, rightValue);
@@ -1429,7 +1454,7 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
     PGX_IO(AST_TRANSLATE);
     if (!op_expr || !op_expr->args) {
         PGX_ERROR("OpExpr has no arguments");
-        return std::nullopt;
+        throw std::runtime_error("Check logs");
     }
 
     if (op_expr->args->length < 1) {
@@ -1473,7 +1498,7 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
     char* oprname = get_opname(op_oid);
     if (!oprname) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unknown arithmetic operator OID: %d", op_oid);
-        return nullptr;
+        throw std::runtime_error("Check logs");
     }
 
     const std::string op(oprname);
