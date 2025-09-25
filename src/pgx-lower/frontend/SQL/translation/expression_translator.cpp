@@ -72,7 +72,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
     case T_FuncExpr: return translate_func_expr(ctx, reinterpret_cast<FuncExpr*>(expr), current_result);
     case T_BoolExpr: return translate_bool_expr(ctx, reinterpret_cast<BoolExpr*>(expr), current_result);
     case T_Aggref: return translate_aggref(ctx, reinterpret_cast<Aggref*>(expr), current_result);
-    case T_NullTest: return translate_null_test(ctx, reinterpret_cast<NullTest*>(expr));
+    case T_NullTest: return translate_null_test(ctx, reinterpret_cast<NullTest*>(expr), current_result);
     case T_CoalesceExpr: return translate_coalesce_expr(ctx, reinterpret_cast<CoalesceExpr*>(expr));
     case T_ScalarArrayOpExpr: return translate_scalar_array_op_expr(ctx, reinterpret_cast<ScalarArrayOpExpr*>(expr));
     case T_CaseExpr: return translate_case_expr(ctx, reinterpret_cast<CaseExpr*>(expr));
@@ -927,7 +927,8 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, const NullTest* null_test,
+                                                                       OptRefT<const TranslationResult> current_result) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!null_test) {
         PGX_ERROR("Invalid NullTest parameters");
@@ -935,7 +936,7 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
     }
 
     auto* argNode = reinterpret_cast<Node*>(null_test->arg);
-    auto argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode), std::nullopt);
+    auto argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode), current_result);
     if (!argVal) {
         PGX_ERROR("Failed to translate NullTest argument");
         throw std::runtime_error("Failed to translate NullTest argument");

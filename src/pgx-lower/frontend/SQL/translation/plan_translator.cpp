@@ -1212,13 +1212,8 @@ TranslationResult
 PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinType join_type, mlir::Value left_value,
                                                      mlir::Value right_value, const TranslationResult& left_translation,
                                                      const TranslationResult& right_translation, List* join_clauses) {
-    // Some notes/advice for this function THIS IS IMPORTANT PLEASE LISTEN!
-    // Since its a complex function, all of its functional dependencies are isolated into lambdas. This means I don't
+    // Since it's a complex function, all of its functional dependencies are isolated into lambdas. This means I don't
     // have to hop around to understand the function so much.
-    // For the captures, we want all the captures to be _constant_, and we want to avoid parameter hell
-    // Within lambdas, we want to avoid calls to the wider class unless the lambda is specifically made for it. This is
-    // so there's a guarantee that the flow of control does not leave our lambdas. If we want to go further than
-    // this function, it needs a dedicated lambda then you need to pass the lambda in by capture.
     PGX_IO(AST_TRANSLATE);
 
     TranslationResult result;
@@ -1399,7 +1394,9 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         };
 
     switch (join_type) {
+        // TODO: Remove these warnings/change them to PGX_LOG, they're just for my own analysis
     case JOIN_INNER: {
+        PGX_WARNING("This is an inner join!");
         const auto joinOp = ctx.builder.create<mlir::relalg::InnerJoinOp>(ctx.builder.getUnknownLoc(), left_value,
                                                                           right_value);
         addPredicateRegion(joinOp, true, ctx);
@@ -1410,6 +1407,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     }
 
     case JOIN_SEMI: {
+        PGX_WARNING("This is a semi join!");
         const auto joinOp = ctx.builder.create<mlir::relalg::SemiJoinOp>(ctx.builder.getUnknownLoc(), left_value,
                                                                          right_value);
         addPredicateRegion(joinOp, false, ctx);
@@ -1419,6 +1417,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     }
 
     case JOIN_ANTI: {
+        PGX_WARNING("This is an anti join!");
         const auto joinOp = ctx.builder.create<mlir::relalg::AntiSemiJoinOp>(ctx.builder.getUnknownLoc(), left_value,
                                                                              right_value);
         addPredicateRegion(joinOp, false, ctx);
@@ -1429,6 +1428,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
 
     case JOIN_LEFT:
     case JOIN_RIGHT: {
+        PGX_WARNING("This is a left/right join!");
 
         const auto [op, scope] = isRightJoin ? createOuterJoinWithNullableMapping(right_value, left_value,
                                                                                   left_translation, true, ctx)
