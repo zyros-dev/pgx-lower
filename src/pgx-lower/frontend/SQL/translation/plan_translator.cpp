@@ -1212,6 +1212,13 @@ TranslationResult
 PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinType join_type, mlir::Value left_value,
                                                      mlir::Value right_value, const TranslationResult& left_translation,
                                                      const TranslationResult& right_translation, List* join_clauses) {
+    // Some notes/advice for this function THIS IS IMPORTANT PLEASE LISTEN!
+    // Since its a complex function, all of its functional dependencies are isolated into lambdas. This means I don't
+    // have to hop around to understand the function so much.
+    // For the captures, we want all the captures to be _constant_, and we want to avoid parameter hell
+    // Within lambdas, we want to avoid calls to the wider class unless the lambda is specifically made for it. This is
+    // so there's a guarantee that the flow of control does not leave our lambdas. If we want to go further than
+    // this function, it needs a dedicated lambda then you need to pass the lambda in by capture.
     PGX_IO(AST_TRANSLATE);
 
     TranslationResult result;
@@ -1227,7 +1234,11 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
                                               mlir::Block* predicateBlock, const mlir::Value tupleArg,
                                               const TranslationResult& leftTrans, const TranslationResult& rightTrans,
                                               const QueryCtxT& queryCtx, List* clauses) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] Left TranslationResult %s", leftTrans.toString().c_str());
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] Right TranslationResult %s", rightTrans.toString().c_str());
+
         if (!clauses || clauses->length == 0) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] No join clauses, returning true");
             auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
             predicateBuilder.setInsertionPointToStart(predicateBlock);
             auto trueVal = predicateBuilder.create<mlir::arith::ConstantOp>(
@@ -1237,20 +1248,25 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
             return;
         }
 
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] Processing %d join clauses", clauses->length);
+
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
 
         const auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, tupleArg);
-
         auto conditions = std::vector<mlir::Value>();
         ListCell* lc;
+        int clauseIdx = 0;
         foreach (lc, clauses) {
             const auto clause = static_cast<Expr*>(lfirst(lc));
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] Processing clause %d of type %d",
+                    ++clauseIdx, clause ? clause->type : -1);
 
             if (auto conditionValue = translateExpressionFn(predicateCtx, clause, &leftTrans, &rightTrans)) {
                 conditions.push_back(conditionValue);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] Successfully translated clause %d", clauseIdx);
             } else {
-                PGX_WARNING("Failed to translate join clause");
+                PGX_WARNING("Failed to translate join clause %d", clauseIdx);
             }
         }
 
@@ -1314,7 +1330,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     auto buildNullableColumns = [](const auto& columns, const std::string& scope) {
         std::vector<TranslationResult::ColumnSchema> nullableColumns;
         for (const auto& col : columns) {
-            TranslationResult::ColumnSchema nullableCol = col;
+            auto nullableCol = col;
             nullableCol.table_name = scope;
             nullableCol.nullable = true;
             if (!mlir::isa<mlir::db::NullableType>(col.mlir_type)) {
@@ -1332,7 +1348,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
             auto& columnManager = queryCtx.builder.getContext()
                                       ->getOrLoadDialect<mlir::relalg::RelAlgDialect>()
                                       ->getColumnManager();
-            std::vector<mlir::Attribute> mappingAttrs;
+            auto mappingAttrs = std::vector<mlir::Attribute>();
 
             const auto outerJoinScope = "oj" + std::to_string(queryCtx.outer_join_counter++);
             PGX_LOG(AST_TRANSLATE, DEBUG, "Creating outer join with scope: @%s", outerJoinScope.c_str());
