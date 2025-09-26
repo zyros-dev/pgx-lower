@@ -67,20 +67,6 @@ struct ColumnInfo {
     , nullable(null) {}
 };
 
-/**
- * This class aims to contain IMMUTABLE state except for the OpBuilder. Since the OpBuilder is effectively our primary
- * goal in this crawl, its ok to constantly mutate it. However, everything else here should be immutable.
- * I'm aiming to remove the column_mappings over time -
- */
-struct TranslationContext {
-    const PlannedStmt current_stmt;
-    mlir::OpBuilder& builder;
-    const mlir::ModuleOp current_module;
-    const mlir::Value current_tuple;
-    static int outer_join_counter;
-};
-
-inline int TranslationContext::outer_join_counter = 0;
 
 struct TranslationResult {
     mlir::Operation* op = nullptr;
@@ -102,6 +88,7 @@ struct TranslationResult {
     std::vector<ColumnSchema> columns;
     std::string current_scope;
     std::map<std::pair<int, int>, std::pair<std::string, std::string>> varno_resolution;
+    std::unordered_map<int, TranslationResult> init_plan_results;
 
     [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {
         const auto key = std::make_pair(varno, varattno);
@@ -119,6 +106,7 @@ struct TranslationResult {
             result += "\n\t" + columns[i].toString();
         }
         result += "]";
+
         if (!varno_resolution.empty()) {
             result += ", varno_mappings=[";
             for (const auto& [key, value] : varno_resolution) {
@@ -127,10 +115,46 @@ struct TranslationResult {
             }
             result += "]";
         }
+
+        if (!init_plan_results.empty()) {
+            result += ", init_plan_results=[";
+            for (const auto& [k, v] : init_plan_results) {
+                result += "\n\tparam[" + std::to_string(k) + "]: " + v.toString();
+            }
+            result += "]";
+        }
+
         result += ")";
         return result;
     }
 };
+
+/**
+ * This class aims to contain IMMUTABLE state except for the OpBuilder. Since the OpBuilder is effectively our primary
+ * goal in this crawl, its ok to constantly mutate it. However, everything else here should be immutable.
+ * I'm aiming to remove the column_mappings over time -
+ */
+struct SubqueryInfo {
+    std::string join_scope;
+    std::string join_column_name;
+    mlir::Type output_type;
+
+    SubqueryInfo() = default;
+};
+
+struct TranslationContext {
+    const PlannedStmt current_stmt;
+    mlir::OpBuilder& builder;
+    const mlir::ModuleOp current_module;
+    const mlir::Value current_tuple;
+    const mlir::Value outer_tuple;
+    std::unordered_map<int, TranslationResult> init_plan_results;
+    std::unordered_map<int, SubqueryInfo> subquery_param_mapping;
+    std::unordered_map<int, std::pair<std::string, std::string>> correlation_params;
+    static int outer_join_counter;
+};
+
+inline int TranslationContext::outer_join_counter = 0;
 
 struct StreamExpressionResult {
     mlir::Value stream;
@@ -196,10 +220,20 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref,
                           OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
     auto translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr) -> mlir::Value;
-    auto translate_scalar_array_op_expr(const QueryCtxT& ctx, const ScalarArrayOpExpr* scalar_array_op) -> mlir::Value;
+    auto translate_scalar_array_op_expr(const QueryCtxT& ctx, const ScalarArrayOpExpr* scalar_array_op,
+                                        OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
     auto translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value;
     auto translate_expression_with_case_test(const QueryCtxT& ctx, Expr* expr, mlir::Value case_test_value)
         -> mlir::Value;
+
+    // Subquery translation
+    auto translate_subplan(const QueryCtxT& ctx, const SubPlan* subplan,
+                          OptRefT<const TranslationResult> current_result) -> mlir::Value;
+    auto translate_subquery_plan(const QueryCtxT& parent_ctx, Plan* subquery_plan,
+                                 const PlannedStmt* parent_stmt)
+        -> std::pair<mlir::Value, TranslationResult>;
+    auto translate_param(const QueryCtxT& ctx, const Param* param,
+                        OptRefT<const TranslationResult> current_result) -> mlir::Value;
 
     // Plan node translation methods
     auto translate_plan_node(QueryCtxT& ctx, Plan* plan) -> TranslationResult;
@@ -213,6 +247,10 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_hash(QueryCtxT& ctx, Hash* hash) -> TranslationResult;
     auto translate_nest_loop(QueryCtxT& ctx, NestLoop* nestLoop) -> TranslationResult;
     auto translate_material(QueryCtxT& ctx, Material* material) -> TranslationResult;
+    auto translate_subquery_scan(QueryCtxT& ctx, SubqueryScan* subqueryScan) -> TranslationResult;
+
+    // InitPlan helpers
+    auto process_init_plans(QueryCtxT& ctx, Plan* plan) -> TranslationResult;
 
     // Query function generation
     static auto create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp;

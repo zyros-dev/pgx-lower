@@ -54,12 +54,70 @@ namespace postgresql_ast {
 
 using namespace pgx_lower::frontend::sql::constants;
 
+auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, Plan* plan) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    TranslationResult initplan_results;
+
+    if (!plan->initPlan || list_length(plan->initPlan) == 0) {
+        return initplan_results;
+    }
+
+
+    List* all_subplans = ctx.current_stmt.subplans;
+    const int num_subplans = list_length(all_subplans);
+    ListCell* lc;
+    foreach (lc, plan->initPlan) {
+        const auto* subplan = static_cast<SubPlan*>(lfirst(lc));
+        if (!subplan) {
+            PGX_ERROR("Invalid SubPlan in initPlan list");
+            continue;
+        }
+
+        const int plan_id = subplan->plan_id;
+        if (plan_id < 1 || plan_id > num_subplans) {
+            PGX_ERROR("SubPlan plan_id %d out of range (have %d subplans)", plan_id, num_subplans);
+            continue;
+        }
+
+        auto* initplan = static_cast<Plan*>(list_nth(all_subplans, plan_id - 1));
+        if (!initplan) {
+            PGX_ERROR("SubPlan plan_id %d points to null Plan", plan_id);
+            continue;
+        }
+
+        auto initplan_result = translate_plan_node(ctx, initplan);
+        if (!initplan_result.op) {
+            PGX_ERROR("Failed to translate InitPlan (plan_id=%d)", plan_id);
+            continue;
+        }
+
+        List* setParam = subplan->setParam;
+        if (!setParam || list_length(setParam) == 0) {
+            PGX_ERROR("InitPlan has no setParam");
+            continue;
+        }
+        const int paramid = list_nth_int(setParam, 0);
+        initplan_results.init_plan_results[paramid] = initplan_result;
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Init plan returning %s", initplan_results.toString().data());
+    return initplan_results;
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* plan) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!plan) {
         PGX_ERROR("Plan node is null");
         throw std::runtime_error("Plan node is null");
     }
+
+    auto initplan_results = process_init_plans(ctx, plan);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Node has %zu local InitPlans, context already has %zu",
+            initplan_results.init_plan_results.size(), ctx.init_plan_results.size());
+    for (const auto& [paramid, result] : initplan_results.init_plan_results) {
+        ctx.init_plan_results[paramid] = result;
+    }
+    PGX_LOG(AST_TRANSLATE, DEBUG, "After merge, context has %zu InitPlans", ctx.init_plan_results.size());
 
     TranslationResult result;
 
@@ -69,8 +127,21 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
             auto* seqScan = reinterpret_cast<SeqScan*>(plan);
             result = translate_seq_scan(ctx, seqScan);
 
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Merging %zu InitPlan results from context into SeqScan result",
+                    ctx.init_plan_results.size());
+            for (const auto& [paramid, initplan_result] : ctx.init_plan_results) {
+                result.init_plan_results[paramid] = initplan_result;
+            }
+            PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan result now has %zu init_plan_results",
+                    result.init_plan_results.size());
+
             if (result.op && plan->qual) {
+                PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan has qual, calling apply_selection with result containing %zu init_plan_results",
+                        result.init_plan_results.size());
                 result = apply_selection_from_qual_with_columns(ctx, result, plan->qual, nullptr, nullptr);
+            } else {
+                PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan: no qual (result.op=%p, plan->qual=%p)",
+                        static_cast<void*>(result.op), static_cast<void*>(plan->qual));
             }
 
             if (result.op && plan->targetlist) {
@@ -80,7 +151,11 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
             PGX_ERROR("Type mismatch for SeqScan");
         }
         break;
-    case T_Agg: result = translate_agg(ctx, reinterpret_cast<Agg*>(plan)); break;
+    case T_Agg:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Calling translate_agg");
+        result = translate_agg(ctx, reinterpret_cast<Agg*>(plan));
+        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_agg returned, result.op=%p", static_cast<void*>(result.op));
+        break;
     case T_Sort: result = translate_sort(ctx, reinterpret_cast<Sort*>(plan)); break;
     case T_IncrementalSort:
         PGX_LOG(AST_TRANSLATE, DEBUG, "Treating IncrementalSort as regular Sort"); // TODO: NV: Do I need to deal with
@@ -94,9 +169,19 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_Hash: result = translate_hash(ctx, reinterpret_cast<Hash*>(plan)); break;
     case T_NestLoop: result = translate_nest_loop(ctx, reinterpret_cast<NestLoop*>(plan)); break;
     case T_Material: result = translate_material(ctx, reinterpret_cast<Material*>(plan)); break;
+    case T_SubqueryScan: result = translate_subquery_scan(ctx, reinterpret_cast<SubqueryScan*>(plan)); break;
     default: PGX_ERROR("Unsupported plan node type: %d", plan->type); result.op = nullptr;
     }
 
+    // Merge context InitPlan results into the node's result
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Merging %zu InitPlan results from context into node result",
+            ctx.init_plan_results.size());
+    for (const auto& [paramid, initplan_result] : ctx.init_plan_results) {
+        result.init_plan_results[paramid] = initplan_result;
+    }
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Finished merging InitPlan results");
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_plan_node returning result with %zu columns", result.columns.size());
     return result;
 }
 
@@ -134,6 +219,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
+    auto uniqueScope = columnManager.getUniqueScope(aliasName);
     auto columnDefs = std::vector<mlir::NamedAttribute>{};
     auto columnOrder = std::vector<mlir::Attribute>{};
     const auto allColumns = get_all_table_columns_from_schema(&ctx.current_stmt, seqScan->scan.scanrelid);
@@ -141,7 +227,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     if (!allColumns.empty()) {
         int varattno = 1;
         for (const auto& colInfo : allColumns) {
-            auto colDef = columnManager.createDef(aliasName, colInfo.name);
+            auto colDef = columnManager.createDef(uniqueScope, colInfo.name);
 
             PostgreSQLTypeMapper type_mapper(context_);
             const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
@@ -188,7 +274,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
                     const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
                                                                                 colInfo.nullable);
 
-                    result.columns.push_back({.table_name = aliasName,
+                    result.columns.push_back({.table_name = uniqueScope,
                                               .column_name = colInfo.name,
                                               .type_oid = colInfo.type_oid,
                                               .typmod = colInfo.typmod,
@@ -198,18 +284,15 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
             }
         }
     } else {
-        // Fallback: if no targetlist, output all columns
-        for (const auto& colInfo : allColumns) {
-            PostgreSQLTypeMapper type_mapper(context_);
-            const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                        colInfo.nullable);
+        throw std::runtime_error("SeqScan had an empty target list");
+    }
 
-            result.columns.push_back({.table_name = aliasName,
-                                      .column_name = colInfo.name,
-                                      .type_oid = colInfo.type_oid,
-                                      .typmod = colInfo.typmod,
-                                      .mlir_type = mlirType,
-                                      .nullable = colInfo.nullable});
+    // TODO: NV: Unsure if this is a reasonable solution to my problem...
+    if (uniqueScope != aliasName) {
+        for (size_t i = 0; i < allColumns.size(); i++) {
+            const int varattno = static_cast<int>(i + 1);
+            result.varno_resolution[std::make_pair(seqScan->scan.scanrelid, varattno)] =
+                std::make_pair(uniqueScope, allColumns[i].name);
         }
     }
 
@@ -328,7 +411,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         continue;
 
                     // For aggregate expressions, we need a special context
-                    auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module, mlir::Value{}};
+                    auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module, mlir::Value{}, ctx.current_tuple};
+                    childCtx.init_plan_results = ctx.init_plan_results;
 
                     auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
                         childCtx, argTE->expr, childOutput, "agg_expr_" + std::to_string(aggref->aggno),
@@ -436,12 +520,15 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     resultColumnName = te->resname ? te->resname : "agg_" + std::to_string(te->resno);
                 }
 
+                PGX_LOG(AST_TRANSLATE, DEBUG, "About to push_back aggregate column: table='%s', column='%s', type_oid=%u",
+                        aggrScopeName.c_str(), resultColumnName.c_str(), aggref->aggtype);
                 result.columns.push_back({.table_name = aggrScopeName,
                                           .column_name = resultColumnName,
                                           .type_oid = aggref->aggtype,
                                           .typmod = -1,
                                           .mlir_type = resultType,
                                           .nullable = true});
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully pushed aggregate column, result now has %zu columns", result.columns.size());
             } else if (te->expr->type == T_Var) {
                 auto* var = reinterpret_cast<Var*>(te->expr);
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
@@ -471,9 +558,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             result = apply_selection_from_qual(ctx, result, agg->plan.qual);
         }
 
+        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_agg: Returning result with %zu columns, op=%p",
+                result.columns.size(), static_cast<void*>(result.op));
         return result;
     }
 
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_agg: Returning childResult with %zu columns",
+            childResult.columns.size());
     return childResult;
 }
 
@@ -563,6 +654,8 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
     } else {
         result.columns = childResult.columns;
     }
+
+    result.init_plan_results = childResult.init_plan_results;
 
     return result;
 }
@@ -716,7 +809,12 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        const auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg};
+        auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.outer_tuple};
+        tmp_ctx.init_plan_results = ctx.init_plan_results;
+            tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+        tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+        tmp_ctx.correlation_params = ctx.correlation_params;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
 
         mlir::Value predicateResult = nullptr;
         if (qual && qual->length > 0) {
@@ -814,7 +912,12 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        const auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg};
+        auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.outer_tuple};
+        tmp_ctx.init_plan_results = ctx.init_plan_results;
+        tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+            tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+        tmp_ctx.correlation_params = ctx.correlation_params;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
 
         mlir::Value predicateResult = nullptr;
         if (qual && qual->length > 0) {
@@ -962,6 +1065,7 @@ void PostgreSQLASTTranslator::Impl::translate_join_predicate_to_region(const Que
     predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), mlir::ValueRange{finalCondition});
 }
 
+
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
     const QueryCtxT& ctx, const TranslationResult& input, const List* target_list, const TranslationResult* left_child,
     const TranslationResult* right_child) -> TranslationResult {
@@ -970,7 +1074,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
         return input;
     }
 
-    auto inputValue = input.op->getResult(0);
+    mlir::Value inputValue = input.op->getResult(0);
     if (!inputValue) {
         PGX_ERROR("Input operation has no result");
         return input;
@@ -1026,7 +1130,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
 
             mlir::OpBuilder temp_builder(&context_);
             temp_builder.setInsertionPointToStart(tempBlock);
-            auto tmp_ctx = QueryCtxT{ctx.current_stmt, temp_builder, ctx.current_module, tupleArg};
+            auto tmp_ctx = QueryCtxT{ctx.current_stmt, temp_builder, ctx.current_module, tupleArg, ctx.current_tuple};
+            tmp_ctx.init_plan_results = ctx.init_plan_results;
+            tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
 
             for (auto* entry : computedEntries) {
                 auto colName = entry->resname ? entry->resname : "col_" + std::to_string(entry->resno);
@@ -1113,7 +1219,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
 
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
-        auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg};
+        auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.current_tuple};
+        tmp_ctx.init_plan_results = ctx.init_plan_results;
+        tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
 
         std::vector<mlir::Value> computedValues;
         for (auto* entry : computedEntries) {
@@ -1271,7 +1379,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
 
-        const auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, tupleArg);
+        const auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, tupleArg, mlir::Value());
         auto conditions = std::vector<mlir::Value>();
         ListCell* lc;
         int clauseIdx = 0;
@@ -1421,7 +1529,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
         const auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module,
-                                            innerTupleArg);
+                                            innerTupleArg, mlir::Value());
         if (!join_clauses_ || join_clauses_->length == 0) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] No join clauses, returning true");
             auto trueVal = predicateBuilder.create<mlir::arith::ConstantOp>(
@@ -1494,7 +1602,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         auto& inner_block = inner_region.emplaceBlock();
         const auto inner_tuple = inner_block.addArgument(tuple_type, outer_builder.getUnknownLoc());
 
-        const auto inner_ctx = QueryCtxT(query_ctx.current_stmt, outer_builder, query_ctx.current_module, inner_tuple);
+        const auto inner_ctx = QueryCtxT(query_ctx.current_stmt, outer_builder, query_ctx.current_module, inner_tuple, mlir::Value());
         buildCorrelatedPredicateRegion(&inner_block, outer_tuple, inner_tuple, join_clauses, left_trans, right_trans,
                                        inner_ctx);
 
@@ -1858,9 +1966,22 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
                             var->varattno, columnIndex);
                 }
             } else if (var->varno == INNER_VAR) {
-                if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child.columns.size())) {
+                if (auto mapping = right_child.resolve_var(var->varnosyn, var->varattno)) {
+                    const auto& [table_name, col_name] = *mapping;
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: INNER_VAR using varno_resolution: varnosyn=%d, varattno=%d -> @%s::@%s",
+                            var->varnosyn, var->varattno, table_name.c_str(), col_name.c_str());
+
+                    for (size_t i = 0; i < input.columns.size(); ++i) {
+                        if (input.columns[i].table_name == table_name && input.columns[i].column_name == col_name) {
+                            columnIndex = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (columnIndex == SIZE_MAX && var->varattno > 0 && var->varattno <= static_cast<int>(right_child.columns.size())) {
                     columnIndex = left_child.columns.size() + (var->varattno - 1);
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: INNER_VAR varattno=%d maps to position %zu",
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: INNER_VAR varattno=%d maps to position %zu (fallback)",
                             var->varattno, columnIndex);
                 }
             } else {
@@ -1970,6 +2091,57 @@ auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& conte
         throw std::runtime_error("Should be impossible");
     }
     return mlir::Value();
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, SubqueryScan* subqueryScan)
+    -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+
+    if (!subqueryScan || !subqueryScan->subplan) {
+        PGX_ERROR("Invalid SubqueryScan parameters");
+        throw std::runtime_error("Invalid SubqueryScan parameters");
+    }
+
+    const auto scanrelid = subqueryScan->scan.scanrelid;
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating SubqueryScan with scanrelid=%d", scanrelid);
+
+    auto result = translate_plan_node(ctx, subqueryScan->subplan);
+
+    if (!result.op) {
+        PGX_ERROR("Failed to translate SubqueryScan subplan");
+        throw std::runtime_error("Failed to translate SubqueryScan subplan");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan subplan translated with %zu columns", result.columns.size());
+
+    if (scanrelid > 0 && subqueryScan->scan.plan.targetlist) {
+        List* targetlist = subqueryScan->scan.plan.targetlist;
+        ListCell* lc;
+        int output_attno = 1;
+
+        foreach(lc, targetlist) {
+            auto* tle = reinterpret_cast<TargetEntry*>(lfirst(lc));
+            if (tle->resjunk) {
+                continue;
+            }
+
+            if (tle->expr && IsA(tle->expr, Var)) {
+                auto* var = reinterpret_cast<Var*>(tle->expr);
+
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
+                    const auto& col = result.columns[var->varattno - 1];
+                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] =
+                        std::make_pair(col.table_name, col.column_name);
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Mapped SubqueryScan: varno=%d, attno=%d -> subplan column %d (@%s::@%s)",
+                            scanrelid, output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
+                }
+            }
+            output_attno++;
+        }
+    }
+
+    return result;
 }
 
 } // namespace postgresql_ast

@@ -29,7 +29,7 @@ auto PostgreSQLASTTranslator::Impl::translate_query(const PlannedStmt* planned_s
     auto module = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context_));
     auto builder = mlir::OpBuilder(&context_);
     builder.setInsertionPointToStart(module.getBody());
-    auto context = QueryCtxT{*planned_stmt, builder, module, nullptr};
+    auto context = QueryCtxT{*planned_stmt, builder, module, nullptr, mlir::Value()};
 
     auto query_func = create_query_function(builder);
     if (!query_func) {
