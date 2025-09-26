@@ -162,13 +162,16 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_expression(const QueryCtxT& ctx, Expr* expr,
                               OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
     auto translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr, const TranslationResult* left_child,
-                                                const TranslationResult* right_child) -> mlir::Value;
+                                                const TranslationResult* right_child,
+                                                std::optional<mlir::Value> outer_tuple_arg = std::nullopt) -> mlir::Value;
     auto translate_op_expr_with_join_context(const QueryCtxT& ctx, const OpExpr* op_expr,
-                                             const TranslationResult* left_child, const TranslationResult* right_child)
+                                             const TranslationResult* left_child, const TranslationResult* right_child,
+                                             std::optional<mlir::Value> outer_tuple_arg = std::nullopt)
         -> mlir::Value;
     auto translate_bool_expr_with_join_context(const QueryCtxT& ctx, const BoolExpr* bool_expr,
                                                const TranslationResult* left_child,
-                                               const TranslationResult* right_child) -> mlir::Value;
+                                               const TranslationResult* right_child,
+                                               std::optional<mlir::Value> outer_tuple_arg = std::nullopt) -> mlir::Value;
     auto translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr, mlir::Value input_stream,
                                          const std::string& suggested_name,
                                          const std::vector<TranslationResult::ColumnSchema>& child_columns)

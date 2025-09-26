@@ -94,7 +94,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
 
 auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr,
                                                                            const TranslationResult* left_child,
-                                                                           const TranslationResult* right_child)
+                                                                           const TranslationResult* right_child,
+                                                                           std::optional<mlir::Value> outer_tuple_arg)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!expr) {
@@ -133,8 +134,9 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
                 auto colRef = columnManager.createRef(col.table_name, col.column_name);
                 colRef.getColumn().type = col.mlir_type;
 
+                const auto tuple_to_use = outer_tuple_arg.value_or(ctx.current_tuple);
                 auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(),
-                                                                              col.mlir_type, colRef, ctx.current_tuple);
+                                                                              col.mlir_type, colRef, tuple_to_use);
 
                 return getColOp.getRes();
             } else {
@@ -185,11 +187,11 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
     switch (expr->type) {
     case T_OpExpr: {
         const auto* op_expr = reinterpret_cast<const OpExpr*>(expr);
-        return translate_op_expr_with_join_context(ctx, op_expr, left_child, right_child);
+        return translate_op_expr_with_join_context(ctx, op_expr, left_child, right_child, outer_tuple_arg);
     }
     case T_BoolExpr: {
         const auto* bool_expr = reinterpret_cast<const BoolExpr*>(expr);
-        return translate_bool_expr_with_join_context(ctx, bool_expr, left_child, right_child);
+        return translate_bool_expr_with_join_context(ctx, bool_expr, left_child, right_child, outer_tuple_arg);
     }
     default: return translate_expression(ctx, expr);
     }
@@ -197,7 +199,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
 
 auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const QueryCtxT& ctx, const OpExpr* op_expr,
                                                                         const TranslationResult* left_child,
-                                                                        const TranslationResult* right_child)
+                                                                        const TranslationResult* right_child,
+                                                                        std::optional<mlir::Value> outer_tuple_arg)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
@@ -215,8 +218,8 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
     PGX_LOG(AST_TRANSLATE, DEBUG, "[OPEXPR] Left operand type: %d, Right operand type: %d",
             leftExpr ? leftExpr->type : -1, rightExpr ? rightExpr->type : -1);
 
-    const auto lhs = translate_expression_with_join_context(ctx, leftExpr, left_child, right_child);
-    const auto rhs = translate_expression_with_join_context(ctx, rightExpr, left_child, right_child);
+    const auto lhs = translate_expression_with_join_context(ctx, leftExpr, left_child, right_child, outer_tuple_arg);
+    const auto rhs = translate_expression_with_join_context(ctx, rightExpr, left_child, right_child, outer_tuple_arg);
 
     if (!lhs || !rhs) {
         PGX_ERROR("Failed to translate OpExpr operands - lhs=%p, rhs=%p", lhs.getAsOpaquePointer(), rhs.getAsOpaquePointer());
@@ -320,7 +323,8 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
 
 auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const QueryCtxT& ctx, const BoolExpr* bool_expr,
                                                                           const TranslationResult* left_child,
-                                                                          const TranslationResult* right_child)
+                                                                          const TranslationResult* right_child,
+                                                                          std::optional<mlir::Value> outer_tuple_arg)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!bool_expr->args || bool_expr->args->length == 0) {
@@ -332,7 +336,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const 
     ListCell* lc;
     foreach (lc, bool_expr->args) {
         auto* arg = static_cast<Expr*>(lfirst(lc));
-        if (auto operand = translate_expression_with_join_context(ctx, arg, left_child, right_child)) {
+        if (auto operand = translate_expression_with_join_context(ctx, arg, left_child, right_child, outer_tuple_arg)) {
             if (!operand.getType().isInteger(1)) {
                 operand = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), operand);
             }

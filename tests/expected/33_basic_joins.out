@@ -42,6 +42,7 @@ SELECT *
 FROM table_a, table_b
 WHERE table_a.id = table_b.id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
  id | value |  name  | id | amount | status  
 ----+-------+--------+----+--------+---------
   1 |   100 | apple  |  1 |     10 | active
@@ -53,6 +54,7 @@ SELECT table_a.name, table_b.amount
 FROM table_a, table_b
 WHERE table_a.id = table_b.id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
   name  | amount 
 --------+--------
  apple  |     10
@@ -64,6 +66,7 @@ SELECT table_a.name, table_b.amount, table_b.status
 FROM table_a, table_b
 WHERE table_a.id = table_b.id AND table_b.status = 'active';
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
   name  | amount | status 
 --------+--------+--------
  apple  |     10 | active
@@ -74,6 +77,8 @@ SELECT table_a.name, table_b.amount, table_c.category
 FROM table_a, table_b, table_c
 WHERE table_a.id = table_b.id AND table_a.id = table_c.id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
   name  | amount | category 
 --------+--------+----------
  apple  |     10 |        1
@@ -85,6 +90,7 @@ SELECT table_a.name, table_a.value, table_b.amount
 FROM table_a, table_b
 WHERE table_a.id = table_b.id AND table_a.value > table_b.amount * 5;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
   name  | value | amount 
 --------+-------+--------
  apple  |   100 |     10
@@ -97,6 +103,7 @@ FROM table_a, table_b
 WHERE table_a.id = table_b.id
 ORDER BY table_b.amount DESC;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
   name  | amount 
 --------+--------
  cherry |     30
@@ -108,6 +115,7 @@ SELECT table_a.id AS a_id, table_b.id AS b_id
 FROM table_a, table_b
 ORDER BY a_id, b_id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
  a_id | b_id 
 ------+------
     1 |    1
@@ -132,6 +140,7 @@ SELECT table_a.name, table_a.value + table_b.amount AS total
 FROM table_a, table_b
 WHERE table_a.id = table_b.id;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
   name  | total 
 --------+-------
  apple  |   110
@@ -145,6 +154,7 @@ WHERE table_a.id = table_c.id
 GROUP BY table_c.category
 ORDER BY table_c.category;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
  category | total_value 
 ----------+-------------
         1 |         300
@@ -156,6 +166,7 @@ FROM table_a a1, table_a a2
 WHERE a1.value < a2.value AND a1.id < a2.id
 ORDER BY a1.name, a2.name;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] plan_translator.cpp:1399: This is an inner join!
  name1  | name2  
 --------+--------
  apple  | banana
