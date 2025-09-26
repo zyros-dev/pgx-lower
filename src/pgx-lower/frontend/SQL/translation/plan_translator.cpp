@@ -1517,9 +1517,8 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     };
 
     switch (join_type) {
-        // TODO: Remove these warnings/change them to PGX_LOG, they're just for my own analysis
     case JOIN_INNER: {
-        PGX_WARNING("This is an inner join!");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "This is an inner join!");
         const auto joinOp = ctx.builder.create<mlir::relalg::InnerJoinOp>(ctx.builder.getUnknownLoc(), left_value,
                                                                           right_value);
         addPredicateRegion(joinOp, true, ctx);
@@ -1552,7 +1551,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
 
     case JOIN_LEFT:
     case JOIN_RIGHT: {
-        PGX_WARNING("This is a left/right join!");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "This is a left/right join!");
 
         const auto [op, scope] = isRightJoin ? createOuterJoinWithNullableMapping(right_value, left_value,
                                                                                   left_translation, true, ctx)
