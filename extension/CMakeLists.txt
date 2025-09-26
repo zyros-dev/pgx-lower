@@ -64,6 +64,7 @@ if(NOT BUILDING_UNIT_TESTS)
             33_basic_joins
             34_advanced_joins
             35_nested_queries
+            36_tpch_minimal
             tpch
 )
 
