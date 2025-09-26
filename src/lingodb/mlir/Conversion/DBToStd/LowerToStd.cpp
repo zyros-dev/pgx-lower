@@ -840,6 +840,14 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             rewriter.replaceOp(op, value);
             return success();
          }
+      } else if (auto timestampSourceType = scalarSourceType.dyn_cast_or_null<db::TimestampType>()) {
+         if (auto dateTargetType = scalarTargetType.dyn_cast_or_null<db::DateType>()) {
+            const uint64_t microsecondsPerDay = 86400000000000ULL;
+            mlir::Value divisor = rewriter.create<arith::ConstantIntOp>(loc, microsecondsPerDay, 64);
+            value = rewriter.create<arith::DivSIOp>(loc, rewriter.getI64Type(), value, divisor);
+            rewriter.replaceOp(op, value);
+            return success();
+         }
       }
 
       // PGX-LOWER added log: log when we fail to cast, since it's a common problem and a pain to figure out what cast it
