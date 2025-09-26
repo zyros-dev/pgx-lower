@@ -1,5 +1,4 @@
 -- This test case covers LEFT, RIGHT, SEMI, and ANTI joins
--- TODO NOT IN statements - we skipped this since it required subquery expression support
 
 LOAD
 'pgx_lower.so';
