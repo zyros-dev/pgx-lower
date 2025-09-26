@@ -1208,6 +1208,24 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
     }
 }
 
+static List* combine_join_clauses(List* specialized_clauses, List* join_quals, const char* clause_type_name) {
+    if (specialized_clauses && join_quals) {
+        const auto combined = list_concat(list_copy(specialized_clauses), list_copy(join_quals));
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Combined %d %s with %d joinquals = %d total clauses",
+                list_length(specialized_clauses), clause_type_name, list_length(join_quals), list_length(combined));
+        return combined;
+    } else if (specialized_clauses) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using %d %s only", list_length(specialized_clauses), clause_type_name);
+        return specialized_clauses;
+    } else if (join_quals) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using %d joinquals only", list_length(join_quals));
+        return join_quals;
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "No join clauses (cross join)");
+        return nullptr;
+    }
+}
+
 TranslationResult
 PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinType join_type, mlir::Value left_value,
                                                      mlir::Value right_value, const TranslationResult& left_translation,
@@ -1638,8 +1656,9 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
     auto leftValue = leftOp->getResult(0);
     auto rightValue = rightOp->getResult(0);
 
+    List* combinedClauses = combine_join_clauses(mergeJoin->mergeclauses, mergeJoin->join.joinqual, "mergeclauses");
     TranslationResult result = create_join_operation(ctx, mergeJoin->join.jointype, leftValue, rightValue,
-                                                     leftTranslation, rightTranslation, mergeJoin->mergeclauses);
+                                                     leftTranslation, rightTranslation, combinedClauses);
 
     // Join conditions are now handled inside the join predicate region
     // No need to apply them as separate selections
@@ -1695,9 +1714,9 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
     auto leftValue = leftOp->getResult(0);
     auto rightValue = rightOp->getResult(0);
 
+    List* combinedClauses = combine_join_clauses(hashJoin->hashclauses, hashJoin->join.joinqual, "hashclauses");
     TranslationResult result = create_join_operation(
-        ctx, hashJoin->join.jointype, leftValue, rightValue, leftTranslation, rightTranslation,
-        hashJoin->hashclauses ? hashJoin->hashclauses : hashJoin->join.joinqual);
+        ctx, hashJoin->join.jointype, leftValue, rightValue, leftTranslation, rightTranslation, combinedClauses);
 
     // Join conditions are now handled inside the join predicate region
     // No need to apply them as separate selections
