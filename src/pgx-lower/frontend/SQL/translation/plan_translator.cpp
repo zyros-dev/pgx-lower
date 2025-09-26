@@ -1871,8 +1871,18 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
         }
     }
 
-    // If we only have simple column projections, create a ProjectionOp
-    if (!projectedColumns.empty() && projectedColumns.size() < input.columns.size()) {
+    const auto columns_identical = [&]() {
+        if (projectedColumns.size() != input.columns.size())
+            return false;
+        for (size_t i = 0; i < projectedColumns.size(); ++i) {
+            if (projectedColumns[i].table_name != input.columns[i].table_name ||
+                projectedColumns[i].column_name != input.columns[i].column_name)
+                return false;
+        }
+        return true;
+    };
+
+    if (!projectedColumns.empty() && !columns_identical()) {
         auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
         const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
             ctx.builder.getUnknownLoc(), tupleStreamType,
@@ -1889,7 +1899,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
         return result;
     }
 
-    // No projection needed
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 2] No projection needed - columns already in correct order");
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 2] RESULT: %s", input.toString().c_str());
     return input;
 }
