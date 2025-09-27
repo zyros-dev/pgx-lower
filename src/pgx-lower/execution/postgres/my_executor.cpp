@@ -138,12 +138,16 @@ TupleDesc setupTupleDescriptor(const PlannedStmt* stmt, const std::vector<int>& 
                         }
 
                         if (tle->expr) {
+                            PGX_LOG(GENERAL, DEBUG, "Column %d: Examining tle->expr nodeTag=%d resname=%s",
+                                    i, nodeTag(tle->expr), tle->resname ? tle->resname : "NULL");
                             columnType = exprType((Node*)tle->expr);
 
                             if (columnType == InvalidOid) {
                                 PGX_ERROR("Failed to determine type for expression node type: %d", nodeTag(tle->expr));
                                 throw std::runtime_error("Failed to determine type for expression node type");
                             }
+
+                            PGX_LOG(GENERAL, DEBUG, "Column %d: exprType returned OID=%u", i, columnType);
 
                             int16 typLen;
                             bool typByVal;

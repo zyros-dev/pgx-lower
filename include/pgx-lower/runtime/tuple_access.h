@@ -63,9 +63,7 @@ struct ComputedResultStorage {
         if (columnIndex >= 0 && columnIndex < numComputedColumns) {
             computedValues[columnIndex] = value;
             computedNulls[columnIndex] = isNull;
-            if (computedTypes[columnIndex] == InvalidOid) {
-                // unsure when this even triggers tbh... but if I get rid of it, things do seem to fail...
-                PGX_WARNING("Had an invalid OID");
+            if (computedTypes[columnIndex] == InvalidOid || computedTypes[columnIndex] == NUMERICOID) {
                 computedTypes[columnIndex] = typeOid;
             }
         }

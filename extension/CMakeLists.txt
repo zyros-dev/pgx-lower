@@ -26,6 +26,7 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/runtime/tuple_access.cpp
         ../src/pgx-lower/runtime/PostgreSQLDataSource.cpp
         ../src/pgx-lower/runtime/PostgreSQLRuntime.cpp
+        ../src/pgx-lower/runtime/DateRuntime.cpp
         SCRIPTS
             sql/pgx_lower--1.0.sql
         REGRESS
@@ -65,6 +66,7 @@ if(NOT BUILDING_UNIT_TESTS)
             34_advanced_joins
             35_nested_queries
             36_tpch_minimal
+            37_tpch_minimal_2
             tpch
 )
 

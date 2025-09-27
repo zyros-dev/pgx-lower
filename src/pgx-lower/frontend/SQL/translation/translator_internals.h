@@ -182,7 +182,7 @@ class PostgreSQLASTTranslator::Impl {
 
     auto translate_query(const PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp>;
 
-    mlir::Value translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr);
+    mlir::Value translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr, OptRefT<const TranslationResult> current_result = std::nullopt);
     auto translate_expression(const QueryCtxT& ctx, Expr* expr,
                               OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
     auto translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr, const TranslationResult* left_child,
@@ -193,6 +193,10 @@ class PostgreSQLASTTranslator::Impl {
                                              std::optional<mlir::Value> outer_tuple_arg = std::nullopt)
         -> mlir::Value;
     auto translate_bool_expr_with_join_context(const QueryCtxT& ctx, const BoolExpr* bool_expr,
+                                               const TranslationResult* left_child,
+                                               const TranslationResult* right_child,
+                                               std::optional<mlir::Value> outer_tuple_arg = std::nullopt) -> mlir::Value;
+    auto translate_func_expr_with_join_context(const QueryCtxT& ctx, const FuncExpr* func_expr,
                                                const TranslationResult* left_child,
                                                const TranslationResult* right_child,
                                                std::optional<mlir::Value> outer_tuple_arg = std::nullopt) -> mlir::Value;
@@ -219,10 +223,10 @@ class PostgreSQLASTTranslator::Impl {
                              OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
     auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref,
                           OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
-    auto translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr) -> mlir::Value;
+    auto translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr, OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
     auto translate_scalar_array_op_expr(const QueryCtxT& ctx, const ScalarArrayOpExpr* scalar_array_op,
                                         OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
-    auto translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value;
+    auto translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr, OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
     auto translate_expression_with_case_test(const QueryCtxT& ctx, Expr* expr, mlir::Value case_test_value)
         -> mlir::Value;
 
@@ -289,7 +293,7 @@ class PostgreSQLASTTranslator::Impl {
     auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr,
                                   OptRefT<const TranslationResult> current_result = std::nullopt)
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
-    static auto translate_arithmetic_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs,
+    static auto translate_arithmetic_op(const QueryCtxT& context, const OpExpr* op_expr, const mlir::Value lhs,
                                         const mlir::Value rhs) -> mlir::Value;
     static auto upcast_binary_operation(const QueryCtxT& ctx, mlir::Value lhs, mlir::Value rhs)
         -> std::pair<mlir::Value, mlir::Value>;

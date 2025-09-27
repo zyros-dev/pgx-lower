@@ -111,7 +111,11 @@ auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t
     //       mapping both of them to strings for the time being.
     case TEXTOID:
     case VARCHAROID:
-    case BPCHAROID: return wrap_nullable(mlir::db::StringType::get(&context_));
+    case BPCHAROID: {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "String type mapping: OID=%d (TEXTOID=%d, VARCHAROID=%d, BPCHAROID=%d), typmod=%d",
+                type_oid, TEXTOID, VARCHAROID, BPCHAROID, typmod);
+        return wrap_nullable(mlir::db::StringType::get(&context_));
+    }
     case NUMERICOID: {
         auto [precision, scale] = extract_numeric_info(typmod);
         return wrap_nullable(mlir::db::DecimalType::get(&context_, precision, scale));
@@ -194,8 +198,8 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
 #endif
     }
     case DATEOID: {
-        const int64_t days = static_cast<int64_t>(static_cast<int32_t>(constNode->constvalue));
-        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI64IntegerAttr(days));
+        const int32_t days = static_cast<int32_t>(constNode->constvalue);
+        return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getI32IntegerAttr(days));
     }
     case TIMESTAMPOID: {
 #ifdef POSTGRESQL_EXTENSION
@@ -249,6 +253,10 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
             char* str = VARDATA(textval);
             int len = VARSIZE(textval) - VARHDRSZ;
             std::string string_value(str, len);
+
+            PGX_LOG(AST_TRANSLATE, DEBUG, "String constant: value='%s', type_oid=%d, typmod=%d, mlirType=%s",
+                    string_value.c_str(), constNode->consttype, constNode->consttypmod,
+                    mlirType.getAsOpaquePointer() ? "valid" : "invalid");
 
             return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
                                                         builder.getStringAttr(string_value));

@@ -31,20 +31,35 @@ extern "C" {
 #define NUMERICOID  1700    // Numeric/Decimal type
 #endif
 int32_t parseDate32(std::string str) {
-   // Simple date parsing - convert to days since epoch
-   // Format: YYYY-MM-DD
-   if (str.length() != 10 || str[4] != '-' || str[7] != '-') {
+   if (str.length() != 10 || (str[4] != '-' && str[2] != '-')) {
        return 0; // Invalid format
    }
-   
-   int year = std::stoi(str.substr(0, 4));
-   int month = std::stoi(str.substr(5, 2));
-   int day = std::stoi(str.substr(8, 2));
-   
-   // Simplified calculation: days since 1970-01-01
-   // This is approximate - real PostgreSQL parsing would be more accurate
-   int days = (year - 1970) * 365 + (month - 1) * 30 + day;
-   return days;
+
+   int year, month, day;
+   if (str[4] == '-') {
+       // YYYY-MM-DD format
+       year = std::stoi(str.substr(0, 4));
+       month = std::stoi(str.substr(5, 2));
+       day = std::stoi(str.substr(8, 2));
+   } else {
+       // MM-DD-YYYY format
+       month = std::stoi(str.substr(0, 2));
+       day = std::stoi(str.substr(3, 2));
+       year = std::stoi(str.substr(6, 4));
+   }
+
+   // Calculate days since PostgreSQL epoch (2000-01-01)
+   // Using standard Gregorian calendar algorithm
+   int a = (14 - month) / 12;
+   int y = year - a;
+   int m = month + 12 * a - 3;
+   int jdn = day + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 32045;
+
+   // PostgreSQL epoch: 2000-01-01 = JDN 2451545
+   int pg_epoch_jdn = 2451545;
+   int days_since_pg_epoch = jdn - pg_epoch_jdn;
+
+   return days_since_pg_epoch;
 }
 int convertTimeUnit(support::TimeUnit unit) {
    switch (unit) {
@@ -175,19 +190,30 @@ std::variant<int64_t, double, std::string> parseString(std::variant<int64_t, dou
    return str;
 }
 std::variant<int64_t, double, std::string> parseDate(std::variant<int64_t, double, std::string> val, bool parse64 = false) {
-   int64_t date64;
-   if (std::holds_alternative<int64_t>(val)) {
-      // Already have the date as days since epoch (PostgreSQL internal format)
-      int64_t days = std::get<int64_t>(val);
-      date64 = days * 24 * 60 * 60 * 1000000000ll;
-   } else if (std::holds_alternative<std::string>(val)) {
-      std::string str = std::get<std::string>(val);
-      int64_t parsed = parseDate32(str);
-      date64 = parsed * 24 * 60 * 60 * 1000000000ll;
+   if (parse64) {
+      // DateType<millisecond>: Convert to i64 milliseconds
+      int64_t days;
+      if (std::holds_alternative<int64_t>(val)) {
+         days = std::get<int64_t>(val);
+      } else if (std::holds_alternative<std::string>(val)) {
+         days = parseDate32(std::get<std::string>(val));
+      } else {
+         throw std::runtime_error("can not parse date from double");
+      }
+      // Convert days to milliseconds
+      return days * 24LL * 60LL * 60LL * 1000LL;
    } else {
-      throw std::runtime_error("can not parse date from double");
+      // DateType<day>: Keep as i32 days since PostgreSQL epoch (2000-01-01)
+      int64_t days;
+      if (std::holds_alternative<int64_t>(val)) {
+         days = std::get<int64_t>(val);
+      } else if (std::holds_alternative<std::string>(val)) {
+         days = parseDate32(std::get<std::string>(val));
+      } else {
+         throw std::runtime_error("can not parse date from double");
+      }
+      return days;
    }
-   return date64;
 }
 std::variant<int64_t, double, std::string> toI64(std::variant<int64_t, double, std::string> val) {
    if (std::holds_alternative<std::string>(val)) {

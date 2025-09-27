@@ -155,7 +155,9 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
 
     case T_IndexScan:
     case T_IndexOnlyScan:
-    case T_BitmapHeapScan: caps.requiresSeqScan = false; break;
+    case T_BitmapHeapScan:
+        caps.requiresSeqScan = true;
+        break;
 
     case T_NestLoop:
     case T_MergeJoin:

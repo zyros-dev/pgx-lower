@@ -73,10 +73,10 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
     case T_BoolExpr: return translate_bool_expr(ctx, reinterpret_cast<BoolExpr*>(expr), current_result);
     case T_Aggref: return translate_aggref(ctx, reinterpret_cast<Aggref*>(expr), current_result);
     case T_NullTest: return translate_null_test(ctx, reinterpret_cast<NullTest*>(expr), current_result);
-    case T_CoalesceExpr: return translate_coalesce_expr(ctx, reinterpret_cast<CoalesceExpr*>(expr));
+    case T_CoalesceExpr: return translate_coalesce_expr(ctx, reinterpret_cast<CoalesceExpr*>(expr), current_result);
     case T_ScalarArrayOpExpr: return translate_scalar_array_op_expr(ctx, reinterpret_cast<ScalarArrayOpExpr*>(expr), current_result);
-    case T_CaseExpr: return translate_case_expr(ctx, reinterpret_cast<CaseExpr*>(expr));
-    case T_CoerceViaIO: return translate_coerce_via_io(ctx, expr);
+    case T_CaseExpr: return translate_case_expr(ctx, reinterpret_cast<CaseExpr*>(expr), current_result);
+    case T_CoerceViaIO: return translate_coerce_via_io(ctx, expr, current_result);
     case T_RelabelType: {
         const auto* relabel = reinterpret_cast<RelabelType*>(expr);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
@@ -207,6 +207,10 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
         const auto* bool_expr = reinterpret_cast<const BoolExpr*>(expr);
         return translate_bool_expr_with_join_context(ctx, bool_expr, left_child, right_child, outer_tuple_arg);
     }
+    case T_FuncExpr: {
+        const auto* func_expr = reinterpret_cast<const FuncExpr*>(expr);
+        return translate_func_expr_with_join_context(ctx, func_expr, left_child, right_child, outer_tuple_arg);
+    }
     default: return translate_expression(ctx, expr);
     }
 }
@@ -244,7 +248,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
 
     const auto op_oid = op_expr->opno;
 
-    if (const auto result = translate_arithmetic_op(ctx, op_oid, lhs, rhs)) {
+    if (const auto result = translate_arithmetic_op(ctx, op_expr, lhs, rhs)) {
         return result;
     }
 
@@ -388,12 +392,69 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const 
     return result;
 }
 
-mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr) {
+auto PostgreSQLASTTranslator::Impl::translate_func_expr_with_join_context(const QueryCtxT& ctx, const FuncExpr* func_expr,
+                                                                          const TranslationResult* left_child,
+                                                                          const TranslationResult* right_child,
+                                                                          std::optional<mlir::Value> outer_tuple_arg)
+    -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
+    if (!func_expr) {
+        PGX_ERROR("Invalid FuncExpr parameters");
+        throw std::runtime_error("Invalid FuncExpr parameters");
+    }
+
+    auto args = std::vector<mlir::Value>{};
+    if (func_expr->args && func_expr->args->length > 0) {
+        if (!func_expr->args->elements) {
+            PGX_ERROR("FuncExpr args list has length but no elements array");
+            throw std::runtime_error("FuncExpr args list has length but no elements array");
+        }
+
+        ListCell* lc;
+        foreach (lc, func_expr->args) {
+            if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
+                if (mlir::Value argValue = translate_expression_with_join_context(ctx, reinterpret_cast<Expr*>(argNode),
+                                                                                  left_child, right_child, outer_tuple_arg)) {
+                    args.push_back(argValue);
+                }
+            }
+        }
+    }
+
+    const auto loc = ctx.builder.getUnknownLoc();
+
+    char* funcname = get_func_name(func_expr->funcid);
+    if (!funcname) {
+        PGX_ERROR("Unknown function OID %d", func_expr->funcid);
+        throw std::runtime_error("Unknown function OID " + std::to_string(func_expr->funcid));
+    }
+
+    std::string func(funcname);
+    pfree(funcname);
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating function %s with join context", func.c_str());
+
+    if (func == "date_part" || func == "extract") {
+        if (args.size() != 2) {
+            PGX_ERROR("EXTRACT/date_part requires exactly 2 arguments, got %zu", args.size());
+            throw std::runtime_error("EXTRACT/date_part requires exactly 2 arguments");
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating EXTRACT function");
+        auto runtimeCall = ctx.builder.create<mlir::db::RuntimeCall>(
+            loc, ctx.builder.getI64Type(), "ExtractFromDate", args);
+        return runtimeCall.getRes();
+    }
+
+    return translate_func_expr(ctx, func_expr, std::nullopt);
+}
+
+mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr, OptRefT<const TranslationResult> current_result) {
     // Handle type coercion via I/O functions (e.g., int::text)
     const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Processing T_CoerceViaIO to type OID %d", coerce->resulttype);
 
-    auto argValue = translate_expression(ctx, coerce->arg);
+    auto argValue = translate_expression(ctx, coerce->arg, current_result);
     if (!argValue) {
         PGX_ERROR("Failed to translate CoerceViaIO argument");
         throw std::runtime_error("Failed to translate CoerceViaIO argument");
@@ -425,7 +486,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
     const Oid opOid = op_expr->opno;
 
     {
-        if (auto result = translate_arithmetic_op(ctx, opOid, lhs, rhs))
+        if (auto result = translate_arithmetic_op(ctx, op_expr, lhs, rhs))
             return result;
     }
 
@@ -535,21 +596,32 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d", var->varno, var->varattno);
 
         std::string tableName, colName;
+        bool nullable;
 
         if (current_result && current_result->get().resolve_var(actualVarno, var->varattno)) {
             const auto& [mappedTable, mappedColumn] = *current_result->get().resolve_var(actualVarno, var->varattno);
             tableName = mappedTable;
             colName = mappedColumn;
+            nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
             PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for varno=%d, varattno=%d -> (%s, %s)",
                     actualVarno, var->varattno, tableName.c_str(), colName.c_str());
         } else if (var->varno == OUTER_VAR) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Handling OUTER_VAR reference without mapping, using varno=1");
-            actualVarno = 1;
-            tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
-            colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
+            if (!current_result || var->varattno <= 0 ||
+                var->varattno > static_cast<int>(current_result->get().columns.size())) {
+                PGX_ERROR("OUTER_VAR varattno=%d out of range (child has %zu columns)",
+                          var->varattno, current_result ? current_result->get().columns.size() : 0);
+                throw std::runtime_error("OUTER_VAR reference without valid child result");
+            }
+            const auto& col = current_result->get().columns[var->varattno - 1];
+            tableName = col.table_name;
+            colName = col.column_name;
+            nullable = col.nullable;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from child result",
+                    var->varattno, tableName.c_str(), colName.c_str(), nullable);
         } else {
             tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
             colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
+            nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
         }
 
         auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
@@ -561,7 +633,6 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         auto& columnManager = dialect->getColumnManager();
 
         const auto type_mapper = PostgreSQLTypeMapper(context_);
-        const bool nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
         auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
 
         auto colRef = columnManager.createRef(tableName, colName);
@@ -1053,7 +1124,7 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     return getColOp.getRes();
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr)
+auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr, OptRefT<const TranslationResult> current_result)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
@@ -1075,7 +1146,7 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
     ListCell* cell;
     foreach (cell, coalesce_expr->args) {
         const auto expr = static_cast<Expr*>(lfirst(cell));
-        if (mlir::Value val = translate_expression(ctx, expr)) {
+        if (mlir::Value val = translate_expression(ctx, expr, current_result)) {
             translatedArgs.push_back(val);
         } else {
             PGX_ERROR("Failed to translate COALESCE argument");
@@ -1404,7 +1475,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr, OptRefT<const TranslationResult> current_result) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
     if (!case_expr) {
@@ -1417,7 +1488,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
     // 2. Searched: CASE WHEN cond1 THEN result1 WHEN cond2 THEN result2 ELSE default END
     mlir::Value caseArg = nullptr;
     if (case_expr->arg) {
-        caseArg = translate_expression(ctx, case_expr->arg);
+        caseArg = translate_expression(ctx, case_expr->arg, current_result);
         if (!caseArg) {
             PGX_ERROR("Failed to translate CASE argument expression");
             throw std::runtime_error("Check logs");
@@ -1430,7 +1501,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
     // Build nested if-then-else structure from WHEN clauses
     mlir::Value elseResult = nullptr;
     if (case_expr->defresult) {
-        elseResult = translate_expression(ctx, case_expr->defresult);
+        elseResult = translate_expression(ctx, case_expr->defresult, current_result);
         if (!elseResult) {
             PGX_ERROR("Failed to translate CASE ELSE expression");
             throw std::runtime_error("Check logs");
@@ -1468,7 +1539,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
                 }
                 condition = whenCondition;
             } else {
-                condition = translate_expression(ctx, whenClause->expr);
+                condition = translate_expression(ctx, whenClause->expr, current_result);
                 if (!condition) {
                     PGX_ERROR("Failed to translate WHEN condition");
                     throw std::runtime_error("Check logs");
@@ -1482,7 +1553,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
             }
 
             // Translate the THEN result
-            mlir::Value thenResult = translate_expression(ctx, whenClause->result);
+            mlir::Value thenResult = translate_expression(ctx, whenClause->result, current_result);
             if (!thenResult) {
                 PGX_ERROR("Failed to translate THEN result");
                 throw std::runtime_error("Check logs");
@@ -1612,10 +1683,16 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
     return std::make_pair(lhs, rhs);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx, const Oid op_oid,
+auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx, const OpExpr* op_expr,
                                                             const mlir::Value lhs, const mlir::Value rhs) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
+    if (!op_expr) {
+        PGX_ERROR("Invalid OpExpr");
+        throw std::runtime_error("Invalid OpExpr");
+    }
+
+    const Oid op_oid = op_expr->opno;
     char* oprname = get_opname(op_oid);
     if (!oprname) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unknown arithmetic operator OID: %d", op_oid);
@@ -1625,26 +1702,74 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
     const std::string op(oprname);
     pfree(oprname);
 
+    if (op != "+" && op != "-" && op != "*" && op != "/" && op != "%") {
+        return nullptr;
+    }
+
     const auto loc = ctx.builder.getUnknownLoc();
 
+    // Check if we need to override the result type (for date/interval arithmetic)
+    // Check BEFORE upcasting to detect original date/interval types
+    auto get_base_type = [](mlir::Type t) -> mlir::Type {
+        if (auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
+            return nullable.getType();
+        }
+        return t;
+    };
+
+    const bool has_date_or_interval =
+        mlir::isa<mlir::db::DateType>(get_base_type(lhs.getType())) ||
+        mlir::isa<mlir::db::DateType>(get_base_type(rhs.getType())) ||
+        mlir::isa<mlir::db::IntervalType>(get_base_type(lhs.getType())) ||
+        mlir::isa<mlir::db::IntervalType>(get_base_type(rhs.getType()));
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[ARITHMETIC] op=%s, has_date_or_interval=%d, opresulttype=%u",
+            op.c_str(), has_date_or_interval, op_expr->opresulttype);
+
+    // Always upcast to ensure compatible operand types
     auto [convertedLhs, convertedRhs] = upcast_binary_operation(ctx, lhs, rhs);
 
-    if (op == "+")
-        return ctx.builder.create<mlir::db::AddOp>(loc, convertedLhs, convertedRhs);
-    if (op == "-")
-        return ctx.builder.create<mlir::db::SubOp>(loc, convertedLhs, convertedRhs);
-    if (op == "*")
-        return ctx.builder.create<mlir::db::MulOp>(loc, convertedLhs, convertedRhs);
-    if (op == "/")
-        return ctx.builder.create<mlir::db::DivOp>(loc, convertedLhs, convertedRhs);
-    if (op == "%")
-        return ctx.builder.create<mlir::db::ModOp>(loc, convertedLhs, convertedRhs);
-    if (op == "%")
-        return ctx.builder.create<mlir::db::ModOp>(loc, convertedLhs, convertedRhs);
+    if (has_date_or_interval) {
+        // For date/interval arithmetic, use PostgreSQL's result type
+        const PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
+        auto result_type = type_mapper.map_postgre_sqltype(op_expr->opresulttype, -1, false);
 
-    // TODO: This logs for '=' operator... that should be a comparison, not arithmetic. unsure of why it routes to here.
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Unhandled comparison operator: %s (OID: %d)", op.c_str(), op_oid);
-    return nullptr;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[ARITHMETIC DATE] Forcing result type from PostgreSQL opresulttype=%u",
+                op_expr->opresulttype);
+
+        // Preserve nullability from operands
+        const bool lhs_nullable = mlir::isa<mlir::db::NullableType>(convertedLhs.getType());
+        const bool rhs_nullable = mlir::isa<mlir::db::NullableType>(convertedRhs.getType());
+        if (lhs_nullable || rhs_nullable) {
+            result_type = mlir::db::NullableType::get(ctx.builder.getContext(), result_type);
+        }
+
+        if (op == "+")
+            return ctx.builder.create<mlir::db::AddOp>(loc, result_type, convertedLhs, convertedRhs);
+        if (op == "-")
+            return ctx.builder.create<mlir::db::SubOp>(loc, result_type, convertedLhs, convertedRhs);
+        if (op == "*")
+            return ctx.builder.create<mlir::db::MulOp>(loc, result_type, convertedLhs, convertedRhs);
+        if (op == "/")
+            return ctx.builder.create<mlir::db::DivOp>(loc, result_type, convertedLhs, convertedRhs);
+        if (op == "%")
+            return ctx.builder.create<mlir::db::ModOp>(loc, result_type, convertedLhs, convertedRhs);
+    } else {
+        // For other types, let MLIR infer the result type
+        if (op == "+")
+            return ctx.builder.create<mlir::db::AddOp>(loc, convertedLhs, convertedRhs);
+        if (op == "-")
+            return ctx.builder.create<mlir::db::SubOp>(loc, convertedLhs, convertedRhs);
+        if (op == "*")
+            return ctx.builder.create<mlir::db::MulOp>(loc, convertedLhs, convertedRhs);
+        if (op == "/")
+            return ctx.builder.create<mlir::db::DivOp>(loc, convertedLhs, convertedRhs);
+        if (op == "%")
+            return ctx.builder.create<mlir::db::ModOp>(loc, convertedLhs, convertedRhs);
+    }
+
+    PGX_ERROR("Failed to create arithmetic operation for operator: %s (OID: %d)", op.c_str(), op_oid);
+    throw std::runtime_error("Check logs");
 }
 
 struct SQLTypeInference {
@@ -1673,7 +1798,7 @@ struct SQLTypeInference {
                 return b;
             const int hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
             const int maxs = std::max(a.getS(), b.getS());
-            return mlir::db::DecimalType::get(a.getContext(), hidig + maxs, maxs);
+            return mlir::db::DecimalType::get(a.getContext(), std::min(hidig + maxs, MAX_NUMERIC_PRECISION), std::min(maxs, MAX_NUMERIC_UNCONSTRAINED_SCALE));
         }
         return a;
     }
@@ -1714,6 +1839,20 @@ struct SQLTypeInference {
     static mlir::Type getCommonBaseType(mlir::Type left, mlir::Type right) {
         left = getBaseType(left);
         right = getBaseType(right);
+
+        const bool leftIsDate = left.isa<mlir::db::DateType>();
+        const bool rightIsDate = right.isa<mlir::db::DateType>();
+        const bool leftIsTimestamp = left.isa<mlir::db::TimestampType>();
+        const bool rightIsTimestamp = right.isa<mlir::db::TimestampType>();
+
+        if ((leftIsDate || leftIsTimestamp) && (rightIsDate || rightIsTimestamp)) {
+            if (leftIsTimestamp)
+                return left;
+            if (rightIsTimestamp)
+                return right;
+            return left;
+        }
+
         const bool stringPresent = left.isa<mlir::db::StringType>() || right.isa<mlir::db::StringType>();
         const bool intPresent = left.isa<mlir::IntegerType>() || right.isa<mlir::IntegerType>();
         const bool floatPresent = left.isa<mlir::FloatType>() || right.isa<mlir::FloatType>();
@@ -1931,7 +2070,10 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
     auto blockCtx = QueryCtxT{ctx.current_stmt, blockBuilder, ctx.current_module, tupleArg, ctx.current_tuple};
     blockCtx.init_plan_results = ctx.init_plan_results;
 
-    auto exprValue = translate_expression(blockCtx, expr);
+    TranslationResult childResult;
+    childResult.columns = child_columns;
+
+    auto exprValue = translate_expression(blockCtx, expr, childResult);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Finished translating expression");
     if (!exprValue) {
         PGX_ERROR("Failed to translate expression in MapOp");
@@ -1957,7 +2099,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
 
     auto realBlockCtx = QueryCtxT{ctx.current_stmt, realBlockBuilder, ctx.current_module, realTupleArg, ctx.current_tuple};
     realBlockCtx.init_plan_results = ctx.init_plan_results;
-    auto realExprValue = translate_expression(realBlockCtx, expr);
+    auto realExprValue = translate_expression(realBlockCtx, expr, childResult);
     realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
 
     // col ref

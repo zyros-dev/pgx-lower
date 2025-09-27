@@ -133,23 +133,24 @@ class AtLowering : public OpConversionPattern<mlir::dsa::At> {
       }
       if (t.isa<mlir::db::DateType, mlir::db::TimestampType>()) {
          if (values[0].getType() != rewriter.getI64Type()) {
-            values[0] = rewriter.create<mlir::arith::ExtUIOp>(loc, rewriter.getI64Type(), values[0]);
+            values[0] = rewriter.create<mlir::arith::ExtSIOp>(loc, rewriter.getI64Type(), values[0]);
          }
          size_t multiplier = 1;
          if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
             multiplier = dateType.getUnit() == mlir::db::DateUnitAttr::day ? 86400000000000 : 1000000;
          } else if (auto timeStampType = t.dyn_cast_or_null<mlir::db::TimestampType>()) {
-            switch (timeStampType.getUnit()) {
-               case mlir::db::TimeUnitAttr::second: multiplier = 1000000; break;
-               case mlir::db::TimeUnitAttr::millisecond: multiplier = 1000; break;
-               case mlir::db::TimeUnitAttr::microsecond: multiplier = 1; break;
-               default: multiplier = 1;
-            }
+            multiplier = 1000;  // microseconds to nanoseconds
          }
          if (multiplier != 1) {
             mlir::Value multiplierConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, multiplier, 64);
             values[0] = rewriter.create<mlir::arith::MulIOp>(loc, values[0], multiplierConst);
          }
+      } else if (t.isa<mlir::db::IntervalType>()) {
+         if (values[0].getType() != rewriter.getI64Type()) {
+            values[0] = rewriter.create<mlir::arith::ExtSIOp>(loc, rewriter.getI64Type(), values[0]);
+         }
+         mlir::Value multiplierConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1000, 64);
+         values[0] = rewriter.create<mlir::arith::MulIOp>(loc, values[0], multiplierConst);
       } else if (auto decimalType = t.dyn_cast_or_null<db::DecimalType>()) {
          if (typeConverter->convertType(decimalType).cast<mlir::IntegerType>().getWidth() != 128) {
             values[0] = rewriter.create<arith::TruncIOp>(loc, typeConverter->convertType(decimalType), values[0]);
@@ -192,12 +193,7 @@ class AppendTBLowering : public ConversionPattern {
          if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
             multiplier = dateType.getUnit() == mlir::db::DateUnitAttr::day ? 86400000000000 : 1000000;
          } else if (auto timeStampType = t.dyn_cast_or_null<mlir::db::TimestampType>()) {
-            switch (timeStampType.getUnit()) {
-               case mlir::db::TimeUnitAttr::second: multiplier = 1000000; break;
-               case mlir::db::TimeUnitAttr::millisecond: multiplier = 1000; break;
-               case mlir::db::TimeUnitAttr::microsecond: multiplier = 1; break;
-               default: multiplier = 1;
-            }
+            multiplier = 1000;  // nanoseconds to microseconds
          }
          if (multiplier != 1) {
             mlir::Value multiplierConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, multiplier, 64);
@@ -206,6 +202,9 @@ class AppendTBLowering : public ConversionPattern {
          if (arrowPhysicalType != rewriter.getI64Type()) {
             val = rewriter.create<mlir::arith::TruncIOp>(loc, arrowPhysicalType, val);
          }
+      } else if (t.isa<mlir::db::IntervalType>()) {
+         mlir::Value multiplierConst = rewriter.create<mlir::arith::ConstantIntOp>(loc, 1000, 64);
+         val = rewriter.create<mlir::arith::DivSIOp>(loc, val, multiplierConst);
       } else if (auto decimalType = t.dyn_cast_or_null<db::DecimalType>()) {
          if (typeConverter->convertType(decimalType).cast<mlir::IntegerType>().getWidth() != 128) {
             val = rewriter.create<arith::ExtSIOp>(loc, rewriter.getIntegerType(128), val);
@@ -507,11 +506,20 @@ class DecimalBinOpLowering : public ConversionPattern {
          auto stdType = this->typeConverter->convertType(decimalType);
          mlir::Value left = adaptor.getLeft();
          mlir::Value right = adaptor.getRight();
+         // Only extend if types differ AND we're not extending i64 to i64
          if (stdType != left.getType()) {
-            left = rewriter.create<mlir::arith::ExtSIOp>(binOp->getLoc(), stdType, left);
+            auto leftIntType = left.getType().template dyn_cast<mlir::IntegerType>();
+            auto stdIntType = stdType.template dyn_cast<mlir::IntegerType>();
+            if (!leftIntType || !stdIntType || leftIntType.getWidth() != stdIntType.getWidth()) {
+               left = rewriter.create<mlir::arith::ExtSIOp>(binOp->getLoc(), stdType, left);
+            }
          }
          if (stdType != right.getType()) {
-            right = rewriter.create<mlir::arith::ExtSIOp>(binOp->getLoc(), stdType, right);
+            auto rightIntType = right.getType().template dyn_cast<mlir::IntegerType>();
+            auto stdIntType = stdType.template dyn_cast<mlir::IntegerType>();
+            if (!rightIntType || !stdIntType || rightIntType.getWidth() != stdIntType.getWidth()) {
+               right = rewriter.create<mlir::arith::ExtSIOp>(binOp->getLoc(), stdType, right);
+            }
          }
          mlir::Value result = rewriter.create<ArithOp>(binOp->getLoc(), stdType, left, right);
 
@@ -539,6 +547,57 @@ class DecimalBinOpLowering : public ConversionPattern {
       return failure();
    }
 };
+
+// Lowering for date/interval arithmetic with potentially mixed operand types
+template <class OpClass, class StdOpClass>
+class DateIntervalArithmeticLowering : public OpConversionPattern<OpClass> {
+   public:
+   using OpConversionPattern<OpClass>::OpConversionPattern;
+   using OpAdaptor = typename OpClass::Adaptor;
+
+   LogicalResult matchAndRewrite(OpClass binOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      auto leftType = getBaseType(binOp.getLeft().getType());
+      auto rightType = getBaseType(binOp.getRight().getType());
+
+      // Match if either operand is DateType or IntervalType
+      bool leftIsDateTime = mlir::isa<mlir::db::DateType, mlir::db::IntervalType>(leftType);
+      bool rightIsDateTime = mlir::isa<mlir::db::DateType, mlir::db::IntervalType>(rightType);
+
+      if (!leftIsDateTime && !rightIsDateTime) {
+         return failure();  // Not a date/interval operation
+      }
+
+      PGX_LOG(DB_LOWER, DEBUG, "[DateIntervalArithmeticLowering] Matched date/interval operation");
+
+      // DateType and IntervalType both convert to i64
+      auto i64Type = rewriter.getI64Type();
+      mlir::Value left = adaptor.getLeft();
+      mlir::Value right = adaptor.getRight();
+
+      // Ensure operands are i64 (extend from i32 if needed)
+      if (left.getType() != i64Type) {
+         if (left.getType().isInteger(32)) {
+            PGX_LOG(DB_LOWER, DEBUG, "[DateIntervalArithmeticLowering] Extending left operand from i32 to i64");
+            left = rewriter.create<arith::ExtSIOp>(binOp->getLoc(), i64Type, left);
+         } else {
+            return failure();
+         }
+      }
+      if (right.getType() != i64Type) {
+         if (right.getType().isInteger(32)) {
+            PGX_LOG(DB_LOWER, DEBUG, "[DateIntervalArithmeticLowering] Extending right operand from i32 to i64");
+            right = rewriter.create<arith::ExtSIOp>(binOp->getLoc(), i64Type, right);
+         } else {
+            return failure();
+         }
+      }
+
+      // Create the arithmetic operation
+      rewriter.replaceOpWithNewOp<StdOpClass>(binOp, i64Type, left, right);
+      return success();
+   }
+};
+
 class IsNullOpLowering : public OpConversionPattern<mlir::db::IsNullOp> {
    public:
    using OpConversionPattern<mlir::db::IsNullOp>::OpConversionPattern;
@@ -667,7 +726,29 @@ class ConstantLowering : public OpConversionPattern<mlir::db::ConstantOp> {
             rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, APInt(llvm::cast<mlir::IntegerType>(stdType).getWidth(), parts)));
             return success();
          } else if (type.isa<mlir::db::TimestampType>() || type.isa<mlir::db::DateType>()) {
-            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, std::get<int64_t>(parseResult)));
+            int64_t parsedValue = std::get<int64_t>(parseResult);
+            int64_t originalValue = parsedValue;
+
+            // Convert date/timestamp to nanoseconds (matching AtLowering behavior)
+            if (auto dateType = type.dyn_cast_or_null<mlir::db::DateType>()) {
+               if (dateType.getUnit() == mlir::db::DateUnitAttr::day) {
+                  parsedValue *= 86400000000000LL;  // Convert days to nanoseconds
+                  PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Date constant: days=%lld → nanoseconds=%lld", originalValue, parsedValue);
+               }
+            } else if (auto timestampType = type.dyn_cast_or_null<mlir::db::TimestampType>()) {
+               // PostgreSQL timestamps are in microseconds, convert to nanoseconds
+               parsedValue *= 1000LL;  // Convert microseconds to nanoseconds
+               PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Timestamp constant: microseconds=%lld → nanoseconds=%lld", originalValue, parsedValue);
+            }
+
+            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, parsedValue));
+            return success();
+         } else if (type.isa<mlir::db::IntervalType>()) {
+            // Intervals come in as microseconds, convert to nanoseconds to match date representation
+            int64_t microseconds = std::get<int64_t>(parseResult);
+            int64_t nanoseconds = microseconds * 1000LL;  // Convert microseconds to nanoseconds
+            PGX_LOG(DB_LOWER, DEBUG, "[ConstantLowering] Interval constant: microseconds=%lld → nanoseconds=%lld", microseconds, nanoseconds);
+            rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, nanoseconds));
             return success();
          } else {
             rewriter.replaceOpWithNewOp<arith::ConstantOp>(constantOp, stdType, rewriter.getIntegerAttr(stdType, std::get<int64_t>(parseResult)));
@@ -769,6 +850,16 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
          rewriter.replaceOp(op, value);
          return success();
       }
+
+      // Handle Date/Interval casting - they both convert to i64, so no actual conversion needed
+      bool sourceIsDateTime = scalarSourceType.isa<mlir::db::DateType, mlir::db::IntervalType, mlir::db::TimestampType>();
+      bool targetIsDateTime = scalarTargetType.isa<mlir::db::DateType, mlir::db::IntervalType, mlir::db::TimestampType>();
+      if (sourceIsDateTime && targetIsDateTime) {
+         // Both convert to i64, so no conversion operation needed
+         rewriter.replaceOp(op, value);
+         return success();
+      }
+
       if (auto sourceIntWidth = getIntegerWidth(scalarSourceType, false)) {
          if (scalarTargetType.isa<FloatType>()) {
             value = rewriter.create<arith::SIToFPOp>(loc, convertedTargetType, value);
@@ -784,8 +875,11 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
          } else if (auto targetIntWidth = getIntegerWidth(scalarTargetType, false)) {
             if (targetIntWidth < sourceIntWidth) {
                rewriter.replaceOpWithNewOp<arith::TruncIOp>(op, convertedTargetType, value);
-            } else {
+            } else if (targetIntWidth > sourceIntWidth) {
                rewriter.replaceOpWithNewOp<arith::ExtSIOp>(op, convertedTargetType, value);
+            } else {
+               // Same width - no conversion needed
+               rewriter.replaceOp(op, value);
             }
             return success();
          }
@@ -842,9 +936,16 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
          }
       } else if (auto timestampSourceType = scalarSourceType.dyn_cast_or_null<db::TimestampType>()) {
          if (auto dateTargetType = scalarTargetType.dyn_cast_or_null<db::DateType>()) {
-            const uint64_t microsecondsPerDay = 86400000000000ULL;
-            mlir::Value divisor = rewriter.create<arith::ConstantIntOp>(loc, microsecondsPerDay, 64);
+            // Both timestamp and date are in nanoseconds, just divide by nanoseconds per day
+            const uint64_t nanosecondsPerDay = 86400000000000ULL;
+            mlir::Value divisor = rewriter.create<arith::ConstantIntOp>(loc, nanosecondsPerDay, 64);
             value = rewriter.create<arith::DivSIOp>(loc, rewriter.getI64Type(), value, divisor);
+            rewriter.replaceOp(op, value);
+            return success();
+         }
+      } else if (auto dateSourceType = scalarSourceType.dyn_cast_or_null<db::DateType>()) {
+         if (auto timestampTargetType = scalarTargetType.dyn_cast_or_null<db::TimestampType>()) {
+            // Both date and timestamp are in nanoseconds, no conversion needed
             rewriter.replaceOp(op, value);
             return success();
          }
@@ -1059,8 +1160,6 @@ void DBToStdLoweringPass::runOnOperation() {
          mlir::Type arrowPhysicalType = typeConverter.convertType(t);
          if (t.isa<mlir::db::DecimalType>()) {
             arrowPhysicalType = mlir::IntegerType::get(t.getContext(), 128);
-         } else if (auto dateType = t.dyn_cast_or_null<mlir::db::DateType>()) {
-            arrowPhysicalType = dateType.getUnit() == mlir::db::DateUnitAttr::day ? mlir::IntegerType::get(t.getContext(), 32) : mlir::IntegerType::get(t.getContext(), 64);
          }
          types.push_back(arrowPhysicalType);
       }
@@ -1113,6 +1212,11 @@ void DBToStdLoweringPass::runOnOperation() {
 
    patterns.insert<AndOpLowering>(typeConverter, ctxt);
    patterns.insert<OrOpLowering>(typeConverter, ctxt);
+
+   // Date/interval arithmetic lowering
+   patterns.insert<DateIntervalArithmeticLowering<mlir::db::AddOp, arith::AddIOp>>(typeConverter, ctxt);
+   patterns.insert<DateIntervalArithmeticLowering<mlir::db::SubOp, arith::SubIOp>>(typeConverter, ctxt);
+
    patterns.insert<BinOpLowering<mlir::db::AddOp, mlir::IntegerType, arith::AddIOp>>(typeConverter, ctxt);
    patterns.insert<BinOpLowering<mlir::db::SubOp, mlir::IntegerType, arith::SubIOp>>(typeConverter, ctxt);
    patterns.insert<BinOpLowering<mlir::db::MulOp, mlir::IntegerType, arith::MulIOp>>(typeConverter, ctxt);

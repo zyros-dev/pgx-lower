@@ -123,32 +123,36 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
 
     switch (plan->type) {
     case T_SeqScan:
-        if (plan->type == T_SeqScan) {
-            auto* seqScan = reinterpret_cast<SeqScan*>(plan);
-            result = translate_seq_scan(ctx, seqScan);
+    case T_IndexScan:
+    case T_IndexOnlyScan:
+    case T_BitmapHeapScan: {
+            const char* scan_type = (plan->type == T_SeqScan) ? "SeqScan" :
+                                    (plan->type == T_IndexScan) ? "IndexScan" :
+                                    (plan->type == T_IndexOnlyScan) ? "IndexOnlyScan" : "BitmapHeapScan";
 
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Merging %zu InitPlan results from context into SeqScan result",
-                    ctx.init_plan_results.size());
+            auto* scan = reinterpret_cast<SeqScan*>(plan);
+            result = translate_seq_scan(ctx, scan);
+
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Merging %zu InitPlan results from context into %s result",
+                    ctx.init_plan_results.size(), scan_type);
             for (const auto& [paramid, initplan_result] : ctx.init_plan_results) {
                 result.init_plan_results[paramid] = initplan_result;
             }
-            PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan result now has %zu init_plan_results",
-                    result.init_plan_results.size());
+            PGX_LOG(AST_TRANSLATE, DEBUG, "%s result now has %zu init_plan_results",
+                    scan_type, result.init_plan_results.size());
 
             if (result.op && plan->qual) {
-                PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan has qual, calling apply_selection with result containing %zu init_plan_results",
-                        result.init_plan_results.size());
+                PGX_LOG(AST_TRANSLATE, DEBUG, "%s has qual, calling apply_selection with result containing %zu init_plan_results",
+                        scan_type, result.init_plan_results.size());
                 result = apply_selection_from_qual_with_columns(ctx, result, plan->qual, nullptr, nullptr);
             } else {
-                PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan: no qual (result.op=%p, plan->qual=%p)",
-                        static_cast<void*>(result.op), static_cast<void*>(plan->qual));
+                PGX_LOG(AST_TRANSLATE, DEBUG, "%s: no qual (result.op=%p, plan->qual=%p)",
+                        scan_type, static_cast<void*>(result.op), static_cast<void*>(plan->qual));
             }
 
             if (result.op && plan->targetlist) {
                 result = apply_projection_from_target_list(ctx, result, plan->targetlist);
             }
-        } else {
-            PGX_ERROR("Type mismatch for SeqScan");
         }
         break;
     case T_Agg:
@@ -327,9 +331,11 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 groupByAttrs.push_back(colRef);
             }
         }
-    } else {
-        // Alternative GROUP BY handling - look for TargetEntries with ressortgroupref
-        // These couple of lines caused me so much pain you would not believe it
+    }
+
+    // Also scan targetlist for additional GROUP BY columns that PostgreSQL optimized out of grpColIdx
+    // (e.g., when grouping by PK + dependent column, PostgreSQL may only list PK in grpColIdx)
+    if (agg->plan.targetlist) {
         ListCell* lc;
         foreach (lc, agg->plan.targetlist) {
             auto* tle = static_cast<TargetEntry*>(lfirst(lc));
@@ -338,12 +344,28 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
                     const auto& childCol = childResult.columns[var->varattno - 1];
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "GROUP BY (via ressortgroupref): %s.%s", childCol.table_name.c_str(),
-                            childCol.column_name.c_str());
 
-                    auto colRef = columnManager.createRef(childCol.table_name, childCol.column_name);
-                    colRef.getColumn().type = childCol.mlir_type;
-                    groupByAttrs.push_back(colRef);
+                    bool alreadyInGroup = false;
+                    for (const auto& attr : groupByAttrs) {
+                        auto existingColRef = mlir::dyn_cast<mlir::relalg::ColumnRefAttr>(attr);
+                        if (existingColRef) {
+                            // Compare table and column names
+                            auto existingName = existingColRef.getName();
+                            if (existingName.getRootReference().str() == childCol.table_name &&
+                                existingName.getLeafReference().str() == childCol.column_name) {
+                                alreadyInGroup = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!alreadyInGroup) {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Adding GROUP BY column from targetlist: %s.%s (ressortgroupref=%d)",
+                                childCol.table_name.c_str(), childCol.column_name.c_str(), tle->ressortgroupref);
+                        auto colRef = columnManager.createRef(childCol.table_name, childCol.column_name);
+                        colRef.getColumn().type = childCol.mlir_type;
+                        groupByAttrs.push_back(colRef);
+                    }
                 }
             }
         }

@@ -25,6 +25,7 @@ extern "C" {
 #include "catalog/pg_type_d.h"
 #include "utils/elog.h"
 #include "utils/numeric.h"
+#include "utils/datum.h"
 #include "fmgr.h"
 #include "utils/builtins.h"
 }
@@ -388,9 +389,17 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
         PGX_LOG(RUNTIME, DEBUG, "Decimal numeric: %s (scale=%d, removed %d trailing zeros)",
                 buffer, scale, zeros_removed);
 
+        PGX_LOG(RUNTIME, DEBUG, "addDecimal: before DirectFunctionCall3, CurrentMemoryContext=%p",
+                CurrentMemoryContext);
+
         const auto numeric_datum = DirectFunctionCall3(numeric_in, CStringGetDatum(buffer),
                                                        ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
-        const auto numeric_value = DatumGetNumeric(numeric_datum);
+
+        const auto copied_datum = datumCopy(numeric_datum, false, -1);
+        const auto numeric_value = DatumGetNumeric(copied_datum);
+
+        PGX_LOG(RUNTIME, DEBUG, "addDecimal: created and copied Numeric at %p (orig=%lu, copied=%lu)",
+                numeric_value, numeric_datum, copied_datum);
 
         pgx_lower::runtime::table_builder_add_numeric(this, false, numeric_value);
         this->next_decimal_scale = std::nullopt;
