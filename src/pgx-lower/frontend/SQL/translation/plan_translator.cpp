@@ -285,6 +285,42 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     return result;
 }
 
+static Aggref* find_first_aggref(Expr* expr) {
+    if (!expr) {
+        return nullptr;
+    }
+
+    if (IsA(expr, Aggref)) {
+        return reinterpret_cast<Aggref*>(expr);
+    }
+
+    if (IsA(expr, OpExpr)) {
+        auto* op_expr = reinterpret_cast<OpExpr*>(expr);
+        ListCell* lc;
+        foreach(lc, op_expr->args) {
+            auto* arg = reinterpret_cast<Expr*>(lfirst(lc));
+            Aggref* found = find_first_aggref(arg);
+            if (found) {
+                return found;
+            }
+        }
+    }
+
+    if (IsA(expr, FuncExpr)) {
+        auto* func_expr = reinterpret_cast<FuncExpr*>(expr);
+        ListCell* lc;
+        foreach(lc, func_expr->args) {
+            auto* arg = reinterpret_cast<Expr*>(lfirst(lc));
+            Aggref* found = find_first_aggref(arg);
+            if (found) {
+                return found;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!agg || !agg->plan.lefttree)
@@ -369,6 +405,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         auto createdCols = std::vector<mlir::Attribute>{};
 
         std::map<int, std::pair<std::string, std::string>> aggregateMappings;
+
+        std::set<int> needs_post_processing;
+        std::map<int, Expr*> post_process_exprs;
+        std::map<int, Aggref*> post_process_aggref_map;
 
         ListCell* lc;
         foreach (lc, agg->plan.targetlist) {
@@ -482,6 +522,127 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         createdValues.push_back(aggResult);
                     }
                 }
+            } else {
+                Aggref* nested_aggref = find_first_aggref(te->expr);
+
+                if (nested_aggref) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Found nested Aggref in complex expression at resno=%d, aggno=%d",
+                            te->resno, nested_aggref->aggno);
+
+                    char* rawFuncName = get_func_name(nested_aggref->aggfnoid);
+                    if (!rawFuncName) {
+                        PGX_WARNING("Could not get function name for nested Aggref aggno=%d", nested_aggref->aggno);
+                        continue;
+                    }
+                    std::string funcName(rawFuncName);
+                    pfree(rawFuncName);
+
+                    std::string aggColumnName = "nested_agg_" + std::to_string(nested_aggref->aggno);
+                    auto relation = block->getArgument(0);
+                    mlir::Value aggResult;
+
+                    if (funcName == "count" && (!nested_aggref->args || list_length(nested_aggref->args) == 0)) {
+                        auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
+                        attrDef.getColumn().type = ctx.builder.getI64Type();
+
+                        aggregateMappings[nested_aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "First loop (nested): Added aggregate mapping aggno=%d -> (%s, %s)",
+                                nested_aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
+
+                        aggResult = aggr_builder.create<mlir::relalg::CountRowsOp>(
+                            ctx.builder.getUnknownLoc(), ctx.builder.getI64Type(), relation);
+
+                        if (attrDef && aggResult) {
+                            createdCols.push_back(attrDef);
+                            createdValues.push_back(aggResult);
+                        }
+                    } else {
+                        if (!nested_aggref->args || list_length(nested_aggref->args) == 0) {
+                            PGX_WARNING("Nested Aggref aggno=%d has no arguments", nested_aggref->aggno);
+                            continue;
+                        }
+
+                        auto argTE = static_cast<TargetEntry*>(linitial(nested_aggref->args));
+                        if (!argTE || !argTE->expr) {
+                            PGX_WARNING("Nested Aggref aggno=%d has invalid argument", nested_aggref->aggno);
+                            continue;
+                        }
+
+                        auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module,
+                                                  mlir::Value{}, ctx.current_tuple};
+                        childCtx.init_plan_results = ctx.init_plan_results;
+
+                        auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
+                            childCtx, argTE->expr, childOutput, "nested_agg_expr_" + std::to_string(nested_aggref->aggno),
+                            childResult.columns);
+
+                        if (stream != childOutput) {
+                            childOutput = cast<mlir::OpResult>(stream);
+
+                            const auto exprOid = exprType(reinterpret_cast<Node*>(argTE->expr));
+                            auto type_mapper = PostgreSQLTypeMapper(*ctx.builder.getContext());
+                            auto mlirExprType = type_mapper.map_postgre_sqltype(exprOid, -1, true);
+
+                            childResult.columns.push_back({.table_name = table_name,
+                                                          .column_name = column_name,
+                                                          .type_oid = exprOid,
+                                                          .typmod = -1,
+                                                          .mlir_type = mlirExprType,
+                                                          .nullable = true});
+                        }
+
+                        auto columnRef = column_ref;
+
+                        PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
+                        auto resultType = (funcName == "count") ? ctx.builder.getI64Type()
+                                                                : type_mapper.map_postgre_sqltype(nested_aggref->aggtype, -1, true);
+
+                        auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
+                        attrDef.getColumn().type = resultType;
+
+                        aggregateMappings[nested_aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "First loop (nested): Added aggregate mapping aggno=%d -> (%s, %s)",
+                                nested_aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
+
+                        auto aggrFuncEnum = (funcName == "sum")   ? mlir::relalg::AggrFunc::sum
+                                            : (funcName == "avg") ? mlir::relalg::AggrFunc::avg
+                                            : (funcName == "min") ? mlir::relalg::AggrFunc::min
+                                            : (funcName == "max") ? mlir::relalg::AggrFunc::max
+                                                                  : mlir::relalg::AggrFunc::count;
+
+                        if (nested_aggref->aggdistinct) {
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "Processing nested %s(DISTINCT) aggregate", funcName.c_str());
+
+                            auto distinctStream = aggr_builder.create<mlir::relalg::ProjectionOp>(
+                                ctx.builder.getUnknownLoc(), mlir::relalg::TupleStreamType::get(ctx.builder.getContext()),
+                                mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(),
+                                                                   mlir::relalg::SetSemantic::distinct),
+                                relation, ctx.builder.getArrayAttr({columnRef}));
+
+                            aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
+                                ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum, distinctStream.getResult(), columnRef);
+                        } else {
+                            aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
+                                ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum, relation, columnRef);
+                        }
+
+                        if (attrDef && aggResult) {
+                            createdCols.push_back(attrDef);
+                            createdValues.push_back(aggResult);
+                        }
+                    }
+
+                    needs_post_processing.insert(te->resno);
+                    post_process_exprs[te->resno] = te->expr;
+                    post_process_aggref_map[te->resno] = nested_aggref;
+
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Marked resno=%d for post-processing (full expr wraps aggno=%d)",
+                            te->resno, nested_aggref->aggno);
+                } else {
+                    PGX_WARNING("Non-aggregate expression in aggregate targetlist at resno=%d", te->resno);
+                }
             }
         }
 
@@ -492,10 +653,121 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                                                      ctx.builder.getArrayAttr(createdCols));
         aggOp.getAggrFunc().push_back(block);
 
+        mlir::Value finalOutput = aggOp;
+        std::string finalScope = aggrScopeName;
+
+        if (!needs_post_processing.empty()) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Creating post-processing MapOp for %zu expressions",
+                    needs_post_processing.size());
+
+            auto postMapScope = columnManager.getUniqueScope("postmap");
+            std::vector<mlir::relalg::ColumnDefAttr> postMapCols;
+
+            auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(
+                ctx.builder.getUnknownLoc(), aggOp,
+                ctx.builder.getArrayAttr({}));
+
+            auto& mapRegion = mapOp.getPredicate();
+            auto* mapBlock = new mlir::Block;
+            mapRegion.push_back(mapBlock);
+            mapBlock->addArgument(tupleStreamType, ctx.builder.getUnknownLoc());
+            mapBlock->addArgument(mlir::relalg::TupleType::get(ctx.builder.getContext()),
+                                 ctx.builder.getUnknownLoc());
+
+            mlir::OpBuilder mapBuilder(mapBlock, mapBlock->begin());
+            std::vector<mlir::Value> mapValues;
+
+            for (int resno : needs_post_processing) {
+                Expr* full_expr = post_process_exprs[resno];
+                Aggref* nested_aggref = post_process_aggref_map[resno];
+
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Post-processing resno=%d, aggno=%d",
+                        resno, nested_aggref->aggno);
+
+                auto& [aggr_scope, aggr_colname] = aggregateMappings.at(nested_aggref->aggno);
+                auto aggr_colref = columnManager.createRef(aggr_scope, aggr_colname);
+
+                mlir::Value aggr_value = mapBuilder.create<mlir::relalg::GetColumnOp>(
+                    ctx.builder.getUnknownLoc(), aggr_colref.getColumn().type,
+                    aggr_colref, mapBlock->getArgument(1)).getRes();
+
+                auto postCtx = QueryCtxT{ctx.current_stmt, mapBuilder, ctx.current_module,
+                                        mapBlock->getArgument(1), ctx.outer_tuple};
+                postCtx.init_plan_results = ctx.init_plan_results;
+
+                mlir::Value post_value = aggr_value;
+
+                if (IsA(full_expr, OpExpr)) {
+                    auto* op_expr = reinterpret_cast<OpExpr*>(full_expr);
+
+                    ListCell* arg_lc;
+                    std::vector<mlir::Value> arg_values;
+                    foreach(arg_lc, op_expr->args) {
+                        auto* arg_expr = reinterpret_cast<Expr*>(lfirst(arg_lc));
+
+                        if (IsA(arg_expr, Aggref)) {
+                            arg_values.push_back(aggr_value);
+                        } else {
+                            auto arg_val = translate_expression(postCtx, arg_expr);
+                            arg_values.push_back(arg_val);
+                        }
+                    }
+
+                    if (arg_values.size() == 2) {
+                        char* op_name = get_opname(op_expr->opno);
+
+                        if (op_name && strcmp(op_name, "*") == 0) {
+                            post_value = mapBuilder.create<mlir::db::MulOp>(
+                                ctx.builder.getUnknownLoc(), arg_values[0].getType(),
+                                arg_values[0], arg_values[1]);
+                        } else if (op_name && strcmp(op_name, "/") == 0) {
+                            post_value = mapBuilder.create<mlir::db::DivOp>(
+                                ctx.builder.getUnknownLoc(), arg_values[0].getType(),
+                                arg_values[0], arg_values[1]);
+                        } else if (op_name && strcmp(op_name, "+") == 0) {
+                            post_value = mapBuilder.create<mlir::db::AddOp>(
+                                ctx.builder.getUnknownLoc(), arg_values[0].getType(),
+                                arg_values[0], arg_values[1]);
+                        } else if (op_name && strcmp(op_name, "-") == 0) {
+                            post_value = mapBuilder.create<mlir::db::SubOp>(
+                                ctx.builder.getUnknownLoc(), arg_values[0].getType(),
+                                arg_values[0], arg_values[1]);
+                        }
+
+                        if (op_name) pfree(op_name);
+                    }
+                }
+
+                std::string colName = "postproc_" + std::to_string(resno);
+                auto colDef = columnManager.createDef(postMapScope, colName);
+                colDef.getColumn().type = post_value.getType();
+
+                postMapCols.push_back(colDef);
+                mapValues.push_back(post_value);
+
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Created post-processing column: %s.%s",
+                        postMapScope.c_str(), colName.c_str());
+            }
+
+            mapBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mapValues);
+
+            std::vector<mlir::Attribute> postMapAttrs;
+            for (const auto& col : postMapCols) {
+                postMapAttrs.push_back(col);
+            }
+            mapOp.setComputedColsAttr(ctx.builder.getArrayAttr(postMapAttrs));
+
+            finalOutput = mapOp;
+            finalScope = postMapScope;
+
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Post-processing MapOp created with %zu columns",
+                    postMapCols.size());
+        }
+
         // Build output schema
         TranslationResult result;
-        result.op = aggOp;
-        result.current_scope = aggrScopeName;
+        result.op = finalOutput.getDefiningOp();
+        result.current_scope = finalScope;
 
         foreach (lc, agg->plan.targetlist) {
             auto* te = static_cast<TargetEntry*>(lfirst(lc));
@@ -554,13 +826,24 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
                 auto exprMlirType = type_mapper.map_postgre_sqltype(exprTypeOid, -1, true);
 
-                std::string columnName = te->resname ? te->resname : "expr_" + std::to_string(te->resno);
+                std::string scopeName;
+                std::string columnName;
 
-                PGX_LOG(AST_TRANSLATE, DEBUG,
-                        "Agg: Adding complex expression column '%s' with type_oid=%u (resno=%d)",
-                        columnName.c_str(), exprTypeOid, te->resno);
+                if (needs_post_processing.count(te->resno) > 0) {
+                    scopeName = finalScope;
+                    columnName = "postproc_" + std::to_string(te->resno);
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Agg: Adding post-processed column '%s' in scope '%s' (resno=%d)",
+                            columnName.c_str(), scopeName.c_str(), te->resno);
+                } else {
+                    scopeName = aggrScopeName;
+                    columnName = te->resname ? te->resname : "expr_" + std::to_string(te->resno);
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Agg: Adding complex expression column '%s' with type_oid=%u (resno=%d)",
+                            columnName.c_str(), exprTypeOid, te->resno);
+                }
 
-                result.columns.push_back({.table_name = aggrScopeName,
+                result.columns.push_back({.table_name = scopeName,
                                           .column_name = columnName,
                                           .type_oid = exprTypeOid,
                                           .typmod = -1,
