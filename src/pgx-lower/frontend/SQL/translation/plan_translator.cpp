@@ -549,6 +549,23 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     }
                     result.columns.push_back(childCol);
                 }
+            } else {
+                Oid exprTypeOid = exprType(reinterpret_cast<Node*>(te->expr));
+                PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
+                auto exprMlirType = type_mapper.map_postgre_sqltype(exprTypeOid, -1, true);
+
+                std::string columnName = te->resname ? te->resname : "expr_" + std::to_string(te->resno);
+
+                PGX_LOG(AST_TRANSLATE, DEBUG,
+                        "Agg: Adding complex expression column '%s' with type_oid=%u (resno=%d)",
+                        columnName.c_str(), exprTypeOid, te->resno);
+
+                result.columns.push_back({.table_name = aggrScopeName,
+                                          .column_name = columnName,
+                                          .type_oid = exprTypeOid,
+                                          .typmod = -1,
+                                          .mlir_type = exprMlirType,
+                                          .nullable = true});
             }
         }
 
