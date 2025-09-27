@@ -193,6 +193,47 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
                                                                           col.mlir_type, colRef, ctx.current_tuple);
 
             return getColOp.getRes();
+        } else if (var->varno == INDEX_VAR && right_child) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] INDEX_VAR: varnosyn=%d, varattno=%d, right_child has %zu columns",
+                    var->varnosyn, var->varattno, right_child->columns.size());
+
+            const auto* resolved_col_ptr = [&]() -> const TranslationResult::ColumnSchema* {
+                if (auto mapping = right_child->resolve_var(var->varnosyn, var->varattno)) {
+                    const auto& [table_name, col_name] = *mapping;
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] INDEX_VAR using varno_resolution: varnosyn=%d, varattno=%d -> @%s::@%s",
+                            var->varnosyn, var->varattno, table_name.c_str(), col_name.c_str());
+                    for (const auto& c : right_child->columns) {
+                        if (c.table_name == table_name && c.column_name == col_name) {
+                            return &c;
+                        }
+                    }
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] Mapping found but column not in schema, falling back to position");
+                }
+                return nullptr;
+            }();
+
+            const auto& col = resolved_col_ptr ? *resolved_col_ptr
+                            : (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size()))
+                              ? right_child->columns[var->varattno - 1]
+                              : throw std::runtime_error("INDEX_VAR varattno out of range");
+
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] INDEX_VAR resolved to %s.%s",
+                    col.table_name.c_str(), col.column_name.c_str());
+
+            auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+            if (!dialect) {
+                PGX_ERROR("RelAlg dialect not registered");
+                throw std::runtime_error("Check logs");
+            }
+
+            auto& columnManager = dialect->getColumnManager();
+            auto colRef = columnManager.createRef(col.table_name, col.column_name);
+            colRef.getColumn().type = col.mlir_type;
+
+            auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(),
+                                                                          col.mlir_type, colRef, ctx.current_tuple);
+
+            return getColOp.getRes();
         } else {
             return translate_var(ctx, var);
         }
@@ -211,6 +252,21 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
     case T_FuncExpr: {
         const auto* func_expr = reinterpret_cast<const FuncExpr*>(expr);
         return translate_func_expr_with_join_context(ctx, func_expr, left_child, right_child, outer_tuple_arg);
+    }
+    case T_Param: {
+        const auto* param = reinterpret_cast<const Param*>(expr);
+
+        if (param->paramkind == PARAM_EXEC && !ctx.nest_params.empty()) {
+            const auto nest_param_it = ctx.nest_params.find(param->paramid);
+            if (nest_param_it != ctx.nest_params.end()) {
+                auto* paramVar = nest_param_it->second;
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Param paramid=%d references nestParam Var(varno=%d, varattno=%d) - translating in join context",
+                        param->paramid, paramVar->varno, paramVar->varattno);
+                return translate_expression_with_join_context(ctx, reinterpret_cast<Expr*>(paramVar), left_child, right_child, outer_tuple_arg);
+            }
+        }
+
+        return translate_expression(ctx, expr);
     }
     default: return translate_expression(ctx, expr);
     }

@@ -1686,7 +1686,11 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
 
-        const auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, tupleArg, mlir::Value());
+        auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, tupleArg, mlir::Value());
+        predicateCtx.nest_params = queryCtx.nest_params;
+        predicateCtx.init_plan_results = queryCtx.init_plan_results;
+        predicateCtx.subquery_param_mapping = queryCtx.subquery_param_mapping;
+        predicateCtx.correlation_params = queryCtx.correlation_params;
         auto conditions = std::vector<mlir::Value>();
         ListCell* lc;
         int clauseIdx = 0;
@@ -2177,9 +2181,35 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         throw std::runtime_error("NestLoop missing children");
     }
 
+    List* effective_join_qual = nestLoop->join.joinqual;
+
     if (nestLoop->nestParams && nestLoop->nestParams->length > 0) {
-        PGX_WARNING("Parameterized nested loops not yet supported - treating as simple nested loop");
-        // TODO: Support parameterized nested loops
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Parameterized nested loop detected with %d parameters", nestLoop->nestParams->length);
+
+        ListCell* lc;
+        foreach (lc, nestLoop->nestParams) {
+            auto* nestParam = reinterpret_cast<NestLoopParam*>(lfirst(lc));
+            if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
+                auto* paramVar = reinterpret_cast<Var*>(nestParam->paramval);
+                ctx.nest_params[nestParam->paramno] = paramVar;
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Registered nest param: paramno=%d -> Var(varno=%d, varattno=%d)",
+                        nestParam->paramno, paramVar->varno, paramVar->varattno);
+            }
+        }
+
+        if (rightPlan->type == T_IndexScan) {
+            auto* indexScan = reinterpret_cast<IndexScan*>(rightPlan);
+            if (indexScan->indexqual && indexScan->indexqual->length > 0) {
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Extracting %d join predicates from IndexScan.indexqual", indexScan->indexqual->length);
+                effective_join_qual = indexScan->indexqual;
+            }
+        } else if (rightPlan->type == T_IndexOnlyScan) {
+            auto* indexOnlyScan = reinterpret_cast<IndexOnlyScan*>(rightPlan);
+            if (indexOnlyScan->indexqual && indexOnlyScan->indexqual->length > 0) {
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Extracting %d join predicates from IndexOnlyScan.indexqual", indexOnlyScan->indexqual->length);
+                effective_join_qual = indexOnlyScan->indexqual;
+            }
+        }
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NestLoop - left child type: %d, right child type: %d", leftPlan->type,
@@ -2206,7 +2236,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     auto rightValue = rightOp->getResult(0);
 
     TranslationResult result = create_join_operation(ctx, nestLoop->join.jointype, leftValue, rightValue,
-                                                     leftTranslation, rightTranslation, nestLoop->join.joinqual);
+                                                     leftTranslation, rightTranslation, effective_join_qual);
 
     if (nestLoop->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
