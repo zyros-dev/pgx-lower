@@ -88,7 +88,6 @@ struct TranslationResult {
     std::vector<ColumnSchema> columns;
     std::string current_scope;
     std::map<std::pair<int, int>, std::pair<std::string, std::string>> varno_resolution;
-    std::unordered_map<int, TranslationResult> init_plan_results;
 
     [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {
         const auto key = std::make_pair(varno, varattno);
@@ -112,14 +111,6 @@ struct TranslationResult {
             for (const auto& [key, value] : varno_resolution) {
                 result += "\n\t(" + std::to_string(key.first) + "," + std::to_string(key.second) + ") -> ("
                           + value.first + ", " + value.second + ")";
-            }
-            result += "]";
-        }
-
-        if (!init_plan_results.empty()) {
-            result += ", init_plan_results=[";
-            for (const auto& [k, v] : init_plan_results) {
-                result += "\n\tparam[" + std::to_string(k) + "]: " + v.toString();
             }
             result += "]";
         }
@@ -254,7 +245,7 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_subquery_scan(QueryCtxT& ctx, SubqueryScan* subqueryScan) -> TranslationResult;
 
     // InitPlan helpers
-    auto process_init_plans(QueryCtxT& ctx, Plan* plan) -> TranslationResult;
+    auto process_init_plans(QueryCtxT& ctx, Plan* plan) -> void;
 
     // Query function generation
     static auto create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp;

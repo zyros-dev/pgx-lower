@@ -1324,17 +1324,12 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     } else if (nodeTag(rightNode) == T_Param) {
         const auto* param = reinterpret_cast<Param*>(rightNode);
 
-        if (!current_result) {
-            PGX_ERROR("Param encountered without current_result context");
-            throw std::runtime_error("Param requires current_result for InitPlan value lookup");
-        }
-
         if (param->paramkind != PARAM_EXEC) {
             PGX_ERROR("Only PARAM_EXEC parameters are supported (got paramkind=%d)", param->paramkind);
             throw std::runtime_error("Unsupported param kind");
         }
 
-        const auto& init_plan_results = current_result->get().init_plan_results;
+        const auto& init_plan_results = ctx.init_plan_results;
         const auto it = init_plan_results.find(param->paramid);
 
         if (it == init_plan_results.end()) {
@@ -2518,13 +2513,8 @@ auto PostgreSQLASTTranslator::Impl::translate_param(
         return column_value;
     }
 
-    // If we reach here, this must be an InitPlan parameter, which requires current_result
-    if (!current_result) {
-        PGX_ERROR("Param paramid=%d is not a correlation parameter or subquery parameter, but current_result is missing (needed for InitPlan lookup)", param->paramid);
-        throw std::runtime_error("Param requires current_result for InitPlan value lookup");
-    }
-
-    const auto& init_plan_results = current_result->get().init_plan_results;
+    // If we reach here, this must be an InitPlan parameter - look it up in context
+    const auto& init_plan_results = ctx.init_plan_results;
     const auto it = init_plan_results.find(param->paramid);
 
     if (it == init_plan_results.end()) {

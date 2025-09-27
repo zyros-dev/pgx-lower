@@ -54,14 +54,12 @@ namespace postgresql_ast {
 
 using namespace pgx_lower::frontend::sql::constants;
 
-auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, Plan* plan) -> TranslationResult {
+auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, Plan* plan) -> void {
     PGX_IO(AST_TRANSLATE);
-    TranslationResult initplan_results;
 
     if (!plan->initPlan || list_length(plan->initPlan) == 0) {
-        return initplan_results;
+        return;
     }
-
 
     List* all_subplans = ctx.current_stmt.subplans;
     const int num_subplans = list_length(all_subplans);
@@ -97,11 +95,13 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, Plan* pla
             continue;
         }
         const int paramid = list_nth_int(setParam, 0);
-        initplan_results.init_plan_results[paramid] = initplan_result;
+        ctx.init_plan_results[paramid] = initplan_result;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Stored InitPlan result for paramid=%d (plan_id=%d, %zu columns)",
+                paramid, plan_id, initplan_result.columns.size());
     }
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Init plan returning %s", initplan_results.toString().data());
-    return initplan_results;
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Processed %d InitPlans, context now has %zu total",
+            list_length(plan->initPlan), ctx.init_plan_results.size());
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* plan) -> TranslationResult {
@@ -111,13 +111,10 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
         throw std::runtime_error("Plan node is null");
     }
 
-    auto initplan_results = process_init_plans(ctx, plan);
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Node has %zu local InitPlans, context already has %zu",
-            initplan_results.init_plan_results.size(), ctx.init_plan_results.size());
-    for (const auto& [paramid, result] : initplan_results.init_plan_results) {
-        ctx.init_plan_results[paramid] = result;
-    }
-    PGX_LOG(AST_TRANSLATE, DEBUG, "After merge, context has %zu InitPlans", ctx.init_plan_results.size());
+    const size_t init_plans_before = ctx.init_plan_results.size();
+    process_init_plans(ctx, plan);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "After processing InitPlans: context has %zu InitPlans (%zu new)",
+            ctx.init_plan_results.size(), ctx.init_plan_results.size() - init_plans_before);
 
     TranslationResult result;
 
@@ -133,17 +130,10 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
             auto* scan = reinterpret_cast<SeqScan*>(plan);
             result = translate_seq_scan(ctx, scan);
 
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Merging %zu InitPlan results from context into %s result",
-                    ctx.init_plan_results.size(), scan_type);
-            for (const auto& [paramid, initplan_result] : ctx.init_plan_results) {
-                result.init_plan_results[paramid] = initplan_result;
-            }
-            PGX_LOG(AST_TRANSLATE, DEBUG, "%s result now has %zu init_plan_results",
-                    scan_type, result.init_plan_results.size());
 
             if (result.op && plan->qual) {
-                PGX_LOG(AST_TRANSLATE, DEBUG, "%s has qual, calling apply_selection with result containing %zu init_plan_results",
-                        scan_type, result.init_plan_results.size());
+                PGX_LOG(AST_TRANSLATE, DEBUG, "%s has qual, calling apply_selection (context has %zu InitPlans)",
+                        scan_type, ctx.init_plan_results.size());
                 result = apply_selection_from_qual_with_columns(ctx, result, plan->qual, nullptr, nullptr);
             } else {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "%s: no qual (result.op=%p, plan->qual=%p)",
@@ -176,14 +166,6 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_SubqueryScan: result = translate_subquery_scan(ctx, reinterpret_cast<SubqueryScan*>(plan)); break;
     default: PGX_ERROR("Unsupported plan node type: %d", plan->type); result.op = nullptr;
     }
-
-    // Merge context InitPlan results into the node's result
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Merging %zu InitPlan results from context into node result",
-            ctx.init_plan_results.size());
-    for (const auto& [paramid, initplan_result] : ctx.init_plan_results) {
-        result.init_plan_results[paramid] = initplan_result;
-    }
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Finished merging InitPlan results");
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_plan_node returning result with %zu columns", result.columns.size());
     return result;
@@ -577,6 +559,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 PGX_LOG(AST_TRANSLATE, DEBUG, "  HAVING: varno=%d, attno=%d -> (%s, %s)",
                         key.first, key.second, value.first.c_str(), value.second.c_str());
             }
+
             result = apply_selection_from_qual(ctx, result, agg->plan.qual);
         }
 
@@ -676,8 +659,6 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
     } else {
         result.columns = childResult.columns;
     }
-
-    result.init_plan_results = childResult.init_plan_results;
 
     return result;
 }
