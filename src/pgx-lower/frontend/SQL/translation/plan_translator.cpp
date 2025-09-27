@@ -522,6 +522,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         createdValues.push_back(aggResult);
                     }
                 }
+            } else if (te->expr->type == T_Var) {
+                PGX_LOG(AST_TRANSLATE, DEBUG,
+                        "First loop: Skipping T_Var at resno=%d (GROUP BY column, handled in second loop)",
+                        te->resno);
             } else {
                 Aggref* nested_aggref = find_first_aggref(te->expr);
 
@@ -641,7 +645,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                             "Marked resno=%d for post-processing (full expr wraps aggno=%d)",
                             te->resno, nested_aggref->aggno);
                 } else {
-                    PGX_WARNING("Non-aggregate expression in aggregate targetlist at resno=%d", te->resno);
+                    PGX_WARNING("Unexpected non-aggregate, non-Var expression in aggregate targetlist at resno=%d, type=%d",
+                                te->resno, te->expr->type);
                 }
             }
         }
@@ -670,7 +675,6 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             auto& mapRegion = mapOp.getPredicate();
             auto* mapBlock = new mlir::Block;
             mapRegion.push_back(mapBlock);
-            mapBlock->addArgument(tupleStreamType, ctx.builder.getUnknownLoc());
             mapBlock->addArgument(mlir::relalg::TupleType::get(ctx.builder.getContext()),
                                  ctx.builder.getUnknownLoc());
 
@@ -689,10 +693,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                 mlir::Value aggr_value = mapBuilder.create<mlir::relalg::GetColumnOp>(
                     ctx.builder.getUnknownLoc(), aggr_colref.getColumn().type,
-                    aggr_colref, mapBlock->getArgument(1)).getRes();
+                    aggr_colref, mapBlock->getArgument(0)).getRes();
 
                 auto postCtx = QueryCtxT{ctx.current_stmt, mapBuilder, ctx.current_module,
-                                        mapBlock->getArgument(1), ctx.outer_tuple};
+                                        mapBlock->getArgument(0), ctx.outer_tuple};
                 postCtx.init_plan_results = ctx.init_plan_results;
 
                 mlir::Value post_value = aggr_value;

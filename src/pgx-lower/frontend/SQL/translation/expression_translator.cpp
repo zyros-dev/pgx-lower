@@ -6,6 +6,7 @@ extern "C" {
 #include "nodes/plannodes.h"
 #include "nodes/parsenodes.h"
 #include "nodes/pg_list.h"
+#include "nodes/nodeFuncs.h"
 #include "catalog/pg_type.h"
 #include "utils/rel.h"
 #include "utils/array.h"
@@ -1263,6 +1264,14 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         throw std::runtime_error("Failed to translate left operand of IN expression");
     }
 
+    Oid leftTypeOid = exprType(leftNode);
+    int32 leftTypeMod = exprTypmod(leftNode);
+    int bpcharLength = -1;
+    if (leftTypeOid == BPCHAROID && leftTypeMod >= VARHDRSZ) {
+        bpcharLength = leftTypeMod - VARHDRSZ;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Left operand is BPCHAR with length=%d", bpcharLength);
+    }
+
     const auto rightNode = static_cast<Node*>(lfirst(&args->elements[1]));
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "ScalarArrayOpExpr: Right operand nodeTag = %d", nodeTag(rightNode));
@@ -1308,6 +1317,35 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
                 if (!nulls || !nulls[i]) {
                     const auto textValue = DatumGetTextP(values[i]);
                     std::string str_value(VARDATA(textValue), VARSIZE(textValue) - VARHDRSZ);
+
+                    auto elemValue = ctx.builder.create<mlir::db::ConstantOp>(
+                        ctx.builder.getUnknownLoc(), ctx.builder.getType<mlir::db::StringType>(),
+                        ctx.builder.getStringAttr(str_value));
+                    arrayElements.push_back(elemValue);
+                }
+            }
+        } else if (constNode->consttype == BPCHARARRAYOID) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Processing BPCHAR array (CHAR/VARCHAR), target column length=%d", bpcharLength);
+            const auto array = DatumGetArrayTypeP(constNode->constvalue);
+            int nitems;
+            Datum* values;
+            bool* nulls;
+
+            deconstruct_array(array, BPCHAROID, -1, false, TYPALIGN_INT, &values, &nulls, &nitems);
+
+            for (int i = 0; i < nitems; i++) {
+                if (!nulls || !nulls[i]) {
+                    const auto bpcharValue = DatumGetBpCharP(values[i]);
+                    std::string str_value(VARDATA_ANY(bpcharValue), VARSIZE_ANY_EXHDR(bpcharValue));
+
+                    str_value.erase(str_value.find_last_not_of(' ') + 1);
+
+                    if (bpcharLength > 0 && str_value.length() < static_cast<size_t>(bpcharLength)) {
+                        str_value.resize(bpcharLength, ' ');
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "BPCHAR array element[%d]: '%s' (padded to len=%d)", i, str_value.c_str(), bpcharLength);
+                    } else {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "BPCHAR array element[%d]: '%s' (len=%zu, no padding needed)", i, str_value.c_str(), str_value.length());
+                    }
 
                     auto elemValue = ctx.builder.create<mlir::db::ConstantOp>(
                         ctx.builder.getUnknownLoc(), ctx.builder.getType<mlir::db::StringType>(),
@@ -1419,34 +1457,43 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     }
 
     if (arrayElements.empty()) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Empty array in IN clause, returning %s", scalar_array_op->useOr ? "false" : "true");
         return ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(),
                                                               scalar_array_op->useOr ? 0 : 1, ctx.builder.getI1Type());
     }
+
+    char* oprname = get_opname(scalar_array_op->opno);
+    std::string op = oprname ? std::string(oprname) : "=";
+    if (oprname) pfree(oprname);
+
+    if (op == "=" && scalar_array_op->useOr) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using db.oneof for IN clause with %zu array elements", arrayElements.size());
+
+        std::vector<mlir::Value> values;
+        values.push_back(leftValue);
+        values.insert(values.end(), arrayElements.begin(), arrayElements.end());
+
+        auto oneofOp = ctx.builder.create<mlir::db::OneOfOp>(ctx.builder.getUnknownLoc(), values);
+        PGX_LOG(AST_TRANSLATE, IO, "translate_scalar_array_op_expr OUT: db.oneof MLIR Value");
+        return oneofOp.getResult();
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Using comparison loop for operator '%s' with useOr=%d", op.c_str(), scalar_array_op->useOr);
 
     mlir::Value result = nullptr;
     for (const auto& elemValue : arrayElements) {
         mlir::Value cmp = nullptr;
 
-        char* oprname = get_opname(scalar_array_op->opno);
-        if (!oprname) {
-            PGX_WARNING("Unknown operator OID %u in IN expression, defaulting to equality", scalar_array_op->opno);
+        if (op == "=") {
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
                                                       leftValue, elemValue);
+        } else if (op == "<>" || op == "!=") {
+            cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::neq,
+                                                      leftValue, elemValue);
         } else {
-            std::string op(oprname);
-            pfree(oprname);
-
-            if (op == "=") {
-                cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
-                                                          leftValue, elemValue);
-            } else if (op == "<>" || op == "!=") {
-                cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::neq,
-                                                          leftValue, elemValue);
-            } else {
-                PGX_WARNING("Unsupported operator '%s' in IN expression, defaulting to equality", op.c_str());
-                cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
-                                                          leftValue, elemValue);
-            }
+            PGX_WARNING("Unsupported operator '%s' in ScalarArrayOpExpr, defaulting to equality", op.c_str());
+            cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
+                                                      leftValue, elemValue);
         }
 
         if (!cmp.getType().isInteger(1)) {
