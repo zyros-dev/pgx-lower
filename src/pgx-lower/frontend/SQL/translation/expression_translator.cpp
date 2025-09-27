@@ -293,8 +293,8 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
     PGX_LOG(AST_TRANSLATE, DEBUG, "[OPEXPR] Left operand type: %d, Right operand type: %d",
             leftExpr ? leftExpr->type : -1, rightExpr ? rightExpr->type : -1);
 
-    const auto lhs = translate_expression_with_join_context(ctx, leftExpr, left_child, right_child, outer_tuple_arg);
-    const auto rhs = translate_expression_with_join_context(ctx, rightExpr, left_child, right_child, outer_tuple_arg);
+    auto lhs = translate_expression_with_join_context(ctx, leftExpr, left_child, right_child, outer_tuple_arg);
+    auto rhs = translate_expression_with_join_context(ctx, rightExpr, left_child, right_child, outer_tuple_arg);
 
     if (!lhs || !rhs) {
         PGX_ERROR("Failed to translate OpExpr operands - lhs=%p, rhs=%p", lhs.getAsOpaquePointer(), rhs.getAsOpaquePointer());
@@ -302,6 +302,9 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[OPEXPR] Successfully translated both operands");
+
+    // Apply BPCHAR padding normalization for join context too
+    std::tie(lhs, rhs) = normalize_bpchar_operands(ctx, op_expr, lhs, rhs);
 
     const auto op_oid = op_expr->opno;
 
@@ -539,7 +542,8 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
         throw std::runtime_error("Invalid OpExpr parameters");
     }
 
-    const auto [lhs, rhs] = *operands;
+    auto [lhs, rhs] = *operands;
+    std::tie(lhs, rhs) = normalize_bpchar_operands(ctx, op_expr, lhs, rhs);
     const Oid opOid = op_expr->opno;
 
     {
@@ -972,7 +976,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
     }
 
     switch (bool_expr->boolop) {
-    case BOOL_AND_EXPR: {
+    case AND_EXPR: {
         mlir::Value result = nullptr;
 
         if (bool_expr->args && bool_expr->args->length > 0) {
@@ -1008,7 +1012,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
         return result;
     }
 
-    case BOOL_OR_EXPR: {
+    case OR_EXPR: {
         mlir::Value result = nullptr;
 
         if (bool_expr->args && bool_expr->args->length > 0) {
@@ -1043,7 +1047,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
         return result;
     }
 
-    case BOOL_NOT_EXPR: {
+    case NOT_EXPR: {
         mlir::Value argVal = nullptr;
 
         if (bool_expr->args && bool_expr->args->length > 0) {
@@ -1779,6 +1783,80 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
     }
 
     return std::make_pair(lhs, rhs);
+}
+
+auto PostgreSQLASTTranslator::Impl::normalize_bpchar_operands(const QueryCtxT& ctx, const OpExpr* op_expr,
+                                                               mlir::Value lhs, mlir::Value rhs) -> std::pair<mlir::Value, mlir::Value> {
+    if (!op_expr || !op_expr->args || op_expr->args->length != 2) {
+        return {lhs, rhs};
+    }
+
+    auto get_base_type = [](mlir::Type t) -> mlir::Type {
+        if (auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
+            return nullable.getType();
+        }
+        return t;
+    };
+
+    const bool lhs_is_string = mlir::isa<mlir::db::StringType>(get_base_type(lhs.getType()));
+    const bool rhs_is_string = mlir::isa<mlir::db::StringType>(get_base_type(rhs.getType()));
+
+    if (!lhs_is_string || !rhs_is_string) {
+        return {lhs, rhs};
+    }
+
+    auto* lhs_expr = reinterpret_cast<Expr*>(lfirst(&op_expr->args->elements[0]));
+    auto* rhs_expr = reinterpret_cast<Expr*>(lfirst(&op_expr->args->elements[1]));
+
+    auto extract_bpchar_length = [](Expr* expr) -> int {
+        if (!expr) {
+            return -1;
+        }
+        // Use exprType/exprTypmod which work for ANY expression type, not just T_Var
+        const Oid typeOid = exprType(reinterpret_cast<Node*>(expr));
+        const int32 typeMod = exprTypmod(reinterpret_cast<Node*>(expr));
+
+        if (typeOid == BPCHAROID && typeMod >= VARHDRSZ) {
+            return typeMod - VARHDRSZ;
+        }
+        return -1;
+    };
+
+    auto pad_string_constant = [&](mlir::Value val, int target_length) -> mlir::Value {
+        auto* defOp = val.getDefiningOp();
+        if (!defOp || !mlir::isa<mlir::db::ConstantOp>(defOp)) {
+            return val;
+        }
+
+        auto constOp = mlir::cast<mlir::db::ConstantOp>(defOp);
+        if (auto strAttr = mlir::dyn_cast<mlir::StringAttr>(constOp.getValue())) {
+            std::string str_value = strAttr.getValue().str();
+            if (static_cast<int>(str_value.length()) < target_length) {
+                str_value.resize(target_length, ' ');
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Padded BPCHAR constant to length %d: '%s'",
+                        target_length, str_value.c_str());
+
+                return ctx.builder.create<mlir::db::ConstantOp>(
+                    ctx.builder.getUnknownLoc(),
+                    ctx.builder.getType<mlir::db::StringType>(),
+                    ctx.builder.getStringAttr(str_value));
+            }
+        }
+        return val;
+    };
+
+    const int lhs_bpchar_len = extract_bpchar_length(lhs_expr);
+    const int rhs_bpchar_len = extract_bpchar_length(rhs_expr);
+
+    if (lhs_bpchar_len > 0 && rhs_expr->type == T_Const) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Normalizing RHS constant to match LHS BPCHAR(%d)", lhs_bpchar_len);
+        rhs = pad_string_constant(rhs, lhs_bpchar_len);
+    } else if (rhs_bpchar_len > 0 && lhs_expr->type == T_Const) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Normalizing LHS constant to match RHS BPCHAR(%d)", rhs_bpchar_len);
+        lhs = pad_string_constant(lhs, rhs_bpchar_len);
+    }
+
+    return {lhs, rhs};
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx, const OpExpr* op_expr,
