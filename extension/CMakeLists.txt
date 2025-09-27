@@ -67,6 +67,7 @@ if(NOT BUILDING_UNIT_TESTS)
             35_nested_queries
             36_tpch_minimal
             37_tpch_minimal_2
+            38_tpch_minimal_3
             tpch
 )
 
