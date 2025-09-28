@@ -206,7 +206,8 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_const(const QueryCtxT& ctx, Const* const_node,
                          OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
     auto translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr,
-                             OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
+                             OptRefT<const TranslationResult> current_result = std::nullopt,
+                             std::optional<std::vector<mlir::Value>> pre_translated_args = std::nullopt) -> mlir::Value;
 
     [[deprecated("Use translate_bool_expr_with_join_context() for join contexts")]]
     auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr,

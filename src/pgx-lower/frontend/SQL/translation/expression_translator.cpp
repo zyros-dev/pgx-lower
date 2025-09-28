@@ -533,7 +533,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr_with_join_context(const 
         return runtimeCall.getRes();
     }
 
-    return translate_func_expr(ctx, func_expr, std::nullopt);
+    return translate_func_expr(ctx, func_expr, std::nullopt, args);
 }
 
 mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr, OptRefT<const TranslationResult> current_result) {
@@ -745,7 +745,8 @@ auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const*
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr,
-                                                        OptRefT<const TranslationResult> current_result) -> mlir::Value {
+                                                        OptRefT<const TranslationResult> current_result,
+                                                        std::optional<std::vector<mlir::Value>> pre_translated_args) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!func_expr) {
         PGX_ERROR("Invalid FuncExpr parameters");
@@ -753,7 +754,9 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     }
 
     auto args = std::vector<mlir::Value>{};
-    if (func_expr->args && func_expr->args->length > 0) {
+    if (pre_translated_args) {
+        args = *pre_translated_args;
+    } else if (func_expr->args && func_expr->args->length > 0) {
         if (!func_expr->args->elements) {
             PGX_ERROR("FuncExpr args list has length but no elements array");
             throw std::runtime_error("FuncExpr args list has length but no elements array");
