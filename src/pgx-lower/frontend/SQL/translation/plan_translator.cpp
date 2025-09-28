@@ -589,12 +589,19 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         "First loop: Skipping T_Var at resno=%d (GROUP BY column, handled in second loop)",
                         te->resno);
             } else {
-                Aggref* nested_aggref = find_first_aggref(te->expr);
+                std::vector<Aggref*> nested_aggrefs;
+                find_all_aggrefs(te->expr, nested_aggrefs);
 
-                if (nested_aggref) {
+                if (!nested_aggrefs.empty()) {
                     PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "Found nested Aggref in complex expression at resno=%d, aggno=%d",
-                            te->resno, nested_aggref->aggno);
+                            "Found %zu nested Aggrefs in complex expression at resno=%d",
+                            nested_aggrefs.size(), te->resno);
+
+                    Aggref* first_aggref = nested_aggrefs[0];
+                    for (Aggref* nested_aggref : nested_aggrefs) {
+                        PGX_LOG(AST_TRANSLATE, DEBUG,
+                                "Processing nested Aggref aggno=%d in expression at resno=%d",
+                                nested_aggref->aggno, te->resno);
 
                     char* rawFuncName = get_func_name(nested_aggref->aggfnoid);
                     if (!rawFuncName) {
@@ -698,14 +705,15 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                             createdValues.push_back(aggResult);
                         }
                     }
+                    }
 
                     needs_post_processing.insert(te->resno);
                     post_process_exprs[te->resno] = te->expr;
-                    post_process_aggref_map[te->resno] = nested_aggref;
+                    post_process_aggref_map[te->resno] = first_aggref;
 
                     PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "Marked resno=%d for post-processing (full expr wraps aggno=%d)",
-                            te->resno, nested_aggref->aggno);
+                            "Marked resno=%d for post-processing (full expr with %zu aggregates)",
+                            te->resno, nested_aggrefs.size());
                 } else {
                     PGX_WARNING("Unexpected non-aggregate, non-Var expression in aggregate targetlist at resno=%d, type=%d",
                                 te->resno, te->expr->type);
@@ -895,7 +903,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         auto* arg_expr = reinterpret_cast<Expr*>(lfirst(arg_lc));
 
                         if (IsA(arg_expr, Aggref)) {
-                            arg_values.push_back(aggr_value);
+                            auto* arg_aggref = reinterpret_cast<Aggref*>(arg_expr);
+                            auto& [arg_scope, arg_colname] = aggregateMappings.at(arg_aggref->aggno);
+                            auto arg_colref = columnManager.createRef(arg_scope, arg_colname);
+                            mlir::Value arg_aggr_value = mapBuilder.create<mlir::relalg::GetColumnOp>(
+                                ctx.builder.getUnknownLoc(), arg_colref.getColumn().type,
+                                arg_colref, mapBlock->getArgument(0)).getRes();
+                            arg_values.push_back(arg_aggr_value);
                         } else {
                             auto arg_val = translate_expression(postCtx, arg_expr, postProcResult);
                             arg_values.push_back(arg_val);
