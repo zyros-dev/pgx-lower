@@ -1,0 +1,469 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS sort_test;
+NOTICE:  table "sort_test" does not exist, skipping
+CREATE TABLE sort_test (
+    id INTEGER,
+    name TEXT
+);
+INSERT INTO sort_test VALUES
+    (1, 'Zebra'),
+    (2, 'Apple'),
+    (3, 'Mango'),
+    (4, 'Banana');
+SELECT name FROM sort_test ORDER BY name;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+  name  
+--------
+ Apple
+ Banana
+ Mango
+ Zebra
+(4 rows)
+
+SELECT t1.name
+FROM sort_test t1
+JOIN sort_test t2 ON t1.id = t2.id
+ORDER BY t1.name;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+  name  
+--------
+ Apple
+ Banana
+ Mango
+ Zebra
+(4 rows)
+
+DROP TABLE IF EXISTS regions;
+NOTICE:  table "regions" does not exist, skipping
+DROP TABLE IF EXISTS countries;
+NOTICE:  table "countries" does not exist, skipping
+CREATE TABLE regions (
+    region_id INTEGER,
+    region_name TEXT
+);
+CREATE TABLE countries (
+    country_id INTEGER,
+    country_name TEXT,
+    region_id INTEGER
+);
+INSERT INTO regions VALUES
+    (1, 'Asia'),
+    (2, 'Europe'),
+    (3, 'Americas');
+INSERT INTO countries VALUES
+    (1, 'India', 1),
+    (2, 'China', 1),
+    (3, 'France', 2),
+    (4, 'Germany', 2),
+    (5, 'Brazil', 3),
+    (6, 'Canada', 3);
+SELECT r.region_name, COUNT(*) as country_count
+FROM countries c
+JOIN regions r ON c.region_id = r.region_id
+GROUP BY r.region_name
+ORDER BY r.region_name;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ region_name | country_count 
+-------------+---------------
+ Americas    |             2
+ Asia        |             2
+ Europe      |             2
+(3 rows)
+
+SELECT c.country_name
+FROM countries c
+JOIN regions r1 ON c.region_id = r1.region_id
+JOIN regions r2 ON r1.region_id = r2.region_id
+WHERE r2.region_name = 'Asia'
+ORDER BY c.country_name;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ country_name 
+--------------
+ China
+ India
+(2 rows)
+
+SELECT country_name
+FROM (
+    SELECT c.country_name, r.region_id
+    FROM countries c
+    JOIN regions r ON c.region_id = r.region_id
+    WHERE r.region_name IN ('Asia', 'Europe')
+) sub
+ORDER BY country_name;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ country_name 
+--------------
+ China
+ France
+ Germany
+ India
+(4 rows)
+
+DROP TABLE IF EXISTS bpchar_test;
+NOTICE:  table "bpchar_test" does not exist, skipping
+CREATE TABLE bpchar_test (
+    id INTEGER,
+    code CHAR(5)
+);
+INSERT INTO bpchar_test VALUES
+    (1, 'ZZZ'),
+    (2, 'AAA'),
+    (3, 'MMM'),
+    (4, 'BBB');
+SELECT code FROM bpchar_test ORDER BY code;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ code  
+-------
+ AAA  
+ BBB  
+ MMM  
+ ZZZ  
+(4 rows)
+
+SELECT c.country_name, SUM(c.country_id) as total
+FROM countries c
+JOIN regions r ON c.region_id = r.region_id
+GROUP BY c.country_name
+ORDER BY total DESC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ country_name | total 
+--------------+-------
+ Canada       |     6
+ Brazil       |     5
+ Germany      |     4
+ France       |     3
+ China        |     2
+ India        |     1
+(6 rows)
+
+DROP TABLE IF EXISTS date_test;
+NOTICE:  table "date_test" does not exist, skipping
+CREATE TABLE date_test (
+    id INTEGER,
+    event_date DATE
+);
+INSERT INTO date_test VALUES
+    (1, '2024-12-31'),
+    (2, '2024-01-01'),
+    (3, '2024-06-15'),
+    (4, '2024-03-20');
+SELECT event_date FROM date_test ORDER BY event_date;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ event_date 
+------------
+ 01-01-2024
+ 03-20-2024
+ 06-15-2024
+ 12-31-2024
+(4 rows)
+
+DROP TABLE IF EXISTS timestamp_test;
+NOTICE:  table "timestamp_test" does not exist, skipping
+CREATE TABLE timestamp_test (
+    id INTEGER,
+    event_time TIMESTAMP
+);
+INSERT INTO timestamp_test VALUES
+    (1, '2024-12-31 23:59:59'),
+    (2, '2024-01-01 00:00:00'),
+    (3, '2024-06-15 12:30:00'),
+    (4, '2024-03-20 08:15:30');
+SELECT event_time FROM timestamp_test ORDER BY event_time;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+        event_time        
+--------------------------
+ Mon Jan 01 00:00:00 2024
+ Wed Mar 20 08:15:30 2024
+ Sat Jun 15 12:30:00 2024
+ Tue Dec 31 23:59:59 2024
+(4 rows)
+
+SELECT r.region_name,
+       COUNT(*) as country_count,
+       SUM(c.country_id) as total_ids
+FROM countries c
+JOIN regions r ON c.region_id = r.region_id
+GROUP BY r.region_name
+ORDER BY total_ids DESC, r.region_name;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ region_name | country_count | total_ids 
+-------------+---------------+-----------
+ Americas    |             2 |        11
+ Europe      |             2 |         7
+ Asia        |             2 |         3
+(3 rows)
+
+SELECT r.region_name, COUNT(*) as cnt
+FROM regions r
+JOIN regions r2 ON r.region_id = r2.region_id
+GROUP BY r.region_name
+ORDER BY r.region_name;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ region_name | cnt 
+-------------+-----
+ Americas    |   1
+ Asia        |   1
+ Europe      |   1
+(3 rows)
+
+DROP TABLE IF EXISTS mixed_sort_test;
+NOTICE:  table "mixed_sort_test" does not exist, skipping
+CREATE TABLE mixed_sort_test (
+    id INTEGER,
+    name TEXT,
+    value DECIMAL(10, 2)
+);
+INSERT INTO mixed_sort_test VALUES
+    (1, 'Alpha', 100.50),
+    (2, 'Beta', 200.75),
+    (3, 'Alpha', 150.25),
+    (4, 'Gamma', 100.50),
+    (5, 'Beta', 100.50);
+SELECT value, name
+FROM mixed_sort_test
+ORDER BY value DESC, name ASC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ value  | name  
+--------+-------
+ 200.75 | Beta
+ 150.25 | Alpha
+  100.5 | Alpha
+  100.5 | Beta
+  100.5 | Gamma
+(5 rows)
+
+SELECT r.region_name,
+       COUNT(*) as cnt,
+       SUM(c.country_id) as total
+FROM countries c
+JOIN regions r ON c.region_id = r.region_id
+GROUP BY r.region_name
+ORDER BY cnt DESC, r.region_name ASC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ region_name | cnt | total 
+-------------+-----+-------
+ Americas    |   2 |    11
+ Asia        |   2 |     3
+ Europe      |   2 |     7
+(3 rows)
+
+SELECT value, name
+FROM mixed_sort_test
+ORDER BY value DESC, name DESC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ value  | name  
+--------+-------
+ 200.75 | Beta
+ 150.25 | Alpha
+  100.5 | Gamma
+  100.5 | Beta
+  100.5 | Alpha
+(5 rows)
+
+SELECT r.region_name,
+       c.country_name,
+       c.country_id
+FROM countries c
+JOIN regions r ON c.region_id = r.region_id
+ORDER BY r.region_name ASC, country_id DESC, c.country_name ASC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ region_name | country_name | country_id 
+-------------+--------------+------------
+ Americas    | Canada       |          6
+ Americas    | Brazil       |          5
+ Asia        | China        |          2
+ Asia        | India        |          1
+ Europe      | Germany      |          4
+ Europe      | France       |          3
+(6 rows)
+
+SELECT EXTRACT(year FROM event_date) as year, COUNT(*) as cnt
+FROM date_test
+GROUP BY EXTRACT(year FROM event_date)
+ORDER BY year;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:ERROR_LEVEL] expression_translator_functions.cpp:310: Unsupported function 'extract' (OID 6199)
+Stack trace:
+  #0 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_expression(pgx_lower::frontend::sql::TranslationContext const&, Expr*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x3da) [0x705626d53c5a]
+  #1 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(pgx_lower::frontend::sql::TranslationContext const&, pgx_lower::frontend::sql::TranslationResult const&, List const*, pgx_lower::frontend::sql::TranslationResult const*, pgx_lower::frontend::sql::TranslationResult const*)+0xfa6) [0x705626db91e6]
+  #2 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x535) [0x705626db6dc5]
+  #3 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_agg(pgx_lower::frontend::sql::TranslationContext&, Agg const*)+0x122) [0x705626d92362]
+  #4 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x59a) [0x705626db6e2a]
+  #5 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_sort(pgx_lower::frontend::sql::TranslationContext&, Sort const*)+0x19e) [0x705626dba8fe]
+  #6 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x610) [0x705626db6ea0]
+  #7 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(PlannedStmt const*, pgx_lower::frontend::sql::TranslationContext&)+0x114) [0x705626d4fb34]
+  #8 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt const*)+0x486) [0x705626d4f846]
+  #9 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::translate_query(PlannedStmt*) const+0x61) [0x705626d4f381]
+  #10 /usr/local/pgsql/lib/pgx_lower.so(mlir_runner::run_mlir_with_dest_receiver(PlannedStmt*, EState*, ExprContext*, _DestReceiver*)+0x2e7) [0x705626cf0d77]
+  #11 /usr/local/pgsql/lib/pgx_lower.so(+0xee927d) [0x705626ce927d]
+  #12 /usr/local/pgsql/lib/pgx_lower.so(+0xee896e) [0x705626ce896e]
+  #13 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x705626ce8716]
+  #14 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x705626ce8dcb]
+  #15 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x705626cf0648]
+  #16 /usr/local/pgsql/lib/pgx_lower.so(+0xee7b01) [0x705626ce7b01]
+  #17 /usr/local/pgsql/lib/pgx_lower.so(+0xee798f) [0x705626ce798f]
+WARNING:  [PROBLEM:ERROR_LEVEL] mlir_runner.cpp:155: MLIR runner exception: Unsupported function: extract
+Stack trace:
+  #0 /usr/local/pgsql/lib/pgx_lower.so(+0xee927d) [0x705626ce927d]
+  #1 /usr/local/pgsql/lib/pgx_lower.so(+0xee896e) [0x705626ce896e]
+  #2 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x705626ce8716]
+  #3 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x705626ce8dcb]
+  #4 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x705626cf0648]
+  #5 /usr/local/pgsql/lib/pgx_lower.so(+0xee7b01) [0x705626ce7b01]
+  #6 /usr/local/pgsql/lib/pgx_lower.so(+0xee798f) [0x705626ce798f]
+  #7 postgres: xzel regression [local] SELECT(ExecutorRun+0x44) [0x5bb5efa56bf0]
+  #8 postgres: xzel regression [local] SELECT(+0x6bb251) [0x5bb5efd2a251]
+  #9 postgres: xzel regression [local] SELECT(PortalRun+0x275) [0x5bb5efd29e82]
+  #10 postgres: xzel regression [local] SELECT(+0x6b38d0) [0x5bb5efd228d0]
+  #11 postgres: xzel regression [local] SELECT(PostgresMain+0x847) [0x5bb5efd27cf3]
+  #12 postgres: xzel regression [local] SELECT(+0x6af85c) [0x5bb5efd1e85c]
+  #13 postgres: xzel regression [local] SELECT(postmaster_child_launch+0x119) [0x5bb5efc32a1a]
+  #14 postgres: xzel regression [local] SELECT(+0x5c9ebe) [0x5bb5efc38ebe]
+  #15 postgres: xzel regression [local] SELECT(+0x5c6f64) [0x5bb5efc35f64]
+  #16 postgres: xzel regression [local] SELECT(PostmasterMain+0x151a) [0x5bb5efc3582e]
+  #17 postgres: xzel regression [local] SELECT(+0x473eb3) [0x5bb5efae2eb3]
+WARNING:  [PROBLEM:WARNING_LEVEL] my_executor.cpp:347: PostgreSQL exception during MLIR execution
+ERROR:  MLIR compilation failed: Unsupported function: extract
+SELECT
+    CASE
+        WHEN c.country_id < 3 THEN 'Low'
+        WHEN c.country_id < 5 THEN 'Medium'
+        ELSE 'High'
+    END as category,
+    COUNT(*) as cnt
+FROM countries c
+GROUP BY category
+ORDER BY category;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ category | cnt 
+----------+-----
+ High     |   2
+ Low      |   2
+ Medium   |   2
+(3 rows)
+
+SELECT r.region_name,
+       SUM(c.country_id) as total,
+       COUNT(*) as cnt,
+       SUM(c.country_id) / COUNT(*) as avg_id
+FROM countries c
+JOIN regions r ON c.region_id = r.region_id
+GROUP BY r.region_name
+ORDER BY avg_id DESC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ region_name | total | cnt | avg_id 
+-------------+-------+-----+--------
+ Americas    |    11 |   2 |      5
+ Europe      |     7 |   2 |      3
+ Asia        |     3 |   2 |      1
+(3 rows)
+
+SELECT year, total_countries
+FROM (
+    SELECT EXTRACT(year FROM event_date) as year,
+           COUNT(*) as total_countries
+    FROM date_test
+    GROUP BY EXTRACT(year FROM event_date)
+) sub
+ORDER BY year;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:ERROR_LEVEL] expression_translator_functions.cpp:310: Unsupported function 'extract' (OID 6199)
+Stack trace:
+  #0 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_expression(pgx_lower::frontend::sql::TranslationContext const&, Expr*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x3da) [0x705626d53c5a]
+  #1 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(pgx_lower::frontend::sql::TranslationContext const&, pgx_lower::frontend::sql::TranslationResult const&, List const*, pgx_lower::frontend::sql::TranslationResult const*, pgx_lower::frontend::sql::TranslationResult const*)+0xfa6) [0x705626db91e6]
+  #2 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x535) [0x705626db6dc5]
+  #3 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_agg(pgx_lower::frontend::sql::TranslationContext&, Agg const*)+0x122) [0x705626d92362]
+  #4 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x59a) [0x705626db6e2a]
+  #5 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_sort(pgx_lower::frontend::sql::TranslationContext&, Sort const*)+0x19e) [0x705626dba8fe]
+  #6 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x610) [0x705626db6ea0]
+  #7 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(PlannedStmt const*, pgx_lower::frontend::sql::TranslationContext&)+0x114) [0x705626d4fb34]
+  #8 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt const*)+0x486) [0x705626d4f846]
+  #9 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::translate_query(PlannedStmt*) const+0x61) [0x705626d4f381]
+  #10 /usr/local/pgsql/lib/pgx_lower.so(mlir_runner::run_mlir_with_dest_receiver(PlannedStmt*, EState*, ExprContext*, _DestReceiver*)+0x2e7) [0x705626cf0d77]
+  #11 /usr/local/pgsql/lib/pgx_lower.so(+0xee927d) [0x705626ce927d]
+  #12 /usr/local/pgsql/lib/pgx_lower.so(+0xee896e) [0x705626ce896e]
+  #13 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x705626ce8716]
+  #14 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x705626ce8dcb]
+  #15 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x705626cf0648]
+  #16 /usr/local/pgsql/lib/pgx_lower.so(+0xee7b01) [0x705626ce7b01]
+  #17 /usr/local/pgsql/lib/pgx_lower.so(+0xee798f) [0x705626ce798f]
+WARNING:  [PROBLEM:ERROR_LEVEL] mlir_runner.cpp:155: MLIR runner exception: Unsupported function: extract
+Stack trace:
+  #0 /usr/local/pgsql/lib/pgx_lower.so(+0xee927d) [0x705626ce927d]
+  #1 /usr/local/pgsql/lib/pgx_lower.so(+0xee896e) [0x705626ce896e]
+  #2 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x705626ce8716]
+  #3 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x705626ce8dcb]
+  #4 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x705626cf0648]
+  #5 /usr/local/pgsql/lib/pgx_lower.so(+0xee7b01) [0x705626ce7b01]
+  #6 /usr/local/pgsql/lib/pgx_lower.so(+0xee798f) [0x705626ce798f]
+  #7 postgres: xzel regression [local] SELECT(ExecutorRun+0x44) [0x5bb5efa56bf0]
+  #8 postgres: xzel regression [local] SELECT(+0x6bb251) [0x5bb5efd2a251]
+  #9 postgres: xzel regression [local] SELECT(PortalRun+0x275) [0x5bb5efd29e82]
+  #10 postgres: xzel regression [local] SELECT(+0x6b38d0) [0x5bb5efd228d0]
+  #11 postgres: xzel regression [local] SELECT(PostgresMain+0x847) [0x5bb5efd27cf3]
+  #12 postgres: xzel regression [local] SELECT(+0x6af85c) [0x5bb5efd1e85c]
+  #13 postgres: xzel regression [local] SELECT(postmaster_child_launch+0x119) [0x5bb5efc32a1a]
+  #14 postgres: xzel regression [local] SELECT(+0x5c9ebe) [0x5bb5efc38ebe]
+  #15 postgres: xzel regression [local] SELECT(+0x5c6f64) [0x5bb5efc35f64]
+  #16 postgres: xzel regression [local] SELECT(PostmasterMain+0x151a) [0x5bb5efc3582e]
+  #17 postgres: xzel regression [local] SELECT(+0x473eb3) [0x5bb5efae2eb3]
+WARNING:  [PROBLEM:WARNING_LEVEL] my_executor.cpp:347: PostgreSQL exception during MLIR execution
+ERROR:  MLIR compilation failed: Unsupported function: extract
+SELECT r.region_name,
+       SUM(CASE WHEN c.country_id < 4 THEN c.country_id ELSE 0 END) as conditional_sum,
+       SUM(c.country_id) as total_sum
+FROM countries c
+JOIN regions r ON c.region_id = r.region_id
+GROUP BY r.region_name
+ORDER BY r.region_name;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ region_name | conditional_sum | total_sum 
+-------------+-----------------+-----------
+ Americas    |               0 |        11
+ Asia        |               3 |         3
+ Europe      |               3 |         7
+(3 rows)
+
+SELECT sub.region_name,
+       sub.conditional_sum / sub.total_sum as ratio
+FROM (
+    SELECT r.region_name,
+           SUM(CASE WHEN c.country_id < 4 THEN c.country_id ELSE 0 END) as conditional_sum,
+           SUM(c.country_id) as total_sum
+    FROM countries c
+    JOIN regions r ON c.region_id = r.region_id
+    GROUP BY r.region_name
+) sub
+ORDER BY ratio DESC;
+ region_name | ratio 
+-------------+-------
+ Asia        |     1
+ Americas    |     0
+ Europe      |     0
+(3 rows)
+
+       sub.special_sum / sub.total_sum as market_share
+FROM (
+    SELECT EXTRACT(year FROM d.event_date) as year,
+           SUM(CASE WHEN c.country_name = 'Brazil' THEN c.country_id ELSE 0 END) as special_sum,
+           SUM(c.country_id) as total_sum
+    FROM countries c
+    JOIN regions r ON c.region_id = r.region_id
+    JOIN date_test d ON c.country_id = d.id
+    WHERE r.region_name = 'Americas'
+    GROUP BY EXTRACT(year FROM d.event_date)
+) sub
+ORDER BY sub.year;
+ERROR:  syntax error at or near "sub"
+LINE 1: sub.special_sum / sub.total_sum as market_share
+        ^
+DROP TABLE sort_test;
+DROP TABLE countries;
+DROP TABLE regions;
+DROP TABLE bpchar_test;
+DROP TABLE date_test;
+DROP TABLE timestamp_test;
+DROP TABLE decimal_test;
+ERROR:  table "decimal_test" does not exist
+DROP TABLE mixed_sort_test;
