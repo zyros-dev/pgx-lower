@@ -6,8 +6,6 @@ extern "C" {
 #include "nodes/plannodes.h"
 #include "nodes/parsenodes.h"
 #include "nodes/pg_list.h"
-#include "nodes/nodeFuncs.h"
-#include "catalog/pg_type.h"
 #include "utils/rel.h"
 #include "utils/array.h"
 #include "utils/syscache.h"

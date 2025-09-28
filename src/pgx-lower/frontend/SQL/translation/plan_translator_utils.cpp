@@ -33,11 +33,9 @@ extern "C" {
 #include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "lingodb/runtime/metadata.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 
 #include <memory>
 #include <unordered_map>

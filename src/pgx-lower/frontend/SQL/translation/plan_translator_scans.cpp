@@ -5,12 +5,10 @@ extern "C" {
 #include "nodes/primnodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/parsenodes.h"
-#include "nodes/nodeFuncs.h"
 #include "nodes/pg_list.h"
 #include "utils/rel.h"
 #include "utils/array.h"
 #include "utils/syscache.h"
-#include "utils/lsyscache.h"
 #include "fmgr.h"
 }
 
@@ -20,7 +18,6 @@ extern "C" {
 #include "pgx-lower/runtime/tuple_access.h"
 
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -34,10 +31,6 @@ extern "C" {
 #include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
 #include "lingodb/runtime/metadata.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 
 #include <memory>
 #include <unordered_map>

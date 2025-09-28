@@ -6,8 +6,6 @@ extern "C" {
 #include "nodes/plannodes.h"
 #include "nodes/parsenodes.h"
 #include "nodes/pg_list.h"
-#include "nodes/nodeFuncs.h"
-#include "catalog/pg_type.h"
 #include "utils/rel.h"
 #include "utils/array.h"
 #include "utils/syscache.h"
@@ -26,7 +24,6 @@ extern "C" {
 #include "pgx-lower/runtime/tuple_access.h"
 
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -38,16 +35,12 @@ extern "C" {
 #include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
 #include <map>
 #include <string>
-#include <vector>
 
 namespace mlir::relalg {
 class GetColumnOp;

@@ -35,7 +35,6 @@ extern "C" {
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
@@ -47,7 +46,6 @@ extern "C" {
 #include <unordered_map>
 #include <map>
 #include <string>
-#include <vector>
 
 namespace mlir::relalg {
 class GetColumnOp;

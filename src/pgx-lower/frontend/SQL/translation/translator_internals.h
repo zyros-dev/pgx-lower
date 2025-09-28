@@ -233,12 +233,13 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_plan_node(QueryCtxT& ctx, Plan* plan) -> TranslationResult;
     auto translate_seq_scan(QueryCtxT& ctx, SeqScan* seqScan) const -> TranslationResult;
     auto translate_agg(QueryCtxT& ctx, const Agg* agg) -> TranslationResult;
+    auto translate_agg_old(QueryCtxT& ctx, const Agg* agg) -> TranslationResult;
     auto translate_sort(QueryCtxT& ctx, const Sort* sort) -> TranslationResult;
     auto translate_limit(QueryCtxT& ctx, const Limit* limit) -> TranslationResult;
     auto translate_gather(QueryCtxT& ctx, const Gather* gather) -> TranslationResult;
     auto translate_merge_join(QueryCtxT& ctx, MergeJoin* mergeJoin) -> TranslationResult;
     auto translate_hash_join(QueryCtxT& ctx, HashJoin* hashJoin) -> TranslationResult;
-    auto translate_hash(QueryCtxT& ctx, Hash* hash) -> TranslationResult;
+    auto translate_hash(QueryCtxT& ctx, const Hash* hash) -> TranslationResult;
     auto translate_nest_loop(QueryCtxT& ctx, NestLoop* nestLoop) -> TranslationResult;
     auto translate_material(QueryCtxT& ctx, Material* material) -> TranslationResult;
     auto translate_subquery_scan(QueryCtxT& ctx, SubqueryScan* subqueryScan) -> TranslationResult;
@@ -276,7 +277,7 @@ class PostgreSQLASTTranslator::Impl {
                                             List* joinClauses, const TranslationResult& leftTranslation,
                                             const TranslationResult& rightTranslation);
 
-    auto create_join_operation(QueryCtxT& ctx, JoinType join_type, mlir::Value left_value, mlir::Value right_value,
+    auto create_join_operation(const QueryCtxT& ctx, JoinType join_type, mlir::Value left_value, mlir::Value right_value,
                                const TranslationResult& left_translation, const TranslationResult& right_translation,
                                List* join_clauses) -> TranslationResult;
 

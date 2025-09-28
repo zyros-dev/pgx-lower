@@ -5,12 +5,10 @@ extern "C" {
 #include "nodes/primnodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/parsenodes.h"
-#include "nodes/nodeFuncs.h"
 #include "nodes/pg_list.h"
 #include "utils/rel.h"
 #include "utils/array.h"
 #include "utils/syscache.h"
-#include "utils/lsyscache.h"
 #include "fmgr.h"
 }
 
@@ -33,9 +31,7 @@ extern "C" {
 #include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "lingodb/runtime/metadata.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Dialect/DB/IR/DBTypes.h"
 
@@ -219,7 +215,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
 
         ListCell* lc;
         foreach (lc, nestLoop->nestParams) {
-            auto* nestParam = reinterpret_cast<NestLoopParam*>(lfirst(lc));
+            auto* nestParam = static_cast<NestLoopParam*>(lfirst(lc));
             if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
                 auto* paramVar = reinterpret_cast<Var*>(nestParam->paramval);
                 ctx.nest_params[nestParam->paramno] = paramVar;
@@ -296,7 +292,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_hash(QueryCtxT& ctx, Hash* hash) -> TranslationResult {
+auto PostgreSQLASTTranslator::Impl::translate_hash(QueryCtxT& ctx, const Hash* hash) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!hash || !hash->plan.lefttree) {
         PGX_ERROR("Invalid Hash parameters");
@@ -386,7 +382,7 @@ void PostgreSQLASTTranslator::Impl::translate_join_predicate_to_region(const Que
 }
 
 TranslationResult
-PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinType join_type, mlir::Value left_value,
+PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const JoinType join_type, mlir::Value left_value,
                                                      mlir::Value right_value, const TranslationResult& left_translation,
                                                      const TranslationResult& right_translation, List* join_clauses) {
     // Since it's a complex function, all of its functional dependencies are isolated into lambdas. This means I don't
@@ -450,7 +446,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
             }
         }
 
-        auto finalCondition = mlir::Value();
+        mlir::Value finalCondition;
         if (conditions.empty()) {
             finalCondition = predicateBuilder.create<mlir::arith::ConstantOp>(
                 predicateBuilder.getUnknownLoc(), predicateBuilder.getI1Type(),
@@ -647,7 +643,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         auto& outer_region = outer_selection.getPredicate();
         auto& outer_block = outer_region.emplaceBlock();
         const auto tuple_type = mlir::relalg::TupleType::get(query_ctx.builder.getContext());
-        const auto outer_tuple = outer_block.addArgument(tuple_type, query_ctx.builder.getUnknownLoc());
+        outer_block.addArgument(tuple_type, query_ctx.builder.getUnknownLoc());
 
         mlir::OpBuilder outer_builder(&outer_block, outer_block.begin());
 
@@ -667,7 +663,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         buildCorrelatedPredicateRegion(&inner_block, inner_tuple, join_clauses, left_trans, right_trans, inner_ctx);
 
         auto& col_mgr = query_ctx.builder.getContext()
-                            ->template getOrLoadDialect<mlir::relalg::RelAlgDialect>()
+                            ->getOrLoadDialect<mlir::relalg::RelAlgDialect>()
                             ->getColumnManager();
         const auto map_scope = col_mgr.getUniqueScope("map");
         auto map_attr = col_mgr.createDef(map_scope, "tmp_attr0");
