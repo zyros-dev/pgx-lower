@@ -68,6 +68,7 @@ if(NOT BUILDING_UNIT_TESTS)
             36_tpch_minimal
             37_tpch_minimal_2
             38_tpch_minimal_3
+            39_tpch_minimal
             tpch
 )
 

@@ -169,45 +169,25 @@ VALUES (1, 1, 1, 1, 17.00, 21168.23, 0.04, 0.02, 'N', 'O', '1996-03-13', '1996-0
        (5, 5, 5, 2, 10.00, 18050.00, 0.07, 0.02, 'A', 'F', '1994-10-16', '1994-09-25', '1994-10-20', 'DELIVER IN PERSON', 'SHIP', 'Lineitem comment 8');
 
 
+SET client_min_messages TO DEBUG1;
+SET pgx_lower.log_enable = true;
+SET pgx_lower.log_debug = true;
+SET pgx_lower.log_ir = true;
+SET pgx_lower.enabled_categories = 'AST_TRANSLATE';
+
 select
-    supp_nation,
-    cust_nation,
-    l_year,
-    sum(volume) as revenue
+        100.00 * sum(case
+                when p_type like 'PROMO%'
+                        then l_extendedprice * (1 - l_discount)
+                else 0
+        end) / sum(l_extendedprice * (1 - l_discount)) as promo_revenue
 from
-    (
-        select
-            n1.n_name as supp_nation,
-            n2.n_name as cust_nation,
-            extract(year from l_shipdate) as l_year,
-            l_extendedprice * (1 - l_discount) as volume
-        from
-            supplier,
-            lineitem,
-            orders,
-            customer,
-            nation n1,
-            nation n2
-        where
-            s_suppkey = l_suppkey
-          and o_orderkey = l_orderkey
-          and c_custkey = o_custkey
-          and s_nationkey = n1.n_nationkey
-          and c_nationkey = n2.n_nationkey
-          and (
-            (n1.n_name = 'FRANCE' and n2.n_name = 'GERMANY')
-                or (n1.n_name = 'GERMANY' and n2.n_name = 'FRANCE')
-            )
-          and l_shipdate between date '1995-01-01' and date '1996-12-31'
-    ) as shipping
-group by
-    supp_nation,
-    cust_nation,
-    l_year
-order by
-    supp_nation,
-    cust_nation,
-    l_year;
+        lineitem,
+        part
+where
+        l_partkey = p_partkey
+        and l_shipdate >= date '1995-09-01'
+        and l_shipdate < date '1995-10-01';
 
 DROP TABLE test_orders CASCADE;
 DROP TABLE test_items CASCADE;
