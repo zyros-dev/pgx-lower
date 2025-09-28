@@ -71,8 +71,8 @@ if(NOT BUILDING_UNIT_TESTS)
             39_tpch_minimal
             40_tpch_not_lowered
             init_tpch
-            tpch
             tpch_no_lower
+            tpch
 )
 
 # MLIR dialect libraries for TypeID resolution  

@@ -122,7 +122,9 @@ VALUES (1, 'Supplier#000000001', 'Address 1', 0, '27-918-335-1736', 5755.94, 'Co
        (2, 'Supplier#000000002', 'Address 2', 3, '16-768-687-3665', 4032.68, 'Comment 2'),
        (3, 'Supplier#000000003', 'Address 3', 4, '17-369-536-1112', 2972.26, 'Comment 3 Customer Complaints'),
        (4, 'Supplier#000000004', 'Address 4', 2, '20-469-856-8873', 4641.08, 'Comment 4'),
-       (5, 'Supplier#000000005', 'Address 5', 7, '30-114-968-4951', 1337.45, 'Comment 5');
+       (5, 'Supplier#000000005', 'Address 5', 7, '30-114-968-4951', 1337.45, 'Comment 5'),
+       (6, 'Supplier#000000006', 'Address 6', 2, '31-222-333-4444', 3500.00, 'Query 20 CANADA supplier'),
+       (7, 'Supplier#000000007', 'Address 7', 5, '91-555-0107', 2500.00, 'Query 5 INDIA supplier');
 
 INSERT INTO part(p_partkey, p_name, p_mfgr, p_brand, p_type, p_size, p_container, p_retailprice, p_comment)
 VALUES (1, 'forest green puff', 'Manufacturer#1', 'Brand#12', 'PROMO BURNISHED COPPER', 5, 'SM BOX', 901.00, 'Part comment 1'),
@@ -139,14 +141,17 @@ VALUES (1, 1, 3325, 771.64, 'Partsupp comment 1'),
        (3, 3, 4651, 438.37, 'Partsupp comment 5'),
        (3, 4, 7054, 364.48, 'Partsupp comment 6'),
        (4, 4, 6942, 113.97, 'Partsupp comment 7'),
-       (5, 5, 9280, 652.89, 'Partsupp comment 8');
+       (5, 5, 9280, 652.89, 'Partsupp comment 8'),
+       (1, 6, 5000, 800.00, 'Query 20 partsupp'),
+       (5, 7, 4500, 650.00, 'Query 5 INDIA partsupp');
 
 INSERT INTO customer(c_custkey, c_name, c_address, c_nationkey, c_phone, c_acctbal, c_mktsegment, c_comment)
 VALUES (1, 'Customer#000000001', 'Address 1', 4, '13-555-0101', 711.56, 'BUILDING', 'Comment 1'),
        (2, 'Customer#000000002', 'Address 2', 2, '31-555-0102', 121.65, 'AUTOMOBILE', 'Comment 2'),
        (3, 'Customer#000000003', 'Address 3', 3, '23-555-0103', 7498.12, 'MACHINERY', 'Comment 3'),
-       (4, 'Customer#000000004', 'Address 4', 4, '29-555-0104', 2866.83, 'HOUSEHOLD', 'Comment 4'),
-       (5, 'Customer#000000005', 'Address 5', 5, '30-555-0105', 794.47, 'FURNITURE', 'Comment 5 special requests');
+       (4, 'Customer#000000004', 'Address 4', 5, '29-555-0104', 2866.83, 'HOUSEHOLD', 'Comment 4'),
+       (5, 'Customer#000000005', 'Address 5', 5, '30-555-0105', 794.47, 'FURNITURE', 'Comment 5 special requests'),
+       (6, 'Customer#000000006', 'Address 6', 2, '31-555-0106', 5500.00, 'BUILDING', 'Query 22 customer no orders');
 
 INSERT INTO orders(o_orderkey, o_custkey, o_orderstatus, o_totalprice, o_orderdate, o_orderpriority, o_clerk, o_shippriority, o_comment)
 VALUES (1, 1, 'O', 173665.47, '1996-01-02', '5-LOW', 'Clerk#000000951', 0, 'Order comment 1'),
@@ -154,7 +159,14 @@ VALUES (1, 1, 'O', 173665.47, '1996-01-02', '5-LOW', 'Clerk#000000951', 0, 'Orde
        (3, 2, 'F', 193846.25, '1993-10-14', '5-LOW', 'Clerk#000000955', 0, 'Order comment 3'),
        (4, 3, 'O', 32151.78, '1995-10-11', '2-HIGH', 'Clerk#000000124', 0, 'Order comment 4'),
        (5, 4, 'F', 144659.20, '1994-07-30', '5-LOW', 'Clerk#000000925', 0, 'Order comment 5'),
-       (6, 5, 'F', 58749.59, '1992-02-21', '4-NOT SPECIFIED', 'Clerk#000000058', 0, 'Order comment 6 special requests');
+       (6, 5, 'F', 58749.59, '1992-02-21', '4-NOT SPECIFIED', 'Clerk#000000058', 0, 'Order comment 6 special requests'),
+       (7, 1, 'O', 85000.00, '1995-03-10', '3-MEDIUM', 'Clerk#000000100', 1, 'Query 3 order'),
+       (8, 1, 'F', 95000.00, '1993-08-15', '1-URGENT', 'Clerk#000000200', 0, 'Query 4 order'),
+       (9, 4, 'O', 75000.00, '1994-06-20', '2-HIGH', 'Clerk#000000300', 0, 'Query 5 ASIA order'),
+       (10, 2, 'O', 105000.00, '1995-06-15', '5-LOW', 'Clerk#000000400', 0, 'Query 8 order'),
+       (11, 4, 'F', 65000.00, '1994-02-10', '1-URGENT', 'Clerk#000000500', 0, 'Query 21 order'),
+       (12, 4, 'O', 55000.00, '1994-03-15', '2-HIGH', 'Clerk#000000600', 0, 'Query 5 INDIA order'),
+       (13, 5, 'F', 45000.00, '1994-01-20', '1-URGENT', 'Clerk#000000700', 0, 'Query 21 Saudi order');
 
 INSERT INTO lineitem(l_orderkey, l_partkey, l_suppkey, l_linenumber, l_quantity, l_extendedprice, l_discount, l_tax, l_returnflag, l_linestatus, l_shipdate, l_commitdate, l_receiptdate, l_shipinstruct, l_shipmode, l_comment)
 VALUES (1, 1, 1, 1, 17.00, 21168.23, 0.04, 0.02, 'N', 'O', '1996-03-13', '1996-02-12', '1996-03-22', 'DELIVER IN PERSON', 'TRUCK', 'Lineitem comment 1'),
@@ -164,4 +176,24 @@ VALUES (1, 1, 1, 1, 17.00, 21168.23, 0.04, 0.02, 'N', 'O', '1996-03-13', '1996-0
        (3, 4, 4, 2, 49.00, 46796.47, 0.10, 0.00, 'R', 'F', '1993-11-09', '1993-12-20', '1993-11-24', 'TAKE BACK RETURN', 'SHIP', 'Lineitem comment 5'),
        (4, 2, 2, 1, 30.00, 55380.00, 0.03, 0.08, 'N', 'O', '1995-11-15', '1995-10-10', '1995-11-24', 'DELIVER IN PERSON', 'AIR REG', 'Lineitem comment 6'),
        (5, 3, 3, 1, 20.00, 30780.20, 0.04, 0.03, 'R', 'F', '1994-08-15', '1994-08-08', '1994-08-25', 'NONE', 'MAIL', 'Lineitem comment 7'),
-       (5, 5, 5, 2, 10.00, 18050.00, 0.07, 0.02, 'A', 'F', '1994-10-16', '1994-09-25', '1994-10-20', 'DELIVER IN PERSON', 'SHIP', 'Lineitem comment 8');
+       (5, 5, 5, 2, 10.00, 18050.00, 0.07, 0.02, 'A', 'F', '1994-10-16', '1994-09-25', '1994-10-20', 'DELIVER IN PERSON', 'SHIP', 'Lineitem comment 8'),
+       (2, 1, 1, 3, 50.00, 60000.00, 0.05, 0.01, 'N', 'O', '1996-02-15', '1996-01-20', '1996-03-01', 'DELIVER IN PERSON', 'AIR', 'Query 3,8 lineitem'),
+       (4, 3, 3, 2, 100.00, 120000.00, 0.02, 0.04, 'N', 'O', '1995-12-01', '1995-11-01', '1995-12-15', 'NONE', 'SHIP', 'Query 12 lineitem 1'),
+       (5, 1, 1, 3, 150.00, 180000.00, 0.01, 0.03, 'N', 'O', '1994-08-01', '1994-07-15', '1994-07-20', 'DELIVER IN PERSON', 'MAIL', 'Query 4,12 lineitem'),
+       (6, 2, 2, 1, 200.00, 240000.00, 0.03, 0.02, 'R', 'F', '1992-03-10', '1992-03-01', '1992-03-20', 'NONE', 'TRUCK', 'Query 18 lineitem 1'),
+       (6, 3, 3, 2, 150.00, 180000.00, 0.04, 0.01, 'R', 'F', '1992-03-15', '1992-03-01', '1992-03-25', 'NONE', 'TRUCK', 'Query 18 lineitem 2'),
+       (7, 1, 1, 1, 25.00, 30000.00, 0.05, 0.02, 'N', 'O', '1995-03-20', '1995-03-10', '1995-03-25', 'DELIVER IN PERSON', 'TRUCK', 'Query 3 lineitem'),
+       (8, 2, 2, 1, 40.00, 48000.00, 0.04, 0.03, 'R', 'F', '1993-09-01', '1993-08-20', '1993-08-25', 'NONE', 'MAIL', 'Query 4 lineitem'),
+       (9, 5, 5, 1, 35.00, 42000.00, 0.06, 0.01, 'N', 'O', '1994-07-15', '1994-06-25', '1994-07-20', 'TAKE BACK RETURN', 'SHIP', 'Query 5 lineitem'),
+       (10, 3, 3, 1, 45.00, 54000.00, 0.03, 0.02, 'N', 'O', '1995-07-01', '1995-06-20', '1995-07-10', 'DELIVER IN PERSON', 'AIR REG', 'Query 8 lineitem'),
+       (11, 4, 4, 1, 30.00, 36000.00, 0.02, 0.01, 'R', 'F', '1994-03-10', '1994-02-15', '1994-03-05', 'NONE', 'RAIL', 'Query 21 lineitem 1'),
+       (11, 5, 5, 2, 28.00, 33600.00, 0.03, 0.02, 'R', 'F', '1994-03-15', '1994-02-20', '1994-03-10', 'TAKE BACK RETURN', 'TRUCK', 'Query 21 lineitem 2'),
+       (12, 5, 7, 1, 40.00, 48000.00, 0.05, 0.02, 'N', 'O', '1994-04-15', '1994-03-20', '1994-04-20', 'NONE', 'TRUCK', 'Query 5 INDIA lineitem'),
+       (13, 1, 5, 1, 35.00, 42000.00, 0.04, 0.01, 'R', 'F', '1994-02-10', '1994-01-25', '1994-02-05', 'NONE', 'RAIL', 'Query 21 Saudi lineitem 1'),
+       (13, 2, 7, 2, 30.00, 36000.00, 0.03, 0.02, 'R', 'F', '1994-02-15', '1994-02-20', '1994-02-10', 'TAKE BACK RETURN', 'TRUCK', 'Query 21 Saudi lineitem 2'),
+       (5, 2, 2, 4, 15.00, 18000.00, 0.06, 0.01, 'N', 'O', '1994-07-25', '1994-08-05', '1994-08-10', 'NONE', 'MAIL', 'Query 12 MAIL lineitem'),
+       (11, 3, 3, 3, 20.00, 24000.00, 0.05, 0.02, 'R', 'F', '1994-02-15', '1994-02-20', '1994-02-25', 'DELIVER IN PERSON', 'SHIP', 'Query 12 SHIP lineitem'),
+       (12, 1, 6, 2, 22.00, 26400.00, 0.04, 0.01, 'N', 'O', '1994-04-10', '1994-03-25', '1994-04-15', 'NONE', 'TRUCK', 'Query 20 forest lineitem'),
+       (7, 5, 5, 2, 8.00, 9600.00, 0.03, 0.01, 'N', 'O', '1995-09-15', '1995-09-10', '1995-09-20', 'NONE', 'TRUCK', 'Query 14 Sept 1995'),
+       (10, 2, 2, 2, 5.00, 6000.00, 0.02, 0.01, 'N', 'O', '1995-07-10', '1995-07-05', '1995-07-15', 'NONE', 'RAIL', 'Query 17 Brand23 MED BOX'),
+       (2, 5, 5, 4, 8.00, 9600.00, 0.04, 0.02, 'N', 'O', '1996-03-10', '1996-03-05', '1996-03-15', 'DELIVER IN PERSON', 'AIR', 'Query 19 Brand12 AIR');
