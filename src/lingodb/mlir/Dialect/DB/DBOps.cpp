@@ -97,7 +97,7 @@ LogicalResult inferDivReturnType(MLIRContext* context, std::optional<Location> l
    mlir::db::RuntimeCall& runtimeCall=*this;
    auto reg = runtimeCall.getContext()->getLoadedDialect<mlir::db::DBDialect>()->getRuntimeFunctionRegistry();
    if (!reg->verify(runtimeCall.getFn().str(), runtimeCall.getArgs().getTypes(), runtimeCall.getNumResults() == 1 ? runtimeCall.getResultTypes()[0] : mlir::Type())) {
-      runtimeCall->emitError("could not find matching runtime function");
+      runtimeCall->emitError("could not find matching runtime function: ") << runtimeCall.getFn().str();
       return failure();
    }
    return success();

@@ -60,6 +60,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
                                                          OptRefT<const TranslationResult> current_result) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Parsing %d", expr->type);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: expr->type=%d, has_current_result=%d",
+            expr->type, current_result.has_value());
 
     if (!expr) {
         PGX_ERROR("Expression is null");
@@ -67,19 +69,42 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
     }
 
     switch (expr->type) {
-    case T_Var: return translate_var(ctx, reinterpret_cast<Var*>(expr), current_result);
-    case T_Const: return translate_const(ctx, reinterpret_cast<Const*>(expr), current_result);
-    case T_OpExpr: return translate_op_expr(ctx, reinterpret_cast<OpExpr*>(expr), current_result);
-    case T_FuncExpr: return translate_func_expr(ctx, reinterpret_cast<FuncExpr*>(expr), current_result);
-    case T_BoolExpr: return translate_bool_expr(ctx, reinterpret_cast<BoolExpr*>(expr), current_result);
-    case T_Aggref: return translate_aggref(ctx, reinterpret_cast<Aggref*>(expr), current_result);
-    case T_NullTest: return translate_null_test(ctx, reinterpret_cast<NullTest*>(expr), current_result);
-    case T_CoalesceExpr: return translate_coalesce_expr(ctx, reinterpret_cast<CoalesceExpr*>(expr), current_result);
-    case T_ScalarArrayOpExpr: return translate_scalar_array_op_expr(ctx, reinterpret_cast<ScalarArrayOpExpr*>(expr), current_result);
-    case T_CaseExpr: return translate_case_expr(ctx, reinterpret_cast<CaseExpr*>(expr), current_result);
-    case T_CoerceViaIO: return translate_coerce_via_io(ctx, expr, current_result);
+    case T_Var:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_Var");
+        return translate_var(ctx, reinterpret_cast<Var*>(expr), current_result);
+    case T_Const:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_Const");
+        return translate_const(ctx, reinterpret_cast<Const*>(expr), current_result);
+    case T_OpExpr:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_OpExpr");
+        return translate_op_expr(ctx, reinterpret_cast<OpExpr*>(expr), current_result);
+    case T_FuncExpr:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_FuncExpr");
+        return translate_func_expr(ctx, reinterpret_cast<FuncExpr*>(expr), current_result);
+    case T_BoolExpr:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_BoolExpr");
+        return translate_bool_expr(ctx, reinterpret_cast<BoolExpr*>(expr), current_result);
+    case T_Aggref:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_Aggref");
+        return translate_aggref(ctx, reinterpret_cast<Aggref*>(expr), current_result);
+    case T_NullTest:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_NullTest");
+        return translate_null_test(ctx, reinterpret_cast<NullTest*>(expr), current_result);
+    case T_CoalesceExpr:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_CoalesceExpr");
+        return translate_coalesce_expr(ctx, reinterpret_cast<CoalesceExpr*>(expr), current_result);
+    case T_ScalarArrayOpExpr:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_ScalarArrayOpExpr");
+        return translate_scalar_array_op_expr(ctx, reinterpret_cast<ScalarArrayOpExpr*>(expr), current_result);
+    case T_CaseExpr:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_CaseExpr");
+        return translate_case_expr(ctx, reinterpret_cast<CaseExpr*>(expr), current_result);
+    case T_CoerceViaIO:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_CoerceViaIO");
+        return translate_coerce_via_io(ctx, expr, current_result);
     case T_RelabelType: {
         const auto* relabel = reinterpret_cast<RelabelType*>(expr);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_RelabelType");
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
         return translate_expression(ctx, relabel->arg, current_result);
     }
@@ -96,8 +121,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
 
 auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr,
                                                                            const TranslationResult* left_child,
-                                                                           const TranslationResult* right_child,
-                                                                           std::optional<mlir::Value> outer_tuple_arg)
+                                                                           const TranslationResult* right_child)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!expr) {
@@ -136,9 +160,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
                 auto colRef = columnManager.createRef(col.table_name, col.column_name);
                 colRef.getColumn().type = col.mlir_type;
 
-                const auto tuple_to_use = outer_tuple_arg.value_or(ctx.current_tuple);
                 auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(),
-                                                                              col.mlir_type, colRef, tuple_to_use);
+                                                                              col.mlir_type, colRef, ctx.current_tuple);
 
                 return getColOp.getRes();
             } else {
@@ -242,15 +265,15 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
     switch (expr->type) {
     case T_OpExpr: {
         const auto* op_expr = reinterpret_cast<const OpExpr*>(expr);
-        return translate_op_expr_with_join_context(ctx, op_expr, left_child, right_child, outer_tuple_arg);
+        return translate_op_expr_with_join_context(ctx, op_expr, left_child, right_child);
     }
     case T_BoolExpr: {
         const auto* bool_expr = reinterpret_cast<const BoolExpr*>(expr);
-        return translate_bool_expr_with_join_context(ctx, bool_expr, left_child, right_child, outer_tuple_arg);
+        return translate_bool_expr_with_join_context(ctx, bool_expr, left_child, right_child);
     }
     case T_FuncExpr: {
         const auto* func_expr = reinterpret_cast<const FuncExpr*>(expr);
-        return translate_func_expr_with_join_context(ctx, func_expr, left_child, right_child, outer_tuple_arg);
+        return translate_func_expr_with_join_context(ctx, func_expr, left_child, right_child);
     }
     case T_Param: {
         const auto* param = reinterpret_cast<const Param*>(expr);
@@ -261,7 +284,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
                 auto* paramVar = nest_param_it->second;
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Param paramid=%d references nestParam Var(varno=%d, varattno=%d) - translating in join context",
                         param->paramid, paramVar->varno, paramVar->varattno);
-                return translate_expression_with_join_context(ctx, reinterpret_cast<Expr*>(paramVar), left_child, right_child, outer_tuple_arg);
+                return translate_expression_with_join_context(ctx, reinterpret_cast<Expr*>(paramVar), left_child, right_child);
             }
         }
 
@@ -301,8 +324,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
 
 auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const QueryCtxT& ctx, const OpExpr* op_expr,
                                                                         const TranslationResult* left_child,
-                                                                        const TranslationResult* right_child,
-                                                                        std::optional<mlir::Value> outer_tuple_arg)
+                                                                        const TranslationResult* right_child)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
@@ -320,8 +342,8 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
     PGX_LOG(AST_TRANSLATE, DEBUG, "[OPEXPR] Left operand type: %d, Right operand type: %d",
             leftExpr ? leftExpr->type : -1, rightExpr ? rightExpr->type : -1);
 
-    auto lhs = translate_expression_with_join_context(ctx, leftExpr, left_child, right_child, outer_tuple_arg);
-    auto rhs = translate_expression_with_join_context(ctx, rightExpr, left_child, right_child, outer_tuple_arg);
+    auto lhs = translate_expression_with_join_context(ctx, leftExpr, left_child, right_child);
+    auto rhs = translate_expression_with_join_context(ctx, rightExpr, left_child, right_child);
 
     if (!lhs || !rhs) {
         PGX_ERROR("Failed to translate OpExpr operands - lhs=%p, rhs=%p", lhs.getAsOpaquePointer(), rhs.getAsOpaquePointer());
@@ -428,8 +450,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
 
 auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const QueryCtxT& ctx, const BoolExpr* bool_expr,
                                                                           const TranslationResult* left_child,
-                                                                          const TranslationResult* right_child,
-                                                                          std::optional<mlir::Value> outer_tuple_arg)
+                                                                          const TranslationResult* right_child)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!bool_expr->args || bool_expr->args->length == 0) {
@@ -441,7 +462,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const 
     ListCell* lc;
     foreach (lc, bool_expr->args) {
         auto* arg = static_cast<Expr*>(lfirst(lc));
-        if (auto operand = translate_expression_with_join_context(ctx, arg, left_child, right_child, outer_tuple_arg)) {
+        if (auto operand = translate_expression_with_join_context(ctx, arg, left_child, right_child)) {
             if (!operand.getType().isInteger(1)) {
                 operand = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), operand);
             }
@@ -481,8 +502,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const 
 
 auto PostgreSQLASTTranslator::Impl::translate_func_expr_with_join_context(const QueryCtxT& ctx, const FuncExpr* func_expr,
                                                                           const TranslationResult* left_child,
-                                                                          const TranslationResult* right_child,
-                                                                          std::optional<mlir::Value> outer_tuple_arg)
+                                                                          const TranslationResult* right_child)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!func_expr) {
@@ -501,7 +521,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr_with_join_context(const 
         foreach (lc, func_expr->args) {
             if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
                 if (mlir::Value argValue = translate_expression_with_join_context(ctx, reinterpret_cast<Expr*>(argNode),
-                                                                                  left_child, right_child, outer_tuple_arg)) {
+                                                                                  left_child, right_child)) {
                     args.push_back(argValue);
                 }
             }
@@ -682,6 +702,8 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         int actualVarno = var->varno;
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d", var->varno, var->varattno);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: varno=%d, varattno=%d, has_current_result=%d",
+                var->varno, var->varattno, current_result.has_value());
 
         std::string tableName, colName;
         bool nullable;
@@ -693,6 +715,8 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
             nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
             PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for varno=%d, varattno=%d -> (%s, %s)",
                     actualVarno, var->varattno, tableName.c_str(), colName.c_str());
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'",
+                    tableName.c_str(), colName.c_str());
         } else if (var->varno == OUTER_VAR) {
             if (!current_result || var->varattno <= 0 ||
                 var->varattno > static_cast<int>(current_result->get().columns.size())) {
@@ -706,10 +730,14 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
             nullable = col.nullable;
             PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from child result",
                     var->varattno, tableName.c_str(), colName.c_str(), nullable);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='%s', colName='%s'",
+                    tableName.c_str(), colName.c_str());
         } else {
             tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
             colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
             nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='%s', colName='%s'",
+                    tableName.c_str(), colName.c_str());
         }
 
         auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
@@ -722,6 +750,9 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
         const auto type_mapper = PostgreSQLTypeMapper(context_);
         auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='%s', column='%s'",
+                tableName.c_str(), colName.c_str());
 
         auto colRef = columnManager.createRef(tableName, colName);
         colRef.getColumn().type = mlirType;
@@ -754,8 +785,11 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     }
 
     auto args = std::vector<mlir::Value>{};
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_func_expr: has_pre_translated_args=%d, has_current_result=%d",
+            pre_translated_args.has_value(), current_result.has_value());
     if (pre_translated_args) {
         args = *pre_translated_args;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_func_expr: Using pre_translated_args with %zu args", args.size());
     } else if (func_expr->args && func_expr->args->length > 0) {
         if (!func_expr->args->elements) {
             PGX_ERROR("FuncExpr args list has length but no elements array");
@@ -765,6 +799,8 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         ListCell* lc;
         foreach (lc, func_expr->args) {
             if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
+                PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_func_expr: About to translate arg, has_current_result=%d",
+                        current_result.has_value());
                 if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode), current_result)) {
                     args.push_back(argValue);
                 }
@@ -1348,7 +1384,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     }
 
     const auto leftNode = static_cast<Node*>(lfirst(&args->elements[0]));
-    auto leftValue = translate_expression(ctx, reinterpret_cast<Expr*>(leftNode), std::nullopt);
+    auto leftValue = translate_expression(ctx, reinterpret_cast<Expr*>(leftNode), current_result);
     if (!leftValue) {
         PGX_ERROR("Failed to translate left operand of IN expression");
         throw std::runtime_error("Failed to translate left operand of IN expression");

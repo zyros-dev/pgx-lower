@@ -286,13 +286,25 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     }
 
     // TODO: NV: Unsure if this is a reasonable solution to my problem...
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: aliasName='%s', uniqueScope='%s', scanrelid=%d",
+            aliasName.c_str(), uniqueScope.c_str(), seqScan->scan.scanrelid);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: allColumns.size()=%zu", allColumns.size());
+
     if (uniqueScope != aliasName) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: uniqueScope != aliasName, populating varno_resolution");
         for (size_t i = 0; i < allColumns.size(); i++) {
             const int varattno = static_cast<int>(i + 1);
             result.varno_resolution[std::make_pair(seqScan->scan.scanrelid, varattno)] =
                 std::make_pair(uniqueScope, allColumns[i].name);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: varno_resolution[(%d,%d)] = ('%s','%s')",
+                    seqScan->scan.scanrelid, varattno, uniqueScope.c_str(), allColumns[i].name.c_str());
         }
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: uniqueScope == aliasName, NOT populating varno_resolution");
     }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: final varno_resolution.size()=%zu",
+            result.varno_resolution.size());
 
     return result;
 }
@@ -1327,6 +1339,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
     TranslationResult result;
     result.op = selectionOp;
     result.columns = input.columns;
+    result.varno_resolution = input.varno_resolution;
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 4] RESULT: %s", result.toString().c_str());
     return result;
 }
@@ -1711,11 +1724,10 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
 
     auto translateExpressionFn = [this, isRightJoin](
                                      const QueryCtxT& ctx_p, Expr* expr, const TranslationResult* left_child,
-                                     const TranslationResult* right_child,
-                                     const std::optional<mlir::Value> outer_tuple_arg = std::nullopt) -> mlir::Value {
+                                     const TranslationResult* right_child) -> mlir::Value {
         return isRightJoin
-                   ? translate_expression_with_join_context(ctx_p, expr, right_child, left_child, outer_tuple_arg)
-                   : translate_expression_with_join_context(ctx_p, expr, left_child, right_child, outer_tuple_arg);
+                   ? translate_expression_with_join_context(ctx_p, expr, right_child, left_child)
+                   : translate_expression_with_join_context(ctx_p, expr, left_child, right_child);
     };
 
     auto translateJoinPredicateToRegion = [translateExpressionFn](
@@ -1888,10 +1900,9 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         };
 
     const auto buildCorrelatedPredicateRegion = [translateExpressionFn](
-                                              mlir::Block* predicateBlock, const mlir::Value outerTupleArg,
-                                              const mlir::Value innerTupleArg, List* join_clauses_,
-                                              const TranslationResult& leftTrans, const TranslationResult& rightTrans,
-                                              const QueryCtxT& queryCtx) {
+                                              mlir::Block* predicateBlock, const mlir::Value innerTupleArg,
+                                              List* join_clauses_, const TranslationResult& leftTrans,
+                                              const TranslationResult& rightTrans, const QueryCtxT& queryCtx) {
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
         auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module,
@@ -1918,7 +1929,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
             const auto clause = static_cast<Expr*>(lfirst(lc));
             PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Processing clause %d", ++clauseIdx);
 
-            if (auto conditionValue = translateExpressionFn(predicateCtx, clause, &leftTrans, &rightTrans, outerTupleArg))
+            if (auto conditionValue = translateExpressionFn(predicateCtx, clause, &leftTrans, &rightTrans))
             {
                 conditions.push_back(conditionValue);
                 PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Successfully translated clause %d", clauseIdx);
@@ -1977,7 +1988,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         inner_ctx.nest_params = query_ctx.nest_params;
         inner_ctx.subquery_param_mapping = query_ctx.subquery_param_mapping;
         inner_ctx.correlation_params = query_ctx.correlation_params;
-        buildCorrelatedPredicateRegion(&inner_block, outer_tuple, inner_tuple, join_clauses, left_trans, right_trans,
+        buildCorrelatedPredicateRegion(&inner_block, inner_tuple, join_clauses, left_trans, right_trans,
                                        inner_ctx);
 
         auto& col_mgr = query_ctx.builder.getContext()
