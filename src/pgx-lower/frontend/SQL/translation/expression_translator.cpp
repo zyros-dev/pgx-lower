@@ -2498,6 +2498,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(
 
             auto inner_ctx = QueryCtxT(ctx.current_stmt, pred_builder, ctx.current_module, inner_tuple, mlir::Value());
             inner_ctx.init_plan_results = ctx.init_plan_results;
+            inner_ctx.nest_params = ctx.nest_params;
+            inner_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+            inner_ctx.correlation_params = ctx.correlation_params;
 
             if (subplan->paramIds) {
                 const int num_params = list_length(subplan->paramIds);
@@ -2573,6 +2576,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(
 
             auto inner_ctx = QueryCtxT(ctx.current_stmt, pred_builder, ctx.current_module, inner_tuple, mlir::Value());
             inner_ctx.init_plan_results = ctx.init_plan_results;
+            inner_ctx.nest_params = ctx.nest_params;
+            inner_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+            inner_ctx.correlation_params = ctx.correlation_params;
 
             if (subplan->paramIds) {
                 const int num_params = list_length(subplan->paramIds);
@@ -2667,6 +2673,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(
         mlir::Value()
     );
     subquery_ctx.init_plan_results = parent_ctx.init_plan_results;
+    subquery_ctx.nest_params = parent_ctx.nest_params;
+    subquery_ctx.subquery_param_mapping = parent_ctx.subquery_param_mapping;
     subquery_ctx.correlation_params = parent_ctx.correlation_params;
 
     auto subquery_result = translate_plan_node(subquery_ctx, subquery_plan);

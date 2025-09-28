@@ -1154,7 +1154,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
 
         auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.outer_tuple};
         tmp_ctx.init_plan_results = ctx.init_plan_results;
-            tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+        tmp_ctx.nest_params = ctx.nest_params;
         tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
         tmp_ctx.correlation_params = ctx.correlation_params;
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
@@ -1475,7 +1475,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
             temp_builder.setInsertionPointToStart(tempBlock);
             auto tmp_ctx = QueryCtxT{ctx.current_stmt, temp_builder, ctx.current_module, tupleArg, ctx.current_tuple};
             tmp_ctx.init_plan_results = ctx.init_plan_results;
+            tmp_ctx.nest_params = ctx.nest_params;
             tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+            tmp_ctx.correlation_params = ctx.correlation_params;
 
             for (auto* entry : computedEntries) {
                 auto colName = entry->resname ? entry->resname : "col_" + std::to_string(entry->resno);
@@ -1564,7 +1566,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
         predicate_builder.setInsertionPointToStart(predicateBlock);
         auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.current_tuple};
         tmp_ctx.init_plan_results = ctx.init_plan_results;
+        tmp_ctx.nest_params = ctx.nest_params;
         tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+        tmp_ctx.correlation_params = ctx.correlation_params;
 
         std::vector<mlir::Value> computedValues;
         for (auto* entry : computedEntries) {
@@ -1686,7 +1690,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     PGX_IO(AST_TRANSLATE);
 
     TranslationResult result;
-    const bool isRightJoin = (join_type == JOIN_RIGHT);
+    const bool isRightJoin = (join_type == JOIN_RIGHT || join_type == JOIN_RIGHT_ANTI);
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 1] LEFT input: %s", left_translation.toString().c_str());
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 1] RIGHT input: %s", right_translation.toString().c_str());
 
@@ -2027,6 +2031,17 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
 
         result.op = selectionOp;
         result.columns = left_translation.columns;
+        break;
+    }
+
+    case JOIN_RIGHT_ANTI: {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating JOIN_RIGHT_ANTI as NOT EXISTS pattern (right-side filtering)");
+
+        const auto selectionOp = buildExistsSubquerySelection(right_value, left_value, join_clauses, true,
+                                                              right_translation, left_translation, ctx);
+
+        result.op = selectionOp;
+        result.columns = right_translation.columns;
         break;
     }
 
