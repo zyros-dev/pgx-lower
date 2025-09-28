@@ -1,0 +1,159 @@
+LOAD 'pgx_lower.so';
+DROP TABLE IF EXISTS test_orders CASCADE;
+NOTICE:  table "test_orders" does not exist, skipping
+DROP TABLE IF EXISTS test_items CASCADE;
+NOTICE:  table "test_items" does not exist, skipping
+DROP TABLE IF EXISTS test_suppliers CASCADE;
+NOTICE:  table "test_suppliers" does not exist, skipping
+CREATE TABLE test_orders (
+    o_id INTEGER PRIMARY KEY,
+    o_date DATE NOT NULL,
+    o_year INTEGER
+);
+CREATE TABLE test_items (
+    i_id INTEGER PRIMARY KEY,
+    i_order_id INTEGER NOT NULL,
+    i_price DECIMAL(12,2) NOT NULL,
+    i_discount DECIMAL(12,2) NOT NULL,
+    i_quantity DECIMAL(12,2) NOT NULL,
+    i_shipmode CHAR(10) NOT NULL
+);
+CREATE TABLE test_suppliers (
+    s_id INTEGER PRIMARY KEY,
+    s_item_id INTEGER NOT NULL,
+    s_cost DECIMAL(12,2) NOT NULL
+);
+INSERT INTO test_orders VALUES
+    (1, '1994-01-15', 1994),
+    (2, '1995-06-20', 1995),
+    (3, '1996-03-10', 1996);
+INSERT INTO test_items VALUES
+    (1, 1, 100.00, 0.05, 10.00, 'MAIL'),
+    (2, 2, 200.00, 0.07, 20.00, 'SHIP'),
+    (3, 3, 150.00, 0.10, 15.00, 'TRUCK');
+INSERT INTO test_suppliers VALUES
+    (1, 1, 50.00),
+    (2, 2, 75.00),
+    (3, 3, 60.00);
+SELECT sum(i_price * i_discount) as revenue
+FROM test_items
+WHERE i_discount BETWEEN 0.05 - 0.01 AND 0.05 + 0.01
+  AND i_quantity < 24;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204705.mlir
+ revenue 
+---------
+       5
+(1 row)
+
+SELECT o_year, sum(volume) as revenue
+FROM (
+    SELECT extract(year from o_date) as o_year,
+           i_price * (1 - i_discount) as volume
+    FROM test_orders, test_items
+    WHERE o_id = i_order_id
+) as subq
+GROUP BY o_year
+ORDER BY o_year;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204705.mlir
+ o_year | revenue 
+--------+---------
+   1994 |      95
+   1995 |     186
+   1996 |     135
+(3 rows)
+
+SELECT o_year, sum(profit) as total_profit
+FROM (
+    SELECT extract(year from o_date) as o_year,
+           i_price * (1 - i_discount) - s_cost * i_quantity as profit
+    FROM test_orders, test_items, test_suppliers
+    WHERE o_id = i_order_id
+      AND s_item_id = i_id
+) as profit_calc
+GROUP BY o_year
+ORDER BY o_year;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204705.mlir
+ o_year | total_profit 
+--------+--------------
+   1994 |         -405
+   1995 |        -1314
+   1996 |         -765
+(3 rows)
+
+SELECT i_id, sum(s_cost * i_quantity) as value
+FROM test_suppliers, test_items
+WHERE s_item_id = i_id
+GROUP BY i_id
+HAVING sum(s_cost * i_quantity) > (
+    SELECT sum(s_cost * i_quantity) * 0.5
+    FROM test_suppliers, test_items
+    WHERE s_item_id = i_id
+)
+ORDER BY value DESC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204705.mlir
+ i_id | value 
+------+-------
+    2 |  1500
+(1 row)
+
+SELECT i_shipmode, count(*) as cnt
+FROM test_items, test_orders
+WHERE o_id = i_order_id
+  AND i_shipmode IN ('MAIL', 'SHIP')
+GROUP BY i_shipmode
+ORDER BY i_shipmode;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204705.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204706.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204706.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204706.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204706.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204706.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204706.mlir
+ i_shipmode | cnt 
+------------+-----
+ MAIL       |   1
+ SHIP       |   1
+(2 rows)
+
+DROP TABLE test_orders CASCADE;
+DROP TABLE test_items CASCADE;
+DROP TABLE test_suppliers CASCADE;

@@ -1,0 +1,322 @@
+LOAD
+'pgx_lower.so';
+DROP TABLE IF EXISTS test_where_logical;
+NOTICE:  table "test_where_logical" does not exist, skipping
+CREATE TABLE test_where_logical
+(
+    id         SERIAL PRIMARY KEY,
+    age        INTEGER,
+    score      INTEGER,
+    active     BOOLEAN,
+    department VARCHAR(20)
+);
+INSERT INTO test_where_logical(age, score, active, department)
+VALUES (25, 85, true, 'Engineering'),
+       (30, 92, false, 'Marketing'),
+       (22, 78, true, 'Engineering'),
+       (35, 88, true, 'Sales'),
+       (28, 95, false, 'Marketing'),
+       (32, 72, true, 'Sales'),
+       (26, 89, false, 'Engineering');
+SELECT id, age, score
+FROM test_where_logical
+WHERE age > 25
+  AND score > 85;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ id | age | score 
+----+-----+-------
+  2 |  30 |    92
+  4 |  35 |    88
+  5 |  28 |    95
+  7 |  26 |    89
+(4 rows)
+
+SELECT department, age
+FROM test_where_logical
+WHERE active = true
+  AND age < 30;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ department  | age 
+-------------+-----
+ Engineering |  25
+ Engineering |  22
+(2 rows)
+
+SELECT id, department
+FROM test_where_logical
+WHERE score >= 85
+  AND department = 'Engineering';
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ id | department  
+----+-------------
+  1 | Engineering
+  7 | Engineering
+(2 rows)
+
+SELECT id, age, score
+FROM test_where_logical
+WHERE age < 25
+   OR score > 90;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ id | age | score 
+----+-----+-------
+  2 |  30 |    92
+  3 |  22 |    78
+  5 |  28 |    95
+(3 rows)
+
+SELECT department, active
+FROM test_where_logical
+WHERE department = 'Sales'
+   OR department = 'Marketing';
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ department | active 
+------------+--------
+ Marketing  | f
+ Sales      | t
+ Marketing  | f
+ Sales      | t
+(4 rows)
+
+SELECT id, age
+FROM test_where_logical
+WHERE age > 35
+   OR active = false;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ id | age 
+----+-----
+  2 |  30
+  5 |  28
+  7 |  26
+(3 rows)
+
+SELECT id, age, department
+FROM test_where_logical
+WHERE NOT active;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ id | age | department  
+----+-----+-------------
+  2 |  30 | Marketing
+  5 |  28 | Marketing
+  7 |  26 | Engineering
+(3 rows)
+
+SELECT age, score
+FROM test_where_logical
+WHERE NOT (age < 25);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ age | score 
+-----+-------
+  25 |    85
+  30 |    92
+  35 |    88
+  28 |    95
+  32 |    72
+  26 |    89
+(6 rows)
+
+SELECT department
+FROM test_where_logical
+WHERE NOT (department = 'Engineering');
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ department 
+------------
+ Marketing
+ Sales
+ Marketing
+ Sales
+(4 rows)
+
+SELECT id, age, score
+FROM test_where_logical
+WHERE (age > 25 AND score > 80)
+   OR (active = false);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ id | age | score 
+----+-----+-------
+  2 |  30 |    92
+  4 |  35 |    88
+  5 |  28 |    95
+  7 |  26 |    89
+(4 rows)
+
+SELECT department, age
+FROM test_where_logical
+WHERE active = true
+  AND (age < 30 OR score > 85);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ department  | age 
+-------------+-----
+ Engineering |  25
+ Engineering |  22
+ Sales       |  35
+(3 rows)
+
+SELECT id, department
+FROM test_where_logical
+WHERE NOT (age < 25 OR score < 80);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204640.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204640.mlir
+ id | department  
+----+-------------
+  1 | Engineering
+  2 | Marketing
+  4 | Sales
+  5 | Marketing
+  7 | Engineering
+(5 rows)
+
+SELECT age, score, department
+FROM test_where_logical
+WHERE age > 25
+  AND score > 80
+  AND active = true;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204641.mlir
+ age | score | department 
+-----+-------+------------
+  35 |    88 | Sales
+(1 row)
+
+SELECT id, age
+FROM test_where_logical
+WHERE age < 30
+   OR score > 90
+   OR department = 'Sales';
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a before optimization_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> Optimised RelAlg_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3a AFTER: RelAlg -> DB+DSA+Util_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3b BEFORE: DB+DSA -> Standard_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm1_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After dsa standard pipeline pm2_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_After func pipeline_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c BEFORE: Standard -> LLVM_20251103_204641.mlir
+WARNING:  [PROBLEM:WARNING_LEVEL] mlir_runner_utils.cpp:146: Failed to open file for writing: /tmp/pgx_ir/pgx_lower_Phase 3c AFTER: Standard -> LLVM_20251103_204641.mlir
+ id | age 
+----+-----
+  1 |  25
+  2 |  30
+  3 |  22
+  4 |  35
+  5 |  28
+  6 |  32
+  7 |  26
+(7 rows)
+
+DROP TABLE test_where_logical;

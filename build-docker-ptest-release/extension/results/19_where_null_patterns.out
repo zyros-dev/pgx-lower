@@ -1,0 +1,225 @@
+LOAD
+'pgx_lower.so';
+DROP TABLE IF EXISTS test_where_nulls;
+NOTICE:  table "test_where_nulls" does not exist, skipping
+CREATE TABLE test_where_nulls
+(
+    id    SERIAL PRIMARY KEY,
+    name  VARCHAR(50),
+    age   INTEGER,
+    email VARCHAR(100),
+    score INTEGER
+);
+INSERT INTO test_where_nulls(name, age, email, score)
+VALUES ('Alice', 25, 'alice@test.com', 85),
+       ('Bob', NULL, 'bob@test.com', 92),
+       ('Carol', 30, NULL, 78),
+       ('David', 35, 'david@test.com', NULL),
+       ('Eve', NULL, NULL, 95),
+       ('Frank', 28, 'frank@test.com', NULL),
+       ('Grace', 32, NULL, 88);
+SELECT id, name, age
+FROM test_where_nulls
+WHERE age IS NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name | age 
+----+------+-----
+  2 | Bob  |    
+  5 | Eve  |    
+(2 rows)
+
+SELECT id, name, email
+FROM test_where_nulls
+WHERE email IS NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  | email 
+----+-------+-------
+  3 | Carol | 
+  5 | Eve   | 
+  7 | Grace | 
+(3 rows)
+
+SELECT id, name, score
+FROM test_where_nulls
+WHERE score IS NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  | score 
+----+-------+-------
+  4 | David |      
+  6 | Frank |      
+(2 rows)
+
+SELECT id, name, age
+FROM test_where_nulls
+WHERE age IS NOT NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  | age 
+----+-------+-----
+  1 | Alice |  25
+  3 | Carol |  30
+  4 | David |  35
+  6 | Frank |  28
+  7 | Grace |  32
+(5 rows)
+
+SELECT id, name, email
+FROM test_where_nulls
+WHERE email IS NOT NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  |     email      
+----+-------+----------------
+  1 | Alice | alice@test.com
+  2 | Bob   | bob@test.com
+  4 | David | david@test.com
+  6 | Frank | frank@test.com
+(4 rows)
+
+SELECT id, name, score
+FROM test_where_nulls
+WHERE score IS NOT NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  | score 
+----+-------+-------
+  1 | Alice |    85
+  2 | Bob   |    92
+  3 | Carol |    78
+  5 | Eve   |    95
+  7 | Grace |    88
+(5 rows)
+
+SELECT id, name
+FROM test_where_nulls
+WHERE age = NULL;
+ id | name 
+----+------
+(0 rows)
+
+SELECT id, name
+FROM test_where_nulls
+WHERE email <> NULL;
+ id | name 
+----+------
+(0 rows)
+
+SELECT id, name, age
+FROM test_where_nulls
+WHERE age IS NULL
+   OR age < 30;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  | age 
+----+-------+-----
+  1 | Alice |  25
+  2 | Bob   |    
+  5 | Eve   |    
+  6 | Frank |  28
+(4 rows)
+
+SELECT id, name, email
+FROM test_where_nulls
+WHERE email IS NOT NULL
+  AND age > 25;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  |     email      
+----+-------+----------------
+  4 | David | david@test.com
+  6 | Frank | frank@test.com
+(2 rows)
+
+SELECT id, name
+FROM test_where_nulls
+WHERE score IS NULL
+  AND age IS NOT NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  
+----+-------
+  4 | David
+  6 | Frank
+(2 rows)
+
+SELECT id, name, age
+FROM test_where_nulls
+WHERE COALESCE(age, 0) > 25;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  | age 
+----+-------+-----
+  3 | Carol |  30
+  4 | David |  35
+  6 | Frank |  28
+  7 | Grace |  32
+(4 rows)
+
+SELECT id, name, score
+FROM test_where_nulls
+WHERE COALESCE(score, 0) >= 85;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  | score 
+----+-------+-------
+  1 | Alice |    85
+  2 | Bob   |    92
+  5 | Eve   |    95
+  7 | Grace |    88
+(4 rows)
+
+SELECT id, name
+FROM test_where_nulls
+WHERE age IS NULL
+  AND email IS NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name 
+----+------
+  5 | Eve
+(1 row)
+
+SELECT id, name
+FROM test_where_nulls
+WHERE age IS NOT NULL
+  AND email IS NOT NULL
+  AND score IS NOT NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  
+----+-------
+  1 | Alice
+(1 row)
+
+SELECT id, name
+FROM test_where_nulls
+WHERE age IS NULL
+   OR email IS NULL
+   OR score IS NULL;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  
+----+-------
+  2 | Bob
+  3 | Carol
+  4 | David
+  5 | Eve
+  6 | Frank
+  7 | Grace
+(6 rows)
+
+SELECT id, name, age
+FROM test_where_nulls
+WHERE (age IS NULL)
+   OR (age > 30 AND score IS NOT NULL);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  | age 
+----+-------+-----
+  2 | Bob   |    
+  5 | Eve   |    
+  7 | Grace |  32
+(3 rows)
+
+SELECT id, name
+FROM test_where_nulls
+WHERE NOT (age IS NULL);
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id | name  
+----+-------
+  1 | Alice
+  3 | Carol
+  4 | David
+  6 | Frank
+  7 | Grace
+(5 rows)
+
+DROP TABLE test_where_nulls;

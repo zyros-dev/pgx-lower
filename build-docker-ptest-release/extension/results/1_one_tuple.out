@@ -1,0 +1,18 @@
+LOAD
+'pgx_lower.so';
+DROP TABLE IF EXISTS test;
+NOTICE:  table "test" does not exist, skipping
+CREATE TABLE test
+(
+    id SERIAL
+);
+INSERT INTO test(id)
+VALUES (42);
+SELECT *
+FROM test;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ id 
+----
+ 42
+(1 row)
+

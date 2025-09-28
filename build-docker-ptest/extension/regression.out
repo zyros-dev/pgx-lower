@@ -1,0 +1,50 @@
+# using postmaster on Unix socket, default port
+not ok 1     - 1_one_tuple                               152 ms
+not ok 2     - 2_two_tuples                              116 ms
+not ok 3     - 3_lots_of_tuples                          126 ms
+not ok 4     - 4_two_columns_ints                        132 ms
+not ok 5     - 5_two_columns_diff                        130 ms
+not ok 6     - 6_every_type                              262 ms
+not ok 7     - 7_sub_select                              161 ms
+not ok 8     - 8_subset_all_types                        250 ms
+not ok 9     - 9_basic_arithmetic_ops                    304 ms
+not ok 10    - 10_comparison_ops                         398 ms
+not ok 11    - 11_logical_ops                            363 ms
+not ok 12    - 12_null_handling                          406 ms
+not ok 13    - 13_text_operations                        498 ms
+not ok 14    - 14_aggregate_functions                    410 ms
+not ok 15    - 15_special_operators                      545 ms
+not ok 16    - 16_debug_text                             119 ms
+not ok 17    - 17_where_simple_conditions                559 ms
+not ok 18    - 18_where_logical_combinations            1102 ms
+not ok 19    - 19_where_null_patterns                   1301 ms
+not ok 20    - 20_where_pattern_matching                1566 ms
+not ok 21    - 21_order_by_basic                         645 ms
+not ok 22    - 22_order_by_multiple_columns              639 ms
+ok 23        - 23_order_by_expressions                   166 ms
+not ok 24    - 24_order_by_with_where                    794 ms
+not ok 25    - 25_group_by_simple                       1068 ms
+not ok 26    - 26_before_check_types                    1435 ms
+not ok 27    - 27_group_by_having                        901 ms
+not ok 28    - 28_group_by_with_where                   1174 ms
+not ok 29    - 29_expressions_in_aggregations           2463 ms
+not ok 30    - 30_test_missing_expressions              2070 ms
+not ok 31    - 31_distinct_statement                    1195 ms
+not ok 32    - 32_decimal_maths                         1021 ms
+not ok 33    - 33_basic_joins                           1847 ms
+not ok 34    - 34_advanced_joins                        1940 ms
+not ok 35    - 35_nested_queries                        2266 ms
+not ok 36    - 36_tpch_minimal                           856 ms
+not ok 37    - 37_tpch_minimal_2                        1096 ms
+not ok 38    - 38_tpch_minimal_3                         632 ms
+not ok 39    - 39_tpch_minimal                          1970 ms
+not ok 40    - 40_tpch_not_lowered                       550 ms
+not ok 41    - 41_sorts                                 3444 ms
+not ok 42    - 42_test_relalg_function                   193 ms
+ok 43        - init_tpch                                3259 ms
+ok 44        - tpch_no_lower                             555 ms
+not ok 45    - tpch                                    10400 ms
+1..45
+# 42 of 45 tests failed.
+# The differences that caused some tests to fail can be viewed in the file "/workspace/build-docker-ptest/extension/regression.diffs".
+# A copy of the test summary that you see above is saved in the file "/workspace/build-docker-ptest/extension/regression.out".

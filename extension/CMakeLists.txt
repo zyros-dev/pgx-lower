@@ -15,8 +15,14 @@ if(NOT BUILDING_UNIT_TESTS)
         ../src/pgx-lower/execution/jit_engine/jit_execution_engine.cpp
         ../src/pgx-lower/execution/jit_engine/jit_execution_wrapper.cpp
         ../src/pgx-lower/frontend/SQL/postgresql_ast_translator.cpp
-        ../src/pgx-lower/frontend/SQL/translation/expression_translator.cpp
-        ../src/pgx-lower/frontend/SQL/translation/plan_translator.cpp
+        ../src/pgx-lower/frontend/SQL/translation/expression_translator_basic.cpp
+        ../src/pgx-lower/frontend/SQL/translation/expression_translator_complex.cpp
+        ../src/pgx-lower/frontend/SQL/translation/expression_translator_functions.cpp
+        ../src/pgx-lower/frontend/SQL/translation/expression_translator_operators.cpp
+        ../src/pgx-lower/frontend/SQL/translation/plan_translator_agg.cpp
+        ../src/pgx-lower/frontend/SQL/translation/plan_translator_joins.cpp
+        ../src/pgx-lower/frontend/SQL/translation/plan_translator_scans.cpp
+        ../src/pgx-lower/frontend/SQL/translation/plan_translator_utils.cpp
         ../src/pgx-lower/frontend/SQL/translation/schema_manager.cpp
         ../src/pgx-lower/frontend/SQL/translation/translation_core.cpp
         ../src/pgx-lower/frontend/SQL/query_analyzer.cpp

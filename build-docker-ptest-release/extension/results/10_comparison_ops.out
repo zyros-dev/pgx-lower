@@ -1,0 +1,101 @@
+LOAD
+'pgx_lower';
+DROP TABLE IF EXISTS test_comparison;
+NOTICE:  table "test_comparison" does not exist, skipping
+CREATE TABLE test_comparison
+(
+    id    SERIAL PRIMARY KEY,
+    value INTEGER,
+    score INTEGER
+);
+INSERT INTO test_comparison(value, score)
+VALUES (10, 15),
+       (20, 20),
+       (15, 10),
+       (25, 5),
+       (30, 30);
+SELECT (value = score) AS is_equal
+FROM test_comparison;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ is_equal 
+----------
+ f
+ t
+ f
+ f
+ t
+(5 rows)
+
+SELECT (value <> score) AS not_equal
+FROM test_comparison;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ not_equal 
+-----------
+ t
+ f
+ t
+ t
+ f
+(5 rows)
+
+SELECT (value != score) AS not_equal_alt
+FROM test_comparison;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ not_equal_alt 
+---------------
+ t
+ f
+ t
+ t
+ f
+(5 rows)
+
+SELECT (value < score) AS less_than
+FROM test_comparison;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ less_than 
+-----------
+ t
+ f
+ f
+ f
+ f
+(5 rows)
+
+SELECT (value <= score) AS less_equal
+FROM test_comparison;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ less_equal 
+------------
+ t
+ t
+ f
+ f
+ t
+(5 rows)
+
+SELECT (value > score) AS greater_than
+FROM test_comparison;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ greater_than 
+--------------
+ f
+ f
+ t
+ t
+ f
+(5 rows)
+
+SELECT (value >= score) AS greater_equal
+FROM test_comparison;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ greater_equal 
+---------------
+ f
+ t
+ t
+ t
+ t
+(5 rows)
+
+DROP TABLE test_comparison;

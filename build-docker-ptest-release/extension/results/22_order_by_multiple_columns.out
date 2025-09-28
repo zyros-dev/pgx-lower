@@ -1,0 +1,111 @@
+LOAD
+'pgx_lower.so';
+DROP TABLE IF EXISTS test_order_multi;
+NOTICE:  table "test_order_multi" does not exist, skipping
+CREATE TABLE test_order_multi
+(
+    id         SERIAL PRIMARY KEY,
+    department VARCHAR(20),
+    salary     INTEGER,
+    years      INTEGER,
+    name       VARCHAR(50)
+);
+INSERT INTO test_order_multi(department, salary, years, name)
+VALUES ('Sales', 50000, 3, 'Alice'),
+       ('IT', 60000, 2, 'Bob'),
+       ('Sales', 45000, 5, 'Carol'),
+       ('IT', 65000, 4, 'David'),
+       ('Sales', 50000, 1, 'Eve'),
+       ('IT', 60000, 6, 'Frank'),
+       ('HR', 55000, 3, 'Grace');
+SELECT department, salary, name
+FROM test_order_multi
+ORDER BY department, salary;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department | salary | name  
+------------+--------+-------
+ HR         |  55000 | Grace
+ IT         |  60000 | Frank
+ IT         |  60000 | Bob
+ IT         |  65000 | David
+ Sales      |  45000 | Carol
+ Sales      |  50000 | Eve
+ Sales      |  50000 | Alice
+(7 rows)
+
+SELECT department, salary, name
+FROM test_order_multi
+ORDER BY department ASC, salary ASC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department | salary | name  
+------------+--------+-------
+ HR         |  55000 | Grace
+ IT         |  60000 | Frank
+ IT         |  60000 | Bob
+ IT         |  65000 | David
+ Sales      |  45000 | Carol
+ Sales      |  50000 | Eve
+ Sales      |  50000 | Alice
+(7 rows)
+
+SELECT department, salary, name
+FROM test_order_multi
+ORDER BY department ASC, salary DESC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department | salary | name  
+------------+--------+-------
+ HR         |  55000 | Grace
+ IT         |  65000 | David
+ IT         |  60000 | Frank
+ IT         |  60000 | Bob
+ Sales      |  50000 | Alice
+ Sales      |  50000 | Eve
+ Sales      |  45000 | Carol
+(7 rows)
+
+SELECT department, salary, name
+FROM test_order_multi
+ORDER BY department DESC, salary DESC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department | salary | name  
+------------+--------+-------
+ Sales      |  50000 | Alice
+ Sales      |  50000 | Eve
+ Sales      |  45000 | Carol
+ IT         |  65000 | David
+ IT         |  60000 | Bob
+ IT         |  60000 | Frank
+ HR         |  55000 | Grace
+(7 rows)
+
+SELECT department, salary, years, name
+FROM test_order_multi
+ORDER BY department, salary, years;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department | salary | years | name  
+------------+--------+-------+-------
+ HR         |  55000 |     3 | Grace
+ IT         |  60000 |     2 | Bob
+ IT         |  60000 |     6 | Frank
+ IT         |  65000 |     4 | David
+ Sales      |  45000 |     5 | Carol
+ Sales      |  50000 |     1 | Eve
+ Sales      |  50000 |     3 | Alice
+(7 rows)
+
+SELECT department, salary, years, name
+FROM test_order_multi
+ORDER BY department ASC, salary DESC, years ASC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ department | salary | years | name  
+------------+--------+-------+-------
+ HR         |  55000 |     3 | Grace
+ IT         |  65000 |     4 | David
+ IT         |  60000 |     2 | Bob
+ IT         |  60000 |     6 | Frank
+ Sales      |  50000 |     1 | Eve
+ Sales      |  50000 |     3 | Alice
+ Sales      |  45000 |     5 | Carol
+(7 rows)
+
+DROP TABLE test_order_multi;
