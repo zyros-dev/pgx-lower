@@ -70,6 +70,7 @@ if(NOT BUILDING_UNIT_TESTS)
             38_tpch_minimal_3
             39_tpch_minimal
             init_tpch
+            40_tpch_not_lowered
             tpch
             tpch_no_lower
 )

@@ -65,14 +65,19 @@ auto QueryCapabilities::isMLIRCompatible() const -> bool {
         PGX_LOG(AST_TRANSLATE, DEBUG, " Query features: None detected");
     }
 
-    const auto compatible = isSelectStatement && hasCompatibleTypes && !requiresLimit
-                            && (requiresSeqScan || requiresAggregation || requiresJoin);
-
+    const auto compatible = isSelectStatement && hasCompatibleTypes
+                            && (requiresSeqScan || requiresAggregation || requiresJoin || requiresLimit);
     if (compatible) {
         PGX_LOG(AST_TRANSLATE, DEBUG, " MLIR COMPATIBLE: Query accepted for compilation");
         return true;
     } else {
-        PGX_LOG(AST_TRANSLATE, DEBUG, " DATA COLLECTION: Query too complex for current MLIR implementation");
+        if (!isSelectStatement) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Not a SELECT statement");
+        } else if (!hasCompatibleTypes) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Incompatible types detected");
+        } else {
+            PGX_LOG(AST_TRANSLATE, DEBUG, " REJECTED: Unknown reason");
+        }
         return false;
     }
 }
@@ -174,9 +179,20 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
     case T_Agg:
         caps.requiresAggregation = true;
         break;
-        // default:
-        // TODO: NV: Temporarily commented out while I;'m doing this refactor
-        // PGX_ERROR("Failed to match node %d", nodeTag(plan)); throw std::runtime_error("Failed to match node!");
+
+    case T_Result:
+    case T_Material:
+    case T_SubqueryScan:
+    case T_Hash:
+    case T_Unique:
+    case T_SetOp:
+    case T_Group:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Accepting node type %d for MLIR compilation", nodeTag(plan));
+        break;
+
+    default:
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Unknown node type %d - accepting for MLIR compilation", nodeTag(plan));
+        break;
     }
 
     analyzeFilter(plan, caps);
