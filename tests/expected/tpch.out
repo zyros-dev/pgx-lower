@@ -74,6 +74,7 @@ order by
         s_name,
         p_partkey
 limit 100;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  s_acctbal |          s_name           |          n_name           | p_partkey |          p_mfgr           | s_address |     s_phone     | s_comment 
 -----------+---------------------------+---------------------------+-----------+---------------------------+-----------+-----------------+-----------
    4032.68 | Supplier#000000002        | FRANCE                    |         2 | Manufacturer#2            | Address 2 | 16-768-687-3665 | Comment 2
@@ -103,6 +104,7 @@ order by
         revenue desc,
         o_orderdate
 limit 10;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  l_orderkey | revenue | o_orderdate | o_shippriority 
 ------------+---------+-------------+----------------
 (0 rows)
@@ -342,9 +344,10 @@ group by
 order by
         revenue desc
 limit 20;
- c_custkey |       c_name       |  revenue   | c_acctbal |          n_name           | c_address |     c_phone     | c_comment 
------------+--------------------+------------+-----------+---------------------------+-----------+-----------------+-----------
-         2 | Customer#000000002 | 92931.3900 |    121.65 | CANADA                    | Address 2 | 31-555-0102     | Comment 2
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+ c_custkey |       c_name       | revenue  | c_acctbal |          n_name           | c_address |     c_phone     | c_comment 
+-----------+--------------------+----------+-----------+---------------------------+-----------+-----------------+-----------
+         2 | Customer#000000002 | 92931.39 |    121.65 | CANADA                    | Address 2 | 31-555-0102     | Comment 2
 (1 row)
 
 -- TPC-H Query 11
@@ -598,10 +601,49 @@ order by
         o_totalprice desc,
         o_orderdate
 limit 100;
- c_name | c_custkey | o_orderkey | o_orderdate | o_totalprice | sum 
---------+-----------+------------+-------------+--------------+-----
-(0 rows)
-
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
+WARNING:  [PROBLEM:ERROR_LEVEL] expression_translator.cpp:1221: No mapping found for aggregate aggno=0
+Stack trace:
+  #0 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_expression(pgx_lower::frontend::sql::TranslationContext const&, Expr*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x4eb) [0x7775f0151cdb]
+  #1 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::extract_op_expr_operands(pgx_lower::frontend::sql::TranslationContext const&, OpExpr const*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x379) [0x7775f0169619]
+  #2 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_op_expr(pgx_lower::frontend::sql::TranslationContext const&, OpExpr const*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x18a) [0x7775f015312a]
+  #3 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_expression(pgx_lower::frontend::sql::TranslationContext const&, Expr*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x330) [0x7775f0151b20]
+  #4 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::apply_selection_from_qual(pgx_lower::frontend::sql::TranslationContext const&, pgx_lower::frontend::sql::TranslationResult const&, List const*)+0x6ae) [0x7775f01a1d1e]
+  #5 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_agg(pgx_lower::frontend::sql::TranslationContext&, Agg const*)+0x62ee) [0x7775f019bcde]
+  #6 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x59a) [0x7775f0190d3a]
+  #7 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash(pgx_lower::frontend::sql::TranslationContext&, Hash*)+0x191) [0x7775f019e8d1]
+  #8 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x7ba) [0x7775f0190f5a]
+  #9 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash_join(pgx_lower::frontend::sql::TranslationContext&, HashJoin*)+0x3eb) [0x7775f019e2ab]
+  #10 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x779) [0x7775f0190f19]
+  #11 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash_join(pgx_lower::frontend::sql::TranslationContext&, HashJoin*)+0x2ba) [0x7775f019e17a]
+  #12 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x779) [0x7775f0190f19]
+  #13 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash(pgx_lower::frontend::sql::TranslationContext&, Hash*)+0x191) [0x7775f019e8d1]
+  #14 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x7ba) [0x7775f0190f5a]
+  #15 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash_join(pgx_lower::frontend::sql::TranslationContext&, HashJoin*)+0x3eb) [0x7775f019e2ab]
+  #16 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x779) [0x7775f0190f19]
+  #17 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_agg(pgx_lower::frontend::sql::TranslationContext&, Agg const*)+0x122) [0x7775f0195b12]
+WARNING:  [PROBLEM:ERROR_LEVEL] mlir_runner.cpp:155: MLIR runner exception: Aggregate reference not found in column mappings
+Stack trace:
+  #0 /usr/local/pgsql/lib/pgx_lower.so(+0xee733d) [0x7775f00e733d]
+  #1 /usr/local/pgsql/lib/pgx_lower.so(+0xee6a2e) [0x7775f00e6a2e]
+  #2 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x7775f00e67d6]
+  #3 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x7775f00e6e8b]
+  #4 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x7775f00ee708]
+  #5 /usr/local/pgsql/lib/pgx_lower.so(+0xee5bc1) [0x7775f00e5bc1]
+  #6 /usr/local/pgsql/lib/pgx_lower.so(+0xee5a4f) [0x7775f00e5a4f]
+  #7 postgres: xzel regression [local] SELECT(ExecutorRun+0x44) [0x5d14fbd31bf0]
+  #8 postgres: xzel regression [local] SELECT(+0x6bb251) [0x5d14fc005251]
+  #9 postgres: xzel regression [local] SELECT(PortalRun+0x275) [0x5d14fc004e82]
+  #10 postgres: xzel regression [local] SELECT(+0x6b38d0) [0x5d14fbffd8d0]
+  #11 postgres: xzel regression [local] SELECT(PostgresMain+0x847) [0x5d14fc002cf3]
+  #12 postgres: xzel regression [local] SELECT(+0x6af85c) [0x5d14fbff985c]
+  #13 postgres: xzel regression [local] SELECT(postmaster_child_launch+0x119) [0x5d14fbf0da1a]
+  #14 postgres: xzel regression [local] SELECT(+0x5c9ebe) [0x5d14fbf13ebe]
+  #15 postgres: xzel regression [local] SELECT(+0x5c6f64) [0x5d14fbf10f64]
+  #16 postgres: xzel regression [local] SELECT(PostmasterMain+0x151a) [0x5d14fbf1082e]
+  #17 postgres: xzel regression [local] SELECT(+0x473eb3) [0x5d14fbdbdeb3]
+WARNING:  [PROBLEM:WARNING_LEVEL] my_executor.cpp:347: PostgreSQL exception during MLIR execution
+ERROR:  MLIR compilation failed: Aggregate reference not found in column mappings
 -- TPC-H Query 19
 select
         sum(l_extendedprice* (1 - l_discount)) as revenue
@@ -728,6 +770,7 @@ order by
         numwait desc,
         s_name
 limit 100;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  s_name | numwait 
 --------+---------
 (0 rows)

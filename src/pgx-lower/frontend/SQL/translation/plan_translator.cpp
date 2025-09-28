@@ -345,6 +345,44 @@ static Aggref* find_first_aggref(Expr* expr) {
     return nullptr;
 }
 
+static void find_all_aggrefs(Expr* expr, std::vector<Aggref*>& result) {
+    if (!expr) {
+        return;
+    }
+
+    if (IsA(expr, Aggref)) {
+        result.push_back(reinterpret_cast<Aggref*>(expr));
+        return;
+    }
+
+    if (IsA(expr, OpExpr)) {
+        auto* op_expr = reinterpret_cast<OpExpr*>(expr);
+        ListCell* lc;
+        foreach(lc, op_expr->args) {
+            auto* arg = reinterpret_cast<Expr*>(lfirst(lc));
+            find_all_aggrefs(arg, result);
+        }
+    }
+
+    if (IsA(expr, FuncExpr)) {
+        auto* func_expr = reinterpret_cast<FuncExpr*>(expr);
+        ListCell* lc;
+        foreach(lc, func_expr->args) {
+            auto* arg = reinterpret_cast<Expr*>(lfirst(lc));
+            find_all_aggrefs(arg, result);
+        }
+    }
+
+    if (IsA(expr, BoolExpr)) {
+        auto* bool_expr = reinterpret_cast<BoolExpr*>(expr);
+        ListCell* lc;
+        foreach(lc, bool_expr->args) {
+            auto* arg = reinterpret_cast<Expr*>(lfirst(lc));
+            find_all_aggrefs(arg, result);
+        }
+    }
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!agg || !agg->plan.lefttree)
@@ -675,6 +713,120 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             }
         }
 
+        // Process aggregates from HAVING clause that aren't in targetlist
+        if (agg->plan.qual && agg->plan.qual->length > 0) {
+            std::vector<Aggref*> having_aggrefs;
+            ListCell* qual_lc;
+            foreach(qual_lc, agg->plan.qual) {
+                auto* qual_expr = reinterpret_cast<Expr*>(lfirst(qual_lc));
+                find_all_aggrefs(qual_expr, having_aggrefs);
+            }
+
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Found %zu aggregate(s) in HAVING clause", having_aggrefs.size());
+
+            for (auto* aggref : having_aggrefs) {
+                // Skip if already processed
+                if (aggregateMappings.find(aggref->aggno) != aggregateMappings.end()) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Aggregate aggno=%d already in mappings, skipping", aggref->aggno);
+                    continue;
+                }
+
+                char* rawFuncName = get_func_name(aggref->aggfnoid);
+                if (!rawFuncName) {
+                    PGX_WARNING("Could not get function name for HAVING aggregate aggno=%d", aggref->aggno);
+                    continue;
+                }
+                std::string funcName(rawFuncName);
+                pfree(rawFuncName);
+
+                std::string aggColumnName = funcName + "_" + std::to_string(aggref->aggno);
+                auto relation = block->getArgument(0);
+                mlir::Value aggResult;
+
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Processing HAVING aggregate: func=%s, aggno=%d, column=%s",
+                        funcName.c_str(), aggref->aggno, aggColumnName.c_str());
+
+                if (funcName == "count" && (!aggref->args || list_length(aggref->args) == 0)) {
+                    // COUNT(*)
+                    auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
+                    attrDef.getColumn().type = ctx.builder.getI64Type();
+
+                    aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "HAVING: Added COUNT(*) mapping aggno=%d -> (%s, %s)",
+                            aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
+
+                    aggResult = aggr_builder.create<mlir::relalg::CountRowsOp>(
+                        ctx.builder.getUnknownLoc(), ctx.builder.getI64Type(), relation);
+
+                    createdCols.push_back(attrDef);
+                    createdValues.push_back(aggResult);
+                } else {
+                    // SUM, AVG, MIN, MAX, etc.
+                    if (!aggref->args || list_length(aggref->args) == 0) {
+                        PGX_WARNING("HAVING aggregate aggno=%d has no arguments", aggref->aggno);
+                        continue;
+                    }
+
+                    auto argTE = static_cast<TargetEntry*>(linitial(aggref->args));
+                    if (!argTE || !argTE->expr) {
+                        PGX_WARNING("HAVING aggregate aggno=%d has invalid argument", aggref->aggno);
+                        continue;
+                    }
+
+                    // Translate aggregate argument expression
+                    auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module,
+                                             mlir::Value{}, ctx.current_tuple};
+                    childCtx.init_plan_results = ctx.init_plan_results;
+
+                    auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
+                        childCtx, argTE->expr, childOutput, "having_agg_expr_" + std::to_string(aggref->aggno),
+                        childResult.columns);
+
+                    if (stream != childOutput) {
+                        childOutput = cast<mlir::OpResult>(stream);
+
+                        const auto exprOid = exprType(reinterpret_cast<Node*>(argTE->expr));
+                        auto type_mapper = PostgreSQLTypeMapper(*ctx.builder.getContext());
+                        auto mlirExprType = type_mapper.map_postgre_sqltype(exprOid, -1, true);
+
+                        childResult.columns.push_back({.table_name = table_name,
+                                                       .column_name = column_name,
+                                                       .type_oid = exprOid,
+                                                       .typmod = -1,
+                                                       .mlir_type = mlirExprType,
+                                                       .nullable = true});
+                    }
+
+                    PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
+                    auto resultType = (aggref->aggfnoid == 2803 || aggref->aggfnoid == 2147)
+                                          ? ctx.builder.getI64Type()
+                                          : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+
+                    auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
+                    attrDef.getColumn().type = resultType;
+
+                    aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "HAVING: Added aggregate mapping aggno=%d -> (%s, %s)",
+                            aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
+
+                    auto aggrFuncEnum = (funcName == "sum")   ? mlir::relalg::AggrFunc::sum
+                                        : (funcName == "avg") ? mlir::relalg::AggrFunc::avg
+                                        : (funcName == "min") ? mlir::relalg::AggrFunc::min
+                                        : (funcName == "max") ? mlir::relalg::AggrFunc::max
+                                                              : mlir::relalg::AggrFunc::count;
+
+                    aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
+                        ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum, relation, column_ref);
+
+                    createdCols.push_back(attrDef);
+                    createdValues.push_back(aggResult);
+                }
+            }
+
+            PGX_LOG(AST_TRANSLATE, DEBUG, "After processing HAVING aggregates: aggregateMappings has %zu entries",
+                    aggregateMappings.size());
+        }
+
         aggr_builder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), createdValues);
 
         auto aggOp = ctx.builder.create<mlir::relalg::AggregationOp>(ctx.builder.getUnknownLoc(), tupleStreamType,
@@ -902,6 +1054,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                           .mlir_type = exprMlirType,
                                           .nullable = true});
             }
+        }
+
+        // Add all aggregate mappings to varno_resolution for HAVING clause processing
+        for (const auto& [aggno, mapping] : aggregateMappings) {
+            result.varno_resolution[std::make_pair(-2, aggno)] = mapping;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Added aggregate mapping to result.varno_resolution: aggno=%d -> (%s, %s)",
+                    aggno, mapping.first.c_str(), mapping.second.c_str());
         }
 
         if (agg->plan.qual && agg->plan.qual->length > 0) {
