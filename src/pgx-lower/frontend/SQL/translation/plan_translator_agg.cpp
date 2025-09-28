@@ -187,7 +187,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             if (!te || !te->expr)
                 continue;
 
-            if (te->expr->type == T_Aggref) {
+            if (IsA(te->expr, Aggref)) {
                 auto aggref = reinterpret_cast<Aggref*>(te->expr);
                 char* rawFuncName = get_func_name(aggref->aggfnoid);
                 if (!rawFuncName)
@@ -293,7 +293,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         createdValues.push_back(aggResult);
                     }
                 }
-            } else if (te->expr->type == T_Var) {
+            } else if (IsA(te->expr, Var)) {
                 PGX_LOG(AST_TRANSLATE, DEBUG,
                         "First loop: Skipping T_Var at resno=%d (GROUP BY column, handled in second loop)",
                         te->resno);
@@ -708,7 +708,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             if (!te || !te->expr)
                 continue;
 
-            if (te->expr->type == T_Aggref) {
+            if (IsA(te->expr, Aggref)) {
                 auto* aggref = reinterpret_cast<Aggref*>(te->expr);
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Second loop: Processing aggregate aggno=%d", aggref->aggno);
                 PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
@@ -739,7 +739,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                           .mlir_type = resultType,
                                           .nullable = true});
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully pushed aggregate column, result now has %zu columns", result.columns.size());
-            } else if (te->expr->type == T_Var) {
+            } else if (IsA(te->expr, Var)) {
                 auto* var = reinterpret_cast<Var*>(te->expr);
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
                     const auto& childCol = childResult.columns[var->varattno - 1];

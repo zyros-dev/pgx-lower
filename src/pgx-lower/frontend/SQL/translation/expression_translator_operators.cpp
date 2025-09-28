@@ -275,10 +275,10 @@ auto PostgreSQLASTTranslator::Impl::normalize_bpchar_operands(const QueryCtxT& c
     const int lhs_bpchar_len = extract_bpchar_length(lhs_expr);
     const int rhs_bpchar_len = extract_bpchar_length(rhs_expr);
 
-    if (lhs_bpchar_len > 0 && rhs_expr->type == T_Const) {
+    if (lhs_bpchar_len > 0 && nodeTag(rhs_expr) == T_Const) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Normalizing RHS constant to match LHS BPCHAR(%d)", lhs_bpchar_len);
         rhs = pad_string_constant(rhs, lhs_bpchar_len);
-    } else if (rhs_bpchar_len > 0 && lhs_expr->type == T_Const) {
+    } else if (rhs_bpchar_len > 0 && nodeTag(lhs_expr) == T_Const) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Normalizing LHS constant to match RHS BPCHAR(%d)", rhs_bpchar_len);
         lhs = pad_string_constant(lhs, rhs_bpchar_len);
     }

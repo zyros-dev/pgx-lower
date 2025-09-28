@@ -133,7 +133,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
             if (!tle || tle->resjunk)
                 continue; // Skip junk columns
 
-            if (tle->expr && tle->expr->type == T_Var) {
+            if (tle->expr && IsA(tle->expr, Var)) {
                 auto* var = reinterpret_cast<Var*>(tle->expr);
 
                 // Find the column info for this var

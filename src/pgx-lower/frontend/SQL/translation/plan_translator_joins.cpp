@@ -335,7 +335,7 @@ void PostgreSQLASTTranslator::Impl::translate_join_predicate_to_region(const Que
     foreach (lc, joinClauses) {
         auto clause = static_cast<Expr*>(lfirst(lc));
 
-        if (clause->type == T_OpExpr) {
+        if (IsA(clause, OpExpr)) {
             // For join predicates, we need to translate with join context
             mlir::Value conditionValue = translate_expression_with_join_context(predicateCtx, clause, &leftTranslation,
                                                                                 &rightTranslation);

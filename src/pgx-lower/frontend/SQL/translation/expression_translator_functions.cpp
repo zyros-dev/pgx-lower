@@ -389,7 +389,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                 int param_id = lfirst_int(list_nth_cell(subplan->parParam, i));
                 auto arg_expr = static_cast<Expr*>(lfirst(list_nth_cell(subplan->args, i)));
 
-                if (arg_expr && arg_expr->type == T_Var) {
+                if (arg_expr && nodeTag(arg_expr) == T_Var) {
                     auto var = reinterpret_cast<Var*>(arg_expr);
                     std::string table_scope;
                     std::string column_name;
@@ -710,7 +710,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
     }
     auto& columnManager = dialect->getColumnManager();
 
-    if (expr->type == T_Var) {
+    if (nodeTag(expr) == T_Var) {
         // We can trivially pass the MLIR value through
         const auto var = reinterpret_cast<Var*>(expr);
 
@@ -818,7 +818,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
         throw std::runtime_error("check logs");
     }
 
-    if (expr->type == T_Var) {
+    if (nodeTag(expr) == T_Var) {
         const auto* var = reinterpret_cast<const Var*>(expr);
 
         PGX_LOG(AST_TRANSLATE, DEBUG,

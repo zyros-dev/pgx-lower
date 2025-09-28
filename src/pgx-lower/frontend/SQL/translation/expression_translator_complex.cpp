@@ -431,11 +431,11 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
         throw std::runtime_error("Invalid expression");
     }
 
-    if (expr->type == T_CaseTestExpr) {
+    if (nodeTag(expr) == T_CaseTestExpr) {
         return case_test_value;
     }
 
-    if (expr->type == T_OpExpr) {
+    if (nodeTag(expr) == T_OpExpr) {
         const auto opExpr = reinterpret_cast<OpExpr*>(expr);
 
         if (!opExpr->args || opExpr->args->length != 2) {
@@ -446,17 +446,19 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
         const auto leftNode = static_cast<Node*>(lfirst(&opExpr->args->elements[0]));
         const auto rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
 
-        const mlir::Value leftValue = (leftNode && leftNode->type == T_CaseTestExpr)
+        mlir::Value leftValue = (leftNode && nodeTag(leftNode) == T_CaseTestExpr)
                                           ? case_test_value
                                           : translate_expression(ctx, reinterpret_cast<Expr*>(leftNode), std::nullopt);
-        const mlir::Value rightValue = (rightNode && rightNode->type == T_CaseTestExpr)
+        mlir::Value rightValue = (rightNode && nodeTag(rightNode) == T_CaseTestExpr)
                                            ? case_test_value
                                            : translate_expression(ctx, reinterpret_cast<Expr*>(rightNode), std::nullopt);
 
         if (!leftValue || !rightValue) {
             PGX_ERROR("Failed to translate operands in CASE OpExpr");
-            throw std::runtime_error("Check logs");
+            throw std::runtime_error("Failed to translate operands in CASE OpExpr");
         }
+
+        std::tie(leftValue, rightValue) = normalize_bpchar_operands(ctx, opExpr, leftValue, rightValue);
 
         return translate_comparison_op(ctx, opExpr->opno, leftValue, rightValue);
     }
@@ -848,19 +850,37 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             scalar_array_op->useOr);
 
     mlir::Value result = nullptr;
-    for (const auto& elemValue : arrayElements) {
+    for (auto elemValue : arrayElements) {
+        auto normalizedLeft = leftValue;
+        auto normalizedElem = elemValue;
+
+        // Check if we're dealing with string types that might need normalization
+        auto get_base_type = [](mlir::Type t) -> mlir::Type {
+            if (auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
+                return nullable.getType();
+            }
+            return t;
+        };
+
+        const bool left_is_string = mlir::isa<mlir::db::StringType>(get_base_type(normalizedLeft.getType()));
+        const bool elem_is_string = mlir::isa<mlir::db::StringType>(get_base_type(normalizedElem.getType()));
+
+        if (left_is_string && elem_is_string) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "String comparison in array operation - BPCHAR normalization may apply");
+        }
+
         mlir::Value cmp = nullptr;
 
         if (op == "=") {
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
-                                                      leftValue, elemValue);
+                                                      normalizedLeft, normalizedElem);
         } else if (op == "<>" || op == "!=") {
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::neq,
-                                                      leftValue, elemValue);
+                                                      normalizedLeft, normalizedElem);
         } else {
             PGX_WARNING("Unsupported operator '%s' in ScalarArrayOpExpr, defaulting to equality", op.c_str());
             cmp = ctx.builder.create<mlir::db::CmpOp>(ctx.builder.getUnknownLoc(), mlir::db::DBCmpPredicate::eq,
-                                                      leftValue, elemValue);
+                                                      normalizedLeft, normalizedElem);
         }
 
         if (!cmp.getType().isInteger(1)) {

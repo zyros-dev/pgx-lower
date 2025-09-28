@@ -263,7 +263,7 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
             if (!tle || tle->resjunk)
                 continue;
 
-            if (tle->expr && tle->expr->type == T_Var) {
+            if (tle->expr && IsA(tle->expr, Var)) {
                 const auto* var = reinterpret_cast<Var*>(tle->expr);
                 if (var->varattno > 0 && var->varattno <= childResult.columns.size()) {
                     result.columns.push_back(childResult.columns[var->varattno - 1]);
@@ -730,7 +730,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
         // Build the projection based on target list
         size_t computedIdx = 0;
         for (auto* tle : targetEntries) {
-            if (tle->expr && tle->expr->type == T_Var) {
+            if (tle->expr && IsA(tle->expr, Var)) {
                 // This is a simple column reference
                 const auto* var = reinterpret_cast<const Var*>(tle->expr);
 
@@ -827,7 +827,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
         if (!tle || tle->resjunk)
             continue;
 
-        if (tle->expr && tle->expr->type == T_Var) {
+        if (tle->expr && IsA(tle->expr, Var)) {
             const auto* var = reinterpret_cast<Var*>(tle->expr);
             size_t columnIndex = SIZE_MAX;
 
@@ -1001,7 +1001,7 @@ auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit*
 
     if (Node* limitCountNode = limit->limitCount) {
         Node* node = limitCountNode;
-        if (node->type == T_Const) {
+        if (IsA(node, Const)) {
             const Const* constNode = reinterpret_cast<Const*>(node);
             if (!constNode->constisnull) {
                 limitCount = static_cast<int64_t>(constNode->constvalue);
@@ -1013,7 +1013,7 @@ auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit*
 
     if (limitOffsetNode) {
         Node* node = limitOffsetNode;
-        if (node->type == T_Const) {
+        if (IsA(node, Const)) {
             const Const* constNode = reinterpret_cast<Const*>(node);
             if (!constNode->constisnull) {
                 limitOffset = static_cast<int64_t>(constNode->constvalue);
