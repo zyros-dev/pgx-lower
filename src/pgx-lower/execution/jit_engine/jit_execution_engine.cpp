@@ -598,7 +598,15 @@ bool PostgreSQLJITExecutionEngine::Impl::invokeCompiledFunction(void* funcPtr, v
     PG_CATCH();
     {
         MemoryContextSwitchTo(savedContext);
-        PGX_ERROR("PostgreSQL exception during JIT execution");
+
+        auto* edata = CopyErrorData();
+        PGX_ERROR("PostgreSQL exception during JIT execution: %s (SQLSTATE: %s, detail: %s, hint: %s)",
+                  edata->message ? edata->message : "<no message>",
+                  edata->sqlerrcode ? unpack_sql_state(edata->sqlerrcode) : "<no code>",
+                  edata->detail ? edata->detail : "<no detail>",
+                  edata->hint ? edata->hint : "<no hint>");
+        FreeErrorData(edata);
+
         PG_RE_THROW();
     }
     PG_END_TRY();
