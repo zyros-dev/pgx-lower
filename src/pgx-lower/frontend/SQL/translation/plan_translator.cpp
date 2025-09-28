@@ -1014,7 +1014,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                           .type_oid = aggref->aggtype,
                                           .typmod = -1,
                                           .mlir_type = resultType,
-                                          .nullable = false});
+                                          .nullable = true});
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully pushed aggregate column, result now has %zu columns", result.columns.size());
             } else if (te->expr->type == T_Var) {
                 auto* var = reinterpret_cast<Var*>(te->expr);

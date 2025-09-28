@@ -82,55 +82,8 @@ void runtime::Vector::sort(bool (*compareFn)(uint8_t*, uint8_t*)) {
    
    PGX_LOG(RUNTIME, DEBUG, "Vector::sort: calling std::sort with compareFn");
    
-   // Add memory validation before sorting
-   PGX_LOG(RUNTIME, DEBUG, "Vector::sort: validating element pointers before sort");
-   for (size_t i = 0; i < toSort.size() && i < 3; i++) {
-      uint8_t* elem = toSort[i];
-      bool valid = isMemoryValid(elem, typeSize);
-      PGX_LOG(RUNTIME, DEBUG, "Vector::sort: elem[%zu] at %p - validity check: %s", 
-              i, elem, valid ? "PASS" : "FAIL");
-      
-      if (valid) {
-         // Try to read first few bytes to check if memory is actually accessible
-         volatile uint8_t test = 0;
-         bool canRead = true;
-         try {
-            // Attempt to read the first byte
-            test = *elem;
-            PGX_LOG(RUNTIME, TRACE, "Vector::sort: elem[%zu] first byte = 0x%02x", i, test);
-            
-            // Dump the tuple contents (assuming it contains pointers)
-            if (typeSize == 48) { // Looks like our tuples are 48 bytes
-               // Cast to pointer array to see what's inside
-               void** ptrArray = reinterpret_cast<void**>(elem);
-               for (size_t j = 0; j < 6; j++) { // 48 bytes = 6 pointers on 64-bit
-                  void* innerPtr = ptrArray[j];
-                  PGX_LOG(RUNTIME, DEBUG, "Vector::sort: elem[%zu] ptr[%zu] = %p", i, j, innerPtr);
-                  
-                  // Check if inner pointer looks valid
-                  if (innerPtr && isMemoryValid(innerPtr, 8)) {
-                     // Try to peek at what it points to
-                     volatile uint8_t innerByte = *reinterpret_cast<uint8_t*>(innerPtr);
-                     PGX_LOG(RUNTIME, TRACE, "Vector::sort: elem[%zu] ptr[%zu] points to byte 0x%02x", 
-                             i, j, innerByte);
-                  }
-               }
-            }
-            
-            // Try reading the full element size
-            for (size_t j = 0; j < typeSize && j < 8; j++) {
-               volatile uint8_t byte = elem[j];
-               (void)byte; // Suppress unused warning
-            }
-            PGX_LOG(RUNTIME, TRACE, "Vector::sort: elem[%zu] readable for %zu bytes", i, typeSize);
-         } catch (...) {
-            canRead = false;
-            PGX_LOG(RUNTIME, DEBUG, "Vector::sort: elem[%zu] at %p is NOT readable!", i, elem);
-         }
-      }
-   }
-   
    size_t comparisons = 0;
+  PGX_LOG(RUNTIME, TRACE, "Sorting...");
    std::sort(toSort.begin(), toSort.end(), [&](uint8_t* left, uint8_t* right) {
       comparisons++;
       PGX_LOG(RUNTIME, TRACE, "Vector::sort: comparison #%zu: left=%p, right=%p", comparisons, left, right);
@@ -145,7 +98,8 @@ void runtime::Vector::sort(bool (*compareFn)(uint8_t*, uint8_t*)) {
             PGX_LOG(RUNTIME, DEBUG, "Vector::sort: WARNING - pointers may be invalid!");
          }
       }
-      
+
+      PGX_LOG(RUNTIME, TRACE, "Calling compare function now!");
       bool result = compareFn(left, right);
       PGX_LOG(RUNTIME, TRACE, "Vector::sort: compare(%p, %p) = %s", left, right, result ? "true" : "false");
       return result;
