@@ -169,12 +169,6 @@ VALUES (1, 1, 1, 1, 17.00, 21168.23, 0.04, 0.02, 'N', 'O', '1996-03-13', '1996-0
        (5, 5, 5, 2, 10.00, 18050.00, 0.07, 0.02, 'A', 'F', '1994-10-16', '1994-09-25', '1994-10-20', 'DELIVER IN PERSON', 'SHIP', 'Lineitem comment 8');
 
 
-SET client_min_messages TO DEBUG1;
-SET pgx_lower.log_enable = true;
-SET pgx_lower.log_debug = true;
-SET pgx_lower.log_ir = true;
-SET pgx_lower.enabled_categories = 'AST_TRANSLATE';
-
 select
         100.00 * sum(case
                 when p_type like 'PROMO%'
