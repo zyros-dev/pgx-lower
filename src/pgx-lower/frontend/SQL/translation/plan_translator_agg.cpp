@@ -67,7 +67,7 @@ static void find_all_aggrefs(Expr* expr, std::vector<Aggref*>& result) {
     if (IsA(expr, OpExpr)) {
         auto* op_expr = reinterpret_cast<OpExpr*>(expr);
         ListCell* lc;
-        foreach(lc, op_expr->args) {
+        foreach (lc, op_expr->args) {
             auto* arg = reinterpret_cast<Expr*>(lfirst(lc));
             find_all_aggrefs(arg, result);
         }
@@ -76,7 +76,7 @@ static void find_all_aggrefs(Expr* expr, std::vector<Aggref*>& result) {
     if (IsA(expr, FuncExpr)) {
         auto* func_expr = reinterpret_cast<FuncExpr*>(expr);
         ListCell* lc;
-        foreach(lc, func_expr->args) {
+        foreach (lc, func_expr->args) {
             auto* arg = reinterpret_cast<Expr*>(lfirst(lc));
             find_all_aggrefs(arg, result);
         }
@@ -85,7 +85,7 @@ static void find_all_aggrefs(Expr* expr, std::vector<Aggref*>& result) {
     if (IsA(expr, BoolExpr)) {
         auto* bool_expr = reinterpret_cast<BoolExpr*>(expr);
         ListCell* lc;
-        foreach(lc, bool_expr->args) {
+        foreach (lc, bool_expr->args) {
             auto* arg = reinterpret_cast<Expr*>(lfirst(lc));
             find_all_aggrefs(arg, result);
         }
@@ -140,8 +140,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         if (existingColRef) {
                             // Compare table and column names
                             auto existingName = existingColRef.getName();
-                            if (existingName.getRootReference().str() == childCol.table_name &&
-                                existingName.getLeafReference().str() == childCol.column_name) {
+                            if (existingName.getRootReference().str() == childCol.table_name
+                                && existingName.getLeafReference().str() == childCol.column_name)
+                            {
                                 alreadyInGroup = true;
                                 break;
                             }
@@ -149,7 +150,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     }
 
                     if (!alreadyInGroup) {
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Adding GROUP BY column from targetlist: %s.%s (ressortgroupref=%d)",
+                        PGX_LOG(AST_TRANSLATE, DEBUG,
+                                "Agg: Adding GROUP BY column from targetlist: %s.%s (ressortgroupref=%d)",
                                 childCol.table_name.c_str(), childCol.column_name.c_str(), tle->ressortgroupref);
                         auto colRef = columnManager.createRef(childCol.table_name, childCol.column_name);
                         colRef.getColumn().type = childCol.mlir_type;
@@ -201,7 +203,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                 if (funcName == "count" && (!aggref->args || list_length(aggref->args) == 0)) {
                     // COUNT(*)
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Creating aggregate column definition: scope='%s', column='%s' for aggno=%d",
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Creating aggregate column definition: scope='%s', column='%s' for aggno=%d",
                             aggrScopeName.c_str(), aggColumnName.c_str(), aggref->aggno);
                     auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
                     attrDef.getColumn().type = ctx.builder.getI64Type();
@@ -226,7 +229,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         continue;
 
                     // For aggregate expressions, we need a special context
-                    auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module, mlir::Value{}, ctx.current_tuple};
+                    auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module, mlir::Value{},
+                                              ctx.current_tuple};
                     childCtx.init_plan_results = ctx.init_plan_results;
 
                     auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
@@ -255,7 +259,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                                             : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
 
                     // Create the column definition now that we know we'll use it
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Creating aggregate column definition: scope='%s', column='%s' for aggno=%d",
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Creating aggregate column definition: scope='%s', column='%s' for aggno=%d",
                             aggrScopeName.c_str(), aggColumnName.c_str(), aggref->aggno);
                     auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
                     attrDef.getColumn().type = resultType;
@@ -295,136 +300,139 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 }
             } else if (IsA(te->expr, Var)) {
                 PGX_LOG(AST_TRANSLATE, DEBUG,
-                        "First loop: Skipping T_Var at resno=%d (GROUP BY column, handled in second loop)",
-                        te->resno);
+                        "First loop: Skipping T_Var at resno=%d (GROUP BY column, handled in second loop)", te->resno);
             } else {
                 std::vector<Aggref*> nested_aggrefs;
                 find_all_aggrefs(te->expr, nested_aggrefs);
 
                 if (!nested_aggrefs.empty()) {
-                    PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "Found %zu nested Aggrefs in complex expression at resno=%d",
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Found %zu nested Aggrefs in complex expression at resno=%d",
                             nested_aggrefs.size(), te->resno);
 
                     Aggref* first_aggref = nested_aggrefs[0];
                     for (Aggref* nested_aggref : nested_aggrefs) {
-                        PGX_LOG(AST_TRANSLATE, DEBUG,
-                                "Processing nested Aggref aggno=%d in expression at resno=%d",
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Processing nested Aggref aggno=%d in expression at resno=%d",
                                 nested_aggref->aggno, te->resno);
 
-                    char* rawFuncName = get_func_name(nested_aggref->aggfnoid);
-                    if (!rawFuncName) {
-                        PGX_WARNING("Could not get function name for nested Aggref aggno=%d", nested_aggref->aggno);
-                        continue;
-                    }
-                    std::string funcName(rawFuncName);
-                    pfree(rawFuncName);
-
-                    std::string aggColumnName = "nested_agg_" + std::to_string(nested_aggref->aggno);
-                    auto relation = block->getArgument(0);
-                    mlir::Value aggResult;
-
-                    if (funcName == "count" && (!nested_aggref->args || list_length(nested_aggref->args) == 0)) {
-                        auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
-                        attrDef.getColumn().type = ctx.builder.getI64Type();
-
-                        aggregateMappings[nested_aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "First loop (nested): Added aggregate mapping aggno=%d -> (%s, %s)",
-                                nested_aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
-
-                        aggResult = aggr_builder.create<mlir::relalg::CountRowsOp>(
-                            ctx.builder.getUnknownLoc(), ctx.builder.getI64Type(), relation);
-
-                        if (attrDef && aggResult) {
-                            createdCols.push_back(attrDef);
-                            createdValues.push_back(aggResult);
-                        }
-                    } else {
-                        if (!nested_aggref->args || list_length(nested_aggref->args) == 0) {
-                            PGX_WARNING("Nested Aggref aggno=%d has no arguments", nested_aggref->aggno);
+                        char* rawFuncName = get_func_name(nested_aggref->aggfnoid);
+                        if (!rawFuncName) {
+                            PGX_WARNING("Could not get function name for nested Aggref aggno=%d", nested_aggref->aggno);
                             continue;
                         }
+                        std::string funcName(rawFuncName);
+                        pfree(rawFuncName);
 
-                        auto argTE = static_cast<TargetEntry*>(linitial(nested_aggref->args));
-                        if (!argTE || !argTE->expr) {
-                            PGX_WARNING("Nested Aggref aggno=%d has invalid argument", nested_aggref->aggno);
-                            continue;
-                        }
+                        std::string aggColumnName = "nested_agg_" + std::to_string(nested_aggref->aggno);
+                        auto relation = block->getArgument(0);
+                        mlir::Value aggResult;
 
-                        auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module,
-                                                  mlir::Value{}, ctx.current_tuple};
-                        childCtx.init_plan_results = ctx.init_plan_results;
+                        if (funcName == "count" && (!nested_aggref->args || list_length(nested_aggref->args) == 0)) {
+                            auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
+                            attrDef.getColumn().type = ctx.builder.getI64Type();
 
-                        auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
-                            childCtx, argTE->expr, childOutput, "nested_agg_expr_" + std::to_string(nested_aggref->aggno),
-                            childResult.columns);
+                            aggregateMappings[nested_aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
+                            PGX_LOG(AST_TRANSLATE, DEBUG,
+                                    "First loop (nested): Added aggregate mapping aggno=%d -> (%s, %s)",
+                                    nested_aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
 
-                        if (stream != childOutput) {
-                            childOutput = cast<mlir::OpResult>(stream);
+                            aggResult = aggr_builder.create<mlir::relalg::CountRowsOp>(
+                                ctx.builder.getUnknownLoc(), ctx.builder.getI64Type(), relation);
 
-                            const auto exprOid = exprType(reinterpret_cast<Node*>(argTE->expr));
-                            auto type_mapper = PostgreSQLTypeMapper(*ctx.builder.getContext());
-                            auto mlirExprType = type_mapper.map_postgre_sqltype(exprOid, -1, true);
-
-                            childResult.columns.push_back({.table_name = table_name,
-                                                          .column_name = column_name,
-                                                          .type_oid = exprOid,
-                                                          .typmod = -1,
-                                                          .mlir_type = mlirExprType,
-                                                          .nullable = true});
-                        }
-
-                        auto columnRef = column_ref;
-
-                        PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
-                        auto resultType = (funcName == "count") ? ctx.builder.getI64Type()
-                                                                : type_mapper.map_postgre_sqltype(nested_aggref->aggtype, -1, true);
-
-                        auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
-                        attrDef.getColumn().type = resultType;
-
-                        aggregateMappings[nested_aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "First loop (nested): Added aggregate mapping aggno=%d -> (%s, %s)",
-                                nested_aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
-
-                        auto aggrFuncEnum = (funcName == "sum")   ? mlir::relalg::AggrFunc::sum
-                                            : (funcName == "avg") ? mlir::relalg::AggrFunc::avg
-                                            : (funcName == "min") ? mlir::relalg::AggrFunc::min
-                                            : (funcName == "max") ? mlir::relalg::AggrFunc::max
-                                                                  : mlir::relalg::AggrFunc::count;
-
-                        if (nested_aggref->aggdistinct) {
-                            PGX_LOG(AST_TRANSLATE, DEBUG, "Processing nested %s(DISTINCT) aggregate", funcName.c_str());
-
-                            auto distinctStream = aggr_builder.create<mlir::relalg::ProjectionOp>(
-                                ctx.builder.getUnknownLoc(), mlir::relalg::TupleStreamType::get(ctx.builder.getContext()),
-                                mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(),
-                                                                   mlir::relalg::SetSemantic::distinct),
-                                relation, ctx.builder.getArrayAttr({columnRef}));
-
-                            aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
-                                ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum, distinctStream.getResult(), columnRef);
+                            if (attrDef && aggResult) {
+                                createdCols.push_back(attrDef);
+                                createdValues.push_back(aggResult);
+                            }
                         } else {
-                            aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
-                                ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum, relation, columnRef);
-                        }
+                            if (!nested_aggref->args || list_length(nested_aggref->args) == 0) {
+                                PGX_WARNING("Nested Aggref aggno=%d has no arguments", nested_aggref->aggno);
+                                continue;
+                            }
 
-                        if (attrDef && aggResult) {
-                            createdCols.push_back(attrDef);
-                            createdValues.push_back(aggResult);
+                            auto argTE = static_cast<TargetEntry*>(linitial(nested_aggref->args));
+                            if (!argTE || !argTE->expr) {
+                                PGX_WARNING("Nested Aggref aggno=%d has invalid argument", nested_aggref->aggno);
+                                continue;
+                            }
+
+                            auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module, mlir::Value{},
+                                                      ctx.current_tuple};
+                            childCtx.init_plan_results = ctx.init_plan_results;
+
+                            auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
+                                childCtx, argTE->expr, childOutput,
+                                "nested_agg_expr_" + std::to_string(nested_aggref->aggno), childResult.columns);
+
+                            if (stream != childOutput) {
+                                childOutput = cast<mlir::OpResult>(stream);
+
+                                const auto exprOid = exprType(reinterpret_cast<Node*>(argTE->expr));
+                                auto type_mapper = PostgreSQLTypeMapper(*ctx.builder.getContext());
+                                auto mlirExprType = type_mapper.map_postgre_sqltype(exprOid, -1, true);
+
+                                childResult.columns.push_back({.table_name = table_name,
+                                                               .column_name = column_name,
+                                                               .type_oid = exprOid,
+                                                               .typmod = -1,
+                                                               .mlir_type = mlirExprType,
+                                                               .nullable = true});
+                            }
+
+                            auto columnRef = column_ref;
+
+                            PostgreSQLTypeMapper type_mapper(*ctx.builder.getContext());
+                            auto resultType = (funcName == "count")
+                                                  ? ctx.builder.getI64Type()
+                                                  : type_mapper.map_postgre_sqltype(nested_aggref->aggtype, -1, true);
+
+                            auto attrDef = columnManager.createDef(aggrScopeName, aggColumnName.c_str());
+                            attrDef.getColumn().type = resultType;
+
+                            aggregateMappings[nested_aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
+                            PGX_LOG(AST_TRANSLATE, DEBUG,
+                                    "First loop (nested): Added aggregate mapping aggno=%d -> (%s, %s)",
+                                    nested_aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
+
+                            auto aggrFuncEnum = (funcName == "sum")   ? mlir::relalg::AggrFunc::sum
+                                                : (funcName == "avg") ? mlir::relalg::AggrFunc::avg
+                                                : (funcName == "min") ? mlir::relalg::AggrFunc::min
+                                                : (funcName == "max") ? mlir::relalg::AggrFunc::max
+                                                                      : mlir::relalg::AggrFunc::count;
+
+                            if (nested_aggref->aggdistinct) {
+                                PGX_LOG(AST_TRANSLATE, DEBUG, "Processing nested %s(DISTINCT) aggregate",
+                                        funcName.c_str());
+
+                                auto distinctStream = aggr_builder.create<mlir::relalg::ProjectionOp>(
+                                    ctx.builder.getUnknownLoc(),
+                                    mlir::relalg::TupleStreamType::get(ctx.builder.getContext()),
+                                    mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(),
+                                                                       mlir::relalg::SetSemantic::distinct),
+                                    relation, ctx.builder.getArrayAttr({columnRef}));
+
+                                aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
+                                    ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum, distinctStream.getResult(),
+                                    columnRef);
+                            } else {
+                                aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
+                                    ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum, relation, columnRef);
+                            }
+
+                            if (attrDef && aggResult) {
+                                createdCols.push_back(attrDef);
+                                createdValues.push_back(aggResult);
+                            }
                         }
-                    }
                     }
 
                     needs_post_processing.insert(te->resno);
                     post_process_exprs[te->resno] = te->expr;
                     post_process_aggref_map[te->resno] = first_aggref;
 
-                    PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "Marked resno=%d for post-processing (full expr with %zu aggregates)",
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Marked resno=%d for post-processing (full expr with %zu aggregates)",
                             te->resno, nested_aggrefs.size());
                 } else {
-                    PGX_WARNING("Unexpected non-aggregate, non-Var expression in aggregate targetlist at resno=%d, type=%d",
+                    PGX_WARNING("Unexpected non-aggregate, non-Var expression in aggregate targetlist at resno=%d, "
+                                "type=%d",
                                 te->resno, te->expr->type);
                 }
             }
@@ -434,7 +442,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         if (agg->plan.qual && agg->plan.qual->length > 0) {
             std::vector<Aggref*> having_aggrefs;
             ListCell* qual_lc;
-            foreach(qual_lc, agg->plan.qual) {
+            foreach (qual_lc, agg->plan.qual) {
                 auto* qual_expr = reinterpret_cast<Expr*>(lfirst(qual_lc));
                 find_all_aggrefs(qual_expr, having_aggrefs);
             }
@@ -469,11 +477,11 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     attrDef.getColumn().type = ctx.builder.getI64Type();
 
                     aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "HAVING: Added COUNT(*) mapping aggno=%d -> (%s, %s)",
-                            aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "HAVING: Added COUNT(*) mapping aggno=%d -> (%s, %s)", aggref->aggno,
+                            aggrScopeName.c_str(), aggColumnName.c_str());
 
-                    aggResult = aggr_builder.create<mlir::relalg::CountRowsOp>(
-                        ctx.builder.getUnknownLoc(), ctx.builder.getI64Type(), relation);
+                    aggResult = aggr_builder.create<mlir::relalg::CountRowsOp>(ctx.builder.getUnknownLoc(),
+                                                                               ctx.builder.getI64Type(), relation);
 
                     createdCols.push_back(attrDef);
                     createdValues.push_back(aggResult);
@@ -491,8 +499,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     }
 
                     // Translate aggregate argument expression
-                    auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module,
-                                             mlir::Value{}, ctx.current_tuple};
+                    auto childCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module, mlir::Value{},
+                                              ctx.current_tuple};
                     childCtx.init_plan_results = ctx.init_plan_results;
 
                     auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
@@ -523,8 +531,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     attrDef.getColumn().type = resultType;
 
                     aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "HAVING: Added aggregate mapping aggno=%d -> (%s, %s)",
-                            aggref->aggno, aggrScopeName.c_str(), aggColumnName.c_str());
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "HAVING: Added aggregate mapping aggno=%d -> (%s, %s)", aggref->aggno,
+                            aggrScopeName.c_str(), aggColumnName.c_str());
 
                     auto aggrFuncEnum = (funcName == "sum")   ? mlir::relalg::AggrFunc::sum
                                         : (funcName == "avg") ? mlir::relalg::AggrFunc::avg
@@ -532,8 +540,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                         : (funcName == "max") ? mlir::relalg::AggrFunc::max
                                                               : mlir::relalg::AggrFunc::count;
 
-                    aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
-                        ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum, relation, column_ref);
+                    aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(ctx.builder.getUnknownLoc(), resultType,
+                                                                              aggrFuncEnum, relation, column_ref);
 
                     createdCols.push_back(attrDef);
                     createdValues.push_back(aggResult);
@@ -561,15 +569,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             auto postMapScope = columnManager.getUniqueScope("postmap");
             std::vector<mlir::relalg::ColumnDefAttr> postMapCols;
 
-            auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(
-                ctx.builder.getUnknownLoc(), aggOp,
-                ctx.builder.getArrayAttr({}));
+            auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), aggOp,
+                                                                 ctx.builder.getArrayAttr({}));
 
             auto& mapRegion = mapOp.getPredicate();
             auto* mapBlock = new mlir::Block;
             mapRegion.push_back(mapBlock);
-            mapBlock->addArgument(mlir::relalg::TupleType::get(ctx.builder.getContext()),
-                                 ctx.builder.getUnknownLoc());
+            mapBlock->addArgument(mlir::relalg::TupleType::get(ctx.builder.getContext()), ctx.builder.getUnknownLoc());
 
             mlir::OpBuilder mapBuilder(mapBlock, mapBlock->begin());
             std::vector<mlir::Value> mapValues;
@@ -587,18 +593,19 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 Expr* full_expr = post_process_exprs[resno];
                 Aggref* nested_aggref = post_process_aggref_map[resno];
 
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Post-processing resno=%d, aggno=%d",
-                        resno, nested_aggref->aggno);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Post-processing resno=%d, aggno=%d", resno, nested_aggref->aggno);
 
                 auto& [aggr_scope, aggr_colname] = aggregateMappings.at(nested_aggref->aggno);
                 auto aggr_colref = columnManager.createRef(aggr_scope, aggr_colname);
 
-                mlir::Value aggr_value = mapBuilder.create<mlir::relalg::GetColumnOp>(
-                    ctx.builder.getUnknownLoc(), aggr_colref.getColumn().type,
-                    aggr_colref, mapBlock->getArgument(0)).getRes();
+                mlir::Value aggr_value = mapBuilder
+                                             .create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(),
+                                                                                aggr_colref.getColumn().type,
+                                                                                aggr_colref, mapBlock->getArgument(0))
+                                             .getRes();
 
-                auto postCtx = QueryCtxT{ctx.current_stmt, mapBuilder, ctx.current_module,
-                                        mapBlock->getArgument(0), ctx.outer_tuple};
+                auto postCtx = QueryCtxT{ctx.current_stmt, mapBuilder, ctx.current_module, mapBlock->getArgument(0),
+                                         ctx.outer_tuple};
                 postCtx.init_plan_results = ctx.init_plan_results;
 
                 mlir::Value post_value = aggr_value;
@@ -608,16 +615,18 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                     ListCell* arg_lc;
                     std::vector<mlir::Value> arg_values;
-                    foreach(arg_lc, op_expr->args) {
+                    foreach (arg_lc, op_expr->args) {
                         auto* arg_expr = reinterpret_cast<Expr*>(lfirst(arg_lc));
 
                         if (IsA(arg_expr, Aggref)) {
                             auto* arg_aggref = reinterpret_cast<Aggref*>(arg_expr);
                             auto& [arg_scope, arg_colname] = aggregateMappings.at(arg_aggref->aggno);
                             auto arg_colref = columnManager.createRef(arg_scope, arg_colname);
-                            mlir::Value arg_aggr_value = mapBuilder.create<mlir::relalg::GetColumnOp>(
-                                ctx.builder.getUnknownLoc(), arg_colref.getColumn().type,
-                                arg_colref, mapBlock->getArgument(0)).getRes();
+                            mlir::Value arg_aggr_value = mapBuilder
+                                                             .create<mlir::relalg::GetColumnOp>(
+                                                                 ctx.builder.getUnknownLoc(), arg_colref.getColumn().type,
+                                                                 arg_colref, mapBlock->getArgument(0))
+                                                             .getRes();
                             arg_values.push_back(arg_aggr_value);
                         } else {
                             auto arg_val = translate_expression(postCtx, arg_expr, postProcResult);
@@ -632,43 +641,48 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                         if (op_name && strcmp(op_name, "*") == 0) {
                             if (mlir::failed(mlir::db::MulOp::inferReturnTypes(ctx.builder.getContext(), loc,
-                                                                                 {arg_values[0], arg_values[1]},
-                                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                                                                               {arg_values[0], arg_values[1]}, nullptr,
+                                                                               nullptr, {}, inferredTypes)))
+                            {
                                 PGX_ERROR("Failed to infer MulOp return type in post-processing");
                                 throw std::runtime_error("Check logs");
                             }
-                            post_value = mapBuilder.create<mlir::db::MulOp>(loc, inferredTypes[0],
-                                                                             arg_values[0], arg_values[1]);
+                            post_value = mapBuilder.create<mlir::db::MulOp>(loc, inferredTypes[0], arg_values[0],
+                                                                            arg_values[1]);
                         } else if (op_name && strcmp(op_name, "/") == 0) {
                             if (mlir::failed(mlir::db::DivOp::inferReturnTypes(ctx.builder.getContext(), loc,
-                                                                                 {arg_values[0], arg_values[1]},
-                                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                                                                               {arg_values[0], arg_values[1]}, nullptr,
+                                                                               nullptr, {}, inferredTypes)))
+                            {
                                 PGX_ERROR("Failed to infer DivOp return type in post-processing");
                                 throw std::runtime_error("Check logs");
                             }
-                            post_value = mapBuilder.create<mlir::db::DivOp>(loc, inferredTypes[0],
-                                                                             arg_values[0], arg_values[1]);
+                            post_value = mapBuilder.create<mlir::db::DivOp>(loc, inferredTypes[0], arg_values[0],
+                                                                            arg_values[1]);
                         } else if (op_name && strcmp(op_name, "+") == 0) {
                             if (mlir::failed(mlir::db::AddOp::inferReturnTypes(ctx.builder.getContext(), loc,
-                                                                                 {arg_values[0], arg_values[1]},
-                                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                                                                               {arg_values[0], arg_values[1]}, nullptr,
+                                                                               nullptr, {}, inferredTypes)))
+                            {
                                 PGX_ERROR("Failed to infer AddOp return type in post-processing");
                                 throw std::runtime_error("Check logs");
                             }
-                            post_value = mapBuilder.create<mlir::db::AddOp>(loc, inferredTypes[0],
-                                                                             arg_values[0], arg_values[1]);
+                            post_value = mapBuilder.create<mlir::db::AddOp>(loc, inferredTypes[0], arg_values[0],
+                                                                            arg_values[1]);
                         } else if (op_name && strcmp(op_name, "-") == 0) {
                             if (mlir::failed(mlir::db::SubOp::inferReturnTypes(ctx.builder.getContext(), loc,
-                                                                                 {arg_values[0], arg_values[1]},
-                                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                                                                               {arg_values[0], arg_values[1]}, nullptr,
+                                                                               nullptr, {}, inferredTypes)))
+                            {
                                 PGX_ERROR("Failed to infer SubOp return type in post-processing");
                                 throw std::runtime_error("Check logs");
                             }
-                            post_value = mapBuilder.create<mlir::db::SubOp>(loc, inferredTypes[0],
-                                                                             arg_values[0], arg_values[1]);
+                            post_value = mapBuilder.create<mlir::db::SubOp>(loc, inferredTypes[0], arg_values[0],
+                                                                            arg_values[1]);
                         }
 
-                        if (op_name) pfree(op_name);
+                        if (op_name)
+                            pfree(op_name);
                     }
                 }
 
@@ -679,8 +693,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 postMapCols.push_back(colDef);
                 mapValues.push_back(post_value);
 
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Created post-processing column: %s.%s",
-                        postMapScope.c_str(), colName.c_str());
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Created post-processing column: %s.%s", postMapScope.c_str(),
+                        colName.c_str());
             }
 
             mapBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mapValues);
@@ -694,8 +708,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             finalOutput = mapOp;
             finalScope = postMapScope;
 
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Post-processing MapOp created with %zu columns",
-                    postMapCols.size());
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Post-processing MapOp created with %zu columns", postMapCols.size());
         }
 
         // Build output schema
@@ -720,9 +733,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 std::string resultColumnName;
                 if (aggregateMappings.find(aggref->aggno) != aggregateMappings.end()) {
                     const auto& mapping = aggregateMappings[aggref->aggno];
-                    resultColumnName = mapping.second;  // Use the same column name from the mapping
+                    resultColumnName = mapping.second; // Use the same column name from the mapping
                     result.varno_resolution[std::make_pair(-2, aggref->aggno)] = mapping;
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Added aggregate mapping to TranslationResult: varno=-2, aggno=%d -> (%s, %s)",
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Added aggregate mapping to TranslationResult: varno=-2, aggno=%d -> (%s, %s)",
                             aggref->aggno, mapping.first.c_str(), mapping.second.c_str());
                 } else {
                     PGX_WARNING("Aggregate aggno=%d not found in aggregateMappings", aggref->aggno);
@@ -738,14 +752,14 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                           .typmod = -1,
                                           .mlir_type = resultType,
                                           .nullable = true});
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully pushed aggregate column, result now has %zu columns", result.columns.size());
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully pushed aggregate column, result now has %zu columns",
+                        result.columns.size());
             } else if (IsA(te->expr, Var)) {
                 auto* var = reinterpret_cast<Var*>(te->expr);
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
                     const auto& childCol = childResult.columns[var->varattno - 1];
                     result.columns.push_back(childCol);
-                    PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "Agg: Adding GROUP BY column '%s' to output (varattno=%d, resname=%s)",
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Adding GROUP BY column '%s' to output (varattno=%d, resname=%s)",
                             childCol.column_name.c_str(), var->varattno, te->resname ? te->resname : "<null>");
                 }
             } else {
@@ -759,8 +773,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 if (needs_post_processing.count(te->resno) > 0) {
                     scopeName = finalScope;
                     columnName = "postproc_" + std::to_string(te->resno);
-                    PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "Agg: Adding post-processed column '%s' in scope '%s' (resno=%d)",
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Adding post-processed column '%s' in scope '%s' (resno=%d)",
                             columnName.c_str(), scopeName.c_str(), te->resno);
                 } else {
                     scopeName = aggrScopeName;
@@ -790,20 +803,19 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             PGX_LOG(AST_TRANSLATE, DEBUG, "Processing HAVING clause with %d varno_resolution entries",
                     static_cast<int>(result.varno_resolution.size()));
             for (const auto& [key, value] : result.varno_resolution) {
-                PGX_LOG(AST_TRANSLATE, DEBUG, "  HAVING: varno=%d, attno=%d -> (%s, %s)",
-                        key.first, key.second, value.first.c_str(), value.second.c_str());
+                PGX_LOG(AST_TRANSLATE, DEBUG, "  HAVING: varno=%d, attno=%d -> (%s, %s)", key.first, key.second,
+                        value.first.c_str(), value.second.c_str());
             }
 
             result = apply_selection_from_qual(ctx, result, agg->plan.qual);
         }
 
-        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_agg: Returning result with %zu columns, op=%p",
-                result.columns.size(), static_cast<void*>(result.op));
+        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_agg: Returning result with %zu columns, op=%p", result.columns.size(),
+                static_cast<void*>(result.op));
         return result;
     }
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_agg: Returning childResult with %zu columns",
-            childResult.columns.size());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_agg: Returning childResult with %zu columns", childResult.columns.size());
     return childResult;
 }
 

@@ -56,8 +56,6 @@ class GetColumnOp;
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
-
-
 auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, Expr* expr,
                                                          OptRefT<const TranslationResult> current_result) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
@@ -110,10 +108,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
         return translate_expression(ctx, relabel->arg, current_result);
     }
-    case T_SubPlan:
-        return translate_subplan(ctx, reinterpret_cast<SubPlan*>(expr), current_result);
-    case T_Param:
-        return translate_param(ctx, reinterpret_cast<Param*>(expr), current_result);
+    case T_SubPlan: return translate_subplan(ctx, reinterpret_cast<SubPlan*>(expr), current_result);
+    case T_Param: return translate_param(ctx, reinterpret_cast<Param*>(expr), current_result);
     default: {
         PGX_ERROR("Unsupported expression type: %d", expr->type);
         throw std::runtime_error("Unsupported expression type - read the logs");
@@ -148,13 +144,15 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
             nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
             PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for varno=%d, varattno=%d -> (%s, %s)",
                     actualVarno, var->varattno, tableName.c_str(), colName.c_str());
-            PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'",
+            PGX_LOG(AST_TRANSLATE, DEBUG,
+                    "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'",
                     tableName.c_str(), colName.c_str());
         } else if (var->varno == OUTER_VAR) {
-            if (!current_result || var->varattno <= 0 ||
-                var->varattno > static_cast<int>(current_result->get().columns.size())) {
-                PGX_ERROR("OUTER_VAR varattno=%d out of range (child has %zu columns)",
-                          var->varattno, current_result ? current_result->get().columns.size() : 0);
+            if (!current_result || var->varattno <= 0
+                || var->varattno > static_cast<int>(current_result->get().columns.size()))
+            {
+                PGX_ERROR("OUTER_VAR varattno=%d out of range (child has %zu columns)", var->varattno,
+                          current_result ? current_result->get().columns.size() : 0);
                 throw std::runtime_error("OUTER_VAR reference without valid child result");
             }
             const auto& col = current_result->get().columns[var->varattno - 1];
@@ -169,7 +167,8 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
             tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
             colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
             nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
-            PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='%s', colName='%s'",
+            PGX_LOG(AST_TRANSLATE, DEBUG,
+                    "[SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='%s', colName='%s'",
                     tableName.c_str(), colName.c_str());
         }
 
@@ -208,11 +207,8 @@ auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const*
     return postgresql_ast::translate_const(const_node, ctx.builder, context_);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_param(
-    const QueryCtxT& ctx,
-    const Param* param,
-    OptRefT<const TranslationResult> current_result
-) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const Param* param,
+                                                    OptRefT<const TranslationResult> current_result) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
     if (!param) {
@@ -254,12 +250,8 @@ auto PostgreSQLASTTranslator::Impl::translate_param(
 
         // Use outer_tuple for correlation parameters (free variables)
         mlir::Value tuple_to_use = ctx.outer_tuple ? ctx.outer_tuple : ctx.current_tuple;
-        return ctx.builder.create<mlir::relalg::GetColumnOp>(
-            ctx.builder.getUnknownLoc(),
-            column_type,
-            column_ref,
-            tuple_to_use
-        );
+        return ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), column_type, column_ref,
+                                                             tuple_to_use);
     }
 
     const auto& subquery_mapping = ctx.subquery_param_mapping;
@@ -274,11 +266,7 @@ auto PostgreSQLASTTranslator::Impl::translate_param(
         auto column_ref = columnManager.createRef(join_scope, join_column_name);
 
         mlir::Value column_value = ctx.builder.create<mlir::relalg::GetColumnOp>(
-            ctx.builder.getUnknownLoc(),
-            output_type,
-            column_ref,
-            ctx.current_tuple
-        );
+            ctx.builder.getUnknownLoc(), output_type, column_ref, ctx.current_tuple);
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetColumnOp for Param paramid=%d from subquery tuple column %s.%s",
                 param->paramid, join_scope.c_str(), join_column_name.c_str());
@@ -317,14 +305,10 @@ auto PostgreSQLASTTranslator::Impl::translate_param(
     auto column_ref = columnManager.createRef(first_column.table_name, first_column.column_name);
 
     mlir::Value scalar_value = ctx.builder.create<mlir::relalg::GetScalarOp>(
-        ctx.builder.getUnknownLoc(),
-        first_column.mlir_type,
-        column_ref,
-        stream
-    );
+        ctx.builder.getUnknownLoc(), first_column.mlir_type, column_ref, stream);
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetScalarOp for Param paramid=%d from %s.%s",
-            param->paramid, first_column.table_name.c_str(), first_column.column_name.c_str());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetScalarOp for Param paramid=%d from %s.%s", param->paramid,
+            first_column.table_name.c_str(), first_column.column_name.c_str());
 
     return scalar_value;
 }
@@ -353,8 +337,8 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     if (current_result) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Available varno_resolution mappings in translate_aggref:");
         for (const auto& [key, value] : current_result->get().varno_resolution) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "  varno=%d, attno=%d -> (%s, %s)",
-                    key.first, key.second, value.first.c_str(), value.second.c_str());
+            PGX_LOG(AST_TRANSLATE, DEBUG, "  varno=%d, attno=%d -> (%s, %s)", key.first, key.second,
+                    value.first.c_str(), value.second.c_str());
         }
     } else {
         PGX_LOG(AST_TRANSLATE, DEBUG, "No TranslationResult available in translate_aggref");
@@ -363,7 +347,8 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     std::string scopeName, columnName;
 
     bool found = false;
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Current result is [%s]", current_result ? current_result->get().toString().data() : "Nothing!");
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Current result is [%s]",
+            current_result ? current_result->get().toString().data() : "Nothing!");
     if (current_result) {
         auto resolved = current_result->get().resolve_var(-2, aggref->aggno);
         if (resolved) {
@@ -398,8 +383,8 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     // Get the actual type from the column that was created during aggregation
     auto resultType = colRef.getColumn().type;
     if (!resultType) {
-        std::string errorMsg = "Aggregate column type not found in column manager for scope='" +
-                              scopeName + "', column='" + columnName + "'";
+        std::string errorMsg = "Aggregate column type not found in column manager for scope='" + scopeName
+                               + "', column='" + columnName + "'";
         PGX_ERROR("%s", errorMsg.c_str());
         throw std::runtime_error(errorMsg);
     }
@@ -408,6 +393,5 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
                                                                   ctx.current_tuple);
     return getColOp.getRes();
 }
-
 
 } // namespace postgresql_ast

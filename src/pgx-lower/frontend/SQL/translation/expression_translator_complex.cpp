@@ -447,11 +447,11 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
         const auto rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
 
         mlir::Value leftValue = (leftNode && nodeTag(leftNode) == T_CaseTestExpr)
-                                          ? case_test_value
-                                          : translate_expression(ctx, reinterpret_cast<Expr*>(leftNode), std::nullopt);
+                                    ? case_test_value
+                                    : translate_expression(ctx, reinterpret_cast<Expr*>(leftNode), std::nullopt);
         mlir::Value rightValue = (rightNode && nodeTag(rightNode) == T_CaseTestExpr)
-                                           ? case_test_value
-                                           : translate_expression(ctx, reinterpret_cast<Expr*>(rightNode), std::nullopt);
+                                     ? case_test_value
+                                     : translate_expression(ctx, reinterpret_cast<Expr*>(rightNode), std::nullopt);
 
         if (!leftValue || !rightValue) {
             PGX_ERROR("Failed to translate operands in CASE OpExpr");

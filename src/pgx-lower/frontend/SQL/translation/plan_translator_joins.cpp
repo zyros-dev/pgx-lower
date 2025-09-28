@@ -398,12 +398,11 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 1] LEFT input: %s", left_translation.toString().c_str());
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 1] RIGHT input: %s", right_translation.toString().c_str());
 
-    auto translateExpressionFn = [this, isRightJoin](
-                                     const QueryCtxT& ctx_p, Expr* expr, const TranslationResult* left_child,
-                                     const TranslationResult* right_child) -> mlir::Value {
-        return isRightJoin
-                   ? translate_expression_with_join_context(ctx_p, expr, right_child, left_child)
-                   : translate_expression_with_join_context(ctx_p, expr, left_child, right_child);
+    auto translateExpressionFn = [this, isRightJoin](const QueryCtxT& ctx_p, Expr* expr,
+                                                     const TranslationResult* left_child,
+                                                     const TranslationResult* right_child) -> mlir::Value {
+        return isRightJoin ? translate_expression_with_join_context(ctx_p, expr, right_child, left_child)
+                           : translate_expression_with_join_context(ctx_p, expr, left_child, right_child);
     };
 
     auto translateJoinPredicateToRegion = [translateExpressionFn](
@@ -429,7 +428,8 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
 
-        auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, tupleArg, mlir::Value());
+        auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, tupleArg,
+                                      mlir::Value());
         predicateCtx.nest_params = queryCtx.nest_params;
         predicateCtx.init_plan_results = queryCtx.init_plan_results;
         predicateCtx.subquery_param_mapping = queryCtx.subquery_param_mapping;
@@ -576,13 +576,13 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         };
 
     const auto buildCorrelatedPredicateRegion = [translateExpressionFn](
-                                              mlir::Block* predicateBlock, const mlir::Value innerTupleArg,
-                                              List* join_clauses_, const TranslationResult& leftTrans,
-                                              const TranslationResult& rightTrans, const QueryCtxT& queryCtx) {
+                                                    mlir::Block* predicateBlock, const mlir::Value innerTupleArg,
+                                                    List* join_clauses_, const TranslationResult& leftTrans,
+                                                    const TranslationResult& rightTrans, const QueryCtxT& queryCtx) {
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
-        auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module,
-                                            innerTupleArg, mlir::Value());
+        auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, innerTupleArg,
+                                      mlir::Value());
         predicateCtx.init_plan_results = queryCtx.init_plan_results;
         predicateCtx.nest_params = queryCtx.nest_params;
         predicateCtx.subquery_param_mapping = queryCtx.subquery_param_mapping;
@@ -605,8 +605,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
             const auto clause = static_cast<Expr*>(lfirst(lc));
             PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Processing clause %d", ++clauseIdx);
 
-            if (auto conditionValue = translateExpressionFn(predicateCtx, clause, &leftTrans, &rightTrans))
-            {
+            if (auto conditionValue = translateExpressionFn(predicateCtx, clause, &leftTrans, &rightTrans)) {
                 conditions.push_back(conditionValue);
                 PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Successfully translated clause %d", clauseIdx);
             } else {
@@ -643,7 +642,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
                                                   const bool negate, const TranslationResult& left_trans,
                                                   const TranslationResult& right_trans, const QueryCtxT& query_ctx) {
         auto outer_selection = query_ctx.builder.create<mlir::relalg::SelectionOp>(query_ctx.builder.getUnknownLoc(),
-                                                                                    left_value);
+                                                                                   left_value);
 
         auto& outer_region = outer_selection.getPredicate();
         auto& outer_block = outer_region.emplaceBlock();
@@ -653,19 +652,19 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         mlir::OpBuilder outer_builder(&outer_block, outer_block.begin());
 
         auto inner_selection = outer_builder.create<mlir::relalg::SelectionOp>(outer_builder.getUnknownLoc(),
-                                                                                right_value);
+                                                                               right_value);
 
         auto& inner_region = inner_selection.getPredicate();
         auto& inner_block = inner_region.emplaceBlock();
         const auto inner_tuple = inner_block.addArgument(tuple_type, outer_builder.getUnknownLoc());
 
-        auto inner_ctx = QueryCtxT(query_ctx.current_stmt, outer_builder, query_ctx.current_module, inner_tuple, mlir::Value());
+        auto inner_ctx = QueryCtxT(query_ctx.current_stmt, outer_builder, query_ctx.current_module, inner_tuple,
+                                   mlir::Value());
         inner_ctx.init_plan_results = query_ctx.init_plan_results;
         inner_ctx.nest_params = query_ctx.nest_params;
         inner_ctx.subquery_param_mapping = query_ctx.subquery_param_mapping;
         inner_ctx.correlation_params = query_ctx.correlation_params;
-        buildCorrelatedPredicateRegion(&inner_block, inner_tuple, join_clauses, left_trans, right_trans,
-                                       inner_ctx);
+        buildCorrelatedPredicateRegion(&inner_block, inner_tuple, join_clauses, left_trans, right_trans, inner_ctx);
 
         auto& col_mgr = query_ctx.builder.getContext()
                             ->template getOrLoadDialect<mlir::relalg::RelAlgDialect>()
@@ -674,28 +673,25 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         auto map_attr = col_mgr.createDef(map_scope, "tmp_attr0");
         map_attr.getColumn().type = outer_builder.getI32Type();
 
-        auto map_op = outer_builder.create<mlir::relalg::MapOp>(outer_builder.getUnknownLoc(),
-                                                                inner_selection.getResult(),
-                                                                outer_builder.getArrayAttr({map_attr}));
+        auto map_op = outer_builder.create<mlir::relalg::MapOp>(
+            outer_builder.getUnknownLoc(), inner_selection.getResult(), outer_builder.getArrayAttr({map_attr}));
 
         auto& map_region = map_op.getPredicate();
         auto& map_block = map_region.emplaceBlock();
         map_block.addArgument(tuple_type, outer_builder.getUnknownLoc());
 
         mlir::OpBuilder map_builder(&map_block, map_block.begin());
-        auto const_one = map_builder.create<mlir::db::ConstantOp>(
-            map_builder.getUnknownLoc(), map_builder.getI32Type(),
-            map_builder.getIntegerAttr(map_builder.getI32Type(), 1));
+        auto const_one = map_builder.create<mlir::db::ConstantOp>(map_builder.getUnknownLoc(), map_builder.getI32Type(),
+                                                                  map_builder.getIntegerAttr(map_builder.getI32Type(), 1));
         map_builder.create<mlir::relalg::ReturnOp>(map_builder.getUnknownLoc(), mlir::ValueRange{const_one});
 
         auto exists_op = outer_builder.create<mlir::relalg::ExistsOp>(outer_builder.getUnknownLoc(),
-                                                                      outer_builder.getI1Type(),
-                                                                      map_op.getResult());
+                                                                      outer_builder.getI1Type(), map_op.getResult());
 
-        const auto final_value = negate ? outer_builder.create<mlir::db::NotOp>(outer_builder.getUnknownLoc(),
-                                                                                 outer_builder.getI1Type(),
-                                                                                 exists_op.getResult())
-                                                .getResult()
+        const auto final_value = negate ? outer_builder
+                                              .create<mlir::db::NotOp>(outer_builder.getUnknownLoc(),
+                                                                       outer_builder.getI1Type(), exists_op.getResult())
+                                              .getResult()
                                         : exists_op.getResult();
 
         outer_builder.create<mlir::relalg::ReturnOp>(outer_builder.getUnknownLoc(), mlir::ValueRange{final_value});
@@ -797,6 +793,5 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
 
     return result;
 }
-
 
 } // namespace postgresql_ast
