@@ -267,7 +267,35 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
 
         return translate_expression(ctx, expr);
     }
-    default: return translate_expression(ctx, expr);
+    default: {
+        if (left_child || right_child) {
+            TranslationResult merged_result;
+            if (left_child) {
+                merged_result.columns.insert(merged_result.columns.end(),
+                                            left_child->columns.begin(), left_child->columns.end());
+                merged_result.varno_resolution.insert(left_child->varno_resolution.begin(),
+                                                     left_child->varno_resolution.end());
+                for (size_t i = 0; i < left_child->columns.size(); ++i) {
+                    const auto& col = left_child->columns[i];
+                    merged_result.varno_resolution[std::make_pair(OUTER_VAR, i + 1)] =
+                        std::make_pair(col.table_name, col.column_name);
+                }
+            }
+            if (right_child) {
+                merged_result.columns.insert(merged_result.columns.end(),
+                                            right_child->columns.begin(), right_child->columns.end());
+                merged_result.varno_resolution.insert(right_child->varno_resolution.begin(),
+                                                     right_child->varno_resolution.end());
+                for (size_t i = 0; i < right_child->columns.size(); ++i) {
+                    const auto& col = right_child->columns[i];
+                    merged_result.varno_resolution[std::make_pair(INNER_VAR, i + 1)] =
+                        std::make_pair(col.table_name, col.column_name);
+                }
+            }
+            return translate_expression(ctx, expr, merged_result);
+        }
+        return translate_expression(ctx, expr);
+    }
     }
 }
 
@@ -1930,17 +1958,54 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
         if (op == "%")
             return ctx.builder.create<mlir::db::ModOp>(loc, result_type, convertedLhs, convertedRhs);
     } else {
-        // For other types, let MLIR infer the result type
-        if (op == "+")
-            return ctx.builder.create<mlir::db::AddOp>(loc, convertedLhs, convertedRhs);
-        if (op == "-")
-            return ctx.builder.create<mlir::db::SubOp>(loc, convertedLhs, convertedRhs);
-        if (op == "*")
-            return ctx.builder.create<mlir::db::MulOp>(loc, convertedLhs, convertedRhs);
-        if (op == "/")
-            return ctx.builder.create<mlir::db::DivOp>(loc, convertedLhs, convertedRhs);
-        if (op == "%")
-            return ctx.builder.create<mlir::db::ModOp>(loc, convertedLhs, convertedRhs);
+        // For other types, explicitly infer result type
+        mlir::SmallVector<mlir::Type, 1> inferredTypes;
+
+        if (op == "+") {
+            if (mlir::failed(mlir::db::AddOp::inferReturnTypes(ctx.builder.getContext(), loc,
+                                                                 {convertedLhs, convertedRhs},
+                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                PGX_ERROR("Failed to infer AddOp return type");
+                throw std::runtime_error("Check logs");
+            }
+            return ctx.builder.create<mlir::db::AddOp>(loc, inferredTypes[0], convertedLhs, convertedRhs);
+        }
+        if (op == "-") {
+            if (mlir::failed(mlir::db::SubOp::inferReturnTypes(ctx.builder.getContext(), loc,
+                                                                 {convertedLhs, convertedRhs},
+                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                PGX_ERROR("Failed to infer SubOp return type");
+                throw std::runtime_error("Check logs");
+            }
+            return ctx.builder.create<mlir::db::SubOp>(loc, inferredTypes[0], convertedLhs, convertedRhs);
+        }
+        if (op == "*") {
+            if (mlir::failed(mlir::db::MulOp::inferReturnTypes(ctx.builder.getContext(), loc,
+                                                                 {convertedLhs, convertedRhs},
+                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                PGX_ERROR("Failed to infer MulOp return type");
+                throw std::runtime_error("Check logs");
+            }
+            return ctx.builder.create<mlir::db::MulOp>(loc, inferredTypes[0], convertedLhs, convertedRhs);
+        }
+        if (op == "/") {
+            if (mlir::failed(mlir::db::DivOp::inferReturnTypes(ctx.builder.getContext(), loc,
+                                                                 {convertedLhs, convertedRhs},
+                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                PGX_ERROR("Failed to infer DivOp return type");
+                throw std::runtime_error("Check logs");
+            }
+            return ctx.builder.create<mlir::db::DivOp>(loc, inferredTypes[0], convertedLhs, convertedRhs);
+        }
+        if (op == "%") {
+            if (mlir::failed(mlir::db::ModOp::inferReturnTypes(ctx.builder.getContext(), loc,
+                                                                 {convertedLhs, convertedRhs},
+                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                PGX_ERROR("Failed to infer ModOp return type");
+                throw std::runtime_error("Check logs");
+            }
+            return ctx.builder.create<mlir::db::ModOp>(loc, inferredTypes[0], convertedLhs, convertedRhs);
+        }
     }
 
     PGX_ERROR("Failed to create arithmetic operation for operator: %s (OID: %d)", op.c_str(), op_oid);
@@ -2319,8 +2384,38 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(
 
                     if (arg_expr && arg_expr->type == T_Var) {
                         auto var = reinterpret_cast<Var*>(arg_expr);
-                        std::string table_scope = get_table_alias_from_rte(&ctx.current_stmt, var->varno);
-                        std::string column_name = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
+                        std::string table_scope;
+                        std::string column_name;
+
+                        if (var->varno == INNER_VAR || var->varno == OUTER_VAR) {
+                            if (current_result) {
+                                if (auto resolved = current_result->get().resolve_var(var->varno, var->varattno)) {
+                                    table_scope = resolved->first;
+                                    column_name = resolved->second;
+                                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                                            "Resolved INNER_VAR/OUTER_VAR via varno_resolution: varno=%d, varattno=%d -> %s.%s",
+                                            var->varno, var->varattno, table_scope.c_str(), column_name.c_str());
+                                } else if (var->varno == OUTER_VAR && var->varattno > 0 &&
+                                           var->varattno <= static_cast<int>(current_result->get().columns.size())) {
+                                    const auto& col = current_result->get().columns[var->varattno - 1];
+                                    table_scope = col.table_name;
+                                    column_name = col.column_name;
+                                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                                            "Resolved OUTER_VAR via columns: varattno=%d -> %s.%s",
+                                            var->varattno, table_scope.c_str(), column_name.c_str());
+                                } else {
+                                    PGX_ERROR("Cannot resolve INNER_VAR/OUTER_VAR: varno=%d, varattno=%d",
+                                              var->varno, var->varattno);
+                                    throw std::runtime_error("Cannot resolve join variable in correlation parameter");
+                                }
+                            } else {
+                                PGX_ERROR("INNER_VAR/OUTER_VAR in correlation but no current_result available");
+                                throw std::runtime_error("Cannot resolve join variable without context");
+                            }
+                        } else {
+                            table_scope = get_table_alias_from_rte(&ctx.current_stmt, var->varno);
+                            column_name = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
+                        }
 
                         correlation_mapping[param_id] = {table_scope, column_name};
                         PGX_LOG(AST_TRANSLATE, DEBUG,

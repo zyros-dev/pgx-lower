@@ -740,23 +740,45 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                     if (arg_values.size() == 2) {
                         char* op_name = get_opname(op_expr->opno);
+                        auto loc = ctx.builder.getUnknownLoc();
+                        mlir::SmallVector<mlir::Type, 1> inferredTypes;
 
                         if (op_name && strcmp(op_name, "*") == 0) {
-                            post_value = mapBuilder.create<mlir::db::MulOp>(
-                                ctx.builder.getUnknownLoc(), arg_values[0].getType(),
-                                arg_values[0], arg_values[1]);
+                            if (mlir::failed(mlir::db::MulOp::inferReturnTypes(ctx.builder.getContext(), loc,
+                                                                                 {arg_values[0], arg_values[1]},
+                                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                                PGX_ERROR("Failed to infer MulOp return type in post-processing");
+                                throw std::runtime_error("Check logs");
+                            }
+                            post_value = mapBuilder.create<mlir::db::MulOp>(loc, inferredTypes[0],
+                                                                             arg_values[0], arg_values[1]);
                         } else if (op_name && strcmp(op_name, "/") == 0) {
-                            post_value = mapBuilder.create<mlir::db::DivOp>(
-                                ctx.builder.getUnknownLoc(), arg_values[0].getType(),
-                                arg_values[0], arg_values[1]);
+                            if (mlir::failed(mlir::db::DivOp::inferReturnTypes(ctx.builder.getContext(), loc,
+                                                                                 {arg_values[0], arg_values[1]},
+                                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                                PGX_ERROR("Failed to infer DivOp return type in post-processing");
+                                throw std::runtime_error("Check logs");
+                            }
+                            post_value = mapBuilder.create<mlir::db::DivOp>(loc, inferredTypes[0],
+                                                                             arg_values[0], arg_values[1]);
                         } else if (op_name && strcmp(op_name, "+") == 0) {
-                            post_value = mapBuilder.create<mlir::db::AddOp>(
-                                ctx.builder.getUnknownLoc(), arg_values[0].getType(),
-                                arg_values[0], arg_values[1]);
+                            if (mlir::failed(mlir::db::AddOp::inferReturnTypes(ctx.builder.getContext(), loc,
+                                                                                 {arg_values[0], arg_values[1]},
+                                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                                PGX_ERROR("Failed to infer AddOp return type in post-processing");
+                                throw std::runtime_error("Check logs");
+                            }
+                            post_value = mapBuilder.create<mlir::db::AddOp>(loc, inferredTypes[0],
+                                                                             arg_values[0], arg_values[1]);
                         } else if (op_name && strcmp(op_name, "-") == 0) {
-                            post_value = mapBuilder.create<mlir::db::SubOp>(
-                                ctx.builder.getUnknownLoc(), arg_values[0].getType(),
-                                arg_values[0], arg_values[1]);
+                            if (mlir::failed(mlir::db::SubOp::inferReturnTypes(ctx.builder.getContext(), loc,
+                                                                                 {arg_values[0], arg_values[1]},
+                                                                                 nullptr, nullptr, {}, inferredTypes))) {
+                                PGX_ERROR("Failed to infer SubOp return type in post-processing");
+                                throw std::runtime_error("Check logs");
+                            }
+                            post_value = mapBuilder.create<mlir::db::SubOp>(loc, inferredTypes[0],
+                                                                             arg_values[0], arg_values[1]);
                         }
 
                         if (op_name) pfree(op_name);
