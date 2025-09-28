@@ -153,7 +153,6 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
                 PGX_LOG(AST_TRANSLATE, DEBUG, "  [%zu] %s.%s (oid=%d)", i + 1, c.table_name.c_str(), c.column_name.c_str(), c.type_oid);
             }
 
-            const auto key = std::make_pair(var->varnosyn, var->varattno);
             const auto* resolved_col_ptr = [&]() -> const TranslationResult::ColumnSchema* {
                 if (auto mapping = right_child->resolve_var(var->varnosyn, var->varattno)) {
                     const auto& [table_name, col_name] = *mapping;
@@ -943,9 +942,9 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         } else if (func == "int8") {
             targetBaseType = ctx.builder.getI64Type();
         } else if (func == "float4") {
-            targetBaseType = ctx.builder.getF32Type();
+            targetBaseType = static_cast<mlir::Type>(ctx.builder.getF32Type());
         } else if (func == "float8") {
-            targetBaseType = ctx.builder.getF64Type();
+            targetBaseType = static_cast<mlir::Type>(ctx.builder.getF64Type());
         } else {
             PGX_ERROR("Unknown numeric conversion function: %s", func.c_str());
             throw std::runtime_error("Unknown numeric conversion function");
@@ -1950,7 +1949,7 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
 
 struct SQLTypeInference {
     static mlir::FloatType getHigherFloatType(mlir::Type left, mlir::Type right) {
-        mlir::FloatType leftFloat = left.dyn_cast_or_null<mlir::FloatType>();
+        auto leftFloat = dyn_cast_or_null<mlir::FloatType>(left);
         if (auto rightFloat = right.dyn_cast_or_null<mlir::FloatType>()) {
             if (!leftFloat || rightFloat.getWidth() > leftFloat.getWidth()) {
                 return rightFloat;
@@ -2297,39 +2296,6 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(
     const SubPlan* subplan,
     OptRefT<const TranslationResult> current_result
 ) -> mlir::Value {
-    // Main entry point for SubPlan translation - dispatcher for all subquery types.
-    //
-    // Overall Steps:
-    // 1. Extract subquery Plan from PlannedStmt.subplans using plan_id
-    // 2. Call translate_subquery_plan() to get stream + schema
-    // 3. Define helper lambdas for common operations:
-    //    - build_predicate_block: creates MLIR block for ANY/ALL predicates
-    //    - apply_selection_exists: selection + exists pattern (for ANY/ALL)
-    // 4. Dispatch on subplan->subLinkType with inline case handlers
-    // 5. Return mlir::Value appropriate for each type
-
-    // Step 1: Extract subquery plan from parent statement
-    // - subplan->plan_id is 1-indexed into ctx.current_stmt.subplans list
-    // - Get Plan* from list_nth(ctx.current_stmt.subplans, plan_id - 1)
-
-    // Step 2: Translate subquery Plan to RelAlg stream
-    // auto [subquery_stream, subquery_result] = translate_subquery_plan(ctx, subquery_plan, &ctx.current_stmt);
-    // - subquery_stream: mlir::Value of TupleStreamType
-    // - subquery_result: TranslationResult with column schema
-
-    // Lambda 1: build_predicate_block
-    // Creates MLIR Block for ANY/ALL predicate evaluation
-    auto build_predicate_block = [&](bool negate) -> mlir::Block* {
-        throw std::runtime_error("UNEXPECTED: Is this possible?");
-    };
-
-    // Lambda 2: apply_selection_exists
-    // Applies selection with predicate, then wraps result in exists operation
-    auto apply_selection_exists = [&](bool negate_predicate) -> mlir::Value {
-        throw std::runtime_error("UNEXPECTED: Is this possible?");
-    };
-
-    // Step 3: Dispatch on SubLinkType
     switch (subplan->subLinkType) {
         case EXPR_SUBLINK: {
             PGX_LOG(AST_TRANSLATE, DEBUG, "EXPR_SUBLINK: Translating scalar subquery");
@@ -2341,7 +2307,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(
                 throw std::runtime_error("Invalid SubPlan plan_id");
             }
 
-            Plan* subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
+            auto subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
 
             // Set up correlation parameters from subplan->parParam and subplan->args
             std::unordered_map<int, std::pair<std::string, std::string>> correlation_mapping;
@@ -2349,10 +2315,10 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(
                 int num_params = list_length(subplan->parParam);
                 for (int i = 0; i < num_params; i++) {
                     int param_id = lfirst_int(list_nth_cell(subplan->parParam, i));
-                    Expr* arg_expr = static_cast<Expr*>(lfirst(list_nth_cell(subplan->args, i)));
+                    auto arg_expr = static_cast<Expr*>(lfirst(list_nth_cell(subplan->args, i)));
 
                     if (arg_expr && arg_expr->type == T_Var) {
-                        Var* var = reinterpret_cast<Var*>(arg_expr);
+                        auto var = reinterpret_cast<Var*>(arg_expr);
                         std::string table_scope = get_table_alias_from_rte(&ctx.current_stmt, var->varno);
                         std::string column_name = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
 

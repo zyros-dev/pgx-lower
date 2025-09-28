@@ -189,6 +189,129 @@ where
         and l_shipdate >= date '1995-09-01'
         and l_shipdate < date '1995-10-01';
 
+with revenue as (
+    select
+        l_suppkey as supplier_no,
+        sum(l_extendedprice * (1 - l_discount)) as total_revenue
+    from
+        lineitem
+    where
+        l_shipdate >= date '1996-01-01'
+      and l_shipdate < date '1996-04-01'
+    group by
+        l_suppkey)
+select
+    s_suppkey,
+    s_name,
+    s_address,
+    s_phone,
+    total_revenue
+from
+    supplier,
+    revenue
+where
+    s_suppkey = supplier_no
+  and total_revenue = (
+    select
+        max(total_revenue)
+    from
+        revenue
+)
+order by
+    s_suppkey;
+
+select
+    sum(l_extendedprice) / 7.0 as avg_yearly
+from
+    lineitem,
+    part
+where
+    p_partkey = l_partkey
+  and p_brand = 'Brand#23'
+  and p_container = 'MED BOX'
+  and l_quantity < (
+    select
+        0.2 * avg(l_quantity)
+    from
+        lineitem
+    where
+        l_partkey = p_partkey
+);
+
+select
+    sum(l_extendedprice* (1 - l_discount)) as revenue
+from
+    lineitem,
+    part
+where
+    (
+        p_partkey = l_partkey
+            and p_brand = 'Brand#12'
+            and p_container in ('SM CASE', 'SM BOX', 'SM PACK', 'SM PKG')
+            and l_quantity >= 1 and l_quantity <= 1 + 10
+            and p_size between 1 and 5
+            and l_shipmode in ('AIR', 'AIR REG')
+            and l_shipinstruct = 'DELIVER IN PERSON'
+        )
+   or
+    (
+        p_partkey = l_partkey
+            and p_brand = 'Brand#23'
+            and p_container in ('MED BAG', 'MED BOX', 'MED PKG', 'MED PACK')
+            and l_quantity >= 10 and l_quantity <= 10 + 10
+            and p_size between 1 and 10
+            and l_shipmode in ('AIR', 'AIR REG')
+            and l_shipinstruct = 'DELIVER IN PERSON'
+        )
+   or
+    (
+        p_partkey = l_partkey
+            and p_brand = 'Brand#34'
+            and p_container in ('LG CASE', 'LG BOX', 'LG PACK', 'LG PKG')
+            and l_quantity >= 20 and l_quantity <= 20 + 10
+            and p_size between 1 and 15
+            and l_shipmode in ('AIR', 'AIR REG')
+            and l_shipinstruct = 'DELIVER IN PERSON'
+        );
+
+select
+    s_name,
+    s_address
+from
+    supplier,
+    nation
+where
+    s_suppkey in (
+        select
+            ps_suppkey
+        from
+            partsupp
+        where
+            ps_partkey in (
+                select
+                    p_partkey
+                from
+                    part
+                where
+                    p_name like 'forest%'
+            )
+          and ps_availqty > (
+            select
+                0.5 * sum(l_quantity)
+            from
+                lineitem
+            where
+                l_partkey = ps_partkey
+              and l_suppkey = ps_suppkey
+              and l_shipdate >= date '1994-01-01'
+              and l_shipdate < date '1995-01-01'
+        )
+    )
+  and s_nationkey = n_nationkey
+  and n_name = 'CANADA'
+order by
+    s_name;
+
 DROP TABLE test_orders CASCADE;
 DROP TABLE test_items CASCADE;
 DROP TABLE test_suppliers CASCADE;

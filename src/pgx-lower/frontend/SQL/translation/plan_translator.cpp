@@ -175,6 +175,7 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_NestLoop: result = translate_nest_loop(ctx, reinterpret_cast<NestLoop*>(plan)); break;
     case T_Material: result = translate_material(ctx, reinterpret_cast<Material*>(plan)); break;
     case T_SubqueryScan: result = translate_subquery_scan(ctx, reinterpret_cast<SubqueryScan*>(plan)); break;
+    case T_CteScan: result = translate_cte_scan(ctx, reinterpret_cast<CteScan*>(plan)); break;
     default: PGX_ERROR("Unsupported plan node type: %d", plan->type); result.op = nullptr;
     }
 
@@ -692,6 +693,15 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             mlir::OpBuilder mapBuilder(mapBlock, mapBlock->begin());
             std::vector<mlir::Value> mapValues;
 
+            TranslationResult postProcResult;
+            postProcResult.op = aggOp.getOperation();
+            postProcResult.current_scope = aggrScopeName;
+            for (const auto& [aggno, mapping] : aggregateMappings) {
+                postProcResult.varno_resolution[std::make_pair(-2, aggno)] = mapping;
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Added aggregate mapping for post-processing: aggno=%d -> (%s, %s)",
+                        aggno, mapping.first.c_str(), mapping.second.c_str());
+            }
+
             for (int resno : needs_post_processing) {
                 Expr* full_expr = post_process_exprs[resno];
                 Aggref* nested_aggref = post_process_aggref_map[resno];
@@ -723,7 +733,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         if (IsA(arg_expr, Aggref)) {
                             arg_values.push_back(aggr_value);
                         } else {
-                            auto arg_val = translate_expression(postCtx, arg_expr);
+                            auto arg_val = translate_expression(postCtx, arg_expr, postProcResult);
                             arg_values.push_back(arg_val);
                         }
                     }
@@ -2547,6 +2557,117 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
             result.op = projectionOp.getOperation();
             result.columns = newColumns;
             result.current_scope = subquery_alias;
+        }
+    }
+
+    return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+
+    if (!cteScan) {
+        PGX_ERROR("Invalid CteScan parameters");
+        throw std::runtime_error("Invalid CteScan parameters");
+    }
+
+    const auto cteParam = cteScan->cteParam;
+    const auto ctePlanId = cteScan->ctePlanId;
+    const auto scanrelid = cteScan->scan.scanrelid;
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating CteScan with cteParam=%d, ctePlanId=%d, scanrelid=%d",
+            cteParam, ctePlanId, scanrelid);
+
+    auto it = ctx.init_plan_results.find(cteParam);
+    if (it == ctx.init_plan_results.end()) {
+        PGX_ERROR("CTE InitPlan result not found for cteParam=%d", cteParam);
+        throw std::runtime_error("CTE InitPlan result not found");
+    }
+
+    auto result = it->second;
+
+    if (!result.op) {
+        PGX_ERROR("CTE InitPlan has no operation for cteParam=%d", cteParam);
+        throw std::runtime_error("CTE InitPlan has no operation");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Found CTE InitPlan result with %zu columns", result.columns.size());
+
+    if (scanrelid > 0 && cteScan->scan.plan.targetlist) {
+        List* targetlist = cteScan->scan.plan.targetlist;
+
+        const std::string cte_alias = get_table_alias_from_rte(&ctx.current_stmt, scanrelid);
+        const bool needs_projection = !cte_alias.empty();
+
+        std::vector<mlir::Attribute> projectionColumns;
+        std::vector<TranslationResult::ColumnSchema> newColumns;
+        auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+
+        ListCell* lc;
+        int output_attno = 1;
+
+        foreach(lc, targetlist) {
+            auto* tle = reinterpret_cast<TargetEntry*>(lfirst(lc));
+            if (tle->resjunk) {
+                continue;
+            }
+
+            if (tle->expr && IsA(tle->expr, Var)) {
+                auto* var = reinterpret_cast<Var*>(tle->expr);
+
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
+                    const auto& col = result.columns[var->varattno - 1];
+
+                    if (needs_projection && tle->resname) {
+                        const std::string new_col_name = tle->resname;
+                        auto colRef = columnManager.createDef(cte_alias, new_col_name);
+                        colRef.getColumn().type = col.mlir_type;
+                        projectionColumns.push_back(colRef);
+
+                        newColumns.push_back({
+                            cte_alias,
+                            new_col_name,
+                            col.type_oid,
+                            col.typmod,
+                            col.mlir_type,
+                            col.nullable
+                        });
+
+                        result.varno_resolution[std::make_pair(scanrelid, output_attno)] =
+                            std::make_pair(cte_alias, new_col_name);
+
+                        PGX_LOG(AST_TRANSLATE, DEBUG,
+                                "CteScan column aliasing: varno=%d, attno=%d: @%s::@%s -> @%s::@%s",
+                                scanrelid, output_attno, col.table_name.c_str(), col.column_name.c_str(),
+                                cte_alias.c_str(), new_col_name.c_str());
+                    } else {
+                        result.varno_resolution[std::make_pair(scanrelid, output_attno)] =
+                            std::make_pair(col.table_name, col.column_name);
+                        PGX_LOG(AST_TRANSLATE, DEBUG,
+                                "Mapped CteScan: varno=%d, attno=%d -> CTE column %d (@%s::@%s)",
+                                scanrelid, output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
+                    }
+                }
+            }
+            output_attno++;
+        }
+
+        if (needs_projection && !projectionColumns.empty()) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Creating projection with %zu aliased columns for CTE '%s'",
+                    projectionColumns.size(), cte_alias.c_str());
+
+            auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
+            auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
+                ctx.builder.getUnknownLoc(),
+                tupleStreamType,
+                mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all),
+                result.op->getResult(0),
+                ctx.builder.getArrayAttr(projectionColumns)
+            );
+
+            result.op = projectionOp.getOperation();
+            result.columns = newColumns;
+            result.current_scope = cte_alias;
         }
     }
 
