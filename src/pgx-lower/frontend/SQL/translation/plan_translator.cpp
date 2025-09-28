@@ -1616,6 +1616,10 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
                 const auto* var = reinterpret_cast<const Var*>(tle->expr);
 
                 // Find the column in intermediateResult
+                // Determine if input contains both join sides or just one side
+                bool inputContainsBothSides = left_child && right_child &&
+                    (input.columns.size() >= left_child->columns.size() + right_child->columns.size());
+
                 size_t columnIndex = SIZE_MAX;
                 if (var->varno == OUTER_VAR && left_child) {
                     if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child->columns.size())) {
@@ -1623,8 +1627,19 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
                     }
                 } else if (var->varno == INNER_VAR && right_child) {
                     if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size())) {
-                        columnIndex = left_child->columns.size() + (var->varattno - 1);
+                        if (inputContainsBothSides) {
+                            columnIndex = left_child->columns.size() + (var->varattno - 1);
+                        } else {
+                            columnIndex = var->varattno - 1;
+                        }
                     }
+                } else if (var->varattno > 0 && var->varattno <= static_cast<int>(input.columns.size())) {
+                    columnIndex = var->varattno - 1;
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Var (varno=%d, varattno=%d) to input column %zu: %s.%s",
+                            var->varno, var->varattno, columnIndex, input.columns[columnIndex].table_name.c_str(),
+                            input.columns[columnIndex].column_name.c_str());
+                } else {
+                    throw std::runtime_error("Failed");
                 }
 
                 if (columnIndex < intermediateResult.columns.size()) {
