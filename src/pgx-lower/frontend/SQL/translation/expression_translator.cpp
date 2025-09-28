@@ -2706,7 +2706,19 @@ auto PostgreSQLASTTranslator::Impl::translate_param(
         throw std::runtime_error("Unsupported param kind");
     }
 
-    // Check correlation parameters first (these are free variables and don't need current_result)
+    // Check nest parameters first (these are NestLoop parameterized scans)
+    const auto& nest_params = ctx.nest_params;
+    const auto nest_it = nest_params.find(param->paramid);
+
+    if (nest_it != nest_params.end()) {
+        auto* paramVar = nest_it->second;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to nestParam Var(varno=%d, varattno=%d)",
+                param->paramid, paramVar->varno, paramVar->varattno);
+
+        return translate_var(ctx, paramVar, current_result);
+    }
+
+    // Check correlation parameters (these are free variables and don't need current_result)
     const auto& correlation_params = ctx.correlation_params;
     const auto corr_it = correlation_params.find(param->paramid);
 

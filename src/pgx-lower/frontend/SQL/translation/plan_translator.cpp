@@ -1257,8 +1257,8 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
 
         auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.outer_tuple};
         tmp_ctx.init_plan_results = ctx.init_plan_results;
+        tmp_ctx.nest_params = ctx.nest_params;
         tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
-            tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
         tmp_ctx.correlation_params = ctx.correlation_params;
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
 
@@ -1875,8 +1875,12 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
                                               const QueryCtxT& queryCtx) {
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
-        const auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module,
+        auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module,
                                             innerTupleArg, mlir::Value());
+        predicateCtx.init_plan_results = queryCtx.init_plan_results;
+        predicateCtx.nest_params = queryCtx.nest_params;
+        predicateCtx.subquery_param_mapping = queryCtx.subquery_param_mapping;
+        predicateCtx.correlation_params = queryCtx.correlation_params;
         if (!join_clauses_ || join_clauses_->length == 0) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] No join clauses, returning true");
             auto trueVal = predicateBuilder.create<mlir::arith::ConstantOp>(
@@ -1949,7 +1953,11 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
         auto& inner_block = inner_region.emplaceBlock();
         const auto inner_tuple = inner_block.addArgument(tuple_type, outer_builder.getUnknownLoc());
 
-        const auto inner_ctx = QueryCtxT(query_ctx.current_stmt, outer_builder, query_ctx.current_module, inner_tuple, mlir::Value());
+        auto inner_ctx = QueryCtxT(query_ctx.current_stmt, outer_builder, query_ctx.current_module, inner_tuple, mlir::Value());
+        inner_ctx.init_plan_results = query_ctx.init_plan_results;
+        inner_ctx.nest_params = query_ctx.nest_params;
+        inner_ctx.subquery_param_mapping = query_ctx.subquery_param_mapping;
+        inner_ctx.correlation_params = query_ctx.correlation_params;
         buildCorrelatedPredicateRegion(&inner_block, outer_tuple, inner_tuple, join_clauses, left_trans, right_trans,
                                        inner_ctx);
 
