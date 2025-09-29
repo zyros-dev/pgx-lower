@@ -143,6 +143,20 @@ struct TranslationContext {
     std::unordered_map<int, std::pair<std::string, std::string>> correlation_params;
     std::unordered_map<int, Var*> nest_params;
     static int outer_join_counter;
+
+    static TranslationContext createChildContext(const TranslationContext& parent) {
+        return TranslationContext{
+            parent.current_stmt,
+            parent.builder,
+            parent.current_module,
+            mlir::Value{},
+            parent.current_tuple,
+            parent.init_plan_results,
+            {},
+            {},
+            {}
+        };
+    }
 };
 
 inline int TranslationContext::outer_join_counter = 0;
