@@ -713,15 +713,17 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(const QueryCtxT& par
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
-    const QueryCtxT& ctx, Expr* expr, mlir::Value input_stream, const std::string& suggested_name,
-    const std::vector<TranslationResult::ColumnSchema>& child_columns)
+    const QueryCtxT& ctx, Expr* expr, const TranslationResult& child_result, const std::string& suggested_name)
     -> pgx_lower::frontend::sql::StreamExpressionResult {
     PGX_IO(AST_TRANSLATE);
 
-    if (!expr || !input_stream) {
+    if (!expr || !child_result.op) {
         PGX_ERROR("Invalid parameters for translate_expression_for_stream");
         throw std::runtime_error("Invalid parameters for translate_expression_for_stream");
     }
+
+    mlir::Value input_stream = child_result.op->getResult(0);
+    const auto& child_columns = child_result.columns;
 
     auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
     if (!dialect) {
@@ -785,10 +787,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
     auto blockCtx = QueryCtxT{ctx.current_stmt, blockBuilder, ctx.current_module, tupleArg, ctx.current_tuple};
     blockCtx.init_plan_results = ctx.init_plan_results;
 
-    TranslationResult childResult;
-    childResult.columns = child_columns;
-
-    auto exprValue = translate_expression(blockCtx, expr, childResult);
+    // Pass through the child_result so varno_resolution is available
+    auto exprValue = translate_expression(blockCtx, expr, child_result);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Finished translating expression");
     if (!exprValue) {
         PGX_ERROR("Failed to translate expression in MapOp");
@@ -815,7 +815,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
     auto realBlockCtx = QueryCtxT{ctx.current_stmt, realBlockBuilder, ctx.current_module, realTupleArg,
                                   ctx.current_tuple};
     realBlockCtx.init_plan_results = ctx.init_plan_results;
-    auto realExprValue = translate_expression(realBlockCtx, expr, childResult);
+    auto realExprValue = translate_expression(realBlockCtx, expr, child_result);
     realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
 
     // col ref

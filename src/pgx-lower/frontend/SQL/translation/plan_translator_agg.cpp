@@ -283,8 +283,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             if (!argTE) return;
 
             const auto childCtx = QueryCtxT::createChildContext(ctx);
+            TranslationResult streamContext = childResult;
+            streamContext.op = childOutput.getDefiningOp();
             auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
-                childCtx, argTE->expr, childOutput, "agg_expr_" + std::to_string(aggref->aggno), childResult.columns);
+                childCtx, argTE->expr, streamContext, "agg_expr_" + std::to_string(aggref->aggno));
 
             if (stream != childOutput) {
                 childOutput = llvm::cast<mlir::OpResult>(stream);
@@ -339,8 +341,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     if (!argTE) continue;
 
                     auto childCtx = QueryCtxT::createChildContext(ctx);
+                    TranslationResult streamContext = childResult;
+                    streamContext.op = childOutput.getDefiningOp();
                     auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
-                        childCtx, argTE->expr, childOutput, "agg_expr_" + std::to_string(aggref->aggno), childResult.columns);
+                        childCtx, argTE->expr, streamContext, "agg_expr_" + std::to_string(aggref->aggno));
 
                     if (stream != childOutput) {
                         childOutput = llvm::cast<mlir::OpResult>(stream);

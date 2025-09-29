@@ -202,9 +202,8 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_func_expr_with_join_context(const QueryCtxT& ctx, const FuncExpr* func_expr,
                                                const TranslationResult* left_child,
                                                const TranslationResult* right_child) -> mlir::Value;
-    auto translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr, mlir::Value input_stream,
-                                         const std::string& suggested_name,
-                                         const std::vector<TranslationResult::ColumnSchema>& child_columns)
+    auto translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr, const TranslationResult& child_result,
+                                         const std::string& suggested_name)
         -> pgx_lower::frontend::sql::StreamExpressionResult;
 
     [[deprecated("Use translate_op_expr_with_join_context() for join contexts")]]
