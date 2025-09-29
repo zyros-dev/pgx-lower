@@ -8,6 +8,7 @@ struct DateRuntime{
    static int64_t extractYear(int64_t date);
    static int64_t subtractMonths(int64_t date,int64_t months);
    static int64_t addMonths(int64_t date,int64_t months);
+   static int64_t ExtractFromDate(VarLen32 field, int64_t date);
 };
 } // namespace runtime
 #endif // RUNTIME_DATERUNTIME_H

@@ -218,6 +218,28 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
             loc, resultType, ctx.builder.getStringAttr("ExtractFromDate"), mlir::ValueRange{args[0], args[1]});
 
         return op.getRes();
+    } else if (func == "extract") {
+        if (args.size() != 2) {
+            PGX_ERROR("EXTRACT requires exactly 2 arguments, got %zu", args.size());
+            throw std::runtime_error("Check logs");
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating EXTRACT function to ExtractFromDate runtime call");
+        mlir::Type resultType = ctx.builder.getI64Type();
+        bool hasNullableOperand = false;
+        for (const auto& arg : args) {
+            if (isa<mlir::db::NullableType>(arg.getType())) {
+                hasNullableOperand = true;
+                break;
+            }
+        }
+        if (hasNullableOperand) {
+            resultType = mlir::db::NullableType::get(ctx.builder.getContext(), resultType);
+        }
+        auto op = ctx.builder.create<mlir::db::RuntimeCall>(
+            loc, resultType, ctx.builder.getStringAttr("ExtractFromDate"), mlir::ValueRange{args[0], args[1]});
+
+        return op.getRes();
     } else if (func == "numeric") {
         if (args.size() < 1 || args.size() > 3) {
             PGX_ERROR("NUMERIC cast requires 1-3 arguments, got %zu", args.size());

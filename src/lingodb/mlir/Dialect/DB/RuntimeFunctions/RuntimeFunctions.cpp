@@ -208,7 +208,7 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    builtinRegistry->add("Lower").implementedAs(rt::StringRuntime::lower).matchesTypes({RuntimeFunction::stringLike}, RuntimeFunction::matchesArgument());
    builtinRegistry->add("ToString").implementedAs(rt::StringRuntime::fromInt).matchesTypes({RuntimeFunction::intLike}, resTypeIsString);
 
-   builtinRegistry->add("ExtractFromDate").matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::dateLike}, resTypeIsI64);
+   builtinRegistry->add("ExtractFromDate").matchesTypes({RuntimeFunction::stringLike, RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::ExtractFromDate);
    builtinRegistry->add("ExtractYearFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractYear);
    builtinRegistry->add("ExtractMonthFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractMonth);
    builtinRegistry->add("ExtractDayFromDate").matchesTypes({RuntimeFunction::dateLike}, resTypeIsI64).implementedAs(rt::DateRuntime::extractDay);

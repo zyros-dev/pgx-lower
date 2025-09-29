@@ -75,3 +75,25 @@ int64_t runtime::DateRuntime::extractDay(int64_t nanos) {
 
     return day;
 }
+
+int64_t runtime::DateRuntime::ExtractFromDate(VarLen32 field, int64_t date) {
+    uint32_t len = field.getLen();
+    char* data = field.data();
+
+    PGX_LOG(RUNTIME, DEBUG, "ExtractFromDate called with field='%.*s', date=%ld",
+            static_cast<int>(len), data, date);
+
+    if (len == 4 && strncmp(data, "year", 4) == 0) {
+        return extractYear(date);
+    } else if (len == 5 && strncmp(data, "month", 5) == 0) {
+        return extractMonth(date);
+    } else if (len == 3 && strncmp(data, "day", 3) == 0) {
+        return extractDay(date);
+    } else {
+        ereport(ERROR,
+                (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                 errmsg("unsupported EXTRACT field: %.*s", static_cast<int>(len), data),
+                 errhint("Supported fields are: year, month, day")));
+        return 0;
+    }
+}
