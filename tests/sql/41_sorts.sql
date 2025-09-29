@@ -201,14 +201,6 @@ FROM (
 ) sub
 ORDER BY year;
 
-SET client_min_messages TO DEBUG1;
-SET pgx_lower.log_enable = true;
-SET pgx_lower.log_debug = true;
-SET pgx_lower.log_io = true;
-SET pgx_lower.log_ir = true;
-SET pgx_lower.log_trace = true;
-SET pgx_lower.log_verbose = true;
-SET pgx_lower.enabled_categories = 'AST_TRANSLATE,RELALG_LOWER,DB_LOWER,DSA_LOWER,UTIL_LOWER,RUNTIME,JIT,GENERAL';
 
 SELECT r.region_name,
        SUM(CASE WHEN c.country_id < 4 THEN c.country_id ELSE 0 END) as conditional_sum,
@@ -217,6 +209,15 @@ FROM countries c
 JOIN regions r ON c.region_id = r.region_id
 GROUP BY r.region_name
 ORDER BY r.region_name;
+
+SET client_min_messages TO DEBUG1;
+SET pgx_lower.log_enable = true;
+SET pgx_lower.log_debug = true;
+SET pgx_lower.log_io = true;
+SET pgx_lower.log_ir = true;
+SET pgx_lower.log_trace = true;
+SET pgx_lower.log_verbose = true;
+SET pgx_lower.enabled_categories = 'AST_TRANSLATE,RELALG_LOWER,DB_LOWER,DSA_LOWER,UTIL_LOWER,RUNTIME,JIT,GENERAL';
 
 SELECT sub.region_name,
        sub.conditional_sum / sub.total_sum as ratio

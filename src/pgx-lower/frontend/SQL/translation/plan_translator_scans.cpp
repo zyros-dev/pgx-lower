@@ -1,4 +1,5 @@
 #include "translator_internals.h"
+
 extern "C" {
 #include "postgres.h"
 #include "nodes/nodes.h"
@@ -8,7 +9,9 @@ extern "C" {
 #include "nodes/pg_list.h"
 #include "utils/rel.h"
 #include "utils/array.h"
+#include "nodes/nodeFuncs.h"
 #include "utils/syscache.h"
+#include "utils/lsyscache.h"
 #include "fmgr.h"
 }
 
@@ -215,7 +218,14 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 continue;
             }
 
-            if (tle->expr && IsA(tle->expr, Var)) {
+            if (!tle->expr) {
+                PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan: Skipping targetlist entry with no expression at attno=%d", output_attno);
+                output_attno++;
+                continue;
+            }
+
+            if (IsA(tle->expr, Var)) {
+                // Simple Var - direct column reference from subplan
                 auto* var = reinterpret_cast<Var*>(tle->expr);
 
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
@@ -244,6 +254,81 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                                 "Mapped SubqueryScan: varno=%d, attno=%d -> subplan column %d (@%s::@%s)", scanrelid,
                                 output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
                     }
+                }
+            } else {
+                PGX_LOG(AST_TRANSLATE, DEBUG, "This is an expression!");
+                // Complex expression - create MapOp with proper region and tuple context
+                const std::string col_name = tle->resname ? tle->resname : "expr_" + std::to_string(output_attno);
+                const std::string map_scope = "map_expr";
+
+                // Create MapOp with placeholder column definition
+                auto mapColDef = columnManager.createDef(map_scope, col_name);
+
+                auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(
+                    ctx.builder.getUnknownLoc(),
+                    result.op->getResult(0),
+                    ctx.builder.getArrayAttr({mapColDef}));
+
+                // Create the MapOp's region with a tuple argument
+                auto& predicateRegion = mapOp.getPredicate();
+                auto* block = new mlir::Block;
+                predicateRegion.push_back(block);
+
+                auto tupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
+                auto tupleArg = block->addArgument(tupleType, ctx.builder.getUnknownLoc());
+
+                // Create new builder and context for the MapOp region
+                mlir::OpBuilder blockBuilder(ctx.builder.getContext());
+                blockBuilder.setInsertionPointToStart(block);
+
+                auto blockCtx = QueryCtxT{ctx.current_stmt, blockBuilder, ctx.current_module, tupleArg, ctx.current_tuple};
+                blockCtx.init_plan_results = ctx.init_plan_results;
+
+                // Create a TranslationResult with varno mappings for the expression context
+                // Vars with varno=scanrelid should resolve to columns from the subplan result
+                TranslationResult exprContext = result;
+                for (size_t i = 0; i < result.columns.size(); ++i) {
+                    const auto& col = result.columns[i];
+                    // Map (scanrelid, attno) to the subplan's column
+                    exprContext.varno_resolution[std::make_pair(scanrelid, i + 1)] = std::make_pair(col.table_name, col.column_name);
+                }
+
+                // Now translate the expression with proper tuple context and varno mappings
+                mlir::Value exprValue = translate_expression(blockCtx, tle->expr, std::cref(exprContext));
+
+                // Update the column type now that we know it
+                mapColDef.getColumn().type = exprValue.getType();
+
+                // Return the computed value from the MapOp region
+                blockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{exprValue});
+
+                // Debug: Log the MapOp structure
+                std::string mapOpStr;
+                llvm::raw_string_ostream stream(mapOpStr);
+                mapOp.print(stream);
+                stream.flush();
+                PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan MapOp created:\n%s", mapOpStr.c_str());
+
+                result.op = mapOp.getOperation();
+
+                Oid type_oid = exprType(reinterpret_cast<Node*>(tle->expr));
+                int32_t typmod = exprTypmod(reinterpret_cast<Node*>(tle->expr));
+                bool nullable = mlir::isa<mlir::db::NullableType>(exprValue.getType());
+
+                // Add to result.columns
+                result.columns.push_back({map_scope, col_name, type_oid, typmod, exprValue.getType(), nullable});
+
+                if (needs_projection && tle->resname) {
+                    // Now reference this column in the projection
+                    auto colRef = columnManager.createDef(subquery_alias, col_name);
+                    colRef.getColumn().type = exprValue.getType();
+                    projectionColumns.push_back(colRef);
+
+                    newColumns.push_back({subquery_alias, col_name, type_oid, typmod, exprValue.getType(), nullable});
+                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(subquery_alias, col_name);
+
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan expression: varno=%d, attno=%d -> @%s::@%s",
+                            scanrelid, output_attno, subquery_alias.c_str(), col_name.c_str());
                 }
             }
             output_attno++;

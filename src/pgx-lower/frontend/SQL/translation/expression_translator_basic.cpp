@@ -114,82 +114,82 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
                                                   OptRefT<const TranslationResult> current_result) const -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
-    if (!var || !ctx.current_tuple) {
-        PGX_ERROR("Invalid Var parameters: var=%p, builder=%p, tuple=%p\n%s", var, ctx.builder,
-                  ctx.current_tuple.getAsOpaquePointer());
+    if (!var) {
+        PGX_ERROR("Invalid Var: var is null");
         throw std::runtime_error("Invalid Var parameters");
     }
 
-    if (ctx.current_tuple) {
-        int actualVarno = var->varno;
-
-        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d", var->varno, var->varattno);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: varno=%d, varattno=%d, has_current_result=%d",
-                var->varno, var->varattno, current_result.has_value());
-
-        std::string tableName, colName;
-        bool nullable;
-
-        if (current_result && current_result->get().resolve_var(actualVarno, var->varattno)) {
-            const auto& [mappedTable, mappedColumn] = *current_result->get().resolve_var(actualVarno, var->varattno);
-            tableName = mappedTable;
-            colName = mappedColumn;
-            nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for varno=%d, varattno=%d -> (%s, %s)",
-                    actualVarno, var->varattno, tableName.c_str(), colName.c_str());
-            PGX_LOG(AST_TRANSLATE, DEBUG,
-                    "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'",
-                    tableName.c_str(), colName.c_str());
-        } else if (var->varno == OUTER_VAR) {
-            if (!current_result || var->varattno <= 0
-                || var->varattno > static_cast<int>(current_result->get().columns.size()))
-            {
-                PGX_ERROR("OUTER_VAR varattno=%d out of range (child has %zu columns)", var->varattno,
-                          current_result ? current_result->get().columns.size() : 0);
-                throw std::runtime_error("OUTER_VAR reference without valid child result");
-            }
-            const auto& col = current_result->get().columns[var->varattno - 1];
-            tableName = col.table_name;
-            colName = col.column_name;
-            nullable = col.nullable;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from child result",
-                    var->varattno, tableName.c_str(), colName.c_str(), nullable);
-            PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='%s', colName='%s'",
-                    tableName.c_str(), colName.c_str());
-        } else {
-            tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
-            colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
-            nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
-            PGX_LOG(AST_TRANSLATE, DEBUG,
-                    "[SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='%s', colName='%s'",
-                    tableName.c_str(), colName.c_str());
-        }
-
-        auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
-        if (!dialect) {
-            PGX_ERROR("RelAlg dialect not registered");
-            throw std::runtime_error("Check logs");
-        }
-
-        auto& columnManager = dialect->getColumnManager();
-
-        const auto type_mapper = PostgreSQLTypeMapper(context_);
-        auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
-
-        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='%s', column='%s'",
-                tableName.c_str(), colName.c_str());
-
-        auto colRef = columnManager.createRef(tableName, colName);
-        colRef.getColumn().type = mlirType;
-
-        auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), mlirType, colRef,
-                                                                      ctx.current_tuple);
-
-        return getColOp.getRes();
-    } else {
-        PGX_ERROR("No tuple context for Var translation");
-        throw std::runtime_error("No tuple context for Var translation");
+    if (!ctx.current_tuple && !current_result) {
+        PGX_ERROR("Invalid Var parameters: var=%p, builder=%p, tuple=%p, has_current_result=false", var, ctx.builder,
+                  ctx.current_tuple.getAsOpaquePointer());
+        throw std::runtime_error("Invalid Var parameters: no tuple and no current_result");
     }
+
+    int actualVarno = var->varno;
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d", var->varno, var->varattno);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: varno=%d, varattno=%d, has_current_result=%d",
+            var->varno, var->varattno, current_result.has_value());
+
+    std::string tableName, colName;
+    bool nullable;
+
+    // Try resolving through current_result first (works with or without tuple)
+    if (current_result && current_result->get().resolve_var(actualVarno, var->varattno)) {
+        const auto& [mappedTable, mappedColumn] = *current_result->get().resolve_var(actualVarno, var->varattno);
+        tableName = mappedTable;
+        colName = mappedColumn;
+        nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for varno=%d, varattno=%d -> (%s, %s)",
+                actualVarno, var->varattno, tableName.c_str(), colName.c_str());
+        PGX_LOG(AST_TRANSLATE, DEBUG,
+                "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'", tableName.c_str(),
+                colName.c_str());
+    } else if (var->varno == OUTER_VAR) {
+        if (!current_result || var->varattno <= 0
+            || var->varattno > static_cast<int>(current_result->get().columns.size()))
+        {
+            PGX_ERROR("OUTER_VAR varattno=%d out of range (child has %zu columns)", var->varattno,
+                      current_result ? current_result->get().columns.size() : 0);
+            throw std::runtime_error("OUTER_VAR reference without valid child result");
+        }
+        const auto& col = current_result->get().columns[var->varattno - 1];
+        tableName = col.table_name;
+        colName = col.column_name;
+        nullable = col.nullable;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from child result",
+                var->varattno, tableName.c_str(), colName.c_str(), nullable);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='%s', colName='%s'",
+                tableName.c_str(), colName.c_str());
+    } else {
+        tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
+        colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
+        nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
+        PGX_LOG(AST_TRANSLATE, DEBUG,
+                "[SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='%s', colName='%s'",
+                tableName.c_str(), colName.c_str());
+    }
+
+    auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+    if (!dialect) {
+        PGX_ERROR("RelAlg dialect not registered");
+        throw std::runtime_error("Check logs");
+    }
+
+    auto& columnManager = dialect->getColumnManager();
+
+    const auto type_mapper = PostgreSQLTypeMapper(context_);
+    auto mlirType = type_mapper.map_postgre_sqltype(var->vartype, var->vartypmod, nullable);
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='%s', column='%s'",
+            tableName.c_str(), colName.c_str());
+
+    auto colRef = columnManager.createRef(tableName, colName);
+    colRef.getColumn().type = mlirType;
+
+    auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), mlirType, colRef,
+                                                                  ctx.current_tuple);
+
+    return getColOp.getRes();
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const* const_node,
