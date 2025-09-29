@@ -201,6 +201,15 @@ FROM (
 ) sub
 ORDER BY year;
 
+SET client_min_messages TO DEBUG1;
+SET pgx_lower.log_enable = true;
+SET pgx_lower.log_debug = true;
+SET pgx_lower.log_io = true;
+SET pgx_lower.log_ir = true;
+SET pgx_lower.log_trace = true;
+SET pgx_lower.log_verbose = true;
+SET pgx_lower.enabled_categories = 'AST_TRANSLATE,RELALG_LOWER,DB_LOWER,DSA_LOWER,UTIL_LOWER,RUNTIME,JIT,GENERAL';
+
 SELECT r.region_name,
        SUM(CASE WHEN c.country_id < 4 THEN c.country_id ELSE 0 END) as conditional_sum,
        SUM(c.country_id) as total_sum
@@ -220,18 +229,6 @@ FROM (
     GROUP BY r.region_name
 ) sub
 ORDER BY ratio DESC;
-       sub.special_sum / sub.total_sum as market_share
-FROM (
-    SELECT EXTRACT(year FROM d.event_date) as year,
-           SUM(CASE WHEN c.country_name = 'Brazil' THEN c.country_id ELSE 0 END) as special_sum,
-           SUM(c.country_id) as total_sum
-    FROM countries c
-    JOIN regions r ON c.region_id = r.region_id
-    JOIN date_test d ON c.country_id = d.id
-    WHERE r.region_name = 'Americas'
-    GROUP BY EXTRACT(year FROM d.event_date)
-) sub
-ORDER BY sub.year;
 
 DROP TABLE sort_test;
 DROP TABLE countries;

@@ -180,9 +180,25 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
         caps.requiresAggregation = true;
         break;
 
+    case T_SubqueryScan:
+        {
+            const auto* subqueryScan = reinterpret_cast<const SubqueryScan*>(plan);
+            if (subqueryScan->subplan) {
+                const auto subCaps = analyzeNode(subqueryScan->subplan);
+                caps.requiresSeqScan |= subCaps.requiresSeqScan;
+                caps.requiresFilter |= subCaps.requiresFilter;
+                caps.requiresProjection |= subCaps.requiresProjection;
+                caps.requiresAggregation |= subCaps.requiresAggregation;
+                caps.requiresJoin |= subCaps.requiresJoin;
+                caps.requiresSort |= subCaps.requiresSort;
+                caps.requiresLimit |= subCaps.requiresLimit;
+                PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan propagating capabilities from subplan");
+            }
+        }
+        break;
+
     case T_Result:
     case T_Material:
-    case T_SubqueryScan:
     case T_Hash:
     case T_Unique:
     case T_SetOp:

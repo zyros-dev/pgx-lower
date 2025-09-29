@@ -283,48 +283,11 @@ FROM date_test
 GROUP BY EXTRACT(year FROM event_date)
 ORDER BY year;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-WARNING:  [PROBLEM:ERROR_LEVEL] expression_translator_functions.cpp:310: Unsupported function 'extract' (OID 6199)
-Stack trace:
-  #0 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_expression(pgx_lower::frontend::sql::TranslationContext const&, Expr*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x3da) [0x705626d53c5a]
-  #1 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(pgx_lower::frontend::sql::TranslationContext const&, pgx_lower::frontend::sql::TranslationResult const&, List const*, pgx_lower::frontend::sql::TranslationResult const*, pgx_lower::frontend::sql::TranslationResult const*)+0xfa6) [0x705626db91e6]
-  #2 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x535) [0x705626db6dc5]
-  #3 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_agg(pgx_lower::frontend::sql::TranslationContext&, Agg const*)+0x122) [0x705626d92362]
-  #4 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x59a) [0x705626db6e2a]
-  #5 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_sort(pgx_lower::frontend::sql::TranslationContext&, Sort const*)+0x19e) [0x705626dba8fe]
-  #6 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x610) [0x705626db6ea0]
-  #7 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(PlannedStmt const*, pgx_lower::frontend::sql::TranslationContext&)+0x114) [0x705626d4fb34]
-  #8 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt const*)+0x486) [0x705626d4f846]
-  #9 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::translate_query(PlannedStmt*) const+0x61) [0x705626d4f381]
-  #10 /usr/local/pgsql/lib/pgx_lower.so(mlir_runner::run_mlir_with_dest_receiver(PlannedStmt*, EState*, ExprContext*, _DestReceiver*)+0x2e7) [0x705626cf0d77]
-  #11 /usr/local/pgsql/lib/pgx_lower.so(+0xee927d) [0x705626ce927d]
-  #12 /usr/local/pgsql/lib/pgx_lower.so(+0xee896e) [0x705626ce896e]
-  #13 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x705626ce8716]
-  #14 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x705626ce8dcb]
-  #15 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x705626cf0648]
-  #16 /usr/local/pgsql/lib/pgx_lower.so(+0xee7b01) [0x705626ce7b01]
-  #17 /usr/local/pgsql/lib/pgx_lower.so(+0xee798f) [0x705626ce798f]
-WARNING:  [PROBLEM:ERROR_LEVEL] mlir_runner.cpp:155: MLIR runner exception: Unsupported function: extract
-Stack trace:
-  #0 /usr/local/pgsql/lib/pgx_lower.so(+0xee927d) [0x705626ce927d]
-  #1 /usr/local/pgsql/lib/pgx_lower.so(+0xee896e) [0x705626ce896e]
-  #2 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x705626ce8716]
-  #3 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x705626ce8dcb]
-  #4 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x705626cf0648]
-  #5 /usr/local/pgsql/lib/pgx_lower.so(+0xee7b01) [0x705626ce7b01]
-  #6 /usr/local/pgsql/lib/pgx_lower.so(+0xee798f) [0x705626ce798f]
-  #7 postgres: xzel regression [local] SELECT(ExecutorRun+0x44) [0x5bb5efa56bf0]
-  #8 postgres: xzel regression [local] SELECT(+0x6bb251) [0x5bb5efd2a251]
-  #9 postgres: xzel regression [local] SELECT(PortalRun+0x275) [0x5bb5efd29e82]
-  #10 postgres: xzel regression [local] SELECT(+0x6b38d0) [0x5bb5efd228d0]
-  #11 postgres: xzel regression [local] SELECT(PostgresMain+0x847) [0x5bb5efd27cf3]
-  #12 postgres: xzel regression [local] SELECT(+0x6af85c) [0x5bb5efd1e85c]
-  #13 postgres: xzel regression [local] SELECT(postmaster_child_launch+0x119) [0x5bb5efc32a1a]
-  #14 postgres: xzel regression [local] SELECT(+0x5c9ebe) [0x5bb5efc38ebe]
-  #15 postgres: xzel regression [local] SELECT(+0x5c6f64) [0x5bb5efc35f64]
-  #16 postgres: xzel regression [local] SELECT(PostmasterMain+0x151a) [0x5bb5efc3582e]
-  #17 postgres: xzel regression [local] SELECT(+0x473eb3) [0x5bb5efae2eb3]
-WARNING:  [PROBLEM:WARNING_LEVEL] my_executor.cpp:347: PostgreSQL exception during MLIR execution
-ERROR:  MLIR compilation failed: Unsupported function: extract
+ year | cnt 
+------+-----
+ 2024 |   4
+(1 row)
+
 SELECT
     CASE
         WHEN c.country_id < 3 THEN 'Low'
@@ -368,48 +331,11 @@ FROM (
 ) sub
 ORDER BY year;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-WARNING:  [PROBLEM:ERROR_LEVEL] expression_translator_functions.cpp:310: Unsupported function 'extract' (OID 6199)
-Stack trace:
-  #0 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_expression(pgx_lower::frontend::sql::TranslationContext const&, Expr*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x3da) [0x705626d53c5a]
-  #1 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(pgx_lower::frontend::sql::TranslationContext const&, pgx_lower::frontend::sql::TranslationResult const&, List const*, pgx_lower::frontend::sql::TranslationResult const*, pgx_lower::frontend::sql::TranslationResult const*)+0xfa6) [0x705626db91e6]
-  #2 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x535) [0x705626db6dc5]
-  #3 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_agg(pgx_lower::frontend::sql::TranslationContext&, Agg const*)+0x122) [0x705626d92362]
-  #4 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x59a) [0x705626db6e2a]
-  #5 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_sort(pgx_lower::frontend::sql::TranslationContext&, Sort const*)+0x19e) [0x705626dba8fe]
-  #6 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x610) [0x705626db6ea0]
-  #7 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::generate_rel_alg_operations(PlannedStmt const*, pgx_lower::frontend::sql::TranslationContext&)+0x114) [0x705626d4fb34]
-  #8 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_query(PlannedStmt const*)+0x486) [0x705626d4f846]
-  #9 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::translate_query(PlannedStmt*) const+0x61) [0x705626d4f381]
-  #10 /usr/local/pgsql/lib/pgx_lower.so(mlir_runner::run_mlir_with_dest_receiver(PlannedStmt*, EState*, ExprContext*, _DestReceiver*)+0x2e7) [0x705626cf0d77]
-  #11 /usr/local/pgsql/lib/pgx_lower.so(+0xee927d) [0x705626ce927d]
-  #12 /usr/local/pgsql/lib/pgx_lower.so(+0xee896e) [0x705626ce896e]
-  #13 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x705626ce8716]
-  #14 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x705626ce8dcb]
-  #15 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x705626cf0648]
-  #16 /usr/local/pgsql/lib/pgx_lower.so(+0xee7b01) [0x705626ce7b01]
-  #17 /usr/local/pgsql/lib/pgx_lower.so(+0xee798f) [0x705626ce798f]
-WARNING:  [PROBLEM:ERROR_LEVEL] mlir_runner.cpp:155: MLIR runner exception: Unsupported function: extract
-Stack trace:
-  #0 /usr/local/pgsql/lib/pgx_lower.so(+0xee927d) [0x705626ce927d]
-  #1 /usr/local/pgsql/lib/pgx_lower.so(+0xee896e) [0x705626ce896e]
-  #2 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x705626ce8716]
-  #3 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x705626ce8dcb]
-  #4 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x705626cf0648]
-  #5 /usr/local/pgsql/lib/pgx_lower.so(+0xee7b01) [0x705626ce7b01]
-  #6 /usr/local/pgsql/lib/pgx_lower.so(+0xee798f) [0x705626ce798f]
-  #7 postgres: xzel regression [local] SELECT(ExecutorRun+0x44) [0x5bb5efa56bf0]
-  #8 postgres: xzel regression [local] SELECT(+0x6bb251) [0x5bb5efd2a251]
-  #9 postgres: xzel regression [local] SELECT(PortalRun+0x275) [0x5bb5efd29e82]
-  #10 postgres: xzel regression [local] SELECT(+0x6b38d0) [0x5bb5efd228d0]
-  #11 postgres: xzel regression [local] SELECT(PostgresMain+0x847) [0x5bb5efd27cf3]
-  #12 postgres: xzel regression [local] SELECT(+0x6af85c) [0x5bb5efd1e85c]
-  #13 postgres: xzel regression [local] SELECT(postmaster_child_launch+0x119) [0x5bb5efc32a1a]
-  #14 postgres: xzel regression [local] SELECT(+0x5c9ebe) [0x5bb5efc38ebe]
-  #15 postgres: xzel regression [local] SELECT(+0x5c6f64) [0x5bb5efc35f64]
-  #16 postgres: xzel regression [local] SELECT(PostmasterMain+0x151a) [0x5bb5efc3582e]
-  #17 postgres: xzel regression [local] SELECT(+0x473eb3) [0x5bb5efae2eb3]
-WARNING:  [PROBLEM:WARNING_LEVEL] my_executor.cpp:347: PostgreSQL exception during MLIR execution
-ERROR:  MLIR compilation failed: Unsupported function: extract
+ year | total_countries 
+------+-----------------
+ 2024 |               4
+(1 row)
+
 SELECT r.region_name,
        SUM(CASE WHEN c.country_id < 4 THEN c.country_id ELSE 0 END) as conditional_sum,
        SUM(c.country_id) as total_sum
@@ -443,21 +369,6 @@ ORDER BY ratio DESC;
  Europe      |     0
 (3 rows)
 
-       sub.special_sum / sub.total_sum as market_share
-FROM (
-    SELECT EXTRACT(year FROM d.event_date) as year,
-           SUM(CASE WHEN c.country_name = 'Brazil' THEN c.country_id ELSE 0 END) as special_sum,
-           SUM(c.country_id) as total_sum
-    FROM countries c
-    JOIN regions r ON c.region_id = r.region_id
-    JOIN date_test d ON c.country_id = d.id
-    WHERE r.region_name = 'Americas'
-    GROUP BY EXTRACT(year FROM d.event_date)
-) sub
-ORDER BY sub.year;
-ERROR:  syntax error at or near "sub"
-LINE 1: sub.special_sum / sub.total_sum as market_share
-        ^
 DROP TABLE sort_test;
 DROP TABLE countries;
 DROP TABLE regions;
