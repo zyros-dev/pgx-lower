@@ -101,11 +101,6 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     std::string func(funcname);
     pfree(funcname);
 
-    // // TODO - This is implemented in lingodb
-    // if (func == "pg_catalog") {
-    //     func = reinterpret_cast<value*>(funcCall->funcname_->tail->data.ptr_value)->val_.str_;
-    // }
-
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating function %s", func.c_str());
     if (func == "abs") {
         if (args.size() != 1) {
@@ -113,17 +108,9 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
             throw std::runtime_error("ABS requires exactly 1 argument");
         }
 
-        std::string valueStr;
-        llvm::raw_string_ostream stream(valueStr);
-        args[0].print(stream);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "ABS argument: %s", valueStr.c_str());
+        verify_and_print(args[0]);
+        print_type(args[0].getType());
 
-        std::string typeStr;
-        llvm::raw_string_ostream typeStream(typeStr);
-        args[0].getType().print(typeStream);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "ABS argument type: %s", typeStr.c_str());
-
-        // Choose the right abs function based on type
         auto baseType = getBaseType(args[0].getType());
         auto absFunctionName = "AbsInt";
         if (mlir::isa<mlir::db::DecimalType>(baseType)) {
@@ -733,7 +720,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
     auto& columnManager = dialect->getColumnManager();
 
     if (nodeTag(expr) == T_Var) {
-        // We can trivially pass the MLIR value through
+        // It's already a column - read the table and early return; we don't need a mapop
         const auto var = reinterpret_cast<Var*>(expr);
 
         std::string tableName;
@@ -763,7 +750,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
         return {.stream = input_stream, .column_ref = columnRefAttr, .column_name = columnName, .table_name = tableName};
     }
 
-    // For complex expressions, we need to create a MapOp - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Temp map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     PGX_LOG(AST_TRANSLATE, DEBUG, "Creating MapOp for complex expression (type=%d)", expr->type);
     static size_t exprId = 0;
     const std::string scopeName = "map_expr";
@@ -799,7 +786,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
     blockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{exprValue});
     tempMapOp.erase();
 
-    // Create the mapop
+    // map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     colDef.getColumn().type = exprType;
     auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
                                                          ctx.builder.getArrayAttr({colDef}));
@@ -818,7 +805,6 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
     auto realExprValue = translate_expression(realBlockCtx, expr, child_result);
     realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
 
-    // col ref
     auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
     auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), scopeName, nested);
     auto columnRef = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, colDef.getColumnPtr());

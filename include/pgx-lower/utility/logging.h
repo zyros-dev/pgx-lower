@@ -49,7 +49,6 @@ extern "C" {
 namespace pgx_lower {
 namespace log {
 
-// Categories - WHAT is logging
 enum class Category {
     AST_TRANSLATE,
     RELALG_LOWER,

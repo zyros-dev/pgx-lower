@@ -278,22 +278,25 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             createdCols.push_back(attrDef);
             createdValues.push_back(aggResult);
         } else {
-            // Regular aggregate: SUM(x), COUNT(x), etc.
             const auto argTE = getFirstAggregateArgument(aggref);
             if (!argTE) return;
 
             const auto childCtx = QueryCtxT::createChildContext(ctx);
-            TranslationResult streamContext = childResult;
-            streamContext.op = childOutput.getDefiningOp();
+            TranslationResult exprContext = childResult;
+            exprContext.op = childOutput.getDefiningOp();
             auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
-                childCtx, argTE->expr, streamContext, "agg_expr_" + std::to_string(aggref->aggno));
+                childCtx, argTE->expr, exprContext, "agg_expr_" + std::to_string(aggref->aggno));
 
             if (stream != childOutput) {
                 childOutput = llvm::cast<mlir::OpResult>(stream);
+                mlir::Type actual_type = column_ref.getColumn().type;
+                bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
+
                 childResult.columns.push_back({.table_name = table_name, .column_name = column_name,
-                                               .type_oid = exprType((Node*)argTE->expr), .typmod = -1,
-                                               .mlir_type = type_mapper.map_postgre_sqltype(exprType((Node*)argTE->expr), -1, true),
-                                               .nullable = true});
+                                               .type_oid = exprType((Node*)argTE->expr),
+                                               .typmod = exprTypmod((Node*)argTE->expr),
+                                               .mlir_type = actual_type,
+                                               .nullable = is_nullable});
             }
 
             const auto resultType = (funcName == "count") ? ctx.builder.getI64Type()
@@ -341,17 +344,23 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     if (!argTE) continue;
 
                     auto childCtx = QueryCtxT::createChildContext(ctx);
-                    TranslationResult streamContext = childResult;
-                    streamContext.op = childOutput.getDefiningOp();
+                    // Create a context with current childOutput as the stream and varno_resolution from childResult
+                    TranslationResult exprContext = childResult;
+                    exprContext.op = childOutput.getDefiningOp();
                     auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
-                        childCtx, argTE->expr, streamContext, "agg_expr_" + std::to_string(aggref->aggno));
+                        childCtx, argTE->expr, exprContext, "agg_expr_" + std::to_string(aggref->aggno));
 
                     if (stream != childOutput) {
                         childOutput = llvm::cast<mlir::OpResult>(stream);
+                        // Extract the actual MLIR type from the column reference attribute
+                        mlir::Type actual_type = column_ref.getColumn().type;
+                        bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
+
                         childResult.columns.push_back({.table_name = table_name, .column_name = column_name,
-                                                       .type_oid = exprType((Node*)argTE->expr), .typmod = -1,
-                                                       .mlir_type = type_mapper.map_postgre_sqltype(exprType((Node*)argTE->expr), -1, true),
-                                                       .nullable = true});
+                                                       .type_oid = exprType((Node*)argTE->expr),
+                                                       .typmod = exprTypmod((Node*)argTE->expr),
+                                                       .mlir_type = actual_type,
+                                                       .nullable = is_nullable});
                     }
 
                     auto resultType = (funcName == "count") ? ctx.builder.getI64Type()

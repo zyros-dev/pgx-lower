@@ -27,6 +27,7 @@ extern "C" {
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -574,6 +575,30 @@ auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx
     return {convertedLhs, convertedRhs};
 }
 
+auto PostgreSQLASTTranslator::Impl::verify_and_print(const mlir::Value val) -> void {
+    if (auto* defOp = val.getDefiningOp()) {
+        const auto verifyResult = mlir::verify(defOp);
+        if (mlir::failed(verifyResult)) {
+            PGX_ERROR("MLIR verification FAILED for value");
+            throw std::runtime_error("MLIR verification FAILED for value");
+        }
+    }
+
+    std::string valueStr;
+    llvm::raw_string_ostream stream(valueStr);
+    val.print(stream);
+    stream.flush();
+    PGX_LOG(AST_TRANSLATE, TRACE, valueStr.c_str());
+}
+
+auto PostgreSQLASTTranslator::Impl::print_type(const mlir::Type val) -> void {
+    std::string valueStr;
+    llvm::raw_string_ostream stream(valueStr);
+    val.print(stream);
+    stream.flush();
+    PGX_LOG(AST_TRANSLATE, TRACE, valueStr.c_str());
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx, const Oid op_oid,
                                                             const mlir::Value lhs, const mlir::Value rhs) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
@@ -595,11 +620,8 @@ auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_comparison_op: Processing operator '%s' (OID %d)", op.c_str(), op_oid);
 
     {
-        std::string lhsTypeStr, rhsTypeStr;
-        llvm::raw_string_ostream lhsOS(lhsTypeStr), rhsOS(rhsTypeStr);
-        lhs.getType().print(lhsOS);
-        rhs.getType().print(rhsOS);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Comparing types: LHS=%s, RHS=%s", lhsTypeStr.c_str(), rhsTypeStr.c_str());
+        print_type(lhs.getType());
+        print_type(rhs.getType());
     }
 
     mlir::db::DBCmpPredicate predicate;

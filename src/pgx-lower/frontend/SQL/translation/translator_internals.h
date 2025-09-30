@@ -307,6 +307,9 @@ class PostgreSQLASTTranslator::Impl {
     static auto translate_comparison_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs,
                                         const mlir::Value rhs) -> mlir::Value;
 
+    static auto verify_and_print(mlir::Value val) -> void;
+    static void print_type(mlir::Type val);
+
    private:
     mlir::MLIRContext& context_;
 };
