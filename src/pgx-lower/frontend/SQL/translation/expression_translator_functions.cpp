@@ -776,6 +776,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
 
     // Pass through the child_result so varno_resolution is available
     auto exprValue = translate_expression(blockCtx, expr, child_result);
+    verify_and_print(exprValue);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Finished translating expression");
     if (!exprValue) {
         PGX_ERROR("Failed to translate expression in MapOp");
@@ -803,6 +804,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
                                   ctx.current_tuple};
     realBlockCtx.init_plan_results = ctx.init_plan_results;
     auto realExprValue = translate_expression(realBlockCtx, expr, child_result);
+    verify_and_print(realExprValue);
     realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
 
     auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};

@@ -589,7 +589,7 @@ auto PostgreSQLASTTranslator::Impl::verify_and_print(const mlir::Value val) -> v
     llvm::raw_string_ostream stream(valueStr);
     val.print(stream);
     stream.flush();
-    PGX_LOG(AST_TRANSLATE, TRACE, valueStr.c_str());
+    PGX_LOG(AST_TRANSLATE, TRACE, "%s", valueStr.c_str());
 }
 
 auto PostgreSQLASTTranslator::Impl::print_type(const mlir::Type val) -> void {
@@ -597,7 +597,7 @@ auto PostgreSQLASTTranslator::Impl::print_type(const mlir::Type val) -> void {
     llvm::raw_string_ostream stream(valueStr);
     val.print(stream);
     stream.flush();
-    PGX_LOG(AST_TRANSLATE, TRACE, valueStr.c_str());
+    PGX_LOG(AST_TRANSLATE, TRACE, "%s", valueStr.c_str());
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_comparison_op(const QueryCtxT& ctx, const Oid op_oid,
