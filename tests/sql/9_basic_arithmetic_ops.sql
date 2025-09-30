@@ -17,18 +17,8 @@ VALUES (10, 5),
        (8, 2),
        (25, 6);
 
-SET client_min_messages TO DEBUG1;
-SET pgx_lower.log_enable = true;
-SET pgx_lower.log_debug = true;
-SET pgx_lower.log_io = true;
-SET pgx_lower.log_ir = true;
-SET pgx_lower.log_trace = true;
-SET pgx_lower.log_verbose = true;
-SET pgx_lower.enabled_categories = 'AST_TRANSLATE';
 SELECT val1 + val2 AS addition
 FROM test_arithmetic;
-SET client_min_messages TO NOTICE;
-
 SELECT val1 - val2 AS subtraction
 FROM test_arithmetic;
 SELECT val1 * val2 AS multiplication

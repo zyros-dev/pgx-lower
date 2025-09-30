@@ -107,11 +107,8 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
     auto rightValue = rightOp->getResult(0);
 
     List* combinedClauses = combine_join_clauses(hashJoin->hashclauses, hashJoin->join.joinqual, "hashclauses");
-    TranslationResult result = create_join_operation(ctx, hashJoin->join.jointype, leftValue, rightValue,
+    auto result = create_join_operation(ctx, hashJoin->join.jointype, leftValue, rightValue,
                                                      leftTranslation, rightTranslation, combinedClauses);
-
-    // Join conditions are now handled inside the join predicate region
-    // No need to apply them as separate selections
 
     if (hashJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
@@ -166,7 +163,7 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
     auto rightValue = rightOp->getResult(0);
 
     List* combinedClauses = combine_join_clauses(mergeJoin->mergeclauses, mergeJoin->join.joinqual, "mergeclauses");
-    TranslationResult result = create_join_operation(ctx, mergeJoin->join.jointype, leftValue, rightValue,
+    auto result = create_join_operation(ctx, mergeJoin->join.jointype, leftValue, rightValue,
                                                      leftTranslation, rightTranslation, combinedClauses);
 
     // Join conditions are now handled inside the join predicate region
@@ -208,49 +205,54 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         PGX_LOG(AST_TRANSLATE, DEBUG, "NestLoop has NO joinqual");
     }
 
-    // Register nest parameters for PARAM resolution during expression translation
-    if (nestLoop->nestParams && nestLoop->nestParams->length > 0) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Parameterized nested loop detected with %d parameters",
-                nestLoop->nestParams->length);
+    // -----------------------------------------------------------------------------------------------------------------
+    // NestLoop is unique: it supports parameterization (inner side references outer via PARAM nodes)
+    // and PostgreSQL pushes join conditions into inner IndexScan's indexqual (we extract them back).
+    {
+        if (nestLoop->nestParams && nestLoop->nestParams->length > 0) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Parameterized nested loop detected with %d parameters",
+                    nestLoop->nestParams->length);
 
-        ListCell* lc;
-        foreach (lc, nestLoop->nestParams) {
-            auto* nestParam = static_cast<NestLoopParam*>(lfirst(lc));
-            if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
-                auto* paramVar = reinterpret_cast<Var*>(nestParam->paramval);
-                ctx.nest_params[nestParam->paramno] = paramVar;
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Registered nest param: paramno=%d -> Var(varno=%d, varattno=%d)",
-                        nestParam->paramno, paramVar->varno, paramVar->varattno);
+            ListCell* lc;
+            foreach (lc, nestLoop->nestParams) {
+                auto* nestParam = static_cast<NestLoopParam*>(lfirst(lc));
+                if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
+                    auto* paramVar = reinterpret_cast<Var*>(nestParam->paramval);
+                    ctx.nest_params[nestParam->paramno] = paramVar;
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Registered nest param: paramno=%d -> Var(varno=%d, varattno=%d)",
+                            nestParam->paramno, paramVar->varno, paramVar->varattno);
+                }
+            }
+        }
+
+        if (rightPlan->type == T_IndexScan) {
+            auto* indexScan = reinterpret_cast<IndexScan*>(rightPlan);
+            if (indexScan->indexqual && indexScan->indexqual->length > 0) {
+                PGX_LOG(AST_TRANSLATE, DEBUG,
+                        "Extracting %d predicates from IndexScan.indexqual for join-level translation",
+                        indexScan->indexqual->length);
+                if (effective_join_qual && effective_join_qual->length > 0) {
+                    effective_join_qual = list_concat(list_copy(effective_join_qual), list_copy(indexScan->indexqual));
+                } else {
+                    effective_join_qual = indexScan->indexqual;
+                }
+            }
+        } else if (rightPlan->type == T_IndexOnlyScan) {
+            auto* indexOnlyScan = reinterpret_cast<IndexOnlyScan*>(rightPlan);
+            if (indexOnlyScan->indexqual && indexOnlyScan->indexqual->length > 0) {
+                PGX_LOG(AST_TRANSLATE, DEBUG,
+                        "Extracting %d predicates from IndexOnlyScan.indexqual for join-level translation",
+                        indexOnlyScan->indexqual->length);
+                if (effective_join_qual && effective_join_qual->length > 0) {
+                    effective_join_qual = list_concat(list_copy(effective_join_qual),
+                                                      list_copy(indexOnlyScan->indexqual));
+                } else {
+                    effective_join_qual = indexOnlyScan->indexqual;
+                }
             }
         }
     }
-
-    // Always extract indexqual from inner scan for join-level translation
-    // indexqual contains join conditions that need both sides of the join
-    if (rightPlan->type == T_IndexScan) {
-        auto* indexScan = reinterpret_cast<IndexScan*>(rightPlan);
-        if (indexScan->indexqual && indexScan->indexqual->length > 0) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Extracting %d predicates from IndexScan.indexqual for join-level translation",
-                    indexScan->indexqual->length);
-            if (effective_join_qual && effective_join_qual->length > 0) {
-                effective_join_qual = list_concat(list_copy(effective_join_qual), list_copy(indexScan->indexqual));
-            } else {
-                effective_join_qual = indexScan->indexqual;
-            }
-        }
-    } else if (rightPlan->type == T_IndexOnlyScan) {
-        auto* indexOnlyScan = reinterpret_cast<IndexOnlyScan*>(rightPlan);
-        if (indexOnlyScan->indexqual && indexOnlyScan->indexqual->length > 0) {
-            PGX_LOG(AST_TRANSLATE, DEBUG,
-                    "Extracting %d predicates from IndexOnlyScan.indexqual for join-level translation",
-                    indexOnlyScan->indexqual->length);
-            if (effective_join_qual && effective_join_qual->length > 0) {
-                effective_join_qual = list_concat(list_copy(effective_join_qual), list_copy(indexOnlyScan->indexqual));
-            } else {
-                effective_join_qual = indexOnlyScan->indexqual;
-            }
-        }
-    }
+    // -----------------------------------------------------------------------------------------------------------------
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NestLoop - left child type: %d, right child type: %d", leftPlan->type,
             rightPlan->type);
@@ -275,7 +277,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     auto leftValue = leftOp->getResult(0);
     auto rightValue = rightOp->getResult(0);
 
-    TranslationResult result = create_join_operation(ctx, nestLoop->join.jointype, leftValue, rightValue,
+    auto result = create_join_operation(ctx, nestLoop->join.jointype, leftValue, rightValue,
                                                      leftTranslation, rightTranslation, effective_join_qual);
 
     if (nestLoop->join.plan.qual) {
@@ -304,82 +306,6 @@ auto PostgreSQLASTTranslator::Impl::translate_hash(QueryCtxT& ctx, const Hash* h
     return translate_plan_node(ctx, hash->plan.lefttree);
 }
 
-void PostgreSQLASTTranslator::Impl::translate_join_predicate_to_region(const QueryCtxT& ctx, mlir::Block* predicateBlock,
-                                                                       mlir::Value tupleArg, List* joinClauses,
-                                                                       const TranslationResult& leftTranslation,
-                                                                       const TranslationResult& rightTranslation) {
-    PGX_IO(AST_TRANSLATE);
-
-    if (!joinClauses || joinClauses->length == 0) {
-        // No join clauses - create constant true
-        mlir::OpBuilder predicateBuilder(ctx.builder.getContext());
-        predicateBuilder.setInsertionPointToStart(predicateBlock);
-        auto trueVal = predicateBuilder.create<mlir::arith::ConstantOp>(
-            predicateBuilder.getUnknownLoc(), predicateBuilder.getI1Type(),
-            predicateBuilder.getIntegerAttr(predicateBuilder.getI1Type(), 1));
-        predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), mlir::ValueRange{trueVal});
-        return;
-    }
-
-    mlir::OpBuilder predicateBuilder(ctx.builder.getContext());
-    predicateBuilder.setInsertionPointToStart(predicateBlock);
-    QueryCtxT predicateCtx(ctx.current_stmt, predicateBuilder, ctx.current_module, tupleArg);
-
-    // Translate each join clause
-    std::vector<mlir::Value> conditions;
-    ListCell* lc;
-    foreach (lc, joinClauses) {
-        auto clause = static_cast<Expr*>(lfirst(lc));
-
-        if (IsA(clause, OpExpr)) {
-            // For join predicates, we need to translate with join context
-            mlir::Value conditionValue = translate_expression_with_join_context(predicateCtx, clause, &leftTranslation,
-                                                                                &rightTranslation);
-
-            if (conditionValue) {
-                conditions.push_back(conditionValue);
-            } else {
-                PGX_WARNING("Failed to translate join clause");
-            }
-        } else {
-            // Handle other expression types if needed
-            mlir::Value conditionValue = translate_expression_with_join_context(predicateCtx, clause, &leftTranslation,
-                                                                                &rightTranslation);
-
-            if (conditionValue) {
-                conditions.push_back(conditionValue);
-            }
-        }
-    }
-
-    // Combine conditions with AND if multiple
-    mlir::Value finalCondition;
-    if (conditions.empty()) {
-        // No valid conditions translated - return true
-        finalCondition = predicateBuilder.create<mlir::arith::ConstantOp>(
-            predicateBuilder.getUnknownLoc(), predicateBuilder.getI1Type(),
-            predicateBuilder.getIntegerAttr(predicateBuilder.getI1Type(), 1));
-    } else if (conditions.size() == 1) {
-        finalCondition = conditions[0];
-    } else {
-        // Combine with AND - let the type be inferred
-        finalCondition = conditions[0];
-        for (size_t i = 1; i < conditions.size(); ++i) {
-            // Don't specify return type - let it be inferred based on operands
-            finalCondition = predicateBuilder.create<mlir::db::AndOp>(predicateBuilder.getUnknownLoc(),
-                                                                      mlir::ValueRange{finalCondition, conditions[i]});
-        }
-    }
-
-    // Ensure the final condition is non-nullable boolean (i1) for join predicates
-    // DeriveTruth converts any type (including nullable) to non-nullable i1
-    if (!finalCondition.getType().isInteger(1)) {
-        finalCondition = predicateBuilder.create<mlir::db::DeriveTruth>(predicateBuilder.getUnknownLoc(), finalCondition);
-    }
-
-    // Return the final condition
-    predicateBuilder.create<mlir::relalg::ReturnOp>(predicateBuilder.getUnknownLoc(), mlir::ValueRange{finalCondition});
-}
 
 TranslationResult
 PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const JoinType join_type, mlir::Value left_value,

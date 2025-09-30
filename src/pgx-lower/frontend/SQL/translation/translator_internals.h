@@ -285,11 +285,6 @@ class PostgreSQLASTTranslator::Impl {
     auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream,
                                const TranslationResult& translation_result) const -> mlir::Value;
 
-    // Join helper functions
-    void translate_join_predicate_to_region(const QueryCtxT& ctx, mlir::Block* predicateBlock, mlir::Value tupleArg,
-                                            List* joinClauses, const TranslationResult& leftTranslation,
-                                            const TranslationResult& rightTranslation);
-
     auto create_join_operation(const QueryCtxT& ctx, JoinType join_type, mlir::Value left_value, mlir::Value right_value,
                                const TranslationResult& left_translation, const TranslationResult& right_translation,
                                List* join_clauses) -> TranslationResult;
