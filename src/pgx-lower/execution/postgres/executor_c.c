@@ -62,6 +62,8 @@ static void register_string_guc(const char *name, const char *desc, char **var) 
 }
 
 void _PG_init(void) {
+    extern void initialize_stderr_redirect(void);
+    initialize_stderr_redirect();
     PGX_NOTICE_C("Installing custom executor hook...");
     prev_ExecutorRun_hook = ExecutorRun_hook;
     ExecutorRun_hook = custom_executor;
