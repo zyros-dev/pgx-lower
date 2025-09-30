@@ -250,7 +250,6 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_plan_node(QueryCtxT& ctx, Plan* plan) -> TranslationResult;
     auto translate_seq_scan(QueryCtxT& ctx, SeqScan* seqScan) -> TranslationResult;
     auto translate_agg(QueryCtxT& ctx, const Agg* agg) -> TranslationResult;
-    auto translate_agg_old(QueryCtxT& ctx, const Agg* agg) -> TranslationResult;
     auto translate_sort(QueryCtxT& ctx, const Sort* sort) -> TranslationResult;
     auto translate_limit(QueryCtxT& ctx, const Limit* limit) -> TranslationResult;
     auto translate_gather(QueryCtxT& ctx, const Gather* gather) -> TranslationResult;
