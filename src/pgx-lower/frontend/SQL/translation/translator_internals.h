@@ -191,6 +191,10 @@ class PostgreSQLASTTranslator::Impl {
                                         OptRefT<const TranslationResult> current_result = std::nullopt);
     auto translate_expression(const QueryCtxT& ctx, Expr* expr,
                               OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
+    // TODO: So we have all of these with_join_context functions. Initially I slammed these down when I was doing joins
+    //       and just wanted to get it running. I figured we'd have like temporal translation results, but probably the
+    //       proper solution is to make a merge_translation_result(a, b) function, then pass through the normal
+    //       translate_expression paths. This probably deletes like two thousand lines of code that is copy-pasted
     auto translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr, const TranslationResult* left_child,
                                                 const TranslationResult* right_child) -> mlir::Value;
     auto translate_op_expr_with_join_context(const QueryCtxT& ctx, const OpExpr* op_expr,
