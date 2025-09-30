@@ -50,7 +50,7 @@ namespace postgresql_ast {
 
 using namespace pgx_lower::frontend::sql::constants;
 
-auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* seqScan) const -> TranslationResult {
+auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* seqScan) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!seqScan) {
         PGX_ERROR("Invalid SeqScan parameters");
@@ -142,8 +142,6 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
                                           .mlir_type = mlirType,
                                           .nullable = colInfo.nullable});
             }
-        } else {
-            PGX_ERROR("Unknown type in the target list");
         }
     }
 
@@ -164,6 +162,21 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: final varno_resolution.size()=%zu",
             result.varno_resolution.size());
+
+    // Apply qual (WHERE clause) if present
+    if (result.op && seqScan->scan.plan.qual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan has qual, applying selection (context has %zu InitPlans)",
+                ctx.init_plan_results.size());
+        result = apply_selection_from_qual_with_columns(ctx, result, seqScan->scan.plan.qual, nullptr, nullptr);
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan: no qual (result.op=%p, plan.qual=%p)",
+                static_cast<void*>(result.op), static_cast<void*>(seqScan->scan.plan.qual));
+    }
+
+    // Apply projection (computed expressions) if present
+    if (result.op && seqScan->scan.plan.targetlist) {
+        result = apply_projection_from_target_list(ctx, result, seqScan->scan.plan.targetlist);
+    }
 
     return result;
 }
@@ -301,7 +314,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) const -> TranslationResult {
+auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) -> TranslationResult {
     // CteScan is a bit confusing. It has a plan inside of it, but these plans are evaluated at InitPlan time,
     // so we just need to read out of the target list here.
     PGX_IO(AST_TRANSLATE);

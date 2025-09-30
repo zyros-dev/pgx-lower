@@ -121,54 +121,21 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_IndexScan:
     case T_IndexOnlyScan:
     case T_BitmapHeapScan: {
-        const char* scan_type = (plan->type == T_SeqScan)         ? "SeqScan"
-                                : (plan->type == T_IndexScan)     ? "IndexScan"
-                                : (plan->type == T_IndexOnlyScan) ? "IndexOnlyScan"
-                                                                  : "BitmapHeapScan";
-
         auto* scan = reinterpret_cast<SeqScan*>(plan);
         result = translate_seq_scan(ctx, scan);
 
-        if (plan->type == T_IndexScan) {
+        if (plan->type == T_IndexScan || plan->type == T_IndexOnlyScan) {
             auto* indexScan = reinterpret_cast<IndexScan*>(plan);
             if (indexScan->indexqual && indexScan->indexqual->length > 0) {
                 PGX_LOG(AST_TRANSLATE, DEBUG,
                         "IndexScan has %d indexqual predicates - will be handled by parent NestLoop",
                         indexScan->indexqual->length);
             }
-        } else if (plan->type == T_IndexOnlyScan) {
-            auto* indexOnlyScan = reinterpret_cast<IndexOnlyScan*>(plan);
-            if (indexOnlyScan->indexqual && indexOnlyScan->indexqual->length > 0) {
-                PGX_LOG(AST_TRANSLATE, DEBUG,
-                        "IndexOnlyScan has %d indexqual predicates - will be handled by parent NestLoop",
-                        indexOnlyScan->indexqual->length);
-            }
-        }
-
-        if (result.op && plan->qual) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "%s has qual, calling apply_selection (context has %zu InitPlans)", scan_type,
-                    ctx.init_plan_results.size());
-            result = apply_selection_from_qual_with_columns(ctx, result, plan->qual, nullptr, nullptr);
-        } else {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "%s: no qual (result.op=%p, plan->qual=%p)", scan_type,
-                    static_cast<void*>(result.op), static_cast<void*>(plan->qual));
-        }
-
-        if (result.op && plan->targetlist) {
-            result = apply_projection_from_target_list(ctx, result, plan->targetlist);
         }
     } break;
-    case T_Agg:
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Calling translate_agg");
-        result = translate_agg(ctx, reinterpret_cast<Agg*>(plan));
-        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_agg returned, result.op=%p", static_cast<void*>(result.op));
-        break;
+    case T_Agg: result = translate_agg(ctx, reinterpret_cast<Agg*>(plan)); break;
     case T_Sort: result = translate_sort(ctx, reinterpret_cast<Sort*>(plan)); break;
-    case T_IncrementalSort:
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Treating IncrementalSort as regular Sort"); // TODO: NV: Do I need to deal with
-                                                                                   // this?
-        result = translate_sort(ctx, reinterpret_cast<Sort*>(plan));
-        break;
+    case T_IncrementalSort: result = translate_sort(ctx, reinterpret_cast<Sort*>(plan)); break;
     case T_Limit: result = translate_limit(ctx, reinterpret_cast<Limit*>(plan)); break;
     case T_Gather: result = translate_gather(ctx, reinterpret_cast<Gather*>(plan)); break;
     case T_MergeJoin: result = translate_merge_join(ctx, reinterpret_cast<MergeJoin*>(plan)); break;
