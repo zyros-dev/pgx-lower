@@ -110,11 +110,8 @@ static void printCustRefArr(OpAsmPrinter& p, mlir::Operation* op, ArrayAttr arra
       } else {
          p << ",";
       }
-      if (auto parsedSymbolRefAttr = a.dyn_cast<mlir::relalg::ColumnRefAttr>()) {
-         p << parsedSymbolRefAttr.getName();
-      } else {
-         p << "<invalid-column-ref>";
-      }
+      mlir::relalg::ColumnRefAttr parsedSymbolRefAttr = a.dyn_cast<mlir::relalg::ColumnRefAttr>();
+      p << parsedSymbolRefAttr.getName();
    }
    p << "]";
 }
