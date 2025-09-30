@@ -270,6 +270,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                                                                                                     col.column_name);
                 }
                 auto streamResult = translate_expression_for_stream(ctx, tle->expr, exprContext, col_name);
+                verify_and_print(streamResult.stream);
                 result.op = streamResult.stream.getDefiningOp();
                 Oid type_oid = exprType(reinterpret_cast<Node*>(tle->expr));
                 int32_t typmod = exprTypmod(reinterpret_cast<Node*>(tle->expr));

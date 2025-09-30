@@ -576,6 +576,7 @@ auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx
 }
 
 auto PostgreSQLASTTranslator::Impl::verify_and_print(const mlir::Value val) -> void {
+    PGX_IO(AST_TRANSLATE);
     if (auto* defOp = val.getDefiningOp()) {
         const auto verifyResult = mlir::verify(defOp);
         if (mlir::failed(verifyResult)) {
