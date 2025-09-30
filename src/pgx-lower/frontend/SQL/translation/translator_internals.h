@@ -256,7 +256,7 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_nest_loop(QueryCtxT& ctx, NestLoop* nestLoop) -> TranslationResult;
     auto translate_material(QueryCtxT& ctx, Material* material) -> TranslationResult;
     auto translate_subquery_scan(QueryCtxT& ctx, SubqueryScan* subqueryScan) -> TranslationResult;
-    auto translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) -> TranslationResult;
+    auto translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) const -> TranslationResult;
 
     // InitPlan helpers
     auto process_init_plans(QueryCtxT& ctx, Plan* plan) -> void;

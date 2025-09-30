@@ -21,7 +21,7 @@ class ColumnManager {
    std::pair<std::string, std::string> getName(const Column* attr);
 
    std::string getUniqueScope(StringRef base) {
-      if (scopeUnifier.count(std::string(base))) {
+      if (scopeUnifier.contains(std::string(base))) {
          scopeUnifier[std::string(base)] += 1;
          return std::string(base) + std::to_string(scopeUnifier[std::string(base)]);
       } else {

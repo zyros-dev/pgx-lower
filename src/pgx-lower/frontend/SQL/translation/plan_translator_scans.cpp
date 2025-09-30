@@ -76,10 +76,8 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     }
 
     auto tableIdentifier = physicalTableName + TABLE_OID_SEPARATOR + std::to_string(tableOid);
-
     const auto tableMetaData = std::make_shared<runtime::TableMetaData>();
     tableMetaData->setNumRows(0); // Will be updated from PostgreSQL catalog
-
     auto tableMetaAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
 
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
@@ -116,46 +114,38 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
         ctx.builder.getUnknownLoc(), mlir::relalg::TupleStreamType::get(&context_),
         ctx.builder.getStringAttr(tableIdentifier), tableMetaAttr, columnsAttr, columnOrderAttr);
 
-    // Build the output schema from discovered columns
-    TranslationResult result;
+    auto result = TranslationResult();
     result.op = baseTableOp;
 
-    // Only output columns specified in the targetlist
-    // The targetlist tells us which columns this node should produce
-    if (seqScan->scan.plan.targetlist && seqScan->scan.plan.targetlist->length > 0) {
-        ListCell* lc;
-        foreach (lc, seqScan->scan.plan.targetlist) {
-            auto* tle = static_cast<TargetEntry*>(lfirst(lc));
-            if (!tle || tle->resjunk)
-                continue; // Skip junk columns
-
-            if (tle->expr && IsA(tle->expr, Var)) {
-                auto* var = reinterpret_cast<Var*>(tle->expr);
-
-                // Find the column info for this var
-                if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
-                    const auto& colInfo = allColumns[var->varattno - 1];
-                    PostgreSQLTypeMapper type_mapper(context_);
-                    const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
-                                                                                colInfo.nullable);
-
-                    result.columns.push_back({.table_name = uniqueScope,
-                                              .column_name = colInfo.name,
-                                              .type_oid = colInfo.type_oid,
-                                              .typmod = colInfo.typmod,
-                                              .mlir_type = mlirType,
-                                              .nullable = colInfo.nullable});
-                }
-            }
-        }
-    } else {
+    if (!seqScan->scan.plan.targetlist || seqScan->scan.plan.targetlist->length <= 0) {
         throw std::runtime_error("SeqScan had an empty target list");
     }
 
-    // TODO: NV: Unsure if this is a reasonable solution to my problem...
-    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: aliasName='%s', uniqueScope='%s', scanrelid=%d",
-            aliasName.c_str(), uniqueScope.c_str(), seqScan->scan.scanrelid);
-    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: allColumns.size()=%zu", allColumns.size());
+    ListCell* lc;
+    foreach (lc, seqScan->scan.plan.targetlist) {
+        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (!tle || tle->resjunk)
+            continue;
+        if (tle->expr && IsA(tle->expr, Var)) {
+            auto* var = reinterpret_cast<Var*>(tle->expr);
+            // Find the column info for this var
+            if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
+                const auto& colInfo = allColumns[var->varattno - 1];
+                PostgreSQLTypeMapper type_mapper(context_);
+                const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
+                                                                            colInfo.nullable);
+
+                result.columns.push_back({.table_name = uniqueScope,
+                                          .column_name = colInfo.name,
+                                          .type_oid = colInfo.type_oid,
+                                          .typmod = colInfo.typmod,
+                                          .mlir_type = mlirType,
+                                          .nullable = colInfo.nullable});
+            }
+        } else {
+            PGX_ERROR("Unknown type in the target list");
+        }
+    }
 
     if (uniqueScope != aliasName) {
         PGX_LOG(AST_TRANSLATE, DEBUG,
@@ -219,7 +209,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
             }
 
             if (!tle->expr) {
-                PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan: Skipping targetlist entry with no expression at attno=%d", output_attno);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan: Skipping targetlist entry with no expression at attno=%d",
+                        output_attno);
                 output_attno++;
                 continue;
             }
@@ -262,7 +253,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 TranslationResult exprContext = result;
                 for (size_t i = 0; i < result.columns.size(); ++i) {
                     const auto& col = result.columns[i];
-                    exprContext.varno_resolution[std::make_pair(scanrelid, i + 1)] = std::make_pair(col.table_name, col.column_name);
+                    exprContext.varno_resolution[std::make_pair(scanrelid, i + 1)] = std::make_pair(col.table_name,
+                                                                                                    col.column_name);
                 }
                 auto streamResult = translate_expression_for_stream(ctx, tle->expr, exprContext, col_name);
                 result.op = streamResult.stream.getDefiningOp();
@@ -272,17 +264,19 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 bool nullable = mlir::isa<mlir::db::NullableType>(exprType);
 
                 // Add to result.columns
-                result.columns.push_back({streamResult.table_name, streamResult.column_name, type_oid, typmod, exprType, nullable});
+                result.columns.push_back(
+                    {streamResult.table_name, streamResult.column_name, type_oid, typmod, exprType, nullable});
 
                 if (needs_projection && tle->resname) {
                     // Reference this column in the projection
                     projectionColumns.push_back(streamResult.column_ref);
 
                     newColumns.push_back({subquery_alias, col_name, type_oid, typmod, exprType, nullable});
-                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(subquery_alias, col_name);
+                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(subquery_alias,
+                                                                                                      col_name);
 
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan expression: varno=%d, attno=%d -> @%s::@%s",
-                            scanrelid, output_attno, subquery_alias.c_str(), col_name.c_str());
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan expression: varno=%d, attno=%d -> @%s::@%s", scanrelid,
+                            output_attno, subquery_alias.c_str(), col_name.c_str());
                 }
             }
             output_attno++;
@@ -307,7 +301,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) -> TranslationResult {
+auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) const -> TranslationResult {
+    // CteScan is a bit confusing. It has a plan inside of it, but these plans are evaluated at InitPlan time,
+    // so we just need to read out of the target list here.
     PGX_IO(AST_TRANSLATE);
 
     if (!cteScan) {
@@ -337,71 +333,70 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* 
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Found CTE InitPlan result with %zu columns", result.columns.size());
 
-    if (scanrelid > 0 && cteScan->scan.plan.targetlist) {
-        List* targetlist = cteScan->scan.plan.targetlist;
+    if (scanrelid <= 0 || !cteScan->scan.plan.targetlist) {
+        return result;
+    }
+    List* targetlist = cteScan->scan.plan.targetlist;
 
-        const std::string cte_alias = get_table_alias_from_rte(&ctx.current_stmt, scanrelid);
-        const bool needs_projection = !cte_alias.empty();
+    const std::string cte_alias = get_table_alias_from_rte(&ctx.current_stmt, scanrelid);
+    const bool needs_projection = !cte_alias.empty();
 
-        std::vector<mlir::Attribute> projectionColumns;
-        std::vector<TranslationResult::ColumnSchema> newColumns;
-        auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+    std::vector<mlir::Attribute> projectionColumns;
+    std::vector<TranslationResult::ColumnSchema> newColumns;
+    auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
-        ListCell* lc;
-        int output_attno = 1;
+    ListCell* lc;
+    int output_attno = 1;
 
-        foreach (lc, targetlist) {
-            auto* tle = reinterpret_cast<TargetEntry*>(lfirst(lc));
-            if (tle->resjunk) {
-                continue;
-            }
+    foreach (lc, targetlist) {
+        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (tle->resjunk)
+            continue;
 
-            if (tle->expr && IsA(tle->expr, Var)) {
-                auto* var = reinterpret_cast<Var*>(tle->expr);
+        if (tle->expr && IsA(tle->expr, Var)) {
+            auto* var = reinterpret_cast<Var*>(tle->expr);
 
-                if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
-                    const auto& col = result.columns[var->varattno - 1];
+            if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
+                const auto& col = result.columns[var->varattno - 1];
 
-                    if (needs_projection && tle->resname) {
-                        const std::string new_col_name = tle->resname;
-                        auto colRef = columnManager.createDef(cte_alias, new_col_name);
-                        colRef.getColumn().type = col.mlir_type;
-                        projectionColumns.push_back(colRef);
+                if (needs_projection && tle->resname) {
+                    const std::string new_col_name = tle->resname;
+                    auto colRef = columnManager.createDef(cte_alias, new_col_name);
+                    colRef.getColumn().type = col.mlir_type;
+                    projectionColumns.push_back(colRef);
 
-                        newColumns.push_back(
-                            {cte_alias, new_col_name, col.type_oid, col.typmod, col.mlir_type, col.nullable});
+                    newColumns.push_back({cte_alias, new_col_name, col.type_oid, col.typmod, col.mlir_type, col.nullable});
 
-                        result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(cte_alias,
-                                                                                                          new_col_name);
+                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(cte_alias,
+                                                                                                      new_col_name);
 
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "CteScan column aliasing: varno=%d, attno=%d: @%s::@%s -> @%s::@%s",
-                                scanrelid, output_attno, col.table_name.c_str(), col.column_name.c_str(),
-                                cte_alias.c_str(), new_col_name.c_str());
-                    } else {
-                        result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(
-                            col.table_name, col.column_name);
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped CteScan: varno=%d, attno=%d -> CTE column %d (@%s::@%s)",
-                                scanrelid, output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
-                    }
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "CteScan column aliasing: varno=%d, attno=%d: @%s::@%s -> @%s::@%s",
+                            scanrelid, output_attno, col.table_name.c_str(), col.column_name.c_str(), cte_alias.c_str(),
+                            new_col_name.c_str());
+                } else {
+                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(col.table_name,
+                                                                                                      col.column_name);
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped CteScan: varno=%d, attno=%d -> CTE column %d (@%s::@%s)",
+                            scanrelid, output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
                 }
             }
-            output_attno++;
         }
+        output_attno++;
+    }
 
-        if (needs_projection && !projectionColumns.empty()) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Creating projection with %zu aliased columns for CTE '%s'",
-                    projectionColumns.size(), cte_alias.c_str());
+    if (needs_projection && !projectionColumns.empty()) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Creating projection with %zu aliased columns for CTE '%s'",
+                projectionColumns.size(), cte_alias.c_str());
 
-            auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
-            auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
-                ctx.builder.getUnknownLoc(), tupleStreamType,
-                mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all),
-                result.op->getResult(0), ctx.builder.getArrayAttr(projectionColumns));
+        auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
+        auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
+            ctx.builder.getUnknownLoc(), tupleStreamType,
+            mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all),
+            result.op->getResult(0), ctx.builder.getArrayAttr(projectionColumns));
 
-            result.op = projectionOp.getOperation();
-            result.columns = newColumns;
-            result.current_scope = cte_alias;
-        }
+        result.op = projectionOp.getOperation();
+        result.columns = newColumns;
+        result.current_scope = cte_alias;
     }
 
     return result;
