@@ -9,6 +9,7 @@
 #include "lingodb/mlir/Dialect/DSA/IR/DSADialect.h"
 
 #include "llvm/ADT/TypeSwitch.h"
+#include "pgx-lower/utility/logging.h"
 
 using namespace mlir;
 using namespace ::mlir::relalg;
@@ -192,4 +193,37 @@ void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) con
    auto columnRefAttr = parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
    return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.value());
 }
+void RelAlgDialect::printAttribute(Attribute attr, DialectAsmPrinter& printer) const {
+   if (auto columnDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>()) {
+      columnDefAttr.print(printer);
+   } else if (auto columnRefAttr = attr.dyn_cast<mlir::relalg::ColumnRefAttr>()) {
+      columnRefAttr.print(printer);
+   } else if (auto sortSpecAttr = attr.dyn_cast<mlir::relalg::SortSpecificationAttr>()) {
+      sortSpecAttr.print(printer);
+   } else if (auto tableMetaAttr = attr.dyn_cast<mlir::relalg::TableMetaDataAttr>()) {
+      tableMetaAttr.print(printer);
+   } else {
+      PGX_ERROR("Unknown relalg attribute type - cannot print");
+      llvm_unreachable("unknown relalg attribute");
+   }
+}
+
+Attribute RelAlgDialect::parseAttribute(DialectAsmParser& parser, Type type) const {
+   llvm::StringRef attrTag;
+   if (parser.parseKeyword(&attrTag))
+      return Attribute();
+
+   if (attrTag == "column_def")
+      return mlir::relalg::ColumnDefAttr::parse(parser, type);
+   if (attrTag == "column_ref")
+      return mlir::relalg::ColumnRefAttr::parse(parser, type);
+   if (attrTag == "sort_spec")
+      return mlir::relalg::SortSpecificationAttr::parse(parser, type);
+   if (attrTag == "table_meta")
+      return mlir::relalg::TableMetaDataAttr::parse(parser, type);
+
+   parser.emitError(parser.getNameLoc(), "unknown relalg attribute: ") << attrTag;
+   return Attribute();
+}
+
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsDialect.cpp.inc"

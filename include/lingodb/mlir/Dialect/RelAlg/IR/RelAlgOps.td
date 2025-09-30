@@ -32,6 +32,11 @@ def RelAlg_Dialect : Dialect {
             ColumnManager& getColumnManager(){
                 return columnManager;
             }
+
+            ::mlir::Attribute parseAttribute(::mlir::DialectAsmParser& parser,
+                                            ::mlir::Type type) const override;
+            void printAttribute(::mlir::Attribute attr,
+                              ::mlir::DialectAsmPrinter& printer) const override;
     }];
 }
 

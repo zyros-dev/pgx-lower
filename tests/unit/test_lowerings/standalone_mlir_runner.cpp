@@ -5,16 +5,30 @@
 #include "mlir/Parser/Parser.h"
 #include "llvm/Support/raw_ostream.h"
 #include "pgx-lower/execution/mlir_runner.h"
+#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgDialect.h"
 
 namespace pgx_test {
 
 StandalonePipelineTester::StandalonePipelineTester() {
     setupMLIRContext();
+    builder_ = std::make_unique<mlir::OpBuilder>(context_.get());
 }
 
 bool StandalonePipelineTester::setupMLIRContext() {
     context_ = std::make_unique<mlir::MLIRContext>();
     return mlir_runner::setupMLIRContextForJIT(*context_);
+}
+
+mlir::OpBuilder* StandalonePipelineTester::getBuilder() {
+    return builder_.get();
+}
+
+mlir::relalg::ColumnManager& StandalonePipelineTester::getColumnManager() {
+    auto* dialect = context_->getLoadedDialect<mlir::relalg::RelAlgDialect>();
+    if (!dialect) {
+        throw std::runtime_error("RelAlg dialect not loaded");
+    }
+    return dialect->getColumnManager();
 }
 
 bool StandalonePipelineTester::loadRelAlgModule(const std::string& mlirText) {
