@@ -206,11 +206,6 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
         List* targetlist = subqueryScan->scan.plan.targetlist;
 
         const std::string subquery_alias = get_table_alias_from_rte(&ctx.current_stmt, scanrelid);
-        const bool needs_projection = !subquery_alias.empty();
-
-        std::vector<mlir::Attribute> projectionColumns;
-        std::vector<TranslationResult::ColumnSchema> newColumns;
-        auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
         ListCell* lc;
         int output_attno = 1;
@@ -229,35 +224,17 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
             }
 
             if (IsA(tle->expr, Var)) {
-                // Simple Var - direct column reference from subplan
                 auto* var = reinterpret_cast<Var*>(tle->expr);
 
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
                     const auto& col = result.columns[var->varattno - 1];
 
-                    if (needs_projection && tle->resname) {
-                        const std::string new_col_name = tle->resname;
-                        auto colRef = columnManager.createDef(subquery_alias, new_col_name);
-                        colRef.getColumn().type = col.mlir_type;
-                        projectionColumns.push_back(colRef);
+                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(
+                        col.table_name, col.column_name);
 
-                        newColumns.push_back(
-                            {subquery_alias, new_col_name, col.type_oid, col.typmod, col.mlir_type, col.nullable});
-
-                        result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(
-                            subquery_alias, new_col_name);
-
-                        PGX_LOG(AST_TRANSLATE, DEBUG,
-                                "SubqueryScan column aliasing: varno=%d, attno=%d: @%s::@%s -> @%s::@%s", scanrelid,
-                                output_attno, col.table_name.c_str(), col.column_name.c_str(), subquery_alias.c_str(),
-                                new_col_name.c_str());
-                    } else {
-                        result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(
-                            col.table_name, col.column_name);
-                        PGX_LOG(AST_TRANSLATE, DEBUG,
-                                "Mapped SubqueryScan: varno=%d, attno=%d -> subplan column %d (@%s::@%s)", scanrelid,
-                                output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
-                    }
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Mapped SubqueryScan: varno=%d, attno=%d -> subplan column %d (@%s::@%s)", scanrelid,
+                            output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
                 }
             } else {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan: Processing complex expression at attno=%d", output_attno);
@@ -277,37 +254,19 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 mlir::Type exprType = streamResult.stream.getType();
                 bool nullable = mlir::isa<mlir::db::NullableType>(exprType);
 
-                // Add to result.columns
                 result.columns.push_back(
                     {streamResult.table_name, streamResult.column_name, type_oid, typmod, exprType, nullable});
 
-                if (needs_projection && tle->resname) {
-                    // Reference this column in the projection
-                    projectionColumns.push_back(streamResult.column_ref);
+                result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(
+                    streamResult.table_name, streamResult.column_name);
 
-                    newColumns.push_back({subquery_alias, col_name, type_oid, typmod, exprType, nullable});
-                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(subquery_alias,
-                                                                                                      col_name);
-
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan expression: varno=%d, attno=%d -> @%s::@%s", scanrelid,
-                            output_attno, subquery_alias.c_str(), col_name.c_str());
-                }
+                PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan expression: varno=%d, attno=%d -> @%s::@%s", scanrelid,
+                        output_attno, streamResult.table_name.c_str(), streamResult.column_name.c_str());
             }
             output_attno++;
         }
 
-        if (needs_projection && !projectionColumns.empty()) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Creating projection with %zu aliased columns for subquery '%s'",
-                    projectionColumns.size(), subquery_alias.c_str());
-
-            auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
-            auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
-                ctx.builder.getUnknownLoc(), tupleStreamType,
-                mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all),
-                result.op->getResult(0), ctx.builder.getArrayAttr(projectionColumns));
-
-            result.op = projectionOp.getOperation();
-            result.columns = newColumns;
+        if (!subquery_alias.empty()) {
             result.current_scope = subquery_alias;
         }
     }
