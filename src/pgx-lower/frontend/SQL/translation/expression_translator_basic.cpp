@@ -126,28 +126,30 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     }
 
     int actualVarno = var->varno;
+    int actualVarattno = var->varattno;
+
     if (var->varno == INNER_VAR || var->varno == INDEX_VAR || var->varno == OUTER_VAR) {
         actualVarno = var->varnosyn;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: Using varnosyn=%d for synthetic varno=%d",
-                var->varnosyn, var->varno);
+        actualVarattno = var->varattnosyn;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: Using varnosyn=%d, varattnosyn=%d for synthetic varno=%d, varattno=%d",
+                var->varnosyn, var->varattnosyn, var->varno, var->varattno);
     }
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d, actualVarno=%d",
-            var->varno, var->varattno, actualVarno);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d, actualVarno=%d, actualVarattno=%d",
+            var->varno, var->varattno, actualVarno, actualVarattno);
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: varno=%d, varattno=%d, has_current_result=%d",
             var->varno, var->varattno, current_result.has_value());
 
     std::string tableName, colName;
     bool nullable;
 
-    // Try resolving through current_result first (works with or without tuple)
-    if (current_result && current_result->get().resolve_var(actualVarno, var->varattno)) {
-        const auto& [mappedTable, mappedColumn] = *current_result->get().resolve_var(actualVarno, var->varattno);
+    if (current_result && current_result->get().resolve_var(actualVarno, actualVarattno)) {
+        const auto& [mappedTable, mappedColumn] = *current_result->get().resolve_var(actualVarno, actualVarattno);
         tableName = mappedTable;
         colName = mappedColumn;
-        nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
+        nullable = is_column_nullable(&ctx.current_stmt, actualVarno, actualVarattno);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for varno=%d, varattno=%d -> (%s, %s)",
-                actualVarno, var->varattno, tableName.c_str(), colName.c_str());
+                actualVarno, actualVarattno, tableName.c_str(), colName.c_str());
         PGX_LOG(AST_TRANSLATE, DEBUG,
                 "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'", tableName.c_str(),
                 colName.c_str());
@@ -222,12 +224,10 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
     auto colRef = columnManager.createRef(tableName, colName);
 
-    // CRITICAL FIX: Don't overwrite Column type if already set (from BaseTableOp creation)
-    // Only set type if it's nullptr (first time seeing this column)
+    // TODO: it's a bit goofy that we even need this safety check here
     if (!colRef.getColumn().type) {
         colRef.getColumn().type = mlirType;
     } else {
-        // Type already set - use existing type instead of var->vartype
         mlirType = colRef.getColumn().type;
     }
 
