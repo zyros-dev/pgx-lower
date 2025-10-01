@@ -271,6 +271,12 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
         }
     }
 
+    if (result.op && subqueryScan->scan.plan.qual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan has qual, applying selection (context has %zu InitPlans)",
+                ctx.init_plan_results.size());
+        result = apply_selection_from_qual_with_columns(ctx, result, subqueryScan->scan.plan.qual, nullptr, nullptr);
+    }
+
     return result;
 }
 
@@ -370,6 +376,12 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* 
         result.op = projectionOp.getOperation();
         result.columns = newColumns;
         result.current_scope = cte_alias;
+    }
+
+    if (result.op && cteScan->scan.plan.qual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "CteScan has qual, applying selection (context has %zu InitPlans)",
+                ctx.init_plan_results.size());
+        result = apply_selection_from_qual_with_columns(ctx, result, cteScan->scan.plan.qual, nullptr, nullptr);
     }
 
     return result;
