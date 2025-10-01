@@ -130,9 +130,23 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
     if (var->varno == INNER_VAR || var->varno == INDEX_VAR || var->varno == OUTER_VAR) {
         actualVarno = var->varnosyn;
-        actualVarattno = var->varattnosyn;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: Using varnosyn=%d, varattnosyn=%d for synthetic varno=%d, varattno=%d",
-                var->varnosyn, var->varattnosyn, var->varno, var->varattno);
+
+        const auto* rte = static_cast<RangeTblEntry*>(
+            list_nth(ctx.current_stmt.rtable, actualVarno - POSTGRESQL_VARNO_OFFSET));
+
+        if (rte->rtekind == RTE_SUBQUERY) {
+            // Subquery: use varattno to index into subquery result
+            actualVarattno = var->varattno;
+            PGX_LOG(AST_TRANSLATE, DEBUG,
+                    "translate_var: Subquery detected - using varnosyn=%d, varattno=%d for synthetic varno=%d",
+                    var->varnosyn, var->varattno, var->varno);
+        } else {
+            // Base table: use varattnosyn to get actual column position
+            actualVarattno = var->varattnosyn;
+            PGX_LOG(AST_TRANSLATE, DEBUG,
+                    "translate_var: Base table detected - using varnosyn=%d, varattnosyn=%d for synthetic varno=%d, varattno=%d",
+                    var->varnosyn, var->varattnosyn, var->varno, var->varattno);
+        }
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d, actualVarno=%d, actualVarattno=%d",
