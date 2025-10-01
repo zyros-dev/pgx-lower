@@ -51,6 +51,32 @@ struct Material;
 
 namespace pgx_lower::frontend::sql {
 
+// Our data model is currently a mess. I believe we should change to
+// QueryState
+//      QueryContext -> represents global/absolute state/variables.
+//      TranslationResult -> represents relative state/variables
+//
+// For the QueryContext, you can ADD information to it, for instance the subquery
+// node might have to add information about the range table lookups because it created these
+// global columns. However, you cannot update or modify entries inside of it after its
+// created
+//
+// For TranslationResult, there are a number of challenges. We need it to be immutable, and
+// construction guarantees correctness. This means we need to either introduce a factory pattern
+// or add like... 5-10 constructors.
+//
+// There's essentially three types of TranslationResults. The first represents reading from a leaf node
+// or absolute positions, subquery columns. These require a lot of validation that what they're being made
+// from is valid.
+// The second is joining two TranslationResults. So, if you have an expression inside of your Join node,
+// this requires a TranslationResult from the children of the Join node. This has like -1 and -2 for left/right
+// children. These are constructed from 2+ TranslationResults, and basically relies on induction.
+// The third is carried up. For instance, if you have a Projection node with a child, it chops columns
+// out of its child. These should be able to validate with the result list of the ProjectionNode.
+//
+// With all of this, we know that our TranslationResult will always represent something VALID. However,
+// we won't know whether it belongs to our current expression. This I'm not sure we need to worry about, or
+// rather, introducing a solution adds too much complexity to justify the benefit compared to testing.
 template<typename T>
 using OptRefT = std::optional<std::reference_wrapper<T>>;
 
@@ -192,31 +218,14 @@ class PostgreSQLASTTranslator::Impl {
                                         OptRefT<const TranslationResult> current_result = std::nullopt);
     auto translate_expression(const QueryCtxT& ctx, Expr* expr,
                               OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
-    // TODO: So we have all of these with_join_context functions. Initially I slammed these down when I was doing joins
-    //       and just wanted to get it running. I figured we'd have like temporal translation results, but probably the
-    //       proper solution is to make a merge_translation_result(a, b) function, then pass through the normal
-    //       translate_expression paths. This probably deletes like two thousand lines of code that is copy-pasted
-    auto translate_expression_merged_context(const QueryCtxT& ctx, Expr* expr, const TranslationResult* left_child,
-                                             const TranslationResult* right_child) -> mlir::Value;
     auto translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr, const TranslationResult* left_child,
                                                 const TranslationResult* right_child) -> mlir::Value;
-    auto translate_op_expr_with_join_context(const QueryCtxT& ctx, const OpExpr* op_expr,
-                                             const TranslationResult* left_child, const TranslationResult* right_child)
-        -> mlir::Value;
-    auto translate_bool_expr_with_join_context(const QueryCtxT& ctx, const BoolExpr* bool_expr,
-                                               const TranslationResult* left_child,
-                                               const TranslationResult* right_child) -> mlir::Value;
-    auto translate_func_expr_with_join_context(const QueryCtxT& ctx, const FuncExpr* func_expr,
-                                               const TranslationResult* left_child,
-                                               const TranslationResult* right_child) -> mlir::Value;
     auto translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr, const TranslationResult& child_result,
                                          const std::string& suggested_name)
         -> pgx_lower::frontend::sql::StreamExpressionResult;
 
-    [[deprecated("Use translate_op_expr_with_join_context() for join contexts")]]
     auto translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr,
                            OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
-
     auto translate_var(const QueryCtxT& ctx, const Var* var,
                        OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
     auto translate_const(const QueryCtxT& ctx, Const* const_node,
@@ -225,7 +234,6 @@ class PostgreSQLASTTranslator::Impl {
                              OptRefT<const TranslationResult> current_result = std::nullopt,
                              std::optional<std::vector<mlir::Value>> pre_translated_args = std::nullopt) -> mlir::Value;
 
-    [[deprecated("Use translate_bool_expr_with_join_context() for join contexts")]]
     auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr,
                              OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
     auto translate_null_test(const QueryCtxT& ctx, const NullTest* null_test,
@@ -273,7 +281,6 @@ class PostgreSQLASTTranslator::Impl {
 
     // Relational operation helpers
 
-    [[deprecated("Use apply_selection_from_qual_with_columns() for better join support")]]
     auto apply_selection_from_qual(const QueryCtxT& ctx, const TranslationResult& input, const List* qual)
         -> TranslationResult;
 

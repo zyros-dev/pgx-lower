@@ -692,7 +692,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const
         result.current_scope = scope;
         for (size_t i = 0; i < result.columns.size(); ++i) {
             const auto& col = result.columns[i];
-            result.varno_resolution[std::make_pair(-2, i + 1)] = std::make_pair(col.table_name, col.column_name);
+            result.varno_resolution[std::make_pair(OUTER_VAR, i + 1)] = std::make_pair(col.table_name, col.column_name);
             PGX_LOG(AST_TRANSLATE, DEBUG, "Added JOIN mapping to TranslationResult: varno=-2, varattno=%zu -> @%s::@%s",
                     i + 1, col.table_name.c_str(), col.column_name.c_str());
         }
