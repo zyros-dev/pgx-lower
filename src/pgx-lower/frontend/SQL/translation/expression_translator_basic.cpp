@@ -221,7 +221,15 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
             tableName.c_str(), colName.c_str());
 
     auto colRef = columnManager.createRef(tableName, colName);
-    colRef.getColumn().type = mlirType;
+
+    // CRITICAL FIX: Don't overwrite Column type if already set (from BaseTableOp creation)
+    // Only set type if it's nullptr (first time seeing this column)
+    if (!colRef.getColumn().type) {
+        colRef.getColumn().type = mlirType;
+    } else {
+        // Type already set - use existing type instead of var->vartype
+        mlirType = colRef.getColumn().type;
+    }
 
     auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), mlirType, colRef,
                                                                   ctx.current_tuple);
