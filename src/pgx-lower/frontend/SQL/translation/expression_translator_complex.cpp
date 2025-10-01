@@ -189,8 +189,8 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr_with_join_context(const Qu
     PGX_LOG(AST_TRANSLATE, DEBUG, "[OPEXPR] Left operand type: %d, Right operand type: %d",
             leftExpr ? leftExpr->type : -1, rightExpr ? rightExpr->type : -1);
 
-    auto lhs = translate_expression_with_join_context(ctx, leftExpr, left_child, right_child);
-    auto rhs = translate_expression_with_join_context(ctx, rightExpr, left_child, right_child);
+    auto lhs = translate_expression_merged_context(ctx, leftExpr, left_child, right_child);
+    auto rhs = translate_expression_merged_context(ctx, rightExpr, left_child, right_child);
 
     if (!lhs || !rhs) {
         PGX_ERROR("Failed to translate OpExpr operands - lhs=%p, rhs=%p", lhs.getAsOpaquePointer(),

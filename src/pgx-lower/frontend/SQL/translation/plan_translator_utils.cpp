@@ -1023,4 +1023,42 @@ auto PostgreSQLASTTranslator::Impl::create_query_function(mlir::OpBuilder& build
     return queryFunc;
 }
 
+auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationResult* left_child,
+                                                               const TranslationResult* right_child)
+    -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+
+    TranslationResult merged_result;
+
+    size_t left_size = 0;
+
+    if (left_child) {
+        left_size = left_child->columns.size();
+        merged_result.columns.insert(merged_result.columns.end(), left_child->columns.begin(),
+                                     left_child->columns.end());
+        merged_result.varno_resolution.insert(left_child->varno_resolution.begin(),
+                                              left_child->varno_resolution.end());
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Merged %zu columns from left_child", left_child->columns.size());
+    }
+
+    if (right_child) {
+        merged_result.columns.insert(merged_result.columns.end(), right_child->columns.begin(),
+                                     right_child->columns.end());
+        merged_result.varno_resolution.insert(right_child->varno_resolution.begin(),
+                                              right_child->varno_resolution.end());
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Merged %zu columns from right_child", right_child->columns.size());
+    }
+
+    merged_result.left_child_column_count = left_size;
+
+    PGX_LOG(AST_TRANSLATE, DEBUG,
+            "merge_translation_results: Total %zu columns (%zu left + %zu right), %zu varno mappings",
+            merged_result.columns.size(), left_size,
+            merged_result.columns.size() - left_size, merged_result.varno_resolution.size());
+
+    return merged_result;
+}
+
 } // namespace postgresql_ast

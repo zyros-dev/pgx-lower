@@ -87,6 +87,7 @@ struct TranslationResult {
     std::vector<ColumnSchema> columns;
     std::string current_scope;
     std::map<std::pair<int, int>, std::pair<std::string, std::string>> varno_resolution;
+    size_t left_child_column_count = 0;
 
     [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {
         const auto key = std::make_pair(varno, varattno);
@@ -195,6 +196,8 @@ class PostgreSQLASTTranslator::Impl {
     //       and just wanted to get it running. I figured we'd have like temporal translation results, but probably the
     //       proper solution is to make a merge_translation_result(a, b) function, then pass through the normal
     //       translate_expression paths. This probably deletes like two thousand lines of code that is copy-pasted
+    auto translate_expression_merged_context(const QueryCtxT& ctx, Expr* expr, const TranslationResult* left_child,
+                                             const TranslationResult* right_child) -> mlir::Value;
     auto translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr, const TranslationResult* left_child,
                                                 const TranslationResult* right_child) -> mlir::Value;
     auto translate_op_expr_with_join_context(const QueryCtxT& ctx, const OpExpr* op_expr,
@@ -291,6 +294,9 @@ class PostgreSQLASTTranslator::Impl {
     auto create_join_operation(const QueryCtxT& ctx, JoinType join_type, mlir::Value left_value, mlir::Value right_value,
                                const TranslationResult& left_translation, const TranslationResult& right_translation,
                                List* join_clauses) -> TranslationResult;
+
+    static auto merge_translation_results(const TranslationResult* left_child, const TranslationResult* right_child)
+        -> TranslationResult;
 
     // Operation translation helpers
     auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr,

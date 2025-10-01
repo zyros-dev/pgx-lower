@@ -126,7 +126,14 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     }
 
     int actualVarno = var->varno;
-    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d", var->varno, var->varattno);
+    if (var->varno == INNER_VAR || var->varno == INDEX_VAR || var->varno == OUTER_VAR) {
+        actualVarno = var->varnosyn;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: Using varnosyn=%d for synthetic varno=%d",
+                var->varnosyn, var->varno);
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d, actualVarno=%d",
+            var->varno, var->varattno, actualVarno);
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: varno=%d, varattno=%d, has_current_result=%d",
             var->varno, var->varattno, current_result.has_value());
 
@@ -160,6 +167,32 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
                 var->varattno, tableName.c_str(), colName.c_str(), nullable);
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='%s', colName='%s'",
                 tableName.c_str(), colName.c_str());
+    } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {
+        if (!current_result) {
+            PGX_ERROR("Unresolved special varno %d (varattno=%d) - no current_result for fallback",
+                      var->varno, var->varattno);
+            throw std::runtime_error("Special varno requires current_result for positional fallback");
+        }
+
+        size_t left_size = current_result->get().left_child_column_count;
+        size_t absolute_position = left_size + var->varattno - 1;  // varattno is 1-based
+
+        if (absolute_position >= current_result->get().columns.size()) {
+            PGX_ERROR("INNER_VAR/INDEX_VAR varattno=%d (absolute pos=%zu) out of range "
+                      "(left_size=%zu, total=%zu columns)",
+                      var->varattno, absolute_position, left_size,
+                      current_result->get().columns.size());
+            throw std::runtime_error("INNER_VAR/INDEX_VAR reference out of bounds");
+        }
+
+        const auto& col = current_result->get().columns[absolute_position];
+        tableName = col.table_name;
+        colName = col.column_name;
+        nullable = col.nullable;
+        PGX_LOG(AST_TRANSLATE, DEBUG,
+                "INNER_VAR/INDEX_VAR varno=%d varattno=%d → absolute_pos=%zu (left_size=%zu) → %s.%s (nullable=%d)",
+                var->varno, var->varattno, absolute_position, left_size,
+                tableName.c_str(), colName.c_str(), nullable);
     } else {
         tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
         colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);

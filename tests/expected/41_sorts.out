@@ -362,19 +362,11 @@ FROM (
     GROUP BY r.region_name
 ) sub
 ORDER BY ratio DESC;
+NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | ratio 
 -------------+-------
- Asia        |     1
+ Asia        |     3
+ Europe      |     3
  Americas    |     0
- Europe      |     0
 (3 rows)
 
-DROP TABLE sort_test;
-DROP TABLE countries;
-DROP TABLE regions;
-DROP TABLE bpchar_test;
-DROP TABLE date_test;
-DROP TABLE timestamp_test;
-DROP TABLE decimal_test;
-ERROR:  table "decimal_test" does not exist
-DROP TABLE mixed_sort_test;

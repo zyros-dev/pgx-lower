@@ -418,6 +418,27 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                                 column_name = col.column_name;
                                 PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved OUTER_VAR via columns: varattno=%d -> %s.%s",
                                         var->varattno, table_scope.c_str(), column_name.c_str());
+                            } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {
+                                // INNER_VAR positional fallback: offset by left_child_column_count
+                                size_t left_size = current_result->get().left_child_column_count;
+                                size_t absolute_position = left_size + var->varattno - 1;
+
+                                if (absolute_position >= current_result->get().columns.size()) {
+                                    PGX_ERROR("INNER_VAR/INDEX_VAR varattno=%d (absolute pos=%zu) out of range "
+                                              "(left_size=%zu, total=%zu columns)",
+                                              var->varattno, absolute_position, left_size,
+                                              current_result->get().columns.size());
+                                    throw std::runtime_error("INNER_VAR/INDEX_VAR reference out of bounds in correlation");
+                                }
+
+                                const auto& col = current_result->get().columns[absolute_position];
+                                table_scope = col.table_name;
+                                column_name = col.column_name;
+                                PGX_LOG(AST_TRANSLATE, DEBUG,
+                                        "Resolved INNER_VAR/INDEX_VAR via positional fallback: varno=%d, varattno=%d → "
+                                        "absolute_pos=%zu → %s.%s",
+                                        var->varno, var->varattno, absolute_position, table_scope.c_str(),
+                                        column_name.c_str());
                             } else {
                                 PGX_ERROR("Cannot resolve INNER_VAR/OUTER_VAR: varno=%d, varattno=%d", var->varno,
                                           var->varattno);
@@ -816,6 +837,17 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
     return {.stream = mapOp.getResult(), .column_ref = columnRef, .column_name = columnName, .table_name = scopeName};
 }
 
+auto PostgreSQLASTTranslator::Impl::translate_expression_merged_context(const QueryCtxT& ctx, Expr* expr,
+                                                                         const TranslationResult* left_child,
+                                                                         const TranslationResult* right_child)
+    -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_expression_merged_context: Merging left and right contexts");
+
+    auto merged = merge_translation_results(left_child, right_child);
+    return translate_expression(ctx, expr, merged);
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr,
                                                                            const TranslationResult* left_child,
                                                                            const TranslationResult* right_child)
@@ -842,33 +874,71 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
                         c.column_name.c_str(), c.type_oid);
             }
 
-            if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child->columns.size())) {
-                const auto& col = left_child->columns[var->varattno - 1];
+            // For OUTER_VAR in join context: determine resolution strategy.
+            // If varno_resolution exists AND the mapped column is in the output, use it.
+            // Otherwise, use direct position-based access (for projected joins where columns are renumbered).
+            const auto& col = [&]() -> const TranslationResult::ColumnSchema& {
+                // Try varno_resolution first
+                if (auto mapping = left_child->resolve_var(var->varnosyn, var->varattno)) {
+                    const auto& [table_name, col_name] = *mapping;
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "[VAR RESOLUTION] OUTER_VAR found varno_resolution: varnosyn=%d, varattno=%d -> @%s::@%s",
+                            var->varnosyn, var->varattno, table_name.c_str(), col_name.c_str());
 
-                PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] OUTER_VAR varattno=%d resolved to %s.%s (position %d)",
-                        var->varattno, col.table_name.c_str(), col.column_name.c_str(), var->varattno - 1);
-                PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] Column details: type_oid=%d, nullable=%d", col.type_oid,
-                        col.nullable);
-
-                auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
-                if (!dialect) {
-                    PGX_ERROR("RelAlg dialect not registered");
-                    throw std::runtime_error("Check logs");
+                    // Check if this mapped column exists in the child's output
+                    for (size_t i = 0; i < left_child->columns.size(); ++i) {
+                        const auto& c = left_child->columns[i];
+                        if (c.table_name == table_name && c.column_name == col_name) {
+                            // Found it! But is it at the position varattno suggests?
+                            if (static_cast<int>(i + 1) == var->varattno) {
+                                // Position matches - safe to use mapping
+                                PGX_LOG(AST_TRANSLATE, DEBUG,
+                                        "[VAR RESOLUTION] OUTER_VAR mapped column @%s::@%s found at expected position %d",
+                                        table_name.c_str(), col_name.c_str(), var->varattno);
+                                return c;
+                            } else {
+                                // Position mismatch - projection has renumbered columns, use direct position
+                                PGX_LOG(AST_TRANSLATE, DEBUG,
+                                        "[VAR RESOLUTION] OUTER_VAR mapped column @%s::@%s found but at position %zu, not %d - using direct position instead",
+                                        table_name.c_str(), col_name.c_str(), i + 1, var->varattno);
+                                break; // Fall through to position-based access
+                            }
+                        }
+                    }
                 }
 
-                auto& columnManager = dialect->getColumnManager();
-                auto colRef = columnManager.createRef(col.table_name, col.column_name);
-                colRef.getColumn().type = col.mlir_type;
+                // Use direct position-based access (projection renumbered columns, or no mapping found)
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child->columns.size())) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "[VAR RESOLUTION] OUTER_VAR using direct position: varattno=%d -> position %d (total %zu cols)",
+                            var->varattno, var->varattno - 1, left_child->columns.size());
+                    return left_child->columns[var->varattno - 1];
+                }
 
-                auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(),
-                                                                              col.mlir_type, colRef, ctx.current_tuple);
+                PGX_ERROR("OUTER_VAR varattno %d out of range (have %zu columns)",
+                          var->varattno, left_child->columns.size());
+                throw std::runtime_error("Check logs");
+            }();
 
-                return getColOp.getRes();
-            } else {
-                PGX_ERROR("OUTER_VAR varattno %d out of range (have %zu columns)", var->varattno,
-                          left_child->columns.size());
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] OUTER_VAR varattno=%d resolved to %s.%s (position %d)",
+                    var->varattno, col.table_name.c_str(), col.column_name.c_str(), var->varattno - 1);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] Column details: type_oid=%d, nullable=%d", col.type_oid,
+                    col.nullable);
+
+            auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+            if (!dialect) {
+                PGX_ERROR("RelAlg dialect not registered");
                 throw std::runtime_error("Check logs");
             }
+
+            auto& columnManager = dialect->getColumnManager();
+            auto colRef = columnManager.createRef(col.table_name, col.column_name);
+            colRef.getColumn().type = col.mlir_type;
+
+            auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(),
+                                                                          col.mlir_type, colRef, ctx.current_tuple);
+
+            return getColOp.getRes();
         } else if (var->varno == INNER_VAR && right_child) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] INNER_VAR: right_child has %zu columns",
                     right_child->columns.size());
@@ -878,27 +948,51 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const
                         c.column_name.c_str(), c.type_oid);
             }
 
-            const auto* resolved_col_ptr = [&]() -> const TranslationResult::ColumnSchema* {
+            // For INNER_VAR in join context: determine resolution strategy.
+            // If varno_resolution exists AND the mapped column is in the output, use it.
+            // Otherwise, use direct position-based access (for projected joins where columns are renumbered).
+            const auto& col = [&]() -> const TranslationResult::ColumnSchema& {
+                // Try varno_resolution first
                 if (auto mapping = right_child->resolve_var(var->varnosyn, var->varattno)) {
                     const auto& [table_name, col_name] = *mapping;
                     PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "[VAR RESOLUTION] INNER_VAR using varno_resolution: varnosyn=%d, varattno=%d -> @%s::@%s",
+                            "[VAR RESOLUTION] INNER_VAR found varno_resolution: varnosyn=%d, varattno=%d -> @%s::@%s",
                             var->varnosyn, var->varattno, table_name.c_str(), col_name.c_str());
-                    for (const auto& c : right_child->columns) {
+
+                    // Check if this mapped column exists in the child's output
+                    for (size_t i = 0; i < right_child->columns.size(); ++i) {
+                        const auto& c = right_child->columns[i];
                         if (c.table_name == table_name && c.column_name == col_name) {
-                            return &c;
+                            // Found it! But is it at the position varattno suggests?
+                            if (static_cast<int>(i + 1) == var->varattno) {
+                                // Position matches - safe to use mapping
+                                PGX_LOG(AST_TRANSLATE, DEBUG,
+                                        "[VAR RESOLUTION] INNER_VAR mapped column @%s::@%s found at expected position %d",
+                                        table_name.c_str(), col_name.c_str(), var->varattno);
+                                return c;
+                            } else {
+                                // Position mismatch - projection has renumbered columns, use direct position
+                                PGX_LOG(AST_TRANSLATE, DEBUG,
+                                        "[VAR RESOLUTION] INNER_VAR mapped column @%s::@%s found but at position %zu, not %d - using direct position instead",
+                                        table_name.c_str(), col_name.c_str(), i + 1, var->varattno);
+                                break; // Fall through to position-based access
+                            }
                         }
                     }
-                    PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "[VAR RESOLUTION] Mapping found but column not in schema, falling back to position");
                 }
-                return nullptr;
-            }();
 
-            const auto& col = resolved_col_ptr ? *resolved_col_ptr
-                              : (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size()))
-                                  ? right_child->columns[var->varattno - 1]
-                                  : throw std::runtime_error("INNER_VAR varattno out of range");
+                // Use direct position-based access (projection renumbered columns, or no mapping found)
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size())) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "[VAR RESOLUTION] INNER_VAR using direct position: varattno=%d -> position %d (total %zu cols)",
+                            var->varattno, var->varattno - 1, right_child->columns.size());
+                    return right_child->columns[var->varattno - 1];
+                }
+
+                PGX_ERROR("INNER_VAR varattno %d out of range (have %zu columns)",
+                          var->varattno, right_child->columns.size());
+                throw std::runtime_error("Check logs");
+            }();
 
             PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR RESOLUTION] INNER_VAR varattno=%d resolved to %s.%s", var->varattno,
                     col.table_name.c_str(), col.column_name.c_str());
