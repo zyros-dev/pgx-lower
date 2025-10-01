@@ -264,7 +264,10 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         throw std::runtime_error("Failed to translate left child of NestLoop");
     }
 
-    auto rightTranslation = translate_plan_node(ctx, rightPlan);
+    auto rightCtx = ctx;
+    rightCtx.outer_result = leftTranslation;
+
+    auto rightTranslation = translate_plan_node(rightCtx, rightPlan);
     auto rightOp = rightTranslation.op;
     if (!rightOp) {
         PGX_ERROR("Failed to translate right child of NestLoop");
@@ -507,6 +510,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const
         predicateBuilder.setInsertionPointToStart(predicateBlock);
         auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, innerTupleArg,
                                       mlir::Value());
+        predicateCtx.outer_result = queryCtx.outer_result;
         predicateCtx.init_plan_results = queryCtx.init_plan_results;
         predicateCtx.nest_params = queryCtx.nest_params;
         predicateCtx.subquery_param_mapping = queryCtx.subquery_param_mapping;
@@ -584,6 +588,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const
 
         auto inner_ctx = QueryCtxT(query_ctx.current_stmt, outer_builder, query_ctx.current_module, inner_tuple,
                                    mlir::Value());
+        inner_ctx.outer_result = query_ctx.outer_result;
         inner_ctx.init_plan_results = query_ctx.init_plan_results;
         inner_ctx.nest_params = query_ctx.nest_params;
         inner_ctx.subquery_param_mapping = query_ctx.subquery_param_mapping;

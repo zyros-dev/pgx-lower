@@ -170,6 +170,7 @@ struct TranslationContext {
     const mlir::ModuleOp current_module;
     const mlir::Value current_tuple;
     const mlir::Value outer_tuple;
+    OptRefT<const TranslationResult> outer_result;
     std::unordered_map<int, TranslationResult> init_plan_results;
     std::unordered_map<int, SubqueryInfo> subquery_param_mapping;
     std::unordered_map<int, std::pair<std::string, std::string>> correlation_params;
@@ -183,6 +184,7 @@ struct TranslationContext {
             parent.current_module,
             mlir::Value{},
             parent.current_tuple,
+            parent.outer_result,
             parent.init_plan_results,
             {},
             {},

@@ -152,19 +152,23 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
                 "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'", tableName.c_str(),
                 colName.c_str());
     } else if (var->varno == OUTER_VAR) {
-        if (!current_result || var->varattno <= 0
-            || var->varattno > static_cast<int>(current_result->get().columns.size()))
-        {
-            PGX_ERROR("OUTER_VAR varattno=%d out of range (child has %zu columns)", var->varattno,
-                      current_result ? current_result->get().columns.size() : 0);
-            throw std::runtime_error("OUTER_VAR reference without valid child result");
+        auto& result_to_use = ctx.outer_result ? ctx.outer_result.value() :
+                              (current_result ? current_result.value() :
+                               throw std::runtime_error("OUTER_VAR without current_result or outer_result"));
+
+        if (var->varattno <= 0 || var->varattno > static_cast<int>(result_to_use.get().columns.size())) {
+            PGX_ERROR("OUTER_VAR varattno=%d out of range (result has %zu columns, using %s)",
+                      var->varattno, result_to_use.get().columns.size(),
+                      ctx.outer_result ? "outer_result" : "current_result");
+            throw std::runtime_error("OUTER_VAR reference out of range");
         }
-        const auto& col = current_result->get().columns[var->varattno - 1];
+        const auto& col = result_to_use.get().columns[var->varattno - 1];
         tableName = col.table_name;
         colName = col.column_name;
         nullable = col.nullable;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from child result",
-                var->varattno, tableName.c_str(), colName.c_str(), nullable);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from %s",
+                var->varattno, tableName.c_str(), colName.c_str(), nullable,
+                ctx.outer_result ? "outer_result" : "current_result");
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='%s', colName='%s'",
                 tableName.c_str(), colName.c_str());
     } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {

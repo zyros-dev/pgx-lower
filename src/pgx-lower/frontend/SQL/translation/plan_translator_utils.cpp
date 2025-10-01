@@ -313,6 +313,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
         auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.outer_tuple};
+        tmp_ctx.outer_result = ctx.outer_result;
         tmp_ctx.init_plan_results = ctx.init_plan_results;
         tmp_ctx.nest_params = ctx.nest_params;
         tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
@@ -417,6 +418,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
         auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.outer_tuple};
+        tmp_ctx.outer_result = ctx.outer_result;
         tmp_ctx.init_plan_results = ctx.init_plan_results;
         tmp_ctx.nest_params = ctx.nest_params;
         tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
