@@ -311,6 +311,8 @@ TranslationResult
 PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const JoinType join_type, mlir::Value left_value,
                                                      mlir::Value right_value, const TranslationResult& left_translation,
                                                      const TranslationResult& right_translation, List* join_clauses) {
+    // TODO: NV: Split this into three functions. Our lambdas are good, but there isn't actually much overlap. We can
+    // split it into two or three separate things, 1) Exists patterns, 2) inner join 3) left/right join
     // Since it's a complex function, all of its functional dependencies are isolated into lambdas. This means I don't
     // have to hop around to understand the function so much.
     PGX_IO(AST_TRANSLATE);

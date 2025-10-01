@@ -51,6 +51,7 @@ struct Material;
 
 namespace pgx_lower::frontend::sql {
 
+// TODO: NV Improve state correctness
 // Our data model is currently a mess. I believe we should change to
 // QueryState
 //      QueryContext -> represents global/absolute state/variables.
@@ -73,6 +74,10 @@ namespace pgx_lower::frontend::sql {
 // children. These are constructed from 2+ TranslationResults, and basically relies on induction.
 // The third is carried up. For instance, if you have a Projection node with a child, it chops columns
 // out of its child. These should be able to validate with the result list of the ProjectionNode.
+//
+// All of these can be validate with MLIR results, like the joins can validate by binding MLIR graph structures
+// by passing in the left and right mlir::Values. So, maybe our constructors for a lot of these will look like
+// construct([TranslationResult], [mlir::Value], resultlist, ... other things)
 //
 // With all of this, we know that our TranslationResult will always represent something VALID. However,
 // we won't know whether it belongs to our current expression. This I'm not sure we need to worry about, or
