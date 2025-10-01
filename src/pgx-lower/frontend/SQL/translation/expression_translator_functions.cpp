@@ -322,56 +322,11 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr_with_join_context(const 
                                                                           const TranslationResult* right_child)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
-    if (!func_expr) {
-        PGX_ERROR("Invalid FuncExpr parameters");
-        throw std::runtime_error("Invalid FuncExpr parameters");
-    }
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_func_expr_with_join_context: Routing through merge path");
 
-    auto args = std::vector<mlir::Value>{};
-    if (func_expr->args && func_expr->args->length > 0) {
-        if (!func_expr->args->elements) {
-            PGX_ERROR("FuncExpr args list has length but no elements array");
-            throw std::runtime_error("FuncExpr args list has length but no elements array");
-        }
-
-        ListCell* lc;
-        foreach (lc, func_expr->args) {
-            if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
-                if (mlir::Value argValue = translate_expression_with_join_context(ctx, reinterpret_cast<Expr*>(argNode),
-                                                                                  left_child, right_child))
-                {
-                    args.push_back(argValue);
-                }
-            }
-        }
-    }
-
-    const auto loc = ctx.builder.getUnknownLoc();
-
-    char* funcname = get_func_name(func_expr->funcid);
-    if (!funcname) {
-        PGX_ERROR("Unknown function OID %d", func_expr->funcid);
-        throw std::runtime_error("Unknown function OID " + std::to_string(func_expr->funcid));
-    }
-
-    std::string func(funcname);
-    pfree(funcname);
-
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating function %s with join context", func.c_str());
-
-    if (func == "date_part" || func == "extract") {
-        if (args.size() != 2) {
-            PGX_ERROR("EXTRACT/date_part requires exactly 2 arguments, got %zu", args.size());
-            throw std::runtime_error("EXTRACT/date_part requires exactly 2 arguments");
-        }
-
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Translating EXTRACT function");
-        auto runtimeCall = ctx.builder.create<mlir::db::RuntimeCall>(loc, ctx.builder.getI64Type(), "ExtractFromDate",
-                                                                     args);
-        return runtimeCall.getRes();
-    }
-
-    return translate_func_expr(ctx, func_expr, std::nullopt, args);
+    // Merge contexts and route through regular translate_func_expr
+    auto merged = merge_translation_results(left_child, right_child);
+    return translate_func_expr(ctx, func_expr, merged);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, const SubPlan* subplan,

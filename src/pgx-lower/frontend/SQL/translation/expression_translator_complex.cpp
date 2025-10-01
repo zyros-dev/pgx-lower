@@ -926,51 +926,11 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr_with_join_context(const 
                                                                           const TranslationResult* right_child)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
-    if (!bool_expr->args || bool_expr->args->length == 0) {
-        PGX_ERROR("BoolExpr has no arguments");
-        throw std::runtime_error("Check logs");
-    }
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_bool_expr_with_join_context: Routing through merge path");
 
-    std::vector<mlir::Value> operands;
-    ListCell* lc;
-    foreach (lc, bool_expr->args) {
-        auto* arg = static_cast<Expr*>(lfirst(lc));
-        if (auto operand = translate_expression_with_join_context(ctx, arg, left_child, right_child)) {
-            if (!operand.getType().isInteger(1)) {
-                operand = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), operand);
-            }
-            operands.push_back(operand);
-        } else {
-            PGX_ERROR("Failed to translate BoolExpr argument");
-            throw std::runtime_error("Check logs");
-        }
-    }
-
-    if (operands.empty()) {
-        PGX_ERROR("No valid operands for BoolExpr");
-        throw std::runtime_error("Check logs");
-    }
-
-    mlir::Value result = operands[0];
-    for (size_t i = 1; i < operands.size(); ++i) {
-        switch (bool_expr->boolop) {
-        case AND_EXPR:
-            result = ctx.builder.create<mlir::db::AndOp>(ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(),
-                                                         mlir::ValueRange{result, operands[i]});
-            break;
-        case OR_EXPR:
-            result = ctx.builder.create<mlir::db::OrOp>(ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(),
-                                                        mlir::ValueRange{result, operands[i]});
-            break;
-        default: PGX_ERROR("Unsupported BoolExpr type: %d", bool_expr->boolop); throw std::runtime_error("Check logs");
-        }
-    }
-
-    if (bool_expr->boolop == NOT_EXPR && operands.size() == 1) {
-        result = ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(), operands[0]);
-    }
-
-    return result;
+    // Merge contexts and route through regular translate_bool_expr
+    auto merged = merge_translation_results(left_child, right_child);
+    return translate_bool_expr(ctx, bool_expr, merged);
 }
 
 } // namespace postgresql_ast
