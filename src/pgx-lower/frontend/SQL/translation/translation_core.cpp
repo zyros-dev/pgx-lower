@@ -33,63 +33,6 @@ extern "C" {
 
 using namespace pgx_lower::frontend::sql::constants;
 
-std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int32_t typmod) {
-    PGX_IO(AST_TRANSLATE);
-    if (typmod < 0) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "No typmod specified - using flexible precision for numeric type");
-        return {MAX_NUMERIC_PRECISION, MAX_NUMERIC_UNCONSTRAINED_SCALE};
-    }
-
-    // Remove VARHDRSZ offset
-    int32_t tmp = typmod - POSTGRESQL_VARHDRSZ;
-    int32_t precision = (tmp >> NUMERIC_PRECISION_SHIFT) & NUMERIC_PRECISION_MASK;
-    int32_t scale = tmp & NUMERIC_SCALE_MASK;
-
-    if (precision < MIN_NUMERIC_PRECISION || precision > MAX_NUMERIC_PRECISION) {
-        PGX_WARNING("Invalid NUMERIC precision: %d from typmod %d", precision, typmod);
-        return {MAX_NUMERIC_PRECISION, MAX_NUMERIC_UNCONSTRAINED_SCALE};
-    }
-
-    if (scale < 0 || scale > precision) {
-        PGX_WARNING("Invalid NUMERIC scale: %d for precision %d", scale, precision);
-        return {precision, MAX_NUMERIC_UNCONSTRAINED_SCALE};
-    }
-
-    return {std::min(precision, MAX_NUMERIC_PRECISION), std::min(scale, MAX_NUMERIC_UNCONSTRAINED_SCALE)};
-}
-
-int32_t PostgreSQLTypeMapper::extract_varchar_length(int32_t typmod) {
-    PGX_IO(AST_TRANSLATE);
-    if (typmod < 0) {
-        return -1; // No length constraint
-    }
-    // PostgreSQL stores varchar length as (typmod - 4)
-    return typmod - 4;
-}
-
-mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(const int32_t typmod) {
-    PGX_IO(AST_TRANSLATE);
-    if (typmod < 0) {
-        return mlir::db::TimeUnitAttr::microsecond;
-    }
-
-    switch (typmod) {
-    case TIMESTAMP_PRECISION_SECOND: return mlir::db::TimeUnitAttr::second;
-    case TIMESTAMP_PRECISION_MILLI_MIN:
-    case 2:
-    case TIMESTAMP_PRECISION_MILLI_MAX: return mlir::db::TimeUnitAttr::millisecond;
-    case TIMESTAMP_PRECISION_MICRO_MIN:
-    case 5:
-    case TIMESTAMP_PRECISION_MICRO_MAX: return mlir::db::TimeUnitAttr::microsecond;
-    case TIMESTAMP_PRECISION_NANO_MIN:
-    case 8:
-    case TIMESTAMP_PRECISION_NANO_MAX: return mlir::db::TimeUnitAttr::nanosecond;
-    default:
-        PGX_WARNING(("Invalid TIMESTAMP precision: " + std::to_string(typmod) + ", defaulting to microsecond").c_str());
-        return mlir::db::TimeUnitAttr::microsecond;
-    }
-}
-
 auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const bool nullable) const
     -> mlir::Type {
     PGX_IO(AST_TRANSLATE);
@@ -133,6 +76,63 @@ auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t
         throw std::runtime_error("Unknown PostgreSQL type OID");
     }
     }
+}
+
+std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int32_t typmod) {
+    PGX_IO(AST_TRANSLATE);
+    if (typmod < 0) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "No typmod specified - using flexible precision for numeric type");
+        return {MAX_NUMERIC_PRECISION, MAX_NUMERIC_UNCONSTRAINED_SCALE};
+    }
+
+    // Remove VARHDRSZ offset
+    int32_t tmp = typmod - POSTGRESQL_VARHDRSZ;
+    int32_t precision = (tmp >> NUMERIC_PRECISION_SHIFT) & NUMERIC_PRECISION_MASK;
+    int32_t scale = tmp & NUMERIC_SCALE_MASK;
+
+    if (precision < MIN_NUMERIC_PRECISION || precision > MAX_NUMERIC_PRECISION) {
+        PGX_WARNING("Invalid NUMERIC precision: %d from typmod %d", precision, typmod);
+        return {MAX_NUMERIC_PRECISION, MAX_NUMERIC_UNCONSTRAINED_SCALE};
+    }
+
+    if (scale < 0 || scale > precision) {
+        PGX_WARNING("Invalid NUMERIC scale: %d for precision %d", scale, precision);
+        return {precision, MAX_NUMERIC_UNCONSTRAINED_SCALE};
+    }
+
+    return {std::min(precision, MAX_NUMERIC_PRECISION), std::min(scale, MAX_NUMERIC_UNCONSTRAINED_SCALE)};
+}
+
+mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(const int32_t typmod) {
+    PGX_IO(AST_TRANSLATE);
+    if (typmod < 0) {
+        return mlir::db::TimeUnitAttr::microsecond;
+    }
+
+    switch (typmod) {
+    case TIMESTAMP_PRECISION_SECOND: return mlir::db::TimeUnitAttr::second;
+    case TIMESTAMP_PRECISION_MILLI_MIN:
+    case 2:
+    case TIMESTAMP_PRECISION_MILLI_MAX: return mlir::db::TimeUnitAttr::millisecond;
+    case TIMESTAMP_PRECISION_MICRO_MIN:
+    case 5:
+    case TIMESTAMP_PRECISION_MICRO_MAX: return mlir::db::TimeUnitAttr::microsecond;
+    case TIMESTAMP_PRECISION_NANO_MIN:
+    case 8:
+    case TIMESTAMP_PRECISION_NANO_MAX: return mlir::db::TimeUnitAttr::nanosecond;
+    default:
+        PGX_WARNING(("Invalid TIMESTAMP precision: " + std::to_string(typmod) + ", defaulting to microsecond").c_str());
+        return mlir::db::TimeUnitAttr::microsecond;
+    }
+}
+
+int32_t PostgreSQLTypeMapper::extract_varchar_length(int32_t typmod) {
+    PGX_IO(AST_TRANSLATE);
+    if (typmod < 0) {
+        return -1; // No length constraint
+    }
+    // PostgreSQL stores varchar length as (typmod - 4)
+    return typmod - 4;
 }
 
 auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRContext& context) -> mlir::Value {

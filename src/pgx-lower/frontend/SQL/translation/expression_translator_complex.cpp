@@ -54,6 +54,24 @@ class GetColumnOp;
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
+mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr,
+                                                                   OptRefT<const TranslationResult> current_result) {
+    const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Processing T_CoerceViaIO to type OID %d", coerce->resulttype);
+
+    auto argValue = translate_expression(ctx, coerce->arg, current_result);
+    if (!argValue) {
+        PGX_ERROR("Failed to translate CoerceViaIO argument");
+        throw std::runtime_error("Failed to translate CoerceViaIO argument");
+    }
+
+    const bool isNullable = mlir::isa<mlir::db::NullableType>(argValue.getType());
+    const auto type_mapper = PostgreSQLTypeMapper(context_);
+    auto targetType = type_mapper.map_postgre_sqltype(coerce->resulttype, -1, isNullable);
+
+    return ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType, argValue);
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr,
                                                         OptRefT<const TranslationResult> current_result) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
@@ -167,174 +185,6 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
         throw std::runtime_error("Unknown BoolExpr type");
     }
     }
-}
-
-auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr,
-                                                        OptRefT<const TranslationResult> current_result) -> mlir::Value {
-    PGX_IO(AST_TRANSLATE);
-
-    if (!case_expr) {
-        PGX_ERROR("Invalid CaseExpr parameters");
-        throw std::runtime_error("Check logs");
-    }
-
-    // CASE expressions in PostgreSQL come in two forms:
-    // 1. Simple:   CASE expr WHEN val1 THEN result1 WHEN val2 THEN result2 ELSE default END
-    // 2. Searched: CASE WHEN cond1 THEN result1 WHEN cond2 THEN result2 ELSE default END
-    mlir::Value caseArg = nullptr;
-    if (case_expr->arg) {
-        caseArg = translate_expression(ctx, case_expr->arg, current_result);
-        if (!caseArg) {
-            PGX_ERROR("Failed to translate CASE argument expression");
-            throw std::runtime_error("Check logs");
-        }
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Simple CASE expression with comparison argument");
-    } else {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Searched CASE expression (no comparison argument)");
-    }
-
-    // Build nested if-then-else structure from WHEN clauses
-    mlir::Value elseResult = nullptr;
-    if (case_expr->defresult) {
-        elseResult = translate_expression(ctx, case_expr->defresult, current_result);
-        if (!elseResult) {
-            PGX_ERROR("Failed to translate CASE ELSE expression");
-            throw std::runtime_error("Check logs");
-        }
-    } else {
-        // If no ELSE clause, use NULL as default
-        const auto baseType = ctx.builder.getI32Type();
-        auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), baseType);
-        elseResult = ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullableType);
-    }
-
-    // Process WHEN clauses in reverse order to build nested if-else chain
-    mlir::Value result = elseResult;
-
-    if (case_expr->args && case_expr->args->length > 0) {
-        // Process from last to first WHEN clause
-        for (int i = case_expr->args->length - 1; i >= 0; i--) {
-            const auto whenNode = static_cast<Node*>(lfirst(&case_expr->args->elements[i]));
-            if (nodeTag(whenNode) != T_CaseWhen) {
-                PGX_ERROR("Expected CaseWhen node in CASE args, got %d", nodeTag(whenNode));
-                throw std::runtime_error("Check logs");
-            }
-
-            const auto whenClause = reinterpret_cast<CaseWhen*>(whenNode);
-
-            // Translate the WHEN condition
-            mlir::Value condition = nullptr;
-            if (caseArg) {
-                // Simple CASE: whenClause->expr may contain CaseTestExpr that needs to be replaced
-                // We need to translate the expression with CaseTestExpr replaced by caseArg
-                const mlir::Value whenCondition = translate_expression_with_case_test(ctx, whenClause->expr, caseArg);
-                if (!whenCondition) {
-                    PGX_ERROR("Failed to translate WHEN condition in simple CASE");
-                    throw std::runtime_error("Check logs");
-                }
-                condition = whenCondition;
-            } else {
-                condition = translate_expression(ctx, whenClause->expr, current_result);
-                if (!condition) {
-                    PGX_ERROR("Failed to translate WHEN condition");
-                    throw std::runtime_error("Check logs");
-                }
-            }
-
-            if (auto conditionType = condition.getType();
-                !isa<mlir::IntegerType>(conditionType) || cast<mlir::IntegerType>(conditionType).getWidth() != 1)
-            {
-                condition = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), condition);
-            }
-
-            // Translate the THEN result
-            mlir::Value thenResult = translate_expression(ctx, whenClause->result, current_result);
-            if (!thenResult) {
-                PGX_ERROR("Failed to translate THEN result");
-                throw std::runtime_error("Check logs");
-            }
-
-            // Ensure both branches return the same type
-            auto resultType = result.getType();
-            // If one is nullable and the other isn't, make both nullable
-            if (auto thenType = thenResult.getType(); resultType != thenType) {
-                const bool resultIsNullable = isa<mlir::db::NullableType>(resultType);
-
-                if (const bool thenIsNullable = isa<mlir::db::NullableType>(thenType); resultIsNullable && !thenIsNullable)
-                {
-                    auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), thenType);
-                    thenResult = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableType,
-                                                                            thenResult);
-                } else if (!resultIsNullable && thenIsNullable) {
-                    auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), resultType);
-                    result = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableType,
-                                                                        result);
-                    resultType = nullableType;
-                }
-            }
-
-            // Create if-then-else for this WHEN clause
-            auto ifOp = ctx.builder.create<mlir::scf::IfOp>(ctx.builder.getUnknownLoc(), thenResult.getType(),
-                                                            condition, true);
-
-            // Build THEN region
-            ctx.builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-            ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), thenResult);
-
-            // Build ELSE region (contains the previous result)
-            ctx.builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
-            ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), result);
-
-            ctx.builder.setInsertionPointAfter(ifOp);
-            result = ifOp.getResult(0);
-        }
-    }
-
-    PGX_LOG(AST_TRANSLATE, IO, "translate_case_expr OUT: MLIR Value (CASE expression)");
-    return result;
-}
-
-auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const QueryCtxT& ctx, Expr* expr,
-                                                                        const mlir::Value case_test_value)
-    -> mlir::Value {
-    PGX_IO(AST_TRANSLATE);
-    if (!expr) {
-        throw std::runtime_error("Invalid expression");
-    }
-
-    if (nodeTag(expr) == T_CaseTestExpr) {
-        return case_test_value;
-    }
-
-    if (nodeTag(expr) == T_OpExpr) {
-        const auto opExpr = reinterpret_cast<OpExpr*>(expr);
-
-        if (!opExpr->args || opExpr->args->length != 2) {
-            PGX_ERROR("OpExpr in CASE requires exactly 2 arguments");
-            throw std::runtime_error("OpExpr in CASE requires exactly 2 arguments");
-        }
-
-        const auto leftNode = static_cast<Node*>(lfirst(&opExpr->args->elements[0]));
-        const auto rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
-
-        mlir::Value leftValue = (leftNode && nodeTag(leftNode) == T_CaseTestExpr)
-                                    ? case_test_value
-                                    : translate_expression(ctx, reinterpret_cast<Expr*>(leftNode), std::nullopt);
-        mlir::Value rightValue = (rightNode && nodeTag(rightNode) == T_CaseTestExpr)
-                                     ? case_test_value
-                                     : translate_expression(ctx, reinterpret_cast<Expr*>(rightNode), std::nullopt);
-
-        if (!leftValue || !rightValue) {
-            PGX_ERROR("Failed to translate operands in CASE OpExpr");
-            throw std::runtime_error("Failed to translate operands in CASE OpExpr");
-        }
-
-        std::tie(leftValue, rightValue) = normalize_bpchar_operands(ctx, opExpr, leftValue, rightValue);
-
-        return translate_comparison_op(ctx, opExpr->opno, leftValue, rightValue);
-    }
-
-    return translate_expression(ctx, expr);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, const NullTest* null_test,
@@ -775,22 +625,171 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     return result;
 }
 
-mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr,
-                                                                   OptRefT<const TranslationResult> current_result) {
-    const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Processing T_CoerceViaIO to type OID %d", coerce->resulttype);
+auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr,
+                                                        OptRefT<const TranslationResult> current_result) -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
 
-    auto argValue = translate_expression(ctx, coerce->arg, current_result);
-    if (!argValue) {
-        PGX_ERROR("Failed to translate CoerceViaIO argument");
-        throw std::runtime_error("Failed to translate CoerceViaIO argument");
+    if (!case_expr) {
+        PGX_ERROR("Invalid CaseExpr parameters");
+        throw std::runtime_error("Check logs");
     }
 
-    const bool isNullable = mlir::isa<mlir::db::NullableType>(argValue.getType());
-    const auto type_mapper = PostgreSQLTypeMapper(context_);
-    auto targetType = type_mapper.map_postgre_sqltype(coerce->resulttype, -1, isNullable);
+    // 1. Simple:   CASE expr WHEN val1 THEN result1 WHEN val2 THEN result2 ELSE default END
+    // 2. Searched: CASE WHEN cond1 THEN result1 WHEN cond2 THEN result2 ELSE default END
+    mlir::Value caseArg = nullptr;
+    if (case_expr->arg) {
+        caseArg = translate_expression(ctx, case_expr->arg, current_result);
+        if (!caseArg) {
+            PGX_ERROR("Failed to translate CASE argument expression");
+            throw std::runtime_error("Check logs");
+        }
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Simple CASE expression with comparison argument");
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Searched CASE expression (no comparison argument)");
+    }
 
-    return ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType, argValue);
+    // Build nested if-then-else structure from WHEN clauses
+    mlir::Value elseResult = nullptr;
+    if (case_expr->defresult) {
+        elseResult = translate_expression(ctx, case_expr->defresult, current_result);
+        if (!elseResult) {
+            PGX_ERROR("Failed to translate CASE ELSE expression");
+            throw std::runtime_error("Check logs");
+        }
+    } else {
+        // If no ELSE clause, use NULL as default
+        const auto baseType = ctx.builder.getI32Type();
+        auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), baseType);
+        elseResult = ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullableType);
+    }
+
+    // Process WHEN clauses in reverse order to build nested if-else chain
+    mlir::Value result = elseResult;
+
+    if (case_expr->args && case_expr->args->length > 0) {
+        // Process from last to first WHEN clause
+        for (int i = case_expr->args->length - 1; i >= 0; i--) {
+            const auto whenNode = static_cast<Node*>(lfirst(&case_expr->args->elements[i]));
+            if (nodeTag(whenNode) != T_CaseWhen) {
+                PGX_ERROR("Expected CaseWhen node in CASE args, got %d", nodeTag(whenNode));
+                throw std::runtime_error("Check logs");
+            }
+
+            const auto whenClause = reinterpret_cast<CaseWhen*>(whenNode);
+
+            // Translate the WHEN condition
+            mlir::Value condition = nullptr;
+            if (caseArg) {
+                // Simple CASE: whenClause->expr may contain CaseTestExpr that needs to be replaced
+                // We need to translate the expression with CaseTestExpr replaced by caseArg
+                const mlir::Value whenCondition = translate_expression_with_case_test(ctx, whenClause->expr, caseArg);
+                if (!whenCondition) {
+                    PGX_ERROR("Failed to translate WHEN condition in simple CASE");
+                    throw std::runtime_error("Check logs");
+                }
+                condition = whenCondition;
+            } else {
+                condition = translate_expression(ctx, whenClause->expr, current_result);
+                if (!condition) {
+                    PGX_ERROR("Failed to translate WHEN condition");
+                    throw std::runtime_error("Check logs");
+                }
+            }
+
+            if (auto conditionType = condition.getType();
+                !isa<mlir::IntegerType>(conditionType) || cast<mlir::IntegerType>(conditionType).getWidth() != 1)
+            {
+                condition = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), condition);
+            }
+
+            // Translate the THEN result
+            mlir::Value thenResult = translate_expression(ctx, whenClause->result, current_result);
+            if (!thenResult) {
+                PGX_ERROR("Failed to translate THEN result");
+                throw std::runtime_error("Check logs");
+            }
+
+            // Ensure both branches return the same type
+            auto resultType = result.getType();
+            // If one is nullable and the other isn't, make both nullable
+            if (auto thenType = thenResult.getType(); resultType != thenType) {
+                const bool resultIsNullable = isa<mlir::db::NullableType>(resultType);
+
+                if (const bool thenIsNullable = isa<mlir::db::NullableType>(thenType); resultIsNullable && !thenIsNullable)
+                {
+                    auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), thenType);
+                    thenResult = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableType,
+                                                                            thenResult);
+                } else if (!resultIsNullable && thenIsNullable) {
+                    auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), resultType);
+                    result = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), nullableType,
+                                                                        result);
+                    resultType = nullableType;
+                }
+            }
+
+            // Create if-then-else for this WHEN clause
+            auto ifOp = ctx.builder.create<mlir::scf::IfOp>(ctx.builder.getUnknownLoc(), thenResult.getType(),
+                                                            condition, true);
+
+            // Build THEN region
+            ctx.builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+            ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), thenResult);
+
+            // Build ELSE region (contains the previous result)
+            ctx.builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), result);
+
+            ctx.builder.setInsertionPointAfter(ifOp);
+            result = ifOp.getResult(0);
+        }
+    }
+
+    PGX_LOG(AST_TRANSLATE, IO, "translate_case_expr OUT: MLIR Value (CASE expression)");
+    return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const QueryCtxT& ctx, Expr* expr,
+                                                                        const mlir::Value case_test_value)
+    -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
+    if (!expr) {
+        throw std::runtime_error("Invalid expression");
+    }
+
+    if (nodeTag(expr) == T_CaseTestExpr) {
+        return case_test_value;
+    }
+
+    if (nodeTag(expr) == T_OpExpr) {
+        const auto opExpr = reinterpret_cast<OpExpr*>(expr);
+
+        if (!opExpr->args || opExpr->args->length != 2) {
+            PGX_ERROR("OpExpr in CASE requires exactly 2 arguments");
+            throw std::runtime_error("OpExpr in CASE requires exactly 2 arguments");
+        }
+
+        const auto leftNode = static_cast<Node*>(lfirst(&opExpr->args->elements[0]));
+        const auto rightNode = static_cast<Node*>(lfirst(&opExpr->args->elements[1]));
+
+        mlir::Value leftValue = (leftNode && nodeTag(leftNode) == T_CaseTestExpr)
+                                    ? case_test_value
+                                    : translate_expression(ctx, reinterpret_cast<Expr*>(leftNode), std::nullopt);
+        mlir::Value rightValue = (rightNode && nodeTag(rightNode) == T_CaseTestExpr)
+                                     ? case_test_value
+                                     : translate_expression(ctx, reinterpret_cast<Expr*>(rightNode), std::nullopt);
+
+        if (!leftValue || !rightValue) {
+            PGX_ERROR("Failed to translate operands in CASE OpExpr");
+            throw std::runtime_error("Failed to translate operands in CASE OpExpr");
+        }
+
+        std::tie(leftValue, rightValue) = normalize_bpchar_operands(ctx, opExpr, leftValue, rightValue);
+
+        return translate_comparison_op(ctx, opExpr->opno, leftValue, rightValue);
+    }
+
+    return translate_expression(ctx, expr);
 }
 
 } // namespace postgresql_ast

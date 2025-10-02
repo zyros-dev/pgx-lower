@@ -52,56 +52,6 @@ namespace postgresql_ast {
 
 using namespace pgx_lower::frontend::sql::constants;
 
-auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, Plan* plan) -> void {
-    PGX_IO(AST_TRANSLATE);
-
-    if (!plan->initPlan || list_length(plan->initPlan) == 0) {
-        return;
-    }
-
-    List* all_subplans = ctx.current_stmt.subplans;
-    const int num_subplans = list_length(all_subplans);
-    ListCell* lc;
-    foreach (lc, plan->initPlan) {
-        const auto* subplan = static_cast<SubPlan*>(lfirst(lc));
-        if (!subplan) {
-            PGX_ERROR("Invalid SubPlan in initPlan list");
-            continue;
-        }
-
-        const int plan_id = subplan->plan_id;
-        if (plan_id < 1 || plan_id > num_subplans) {
-            PGX_ERROR("SubPlan plan_id %d out of range (have %d subplans)", plan_id, num_subplans);
-            continue;
-        }
-
-        auto* initplan = static_cast<Plan*>(list_nth(all_subplans, plan_id - 1));
-        if (!initplan) {
-            PGX_ERROR("SubPlan plan_id %d points to null Plan", plan_id);
-            continue;
-        }
-
-        auto initplan_result = translate_plan_node(ctx, initplan);
-        if (!initplan_result.op) {
-            PGX_ERROR("Failed to translate InitPlan (plan_id=%d)", plan_id);
-            continue;
-        }
-
-        List* setParam = subplan->setParam;
-        if (!setParam || list_length(setParam) == 0) {
-            PGX_ERROR("InitPlan has no setParam");
-            continue;
-        }
-        const int paramid = list_nth_int(setParam, 0);
-        ctx.init_plan_results[paramid] = initplan_result;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Stored InitPlan result for paramid=%d (plan_id=%d, %zu columns)", paramid,
-                plan_id, initplan_result.columns.size());
-    }
-
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Processed %d InitPlans, context now has %zu total", list_length(plan->initPlan),
-            ctx.init_plan_results.size());
-}
-
 auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* plan) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!plan) {
@@ -242,6 +192,84 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
     return result;
 }
 
+auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit* limit) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!limit) {
+        PGX_ERROR("Invalid Limit parameters");
+        return TranslationResult{};
+    }
+
+    TranslationResult childResult;
+
+    if (Plan* leftTree = limit->plan.lefttree) {
+        childResult = translate_plan_node(ctx, leftTree);
+        if (!childResult.op) {
+            PGX_ERROR("Failed to translate Limit child plan");
+            return childResult;
+        }
+    } else {
+        PGX_WARNING("Limit node has no child plan");
+        return TranslationResult{};
+    }
+
+    auto childOutput = childResult.op->getResult(0);
+    if (!childOutput) {
+        PGX_ERROR("Child operation has no result");
+        return childResult;
+    }
+
+    int64_t limitCount = DEFAULT_LIMIT_COUNT;
+    int64_t limitOffset = 0;
+
+    Node* limitOffsetNode = limit->limitOffset;
+
+    if (Node* limitCountNode = limit->limitCount) {
+        Node* node = limitCountNode;
+        if (IsA(node, Const)) {
+            const Const* constNode = reinterpret_cast<Const*>(node);
+            if (!constNode->constisnull) {
+                limitCount = static_cast<int64_t>(constNode->constvalue);
+            }
+        } else {
+            PGX_WARNING("Limit count is not a Const or Param node");
+        }
+    }
+
+    if (limitOffsetNode) {
+        Node* node = limitOffsetNode;
+        if (IsA(node, Const)) {
+            const Const* constNode = reinterpret_cast<Const*>(node);
+            if (!constNode->constisnull) {
+                limitOffset = static_cast<int64_t>(constNode->constvalue);
+            }
+        }
+    }
+
+    if (limitCount < 0) {
+        PGX_WARNING("Invalid negative limit count: %d", limitCount);
+        limitCount = DEFAULT_LIMIT_COUNT;
+    } else if (limitCount > MAX_LIMIT_COUNT) {
+        PGX_WARNING("Very large limit count: %d", limitCount);
+    }
+
+    if (limitOffset < 0) {
+        PGX_WARNING("Negative offset not supported, using 0");
+        limitOffset = 0;
+    }
+
+    if (limitCount == -1) {
+        limitCount = INT32_MAX;
+    }
+
+    const auto limitOp = ctx.builder.create<mlir::relalg::LimitOp>(
+        ctx.builder.getUnknownLoc(), ctx.builder.getI32IntegerAttr(static_cast<int32_t>(limitCount)), childOutput);
+
+    TranslationResult result;
+    result.op = limitOp;
+    result.columns = childResult.columns;
+    return result;
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_gather(QueryCtxT& ctx, const Gather* gather) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!gather) {
@@ -280,6 +308,68 @@ auto PostgreSQLASTTranslator::Impl::translate_material(QueryCtxT& ctx, Material*
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Material node is a pass-through, translating its child");
     return translate_plan_node(ctx, material->plan.lefttree);
+}
+
+auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, Plan* plan) -> void {
+    PGX_IO(AST_TRANSLATE);
+
+    if (!plan->initPlan || list_length(plan->initPlan) == 0) {
+        return;
+    }
+
+    List* all_subplans = ctx.current_stmt.subplans;
+    const int num_subplans = list_length(all_subplans);
+    ListCell* lc;
+    foreach (lc, plan->initPlan) {
+        const auto* subplan = static_cast<SubPlan*>(lfirst(lc));
+        if (!subplan) {
+            PGX_ERROR("Invalid SubPlan in initPlan list");
+            continue;
+        }
+
+        const int plan_id = subplan->plan_id;
+        if (plan_id < 1 || plan_id > num_subplans) {
+            PGX_ERROR("SubPlan plan_id %d out of range (have %d subplans)", plan_id, num_subplans);
+            continue;
+        }
+
+        auto* initplan = static_cast<Plan*>(list_nth(all_subplans, plan_id - 1));
+        if (!initplan) {
+            PGX_ERROR("SubPlan plan_id %d points to null Plan", plan_id);
+            continue;
+        }
+
+        auto initplan_result = translate_plan_node(ctx, initplan);
+        if (!initplan_result.op) {
+            PGX_ERROR("Failed to translate InitPlan (plan_id=%d)", plan_id);
+            continue;
+        }
+
+        List* setParam = subplan->setParam;
+        if (!setParam || list_length(setParam) == 0) {
+            PGX_ERROR("InitPlan has no setParam");
+            continue;
+        }
+        const int paramid = list_nth_int(setParam, 0);
+        ctx.init_plan_results[paramid] = initplan_result;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Stored InitPlan result for paramid=%d (plan_id=%d, %zu columns)", paramid,
+                plan_id, initplan_result.columns.size());
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Processed %d InitPlans, context now has %zu total", list_length(plan->initPlan),
+            ctx.init_plan_results.size());
+}
+
+auto PostgreSQLASTTranslator::Impl::create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp {
+    PGX_IO(AST_TRANSLATE);
+    auto tableType = mlir::dsa::TableType::get(builder.getContext());
+    auto queryFuncType = builder.getFunctionType({}, {tableType});
+    auto queryFunc = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), QUERY_FUNCTION_NAME, queryFuncType);
+
+    auto& queryBody = queryFunc.getBody().emplaceBlock();
+    builder.setInsertionPointToStart(&queryBody);
+
+    return queryFunc;
 }
 
 auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& ctx, const TranslationResult& input,
@@ -935,99 +1025,8 @@ auto PostgreSQLASTTranslator::Impl::create_materialize_op(const QueryCtxT& conte
     return mlir::Value();
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_limit(QueryCtxT& ctx, const Limit* limit) -> TranslationResult {
-    PGX_IO(AST_TRANSLATE);
-    if (!limit) {
-        PGX_ERROR("Invalid Limit parameters");
-        return TranslationResult{};
-    }
-
-    TranslationResult childResult;
-
-    if (Plan* leftTree = limit->plan.lefttree) {
-        childResult = translate_plan_node(ctx, leftTree);
-        if (!childResult.op) {
-            PGX_ERROR("Failed to translate Limit child plan");
-            return childResult;
-        }
-    } else {
-        PGX_WARNING("Limit node has no child plan");
-        return TranslationResult{};
-    }
-
-    auto childOutput = childResult.op->getResult(0);
-    if (!childOutput) {
-        PGX_ERROR("Child operation has no result");
-        return childResult;
-    }
-
-    int64_t limitCount = DEFAULT_LIMIT_COUNT;
-    int64_t limitOffset = 0;
-
-    Node* limitOffsetNode = limit->limitOffset;
-
-    if (Node* limitCountNode = limit->limitCount) {
-        Node* node = limitCountNode;
-        if (IsA(node, Const)) {
-            const Const* constNode = reinterpret_cast<Const*>(node);
-            if (!constNode->constisnull) {
-                limitCount = static_cast<int64_t>(constNode->constvalue);
-            }
-        } else {
-            PGX_WARNING("Limit count is not a Const or Param node");
-        }
-    }
-
-    if (limitOffsetNode) {
-        Node* node = limitOffsetNode;
-        if (IsA(node, Const)) {
-            const Const* constNode = reinterpret_cast<Const*>(node);
-            if (!constNode->constisnull) {
-                limitOffset = static_cast<int64_t>(constNode->constvalue);
-            }
-        }
-    }
-
-    if (limitCount < 0) {
-        PGX_WARNING("Invalid negative limit count: %d", limitCount);
-        limitCount = DEFAULT_LIMIT_COUNT;
-    } else if (limitCount > MAX_LIMIT_COUNT) {
-        PGX_WARNING("Very large limit count: %d", limitCount);
-    }
-
-    if (limitOffset < 0) {
-        PGX_WARNING("Negative offset not supported, using 0");
-        limitOffset = 0;
-    }
-
-    if (limitCount == -1) {
-        limitCount = INT32_MAX; // Use max for "no limit"
-    }
-
-    const auto limitOp = ctx.builder.create<mlir::relalg::LimitOp>(
-        ctx.builder.getUnknownLoc(), ctx.builder.getI32IntegerAttr(static_cast<int32_t>(limitCount)), childOutput);
-
-    TranslationResult result;
-    result.op = limitOp;
-    result.columns = childResult.columns;
-    return result;
-}
-
-auto PostgreSQLASTTranslator::Impl::create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp {
-    PGX_IO(AST_TRANSLATE);
-    auto tableType = mlir::dsa::TableType::get(builder.getContext());
-    auto queryFuncType = builder.getFunctionType({}, {tableType});
-    auto queryFunc = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), QUERY_FUNCTION_NAME, queryFuncType);
-
-    auto& queryBody = queryFunc.getBody().emplaceBlock();
-    builder.setInsertionPointToStart(&queryBody);
-
-    return queryFunc;
-}
-
 auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationResult* left_child,
-                                                               const TranslationResult* right_child)
-    -> TranslationResult {
+                                                              const TranslationResult* right_child) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
 
     TranslationResult merged_result;
@@ -1036,10 +1035,8 @@ auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationR
 
     if (left_child) {
         left_size = left_child->columns.size();
-        merged_result.columns.insert(merged_result.columns.end(), left_child->columns.begin(),
-                                     left_child->columns.end());
-        merged_result.varno_resolution.insert(left_child->varno_resolution.begin(),
-                                              left_child->varno_resolution.end());
+        merged_result.columns.insert(merged_result.columns.end(), left_child->columns.begin(), left_child->columns.end());
+        merged_result.varno_resolution.insert(left_child->varno_resolution.begin(), left_child->varno_resolution.end());
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Merged %zu columns from left_child", left_child->columns.size());
     }
@@ -1047,8 +1044,7 @@ auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationR
     if (right_child) {
         merged_result.columns.insert(merged_result.columns.end(), right_child->columns.begin(),
                                      right_child->columns.end());
-        merged_result.varno_resolution.insert(right_child->varno_resolution.begin(),
-                                              right_child->varno_resolution.end());
+        merged_result.varno_resolution.insert(right_child->varno_resolution.begin(), right_child->varno_resolution.end());
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Merged %zu columns from right_child", right_child->columns.size());
     }
@@ -1057,8 +1053,8 @@ auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationR
 
     PGX_LOG(AST_TRANSLATE, DEBUG,
             "merge_translation_results: Total %zu columns (%zu left + %zu right), %zu varno mappings",
-            merged_result.columns.size(), left_size,
-            merged_result.columns.size() - left_size, merged_result.varno_resolution.size());
+            merged_result.columns.size(), left_size, merged_result.columns.size() - left_size,
+            merged_result.varno_resolution.size());
 
     return merged_result;
 }

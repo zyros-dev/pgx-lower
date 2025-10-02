@@ -63,8 +63,8 @@ constexpr auto TIMESTAMP_PRECISION_NANO_MAX = 9;
 // =============================================================================
 
 // Aggregate Function OIDs
-constexpr auto PG_COUNT_ANY_OID = 2147;  // COUNT(*)
-constexpr auto PG_COUNT_OID = 2803;      // COUNT(expr)
+constexpr auto PG_COUNT_ANY_OID = 2147; // COUNT(*)
+constexpr auto PG_COUNT_OID = 2803; // COUNT(expr)
 
 constexpr auto UNIT_TEST_TABLE_PREFIX = "test_table_";
 constexpr auto FALLBACK_TABLE_PREFIX = "table_";

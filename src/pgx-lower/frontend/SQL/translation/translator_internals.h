@@ -178,18 +178,16 @@ struct TranslationContext {
     static int outer_join_counter;
 
     static TranslationContext createChildContext(const TranslationContext& parent) {
-        return TranslationContext{
-            parent.current_stmt,
-            parent.builder,
-            parent.current_module,
-            mlir::Value{},
-            parent.current_tuple,
-            parent.outer_result,
-            parent.init_plan_results,
-            {},
-            {},
-            {}
-        };
+        return TranslationContext{parent.current_stmt,
+                                  parent.builder,
+                                  parent.current_module,
+                                  mlir::Value{},
+                                  parent.current_tuple,
+                                  parent.outer_result,
+                                  parent.init_plan_results,
+                                  {},
+                                  {},
+                                  {}};
     }
 };
 
@@ -261,7 +259,7 @@ class PostgreSQLASTTranslator::Impl {
         -> mlir::Value;
     auto translate_subquery_plan(const QueryCtxT& parent_ctx, Plan* subquery_plan, const PlannedStmt* parent_stmt)
         -> std::pair<mlir::Value, TranslationResult>;
-    auto translate_param(const QueryCtxT& ctx, const Param* param, OptRefT<const TranslationResult> current_result)
+    auto translate_param(const QueryCtxT& ctx, const Param* param, OptRefT<const TranslationResult> current_result) const
         -> mlir::Value;
 
     // Plan node translation methods
@@ -305,9 +303,9 @@ class PostgreSQLASTTranslator::Impl {
     auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream,
                                const TranslationResult& translation_result) const -> mlir::Value;
 
-    auto create_join_operation(const QueryCtxT& ctx, JoinType join_type, mlir::Value left_value, mlir::Value right_value,
-                               const TranslationResult& left_translation, const TranslationResult& right_translation,
-                               List* join_clauses) -> TranslationResult;
+    auto create_join_operation(const QueryCtxT& ctx, JoinType join_type, mlir::Value left_value,
+                               mlir::Value right_value, const TranslationResult& left_translation,
+                               const TranslationResult& right_translation, List* join_clauses) -> TranslationResult;
 
     static auto merge_translation_results(const TranslationResult* left_child, const TranslationResult* right_child)
         -> TranslationResult;

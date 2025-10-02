@@ -128,7 +128,6 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
             continue;
         if (tle->expr && IsA(tle->expr, Var)) {
             auto* var = reinterpret_cast<Var*>(tle->expr);
-            // Find the column info for this var
             if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
                 const auto& colInfo = allColumns[var->varattno - 1];
                 PostgreSQLTypeMapper type_mapper(context_);
@@ -163,18 +162,17 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: final varno_resolution.size()=%zu",
             result.varno_resolution.size());
 
-    // Apply qual (WHERE clause) if present
+    // where + projection - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     if (result.op && seqScan->scan.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan has qual, applying selection (context has %zu InitPlans)",
                 ctx.init_plan_results.size());
         result = apply_selection_from_qual_with_columns(ctx, result, seqScan->scan.plan.qual, nullptr, nullptr);
     } else {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan: no qual (result.op=%p, plan.qual=%p)",
-                static_cast<void*>(result.op), static_cast<void*>(seqScan->scan.plan.qual));
+        PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan: no qual (result.op=%p, plan.qual=%p)", static_cast<void*>(result.op),
+                static_cast<void*>(seqScan->scan.plan.qual));
     }
 
-    // Apply projection (computed expressions) if present
-    if (result.op && seqScan->scan.plan.targetlist) {
+    if (result.op) {
         result = apply_projection_from_target_list(ctx, result, seqScan->scan.plan.targetlist);
     }
 
@@ -229,8 +227,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
                     const auto& col = result.columns[var->varattno - 1];
 
-                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(
-                        col.table_name, col.column_name);
+                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(col.table_name,
+                                                                                                      col.column_name);
 
                     PGX_LOG(AST_TRANSLATE, DEBUG,
                             "Mapped SubqueryScan: varno=%d, attno=%d -> subplan column %d (@%s::@%s)", scanrelid,

@@ -160,9 +160,7 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
 
     case T_IndexScan:
     case T_IndexOnlyScan:
-    case T_BitmapHeapScan:
-        caps.requiresSeqScan = true;
-        break;
+    case T_BitmapHeapScan: caps.requiresSeqScan = true; break;
 
     case T_NestLoop:
     case T_MergeJoin:
@@ -176,9 +174,7 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
 
     case T_Limit: caps.requiresLimit = true; break;
 
-    case T_Agg:
-        caps.requiresAggregation = true;
-        break;
+    case T_Agg: caps.requiresAggregation = true; break;
 
     case T_SubqueryScan:
         {
@@ -202,9 +198,7 @@ auto QueryAnalyzer::analyzeNode(const Plan* plan) -> QueryCapabilities {
     case T_Hash:
     case T_Unique:
     case T_SetOp:
-    case T_Group:
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Accepting node type %d for MLIR compilation", nodeTag(plan));
-        break;
+    case T_Group: PGX_LOG(AST_TRANSLATE, DEBUG, "Accepting node type %d for MLIR compilation", nodeTag(plan)); break;
 
     default:
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unknown node type %d - accepting for MLIR compilation", nodeTag(plan));
@@ -277,9 +271,10 @@ auto QueryAnalyzer::analyzeTypes(const Plan* plan, QueryCapabilities& caps) -> v
                 if (funcName) {
                     std::string func(funcName);
                     pfree(funcName);
-                    if (func == "upper" || func == "lower" || func == "substring" ||
-                        func == "varchar" || func == "text" || func == "char" || func == "bpchar" ||
-                        func == "int4" || func == "int8" || func == "numeric" || func == "float4" || func == "float8") {
+                    if (func == "upper" || func == "lower" || func == "substring" || func == "varchar" || func == "text"
+                        || func == "char" || func == "bpchar" || func == "int4" || func == "int8" || func == "numeric"
+                        || func == "float4" || func == "float8")
+                    {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "Supported function in targetlist: %s", func.c_str());
                     } else {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "Unsupported function in targetlist: %s", func.c_str());
@@ -350,7 +345,8 @@ auto QueryAnalyzer::analyzeTypeCompatibility(const std::vector<Oid>& types) -> s
 }
 
 auto QueryAnalyzer::logExecutionTree(Plan* rootPlan) -> void {
-    if (!rootPlan) return;
+    if (!rootPlan)
+        return;
     PGX_LOG(AST_TRANSLATE, DEBUG, "=== POSTGRESQL EXECUTION TREE ===");
 
     char* plan_str = nodeToString(rootPlan);

@@ -68,62 +68,6 @@ static List* combine_join_clauses(List* specialized_clauses, List* join_quals, c
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin* hashJoin) -> TranslationResult {
-    PGX_IO(AST_TRANSLATE);
-    if (!hashJoin) {
-        PGX_ERROR("Invalid HashJoin parameters");
-        throw std::runtime_error("Invalid HashJoin parameters");
-    }
-
-    auto* leftPlan = hashJoin->join.plan.lefttree;
-    auto* rightPlan = hashJoin->join.plan.righttree;
-
-    if (!leftPlan || !rightPlan) {
-        PGX_ERROR("HashJoin missing left or right child");
-        throw std::runtime_error("HashJoin missing children");
-    }
-
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating HashJoin - left child type: %d, right child type: %d", leftPlan->type,
-            rightPlan->type);
-
-    const auto leftTranslation = translate_plan_node(ctx, leftPlan);
-    const auto leftOp = leftTranslation.op;
-    if (!leftOp) {
-        PGX_ERROR("Failed to translate left child of HashJoin");
-        throw std::runtime_error("Failed to translate left child of HashJoin");
-    }
-
-    auto rightTranslation = translate_plan_node(ctx, rightPlan);
-    auto rightOp = rightTranslation.op;
-    if (!rightOp) {
-        PGX_ERROR("Failed to translate right child of HashJoin");
-        throw std::runtime_error("Failed to translate right child of HashJoin");
-    }
-
-    PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin left child %s", leftTranslation.toString().data());
-    PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin right child %s", rightTranslation.toString().data());
-
-    auto leftValue = leftOp->getResult(0);
-    auto rightValue = rightOp->getResult(0);
-
-    List* combinedClauses = combine_join_clauses(hashJoin->hashclauses, hashJoin->join.joinqual, "hashclauses");
-    auto result = create_join_operation(ctx, hashJoin->join.jointype, leftValue, rightValue,
-                                                     leftTranslation, rightTranslation, combinedClauses);
-
-    if (hashJoin->join.plan.qual) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.plan.qual, nullptr, nullptr);
-    }
-
-    if (hashJoin->join.plan.targetlist) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
-        result = apply_projection_from_translation_result(ctx, result, leftTranslation, rightTranslation,
-                                                          hashJoin->join.plan.targetlist);
-    }
-
-    return result;
-}
-
 auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJoin* mergeJoin) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!mergeJoin) {
@@ -163,8 +107,8 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
     auto rightValue = rightOp->getResult(0);
 
     List* combinedClauses = combine_join_clauses(mergeJoin->mergeclauses, mergeJoin->join.joinqual, "mergeclauses");
-    auto result = create_join_operation(ctx, mergeJoin->join.jointype, leftValue, rightValue,
-                                                     leftTranslation, rightTranslation, combinedClauses);
+    auto result = create_join_operation(ctx, mergeJoin->join.jointype, leftValue, rightValue, leftTranslation,
+                                        rightTranslation, combinedClauses);
 
     // Join conditions are now handled inside the join predicate region
     // No need to apply them as separate selections
@@ -180,6 +124,74 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
     }
 
     return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin* hashJoin) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!hashJoin) {
+        PGX_ERROR("Invalid HashJoin parameters");
+        throw std::runtime_error("Invalid HashJoin parameters");
+    }
+
+    auto* leftPlan = hashJoin->join.plan.lefttree;
+    auto* rightPlan = hashJoin->join.plan.righttree;
+
+    if (!leftPlan || !rightPlan) {
+        PGX_ERROR("HashJoin missing left or right child");
+        throw std::runtime_error("HashJoin missing children");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Translating HashJoin - left child type: %d, right child type: %d", leftPlan->type,
+            rightPlan->type);
+
+    const auto leftTranslation = translate_plan_node(ctx, leftPlan);
+    const auto leftOp = leftTranslation.op;
+    if (!leftOp) {
+        PGX_ERROR("Failed to translate left child of HashJoin");
+        throw std::runtime_error("Failed to translate left child of HashJoin");
+    }
+
+    auto rightTranslation = translate_plan_node(ctx, rightPlan);
+    auto rightOp = rightTranslation.op;
+    if (!rightOp) {
+        PGX_ERROR("Failed to translate right child of HashJoin");
+        throw std::runtime_error("Failed to translate right child of HashJoin");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin left child %s", leftTranslation.toString().data());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "HashJoin right child %s", rightTranslation.toString().data());
+
+    auto leftValue = leftOp->getResult(0);
+    auto rightValue = rightOp->getResult(0);
+
+    List* combinedClauses = combine_join_clauses(hashJoin->hashclauses, hashJoin->join.joinqual, "hashclauses");
+    auto result = create_join_operation(ctx, hashJoin->join.jointype, leftValue, rightValue, leftTranslation,
+                                        rightTranslation, combinedClauses);
+
+    if (hashJoin->join.plan.qual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
+        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.plan.qual, nullptr, nullptr);
+    }
+
+    if (hashJoin->join.plan.targetlist) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
+        result = apply_projection_from_translation_result(ctx, result, leftTranslation, rightTranslation,
+                                                          hashJoin->join.plan.targetlist);
+    }
+
+    return result;
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_hash(QueryCtxT& ctx, const Hash* hash) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!hash || !hash->plan.lefttree) {
+        PGX_ERROR("Invalid Hash parameters");
+        throw std::runtime_error("Invalid Hash parameters");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG,
+            "Translating Hash node - passing through to child - it just prepares its child for hashing");
+    return translate_plan_node(ctx, hash->plan.lefttree);
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop* nestLoop) -> TranslationResult {
@@ -280,8 +292,8 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     auto leftValue = leftOp->getResult(0);
     auto rightValue = rightOp->getResult(0);
 
-    auto result = create_join_operation(ctx, nestLoop->join.jointype, leftValue, rightValue,
-                                                     leftTranslation, rightTranslation, effective_join_qual);
+    auto result = create_join_operation(ctx, nestLoop->join.jointype, leftValue, rightValue, leftTranslation,
+                                        rightTranslation, effective_join_qual);
 
     if (nestLoop->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
@@ -297,23 +309,11 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_hash(QueryCtxT& ctx, const Hash* hash) -> TranslationResult {
-    PGX_IO(AST_TRANSLATE);
-    if (!hash || !hash->plan.lefttree) {
-        PGX_ERROR("Invalid Hash parameters");
-        throw std::runtime_error("Invalid Hash parameters");
-    }
-
-    PGX_LOG(AST_TRANSLATE, DEBUG,
-            "Translating Hash node - passing through to child - it just prepares its child for hashing");
-    return translate_plan_node(ctx, hash->plan.lefttree);
-}
-
-
-TranslationResult
-PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const JoinType join_type, mlir::Value left_value,
-                                                     mlir::Value right_value, const TranslationResult& left_translation,
-                                                     const TranslationResult& right_translation, List* join_clauses) {
+TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const JoinType join_type,
+                                                                       mlir::Value left_value, mlir::Value right_value,
+                                                                       const TranslationResult& left_translation,
+                                                                       const TranslationResult& right_translation,
+                                                                       List* join_clauses) {
     // TODO: NV: Split this into three functions. Our lambdas are good, but there isn't actually much overlap. We can
     // split it into two or three separate things, 1) Exists patterns, 2) inner join 3) left/right join
     // Since it's a complex function, all of its functional dependencies are isolated into lambdas. This means I don't
@@ -595,9 +595,7 @@ PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const
         inner_ctx.correlation_params = query_ctx.correlation_params;
         buildCorrelatedPredicateRegion(&inner_block, inner_tuple, join_clauses, left_trans, right_trans, inner_ctx);
 
-        auto& col_mgr = query_ctx.builder.getContext()
-                            ->getOrLoadDialect<mlir::relalg::RelAlgDialect>()
-                            ->getColumnManager();
+        auto& col_mgr = query_ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
         const auto map_scope = col_mgr.getUniqueScope("map");
         auto map_attr = col_mgr.createDef(map_scope, "tmp_attr0");
         map_attr.getColumn().type = outer_builder.getI32Type();

@@ -144,13 +144,14 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
             // Base table: use varattnosyn to get actual column position
             actualVarattno = var->varattnosyn;
             PGX_LOG(AST_TRANSLATE, DEBUG,
-                    "translate_var: Base table detected - using varnosyn=%d, varattnosyn=%d for synthetic varno=%d, varattno=%d",
+                    "translate_var: Base table detected - using varnosyn=%d, varattnosyn=%d for synthetic varno=%d, "
+                    "varattno=%d",
                     var->varnosyn, var->varattnosyn, var->varno, var->varattno);
         }
     }
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d, actualVarno=%d, actualVarattno=%d",
-            var->varno, var->varattno, actualVarno, actualVarattno);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d, actualVarno=%d, actualVarattno=%d", var->varno,
+            var->varattno, actualVarno, actualVarattno);
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: varno=%d, varattno=%d, has_current_result=%d",
             var->varno, var->varattno, current_result.has_value());
 
@@ -168,40 +169,39 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
                 "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'", tableName.c_str(),
                 colName.c_str());
     } else if (var->varno == OUTER_VAR) {
-        auto& result_to_use = ctx.outer_result ? ctx.outer_result.value() :
-                              (current_result ? current_result.value() :
-                               throw std::runtime_error("OUTER_VAR without current_result or outer_result"));
+        auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
+                                               : (current_result ? current_result.value()
+                                                                 : throw std::runtime_error("OUTER_VAR without "
+                                                                                            "current_result or "
+                                                                                            "outer_result"));
 
         if (var->varattno <= 0 || var->varattno > static_cast<int>(result_to_use.get().columns.size())) {
-            PGX_ERROR("OUTER_VAR varattno=%d out of range (result has %zu columns, using %s)",
-                      var->varattno, result_to_use.get().columns.size(),
-                      ctx.outer_result ? "outer_result" : "current_result");
+            PGX_ERROR("OUTER_VAR varattno=%d out of range (result has %zu columns, using %s)", var->varattno,
+                      result_to_use.get().columns.size(), ctx.outer_result ? "outer_result" : "current_result");
             throw std::runtime_error("OUTER_VAR reference out of range");
         }
         const auto& col = result_to_use.get().columns[var->varattno - 1];
         tableName = col.table_name;
         colName = col.column_name;
         nullable = col.nullable;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from %s",
-                var->varattno, tableName.c_str(), colName.c_str(), nullable,
-                ctx.outer_result ? "outer_result" : "current_result");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from %s", var->varattno,
+                tableName.c_str(), colName.c_str(), nullable, ctx.outer_result ? "outer_result" : "current_result");
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='%s', colName='%s'",
                 tableName.c_str(), colName.c_str());
     } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {
         if (!current_result) {
-            PGX_ERROR("Unresolved special varno %d (varattno=%d) - no current_result for fallback",
-                      var->varno, var->varattno);
+            PGX_ERROR("Unresolved special varno %d (varattno=%d) - no current_result for fallback", var->varno,
+                      var->varattno);
             throw std::runtime_error("Special varno requires current_result for positional fallback");
         }
 
         size_t left_size = current_result->get().left_child_column_count;
-        size_t absolute_position = left_size + var->varattno - 1;  // varattno is 1-based
+        size_t absolute_position = left_size + var->varattno - 1; // varattno is 1-based
 
         if (absolute_position >= current_result->get().columns.size()) {
             PGX_ERROR("INNER_VAR/INDEX_VAR varattno=%d (absolute pos=%zu) out of range "
                       "(left_size=%zu, total=%zu columns)",
-                      var->varattno, absolute_position, left_size,
-                      current_result->get().columns.size());
+                      var->varattno, absolute_position, left_size, current_result->get().columns.size());
             throw std::runtime_error("INNER_VAR/INDEX_VAR reference out of bounds");
         }
 
@@ -211,8 +211,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         nullable = col.nullable;
         PGX_LOG(AST_TRANSLATE, DEBUG,
                 "INNER_VAR/INDEX_VAR varno=%d varattno=%d → absolute_pos=%zu (left_size=%zu) → %s.%s (nullable=%d)",
-                var->varno, var->varattno, absolute_position, left_size,
-                tableName.c_str(), colName.c_str(), nullable);
+                var->varno, var->varattno, absolute_position, left_size, tableName.c_str(), colName.c_str(), nullable);
     } else {
         tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
         colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
@@ -259,116 +258,9 @@ auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const*
     return postgresql_ast::translate_const(const_node, ctx.builder, context_);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const Param* param,
-                                                    OptRefT<const TranslationResult> current_result) -> mlir::Value {
-    PGX_IO(AST_TRANSLATE);
-
-    if (!param) {
-        PGX_ERROR("Invalid Param node");
-        throw std::runtime_error("Invalid Param node");
-    }
-
-    if (param->paramkind != PARAM_EXEC) {
-        PGX_ERROR("Only PARAM_EXEC parameters are supported (got paramkind=%d)", param->paramkind);
-        throw std::runtime_error("Unsupported param kind");
-    }
-
-    // Check nest parameters first (these are NestLoop parameterized scans)
-    const auto& nest_params = ctx.nest_params;
-    const auto nest_it = nest_params.find(param->paramid);
-
-    if (nest_it != nest_params.end()) {
-        auto* paramVar = nest_it->second;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to nestParam Var(varno=%d, varattno=%d)",
-                param->paramid, paramVar->varno, paramVar->varattno);
-
-        return translate_var(ctx, paramVar, current_result);
-    }
-
-    // Check correlation parameters (these are free variables and don't need current_result)
-    const auto& correlation_params = ctx.correlation_params;
-    const auto corr_it = correlation_params.find(param->paramid);
-
-    if (corr_it != correlation_params.end()) {
-        const auto& [tableScope, columnName] = corr_it->second;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to correlation parameter %s.%s as free variable",
-                param->paramid, tableScope.c_str(), columnName.c_str());
-
-        auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-        auto column_ref = columnManager.createRef(tableScope, columnName);
-
-        const auto type_mapper = PostgreSQLTypeMapper(context_);
-        auto column_type = type_mapper.map_postgre_sqltype(param->paramtype, param->paramtypmod, true);
-
-        // Use outer_tuple for correlation parameters (free variables)
-        mlir::Value tuple_to_use = ctx.outer_tuple ? ctx.outer_tuple : ctx.current_tuple;
-        return ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), column_type, column_ref,
-                                                             tuple_to_use);
-    }
-
-    const auto& subquery_mapping = ctx.subquery_param_mapping;
-    const auto subquery_it = subquery_mapping.find(param->paramid);
-
-    if (subquery_it != subquery_mapping.end()) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to subquery column", param->paramid);
-
-        const auto& [join_scope, join_column_name, output_type] = subquery_it->second;
-
-        auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-        auto column_ref = columnManager.createRef(join_scope, join_column_name);
-
-        mlir::Value column_value = ctx.builder.create<mlir::relalg::GetColumnOp>(
-            ctx.builder.getUnknownLoc(), output_type, column_ref, ctx.current_tuple);
-
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetColumnOp for Param paramid=%d from subquery tuple column %s.%s",
-                param->paramid, join_scope.c_str(), join_column_name.c_str());
-
-        return column_value;
-    }
-
-    // If we reach here, this must be an InitPlan parameter - look it up in context
-    const auto& init_plan_results = ctx.init_plan_results;
-    const auto it = init_plan_results.find(param->paramid);
-
-    if (it == init_plan_results.end()) {
-        PGX_ERROR("Param references unknown paramid=%d (InitPlan not processed?)", param->paramid);
-        throw std::runtime_error("Param references unknown InitPlan result");
-    }
-
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to InitPlan result", param->paramid);
-
-    // Extract scalar value from InitPlan result using GetScalarOp
-    const auto& initplan_result = it->second;
-
-    if (!initplan_result.op) {
-        PGX_ERROR("InitPlan result for paramid=%d has no operation", param->paramid);
-        throw std::runtime_error("Invalid InitPlan result");
-    }
-
-    if (initplan_result.columns.empty()) {
-        PGX_ERROR("InitPlan result for paramid=%d has no columns", param->paramid);
-        throw std::runtime_error("InitPlan must return at least one column");
-    }
-
-    mlir::Value stream = initplan_result.op->getResult(0);
-    const auto& first_column = initplan_result.columns[0];
-
-    auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-    auto column_ref = columnManager.createRef(first_column.table_name, first_column.column_name);
-
-    mlir::Value scalar_value = ctx.builder.create<mlir::relalg::GetScalarOp>(
-        ctx.builder.getUnknownLoc(), first_column.mlir_type, column_ref, stream);
-
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetScalarOp for Param paramid=%d from %s.%s", param->paramid,
-            first_column.table_name.c_str(), first_column.column_name.c_str());
-
-    return scalar_value;
-}
-
 auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const Aggref* aggref,
                                                      OptRefT<const TranslationResult> current_result) const
     -> mlir::Value {
-    // TODO: Clean...
     PGX_IO(AST_TRANSLATE);
     if (!aggref) {
         PGX_ERROR("Invalid Aggref parameters");
@@ -444,6 +336,113 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     auto getColOp = ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), resultType, colRef,
                                                                   ctx.current_tuple);
     return getColOp.getRes();
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const Param* param,
+                                                    OptRefT<const TranslationResult> current_result) const
+    -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
+
+    if (!param) {
+        PGX_ERROR("Invalid Param node");
+        throw std::runtime_error("Invalid Param node");
+    }
+
+    if (param->paramkind != PARAM_EXEC) {
+        PGX_ERROR("Only PARAM_EXEC parameters are supported (got paramkind=%d)", param->paramkind);
+        throw std::runtime_error("Unsupported param kind");
+    }
+
+    // Check nest parameters first (these are NestLoop parameterized scans)
+    const auto& nest_params = ctx.nest_params;
+    const auto nest_it = nest_params.find(param->paramid);
+
+    if (nest_it != nest_params.end()) {
+        auto* paramVar = nest_it->second;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to nestParam Var(varno=%d, varattno=%d)",
+                param->paramid, paramVar->varno, paramVar->varattno);
+
+        return translate_var(ctx, paramVar, current_result);
+    }
+
+    // Check correlation parameters (these are free variables and don't need current_result)
+    const auto& correlation_params = ctx.correlation_params;
+    const auto corr_it = correlation_params.find(param->paramid);
+
+    if (corr_it != correlation_params.end()) {
+        const auto& [tableScope, columnName] = corr_it->second;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to correlation parameter %s.%s as free variable",
+                param->paramid, tableScope.c_str(), columnName.c_str());
+
+        auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+        auto column_ref = columnManager.createRef(tableScope, columnName);
+
+        const auto type_mapper = PostgreSQLTypeMapper(context_);
+        auto column_type = type_mapper.map_postgre_sqltype(param->paramtype, param->paramtypmod, true);
+
+        // Use outer_tuple for correlation parameters (free variables)
+        mlir::Value tuple_to_use = ctx.outer_tuple ? ctx.outer_tuple : ctx.current_tuple;
+        return ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), column_type, column_ref,
+                                                             tuple_to_use);
+    }
+
+    const auto& subquery_mapping = ctx.subquery_param_mapping;
+    const auto subquery_it = subquery_mapping.find(param->paramid);
+
+    if (subquery_it != subquery_mapping.end()) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to subquery column", param->paramid);
+
+        const auto& [join_scope, join_column_name, output_type] = subquery_it->second;
+
+        auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+        auto column_ref = columnManager.createRef(join_scope, join_column_name);
+
+        mlir::Value column_value = ctx.builder.create<mlir::relalg::GetColumnOp>(
+            ctx.builder.getUnknownLoc(), output_type, column_ref, ctx.current_tuple);
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetColumnOp for Param paramid=%d from subquery tuple column %s.%s",
+                param->paramid, join_scope.c_str(), join_column_name.c_str());
+
+        return column_value;
+    }
+
+    // this must be an InitPlan parameter - look it up in context
+    const auto& init_plan_results = ctx.init_plan_results;
+    const auto it = init_plan_results.find(param->paramid);
+
+    if (it == init_plan_results.end()) {
+        PGX_ERROR("Param references unknown paramid=%d (InitPlan not processed?)", param->paramid);
+        throw std::runtime_error("Param references unknown InitPlan result");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to InitPlan result", param->paramid);
+
+    // Extract scalar value from InitPlan result using GetScalarOp
+    const auto& initplan_result = it->second;
+
+    if (!initplan_result.op) {
+        PGX_ERROR("InitPlan result for paramid=%d has no operation", param->paramid);
+        throw std::runtime_error("Invalid InitPlan result");
+    }
+
+    if (initplan_result.columns.empty()) {
+        PGX_ERROR("InitPlan result for paramid=%d has no columns", param->paramid);
+        throw std::runtime_error("InitPlan must return at least one column");
+    }
+
+    mlir::Value stream = initplan_result.op->getResult(0);
+    const auto& first_column = initplan_result.columns[0];
+
+    auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+    auto column_ref = columnManager.createRef(first_column.table_name, first_column.column_name);
+
+    mlir::Value scalar_value = ctx.builder.create<mlir::relalg::GetScalarOp>(
+        ctx.builder.getUnknownLoc(), first_column.mlir_type, column_ref, stream);
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetScalarOp for Param paramid=%d from %s.%s", param->paramid,
+            first_column.table_name.c_str(), first_column.column_name.c_str());
+
+    return scalar_value;
 }
 
 } // namespace postgresql_ast

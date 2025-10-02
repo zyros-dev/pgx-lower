@@ -54,6 +54,133 @@ class GetColumnOp;
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
+auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr,
+                                                                           const TranslationResult* left_child,
+                                                                           const TranslationResult* right_child)
+    -> mlir::Value {
+    PGX_IO(AST_TRANSLATE);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_expression_with_join_context: Routing through merge path");
+    auto merged = merge_translation_results(left_child, right_child);
+    return translate_expression(ctx, expr, merged);
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr,
+                                                                    const TranslationResult& child_result,
+                                                                    const std::string& suggested_name)
+    -> pgx_lower::frontend::sql::StreamExpressionResult {
+    PGX_IO(AST_TRANSLATE);
+
+    if (!expr || !child_result.op) {
+        PGX_ERROR("Invalid parameters for translate_expression_for_stream");
+        throw std::runtime_error("Invalid parameters for translate_expression_for_stream");
+    }
+
+    mlir::Value input_stream = child_result.op->getResult(0);
+    const auto& child_columns = child_result.columns;
+
+    auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+    if (!dialect) {
+        PGX_ERROR("RelAlg dialect not registered");
+        throw std::runtime_error("RelAlg dialect not registered");
+    }
+    auto& columnManager = dialect->getColumnManager();
+
+    if (nodeTag(expr) == T_Var) {
+        const auto var = reinterpret_cast<Var*>(expr);
+
+        std::string tableName;
+        std::string columnName;
+
+        // Both OUTER_VAR (-2) and regular vars should use child output positions
+        if (var->varattno > 0 && var->varattno <= static_cast<int>(child_columns.size())) {
+            const auto& childCol = child_columns[var->varattno - 1];
+            tableName = childCol.table_name;
+            columnName = childCol.column_name;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Var (varno=%d) resolved to child output column %d: %s.%s", var->varno,
+                    var->varattno, tableName.c_str(), columnName.c_str());
+        } else {
+            throw std::runtime_error("bad situation");
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Expression is already a column reference: %s.%s", tableName.c_str(),
+                columnName.c_str());
+
+        auto colRef = columnManager.createRef(tableName, columnName);
+
+        auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
+        auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), tableName, nested);
+        auto columnRefAttr = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, colRef.getColumnPtr());
+
+        return {.stream = input_stream, .column_ref = columnRefAttr, .column_name = columnName, .table_name = tableName};
+    }
+
+    // Temp map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Creating MapOp for complex expression (type=%d)", expr->type);
+    static size_t exprId = 0;
+    const std::string scopeName = "map_expr";
+    const std::string columnName = suggested_name.empty() ? "expr_" + std::to_string(exprId++) : suggested_name;
+
+    auto colDef = columnManager.createDef(scopeName, columnName);
+
+    auto tempMapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
+                                                             ctx.builder.getArrayAttr({colDef}));
+
+    auto& predicateRegion = tempMapOp.getPredicate();
+    auto* block = new mlir::Block;
+    predicateRegion.push_back(block);
+
+    auto tupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
+    auto tupleArg = block->addArgument(tupleType, ctx.builder.getUnknownLoc());
+
+    auto blockBuilder = mlir::OpBuilder(ctx.builder.getContext());
+    blockBuilder.setInsertionPointToStart(block);
+
+    auto blockCtx = QueryCtxT{ctx.current_stmt, blockBuilder, ctx.current_module, tupleArg, ctx.current_tuple};
+    blockCtx.init_plan_results = ctx.init_plan_results;
+
+    // Pass through the child_result so varno_resolution is available
+    auto exprValue = translate_expression(blockCtx, expr, child_result);
+    verify_and_print(exprValue);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Finished translating expression");
+    if (!exprValue) {
+        PGX_ERROR("Failed to translate expression in MapOp");
+        throw std::runtime_error("Failed to translate expression in MapOp");
+    }
+
+    mlir::Type exprType = exprValue.getType();
+    blockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{exprValue});
+    tempMapOp.erase();
+
+    // map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // -
+    colDef.getColumn().type = exprType;
+    auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
+                                                         ctx.builder.getArrayAttr({colDef}));
+    auto& realRegion = mapOp.getPredicate();
+    auto* realBlock = new mlir::Block;
+    realRegion.push_back(realBlock);
+
+    auto realTupleArg = realBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
+
+    mlir::OpBuilder realBlockBuilder(ctx.builder.getContext());
+    realBlockBuilder.setInsertionPointToStart(realBlock);
+
+    auto realBlockCtx = QueryCtxT{ctx.current_stmt, realBlockBuilder, ctx.current_module, realTupleArg,
+                                  ctx.current_tuple};
+    realBlockCtx.init_plan_results = ctx.init_plan_results;
+    auto realExprValue = translate_expression(realBlockCtx, expr, child_result);
+    verify_and_print(realExprValue);
+    realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
+
+    auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
+    auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), scopeName, nested);
+    auto columnRef = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, colDef.getColumnPtr());
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Created MapOp with computed column: %s.%s", scopeName.c_str(), columnName.c_str());
+
+    return {.stream = mapOp.getResult(), .column_ref = columnRef, .column_name = columnName, .table_name = scopeName};
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr,
                                                         OptRefT<const TranslationResult> current_result,
                                                         std::optional<std::vector<mlir::Value>> pre_translated_args)
@@ -371,7 +498,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                                               "(left_size=%zu, total=%zu columns)",
                                               var->varattno, absolute_position, left_size,
                                               current_result->get().columns.size());
-                                    throw std::runtime_error("INNER_VAR/INDEX_VAR reference out of bounds in correlation");
+                                    throw std::runtime_error("INNER_VAR/INDEX_VAR reference out of bounds in "
+                                                             "correlation");
                                 }
 
                                 const auto& col = current_result->get().columns[absolute_position];
@@ -661,133 +789,6 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(const QueryCtxT& par
             subquery_result.columns.size());
 
     return {subquery_stream, subquery_result};
-}
-
-auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(
-    const QueryCtxT& ctx, Expr* expr, const TranslationResult& child_result, const std::string& suggested_name)
-    -> pgx_lower::frontend::sql::StreamExpressionResult {
-    PGX_IO(AST_TRANSLATE);
-
-    if (!expr || !child_result.op) {
-        PGX_ERROR("Invalid parameters for translate_expression_for_stream");
-        throw std::runtime_error("Invalid parameters for translate_expression_for_stream");
-    }
-
-    mlir::Value input_stream = child_result.op->getResult(0);
-    const auto& child_columns = child_result.columns;
-
-    auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
-    if (!dialect) {
-        PGX_ERROR("RelAlg dialect not registered");
-        throw std::runtime_error("RelAlg dialect not registered");
-    }
-    auto& columnManager = dialect->getColumnManager();
-
-    if (nodeTag(expr) == T_Var) {
-        // It's already a column - read the table and early return; we don't need a mapop
-        const auto var = reinterpret_cast<Var*>(expr);
-
-        std::string tableName;
-        std::string columnName;
-
-        // When child_columns is provided, use it for column resolution (aggregate context)
-        // Both OUTER_VAR (-2) and regular vars should use child output positions
-        if (var->varattno > 0 && var->varattno <= static_cast<int>(child_columns.size())) {
-            const auto& childCol = child_columns[var->varattno - 1];
-            tableName = childCol.table_name;
-            columnName = childCol.column_name;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Var (varno=%d) resolved to child output column %d: %s.%s", var->varno,
-                    var->varattno, tableName.c_str(), columnName.c_str());
-        } else {
-            throw std::runtime_error("bad situation");
-        }
-
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Expression is already a column reference: %s.%s", tableName.c_str(),
-                columnName.c_str());
-
-        auto colRef = columnManager.createRef(tableName, columnName);
-
-        auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
-        auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), tableName, nested);
-        auto columnRefAttr = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, colRef.getColumnPtr());
-
-        return {.stream = input_stream, .column_ref = columnRefAttr, .column_name = columnName, .table_name = tableName};
-    }
-
-    // Temp map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Creating MapOp for complex expression (type=%d)", expr->type);
-    static size_t exprId = 0;
-    const std::string scopeName = "map_expr";
-    const std::string columnName = suggested_name.empty() ? "expr_" + std::to_string(exprId++) : suggested_name;
-
-    auto colDef = columnManager.createDef(scopeName, columnName);
-
-    auto tempMapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
-                                                             ctx.builder.getArrayAttr({colDef}));
-
-    auto& predicateRegion = tempMapOp.getPredicate();
-    auto* block = new mlir::Block;
-    predicateRegion.push_back(block);
-
-    auto tupleType = mlir::relalg::TupleType::get(ctx.builder.getContext());
-    auto tupleArg = block->addArgument(tupleType, ctx.builder.getUnknownLoc());
-
-    auto blockBuilder = mlir::OpBuilder(ctx.builder.getContext());
-    blockBuilder.setInsertionPointToStart(block);
-
-    auto blockCtx = QueryCtxT{ctx.current_stmt, blockBuilder, ctx.current_module, tupleArg, ctx.current_tuple};
-    blockCtx.init_plan_results = ctx.init_plan_results;
-
-    // Pass through the child_result so varno_resolution is available
-    auto exprValue = translate_expression(blockCtx, expr, child_result);
-    verify_and_print(exprValue);
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Finished translating expression");
-    if (!exprValue) {
-        PGX_ERROR("Failed to translate expression in MapOp");
-        throw std::runtime_error("Failed to translate expression in MapOp");
-    }
-
-    mlir::Type exprType = exprValue.getType();
-    blockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{exprValue});
-    tempMapOp.erase();
-
-    // map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    colDef.getColumn().type = exprType;
-    auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
-                                                         ctx.builder.getArrayAttr({colDef}));
-    auto& realRegion = mapOp.getPredicate();
-    auto* realBlock = new mlir::Block;
-    realRegion.push_back(realBlock);
-
-    auto realTupleArg = realBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
-
-    mlir::OpBuilder realBlockBuilder(ctx.builder.getContext());
-    realBlockBuilder.setInsertionPointToStart(realBlock);
-
-    auto realBlockCtx = QueryCtxT{ctx.current_stmt, realBlockBuilder, ctx.current_module, realTupleArg,
-                                  ctx.current_tuple};
-    realBlockCtx.init_plan_results = ctx.init_plan_results;
-    auto realExprValue = translate_expression(realBlockCtx, expr, child_result);
-    verify_and_print(realExprValue);
-    realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
-
-    auto nested = std::vector{mlir::FlatSymbolRefAttr::get(ctx.builder.getContext(), columnName)};
-    auto symbolRef = mlir::SymbolRefAttr::get(ctx.builder.getContext(), scopeName, nested);
-    auto columnRef = mlir::relalg::ColumnRefAttr::get(ctx.builder.getContext(), symbolRef, colDef.getColumnPtr());
-
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Created MapOp with computed column: %s.%s", scopeName.c_str(), columnName.c_str());
-
-    return {.stream = mapOp.getResult(), .column_ref = columnRef, .column_name = columnName, .table_name = scopeName};
-}
-
-auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr,
-                                                                           const TranslationResult* left_child,
-                                                                           const TranslationResult* right_child)
-    -> mlir::Value {
-    PGX_IO(AST_TRANSLATE);
-    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_expression_with_join_context: Routing through merge path");
-    auto merged = merge_translation_results(left_child, right_child);
-    return translate_expression(ctx, expr, merged);
 }
 
 } // namespace postgresql_ast

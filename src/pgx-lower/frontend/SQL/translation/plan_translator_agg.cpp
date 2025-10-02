@@ -279,7 +279,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             createdValues.push_back(aggResult);
         } else {
             const auto argTE = getFirstAggregateArgument(aggref);
-            if (!argTE) return;
+            if (!argTE)
+                return;
 
             const auto childCtx = QueryCtxT::createChildContext(ctx);
             TranslationResult exprContext = childResult;
@@ -292,7 +293,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 mlir::Type actual_type = column_ref.getColumn().type;
                 bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
 
-                childResult.columns.push_back({.table_name = table_name, .column_name = column_name,
+                childResult.columns.push_back({.table_name = table_name,
+                                               .column_name = column_name,
                                                .type_oid = exprType((Node*)argTE->expr),
                                                .typmod = exprTypmod((Node*)argTE->expr),
                                                .mlir_type = actual_type,
@@ -300,13 +302,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             }
 
             const auto resultType = (funcName == "count") ? ctx.builder.getI64Type()
-                                                     : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+                                                          : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
             const auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
             aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
 
             const auto aggrFuncEnum = getAggregateFunction(funcName);
             aggResult = createAggregateOperation(aggr_builder, ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum,
-                                                relation, column_ref, aggref->aggdistinct);
+                                                 relation, column_ref, aggref->aggdistinct);
             createdCols.push_back(attrDef);
             createdValues.push_back(aggResult);
         }
@@ -324,7 +326,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 // Direct aggregate: SUM(x), COUNT(*), etc.
                 auto aggref = reinterpret_cast<Aggref*>(te->expr);
                 char* rawFuncName = get_func_name(aggref->aggfnoid);
-                if (!rawFuncName) continue;
+                if (!rawFuncName)
+                    continue;
                 auto funcName = std::string(rawFuncName);
                 pfree(rawFuncName);
 
@@ -335,13 +338,14 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 if (funcName == "count" && (!aggref->args || list_length(aggref->args) == 0)) {
                     mlir::relalg::ColumnDefAttr attrDef;
                     aggResult = processCountStarAggregate(aggr_builder, ctx.builder.getUnknownLoc(), relation, attrDef,
-                                                          columnManager, aggrScopeName, aggColumnName, aggregateMappings,
-                                                          aggref->aggno);
+                                                          columnManager, aggrScopeName, aggColumnName,
+                                                          aggregateMappings, aggref->aggno);
                     createdCols.push_back(attrDef);
                     createdValues.push_back(aggResult);
                 } else {
                     auto argTE = getFirstAggregateArgument(aggref);
-                    if (!argTE) continue;
+                    if (!argTE)
+                        continue;
 
                     auto childCtx = QueryCtxT::createChildContext(ctx);
                     // Create a context with current childOutput as the stream and varno_resolution from childResult
@@ -356,7 +360,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         mlir::Type actual_type = column_ref.getColumn().type;
                         bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
 
-                        childResult.columns.push_back({.table_name = table_name, .column_name = column_name,
+                        childResult.columns.push_back({.table_name = table_name,
+                                                       .column_name = column_name,
                                                        .type_oid = exprType((Node*)argTE->expr),
                                                        .typmod = exprTypmod((Node*)argTE->expr),
                                                        .mlir_type = actual_type,
@@ -364,13 +369,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     }
 
                     auto resultType = (funcName == "count") ? ctx.builder.getI64Type()
-                                                             : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+                                                            : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
                     auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
                     aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
 
                     auto aggrFuncEnum = getAggregateFunction(funcName);
-                    aggResult = createAggregateOperation(aggr_builder, ctx.builder.getUnknownLoc(), resultType, aggrFuncEnum,
-                                                        relation, column_ref, aggref->aggdistinct);
+                    aggResult = createAggregateOperation(aggr_builder, ctx.builder.getUnknownLoc(), resultType,
+                                                         aggrFuncEnum, relation, column_ref, aggref->aggdistinct);
                     createdCols.push_back(attrDef);
                     createdValues.push_back(aggResult);
                 }
@@ -430,7 +435,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     mlir::Value finalOutput = aggOp;
     auto finalScope = aggrScopeName;
 
-    // Section 4: Post processing - evaluate outer expressions that had an aggregation inside of them - - - - - - - - - -
+    // Section 4: Post processing - evaluate outer expressions that had an aggregation inside of them - - - - - - - - -
+    // -
     {
         if (!needs_post_processing.empty()) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Creating post-processing MapOp for %zu expressions",
