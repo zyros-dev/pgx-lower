@@ -2,7 +2,7 @@
 # Build system for PostgreSQL JIT compilation via MLIR
 # Architecture: PostgreSQL AST → RelAlg → DB → DSA → Standard MLIR → LLVM IR → JIT
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands clean-root gviz
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv
 
 # Build directories for different test types
 BUILD_DIR = build
@@ -159,6 +159,40 @@ gviz:
 	fi
 	@echo "CMake visualization completed!"
 
+venv:
+	@if [ ! -d .venv ]; then \
+		echo "Creating Python 3.12.11 virtual environment..."; \
+		if [ ! -d ~/.pyenv/versions/3.12.11 ]; then \
+			echo "Python 3.12.11 not installed. Run: ~/.pyenv/bin/pyenv install 3.12.11"; \
+			exit 1; \
+		fi; \
+		~/.pyenv/versions/3.12.11/bin/python3 -m venv .venv; \
+		~/.pyenv/versions/3.12.11/bin/python3 -c "import sys; print('.venv created with Python', sys.version.split()[0])"; \
+		echo "Activate with: source .venv/bin/activate.fish (or .venv/bin/activate for bash)"; \
+	else \
+		echo "Virtual environment already exists at .venv"; \
+	fi
+
+pgx-bench:
+	@SF_VALUE=$${SF:-0.1}; \
+	echo "Running TPC-H benchmark (pgx-lower) with scale factor $$SF_VALUE..."; \
+	python3 tools/bench.py pgx $$SF_VALUE
+
+psql-bench:
+	@SF_VALUE=$${SF:-0.1}; \
+	echo "Running TPC-H benchmark (vanilla PostgreSQL) with scale factor $$SF_VALUE..."; \
+	python3 tools/bench.py psql $$SF_VALUE
+
+lingo-bench:
+	@SF_VALUE=$${SF:-0.1}; \
+	echo "Running TPC-H benchmark (LingoDB) with scale factor $$SF_VALUE..."; \
+	python3 tools/bench.py lingo $$SF_VALUE
+
+validate-bench:
+	@SF_VALUE=$${SF:-0.1}; \
+	echo "Running TPC-H validation benchmark (all engines) with scale factor $$SF_VALUE..."; \
+	python3 tools/bench.py validate $$SF_VALUE
+
 help:
 	@echo "Available targets:"
 	@echo "  build        - Build the main project"
@@ -170,6 +204,11 @@ help:
 	@echo "  utest        - Build and run unit tests (excludes crashing tests)"
 	@echo "  utest-run    - Run unit tests without rebuild (excludes crashing tests)"
 	@echo "  utest-all    - Run ALL unit tests including potentially crashing ones"
+	@echo "  venv         - Create Python virtual environment (Python 3.12.11)"
+	@echo "  bench        - Run TPC-H benchmark with pgx-lower (Usage: make bench [SF=<scale_factor>], default SF=0.1)"
+	@echo "  psql-bench   - Run TPC-H benchmark with vanilla PostgreSQL (Usage: make psql-bench [SF=<scale_factor>])"
+	@echo "  lingo-bench  - Run TPC-H benchmark with LingoDB (Usage: make lingo-bench [SF=<scale_factor>])"
+	@echo "  validate-bench - Cross-validate all benchmark engines (Usage: make validate-bench [SF=<scale_factor>])"
 	@echo "  compile_commands - Generate compile_commands.json"
 	@echo "  install      - Install the project"
 	@echo "  rebuild      - Quick rebuild without cleaning"

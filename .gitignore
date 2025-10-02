@@ -116,4 +116,6 @@ tools/lingodb-debug/lingodb_debug.log
 build-ptest
 build-viz
 query_outputs
-compare
+compareresources/data/
+benchmark_results/
+.venv/
