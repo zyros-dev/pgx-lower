@@ -562,165 +562,100 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         throw std::runtime_error("Is this possible?");
     }
 
-    case ANY_SUBLINK: {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "ANY_SUBLINK: Translating x IN (subquery) pattern");
-
-        if (subplan->plan_id < 1 || subplan->plan_id > list_length(ctx.current_stmt.subplans)) {
-            PGX_ERROR("Invalid SubPlan plan_id: %d", subplan->plan_id);
-            throw std::runtime_error("Invalid SubPlan plan_id");
-        }
-
-        auto* subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
-        if (!subquery_plan) {
-            PGX_ERROR("SubPlan plan_id %d points to null Plan", subplan->plan_id);
-            throw std::runtime_error("Null subquery plan");
-        }
-
-        auto [subquery_stream, subquery_result] = translate_subquery_plan(ctx, subquery_plan, &ctx.current_stmt);
-
-        if (!subplan->testexpr) {
-            PGX_ERROR("ANY_SUBLINK missing testexpr");
-            throw std::runtime_error("ANY_SUBLINK requires testexpr");
-        }
-
-        const auto tuple_type = mlir::relalg::TupleType::get(ctx.builder.getContext());
-
-        auto selection_op = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), subquery_stream);
-
-        auto& pred_region = selection_op.getPredicate();
-        auto& pred_block = pred_region.emplaceBlock();
-        auto inner_tuple = pred_block.addArgument(tuple_type, ctx.builder.getUnknownLoc());
-
-        mlir::OpBuilder pred_builder(&pred_block, pred_block.begin());
-
-        auto inner_ctx = QueryCtxT(ctx.current_stmt, pred_builder, ctx.current_module, inner_tuple, mlir::Value());
-        inner_ctx.init_plan_results = ctx.init_plan_results;
-        inner_ctx.nest_params = ctx.nest_params;
-        inner_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
-        inner_ctx.correlation_params = ctx.correlation_params;
-
-        if (subplan->paramIds) {
-            const int num_params = list_length(subplan->paramIds);
-            PGX_LOG(AST_TRANSLATE, DEBUG, "ANY_SUBLINK: Mapping %d paramIds to subquery columns", num_params);
-
-            for (int i = 0; i < num_params; ++i) {
-                const int param_id = lfirst_int(list_nth_cell(subplan->paramIds, i));
-
-                if (i < static_cast<int>(subquery_result.columns.size())) {
-                    const auto& column_schema = subquery_result.columns[i];
-                    pgx_lower::frontend::sql::SubqueryInfo info;
-                    info.join_scope = column_schema.table_name;
-                    info.join_column_name = column_schema.column_name;
-                    info.output_type = column_schema.mlir_type;
-                    inner_ctx.subquery_param_mapping[param_id] = info;
-
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "  Mapped paramId=%d to column %s.%s (index %d)", param_id,
-                            column_schema.table_name.c_str(), column_schema.column_name.c_str(), i);
-                } else {
-                    PGX_ERROR("ParamId=%d index %d exceeds subquery columns (%zu)", param_id, i,
-                              subquery_result.columns.size());
-                    throw std::runtime_error("ParamId index out of range");
-                }
-            }
-        }
-
-        auto comparison = translate_expression(inner_ctx, reinterpret_cast<Expr*>(subplan->testexpr), current_result);
-        if (!comparison) {
-            PGX_ERROR("Failed to translate ANY_SUBLINK testexpr");
-            throw std::runtime_error("Failed to translate testexpr");
-        }
-
-        pred_builder.create<mlir::relalg::ReturnOp>(pred_builder.getUnknownLoc(), mlir::ValueRange{comparison});
-
-        auto exists_op = ctx.builder.create<mlir::relalg::ExistsOp>(ctx.builder.getUnknownLoc(),
-                                                                    ctx.builder.getI1Type(), selection_op.getResult());
-
-        PGX_LOG(AST_TRANSLATE, DEBUG, "ANY_SUBLINK: Created EXISTS pattern");
-        return exists_op.getResult();
-    }
-
+    case ANY_SUBLINK:
     case ALL_SUBLINK: {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "ALL_SUBLINK: Translating price > ALL (subquery) pattern");
+        const bool is_all = (subplan->subLinkType == ALL_SUBLINK);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "%s: Translating %s pattern", is_all ? "ALL_SUBLINK" : "ANY_SUBLINK",
+                is_all ? "x > ALL (subquery)" : "x IN (subquery)");
 
-        if (subplan->plan_id < 1 || subplan->plan_id > list_length(ctx.current_stmt.subplans)) {
-            PGX_ERROR("Invalid SubPlan plan_id: %d", subplan->plan_id);
-            throw std::runtime_error("Invalid SubPlan plan_id");
-        }
+        auto translate_quantified = [&](bool negate_predicate) -> mlir::Value {
+            if (subplan->plan_id < 1 || subplan->plan_id > list_length(ctx.current_stmt.subplans)) {
+                PGX_ERROR("Invalid SubPlan plan_id: %d", subplan->plan_id);
+                throw std::runtime_error("Invalid SubPlan plan_id");
+            }
 
-        auto* subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
-        if (!subquery_plan) {
-            PGX_ERROR("SubPlan plan_id %d points to null Plan", subplan->plan_id);
-            throw std::runtime_error("Null subquery plan");
-        }
+            auto* subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
+            if (!subquery_plan) {
+                PGX_ERROR("SubPlan plan_id %d points to null Plan", subplan->plan_id);
+                throw std::runtime_error("Null subquery plan");
+            }
 
-        auto [subquery_stream, subquery_result] = translate_subquery_plan(ctx, subquery_plan, &ctx.current_stmt);
+            auto [subquery_stream, subquery_result] = translate_subquery_plan(ctx, subquery_plan, &ctx.current_stmt);
 
-        if (!subplan->testexpr) {
-            PGX_ERROR("ALL_SUBLINK missing testexpr");
-            throw std::runtime_error("ALL_SUBLINK requires testexpr");
-        }
+            if (!subplan->testexpr) {
+                PGX_ERROR("%s missing testexpr", negate_predicate ? "ALL_SUBLINK" : "ANY_SUBLINK");
+                throw std::runtime_error("Quantified subquery requires testexpr");
+            }
 
-        const auto tuple_type = mlir::relalg::TupleType::get(ctx.builder.getContext());
+            const auto tuple_type = mlir::relalg::TupleType::get(ctx.builder.getContext());
+            auto selection_op = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), subquery_stream);
 
-        auto selection_op = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), subquery_stream);
+            auto& pred_region = selection_op.getPredicate();
+            auto& pred_block = pred_region.emplaceBlock();
+            auto inner_tuple = pred_block.addArgument(tuple_type, ctx.builder.getUnknownLoc());
 
-        auto& pred_region = selection_op.getPredicate();
-        auto& pred_block = pred_region.emplaceBlock();
-        auto inner_tuple = pred_block.addArgument(tuple_type, ctx.builder.getUnknownLoc());
+            mlir::OpBuilder pred_builder(&pred_block, pred_block.begin());
 
-        mlir::OpBuilder pred_builder(&pred_block, pred_block.begin());
+            auto inner_ctx = QueryCtxT(ctx.current_stmt, pred_builder, ctx.current_module, inner_tuple, mlir::Value());
+            inner_ctx.init_plan_results = ctx.init_plan_results;
+            inner_ctx.nest_params = ctx.nest_params;
+            inner_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
+            inner_ctx.correlation_params = ctx.correlation_params;
 
-        auto inner_ctx = QueryCtxT(ctx.current_stmt, pred_builder, ctx.current_module, inner_tuple, mlir::Value());
-        inner_ctx.init_plan_results = ctx.init_plan_results;
-        inner_ctx.nest_params = ctx.nest_params;
-        inner_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
-        inner_ctx.correlation_params = ctx.correlation_params;
+            if (subplan->paramIds) {
+                const int num_params = list_length(subplan->paramIds);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "%s: Mapping %d paramIds to subquery columns",
+                        negate_predicate ? "ALL_SUBLINK" : "ANY_SUBLINK", num_params);
 
-        if (subplan->paramIds) {
-            const int num_params = list_length(subplan->paramIds);
-            PGX_LOG(AST_TRANSLATE, DEBUG, "ALL_SUBLINK: Mapping %d paramIds to subquery columns", num_params);
+                for (int i = 0; i < num_params; ++i) {
+                    const int param_id = lfirst_int(list_nth_cell(subplan->paramIds, i));
 
-            for (int i = 0; i < num_params; ++i) {
-                const int param_id = lfirst_int(list_nth_cell(subplan->paramIds, i));
+                    if (i < static_cast<int>(subquery_result.columns.size())) {
+                        const auto& column_schema = subquery_result.columns[i];
+                        pgx_lower::frontend::sql::SubqueryInfo info;
+                        info.join_scope = column_schema.table_name;
+                        info.join_column_name = column_schema.column_name;
+                        info.output_type = column_schema.mlir_type;
+                        inner_ctx.subquery_param_mapping[param_id] = info;
 
-                if (i < static_cast<int>(subquery_result.columns.size())) {
-                    const auto& column_schema = subquery_result.columns[i];
-                    pgx_lower::frontend::sql::SubqueryInfo info;
-                    info.join_scope = column_schema.table_name;
-                    info.join_column_name = column_schema.column_name;
-                    info.output_type = column_schema.mlir_type;
-                    inner_ctx.subquery_param_mapping[param_id] = info;
-
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "  Mapped paramId=%d to column %s.%s (index %d)", param_id,
-                            column_schema.table_name.c_str(), column_schema.column_name.c_str(), i);
-                } else {
-                    PGX_ERROR("ParamId=%d index %d exceeds subquery columns (%zu)", param_id, i,
-                              subquery_result.columns.size());
-                    throw std::runtime_error("ParamId index out of range");
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "  Mapped paramId=%d to column %s.%s (index %d)", param_id,
+                                column_schema.table_name.c_str(), column_schema.column_name.c_str(), i);
+                    } else {
+                        PGX_ERROR("ParamId=%d index %d exceeds subquery columns (%zu)", param_id, i,
+                                  subquery_result.columns.size());
+                        throw std::runtime_error("ParamId index out of range");
+                    }
                 }
             }
-        }
 
-        auto comparison = translate_expression(inner_ctx, reinterpret_cast<Expr*>(subplan->testexpr), current_result);
-        if (!comparison) {
-            PGX_ERROR("Failed to translate ALL_SUBLINK testexpr");
-            throw std::runtime_error("Failed to translate testexpr");
-        }
+            auto comparison = translate_expression(inner_ctx, reinterpret_cast<Expr*>(subplan->testexpr), current_result);
+            if (!comparison) {
+                PGX_ERROR("Failed to translate %s testexpr", negate_predicate ? "ALL_SUBLINK" : "ANY_SUBLINK");
+                throw std::runtime_error("Failed to translate testexpr");
+            }
 
-        auto negated_comparison = pred_builder.create<mlir::db::NotOp>(pred_builder.getUnknownLoc(),
-                                                                       comparison.getType(), comparison);
+            if (negate_predicate) {
+                comparison = pred_builder.create<mlir::db::NotOp>(pred_builder.getUnknownLoc(),
+                                                                  comparison.getType(), comparison);
+            }
 
-        pred_builder.create<mlir::relalg::ReturnOp>(pred_builder.getUnknownLoc(),
-                                                    mlir::ValueRange{negated_comparison.getResult()});
+            pred_builder.create<mlir::relalg::ReturnOp>(pred_builder.getUnknownLoc(), mlir::ValueRange{comparison});
 
-        auto exists_op = ctx.builder.create<mlir::relalg::ExistsOp>(ctx.builder.getUnknownLoc(),
-                                                                    ctx.builder.getI1Type(), selection_op.getResult());
+            auto exists_op = ctx.builder.create<mlir::relalg::ExistsOp>(ctx.builder.getUnknownLoc(),
+                                                                        ctx.builder.getI1Type(), selection_op.getResult());
 
-        auto final_not = ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), exists_op.getType(),
-                                                             exists_op.getResult());
+            if (negate_predicate) {
+                auto final_not = ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(),
+                                                                     exists_op.getType(), exists_op.getResult());
+                PGX_LOG(AST_TRANSLATE, DEBUG, "ALL_SUBLINK: Created NOT EXISTS pattern");
+                return final_not.getResult();
+            }
 
-        PGX_LOG(AST_TRANSLATE, DEBUG, "ALL_SUBLINK: Created NOT EXISTS pattern");
-        return final_not.getResult();
+            PGX_LOG(AST_TRANSLATE, DEBUG, "ANY_SUBLINK: Created EXISTS pattern");
+            return exists_op.getResult();
+        };
+
+        return translate_quantified(is_all);
     }
 
     default: {
