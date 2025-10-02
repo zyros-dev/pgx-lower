@@ -523,11 +523,15 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     correlation_mapping[param_id] = {table_scope, column_name};
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d to %s.%s", param_id,
                             table_scope.c_str(), column_name.c_str());
+                } else {
+                    // IMPORTANT!
+                    // This is possible if you like, select col from tbl as t, (select x from tbl2 where t.col + 1 == x)
+                    // However, TPC-H doesn't have this situation, so... I'm skipping it!
+                    throw std::runtime_error("Unhandled subplan");
                 }
             }
         }
 
-        // Translate subquery with correlation parameters
         auto saved_correlation = ctx.correlation_params;
         const_cast<QueryCtxT&>(ctx).correlation_params = correlation_mapping;
         auto [subquery_stream, subquery_result] = translate_subquery_plan(ctx, subquery_plan, &ctx.current_stmt);
@@ -538,14 +542,12 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             throw std::runtime_error("Scalar subquery must return exactly one column");
         }
 
-        // Create GetScalarOp to extract the result
         const auto& result_column = subquery_result.columns[0];
         auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
         auto column_ref = columnManager.createRef(result_column.table_name, result_column.column_name);
 
-        // Make result type nullable (scalar subquery can return NULL)
         mlir::Type result_type = result_column.mlir_type;
-        if (!result_type.isa<mlir::db::NullableType>()) {
+        if (!isa<mlir::db::NullableType>(result_type)) {
             result_type = mlir::db::NullableType::get(ctx.builder.getContext(), result_type);
         }
 
