@@ -11,7 +11,6 @@ extern "C" {
 #include "utils/array.h"
 #include "nodes/nodeFuncs.h"
 #include "utils/syscache.h"
-#include "utils/lsyscache.h"
 #include "fmgr.h"
 }
 
@@ -209,7 +208,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
         int output_attno = 1;
 
         foreach (lc, targetlist) {
-            auto* tle = reinterpret_cast<TargetEntry*>(lfirst(lc));
+            auto* tle = static_cast<TargetEntry*>(lfirst(lc));
             if (tle->resjunk) {
                 continue;
             }
@@ -247,9 +246,12 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 auto streamResult = translate_expression_for_stream(ctx, tle->expr, exprContext, col_name);
                 verify_and_print(streamResult.stream);
                 result.op = streamResult.stream.getDefiningOp();
+                // ReSharper disable once CppDFAUnusedValue,CppDFAUnreadVariable
                 Oid type_oid = exprType(reinterpret_cast<Node*>(tle->expr));
+                // ReSharper disable once CppDFAUnusedValue,CppDFAUnreadVariable
                 int32_t typmod = exprTypmod(reinterpret_cast<Node*>(tle->expr));
                 mlir::Type exprType = streamResult.stream.getType();
+                // ReSharper disable once CppDFAUnreadVariable,CppDFAUnusedValue
                 bool nullable = mlir::isa<mlir::db::NullableType>(exprType);
 
                 result.columns.push_back(
@@ -334,6 +336,7 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* 
             auto* var = reinterpret_cast<Var*>(tle->expr);
 
             if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
+                // ReSharper disable once CppUseStructuredBinding
                 const auto& col = result.columns[var->varattno - 1];
 
                 if (needs_projection && tle->resname) {

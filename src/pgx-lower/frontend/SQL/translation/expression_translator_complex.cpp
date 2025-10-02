@@ -55,7 +55,7 @@ namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
 mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr,
-                                                                   OptRefT<const TranslationResult> current_result) {
+                                                                   const OptRefT<const TranslationResult> current_result) {
     const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Processing T_CoerceViaIO to type OID %d", coerce->resulttype);
 
@@ -73,15 +73,10 @@ mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCt
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr,
-                                                        OptRefT<const TranslationResult> current_result) -> mlir::Value {
+                                                        const OptRefT<const TranslationResult> current_result) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
-    if (!bool_expr) {
+    if (!bool_expr || !bool_expr->args || bool_expr->args->length == 0) {
         PGX_ERROR("Invalid BoolExpr parameters");
-        throw std::runtime_error("Invalid BoolExpr parameters");
-    }
-
-    if (!bool_expr->args || bool_expr->args->length == 0) {
-        PGX_ERROR("BoolExpr has no arguments");
         throw std::runtime_error("Invalid BoolExpr parameters");
     }
 
@@ -188,7 +183,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, const NullTest* null_test,
-                                                        OptRefT<const TranslationResult> current_result) -> mlir::Value {
+                                                        const OptRefT<const TranslationResult> current_result) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!null_test) {
         PGX_ERROR("Invalid NullTest parameters");
@@ -216,7 +211,7 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr,
-                                                            OptRefT<const TranslationResult> current_result)
+                                                            const OptRefT<const TranslationResult> current_result)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
@@ -250,7 +245,6 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
         throw std::runtime_error("All COALESCE arguments failed to translate");
     }
 
-    // Determine common type - Only create nullable result if at least one argument is nullable
     mlir::Type baseType = nullptr;
     for (const auto& arg : translatedArgs) {
         const auto argType = arg.getType();
@@ -269,10 +263,8 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE common type determined - forcing nullable for query context");
     for (auto& val : translatedArgs) {
         if (val.getType() != commonType) {
-            // Need to convert to common type
             if (!isa<mlir::db::NullableType>(val.getType())) {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Wrapping non-nullable argument to match common nullable type");
-                // Wrap non-nullable value in nullable type with explicit false null flag
                 auto falseFlag = ctx.builder.create<mlir::arith::ConstantIntOp>(ctx.builder.getUnknownLoc(), 0, 1);
                 val = ctx.builder.create<mlir::db::AsNullableOp>(ctx.builder.getUnknownLoc(), commonType, val, falseFlag);
             }
@@ -289,15 +281,12 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
         auto isNull = ctx.builder.create<mlir::db::IsNullOp>(loc, value);
         auto isNotNull = ctx.builder.create<mlir::db::NotOp>(loc, isNull);
 
-        // Create scf.IfOp with automatic region creation (safer than manual blocks)
         auto ifOp = ctx.builder.create<mlir::scf::IfOp>(loc, commonType, isNotNull, true);
 
-        // Then block: yield current value
         auto& thenRegion = ifOp.getThenRegion();
         auto* thenBlock = &thenRegion.front();
         ctx.builder.setInsertionPointToEnd(thenBlock);
 
-        // Cast value if needed
         mlir::Value thenValue = value;
         if (value.getType() != commonType && !isa<mlir::db::NullableType>(value.getType())) {
             auto falseFlag = ctx.builder.create<mlir::arith::ConstantIntOp>(loc, 0, 1);
@@ -305,14 +294,12 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
         }
         ctx.builder.create<mlir::scf::YieldOp>(loc, thenValue);
 
-        // Else block: recursive call for remaining arguments
         auto& elseRegion = ifOp.getElseRegion();
         auto* elseBlock = &elseRegion.front();
         ctx.builder.setInsertionPointToEnd(elseBlock);
         auto elseValue = buildCoalesceRecursive(index + 1);
         ctx.builder.create<mlir::scf::YieldOp>(loc, elseValue);
 
-        // Reset insertion point after the ifOp
         ctx.builder.setInsertionPointAfter(ifOp);
 
         return ifOp.getResult(0);
@@ -323,7 +310,6 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
     const bool resultIsNullable = mlir::isa<mlir::db::NullableType>(result.getType());
     PGX_LOG(AST_TRANSLATE, DEBUG, "COALESCE final result is nullable: %d", resultIsNullable);
 
-    // COALESCE always returns nullable type for query context compatibility
     const auto resultIsNullableType = isa<mlir::db::NullableType>(result.getType());
     PGX_LOG(AST_TRANSLATE, IO, "translate_coalesce_expr OUT: MLIR Value (nullable=%d)", resultIsNullableType);
 
@@ -575,9 +561,8 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
         auto normalizedLeft = leftValue;
         auto normalizedElem = elemValue;
 
-        // Check if we're dealing with string types that might need normalization
         auto get_base_type = [](mlir::Type t) -> mlir::Type {
-            if (auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
+            if (const auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
                 return nullable.getType();
             }
             return t;
@@ -657,7 +642,6 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
             throw std::runtime_error("Check logs");
         }
     } else {
-        // If no ELSE clause, use NULL as default
         const auto baseType = ctx.builder.getI32Type();
         auto nullableType = mlir::db::NullableType::get(ctx.builder.getContext(), baseType);
         elseResult = ctx.builder.create<mlir::db::NullOp>(ctx.builder.getUnknownLoc(), nullableType);
@@ -665,9 +649,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
 
     // Process WHEN clauses in reverse order to build nested if-else chain
     mlir::Value result = elseResult;
-
     if (case_expr->args && case_expr->args->length > 0) {
-        // Process from last to first WHEN clause
         for (int i = case_expr->args->length - 1; i >= 0; i--) {
             const auto whenNode = static_cast<Node*>(lfirst(&case_expr->args->elements[i]));
             if (nodeTag(whenNode) != T_CaseWhen) {
@@ -677,11 +659,8 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
 
             const auto whenClause = reinterpret_cast<CaseWhen*>(whenNode);
 
-            // Translate the WHEN condition
             mlir::Value condition = nullptr;
             if (caseArg) {
-                // Simple CASE: whenClause->expr may contain CaseTestExpr that needs to be replaced
-                // We need to translate the expression with CaseTestExpr replaced by caseArg
                 const mlir::Value whenCondition = translate_expression_with_case_test(ctx, whenClause->expr, caseArg);
                 if (!whenCondition) {
                     PGX_ERROR("Failed to translate WHEN condition in simple CASE");
@@ -702,16 +681,13 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
                 condition = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), condition);
             }
 
-            // Translate the THEN result
             mlir::Value thenResult = translate_expression(ctx, whenClause->result, current_result);
             if (!thenResult) {
                 PGX_ERROR("Failed to translate THEN result");
                 throw std::runtime_error("Check logs");
             }
 
-            // Ensure both branches return the same type
             auto resultType = result.getType();
-            // If one is nullable and the other isn't, make both nullable
             if (auto thenType = thenResult.getType(); resultType != thenType) {
                 const bool resultIsNullable = isa<mlir::db::NullableType>(resultType);
 
@@ -728,15 +704,12 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
                 }
             }
 
-            // Create if-then-else for this WHEN clause
             auto ifOp = ctx.builder.create<mlir::scf::IfOp>(ctx.builder.getUnknownLoc(), thenResult.getType(),
                                                             condition, true);
 
-            // Build THEN region
             ctx.builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
             ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), thenResult);
 
-            // Build ELSE region (contains the previous result)
             ctx.builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
             ctx.builder.create<mlir::scf::YieldOp>(ctx.builder.getUnknownLoc(), result);
 

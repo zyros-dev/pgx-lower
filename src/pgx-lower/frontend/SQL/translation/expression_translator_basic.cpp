@@ -50,7 +50,7 @@ namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
 auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, Expr* expr,
-                                                         OptRefT<const TranslationResult> current_result) -> mlir::Value {
+                                                         const OptRefT<const TranslationResult> current_result) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Parsing %d", expr->type);
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: expr->type=%d, has_current_result=%d",
@@ -251,7 +251,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const* const_node,
-                                                    OptRefT<const TranslationResult> current_result) const
+                                                    const OptRefT<const TranslationResult> current_result) const
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     (void)current_result;
@@ -294,8 +294,7 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     PGX_LOG(AST_TRANSLATE, DEBUG, "Current result is [%s]",
             current_result ? current_result->get().toString().data() : "Nothing!");
     if (current_result) {
-        auto resolved = current_result->get().resolve_var(-2, aggref->aggno);
-        if (resolved) {
+        if (auto resolved = current_result->get().resolve_var(-2, aggref->aggno)) {
             scopeName = resolved->first;
             columnName = resolved->second;
             found = true;

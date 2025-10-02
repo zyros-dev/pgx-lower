@@ -451,7 +451,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
     auto createOuterJoinWithNullableMapping =
         [&left_translation, &right_translation, join_clauses, translateJoinPredicateToRegion](
             mlir::Value primaryValue, mlir::Value outerValue, const TranslationResult& outerTranslation,
-            const bool isRightJoin, const QueryCtxT& queryCtx) {
+            const bool isRightJoin2, const QueryCtxT& queryCtx) {
             auto& columnManager = queryCtx.builder.getContext()
                                       ->getOrLoadDialect<mlir::relalg::RelAlgDialect>()
                                       ->getColumnManager();
@@ -486,7 +486,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
             const auto tupleType = mlir::relalg::TupleType::get(queryCtx.builder.getContext());
             const auto tupleArg = predicateBlock->addArgument(tupleType, queryCtx.builder.getUnknownLoc());
 
-            if (isRightJoin) {
+            if (isRightJoin2) {
                 translateJoinPredicateToRegion(predicateBlock, tupleArg, right_translation, left_translation, queryCtx,
                                                join_clauses);
             } else {
@@ -566,11 +566,11 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
     };
 
     const auto buildExistsSubquerySelection = [buildCorrelatedPredicateRegion](
-                                                  mlir::Value left_value, mlir::Value right_value, List* join_clauses,
+                                                  mlir::Value left_value2, mlir::Value right_value2, List* join_clauses2,
                                                   const bool negate, const TranslationResult& left_trans,
                                                   const TranslationResult& right_trans, const QueryCtxT& query_ctx) {
         auto outer_selection = query_ctx.builder.create<mlir::relalg::SelectionOp>(query_ctx.builder.getUnknownLoc(),
-                                                                                   left_value);
+                                                                                   left_value2);
 
         auto& outer_region = outer_selection.getPredicate();
         auto& outer_block = outer_region.emplaceBlock();
@@ -580,7 +580,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
         mlir::OpBuilder outer_builder(&outer_block, outer_block.begin());
 
         auto inner_selection = outer_builder.create<mlir::relalg::SelectionOp>(outer_builder.getUnknownLoc(),
-                                                                               right_value);
+                                                                               right_value2);
 
         auto& inner_region = inner_selection.getPredicate();
         auto& inner_block = inner_region.emplaceBlock();
@@ -593,7 +593,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
         inner_ctx.nest_params = query_ctx.nest_params;
         inner_ctx.subquery_param_mapping = query_ctx.subquery_param_mapping;
         inner_ctx.correlation_params = query_ctx.correlation_params;
-        buildCorrelatedPredicateRegion(&inner_block, inner_tuple, join_clauses, left_trans, right_trans, inner_ctx);
+        buildCorrelatedPredicateRegion(&inner_block, inner_tuple, join_clauses2, left_trans, right_trans, inner_ctx);
 
         auto& col_mgr = query_ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
         const auto map_scope = col_mgr.getUniqueScope("map");

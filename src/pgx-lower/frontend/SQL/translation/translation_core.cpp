@@ -22,13 +22,7 @@ extern "C" {
 namespace postgresql_ast {
 
 #ifdef POSTGRESQL_EXTENSION
-extern "C" {
-#include "utils/numeric.h"
-#include "utils/date.h"
-#include "datatype/timestamp.h"
-#include "utils/timestamp.h"
-#include "utils/builtins.h"
-}
+extern "C" {}
 #endif
 
 using namespace pgx_lower::frontend::sql::constants;
@@ -85,10 +79,9 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int
         return {MAX_NUMERIC_PRECISION, MAX_NUMERIC_UNCONSTRAINED_SCALE};
     }
 
-    // Remove VARHDRSZ offset
-    int32_t tmp = typmod - POSTGRESQL_VARHDRSZ;
+    const int32_t tmp = typmod - POSTGRESQL_VARHDRSZ;
     int32_t precision = (tmp >> NUMERIC_PRECISION_SHIFT) & NUMERIC_PRECISION_MASK;
-    int32_t scale = tmp & NUMERIC_SCALE_MASK;
+    const int32_t scale = tmp & NUMERIC_SCALE_MASK;
 
     if (precision < MIN_NUMERIC_PRECISION || precision > MAX_NUMERIC_PRECISION) {
         PGX_WARNING("Invalid NUMERIC precision: %d from typmod %d", precision, typmod);
@@ -126,7 +119,7 @@ mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(const i
     }
 }
 
-int32_t PostgreSQLTypeMapper::extract_varchar_length(int32_t typmod) {
+int32_t PostgreSQLTypeMapper::extract_varchar_length(const int32_t typmod) {
     PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
         return -1; // No length constraint
@@ -148,7 +141,6 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     }
 
     const auto type_mapper = PostgreSQLTypeMapper(context);
-    // Only pass the value for non-null constants
     const auto mlirType = type_mapper.map_postgre_sqltype(constNode->consttype, constNode->consttypmod, false);
 
     switch (constNode->consttype) {
@@ -171,7 +163,6 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     }
     case FLOAT4OID: {
         // goofy, C++ doesn't support float32_t and float64_t until C++23... we're on 20. unsure of how to handle this
-        // tbh
         const float val = *reinterpret_cast<float*>(&constNode->constvalue);
         return builder.create<mlir::arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(val),
                                                             mlir::cast<mlir::FloatType>(mlirType));
@@ -203,7 +194,7 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     }
     case TIMESTAMPOID: {
 #ifdef POSTGRESQL_EXTENSION
-        // Postgres hands us the time as a int64_t, but lingodb stores it as a string. We have two options here...
+        // Postgres hands us the time as an int64_t, but lingodb stores it as a string. We have two options here...
         // hand lingodb the string and don't worry, or adjust lingodb to handle int64s... I will rather rely on
         // lingodb's solution.
         const Timestamp timestamp = static_cast<Timestamp>(constNode->constvalue);
@@ -220,7 +211,7 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
     }
     case INTERVALOID: {
 #ifdef POSTGRESQL_EXTENSION
-        // TODO Don't, thanks.
+        // TODO Don't, thanks. Our datetime representation needs to be smarter
         // Convert all intervals to daytime representation for column homogeneity
         const auto* interval = DatumGetIntervalP(constNode->constvalue);
 
@@ -229,14 +220,13 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
 
         // Convert months to microseconds using the standard approximation
         if (interval->month != 0) {
-            int64_t monthMicroseconds = static_cast<int64_t>(interval->month * AVERAGE_DAYS_PER_MONTH * USECS_PER_DAY);
+            const int64_t monthMicroseconds = static_cast<int64_t>(interval->month * AVERAGE_DAYS_PER_MONTH * USECS_PER_DAY);
             totalMicroseconds += monthMicroseconds;
         }
 
         return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
                                                     builder.getI64IntegerAttr(totalMicroseconds));
 #else
-        // For unit tests, assume the value is already in microseconds
         int64_t microseconds = static_cast<int64_t>(constNode->constvalue);
         return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
                                                     builder.getI64IntegerAttr(microseconds));
@@ -250,9 +240,9 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
 #ifdef POSTGRESQL_EXTENSION
         if (constNode->constvalue) {
             auto* textval = DatumGetTextP(constNode->constvalue);
-            char* str = VARDATA(textval);
-            int len = VARSIZE(textval) - VARHDRSZ;
-            std::string string_value(str, len);
+            const char* str = VARDATA(textval);
+            const int len = VARSIZE(textval) - VARHDRSZ;
+            const std::string string_value(str, len);
 
             PGX_LOG(AST_TRANSLATE, DEBUG, "String constant: value='%s', type_oid=%d, typmod=%d, mlirType=%s",
                     string_value.c_str(), constNode->consttype, constNode->consttypmod,

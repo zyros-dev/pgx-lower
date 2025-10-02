@@ -27,9 +27,7 @@ struct Material;
 
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
 #include "pgx-lower/runtime/tuple_access.h"
-#include "pgx-lower/utility/logging.h"
 
-#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -42,7 +40,6 @@ struct Material;
 #include <map>
 #include <string>
 #include <vector>
-#include <optional>
 #include <utility>
 
 // ===========================================================================
@@ -77,7 +74,7 @@ namespace pgx_lower::frontend::sql {
 //
 // All of these can be validate with MLIR results, like the joins can validate by binding MLIR graph structures
 // by passing in the left and right mlir::Values. So, maybe our constructors for a lot of these will look like
-// construct([TranslationResult], [mlir::Value], resultlist, ... other things)
+// construct([TranslationResult], [mlir::Value], result list, ... other things)
 //
 // With all of this, we know that our TranslationResult will always represent something VALID. However,
 // we won't know whether it belongs to our current expression. This I'm not sure we need to worry about, or
@@ -91,11 +88,11 @@ struct ColumnInfo {
     int32_t typmod;
     bool nullable;
 
-    ColumnInfo(std::string n, const unsigned int t, const int32_t m, const bool null)
+    ColumnInfo(std::string n, const unsigned int T, const int32_t TYPEMOD, const bool nullable)
     : name(std::move(n))
-    , type_oid(t)
-    , typmod(m)
-    , nullable(null) {}
+    , type_oid(T)
+    , typmod(TYPEMOD)
+    , nullable(nullable) {}
 };
 
 struct TranslationResult {
@@ -108,7 +105,7 @@ struct TranslationResult {
         int32_t typmod;
         mlir::Type mlir_type;
         bool nullable;
-        auto toString() const -> std::string {
+        [[nodiscard]] auto toString() const -> std::string {
             return "ColumnSchema(table='" + table_name + "', column='" + column_name
                    + "', oid=" + std::to_string(type_oid) + ", typmod=" + std::to_string(typmod)
                    + ", nullable=" + (nullable ? "true" : "false") + ")";
@@ -121,19 +118,19 @@ struct TranslationResult {
     size_t left_child_column_count = 0;
 
     [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {
-        const auto key = std::make_pair(varno, varattno);
-        const auto it = varno_resolution.find(key);
+        const auto KEY = std::make_pair(varno, varattno);
+        const auto it = varno_resolution.find(KEY);
         if (it != varno_resolution.end()) {
             return it->second;
         }
         return std::nullopt;
     }
 
-    auto toString() const -> std::string {
+    [[nodiscard]] auto toString() const -> std::string {
         std::string result = "TranslationResult(op=" + (op ? std::to_string(reinterpret_cast<uintptr_t>(op)) : "null")
                              + ", scope=" + current_scope + ", columns=[";
-        for (size_t i = 0; i < columns.size(); ++i) {
-            result += "\n\t" + columns[i].toString();
+        for (const auto & col : columns) {
+            result += "\n\t" + col.toString();
         }
         result += "]";
 
@@ -153,7 +150,7 @@ struct TranslationResult {
 
 /**
  * This class aims to contain IMMUTABLE state except for the OpBuilder. Since the OpBuilder is effectively our primary
- * goal in this crawl, its ok to constantly mutate it. However, everything else here should be immutable.
+ * goal in this crawl, It's ok to constantly mutate it. However, everything else here should be immutable.
  * I'm aiming to remove the column_mappings over time -
  */
 struct SubqueryInfo {
@@ -273,12 +270,12 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_hash_join(QueryCtxT& ctx, HashJoin* hashJoin) -> TranslationResult;
     auto translate_hash(QueryCtxT& ctx, const Hash* hash) -> TranslationResult;
     auto translate_nest_loop(QueryCtxT& ctx, NestLoop* nestLoop) -> TranslationResult;
-    auto translate_material(QueryCtxT& ctx, Material* material) -> TranslationResult;
+    auto translate_material(QueryCtxT& ctx, const Material* material) -> TranslationResult;
     auto translate_subquery_scan(QueryCtxT& ctx, SubqueryScan* subqueryScan) -> TranslationResult;
     auto translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) -> TranslationResult;
 
     // InitPlan helpers
-    auto process_init_plans(QueryCtxT& ctx, Plan* plan) -> void;
+    auto process_init_plans(QueryCtxT& ctx, const Plan* plan) -> void;
 
     // Query function generation
     static auto create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp;
@@ -316,12 +313,10 @@ class PostgreSQLASTTranslator::Impl {
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
     static auto normalize_bpchar_operands(const QueryCtxT& ctx, const OpExpr* op_expr, mlir::Value lhs, mlir::Value rhs)
         -> std::pair<mlir::Value, mlir::Value>;
-    static auto translate_arithmetic_op(const QueryCtxT& context, const OpExpr* op_expr, const mlir::Value lhs,
-                                        const mlir::Value rhs) -> mlir::Value;
+    static auto translate_arithmetic_op(const QueryCtxT& ctx, const OpExpr* op_expr, mlir::Value lhs, mlir::Value rhs) -> mlir::Value;
     static auto upcast_binary_operation(const QueryCtxT& ctx, mlir::Value lhs, mlir::Value rhs)
         -> std::pair<mlir::Value, mlir::Value>;
-    static auto translate_comparison_op(const QueryCtxT& context, const Oid op_oid, const mlir::Value lhs,
-                                        const mlir::Value rhs) -> mlir::Value;
+    static auto translate_comparison_op(const QueryCtxT& context, Oid op_oid, mlir::Value lhs, mlir::Value rhs) -> mlir::Value;
 
     static auto verify_and_print(mlir::Value val) -> void;
     static void print_type(mlir::Type val);
@@ -338,12 +333,12 @@ class PostgreSQLTypeMapper {
     explicit PostgreSQLTypeMapper(mlir::MLIRContext& context)
     : context_(context) {}
 
-    auto map_postgre_sqltype(const Oid type_oid, const int32_t typmod, const bool nullable = false) const -> mlir::Type;
+    [[nodiscard]] auto map_postgre_sqltype(Oid type_oid, int32_t typmod, bool nullable = false) const -> mlir::Type;
 
     // Type modifier extraction functions
-    static auto extract_numeric_info(const int32_t typmod) -> std::pair<int32_t, int32_t>;
-    static auto extract_timestamp_precision(const int32_t typmod) -> mlir::db::TimeUnitAttr;
-    static auto extract_varchar_length(const int32_t typmod) -> int32_t;
+    static auto extract_numeric_info(int32_t typmod) -> std::pair<int32_t, int32_t>;
+    static auto extract_timestamp_precision(int32_t typmod) -> mlir::db::TimeUnitAttr;
+    static auto extract_varchar_length(int32_t typmod) -> int32_t;
 
    private:
     mlir::MLIRContext& context_;
@@ -354,17 +349,17 @@ class PostgreSQLTypeMapper {
 // ===========================================================================
 
 // Schema access helpers (standalone functions for backwards compatibility)
-auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string;
-auto get_table_alias_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> std::string;
-auto get_column_name_from_schema(const PlannedStmt* planned_stmt, const int rt_index, AttrNumber attnum) -> std::string;
-auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, const int varno) -> Oid;
-auto is_column_nullable(const PlannedStmt* planned_stmt, const int rt_index, const AttrNumber attnum) -> bool;
+auto get_table_name_from_rte(const PlannedStmt* current_planned_stmt, int varno) -> std::string;
+auto get_table_alias_from_rte(const PlannedStmt* current_planned_stmt, int varno) -> std::string;
+auto get_column_name_from_schema(const PlannedStmt* planned_stmt, int rt_index, AttrNumber attnum) -> std::string;
+auto get_table_oid_from_rte(const PlannedStmt* current_planned_stmt, int varno) -> Oid;
+auto is_column_nullable(const PlannedStmt* planned_stmt, int rt_index, AttrNumber attnum) -> bool;
 
 // Translation helper for constants
-auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRContext& context) -> mlir::Value;
+auto translate_const(Const* const_node, mlir::OpBuilder& builder, mlir::MLIRContext& context) -> mlir::Value;
 
 // Get all columns from a table
-auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, const int scanrelid)
+auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, int scanrelid)
     -> std::vector<pgx_lower::frontend::sql::ColumnInfo>;
 
 } // namespace postgresql_ast

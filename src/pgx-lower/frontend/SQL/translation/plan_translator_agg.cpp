@@ -33,8 +33,6 @@ extern "C" {
 #include "lingodb/mlir/Dialect/RelAlg/IR/Column.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/ColumnManager.h"
 #include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOpsAttributes.h"
-#include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
-#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 
 #include <memory>
 #include <unordered_map>
@@ -96,15 +94,7 @@ auto getAggregateFunction(const std::string& funcName) -> mlir::relalg::AggrFunc
                                  : mlir::relalg::AggrFunc::count;
 }
 
-auto getAggregateResultType(Aggref* aggref, const std::string& funcName, mlir::MLIRContext& context) -> mlir::Type {
-    const auto type_mapper = PostgreSQLTypeMapper(context);
-    if (funcName == "count" || aggref->aggfnoid == 2803 || aggref->aggfnoid == 2147) {
-        return mlir::IntegerType::get(&context, 64);
-    }
-    return type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
-}
-
-auto getFirstAggregateArgument(Aggref* aggref) -> TargetEntry* {
+auto getFirstAggregateArgument(const Aggref* aggref) -> TargetEntry* {
     if (!aggref->args || list_length(aggref->args) == 0)
         return nullptr;
     auto* argTE = static_cast<TargetEntry*>(linitial(aggref->args));
@@ -118,11 +108,11 @@ auto createColumnDef(mlir::relalg::ColumnManager& columnManager, const std::stri
     return colDef;
 }
 
-auto processCountStarAggregate(mlir::OpBuilder& aggr_builder, mlir::Location loc, mlir::Value relation,
+auto processCountStarAggregate(mlir::OpBuilder& aggr_builder, const mlir::Location loc, mlir::Value relation,
                                mlir::relalg::ColumnDefAttr& attrDef, mlir::relalg::ColumnManager& columnManager,
                                const std::string& aggrScopeName, const std::string& aggColumnName,
-                               std::map<int, std::pair<std::string, std::string>>& aggregateMappings, int aggno,
-                               bool logDebug = true) -> mlir::Value {
+                               std::map<int, std::pair<std::string, std::string>>& aggregateMappings, const int aggno,
+                               const bool logDebug = true) -> mlir::Value {
     if (logDebug) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Processing COUNT(*) aggregate aggno=%d", aggno);
     }
@@ -256,7 +246,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     auto needs_post_processing = std::set<int>();
     auto post_process_exprs = std::map<int, Expr*>();
 
-    auto process_single_aggregate = [&](Aggref* aggref) -> void {
+    auto process_single_aggregate = [&](const Aggref* aggref) -> void {
         char* rawFuncName = get_func_name(aggref->aggfnoid);
         if (!rawFuncName) {
             PGX_WARNING("Failed to find a function name!");
@@ -290,13 +280,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
             if (stream != childOutput) {
                 childOutput = llvm::cast<mlir::OpResult>(stream);
-                mlir::Type actual_type = column_ref.getColumn().type;
-                bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
+                const mlir::Type actual_type = column_ref.getColumn().type;
+                const bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
 
                 childResult.columns.push_back({.table_name = table_name,
                                                .column_name = column_name,
-                                               .type_oid = exprType((Node*)argTE->expr),
-                                               .typmod = exprTypmod((Node*)argTE->expr),
+                                               .type_oid = exprType(reinterpret_cast<Node*>(argTE->expr)),
+                                               .typmod = exprTypmod(reinterpret_cast<Node*>(argTE->expr)),
                                                .mlir_type = actual_type,
                                                .nullable = is_nullable});
             }
@@ -362,8 +352,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                         childResult.columns.push_back({.table_name = table_name,
                                                        .column_name = column_name,
-                                                       .type_oid = exprType((Node*)argTE->expr),
-                                                       .typmod = exprTypmod((Node*)argTE->expr),
+                                                       .type_oid = exprType(reinterpret_cast<Node*>(argTE->expr)),
+                                                       .typmod = exprTypmod(reinterpret_cast<Node*>(argTE->expr)),
                                                        .mlir_type = actual_type,
                                                        .nullable = is_nullable});
                     }
@@ -380,7 +370,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     createdValues.push_back(aggResult);
                 }
             } else {
-                // This could be a complex expression with nested aggregation, like SUM(x) / SUM(y) has two aggreations
+                // This could be a complex expression with nested aggregation, like SUM(x) / SUM(y) has two aggregations
                 // inside of it.
                 auto nested_aggrefs = std::vector<Aggref*>();
                 find_all_aggrefs(te->expr, nested_aggrefs);

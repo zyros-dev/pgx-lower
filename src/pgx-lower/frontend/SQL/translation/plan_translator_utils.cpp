@@ -127,18 +127,15 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
         if (colIdx <= 0 || colIdx >= MAX_COLUMN_INDEX)
             continue;
 
-        // Determine sort direction
         auto spec = mlir::relalg::SortSpec::asc;
         if (sort->sortOperators) {
-            char* oprname = get_opname(sort->sortOperators[i]);
-            if (oprname) {
+            if (char* oprname = get_opname(sort->sortOperators[i])) {
                 spec = (std::string(oprname) == ">" || std::string(oprname) == ">=") ? mlir::relalg::SortSpec::desc
                                                                                      : mlir::relalg::SortSpec::asc;
                 pfree(oprname);
             }
         }
 
-        // Find column at position colIdx in Sort's targetlist
         ListCell* lc;
         int idx = 0;
         foreach (lc, sort->plan.targetlist) {
@@ -290,16 +287,10 @@ auto PostgreSQLASTTranslator::Impl::translate_gather(QueryCtxT& ctx, const Gathe
         return TranslationResult{};
     }
 
-    // In a full implementation, we would:
-    // 1. Create worker coordination logic
-    // 2. Handle partial aggregates from workers
-    // 3. Implement tuple gathering and merging
-
-    // Gather doesn't change the schema - pass through child's columns
-    return childResult; // For now, just pass through the child
+    return childResult;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_material(QueryCtxT& ctx, Material* material) -> TranslationResult {
+auto PostgreSQLASTTranslator::Impl::translate_material(QueryCtxT& ctx, const Material* material) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!material || !material->plan.lefttree) {
         PGX_ERROR("Invalid Material parameters");
@@ -310,14 +301,14 @@ auto PostgreSQLASTTranslator::Impl::translate_material(QueryCtxT& ctx, Material*
     return translate_plan_node(ctx, material->plan.lefttree);
 }
 
-auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, Plan* plan) -> void {
+auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Plan* plan) -> void {
     PGX_IO(AST_TRANSLATE);
 
     if (!plan->initPlan || list_length(plan->initPlan) == 0) {
         return;
     }
 
-    List* all_subplans = ctx.current_stmt.subplans;
+    const List* all_subplans = ctx.current_stmt.subplans;
     const int num_subplans = list_length(all_subplans);
     ListCell* lc;
     foreach (lc, plan->initPlan) {
@@ -345,7 +336,7 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, Plan* pla
             continue;
         }
 
-        List* setParam = subplan->setParam;
+        const List* setParam = subplan->setParam;
         if (!setParam || list_length(setParam) == 0) {
             PGX_ERROR("InitPlan has no setParam");
             continue;
@@ -394,11 +385,9 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         auto* predicateBlock = new mlir::Block;
         predicateRegion.push_back(predicateBlock);
 
-        // Add tuple argument to the predicate block
         const auto tupleType = mlir::relalg::TupleType::get(&context_);
         const auto tupleArg = predicateBlock->addArgument(tupleType, ctx.builder.getUnknownLoc());
 
-        // Set insertion point to predicate block
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
@@ -429,7 +418,6 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
                         continue;
                     }
 
-                    // Pass the TranslationResult to translate_expression for proper varno resolution
                     if (mlir::Value condValue = translate_expression(tmp_ctx, reinterpret_cast<Expr*>(qualNode), input))
                     {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully translated HAVING condition %d", i);
@@ -442,8 +430,6 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
                             predicateResult = condValue;
                             PGX_LOG(AST_TRANSLATE, DEBUG, "Set first HAVING predicate");
                         } else {
-                            // TODO: NV: This is hardcoded to only ANDs... it should figure out what the predicate type
-                            // is
                             predicateResult = predicate_builder.create<mlir::db::AndOp>(
                                 predicate_builder.getUnknownLoc(), predicate_builder.getI1Type(),
                                 mlir::ValueRange{predicateResult, condValue});
@@ -765,7 +751,6 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
         predicate_builder.create<mlir::relalg::ReturnOp>(predicate_builder.getUnknownLoc(), computedValues);
     }
 
-    // Build intermediate result with MapOp
     TranslationResult intermediateResult;
     intermediateResult.op = mapOp;
     intermediateResult.columns = input.columns;
@@ -778,91 +763,81 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
                                               .nullable = true});
     }
 
-    if (handleAllEntries) {
-        // When handling all entries (join context), we need to add a ProjectionOp
-        // to select only the columns from the target list
-        std::vector<mlir::Attribute> projectedColumnRefs;
-        std::vector<TranslationResult::ColumnSchema> projectedColumns;
-
-        // Build the projection based on target list
-        size_t computedIdx = 0;
-        for (auto* tle : targetEntries) {
-            if (tle->expr && IsA(tle->expr, Var)) {
-                // This is a simple column reference
-                const auto* var = reinterpret_cast<const Var*>(tle->expr);
-
-                // Find the column in intermediateResult
-                // Determine if input contains both join sides or just one side
-                bool inputContainsBothSides = left_child && right_child
-                                              && (input.columns.size()
-                                                  >= left_child->columns.size() + right_child->columns.size());
-
-                size_t columnIndex = SIZE_MAX;
-                if (var->varno == OUTER_VAR && left_child) {
-                    if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child->columns.size())) {
-                        columnIndex = var->varattno - 1;
-                    }
-                } else if (var->varno == INNER_VAR && right_child) {
-                    if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size())) {
-                        if (inputContainsBothSides) {
-                            columnIndex = left_child->columns.size() + (var->varattno - 1);
-                        } else {
-                            columnIndex = var->varattno - 1;
-                        }
-                    }
-                } else if (var->varattno > 0 && var->varattno <= static_cast<int>(input.columns.size())) {
-                    columnIndex = var->varattno - 1;
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Var (varno=%d, varattno=%d) to input column %zu: %s.%s",
-                            var->varno, var->varattno, columnIndex, input.columns[columnIndex].table_name.c_str(),
-                            input.columns[columnIndex].column_name.c_str());
-                } else {
-                    throw std::runtime_error("Failed");
-                }
-
-                if (columnIndex < intermediateResult.columns.size()) {
-                    const auto& col = intermediateResult.columns[columnIndex];
-                    auto colRef = columnManager.createRef(col.table_name, col.column_name);
-                    projectedColumnRefs.push_back(colRef);
-                    projectedColumns.push_back(col);
-                }
-            } else {
-                // This is a computed expression - it's at the end of intermediateResult.columns
-                size_t columnIndex = input.columns.size() + computedIdx;
-                if (columnIndex < intermediateResult.columns.size()) {
-                    const auto& col = intermediateResult.columns[columnIndex];
-                    auto colRef = columnManager.createRef(col.table_name, col.column_name);
-                    projectedColumnRefs.push_back(colRef);
-                    projectedColumns.push_back(col);
-                    computedIdx++;
-                }
-            }
-        }
-
-        // Create ProjectionOp
-        auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
-        const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
-            ctx.builder.getUnknownLoc(), tupleStreamType,
-            mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all),
-            mapOp.getResult(), ctx.builder.getArrayAttr(projectedColumnRefs));
-
-        TranslationResult result;
-        result.op = projectionOp;
-        result.columns = projectedColumns;
-        return result;
-    } else {
-        // Original behavior: return the intermediate result
+    if (!handleAllEntries) {
         return intermediateResult;
     }
+
+    // When handling all entries we need to add a ProjectionOp to select only the columns from the target list
+    std::vector<mlir::Attribute> projectedColumnRefs;
+    std::vector<TranslationResult::ColumnSchema> projectedColumns;
+
+    size_t computedIdx = 0;
+    for (auto* tle : targetEntries) {
+        if (tle->expr && IsA(tle->expr, Var)) {
+            const auto* var = reinterpret_cast<const Var*>(tle->expr);
+
+            bool inputContainsBothSides = left_child && right_child
+                                          && (input.columns.size()
+                                              >= left_child->columns.size() + right_child->columns.size());
+
+            size_t columnIndex = SIZE_MAX;
+            if (var->varno == OUTER_VAR && left_child) {
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child->columns.size())) {
+                    columnIndex = var->varattno - 1;
+                }
+            } else if (var->varno == INNER_VAR && right_child) {
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size())) {
+                    if (inputContainsBothSides) {
+                        columnIndex = left_child->columns.size() + (var->varattno - 1);
+                    } else {
+                        columnIndex = var->varattno - 1;
+                    }
+                }
+            } else if (var->varattno > 0 && var->varattno <= static_cast<int>(input.columns.size())) {
+                columnIndex = var->varattno - 1;
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Var (varno=%d, varattno=%d) to input column %zu: %s.%s",
+                        var->varno, var->varattno, columnIndex, input.columns[columnIndex].table_name.c_str(),
+                        input.columns[columnIndex].column_name.c_str());
+            } else {
+                throw std::runtime_error("Failed");
+            }
+
+            if (columnIndex < intermediateResult.columns.size()) {
+                const auto& col = intermediateResult.columns[columnIndex];
+                auto colRef = columnManager.createRef(col.table_name, col.column_name);
+                projectedColumnRefs.push_back(colRef);
+                projectedColumns.push_back(col);
+            }
+        } else {
+            size_t columnIndex = input.columns.size() + computedIdx;
+            if (columnIndex < intermediateResult.columns.size()) {
+                const auto& col = intermediateResult.columns[columnIndex];
+                auto colRef = columnManager.createRef(col.table_name, col.column_name);
+                projectedColumnRefs.push_back(colRef);
+                projectedColumns.push_back(col);
+                computedIdx++;
+            }
+        }
+    }
+
+    // Create ProjectionOp
+    auto tupleStreamType = mlir::relalg::TupleStreamType::get(ctx.builder.getContext());
+    const auto projectionOp = ctx.builder.create<mlir::relalg::ProjectionOp>(
+        ctx.builder.getUnknownLoc(), tupleStreamType,
+        mlir::relalg::SetSemanticAttr::get(ctx.builder.getContext(), mlir::relalg::SetSemantic::all), mapOp.getResult(),
+        ctx.builder.getArrayAttr(projectedColumnRefs));
+
+    TranslationResult result;
+    result.op = projectionOp;
+    result.columns = projectedColumns;
+    return result;
 }
 
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
     const QueryCtxT& ctx, const TranslationResult& input, const TranslationResult& left_child,
     const TranslationResult& right_child, const List* target_list) -> TranslationResult {
-    PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 5] input: %s", input.toString().c_str());
-    PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 5] LEFT input: %s", left_child.toString().c_str());
-    PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 5] RIGHT input: %s", right_child.toString().c_str());
-
     PGX_IO(AST_TRANSLATE);
+
     if (!input.op || !target_list || target_list->length <= 0) {
         PGX_WARNING("No target list");
         return input;
@@ -890,7 +865,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
 
             if (var->varno == OUTER_VAR) {
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child.columns.size())) {
-                    columnIndex = var->varattno - 1; // Convert to 0-based
+                    columnIndex = var->varattno - 1;
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: OUTER_VAR varattno=%d maps to position %zu",
                             var->varattno, columnIndex);
                 }

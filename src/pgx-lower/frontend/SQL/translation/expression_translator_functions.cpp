@@ -45,7 +45,6 @@ extern "C" {
 #include <unordered_map>
 #include <map>
 #include <string>
-#include <vector>
 
 namespace mlir::relalg {
 class GetColumnOp;
@@ -152,7 +151,6 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     tempMapOp.erase();
 
     // map op - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // -
     colDef.getColumn().type = exprType;
     auto mapOp = ctx.builder.create<mlir::relalg::MapOp>(ctx.builder.getUnknownLoc(), input_stream,
                                                          ctx.builder.getArrayAttr({colDef}));
@@ -306,7 +304,6 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
                                                             mlir::ValueRange{substringArgs});
         return op.getRes();
     } else if (func == "date_part") {
-        // date_part('field', timestamp) extracts a field from a date/timestamp
         // e.g., date_part('year', TIMESTAMP '2024-01-15') returns 2024
         if (args.size() != 2) {
             PGX_ERROR("DATE_PART requires exactly 2 arguments, got %zu", args.size());
@@ -446,10 +443,10 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
 
 auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, const SubPlan* subplan,
                                                       OptRefT<const TranslationResult> current_result) -> mlir::Value {
+    // TODO: Long function...
     switch (subplan->subLinkType) {
     case EXPR_SUBLINK: {
         PGX_LOG(AST_TRANSLATE, DEBUG, "EXPR_SUBLINK: Translating scalar subquery");
-
         // Extract subquery plan
         if (subplan->plan_id < 1 || subplan->plan_id > list_length(ctx.current_stmt.subplans)) {
             PGX_ERROR("Invalid plan_id=%d (subplans count=%d)", subplan->plan_id, list_length(ctx.current_stmt.subplans));
@@ -489,7 +486,6 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                                 PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved OUTER_VAR via columns: varattno=%d -> %s.%s",
                                         var->varattno, table_scope.c_str(), column_name.c_str());
                             } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {
-                                // INNER_VAR positional fallback: offset by left_child_column_count
                                 size_t left_size = current_result->get().left_child_column_count;
                                 size_t absolute_position = left_size + var->varattno - 1;
 
@@ -740,28 +736,6 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(const QueryCtxT& par
                                                             const PlannedStmt* parent_stmt)
     -> std::pair<mlir::Value, TranslationResult> {
     // Translate subquery Plan tree to RelAlg MLIR stream with isolated context.
-    // This function provides the foundation for all subquery types.
-    //
-    // Steps:
-    // 1. Create new QueryCtxT for subquery:
-    //    - Copy parent_ctx but with fresh context for subquery scope
-    //    - Keep same builder, module, stmt reference
-    //    - current_tuple: use parent current_tuple for correlation support
-    // 2. Call translate_plan_node() recursively:
-    //    - Pass subquery_plan as the plan to translate
-    //    - This reuses ALL existing plan translation infrastructure
-    //    - Returns TranslationResult with op and column schema
-    // 3. Extract result stream from TranslationResult:
-    //    - Get mlir::Value from result.op->getResult(0)
-    //    - Verify it's TupleStreamType (not materialized table)
-    // 4. Return pair:
-    //    - First: mlir::Value of TupleStreamType
-    //    - Second: TranslationResult with full column schema
-    // 5. Context automatically destroyed on return (RAII pattern)
-    //
-    // Note: This function is the key reuse point - it lets us treat subqueries
-    // as just another Plan tree that we already know how to translate.
-
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_subquery_plan: Starting subquery translation");
 
     auto subquery_ctx = QueryCtxT(*parent_stmt, parent_ctx.builder, parent_ctx.current_module, parent_ctx.current_tuple,

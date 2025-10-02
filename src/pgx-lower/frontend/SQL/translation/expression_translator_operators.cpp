@@ -43,7 +43,6 @@ extern "C" {
 #include <unordered_map>
 #include <map>
 #include <string>
-#include <vector>
 
 namespace mlir::relalg {
 class GetColumnOp;
@@ -167,7 +166,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
 }
 
 auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr,
-                                                             OptRefT<const TranslationResult> current_result)
+                                                             const OptRefT<const TranslationResult> current_result)
     -> std::optional<std::pair<mlir::Value, mlir::Value>> {
     PGX_IO(AST_TRANSLATE);
     if (!op_expr || !op_expr->args) {
@@ -217,7 +216,7 @@ auto PostgreSQLASTTranslator::Impl::normalize_bpchar_operands(const QueryCtxT& c
     }
 
     auto get_base_type = [](mlir::Type t) -> mlir::Type {
-        if (auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
+        if (const auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
             return nullable.getType();
         }
         return t;
@@ -230,8 +229,8 @@ auto PostgreSQLASTTranslator::Impl::normalize_bpchar_operands(const QueryCtxT& c
         return {lhs, rhs};
     }
 
-    auto* lhs_expr = reinterpret_cast<Expr*>(lfirst(&op_expr->args->elements[0]));
-    auto* rhs_expr = reinterpret_cast<Expr*>(lfirst(&op_expr->args->elements[1]));
+    auto* lhs_expr = static_cast<Expr*>(lfirst(&op_expr->args->elements[0]));
+    auto* rhs_expr = static_cast<Expr*>(lfirst(&op_expr->args->elements[1]));
 
     auto extract_bpchar_length = [](Expr* expr) -> int {
         if (!expr) {
@@ -246,14 +245,14 @@ auto PostgreSQLASTTranslator::Impl::normalize_bpchar_operands(const QueryCtxT& c
         return -1;
     };
 
-    auto pad_string_constant = [&](mlir::Value val, int target_length) -> mlir::Value {
+    auto pad_string_constant = [&](const mlir::Value val, const int target_length) -> mlir::Value {
         auto* defOp = val.getDefiningOp();
         if (!defOp || !mlir::isa<mlir::db::ConstantOp>(defOp)) {
             return val;
         }
 
         auto constOp = mlir::cast<mlir::db::ConstantOp>(defOp);
-        if (auto strAttr = mlir::dyn_cast<mlir::StringAttr>(constOp.getValue())) {
+        if (const auto strAttr = mlir::dyn_cast<mlir::StringAttr>(constOp.getValue())) {
             std::string str_value = strAttr.getValue().str();
             if (static_cast<int>(str_value.length()) < target_length) {
                 str_value.resize(target_length, ' ');
@@ -309,7 +308,7 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
 
     // Check if we need to override the result type (for date/interval arithmetic)
     auto get_base_type = [](mlir::Type t) -> mlir::Type {
-        if (auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
+        if (const auto nullable = mlir::dyn_cast<mlir::db::NullableType>(t)) {
             return nullable.getType();
         }
         return t;
@@ -405,7 +404,7 @@ auto PostgreSQLASTTranslator::Impl::translate_arithmetic_op(const QueryCtxT& ctx
 struct SQLTypeInference {
     static mlir::FloatType getHigherFloatType(mlir::Type left, mlir::Type right) {
         auto leftFloat = dyn_cast_or_null<mlir::FloatType>(left);
-        if (auto rightFloat = right.dyn_cast_or_null<mlir::FloatType>()) {
+        if (auto rightFloat = dyn_cast_or_null<mlir::FloatType>(right)) {
             if (!leftFloat || rightFloat.getWidth() > leftFloat.getWidth()) {
                 return rightFloat;
             }
@@ -413,8 +412,8 @@ struct SQLTypeInference {
         return leftFloat;
     }
     static mlir::IntegerType getHigherIntType(mlir::Type left, mlir::Type right) {
-        const mlir::IntegerType leftInt = left.dyn_cast_or_null<mlir::IntegerType>();
-        if (const auto rightInt = right.dyn_cast_or_null<mlir::IntegerType>()) {
+        const mlir::IntegerType leftInt = dyn_cast_or_null<mlir::IntegerType>(left);
+        if (const auto rightInt = dyn_cast_or_null<mlir::IntegerType>(right)) {
             if (!leftInt || rightInt.getWidth() > leftInt.getWidth()) {
                 return rightInt;
             }
@@ -422,8 +421,8 @@ struct SQLTypeInference {
         return leftInt;
     }
     static mlir::db::DecimalType getHigherDecimalType(mlir::Type left, mlir::Type right) {
-        const auto a = left.dyn_cast_or_null<mlir::db::DecimalType>();
-        if (const auto b = right.dyn_cast_or_null<mlir::db::DecimalType>()) {
+        const auto a = dyn_cast_or_null<mlir::db::DecimalType>(left);
+        if (const auto b = dyn_cast_or_null<mlir::db::DecimalType>(right)) {
             if (!a)
                 return b;
             const int hidig = std::max(a.getP() - a.getS(), b.getP() - b.getS());
@@ -434,17 +433,17 @@ struct SQLTypeInference {
         return a;
     }
     static mlir::Value castValueToType(mlir::OpBuilder& builder, mlir::Value v, mlir::Type t) {
-        const bool isNullable = v.getType().isa<mlir::db::NullableType>();
-        if (isNullable && !t.isa<mlir::db::NullableType>()) {
+        const bool isNullable = isa<mlir::db::NullableType>(v.getType());
+        if (isNullable && !isa<mlir::db::NullableType>(t)) {
             t = mlir::db::NullableType::get(builder.getContext(), t);
         }
-        const bool onlyTargetIsNullable = !isNullable && t.isa<mlir::db::NullableType>();
+        const bool onlyTargetIsNullable = !isNullable && isa<mlir::db::NullableType>(t);
         if (v.getType() == t) {
             return v;
         }
         if (auto* defOp = v.getDefiningOp()) {
             if (auto constOp = mlir::dyn_cast_or_null<mlir::db::ConstantOp>(defOp)) {
-                if (!t.isa<mlir::db::NullableType>()) {
+                if (!isa<mlir::db::NullableType>(t)) {
                     constOp.getResult().setType(t);
                     return constOp;
                 }
@@ -471,10 +470,10 @@ struct SQLTypeInference {
         left = getBaseType(left);
         right = getBaseType(right);
 
-        const bool leftIsDate = left.isa<mlir::db::DateType>();
-        const bool rightIsDate = right.isa<mlir::db::DateType>();
-        const bool leftIsTimestamp = left.isa<mlir::db::TimestampType>();
-        const bool rightIsTimestamp = right.isa<mlir::db::TimestampType>();
+        const bool leftIsDate = isa<mlir::db::DateType>(left);
+        const bool rightIsDate = isa<mlir::db::DateType>(right);
+        const bool leftIsTimestamp = isa<mlir::db::TimestampType>(left);
+        const bool rightIsTimestamp = isa<mlir::db::TimestampType>(right);
 
         if ((leftIsDate || leftIsTimestamp) && (rightIsDate || rightIsTimestamp)) {
             if (leftIsTimestamp)
@@ -484,22 +483,22 @@ struct SQLTypeInference {
             return left;
         }
 
-        const bool stringPresent = left.isa<mlir::db::StringType>() || right.isa<mlir::db::StringType>();
-        const bool intPresent = left.isa<mlir::IntegerType>() || right.isa<mlir::IntegerType>();
-        const bool floatPresent = left.isa<mlir::FloatType>() || right.isa<mlir::FloatType>();
-        const bool decimalPresent = left.isa<mlir::db::DecimalType>() || right.isa<mlir::db::DecimalType>();
+        const bool stringPresent = isa<mlir::db::StringType>(left) || isa<mlir::db::StringType>(right);
+        const bool intPresent = isa<mlir::IntegerType>(left) || isa<mlir::IntegerType>(right);
+        const bool floatPresent = isa<mlir::FloatType>(left) || isa<mlir::FloatType>(right);
+        const bool decimalPresent = isa<mlir::db::DecimalType>(left) || isa<mlir::db::DecimalType>(right);
         if (stringPresent)
             return mlir::db::StringType::get(left.getContext());
         if (decimalPresent)
             return getHigherDecimalType(left, right);
         if (floatPresent)
-            return getHigherFloatType(left, right);
+            return static_cast<mlir::Type>(getHigherFloatType(left, right));
         if (intPresent)
             return getHigherIntType(left, right);
         return left;
     }
-    static mlir::Type getCommonType(mlir::Type left, mlir::Type right) {
-        const bool isNullable = left.isa<mlir::db::NullableType>() || right.isa<mlir::db::NullableType>();
+    static mlir::Type getCommonType(const mlir::Type left, const mlir::Type right) {
+        const bool isNullable = isa<mlir::db::NullableType>(left) || isa<mlir::db::NullableType>(right);
         const auto commonBaseType = getCommonBaseType(left, right);
         if (isNullable) {
             return mlir::db::NullableType::get(left.getContext(), commonBaseType);
@@ -507,14 +506,14 @@ struct SQLTypeInference {
             return commonBaseType;
         }
     }
-    static mlir::Type getCommonBaseType(mlir::TypeRange types) {
+    static mlir::Type getCommonBaseType(const mlir::TypeRange types) {
         mlir::Type commonType = types.front();
         for (const auto t : types) {
             commonType = getCommonBaseType(commonType, t);
         }
         return commonType;
     }
-    static std::vector<mlir::Value> toCommonBaseTypes(mlir::OpBuilder& builder, mlir::ValueRange values) {
+    static std::vector<mlir::Value> toCommonBaseTypes(mlir::OpBuilder& builder, const mlir::ValueRange values) {
         const auto commonType = getCommonBaseType(values.getTypes());
         std::vector<mlir::Value> res;
         for (const auto val : values) {
@@ -522,10 +521,11 @@ struct SQLTypeInference {
         }
         return res;
     }
-    static std::vector<mlir::Value> toCommonBaseTypesExceptDecimals(mlir::OpBuilder& builder, mlir::ValueRange values) {
+    static std::vector<mlir::Value>
+    toCommonBaseTypesExceptDecimals(mlir::OpBuilder& builder, const mlir::ValueRange values) {
         std::vector<mlir::Value> res;
         for (auto val : values) {
-            if (!getBaseType(val.getType()).isa<mlir::db::DecimalType>()) {
+            if (!isa<mlir::db::DecimalType>(getBaseType(val.getType()))) {
                 return toCommonBaseTypes(builder, values);
             }
             res.push_back(val);
@@ -537,7 +537,7 @@ struct SQLTypeInference {
 auto PostgreSQLASTTranslator::Impl::upcast_binary_operation(const QueryCtxT& ctx, const mlir::Value lhs,
                                                             const mlir::Value rhs)
     -> std::pair<mlir::Value, mlir::Value> {
-    auto convertToType = [&ctx](mlir::Value value, mlir::Type targetBaseType, bool needsNullable) -> mlir::Value {
+    auto convertToType = [&ctx](mlir::Value value, mlir::Type targetBaseType, const bool needsNullable) -> mlir::Value {
         const auto currentType = value.getType();
         const auto currentBaseType = getBaseType(currentType);
         const bool isNullable = mlir::isa<mlir::db::NullableType>(currentType);
