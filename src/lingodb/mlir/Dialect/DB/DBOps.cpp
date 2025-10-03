@@ -9,8 +9,8 @@
 #include <llvm/Support/Debug.h>
 #include <queue>
 
-constexpr auto MAX_NUMERIC_PRECISION = 21;
-constexpr auto MAX_NUMERIC_UNCONSTRAINED_SCALE = 16;
+constexpr auto MAX_NUMERIC_PRECISION = 32;
+constexpr auto MAX_NUMERIC_UNCONSTRAINED_SCALE = 6;
 
 using namespace mlir;
 bool mlir::db::CmpOp::isEqualityPred() { return getPredicate() == mlir::db::DBCmpPredicate::eq; }

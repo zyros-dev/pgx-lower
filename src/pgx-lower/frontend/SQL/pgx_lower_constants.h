@@ -88,8 +88,8 @@ constexpr auto MAX_LIST_LENGTH = 1000;
 constexpr auto MAX_LIMIT_COUNT = 1000000;
 constexpr auto DEFAULT_LIMIT_COUNT = 10;
 
-constexpr auto MAX_NUMERIC_PRECISION = 21;
-constexpr auto MAX_NUMERIC_UNCONSTRAINED_SCALE = 16;
+constexpr auto MAX_NUMERIC_PRECISION = 32;
+constexpr auto MAX_NUMERIC_UNCONSTRAINED_SCALE = 6;
 } // namespace pgx_lower::frontend::sql::constants
 
 #endif // PGX_LOWER_CONSTANTS_H
