@@ -157,18 +157,24 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
 
     std::string tableName, colName;
     bool nullable;
+    bool resolved_from_mapping = false;
 
-    if (current_result && current_result->get().resolve_var(actualVarno, actualVarattno)) {
-        const auto& [mappedTable, mappedColumn] = *current_result->get().resolve_var(actualVarno, actualVarattno);
-        tableName = mappedTable;
-        colName = mappedColumn;
-        nullable = is_column_nullable(&ctx.current_stmt, actualVarno, actualVarattno);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for varno=%d, varattno=%d -> (%s, %s)",
-                actualVarno, actualVarattno, tableName.c_str(), colName.c_str());
-        PGX_LOG(AST_TRANSLATE, DEBUG,
-                "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'", tableName.c_str(),
-                colName.c_str());
-    } else if (var->varno == OUTER_VAR) {
+    if (current_result) {
+        if (auto resolved = current_result->get().resolve_var(actualVarno, actualVarattno)) {
+            const auto& [mappedTable, mappedColumn] = *resolved;
+            tableName = mappedTable;
+            colName = mappedColumn;
+            nullable = is_column_nullable(&ctx.current_stmt, actualVarno, actualVarattno);
+            resolved_from_mapping = true;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for varno=%d, varattno=%d -> (%s, %s)",
+                    actualVarno, actualVarattno, tableName.c_str(), colName.c_str());
+            PGX_LOG(AST_TRANSLATE, DEBUG,
+                    "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'", tableName.c_str(),
+                    colName.c_str());
+        }
+    }
+
+    if (!resolved_from_mapping && var->varno == OUTER_VAR) {
         auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
                                                : (current_result ? current_result.value()
                                                                  : throw std::runtime_error("OUTER_VAR without "
@@ -184,11 +190,14 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         tableName = col.table_name;
         colName = col.column_name;
         nullable = col.nullable;
+        resolved_from_mapping = true;
         PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from %s", var->varattno,
                 tableName.c_str(), colName.c_str(), nullable, ctx.outer_result ? "outer_result" : "current_result");
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='%s', colName='%s'",
                 tableName.c_str(), colName.c_str());
-    } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {
+    }
+
+    if (!resolved_from_mapping && (var->varno == INNER_VAR || var->varno == INDEX_VAR)) {
         if (!current_result) {
             PGX_ERROR("Unresolved special varno %d (varattno=%d) - no current_result for fallback", var->varno,
                       var->varattno);
@@ -209,10 +218,13 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         tableName = col.table_name;
         colName = col.column_name;
         nullable = col.nullable;
+        resolved_from_mapping = true;
         PGX_LOG(AST_TRANSLATE, DEBUG,
                 "INNER_VAR/INDEX_VAR varno=%d varattno=%d → absolute_pos=%zu (left_size=%zu) → %s.%s (nullable=%d)",
                 var->varno, var->varattno, absolute_position, left_size, tableName.c_str(), colName.c_str(), nullable);
-    } else {
+    }
+
+    if (!resolved_from_mapping) {
         tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
         colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
         nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
@@ -358,8 +370,16 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
 
     if (nest_it != nest_params.end()) {
         auto* paramVar = nest_it->second;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to nestParam Var(varno=%d, varattno=%d)",
-                param->paramid, paramVar->varno, paramVar->varattno);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to nestParam Var(varno=%d, varattno=%d, varnosyn=%d, varattnosyn=%d)",
+                param->paramid, paramVar->varno, paramVar->varattno, paramVar->varnosyn, paramVar->varattnosyn);
+        if (paramVar->varnosyn > 0 && paramVar->varattnosyn > 0) {
+            Var tempVar = *paramVar;
+            tempVar.varno = paramVar->varnosyn;
+            tempVar.varattno = paramVar->varattnosyn;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using varnosyn/varattnosyn: translating as Var(varno=%d, varattno=%d)",
+                    tempVar.varno, tempVar.varattno);
+            return translate_var(ctx, &tempVar, current_result);
+        }
 
         return translate_var(ctx, paramVar, current_result);
     }

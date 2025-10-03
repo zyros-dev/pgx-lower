@@ -356,7 +356,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
         predicateBuilder.setInsertionPointToStart(predicateBlock);
 
         auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, tupleArg,
-                                      mlir::Value());
+                                      queryCtx.outer_tuple);
         predicateCtx.nest_params = queryCtx.nest_params;
         predicateCtx.init_plan_results = queryCtx.init_plan_results;
         predicateCtx.subquery_param_mapping = queryCtx.subquery_param_mapping;
