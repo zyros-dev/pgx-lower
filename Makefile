@@ -68,7 +68,6 @@ install-ptest: build-ptest
 ptest: install-ptest
 	@echo "Running PostgreSQL regression tests (Test 1: SELECT * FROM test)..."
 	-cd $(BUILD_DIR_PTEST) && ctest --output-on-failure && cd -
-	@echo "Validating TPCH results..."
 	@if [ -f .venv/bin/python3 ]; then \
 		.venv/bin/python3 tools/validate_tpch.py $(BUILD_DIR_PTEST)/extension/results/tpch.out $(BUILD_DIR_PTEST)/extension/results/tpch_no_lower.out; \
 	else \

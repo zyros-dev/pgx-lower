@@ -48,6 +48,9 @@ def to_num(s: str) -> float:
 
 
 def validate(f1: str, f2: str, eps: float = 1e-6) -> int:
+    print("\n")
+    print("- " * 30)
+    print(f"Validating TPC-H between \n * {f1}\n * {f2}")
     try:
         t1, t2 = parse_tables(f1), parse_tables(f2)
 
@@ -78,9 +81,9 @@ def validate(f1: str, f2: str, eps: float = 1e-6) -> int:
                         ok = False
 
         if ok:
-            print(f"\nAll {len(t1)} tables match (eps={eps:.2e})")
+            print(f"... All {len(t1)} tables match (eps={eps:.2e}) :)) !")
             return 0
-        print("\nValidation failed")
+        print("\nValidation failed :(")
         return 1
 
     except FileNotFoundError as e:
