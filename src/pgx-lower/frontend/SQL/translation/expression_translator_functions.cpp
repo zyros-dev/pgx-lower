@@ -456,7 +456,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         auto subquery_plan = static_cast<Plan*>(list_nth(ctx.current_stmt.subplans, subplan->plan_id - 1));
 
         // Set up correlation parameters from subplan->parParam and subplan->args
-        std::unordered_map<int, std::pair<std::string, std::string>> correlation_mapping;
+        std::unordered_map<int, QueryCtxT::CorrelationInfo> correlation_mapping;
         if (subplan->parParam && subplan->args) {
             int num_params = list_length(subplan->parParam);
             for (int i = 0; i < num_params; i++) {
@@ -467,24 +467,27 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     auto var = reinterpret_cast<Var*>(arg_expr);
                     std::string table_scope;
                     std::string column_name;
+                    bool nullable;
 
                     if (var->varno == INNER_VAR || var->varno == OUTER_VAR) {
                         if (current_result) {
                             if (auto resolved = current_result->get().resolve_var(var->varno, var->varattno)) {
                                 table_scope = resolved->first;
                                 column_name = resolved->second;
+                                nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
                                 PGX_LOG(AST_TRANSLATE, DEBUG,
                                         "Resolved INNER_VAR/OUTER_VAR via varno_resolution: varno=%d, varattno=%d -> "
-                                        "%s.%s",
-                                        var->varno, var->varattno, table_scope.c_str(), column_name.c_str());
+                                        "%s.%s (nullable=%d)",
+                                        var->varno, var->varattno, table_scope.c_str(), column_name.c_str(), nullable);
                             } else if (var->varno == OUTER_VAR && var->varattno > 0
                                        && var->varattno <= static_cast<int>(current_result->get().columns.size()))
                             {
                                 const auto& col = current_result->get().columns[var->varattno - 1];
                                 table_scope = col.table_name;
                                 column_name = col.column_name;
-                                PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved OUTER_VAR via columns: varattno=%d -> %s.%s",
-                                        var->varattno, table_scope.c_str(), column_name.c_str());
+                                nullable = col.nullable;
+                                PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved OUTER_VAR via columns: varattno=%d -> %s.%s (nullable=%d)",
+                                        var->varattno, table_scope.c_str(), column_name.c_str(), nullable);
                             } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {
                                 size_t left_size = current_result->get().left_child_column_count;
                                 size_t absolute_position = left_size + var->varattno - 1;
@@ -501,11 +504,12 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                                 const auto& col = current_result->get().columns[absolute_position];
                                 table_scope = col.table_name;
                                 column_name = col.column_name;
+                                nullable = col.nullable;
                                 PGX_LOG(AST_TRANSLATE, DEBUG,
                                         "Resolved INNER_VAR/INDEX_VAR via positional fallback: varno=%d, varattno=%d → "
-                                        "absolute_pos=%zu → %s.%s",
+                                        "absolute_pos=%zu → %s.%s (nullable=%d)",
                                         var->varno, var->varattno, absolute_position, table_scope.c_str(),
-                                        column_name.c_str());
+                                        column_name.c_str(), nullable);
                             } else {
                                 PGX_ERROR("Cannot resolve INNER_VAR/OUTER_VAR: varno=%d, varattno=%d", var->varno,
                                           var->varattno);
@@ -518,11 +522,12 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     } else {
                         table_scope = get_table_alias_from_rte(&ctx.current_stmt, var->varno);
                         column_name = get_column_name_from_schema(&ctx.current_stmt, var->varno, var->varattno);
+                        nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
                     }
 
-                    correlation_mapping[param_id] = {table_scope, column_name};
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d to %s.%s", param_id,
-                            table_scope.c_str(), column_name.c_str());
+                    correlation_mapping[param_id] = {table_scope, column_name, nullable};
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d to %s.%s (nullable=%d)", param_id,
+                            table_scope.c_str(), column_name.c_str(), nullable);
                 } else if (arg_expr && nodeTag(arg_expr) == T_Param) {
                     // TODO: Do we need to parse T_Param in other contexts as well?
                     auto param = reinterpret_cast<Param*>(arg_expr);
@@ -533,6 +538,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                         auto* paramVar = nest_it->second;
                         std::string table_scope;
                         std::string column_name;
+                        bool nullable;
 
                         if (paramVar->varno == INNER_VAR || paramVar->varno == OUTER_VAR) {
                             if (current_result) {
@@ -540,12 +546,14 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                                 {
                                     table_scope = resolved->first;
                                     column_name = resolved->second;
+                                    nullable = is_column_nullable(&ctx.current_stmt, paramVar->varno, paramVar->varattno);
                                 } else if (paramVar->varno == OUTER_VAR && paramVar->varattno > 0
                                            && paramVar->varattno <= static_cast<int>(current_result->get().columns.size()))
                                 {
                                     const auto& col = current_result->get().columns[paramVar->varattno - 1];
                                     table_scope = col.table_name;
                                     column_name = col.column_name;
+                                    nullable = col.nullable;
                                 } else {
                                     PGX_ERROR("Cannot resolve nest param Var: varno=%d, varattno=%d", paramVar->varno,
                                               paramVar->varattno);
@@ -559,11 +567,12 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                             table_scope = get_table_alias_from_rte(&ctx.current_stmt, paramVar->varno);
                             column_name = get_column_name_from_schema(&ctx.current_stmt, paramVar->varno,
                                                                       paramVar->varattno);
+                            nullable = is_column_nullable(&ctx.current_stmt, paramVar->varno, paramVar->varattno);
                         }
 
-                        correlation_mapping[param_id] = {table_scope, column_name};
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d via nest_param %d to %s.%s",
-                                param_id, param->paramid, table_scope.c_str(), column_name.c_str());
+                        correlation_mapping[param_id] = {table_scope, column_name, nullable};
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d via nest_param %d to %s.%s (nullable=%d)",
+                                param_id, param->paramid, table_scope.c_str(), column_name.c_str(), nullable);
                     } else {
                         PGX_ERROR("Correlation arg is PARAM paramid=%d but not found in nest_params", param->paramid);
                         throw std::runtime_error("Correlation PARAM not found in nest_params");

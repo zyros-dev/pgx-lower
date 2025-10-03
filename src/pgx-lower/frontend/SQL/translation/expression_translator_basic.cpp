@@ -369,17 +369,17 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
     const auto corr_it = correlation_params.find(param->paramid);
 
     if (corr_it != correlation_params.end()) {
-        const auto& [tableScope, columnName] = corr_it->second;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to correlation parameter %s.%s as free variable",
-                param->paramid, tableScope.c_str(), columnName.c_str());
+        // ReSharper disable once CppUseStructuredBinding
+        const auto& corr_info = corr_it->second;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to correlation parameter %s.%s (nullable=%d) as free variable",
+                param->paramid, corr_info.table_scope.c_str(), corr_info.column_name.c_str(), corr_info.nullable);
 
         auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
-        auto column_ref = columnManager.createRef(tableScope, columnName);
+        auto column_ref = columnManager.createRef(corr_info.table_scope, corr_info.column_name);
 
         const auto type_mapper = PostgreSQLTypeMapper(context_);
-        auto column_type = type_mapper.map_postgre_sqltype(param->paramtype, param->paramtypmod, true);
+        auto column_type = type_mapper.map_postgre_sqltype(param->paramtype, param->paramtypmod, corr_info.nullable);
 
-        // Use outer_tuple for correlation parameters (free variables)
         mlir::Value tuple_to_use = ctx.outer_tuple ? ctx.outer_tuple : ctx.current_tuple;
         return ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), column_type, column_ref,
                                                              tuple_to_use);

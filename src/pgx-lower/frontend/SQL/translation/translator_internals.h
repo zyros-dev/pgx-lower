@@ -170,7 +170,13 @@ struct TranslationContext {
     OptRefT<const TranslationResult> outer_result;
     std::unordered_map<int, TranslationResult> init_plan_results;
     std::unordered_map<int, SubqueryInfo> subquery_param_mapping;
-    std::unordered_map<int, std::pair<std::string, std::string>> correlation_params;
+
+    struct CorrelationInfo {
+        std::string table_scope;
+        std::string column_name;
+        bool nullable;
+    };
+    std::unordered_map<int, CorrelationInfo> correlation_params;
     std::unordered_map<int, Var*> nest_params;
     static int outer_join_counter;
 
