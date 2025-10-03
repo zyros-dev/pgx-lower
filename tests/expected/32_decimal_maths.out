@@ -96,9 +96,9 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 ----------------------
            223.727625
            223.050625
-         149.06401625
+           149.064016
                  79.6
-        205.173828125
+           205.173828
 (5 rows)
 
 -- Division with different scales
@@ -129,26 +129,26 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
 SELECT quantity / 3 AS third_quantity
 FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-   third_quantity   
---------------------
- 0.8333333333333333
- 0.5833333333333333
- 1.7776666666666666
- 0.1666666666666666
- 1.0416666666666666
+ third_quantity 
+----------------
+       0.833333
+       0.583333
+       1.777666
+       0.166666
+       1.041666
 (5 rows)
 
 -- Complex expressions
 SELECT ((price + 10) * quantity) / (1 + rate) AS complex_calc
 FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-     complex_calc     
-----------------------
- 237.5593952483801295
-                228.5
- 194.5990762124711316
-  80.3846153846153846
-             242.1875
+ complex_calc 
+--------------
+   237.559395
+        228.5
+   194.599076
+    80.384615
+     242.1875
 (5 rows)
 
 SELECT price * quantity * rate AS tax_on_total
@@ -156,9 +156,9 @@ FROM test_decimal_maths;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  tax_on_total 
 --------------
-   39.3710625
-   59.0428125
-  12.97918875
+    39.371062
+    59.042812
+    12.979188
         29.85
     23.515625
 (5 rows)

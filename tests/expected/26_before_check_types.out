@@ -67,9 +67,9 @@ SELECT SUM(int2_col) AS sum_int2,
        MAX(int4_col) AS max_int4
 FROM type_test_table;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- sum_int2 | sum_int4 | sum_int8  | avg_int2 | avg_int4 |        avg_int8        | min_int2 | max_int4 
-----------+----------+-----------+----------+----------+------------------------+----------+----------
-      222 |    20474 | 922237203 |     55.5 |   5118.5 | 17997.1610641910035637 |     -200 |    21474
+ sum_int2 | sum_int4 | sum_int8  | avg_int2 | avg_int4 |   avg_int8   | min_int2 | max_int4 
+----------+----------+-----------+----------+----------+--------------+----------+----------
+      222 |    20474 | 922237203 |     55.5 |   5118.5 | 230559300.75 |     -200 |    21474
 (1 row)
 
 SELECT float4_col > 0 AS float4_positive,
@@ -139,13 +139,13 @@ SELECT decimal_col,
        decimal_col * 2 AS decimal_doubled
 FROM type_test_table;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- decimal_col | numeric_col | decimal_positive | numeric_small | sum_decimals |  decimal_doubled   
--------------+-------------+------------------+---------------+--------------+--------------------
-     1245.67 |   9865.4321 | t                | t             |   11111.1021 |            2491.34
-    -9999.99 |  -1245.6789 | f                | t             |  -11245.6689 |          -19999.98
-     9999.99 |  9999.99999 | t                | t             |  19999.98999 |           19999.98
-             |             |                  |               |              |                   
-        0.00 |     0.00000 | f                | t             |      0.00000 | 0.0000000000000000
+ decimal_col | numeric_col | decimal_positive | numeric_small | sum_decimals | decimal_doubled 
+-------------+-------------+------------------+---------------+--------------+-----------------
+     1245.67 |   9865.4321 | t                | t             |   11111.1021 |         2491.34
+    -9999.99 |  -1245.6789 | f                | t             |  -11245.6689 |       -19999.98
+     9999.99 |  9999.99999 | t                | t             |  19999.98999 |        19999.98
+             |             |                  |               |              |                
+        0.00 |     0.00000 | f                | t             |      0.00000 |        0.000000
 (5 rows)
 
 SELECT SUM(decimal_col) AS sum_decimal,
@@ -156,9 +156,9 @@ SELECT SUM(decimal_col) AS sum_decimal,
        MAX(numeric_col) AS max_numeric
 FROM type_test_table;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- sum_decimal | sum_numeric | avg_decimal | avg_numeric  | min_decimal | max_numeric 
--------------+-------------+-------------+--------------+-------------+-------------
-     1245.67 | 18619.75319 |    311.4175 | 4654.9382975 |    -9999.99 |  9999.99999
+ sum_decimal | sum_numeric | avg_decimal | avg_numeric | min_decimal | max_numeric 
+-------------+-------------+-------------+-------------+-------------+-------------
+     1245.67 | 18619.75319 |    311.4175 | 4654.938297 |    -9999.99 |  9999.99999
 (1 row)
 
 SELECT date_col,

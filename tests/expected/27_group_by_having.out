@@ -67,10 +67,10 @@ HAVING COUNT(*) >= 2
    AND SUM(sale_amount) > 5000
 ORDER BY department;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department | sale_count | total_sales |       avg_sale        
-------------+------------+-------------+-----------------------
- IT         |          3 |        5800 | 1933.3333333333333333
- Sales      |          5 |       24500 |                  4900
+ department | sale_count | total_sales |  avg_sale   
+------------+------------+-------------+-------------
+ IT         |          3 |        5800 | 1933.333333
+ Sales      |          5 |       24500 |        4900
 (2 rows)
 
 SELECT employee_name,

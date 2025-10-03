@@ -57,10 +57,10 @@ WHERE order_amount >= 100
 GROUP BY category
 ORDER BY category;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-  category   | order_count | total_sales |    avg_quantity    
--------------+-------------+-------------+--------------------
- Electronics |           3 |        2700 | 1.3333333333333333
- Furniture   |           4 |        1450 |               1.75
+  category   | order_count | total_sales | avg_quantity 
+-------------+-------------+-------------+--------------
+ Electronics |           3 |        2700 |     1.333333
+ Furniture   |           4 |        1450 |         1.75
 (2 rows)
 
 SELECT customer_type,

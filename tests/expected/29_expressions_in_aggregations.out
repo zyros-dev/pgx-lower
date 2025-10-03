@@ -88,9 +88,9 @@ SELECT
 FROM comprehensive_data
 WHERE years_experience > 0;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- salary_per_year_exp |  monthly_bonus_total  |  max_weekly_estimate   
----------------------+-----------------------+------------------------
-           19307.737 | 8541.6666666666666664 | 15714.2857142857142857
+ salary_per_year_exp | monthly_bonus_total | max_weekly_estimate 
+---------------------+---------------------+---------------------
+           19307.737 |         8541.666664 |        15714.285714
 (1 row)
 
 SELECT
@@ -102,11 +102,11 @@ WHERE salary > 70000
 GROUP BY department
 ORDER BY department;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department  | total_with_double_bonus |   avg_exp_quarter    
--------------+-------------------------+----------------------
- Engineering |                  483000 |               168.75
- Marketing   |                   84000 |                   75
- Sales       |                  332000 | 108.3333333333333333
+ department  | total_with_double_bonus | avg_exp_quarter 
+-------------+-------------------------+-----------------
+ Engineering |                  483000 |          168.75
+ Marketing   |                   84000 |              75
+ Sales       |                  332000 |      108.333333
 (3 rows)
 
 SELECT
@@ -117,9 +117,9 @@ SELECT
     MIN(bonus / 100) AS min_bonus_hundred
 FROM comprehensive_data;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- total_employees | total_above_minimum |   avg_monthly_comp    | max_exp_hundred | min_bonus_hundred 
------------------+---------------------+-----------------------+-----------------+-------------------
-              10 |              247000 | 7912.4999999999999999 |            1000 |                40
+ total_employees | total_above_minimum | avg_monthly_comp | max_exp_hundred | min_bonus_hundred 
+-----------------+---------------------+------------------+-----------------+-------------------
+              10 |              247000 |      7912.499999 |            1000 |                40
 (1 row)
 
 SELECT
@@ -143,9 +143,9 @@ SELECT
 FROM comprehensive_data
 WHERE years_experience > 3;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- net_after_tax_estimate |   exp_adjusted_value   
-------------------------+------------------------
-                 580500 | 62857.1428571428571428
+ net_after_tax_estimate | exp_adjusted_value 
+------------------------+--------------------
+                 580500 |       62857.142857
 (1 row)
 
 SELECT
@@ -182,12 +182,12 @@ FROM comprehensive_data
 GROUP BY department
 ORDER BY department;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- department  | adjusted_compensation |   salary_factor    | max_bonus_plus_thousand 
--------------+-----------------------+--------------------+-------------------------
- Engineering |                438500 |              10.05 |                   14000
- HR          |                 68000 |                6.5 |                    5000
- Marketing   |                151000 |                7.1 |                    7000
- Sales       |                282000 | 7.9333333333333333 |                   19000
+ department  | adjusted_compensation | salary_factor | max_bonus_plus_thousand 
+-------------+-----------------------+---------------+-------------------------
+ Engineering |                438500 |         10.05 |                   14000
+ HR          |                 68000 |           6.5 |                    5000
+ Marketing   |                151000 |           7.1 |                    7000
+ Sales       |                282000 |      7.933333 |                   19000
 (4 rows)
 
 SELECT

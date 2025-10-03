@@ -523,11 +523,57 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     correlation_mapping[param_id] = {table_scope, column_name};
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d to %s.%s", param_id,
                             table_scope.c_str(), column_name.c_str());
+                } else if (arg_expr && nodeTag(arg_expr) == T_Param) {
+                    // TODO: Do we need to parse T_Param in other contexts as well?
+                    auto param = reinterpret_cast<Param*>(arg_expr);
+                    const auto& nest_params = ctx.nest_params;
+                    const auto nest_it = nest_params.find(param->paramid);
+
+                    if (nest_it != nest_params.end()) {
+                        auto* paramVar = nest_it->second;
+                        std::string table_scope;
+                        std::string column_name;
+
+                        if (paramVar->varno == INNER_VAR || paramVar->varno == OUTER_VAR) {
+                            if (current_result) {
+                                if (auto resolved = current_result->get().resolve_var(paramVar->varno, paramVar->varattno))
+                                {
+                                    table_scope = resolved->first;
+                                    column_name = resolved->second;
+                                } else if (paramVar->varno == OUTER_VAR && paramVar->varattno > 0
+                                           && paramVar->varattno <= static_cast<int>(current_result->get().columns.size()))
+                                {
+                                    const auto& col = current_result->get().columns[paramVar->varattno - 1];
+                                    table_scope = col.table_name;
+                                    column_name = col.column_name;
+                                } else {
+                                    PGX_ERROR("Cannot resolve nest param Var: varno=%d, varattno=%d", paramVar->varno,
+                                              paramVar->varattno);
+                                    throw std::runtime_error("Cannot resolve nest param Var in correlation");
+                                }
+                            } else {
+                                PGX_ERROR("INNER_VAR/OUTER_VAR in nest param but no current_result available");
+                                throw std::runtime_error("Cannot resolve nest param without context");
+                            }
+                        } else {
+                            table_scope = get_table_alias_from_rte(&ctx.current_stmt, paramVar->varno);
+                            column_name = get_column_name_from_schema(&ctx.current_stmt, paramVar->varno,
+                                                                      paramVar->varattno);
+                        }
+
+                        correlation_mapping[param_id] = {table_scope, column_name};
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d via nest_param %d to %s.%s",
+                                param_id, param->paramid, table_scope.c_str(), column_name.c_str());
+                    } else {
+                        PGX_ERROR("Correlation arg is PARAM paramid=%d but not found in nest_params", param->paramid);
+                        throw std::runtime_error("Correlation PARAM not found in nest_params");
+                    }
                 } else {
-                    // IMPORTANT!
-                    // This is possible if you like, select col from tbl as t, (select x from tbl2 where t.col + 1 == x)
-                    // However, TPC-H doesn't have this situation, so... I'm skipping it!
-                    throw std::runtime_error("Unhandled subplan");
+                    // Complex expression in correlation (e.g., t.col + 1)
+                    // This would require translating the expression and passing the MLIR value
+                    PGX_ERROR("Correlation arg is complex expression (nodeTag=%d), not yet supported",
+                              arg_expr ? nodeTag(arg_expr) : -1);
+                    throw std::runtime_error("Complex correlation expressions not yet supported");
                 }
             }
         }
@@ -590,7 +636,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             }
 
             const auto tuple_type = mlir::relalg::TupleType::get(ctx.builder.getContext());
-            auto selection_op = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(), subquery_stream);
+            auto selection_op = ctx.builder.create<mlir::relalg::SelectionOp>(ctx.builder.getUnknownLoc(),
+                                                                              subquery_stream);
 
             auto& pred_region = selection_op.getPredicate();
             auto& pred_block = pred_region.emplaceBlock();
@@ -637,18 +684,18 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             }
 
             if (negate_predicate) {
-                comparison = pred_builder.create<mlir::db::NotOp>(pred_builder.getUnknownLoc(),
-                                                                  comparison.getType(), comparison);
+                comparison = pred_builder.create<mlir::db::NotOp>(pred_builder.getUnknownLoc(), comparison.getType(),
+                                                                  comparison);
             }
 
             pred_builder.create<mlir::relalg::ReturnOp>(pred_builder.getUnknownLoc(), mlir::ValueRange{comparison});
 
-            auto exists_op = ctx.builder.create<mlir::relalg::ExistsOp>(ctx.builder.getUnknownLoc(),
-                                                                        ctx.builder.getI1Type(), selection_op.getResult());
+            auto exists_op = ctx.builder.create<mlir::relalg::ExistsOp>(
+                ctx.builder.getUnknownLoc(), ctx.builder.getI1Type(), selection_op.getResult());
 
             if (negate_predicate) {
-                auto final_not = ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(),
-                                                                     exists_op.getType(), exists_op.getResult());
+                auto final_not = ctx.builder.create<mlir::db::NotOp>(ctx.builder.getUnknownLoc(), exists_op.getType(),
+                                                                     exists_op.getResult());
                 PGX_LOG(AST_TRANSLATE, DEBUG, "ALL_SUBLINK: Created NOT EXISTS pattern");
                 return final_not.getResult();
             }
@@ -675,8 +722,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(const QueryCtxT& par
     // Translate subquery Plan tree to RelAlg MLIR stream with isolated context.
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_subquery_plan: Starting subquery translation");
 
-    auto subquery_ctx = QueryCtxT(*parent_stmt, parent_ctx.builder, parent_ctx.current_module, parent_ctx.current_tuple,
-                                  mlir::Value());
+    // Create subquery context with parent's current_tuple as outer_tuple for correlation
+    auto subquery_ctx = QueryCtxT(*parent_stmt, parent_ctx.builder, parent_ctx.current_module, mlir::Value(),
+                                  parent_ctx.current_tuple);
     subquery_ctx.init_plan_results = parent_ctx.init_plan_results;
     subquery_ctx.nest_params = parent_ctx.nest_params;
     subquery_ctx.subquery_param_mapping = parent_ctx.subquery_param_mapping;

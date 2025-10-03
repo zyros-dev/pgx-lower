@@ -1,34 +1,9 @@
 LOAD 'pgx_lower.so';
--- TPC-H Query 1
-select
-        l_returnflag,
-        l_linestatus,
-        sum(l_quantity) as sum_qty,
-        sum(l_extendedprice) as sum_base_price,
-        sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
-        sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
-        avg(l_quantity) as avg_qty,
-        avg(l_extendedprice) as avg_price,
-        avg(l_discount) as avg_disc,
-        count(*) as count_order
-from
-        lineitem
-where
-        l_shipdate <= date '1998-12-01' - interval '90' day
-group by
-        l_returnflag,
-        l_linestatus
-order by
-        l_returnflag,
-        l_linestatus;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- l_returnflag | l_linestatus | sum_qty | sum_base_price | sum_disc_price |  sum_charge   |       avg_qty       |       avg_price        |      avg_disc      | count_order 
---------------+--------------+---------+----------------+----------------+---------------+---------------------+------------------------+--------------------+-------------
- A            | F            |      10 |          18050 |        16786.5 |      17122.23 |                  10 |                  18050 |               0.07 |           1
- N            | O            |     586 |      726131.39 |    701316.7764 | 722834.654952 | 39.0666666666666666 | 48408.7593333333333333 | 0.0413333333333333 |          15
- R            | F            |     685 |      813887.72 |     782725.382 |  796073.14176 | 57.0833333333333333 | 67823.9766666666666666 |               0.04 |          12
-(3 rows)
-
+SET client_min_messages TO DEBUG1;
+SET pgx_lower.log_enable = true;
+SET pgx_lower.log_debug = true;
+SET pgx_lower.log_ir = true;
+SET pgx_lower.enabled_categories = 'AST_TRANSLATE';
 -- TPC-H Query 2
 select
         s_acctbal,
@@ -74,727 +49,2422 @@ order by
         s_name,
         p_partkey
 limit 100;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- s_acctbal |          s_name           |          n_name           | p_partkey |          p_mfgr           | s_address |     s_phone     | s_comment 
------------+---------------------------+---------------------------+-----------+---------------------------+-----------+-----------------+-----------
-   4032.68 | Supplier#000000002        | FRANCE                    |         2 | Manufacturer#2            | Address 2 | 16-768-687-3665 | Comment 2
-(1 row)
-
--- TPC-H Query 3
-select
-        l_orderkey,
-        sum(l_extendedprice * (1 - l_discount)) as revenue,
-        o_orderdate,
-        o_shippriority
-from
-        customer,
-        orders,
-        lineitem
-where
-        c_mktsegment = 'BUILDING'
-        and c_custkey = o_custkey
-        and l_orderkey = o_orderkey
-        and o_orderdate < date '1995-03-15'
-        and l_shipdate > date '1995-03-15'
-group by
-        l_orderkey,
-        o_orderdate,
-        o_shippriority
-order by
-        revenue desc,
-        o_orderdate
-limit 10;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- l_orderkey | revenue | o_orderdate | o_shippriority 
-------------+---------+-------------+----------------
-          7 |   37812 | 03-10-1995  |              1
-(1 row)
-
-select
-        o_orderpriority,
-        count(*) as order_count
-from
-        orders
-where
-        o_orderdate >= date '1993-07-01'
-        and o_orderdate < date '1993-10-01'
-        and exists (
-                select
-                        *
-                from
-                        lineitem
-                where
-                        l_orderkey = o_orderkey
-                        and l_commitdate < l_receiptdate
-        )
-group by
-        o_orderpriority
-order by
-        o_orderpriority;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- o_orderpriority | order_count 
------------------+-------------
- 1-URGENT        |           1
-(1 row)
-
--- TPC-H Query 5
-select
-        n_name,
-        sum(l_extendedprice * (1 - l_discount)) as revenue
-from
-        customer,
-        orders,
-        lineitem,
-        supplier,
-        nation,
-        region
-where
-        c_custkey = o_custkey
-        and l_orderkey = o_orderkey
-        and l_suppkey = s_suppkey
-        and c_nationkey = s_nationkey
-        and s_nationkey = n_nationkey
-        and n_regionkey = r_regionkey
-        and r_name = 'ASIA'
-        and o_orderdate >= date '1994-01-01'
-        and o_orderdate < date '1995-01-01'
-group by
-        n_name
-order by
-        revenue desc;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-          n_name           | revenue 
----------------------------+---------
- INDIA                     |   80520
-(1 row)
-
--- TPC-H Query 6
-select
-        sum(l_extendedprice * l_discount) as revenue
-from
-        lineitem
-where
-        l_shipdate >= date '1994-01-01'
-        and l_shipdate < date '1995-01-01'
-        and l_discount between 0.06 - 0.01 and 0.06 + 0.01
-        and l_quantity < 24;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- revenue 
----------
-  3543.5
-(1 row)
-
--- TPC-H Query 7
-select
-        supp_nation,
-        cust_nation,
-        l_year,
-        sum(volume) as revenue
-from
-        (
-                select
-                        n1.n_name as supp_nation,
-                        n2.n_name as cust_nation,
-                        extract(year from l_shipdate) as l_year,
-                        l_extendedprice * (1 - l_discount) as volume
-                from
-                        supplier,
-                        lineitem,
-                        orders,
-                        customer,
-                        nation n1,
-                        nation n2
-                where
-                        s_suppkey = l_suppkey
-                        and o_orderkey = l_orderkey
-                        and c_custkey = o_custkey
-                        and s_nationkey = n1.n_nationkey
-                        and c_nationkey = n2.n_nationkey
-                        and (
-                                (n1.n_name = 'FRANCE' and n2.n_name = 'GERMANY')
-                                or (n1.n_name = 'GERMANY' and n2.n_name = 'FRANCE')
+DEBUG:  [AST_TRANSLATE:DEBUG] query_analyzer.cpp:206: Accepting node type 366 for MLIR compilation
+DEBUG:  [AST_TRANSLATE:DEBUG] query_analyzer.cpp:357: === POSTGRESQL EXECUTION TREE ===
+DEBUG:  [AST_TRANSLATE:DEBUG] query_analyzer.cpp:362: 
+   {LIMIT 
+   :plan.startup_cost 137.40724999999998 
+   :plan.total_cost 137.41224999999997 
+   :plan.plan_rows 1 
+   :plan.plan_width 714 
+   :plan.parallel_aware false 
+   :plan.parallel_safe false 
+   :plan.async_capable false 
+   :plan.plan_node_id 0 
+   :plan.targetlist (
+      {TARGETENTRY 
+      :expr 
+         {VAR 
+         :varno -2 
+         :varattno 1 
+         :vartype 1700 
+         :vartypmod 786438 
+         :varcollid 0 
+         :varnullingrels (b)
+         :varlevelsup 0 
+         :varnosyn 2 
+         :varattnosyn 6 
+         :location -1
+         }
+      :resno 1 
+      :resname s_acctbal 
+      :ressortgroupref 1 
+      :resorigtbl 26482686 
+      :resorigcol 6 
+      :resjunk false
+      }
+      {TARGETENTRY 
+      :expr 
+         {VAR 
+         :varno -2 
+         :varattno 2 
+         :vartype 1042 
+         :vartypmod 29 
+         :varcollid 100 
+         :varnullingrels (b)
+         :varlevelsup 0 
+         :varnosyn 2 
+         :varattnosyn 2 
+         :location -1
+         }
+      :resno 2 
+      :resname s_name 
+      :ressortgroupref 3 
+      :resorigtbl 26482686 
+      :resorigcol 2 
+      :resjunk false
+      }
+      {TARGETENTRY 
+      :expr 
+         {VAR 
+         :varno -2 
+         :varattno 3 
+         :vartype 1042 
+         :vartypmod 29 
+         :varcollid 100 
+         :varnullingrels (b)
+         :varlevelsup 0 
+         :varnosyn 4 
+         :varattnosyn 2 
+         :location -1
+         }
+      :resno 3 
+      :resname n_name 
+      :ressortgroupref 2 
+      :resorigtbl 26482676 
+      :resorigcol 2 
+      :resjunk false
+      }
+      {TARGETENTRY 
+      :expr 
+         {VAR 
+         :varno -2 
+         :varattno 4 
+         :vartype 23 
+         :vartypmod -1 
+         :varcollid 0 
+         :varnullingrels (b)
+         :varlevelsup 0 
+         :varnosyn 1 
+         :varattnosyn 1 
+         :location -1
+         }
+      :resno 4 
+      :resname p_partkey 
+      :ressortgroupref 4 
+      :resorigtbl 26482681 
+      :resorigcol 1 
+      :resjunk false
+      }
+      {TARGETENTRY 
+      :expr 
+         {VAR 
+         :varno -2 
+         :varattno 5 
+         :vartype 1042 
+         :vartypmod 29 
+         :varcollid 100 
+         :varnullingrels (b)
+         :varlevelsup 0 
+         :varnosyn 1 
+         :varattnosyn 3 
+         :location -1
+         }
+      :resno 5 
+      :resname p_mfgr 
+      :ressortgroupref 0 
+      :resorigtbl 26482681 
+      :resorigcol 3 
+      :resjunk false
+      }
+      {TARGETENTRY 
+      :expr 
+         {VAR 
+         :varno -2 
+         :varattno 6 
+         :vartype 1043 
+         :vartypmod 44 
+         :varcollid 100 
+         :varnullingrels (b)
+         :varlevelsup 0 
+         :varnosyn 2 
+         :varattnosyn 3 
+         :location -1
+         }
+      :resno 6 
+      :resname s_address 
+      :ressortgroupref 0 
+      :resorigtbl 26482686 
+      :resorigcol 3 
+      :resjunk false
+      }
+      {TARGETENTRY 
+      :expr 
+         {VAR 
+         :varno -2 
+         :varattno 7 
+         :vartype 1042 
+         :vartypmod 19 
+         :varcollid 100 
+         :varnullingrels (b)
+         :varlevelsup 0 
+         :varnosyn 2 
+         :varattnosyn 5 
+         :location -1
+         }
+      :resno 7 
+      :resname s_phone 
+      :ressortgroupref 0 
+      :resorigtbl 26482686 
+      :resorigcol 5 
+      :resjunk false
+      }
+      {TARGETENTRY 
+      :expr 
+         {VAR 
+         :varno -2 
+         :varattno 8 
+         :vartype 1043 
+         :vartypmod 105 
+         :varcollid 100 
+         :varnullingrels (b)
+         :varlevelsup 0 
+         :varnosyn 2 
+         :varattnosyn 7 
+         :location -1
+         }
+      :resno 8 
+      :resname s_comment 
+      :ressortgroupref 0 
+      :resorigtbl 26482686 
+      :resorigcol 7 
+      :resjunk false
+      }
+   )
+   :plan.qual <> 
+   :plan.lefttree 
+      {SORT 
+      :plan.startup_cost 137.40724999999998 
+      :plan.total_cost 137.41224999999997 
+      :plan.plan_rows 1 
+      :plan.plan_width 714 
+      :plan.parallel_aware false 
+      :plan.parallel_safe false 
+      :plan.async_capable false 
+      :plan.plan_node_id 1 
+      :plan.targetlist (
+         {TARGETENTRY 
+         :expr 
+            {VAR 
+            :varno -2 
+            :varattno 1 
+            :vartype 1700 
+            :vartypmod 786438 
+            :varcollid 0 
+            :varnullingrels (b)
+            :varlevelsup 0 
+            :varnosyn 2 
+            :varattnosyn 6 
+            :location -1
+            }
+         :resno 1 
+         :resname s_acctbal 
+         :ressortgroupref 1 
+         :resorigtbl 26482686 
+         :resorigcol 6 
+         :resjunk false
+         }
+         {TARGETENTRY 
+         :expr 
+            {VAR 
+            :varno -2 
+            :varattno 2 
+            :vartype 1042 
+            :vartypmod 29 
+            :varcollid 100 
+            :varnullingrels (b)
+            :varlevelsup 0 
+            :varnosyn 2 
+            :varattnosyn 2 
+            :location -1
+            }
+         :resno 2 
+         :resname s_name 
+         :ressortgroupref 3 
+         :resorigtbl 26482686 
+         :resorigcol 2 
+         :resjunk false
+         }
+         {TARGETENTRY 
+         :expr 
+            {VAR 
+            :varno -2 
+            :varattno 3 
+            :vartype 1042 
+            :vartypmod 29 
+            :varcollid 100 
+            :varnullingrels (b)
+            :varlevelsup 0 
+            :varnosyn 4 
+            :varattnosyn 2 
+            :location -1
+            }
+         :resno 3 
+         :resname n_name 
+         :ressortgroupref 2 
+         :resorigtbl 26482676 
+         :resorigcol 2 
+         :resjunk false
+         }
+         {TARGETENTRY 
+         :expr 
+            {VAR 
+            :varno -2 
+            :varattno 4 
+            :vartype 23 
+            :vartypmod -1 
+            :varcollid 0 
+            :varnullingrels (b)
+            :varlevelsup 0 
+            :varnosyn 1 
+            :varattnosyn 1 
+            :location -1
+            }
+         :resno 4 
+         :resname p_partkey 
+         :ressortgroupref 4 
+         :resorigtbl 26482681 
+         :resorigcol 1 
+         :resjunk false
+         }
+         {TARGETENTRY 
+         :expr 
+            {VAR 
+            :varno -2 
+            :varattno 5 
+            :vartype 1042 
+            :vartypmod 29 
+            :varcollid 100 
+            :varnullingrels (b)
+            :varlevelsup 0 
+            :varnosyn 1 
+            :varattnosyn 3 
+            :location -1
+            }
+         :resno 5 
+         :resname p_mfgr 
+         :ressortgroupref 0 
+         :resorigtbl 26482681 
+         :resorigcol 3 
+         :resjunk false
+         }
+         {TARGETENTRY 
+         :expr 
+            {VAR 
+            :varno -2 
+            :varattno 6 
+            :vartype 1043 
+            :vartypmod 44 
+            :varcollid 100 
+            :varnullingrels (b)
+            :varlevelsup 0 
+            :varnosyn 2 
+            :varattnosyn 3 
+            :location -1
+            }
+         :resno 6 
+         :resname s_address 
+         :ressortgroupref 0 
+         :resorigtbl 26482686 
+         :resorigcol 3 
+         :resjunk false
+         }
+         {TARGETENTRY 
+         :expr 
+            {VAR 
+            :varno -2 
+            :varattno 7 
+            :vartype 1042 
+            :vartypmod 19 
+            :varcollid 100 
+            :varnullingrels (b)
+            :varlevelsup 0 
+            :varnosyn 2 
+            :varattnosyn 5 
+            :location -1
+            }
+         :resno 7 
+         :resname s_phone 
+         :ressortgroupref 0 
+         :resorigtbl 26482686 
+         :resorigcol 5 
+         :resjunk false
+         }
+         {TARGETENTRY 
+         :expr 
+            {VAR 
+            :varno -2 
+            :varattno 8 
+            :vartype 1043 
+            :vartypmod 105 
+            :varcollid 100 
+            :varnullingrels (b)
+            :varlevelsup 0 
+            :varnosyn 2 
+            :varattnosyn 7 
+            :location -1
+            }
+         :resno 8 
+         :resname s_comment 
+         :ressortgroupref 0 
+         :resorigtbl 26482686 
+         :resorigcol 7 
+         :resjunk false
+         }
+      )
+      :plan.qual <> 
+      :plan.lefttree 
+         {NESTLOOP 
+         :join.plan.startup_cost 12.417499999999999 
+         :join.plan.total_cost 137.39724999999999 
+         :join.plan.plan_rows 1 
+         :join.plan.plan_width 714 
+         :join.plan.parallel_aware false 
+         :join.plan.parallel_safe false 
+         :join.plan.async_capable false 
+         :join.plan.plan_node_id 2 
+         :join.plan.targetlist (
+            {TARGETENTRY 
+            :expr 
+               {VAR 
+               :varno -2 
+               :varattno 1 
+               :vartype 1700 
+               :vartypmod 786438 
+               :varcollid 0 
+               :varnullingrels (b)
+               :varlevelsup 0 
+               :varnosyn 2 
+               :varattnosyn 6 
+               :location -1
+               }
+            :resno 1 
+            :resname s_acctbal 
+            :ressortgroupref 1 
+            :resorigtbl 26482686 
+            :resorigcol 6 
+            :resjunk false
+            }
+            {TARGETENTRY 
+            :expr 
+               {VAR 
+               :varno -2 
+               :varattno 2 
+               :vartype 1042 
+               :vartypmod 29 
+               :varcollid 100 
+               :varnullingrels (b)
+               :varlevelsup 0 
+               :varnosyn 2 
+               :varattnosyn 2 
+               :location -1
+               }
+            :resno 2 
+            :resname s_name 
+            :ressortgroupref 3 
+            :resorigtbl 26482686 
+            :resorigcol 2 
+            :resjunk false
+            }
+            {TARGETENTRY 
+            :expr 
+               {VAR 
+               :varno -2 
+               :varattno 7 
+               :vartype 1042 
+               :vartypmod 29 
+               :varcollid 100 
+               :varnullingrels (b)
+               :varlevelsup 0 
+               :varnosyn 4 
+               :varattnosyn 2 
+               :location -1
+               }
+            :resno 3 
+            :resname n_name 
+            :ressortgroupref 2 
+            :resorigtbl 26482676 
+            :resorigcol 2 
+            :resjunk false
+            }
+            {TARGETENTRY 
+            :expr 
+               {VAR 
+               :varno -1 
+               :varattno 1 
+               :vartype 23 
+               :vartypmod -1 
+               :varcollid 0 
+               :varnullingrels (b)
+               :varlevelsup 0 
+               :varnosyn 1 
+               :varattnosyn 1 
+               :location -1
+               }
+            :resno 4 
+            :resname p_partkey 
+            :ressortgroupref 4 
+            :resorigtbl 26482681 
+            :resorigcol 1 
+            :resjunk false
+            }
+            {TARGETENTRY 
+            :expr 
+               {VAR 
+               :varno -1 
+               :varattno 2 
+               :vartype 1042 
+               :vartypmod 29 
+               :varcollid 100 
+               :varnullingrels (b)
+               :varlevelsup 0 
+               :varnosyn 1 
+               :varattnosyn 3 
+               :location -1
+               }
+            :resno 5 
+            :resname p_mfgr 
+            :ressortgroupref 0 
+            :resorigtbl 26482681 
+            :resorigcol 3 
+            :resjunk false
+            }
+            {TARGETENTRY 
+            :expr 
+               {VAR 
+               :varno -2 
+               :varattno 3 
+               :vartype 1043 
+               :vartypmod 44 
+               :varcollid 100 
+               :varnullingrels (b)
+               :varlevelsup 0 
+               :varnosyn 2 
+               :varattnosyn 3 
+               :location -1
+               }
+            :resno 6 
+            :resname s_address 
+            :ressortgroupref 0 
+            :resorigtbl 26482686 
+            :resorigcol 3 
+            :resjunk false
+            }
+            {TARGETENTRY 
+            :expr 
+               {VAR 
+               :varno -2 
+               :varattno 4 
+               :vartype 1042 
+               :vartypmod 19 
+               :varcollid 100 
+               :varnullingrels (b)
+               :varlevelsup 0 
+               :varnosyn 2 
+               :varattnosyn 5 
+               :location -1
+               }
+            :resno 7 
+            :resname s_phone 
+            :ressortgroupref 0 
+            :resorigtbl 26482686 
+            :resorigcol 5 
+            :resjunk false
+            }
+            {TARGETENTRY 
+            :expr 
+               {VAR 
+               :varno -2 
+               :varattno 5 
+               :vartype 1043 
+               :vartypmod 105 
+               :varcollid 100 
+               :varnullingrels (b)
+               :varlevelsup 0 
+               :varnosyn 2 
+               :varattnosyn 7 
+               :location -1
+               }
+            :resno 8 
+            :resname s_comment 
+            :ressortgroupref 0 
+            :resorigtbl 26482686 
+            :resorigcol 7 
+            :resjunk false
+            }
+         )
+         :join.plan.qual <> 
+         :join.plan.lefttree 
+            {NESTLOOP 
+            :join.plan.startup_cost 12.1375 
+            :join.plan.total_cost 37.669875 
+            :join.plan.plan_rows 1 
+            :join.plan.plan_width 610 
+            :join.plan.parallel_aware false 
+            :join.plan.parallel_safe true 
+            :join.plan.async_capable false 
+            :join.plan.plan_node_id 3 
+            :join.plan.targetlist (
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -1 
+                  :varattno 6 
+                  :vartype 1700 
+                  :vartypmod 786438 
+                  :varcollid 0 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 2 
+                  :varattnosyn 6 
+                  :location -1
+                  }
+               :resno 1 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -1 
+                  :varattno 2 
+                  :vartype 1042 
+                  :vartypmod 29 
+                  :varcollid 100 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 2 
+                  :varattnosyn 2 
+                  :location -1
+                  }
+               :resno 2 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -1 
+                  :varattno 3 
+                  :vartype 1043 
+                  :vartypmod 44 
+                  :varcollid 100 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 2 
+                  :varattnosyn 3 
+                  :location -1
+                  }
+               :resno 3 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -1 
+                  :varattno 5 
+                  :vartype 1042 
+                  :vartypmod 19 
+                  :varcollid 100 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 2 
+                  :varattnosyn 5 
+                  :location -1
+                  }
+               :resno 4 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -1 
+                  :varattno 7 
+                  :vartype 1043 
+                  :vartypmod 105 
+                  :varcollid 100 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 2 
+                  :varattnosyn 7 
+                  :location -1
+                  }
+               :resno 5 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -1 
+                  :varattno 1 
+                  :vartype 23 
+                  :vartypmod -1 
+                  :varcollid 0 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 2 
+                  :varattnosyn 1 
+                  :location -1
+                  }
+               :resno 6 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -2 
+                  :varattno 1 
+                  :vartype 1042 
+                  :vartypmod 29 
+                  :varcollid 100 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 4 
+                  :varattnosyn 2 
+                  :location -1
+                  }
+               :resno 7 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+            )
+            :join.plan.qual <> 
+            :join.plan.lefttree 
+               {HASHJOIN 
+               :join.plan.startup_cost 12.1375 
+               :join.plan.total_cost 24.294874999999998 
+               :join.plan.plan_rows 1 
+               :join.plan.plan_width 108 
+               :join.plan.parallel_aware false 
+               :join.plan.parallel_safe true 
+               :join.plan.async_capable false 
+               :join.plan.plan_node_id 4 
+               :join.plan.targetlist (
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno -2 
+                     :varattno 2 
+                     :vartype 1042 
+                     :vartypmod 29 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 4 
+                     :varattnosyn 2 
+                     :location -1
+                     }
+                  :resno 1 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno -2 
+                     :varattno 1 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 4 
+                     :varattnosyn 1 
+                     :location -1
+                     }
+                  :resno 2 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+               )
+               :join.plan.qual <> 
+               :join.plan.lefttree 
+                  {SEQSCAN 
+                  :scan.plan.startup_cost 0 
+                  :scan.plan.total_cost 11.7 
+                  :scan.plan.plan_rows 170 
+                  :scan.plan.plan_width 112 
+                  :scan.plan.parallel_aware false 
+                  :scan.plan.parallel_safe true 
+                  :scan.plan.async_capable false 
+                  :scan.plan.plan_node_id 5 
+                  :scan.plan.targetlist (
+                     {TARGETENTRY 
+                     :expr 
+                        {VAR 
+                        :varno 4 
+                        :varattno 1 
+                        :vartype 23 
+                        :vartypmod -1 
+                        :varcollid 0 
+                        :varnullingrels (b)
+                        :varlevelsup 0 
+                        :varnosyn 4 
+                        :varattnosyn 1 
+                        :location -1
+                        }
+                     :resno 1 
+                     :resname <> 
+                     :ressortgroupref 0 
+                     :resorigtbl 0 
+                     :resorigcol 0 
+                     :resjunk false
+                     }
+                     {TARGETENTRY 
+                     :expr 
+                        {VAR 
+                        :varno 4 
+                        :varattno 2 
+                        :vartype 1042 
+                        :vartypmod 29 
+                        :varcollid 100 
+                        :varnullingrels (b)
+                        :varlevelsup 0 
+                        :varnosyn 4 
+                        :varattnosyn 2 
+                        :location -1
+                        }
+                     :resno 2 
+                     :resname <> 
+                     :ressortgroupref 0 
+                     :resorigtbl 0 
+                     :resorigcol 0 
+                     :resjunk false
+                     }
+                     {TARGETENTRY 
+                     :expr 
+                        {VAR 
+                        :varno 4 
+                        :varattno 3 
+                        :vartype 23 
+                        :vartypmod -1 
+                        :varcollid 0 
+                        :varnullingrels (b)
+                        :varlevelsup 0 
+                        :varnosyn 4 
+                        :varattnosyn 3 
+                        :location -1
+                        }
+                     :resno 3 
+                     :resname <> 
+                     :ressortgroupref 0 
+                     :resorigtbl 0 
+                     :resorigcol 0 
+                     :resjunk false
+                     }
+                     {TARGETENTRY 
+                     :expr 
+                        {VAR 
+                        :varno 4 
+                        :varattno 4 
+                        :vartype 1043 
+                        :vartypmod 156 
+                        :varcollid 100 
+                        :varnullingrels (b)
+                        :varlevelsup 0 
+                        :varnosyn 4 
+                        :varattnosyn 4 
+                        :location -1
+                        }
+                     :resno 4 
+                     :resname <> 
+                     :ressortgroupref 0 
+                     :resorigtbl 0 
+                     :resorigcol 0 
+                     :resjunk false
+                     }
+                  )
+                  :scan.plan.qual <> 
+                  :scan.plan.lefttree <> 
+                  :scan.plan.righttree <> 
+                  :scan.plan.initPlan <> 
+                  :scan.plan.extParam (b)
+                  :scan.plan.allParam (b)
+                  :scan.scanrelid 4
+                  }
+               :join.plan.righttree 
+                  {HASH 
+                  :plan.startup_cost 12.125 
+                  :plan.total_cost 12.125 
+                  :plan.plan_rows 1 
+                  :plan.plan_width 4 
+                  :plan.parallel_aware false 
+                  :plan.parallel_safe true 
+                  :plan.async_capable false 
+                  :plan.plan_node_id 6 
+                  :plan.targetlist (
+                     {TARGETENTRY 
+                     :expr 
+                        {VAR 
+                        :varno -2 
+                        :varattno 1 
+                        :vartype 23 
+                        :vartypmod -1 
+                        :varcollid 0 
+                        :varnullingrels (b)
+                        :varlevelsup 0 
+                        :varnosyn 5 
+                        :varattnosyn 1 
+                        :location -1
+                        }
+                     :resno 1 
+                     :resname <> 
+                     :ressortgroupref 0 
+                     :resorigtbl 0 
+                     :resorigcol 0 
+                     :resjunk false
+                     }
+                  )
+                  :plan.qual <> 
+                  :plan.lefttree 
+                     {SEQSCAN 
+                     :scan.plan.startup_cost 0 
+                     :scan.plan.total_cost 12.125 
+                     :scan.plan.plan_rows 1 
+                     :scan.plan.plan_width 4 
+                     :scan.plan.parallel_aware false 
+                     :scan.plan.parallel_safe true 
+                     :scan.plan.async_capable false 
+                     :scan.plan.plan_node_id 7 
+                     :scan.plan.targetlist (
+                        {TARGETENTRY 
+                        :expr 
+                           {VAR 
+                           :varno 5 
+                           :varattno 1 
+                           :vartype 23 
+                           :vartypmod -1 
+                           :varcollid 0 
+                           :varnullingrels (b)
+                           :varlevelsup 0 
+                           :varnosyn 5 
+                           :varattnosyn 1 
+                           :location -1
+                           }
+                        :resno 1 
+                        :resname <> 
+                        :ressortgroupref 0 
+                        :resorigtbl 0 
+                        :resorigcol 0 
+                        :resjunk false
+                        }
+                     )
+                     :scan.plan.qual (
+                        {OPEXPR 
+                        :opno 1054 
+                        :opfuncid 1048 
+                        :opresulttype 16 
+                        :opretset false 
+                        :opcollid 0 
+                        :inputcollid 100 
+                        :args (
+                           {VAR 
+                           :varno 5 
+                           :varattno 2 
+                           :vartype 1042 
+                           :vartypmod 29 
+                           :varcollid 100 
+                           :varnullingrels (b)
+                           :varlevelsup 0 
+                           :varnosyn 5 
+                           :varattnosyn 2 
+                           :location -1
+                           }
+                           {CONST 
+                           :consttype 1042 
+                           :consttypmod -1 
+                           :constcollid 100 
+                           :constlen -1 
+                           :constbyval false 
+                           :constisnull false 
+                           :location -1 
+                           :constvalue 10 [ 40 0 0 0 69 85 82 79 80 69 ]
+                           }
                         )
-                        and l_shipdate between date '1995-01-01' and date '1996-12-31'
-        ) as shipping
-group by
-        supp_nation,
-        cust_nation,
-        l_year
-order by
-        supp_nation,
-        cust_nation,
-        l_year;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-        supp_nation        |        cust_nation        | l_year |  revenue   
----------------------------+---------------------------+--------+------------
- FRANCE                    | GERMANY                   |   1996 | 41844.6756
- GERMANY                   | FRANCE                    |   1995 |     117600
-(2 rows)
+                        :location -1
+                        }
+                     )
+                     :scan.plan.lefttree <> 
+                     :scan.plan.righttree <> 
+                     :scan.plan.initPlan <> 
+                     :scan.plan.extParam (b)
+                     :scan.plan.allParam (b)
+                     :scan.scanrelid 5
+                     }
+                  :plan.righttree <> 
+                  :plan.initPlan <> 
+                  :plan.extParam (b)
+                  :plan.allParam (b)
+                  :hashkeys (
+                     {VAR 
+                     :varno -2 
+                     :varattno 1 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 5 
+                     :varattnosyn 1 
+                     :location -1
+                     }
+                  )
+                  :skewTable 26482676 
+                  :skewColumn 3 
+                  :skewInherit false 
+                  :rows_total 0
+                  }
+               :join.plan.initPlan <> 
+               :join.plan.extParam (b)
+               :join.plan.allParam (b)
+               :join.jointype 0 
+               :join.inner_unique true 
+               :join.joinqual <> 
+               :hashclauses (
+                  {OPEXPR 
+                  :opno 96 
+                  :opfuncid 65 
+                  :opresulttype 16 
+                  :opretset false 
+                  :opcollid 0 
+                  :inputcollid 0 
+                  :args (
+                     {VAR 
+                     :varno -2 
+                     :varattno 3 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 4 
+                     :varattnosyn 3 
+                     :location -1
+                     }
+                     {VAR 
+                     :varno -1 
+                     :varattno 1 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 5 
+                     :varattnosyn 1 
+                     :location -1
+                     }
+                  )
+                  :location -1
+                  }
+               )
+               :hashoperators (o 96)
+               :hashcollations (o 0)
+               :hashkeys (
+                  {VAR 
+                  :varno -2 
+                  :varattno 3 
+                  :vartype 23 
+                  :vartypmod -1 
+                  :varcollid 0 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 4 
+                  :varattnosyn 3 
+                  :location -1
+                  }
+               )
+               }
+            :join.plan.righttree 
+               {SEQSCAN 
+               :scan.plan.startup_cost 0 
+               :scan.plan.total_cost 11.5 
+               :scan.plan.plan_rows 150 
+               :scan.plan.plan_width 510 
+               :scan.plan.parallel_aware false 
+               :scan.plan.parallel_safe true 
+               :scan.plan.async_capable false 
+               :scan.plan.plan_node_id 8 
+               :scan.plan.targetlist (
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 2 
+                     :varattno 1 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 2 
+                     :varattnosyn 1 
+                     :location -1
+                     }
+                  :resno 1 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 2 
+                     :varattno 2 
+                     :vartype 1042 
+                     :vartypmod 29 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 2 
+                     :varattnosyn 2 
+                     :location -1
+                     }
+                  :resno 2 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 2 
+                     :varattno 3 
+                     :vartype 1043 
+                     :vartypmod 44 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 2 
+                     :varattnosyn 3 
+                     :location -1
+                     }
+                  :resno 3 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 2 
+                     :varattno 4 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 2 
+                     :varattnosyn 4 
+                     :location -1
+                     }
+                  :resno 4 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 2 
+                     :varattno 5 
+                     :vartype 1042 
+                     :vartypmod 19 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 2 
+                     :varattnosyn 5 
+                     :location -1
+                     }
+                  :resno 5 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 2 
+                     :varattno 6 
+                     :vartype 1700 
+                     :vartypmod 786438 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 2 
+                     :varattnosyn 6 
+                     :location -1
+                     }
+                  :resno 6 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 2 
+                     :varattno 7 
+                     :vartype 1043 
+                     :vartypmod 105 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 2 
+                     :varattnosyn 7 
+                     :location -1
+                     }
+                  :resno 7 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+               )
+               :scan.plan.qual <> 
+               :scan.plan.lefttree <> 
+               :scan.plan.righttree <> 
+               :scan.plan.initPlan <> 
+               :scan.plan.extParam (b)
+               :scan.plan.allParam (b)
+               :scan.scanrelid 2
+               }
+            :join.plan.initPlan <> 
+            :join.plan.extParam (b)
+            :join.plan.allParam (b)
+            :join.jointype 0 
+            :join.inner_unique false 
+            :join.joinqual (
+               {OPEXPR 
+               :opno 96 
+               :opfuncid 65 
+               :opresulttype 16 
+               :opretset false 
+               :opcollid 0 
+               :inputcollid 0 
+               :args (
+                  {VAR 
+                  :varno -2 
+                  :varattno 2 
+                  :vartype 23 
+                  :vartypmod -1 
+                  :varcollid 0 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 4 
+                  :varattnosyn 1 
+                  :location -1
+                  }
+                  {VAR 
+                  :varno -1 
+                  :varattno 4 
+                  :vartype 23 
+                  :vartypmod -1 
+                  :varcollid 0 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 2 
+                  :varattnosyn 4 
+                  :location -1
+                  }
+               )
+               :location -1
+               }
+            )
+            :nestParams <>
+            }
+         :join.plan.righttree 
+            {NESTLOOP 
+            :join.plan.startup_cost 0.28 
+            :join.plan.total_cost 99.71737499999999 
+            :join.plan.plan_rows 1 
+            :join.plan.plan_width 112 
+            :join.plan.parallel_aware false 
+            :join.plan.parallel_safe false 
+            :join.plan.async_capable false 
+            :join.plan.plan_node_id 9 
+            :join.plan.targetlist (
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -2 
+                  :varattno 1 
+                  :vartype 23 
+                  :vartypmod -1 
+                  :varcollid 0 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 1 
+                  :varattnosyn 1 
+                  :location -1
+                  }
+               :resno 1 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -2 
+                  :varattno 3 
+                  :vartype 1042 
+                  :vartypmod 29 
+                  :varcollid 100 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 1 
+                  :varattnosyn 3 
+                  :location -1
+                  }
+               :resno 2 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+               {TARGETENTRY 
+               :expr 
+                  {VAR 
+                  :varno -1 
+                  :varattno 2 
+                  :vartype 23 
+                  :vartypmod -1 
+                  :varcollid 0 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 3 
+                  :varattnosyn 2 
+                  :location -1
+                  }
+               :resno 3 
+               :resname <> 
+               :ressortgroupref 0 
+               :resorigtbl 0 
+               :resorigcol 0 
+               :resjunk false
+               }
+            )
+            :join.plan.qual <> 
+            :join.plan.lefttree 
+               {SEQSCAN 
+               :scan.plan.startup_cost 0 
+               :scan.plan.total_cost 50.84 
+               :scan.plan.plan_rows 1 
+               :scan.plan.plan_width 108 
+               :scan.plan.parallel_aware false 
+               :scan.plan.parallel_safe true 
+               :scan.plan.async_capable false 
+               :scan.plan.plan_node_id 10 
+               :scan.plan.targetlist (
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 1 
+                     :varattno 1 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 1 
+                     :location -1
+                     }
+                  :resno 1 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 1 
+                     :varattno 2 
+                     :vartype 1043 
+                     :vartypmod 59 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 2 
+                     :location -1
+                     }
+                  :resno 2 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 1 
+                     :varattno 3 
+                     :vartype 1042 
+                     :vartypmod 29 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 3 
+                     :location -1
+                     }
+                  :resno 3 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 1 
+                     :varattno 4 
+                     :vartype 1042 
+                     :vartypmod 14 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 4 
+                     :location -1
+                     }
+                  :resno 4 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 1 
+                     :varattno 5 
+                     :vartype 1043 
+                     :vartypmod 29 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 5 
+                     :location -1
+                     }
+                  :resno 5 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 1 
+                     :varattno 6 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 6 
+                     :location -1
+                     }
+                  :resno 6 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 1 
+                     :varattno 7 
+                     :vartype 1042 
+                     :vartypmod 14 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 7 
+                     :location -1
+                     }
+                  :resno 7 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 1 
+                     :varattno 8 
+                     :vartype 1700 
+                     :vartypmod 786438 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 8 
+                     :location -1
+                     }
+                  :resno 8 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 1 
+                     :varattno 9 
+                     :vartype 1043 
+                     :vartypmod 27 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 9 
+                     :location -1
+                     }
+                  :resno 9 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+               )
+               :scan.plan.qual (
+                  {OPEXPR 
+                  :opno 1209 
+                  :opfuncid 850 
+                  :opresulttype 16 
+                  :opretset false 
+                  :opcollid 0 
+                  :inputcollid 100 
+                  :args (
+                     {RELABELTYPE 
+                     :arg 
+                        {VAR 
+                        :varno 1 
+                        :varattno 5 
+                        :vartype 1043 
+                        :vartypmod 29 
+                        :varcollid 100 
+                        :varnullingrels (b)
+                        :varlevelsup 0 
+                        :varnosyn 1 
+                        :varattnosyn 5 
+                        :location -1
+                        }
+                     :resulttype 25 
+                     :resulttypmod -1 
+                     :resultcollid 100 
+                     :relabelformat 2 
+                     :location -1
+                     }
+                     {CONST 
+                     :consttype 25 
+                     :consttypmod -1 
+                     :constcollid 100 
+                     :constlen -1 
+                     :constbyval false 
+                     :constisnull false 
+                     :location -1 
+                     :constvalue 10 [ 40 0 0 0 37 66 82 65 83 83 ]
+                     }
+                  )
+                  :location -1
+                  }
+                  {OPEXPR 
+                  :opno 96 
+                  :opfuncid 65 
+                  :opresulttype 16 
+                  :opretset false 
+                  :opcollid 0 
+                  :inputcollid 0 
+                  :args (
+                     {VAR 
+                     :varno 1 
+                     :varattno 6 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 1 
+                     :varattnosyn 6 
+                     :location -1
+                     }
+                     {CONST 
+                     :consttype 23 
+                     :consttypmod -1 
+                     :constcollid 0 
+                     :constlen 4 
+                     :constbyval true 
+                     :constisnull false 
+                     :location -1 
+                     :constvalue 4 [ 15 0 0 0 0 0 0 0 ]
+                     }
+                  )
+                  :location -1
+                  }
+               )
+               :scan.plan.lefttree <> 
+               :scan.plan.righttree <> 
+               :scan.plan.initPlan <> 
+               :scan.plan.extParam (b)
+               :scan.plan.allParam (b)
+               :scan.scanrelid 1
+               }
+            :join.plan.righttree 
+               {INDEXSCAN 
+               :scan.plan.startup_cost 0.28 
+               :scan.plan.total_cost 48.86737499999999 
+               :scan.plan.plan_rows 1 
+               :scan.plan.plan_width 24 
+               :scan.plan.parallel_aware false 
+               :scan.plan.parallel_safe true 
+               :scan.plan.async_capable false 
+               :scan.plan.plan_node_id 11 
+               :scan.plan.targetlist (
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 3 
+                     :varattno 1 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 1 
+                     :location -1
+                     }
+                  :resno 1 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 3 
+                     :varattno 2 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 2 
+                     :location -1
+                     }
+                  :resno 2 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 3 
+                     :varattno 3 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 3 
+                     :location -1
+                     }
+                  :resno 3 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 3 
+                     :varattno 4 
+                     :vartype 1700 
+                     :vartypmod 786438 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 4 
+                     :location -1
+                     }
+                  :resno 4 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+                  {TARGETENTRY 
+                  :expr 
+                     {VAR 
+                     :varno 3 
+                     :varattno 5 
+                     :vartype 1043 
+                     :vartypmod 203 
+                     :varcollid 100 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 5 
+                     :location -1
+                     }
+                  :resno 5 
+                  :resname <> 
+                  :ressortgroupref 0 
+                  :resorigtbl 0 
+                  :resorigcol 0 
+                  :resjunk false
+                  }
+               )
+               :scan.plan.qual (
+                  {OPEXPR 
+                  :opno 1752 
+                  :opfuncid 1718 
+                  :opresulttype 16 
+                  :opretset false 
+                  :opcollid 0 
+                  :inputcollid 0 
+                  :args (
+                     {VAR 
+                     :varno 3 
+                     :varattno 4 
+                     :vartype 1700 
+                     :vartypmod 786438 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 4 
+                     :location -1
+                     }
+                     {SUBPLAN 
+                     :subLinkType 4 
+                     :testexpr <> 
+                     :paramIds <> 
+                     :plan_id 1 
+                     :plan_name SubPlan\ 1 
+                     :firstColType 1700 
+                     :firstColTypmod -1 
+                     :firstColCollation 0 
+                     :useHashTable false 
+                     :unknownEqFalse false 
+                     :parallel_safe false 
+                     :setParam <> 
+                     :parParam (i 0)
+                     :args (
+                        {PARAM 
+                        :paramkind 1 
+                        :paramid 2 
+                        :paramtype 23 
+                        :paramtypmod -1 
+                        :paramcollid 0 
+                        :location -1
+                        }
+                     )
+                     :startup_cost 0 
+                     :per_call_cost 40.564874999999994
+                     }
+                  )
+                  :location -1
+                  }
+               )
+               :scan.plan.lefttree <> 
+               :scan.plan.righttree <> 
+               :scan.plan.initPlan <> 
+               :scan.plan.extParam (b 2 3)
+               :scan.plan.allParam (b 2 3)
+               :scan.scanrelid 3 
+               :indexid 26482694 
+               :indexqual (
+                  {OPEXPR 
+                  :opno 96 
+                  :opfuncid 65 
+                  :opresulttype 16 
+                  :opretset false 
+                  :opcollid 0 
+                  :inputcollid 0 
+                  :args (
+                     {VAR 
+                     :varno -3 
+                     :varattno 1 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 1 
+                     :location -1
+                     }
+                     {PARAM 
+                     :paramkind 1 
+                     :paramid 2 
+                     :paramtype 23 
+                     :paramtypmod -1 
+                     :paramcollid 0 
+                     :location -1
+                     }
+                  )
+                  :location -1
+                  }
+                  {OPEXPR 
+                  :opno 96 
+                  :opfuncid 65 
+                  :opresulttype 16 
+                  :opretset false 
+                  :opcollid 0 
+                  :inputcollid 0 
+                  :args (
+                     {VAR 
+                     :varno -3 
+                     :varattno 2 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 2 
+                     :location -1
+                     }
+                     {PARAM 
+                     :paramkind 1 
+                     :paramid 3 
+                     :paramtype 23 
+                     :paramtypmod -1 
+                     :paramcollid 0 
+                     :location -1
+                     }
+                  )
+                  :location -1
+                  }
+               )
+               :indexqualorig (
+                  {OPEXPR 
+                  :opno 96 
+                  :opfuncid 65 
+                  :opresulttype 16 
+                  :opretset false 
+                  :opcollid 0 
+                  :inputcollid 0 
+                  :args (
+                     {VAR 
+                     :varno 3 
+                     :varattno 1 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 1 
+                     :location -1
+                     }
+                     {PARAM 
+                     :paramkind 1 
+                     :paramid 2 
+                     :paramtype 23 
+                     :paramtypmod -1 
+                     :paramcollid 0 
+                     :location -1
+                     }
+                  )
+                  :location -1
+                  }
+                  {OPEXPR 
+                  :opno 96 
+                  :opfuncid 65 
+                  :opresulttype 16 
+                  :opretset false 
+                  :opcollid 0 
+                  :inputcollid 0 
+                  :args (
+                     {VAR 
+                     :varno 3 
+                     :varattno 2 
+                     :vartype 23 
+                     :vartypmod -1 
+                     :varcollid 0 
+                     :varnullingrels (b)
+                     :varlevelsup 0 
+                     :varnosyn 3 
+                     :varattnosyn 2 
+                     :location -1
+                     }
+                     {PARAM 
+                     :paramkind 1 
+                     :paramid 3 
+                     :paramtype 23 
+                     :paramtypmod -1 
+                     :paramcollid 0 
+                     :location -1
+                     }
+                  )
+                  :location -1
+                  }
+               )
+               :indexorderby <> 
+               :indexorderbyorig <> 
+               :indexorderbyops <> 
+               :indexorderdir 1
+               }
+            :join.plan.initPlan <> 
+            :join.plan.extParam (b 3)
+            :join.plan.allParam (b 3)
+            :join.jointype 0 
+            :join.inner_unique false 
+            :join.joinqual <> 
+            :nestParams (
+               {NESTLOOPPARAM 
+               :paramno 2 
+               :paramval 
+                  {VAR 
+                  :varno -2 
+                  :varattno 1 
+                  :vartype 23 
+                  :vartypmod -1 
+                  :varcollid 0 
+                  :varnullingrels (b)
+                  :varlevelsup 0 
+                  :varnosyn 1 
+                  :varattnosyn 1 
+                  :location -1
+                  }
+               }
+            )
+            }
+         :join.plan.initPlan <> 
+         :join.plan.extParam (b)
+         :join.plan.allParam (b)
+         :join.jointype 0 
+         :join.inner_unique false 
+         :join.joinqual <> 
+         :nestParams (
+            {NESTLOOPPARAM 
+            :paramno 3 
+            :paramval 
+               {VAR 
+               :varno -2 
+               :varattno 6 
+               :vartype 23 
+               :vartypmod -1 
+               :varcollid 0 
+               :varnullingrels (b)
+               :varlevelsup 0 
+               :varnosyn 2 
+               :varattnosyn 1 
+               :location -1
+               }
+            }
+         )
+         }
+      :plan.righttree <> 
+      :plan.initPlan <> 
+      :plan.extParam (b)
+      :plan.allParam (b)
+      :numCols 4 
+      :sortColIdx ( 1 3 2 4)
+      :sortOperators ( 1756 1058 1058 97)
+      :collations ( 0 100 100 0)
+      :nullsFirst ( true false false false)
+      }
+   :plan.righttree <> 
+   :plan.initPlan <> 
+   :plan.extParam (b)
+   :plan.allParam (b)
+   :limitOffset <> 
+   :limitCount 
+      {CONST 
+      :consttype 20 
+      :consttypmod -1 
+      :constcollid 0 
+      :constlen 8 
+      :constbyval true 
+      :constisnull false 
+      :location -1 
+      :constvalue 8 [ 100 0 0 0 0 0 0 0 ]
+      }
+   :limitOption 0 
+   :uniqNumCols 0 
+   :uniqColIdx <> 
+   :uniqOperators <> 
+   :uniqCollations <>
+   }
 
--- TPC-H Query 8
-select
-        o_year,
-        sum(case
-                when nation = 'BRAZIL' then volume
-                else 0
-        end) / sum(volume) as mkt_share
-from
-        (
-                select
-                        extract(year from o_orderdate) as o_year,
-                        l_extendedprice * (1 - l_discount) as volume,
-                        n2.n_name as nation
-                from
-                        part,
-                        supplier,
-                        lineitem,
-                        orders,
-                        customer,
-                        nation n1,
-                        nation n2,
-                        region
-                where
-                        p_partkey = l_partkey
-                        and s_suppkey = l_suppkey
-                        and l_orderkey = o_orderkey
-                        and o_custkey = c_custkey
-                        and c_nationkey = n1.n_nationkey
-                        and n1.n_regionkey = r_regionkey
-                        and r_name = 'AMERICA'
-                        and s_nationkey = n2.n_nationkey
-                        and o_orderdate between date '1995-01-01' and date '1996-12-31'
-                        and p_type = 'ECONOMY ANODIZED STEEL'
-        ) as all_nations
-group by
-        o_year
-order by
-        o_year;
+DEBUG:  [AST_TRANSLATE:DEBUG] query_analyzer.cpp:401:  UNKNOWN PATTERN: Accepting for testing but may need implementation
+DEBUG:  [AST_TRANSLATE:DEBUG] query_analyzer.cpp:412:  No scan plan extracted - query may not access tables directly
+DEBUG:  [AST_TRANSLATE:DEBUG] query_analyzer.cpp:415:  QUERY ACCEPTED: Proceeding to MLIR compilation pipeline
+DEBUG:  [AST_TRANSLATE:DEBUG] query_analyzer.cpp:63:  Query features: SELECT, SeqScan, WHERE, ORDER BY, JOIN, LIMIT, CompatibleTypes, 
+DEBUG:  [AST_TRANSLATE:DEBUG] query_analyzer.cpp:74:  MLIR COMPATIBLE: Query accepted for compilation
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- o_year |     mkt_share      
---------+--------------------
-   1995 | 0.0000000000000000
-(1 row)
-
--- TPC-H Query 9
-select
-        nation,
-        o_year,
-        sum(amount) as sum_profit
-from
-        (
-                select
-                        n_name as nation,
-                        extract(year from o_orderdate) as o_year,
-                        l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity as amount
-                from
-                        part,
-                        supplier,
-                        lineitem,
-                        partsupp,
-                        orders,
-                        nation
-                where
-                        s_suppkey = l_suppkey
-                        and ps_suppkey = l_suppkey
-                        and ps_partkey = l_partkey
-                        and p_partkey = l_partkey
-                        and o_orderkey = l_orderkey
-                        and s_nationkey = n_nationkey
-                        and p_name like '%green%'
-        ) as profit
-group by
-        nation,
-        o_year
-order by
-        nation,
-        o_year desc;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-          nation           | o_year | sum_profit 
----------------------------+--------+------------
- ALGERIA                   |   1996 | 25621.6208
- ALGERIA                   |   1995 |       9209
- ALGERIA                   |   1994 |      62454
- ALGERIA                   |   1993 |  16090.767
- CANADA                    |   1994 |       7744
- INDIA                     |   1994 |      19600
- SAUDI ARABIA              |   1996 |    3992.88
- SAUDI ARABIA              |   1995 |    4088.88
- SAUDI ARABIA              |   1994 |   41197.53
-(9 rows)
-
--- TPC-H Query 10
-select
-        c_custkey,
-        c_name,
-        sum(l_extendedprice * (1 - l_discount)) as revenue,
-        c_acctbal,
-        n_name,
-        c_address,
-        c_phone,
-        c_comment
-from
-        customer,
-        orders,
-        lineitem,
-        nation
-where
-        c_custkey = o_custkey
-        and l_orderkey = o_orderkey
-        and o_orderdate >= date '1993-10-01'
-        and o_orderdate < date '1994-01-01'
-        and l_returnflag = 'R'
-        and c_nationkey = n_nationkey
-group by
-        c_custkey,
-        c_name,
-        c_acctbal,
-        c_phone,
-        n_name,
-        c_address,
-        c_comment
-order by
-        revenue desc
-limit 20;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- c_custkey |       c_name       | revenue  | c_acctbal |          n_name           | c_address |     c_phone     | c_comment 
------------+--------------------+----------+-----------+---------------------------+-----------+-----------------+-----------
-         2 | Customer#000000002 | 92931.39 |    121.65 | CANADA                    | Address 2 | 31-555-0102     | Comment 2
-(1 row)
-
--- TPC-H Query 11
-select
-        ps_partkey,
-        sum(ps_supplycost * ps_availqty) as "value"
-from
-        partsupp,
-        supplier,
-        nation
-where
-        ps_suppkey = s_suppkey
-        and s_nationkey = n_nationkey
-        and n_name = 'GERMANY'
-group by
-        ps_partkey having
-                sum(ps_supplycost * ps_availqty) > (
-                        select
-                                sum(ps_supplycost * ps_availqty) * 0.0001
-                        from
-                                partsupp,
-                                supplier,
-                                nation
-                        where
-                                ps_suppkey = s_suppkey
-                                and s_nationkey = n_nationkey
-                                and n_name = 'GERMANY'
-                )
-order by
-        "value" desc;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- ps_partkey |   value    
-------------+------------
-          2 | 2994029.57
-          3 | 2038858.87
-(2 rows)
-
--- TPC-H Query 12
-select
-        l_shipmode,
-        sum(case
-                when o_orderpriority = '1-URGENT'
-                        or o_orderpriority = '2-HIGH'
-                        then 1
-                else 0
-        end) as high_line_count,
-        sum(case
-                when o_orderpriority <> '1-URGENT'
-                        and o_orderpriority <> '2-HIGH'
-                        then 1
-                else 0
-        end) as low_line_count
-from
-        orders,
-        lineitem
-where
-        o_orderkey = l_orderkey
-        and l_shipmode in ('MAIL', 'SHIP')
-        and l_commitdate < l_receiptdate
-        and l_shipdate < l_commitdate
-        and l_receiptdate >= date '1994-01-01'
-        and l_receiptdate < date '1995-01-01'
-group by
-        l_shipmode
-order by
-        l_shipmode;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- l_shipmode | high_line_count | low_line_count 
-------------+-----------------+----------------
- MAIL       |               0 |              1
- SHIP       |               1 |              0
-(2 rows)
-
--- TPC-H Query 13
-select
-        c_count,
-        count(*) as custdist
-from
-        (
-                select
-                        c_custkey,
-                        count(o_orderkey) c_count
-                from
-                        customer left outer join orders on
-                                c_custkey = o_custkey
-                                and o_comment not like '%special%requests%'
-                group by
-                        c_custkey
-        ) as c_orders
-group by
-        c_count
-order by
-        custdist desc,
-        c_count desc;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- c_count | custdist 
----------+----------
-       4 |        2
-       1 |        2
-       2 |        1
-       0 |        1
-(4 rows)
-
--- TPC-H Query 14
-select
-        100.00 * sum(case
-                when p_type like 'PROMO%'
-                        then l_extendedprice * (1 - l_discount)
-                else 0
-        end) / sum(l_extendedprice * (1 - l_discount)) as promo_revenue
-from
-        lineitem,
-        part
-where
-        l_partkey = p_partkey
-        and l_shipdate >= date '1995-09-01'
-        and l_shipdate < date '1995-10-01';
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- promo_revenue 
----------------
-           100
-(1 row)
-
--- TPC-H Query 15
-with revenue as (
-	select
-		l_suppkey as supplier_no,
-		sum(l_extendedprice * (1 - l_discount)) as total_revenue
-	from
-		lineitem
-	where
-		l_shipdate >= date '1996-01-01'
-		and l_shipdate < date '1996-04-01'
-	group by
-		l_suppkey)
-select
-	s_suppkey,
-	s_name,
-	s_address,
-	s_phone,
-	total_revenue
-from
-	supplier,
-	revenue
-where
-	s_suppkey = supplier_no
-	and total_revenue = (
-		select
-			max(total_revenue)
-		from
-			revenue
-	)
-order by
-	s_suppkey;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- s_suppkey |          s_name           | s_address |     s_phone     | total_revenue 
------------+---------------------------+-----------+-----------------+---------------
-         1 | Supplier#000000001        | Address 1 | 27-918-335-1736 |    77321.5008
-(1 row)
-
--- TPC-H Query 16
-select
-        p_brand,
-        p_type,
-        p_size,
-        count(distinct ps_suppkey) as supplier_cnt
-from
-        partsupp,
-        part
-where
-        p_partkey = ps_partkey
-        and p_brand <> 'Brand#45'
-        and p_type not like 'MEDIUM POLISHED%'
-        and p_size in (49, 14, 23, 45, 19, 3, 36, 9)
-        and ps_suppkey not in (
-                select
-                        s_suppkey
-                from
-                        supplier
-                where
-                        s_comment like '%Customer%Complaints%'
-        )
-group by
-        p_brand,
-        p_type,
-        p_size
-order by
-        supplier_cnt desc,
-        p_brand,
-        p_type,
-        p_size;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-  p_brand   |         p_type         | p_size | supplier_cnt 
-------------+------------------------+--------+--------------
- Brand#12   | PROMO PLATED COPPER    |      3 |            2
- Brand#34   | ECONOMY ANODIZED STEEL |     23 |            1
-(2 rows)
-
--- TPC-H Query 17
-select
-        sum(l_extendedprice) / 7.0 as avg_yearly
-from
-        lineitem,
-        part
-where
-        p_partkey = l_partkey
-        and p_brand = 'Brand#23'
-        and p_container = 'MED BOX'
-        and l_quantity < (
-                select
-                        0.2 * avg(l_quantity)
-                from
-                        lineitem
-                where
-                        l_partkey = p_partkey
-        );
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-      avg_yearly      
-----------------------
- 857.1428571428571428
-(1 row)
-
--- TPC-H Query 18
-select
-        c_name,
-        c_custkey,
-        o_orderkey,
-        o_orderdate,
-        o_totalprice,
-        sum(l_quantity)
-from
-        customer,
-        orders,
-        lineitem
-where
-        o_orderkey in (
-                select
-                        l_orderkey
-                from
-                        lineitem
-                group by
-                        l_orderkey having
-                                sum(l_quantity) > 300
-        )
-        and c_custkey = o_custkey
-        and o_orderkey = l_orderkey
-group by
-        c_name,
-        c_custkey,
-        o_orderkey,
-        o_orderdate,
-        o_totalprice
-order by
-        o_totalprice desc,
-        o_orderdate
-limit 100;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-       c_name       | c_custkey | o_orderkey | o_orderdate | o_totalprice | sum 
---------------------+-----------+------------+-------------+--------------+-----
- Customer#000000005 |         5 |          6 | 02-21-1992  |     58749.59 | 350
-(1 row)
-
--- TPC-H Query 19
-select
-        sum(l_extendedprice* (1 - l_discount)) as revenue
-from
-        lineitem,
-        part
-where
-        (
-                p_partkey = l_partkey
-                and p_brand = 'Brand#12'
-                and p_container in ('SM CASE', 'SM BOX', 'SM PACK', 'SM PKG')
-                and l_quantity >= 1 and l_quantity <= 1 + 10
-                and p_size between 1 and 5
-                and l_shipmode in ('AIR', 'AIR REG')
-                and l_shipinstruct = 'DELIVER IN PERSON'
-        )
-        or
-        (
-                p_partkey = l_partkey
-                and p_brand = 'Brand#23'
-                and p_container in ('MED BAG', 'MED BOX', 'MED PKG', 'MED PACK')
-                and l_quantity >= 10 and l_quantity <= 10 + 10
-                and p_size between 1 and 10
-                and l_shipmode in ('AIR', 'AIR REG')
-                and l_shipinstruct = 'DELIVER IN PERSON'
-        )
-        or
-        (
-                p_partkey = l_partkey
-                and p_brand = 'Brand#34'
-                and p_container in ('LG CASE', 'LG BOX', 'LG PACK', 'LG PKG')
-                and l_quantity >= 20 and l_quantity <= 20 + 10
-                and p_size between 1 and 15
-                and l_shipmode in ('AIR', 'AIR REG')
-                and l_shipinstruct = 'DELIVER IN PERSON'
-        );
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- revenue 
----------
-    9216
-(1 row)
-
--- TPC-H Query 20
-select
-        s_name,
-        s_address
-from
-        supplier,
-        nation
-where
-        s_suppkey in (
-                select
-                        ps_suppkey
-                from
-                        partsupp
-                where
-                        ps_partkey in (
-                                select
-                                        p_partkey
-                                from
-                                        part
-                                where
-                                        p_name like 'forest%'
-                        )
-                        and ps_availqty > (
-                                select
-                                        0.5 * sum(l_quantity)
-                                from
-                                        lineitem
-                                where
-                                        l_partkey = ps_partkey
-                                        and l_suppkey = ps_suppkey
-                                        and l_shipdate >= date '1994-01-01'
-                                        and l_shipdate < date '1995-01-01'
-                        )
-        )
-        and s_nationkey = n_nationkey
-        and n_name = 'CANADA'
-order by
-        s_name;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-          s_name           | s_address 
----------------------------+-----------
- Supplier#000000006        | Address 6
-(1 row)
-
--- TPC-H Query 21
-select
-        s_name,
-        count(*) as numwait
-from
-        supplier,
-        lineitem l1,
-        orders,
-        nation
-where
-        s_suppkey = l1.l_suppkey
-        and o_orderkey = l1.l_orderkey
-        and o_orderstatus = 'F'
-        and l1.l_receiptdate > l1.l_commitdate
-        and exists (
-                select
-                        *
-                from
-                        lineitem l2
-                where
-                        l2.l_orderkey = l1.l_orderkey
-                        and l2.l_suppkey <> l1.l_suppkey
-        )
-        and not exists (
-                select
-                        *
-                from
-                        lineitem l3
-                where
-                        l3.l_orderkey = l1.l_orderkey
-                        and l3.l_suppkey <> l1.l_suppkey
-                        and l3.l_receiptdate > l3.l_commitdate
-        )
-        and s_nationkey = n_nationkey
-        and n_name = 'SAUDI ARABIA'
-group by
-        s_name
-order by
-        numwait desc,
-        s_name
-limit 100;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-          s_name           | numwait 
----------------------------+---------
- Supplier#000000005        |       1
-(1 row)
-
--- TPC-H Query 22
-select
-        cntrycode,
-        count(*) as numcust,
-        sum(c_acctbal) as totacctbal
-from
-        (
-                select
-                        substring(c_phone from 1 for 2) as cntrycode,
-                        c_acctbal
-                from
-                        customer
-                where
-                        substring(c_phone from 1 for 2) in
-                                ('13', '31', '23', '29', '30', '18', '17')
-                        and c_acctbal > (
-                                select
-                                        avg(c_acctbal)
-                                from
-                                        customer
-                                where
-                                        c_acctbal > 0.00
-                                        and substring(c_phone from 1 for 2) in
-                                                ('13', '31', '23', '29', '30', '18', '17')
-                        )
-                        and not exists (
-                                select
-                                        *
-                                from
-                                        orders
-                                where
-                                        o_custkey = c_custkey
-                        )
-        ) as custsale
-group by
-        cntrycode
-order by
-        cntrycode;
-NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- cntrycode | numcust | totacctbal 
------------+---------+------------
- 31        |       1 |       5500
-(1 row)
-
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:217: NestLoop has NO joinqual
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:226: Parameterized nested loop detected with 1 parameters
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:235: Registered nest param: paramno=3 -> Var(varno=-2, varattno=6)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:270: Translating NestLoop - left child type: 352, right child type: 352
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:215: NestLoop has joinqual with 1 clauses
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:270: Translating NestLoop - left child type: 355, right child type: 335
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:145: Translating HashJoin - left child type: 335, right child type: 366
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] schema_manager.cpp:266: Discovered 4 columns for scanrelid 4
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=156
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=156
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:158: [SCOPE_DEBUG] translate_seq_scan: uniqueScope == aliasName, NOT populating varno_resolution
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:162: [SCOPE_DEBUG] translate_seq_scan: final varno_resolution.size()=0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:171: SeqScan: no qual (result.op=0x5d21227006e0, plan.qual=(nil))
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:101: translate_plan_node returning result with 4 columns
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:193: Translating Hash node - passing through to child - it just prepares its child for hashing
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] schema_manager.cpp:266: Discovered 3 columns for scanrelid 5
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=156
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:158: [SCOPE_DEBUG] translate_seq_scan: uniqueScope == aliasName, NOT populating varno_resolution
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:162: [SCOPE_DEBUG] translate_seq_scan: final varno_resolution.size()=0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:167: SeqScan has qual, applying selection (context has 0 InitPlans)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:472: [JOIN STAGE 3] input: TranslationResult(op=102396893090464, scope=, columns=[
+	ColumnSchema(table='region', column='r_regionkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:507: Created predicate context with 0 InitPlans
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 17
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=17, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:72: [SCOPE_DEBUG] translate_expression: CASE=T_OpExpr
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 6
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=6, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:66: [SCOPE_DEBUG] translate_expression: CASE=T_Var
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:154: translate_var: varno=5, varattno=2, actualVarno=5, actualVarattno=2
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:156: [SCOPE_DEBUG] translate_var: varno=5, varattno=2, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:221: [SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='region', colName='r_name'
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:236: [SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='region', column='r_name'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 7
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=7, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:69: [SCOPE_DEBUG] translate_expression: CASE=T_Const
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=-1
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:250: String constant: value='EUROPE', type_oid=1042, typmod=-1, mlirType=valid
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:275: Normalizing RHS constant to match LHS BPCHAR(25)
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:261: Padded BPCHAR constant to length 25: 'EUROPE                   '
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:640: translate_comparison_op: Processing operator '=' (OID 1054)
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:668: translate_comparison_op: Creating CmpOp with predicate 0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:538: Successfully translated condition 0 (join context: no)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:546: Set first join predicate
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:575: [JOIN STAGE 4] RESULT: TranslationResult(op=102396893093984, scope=, columns=[
+	ColumnSchema(table='region', column='r_regionkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:101: translate_plan_node returning result with 1 columns
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:101: translate_plan_node returning result with 1 columns
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:161: HashJoin left child TranslationResult(op=102396893071072, scope=, columns=[
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_regionkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_comment', oid=1043, typmod=156, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:162: HashJoin right child TranslationResult(op=102396893093984, scope=, columns=[
+	ColumnSchema(table='region', column='r_regionkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:60: Using 1 hashclauses only
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:325: [JOIN STAGE 1] LEFT input: TranslationResult(op=102396893071072, scope=, columns=[
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_regionkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_comment', oid=1043, typmod=156, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:326: [JOIN STAGE 1] RIGHT input: TranslationResult(op=102396893093984, scope=, columns=[
+	ColumnSchema(table='region', column='r_regionkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:631: This is an inner join!
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:339: [JOIN PREDICATE] Left TranslationResult TranslationResult(op=102396893071072, scope=, columns=[
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_regionkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_comment', oid=1043, typmod=156, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:340: [JOIN PREDICATE] Right TranslationResult TranslationResult(op=102396893093984, scope=, columns=[
+	ColumnSchema(table='region', column='r_regionkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:353: [JOIN PREDICATE] Processing 1 join clauses
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:370: [JOIN PREDICATE] Processing clause 1 of type 17
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_functions.cpp:61: translate_expression_with_join_context: Routing through merge path
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:1021: Merged 4 columns from left_child
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:1029: Merged 1 columns from right_child
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:1037: merge_translation_results: Total 5 columns (4 left + 1 right), 0 varno mappings
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 17
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=17, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:72: [SCOPE_DEBUG] translate_expression: CASE=T_OpExpr
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 6
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=6, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:66: [SCOPE_DEBUG] translate_expression: CASE=T_Var
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:149: translate_var: Base table detected - using varnosyn=4, varattnosyn=3 for synthetic varno=-2, varattno=3
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:154: translate_var: varno=-2, varattno=3, actualVarno=4, actualVarattno=3
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:156: [SCOPE_DEBUG] translate_var: varno=-2, varattno=3, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:188: OUTER_VAR varattno=3 resolved to nation.n_regionkey (nullable=0) from current_result
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:190: [SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='nation', colName='n_regionkey'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:236: [SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='nation', column='n_regionkey'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 6
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=6, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:66: [SCOPE_DEBUG] translate_expression: CASE=T_Var
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:149: translate_var: Base table detected - using varnosyn=5, varattnosyn=1 for synthetic varno=-1, varattno=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:154: translate_var: varno=-1, varattno=1, actualVarno=5, actualVarattno=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:156: [SCOPE_DEBUG] translate_var: varno=-1, varattno=1, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:214: INNER_VAR/INDEX_VAR varno=-1 varattno=1 → absolute_pos=4 (left_size=4) → region.r_regionkey (nullable=0)
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:236: [SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='region', column='r_regionkey'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:640: translate_comparison_op: Processing operator '=' (OID 96)
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:668: translate_comparison_op: Creating CmpOp with predicate 0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:374: [JOIN PREDICATE] Successfully translated clause 1
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:717: [JOIN STAGE 2] RESULT: TranslationResult(op=102396893081200, scope=, columns=[
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_regionkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_comment', oid=1043, typmod=156, nullable=false)
+	ColumnSchema(table='region', column='r_regionkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:718: [JOIN STAGE 2] LEFT input: TranslationResult(op=102396893071072, scope=, columns=[
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_regionkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_comment', oid=1043, typmod=156, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:719: [JOIN STAGE 2] RIGHT input: TranslationResult(op=102396893093984, scope=, columns=[
+	ColumnSchema(table='region', column='r_regionkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:177: Applying projection from target list using TranslationResult
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:875: Projection: OUTER_VAR varattno=2 maps to position 1
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:912: Projecting column: nation.n_name from position 1
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:875: Projection: OUTER_VAR varattno=1 maps to position 0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:912: Projecting column: nation.n_nationkey from position 0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:948: Created ProjectionOp: projecting 2 columns from 5 input columns
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:949: [JOIN STAGE 2] RESULT: TranslationResult(op=102396893094320, scope=, columns=[
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:101: translate_plan_node returning result with 2 columns
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] schema_manager.cpp:266: Discovered 7 columns for scanrelid 2
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=44
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=19
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=105
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=44
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=19
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=105
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:158: [SCOPE_DEBUG] translate_seq_scan: uniqueScope == aliasName, NOT populating varno_resolution
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:162: [SCOPE_DEBUG] translate_seq_scan: final varno_resolution.size()=0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:171: SeqScan: no qual (result.op=0x5d212270af00, plan.qual=(nil))
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:101: translate_plan_node returning result with 7 columns
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:289: NestLoop left child TranslationResult(op=102396893094320, scope=, columns=[
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:290: NestLoop right child TranslationResult(op=102396893114112, scope=, columns=[
+	ColumnSchema(table='supplier', column='s_suppkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='supplier', column='s_address', oid=1043, typmod=44, nullable=false)
+	ColumnSchema(table='supplier', column='s_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_phone', oid=1042, typmod=19, nullable=false)
+	ColumnSchema(table='supplier', column='s_acctbal', oid=1700, typmod=786438, nullable=false)
+	ColumnSchema(table='supplier', column='s_comment', oid=1043, typmod=105, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:325: [JOIN STAGE 1] LEFT input: TranslationResult(op=102396893094320, scope=, columns=[
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:326: [JOIN STAGE 1] RIGHT input: TranslationResult(op=102396893114112, scope=, columns=[
+	ColumnSchema(table='supplier', column='s_suppkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='supplier', column='s_address', oid=1043, typmod=44, nullable=false)
+	ColumnSchema(table='supplier', column='s_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_phone', oid=1042, typmod=19, nullable=false)
+	ColumnSchema(table='supplier', column='s_acctbal', oid=1700, typmod=786438, nullable=false)
+	ColumnSchema(table='supplier', column='s_comment', oid=1043, typmod=105, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:631: This is an inner join!
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:339: [JOIN PREDICATE] Left TranslationResult TranslationResult(op=102396893094320, scope=, columns=[
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:340: [JOIN PREDICATE] Right TranslationResult TranslationResult(op=102396893114112, scope=, columns=[
+	ColumnSchema(table='supplier', column='s_suppkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='supplier', column='s_address', oid=1043, typmod=44, nullable=false)
+	ColumnSchema(table='supplier', column='s_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_phone', oid=1042, typmod=19, nullable=false)
+	ColumnSchema(table='supplier', column='s_acctbal', oid=1700, typmod=786438, nullable=false)
+	ColumnSchema(table='supplier', column='s_comment', oid=1043, typmod=105, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:353: [JOIN PREDICATE] Processing 1 join clauses
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:370: [JOIN PREDICATE] Processing clause 1 of type 17
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_functions.cpp:61: translate_expression_with_join_context: Routing through merge path
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:1021: Merged 2 columns from left_child
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:1029: Merged 7 columns from right_child
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:1037: merge_translation_results: Total 9 columns (2 left + 7 right), 0 varno mappings
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 17
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=17, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:72: [SCOPE_DEBUG] translate_expression: CASE=T_OpExpr
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 6
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=6, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:66: [SCOPE_DEBUG] translate_expression: CASE=T_Var
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:149: translate_var: Base table detected - using varnosyn=4, varattnosyn=1 for synthetic varno=-2, varattno=2
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:154: translate_var: varno=-2, varattno=2, actualVarno=4, actualVarattno=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:156: [SCOPE_DEBUG] translate_var: varno=-2, varattno=2, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:188: OUTER_VAR varattno=2 resolved to nation.n_nationkey (nullable=0) from current_result
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:190: [SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='nation', colName='n_nationkey'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:236: [SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='nation', column='n_nationkey'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 6
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=6, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:66: [SCOPE_DEBUG] translate_expression: CASE=T_Var
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:149: translate_var: Base table detected - using varnosyn=2, varattnosyn=4 for synthetic varno=-1, varattno=4
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:154: translate_var: varno=-1, varattno=4, actualVarno=2, actualVarattno=4
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:156: [SCOPE_DEBUG] translate_var: varno=-1, varattno=4, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:214: INNER_VAR/INDEX_VAR varno=-1 varattno=4 → absolute_pos=5 (left_size=2) → supplier.s_nationkey (nullable=0)
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:236: [SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='supplier', column='s_nationkey'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:640: translate_comparison_op: Processing operator '=' (OID 96)
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:668: translate_comparison_op: Creating CmpOp with predicate 0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:374: [JOIN PREDICATE] Successfully translated clause 1
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:717: [JOIN STAGE 2] RESULT: TranslationResult(op=102396893110048, scope=, columns=[
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_suppkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='supplier', column='s_address', oid=1043, typmod=44, nullable=false)
+	ColumnSchema(table='supplier', column='s_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_phone', oid=1042, typmod=19, nullable=false)
+	ColumnSchema(table='supplier', column='s_acctbal', oid=1700, typmod=786438, nullable=false)
+	ColumnSchema(table='supplier', column='s_comment', oid=1043, typmod=105, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:718: [JOIN STAGE 2] LEFT input: TranslationResult(op=102396893094320, scope=, columns=[
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='nation', column='n_nationkey', oid=23, typmod=-1, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:719: [JOIN STAGE 2] RIGHT input: TranslationResult(op=102396893114112, scope=, columns=[
+	ColumnSchema(table='supplier', column='s_suppkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='supplier', column='s_address', oid=1043, typmod=44, nullable=false)
+	ColumnSchema(table='supplier', column='s_nationkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='supplier', column='s_phone', oid=1042, typmod=19, nullable=false)
+	ColumnSchema(table='supplier', column='s_acctbal', oid=1700, typmod=786438, nullable=false)
+	ColumnSchema(table='supplier', column='s_comment', oid=1043, typmod=105, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:304: Applying projection from target list using TranslationResult
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:897: Projection: INNER_VAR varattno=6 maps to position 7 (fallback)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:912: Projecting column: supplier.s_acctbal from position 7
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:897: Projection: INNER_VAR varattno=2 maps to position 3 (fallback)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:912: Projecting column: supplier.s_name from position 3
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:897: Projection: INNER_VAR varattno=3 maps to position 4 (fallback)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:912: Projecting column: supplier.s_address from position 4
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:897: Projection: INNER_VAR varattno=5 maps to position 6 (fallback)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:912: Projecting column: supplier.s_phone from position 6
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:897: Projection: INNER_VAR varattno=7 maps to position 8 (fallback)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:912: Projecting column: supplier.s_comment from position 8
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:897: Projection: INNER_VAR varattno=1 maps to position 2 (fallback)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:912: Projecting column: supplier.s_suppkey from position 2
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:875: Projection: OUTER_VAR varattno=1 maps to position 0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:912: Projecting column: nation.n_name from position 0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:948: Created ProjectionOp: projecting 7 columns from 9 input columns
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:949: [JOIN STAGE 2] RESULT: TranslationResult(op=102396893124592, scope=, columns=[
+	ColumnSchema(table='supplier', column='s_acctbal', oid=1700, typmod=786438, nullable=false)
+	ColumnSchema(table='supplier', column='s_name', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='supplier', column='s_address', oid=1043, typmod=44, nullable=false)
+	ColumnSchema(table='supplier', column='s_phone', oid=1042, typmod=19, nullable=false)
+	ColumnSchema(table='supplier', column='s_comment', oid=1043, typmod=105, nullable=false)
+	ColumnSchema(table='supplier', column='s_suppkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='nation', column='n_name', oid=1042, typmod=29, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:101: translate_plan_node returning result with 7 columns
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:217: NestLoop has NO joinqual
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:226: Parameterized nested loop detected with 1 parameters
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:235: Registered nest param: paramno=2 -> Var(varno=-2, varattno=1)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:245: Extracting 2 predicates from IndexScan.indexqual for join-level translation
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_joins.cpp:270: Translating NestLoop - left child type: 335, right child type: 337
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] schema_manager.cpp:266: Discovered 9 columns for scanrelid 1
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=59
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=14
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=14
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=27
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=59
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=14
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1042 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=14
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=27
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:158: [SCOPE_DEBUG] translate_seq_scan: uniqueScope == aliasName, NOT populating varno_resolution
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:162: [SCOPE_DEBUG] translate_seq_scan: final varno_resolution.size()=0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:167: SeqScan has qual, applying selection (context has 0 InitPlans)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:472: [JOIN STAGE 3] input: TranslationResult(op=102396893126784, scope=, columns=[
+	ColumnSchema(table='part', column='p_partkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='part', column='p_name', oid=1043, typmod=59, nullable=false)
+	ColumnSchema(table='part', column='p_mfgr', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='part', column='p_brand', oid=1042, typmod=14, nullable=false)
+	ColumnSchema(table='part', column='p_type', oid=1043, typmod=29, nullable=false)
+	ColumnSchema(table='part', column='p_size', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='part', column='p_container', oid=1042, typmod=14, nullable=false)
+	ColumnSchema(table='part', column='p_retailprice', oid=1700, typmod=786438, nullable=false)
+	ColumnSchema(table='part', column='p_comment', oid=1043, typmod=27, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:507: Created predicate context with 0 InitPlans
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 17
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=17, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:72: [SCOPE_DEBUG] translate_expression: CASE=T_OpExpr
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 27
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=27, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:100: [SCOPE_DEBUG] translate_expression: CASE=T_RelabelType
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:101: Unwrapping T_RelabelType to translate underlying expression
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 6
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=6, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:66: [SCOPE_DEBUG] translate_expression: CASE=T_Var
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:154: translate_var: varno=1, varattno=5, actualVarno=1, actualVarattno=5
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:156: [SCOPE_DEBUG] translate_var: varno=1, varattno=5, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:221: [SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='part', colName='p_type'
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=29
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:236: [SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='part', column='p_type'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 7
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=7, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:69: [SCOPE_DEBUG] translate_expression: CASE=T_Const
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=25 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=-1
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:250: String constant: value='%BRASS', type_oid=25, typmod=-1, mlirType=valid
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:640: translate_comparison_op: Processing operator '~~' (OID 1209)
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:661: translate_comparison_op: Unhandled operator: ~~ (OID: 1209)
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:88: Translating LIKE operator to db.runtime_call
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:538: Successfully translated condition 0 (join context: no)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:546: Set first join predicate
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 17
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=17, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:72: [SCOPE_DEBUG] translate_expression: CASE=T_OpExpr
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 6
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=6, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:66: [SCOPE_DEBUG] translate_expression: CASE=T_Var
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:154: translate_var: varno=1, varattno=6, actualVarno=1, actualVarattno=6
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:156: [SCOPE_DEBUG] translate_var: varno=1, varattno=6, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:221: [SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='part', colName='p_size'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:236: [SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='part', column='p_size'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 7
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=7, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:69: [SCOPE_DEBUG] translate_expression: CASE=T_Const
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:640: translate_comparison_op: Processing operator '=' (OID 96)
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_operators.cpp:668: translate_comparison_op: Creating CmpOp with predicate 0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:538: Successfully translated condition 1 (join context: no)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:550: ANDed join predicate 1
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:575: [JOIN STAGE 4] RESULT: TranslationResult(op=102396893142816, scope=, columns=[
+	ColumnSchema(table='part', column='p_partkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='part', column='p_name', oid=1043, typmod=59, nullable=false)
+	ColumnSchema(table='part', column='p_mfgr', oid=1042, typmod=29, nullable=false)
+	ColumnSchema(table='part', column='p_brand', oid=1042, typmod=14, nullable=false)
+	ColumnSchema(table='part', column='p_type', oid=1043, typmod=29, nullable=false)
+	ColumnSchema(table='part', column='p_size', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='part', column='p_container', oid=1042, typmod=14, nullable=false)
+	ColumnSchema(table='part', column='p_retailprice', oid=1700, typmod=786438, nullable=false)
+	ColumnSchema(table='part', column='p_comment', oid=1043, typmod=27, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:101: translate_plan_node returning result with 9 columns
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:65: After processing InitPlans: context has 0 InitPlans (0 new)
+DEBUG:  [AST_TRANSLATE:DEBUG] schema_manager.cpp:266: Discovered 5 columns for scanrelid 3
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=203
+DEBUG:  [AST_TRANSLATE:DEBUG] translation_core.cpp:53: String type mapping: OID=1043 (TEXTOID=25, VARCHAROID=1043, BPCHAROID=1042), typmod=203
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:158: [SCOPE_DEBUG] translate_seq_scan: uniqueScope == aliasName, NOT populating varno_resolution
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:162: [SCOPE_DEBUG] translate_seq_scan: final varno_resolution.size()=0
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_scans.cpp:167: SeqScan has qual, applying selection (context has 0 InitPlans)
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:472: [JOIN STAGE 3] input: TranslationResult(op=102396893141248, scope=, columns=[
+	ColumnSchema(table='partsupp', column='ps_partkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='partsupp', column='ps_suppkey', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='partsupp', column='ps_availqty', oid=23, typmod=-1, nullable=false)
+	ColumnSchema(table='partsupp', column='ps_supplycost', oid=1700, typmod=786438, nullable=false)
+	ColumnSchema(table='partsupp', column='ps_comment', oid=1043, typmod=203, nullable=false)])
+DEBUG:  [AST_TRANSLATE:DEBUG] plan_translator_utils.cpp:507: Created predicate context with 0 InitPlans
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 17
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=17, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:72: [SCOPE_DEBUG] translate_expression: CASE=T_OpExpr
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 6
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=6, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:66: [SCOPE_DEBUG] translate_expression: CASE=T_Var
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:154: translate_var: varno=3, varattno=4, actualVarno=3, actualVarattno=4
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:156: [SCOPE_DEBUG] translate_var: varno=3, varattno=4, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:221: [SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='partsupp', colName='ps_supplycost'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:236: [SCOPE_DEBUG] translate_var: Creating GetColumnOp with scope='partsupp', column='ps_supplycost'
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:55: Parsing 23
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_basic.cpp:57: [SCOPE_DEBUG] translate_expression: expr->type=23, has_current_result=1
+DEBUG:  [AST_TRANSLATE:DEBUG] expression_translator_functions.cpp:453: EXPR_SUBLINK: Translating scalar subquery
+WARNING:  [PROBLEM:ERROR_LEVEL] mlir_runner.cpp:155: MLIR runner exception: Unhandled subplan
+Stack trace:
+  #0 /usr/local/pgsql/lib/pgx_lower.so(+0xeec87d) [0x747453cec87d]
+  #1 /usr/local/pgsql/lib/pgx_lower.so(+0xeebf6e) [0x747453cebf6e]
+  #2 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x747453cebd16]
+  #3 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x747453cec3cb]
+  #4 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x747453cf3cc8]
+  #5 /usr/local/pgsql/lib/pgx_lower.so(+0xeeb101) [0x747453ceb101]
+  #6 /usr/local/pgsql/lib/pgx_lower.so(+0xeeaf8f) [0x747453ceaf8f]
+  #7 postgres: xzel regression [local] SELECT(ExecutorRun+0x44) [0x5d20ea3a8bf0]
+  #8 postgres: xzel regression [local] SELECT(+0x6bb251) [0x5d20ea67c251]
+  #9 postgres: xzel regression [local] SELECT(PortalRun+0x275) [0x5d20ea67be82]
+  #10 postgres: xzel regression [local] SELECT(+0x6b38d0) [0x5d20ea6748d0]
+  #11 postgres: xzel regression [local] SELECT(PostgresMain+0x847) [0x5d20ea679cf3]
+  #12 postgres: xzel regression [local] SELECT(+0x6af85c) [0x5d20ea67085c]
+  #13 postgres: xzel regression [local] SELECT(postmaster_child_launch+0x119) [0x5d20ea584a1a]
+  #14 postgres: xzel regression [local] SELECT(+0x5c9ebe) [0x5d20ea58aebe]
+  #15 postgres: xzel regression [local] SELECT(+0x5c6f64) [0x5d20ea587f64]
+  #16 postgres: xzel regression [local] SELECT(PostmasterMain+0x151a) [0x5d20ea58782e]
+  #17 postgres: xzel regression [local] SELECT(+0x473eb3) [0x5d20ea434eb3]
+WARNING:  [PROBLEM:WARNING_LEVEL] my_executor.cpp:347: PostgreSQL exception during MLIR execution
+ERROR:  MLIR compilation failed: Unhandled subplan
