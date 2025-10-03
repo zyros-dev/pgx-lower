@@ -25,8 +25,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  l_returnflag | l_linestatus | sum_qty | sum_base_price | sum_disc_price |  sum_charge   |       avg_qty       |       avg_price        |      avg_disc      | count_order 
 --------------+--------------+---------+----------------+----------------+---------------+---------------------+------------------------+--------------------+-------------
  A            | F            |      10 |          18050 |        16786.5 |      17122.23 |                  10 |                  18050 |               0.07 |           1
- N            | O            |      83 |      122531.39 |    115884.7764 | 123099.374952 | 27.6666666666666666 | 40843.7966666666666666 | 0.0533333333333333 |           3
- R            | F            |     152 |      174287.72 |     165133.382 |  168152.50176 |                  38 |               43571.93 |               0.05 |           4
+ N            | O            |     586 |      726131.39 |    701316.7764 | 722834.654952 | 39.0666666666666666 | 48408.7593333333333333 | 0.0413333333333333 |          15
+ R            | F            |     685 |      813887.72 |     782725.382 |  796073.14176 | 57.0833333333333333 | 67823.9766666666666666 |               0.04 |          12
 (3 rows)
 
 -- TPC-H Query 2
@@ -107,7 +107,8 @@ limit 10;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  l_orderkey | revenue | o_orderdate | o_shippriority 
 ------------+---------+-------------+----------------
-(0 rows)
+          7 |   37812 | 03-10-1995  |              1
+(1 row)
 
 select
         o_orderpriority,
@@ -133,7 +134,8 @@ order by
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  o_orderpriority | order_count 
 -----------------+-------------
-(0 rows)
+ 1-URGENT        |           1
+(1 row)
 
 -- TPC-H Query 5
 select
@@ -161,9 +163,10 @@ group by
 order by
         revenue desc;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- n_name | revenue 
---------+---------
-(0 rows)
+          n_name           | revenue 
+---------------------------+---------
+ INDIA                     |   80520
+(1 row)
 
 -- TPC-H Query 6
 select
@@ -178,7 +181,7 @@ where
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  revenue 
 ---------
-  1263.5
+  3543.5
 (1 row)
 
 -- TPC-H Query 7
@@ -225,7 +228,8 @@ NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
         supp_nation        |        cust_nation        | l_year |  revenue   
 ---------------------------+---------------------------+--------+------------
  FRANCE                    | GERMANY                   |   1996 | 41844.6756
-(1 row)
+ GERMANY                   | FRANCE                    |   1995 |     117600
+(2 rows)
 
 -- TPC-H Query 8
 select
@@ -266,9 +270,10 @@ group by
 order by
         o_year;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- o_year | mkt_share 
---------+-----------
-(0 rows)
+ o_year |     mkt_share      
+--------+--------------------
+   1995 | 0.0000000000000000
+(1 row)
 
 -- TPC-H Query 9
 select
@@ -306,10 +311,16 @@ order by
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
           nation           | o_year | sum_profit 
 ---------------------------+--------+------------
- ALGERIA                   |   1996 |  7203.6208
+ ALGERIA                   |   1996 | 25621.6208
+ ALGERIA                   |   1995 |       9209
+ ALGERIA                   |   1994 |      62454
  ALGERIA                   |   1993 |  16090.767
- SAUDI ARABIA              |   1994 |    10257.6
-(3 rows)
+ CANADA                    |   1994 |       7744
+ INDIA                     |   1994 |      19600
+ SAUDI ARABIA              |   1996 |    3992.88
+ SAUDI ARABIA              |   1995 |    4088.88
+ SAUDI ARABIA              |   1994 |   41197.53
+(9 rows)
 
 -- TPC-H Query 10
 select
@@ -417,7 +428,9 @@ order by
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  l_shipmode | high_line_count | low_line_count 
 ------------+-----------------+----------------
-(0 rows)
+ MAIL       |               0 |              1
+ SHIP       |               1 |              0
+(2 rows)
 
 -- TPC-H Query 13
 select
@@ -443,10 +456,11 @@ order by
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  c_count | custdist 
 ---------+----------
-       1 |        3
+       4 |        2
+       1 |        2
        2 |        1
        0 |        1
-(3 rows)
+(4 rows)
 
 -- TPC-H Query 14
 select
@@ -465,7 +479,7 @@ where
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  promo_revenue 
 ---------------
-              
+           100
 (1 row)
 
 -- TPC-H Query 15
@@ -502,7 +516,7 @@ order by
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  s_suppkey |          s_name           | s_address |     s_phone     | total_revenue 
 -----------+---------------------------+-----------+-----------------+---------------
-         1 | Supplier#000000001        | Address 1 | 27-918-335-1736 |    20321.5008
+         1 | Supplier#000000001        | Address 1 | 27-918-335-1736 |    77321.5008
 (1 row)
 
 -- TPC-H Query 16
@@ -539,7 +553,7 @@ order by
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
   p_brand   |         p_type         | p_size | supplier_cnt 
 ------------+------------------------+--------+--------------
- Brand#12   | PROMO PLATED COPPER    |      3 |            1
+ Brand#12   | PROMO PLATED COPPER    |      3 |            2
  Brand#34   | ECONOMY ANODIZED STEEL |     23 |            1
 (2 rows)
 
@@ -562,9 +576,9 @@ where
                         l_partkey = p_partkey
         );
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- avg_yearly 
-------------
-           
+      avg_yearly      
+----------------------
+ 857.1428571428571428
 (1 row)
 
 -- TPC-H Query 18
@@ -602,48 +616,11 @@ order by
         o_orderdate
 limit 100;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
-WARNING:  [PROBLEM:ERROR_LEVEL] expression_translator.cpp:1221: No mapping found for aggregate aggno=0
-Stack trace:
-  #0 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_expression(pgx_lower::frontend::sql::TranslationContext const&, Expr*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x4eb) [0x7775f0151cdb]
-  #1 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::extract_op_expr_operands(pgx_lower::frontend::sql::TranslationContext const&, OpExpr const*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x379) [0x7775f0169619]
-  #2 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_op_expr(pgx_lower::frontend::sql::TranslationContext const&, OpExpr const*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x18a) [0x7775f015312a]
-  #3 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_expression(pgx_lower::frontend::sql::TranslationContext const&, Expr*, std::optional<std::reference_wrapper<pgx_lower::frontend::sql::TranslationResult const> >)+0x330) [0x7775f0151b20]
-  #4 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::apply_selection_from_qual(pgx_lower::frontend::sql::TranslationContext const&, pgx_lower::frontend::sql::TranslationResult const&, List const*)+0x6ae) [0x7775f01a1d1e]
-  #5 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_agg(pgx_lower::frontend::sql::TranslationContext&, Agg const*)+0x62ee) [0x7775f019bcde]
-  #6 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x59a) [0x7775f0190d3a]
-  #7 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash(pgx_lower::frontend::sql::TranslationContext&, Hash*)+0x191) [0x7775f019e8d1]
-  #8 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x7ba) [0x7775f0190f5a]
-  #9 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash_join(pgx_lower::frontend::sql::TranslationContext&, HashJoin*)+0x3eb) [0x7775f019e2ab]
-  #10 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x779) [0x7775f0190f19]
-  #11 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash_join(pgx_lower::frontend::sql::TranslationContext&, HashJoin*)+0x2ba) [0x7775f019e17a]
-  #12 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x779) [0x7775f0190f19]
-  #13 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash(pgx_lower::frontend::sql::TranslationContext&, Hash*)+0x191) [0x7775f019e8d1]
-  #14 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x7ba) [0x7775f0190f5a]
-  #15 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_hash_join(pgx_lower::frontend::sql::TranslationContext&, HashJoin*)+0x3eb) [0x7775f019e2ab]
-  #16 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_plan_node(pgx_lower::frontend::sql::TranslationContext&, Plan*)+0x779) [0x7775f0190f19]
-  #17 /usr/local/pgsql/lib/pgx_lower.so(postgresql_ast::PostgreSQLASTTranslator::Impl::translate_agg(pgx_lower::frontend::sql::TranslationContext&, Agg const*)+0x122) [0x7775f0195b12]
-WARNING:  [PROBLEM:ERROR_LEVEL] mlir_runner.cpp:155: MLIR runner exception: Aggregate reference not found in column mappings
-Stack trace:
-  #0 /usr/local/pgsql/lib/pgx_lower.so(+0xee733d) [0x7775f00e733d]
-  #1 /usr/local/pgsql/lib/pgx_lower.so(+0xee6a2e) [0x7775f00e6a2e]
-  #2 /usr/local/pgsql/lib/pgx_lower.so(run_mlir_with_ast_translation(QueryDesc const*)+0xd6) [0x7775f00e67d6]
-  #3 /usr/local/pgsql/lib/pgx_lower.so(MyCppExecutor::execute(QueryDesc const*)+0x2db) [0x7775f00e6e8b]
-  #4 /usr/local/pgsql/lib/pgx_lower.so(try_cpp_executor_direct+0x18) [0x7775f00ee708]
-  #5 /usr/local/pgsql/lib/pgx_lower.so(+0xee5bc1) [0x7775f00e5bc1]
-  #6 /usr/local/pgsql/lib/pgx_lower.so(+0xee5a4f) [0x7775f00e5a4f]
-  #7 postgres: xzel regression [local] SELECT(ExecutorRun+0x44) [0x5d14fbd31bf0]
-  #8 postgres: xzel regression [local] SELECT(+0x6bb251) [0x5d14fc005251]
-  #9 postgres: xzel regression [local] SELECT(PortalRun+0x275) [0x5d14fc004e82]
-  #10 postgres: xzel regression [local] SELECT(+0x6b38d0) [0x5d14fbffd8d0]
-  #11 postgres: xzel regression [local] SELECT(PostgresMain+0x847) [0x5d14fc002cf3]
-  #12 postgres: xzel regression [local] SELECT(+0x6af85c) [0x5d14fbff985c]
-  #13 postgres: xzel regression [local] SELECT(postmaster_child_launch+0x119) [0x5d14fbf0da1a]
-  #14 postgres: xzel regression [local] SELECT(+0x5c9ebe) [0x5d14fbf13ebe]
-  #15 postgres: xzel regression [local] SELECT(+0x5c6f64) [0x5d14fbf10f64]
-  #16 postgres: xzel regression [local] SELECT(PostmasterMain+0x151a) [0x5d14fbf1082e]
-  #17 postgres: xzel regression [local] SELECT(+0x473eb3) [0x5d14fbdbdeb3]
-WARNING:  [PROBLEM:WARNING_LEVEL] my_executor.cpp:347: PostgreSQL exception during MLIR execution
-ERROR:  MLIR compilation failed: Aggregate reference not found in column mappings
+       c_name       | c_custkey | o_orderkey | o_orderdate | o_totalprice | sum 
+--------------------+-----------+------------+-------------+--------------+-----
+ Customer#000000005 |         5 |          6 | 02-21-1992  |     58749.59 | 350
+(1 row)
+
 -- TPC-H Query 19
 select
         sum(l_extendedprice* (1 - l_discount)) as revenue
@@ -683,7 +660,7 @@ where
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  revenue 
 ---------
-        
+    9216
 (1 row)
 
 -- TPC-H Query 20
@@ -725,9 +702,10 @@ where
 order by
         s_name;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- s_name | s_address 
---------+-----------
-(0 rows)
+          s_name           | s_address 
+---------------------------+-----------
+ Supplier#000000006        | Address 6
+(1 row)
 
 -- TPC-H Query 21
 select
@@ -771,9 +749,10 @@ order by
         s_name
 limit 100;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
- s_name | numwait 
---------+---------
-(0 rows)
+          s_name           | numwait 
+---------------------------+---------
+ Supplier#000000005        |       1
+(1 row)
 
 -- TPC-H Query 22
 select
@@ -816,5 +795,6 @@ order by
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  cntrycode | numcust | totacctbal 
 -----------+---------+------------
-(0 rows)
+ 31        |       1 |       5500
+(1 row)
 
