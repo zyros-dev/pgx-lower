@@ -36,6 +36,13 @@ bool g_extension_after_load = false;
 
 #include "pgx-lower/execution/postgres/executor_c.h"
 #include "pgx-lower/execution/postgres/my_executor.h"
+#include "pgx-lower/runtime/tuple_access.h"
+#include "pgx-lower/execution/mlir_runner.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/IR/BuiltinOps.h"
+
+extern ComputedResultStorage g_computed_results;
 
 class StderrToLogRedirector {
    private:
@@ -163,6 +170,70 @@ PG_FUNCTION_INFO_V1(log_cpp_notice);
 Datum log_cpp_notice(PG_FUNCTION_ARGS) {
     PGX_LOG(GENERAL, DEBUG, "Hello from C++!");
     PG_RETURN_VOID();
+}
+
+bool execute_mlir_text(const char* mlir_text, void* dest_receiver) {
+    try {
+        mlir::MLIRContext context;
+        if (!mlir_runner::setupMLIRContextForJIT(context)) {
+            PGX_ERROR("Failed to setup MLIR context");
+            return false;
+        }
+
+        auto moduleRef = mlir::parseSourceString<mlir::ModuleOp>(mlir_text, &context);
+        if (!moduleRef) {
+            PGX_ERROR("Failed to parse MLIR text");
+            return false;
+        }
+
+        mlir::ModuleOp module = moduleRef.release();
+
+        if (mlir::failed(mlir::verify(module.getOperation()))) {
+            PGX_ERROR("MLIR module verification failed");
+            return false;
+        }
+
+        if (!mlir_runner::runCompleteLoweringPipeline(module)) {
+            PGX_ERROR("MLIR lowering pipeline failed");
+            return false;
+        }
+
+        static int dummy_estate = 0;
+        static int dummy_dest = 0;
+
+        if (!mlir_runner::executeJITWithDestReceiver(module, (EState*)&dummy_estate, (DestReceiver*)&dummy_dest)) {
+            PGX_ERROR("JIT execution failed");
+            return false;
+        }
+
+        return true;
+
+    } catch (const std::exception& e) {
+        PGX_ERROR("Exception during MLIR execution: %s", e.what());
+        return false;
+    }
+}
+
+int get_computed_results_num_columns() {
+    return g_computed_results.numComputedColumns;
+}
+
+int get_computed_results_num_rows() {
+    if (g_computed_results.numComputedColumns == 0) {
+        return 0;
+    }
+    return static_cast<int>(g_computed_results.computedValues.size()) / g_computed_results.numComputedColumns;
+}
+
+void get_computed_result(int row, int col, void** value_out, bool* is_null_out) {
+    const int idx = row * g_computed_results.numComputedColumns + col;
+    if (idx < static_cast<int>(g_computed_results.computedValues.size())) {
+        *value_out = reinterpret_cast<void*>(g_computed_results.computedValues[idx]);
+        *is_null_out = g_computed_results.computedNulls[idx];
+    } else {
+        *value_out = nullptr;
+        *is_null_out = true;
+    }
 }
 
 } // extern "C"

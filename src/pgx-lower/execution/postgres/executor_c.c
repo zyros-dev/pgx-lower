@@ -4,8 +4,12 @@
 #include "executor/execdesc.h"
 #include "executor/executor.h"
 #include "fmgr.h"
+#include "funcapi.h"
 #include "postgres.h"
+#include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/guc_hooks.h"
+#include "utils/tuplestore.h"
 
 PG_MODULE_MAGIC;
 
@@ -87,4 +91,75 @@ void _PG_init(void) {
 void _PG_fini(void) {
     PGX_NOTICE_C("Uninstalling custom executor hook...");
     ExecutorRun_hook = NULL;
+}
+
+extern bool execute_mlir_text(const char* mlir_text, void* dest_receiver);
+extern int get_computed_results_num_columns(void);
+extern int get_computed_results_num_rows(void);
+extern void get_computed_result(int row, int col, void** value_out, bool* is_null_out);
+
+PG_FUNCTION_INFO_V1(pgx_lower_test_relalg);
+
+Datum
+pgx_lower_test_relalg(PG_FUNCTION_ARGS)
+{
+    ReturnSetInfo* rsinfo = (ReturnSetInfo*) fcinfo->resultinfo;
+
+    if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
+        ereport(ERROR,
+                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                 errmsg("set-valued function called in context that cannot accept a set")));
+
+    if (!(rsinfo->allowedModes & SFRM_Materialize))
+        ereport(ERROR,
+                (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                 errmsg("materialize mode required, but it is not allowed in this context")));
+
+    const text * mlir_input = PG_GETARG_TEXT_PP(0);
+    const char * mlir_text = text_to_cstring(mlir_input);
+
+    PGX_NOTICE_C("Executing MLIR RelAlg directly...");
+
+    bool success = execute_mlir_text(mlir_text, NULL);
+
+    if (!success) {
+        ereport(ERROR,
+                (errcode(ERRCODE_INTERNAL_ERROR),
+                 errmsg("MLIR execution failed")));
+    }
+
+    const MemoryContext per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
+    const MemoryContext oldcontext = MemoryContextSwitchTo(per_query_ctx);
+
+    const TupleDesc tupdesc = CreateTupleDescCopy(rsinfo->expectedDesc);
+    Tuplestorestate *tupstore = tuplestore_begin_heap(true, false, 4096);
+
+    const int numColumns = get_computed_results_num_columns();
+    const int numRows = get_computed_results_num_rows();
+
+    for (int row = 0; row < numRows; row++) {
+        Datum *values = (Datum *) palloc(numColumns * sizeof(Datum));
+        bool *nulls = (bool *) palloc(numColumns * sizeof(bool));
+
+        for (int col = 0; col < numColumns; col++) {
+            void* datum_ptr = NULL;
+            bool is_null = false;
+            get_computed_result(row, col, &datum_ptr, &is_null);
+            values[col] = (Datum)(uintptr_t)datum_ptr;
+            nulls[col] = is_null;
+        }
+
+        tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+
+        pfree(values);
+        pfree(nulls);
+    }
+
+    rsinfo->returnMode = SFRM_Materialize;
+    rsinfo->setResult = tupstore;
+    rsinfo->setDesc = tupdesc;
+
+    MemoryContextSwitchTo(oldcontext);
+
+    PG_RETURN_NULL();
 }

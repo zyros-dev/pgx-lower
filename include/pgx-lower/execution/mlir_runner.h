@@ -48,6 +48,7 @@ auto run_mlir_with_estate(PlannedStmt* plannedStmt, EState* estate, ExprContext*
 bool runPhase3a(::mlir::ModuleOp module);
 bool runPhase3b(::mlir::ModuleOp module);
 bool runPhase3c(::mlir::ModuleOp module);
+bool runCompleteLoweringPipeline(::mlir::ModuleOp module);
 
 } // namespace mlir_runner
 

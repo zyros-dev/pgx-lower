@@ -18,3 +18,6 @@ DO $$ BEGIN
     RAISE NOTICE 'MLIR JIT Engine extension installed successfully.';
 END $$;
 
+CREATE FUNCTION pgx_lower_test_relalg(text) RETURNS SETOF record
+    AS 'pgx_lower.so', 'pgx_lower_test_relalg'
+    LANGUAGE C STRICT;

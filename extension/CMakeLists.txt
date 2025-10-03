@@ -77,6 +77,7 @@ if(NOT BUILDING_UNIT_TESTS)
             39_tpch_minimal
             40_tpch_not_lowered
             41_sorts
+            42_test_relalg_function
             init_tpch
             tpch_no_lower
             tpch
