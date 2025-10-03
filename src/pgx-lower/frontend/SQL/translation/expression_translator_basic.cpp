@@ -373,11 +373,26 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to nestParam Var(varno=%d, varattno=%d, varnosyn=%d, varattnosyn=%d)",
                 param->paramid, paramVar->varno, paramVar->varattno, paramVar->varnosyn, paramVar->varattnosyn);
         if (paramVar->varnosyn > 0 && paramVar->varattnosyn > 0) {
+            // This nest_param references the outer query via varnosyn
+            // We need to use outer_tuple for the GetColumnOp
             Var tempVar = *paramVar;
             tempVar.varno = paramVar->varnosyn;
             tempVar.varattno = paramVar->varattnosyn;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Using varnosyn/varattnosyn: translating as Var(varno=%d, varattno=%d)",
-                    tempVar.varno, tempVar.varattno);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using varnosyn/varattnosyn: translating as Var(varno=%d, varattno=%d) with outer_tuple=%d",
+                    tempVar.varno, tempVar.varattno, ctx.outer_tuple ? 1 : 0);
+
+            if (ctx.outer_tuple) {
+                // Create a modified context that uses outer_tuple instead of current_tuple
+                auto outerCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module, ctx.outer_tuple, mlir::Value()};
+                outerCtx.nest_params = ctx.nest_params;
+                outerCtx.correlation_params = ctx.correlation_params;
+                outerCtx.outer_result = ctx.outer_result;
+                outerCtx.init_plan_results = ctx.init_plan_results;
+                outerCtx.subquery_param_mapping = ctx.subquery_param_mapping;
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Creating GetColumnOp using outer_tuple for correlation parameter");
+                return translate_var(outerCtx, &tempVar, current_result);
+            }
+
             return translate_var(ctx, &tempVar, current_result);
         }
 
