@@ -2,7 +2,7 @@
 # Build system for PostgreSQL JIT compilation via MLIR
 # Architecture: PostgreSQL AST → RelAlg → DB → DSA → Standard MLIR → LLVM IR → JIT
 
-.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv
+.PHONY: build clean test install psql-start debug-stop all format-check format-fix ptest utest fcheck ffix rebuild help build-ptest build-utest clean-ptest clean-utest compile_commands clean-root gviz bench psql-bench lingo-bench validate-bench venv tpch-data
 
 # Build directories for different test types
 BUILD_DIR = build
@@ -199,6 +199,17 @@ validate-bench:
 	echo "Running TPC-H validation benchmark (all engines) with scale factor $$SF_VALUE..."; \
 	python3 tools/bench.py validate $$SF_VALUE
 
+tpch-data:
+	@SF_VALUE=$${SF:-0.01}; \
+	echo "Generating TPC-H test data with scale factor $$SF_VALUE..."; \
+	if [ -f .venv/bin/python3 ]; then \
+		.venv/bin/python3 tools/generate_tpch_data.py $$SF_VALUE; \
+	else \
+		echo "Warning: .venv not found, using system python3"; \
+		python3 tools/generate_tpch_data.py $$SF_VALUE; \
+	fi; \
+	echo "TPC-H test data generation completed!"
+
 help:
 	@echo "Available targets:"
 	@echo "  build        - Build the main project"
@@ -211,6 +222,7 @@ help:
 	@echo "  utest-run    - Run unit tests without rebuild (excludes crashing tests)"
 	@echo "  utest-all    - Run ALL unit tests including potentially crashing ones"
 	@echo "  venv         - Create Python virtual environment (Python 3.12.11)"
+	@echo "  tpch-data    - Generate TPC-H test data (Usage: make tpch-data [SF=<scale_factor>], default SF=0.01)"
 	@echo "  bench        - Run TPC-H benchmark with pgx-lower (Usage: make bench [SF=<scale_factor>], default SF=0.1)"
 	@echo "  psql-bench   - Run TPC-H benchmark with vanilla PostgreSQL (Usage: make psql-bench [SF=<scale_factor>])"
 	@echo "  lingo-bench  - Run TPC-H benchmark with LingoDB (Usage: make lingo-bench [SF=<scale_factor>])"
