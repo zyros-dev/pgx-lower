@@ -218,49 +218,18 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     }
 
     // -----------------------------------------------------------------------------------------------------------------
-    // NestLoop is unique: it supports parameterization (inner side references outer via PARAM nodes)
-    // and PostgreSQL pushes join conditions into inner IndexScan's indexqual (we extract them back).
-    {
-        if (nestLoop->nestParams && nestLoop->nestParams->length > 0) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Parameterized nested loop detected with %d parameters",
-                    nestLoop->nestParams->length);
+    // NestLoop parameterization: inner side references outer via PARAM nodes
+    if (nestLoop->nestParams && nestLoop->nestParams->length > 0) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Parameterized nested loop detected with %d parameters",
+                nestLoop->nestParams->length);
 
-            ListCell* lc;
-            foreach (lc, nestLoop->nestParams) {
-                auto* nestParam = static_cast<NestLoopParam*>(lfirst(lc));
-                if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
-                    auto* paramVar = reinterpret_cast<Var*>(nestParam->paramval);
-                    ctx.nest_params[nestParam->paramno] = paramVar;
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Registered nest param: paramno=%d -> Var(varno=%d, varattno=%d)",
-                            nestParam->paramno, paramVar->varno, paramVar->varattno);
-                }
-            }
-        }
-
-        if (rightPlan->type == T_IndexScan) {
-            auto* indexScan = reinterpret_cast<IndexScan*>(rightPlan);
-            if (indexScan->indexqual && indexScan->indexqual->length > 0) {
-                PGX_LOG(AST_TRANSLATE, DEBUG,
-                        "Extracting %d predicates from IndexScan.indexqual for join-level translation",
-                        indexScan->indexqual->length);
-                if (effective_join_qual && effective_join_qual->length > 0) {
-                    effective_join_qual = list_concat(list_copy(effective_join_qual), list_copy(indexScan->indexqual));
-                } else {
-                    effective_join_qual = indexScan->indexqual;
-                }
-            }
-        } else if (rightPlan->type == T_IndexOnlyScan) {
-            auto* indexOnlyScan = reinterpret_cast<IndexOnlyScan*>(rightPlan);
-            if (indexOnlyScan->indexqual && indexOnlyScan->indexqual->length > 0) {
-                PGX_LOG(AST_TRANSLATE, DEBUG,
-                        "Extracting %d predicates from IndexOnlyScan.indexqual for join-level translation",
-                        indexOnlyScan->indexqual->length);
-                if (effective_join_qual && effective_join_qual->length > 0) {
-                    effective_join_qual = list_concat(list_copy(effective_join_qual),
-                                                      list_copy(indexOnlyScan->indexqual));
-                } else {
-                    effective_join_qual = indexOnlyScan->indexqual;
-                }
+        ListCell* lc;
+        foreach (lc, nestLoop->nestParams) {
+            auto* nestParam = static_cast<NestLoopParam*>(lfirst(lc));
+            if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
+                ctx.nest_params[nestParam->paramno] = nestParam->paramval;
+                PGX_LOG(AST_TRANSLATE, DEBUG, "Registered nest param: paramno=%d -> Var(varno=%d, varattno=%d)",
+                        nestParam->paramno, nestParam->paramval->varno, nestParam->paramval->varattno);
             }
         }
     }

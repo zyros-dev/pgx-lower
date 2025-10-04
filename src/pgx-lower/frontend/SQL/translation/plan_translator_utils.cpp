@@ -67,22 +67,10 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     TranslationResult result;
 
     switch (plan->type) {
-    case T_SeqScan:
-    case T_IndexScan:
+    case T_IndexScan: result = translate_index_scan(ctx, reinterpret_cast<IndexScan*>(plan)); break;
     case T_IndexOnlyScan:
-    case T_BitmapHeapScan: {
-        auto* scan = reinterpret_cast<SeqScan*>(plan);
-        result = translate_seq_scan(ctx, scan);
-
-        if (plan->type == T_IndexScan || plan->type == T_IndexOnlyScan) {
-            auto* indexScan = reinterpret_cast<IndexScan*>(plan);
-            if (indexScan->indexqual && indexScan->indexqual->length > 0) {
-                PGX_LOG(AST_TRANSLATE, DEBUG,
-                        "IndexScan has %d indexqual predicates - will be handled by parent NestLoop",
-                        indexScan->indexqual->length);
-            }
-        }
-    } break;
+    case T_SeqScan:
+    case T_BitmapHeapScan: result = translate_seq_scan(ctx, reinterpret_cast<SeqScan*>(plan)); break;
     case T_Agg: result = translate_agg(ctx, reinterpret_cast<Agg*>(plan)); break;
     case T_Sort: result = translate_sort(ctx, reinterpret_cast<Sort*>(plan)); break;
     case T_IncrementalSort: result = translate_sort(ctx, reinterpret_cast<Sort*>(plan)); break;
