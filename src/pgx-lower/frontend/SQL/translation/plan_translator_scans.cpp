@@ -163,9 +163,10 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 
     // where + projection - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     if (result.op && seqScan->scan.plan.qual) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan has qual, applying selection (context has %zu InitPlans)",
-                ctx.init_plan_results.size());
-        result = apply_selection_from_qual_with_columns(ctx, result, seqScan->scan.plan.qual, nullptr, nullptr);
+        const TranslationResult* outer = ctx.outer_result.has_value() ? &ctx.outer_result.value().get() : nullptr;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan has qual, applying selection (context has %zu InitPlans)%s",
+                ctx.init_plan_results.size(), outer ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, seqScan->scan.plan.qual, outer, nullptr);
     } else {
         PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan: no qual (result.op=%p, plan.qual=%p)", static_cast<void*>(result.op),
                 static_cast<void*>(seqScan->scan.plan.qual));
@@ -272,42 +273,40 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
         }
     }
 
-    if (uniqueScope != aliasName) {
-        PGX_LOG(AST_TRANSLATE, DEBUG,
-                "[SCOPE_DEBUG] translate_index_scan: uniqueScope != aliasName, populating varno_resolution");
-        for (size_t i = 0; i < allColumns.size(); i++) {
-            const int varattno = static_cast<int>(i + 1);
-            result.varno_resolution[std::make_pair(indexScan->scan.scanrelid, varattno)] = std::make_pair(
-                uniqueScope, allColumns[i].name);
-            PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_index_scan: varno_resolution[(%d,%d)] = ('%s','%s')",
-                    indexScan->scan.scanrelid, varattno, uniqueScope.c_str(), allColumns[i].name.c_str());
-        }
-    } else {
-        PGX_LOG(AST_TRANSLATE, DEBUG,
-                "[SCOPE_DEBUG] translate_index_scan: uniqueScope == aliasName, NOT populating varno_resolution");
+    // populate varno_resolution for IndexScan because indexqual contains INDEX_VAR nodes
+    PGX_LOG(AST_TRANSLATE, DEBUG,
+            "[SCOPE_DEBUG] translate_index_scan: populating varno_resolution (uniqueScope=%s, aliasName=%s)",
+            uniqueScope.c_str(), aliasName.c_str());
+
+    for (size_t i = 0; i < allColumns.size(); i++) {
+        const int varattno = static_cast<int>(i + 1);
+
+        // Add mapping for scanrelid (regular Var and INDEX_VAR lookups)
+        result.varno_resolution[std::make_pair(indexScan->scan.scanrelid, varattno)] = std::make_pair(
+            uniqueScope, allColumns[i].name);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_index_scan: varno_resolution[(%d,%d)] = ('%s','%s')",
+                indexScan->scan.scanrelid, varattno, uniqueScope.c_str(), allColumns[i].name.c_str());
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_index_scan: final varno_resolution.size()=%zu",
             result.varno_resolution.size());
 
-    // Apply indexqual (primary index conditions)
+    const TranslationResult* outer = ctx.outer_result.has_value() ? &ctx.outer_result.value().get() : nullptr;
     if (result.op && indexScan->indexqual && indexScan->indexqual->length > 0) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan has %d indexqual predicates, applying as selection",
-                indexScan->indexqual->length);
-        result = apply_selection_from_qual_with_columns(ctx, result, indexScan->indexqual, nullptr, nullptr);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan has %d indexqual predicates, applying as selection%s",
+                indexScan->indexqual->length, outer ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, indexScan->indexqual, outer, &result);
     }
 
-    // Apply plan.qual (additional filters)
     if (result.op && indexScan->scan.plan.qual) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan has plan.qual, applying selection (context has %zu InitPlans)",
-                ctx.init_plan_results.size());
-        result = apply_selection_from_qual_with_columns(ctx, result, indexScan->scan.plan.qual, nullptr, nullptr);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan has plan.qual, applying selection (context has %zu InitPlans)%s",
+                ctx.init_plan_results.size(), outer ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, indexScan->scan.plan.qual, outer, nullptr);
     } else {
         PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan: no plan.qual (result.op=%p, plan.qual=%p)",
                 static_cast<void*>(result.op), static_cast<void*>(indexScan->scan.plan.qual));
     }
 
-    // Apply projection
     if (result.op) {
         result = apply_projection_from_target_list(ctx, result, indexScan->scan.plan.targetlist);
     }
