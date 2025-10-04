@@ -24,7 +24,9 @@ $$, (SELECT oid FROM pg_class WHERE relname = 'test_relalg'))
 ) AS t(id INTEGER, value INTEGER);
  id | value 
 ----+-------
+  1 |   100
+  2 |   200
   3 |   300
-(1 row)
+(3 rows)
 
 DROP TABLE test_relalg;

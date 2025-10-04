@@ -975,3 +975,15 @@ extern "C" double get_float64_field_mlir(int64_t iteration_signal, int32_t field
     bool is_null;
     return pgx_lower::runtime::extract_field<double>(field_index, &is_null);
 }
+
+//==============================================================================
+// C Wrapper Functions for TupleStreamer
+//==============================================================================
+
+extern "C" void tuple_streamer_initialize(TupleStreamer* streamer, void* dest, void* slot) {
+    streamer->initialize(static_cast<DestReceiver*>(dest), static_cast<TupleTableSlot*>(slot));
+}
+
+extern "C" void tuple_streamer_shutdown(TupleStreamer* streamer) {
+    streamer->shutdown();
+}

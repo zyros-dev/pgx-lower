@@ -3,6 +3,7 @@
 
 #include "executor/execdesc.h"
 #include "executor/executor.h"
+#include "executor/tstoreReceiver.h"
 #include "fmgr.h"
 #include "funcapi.h"
 #include "postgres.h"
@@ -98,6 +99,11 @@ extern int get_computed_results_num_columns(void);
 extern int get_computed_results_num_rows(void);
 extern void get_computed_result(int row, int col, void** value_out, bool* is_null_out);
 
+struct TupleStreamer;
+extern struct TupleStreamer g_tuple_streamer;
+extern void tuple_streamer_initialize(struct TupleStreamer* streamer, void* dest, void* slot);
+extern void tuple_streamer_shutdown(struct TupleStreamer* streamer);
+
 PG_FUNCTION_INFO_V1(pgx_lower_test_relalg);
 
 Datum
@@ -118,41 +124,32 @@ pgx_lower_test_relalg(PG_FUNCTION_ARGS)
     const text * mlir_input = PG_GETARG_TEXT_PP(0);
     const char * mlir_text = text_to_cstring(mlir_input);
 
-    PGX_NOTICE_C("Executing MLIR RelAlg directly...");
-
-    bool success = execute_mlir_text(mlir_text, NULL);
-
-    if (!success) {
-        ereport(ERROR,
-                (errcode(ERRCODE_INTERNAL_ERROR),
-                 errmsg("MLIR execution failed")));
-    }
-
     const MemoryContext per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
     const MemoryContext oldcontext = MemoryContextSwitchTo(per_query_ctx);
 
     const TupleDesc tupdesc = CreateTupleDescCopy(rsinfo->expectedDesc);
     Tuplestorestate *tupstore = tuplestore_begin_heap(true, false, 4096);
 
-    const int numColumns = get_computed_results_num_columns();
-    const int numRows = get_computed_results_num_rows();
+    TupleTableSlot *slot = MakeSingleTupleTableSlot(tupdesc, &TTSOpsVirtual);
+    DestReceiver *dest = CreateDestReceiver(DestTuplestore);
+    SetTuplestoreDestReceiverParams(dest, tupstore, per_query_ctx, false, NULL, NULL);
 
-    for (int row = 0; row < numRows; row++) {
-        Datum *values = (Datum *) palloc(numColumns * sizeof(Datum));
-        bool *nulls = (bool *) palloc(numColumns * sizeof(bool));
+    tuple_streamer_initialize(&g_tuple_streamer, dest, slot);
 
-        for (int col = 0; col < numColumns; col++) {
-            void* datum_ptr = NULL;
-            bool is_null = false;
-            get_computed_result(row, col, &datum_ptr, &is_null);
-            values[col] = (Datum)(uintptr_t)datum_ptr;
-            nulls[col] = is_null;
-        }
+    PGX_NOTICE_C("Executing MLIR RelAlg directly...");
 
-        tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+    dest->rStartup(dest, 0, tupdesc);
+    bool success = execute_mlir_text(mlir_text, dest);
+    dest->rShutdown(dest);
+    dest->rDestroy(dest);
 
-        pfree(values);
-        pfree(nulls);
+    tuple_streamer_shutdown(&g_tuple_streamer);
+    ExecDropSingleTupleTableSlot(slot);
+
+    if (!success) {
+        ereport(ERROR,
+                (errcode(ERRCODE_INTERNAL_ERROR),
+                 errmsg("MLIR execution failed")));
     }
 
     rsinfo->returnMode = SFRM_Materialize;
