@@ -299,7 +299,14 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
 
     if (resolved.cached_value) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Using cached InitPlan value for paramid=%d", param->paramid);
-        return *resolved.cached_value;
+        mlir::Value stream = *resolved.cached_value;
+        auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+        auto column_ref = columnManager.createRef(resolved.table_name, resolved.column_name);
+        const mlir::Value scalar_value = ctx.builder.create<mlir::relalg::GetScalarOp>(
+            ctx.builder.getUnknownLoc(), resolved.mlir_type, column_ref, stream);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetScalarOp for paramid=%d from %s.%s", param->paramid,
+                resolved.table_name.c_str(), resolved.column_name.c_str());
+        return scalar_value;
     }
 
     auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
