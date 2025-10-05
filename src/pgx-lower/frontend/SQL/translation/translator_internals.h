@@ -187,8 +187,8 @@ struct TranslationContext {
                                   .nest_params = parent.nest_params};
     }
 
-    [[nodiscard]] auto resolve_var(int varno, int varattno, std::optional<int> varnosyn = std::nullopt,
-                                   std::optional<int> varattnosyn = std::nullopt) const
+    [[nodiscard]] auto resolve_var(const int varno, int varattno, const std::optional<int> varnosyn = std::nullopt,
+                                   const std::optional<int> varattnosyn = std::nullopt) const
         -> std::optional<std::pair<std::string, std::string>> {
         int lookup_varno = varno;
         int lookup_varattno = varattno;
