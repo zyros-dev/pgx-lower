@@ -298,13 +298,18 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
             resolved.column_name.c_str());
 
     if (resolved.cached_value) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Using cached InitPlan value for paramid=%d", param->paramid);
-        mlir::Value stream = *resolved.cached_value;
+        auto cachedValue = *resolved.cached_value;
+        if (!mlir::isa<mlir::relalg::TupleStreamType>(cachedValue.getType())) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using cached correlation scalar for paramid=%d", param->paramid);
+            return cachedValue;
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using cached InitPlan tuplestream for paramid=%d", param->paramid);
         auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
         auto column_ref = columnManager.createRef(resolved.table_name, resolved.column_name);
         const mlir::Value scalar_value = ctx.builder.create<mlir::relalg::GetScalarOp>(
-            ctx.builder.getUnknownLoc(), resolved.mlir_type, column_ref, stream);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetScalarOp for paramid=%d from %s.%s", param->paramid,
+            ctx.builder.getUnknownLoc(), resolved.mlir_type, column_ref, cachedValue);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created GetScalarOp for InitPlan paramid=%d from %s.%s", param->paramid,
                 resolved.table_name.c_str(), resolved.column_name.c_str());
         return scalar_value;
     }
