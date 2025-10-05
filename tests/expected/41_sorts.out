@@ -365,8 +365,8 @@ ORDER BY ratio DESC;
 NOTICE:  [PGX-LOWER] Routing through PGX_LOWER compilation
  region_name | ratio 
 -------------+-------
- Asia        |     3
- Europe      |     3
+ Asia        |     1
+ Europe      |     0
  Americas    |     0
 (3 rows)
 
