@@ -338,6 +338,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
 
         const std::string subquery_alias = get_table_alias_from_rte(&ctx.current_stmt, scanrelid);
 
+        std::vector<TranslationResult::ColumnSchema> subplan_columns = result.columns;
+        result.columns.clear();
+
         ListCell* lc;
         int output_attno = 1;
 
@@ -357,12 +360,12 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
             if (IsA(tle->expr, Var)) {
                 auto* var = reinterpret_cast<Var*>(tle->expr);
 
-                if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
-                    const auto& col = result.columns[var->varattno - 1];
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(subplan_columns.size())) {
+                    const auto& col = subplan_columns[var->varattno - 1];
 
                     ctx.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(col.table_name,
                                                                                                       col.column_name);
-
+                    result.columns.push_back(col);
                     PGX_LOG(AST_TRANSLATE, DEBUG,
                             "Mapped SubqueryScan: varno=%d, attno=%d -> subplan column %d (@%s::@%s)", scanrelid,
                             output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
@@ -371,9 +374,11 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan: Processing complex expression at attno=%d", output_attno);
                 const std::string col_name = tle->resname ? tle->resname : "expr_" + std::to_string(output_attno);
 
-                TranslationResult exprContext = result;
-                for (size_t i = 0; i < result.columns.size(); ++i) {
-                    const auto& col = result.columns[i];
+                TranslationResult exprContext;
+                exprContext.op = result.op;
+                exprContext.columns = subplan_columns;
+                for (size_t i = 0; i < subplan_columns.size(); ++i) {
+                    const auto& col = subplan_columns[i];
                     ctx.varno_resolution[std::make_pair(scanrelid, i + 1)] = std::make_pair(col.table_name,
                                                                                                     col.column_name);
                 }
