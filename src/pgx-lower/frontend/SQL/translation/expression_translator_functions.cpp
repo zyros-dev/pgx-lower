@@ -439,6 +439,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             std::string table_scope;
             std::string column_name;
             bool nullable;
+            Oid type_oid;
+            int32 typmod;
         };
         std::unordered_map<int, CorrelationInfo> correlation_mapping;
         if (subplan->parParam && subplan->args) {
@@ -452,6 +454,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     std::string table_scope;
                     std::string column_name;
                     bool nullable;
+                    Oid type_oid = var->vartype;
+                    int32 typmod = var->vartypmod;
 
                     if (IS_SPECIAL_VARNO(var->varno)) {
                         auto varnosyn_opt = std::optional<int>(var->varnosyn);
@@ -478,6 +482,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                             table_scope = col.table_name;
                             column_name = col.column_name;
                             nullable = col.nullable;
+                            type_oid = col.type_oid;
+                            typmod = col.typmod;
                             PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from outer_result",
                                     var->varattno, table_scope.c_str(), column_name.c_str(), nullable);
                         } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {
@@ -491,7 +497,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                         nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
                     }
 
-                    correlation_mapping[param_id] = {table_scope, column_name, nullable};
+                    correlation_mapping[param_id] = {table_scope, column_name, nullable, type_oid, typmod};
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d to %s.%s (nullable=%d)", param_id,
                             table_scope.c_str(), column_name.c_str(), nullable);
                 } else if (arg_expr && nodeTag(arg_expr) == T_Param) {
@@ -500,7 +506,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
 
                     if (param_it != ctx.params.end()) {
                         const auto& resolved = param_it->second;
-                        correlation_mapping[param_id] = {resolved.table_name, resolved.column_name, resolved.nullable};
+                        correlation_mapping[param_id] = {resolved.table_name, resolved.column_name, resolved.nullable,
+                                                         resolved.type_oid, resolved.typmod};
                         PGX_LOG(AST_TRANSLATE, DEBUG,
                                 "Mapped correlation paramid=%d via unified params to %s.%s (nullable=%d)", param_id,
                                 resolved.table_name.c_str(), resolved.column_name.c_str(), resolved.nullable);
@@ -510,7 +517,6 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     }
                 } else {
                     // Complex expression in correlation (e.g., t.col + 1)
-                    // This would require translating the expression and passing the MLIR value
                     PGX_ERROR("Correlation arg is complex expression (nodeTag=%d), not yet supported",
                               arg_expr ? nodeTag(arg_expr) : -1);
                     throw std::runtime_error("Complex correlation expressions not yet supported");
@@ -518,16 +524,28 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
             }
         }
 
-        // Create child context with correlation params
         auto subquery_ctx = QueryCtxT::createChildContext(ctx);
+        auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
         for (const auto& [param_id, info] : correlation_mapping) {
+            auto colRef = columnManager.createRef(info.table_scope, info.column_name);
+            PostgreSQLTypeMapper mapper(*ctx.builder.getContext());
+            auto mlir_type = mapper.map_postgre_sqltype(info.type_oid, info.typmod, info.nullable);
+
+            mlir::Value correlation_value = ctx.builder.create<mlir::relalg::GetColumnOp>(
+                ctx.builder.getUnknownLoc(),
+                mlir_type,
+                colRef,
+                ctx.current_tuple
+            );
+
             subquery_ctx.params[param_id] = pgx_lower::frontend::sql::ResolvedParam{
                 .table_name = info.table_scope,
                 .column_name = info.column_name,
-                .type_oid = 0,  // Will be resolved from expression
-                .typmod = -1,
+                .type_oid = info.type_oid,
+                .typmod = info.typmod,
                 .nullable = info.nullable,
-                .mlir_type = mlir::Type()  // Will be set when used
+                .mlir_type = mlir_type,
+                .cached_value = correlation_value
             };
         }
         auto [subquery_stream, subquery_result] = translate_subquery_plan(subquery_ctx, subquery_plan, &ctx.current_stmt);
@@ -538,7 +556,6 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
         }
 
         const auto& result_column = subquery_result.columns[0];
-        auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
         auto column_ref = columnManager.createRef(result_column.table_name, result_column.column_name);
 
         mlir::Type result_type = result_column.mlir_type;
