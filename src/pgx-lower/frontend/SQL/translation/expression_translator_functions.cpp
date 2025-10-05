@@ -53,15 +53,6 @@ class GetColumnOp;
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
-auto PostgreSQLASTTranslator::Impl::translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr,
-                                                                           const TranslationResult* left_child,
-                                                                           const TranslationResult* right_child)
-    -> mlir::Value {
-    PGX_IO(AST_TRANSLATE);
-    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_expression_with_join_context: Routing through merge path");
-    auto merged = merge_translation_results(left_child, right_child);
-    return translate_expression(ctx, expr, merged);
-}
 
 auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr,
                                                                     const TranslationResult& child_result,
@@ -137,7 +128,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     auto blockCtx = QueryCtxT::createChildContext(ctx, blockBuilder, tupleArg);
 
     // Pass through the child_result so varno_resolution is available
-    auto exprValue = translate_expression(blockCtx, expr, child_result);
+    auto exprValue = translate_expression(blockCtx, expr);
     verify_and_print(exprValue);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Finished translating expression");
     if (!exprValue) {
@@ -163,7 +154,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     realBlockBuilder.setInsertionPointToStart(realBlock);
 
     auto realBlockCtx = QueryCtxT::createChildContext(ctx, realBlockBuilder, realTupleArg);
-    auto realExprValue = translate_expression(realBlockCtx, expr, child_result);
+    auto realExprValue = translate_expression(realBlockCtx, expr);
     verify_and_print(realExprValue);
     realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
 
@@ -177,7 +168,6 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr,
-                                                        OptRefT<const TranslationResult> current_result,
                                                         std::optional<std::vector<mlir::Value>> pre_translated_args)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
@@ -187,8 +177,6 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     }
 
     auto args = std::vector<mlir::Value>{};
-    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_func_expr: has_pre_translated_args=%d, has_current_result=%d",
-            pre_translated_args.has_value(), current_result.has_value());
     if (pre_translated_args) {
         args = *pre_translated_args;
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_func_expr: Using pre_translated_args with %zu args",
@@ -202,10 +190,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
         ListCell* lc;
         foreach (lc, func_expr->args) {
             if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
-                PGX_LOG(AST_TRANSLATE, DEBUG,
-                        "[SCOPE_DEBUG] translate_func_expr: About to translate arg, has_current_result=%d",
-                        current_result.has_value());
-                if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode), current_result)) {
+                if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                     args.push_back(argValue);
                 }
             }
@@ -438,9 +423,7 @@ auto PostgreSQLASTTranslator::Impl::translate_func_expr(const QueryCtxT& ctx, co
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, const SubPlan* subplan,
-                                                      OptRefT<const TranslationResult> current_result) -> mlir::Value {
-    // TODO: Long function...
+auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, const SubPlan* subplan) -> mlir::Value {
     switch (subplan->subLinkType) {
     case EXPR_SUBLINK: {
         PGX_LOG(AST_TRANSLATE, DEBUG, "EXPR_SUBLINK: Translating scalar subquery");
@@ -467,56 +450,36 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     bool nullable;
 
                     if (IS_SPECIAL_VARNO(var->varno)) {
-                        if (current_result) {
-                            auto varnosyn_opt = std::optional<int>(var->varnosyn);
-                            auto varattnosyn_opt = std::optional<int>(var->varattnosyn);
+                        auto varnosyn_opt = std::optional<int>(var->varnosyn);
+                        auto varattnosyn_opt = std::optional<int>(var->varattnosyn);
 
-                            if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
-                                table_scope = resolved->table_name;
-                                column_name = resolved->column_name;
-                                nullable = resolved->nullable;
-                                PGX_LOG(AST_TRANSLATE, DEBUG,
-                                        "Resolved synthetic varno=%d via varno_resolution -> %s.%s (nullable=%d)",
-                                        var->varno, table_scope.c_str(), column_name.c_str(), nullable);
-                            } else if (var->varno == OUTER_VAR && var->varattno > 0
-                                       && var->varattno <= static_cast<int>(current_result->get().columns.size()))
-                            {
-                                const auto& col = current_result->get().columns[var->varattno - 1];
-                                table_scope = col.table_name;
-                                column_name = col.column_name;
-                                nullable = col.nullable;
-                                PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved OUTER_VAR via columns: varattno=%d -> %s.%s (nullable=%d)",
-                                        var->varattno, table_scope.c_str(), column_name.c_str(), nullable);
-                            } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {
-                                size_t left_size = current_result->get().left_child_column_count;
-                                size_t absolute_position = left_size + var->varattno - 1;
+                        if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt))
+                        {
+                            table_scope = resolved->table_name;
+                            column_name = resolved->column_name;
+                            nullable = resolved->nullable;
+                            PGX_LOG(AST_TRANSLATE, DEBUG,
+                                    "Resolved synthetic varno=%d via varno_resolution -> %s.%s (nullable=%d)",
+                                    var->varno, table_scope.c_str(), column_name.c_str(), nullable);
+                        } else if (var->varno == OUTER_VAR) {
+                            auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
+                                                                   : throw std::runtime_error("OUTER_VAR without outer_result");
 
-                                if (absolute_position >= current_result->get().columns.size()) {
-                                    PGX_ERROR("INNER_VAR/INDEX_VAR varattno=%d (absolute pos=%zu) out of range "
-                                              "(left_size=%zu, total=%zu columns)",
-                                              var->varattno, absolute_position, left_size,
-                                              current_result->get().columns.size());
-                                    throw std::runtime_error("INNER_VAR/INDEX_VAR reference out of bounds in "
-                                                             "correlation");
-                                }
-
-                                const auto& col = current_result->get().columns[absolute_position];
-                                table_scope = col.table_name;
-                                column_name = col.column_name;
-                                nullable = col.nullable;
-                                PGX_LOG(AST_TRANSLATE, DEBUG,
-                                        "Resolved INNER_VAR/INDEX_VAR via positional fallback: varno=%d, varattno=%d → "
-                                        "absolute_pos=%zu → %s.%s (nullable=%d)",
-                                        var->varno, var->varattno, absolute_position, table_scope.c_str(),
-                                        column_name.c_str(), nullable);
-                            } else {
-                                PGX_ERROR("Cannot resolve INNER_VAR/OUTER_VAR: varno=%d, varattno=%d", var->varno,
-                                          var->varattno);
-                                throw std::runtime_error("Cannot resolve join variable in correlation parameter");
+                            if (var->varattno <= 0 || var->varattno > static_cast<int>(result_to_use.get().columns.size())) {
+                                PGX_ERROR("OUTER_VAR varattno=%d out of range (result has %zu columns)", var->varattno,
+                                          result_to_use.get().columns.size());
+                                throw std::runtime_error("OUTER_VAR reference out of range");
                             }
-                        } else {
-                            PGX_ERROR("INNER_VAR/OUTER_VAR in correlation but no current_result available");
-                            throw std::runtime_error("Cannot resolve join variable without context");
+                            const auto& col = result_to_use.get().columns[var->varattno - 1];
+                            table_scope = col.table_name;
+                            column_name = col.column_name;
+                            nullable = col.nullable;
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from outer_result",
+                                    var->varattno, table_scope.c_str(), column_name.c_str(), nullable);
+                        } else if (var->varno == INNER_VAR || var->varno == INDEX_VAR) {
+                            PGX_ERROR("INNER_VAR/INDEX_VAR varno=%d varattno=%d not found in varno_resolution - join translation bug",
+                                      var->varno, var->varattno);
+                            throw std::runtime_error("INNER_VAR/INDEX_VAR requires varno_resolution mapping");
                         }
                     } else {
                         table_scope = get_table_alias_from_rte(&ctx.current_stmt, var->varno);
@@ -540,30 +503,36 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                         bool nullable;
 
                         if (IS_SPECIAL_VARNO(paramVar->varno)) {
-                            if (current_result) {
-                                auto varnosyn_opt = std::optional<int>(paramVar->varnosyn);
-                                auto varattnosyn_opt = std::optional<int>(paramVar->varattnosyn);
+                            auto varnosyn_opt = std::optional<int>(paramVar->varnosyn);
+                            auto varattnosyn_opt = std::optional<int>(paramVar->varattnosyn);
 
-                                if (auto resolved = ctx.resolve_var(paramVar->varno, paramVar->varattno, varnosyn_opt, varattnosyn_opt))
-                                {
-                                    table_scope = resolved->table_name;
-                                    column_name = resolved->column_name;
-                                    nullable = resolved->nullable;
-                                } else if (paramVar->varno == OUTER_VAR && paramVar->varattno > 0
-                                           && paramVar->varattno <= static_cast<int>(current_result->get().columns.size()))
-                                {
-                                    const auto& col = current_result->get().columns[paramVar->varattno - 1];
-                                    table_scope = col.table_name;
-                                    column_name = col.column_name;
-                                    nullable = col.nullable;
-                                } else {
-                                    PGX_ERROR("Cannot resolve nest param Var: varno=%d, varattno=%d", paramVar->varno,
-                                              paramVar->varattno);
-                                    throw std::runtime_error("Cannot resolve nest param Var in correlation");
+                            if (auto resolved = ctx.resolve_var(paramVar->varno, paramVar->varattno, varnosyn_opt,
+                                                                varattnosyn_opt))
+                            {
+                                table_scope = resolved->table_name;
+                                column_name = resolved->column_name;
+                                nullable = resolved->nullable;
+                            } else if (paramVar->varno == OUTER_VAR) {
+                                auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
+                                                                       : throw std::runtime_error("OUTER_VAR without outer_result");
+
+                                if (paramVar->varattno <= 0 || paramVar->varattno > static_cast<int>(result_to_use.get().columns.size())) {
+                                    PGX_ERROR("OUTER_VAR varattno=%d out of range (result has %zu columns)", paramVar->varattno,
+                                              result_to_use.get().columns.size());
+                                    throw std::runtime_error("OUTER_VAR reference out of range");
                                 }
+                                const auto& col = result_to_use.get().columns[paramVar->varattno - 1];
+                                table_scope = col.table_name;
+                                column_name = col.column_name;
+                                nullable = col.nullable;
+                            } else if (paramVar->varno == INNER_VAR || paramVar->varno == INDEX_VAR) {
+                                PGX_ERROR("INNER_VAR/INDEX_VAR varno=%d varattno=%d not found in varno_resolution - join translation bug",
+                                          paramVar->varno, paramVar->varattno);
+                                throw std::runtime_error("INNER_VAR/INDEX_VAR requires varno_resolution mapping");
                             } else {
-                                PGX_ERROR("INNER_VAR/OUTER_VAR in nest param but no current_result available");
-                                throw std::runtime_error("Cannot resolve nest param without context");
+                                PGX_ERROR("Cannot resolve nest param Var: varno=%d, varattno=%d", paramVar->varno,
+                                          paramVar->varattno);
+                                throw std::runtime_error("Cannot resolve nest param Var in correlation");
                             }
                         } else {
                             table_scope = get_table_alias_from_rte(&ctx.current_stmt, paramVar->varno);
@@ -573,8 +542,9 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                         }
 
                         correlation_mapping[param_id] = {table_scope, column_name, nullable};
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped correlation paramid=%d via nest_param %d to %s.%s (nullable=%d)",
-                                param_id, param->paramid, table_scope.c_str(), column_name.c_str(), nullable);
+                        PGX_LOG(AST_TRANSLATE, DEBUG,
+                                "Mapped correlation paramid=%d via nest_param %d to %s.%s (nullable=%d)", param_id,
+                                param->paramid, table_scope.c_str(), column_name.c_str(), nullable);
                     } else {
                         PGX_ERROR("Correlation arg is PARAM paramid=%d but not found in nest_params", param->paramid);
                         throw std::runtime_error("Correlation PARAM not found in nest_params");
@@ -688,7 +658,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                 }
             }
 
-            auto comparison = translate_expression(inner_ctx, reinterpret_cast<Expr*>(subplan->testexpr), current_result);
+            auto comparison = translate_expression(inner_ctx, reinterpret_cast<Expr*>(subplan->testexpr));
             if (!comparison) {
                 PGX_ERROR("Failed to translate %s testexpr", negate_predicate ? "ALL_SUBLINK" : "ANY_SUBLINK");
                 throw std::runtime_error("Failed to translate testexpr");

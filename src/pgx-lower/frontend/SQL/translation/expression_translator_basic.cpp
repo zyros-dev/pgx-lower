@@ -49,12 +49,10 @@ class GetColumnOp;
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
-auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, Expr* expr,
-                                                         const OptRefT<const TranslationResult> current_result) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Parsing %d", expr->type);
-    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: expr->type=%d, has_current_result=%d",
-            expr->type, current_result.has_value());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: expr->type=%d", expr->type);
 
     if (!expr) {
         PGX_ERROR("Expression is null");
@@ -64,45 +62,45 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
     switch (expr->type) {
     case T_Var:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_Var");
-        return translate_var(ctx, reinterpret_cast<Var*>(expr), current_result);
+        return translate_var(ctx, reinterpret_cast<Var*>(expr));
     case T_Const:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_Const");
-        return translate_const(ctx, reinterpret_cast<Const*>(expr), current_result);
+        return translate_const(ctx, reinterpret_cast<Const*>(expr));
     case T_OpExpr:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_OpExpr");
-        return translate_op_expr(ctx, reinterpret_cast<OpExpr*>(expr), current_result);
+        return translate_op_expr(ctx, reinterpret_cast<OpExpr*>(expr));
     case T_FuncExpr:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_FuncExpr");
-        return translate_func_expr(ctx, reinterpret_cast<FuncExpr*>(expr), current_result);
+        return translate_func_expr(ctx, reinterpret_cast<FuncExpr*>(expr));
     case T_BoolExpr:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_BoolExpr");
-        return translate_bool_expr(ctx, reinterpret_cast<BoolExpr*>(expr), current_result);
+        return translate_bool_expr(ctx, reinterpret_cast<BoolExpr*>(expr));
     case T_Aggref:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_Aggref");
-        return translate_aggref(ctx, reinterpret_cast<Aggref*>(expr), current_result);
+        return translate_aggref(ctx, reinterpret_cast<Aggref*>(expr));
     case T_NullTest:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_NullTest");
-        return translate_null_test(ctx, reinterpret_cast<NullTest*>(expr), current_result);
+        return translate_null_test(ctx, reinterpret_cast<NullTest*>(expr));
     case T_CoalesceExpr:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_CoalesceExpr");
-        return translate_coalesce_expr(ctx, reinterpret_cast<CoalesceExpr*>(expr), current_result);
+        return translate_coalesce_expr(ctx, reinterpret_cast<CoalesceExpr*>(expr));
     case T_ScalarArrayOpExpr:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_ScalarArrayOpExpr");
-        return translate_scalar_array_op_expr(ctx, reinterpret_cast<ScalarArrayOpExpr*>(expr), current_result);
+        return translate_scalar_array_op_expr(ctx, reinterpret_cast<ScalarArrayOpExpr*>(expr));
     case T_CaseExpr:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_CaseExpr");
-        return translate_case_expr(ctx, reinterpret_cast<CaseExpr*>(expr), current_result);
+        return translate_case_expr(ctx, reinterpret_cast<CaseExpr*>(expr));
     case T_CoerceViaIO:
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_CoerceViaIO");
-        return translate_coerce_via_io(ctx, expr, current_result);
+        return translate_coerce_via_io(ctx, expr);
     case T_RelabelType: {
         const auto* relabel = reinterpret_cast<RelabelType*>(expr);
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_expression: CASE=T_RelabelType");
         PGX_LOG(AST_TRANSLATE, DEBUG, "Unwrapping T_RelabelType to translate underlying expression");
-        return translate_expression(ctx, relabel->arg, current_result);
+        return translate_expression(ctx, relabel->arg);
     }
-    case T_SubPlan: return translate_subplan(ctx, reinterpret_cast<SubPlan*>(expr), current_result);
-    case T_Param: return translate_param(ctx, reinterpret_cast<Param*>(expr), current_result);
+    case T_SubPlan: return translate_subplan(ctx, reinterpret_cast<SubPlan*>(expr));
+    case T_Param: return translate_param(ctx, reinterpret_cast<Param*>(expr));
     default: {
         PGX_ERROR("Unsupported expression type: %d", expr->type);
         throw std::runtime_error("Unsupported expression type - read the logs");
@@ -110,8 +108,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression(const QueryCtxT& ctx, E
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Var* var,
-                                                  OptRefT<const TranslationResult> current_result) const -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Var* var) const -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
     if (!var) {
@@ -119,44 +116,38 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         throw std::runtime_error("Invalid Var parameters");
     }
 
-    if (!ctx.current_tuple && !current_result) {
-        PGX_ERROR("Invalid Var parameters: var=%p, builder=%p, tuple=%p, has_current_result=false", var, ctx.builder,
+    if (!ctx.current_tuple) {
+        PGX_ERROR("Invalid Var parameters: var=%p, builder=%p, tuple=%p", var, ctx.builder,
                   ctx.current_tuple.getAsOpaquePointer());
-        throw std::runtime_error("Invalid Var parameters: no tuple and no current_result");
+        throw std::runtime_error("Invalid Var parameters: no tuple");
     }
 
-    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d, has_current_result=%d",
-            var->varno, var->varattno, current_result.has_value());
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d", var->varno, var->varattno);
 
     std::string tableName, colName;
     bool nullable;
     bool resolved_from_mapping = false;
 
-    // Try varno_resolution map (handles synthetic varnos via optional varnosyn/varattnosyn)
-    if (current_result) {
-        std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
-        std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn) : std::nullopt;
+    std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
+    std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn)
+                                                                      : std::nullopt;
 
-        if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
-            tableName = resolved->table_name;
-            colName = resolved->column_name;
-            nullable = resolved->nullable;
-            resolved_from_mapping = true;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Using varno_resolution for varno=%d, varattno=%d -> (%s, %s, nullable=%d)",
-                    var->varno, var->varattno, tableName.c_str(), colName.c_str(), nullable);
-        }
+    if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
+        tableName = resolved->table_name;
+        colName = resolved->column_name;
+        nullable = resolved->nullable;
+        resolved_from_mapping = true;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using varno_resolution for varno=%d, varattno=%d -> (%s, %s, nullable=%d)",
+                var->varno, var->varattno, tableName.c_str(), colName.c_str(), nullable);
     }
 
     if (!resolved_from_mapping && var->varno == OUTER_VAR) {
         auto& result_to_use = ctx.outer_result ? ctx.outer_result.value()
-                                               : (current_result ? current_result.value()
-                                                                 : throw std::runtime_error("OUTER_VAR without "
-                                                                                            "current_result or "
-                                                                                            "outer_result"));
+                                               : throw std::runtime_error("OUTER_VAR without outer_result");
 
         if (var->varattno <= 0 || var->varattno > static_cast<int>(result_to_use.get().columns.size())) {
-            PGX_ERROR("OUTER_VAR varattno=%d out of range (result has %zu columns, using %s)", var->varattno,
-                      result_to_use.get().columns.size(), ctx.outer_result ? "outer_result" : "current_result");
+            PGX_ERROR("OUTER_VAR varattno=%d out of range (result has %zu columns)", var->varattno,
+                      result_to_use.get().columns.size());
             throw std::runtime_error("OUTER_VAR reference out of range");
         }
         const auto& col = result_to_use.get().columns[var->varattno - 1];
@@ -164,37 +155,16 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         colName = col.column_name;
         nullable = col.nullable;
         resolved_from_mapping = true;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from %s", var->varattno,
-                tableName.c_str(), colName.c_str(), nullable, ctx.outer_result ? "outer_result" : "current_result");
+        PGX_LOG(AST_TRANSLATE, DEBUG, "OUTER_VAR varattno=%d resolved to %s.%s (nullable=%d) from outer_result",
+                var->varattno, tableName.c_str(), colName.c_str(), nullable);
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: BRANCH=OUTER_VAR, tableName='%s', colName='%s'",
                 tableName.c_str(), colName.c_str());
     }
 
     if (!resolved_from_mapping && (var->varno == INNER_VAR || var->varno == INDEX_VAR)) {
-        if (!current_result) {
-            PGX_ERROR("Unresolved special varno %d (varattno=%d) - no current_result for fallback", var->varno,
-                      var->varattno);
-            throw std::runtime_error("Special varno requires current_result for positional fallback");
-        }
-
-        size_t left_size = current_result->get().left_child_column_count;
-        size_t absolute_position = left_size + var->varattno - 1; // varattno is 1-based
-
-        if (absolute_position >= current_result->get().columns.size()) {
-            PGX_ERROR("INNER_VAR/INDEX_VAR varattno=%d (absolute pos=%zu) out of range "
-                      "(left_size=%zu, total=%zu columns)",
-                      var->varattno, absolute_position, left_size, current_result->get().columns.size());
-            throw std::runtime_error("INNER_VAR/INDEX_VAR reference out of bounds");
-        }
-
-        const auto& col = current_result->get().columns[absolute_position];
-        tableName = col.table_name;
-        colName = col.column_name;
-        nullable = col.nullable;
-        resolved_from_mapping = true;
-        PGX_LOG(AST_TRANSLATE, DEBUG,
-                "INNER_VAR/INDEX_VAR varno=%d varattno=%d → absolute_pos=%zu (left_size=%zu) → %s.%s (nullable=%d)",
-                var->varno, var->varattno, absolute_position, left_size, tableName.c_str(), colName.c_str(), nullable);
+        PGX_ERROR("INNER_VAR/INDEX_VAR varno=%d varattno=%d not found in varno_resolution - join translation bug",
+                  var->varno, var->varattno);
+        throw std::runtime_error("INNER_VAR/INDEX_VAR requires varno_resolution mapping");
     }
 
     if (!resolved_from_mapping) {
@@ -204,9 +174,8 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         tableName = get_table_alias_from_rte(&ctx.current_stmt, schema_varno);
         colName = get_column_name_from_schema(&ctx.current_stmt, schema_varno, var->varattno);
         nullable = is_column_nullable(&ctx.current_stmt, schema_varno, var->varattno);
-        PGX_LOG(AST_TRANSLATE, DEBUG,
-                "Fallback to schema lookup: varno=%d -> %s.%s",
-                schema_varno, tableName.c_str(), colName.c_str());
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Fallback to schema lookup: varno=%d -> %s.%s", schema_varno, tableName.c_str(),
+                colName.c_str());
     }
 
     auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
@@ -238,17 +207,12 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     return getColOp.getRes();
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const* const_node,
-                                                    const OptRefT<const TranslationResult> current_result) const
-    -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_const(const QueryCtxT& ctx, Const* const_node) const -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
-    (void)current_result;
     return postgresql_ast::translate_const(const_node, ctx.builder, context_);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const Aggref* aggref,
-                                                     OptRefT<const TranslationResult> current_result) const
-    -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) const -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!aggref) {
         PGX_ERROR("Invalid Aggref parameters");
@@ -266,31 +230,16 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_aggref: Looking for Aggref with function %s (OID %u, aggno=%d, aggtype=%d)",
             funcName.c_str(), aggref->aggfnoid, aggref->aggno, aggref->aggtype);
 
-    if (current_result) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Available varno_resolution mappings in translate_aggref:");
-        for (const auto& [key, value] : ctx.varno_resolution) {
-            PGX_LOG(AST_TRANSLATE, DEBUG, "  varno=%d, attno=%d -> (%s, %s)", key.first, key.second,
-                    value.first.c_str(), value.second.c_str());
-        }
-    } else {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "No TranslationResult available in translate_aggref");
-    }
-
     std::string scopeName, columnName;
 
     bool found = false;
-    PGX_LOG(AST_TRANSLATE, DEBUG, "Current result is [%s]",
-            current_result ? current_result->get().toString().data() : "Nothing!");
-    if (current_result) {
-        if (auto resolved = ctx.resolve_var(-2, aggref->aggno)) {
-            scopeName = resolved->table_name;
-            columnName = resolved->column_name;
-            found = true;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for aggregate aggno=%d -> (%s, %s)",
-                    aggref->aggno, scopeName.c_str(), columnName.c_str());
-        }
+    if (auto resolved = ctx.resolve_var(-2, aggref->aggno)) {
+        scopeName = resolved->table_name;
+        columnName = resolved->column_name;
+        found = true;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for aggregate aggno=%d -> (%s, %s)",
+                aggref->aggno, scopeName.c_str(), columnName.c_str());
     }
-
     if (!found) {
         PGX_ERROR("No mapping found for aggregate aggno=%d", aggref->aggno);
         throw std::runtime_error("Aggregate reference not found in column mappings");
@@ -325,9 +274,7 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     return getColOp.getRes();
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const Param* param,
-                                                    OptRefT<const TranslationResult> current_result) const
-    -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const Param* param) const -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
     if (!param) {
@@ -352,13 +299,14 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
         // Try varno_resolution first
         std::string tableName, colName;
         auto varnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varnosyn) : std::nullopt;
-        auto varattnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varattnosyn) : std::nullopt;
+        auto varattnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varattnosyn)
+                                                                 : std::nullopt;
 
         if (auto resolved = ctx.resolve_var(paramVar->varno, paramVar->varattno, varnosyn_opt, varattnosyn_opt)) {
             tableName = resolved->table_name;
             colName = resolved->column_name;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Resolved via varno_resolution -> %s.%s",
-                    tableName.c_str(), colName.c_str());
+            PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Resolved via varno_resolution -> %s.%s", tableName.c_str(),
+                    colName.c_str());
         } else {
             int schema_varno = varnosyn_opt.value_or(paramVar->varno);
             colName = get_column_name_from_schema(&ctx.current_stmt, schema_varno, paramVar->varattno);
@@ -382,24 +330,26 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
                         colRef.getColumn().type = mlirType;
                     }
 
-                    return ctx.builder.create<mlir::relalg::GetColumnOp>(
-                        ctx.builder.getUnknownLoc(), mlirType, colRef, ctx.current_tuple);
+                    return ctx.builder.create<mlir::relalg::GetColumnOp>(ctx.builder.getUnknownLoc(), mlirType, colRef,
+                                                                         ctx.current_tuple);
                 }
             }
         }
 
-        PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Column '%s' not found in outer_result, using fallback", colName.c_str());
-        return translate_var(ctx, paramVar, ctx.outer_result);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Column '%s' not found in outer_result, using fallback",
+                colName.c_str());
+        return translate_var(ctx, paramVar);
     }
 
-    // Check correlation parameters (these are free variables and don't need current_result)
+    // Check correlation parameters
     const auto& correlation_params = ctx.correlation_params;
     const auto corr_it = correlation_params.find(param->paramid);
 
     if (corr_it != correlation_params.end()) {
         // ReSharper disable once CppUseStructuredBinding
         const auto& corr_info = corr_it->second;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to correlation parameter %s.%s (nullable=%d) as free variable",
+        PGX_LOG(AST_TRANSLATE, DEBUG,
+                "Resolving Param paramid=%d to correlation parameter %s.%s (nullable=%d) as free variable",
                 param->paramid, corr_info.table_scope.c_str(), corr_info.column_name.c_str(), corr_info.nullable);
 
         auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();

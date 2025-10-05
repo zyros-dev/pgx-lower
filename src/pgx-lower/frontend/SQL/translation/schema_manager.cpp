@@ -133,7 +133,8 @@ auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, const in
     return "col_" + std::to_string(varattno);
 #else
     if (rte->relid == InvalidOid) {
-        PGX_ERROR("Invalid RTE for column lookup: varno=%d has no relid (CTE/subquery should use varno_resolution)", varno);
+        PGX_ERROR("Invalid RTE for column lookup: varno=%d has no relid (CTE/subquery should use varno_resolution)",
+                  varno);
         throw std::runtime_error("Invalid - read logs");
     }
 

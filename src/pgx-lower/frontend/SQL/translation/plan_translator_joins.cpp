@@ -114,7 +114,7 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
     // No need to apply them as separate selections
 
     if (mergeJoin->join.plan.qual) {
-        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->join.plan.qual, nullptr);
+        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->join.plan.qual);
     }
 
     if (mergeJoin->join.plan.targetlist) {
@@ -170,7 +170,7 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
 
     if (hashJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.plan.qual, nullptr);
+        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.plan.qual);
     }
 
     if (hashJoin->join.plan.targetlist) {
@@ -266,7 +266,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
 
     if (nestLoop->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual_with_columns(ctx, result, nestLoop->join.plan.qual, nullptr);
+        result = apply_selection_from_qual_with_columns(ctx, result, nestLoop->join.plan.qual);
     }
 
     if (nestLoop->join.plan.targetlist) {
@@ -297,8 +297,9 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
     auto translateExpressionFn = [this, isRightJoin](const QueryCtxT& ctx_p, Expr* expr,
                                                      const TranslationResult* left_child,
                                                      const TranslationResult* right_child) -> mlir::Value {
-        return isRightJoin ? translate_expression_with_join_context(ctx_p, expr, right_child, left_child)
-                           : translate_expression_with_join_context(ctx_p, expr, left_child, right_child);
+        // TODO: You need to remap -1 and -2 inside the context depending on which join it is... uhm...
+        // use isRightJoin
+        return translate_expression(ctx_p, expr);
     };
 
     auto translateJoinPredicateToRegion = [translateExpressionFn](

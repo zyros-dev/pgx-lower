@@ -53,38 +53,6 @@ auto is_column_nullable(const PlannedStmt* currentPlannedStmt, int varno, AttrNu
 // ===========================================================================
 
 namespace pgx_lower::frontend::sql {
-
-// TODO: NV Improve state correctness
-// Our data model is currently a mess. I believe we should change to
-// QueryState
-//      QueryContext -> represents global/absolute state/variables.
-//      TranslationResult -> represents relative state/variables
-//
-// For the QueryContext, you can ADD information to it, for instance the subquery
-// node might have to add information about the range table lookups because it created these
-// global columns. However, you cannot update or modify entries inside of it after its
-// created
-//
-// For TranslationResult, there are a number of challenges. We need it to be immutable, and
-// construction guarantees correctness. This means we need to either introduce a factory pattern
-// or add like... 5-10 constructors.
-//
-// There's essentially three types of TranslationResults. The first represents reading from a leaf node
-// or absolute positions, subquery columns. These require a lot of validation that what they're being made
-// from is valid.
-// The second is joining two TranslationResults. So, if you have an expression inside of your Join node,
-// this requires a TranslationResult from the children of the Join node. This has like -1 and -2 for left/right
-// children. These are constructed from 2+ TranslationResults, and basically relies on induction.
-// The third is carried up. For instance, if you have a Projection node with a child, it chops columns
-// out of its child. These should be able to validate with the result list of the ProjectionNode.
-//
-// All of these can be validate with MLIR results, like the joins can validate by binding MLIR graph structures
-// by passing in the left and right mlir::Values. So, maybe our constructors for a lot of these will look like
-// construct([TranslationResult], [mlir::Value], result list, ... other things)
-//
-// With all of this, we know that our TranslationResult will always represent something VALID. However,
-// we won't know whether it belongs to our current expression. This I'm not sure we need to worry about, or
-// rather, introducing a solution adds too much complexity to justify the benefit compared to testing.
 template<typename T>
 using OptRefT = std::optional<std::reference_wrapper<T>>;
 
@@ -252,48 +220,32 @@ class PostgreSQLASTTranslator::Impl {
 
     auto translate_query(const PlannedStmt* planned_stmt) -> std::unique_ptr<mlir::ModuleOp>;
 
-    mlir::Value translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr,
-                                        OptRefT<const TranslationResult> current_result = std::nullopt);
-    auto translate_expression(const QueryCtxT& ctx, Expr* expr,
-                              OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
-    auto translate_expression_with_join_context(const QueryCtxT& ctx, Expr* expr, const TranslationResult* left_child,
-                                                const TranslationResult* right_child) -> mlir::Value;
+    mlir::Value translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr);
+    auto translate_expression(const QueryCtxT& ctx, Expr* expr) -> mlir::Value;
     auto translate_expression_for_stream(const QueryCtxT& ctx, Expr* expr, const TranslationResult& child_result,
                                          const std::string& suggested_name)
         -> pgx_lower::frontend::sql::StreamExpressionResult;
 
-    auto translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr,
-                           OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
-    auto translate_var(const QueryCtxT& ctx, const Var* var,
-                       OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
-    auto translate_const(const QueryCtxT& ctx, Const* const_node,
-                         OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
+    auto translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value;
+    auto translate_var(const QueryCtxT& ctx, const Var* var) const -> mlir::Value;
+    auto translate_const(const QueryCtxT& ctx, Const* const_node) const -> mlir::Value;
     auto translate_func_expr(const QueryCtxT& ctx, const FuncExpr* func_expr,
-                             OptRefT<const TranslationResult> current_result = std::nullopt,
                              std::optional<std::vector<mlir::Value>> pre_translated_args = std::nullopt) -> mlir::Value;
 
-    auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr,
-                             OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
-    auto translate_null_test(const QueryCtxT& ctx, const NullTest* null_test,
-                             OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
-    auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref,
-                          OptRefT<const TranslationResult> current_result = std::nullopt) const -> mlir::Value;
-    auto translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr,
-                                 OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
-    auto translate_scalar_array_op_expr(const QueryCtxT& ctx, const ScalarArrayOpExpr* scalar_array_op,
-                                        OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
-    auto translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr,
-                             OptRefT<const TranslationResult> current_result = std::nullopt) -> mlir::Value;
+    auto translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value;
+    auto translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value;
+    auto translate_aggref(const QueryCtxT& ctx, const Aggref* aggref) const -> mlir::Value;
+    auto translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr) -> mlir::Value;
+    auto translate_scalar_array_op_expr(const QueryCtxT& ctx, const ScalarArrayOpExpr* scalar_array_op) -> mlir::Value;
+    auto translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value;
     auto translate_expression_with_case_test(const QueryCtxT& ctx, Expr* expr, mlir::Value case_test_value)
         -> mlir::Value;
 
     // Subquery translation
-    auto translate_subplan(const QueryCtxT& ctx, const SubPlan* subplan, OptRefT<const TranslationResult> current_result)
-        -> mlir::Value;
+    auto translate_subplan(const QueryCtxT& ctx, const SubPlan* subplan) -> mlir::Value;
     auto translate_subquery_plan(const QueryCtxT& parent_ctx, Plan* subquery_plan, const PlannedStmt* parent_stmt)
         -> std::pair<mlir::Value, TranslationResult>;
-    auto translate_param(const QueryCtxT& ctx, const Param* param, OptRefT<const TranslationResult> current_result) const
-        -> mlir::Value;
+    auto translate_param(const QueryCtxT& ctx, const Param* param) const -> mlir::Value;
 
     // Plan node translation methods
     auto translate_plan_node(QueryCtxT& ctx, Plan* plan) -> TranslationResult;
@@ -309,7 +261,7 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_nest_loop(QueryCtxT& ctx, NestLoop* nestLoop) -> TranslationResult;
     auto translate_material(QueryCtxT& ctx, const Material* material) -> TranslationResult;
     auto translate_subquery_scan(QueryCtxT& ctx, SubqueryScan* subqueryScan) -> TranslationResult;
-    auto translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) -> TranslationResult;
+    auto translate_cte_scan(QueryCtxT& ctx, const CteScan* cteScan) -> TranslationResult;
 
     // InitPlan helpers
     auto process_init_plans(QueryCtxT& ctx, const Plan* plan) -> void;
@@ -323,8 +275,7 @@ class PostgreSQLASTTranslator::Impl {
     auto apply_selection_from_qual(const QueryCtxT& ctx, const TranslationResult& input, const List* qual)
         -> TranslationResult;
 
-    auto apply_selection_from_qual_with_columns(const QueryCtxT& ctx, const TranslationResult& input, const List* qual,
-                                                const TranslationResult* merged_join_child) -> TranslationResult;
+    auto apply_selection_from_qual_with_columns(const QueryCtxT& ctx, const TranslationResult& input, const List* qual) -> TranslationResult;
     auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input, const List* target_list,
                                            const TranslationResult* merged_join_child = nullptr) -> TranslationResult;
     auto apply_projection_from_translation_result(const QueryCtxT& ctx, const TranslationResult& input,
@@ -342,8 +293,7 @@ class PostgreSQLASTTranslator::Impl {
         -> TranslationResult;
 
     // Operation translation helpers
-    auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr,
-                                  OptRefT<const TranslationResult> current_result = std::nullopt)
+    auto extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
     static auto normalize_bpchar_operands(const QueryCtxT& ctx, const OpExpr* op_expr, mlir::Value lhs, mlir::Value rhs)
         -> std::pair<mlir::Value, mlir::Value>;

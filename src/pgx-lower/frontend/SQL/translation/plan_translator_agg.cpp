@@ -461,7 +461,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Post-processing resno=%d with expression type=%d", resno, full_expr->type);
 
                 auto postCtx = QueryCtxT::createChildContext(ctx, mapBuilder, mapBlock->getArgument(0));
-                auto post_value = translate_expression(postCtx, full_expr, postProcResult);
+                auto post_value = translate_expression(postCtx, full_expr);
 
                 auto colName = "postproc_" + std::to_string(resno);
                 auto colDef = columnManager.createDef(postMapScope, colName);

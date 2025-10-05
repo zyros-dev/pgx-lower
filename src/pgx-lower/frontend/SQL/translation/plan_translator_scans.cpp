@@ -163,10 +163,9 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
 
     // where + projection - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     if (result.op && seqScan->scan.plan.qual) {
-        const TranslationResult* outer = ctx.outer_result.has_value() ? &ctx.outer_result.value().get() : nullptr;
         PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan has qual, applying selection (context has %zu InitPlans)%s",
-                ctx.init_plan_results.size(), outer ? " (parameterized)" : "");
-        result = apply_selection_from_qual_with_columns(ctx, result, seqScan->scan.plan.qual, outer);
+                ctx.init_plan_results.size(), ctx.outer_result.has_value() ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, seqScan->scan.plan.qual);
     } else {
         PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan: no qual (result.op=%p, plan.qual=%p)", static_cast<void*>(result.op),
                 static_cast<void*>(seqScan->scan.plan.qual));
@@ -291,18 +290,16 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_index_scan: final varno_resolution.size()=%zu",
             ctx.varno_resolution.size());
 
-    const TranslationResult* outer = ctx.outer_result.has_value() ? &ctx.outer_result.value().get() : nullptr;
     if (result.op && indexScan->indexqual && indexScan->indexqual->length > 0) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan has %d indexqual predicates, applying as selection%s",
-                indexScan->indexqual->length, outer ? " (parameterized)" : "");
-        auto merged = merge_translation_results(outer, &result);
-        result = apply_selection_from_qual_with_columns(ctx, result, indexScan->indexqual, &merged);
+                indexScan->indexqual->length, ctx.outer_result.has_value() ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, indexScan->indexqual);
     }
 
     if (result.op && indexScan->scan.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan has plan.qual, applying selection (context has %zu InitPlans)%s",
-                ctx.init_plan_results.size(), outer ? " (parameterized)" : "");
-        result = apply_selection_from_qual_with_columns(ctx, result, indexScan->scan.plan.qual, outer);
+                ctx.init_plan_results.size(), ctx.outer_result.has_value() ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, indexScan->scan.plan.qual);
     } else {
         PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan: no plan.qual (result.op=%p, plan.qual=%p)",
                 static_cast<void*>(result.op), static_cast<void*>(indexScan->scan.plan.qual));
@@ -411,13 +408,13 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
     if (result.op && subqueryScan->scan.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan has qual, applying selection (context has %zu InitPlans)",
                 ctx.init_plan_results.size());
-        result = apply_selection_from_qual_with_columns(ctx, result, subqueryScan->scan.plan.qual, nullptr);
+        result = apply_selection_from_qual_with_columns(ctx, result, subqueryScan->scan.plan.qual);
     }
 
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* cteScan) -> TranslationResult {
+auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const CteScan* cteScan) -> TranslationResult {
     // CteScan is a bit confusing. It has a plan inside of it, but these plans are evaluated at InitPlan time,
     // so we just need to read out of the target list here.
     PGX_IO(AST_TRANSLATE);
@@ -519,7 +516,7 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* 
     if (result.op && cteScan->scan.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "CteScan has qual, applying selection (context has %zu InitPlans)",
                 ctx.init_plan_results.size());
-        result = apply_selection_from_qual_with_columns(ctx, result, cteScan->scan.plan.qual, nullptr);
+        result = apply_selection_from_qual_with_columns(ctx, result, cteScan->scan.plan.qual);
     }
 
     return result;

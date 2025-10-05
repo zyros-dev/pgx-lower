@@ -54,12 +54,11 @@ class GetColumnOp;
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
-mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr,
-                                                                   const OptRefT<const TranslationResult> current_result) {
+mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCtxT& ctx, Expr* expr) {
     const auto* coerce = reinterpret_cast<CoerceViaIO*>(expr);
     PGX_LOG(AST_TRANSLATE, DEBUG, "Processing T_CoerceViaIO to type OID %d", coerce->resulttype);
 
-    auto argValue = translate_expression(ctx, coerce->arg, current_result);
+    auto argValue = translate_expression(ctx, coerce->arg);
     if (!argValue) {
         PGX_ERROR("Failed to translate CoerceViaIO argument");
         throw std::runtime_error("Failed to translate CoerceViaIO argument");
@@ -72,8 +71,7 @@ mlir::Value PostgreSQLASTTranslator::Impl::translate_coerce_via_io(const QueryCt
     return ctx.builder.create<mlir::db::CastOp>(ctx.builder.getUnknownLoc(), targetType, argValue);
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr,
-                                                        const OptRefT<const TranslationResult> current_result) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, const BoolExpr* bool_expr) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!bool_expr || !bool_expr->args || bool_expr->args->length == 0) {
         PGX_ERROR("Invalid BoolExpr parameters");
@@ -93,8 +91,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
             ListCell* lc;
             foreach (lc, bool_expr->args) {
                 if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
-                    if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode), current_result))
-                    {
+                    if (mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                         if (!argValue.getType().isInteger(1)) {
                             argValue = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argValue);
                         }
@@ -129,8 +126,8 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
             ListCell* lc;
             foreach (lc, bool_expr->args) {
                 if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
-                    if (auto argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode), current_result)) {
-                        if (!argValue.getType().isInteger(1)) { // Ensure boolean type
+                    if (auto argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
+                        if (!argValue.getType().isInteger(1)) { // Ensur
                             argValue = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), argValue);
                         }
 
@@ -158,7 +155,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
         if (bool_expr->args && bool_expr->args->length > 0) {
             if (const ListCell* lc = list_head(bool_expr->args)) {
                 if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
-                    argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode), current_result);
+                    argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode));
                 }
             }
         }
@@ -182,8 +179,7 @@ auto PostgreSQLASTTranslator::Impl::translate_bool_expr(const QueryCtxT& ctx, co
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, const NullTest* null_test,
-                                                        const OptRefT<const TranslationResult> current_result) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, const NullTest* null_test) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
     if (!null_test) {
         PGX_ERROR("Invalid NullTest parameters");
@@ -191,7 +187,7 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
     }
 
     auto* argNode = reinterpret_cast<Node*>(null_test->arg);
-    auto argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode), current_result);
+    auto argVal = translate_expression(ctx, reinterpret_cast<Expr*>(argNode));
     if (!argVal) {
         PGX_ERROR("Failed to translate NullTest argument");
         throw std::runtime_error("Failed to translate NullTest argument");
@@ -210,8 +206,7 @@ auto PostgreSQLASTTranslator::Impl::translate_null_test(const QueryCtxT& ctx, co
     }
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr,
-                                                            const OptRefT<const TranslationResult> current_result)
+auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx, const CoalesceExpr* coalesce_expr)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
@@ -232,7 +227,7 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
     ListCell* cell;
     foreach (cell, coalesce_expr->args) {
         const auto expr = static_cast<Expr*>(lfirst(cell));
-        if (mlir::Value val = translate_expression(ctx, expr, current_result)) {
+        if (mlir::Value val = translate_expression(ctx, expr)) {
             translatedArgs.push_back(val);
         } else {
             PGX_ERROR("Failed to translate COALESCE argument");
@@ -317,8 +312,7 @@ auto PostgreSQLASTTranslator::Impl::translate_coalesce_expr(const QueryCtxT& ctx
 }
 
 auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCtxT& ctx,
-                                                                   const ScalarArrayOpExpr* scalar_array_op,
-                                                                   OptRefT<const TranslationResult> current_result)
+                                                                   const ScalarArrayOpExpr* scalar_array_op)
     -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
@@ -334,7 +328,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     }
 
     const auto leftNode = static_cast<Node*>(lfirst(&args->elements[0]));
-    auto leftValue = translate_expression(ctx, reinterpret_cast<Expr*>(leftNode), current_result);
+    auto leftValue = translate_expression(ctx, reinterpret_cast<Expr*>(leftNode));
     if (!leftValue) {
         PGX_ERROR("Failed to translate left operand of IN expression");
         throw std::runtime_error("Failed to translate left operand of IN expression");
@@ -359,7 +353,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             ListCell* lc;
             foreach (lc, elements) {
                 const auto elemNode = static_cast<Node*>(lfirst(lc));
-                if (mlir::Value elemValue = translate_expression(ctx, reinterpret_cast<Expr*>(elemNode), std::nullopt)) {
+                if (mlir::Value elemValue = translate_expression(ctx, reinterpret_cast<Expr*>(elemNode))) {
                     arrayElements.push_back(elemValue);
                 }
             }
@@ -610,8 +604,7 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr,
-                                                        OptRefT<const TranslationResult> current_result) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, const CaseExpr* case_expr) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
     if (!case_expr) {
@@ -623,7 +616,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
     // 2. Searched: CASE WHEN cond1 THEN result1 WHEN cond2 THEN result2 ELSE default END
     mlir::Value caseArg = nullptr;
     if (case_expr->arg) {
-        caseArg = translate_expression(ctx, case_expr->arg, current_result);
+        caseArg = translate_expression(ctx, case_expr->arg);
         if (!caseArg) {
             PGX_ERROR("Failed to translate CASE argument expression");
             throw std::runtime_error("Check logs");
@@ -636,7 +629,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
     // Build nested if-then-else structure from WHEN clauses
     mlir::Value elseResult = nullptr;
     if (case_expr->defresult) {
-        elseResult = translate_expression(ctx, case_expr->defresult, current_result);
+        elseResult = translate_expression(ctx, case_expr->defresult);
         if (!elseResult) {
             PGX_ERROR("Failed to translate CASE ELSE expression");
             throw std::runtime_error("Check logs");
@@ -668,7 +661,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
                 }
                 condition = whenCondition;
             } else {
-                condition = translate_expression(ctx, whenClause->expr, current_result);
+                condition = translate_expression(ctx, whenClause->expr);
                 if (!condition) {
                     PGX_ERROR("Failed to translate WHEN condition");
                     throw std::runtime_error("Check logs");
@@ -681,7 +674,7 @@ auto PostgreSQLASTTranslator::Impl::translate_case_expr(const QueryCtxT& ctx, co
                 condition = ctx.builder.create<mlir::db::DeriveTruth>(ctx.builder.getUnknownLoc(), condition);
             }
 
-            mlir::Value thenResult = translate_expression(ctx, whenClause->result, current_result);
+            mlir::Value thenResult = translate_expression(ctx, whenClause->result);
             if (!thenResult) {
                 PGX_ERROR("Failed to translate THEN result");
                 throw std::runtime_error("Check logs");
@@ -747,10 +740,10 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_with_case_test(const Qu
 
         mlir::Value leftValue = (leftNode && nodeTag(leftNode) == T_CaseTestExpr)
                                     ? case_test_value
-                                    : translate_expression(ctx, reinterpret_cast<Expr*>(leftNode), std::nullopt);
+                                    : translate_expression(ctx, reinterpret_cast<Expr*>(leftNode));
         mlir::Value rightValue = (rightNode && nodeTag(rightNode) == T_CaseTestExpr)
                                      ? case_test_value
-                                     : translate_expression(ctx, reinterpret_cast<Expr*>(rightNode), std::nullopt);
+                                     : translate_expression(ctx, reinterpret_cast<Expr*>(rightNode));
 
         if (!leftValue || !rightValue) {
             PGX_ERROR("Failed to translate operands in CASE OpExpr");

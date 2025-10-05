@@ -51,8 +51,7 @@ class GetColumnOp;
 namespace postgresql_ast {
 using namespace pgx_lower::frontend::sql::constants;
 
-auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr,
-                                                      OptRefT<const TranslationResult> current_result) -> mlir::Value {
+auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, const OpExpr* op_expr) -> mlir::Value {
     PGX_IO(AST_TRANSLATE);
 
     if (!op_expr) {
@@ -60,7 +59,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
         throw std::runtime_error("Invalid OpExpr parameters");
     }
 
-    auto operands = extract_op_expr_operands(ctx, op_expr, current_result);
+    auto operands = extract_op_expr_operands(ctx, op_expr);
     if (!operands) {
         PGX_ERROR("Failed to extract OpExpr operands");
         throw std::runtime_error("Invalid OpExpr parameters");
@@ -165,8 +164,7 @@ auto PostgreSQLASTTranslator::Impl::translate_op_expr(const QueryCtxT& ctx, cons
     throw std::runtime_error("Unsupported operator");
 }
 
-auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr,
-                                                             const OptRefT<const TranslationResult> current_result)
+auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ctx, const OpExpr* op_expr)
     -> std::optional<std::pair<mlir::Value, mlir::Value>> {
     PGX_IO(AST_TRANSLATE);
     if (!op_expr || !op_expr->args) {
@@ -189,8 +187,7 @@ auto PostgreSQLASTTranslator::Impl::extract_op_expr_operands(const QueryCtxT& ct
     for (int argIndex = 0; argIndex < op_expr->args->length && argIndex < 2; argIndex++) {
         const ListCell* lc = &op_expr->args->elements[argIndex];
         if (const auto argNode = static_cast<Node*>(lfirst(lc))) {
-            if (const mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode), current_result))
-            {
+            if (const mlir::Value argValue = translate_expression(ctx, reinterpret_cast<Expr*>(argNode))) {
                 if (argIndex == 0) {
                     lhs = argValue;
                 } else if (argIndex == 1) {
