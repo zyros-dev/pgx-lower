@@ -165,7 +165,7 @@ struct TranslationContext {
         return TranslationContext{
             parent.current_stmt,     parent.builder,           parent.current_module,    parent.current_tuple,
             parent.current_tuple,    parent.outer_result,      parent.init_plan_results, parent.subquery_param_mapping,
-            parent.varno_resolution, parent.correlation_params};
+            parent.varno_resolution, parent.correlation_params, parent.nest_params};
     }
 
     static TranslationContext createChildContext(const TranslationContext& parent, mlir::OpBuilder& new_builder,
@@ -173,7 +173,7 @@ struct TranslationContext {
         return TranslationContext{parent.current_stmt,        new_builder,              parent.current_module,
                                   new_current_tuple,          parent.current_tuple,     parent.outer_result,
                                   parent.init_plan_results,   parent.subquery_param_mapping,
-                                  parent.varno_resolution,    parent.correlation_params};
+                                  parent.varno_resolution,    parent.correlation_params, parent.nest_params};
     }
 
     [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {

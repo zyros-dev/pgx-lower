@@ -162,9 +162,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     mlir::OpBuilder realBlockBuilder(ctx.builder.getContext());
     realBlockBuilder.setInsertionPointToStart(realBlock);
 
-    auto realBlockCtx = QueryCtxT::createChildContext(ctx);
-    realBlockCtx.builder = realBlockBuilder;
-    realBlockCtx.current_tuple = realTupleArg;
+    auto realBlockCtx = QueryCtxT::createChildContext(ctx, realBlockBuilder, realTupleArg);
     auto realExprValue = translate_expression(realBlockCtx, expr, child_result);
     verify_and_print(realExprValue);
     realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});

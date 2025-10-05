@@ -324,9 +324,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
 
-        auto predicateCtx = QueryCtxT::createChildContext(queryCtx);
-        predicateCtx.builder = predicateBuilder;
-        predicateCtx.current_tuple = tupleArg;
+        auto predicateCtx = QueryCtxT::createChildContext(queryCtx, predicateBuilder, tupleArg);
         auto conditions = std::vector<mlir::Value>();
         ListCell* lc;
         int clauseIdx = 0;
@@ -474,10 +472,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
                                                     const TranslationResult& rightTrans, const QueryCtxT& queryCtx) {
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
-        auto predicateCtx = QueryCtxT::createChildContext(queryCtx);
-        predicateCtx.builder = predicateBuilder;
-        predicateCtx.current_tuple = innerTupleArg;
-        predicateCtx.outer_tuple = mlir::Value();
+        auto predicateCtx = QueryCtxT::createChildContext(queryCtx, predicateBuilder, innerTupleArg);
         if (!join_clauses_ || join_clauses_->length == 0) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] No join clauses, returning true");
             auto trueVal = predicateBuilder.create<mlir::arith::ConstantOp>(
