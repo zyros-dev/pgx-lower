@@ -180,7 +180,7 @@ struct TranslationContext {
         int lookup_varno = varno;
         int lookup_varattno = varattno;
 
-        if (varnosyn.has_value()) {
+        if (varnosyn.has_value() && varno != INNER_VAR && varno != OUTER_VAR) {
             lookup_varno = *varnosyn;
 
             const auto* rte = static_cast<RangeTblEntry*>(

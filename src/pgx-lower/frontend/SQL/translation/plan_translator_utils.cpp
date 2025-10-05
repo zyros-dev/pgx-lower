@@ -1014,10 +1014,21 @@ auto create_child_context_with_var_mappings(
             continue;
         }
         child_ctx.varno_resolution[key] = value;
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR_MAPPINGS] Added mapping: varno=%d, varattno=%d -> (%s, %s)", varno,
+                varattno, value.first.c_str(), value.second.c_str());
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR_MAPPINGS] Final context has %zu varno_resolution entries",
             child_ctx.varno_resolution.size());
+
+    for (const auto& [key, value] : child_ctx.varno_resolution) {
+        const auto& [varno, varattno] = key;
+        if (varno == INNER_VAR || varno == OUTER_VAR) {
+            PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR_MAPPINGS] Final mapping: varno=%d, varattno=%d -> (%s, %s)", varno,
+                    varattno, value.first.c_str(), value.second.c_str());
+        }
+    }
+
     return child_ctx;
 }
 

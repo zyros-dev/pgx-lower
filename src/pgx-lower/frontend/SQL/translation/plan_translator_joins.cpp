@@ -332,7 +332,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
 
-        auto predicateCtx = QueryCtxT::createChildContext(queryCtx, predicateBuilder, tupleArg);
+        const auto basePredicateCtx = QueryCtxT::createChildContext(queryCtx, predicateBuilder, tupleArg);
         auto conditions = std::vector<mlir::Value>();
         ListCell* lc;
         int clauseIdx = 0;
@@ -341,7 +341,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
             PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] Processing clause %d of type %d", ++clauseIdx,
                     clause ? clause->type : -1);
 
-            if (auto conditionValue = translateExpressionFn(predicateCtx, clause, &leftTrans, &rightTrans)) {
+            if (auto conditionValue = translateExpressionFn(basePredicateCtx, clause, &leftTrans, &rightTrans)) {
                 conditions.push_back(conditionValue);
                 PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN PREDICATE] Successfully translated clause %d", clauseIdx);
             } else {
@@ -492,6 +492,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Processing %d correlation clauses", join_clauses_->length);
 
+        const auto basePredicateCtx = predicateCtx;
         auto conditions = std::vector<mlir::Value>();
         ListCell* lc;
         int clauseIdx = 0;
@@ -499,7 +500,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
             const auto clause = static_cast<Expr*>(lfirst(lc));
             PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Processing clause %d", ++clauseIdx);
 
-            if (auto conditionValue = translateExpressionFn(predicateCtx, clause, &leftTrans, &rightTrans)) {
+            if (auto conditionValue = translateExpressionFn(basePredicateCtx, clause, &leftTrans, &rightTrans)) {
                 conditions.push_back(conditionValue);
                 PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] Successfully translated clause %d", clauseIdx);
             } else {
