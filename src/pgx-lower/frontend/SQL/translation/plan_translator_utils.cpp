@@ -59,10 +59,10 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
         throw std::runtime_error("Plan node is null");
     }
 
-    const size_t init_plans_before = ctx.init_plan_results.size();
+    const size_t params_before = ctx.params.size();
     process_init_plans(ctx, plan);
     PGX_LOG(AST_TRANSLATE, DEBUG, "After processing InitPlans: context has %zu InitPlans (%zu new)",
-            ctx.init_plan_results.size(), ctx.init_plan_results.size() - init_plans_before);
+            ctx.params.size(), ctx.params.size() - params_before);
 
     TranslationResult result;
 
@@ -330,13 +330,29 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Pla
             continue;
         }
         const int paramid = list_nth_int(setParam, 0);
-        ctx.init_plan_results[paramid] = initplan_result;
+
+        if (initplan_result.columns.empty()) {
+            PGX_ERROR("InitPlan produced no columns for paramid=%d", paramid);
+            continue;
+        }
+
+        const auto& col = initplan_result.columns[0];
+        ctx.params[paramid] = pgx_lower::frontend::sql::ResolvedParam{
+            .table_name = col.table_name,
+            .column_name = col.column_name,
+            .type_oid = col.type_oid,
+            .typmod = col.typmod,
+            .nullable = col.nullable,
+            .mlir_type = col.mlir_type,
+            .cached_value = initplan_result.op->getResult(0)
+        };
+
         PGX_LOG(AST_TRANSLATE, DEBUG, "Stored InitPlan result for paramid=%d (plan_id=%d, %zu columns)", paramid,
                 plan_id, initplan_result.columns.size());
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Processed %d InitPlans, context now has %zu total", list_length(plan->initPlan),
-            ctx.init_plan_results.size());
+            ctx.params.size());
 }
 
 auto PostgreSQLASTTranslator::Impl::create_query_function(mlir::OpBuilder& builder) -> mlir::func::FuncOp {
@@ -380,7 +396,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
         auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu params", tmp_ctx.params.size());
 
         mlir::Value predicateResult = nullptr;
         if (qual && qual->length > 0) {
@@ -472,7 +488,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(const
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
         auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu params", tmp_ctx.params.size());
 
         mlir::Value predicateResult = nullptr;
         if (qual && qual->length > 0) {

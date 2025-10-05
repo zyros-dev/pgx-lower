@@ -222,24 +222,6 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         PGX_LOG(AST_TRANSLATE, DEBUG, "NestLoop has NO joinqual");
     }
 
-    // -----------------------------------------------------------------------------------------------------------------
-    // NestLoop parameterization: inner side references outer via PARAM nodes
-    if (nestLoop->nestParams && nestLoop->nestParams->length > 0) {
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Parameterized nested loop detected with %d parameters",
-                nestLoop->nestParams->length);
-
-        ListCell* lc;
-        foreach (lc, nestLoop->nestParams) {
-            auto* nestParam = static_cast<NestLoopParam*>(lfirst(lc));
-            if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
-                ctx.nest_params[nestParam->paramno] = nestParam->paramval;
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Registered nest param: paramno=%d -> Var(varno=%d, varattno=%d)",
-                        nestParam->paramno, nestParam->paramval->varno, nestParam->paramval->varattno);
-            }
-        }
-    }
-    // -----------------------------------------------------------------------------------------------------------------
-
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating NestLoop - left child type: %d, right child type: %d", leftPlan->type,
             rightPlan->type);
 
@@ -249,6 +231,78 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         PGX_ERROR("Failed to translate left child of NestLoop");
         throw std::runtime_error("Failed to translate left child of NestLoop");
     }
+
+    // -----------------------------------------------------------------------------------------------------------------
+    // NestLoop parameterization: Resolve params using outer (left) child's output
+    if (nestLoop->nestParams && nestLoop->nestParams->length > 0) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Parameterized nested loop detected with %d parameters",
+                nestLoop->nestParams->length);
+
+        ListCell* lc;
+        foreach (lc, nestLoop->nestParams) {
+            auto* nestParam = static_cast<NestLoopParam*>(lfirst(lc));
+            if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
+                auto* paramVar = nestParam->paramval;
+                auto varnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno)
+                    ? std::optional<int>(paramVar->varnosyn) : std::nullopt;
+                auto varattnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno)
+                    ? std::optional<int>(paramVar->varattnosyn) : std::nullopt;
+
+                bool resolved = false;
+                if (auto resolved_var = ctx.resolve_var(paramVar->varno, paramVar->varattno,
+                                                       varnosyn_opt, varattnosyn_opt)) {
+                    auto typeMapper = PostgreSQLTypeMapper(context_);
+                    ctx.params[nestParam->paramno] = pgx_lower::frontend::sql::ResolvedParam{
+                        .table_name = resolved_var->table_name,
+                        .column_name = resolved_var->column_name,
+                        .type_oid = paramVar->vartype,
+                        .typmod = paramVar->vartypmod,
+                        .nullable = resolved_var->nullable,
+                        .mlir_type = typeMapper.map_postgre_sqltype(paramVar->vartype,
+                                                                    paramVar->vartypmod,
+                                                                    resolved_var->nullable)
+                    };
+                    resolved = true;
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Resolved nest param %d via varno_resolution -> %s.%s",
+                            nestParam->paramno, resolved_var->table_name.c_str(),
+                            resolved_var->column_name.c_str());
+                }
+
+                if (!resolved) {
+                    int lookup_varno = varnosyn_opt.value_or(paramVar->varno);
+                    std::string colName = get_column_name_from_schema(&ctx.current_stmt,
+                                                                       lookup_varno,
+                                                                       paramVar->varattno);
+
+                    for (const auto& col : leftTranslation.columns) {
+                        if (col.column_name == colName) {
+                            ctx.params[nestParam->paramno] = pgx_lower::frontend::sql::ResolvedParam{
+                                .table_name = col.table_name,
+                                .column_name = col.column_name,
+                                .type_oid = col.type_oid,
+                                .typmod = col.typmod,
+                                .nullable = col.nullable,
+                                .mlir_type = col.mlir_type
+                            };
+                            resolved = true;
+                            PGX_LOG(AST_TRANSLATE, DEBUG,
+                                    "Resolved nest param %d via outer columns -> %s.%s",
+                                    nestParam->paramno, col.table_name.c_str(), col.column_name.c_str());
+                            break;
+                        }
+                    }
+                }
+
+                if (!resolved) {
+                    PGX_ERROR("NestLoop param %d references column not found in outer result (varno=%d, varattno=%d)",
+                              nestParam->paramno, paramVar->varno, paramVar->varattno);
+                    throw std::runtime_error("Invalid NestLoop param");
+                }
+            }
+        }
+    }
+    // -----------------------------------------------------------------------------------------------------------------
 
     auto rightCtx = map_child_cols(ctx, &leftTranslation, nullptr);
     auto rightTranslation = translate_plan_node(rightCtx, rightPlan);
@@ -556,10 +610,8 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
         auto inner_ctx = QueryCtxT(query_ctx.current_stmt, outer_builder, query_ctx.current_module, inner_tuple,
                                    mlir::Value());
         inner_ctx.outer_result = query_ctx.outer_result;
-        inner_ctx.init_plan_results = query_ctx.init_plan_results;
-        inner_ctx.nest_params = query_ctx.nest_params;
-        inner_ctx.subquery_param_mapping = query_ctx.subquery_param_mapping;
-        inner_ctx.correlation_params = query_ctx.correlation_params;
+        inner_ctx.params = query_ctx.params;  // Copy unified param map
+        inner_ctx.varno_resolution = query_ctx.varno_resolution;
         buildCorrelatedPredicateRegion(&inner_block, inner_tuple, join_clauses2, left_trans, right_trans, inner_ctx);
 
         auto& col_mgr = query_ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();

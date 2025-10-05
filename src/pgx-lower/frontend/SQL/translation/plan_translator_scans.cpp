@@ -164,7 +164,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     // where + projection - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     if (result.op && seqScan->scan.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan has qual, applying selection (context has %zu InitPlans)%s",
-                ctx.init_plan_results.size(), ctx.outer_result.has_value() ? " (parameterized)" : "");
+                ctx.params.size(), ctx.outer_result.has_value() ? " (parameterized)" : "");
         result = apply_selection_from_qual_with_columns(ctx, result, seqScan->scan.plan.qual);
     } else {
         PGX_LOG(AST_TRANSLATE, DEBUG, "SeqScan: no qual (result.op=%p, plan.qual=%p)", static_cast<void*>(result.op),
@@ -298,7 +298,7 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
 
     if (result.op && indexScan->scan.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan has plan.qual, applying selection (context has %zu InitPlans)%s",
-                ctx.init_plan_results.size(), ctx.outer_result.has_value() ? " (parameterized)" : "");
+                ctx.params.size(), ctx.outer_result.has_value() ? " (parameterized)" : "");
         result = apply_selection_from_qual_with_columns(ctx, result, indexScan->scan.plan.qual);
     } else {
         PGX_LOG(AST_TRANSLATE, DEBUG, "IndexScan: no plan.qual (result.op=%p, plan.qual=%p)",
@@ -412,7 +412,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
 
     if (result.op && subqueryScan->scan.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan has qual, applying selection (context has %zu InitPlans)",
-                ctx.init_plan_results.size());
+                ctx.params.size());
         result = apply_selection_from_qual_with_columns(ctx, result, subqueryScan->scan.plan.qual);
     }
 
@@ -436,13 +436,30 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating CteScan with cteParam=%d, ctePlanId=%d, scanrelid=%d", cteParam,
             ctePlanId, scanrelid);
 
-    auto it = ctx.init_plan_results.find(cteParam);
-    if (it == ctx.init_plan_results.end()) {
-        PGX_ERROR("CTE InitPlan result not found for cteParam=%d", cteParam);
-        throw std::runtime_error("CTE InitPlan result not found");
+    auto it = ctx.params.find(cteParam);
+    if (it == ctx.params.end()) {
+        PGX_ERROR("CTE InitPlan param not found for cteParam=%d", cteParam);
+        throw std::runtime_error("CTE InitPlan param not found");
     }
 
-    auto result = it->second;
+    // ReSharper disable once CppUseStructuredBinding
+    const auto& param_info = it->second;
+    if (!param_info.cached_value) {
+        PGX_ERROR("CTE InitPlan has no cached value for cteParam=%d", cteParam);
+        throw std::runtime_error("CTE InitPlan has no cached value");
+    }
+
+    // Reconstruct TranslationResult from cached value - CTE scans need the full result structure, not just the value
+    TranslationResult result;
+    result.op = param_info.cached_value->getDefiningOp();
+    result.columns.push_back(TranslationResult::ColumnSchema{
+        .table_name = param_info.table_name,
+        .column_name = param_info.column_name,
+        .type_oid = param_info.type_oid,
+        .typmod = param_info.typmod,
+        .mlir_type = param_info.mlir_type,
+        .nullable = param_info.nullable
+    });
 
     if (!result.op) {
         PGX_ERROR("CTE InitPlan has no operation for cteParam=%d", cteParam);
@@ -520,7 +537,7 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
 
     if (result.op && cteScan->scan.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "CteScan has qual, applying selection (context has %zu InitPlans)",
-                ctx.init_plan_results.size());
+                ctx.params.size());
         result = apply_selection_from_qual_with_columns(ctx, result, cteScan->scan.plan.qual);
     }
 

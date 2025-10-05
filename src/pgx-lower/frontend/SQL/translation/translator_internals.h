@@ -110,6 +110,16 @@ struct SubqueryInfo {
     SubqueryInfo() = default;
 };
 
+struct ResolvedParam {
+    std::string table_name;
+    std::string column_name;
+    Oid type_oid;
+    int32 typmod;
+    bool nullable;
+    mlir::Type mlir_type;
+    std::optional<mlir::Value> cached_value;
+};
+
 struct TranslationContext {
     const PlannedStmt current_stmt;
     mlir::OpBuilder& builder;
@@ -117,17 +127,9 @@ struct TranslationContext {
     mlir::Value current_tuple;
     mlir::Value outer_tuple;
     OptRefT<const TranslationResult> outer_result;
-    std::unordered_map<int, TranslationResult> init_plan_results;
-    std::unordered_map<int, SubqueryInfo> subquery_param_mapping;
     std::map<std::pair<int, int>, std::pair<std::string, std::string>> varno_resolution;
+    std::unordered_map<int, ResolvedParam> params;
 
-    struct CorrelationInfo {
-        std::string table_scope;
-        std::string column_name;
-        bool nullable;
-    };
-    std::unordered_map<int, CorrelationInfo> correlation_params;
-    std::unordered_map<int, Var*> nest_params;
     static int outer_join_counter;
 
     static TranslationContext createChildContext(const TranslationContext& parent) {
@@ -137,11 +139,8 @@ struct TranslationContext {
                                   .current_tuple = parent.current_tuple,
                                   .outer_tuple = parent.current_tuple,
                                   .outer_result = parent.outer_result,
-                                  .init_plan_results = parent.init_plan_results,
-                                  .subquery_param_mapping = parent.subquery_param_mapping,
                                   .varno_resolution = parent.varno_resolution,
-                                  .correlation_params = parent.correlation_params,
-                                  .nest_params = parent.nest_params};
+                                  .params = parent.params};
     }
 
     static TranslationContext createChildContext(const TranslationContext& parent, mlir::OpBuilder& new_builder,
@@ -152,11 +151,8 @@ struct TranslationContext {
                                   .current_tuple = new_current_tuple,
                                   .outer_tuple = parent.current_tuple,
                                   .outer_result = parent.outer_result,
-                                  .init_plan_results = parent.init_plan_results,
-                                  .subquery_param_mapping = parent.subquery_param_mapping,
                                   .varno_resolution = parent.varno_resolution,
-                                  .correlation_params = parent.correlation_params,
-                                  .nest_params = parent.nest_params};
+                                  .params = parent.params};
     }
 
     static TranslationContext createChildContextWithOuter(const TranslationContext& parent,
@@ -167,11 +163,8 @@ struct TranslationContext {
                                   .current_tuple = parent.current_tuple,
                                   .outer_tuple = parent.current_tuple,
                                   .outer_result = std::ref(outer_result),
-                                  .init_plan_results = parent.init_plan_results,
-                                  .subquery_param_mapping = parent.subquery_param_mapping,
                                   .varno_resolution = parent.varno_resolution,
-                                  .correlation_params = parent.correlation_params,
-                                  .nest_params = parent.nest_params};
+                                  .params = parent.params};
     }
 
     [[nodiscard]] auto resolve_var(const int varno, int varattno, const std::optional<int> varnosyn = std::nullopt,
@@ -260,7 +253,7 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_subplan(const QueryCtxT& ctx, const SubPlan* subplan) -> mlir::Value;
     auto translate_subquery_plan(const QueryCtxT& parent_ctx, Plan* subquery_plan, const PlannedStmt* parent_stmt)
         -> std::pair<mlir::Value, TranslationResult>;
-    auto translate_param(const QueryCtxT& ctx, const Param* param) const -> mlir::Value;
+    static auto translate_param(const QueryCtxT& ctx, const Param* param) -> mlir::Value;
 
     // Plan node translation methods
     auto translate_plan_node(QueryCtxT& ctx, Plan* plan) -> TranslationResult;

@@ -440,17 +440,30 @@ auto PostgreSQLASTTranslator::Impl::translate_scalar_array_op_expr(const QueryCt
             throw std::runtime_error("Unsupported param kind");
         }
 
-        const auto& init_plan_results = ctx.init_plan_results;
-        const auto it = init_plan_results.find(param->paramid);
-
-        if (it == init_plan_results.end()) {
-            PGX_ERROR("Param references unknown paramid=%d (InitPlan not processed?)", param->paramid);
-            throw std::runtime_error("Param references unknown InitPlan result");
+        const auto it = ctx.params.find(param->paramid);
+        if (it == ctx.params.end()) {
+            PGX_ERROR("Param references unknown paramid=%d (not in params map)", param->paramid);
+            throw std::runtime_error("Param references unknown param");
         }
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving ScalarArrayOpExpr Param paramid=%d to InitPlan result", param->paramid);
 
-        const auto& initplan_result = it->second;
+        const auto& param_info = it->second;
+
+        if (!param_info.cached_value) {
+            PGX_ERROR("InitPlan param %d has no cached value", param->paramid);
+            throw std::runtime_error("Invalid InitPlan param");
+        }
+        TranslationResult initplan_result;
+        initplan_result.op = param_info.cached_value->getDefiningOp();
+        initplan_result.columns.push_back(TranslationResult::ColumnSchema{
+            .table_name = param_info.table_name,
+            .column_name = param_info.column_name,
+            .type_oid = param_info.type_oid,
+            .typmod = param_info.typmod,
+            .mlir_type = param_info.mlir_type,
+            .nullable = param_info.nullable
+        });
 
         if (!initplan_result.op) {
             PGX_ERROR("InitPlan result for paramid=%d has no operation", param->paramid);
