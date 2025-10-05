@@ -232,8 +232,12 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         throw std::runtime_error("Failed to translate left child of NestLoop");
     }
 
+    // Nest loop is unique: The inner node can use parameters from the inner node, so we need to do this
+    // Loads of pain has been experienced here - check out the git history haha
     // -----------------------------------------------------------------------------------------------------------------
-    // NestLoop parameterization: Resolve params using outer (left) child's output
+    auto rightCtx = map_child_cols(ctx, &leftTranslation, nullptr);
+
+    // NestLoop parameterization: Resolve params using rightCtx which has OUTER_VAR mappings
     if (nestLoop->nestParams && nestLoop->nestParams->length > 0) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Parameterized nested loop detected with %d parameters",
                 nestLoop->nestParams->length);
@@ -249,10 +253,10 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
                     ? std::optional<int>(paramVar->varattnosyn) : std::nullopt;
 
                 bool resolved = false;
-                if (auto resolved_var = ctx.resolve_var(paramVar->varno, paramVar->varattno,
+                if (auto resolved_var = rightCtx.resolve_var(paramVar->varno, paramVar->varattno,
                                                        varnosyn_opt, varattnosyn_opt)) {
                     auto typeMapper = PostgreSQLTypeMapper(context_);
-                    ctx.params[nestParam->paramno] = pgx_lower::frontend::sql::ResolvedParam{
+                    rightCtx.params[nestParam->paramno] = pgx_lower::frontend::sql::ResolvedParam{
                         .table_name = resolved_var->table_name,
                         .column_name = resolved_var->column_name,
                         .type_oid = paramVar->vartype,
@@ -271,13 +275,13 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
 
                 if (!resolved) {
                     int lookup_varno = varnosyn_opt.value_or(paramVar->varno);
-                    std::string colName = get_column_name_from_schema(&ctx.current_stmt,
+                    std::string colName = get_column_name_from_schema(&rightCtx.current_stmt,
                                                                        lookup_varno,
                                                                        paramVar->varattno);
 
                     for (const auto& col : leftTranslation.columns) {
                         if (col.column_name == colName) {
-                            ctx.params[nestParam->paramno] = pgx_lower::frontend::sql::ResolvedParam{
+                            rightCtx.params[nestParam->paramno] = pgx_lower::frontend::sql::ResolvedParam{
                                 .table_name = col.table_name,
                                 .column_name = col.column_name,
                                 .type_oid = col.type_oid,
@@ -303,8 +307,6 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         }
     }
     // -----------------------------------------------------------------------------------------------------------------
-
-    auto rightCtx = map_child_cols(ctx, &leftTranslation, nullptr);
     auto rightTranslation = translate_plan_node(rightCtx, rightPlan);
     auto rightOp = rightTranslation.op;
     if (!rightOp) {
