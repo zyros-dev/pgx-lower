@@ -128,11 +128,6 @@ struct TranslationResult {
     }
 };
 
-/**
- * This class aims to contain IMMUTABLE state except for the OpBuilder. Since the OpBuilder is effectively our primary
- * goal in this crawl, It's ok to constantly mutate it. However, everything else here should be immutable.
- * I'm aiming to remove the column_mappings over time -
- */
 struct SubqueryInfo {
     std::string join_scope;
     std::string join_column_name;
@@ -162,18 +157,32 @@ struct TranslationContext {
     static int outer_join_counter;
 
     static TranslationContext createChildContext(const TranslationContext& parent) {
-        return TranslationContext{
-            parent.current_stmt,     parent.builder,           parent.current_module,    parent.current_tuple,
-            parent.current_tuple,    parent.outer_result,      parent.init_plan_results, parent.subquery_param_mapping,
-            parent.varno_resolution, parent.correlation_params, parent.nest_params};
+        return TranslationContext{.current_stmt = parent.current_stmt,
+                                  .builder = parent.builder,
+                                  .current_module = parent.current_module,
+                                  .current_tuple = parent.current_tuple,
+                                  .outer_tuple = parent.current_tuple,
+                                  .outer_result = parent.outer_result,
+                                  .init_plan_results = parent.init_plan_results,
+                                  .subquery_param_mapping = parent.subquery_param_mapping,
+                                  .varno_resolution = parent.varno_resolution,
+                                  .correlation_params = parent.correlation_params,
+                                  .nest_params = parent.nest_params};
     }
 
     static TranslationContext createChildContext(const TranslationContext& parent, mlir::OpBuilder& new_builder,
-                                                 mlir::Value new_current_tuple) {
-        return TranslationContext{parent.current_stmt,        new_builder,              parent.current_module,
-                                  new_current_tuple,          parent.current_tuple,     parent.outer_result,
-                                  parent.init_plan_results,   parent.subquery_param_mapping,
-                                  parent.varno_resolution,    parent.correlation_params, parent.nest_params};
+                                                 const mlir::Value new_current_tuple) {
+        return TranslationContext{.current_stmt = parent.current_stmt,
+                                  .builder = new_builder,
+                                  .current_module = parent.current_module,
+                                  .current_tuple = new_current_tuple,
+                                  .outer_tuple = parent.current_tuple,
+                                  .outer_result = parent.outer_result,
+                                  .init_plan_results = parent.init_plan_results,
+                                  .subquery_param_mapping = parent.subquery_param_mapping,
+                                  .varno_resolution = parent.varno_resolution,
+                                  .correlation_params = parent.correlation_params,
+                                  .nest_params = parent.nest_params};
     }
 
     [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {

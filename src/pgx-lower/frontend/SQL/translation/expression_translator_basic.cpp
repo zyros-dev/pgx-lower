@@ -379,7 +379,17 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
             PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: varnosyn=%d, varattnosyn=%d - need to find scope from outer_result",
                     tempVar.varno, tempVar.varattno);
 
-            std::string colName = get_column_name_from_schema(&ctx.current_stmt, tempVar.varno, tempVar.varattno);
+            std::string tableName, colName;
+            auto resolved = ctx.resolve_var(tempVar.varno, tempVar.varattno);
+            if (resolved) {
+                std::tie(tableName, colName) = *resolved;
+                PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Resolved via varno_resolution: varno=%d attno=%d -> %s.%s",
+                        tempVar.varno, tempVar.varattno, tableName.c_str(), colName.c_str());
+            } else {
+                colName = get_column_name_from_schema(&ctx.current_stmt, tempVar.varno, tempVar.varattno);
+                PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Resolved via schema: varno=%d attno=%d -> column '%s'",
+                        tempVar.varno, tempVar.varattno, colName.c_str());
+            }
 
             if (ctx.outer_result && ctx.outer_result->get().columns.size() > 0) {
                 for (const auto& col : ctx.outer_result->get().columns) {

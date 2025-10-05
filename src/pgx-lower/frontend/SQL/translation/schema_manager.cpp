@@ -118,8 +118,8 @@ auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, const in
 
     const auto rte = static_cast<RangeTblEntry*>(list_nth(currentPlannedStmt->rtable, varno - POSTGRESQL_VARNO_OFFSET));
 
-    if (!rte || rte->relid == InvalidOid) {
-        PGX_ERROR("Invalid RTE for column lookup");
+    if (!rte) {
+        PGX_ERROR("Invalid RTE for column lookup: varno=%d", varno);
         throw std::runtime_error("Invalid - read logs");
     }
 
@@ -132,6 +132,11 @@ auto get_column_name_from_schema(const PlannedStmt* currentPlannedStmt, const in
         return "val2";
     return "col_" + std::to_string(varattno);
 #else
+    if (rte->relid == InvalidOid) {
+        PGX_ERROR("Invalid RTE for column lookup: varno=%d has no relid (CTE/subquery should use varno_resolution)", varno);
+        throw std::runtime_error("Invalid - read logs");
+    }
+
     char* attname = get_attname(rte->relid, varattno, PG_ATTNAME_NOT_MISSING_OK);
     std::string columnName = attname ? attname : ("col_" + std::to_string(varattno));
 
