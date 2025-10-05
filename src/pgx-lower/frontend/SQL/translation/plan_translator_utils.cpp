@@ -998,6 +998,9 @@ auto create_child_context_with_var_mappings(
     -> QueryCtxT {
     auto child_ctx = QueryCtxT::createChildContext(parent);
 
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR_MAPPINGS] Creating child context, parent had %zu varno_resolution entries",
+            parent.varno_resolution.size());
+
     std::erase_if(child_ctx.varno_resolution, [](const auto& entry) {
         const auto& [varno, varattno] = entry.first;
         return varno == INNER_VAR || varno == OUTER_VAR;
@@ -1011,6 +1014,34 @@ auto create_child_context_with_var_mappings(
             continue;
         }
         child_ctx.varno_resolution[key] = value;
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[VAR_MAPPINGS] Final context has %zu varno_resolution entries",
+            child_ctx.varno_resolution.size());
+    return child_ctx;
+}
+
+auto map_child_cols(const QueryCtxT& ctx, const TranslationResult* left_translation,
+                    const TranslationResult* right_translation) -> QueryCtxT {
+    std::map<std::pair<int, int>, std::pair<std::string, std::string>> child_mappings;
+
+    if (left_translation) {
+        for (size_t i = 0; i < left_translation->columns.size(); ++i) {
+            child_mappings[{OUTER_VAR, i + 1}] = {left_translation->columns[i].table_name,
+                                                  left_translation->columns[i].column_name};
+        }
+    }
+
+    if (right_translation) {
+        for (size_t i = 0; i < right_translation->columns.size(); ++i) {
+            child_mappings[{INNER_VAR, i + 1}] = {right_translation->columns[i].table_name,
+                                                  right_translation->columns[i].column_name};
+        }
+    }
+
+    auto child_ctx = create_child_context_with_var_mappings(ctx, child_mappings);
+    if (left_translation) {
+        child_ctx.outer_result = std::ref(*left_translation);
     }
 
     return child_ctx;

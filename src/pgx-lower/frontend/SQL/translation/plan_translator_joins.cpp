@@ -114,13 +114,15 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
     // No need to apply them as separate selections
 
     if (mergeJoin->join.plan.qual) {
-        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->join.plan.qual);
+        auto qual_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        result = apply_selection_from_qual_with_columns(qual_ctx, result, mergeJoin->join.plan.qual);
     }
 
     if (mergeJoin->join.plan.targetlist) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
         auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
-        result = apply_projection_from_translation_result(ctx, result, merged, mergeJoin->join.plan.targetlist);
+        auto projection_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        result = apply_projection_from_translation_result(projection_ctx, result, merged, mergeJoin->join.plan.targetlist);
     }
 
     return result;
@@ -170,13 +172,15 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
 
     if (hashJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.plan.qual);
+        auto qual_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        result = apply_selection_from_qual_with_columns(qual_ctx, result, hashJoin->join.plan.qual);
     }
 
     if (hashJoin->join.plan.targetlist) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
         auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
-        result = apply_projection_from_translation_result(ctx, result, merged, hashJoin->join.plan.targetlist);
+        auto projection_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        result = apply_projection_from_translation_result(projection_ctx, result, merged, hashJoin->join.plan.targetlist);
     }
 
     return result;
@@ -266,13 +270,15 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
 
     if (nestLoop->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual_with_columns(ctx, result, nestLoop->join.plan.qual);
+        auto qual_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        result = apply_selection_from_qual_with_columns(qual_ctx, result, nestLoop->join.plan.qual);
     }
 
     if (nestLoop->join.plan.targetlist) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
         auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
-        result = apply_projection_from_translation_result(ctx, result, merged, nestLoop->join.plan.targetlist);
+        auto projection_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        result = apply_projection_from_translation_result(projection_ctx, result, merged, nestLoop->join.plan.targetlist);
     }
 
     return result;
@@ -297,23 +303,9 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
     auto translateExpressionFn = [this, isRightJoin](const QueryCtxT& ctx_p, Expr* expr,
                                                      const TranslationResult* left_child,
                                                      const TranslationResult* right_child) -> mlir::Value {
-        std::map<std::pair<int, int>, std::pair<std::string, std::string>> join_mappings;
-
         const auto* outer_trans = isRightJoin ? right_child : left_child;
         const auto* inner_trans = isRightJoin ? left_child : right_child;
-
-        if (outer_trans) {
-            for (size_t i = 0; i < outer_trans->columns.size(); ++i) {
-                join_mappings[{OUTER_VAR, i + 1}] = {outer_trans->columns[i].table_name, outer_trans->columns[i].column_name};
-            }
-        }
-        if (inner_trans) {
-            for (size_t i = 0; i < inner_trans->columns.size(); ++i) {
-                join_mappings[{INNER_VAR, i + 1}] = {inner_trans->columns[i].table_name, inner_trans->columns[i].column_name};
-            }
-        }
-
-        const auto expr_ctx = create_child_context_with_var_mappings(ctx_p, join_mappings);
+        const auto expr_ctx = map_child_cols(ctx_p, outer_trans, inner_trans);
         return translate_expression(expr_ctx, expr);
     };
 

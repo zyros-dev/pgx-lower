@@ -367,4 +367,8 @@ auto create_child_context_with_var_mappings(
     const QueryCtxT& parent, const std::map<std::pair<int, int>, std::pair<std::string, std::string>>& var_mappings)
     -> QueryCtxT;
 
+// Create child context with INNER_VAR/OUTER_VAR mappings from join children
+auto map_child_cols(const QueryCtxT& ctx, const TranslationResult* left_translation = nullptr,
+                    const TranslationResult* right_translation = nullptr) -> QueryCtxT;
+
 } // namespace postgresql_ast
