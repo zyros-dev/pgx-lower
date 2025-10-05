@@ -364,6 +364,26 @@ auto QueryAnalyzer::validateAndLogPlanStructure(const PlannedStmt* stmt) -> bool
     Plan* scanPlan = nullptr;
 
     logExecutionTree(rootPlan);
+
+    if (stmt->subplans && list_length(stmt->subplans) > 0) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "=== SUBPLANS (%d total) ===", list_length(stmt->subplans));
+
+        int i = 1;
+        ListCell* lc;
+        foreach(lc, stmt->subplans) {
+            Plan* subplan = (Plan*)lfirst(lc);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "\n--- SubPlan %d ---", i);
+
+            char* plan_str = nodeToString(subplan);
+            char* pretty_str = pretty_format_node_dump(plan_str);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "\n%s", pretty_str);
+
+            pfree(pretty_str);
+            pfree(plan_str);
+            i++;
+        }
+        PGX_LOG(AST_TRANSLATE, DEBUG, "=== END SUBPLANS ===\n");
+    }
     if (rootPlan->type == T_SeqScan) {
         // Pattern 1: Simple table scan
         scanPlan = rootPlan;
