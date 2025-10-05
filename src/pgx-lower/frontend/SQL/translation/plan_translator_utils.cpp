@@ -846,7 +846,8 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
                 std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn) : std::nullopt;
 
                 if (auto mapping = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
-                    const auto& [table_name, col_name] = *mapping;
+                    const auto& table_name = mapping->table_name;
+                    const auto& col_name = mapping->column_name;
                     PGX_LOG(AST_TRANSLATE, DEBUG,
                             "Projection: INNER_VAR using varno_resolution -> @%s::@%s",
                             table_name.c_str(), col_name.c_str());

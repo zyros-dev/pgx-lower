@@ -138,23 +138,12 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn) : std::nullopt;
 
         if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
-            const auto& [mappedTable, mappedColumn] = *resolved;
-            tableName = mappedTable;
-            colName = mappedColumn;
-            // For nullable lookup, use same resolution logic
-            int lookup_varno = varnosyn_opt.value_or(var->varno);
-            int lookup_varattno = var->varattno;
-            if (varnosyn_opt.has_value()) {
-                const auto* rte = static_cast<RangeTblEntry*>(
-                    list_nth(ctx.current_stmt.rtable, lookup_varno - POSTGRESQL_VARNO_OFFSET));
-                if (rte->rtekind != RTE_SUBQUERY) {
-                    lookup_varattno = var->varattnosyn;
-                }
-            }
-            nullable = is_column_nullable(&ctx.current_stmt, lookup_varno, lookup_varattno);
+            tableName = resolved->table_name;
+            colName = resolved->column_name;
+            nullable = resolved->nullable;
             resolved_from_mapping = true;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Using varno_resolution for varno=%d, varattno=%d -> (%s, %s)",
-                    var->varno, var->varattno, tableName.c_str(), colName.c_str());
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using varno_resolution for varno=%d, varattno=%d -> (%s, %s, nullable=%d)",
+                    var->varno, var->varattno, tableName.c_str(), colName.c_str(), nullable);
         }
     }
 
@@ -294,8 +283,8 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
             current_result ? current_result->get().toString().data() : "Nothing!");
     if (current_result) {
         if (auto resolved = ctx.resolve_var(-2, aggref->aggno)) {
-            scopeName = resolved->first;
-            columnName = resolved->second;
+            scopeName = resolved->table_name;
+            columnName = resolved->column_name;
             found = true;
             PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for aggregate aggno=%d -> (%s, %s)",
                     aggref->aggno, scopeName.c_str(), columnName.c_str());
@@ -362,12 +351,12 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
 
         // Try varno_resolution first
         std::string tableName, colName;
-        std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varnosyn) : std::nullopt;
-        std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varattnosyn) : std::nullopt;
+        auto varnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varnosyn) : std::nullopt;
+        auto varattnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varattnosyn) : std::nullopt;
 
-        auto resolved = ctx.resolve_var(paramVar->varno, paramVar->varattno, varnosyn_opt, varattnosyn_opt);
-        if (resolved) {
-            std::tie(tableName, colName) = *resolved;
+        if (auto resolved = ctx.resolve_var(paramVar->varno, paramVar->varattno, varnosyn_opt, varattnosyn_opt)) {
+            tableName = resolved->table_name;
+            colName = resolved->column_name;
             PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Resolved via varno_resolution -> %s.%s",
                     tableName.c_str(), colName.c_str());
         } else {

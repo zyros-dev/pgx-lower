@@ -466,16 +466,18 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                     std::string column_name;
                     bool nullable;
 
-                    if (var->varno == INNER_VAR || var->varno == OUTER_VAR) {
+                    if (IS_SPECIAL_VARNO(var->varno)) {
                         if (current_result) {
-                            if (auto resolved = ctx.resolve_var(var->varno, var->varattno)) {
-                                table_scope = resolved->first;
-                                column_name = resolved->second;
-                                nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
+                            auto varnosyn_opt = std::optional<int>(var->varnosyn);
+                            auto varattnosyn_opt = std::optional<int>(var->varattnosyn);
+
+                            if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
+                                table_scope = resolved->table_name;
+                                column_name = resolved->column_name;
+                                nullable = resolved->nullable;
                                 PGX_LOG(AST_TRANSLATE, DEBUG,
-                                        "Resolved INNER_VAR/OUTER_VAR via varno_resolution: varno=%d, varattno=%d -> "
-                                        "%s.%s (nullable=%d)",
-                                        var->varno, var->varattno, table_scope.c_str(), column_name.c_str(), nullable);
+                                        "Resolved synthetic varno=%d via varno_resolution -> %s.%s (nullable=%d)",
+                                        var->varno, table_scope.c_str(), column_name.c_str(), nullable);
                             } else if (var->varno == OUTER_VAR && var->varattno > 0
                                        && var->varattno <= static_cast<int>(current_result->get().columns.size()))
                             {
@@ -537,13 +539,16 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
                         std::string column_name;
                         bool nullable;
 
-                        if (paramVar->varno == INNER_VAR || paramVar->varno == OUTER_VAR) {
+                        if (IS_SPECIAL_VARNO(paramVar->varno)) {
                             if (current_result) {
-                                if (auto resolved = ctx.resolve_var(paramVar->varno, paramVar->varattno))
+                                auto varnosyn_opt = std::optional<int>(paramVar->varnosyn);
+                                auto varattnosyn_opt = std::optional<int>(paramVar->varattnosyn);
+
+                                if (auto resolved = ctx.resolve_var(paramVar->varno, paramVar->varattno, varnosyn_opt, varattnosyn_opt))
                                 {
-                                    table_scope = resolved->first;
-                                    column_name = resolved->second;
-                                    nullable = is_column_nullable(&ctx.current_stmt, paramVar->varno, paramVar->varattno);
+                                    table_scope = resolved->table_name;
+                                    column_name = resolved->column_name;
+                                    nullable = resolved->nullable;
                                 } else if (paramVar->varno == OUTER_VAR && paramVar->varattno > 0
                                            && paramVar->varattno <= static_cast<int>(current_result->get().columns.size()))
                                 {
