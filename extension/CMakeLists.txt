@@ -123,5 +123,9 @@ target_include_directories(pgx_lower PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
+target_precompile_headers(pgx_lower PRIVATE
+    ../src/pgx-lower/frontend/SQL/translation/translation_pch.h
+)
+
 endif() # NOT BUILDING_UNIT_TESTS
 
