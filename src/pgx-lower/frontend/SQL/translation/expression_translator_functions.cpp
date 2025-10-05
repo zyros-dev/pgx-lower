@@ -134,9 +134,7 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     auto blockBuilder = mlir::OpBuilder(ctx.builder.getContext());
     blockBuilder.setInsertionPointToStart(block);
 
-    auto blockCtx = QueryCtxT::createChildContext(ctx);
-    blockCtx.builder = blockBuilder;
-    blockCtx.current_tuple = tupleArg;
+    auto blockCtx = QueryCtxT::createChildContext(ctx, blockBuilder, tupleArg);
 
     // Pass through the child_result so varno_resolution is available
     auto exprValue = translate_expression(blockCtx, expr, child_result);

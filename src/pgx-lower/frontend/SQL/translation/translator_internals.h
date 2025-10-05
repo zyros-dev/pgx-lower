@@ -168,6 +168,14 @@ struct TranslationContext {
             parent.varno_resolution, parent.correlation_params};
     }
 
+    static TranslationContext createChildContext(const TranslationContext& parent, mlir::OpBuilder& new_builder,
+                                                 mlir::Value new_current_tuple) {
+        return TranslationContext{parent.current_stmt,        new_builder,              parent.current_module,
+                                  new_current_tuple,          parent.current_tuple,     parent.outer_result,
+                                  parent.init_plan_results,   parent.subquery_param_mapping,
+                                  parent.varno_resolution,    parent.correlation_params};
+    }
+
     [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {
         const auto KEY = std::make_pair(varno, varattno);
         const auto it = varno_resolution.find(KEY);

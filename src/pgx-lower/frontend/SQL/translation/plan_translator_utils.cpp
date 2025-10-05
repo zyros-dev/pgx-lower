@@ -379,9 +379,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        auto tmp_ctx = QueryCtxT::createChildContext(ctx);
-        tmp_ctx.builder = predicate_builder;
-        tmp_ctx.current_tuple = tupleArg;
+        auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
 
         mlir::Value predicateResult = nullptr;
@@ -477,9 +475,7 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        auto tmp_ctx = QueryCtxT::createChildContext(ctx);
-        tmp_ctx.builder = predicate_builder;
-        tmp_ctx.current_tuple = tupleArg;
+        auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
 
         mlir::Value predicateResult = nullptr;
@@ -614,9 +610,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
 
             mlir::OpBuilder temp_builder(&context_);
             temp_builder.setInsertionPointToStart(tempBlock);
-            auto tmp_ctx = QueryCtxT::createChildContext(ctx);
-            tmp_ctx.builder = temp_builder;
-            tmp_ctx.current_tuple = tupleArg;
+            auto tmp_ctx = QueryCtxT::createChildContext(ctx, temp_builder, tupleArg);
 
             for (auto* entry : computedEntries) {
                 auto colName = entry->resname ? entry->resname : "col_" + std::to_string(entry->resno);
@@ -703,9 +697,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
 
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
-        auto tmp_ctx = QueryCtxT::createChildContext(ctx);
-        tmp_ctx.builder = predicate_builder;
-        tmp_ctx.current_tuple = tupleArg;
+        auto tmp_ctx = QueryCtxT::createChildContext(ctx, predicate_builder, tupleArg);
 
         std::vector<mlir::Value> computedValues;
         for (auto* entry : computedEntries) {
