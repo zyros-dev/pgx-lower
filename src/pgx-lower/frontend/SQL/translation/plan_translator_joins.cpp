@@ -250,9 +250,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         throw std::runtime_error("Failed to translate left child of NestLoop");
     }
 
-    auto rightCtx = ctx;
-    rightCtx.outer_result = leftTranslation;
-
+    auto rightCtx = map_child_cols(ctx, &leftTranslation, nullptr);
     auto rightTranslation = translate_plan_node(rightCtx, rightPlan);
     auto rightOp = rightTranslation.op;
     if (!rightOp) {
