@@ -993,4 +993,27 @@ auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationR
     return merged_result;
 }
 
+auto create_child_context_with_var_mappings(
+    const QueryCtxT& parent, const std::map<std::pair<int, int>, std::pair<std::string, std::string>>& var_mappings)
+    -> QueryCtxT {
+    auto child_ctx = QueryCtxT::createChildContext(parent);
+
+    std::erase_if(child_ctx.varno_resolution, [](const auto& entry) {
+        const auto& [varno, varattno] = entry.first;
+        return varno == INNER_VAR || varno == OUTER_VAR;
+    });
+
+    for (const auto& [key, value] : var_mappings) {
+        const auto& [varno, varattno] = key;
+        if (varno != INNER_VAR && varno != OUTER_VAR) {
+            PGX_WARNING("create_child_context_with_var_mappings: var_mappings contains varno=%d (expected -1 or -2)",
+                        varno);
+            continue;
+        }
+        child_ctx.varno_resolution[key] = value;
+    }
+
+    return child_ctx;
+}
+
 } // namespace postgresql_ast

@@ -363,4 +363,8 @@ auto translate_const(Const* const_node, mlir::OpBuilder& builder, mlir::MLIRCont
 auto get_all_table_columns_from_schema(const PlannedStmt* current_planned_stmt, int scanrelid)
     -> std::vector<pgx_lower::frontend::sql::ColumnInfo>;
 
+auto create_child_context_with_var_mappings(
+    const QueryCtxT& parent, const std::map<std::pair<int, int>, std::pair<std::string, std::string>>& var_mappings)
+    -> QueryCtxT;
+
 } // namespace postgresql_ast

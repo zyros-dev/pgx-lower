@@ -297,9 +297,24 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
     auto translateExpressionFn = [this, isRightJoin](const QueryCtxT& ctx_p, Expr* expr,
                                                      const TranslationResult* left_child,
                                                      const TranslationResult* right_child) -> mlir::Value {
-        // TODO: You need to remap -1 and -2 inside the context depending on which join it is... uhm...
-        // use isRightJoin
-        return translate_expression(ctx_p, expr);
+        std::map<std::pair<int, int>, std::pair<std::string, std::string>> join_mappings;
+
+        const auto* outer_trans = isRightJoin ? right_child : left_child;
+        const auto* inner_trans = isRightJoin ? left_child : right_child;
+
+        if (outer_trans) {
+            for (size_t i = 0; i < outer_trans->columns.size(); ++i) {
+                join_mappings[{OUTER_VAR, i + 1}] = {outer_trans->columns[i].table_name, outer_trans->columns[i].column_name};
+            }
+        }
+        if (inner_trans) {
+            for (size_t i = 0; i < inner_trans->columns.size(); ++i) {
+                join_mappings[{INNER_VAR, i + 1}] = {inner_trans->columns[i].table_name, inner_trans->columns[i].column_name};
+            }
+        }
+
+        const auto expr_ctx = create_child_context_with_var_mappings(ctx_p, join_mappings);
+        return translate_expression(expr_ctx, expr);
     };
 
     auto translateJoinPredicateToRegion = [translateExpressionFn](

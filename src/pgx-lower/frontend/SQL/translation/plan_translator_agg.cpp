@@ -449,8 +449,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             auto postProcResult = TranslationResult();
             postProcResult.op = aggOp.getOperation();
             postProcResult.current_scope = aggrScopeName;
+            std::map<std::pair<int, int>, std::pair<std::string, std::string>> agg_mappings;
             for (const auto& [aggno, mapping] : aggregateMappings) {
-                ctx.varno_resolution[std::make_pair(-2, aggno)] = mapping;
+                agg_mappings[{OUTER_VAR, aggno}] = mapping;
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Added aggregate mapping for post-processing: aggno=%d -> (%s, %s)",
                         aggno, mapping.first.c_str(), mapping.second.c_str());
             }
@@ -460,7 +461,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Post-processing resno=%d with expression type=%d", resno, full_expr->type);
 
-                auto postCtx = QueryCtxT::createChildContext(ctx, mapBuilder, mapBlock->getArgument(0));
+                auto postCtx = create_child_context_with_var_mappings(
+                    QueryCtxT::createChildContext(ctx, mapBuilder, mapBlock->getArgument(0)), agg_mappings);
                 auto post_value = translate_expression(postCtx, full_expr);
 
                 auto colName = "postproc_" + std::to_string(resno);
