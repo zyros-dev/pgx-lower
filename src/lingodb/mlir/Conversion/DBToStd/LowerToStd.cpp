@@ -851,59 +851,85 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
          return success();
       }
 
+      // Support null casting
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+      bool needsNullableWrap = false;
+      mlir::Type originalTargetType = scalarTargetType;
+      if (!scalarSourceType.isa<db::NullableType>()) {
+         if (auto nullableTargetType = scalarTargetType.dyn_cast_or_null<db::NullableType>()) {
+            scalarTargetType = nullableTargetType.getType();
+            convertedTargetType = typeConverter->convertType(scalarTargetType);
+            needsNullableWrap = true;
+         }
+      }
+
+      // Lambda to finalize cast: wraps in nullable if needed, replaces op, returns success
+      auto finishCast = [&](const Value resultValue) -> LogicalResult {
+         if (needsNullableWrap) {
+            auto nullableTupleType = typeConverter->convertType(originalTargetType);
+            auto notNullValue = rewriter.create<mlir::arith::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getI1Type(), 0));
+            const Value packed = rewriter.create<mlir::util::PackOp>(loc, nullableTupleType, mlir::ValueRange{notNullValue, resultValue});
+            rewriter.replaceOp(op, packed);
+         } else {
+            rewriter.replaceOp(op, resultValue);
+         }
+         return success();
+      };
+      // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
       // Handle Date/Interval casting - they both convert to i64, so no actual conversion needed
       bool sourceIsDateTime = scalarSourceType.isa<mlir::db::DateType, mlir::db::IntervalType, mlir::db::TimestampType>();
       bool targetIsDateTime = scalarTargetType.isa<mlir::db::DateType, mlir::db::IntervalType, mlir::db::TimestampType>();
       if (sourceIsDateTime && targetIsDateTime) {
          // Both convert to i64, so no conversion operation needed
-         rewriter.replaceOp(op, value);
-         return success();
+         return finishCast(value);
       }
 
       if (auto sourceIntWidth = getIntegerWidth(scalarSourceType, false)) {
          if (scalarTargetType.isa<FloatType>()) {
             value = rewriter.create<arith::SIToFPOp>(loc, convertedTargetType, value);
-            rewriter.replaceOp(op, value);
-            return success();
+            return finishCast(value);
          } else if (auto decimalTargetType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
             int decimalWidth = typeConverter->convertType(decimalTargetType).cast<mlir::IntegerType>().getWidth();
             if (sourceIntWidth < decimalWidth) {
                value = rewriter.create<arith::ExtSIOp>(loc, convertedTargetType, value);
             }
-            rewriter.replaceOpWithNewOp<arith::MulIOp>(op, convertedTargetType, value, getDecimalScaleMultiplierConstant(rewriter, decimalTargetType.getS(), convertedTargetType, op->getLoc()));
-            return success();
+            Value result = rewriter.create<arith::MulIOp>(loc, convertedTargetType, value, getDecimalScaleMultiplierConstant(rewriter, decimalTargetType.getS(), convertedTargetType, op->getLoc()));
+            return finishCast(result);
          } else if (auto targetIntWidth = getIntegerWidth(scalarTargetType, false)) {
+            Value result;
             if (targetIntWidth < sourceIntWidth) {
-               rewriter.replaceOpWithNewOp<arith::TruncIOp>(op, convertedTargetType, value);
+               result = rewriter.create<arith::TruncIOp>(loc, convertedTargetType, value);
             } else if (targetIntWidth > sourceIntWidth) {
-               rewriter.replaceOpWithNewOp<arith::ExtSIOp>(op, convertedTargetType, value);
+               result = rewriter.create<arith::ExtSIOp>(loc, convertedTargetType, value);
             } else {
                // Same width - no conversion needed
-               rewriter.replaceOp(op, value);
+               result = value;
             }
-            return success();
+            return finishCast(result);
          }
       } else if (auto floatType = scalarSourceType.dyn_cast_or_null<FloatType>()) {
          if (getIntegerWidth(scalarTargetType, false)) {
-            value = rewriter.replaceOpWithNewOp<arith::FPToSIOp>(op, convertedTargetType, value);
-            return success();
+            value = rewriter.create<arith::FPToSIOp>(loc, convertedTargetType, value);
+            return finishCast(value);
          } else if (auto decimalTargetType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
             auto multiplier = rewriter.create<arith::ConstantOp>(loc, convertedSourceType, FloatAttr::get(convertedSourceType, powf(10, decimalTargetType.getS())));
             value = rewriter.create<arith::MulFOp>(loc, convertedSourceType, value, multiplier);
-            rewriter.replaceOpWithNewOp<arith::FPToSIOp>(op, convertedTargetType, value);
-            return success();
+            Value result = rewriter.create<arith::FPToSIOp>(loc, convertedTargetType, value);
+            return finishCast(result);
          } else if (auto targetFloatType = scalarTargetType.dyn_cast_or_null<FloatType>()) {
              // PGX-LOWER edit: Lingodb didn't have type cast for float -> float implemented
             const auto sourceWidth = floatType.getWidth();
             const auto targetWidth = targetFloatType.getWidth();
+            Value result;
             if (sourceWidth < targetWidth) {
-               rewriter.replaceOpWithNewOp<arith::ExtFOp>(op, convertedTargetType, value);
+               result = rewriter.create<arith::ExtFOp>(loc, convertedTargetType, value);
             } else if (sourceWidth > targetWidth) {
-               rewriter.replaceOpWithNewOp<arith::TruncFOp>(op, convertedTargetType, value);
+               result = rewriter.create<arith::TruncFOp>(loc, convertedTargetType, value);
             } else {
-               rewriter.replaceOp(op, value);
+               result = value;
             }
-            return success();
+            return finishCast(result);
          }
       } else if (auto decimalSourceType = scalarSourceType.dyn_cast_or_null<db::DecimalType>()) {
          if (auto decimalTargetType = scalarTargetType.dyn_cast_or_null<db::DecimalType>()) {
@@ -913,17 +939,18 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             auto [low, high] = support::getDecimalScaleMultiplier(std::max(sourceScale, targetScale) - std::min(sourceScale, targetScale));
             std::vector<uint64_t> parts = {low, high};
             auto multiplier = rewriter.create<arith::ConstantOp>(loc, convertedTargetType, rewriter.getIntegerAttr(convertedTargetType, APInt(decimalWidth, parts)));
+            Value result;
             if (sourceScale < targetScale) {
-               rewriter.replaceOpWithNewOp<arith::MulIOp>(op, convertedTargetType, value, multiplier);
+               result = rewriter.create<arith::MulIOp>(loc, convertedTargetType, value, multiplier);
             } else {
-               rewriter.replaceOpWithNewOp<arith::DivSIOp>(op, convertedTargetType, value, multiplier);
+               result = rewriter.create<arith::DivSIOp>(loc, convertedTargetType, value, multiplier);
             }
-            return success();
+            return finishCast(result);
          } else if (scalarTargetType.isa<FloatType>()) {
             auto multiplier = rewriter.create<arith::ConstantOp>(loc, convertedTargetType, FloatAttr::get(convertedTargetType, powf(10, decimalSourceType.getS())));
             value = rewriter.create<arith::SIToFPOp>(loc, convertedTargetType, value);
-            rewriter.replaceOpWithNewOp<arith::DivFOp>(op, convertedTargetType, value, multiplier);
-            return success();
+            Value result = rewriter.create<arith::DivFOp>(loc, convertedTargetType, value, multiplier);
+            return finishCast(result);
          } else if (auto targetIntWidth = getIntegerWidth(scalarTargetType, false)) {
             int decimalWidth = convertedSourceType.cast<mlir::IntegerType>().getWidth();
             auto multiplier = getDecimalScaleMultiplierConstant(rewriter, decimalSourceType.getS(), convertedSourceType, op->getLoc());
@@ -931,8 +958,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             if (targetIntWidth < decimalWidth) {
                value = rewriter.create<arith::TruncIOp>(loc, convertedTargetType, value);
             }
-            rewriter.replaceOp(op, value);
-            return success();
+            return finishCast(value);
          }
       } else if (auto timestampSourceType = scalarSourceType.dyn_cast_or_null<db::TimestampType>()) {
          if (auto dateTargetType = scalarTargetType.dyn_cast_or_null<db::DateType>()) {
@@ -940,14 +966,12 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
             const uint64_t nanosecondsPerDay = 86400000000000ULL;
             mlir::Value divisor = rewriter.create<arith::ConstantIntOp>(loc, nanosecondsPerDay, 64);
             value = rewriter.create<arith::DivSIOp>(loc, rewriter.getI64Type(), value, divisor);
-            rewriter.replaceOp(op, value);
-            return success();
+            return finishCast(value);
          }
       } else if (auto dateSourceType = scalarSourceType.dyn_cast_or_null<db::DateType>()) {
          if (auto timestampTargetType = scalarTargetType.dyn_cast_or_null<db::TimestampType>()) {
             // Both date and timestamp are in nanoseconds, no conversion needed
-            rewriter.replaceOp(op, value);
-            return success();
+            return finishCast(value);
          }
       }
 
@@ -966,7 +990,7 @@ class CastOpLowering : public OpConversionPattern<mlir::db::CastOp> {
 
          std::string toType;
          llvm::raw_string_ostream toOs(toType);
-         op.getType().print(toOs);
+         originalTargetType.print(toOs);
          toOs.flush();
 
          PGX_WARNING("Failed to lower db.cast operation - From type: %s, To type: %s",
