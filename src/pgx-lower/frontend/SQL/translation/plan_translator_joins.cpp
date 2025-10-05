@@ -112,16 +112,16 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
 
     // Join conditions are now handled inside the join predicate region
     // No need to apply them as separate selections
-
+    const bool is_outer_join = (mergeJoin->join.jointype == JOIN_LEFT || mergeJoin->join.jointype == JOIN_RIGHT || mergeJoin->join.jointype == JOIN_FULL);
     if (mergeJoin->join.plan.qual) {
-        auto qual_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        auto qual_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
         result = apply_selection_from_qual_with_columns(qual_ctx, result, mergeJoin->join.plan.qual);
     }
 
     if (mergeJoin->join.plan.targetlist) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
         auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
-        auto projection_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        auto projection_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
         result = apply_projection_from_translation_result(projection_ctx, result, merged, mergeJoin->join.plan.targetlist);
     }
 
@@ -170,16 +170,17 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
     auto result = create_join_operation(ctx, hashJoin->join.jointype, leftValue, rightValue, leftTranslation,
                                         rightTranslation, combinedClauses);
 
+    const bool is_outer_join = (hashJoin->join.jointype == JOIN_LEFT || hashJoin->join.jointype == JOIN_RIGHT || hashJoin->join.jointype == JOIN_FULL);
     if (hashJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        auto qual_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        auto qual_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
         result = apply_selection_from_qual_with_columns(qual_ctx, result, hashJoin->join.plan.qual);
     }
 
     if (hashJoin->join.plan.targetlist) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
         auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
-        auto projection_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        auto projection_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
         result = apply_projection_from_translation_result(projection_ctx, result, merged, hashJoin->join.plan.targetlist);
     }
 
@@ -268,16 +269,17 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     auto result = create_join_operation(ctx, nestLoop->join.jointype, leftValue, rightValue, leftTranslation,
                                         rightTranslation, effective_join_qual);
 
+    const bool is_outer_join = (nestLoop->join.jointype == JOIN_LEFT || nestLoop->join.jointype == JOIN_RIGHT || nestLoop->join.jointype == JOIN_FULL);
     if (nestLoop->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        auto qual_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        auto qual_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
         result = apply_selection_from_qual_with_columns(qual_ctx, result, nestLoop->join.plan.qual);
     }
 
     if (nestLoop->join.plan.targetlist) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
         auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
-        auto projection_ctx = map_child_cols(ctx, &leftTranslation, &rightTranslation);
+        auto projection_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
         result = apply_projection_from_translation_result(projection_ctx, result, merged, nestLoop->join.plan.targetlist);
     }
 
