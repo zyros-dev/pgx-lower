@@ -129,6 +129,7 @@ struct TranslationContext {
     OptRefT<const TranslationResult> outer_result;
     std::map<std::pair<int, int>, std::pair<std::string, std::string>> varno_resolution;
     std::unordered_map<int, ResolvedParam> params;
+    std::unordered_map<int, TranslationResult> initplan_results;
 
     static int outer_join_counter;
 
@@ -140,7 +141,8 @@ struct TranslationContext {
                                   .outer_tuple = parent.current_tuple,
                                   .outer_result = parent.outer_result,
                                   .varno_resolution = parent.varno_resolution,
-                                  .params = parent.params};
+                                  .params = parent.params,
+                                  .initplan_results = parent.initplan_results};
     }
 
     static TranslationContext createChildContext(const TranslationContext& parent, mlir::OpBuilder& new_builder,
@@ -152,7 +154,8 @@ struct TranslationContext {
                                   .outer_tuple = parent.current_tuple,
                                   .outer_result = parent.outer_result,
                                   .varno_resolution = parent.varno_resolution,
-                                  .params = parent.params};
+                                  .params = parent.params,
+                                  .initplan_results = parent.initplan_results};
     }
 
     static TranslationContext createChildContextWithOuter(const TranslationContext& parent,
@@ -164,7 +167,8 @@ struct TranslationContext {
                                   .outer_tuple = parent.current_tuple,
                                   .outer_result = std::ref(outer_result),
                                   .varno_resolution = parent.varno_resolution,
-                                  .params = parent.params};
+                                  .params = parent.params,
+                                  .initplan_results = parent.initplan_results};
     }
 
     [[nodiscard]] auto resolve_var(const int varno, int varattno, const std::optional<int> varnosyn = std::nullopt,

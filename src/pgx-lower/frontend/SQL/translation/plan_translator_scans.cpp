@@ -436,30 +436,12 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
     PGX_LOG(AST_TRANSLATE, DEBUG, "Translating CteScan with cteParam=%d, ctePlanId=%d, scanrelid=%d", cteParam,
             ctePlanId, scanrelid);
 
-    auto it = ctx.params.find(cteParam);
-    if (it == ctx.params.end()) {
-        PGX_ERROR("CTE InitPlan param not found for cteParam=%d", cteParam);
-        throw std::runtime_error("CTE InitPlan param not found");
+    const auto it = ctx.initplan_results.find(cteParam);
+    if (it == ctx.initplan_results.end()) {
+        PGX_ERROR("CTE InitPlan result not found for cteParam=%d", cteParam);
+        throw std::runtime_error("CTE InitPlan result not found");
     }
-
-    // ReSharper disable once CppUseStructuredBinding
-    const auto& param_info = it->second;
-    if (!param_info.cached_value) {
-        PGX_ERROR("CTE InitPlan has no cached value for cteParam=%d", cteParam);
-        throw std::runtime_error("CTE InitPlan has no cached value");
-    }
-
-    // Reconstruct TranslationResult from cached value - CTE scans need the full result structure, not just the value
-    TranslationResult result;
-    result.op = param_info.cached_value->getDefiningOp();
-    result.columns.push_back(TranslationResult::ColumnSchema{
-        .table_name = param_info.table_name,
-        .column_name = param_info.column_name,
-        .type_oid = param_info.type_oid,
-        .typmod = param_info.typmod,
-        .mlir_type = param_info.mlir_type,
-        .nullable = param_info.nullable
-    });
+    TranslationResult result = it->second;
 
     if (!result.op) {
         PGX_ERROR("CTE InitPlan has no operation for cteParam=%d", cteParam);

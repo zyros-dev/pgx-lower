@@ -336,19 +336,25 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Pla
             continue;
         }
 
-        const auto& col = initplan_result.columns[0];
-        ctx.params[paramid] = pgx_lower::frontend::sql::ResolvedParam{
-            .table_name = col.table_name,
-            .column_name = col.column_name,
-            .type_oid = col.type_oid,
-            .typmod = col.typmod,
-            .nullable = col.nullable,
-            .mlir_type = col.mlir_type,
-            .cached_value = initplan_result.op->getResult(0)
-        };
-
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Stored InitPlan result for paramid=%d (plan_id=%d, %zu columns)", paramid,
-                plan_id, initplan_result.columns.size());
+        const bool is_cte = (subplan->subLinkType == 7) || (initplan_result.columns.size() > 1);
+        if (is_cte) {
+            ctx.initplan_results[paramid] = initplan_result;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Stored CTE InitPlan result for paramid=%d (plan_id=%d, %zu columns)",
+                    paramid, plan_id, initplan_result.columns.size());
+        } else {
+            const auto& col = initplan_result.columns[0];
+            ctx.params[paramid] = pgx_lower::frontend::sql::ResolvedParam{
+                .table_name = col.table_name,
+                .column_name = col.column_name,
+                .type_oid = col.type_oid,
+                .typmod = col.typmod,
+                .nullable = col.nullable,
+                .mlir_type = col.mlir_type,
+                .cached_value = initplan_result.op->getResult(0)
+            };
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Stored scalar InitPlan result for paramid=%d (plan_id=%d)", paramid,
+                    plan_id);
+        }
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Processed %d InitPlans, context now has %zu total", list_length(plan->initPlan),
