@@ -80,7 +80,7 @@ MLIR='module {
         %40 = relalg.getcol %arg0 @part::@p_partkey : i32
         %41 = db.compare eq %39 : i32, %40 : i32
         %42 = relalg.getcol %arg1 @partsupp1::@ps_suppkey : i32
-        %43 = relalg.getcol %arg0 @supplier::@s_suppkey : i32
+        %43 = relalg.getcol %arg1 @supplier1::@s_suppkey : i32
         %44 = db.compare eq %42 : i32, %43 : i32
         %45 = db.and %41, %44 : i1, i1
         relalg.return %45 : i1
