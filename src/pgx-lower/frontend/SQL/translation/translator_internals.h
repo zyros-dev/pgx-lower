@@ -114,36 +114,16 @@ struct TranslationResult {
 
     std::vector<ColumnSchema> columns;
     std::string current_scope;
-    std::map<std::pair<int, int>, std::pair<std::string, std::string>> varno_resolution;
     size_t left_child_column_count = 0;
-
-    [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {
-        const auto KEY = std::make_pair(varno, varattno);
-        const auto it = varno_resolution.find(KEY);
-        if (it != varno_resolution.end()) {
-            return it->second;
-        }
-        return std::nullopt;
-    }
 
     [[nodiscard]] auto toString() const -> std::string {
         std::string result = "TranslationResult(op=" + (op ? std::to_string(reinterpret_cast<uintptr_t>(op)) : "null")
                              + ", scope=" + current_scope + ", columns=[";
-        for (const auto & col : columns) {
+        for (const auto& col : columns) {
             result += "\n\t" + col.toString();
         }
         result += "]";
 
-        if (!varno_resolution.empty()) {
-            result += ", varno_mappings=[";
-            for (const auto& [key, value] : varno_resolution) {
-                result += "\n\t(" + std::to_string(key.first) + "," + std::to_string(key.second) + ") -> ("
-                          + value.first + ", " + value.second + ")";
-            }
-            result += "]";
-        }
-
-        result += ")";
         return result;
     }
 };
@@ -165,11 +145,12 @@ struct TranslationContext {
     const PlannedStmt current_stmt;
     mlir::OpBuilder& builder;
     const mlir::ModuleOp current_module;
-    const mlir::Value current_tuple;
-    const mlir::Value outer_tuple;
+    mlir::Value current_tuple;
+    mlir::Value outer_tuple;
     OptRefT<const TranslationResult> outer_result;
     std::unordered_map<int, TranslationResult> init_plan_results;
     std::unordered_map<int, SubqueryInfo> subquery_param_mapping;
+    std::map<std::pair<int, int>, std::pair<std::string, std::string>> varno_resolution;
 
     struct CorrelationInfo {
         std::string table_scope;
@@ -181,16 +162,19 @@ struct TranslationContext {
     static int outer_join_counter;
 
     static TranslationContext createChildContext(const TranslationContext& parent) {
-        return TranslationContext{parent.current_stmt,
-                                  parent.builder,
-                                  parent.current_module,
-                                  mlir::Value{},
-                                  parent.current_tuple,
-                                  parent.outer_result,
-                                  parent.init_plan_results,
-                                  {},
-                                  {},
-                                  {}};
+        return TranslationContext{
+            parent.current_stmt,     parent.builder,           parent.current_module,    parent.current_tuple,
+            parent.current_tuple,    parent.outer_result,      parent.init_plan_results, parent.subquery_param_mapping,
+            parent.varno_resolution, parent.correlation_params};
+    }
+
+    [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {
+        const auto KEY = std::make_pair(varno, varattno);
+        const auto it = varno_resolution.find(KEY);
+        if (it != varno_resolution.end()) {
+            return it->second;
+        }
+        return std::nullopt;
     }
 };
 
@@ -295,8 +279,7 @@ class PostgreSQLASTTranslator::Impl {
 
     auto apply_selection_from_qual_with_columns(const QueryCtxT& ctx, const TranslationResult& input, const List* qual,
                                                 const TranslationResult* merged_join_child) -> TranslationResult;
-    auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input,
-                                           const List* target_list,
+    auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input, const List* target_list,
                                            const TranslationResult* merged_join_child = nullptr) -> TranslationResult;
     auto apply_projection_from_translation_result(const QueryCtxT& ctx, const TranslationResult& input,
                                                   const TranslationResult& merged_join_child, const List* target_list)
@@ -305,7 +288,7 @@ class PostgreSQLASTTranslator::Impl {
     auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream,
                                const TranslationResult& translation_result) const -> mlir::Value;
 
-    auto create_join_operation(const QueryCtxT& ctx, JoinType join_type, mlir::Value left_value,
+    auto create_join_operation(QueryCtxT& ctx, JoinType join_type, mlir::Value left_value,
                                mlir::Value right_value, const TranslationResult& left_translation,
                                const TranslationResult& right_translation, List* join_clauses) -> TranslationResult;
 
@@ -318,10 +301,12 @@ class PostgreSQLASTTranslator::Impl {
         -> std::optional<std::pair<mlir::Value, mlir::Value>>;
     static auto normalize_bpchar_operands(const QueryCtxT& ctx, const OpExpr* op_expr, mlir::Value lhs, mlir::Value rhs)
         -> std::pair<mlir::Value, mlir::Value>;
-    static auto translate_arithmetic_op(const QueryCtxT& ctx, const OpExpr* op_expr, mlir::Value lhs, mlir::Value rhs) -> mlir::Value;
+    static auto translate_arithmetic_op(const QueryCtxT& ctx, const OpExpr* op_expr, mlir::Value lhs, mlir::Value rhs)
+        -> mlir::Value;
     static auto upcast_binary_operation(const QueryCtxT& ctx, mlir::Value lhs, mlir::Value rhs)
         -> std::pair<mlir::Value, mlir::Value>;
-    static auto translate_comparison_op(const QueryCtxT& context, Oid op_oid, mlir::Value lhs, mlir::Value rhs) -> mlir::Value;
+    static auto translate_comparison_op(const QueryCtxT& context, Oid op_oid, mlir::Value lhs, mlir::Value rhs)
+        -> mlir::Value;
 
     static auto verify_and_print(mlir::Value val) -> void;
     static void print_type(mlir::Type val);

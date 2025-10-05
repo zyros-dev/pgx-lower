@@ -278,7 +278,7 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     return result;
 }
 
-TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const QueryCtxT& ctx, const JoinType join_type,
+TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinType join_type,
                                                                        mlir::Value left_value, mlir::Value right_value,
                                                                        const TranslationResult& left_translation,
                                                                        const TranslationResult& right_translation,
@@ -324,12 +324,9 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
 
-        auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, tupleArg,
-                                      queryCtx.outer_tuple);
-        predicateCtx.nest_params = queryCtx.nest_params;
-        predicateCtx.init_plan_results = queryCtx.init_plan_results;
-        predicateCtx.subquery_param_mapping = queryCtx.subquery_param_mapping;
-        predicateCtx.correlation_params = queryCtx.correlation_params;
+        auto predicateCtx = QueryCtxT::createChildContext(queryCtx);
+        predicateCtx.builder = predicateBuilder;
+        predicateCtx.current_tuple = tupleArg;
         auto conditions = std::vector<mlir::Value>();
         ListCell* lc;
         int clauseIdx = 0;
@@ -420,7 +417,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
     auto createOuterJoinWithNullableMapping =
         [&left_translation, &right_translation, join_clauses, translateJoinPredicateToRegion](
             mlir::Value primaryValue, mlir::Value outerValue, const TranslationResult& outerTranslation,
-            const bool isRightJoin2, const QueryCtxT& queryCtx) {
+            const bool isRightJoin2, QueryCtxT& queryCtx) {
             auto& columnManager = queryCtx.builder.getContext()
                                       ->getOrLoadDialect<mlir::relalg::RelAlgDialect>()
                                       ->getColumnManager();
@@ -477,13 +474,10 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
                                                     const TranslationResult& rightTrans, const QueryCtxT& queryCtx) {
         auto predicateBuilder = mlir::OpBuilder(queryCtx.builder.getContext());
         predicateBuilder.setInsertionPointToStart(predicateBlock);
-        auto predicateCtx = QueryCtxT(queryCtx.current_stmt, predicateBuilder, queryCtx.current_module, innerTupleArg,
-                                      mlir::Value());
-        predicateCtx.outer_result = queryCtx.outer_result;
-        predicateCtx.init_plan_results = queryCtx.init_plan_results;
-        predicateCtx.nest_params = queryCtx.nest_params;
-        predicateCtx.subquery_param_mapping = queryCtx.subquery_param_mapping;
-        predicateCtx.correlation_params = queryCtx.correlation_params;
+        auto predicateCtx = QueryCtxT::createChildContext(queryCtx);
+        predicateCtx.builder = predicateBuilder;
+        predicateCtx.current_tuple = innerTupleArg;
+        predicateCtx.outer_tuple = mlir::Value();
         if (!join_clauses_ || join_clauses_->length == 0) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "[CORRELATED PREDICATE] No join clauses, returning true");
             auto trueVal = predicateBuilder.create<mlir::arith::ConstantOp>(
@@ -664,9 +658,10 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(const Que
         }
 
         result.current_scope = scope;
-        for (size_t i = 0; i < result.columns.size(); ++i) {
+        for (int i = 0; i < result.columns.size(); ++i) {
             const auto& col = result.columns[i];
-            result.varno_resolution[std::make_pair(OUTER_VAR, i + 1)] = std::make_pair(col.table_name, col.column_name);
+            std::pair<int, int> make_pair = std::make_pair<int, int>(OUTER_VAR, i + 1);
+            ctx.varno_resolution[make_pair] = std::make_pair(col.table_name, col.column_name);
             PGX_LOG(AST_TRANSLATE, DEBUG, "Added JOIN mapping to TranslationResult: varno=-2, varattno=%zu -> @%s::@%s",
                     i + 1, col.table_name.c_str(), col.column_name.c_str());
         }

@@ -148,7 +148,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
                 "[SCOPE_DEBUG] translate_seq_scan: uniqueScope != aliasName, populating varno_resolution");
         for (size_t i = 0; i < allColumns.size(); i++) {
             const int varattno = static_cast<int>(i + 1);
-            result.varno_resolution[std::make_pair(seqScan->scan.scanrelid, varattno)] = std::make_pair(
+            ctx.varno_resolution[std::make_pair(seqScan->scan.scanrelid, varattno)] = std::make_pair(
                 uniqueScope, allColumns[i].name);
             PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: varno_resolution[(%d,%d)] = ('%s','%s')",
                     seqScan->scan.scanrelid, varattno, uniqueScope.c_str(), allColumns[i].name.c_str());
@@ -159,7 +159,7 @@ auto PostgreSQLASTTranslator::Impl::translate_seq_scan(QueryCtxT& ctx, SeqScan* 
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_seq_scan: final varno_resolution.size()=%zu",
-            result.varno_resolution.size());
+            ctx.varno_resolution.size());
 
     // where + projection - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     if (result.op && seqScan->scan.plan.qual) {
@@ -282,14 +282,14 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
         const int varattno = static_cast<int>(i + 1);
 
         // Add mapping for scanrelid (regular Var and INDEX_VAR lookups)
-        result.varno_resolution[std::make_pair(indexScan->scan.scanrelid, varattno)] = std::make_pair(
+        ctx.varno_resolution[std::make_pair(indexScan->scan.scanrelid, varattno)] = std::make_pair(
             uniqueScope, allColumns[i].name);
         PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_index_scan: varno_resolution[(%d,%d)] = ('%s','%s')",
                 indexScan->scan.scanrelid, varattno, uniqueScope.c_str(), allColumns[i].name.c_str());
     }
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_index_scan: final varno_resolution.size()=%zu",
-            result.varno_resolution.size());
+            ctx.varno_resolution.size());
 
     const TranslationResult* outer = ctx.outer_result.has_value() ? &ctx.outer_result.value().get() : nullptr;
     if (result.op && indexScan->indexqual && indexScan->indexqual->length > 0) {
@@ -363,7 +363,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(result.columns.size())) {
                     const auto& col = result.columns[var->varattno - 1];
 
-                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(col.table_name,
+                    ctx.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(col.table_name,
                                                                                                       col.column_name);
 
                     PGX_LOG(AST_TRANSLATE, DEBUG,
@@ -377,7 +377,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 TranslationResult exprContext = result;
                 for (size_t i = 0; i < result.columns.size(); ++i) {
                     const auto& col = result.columns[i];
-                    exprContext.varno_resolution[std::make_pair(scanrelid, i + 1)] = std::make_pair(col.table_name,
+                    ctx.varno_resolution[std::make_pair(scanrelid, i + 1)] = std::make_pair(col.table_name,
                                                                                                     col.column_name);
                 }
                 auto streamResult = translate_expression_for_stream(ctx, tle->expr, exprContext, col_name);
@@ -394,7 +394,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, Subq
                 result.columns.push_back(
                     {streamResult.table_name, streamResult.column_name, type_oid, typmod, exprType, nullable});
 
-                result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(
+                ctx.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(
                     streamResult.table_name, streamResult.column_name);
 
                 PGX_LOG(AST_TRANSLATE, DEBUG, "SubqueryScan expression: varno=%d, attno=%d -> @%s::@%s", scanrelid,
@@ -484,14 +484,14 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, CteScan* 
 
                     newColumns.push_back({cte_alias, new_col_name, col.type_oid, col.typmod, col.mlir_type, col.nullable});
 
-                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(cte_alias,
+                    ctx.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(cte_alias,
                                                                                                       new_col_name);
 
                     PGX_LOG(AST_TRANSLATE, DEBUG, "CteScan column aliasing: varno=%d, attno=%d: @%s::@%s -> @%s::@%s",
                             scanrelid, output_attno, col.table_name.c_str(), col.column_name.c_str(), cte_alias.c_str(),
                             new_col_name.c_str());
                 } else {
-                    result.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(col.table_name,
+                    ctx.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(col.table_name,
                                                                                                       col.column_name);
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped CteScan: varno=%d, attno=%d -> CTE column %d (@%s::@%s)",
                             scanrelid, output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());

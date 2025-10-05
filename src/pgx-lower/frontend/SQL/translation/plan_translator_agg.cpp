@@ -450,7 +450,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             postProcResult.op = aggOp.getOperation();
             postProcResult.current_scope = aggrScopeName;
             for (const auto& [aggno, mapping] : aggregateMappings) {
-                postProcResult.varno_resolution[std::make_pair(-2, aggno)] = mapping;
+                ctx.varno_resolution[std::make_pair(-2, aggno)] = mapping;
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Added aggregate mapping for post-processing: aggno=%d -> (%s, %s)",
                         aggno, mapping.first.c_str(), mapping.second.c_str());
             }
@@ -460,9 +460,9 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Post-processing resno=%d with expression type=%d", resno, full_expr->type);
 
-                auto postCtx = QueryCtxT{ctx.current_stmt, mapBuilder, ctx.current_module, mapBlock->getArgument(0),
-                                         ctx.outer_tuple};
-                postCtx.init_plan_results = ctx.init_plan_results;
+                auto postCtx = QueryCtxT::createChildContext(ctx);
+                postCtx.builder = mapBuilder;
+                postCtx.current_tuple = mapBlock->getArgument(0);
                 auto post_value = translate_expression(postCtx, full_expr, postProcResult);
 
                 auto colName = "postproc_" + std::to_string(resno);
@@ -514,7 +514,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 if (aggregateMappings.contains(aggref->aggno)) {
                     const auto& mapping = aggregateMappings[aggref->aggno];
                     resultColumnName = mapping.second;
-                    result.varno_resolution[std::make_pair(-2, aggref->aggno)] = mapping;
+                    ctx.varno_resolution[std::make_pair(-2, aggref->aggno)] = mapping;
                     PGX_LOG(AST_TRANSLATE, DEBUG,
                             "Added aggregate mapping to TranslationResult: varno=-2, aggno=%d -> (%s, %s)",
                             aggref->aggno, mapping.first.c_str(), mapping.second.c_str());
@@ -571,15 +571,15 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         }
 
         for (const auto& [aggno, mapping] : aggregateMappings) {
-            result.varno_resolution[std::make_pair(-2, aggno)] = mapping;
+            ctx.varno_resolution[std::make_pair(-2, aggno)] = mapping;
             PGX_LOG(AST_TRANSLATE, DEBUG, "Added aggregate mapping to result.varno_resolution: aggno=%d -> (%s, %s)",
                     aggno, mapping.first.c_str(), mapping.second.c_str());
         }
 
         if (agg->plan.qual && agg->plan.qual->length > 0) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "Processing HAVING clause with %d varno_resolution entries",
-                    static_cast<int>(result.varno_resolution.size()));
-            for (const auto& [key, value] : result.varno_resolution) {
+                    static_cast<int>(ctx.varno_resolution.size()));
+            for (const auto& [key, value] : ctx.varno_resolution) {
                 PGX_LOG(AST_TRANSLATE, DEBUG, "  HAVING: varno=%d, attno=%d -> (%s, %s)", key.first, key.second,
                         value.first.c_str(), value.second.c_str());
             }

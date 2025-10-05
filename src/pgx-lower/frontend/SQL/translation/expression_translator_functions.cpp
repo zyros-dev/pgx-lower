@@ -134,8 +134,9 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     auto blockBuilder = mlir::OpBuilder(ctx.builder.getContext());
     blockBuilder.setInsertionPointToStart(block);
 
-    auto blockCtx = QueryCtxT{ctx.current_stmt, blockBuilder, ctx.current_module, tupleArg, ctx.current_tuple};
-    blockCtx.init_plan_results = ctx.init_plan_results;
+    auto blockCtx = QueryCtxT::createChildContext(ctx);
+    blockCtx.builder = blockBuilder;
+    blockCtx.current_tuple = tupleArg;
 
     // Pass through the child_result so varno_resolution is available
     auto exprValue = translate_expression(blockCtx, expr, child_result);
@@ -163,9 +164,9 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
     mlir::OpBuilder realBlockBuilder(ctx.builder.getContext());
     realBlockBuilder.setInsertionPointToStart(realBlock);
 
-    auto realBlockCtx = QueryCtxT{ctx.current_stmt, realBlockBuilder, ctx.current_module, realTupleArg,
-                                  ctx.current_tuple};
-    realBlockCtx.init_plan_results = ctx.init_plan_results;
+    auto realBlockCtx = QueryCtxT::createChildContext(ctx);
+    realBlockCtx.builder = realBlockBuilder;
+    realBlockCtx.current_tuple = realTupleArg;
     auto realExprValue = translate_expression(realBlockCtx, expr, child_result);
     verify_and_print(realExprValue);
     realBlockBuilder.create<mlir::relalg::ReturnOp>(ctx.builder.getUnknownLoc(), mlir::ValueRange{realExprValue});
@@ -471,7 +472,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
 
                     if (var->varno == INNER_VAR || var->varno == OUTER_VAR) {
                         if (current_result) {
-                            if (auto resolved = current_result->get().resolve_var(var->varno, var->varattno)) {
+                            if (auto resolved = ctx.resolve_var(var->varno, var->varattno)) {
                                 table_scope = resolved->first;
                                 column_name = resolved->second;
                                 nullable = is_column_nullable(&ctx.current_stmt, var->varno, var->varattno);
@@ -542,7 +543,7 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
 
                         if (paramVar->varno == INNER_VAR || paramVar->varno == OUTER_VAR) {
                             if (current_result) {
-                                if (auto resolved = current_result->get().resolve_var(paramVar->varno, paramVar->varattno))
+                                if (auto resolved = ctx.resolve_var(paramVar->varno, paramVar->varattno))
                                 {
                                     table_scope = resolved->first;
                                     column_name = resolved->second;

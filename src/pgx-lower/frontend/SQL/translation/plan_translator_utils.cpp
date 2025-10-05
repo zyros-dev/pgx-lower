@@ -379,12 +379,9 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.outer_tuple};
-        tmp_ctx.outer_result = ctx.outer_result;
-        tmp_ctx.init_plan_results = ctx.init_plan_results;
-        tmp_ctx.nest_params = ctx.nest_params;
-        tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
-        tmp_ctx.correlation_params = ctx.correlation_params;
+        auto tmp_ctx = QueryCtxT::createChildContext(ctx);
+        tmp_ctx.builder = predicate_builder;
+        tmp_ctx.current_tuple = tupleArg;
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
 
         mlir::Value predicateResult = nullptr;
@@ -480,12 +477,9 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
 
-        auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.outer_tuple};
-        tmp_ctx.outer_result = ctx.outer_result;
-        tmp_ctx.init_plan_results = ctx.init_plan_results;
-        tmp_ctx.nest_params = ctx.nest_params;
-        tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
-        tmp_ctx.correlation_params = ctx.correlation_params;
+        auto tmp_ctx = QueryCtxT::createChildContext(ctx);
+        tmp_ctx.builder = predicate_builder;
+        tmp_ctx.current_tuple = tupleArg;
         PGX_LOG(AST_TRANSLATE, DEBUG, "Created predicate context with %zu InitPlans", tmp_ctx.init_plan_results.size());
 
         mlir::Value predicateResult = nullptr;
@@ -552,7 +546,6 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
     TranslationResult result;
     result.op = selectionOp;
     result.columns = input.columns;
-    result.varno_resolution = input.varno_resolution;
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 4] RESULT: %s", result.toString().c_str());
     return result;
 }
@@ -621,11 +614,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
 
             mlir::OpBuilder temp_builder(&context_);
             temp_builder.setInsertionPointToStart(tempBlock);
-            auto tmp_ctx = QueryCtxT{ctx.current_stmt, temp_builder, ctx.current_module, tupleArg, ctx.current_tuple};
-            tmp_ctx.init_plan_results = ctx.init_plan_results;
-            tmp_ctx.nest_params = ctx.nest_params;
-            tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
-            tmp_ctx.correlation_params = ctx.correlation_params;
+            auto tmp_ctx = QueryCtxT::createChildContext(ctx);
+            tmp_ctx.builder = temp_builder;
+            tmp_ctx.current_tuple = tupleArg;
 
             for (auto* entry : computedEntries) {
                 auto colName = entry->resname ? entry->resname : "col_" + std::to_string(entry->resno);
@@ -712,11 +703,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
 
         mlir::OpBuilder predicate_builder(&context_);
         predicate_builder.setInsertionPointToStart(predicateBlock);
-        auto tmp_ctx = QueryCtxT{ctx.current_stmt, predicate_builder, ctx.current_module, tupleArg, ctx.current_tuple};
-        tmp_ctx.init_plan_results = ctx.init_plan_results;
-        tmp_ctx.nest_params = ctx.nest_params;
-        tmp_ctx.subquery_param_mapping = ctx.subquery_param_mapping;
-        tmp_ctx.correlation_params = ctx.correlation_params;
+        auto tmp_ctx = QueryCtxT::createChildContext(ctx);
+        tmp_ctx.builder = predicate_builder;
+        tmp_ctx.current_tuple = tupleArg;
 
         std::vector<mlir::Value> computedValues;
         for (auto* entry : computedEntries) {
@@ -861,7 +850,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
                             var->varattno, columnIndex);
                 }
             } else if (var->varno == INNER_VAR) {
-                if (auto mapping = merged_join_child.resolve_var(var->varnosyn, var->varattno)) {
+                if (auto mapping = ctx.resolve_var(var->varnosyn, var->varattno)) {
                     const auto& [table_name, col_name] = *mapping;
                     PGX_LOG(AST_TRANSLATE, DEBUG,
                             "Projection: INNER_VAR using varno_resolution: varnosyn=%d, varattno=%d -> @%s::@%s",
@@ -1000,7 +989,6 @@ auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationR
     if (left_child) {
         left_size = left_child->columns.size();
         merged_result.columns.insert(merged_result.columns.end(), left_child->columns.begin(), left_child->columns.end());
-        merged_result.varno_resolution.insert(left_child->varno_resolution.begin(), left_child->varno_resolution.end());
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Merged %zu columns from left_child", left_child->columns.size());
     }
@@ -1008,7 +996,6 @@ auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationR
     if (right_child) {
         merged_result.columns.insert(merged_result.columns.end(), right_child->columns.begin(),
                                      right_child->columns.end());
-        merged_result.varno_resolution.insert(right_child->varno_resolution.begin(), right_child->varno_resolution.end());
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Merged %zu columns from right_child", right_child->columns.size());
     }
@@ -1016,9 +1003,8 @@ auto PostgreSQLASTTranslator::Impl::merge_translation_results(const TranslationR
     merged_result.left_child_column_count = left_size;
 
     PGX_LOG(AST_TRANSLATE, DEBUG,
-            "merge_translation_results: Total %zu columns (%zu left + %zu right), %zu varno mappings",
-            merged_result.columns.size(), left_size, merged_result.columns.size() - left_size,
-            merged_result.varno_resolution.size());
+            "merge_translation_results: Total %zu columns (%zu left + %zu right), ??? varno mappings",
+            merged_result.columns.size(), left_size, merged_result.columns.size() - left_size);
 
     return merged_result;
 }

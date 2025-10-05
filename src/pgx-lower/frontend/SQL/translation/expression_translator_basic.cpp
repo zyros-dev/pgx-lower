@@ -160,7 +160,7 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     bool resolved_from_mapping = false;
 
     if (current_result) {
-        if (auto resolved = current_result->get().resolve_var(actualVarno, actualVarattno)) {
+        if (auto resolved = ctx.resolve_var(actualVarno, actualVarattno)) {
             const auto& [mappedTable, mappedColumn] = *resolved;
             tableName = mappedTable;
             colName = mappedColumn;
@@ -292,7 +292,7 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
 
     if (current_result) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Available varno_resolution mappings in translate_aggref:");
-        for (const auto& [key, value] : current_result->get().varno_resolution) {
+        for (const auto& [key, value] : ctx.varno_resolution) {
             PGX_LOG(AST_TRANSLATE, DEBUG, "  varno=%d, attno=%d -> (%s, %s)", key.first, key.second,
                     value.first.c_str(), value.second.c_str());
         }
@@ -306,7 +306,7 @@ auto PostgreSQLASTTranslator::Impl::translate_aggref(const QueryCtxT& ctx, const
     PGX_LOG(AST_TRANSLATE, DEBUG, "Current result is [%s]",
             current_result ? current_result->get().toString().data() : "Nothing!");
     if (current_result) {
-        if (auto resolved = current_result->get().resolve_var(-2, aggref->aggno)) {
+        if (auto resolved = ctx.resolve_var(-2, aggref->aggno)) {
             scopeName = resolved->first;
             columnName = resolved->second;
             found = true;
