@@ -114,13 +114,13 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
     // No need to apply them as separate selections
 
     if (mergeJoin->join.plan.qual) {
-        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->join.plan.qual, nullptr, nullptr);
+        result = apply_selection_from_qual_with_columns(ctx, result, mergeJoin->join.plan.qual, nullptr);
     }
 
     if (mergeJoin->join.plan.targetlist) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
-        result = apply_projection_from_translation_result(ctx, result, leftTranslation, rightTranslation,
-                                                          mergeJoin->join.plan.targetlist);
+        auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
+        result = apply_projection_from_translation_result(ctx, result, merged, mergeJoin->join.plan.targetlist);
     }
 
     return result;
@@ -170,13 +170,13 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
 
     if (hashJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.plan.qual, nullptr, nullptr);
+        result = apply_selection_from_qual_with_columns(ctx, result, hashJoin->join.plan.qual, nullptr);
     }
 
     if (hashJoin->join.plan.targetlist) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
-        result = apply_projection_from_translation_result(ctx, result, leftTranslation, rightTranslation,
-                                                          hashJoin->join.plan.targetlist);
+        auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
+        result = apply_projection_from_translation_result(ctx, result, merged, hashJoin->join.plan.targetlist);
     }
 
     return result;
@@ -266,13 +266,13 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
 
     if (nestLoop->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
-        result = apply_selection_from_qual_with_columns(ctx, result, nestLoop->join.plan.qual, nullptr, nullptr);
+        result = apply_selection_from_qual_with_columns(ctx, result, nestLoop->join.plan.qual, nullptr);
     }
 
     if (nestLoop->join.plan.targetlist) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
-        result = apply_projection_from_translation_result(ctx, result, leftTranslation, rightTranslation,
-                                                          nestLoop->join.plan.targetlist);
+        auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
+        result = apply_projection_from_translation_result(ctx, result, merged, nestLoop->join.plan.targetlist);
     }
 
     return result;

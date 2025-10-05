@@ -449,14 +449,13 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual(const QueryCtxT& c
 }
 
 auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
-    const QueryCtxT& ctx, const TranslationResult& input, const List* qual, const TranslationResult* left_child,
-    const TranslationResult* right_child) -> TranslationResult {
+    const QueryCtxT& ctx, const TranslationResult& input, const List* qual,
+    const TranslationResult* merged_join_child) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 3] input: %s", input.toString().c_str());
-    if (left_child)
-        PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 3] LEFT input: %s", left_child->toString().c_str());
-    if (right_child)
-        PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 3] RIGHT input: %s", right_child->toString().c_str());
+    if (merged_join_child)
+        PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 3] MERGED JOIN CHILD input: %s",
+                merged_join_child->toString().c_str());
 
     if (!input.op || !qual || qual->length == 0) {
         return input;
@@ -509,16 +508,15 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
                     }
 
                     mlir::Value condValue;
-                    if (left_child || right_child) {
-                        condValue = translate_expression_with_join_context(tmp_ctx, reinterpret_cast<Expr*>(qualNode),
-                                                                           left_child, right_child);
+                    if (merged_join_child) {
+                        condValue = translate_expression(tmp_ctx, reinterpret_cast<Expr*>(qualNode), *merged_join_child);
                     } else {
                         condValue = translate_expression(tmp_ctx, reinterpret_cast<Expr*>(qualNode), input);
                     }
 
                     if (condValue) {
                         PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully translated condition %d (join context: %s)", i,
-                                (left_child || right_child) ? "yes" : "no");
+                                merged_join_child ? "yes" : "no");
                         if (!condValue.getType().isInteger(1)) {
                             condValue = predicate_builder.create<mlir::db::DeriveTruth>(
                                 predicate_builder.getUnknownLoc(), condValue);
@@ -560,8 +558,8 @@ auto PostgreSQLASTTranslator::Impl::apply_selection_from_qual_with_columns(
 }
 
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
-    const QueryCtxT& ctx, const TranslationResult& input, const List* target_list, const TranslationResult* left_child,
-    const TranslationResult* right_child) -> TranslationResult {
+    const QueryCtxT& ctx, const TranslationResult& input, const List* target_list,
+    const TranslationResult* merged_join_child) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
     if (!input.op || !target_list || target_list->length <= 0 || !target_list->elements) {
         return input;
@@ -575,7 +573,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
 
     // When we have join context, we need to handle ALL target entries, not just computed ones
     // This ensures we project only the requested columns, not all input columns
-    bool handleAllEntries = (left_child != nullptr || right_child != nullptr);
+    bool handleAllEntries = (merged_join_child != nullptr);
 
     auto targetEntries = std::vector<TargetEntry*>();
     auto computedEntries = std::vector<TargetEntry*>();
@@ -671,8 +669,8 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
                         entry->resno, entry->resname ? entry->resname : "<null>");
 
                 mlir::Value exprValue;
-                if (left_child != nullptr || right_child != nullptr) {
-                    exprValue = translate_expression_with_join_context(tmp_ctx, entry->expr, left_child, right_child);
+                if (merged_join_child != nullptr) {
+                    exprValue = translate_expression(tmp_ctx, entry->expr, *merged_join_child);
                 } else {
                     exprValue = translate_expression(tmp_ctx, entry->expr);
                 }
@@ -723,8 +721,8 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
         std::vector<mlir::Value> computedValues;
         for (auto* entry : computedEntries) {
             mlir::Value exprValue;
-            if (left_child != nullptr || right_child != nullptr) {
-                exprValue = translate_expression_with_join_context(tmp_ctx, entry->expr, left_child, right_child);
+            if (merged_join_child != nullptr) {
+                exprValue = translate_expression(tmp_ctx, entry->expr, *merged_join_child);
             } else {
                 exprValue = translate_expression(tmp_ctx, entry->expr);
             }
@@ -764,19 +762,21 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
         if (tle->expr && IsA(tle->expr, Var)) {
             const auto* var = reinterpret_cast<const Var*>(tle->expr);
 
-            bool inputContainsBothSides = left_child && right_child
-                                          && (input.columns.size()
-                                              >= left_child->columns.size() + right_child->columns.size());
+            size_t left_column_count = merged_join_child ? merged_join_child->left_child_column_count : 0;
+            size_t right_column_count =
+                merged_join_child ? (merged_join_child->columns.size() - left_column_count) : 0;
+            bool inputContainsBothSides =
+                merged_join_child && (input.columns.size() >= merged_join_child->columns.size());
 
             size_t columnIndex = SIZE_MAX;
-            if (var->varno == OUTER_VAR && left_child) {
-                if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child->columns.size())) {
+            if (var->varno == OUTER_VAR && merged_join_child && left_column_count > 0) {
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(left_column_count)) {
                     columnIndex = var->varattno - 1;
                 }
-            } else if (var->varno == INNER_VAR && right_child) {
-                if (var->varattno > 0 && var->varattno <= static_cast<int>(right_child->columns.size())) {
+            } else if (var->varno == INNER_VAR && merged_join_child && right_column_count > 0) {
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(right_column_count)) {
                     if (inputContainsBothSides) {
-                        columnIndex = left_child->columns.size() + (var->varattno - 1);
+                        columnIndex = left_column_count + (var->varattno - 1);
                     } else {
                         columnIndex = var->varattno - 1;
                     }
@@ -822,8 +822,8 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(
 }
 
 auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
-    const QueryCtxT& ctx, const TranslationResult& input, const TranslationResult& left_child,
-    const TranslationResult& right_child, const List* target_list) -> TranslationResult {
+    const QueryCtxT& ctx, const TranslationResult& input, const TranslationResult& merged_join_child,
+    const List* target_list) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
 
     if (!input.op || !target_list || target_list->length <= 0) {
@@ -841,6 +841,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
     std::vector<mlir::Attribute> columnRefs;
     auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
 
+    size_t left_column_count = merged_join_child.left_child_column_count;
+    size_t right_column_count = merged_join_child.columns.size() - left_column_count;
+
     ListCell* lc;
     foreach (lc, target_list) {
         const auto* tle = static_cast<TargetEntry*>(lfirst(lc));
@@ -852,13 +855,13 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
             size_t columnIndex = SIZE_MAX;
 
             if (var->varno == OUTER_VAR) {
-                if (var->varattno > 0 && var->varattno <= static_cast<int>(left_child.columns.size())) {
+                if (var->varattno > 0 && var->varattno <= static_cast<int>(left_column_count)) {
                     columnIndex = var->varattno - 1;
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: OUTER_VAR varattno=%d maps to position %zu",
                             var->varattno, columnIndex);
                 }
             } else if (var->varno == INNER_VAR) {
-                if (auto mapping = right_child.resolve_var(var->varnosyn, var->varattno)) {
+                if (auto mapping = merged_join_child.resolve_var(var->varnosyn, var->varattno)) {
                     const auto& [table_name, col_name] = *mapping;
                     PGX_LOG(AST_TRANSLATE, DEBUG,
                             "Projection: INNER_VAR using varno_resolution: varnosyn=%d, varattno=%d -> @%s::@%s",
@@ -872,10 +875,8 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
                     }
                 }
 
-                if (columnIndex == SIZE_MAX && var->varattno > 0
-                    && var->varattno <= static_cast<int>(right_child.columns.size()))
-                {
-                    columnIndex = left_child.columns.size() + (var->varattno - 1);
+                if (columnIndex == SIZE_MAX && var->varattno > 0 && var->varattno <= static_cast<int>(right_column_count)) {
+                    columnIndex = left_column_count + (var->varattno - 1);
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Projection: INNER_VAR varattno=%d maps to position %zu (fallback)",
                             var->varattno, columnIndex);
                 }
@@ -899,7 +900,7 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
         } else if (tle->expr) {
             PGX_LOG(AST_TRANSLATE, DEBUG,
                     "Non-Var expression in join projection, delegating to apply_projection_from_target_list");
-            auto result = apply_projection_from_target_list(ctx, input, target_list, &left_child, &right_child);
+            auto result = apply_projection_from_target_list(ctx, input, target_list, &merged_join_child);
             PGX_LOG(AST_TRANSLATE, DEBUG, "[JOIN STAGE 2] RESULT: %s", result.toString().c_str());
             return result;
         }
