@@ -373,27 +373,39 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to nestParam Var(varno=%d, varattno=%d, varnosyn=%d, varattnosyn=%d)",
                 param->paramid, paramVar->varno, paramVar->varattno, paramVar->varnosyn, paramVar->varattnosyn);
         if (paramVar->varnosyn > 0 && paramVar->varattnosyn > 0) {
-            // This nest_param references the outer query via varnosyn
-            // We need to use outer_tuple for the GetColumnOp
             Var tempVar = *paramVar;
             tempVar.varno = paramVar->varnosyn;
             tempVar.varattno = paramVar->varattnosyn;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Using varnosyn/varattnosyn: translating as Var(varno=%d, varattno=%d) with outer_tuple=%d",
-                    tempVar.varno, tempVar.varattno, ctx.outer_tuple ? 1 : 0);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: varnosyn=%d, varattnosyn=%d - need to find scope from outer_result",
+                    tempVar.varno, tempVar.varattno);
 
-            if (ctx.outer_tuple) {
-                // Create a modified context that uses outer_tuple instead of current_tuple
-                auto outerCtx = QueryCtxT{ctx.current_stmt, ctx.builder, ctx.current_module, ctx.outer_tuple, mlir::Value()};
-                outerCtx.nest_params = ctx.nest_params;
-                outerCtx.correlation_params = ctx.correlation_params;
-                outerCtx.outer_result = ctx.outer_result;
-                outerCtx.init_plan_results = ctx.init_plan_results;
-                outerCtx.subquery_param_mapping = ctx.subquery_param_mapping;
-                PGX_LOG(AST_TRANSLATE, DEBUG, "Creating GetColumnOp using outer_tuple for correlation parameter");
-                return translate_var(outerCtx, &tempVar, current_result);
+            std::string colName = get_column_name_from_schema(&ctx.current_stmt, tempVar.varno, tempVar.varattno);
+
+            if (ctx.outer_result && ctx.outer_result->get().columns.size() > 0) {
+                for (const auto& col : ctx.outer_result->get().columns) {
+                    if (col.column_name == colName) {
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Found column '%s' in outer_result with scope '%s'",
+                                colName.c_str(), col.table_name.c_str());
+
+                        auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+                        auto& columnManager = dialect->getColumnManager();
+                        auto colRef = columnManager.createRef(col.table_name, col.column_name);
+
+                        const auto type_mapper = PostgreSQLTypeMapper(context_);
+                        auto mlirType = type_mapper.map_postgre_sqltype(col.type_oid, col.typmod, col.nullable);
+
+                        if (!colRef.getColumn().type) {
+                            colRef.getColumn().type = mlirType;
+                        }
+
+                        return ctx.builder.create<mlir::relalg::GetColumnOp>(
+                            ctx.builder.getUnknownLoc(), mlirType, colRef, ctx.current_tuple);
+                    }
+                }
             }
 
-            return translate_var(ctx, &tempVar, current_result);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Column '%s' not found in outer_result, using fallback", colName.c_str());
+            return translate_var(ctx, &tempVar, ctx.outer_result);
         }
 
         return translate_var(ctx, paramVar, current_result);
