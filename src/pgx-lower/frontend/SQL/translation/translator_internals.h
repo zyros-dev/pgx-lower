@@ -159,6 +159,21 @@ struct TranslationContext {
                                   .nest_params = parent.nest_params};
     }
 
+    static TranslationContext createChildContextWithOuter(const TranslationContext& parent,
+                                                          const TranslationResult& outer_result) {
+        return TranslationContext{.current_stmt = parent.current_stmt,
+                                  .builder = parent.builder,
+                                  .current_module = parent.current_module,
+                                  .current_tuple = parent.current_tuple,
+                                  .outer_tuple = parent.current_tuple,
+                                  .outer_result = std::ref(outer_result),
+                                  .init_plan_results = parent.init_plan_results,
+                                  .subquery_param_mapping = parent.subquery_param_mapping,
+                                  .varno_resolution = parent.varno_resolution,
+                                  .correlation_params = parent.correlation_params,
+                                  .nest_params = parent.nest_params};
+    }
+
     [[nodiscard]] auto resolve_var(const int varno, int varattno, const std::optional<int> varnosyn = std::nullopt,
                                    const std::optional<int> varattnosyn = std::nullopt) const
         -> std::optional<TranslationResult::ColumnSchema> {

@@ -272,7 +272,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             if (!argTE)
                 return;
 
-            const auto childCtx = QueryCtxT::createChildContext(ctx);
+            const auto childCtx = QueryCtxT::createChildContextWithOuter(ctx, childResult);
+
             TranslationResult exprContext = childResult;
             exprContext.op = childOutput.getDefiningOp();
             auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
@@ -337,8 +338,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     if (!argTE)
                         continue;
 
-                    auto childCtx = QueryCtxT::createChildContext(ctx);
-                    // Create a context with current childOutput as the stream and varno_resolution from childResult
+                    const auto childCtx = QueryCtxT::createChildContextWithOuter(ctx, childResult);
                     TranslationResult exprContext = childResult;
                     exprContext.op = childOutput.getDefiningOp();
                     auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
