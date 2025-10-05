@@ -842,11 +842,14 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
                             var->varattno, columnIndex);
                 }
             } else if (var->varno == INNER_VAR) {
-                if (auto mapping = ctx.resolve_var(var->varnosyn, var->varattno)) {
+                std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
+                std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn) : std::nullopt;
+
+                if (auto mapping = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
                     const auto& [table_name, col_name] = *mapping;
                     PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "Projection: INNER_VAR using varno_resolution: varnosyn=%d, varattno=%d -> @%s::@%s",
-                            var->varnosyn, var->varattno, table_name.c_str(), col_name.c_str());
+                            "Projection: INNER_VAR using varno_resolution -> @%s::@%s",
+                            table_name.c_str(), col_name.c_str());
 
                     for (size_t i = 0; i < input.columns.size(); ++i) {
                         if (input.columns[i].table_name == table_name && input.columns[i].column_name == col_name) {

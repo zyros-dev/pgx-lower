@@ -125,52 +125,36 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
         throw std::runtime_error("Invalid Var parameters: no tuple and no current_result");
     }
 
-    int actualVarno = var->varno;
-    int actualVarattno = var->varattno;
-
-    if (var->varno == INNER_VAR || var->varno == INDEX_VAR || var->varno == OUTER_VAR) {
-        actualVarno = var->varnosyn;
-
-        const auto* rte = static_cast<RangeTblEntry*>(
-            list_nth(ctx.current_stmt.rtable, actualVarno - POSTGRESQL_VARNO_OFFSET));
-
-        if (rte->rtekind == RTE_SUBQUERY) {
-            // Subquery: use varattno to index into subquery result
-            actualVarattno = var->varattno;
-            PGX_LOG(AST_TRANSLATE, DEBUG,
-                    "translate_var: Subquery detected - using varnosyn=%d, varattno=%d for synthetic varno=%d",
-                    var->varnosyn, var->varattno, var->varno);
-        } else {
-            // Base table: use varattnosyn to get actual column position
-            actualVarattno = var->varattnosyn;
-            PGX_LOG(AST_TRANSLATE, DEBUG,
-                    "translate_var: Base table detected - using varnosyn=%d, varattnosyn=%d for synthetic varno=%d, "
-                    "varattno=%d",
-                    var->varnosyn, var->varattnosyn, var->varno, var->varattno);
-        }
-    }
-
-    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d, actualVarno=%d, actualVarattno=%d", var->varno,
-            var->varattno, actualVarno, actualVarattno);
-    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_var: varno=%d, varattno=%d, has_current_result=%d",
+    PGX_LOG(AST_TRANSLATE, DEBUG, "translate_var: varno=%d, varattno=%d, has_current_result=%d",
             var->varno, var->varattno, current_result.has_value());
 
     std::string tableName, colName;
     bool nullable;
     bool resolved_from_mapping = false;
 
+    // Try varno_resolution map (handles synthetic varnos via optional varnosyn/varattnosyn)
     if (current_result) {
-        if (auto resolved = ctx.resolve_var(actualVarno, actualVarattno)) {
+        std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn) : std::nullopt;
+        std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn) : std::nullopt;
+
+        if (auto resolved = ctx.resolve_var(var->varno, var->varattno, varnosyn_opt, varattnosyn_opt)) {
             const auto& [mappedTable, mappedColumn] = *resolved;
             tableName = mappedTable;
             colName = mappedColumn;
-            nullable = is_column_nullable(&ctx.current_stmt, actualVarno, actualVarattno);
+            // For nullable lookup, use same resolution logic
+            int lookup_varno = varnosyn_opt.value_or(var->varno);
+            int lookup_varattno = var->varattno;
+            if (varnosyn_opt.has_value()) {
+                const auto* rte = static_cast<RangeTblEntry*>(
+                    list_nth(ctx.current_stmt.rtable, lookup_varno - POSTGRESQL_VARNO_OFFSET));
+                if (rte->rtekind != RTE_SUBQUERY) {
+                    lookup_varattno = var->varattnosyn;
+                }
+            }
+            nullable = is_column_nullable(&ctx.current_stmt, lookup_varno, lookup_varattno);
             resolved_from_mapping = true;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Using TranslationResult mapping for varno=%d, varattno=%d -> (%s, %s)",
-                    actualVarno, actualVarattno, tableName.c_str(), colName.c_str());
-            PGX_LOG(AST_TRANSLATE, DEBUG,
-                    "[SCOPE_DEBUG] translate_var: BRANCH=varno_resolution, tableName='%s', colName='%s'", tableName.c_str(),
-                    colName.c_str());
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Using varno_resolution for varno=%d, varattno=%d -> (%s, %s)",
+                    var->varno, var->varattno, tableName.c_str(), colName.c_str());
         }
     }
 
@@ -225,12 +209,15 @@ auto PostgreSQLASTTranslator::Impl::translate_var(const QueryCtxT& ctx, const Va
     }
 
     if (!resolved_from_mapping) {
-        tableName = get_table_alias_from_rte(&ctx.current_stmt, actualVarno);
-        colName = get_column_name_from_schema(&ctx.current_stmt, actualVarno, var->varattno);
-        nullable = is_column_nullable(&ctx.current_stmt, actualVarno, var->varattno);
+        // Final fallback: use PostgreSQL catalog
+        // For synthetic varnos, need to get concrete varno for schema lookup
+        int schema_varno = IS_SPECIAL_VARNO(var->varno) ? var->varnosyn : var->varno;
+        tableName = get_table_alias_from_rte(&ctx.current_stmt, schema_varno);
+        colName = get_column_name_from_schema(&ctx.current_stmt, schema_varno, var->varattno);
+        nullable = is_column_nullable(&ctx.current_stmt, schema_varno, var->varattno);
         PGX_LOG(AST_TRANSLATE, DEBUG,
-                "[SCOPE_DEBUG] translate_var: BRANCH=get_table_alias_from_rte, tableName='%s', colName='%s'",
-                tableName.c_str(), colName.c_str());
+                "Fallback to schema lookup: varno=%d -> %s.%s",
+                schema_varno, tableName.c_str(), colName.c_str());
     }
 
     auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
@@ -370,55 +357,50 @@ auto PostgreSQLASTTranslator::Impl::translate_param(const QueryCtxT& ctx, const 
 
     if (nest_it != nest_params.end()) {
         auto* paramVar = nest_it->second;
-        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to nestParam Var(varno=%d, varattno=%d, varnosyn=%d, varattnosyn=%d)",
-                param->paramid, paramVar->varno, paramVar->varattno, paramVar->varnosyn, paramVar->varattnosyn);
-        if (paramVar->varnosyn > 0 && paramVar->varattnosyn > 0) {
-            Var tempVar = *paramVar;
-            tempVar.varno = paramVar->varnosyn;
-            tempVar.varattno = paramVar->varattnosyn;
-            PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: varnosyn=%d, varattnosyn=%d - need to find scope from outer_result",
-                    tempVar.varno, tempVar.varattno);
+        PGX_LOG(AST_TRANSLATE, DEBUG, "Resolving Param paramid=%d to nestParam Var(varno=%d, varattno=%d)",
+                param->paramid, paramVar->varno, paramVar->varattno);
 
-            std::string tableName, colName;
-            auto resolved = ctx.resolve_var(tempVar.varno, tempVar.varattno);
-            if (resolved) {
-                std::tie(tableName, colName) = *resolved;
-                PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Resolved via varno_resolution: varno=%d attno=%d -> %s.%s",
-                        tempVar.varno, tempVar.varattno, tableName.c_str(), colName.c_str());
-            } else {
-                colName = get_column_name_from_schema(&ctx.current_stmt, tempVar.varno, tempVar.varattno);
-                PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Resolved via schema: varno=%d attno=%d -> column '%s'",
-                        tempVar.varno, tempVar.varattno, colName.c_str());
-            }
+        // Try varno_resolution first
+        std::string tableName, colName;
+        std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varnosyn) : std::nullopt;
+        std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varattnosyn) : std::nullopt;
 
-            if (ctx.outer_result && ctx.outer_result->get().columns.size() > 0) {
-                for (const auto& col : ctx.outer_result->get().columns) {
-                    if (col.column_name == colName) {
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Found column '%s' in outer_result with scope '%s'",
-                                colName.c_str(), col.table_name.c_str());
-
-                        auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
-                        auto& columnManager = dialect->getColumnManager();
-                        auto colRef = columnManager.createRef(col.table_name, col.column_name);
-
-                        const auto type_mapper = PostgreSQLTypeMapper(context_);
-                        auto mlirType = type_mapper.map_postgre_sqltype(col.type_oid, col.typmod, col.nullable);
-
-                        if (!colRef.getColumn().type) {
-                            colRef.getColumn().type = mlirType;
-                        }
-
-                        return ctx.builder.create<mlir::relalg::GetColumnOp>(
-                            ctx.builder.getUnknownLoc(), mlirType, colRef, ctx.current_tuple);
-                    }
-                }
-            }
-
-            PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Column '%s' not found in outer_result, using fallback", colName.c_str());
-            return translate_var(ctx, &tempVar, ctx.outer_result);
+        auto resolved = ctx.resolve_var(paramVar->varno, paramVar->varattno, varnosyn_opt, varattnosyn_opt);
+        if (resolved) {
+            std::tie(tableName, colName) = *resolved;
+            PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Resolved via varno_resolution -> %s.%s",
+                    tableName.c_str(), colName.c_str());
+        } else {
+            int schema_varno = varnosyn_opt.value_or(paramVar->varno);
+            colName = get_column_name_from_schema(&ctx.current_stmt, schema_varno, paramVar->varattno);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Resolved via schema -> column '%s'", colName.c_str());
         }
 
-        return translate_var(ctx, paramVar, current_result);
+        if (ctx.outer_result && ctx.outer_result->get().columns.size() > 0) {
+            for (const auto& col : ctx.outer_result->get().columns) {
+                if (col.column_name == colName) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Found column '%s' in outer_result with scope '%s'",
+                            colName.c_str(), col.table_name.c_str());
+
+                    auto* dialect = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>();
+                    auto& columnManager = dialect->getColumnManager();
+                    auto colRef = columnManager.createRef(col.table_name, col.column_name);
+
+                    const auto type_mapper = PostgreSQLTypeMapper(context_);
+                    auto mlirType = type_mapper.map_postgre_sqltype(col.type_oid, col.typmod, col.nullable);
+
+                    if (!colRef.getColumn().type) {
+                        colRef.getColumn().type = mlirType;
+                    }
+
+                    return ctx.builder.create<mlir::relalg::GetColumnOp>(
+                        ctx.builder.getUnknownLoc(), mlirType, colRef, ctx.current_tuple);
+                }
+            }
+        }
+
+        PGX_LOG(AST_TRANSLATE, DEBUG, "NESTLOOPPARAM: Column '%s' not found in outer_result, using fallback", colName.c_str());
+        return translate_var(ctx, paramVar, ctx.outer_result);
     }
 
     // Check correlation parameters (these are free variables and don't need current_result)

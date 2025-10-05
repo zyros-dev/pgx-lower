@@ -8,6 +8,8 @@ extern "C" {
 #include "utils/lsyscache.h"
 }
 
+#include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
+
 using AttrNumber = int16;
 
 // fwd
@@ -185,8 +187,25 @@ struct TranslationContext {
                                   .nest_params = parent.nest_params};
     }
 
-    [[nodiscard]] auto resolve_var(int varno, int varattno) const -> std::optional<std::pair<std::string, std::string>> {
-        const auto KEY = std::make_pair(varno, varattno);
+    [[nodiscard]] auto resolve_var(int varno, int varattno, std::optional<int> varnosyn = std::nullopt,
+                                   std::optional<int> varattnosyn = std::nullopt) const
+        -> std::optional<std::pair<std::string, std::string>> {
+        int lookup_varno = varno;
+        int lookup_varattno = varattno;
+
+        if (varnosyn.has_value()) {
+            lookup_varno = *varnosyn;
+
+            const auto* rte = static_cast<RangeTblEntry*>(
+                list_nth(current_stmt.rtable, lookup_varno - constants::POSTGRESQL_VARNO_OFFSET));
+            if (rte->rtekind == RTE_SUBQUERY) {
+                lookup_varattno = varattno;
+            } else {
+                lookup_varattno = varattnosyn.value_or(varattno);
+            }
+        }
+
+        const auto KEY = std::make_pair(lookup_varno, lookup_varattno);
         const auto it = varno_resolution.find(KEY);
         if (it != varno_resolution.end()) {
             return it->second;
