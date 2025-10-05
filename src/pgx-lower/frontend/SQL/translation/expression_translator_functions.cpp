@@ -700,17 +700,8 @@ auto PostgreSQLASTTranslator::Impl::translate_subplan(const QueryCtxT& ctx, cons
 auto PostgreSQLASTTranslator::Impl::translate_subquery_plan(const QueryCtxT& parent_ctx, Plan* subquery_plan,
                                                             const PlannedStmt* parent_stmt)
     -> std::pair<mlir::Value, TranslationResult> {
-    // Translate subquery Plan tree to RelAlg MLIR stream with isolated context.
     PGX_LOG(AST_TRANSLATE, DEBUG, "translate_subquery_plan: Starting subquery translation");
-
-    // Create subquery context with parent's current_tuple as outer_tuple for correlation
-    auto subquery_ctx = QueryCtxT(*parent_stmt, parent_ctx.builder, parent_ctx.current_module, mlir::Value(),
-                                  parent_ctx.current_tuple);
-    subquery_ctx.init_plan_results = parent_ctx.init_plan_results;
-    subquery_ctx.nest_params = parent_ctx.nest_params;
-    subquery_ctx.subquery_param_mapping = parent_ctx.subquery_param_mapping;
-    subquery_ctx.correlation_params = parent_ctx.correlation_params;
-
+    auto subquery_ctx = QueryCtxT::createChildContext(parent_ctx, parent_ctx.builder, mlir::Value());
     auto subquery_result = translate_plan_node(subquery_ctx, subquery_plan);
 
     if (!subquery_result.op) {
