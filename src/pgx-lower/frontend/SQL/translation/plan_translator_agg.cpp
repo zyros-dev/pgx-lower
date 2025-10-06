@@ -266,7 +266,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     auto needs_post_processing = std::set<int>();
     auto post_process_exprs = std::map<int, Expr*>();
 
-    auto process_single_aggregate = [&](const Aggref* aggref) -> void {
+    auto process_single_aggregate = [&](const Aggref* aggref, const char* resname = nullptr) -> void {
         char* rawFuncName = get_func_name(aggref->aggfnoid);
         if (!rawFuncName) {
             PGX_WARNING("Failed to find a function name!");
@@ -275,7 +275,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
         const auto funcName = std::string(rawFuncName);
         pfree(rawFuncName);
 
-        auto aggColumnName = "agg_" + std::to_string(aggref->aggno);
+        auto aggColumnName = resname ? std::string(resname) : ("agg_" + std::to_string(aggref->aggno));
         const auto relation = block->getArgument(0);
         mlir::Value aggResult;
 
@@ -370,7 +370,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             const auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
             aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
 
-            // In combining mode, COUNT with an argument should be SUM (combining partial counts)
+            // TODO: AVG in combining mode also needs special handling - it should combine using
             auto aggrFuncEnum = getAggregateFunction(funcName);
             if (funcName == "count" && is_combining) {
                 aggrFuncEnum = mlir::relalg::AggrFunc::sum;
@@ -393,122 +393,8 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 continue;
 
             if (IsA(te->expr, Aggref)) {
-                // Direct aggregate: SUM(x), COUNT(*), etc.
                 auto aggref = reinterpret_cast<Aggref*>(te->expr);
-                char* rawFuncName = get_func_name(aggref->aggfnoid);
-                if (!rawFuncName)
-                    continue;
-                auto funcName = std::string(rawFuncName);
-                pfree(rawFuncName);
-
-                auto aggColumnName = te->resname ? te->resname : funcName + "_" + std::to_string(aggref->aggno);
-                auto relation = block->getArgument(0);
-                mlir::Value aggResult;
-
-                if (funcName == "count" && (!aggref->args || list_length(aggref->args) == 0)) {
-                    // COUNT(*) - but in combining mode, we sum partial counts instead
-                    if (is_combining) {
-                        auto argTE = getFirstAggregateArgument(aggref);
-                        if (!argTE) {
-                            PGX_ERROR("COUNT in combining mode but no argument found (aggno=%d, resname=%s)",
-                                     aggref->aggno, te->resname ? te->resname : "<null>");
-                            continue;
-                        }
-
-                        const auto childCtx = QueryCtxT::createChildContextWithOuter(ctx, childResult);
-                        TranslationResult exprContext = childResult;
-                        exprContext.op = childOutput.getDefiningOp();
-                        auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
-                            childCtx, argTE->expr, exprContext, "agg_expr_" + std::to_string(aggref->aggno));
-
-                        if (stream != childOutput) {
-                            childOutput = llvm::cast<mlir::OpResult>(stream);
-                            mlir::Type actual_type = column_ref.getColumn().type;
-                            bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
-
-                            childResult.columns.push_back({.table_name = table_name,
-                                                           .column_name = column_name,
-                                                           .type_oid = exprType(reinterpret_cast<Node*>(argTE->expr)),
-                                                           .typmod = exprTypmod(reinterpret_cast<Node*>(argTE->expr)),
-                                                           .mlir_type = actual_type,
-                                                           .nullable = is_nullable});
-                        }
-
-                        // Use SUM to combine partial counts
-                        auto resultType = ctx.builder.getI64Type();
-                        auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
-                        aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
-
-                        aggResult = aggr_builder.create<mlir::relalg::AggrFuncOp>(
-                            ctx.builder.getUnknownLoc(), resultType, mlir::relalg::AggrFunc::sum, relation, column_ref);
-
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "COUNT in combining mode (targetlist): using SUM on %s.%s (aggno=%d, resname=%s)",
-                                table_name.c_str(), column_name.c_str(), aggref->aggno, te->resname ? te->resname : "<null>");
-
-                        createdCols.push_back(attrDef);
-                        createdValues.push_back(aggResult);
-                    } else {
-                        mlir::relalg::ColumnDefAttr attrDef;
-                        aggResult = processCountStarAggregate(aggr_builder, ctx.builder.getUnknownLoc(), relation, attrDef,
-                                                              columnManager, aggrScopeName, aggColumnName,
-                                                              aggregateMappings, aggref->aggno);
-                        createdCols.push_back(attrDef);
-                        createdValues.push_back(aggResult);
-                    }
-                } else {
-                    auto argTE = getFirstAggregateArgument(aggref);
-                    if (!argTE)
-                        continue;
-
-                    const auto childCtx = QueryCtxT::createChildContextWithOuter(ctx, childResult);
-                    TranslationResult exprContext = childResult;
-                    exprContext.op = childOutput.getDefiningOp();
-                    auto [stream, column_ref, column_name, table_name] = translate_expression_for_stream(
-                        childCtx, argTE->expr, exprContext, "agg_expr_" + std::to_string(aggref->aggno));
-
-                    if (stream != childOutput) {
-                        childOutput = llvm::cast<mlir::OpResult>(stream);
-                        // Extract the actual MLIR type from the column reference attribute
-                        mlir::Type actual_type = column_ref.getColumn().type;
-                        bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
-
-                        childResult.columns.push_back({.table_name = table_name,
-                                                       .column_name = column_name,
-                                                       .type_oid = exprType(reinterpret_cast<Node*>(argTE->expr)),
-                                                       .typmod = exprTypmod(reinterpret_cast<Node*>(argTE->expr)),
-                                                       .mlir_type = actual_type,
-                                                       .nullable = is_nullable});
-                    }
-
-                    mlir::Type resultType;
-                    if (funcName == "count") {
-                        resultType = ctx.builder.getI64Type();
-                    } else if (aggref->aggtype == 17 && aggref->aggargtypes && list_length(aggref->aggargtypes) > 0) {
-                        // BYTEAOID (17) indicates PostgreSQL is using polymorphic aggregate with internal state
-                        // Use the actual argument type for result type (works for SUM/MIN/MAX)
-                        Oid argTypeOid = lfirst_oid(list_head(aggref->aggargtypes));
-                        resultType = type_mapper.map_postgre_sqltype(argTypeOid, -1, true);
-                        PGX_LOG(AST_TRANSLATE, DEBUG,
-                                "Polymorphic aggregate: using aggargtypes for result type: aggtype=%u -> argtype=%u",
-                                aggref->aggtype, argTypeOid);
-                    } else {
-                        resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
-                    }
-                    auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
-                    aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
-
-                    // In combining mode, COUNT with an argument should be SUM (combining partial counts)
-                    auto aggrFuncEnum = getAggregateFunction(funcName);
-                    if (funcName == "count" && is_combining) {
-                        aggrFuncEnum = mlir::relalg::AggrFunc::sum;
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "COUNT with argument in combining mode (targetlist): using SUM on %s.%s (aggno=%d, resname=%s)",
-                                table_name.c_str(), column_name.c_str(), aggref->aggno, te->resname ? te->resname : "<null>");
-                    }
-                    aggResult = createAggregateOperation(aggr_builder, ctx.builder.getUnknownLoc(), resultType,
-                                                         aggrFuncEnum, relation, column_ref, aggref->aggdistinct);
-                    createdCols.push_back(attrDef);
-                    createdValues.push_back(aggResult);
-                }
+                process_single_aggregate(aggref, te->resname);
             } else {
                 // This could be a complex expression with nested aggregation, like SUM(x) / SUM(y) has two aggregations
                 // inside of it.
