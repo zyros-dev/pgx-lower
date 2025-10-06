@@ -186,6 +186,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
 
         // Also scan targetlist for additional GROUP BY columns that PostgreSQL optimized out of grpColIdx
         // (e.g., when grouping by PK + dependent column, PostgreSQL may only list PK in grpColIdx)
+        // IMPORTANT: Only add if the column exists in child result (prevents nested aggregation issues)
         if (agg->plan.targetlist) {
             ListCell* lc;
             foreach (lc, agg->plan.targetlist) {
@@ -196,6 +197,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
                         const auto& childCol = childResult.columns[var->varattno - 1];
 
+                        // Check if column already in GROUP BY
                         bool alreadyInGroup = false;
                         for (const auto& attr : groupByAttrs) {
                             if (auto existingColRef = mlir::dyn_cast<mlir::relalg::ColumnRefAttr>(attr)) {
@@ -209,13 +211,27 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                             }
                         }
 
+                        // GUARD: Only add if column exists in child output
+                        // This prevents issues in nested aggregations where outer agg references columns
+                        // from inner agg's child that inner agg didn't output
                         if (!alreadyInGroup) {
-                            PGX_LOG(AST_TRANSLATE, DEBUG,
-                                    "Agg: Adding GROUP BY column from targetlist: %s.%s (ressortgroupref=%d)",
-                                    childCol.table_name.c_str(), childCol.column_name.c_str(), tle->ressortgroupref);
-                            auto colRef = columnManager.createRef(childCol.table_name, childCol.column_name);
-                            colRef.getColumn().type = childCol.mlir_type;
-                            groupByAttrs.push_back(colRef);
+                            // Check if this column was actually output by the child
+                            bool existsInChild = false;
+                            for (const auto& col : childResult.columns) {
+                                if (col.table_name == childCol.table_name && col.column_name == childCol.column_name) {
+                                    existsInChild = true;
+                                    break;
+                                }
+                            }
+
+                            if (existsInChild) {
+                                PGX_LOG(AST_TRANSLATE, DEBUG,
+                                        "Agg: Adding GROUP BY column from targetlist: %s.%s (ressortgroupref=%d)",
+                                        childCol.table_name.c_str(), childCol.column_name.c_str(), tle->ressortgroupref);
+                                auto colRef = columnManager.createRef(childCol.table_name, childCol.column_name);
+                                colRef.getColumn().type = childCol.mlir_type;
+                                groupByAttrs.push_back(colRef);
+                            }
                         }
                     }
                 }
@@ -295,13 +311,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
             mlir::Type resultType;
             if (funcName == "count") {
                 resultType = ctx.builder.getI64Type();
-            } else if (aggref->aggargtypes && list_length(aggref->aggargtypes) > 0) {
-                // Sometimes postgres introduces polymorphic types... we need to
-                // deduce if these are strings or decimals
+            } else if (aggref->aggtype == 17 && aggref->aggargtypes && list_length(aggref->aggargtypes) > 0) {
+                // BYTEAOID (17) indicates PostgreSQL is using polymorphic aggregate with internal state
+                // Use the actual argument type for result type (works for SUM/MIN/MAX)
                 Oid argTypeOid = lfirst_oid(list_head(aggref->aggargtypes));
                 resultType = type_mapper.map_postgre_sqltype(argTypeOid, -1, true);
                 PGX_LOG(AST_TRANSLATE, DEBUG,
-                        "Using aggargtypes for result type: aggtype=%u -> argtype=%u",
+                        "Polymorphic aggregate: using aggargtypes for result type: aggtype=%u -> argtype=%u",
                         aggref->aggtype, argTypeOid);
             } else {
                 resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
@@ -373,12 +389,13 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     mlir::Type resultType;
                     if (funcName == "count") {
                         resultType = ctx.builder.getI64Type();
-                    } else if (aggref->aggargtypes && list_length(aggref->aggargtypes) > 0) {
-                        // For aggregates like SUM/AVG/MIN/MAX, use argument type as result type
+                    } else if (aggref->aggtype == 17 && aggref->aggargtypes && list_length(aggref->aggargtypes) > 0) {
+                        // BYTEAOID (17) indicates PostgreSQL is using polymorphic aggregate with internal state
+                        // Use the actual argument type for result type (works for SUM/MIN/MAX)
                         Oid argTypeOid = lfirst_oid(list_head(aggref->aggargtypes));
                         resultType = type_mapper.map_postgre_sqltype(argTypeOid, -1, true);
                         PGX_LOG(AST_TRANSLATE, DEBUG,
-                                "Using aggargtypes for result type: aggtype=%u -> argtype=%u",
+                                "Polymorphic aggregate: using aggargtypes for result type: aggtype=%u -> argtype=%u",
                                 aggref->aggtype, argTypeOid);
                     } else {
                         resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
