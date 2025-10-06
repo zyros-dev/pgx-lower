@@ -81,6 +81,7 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_Hash: result = translate_hash(ctx, reinterpret_cast<Hash*>(plan)); break;
     case T_NestLoop: result = translate_nest_loop(ctx, reinterpret_cast<NestLoop*>(plan)); break;
     case T_Material: result = translate_material(ctx, reinterpret_cast<Material*>(plan)); break;
+    case T_Memoize: result = translate_memoize(ctx, reinterpret_cast<Memoize*>(plan)); break;
     case T_SubqueryScan: result = translate_subquery_scan(ctx, reinterpret_cast<SubqueryScan*>(plan)); break;
     case T_CteScan: result = translate_cte_scan(ctx, reinterpret_cast<CteScan*>(plan)); break;
     default: PGX_ERROR("Unsupported plan node type: %d", plan->type); result.op = nullptr;
@@ -287,6 +288,17 @@ auto PostgreSQLASTTranslator::Impl::translate_material(QueryCtxT& ctx, const Mat
 
     PGX_LOG(AST_TRANSLATE, DEBUG, "Material node is a pass-through, translating its child");
     return translate_plan_node(ctx, material->plan.lefttree);
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_memoize(QueryCtxT& ctx, const Memoize* memoize) -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!memoize || !memoize->plan.lefttree) {
+        PGX_ERROR("Invalid Memoize parameters");
+        throw std::runtime_error("Invalid Memoize parameters");
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "Memoize node is a pass-through (caching handled by JIT), translating its child");
+    return translate_plan_node(ctx, memoize->plan.lefttree);
 }
 
 auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Plan* plan) -> void {
