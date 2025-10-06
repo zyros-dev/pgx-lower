@@ -576,15 +576,11 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         }
                     }
 
-                    if (inGroupBy) {
-                        result.columns.push_back(childCol);
-                        PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Adding GROUP BY column '%s' to output (varattno=%d, resname=%s)",
-                                childCol.column_name.c_str(), var->varattno, te->resname ? te->resname : "<null>");
-                    } else {
-                        PGX_LOG(AST_TRANSLATE, DEBUG,
-                                "Agg: Skipping column '%s' from output (not in MLIR GROUP BY, functionally dependent)",
-                                childCol.column_name.c_str());
-                    }
+                    result.columns.push_back(childCol);
+                    const char* group_status = inGroupBy ? "in GROUP BY" : "functionally dependent, pass-through";
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Adding column '%s' to output (%s, varattno=%d, resname=%s)",
+                            childCol.column_name.c_str(), group_status, var->varattno,
+                            te->resname ? te->resname : "<null>");
                 }
             } else {
                 Oid exprTypeOid = exprType(reinterpret_cast<Node*>(te->expr));
