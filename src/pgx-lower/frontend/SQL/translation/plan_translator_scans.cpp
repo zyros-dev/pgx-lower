@@ -312,6 +312,151 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
     return result;
 }
 
+auto PostgreSQLASTTranslator::Impl::translate_index_only_scan(QueryCtxT& ctx, IndexOnlyScan* indexOnlyScan)
+    -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!indexOnlyScan) {
+        PGX_ERROR("Invalid IndexOnlyScan parameters");
+        throw std::runtime_error("Invalid IndexOnlyScan parameters");
+    }
+
+    auto physicalTableName = std::string();
+    auto aliasName = std::string();
+    auto tableOid = InvalidOid;
+
+    if (indexOnlyScan->scan.scanrelid > 0) {
+        physicalTableName = get_table_name_from_rte(&ctx.current_stmt, indexOnlyScan->scan.scanrelid);
+        aliasName = get_table_alias_from_rte(&ctx.current_stmt, indexOnlyScan->scan.scanrelid);
+        tableOid = get_table_oid_from_rte(&ctx.current_stmt, indexOnlyScan->scan.scanrelid);
+
+        if (physicalTableName.empty()) {
+            PGX_ERROR("Could not resolve table name for scanrelid: %d", indexOnlyScan->scan.scanrelid);
+            throw std::runtime_error("Could not resolve table name for scanrelid");
+        }
+    } else {
+        PGX_ERROR("Invalid scan relation ID: %d", indexOnlyScan->scan.scanrelid);
+        throw std::runtime_error("Could not resolve table name for scanrelid");
+    }
+
+    auto tableIdentifier = physicalTableName + TABLE_OID_SEPARATOR + std::to_string(tableOid);
+    const auto tableMetaData = std::make_shared<runtime::TableMetaData>();
+    tableMetaData->setNumRows(0);
+    auto tableMetaAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
+
+    auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+
+    auto uniqueScope = columnManager.getUniqueScope(aliasName);
+    auto columnDefs = std::vector<mlir::NamedAttribute>{};
+    auto columnOrder = std::vector<mlir::Attribute>{};
+    const auto allColumns = get_all_table_columns_from_schema(&ctx.current_stmt, indexOnlyScan->scan.scanrelid);
+
+    if (!allColumns.empty()) {
+        int varattno = 1;
+        for (const auto& colInfo : allColumns) {
+            auto colDef = columnManager.createDef(uniqueScope, colInfo.name);
+
+            PostgreSQLTypeMapper type_mapper(context_);
+            const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
+                                                                        colInfo.nullable);
+            colDef.getColumn().type = mlirType;
+
+            columnDefs.push_back(ctx.builder.getNamedAttr(colInfo.name, colDef));
+            columnOrder.push_back(ctx.builder.getStringAttr(colInfo.name));
+
+            varattno++;
+        }
+    } else {
+        PGX_ERROR("Could not discover table schema");
+        throw std::runtime_error("Could not discover table schema");
+    }
+
+    auto columnsAttr = ctx.builder.getDictionaryAttr(columnDefs);
+    auto columnOrderAttr = ctx.builder.getArrayAttr(columnOrder);
+
+    const auto baseTableOp = ctx.builder.create<mlir::relalg::BaseTableOp>(
+        ctx.builder.getUnknownLoc(), mlir::relalg::TupleStreamType::get(&context_),
+        ctx.builder.getStringAttr(tableIdentifier), tableMetaAttr, columnsAttr, columnOrderAttr);
+
+    auto result = TranslationResult();
+    result.op = baseTableOp;
+
+    if (!indexOnlyScan->scan.plan.targetlist || indexOnlyScan->scan.plan.targetlist->length <= 0) {
+        throw std::runtime_error("IndexOnlyScan had an empty target list");
+    }
+
+    ListCell* lc;
+    foreach (lc, indexOnlyScan->scan.plan.targetlist) {
+        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (!tle || tle->resjunk)
+            continue;
+        if (tle->expr && IsA(tle->expr, Var)) {
+            auto* var = reinterpret_cast<Var*>(tle->expr);
+            if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
+                const auto& colInfo = allColumns[var->varattno - 1];
+                PostgreSQLTypeMapper type_mapper(context_);
+                const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
+                                                                            colInfo.nullable);
+
+                result.columns.push_back({.table_name = uniqueScope,
+                                          .column_name = colInfo.name,
+                                          .type_oid = colInfo.type_oid,
+                                          .typmod = colInfo.typmod,
+                                          .mlir_type = mlirType,
+                                          .nullable = colInfo.nullable});
+            }
+        }
+    }
+
+    // populate varno_resolution for IndexOnlyScan because indexqual/recheckqual may contain INDEX_VAR nodes
+    PGX_LOG(AST_TRANSLATE, DEBUG,
+            "[SCOPE_DEBUG] translate_index_only_scan: populating varno_resolution (uniqueScope=%s, aliasName=%s)",
+            uniqueScope.c_str(), aliasName.c_str());
+
+    for (size_t i = 0; i < allColumns.size(); i++) {
+        const int varattno = static_cast<int>(i + 1);
+
+        // Add mapping for scanrelid (regular Var and INDEX_VAR lookups)
+        ctx.varno_resolution[std::make_pair(indexOnlyScan->scan.scanrelid, varattno)] = std::make_pair(
+            uniqueScope, allColumns[i].name);
+        PGX_LOG(AST_TRANSLATE, DEBUG,
+                "[SCOPE_DEBUG] translate_index_only_scan: varno_resolution[(%d,%d)] = ('%s','%s')",
+                indexOnlyScan->scan.scanrelid, varattno, uniqueScope.c_str(), allColumns[i].name.c_str());
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_index_only_scan: final varno_resolution.size()=%zu",
+            ctx.varno_resolution.size());
+
+    // Apply indexqual (index access conditions)
+    if (result.op && indexOnlyScan->indexqual && indexOnlyScan->indexqual->length > 0) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "IndexOnlyScan has %d indexqual predicates, applying as selection%s",
+                indexOnlyScan->indexqual->length, ctx.outer_result.has_value() ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, indexOnlyScan->indexqual);
+    }
+
+    // Apply recheckqual (lossy index recheck conditions)
+    if (result.op && indexOnlyScan->recheckqual && indexOnlyScan->recheckqual->length > 0) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "IndexOnlyScan has %d recheckqual predicates, applying as selection%s",
+                indexOnlyScan->recheckqual->length, ctx.outer_result.has_value() ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, indexOnlyScan->recheckqual);
+    }
+
+    // Apply plan.qual (additional heap-level conditions)
+    if (result.op && indexOnlyScan->scan.plan.qual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "IndexOnlyScan has plan.qual, applying selection (context has %zu InitPlans)%s",
+                ctx.params.size(), ctx.outer_result.has_value() ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, indexOnlyScan->scan.plan.qual);
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "IndexOnlyScan: no plan.qual (result.op=%p, plan.qual=%p)",
+                static_cast<void*>(result.op), static_cast<void*>(indexOnlyScan->scan.plan.qual));
+    }
+
+    if (result.op) {
+        result = apply_projection_from_target_list(ctx, result, indexOnlyScan->scan.plan.targetlist);
+    }
+
+    return result;
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_bitmap_heap_scan(QueryCtxT& ctx, BitmapHeapScan* bitmapScan)
     -> TranslationResult {
     PGX_IO(AST_TRANSLATE);

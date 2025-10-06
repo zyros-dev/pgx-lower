@@ -67,8 +67,8 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     TranslationResult result;
 
     switch (plan->type) {
-    case T_IndexScan:
-    case T_IndexOnlyScan: result = translate_index_scan(ctx, reinterpret_cast<IndexScan*>(plan)); break;
+    case T_IndexScan: result = translate_index_scan(ctx, reinterpret_cast<IndexScan*>(plan)); break;
+    case T_IndexOnlyScan: result = translate_index_only_scan(ctx, reinterpret_cast<IndexOnlyScan*>(plan)); break;
     case T_SeqScan: result = translate_seq_scan(ctx, reinterpret_cast<SeqScan*>(plan)); break;
     case T_BitmapHeapScan: result = translate_bitmap_heap_scan(ctx, reinterpret_cast<BitmapHeapScan*>(plan)); break;
     case T_Agg: result = translate_agg(ctx, reinterpret_cast<Agg*>(plan)); break;
