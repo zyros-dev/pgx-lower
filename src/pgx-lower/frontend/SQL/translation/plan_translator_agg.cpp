@@ -577,9 +577,28 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 auto* var = reinterpret_cast<Var*>(te->expr);
                 if (var->varattno > 0 && var->varattno <= static_cast<int>(childResult.columns.size())) {
                     const auto& childCol = childResult.columns[var->varattno - 1];
-                    result.columns.push_back(childCol);
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Adding GROUP BY column '%s' to output (varattno=%d, resname=%s)",
-                            childCol.column_name.c_str(), var->varattno, te->resname ? te->resname : "<null>");
+                    bool inGroupBy = false;
+                    for (const auto& attr : groupByAttrs) {
+                        if (auto colRef = mlir::dyn_cast<mlir::relalg::ColumnRefAttr>(attr)) {
+                            auto name = colRef.getName();
+                            if (name.getRootReference().str() == childCol.table_name
+                                && name.getLeafReference().str() == childCol.column_name)
+                            {
+                                inGroupBy = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (inGroupBy) {
+                        result.columns.push_back(childCol);
+                        PGX_LOG(AST_TRANSLATE, DEBUG, "Agg: Adding GROUP BY column '%s' to output (varattno=%d, resname=%s)",
+                                childCol.column_name.c_str(), var->varattno, te->resname ? te->resname : "<null>");
+                    } else {
+                        PGX_LOG(AST_TRANSLATE, DEBUG,
+                                "Agg: Skipping column '%s' from output (not in MLIR GROUP BY, functionally dependent)",
+                                childCol.column_name.c_str());
+                    }
                 }
             } else {
                 Oid exprTypeOid = exprType(reinterpret_cast<Node*>(te->expr));
