@@ -269,6 +269,7 @@ class PostgreSQLASTTranslator::Impl {
     auto translate_sort(QueryCtxT& ctx, const Sort* sort) -> TranslationResult;
     auto translate_limit(QueryCtxT& ctx, const Limit* limit) -> TranslationResult;
     auto translate_gather(QueryCtxT& ctx, const Gather* gather) -> TranslationResult;
+    auto translate_gather_merge(QueryCtxT& ctx, const GatherMerge* gatherMerge) -> TranslationResult;
     auto translate_merge_join(QueryCtxT& ctx, MergeJoin* mergeJoin) -> TranslationResult;
     auto translate_hash_join(QueryCtxT& ctx, HashJoin* hashJoin) -> TranslationResult;
     auto translate_hash(QueryCtxT& ctx, const Hash* hash) -> TranslationResult;

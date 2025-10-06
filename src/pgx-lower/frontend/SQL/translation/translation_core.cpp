@@ -53,6 +53,10 @@ auto PostgreSQLTypeMapper::map_postgre_sqltype(const Oid type_oid, const int32_t
                 type_oid, TEXTOID, VARCHAROID, BPCHAROID, typmod);
         return wrap_nullable(mlir::db::StringType::get(&context_));
     }
+    case BYTEAOID: {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "BYTEA type mapping: using string type for binary data (OID=%d)", type_oid);
+        return wrap_nullable(mlir::db::StringType::get(&context_));
+    }
     case NUMERICOID: {
         auto [precision, scale] = extract_numeric_info(typmod);
         return wrap_nullable(mlir::db::DecimalType::get(&context_, precision, scale));
@@ -261,6 +265,21 @@ auto translate_const(Const* constNode, mlir::OpBuilder& builder, mlir::MLIRConte
             return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType, builder.getStringAttr(""));
         }
 #endif
+    }
+    case BYTEAOID: {
+#ifdef POSTGRESQL_EXTENSION
+        if (constNode->constvalue) {
+            auto* bytea_val = DatumGetByteaP(constNode->constvalue);
+            const char* data = VARDATA(bytea_val);
+            const int len = VARSIZE(bytea_val) - VARHDRSZ;
+            const std::string binary_value(data, len);
+            PGX_LOG(AST_TRANSLATE, DEBUG, "BYTEA constant: length=%d bytes", len);
+            return builder.create<mlir::db::ConstantOp>(builder.getUnknownLoc(), mlirType,
+                                                        builder.getStringAttr(binary_value));
+        }
+#endif
+        PGX_LOG(AST_TRANSLATE, DEBUG, "BYTEA constant with null value, creating NULL");
+        return builder.create<mlir::db::NullOp>(builder.getUnknownLoc(), mlirType);
     }
     default:
         PGX_ERROR("Unsupported constant type: %d", constNode->consttype);

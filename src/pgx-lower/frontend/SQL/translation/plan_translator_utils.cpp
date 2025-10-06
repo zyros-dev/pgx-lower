@@ -76,6 +76,7 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
     case T_IncrementalSort: result = translate_sort(ctx, reinterpret_cast<Sort*>(plan)); break;
     case T_Limit: result = translate_limit(ctx, reinterpret_cast<Limit*>(plan)); break;
     case T_Gather: result = translate_gather(ctx, reinterpret_cast<Gather*>(plan)); break;
+    case T_GatherMerge: result = translate_gather_merge(ctx, reinterpret_cast<GatherMerge*>(plan)); break;
     case T_MergeJoin: result = translate_merge_join(ctx, reinterpret_cast<MergeJoin*>(plan)); break;
     case T_HashJoin: result = translate_hash_join(ctx, reinterpret_cast<HashJoin*>(plan)); break;
     case T_Hash: result = translate_hash(ctx, reinterpret_cast<Hash*>(plan)); break;
@@ -276,6 +277,32 @@ auto PostgreSQLASTTranslator::Impl::translate_gather(QueryCtxT& ctx, const Gathe
         return TranslationResult{};
     }
 
+    return childResult;
+}
+
+auto PostgreSQLASTTranslator::Impl::translate_gather_merge(QueryCtxT& ctx, const GatherMerge* gatherMerge)
+    -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!gatherMerge) {
+        PGX_ERROR("Invalid GatherMerge parameters");
+        return TranslationResult{};
+    }
+
+    TranslationResult childResult;
+    if (Plan* leftTree = gatherMerge->plan.lefttree) {
+        childResult = translate_plan_node(ctx, leftTree);
+        if (!childResult.op) {
+            PGX_ERROR("Failed to translate GatherMerge child plan");
+            return childResult;
+        }
+    } else {
+        PGX_WARNING("GatherMerge node has no child plan");
+        return TranslationResult{};
+    }
+
+    // GatherMerge is parallel execution coordinator - pass through child for now
+    // Note: Ignoring sort columns (numCols, sortColIdx, etc.) as child already sorted
+    PGX_LOG(AST_TRANSLATE, DEBUG, "GatherMerge: passing through child result (parallel gathering not implemented)");
     return childResult;
 }
 
