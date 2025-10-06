@@ -112,7 +112,8 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
 
     // Join conditions are now handled inside the join predicate region
     // No need to apply them as separate selections
-    const bool is_outer_join = (mergeJoin->join.jointype == JOIN_LEFT || mergeJoin->join.jointype == JOIN_RIGHT || mergeJoin->join.jointype == JOIN_FULL);
+    const bool is_outer_join = (mergeJoin->join.jointype == JOIN_LEFT || mergeJoin->join.jointype == JOIN_RIGHT
+                                || mergeJoin->join.jointype == JOIN_FULL);
     if (mergeJoin->join.plan.qual) {
         auto qual_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
         result = apply_selection_from_qual_with_columns(qual_ctx, result, mergeJoin->join.plan.qual);
@@ -122,7 +123,8 @@ auto PostgreSQLASTTranslator::Impl::translate_merge_join(QueryCtxT& ctx, MergeJo
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
         auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
         auto projection_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
-        result = apply_projection_from_translation_result(projection_ctx, result, merged, mergeJoin->join.plan.targetlist);
+        result = apply_projection_from_translation_result(projection_ctx, result, merged,
+                                                          mergeJoin->join.plan.targetlist, mergeJoin->join.jointype);
     }
 
     return result;
@@ -170,7 +172,8 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
     auto result = create_join_operation(ctx, hashJoin->join.jointype, leftValue, rightValue, leftTranslation,
                                         rightTranslation, combinedClauses);
 
-    const bool is_outer_join = (hashJoin->join.jointype == JOIN_LEFT || hashJoin->join.jointype == JOIN_RIGHT || hashJoin->join.jointype == JOIN_FULL);
+    const bool is_outer_join = (hashJoin->join.jointype == JOIN_LEFT || hashJoin->join.jointype == JOIN_RIGHT
+                                || hashJoin->join.jointype == JOIN_FULL);
     if (hashJoin->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
         auto qual_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
@@ -181,7 +184,8 @@ auto PostgreSQLASTTranslator::Impl::translate_hash_join(QueryCtxT& ctx, HashJoin
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
         auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
         auto projection_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
-        result = apply_projection_from_translation_result(projection_ctx, result, merged, hashJoin->join.plan.targetlist);
+        result = apply_projection_from_translation_result(projection_ctx, result, merged,
+                                                          hashJoin->join.plan.targetlist, hashJoin->join.jointype);
     }
 
     return result;
@@ -247,14 +251,15 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
             auto* nestParam = static_cast<NestLoopParam*>(lfirst(lc));
             if (nestParam && nestParam->paramval && IsA(nestParam->paramval, Var)) {
                 auto* paramVar = nestParam->paramval;
-                auto varnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno)
-                    ? std::optional<int>(paramVar->varnosyn) : std::nullopt;
-                auto varattnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno)
-                    ? std::optional<int>(paramVar->varattnosyn) : std::nullopt;
+                auto varnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varnosyn)
+                                                                      : std::nullopt;
+                auto varattnosyn_opt = IS_SPECIAL_VARNO(paramVar->varno) ? std::optional<int>(paramVar->varattnosyn)
+                                                                         : std::nullopt;
 
                 bool resolved = false;
-                if (auto resolved_var = rightCtx.resolve_var(paramVar->varno, paramVar->varattno,
-                                                       varnosyn_opt, varattnosyn_opt)) {
+                if (auto resolved_var = rightCtx.resolve_var(paramVar->varno, paramVar->varattno, varnosyn_opt,
+                                                             varattnosyn_opt))
+                {
                     auto typeMapper = PostgreSQLTypeMapper(context_);
                     rightCtx.params[nestParam->paramno] = pgx_lower::frontend::sql::ResolvedParam{
                         .table_name = resolved_var->table_name,
@@ -262,22 +267,17 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
                         .type_oid = paramVar->vartype,
                         .typmod = paramVar->vartypmod,
                         .nullable = resolved_var->nullable,
-                        .mlir_type = typeMapper.map_postgre_sqltype(paramVar->vartype,
-                                                                    paramVar->vartypmod,
-                                                                    resolved_var->nullable)
-                    };
+                        .mlir_type = typeMapper.map_postgre_sqltype(paramVar->vartype, paramVar->vartypmod,
+                                                                    resolved_var->nullable)};
                     resolved = true;
-                    PGX_LOG(AST_TRANSLATE, DEBUG,
-                            "Resolved nest param %d via varno_resolution -> %s.%s",
-                            nestParam->paramno, resolved_var->table_name.c_str(),
-                            resolved_var->column_name.c_str());
+                    PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved nest param %d via varno_resolution -> %s.%s",
+                            nestParam->paramno, resolved_var->table_name.c_str(), resolved_var->column_name.c_str());
                 }
 
                 if (!resolved) {
                     int lookup_varno = varnosyn_opt.value_or(paramVar->varno);
-                    std::string colName = get_column_name_from_schema(&rightCtx.current_stmt,
-                                                                       lookup_varno,
-                                                                       paramVar->varattno);
+                    std::string colName = get_column_name_from_schema(&rightCtx.current_stmt, lookup_varno,
+                                                                      paramVar->varattno);
 
                     for (const auto& col : leftTranslation.columns) {
                         if (col.column_name == colName) {
@@ -287,11 +287,9 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
                                 .type_oid = col.type_oid,
                                 .typmod = col.typmod,
                                 .nullable = col.nullable,
-                                .mlir_type = col.mlir_type
-                            };
+                                .mlir_type = col.mlir_type};
                             resolved = true;
-                            PGX_LOG(AST_TRANSLATE, DEBUG,
-                                    "Resolved nest param %d via outer columns -> %s.%s",
+                            PGX_LOG(AST_TRANSLATE, DEBUG, "Resolved nest param %d via outer columns -> %s.%s",
                                     nestParam->paramno, col.table_name.c_str(), col.column_name.c_str());
                             break;
                         }
@@ -323,7 +321,8 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
     auto result = create_join_operation(ctx, nestLoop->join.jointype, leftValue, rightValue, leftTranslation,
                                         rightTranslation, effective_join_qual);
 
-    const bool is_outer_join = (nestLoop->join.jointype == JOIN_LEFT || nestLoop->join.jointype == JOIN_RIGHT || nestLoop->join.jointype == JOIN_FULL);
+    const bool is_outer_join = (nestLoop->join.jointype == JOIN_LEFT || nestLoop->join.jointype == JOIN_RIGHT
+                                || nestLoop->join.jointype == JOIN_FULL);
     if (nestLoop->join.plan.qual) {
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying additional plan qualifications");
         auto qual_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
@@ -334,21 +333,17 @@ auto PostgreSQLASTTranslator::Impl::translate_nest_loop(QueryCtxT& ctx, NestLoop
         PGX_LOG(AST_TRANSLATE, DEBUG, "Applying projection from target list using TranslationResult");
         auto merged = merge_translation_results(&leftTranslation, &rightTranslation);
         auto projection_ctx = is_outer_join ? ctx : map_child_cols(ctx, &leftTranslation, &rightTranslation);
-        result = apply_projection_from_translation_result(projection_ctx, result, merged, nestLoop->join.plan.targetlist);
+        result = apply_projection_from_translation_result(projection_ctx, result, merged,
+                                                          nestLoop->join.plan.targetlist, nestLoop->join.jointype);
     }
 
     return result;
 }
 
-TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinType join_type,
-                                                                       mlir::Value left_value, mlir::Value right_value,
-                                                                       const TranslationResult& left_translation,
-                                                                       const TranslationResult& right_translation,
-                                                                       List* join_clauses) {
-    // TODO: NV: Split this into three functions. Our lambdas are good, but there isn't actually much overlap. We can
-    // split it into two or three separate things, 1) Exists patterns, 2) inner join 3) left/right join
-    // Since it's a complex function, all of its functional dependencies are isolated into lambdas. This means I don't
-    // have to hop around to understand the function so much.
+TranslationResult
+PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinType join_type, mlir::Value left_value,
+                                                     mlir::Value right_value, const TranslationResult& left_translation,
+                                                     const TranslationResult& right_translation, List* join_clauses) {
     PGX_IO(AST_TRANSLATE);
 
     TranslationResult result;
@@ -612,7 +607,7 @@ TranslationResult PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT
         auto inner_ctx = QueryCtxT(query_ctx.current_stmt, outer_builder, query_ctx.current_module, inner_tuple,
                                    mlir::Value());
         inner_ctx.outer_result = query_ctx.outer_result;
-        inner_ctx.params = query_ctx.params;  // Copy unified param map
+        inner_ctx.params = query_ctx.params; // Copy unified param map
         inner_ctx.varno_resolution = query_ctx.varno_resolution;
         buildCorrelatedPredicateRegion(&inner_block, inner_tuple, join_clauses2, left_trans, right_trans, inner_ctx);
 

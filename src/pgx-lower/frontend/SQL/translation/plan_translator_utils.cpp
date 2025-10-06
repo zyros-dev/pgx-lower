@@ -61,8 +61,8 @@ auto PostgreSQLASTTranslator::Impl::translate_plan_node(QueryCtxT& ctx, Plan* pl
 
     const size_t params_before = ctx.params.size();
     process_init_plans(ctx, plan);
-    PGX_LOG(AST_TRANSLATE, DEBUG, "After processing InitPlans: context has %zu InitPlans (%zu new)",
-            ctx.params.size(), ctx.params.size() - params_before);
+    PGX_LOG(AST_TRANSLATE, DEBUG, "After processing InitPlans: context has %zu InitPlans (%zu new)", ctx.params.size(),
+            ctx.params.size() - params_before);
 
     TranslationResult result;
 
@@ -362,10 +362,8 @@ auto PostgreSQLASTTranslator::Impl::process_init_plans(QueryCtxT& ctx, const Pla
                 .typmod = col.typmod,
                 .nullable = col.nullable,
                 .mlir_type = col.mlir_type,
-                .cached_value = initplan_result.op->getResult(0)
-            };
-            PGX_LOG(AST_TRANSLATE, DEBUG, "Stored scalar InitPlan result for paramid=%d (plan_id=%d)", paramid,
-                    plan_id);
+                .cached_value = initplan_result.op->getResult(0)};
+            PGX_LOG(AST_TRANSLATE, DEBUG, "Stored scalar InitPlan result for paramid=%d (plan_id=%d)", paramid, plan_id);
         }
     }
 
@@ -820,11 +818,9 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
     return result;
 }
 
-auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(const QueryCtxT& ctx,
-                                                                             const TranslationResult& input,
-                                                                             const TranslationResult& merged_join_child,
-                                                                             const List* target_list)
-    -> TranslationResult {
+auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(
+    const QueryCtxT& ctx, const TranslationResult& input, const TranslationResult& merged_join_child,
+    const List* target_list, const JoinType join_type) -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
 
     if (!input.op || !target_list || target_list->length <= 0) {
@@ -862,6 +858,15 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_translation_result(con
                             var->varattno, columnIndex);
                 }
             } else if (var->varno == INNER_VAR) {
+                const bool is_exists_join = (join_type == JOIN_SEMI || join_type == JOIN_ANTI
+                                             || join_type == JOIN_RIGHT_ANTI);
+                if (is_exists_join) {
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "Projection: Skipping INNER_VAR reference after %s join (right columns not in output)",
+                            join_type == JOIN_SEMI ? "SEMI" : (join_type == JOIN_ANTI ? "ANTI" : "RIGHT_ANTI"));
+                    continue;
+                }
+
                 std::optional<int> varnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varnosyn)
                                                                                : std::nullopt;
                 std::optional<int> varattnosyn_opt = IS_SPECIAL_VARNO(var->varno) ? std::optional<int>(var->varattnosyn)

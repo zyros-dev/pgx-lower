@@ -294,7 +294,8 @@ class PostgreSQLASTTranslator::Impl {
     auto apply_projection_from_target_list(const QueryCtxT& ctx, const TranslationResult& input, const List* target_list,
                                            const TranslationResult* merged_join_child = nullptr) -> TranslationResult;
     auto apply_projection_from_translation_result(const QueryCtxT& ctx, const TranslationResult& input,
-                                                  const TranslationResult& merged_join_child, const List* target_list)
+                                                  const TranslationResult& merged_join_child, const List* target_list,
+                                                  JoinType join_type = JOIN_INNER)
         -> TranslationResult;
 
     auto create_materialize_op(const QueryCtxT& context, mlir::Value tuple_stream,
