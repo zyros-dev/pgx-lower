@@ -1072,14 +1072,14 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
                 size_t row_index = iter->current_row_index - 1; // -1 because we already incremented
 
                 if (row_index < iter->string_data_pointers_per_column[i].size()) {
-                    column_info_ptr[DATA_BUFFER_IDX] = (size_t)iter->string_lengths_per_column[i].data();
-                    column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)iter->string_data_pointers_per_column[i].data();
+                    column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->string_lengths_per_column[i][row_index];
+                    column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)&iter->string_data_pointers_per_column[i][row_index];
 
                     PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_access: column %zu (%s): length_array=%p pointer_array=%p",
-                            i, col_spec.name.c_str(),
-                            iter->string_lengths_per_column[i].data(),
-                            iter->string_data_pointers_per_column[i].data());
+                            "rt_datasourceiteration_access: column %zu (%s) row %zu: len=%d ptr=%p",
+                            i, col_spec.name.c_str(), row_index,
+                            iter->string_lengths_per_column[i][row_index],
+                            iter->string_data_pointers_per_column[i][row_index]);
                 } else {
                     PGX_LOG(RUNTIME, DEBUG, "WARNING: Invalid row index %zu for string column %s",
                             row_index, col_spec.name.c_str());
