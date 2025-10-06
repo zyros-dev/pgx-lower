@@ -79,7 +79,6 @@ struct TranslationResult {
         int32_t typmod;
         mlir::Type mlir_type;
         bool nullable;
-        bool is_aggregate_result = false;  // True if this column is an aggregate function result
         [[nodiscard]] auto toString() const -> std::string {
             return "ColumnSchema(table='" + table_name + "', column='" + column_name
                    + "', oid=" + std::to_string(type_oid) + ", typmod=" + std::to_string(typmod)

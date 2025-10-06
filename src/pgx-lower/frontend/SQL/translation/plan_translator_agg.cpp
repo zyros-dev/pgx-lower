@@ -161,40 +161,6 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
     if (!childResult.op || !childResult.op->getNumResults())
         throw std::runtime_error("Failed to translate Agg child plan");
 
-    if (agg->plan.targetlist) {
-        ListCell* lc;
-        foreach (lc, agg->plan.targetlist) {
-            auto* te = static_cast<TargetEntry*>(lfirst(lc));
-            if (te && IsA(te->expr, Var)) {
-                auto* var = reinterpret_cast<Var*>(te->expr);
-                if (var->varattno > static_cast<int>(childResult.columns.size())) {
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Multi-phase aggregation detected: Var varattno=%d exceeds child aggregation output (%zu columns)",
-                            var->varattno, childResult.columns.size());
-                    PGX_LOG(AST_TRANSLATE, DEBUG, "Query uses PostgreSQL's parallel aggregation optimization - falling back to native execution");
-                    throw std::runtime_error("Multi-phase aggregation not supported - falling back to PostgreSQL");
-                }
-            }
-            if (te && IsA(te->expr, Aggref)) {
-                auto* aggref = reinterpret_cast<Aggref*>(te->expr);
-                if (aggref->args) {
-                    ListCell* arg_lc;
-                    foreach (arg_lc, aggref->args) {
-                        auto* tle = static_cast<TargetEntry*>(lfirst(arg_lc));
-                        if (tle && IsA(tle->expr, Var)) {
-                            auto* arg_var = reinterpret_cast<Var*>(tle->expr);
-                            if (arg_var->varattno > static_cast<int>(childResult.columns.size())) {
-                                PGX_LOG(AST_TRANSLATE, DEBUG, "Multi-phase aggregation detected: Aggregate arg Var varattno=%d exceeds child output (%zu columns)",
-                                        arg_var->varattno, childResult.columns.size());
-                                PGX_LOG(AST_TRANSLATE, DEBUG, "Query uses PostgreSQL's parallel aggregation optimization - falling back to native execution");
-                                throw std::runtime_error("Multi-phase aggregation not supported - falling back to PostgreSQL");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     auto childOutput = childResult.op->getResult(0);
     auto& columnManager = ctx.builder.getContext()->getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
     auto groupByAttrs = std::vector<mlir::Attribute>{};
@@ -249,13 +215,6 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                         // This prevents issues in nested aggregations where outer agg references columns
                         // from inner agg's child that inner agg didn't output
                         if (!alreadyInGroup) {
-                            if (childCol.is_aggregate_result) {
-                                PGX_LOG(AST_TRANSLATE, DEBUG,
-                                        "Agg: Skipping aggregate result '%s.%s' from GROUP BY (cannot group by aggregate)",
-                                        childCol.table_name.c_str(), childCol.column_name.c_str());
-                                continue;
-                            }
-
                             // Check if this column was actually output by the child
                             bool existsInChild = false;
                             for (const auto& col : childResult.columns) {
@@ -611,8 +570,7 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                           .type_oid = aggref->aggtype,
                                           .typmod = -1,
                                           .mlir_type = resultType,
-                                          .nullable = true,
-                                          .is_aggregate_result = true});
+                                          .nullable = true});
                 PGX_LOG(AST_TRANSLATE, DEBUG, "Successfully pushed aggregate column, result now has %zu columns",
                         result.columns.size());
             } else if (IsA(te->expr, Var)) {
@@ -641,11 +599,6 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                 "Agg: Skipping column '%s' from output (not in MLIR GROUP BY, functionally dependent)",
                                 childCol.column_name.c_str());
                     }
-                } else if (var->varattno > static_cast<int>(childResult.columns.size())) {
-                    PGX_WARNING("Multi-phase aggregation detected: Var varattno=%d exceeds child output size %zu - cannot compile",
-                                var->varattno, childResult.columns.size());
-                    PGX_WARNING("This query uses PostgreSQL's parallel aggregation optimization which is not yet supported");
-                    throw std::runtime_error("Multi-phase aggregation not supported");
                 }
             } else {
                 Oid exprTypeOid = exprType(reinterpret_cast<Node*>(te->expr));

@@ -285,6 +285,10 @@ static bool executeMLIRTranslation(PlannedStmt* stmt, EState* estate, ExprContex
 
     PGX_LOG(GENERAL, DEBUG, "mlir_runner::run_mlir_with_dest_receiver returned %s", mlir_success ? "true" : "false");
 
+    if (!mlir_success) {
+        PGX_ERROR("MLIR compilation failed, falling back to PostgreSQL standard execution");
+    }
+
     return mlir_success;
 }
 
