@@ -312,6 +312,140 @@ auto PostgreSQLASTTranslator::Impl::translate_index_scan(QueryCtxT& ctx, IndexSc
     return result;
 }
 
+auto PostgreSQLASTTranslator::Impl::translate_bitmap_heap_scan(QueryCtxT& ctx, BitmapHeapScan* bitmapScan)
+    -> TranslationResult {
+    PGX_IO(AST_TRANSLATE);
+    if (!bitmapScan) {
+        PGX_ERROR("Invalid BitmapHeapScan parameters");
+        throw std::runtime_error("Invalid BitmapHeapScan parameters");
+    }
+
+    auto physicalTableName = std::string();
+    auto aliasName = std::string();
+    auto tableOid = InvalidOid;
+
+    if (bitmapScan->scan.scanrelid > 0) {
+        physicalTableName = get_table_name_from_rte(&ctx.current_stmt, bitmapScan->scan.scanrelid);
+        aliasName = get_table_alias_from_rte(&ctx.current_stmt, bitmapScan->scan.scanrelid);
+        tableOid = get_table_oid_from_rte(&ctx.current_stmt, bitmapScan->scan.scanrelid);
+
+        if (physicalTableName.empty()) {
+            PGX_ERROR("Could not resolve table name for scanrelid: %d", bitmapScan->scan.scanrelid);
+            throw std::runtime_error("Could not resolve table name for scanrelid");
+        }
+    } else {
+        PGX_ERROR("Invalid scan relation ID: %d", bitmapScan->scan.scanrelid);
+        throw std::runtime_error("Could not resolve table name for scanrelid");
+    }
+
+    auto tableIdentifier = physicalTableName + TABLE_OID_SEPARATOR + std::to_string(tableOid);
+    const auto tableMetaData = std::make_shared<runtime::TableMetaData>();
+    tableMetaData->setNumRows(0);
+    auto tableMetaAttr = mlir::relalg::TableMetaDataAttr::get(&context_, tableMetaData);
+
+    auto& columnManager = context_.getOrLoadDialect<mlir::relalg::RelAlgDialect>()->getColumnManager();
+
+    auto uniqueScope = columnManager.getUniqueScope(aliasName);
+    auto columnDefs = std::vector<mlir::NamedAttribute>{};
+    auto columnOrder = std::vector<mlir::Attribute>{};
+    const auto allColumns = get_all_table_columns_from_schema(&ctx.current_stmt, bitmapScan->scan.scanrelid);
+
+    if (!allColumns.empty()) {
+        int varattno = 1;
+        for (const auto& colInfo : allColumns) {
+            auto colDef = columnManager.createDef(uniqueScope, colInfo.name);
+
+            PostgreSQLTypeMapper type_mapper(context_);
+            const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
+                                                                        colInfo.nullable);
+            colDef.getColumn().type = mlirType;
+
+            columnDefs.push_back(ctx.builder.getNamedAttr(colInfo.name, colDef));
+            columnOrder.push_back(ctx.builder.getStringAttr(colInfo.name));
+
+            varattno++;
+        }
+    } else {
+        PGX_ERROR("Could not discover table schema");
+        throw std::runtime_error("Could not discover table schema");
+    }
+
+    auto columnsAttr = ctx.builder.getDictionaryAttr(columnDefs);
+    auto columnOrderAttr = ctx.builder.getArrayAttr(columnOrder);
+
+    const auto baseTableOp = ctx.builder.create<mlir::relalg::BaseTableOp>(
+        ctx.builder.getUnknownLoc(), mlir::relalg::TupleStreamType::get(&context_),
+        ctx.builder.getStringAttr(tableIdentifier), tableMetaAttr, columnsAttr, columnOrderAttr);
+
+    auto result = TranslationResult();
+    result.op = baseTableOp;
+
+    if (!bitmapScan->scan.plan.targetlist || bitmapScan->scan.plan.targetlist->length <= 0) {
+        throw std::runtime_error("BitmapHeapScan had an empty target list");
+    }
+
+    ListCell* lc;
+    foreach (lc, bitmapScan->scan.plan.targetlist) {
+        auto* tle = static_cast<TargetEntry*>(lfirst(lc));
+        if (!tle || tle->resjunk)
+            continue;
+        if (tle->expr && IsA(tle->expr, Var)) {
+            auto* var = reinterpret_cast<Var*>(tle->expr);
+            if (var->varattno > 0 && var->varattno <= static_cast<int>(allColumns.size())) {
+                const auto& colInfo = allColumns[var->varattno - 1];
+                PostgreSQLTypeMapper type_mapper(context_);
+                const mlir::Type mlirType = type_mapper.map_postgre_sqltype(colInfo.type_oid, colInfo.typmod,
+                                                                            colInfo.nullable);
+
+                result.columns.push_back({.table_name = uniqueScope,
+                                          .column_name = colInfo.name,
+                                          .type_oid = colInfo.type_oid,
+                                          .typmod = colInfo.typmod,
+                                          .mlir_type = mlirType,
+                                          .nullable = colInfo.nullable});
+            }
+        }
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG,
+            "[SCOPE_DEBUG] translate_bitmap_heap_scan: populating varno_resolution (uniqueScope=%s, aliasName=%s)",
+            uniqueScope.c_str(), aliasName.c_str());
+
+    for (size_t i = 0; i < allColumns.size(); i++) {
+        const int varattno = static_cast<int>(i + 1);
+
+        ctx.varno_resolution[std::make_pair(bitmapScan->scan.scanrelid, varattno)] = std::make_pair(
+            uniqueScope, allColumns[i].name);
+        PGX_LOG(AST_TRANSLATE, DEBUG,
+                "[SCOPE_DEBUG] translate_bitmap_heap_scan: varno_resolution[(%d,%d)] = ('%s','%s')",
+                bitmapScan->scan.scanrelid, varattno, uniqueScope.c_str(), allColumns[i].name.c_str());
+    }
+
+    PGX_LOG(AST_TRANSLATE, DEBUG, "[SCOPE_DEBUG] translate_bitmap_heap_scan: final varno_resolution.size()=%zu",
+            ctx.varno_resolution.size());
+
+    if (result.op && bitmapScan->bitmapqualorig && bitmapScan->bitmapqualorig->length > 0) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "BitmapHeapScan has %d bitmapqualorig predicates, applying as selection%s",
+                bitmapScan->bitmapqualorig->length, ctx.outer_result.has_value() ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, bitmapScan->bitmapqualorig);
+    }
+
+    if (result.op && bitmapScan->scan.plan.qual) {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "BitmapHeapScan has plan.qual, applying selection (context has %zu InitPlans)%s",
+                ctx.params.size(), ctx.outer_result.has_value() ? " (parameterized)" : "");
+        result = apply_selection_from_qual_with_columns(ctx, result, bitmapScan->scan.plan.qual);
+    } else {
+        PGX_LOG(AST_TRANSLATE, DEBUG, "BitmapHeapScan: no plan.qual (result.op=%p, plan.qual=%p)",
+                static_cast<void*>(result.op), static_cast<void*>(bitmapScan->scan.plan.qual));
+    }
+
+    if (result.op) {
+        result = apply_projection_from_target_list(ctx, result, bitmapScan->scan.plan.targetlist);
+    }
+
+    return result;
+}
+
 auto PostgreSQLASTTranslator::Impl::translate_subquery_scan(QueryCtxT& ctx, SubqueryScan* subqueryScan)
     -> TranslationResult {
     PGX_IO(AST_TRANSLATE);
