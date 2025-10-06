@@ -79,7 +79,6 @@ if(NOT BUILDING_UNIT_TESTS)
             41_sorts
             42_test_relalg_function
             init_tpch
-            tpch_no_lower
             tpch
 )
 

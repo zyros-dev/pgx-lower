@@ -89,7 +89,8 @@ auto PostgreSQLASTTranslator::Impl::translate_expression_for_stream(const QueryC
             PGX_LOG(AST_TRANSLATE, DEBUG, "Var (varno=%d) resolved to child output column %d: %s.%s", var->varno,
                     var->varattno, tableName.c_str(), columnName.c_str());
         } else {
-            throw std::runtime_error("bad situation");
+            PGX_ERROR("Var varattno=%d out of bounds (child has %zu columns)", var->varattno, child_columns.size());
+            throw std::runtime_error("Var index out of bounds in aggregate context");
         }
 
         PGX_LOG(AST_TRANSLATE, DEBUG, "Expression is already a column reference: %s.%s", tableName.c_str(),

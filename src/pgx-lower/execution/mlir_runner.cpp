@@ -148,11 +148,17 @@ auto run_mlir_with_dest_receiver(PlannedStmt* plannedStmt, EState* estate, ExprC
         return true;
 
     } catch (const std::exception& e) {
-        PGX_ERROR("MLIR runner exception: %s", e.what());
+        std::string error_msg(e.what());
+        if (error_msg.find("Multi-phase aggregation") != std::string::npos) {
+            PGX_LOG(JIT, DEBUG, "Expected fallback: %s", e.what());
+            return false;
+        } else {
+            PGX_ERROR("MLIR runner exception: %s", e.what());
 #ifndef BUILDING_UNIT_TESTS
-        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("MLIR compilation failed: %s", e.what())));
+            ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("MLIR compilation failed: %s", e.what())));
 #endif
-        return false;
+            return false;
+        }
     } catch (...) {
         PGX_ERROR("Unknown error in MLIR runner");
 #ifndef BUILDING_UNIT_TESTS
