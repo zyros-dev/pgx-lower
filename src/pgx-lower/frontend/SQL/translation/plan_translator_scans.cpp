@@ -492,6 +492,7 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
                             scanrelid, output_attno, col.table_name.c_str(), col.column_name.c_str(), cte_alias.c_str(),
                             new_col_name.c_str());
                 } else {
+                    newColumns.push_back(col);
                     ctx.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(col.table_name,
                                                                                                       col.column_name);
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped CteScan: varno=%d, attno=%d -> CTE column %d (@%s::@%s)",
