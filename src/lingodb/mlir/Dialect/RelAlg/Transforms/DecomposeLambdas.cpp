@@ -108,6 +108,9 @@ class DecomposeLambdas : public ::mlir::PassWrapper<DecomposeLambdas, ::mlir::Op
             //todo: fix potential dominator problem...
             deriveRestrictionsFromOr(orOp,tree);
          }
+         if (!currentSel) {
+            return;
+         }
          OpBuilder builder(currentSel);
          ::mlir::IRMapping mapping;
          auto newsel = builder.create<relalg::SelectionOp>(currentSel->getLoc(), mlir::relalg::TupleStreamType::get(builder.getContext()), tree);
