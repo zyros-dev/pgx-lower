@@ -177,6 +177,19 @@ struct TranslationContext {
         int lookup_varno = varno;
         int lookup_varattno = varattno;
 
+        if ((varno == INNER_VAR || varno == OUTER_VAR) && varnosyn.has_value() && varattnosyn.has_value()) {
+            // I'm not really a fan of this... but it seems specifically subqueries actually use their
+            // synthetic IDs... I believe the init query thing scrambles the order, making those invalid...
+            // I dunno... pretty weird. Perhaps I should just insert them into the map inside of the init query param...
+            // but then my varno resolution contains lies...
+            const auto* rte = static_cast<RangeTblEntry*>(
+                list_nth(current_stmt.rtable, *varnosyn - constants::POSTGRESQL_VARNO_OFFSET));
+            if (rte->rtekind == RTE_SUBQUERY && rte->ctename != nullptr) {
+                lookup_varno = *varnosyn;
+                lookup_varattno = *varattnosyn;
+            }
+        }
+
         if (varnosyn.has_value() && varno != INNER_VAR && varno != OUTER_VAR) {
             lookup_varno = *varnosyn;
 
