@@ -292,8 +292,20 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                                .nullable = is_nullable});
             }
 
-            const auto resultType = (funcName == "count") ? ctx.builder.getI64Type()
-                                                          : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+            mlir::Type resultType;
+            if (funcName == "count") {
+                resultType = ctx.builder.getI64Type();
+            } else if (aggref->aggargtypes && list_length(aggref->aggargtypes) > 0) {
+                // Sometimes postgres introduces polymorphic types... we need to
+                // deduce if these are strings or decimals
+                Oid argTypeOid = lfirst_oid(list_head(aggref->aggargtypes));
+                resultType = type_mapper.map_postgre_sqltype(argTypeOid, -1, true);
+                PGX_LOG(AST_TRANSLATE, DEBUG,
+                        "Using aggargtypes for result type: aggtype=%u -> argtype=%u",
+                        aggref->aggtype, argTypeOid);
+            } else {
+                resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+            }
             const auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
             aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
 
@@ -358,8 +370,19 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                                                        .nullable = is_nullable});
                     }
 
-                    auto resultType = (funcName == "count") ? ctx.builder.getI64Type()
-                                                            : type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+                    mlir::Type resultType;
+                    if (funcName == "count") {
+                        resultType = ctx.builder.getI64Type();
+                    } else if (aggref->aggargtypes && list_length(aggref->aggargtypes) > 0) {
+                        // For aggregates like SUM/AVG/MIN/MAX, use argument type as result type
+                        Oid argTypeOid = lfirst_oid(list_head(aggref->aggargtypes));
+                        resultType = type_mapper.map_postgre_sqltype(argTypeOid, -1, true);
+                        PGX_LOG(AST_TRANSLATE, DEBUG,
+                                "Using aggargtypes for result type: aggtype=%u -> argtype=%u",
+                                aggref->aggtype, argTypeOid);
+                    } else {
+                        resultType = type_mapper.map_postgre_sqltype(aggref->aggtype, -1, true);
+                    }
                     auto attrDef = createColumnDef(columnManager, aggrScopeName, aggColumnName, resultType);
                     aggregateMappings[aggref->aggno] = std::make_pair(aggrScopeName, aggColumnName);
 
