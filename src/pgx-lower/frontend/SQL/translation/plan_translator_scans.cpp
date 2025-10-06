@@ -764,18 +764,18 @@ auto PostgreSQLASTTranslator::Impl::translate_cte_scan(QueryCtxT& ctx, const Cte
 
                     newColumns.push_back({cte_alias, new_col_name, col.type_oid, col.typmod, col.mlir_type, col.nullable});
 
-                    ctx.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(cte_alias,
+                    ctx.varno_resolution[std::make_pair(scanrelid, var->varattno)] = std::make_pair(cte_alias,
                                                                                                       new_col_name);
 
                     PGX_LOG(AST_TRANSLATE, DEBUG, "CteScan column aliasing: varno=%d, attno=%d: @%s::@%s -> @%s::@%s",
-                            scanrelid, output_attno, col.table_name.c_str(), col.column_name.c_str(), cte_alias.c_str(),
+                            scanrelid, var->varattno, col.table_name.c_str(), col.column_name.c_str(), cte_alias.c_str(),
                             new_col_name.c_str());
                 } else {
                     newColumns.push_back(col);
-                    ctx.varno_resolution[std::make_pair(scanrelid, output_attno)] = std::make_pair(col.table_name,
+                    ctx.varno_resolution[std::make_pair(scanrelid, var->varattno)] = std::make_pair(col.table_name,
                                                                                                       col.column_name);
                     PGX_LOG(AST_TRANSLATE, DEBUG, "Mapped CteScan: varno=%d, attno=%d -> CTE column %d (@%s::@%s)",
-                            scanrelid, output_attno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
+                            scanrelid, var->varattno, var->varattno, col.table_name.c_str(), col.column_name.c_str());
                 }
             }
         }
