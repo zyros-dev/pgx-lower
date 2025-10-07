@@ -3,6 +3,7 @@ gen_rt_def(ds-it-rt-defs "DataSourceIteration.h")
 gen_rt_def(vec-rt-defs "Vector.h")
 gen_rt_def(join-ht-rt-defs "LazyJoinHashtable.h")
 gen_rt_def(ht-rt-defs "Hashtable.h")
+gen_rt_def(pg-sort-rt-defs "PgSortRuntime.h")
 
 add_mlir_conversion_library(MLIRDSAToStd
         CollectionIterators.cpp
@@ -20,6 +21,7 @@ add_mlir_conversion_library(MLIRDSAToStd
         vec-rt-defs
         join-ht-rt-defs
         ht-rt-defs
+        pg-sort-rt-defs
         LINK_COMPONENTS
         Core
 

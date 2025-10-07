@@ -11,6 +11,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 #include "runtime-defs/Vector.h"
+#include "runtime-defs/PgSortRuntime.h"
 using namespace mlir;
 namespace {
 

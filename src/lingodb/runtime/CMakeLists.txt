@@ -6,6 +6,7 @@ add_library(runtime OBJECT
         Hashtable.cpp
         Vector.cpp
         LazyJoinHashtable.cpp
+        PgSortRuntime.cpp
 )
 
 target_include_directories(runtime PUBLIC ${CMAKE_SOURCE_DIR}/vendored)
