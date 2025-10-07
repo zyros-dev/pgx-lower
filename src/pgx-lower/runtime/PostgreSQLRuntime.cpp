@@ -573,6 +573,7 @@ static size_t calculate_batch_capacity(TupleDesc tupleDesc) {
 static BatchStorage* create_batch_storage(TupleDesc tupleDesc, size_t capacity) {
     PGX_IO(RUNTIME);
 
+    // ReSharper disable once CppStaticAssertFailure
     const MemoryContext batchContext = AllocSetContextCreate(CurrentMemoryContext, "BatchStorage",
                                                              ALLOCSET_DEFAULT_MINSIZE, ALLOCSET_DEFAULT_INITSIZE,
                                                              ALLOCSET_DEFAULT_MAXSIZE);
@@ -703,13 +704,6 @@ bool DataSourceIteration::isValid() {
         }
 
         // Extract ALL columns from current tuple using heap_deform_tuple
-        // NOTE: This requires access to g_current_tuple_passthrough
-        struct PostgreSQLTuplePassthrough {
-            void* originalTuple; // HeapTuple
-            void* tupleDesc; // TupleDesc
-        };
-        extern PostgreSQLTuplePassthrough g_current_tuple_passthrough;
-
         const auto tuple = static_cast<HeapTuple>(g_current_tuple_passthrough.originalTuple);
         if (!tuple) {
             PGX_ERROR("rt_datasourceiteration_isvalid: g_current_tuple_passthrough.originalTuple is NULL");
