@@ -145,6 +145,11 @@ let builders = [
     }]>
 ];
 }
+def LoadDatumOp  : Util_Op<"load_datum",[Pure]> {
+let arguments = (ins RefType:$ref,Optional<Index>:$idx);
+let results=(outs RefType:$res);
+let assemblyFormat = "$ref `[` $idx `]` `:`type($ref) `->` type($res) attr-dict";
+}
 def ArrayElementPtrOp  : Util_Op<"arrayelementptr",[Pure]> {
     let arguments = (ins RefType:$ref,Index:$idx);
     let results=(outs RefType:$res);
