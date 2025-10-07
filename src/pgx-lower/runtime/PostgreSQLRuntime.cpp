@@ -727,9 +727,10 @@ bool DataSourceIteration::isValid() {
                     const char* str_data = VARDATA_ANY(pg_text);
                     const int str_len = VARSIZE_ANY_EXHDR(pg_text);
 
-                    // Store pointer to transferred data (no additional copy needed)
                     iter->batch->string_lengths[json_col_idx][row_idx] = str_len;
                     iter->batch->string_data_ptrs[json_col_idx][row_idx] = reinterpret_cast<uint8_t*>(const_cast<char*>(str_data));
+                    iter->batch->column_values[json_col_idx][row_idx] = transferred_datum;
+
 
                     PGX_LOG(RUNTIME, TRACE, "Row %zu: col[%zu]='%s' STRING: len=%d, data=%p", row_idx, json_col_idx,
                             col_spec.name.c_str(), str_len, str_data);
