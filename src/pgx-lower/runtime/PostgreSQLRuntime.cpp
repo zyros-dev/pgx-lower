@@ -722,21 +722,20 @@ bool DataSourceIteration::isValid() {
                     iter->batch->string_lengths[json_col_idx][row_idx] = 0;
                     iter->batch->string_data_ptrs[json_col_idx][row_idx] = nullptr;
                 } else {
-                    const auto pg_text = DatumGetTextPP(temp_values[pg_col_idx]);
+                    const Datum transferred_datum = datumTransfer(temp_values[pg_col_idx], attr->attbyval, attr->attlen);
+                    const auto pg_text = DatumGetTextPP(transferred_datum);
                     const char* str_data = VARDATA_ANY(pg_text);
                     const int str_len = VARSIZE_ANY_EXHDR(pg_text);
 
-                    const auto copied_data = static_cast<uint8_t*>(MemoryContextAlloc(iter->batch->batchContext, str_len));
-                    memcpy(copied_data, str_data, str_len);
-
+                    // Store pointer to transferred data (no additional copy needed)
                     iter->batch->string_lengths[json_col_idx][row_idx] = str_len;
-                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = copied_data;
+                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = reinterpret_cast<uint8_t*>(const_cast<char*>(str_data));
 
                     PGX_LOG(RUNTIME, TRACE, "Row %zu: col[%zu]='%s' STRING: len=%d, data=%p", row_idx, json_col_idx,
-                            col_spec.name.c_str(), str_len, copied_data);
+                            col_spec.name.c_str(), str_len, str_data);
                 }
             } else {
-                iter->batch->column_values[json_col_idx][row_idx] = datumCopy(temp_values[pg_col_idx], attr->attbyval,
+                iter->batch->column_values[json_col_idx][row_idx] = datumTransfer(temp_values[pg_col_idx], attr->attbyval,
                                                                               attr->attlen);
 
                 PGX_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] Datum=%lu null=%s", row_idx,
