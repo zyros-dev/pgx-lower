@@ -26,6 +26,7 @@ extern "C" {
 #include "utils/elog.h"
 #include "utils/numeric.h"
 #include "utils/datum.h"
+#include "utils/memutils.h"
 #include "fmgr.h"
 #include "utils/builtins.h"
 }
@@ -89,47 +90,27 @@ struct ColumnSpec {
     ColumnType type;
 };
 
+struct BatchStorage {
+    MemoryContext batchContext;
+    TupleDesc tupleDesc;
+
+    size_t capacity;
+    size_t num_rows;
+
+    Datum** column_values;
+    bool** column_nulls;
+};
+
 struct DataSourceIterator {
     void* context;
     void* table_handle;
-    bool has_current_tuple;
 
     std::string table_name;
     std::vector<ColumnSpec> columns;
 
-    // Dynamic column data storage
-    std::vector<int16_t> smallint_values;
-    std::vector<bool> smallint_nulls;
-    std::vector<int32_t> int_values;
-    std::vector<bool> int_nulls;
-    std::vector<int64_t> bigint_values;
-    std::vector<bool> bigint_nulls;
-    std::vector<uint8_t> bool_values; // Use uint8_t instead of bool for addressability
-    std::vector<bool> bool_nulls;
+    BatchStorage* batch;
+    bool batch_exhausted;
 
-    std::vector<std::vector<uint8_t*>> string_data_pointers_per_column;
-    std::vector<std::vector<int32_t>> string_lengths_per_column;
-    std::vector<bool> string_nulls;
-    std::vector<std::string> string_data;
-
-    std::vector<__int128> decimal_values;
-    std::vector<bool> decimal_nulls;
-
-    // Additional type storage
-    std::vector<float> real_values;
-    std::vector<bool> real_nulls;
-    std::vector<double> double_values;
-    std::vector<bool> double_nulls;
-    std::vector<int32_t> date_values; // Days since epoch
-    std::vector<bool> date_nulls;
-    std::vector<int64_t> timestamp_values; // Microseconds since epoch
-    std::vector<bool> timestamp_nulls;
-    std::vector<int64_t> interval_values; // Microseconds
-    std::vector<bool> interval_nulls;
-
-    int32_t current_row_index = 0;
-
-    // Legacy fields for backward compatibility
     int32_t current_id;
     bool current_id_is_null;
     int32_t current_col2;
@@ -149,7 +130,7 @@ struct TableSpec {
 static int get_column_position(const std::string& table_name, const std::string& column_name) {
     PGX_IO(RUNTIME);
     extern int32_t get_column_attnum(const char* p_table_name, const char* p_column_name);
-    int32_t attnum = get_column_attnum(table_name.c_str(), column_name.c_str());
+    const int32_t attnum = get_column_attnum(table_name.c_str(), column_name.c_str());
     if (attnum > 0) {
         // Convert from 1-based PostgreSQL attnum to 0-based index
         return attnum - 1;
@@ -193,7 +174,7 @@ static TableSpec parse_table_spec(const char* json_str) {
 // Memory context callback for TableBuilder cleanup
 static void cleanup_tablebuilder_callback(void* arg) {
     PGX_IO(RUNTIME);
-    runtime::TableBuilder* tb = static_cast<runtime::TableBuilder*>(arg);
+    auto tb = static_cast<runtime::TableBuilder*>(arg);
 }
 
 namespace runtime {
@@ -209,15 +190,15 @@ TableBuilder::TableBuilder()
 TableBuilder* TableBuilder::create(VarLen32 schema_param) {
     PGX_IO(RUNTIME);
 
-    MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
+    const MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
     void* builder_memory = palloc(sizeof(runtime::TableBuilder));
-    runtime::TableBuilder* builder = new (builder_memory) runtime::TableBuilder();
+    const auto builder = new (builder_memory) runtime::TableBuilder();
 
     builder->total_columns = 0;
     PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_create: initialized with dynamic column tracking");
 
-    MemoryContextCallback* callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
+    const auto callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
     callback->func = cleanup_tablebuilder_callback;
     callback->arg = builder;
     MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
@@ -336,7 +317,7 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
         auto scale = this->next_decimal_scale.value();
 
         char value_str[45];
-        bool is_negative = (value < 0);
+        const bool is_negative = (value < 0);
         __uint128_t abs_value = is_negative ? -static_cast<__uint128_t>(value) : static_cast<__uint128_t>(value);
 
         char* p = value_str + sizeof(value_str) - 1;
@@ -366,7 +347,7 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
             // Need to insert decimal point
             if (len <= scale) {
                 // Number is less than 1, need leading zeros
-                int leading_zeros = scale - len + 1;
+                const int leading_zeros = scale - len + 1;
                 buffer[0] = '0';
                 buffer[1] = '.';
                 int pos = 2;
@@ -376,7 +357,7 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
                 strcpy(buffer + pos, p);
             } else {
                 // Number >= 1, insert decimal point at appropriate position
-                size_t integer_len = len - scale;
+                const size_t integer_len = len - scale;
                 strncpy(buffer, p, integer_len);
                 buffer[integer_len] = '.';
                 strcpy(buffer + integer_len + 1, p + integer_len);
@@ -385,11 +366,10 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
             // No decimal point needed
             strcpy(buffer, p);
         }
-        PGX_LOG(RUNTIME, DEBUG, "Decimal numeric: %s (scale=%d, removed %d trailing zeros)",
-                buffer, scale, zeros_removed);
+        PGX_LOG(RUNTIME, DEBUG, "Decimal numeric: %s (scale=%d, removed %d trailing zeros)", buffer, scale,
+                zeros_removed);
 
-        PGX_LOG(RUNTIME, DEBUG, "addDecimal: before DirectFunctionCall3, CurrentMemoryContext=%p",
-                CurrentMemoryContext);
+        PGX_LOG(RUNTIME, DEBUG, "addDecimal: before DirectFunctionCall3, CurrentMemoryContext=%p", CurrentMemoryContext);
 
         const auto numeric_datum = DirectFunctionCall3(numeric_in, CStringGetDatum(buffer),
                                                        ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
@@ -397,8 +377,8 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
         const auto copied_datum = datumCopy(numeric_datum, false, -1);
         const auto numeric_value = DatumGetNumeric(copied_datum);
 
-        PGX_LOG(RUNTIME, DEBUG, "addDecimal: created and copied Numeric at %p (orig=%lu, copied=%lu)",
-                numeric_value, numeric_datum, copied_datum);
+        PGX_LOG(RUNTIME, DEBUG, "addDecimal: created and copied Numeric at %p (orig=%lu, copied=%lu)", numeric_value,
+                numeric_datum, copied_datum);
 
         pgx_lower::runtime::table_builder_add_numeric(this, false, numeric_value);
         this->next_decimal_scale = std::nullopt;
@@ -422,7 +402,7 @@ void TableBuilder::destroy(void* builder) {
 // Memory context callback for DataSourceIterator cleanup
 static void cleanup_datasourceiterator_callback(void* arg) {
     PGX_IO(RUNTIME);
-    DataSourceIterator* iter = static_cast<DataSourceIterator*>(arg);
+    const auto iter = static_cast<DataSourceIterator*>(arg);
     if (iter) {
         iter->~DataSourceIterator(); // Explicit destructor call for PostgreSQL longjmp safety
     }
@@ -550,585 +530,266 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
     return json_parsed;
 }
 
-// Helper function: Initialize column storage for dynamic types
-static void initialize_column_storage(DataSourceIterator* iter) {
+// ============================================================================
+// BatchStorage Helper Functions
+// ============================================================================
+
+static size_t calculate_batch_capacity(TupleDesc tupleDesc) {
     PGX_IO(RUNTIME);
-    // Reserve capacity to prevent reallocation during iteration
-    iter->smallint_values.reserve(10000);
-    iter->smallint_nulls.reserve(10000);
-    iter->int_values.reserve(10000);
-    iter->int_nulls.reserve(10000);
-    iter->bigint_values.reserve(10000);
-    iter->bigint_nulls.reserve(10000);
-    iter->bool_values.reserve(10000);
-    iter->bool_nulls.reserve(10000);
-    iter->smallint_values.resize(iter->columns.size(), 0);
-    iter->smallint_nulls.resize(iter->columns.size(), true);
-    iter->int_values.resize(iter->columns.size(), 0);
-    iter->int_nulls.resize(iter->columns.size(), true);
-    iter->bigint_values.resize(iter->columns.size(), 0);
-    iter->bigint_nulls.resize(iter->columns.size(), true);
-    iter->bool_values.resize(iter->columns.size(), 0);
-    iter->bool_nulls.resize(iter->columns.size(), true);
-    iter->string_data.resize(iter->columns.size(), "");
-    iter->string_nulls.resize(iter->columns.size(), true);
-    iter->decimal_values.resize(iter->columns.size(), 0);
-    iter->decimal_nulls.resize(iter->columns.size(), true);
-    iter->real_values.resize(iter->columns.size(), 0.0f);
-    iter->real_nulls.resize(iter->columns.size(), true);
-    iter->double_values.resize(iter->columns.size(), 0.0);
-    iter->double_nulls.resize(iter->columns.size(), true);
-    iter->date_values.resize(iter->columns.size(), 0);
-    iter->date_nulls.resize(iter->columns.size(), true);
-    iter->timestamp_values.resize(iter->columns.size(), 0);
-    iter->timestamp_nulls.resize(iter->columns.size(), true);
-    iter->interval_values.resize(iter->columns.size(), 0);
-    iter->interval_nulls.resize(iter->columns.size(), true);
+    extern int work_mem;
+    const size_t work_mem_bytes = static_cast<size_t>(work_mem) * 1024L;
 
-    // Initialize per-column string storage
-    iter->string_data_pointers_per_column.resize(iter->columns.size());
-    iter->string_lengths_per_column.resize(iter->columns.size());
-
-    for (size_t i = 0; i < iter->columns.size(); ++i) {
-        if (iter->columns[i].type == ::ColumnType::STRING || iter->columns[i].type == ::ColumnType::TEXT
-            || iter->columns[i].type == ::ColumnType::VARCHAR)
-        {
-            iter->string_data_pointers_per_column[i].reserve(10000); // Reserve for up to 10k rows
-            iter->string_lengths_per_column[i].reserve(10000);
+    size_t bytes_per_row = 0;
+    for (int i = 0; i < tupleDesc->natts; i++) {
+        const Form_pg_attribute attr = TupleDescAttr(tupleDesc, i);
+        if (attr->attlen > 0) {
+            bytes_per_row += attr->attlen;
+        } else if (attr->attlen == -1) {
+            bytes_per_row += 100;
+        } else {
+            bytes_per_row += 64;
         }
     }
 
-    PGX_LOG(RUNTIME, DEBUG, "initialize_column_storage: configured for table '%s' with %zu columns",
-            iter->table_name.c_str(), iter->columns.size());
+    bytes_per_row += tupleDesc->natts * (sizeof(Datum) + sizeof(bool));
+
+    size_t max_rows = work_mem_bytes / bytes_per_row;
+
+    constexpr size_t MIN_BATCH_SIZE = 5;
+    constexpr size_t MAX_BATCH_SIZE = 100000;
+
+    if (max_rows < MIN_BATCH_SIZE) {
+        max_rows = MIN_BATCH_SIZE;
+    } else if (max_rows > MAX_BATCH_SIZE) {
+        max_rows = MAX_BATCH_SIZE;
+    }
+
+    PGX_LOG(RUNTIME, DEBUG, "calculate_batch_capacity: work_mem=%dKB, bytes_per_row=%zu, capacity=%zu", work_mem,
+            bytes_per_row, max_rows);
+
+    return max_rows;
 }
 
-// Helper function: Open PostgreSQL table connection
+static BatchStorage* create_batch_storage(TupleDesc tupleDesc, size_t capacity) {
+    PGX_IO(RUNTIME);
+
+    const MemoryContext batchContext = AllocSetContextCreate(CurrentMemoryContext, "BatchStorage",
+                                                             ALLOCSET_DEFAULT_MINSIZE, ALLOCSET_DEFAULT_INITSIZE,
+                                                             ALLOCSET_DEFAULT_MAXSIZE);
+
+    const MemoryContext oldContext = MemoryContextSwitchTo(batchContext);
+
+    const auto batch = static_cast<BatchStorage*>(palloc(sizeof(BatchStorage)));
+    batch->batchContext = batchContext;
+    batch->tupleDesc = tupleDesc;
+    batch->capacity = capacity;
+    batch->num_rows = 0;
+
+    const int num_cols = tupleDesc->natts;
+    batch->column_values = static_cast<Datum**>(palloc(num_cols * sizeof(Datum*)));
+    batch->column_nulls = static_cast<bool**>(palloc(num_cols * sizeof(bool*)));
+
+    for (int col = 0; col < num_cols; col++) {
+        batch->column_values[col] = (Datum*)palloc(capacity * sizeof(Datum));
+        batch->column_nulls[col] = (bool*)palloc(capacity * sizeof(bool));
+        memset(batch->column_nulls[col], true, capacity * sizeof(bool));
+    }
+
+    MemoryContextSwitchTo(oldContext);
+
+    PGX_LOG(RUNTIME, DEBUG, "create_batch_storage: created batch with capacity=%zu, columns=%d, context=%p", capacity,
+            num_cols, batchContext);
+
+    return batch;
+}
+
+static void destroy_batch_storage(const BatchStorage* batch) {
+    PGX_IO(RUNTIME);
+    if (!batch) {
+        return;
+    }
+    PGX_LOG(RUNTIME, DEBUG, "destroy_batch_storage: deleting context %p with %zu rows", batch->batchContext,
+            batch->num_rows);
+    MemoryContextDelete(batch->batchContext);
+}
+
 static void* open_table_connection(const std::string& table_name) {
     PGX_IO(RUNTIME);
     void* table_handle = open_postgres_table(table_name.c_str());
 
     if (!table_handle) {
-        PGX_LOG(RUNTIME, DEBUG, "open_table_connection: open_postgres_table failed for '%s'", table_name.c_str());
+        PGX_WARNING("open_table_connection: open_postgres_table failed for '%s'", table_name.c_str());
     }
 
     return table_handle;
 }
 
-DataSourceIteration* DataSourceIteration::start(ExecutionContext* context, runtime::VarLen32 varlen32_param) {
+DataSourceIteration*
+DataSourceIteration::start(ExecutionContext* executionContext, const runtime::VarLen32 varlen32_param) {
     PGX_IO(RUNTIME);
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_start called with context: %p, varlen32_param len: %u", context,
-            varlen32_param.getLen());
-
-    // Use PostgreSQL memory management instead of malloc()
-    MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
+    const MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
     void* iter_memory = palloc(sizeof(DataSourceIterator));
-    DataSourceIterator* iter = new (iter_memory) DataSourceIterator();
+    const auto iter = new (iter_memory) DataSourceIterator();
 
-    // Register cleanup callback for C++ destructor safety during PostgreSQL error recovery
-    MemoryContextCallback* callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
+    const auto callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
     callback->func = cleanup_datasourceiterator_callback;
     callback->arg = iter;
     MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
 
     MemoryContextSwitchTo(oldcontext);
 
-    // Initialize basic iterator state
-    iter->context = context;
-    iter->has_current_tuple = false;
-
-    PGX_LOG(RUNTIME, DEBUG, "Before clear: string_data_pointers_per_column.size()=%zu", iter->string_data_pointers_per_column.size());
-    iter->current_row_index = 0;
-    iter->string_data_pointers_per_column.clear();
-    iter->string_lengths_per_column.clear();
-    iter->string_data.clear();
-    iter->string_nulls.clear();
-    PGX_LOG(RUNTIME, DEBUG, "After clear: string_data_pointers_per_column.size()=%zu", iter->string_data_pointers_per_column.size());
+    iter->context = executionContext;
+    iter->batch = nullptr;
+    iter->batch_exhausted = false;
 
     iter->current_value = 0;
     iter->current_is_null = true;
-
-    // Decode table specification from runtime::VarLen32 parameter
-    bool json_parsed = decode_table_specification(varlen32_param, iter);
-
+    const bool json_parsed = decode_table_specification(varlen32_param, iter);
     if (!json_parsed) {
         PGX_ERROR("JSON parsing failed");
         throw std::runtime_error("Failed to parse the json");
     }
-
-    // Initialize column storage based on parsed configuration
-    initialize_column_storage(iter);
-
-    // Open PostgreSQL table connection
     iter->table_handle = open_table_connection(iter->table_name);
-
     if (!iter->table_handle) {
         return reinterpret_cast<DataSourceIteration*>(iter);
     }
 
     g_current_iterator = iter;
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_start returning iterator: %p", iter);
     return reinterpret_cast<DataSourceIteration*>(iter);
 }
 
 bool DataSourceIteration::isValid() {
     PGX_IO(RUNTIME);
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid called with iterator: %p", this);
-    if (!this)
-        return false;
-
-    auto* iter = (DataSourceIterator*)this;
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: iter=%p, table_handle=%p", iter, iter->table_handle);
+    auto* iter = reinterpret_cast<DataSourceIterator*>(this);
     if (!iter->table_handle) {
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 1 (no table_handle)",
-                this);
+        PGX_LOG(RUNTIME, DEBUG, "Finished running with: %p branch 1 (no table_handle)", this);
         return false;
     }
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: About to call read_next_tuple_from_table");
-    int64_t read_result = read_next_tuple_from_table(iter->table_handle);
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid: read_result = %ld", read_result);
 
-    if (read_result != 1) {
-        iter->has_current_tuple = false;
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 3", this);
-        return false;
-    } else {
-        extern int32_t get_int32_field(void* tuple_handle, int32_t field_index, bool* is_null);
-        extern int64_t get_int64_field(void* tuple_handle, int32_t field_index, bool* is_null);
-        extern bool get_bool_field(void* tuple_handle, int32_t field_index, bool* is_null);
-        extern Numeric get_numeric_field(void* tuple_handle, int32_t field_index, bool* is_null);
-        extern const char* get_string_field(void* tuple_handle, int32_t field_index, bool* is_null, int32_t* length,
-                                            int32_t type_oid);
-        extern int32_t get_field_type_oid(int32_t field_index);
-        extern int32_t get_field_typmod(int32_t field_index);
-
-        // Read dynamic columns based on specification
-        // We need to map column names to their actual PostgreSQL positions
-        // because MLIR may have columns in different order than PostgreSQL physical order
-        for (size_t i = 0; i < iter->columns.size(); ++i) {
-            auto& col_spec = iter->columns[i]; // Non-const so we can update the type
-
-            // Find the actual PostgreSQL column index for this column name
-            int pg_column_index = get_column_position(iter->table_name, col_spec.name);
-
-            if (pg_column_index == -1) {
-                PGX_ERROR("rt_datasourceiteration_isvalid: No mapping found for column '%s' in table '%s', crashing",
-                          col_spec.name.c_str(), iter->table_name.c_str());
-                pg_column_index = i;
-            }
-
-            // Get the actual type OID from PostgreSQL
-            int32_t type_oid = get_field_type_oid(pg_column_index);
-
-            // Determine the column type from the PostgreSQL type OID and process data
-            switch (type_oid) {
-            case BOOLOID:
-                col_spec.type = ::ColumnType::BOOLEAN;
-                {
-                    bool is_null = false;
-                    bool bool_value = get_bool_field(iter->table_handle, pg_column_index, &is_null);
-                    iter->bool_values[i] = bool_value ? 1 : 0;
-                    iter->bool_nulls[i] = is_null;
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %s (null=%s)", i,
-                            col_spec.name.c_str(), pg_column_index, bool_value ? "true" : "false",
-                            is_null ? "true" : "false");
-                }
-                break;
-            case INT2OID:
-                col_spec.type = ::ColumnType::SMALLINT;
-                {
-                    bool is_null = false;
-                    extern int16_t get_int16_field(void* tuple_handle, int32_t field_index, bool* is_null);
-                    iter->smallint_values[i] = get_int16_field(iter->table_handle, pg_column_index, &is_null);
-                    iter->smallint_nulls[i] = is_null;
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", i,
-                            col_spec.name.c_str(), pg_column_index, iter->smallint_values[i], is_null ? "true" : "false");
-                }
-                break;
-            case INT4OID:
-                col_spec.type = ::ColumnType::INTEGER;
-                {
-                    bool is_null = false;
-                    iter->int_values[i] = get_int32_field(iter->table_handle, pg_column_index, &is_null);
-                    iter->int_nulls[i] = is_null;
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", i,
-                            col_spec.name.c_str(), pg_column_index, iter->int_values[i], is_null ? "true" : "false");
-                }
-                break;
-            case INT8OID:
-                col_spec.type = ::ColumnType::BIGINT;
-                {
-                    bool is_null = false;
-                    iter->bigint_values[i] = get_int64_field(iter->table_handle, pg_column_index, &is_null);
-                    iter->bigint_nulls[i] = is_null;
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)", i,
-                            col_spec.name.c_str(), pg_column_index, (long long)iter->bigint_values[i],
-                            is_null ? "true" : "false");
-                }
-                break;
-            case TEXTOID:
-            case VARCHAROID:
-            case BPCHAROID:
-            case CHAROID:
-                col_spec.type = ::ColumnType::STRING;
-                {
-                    bool is_null = false;
-                    int32_t length = 0;
-                    const char* string_value = get_string_field(iter->table_handle, pg_column_index, &is_null, &length,
-                                                                type_oid);
-
-                    if (!is_null && string_value != nullptr && length > 0) {
-                        iter->string_data[i] = std::string(string_value, length);
-                    } else {
-                        iter->string_data[i] = "";
-                    }
-
-                    iter->string_nulls[i] = is_null;
-
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d string = '%s' len=%zu "
-                            "(null=%s)",
-                            i, col_spec.name.c_str(), pg_column_index, iter->string_data[i].c_str(),
-                            iter->string_data[i].length(), is_null ? "true" : "false");
-                }
-                break;
-            case NUMERICOID:
-                col_spec.type = ::ColumnType::DECIMAL;
-                {
-                    bool is_null = false;
-                    Numeric numeric_value = get_numeric_field(iter->table_handle, pg_column_index, &is_null);
-
-                    if (is_null || !numeric_value) {
-                        iter->decimal_values[i] = 0;
-                        iter->decimal_nulls[i] = true;
-                        PGX_LOG(RUNTIME, DEBUG, "Column %zu (%s) decimal is NULL", i, col_spec.name.c_str());
-                        break;
-                    }
-
-                    // Get the TYPE scale from typmod
-                    int32_t typmod = get_field_typmod(pg_column_index);
-                    int32_t type_scale = 0;
-
-                    if (typmod >= 0) {
-                        // typmod encoding: ((precision << 16) | scale) + 4
-                        int32_t adjusted = typmod - 4; // VARHDRSZ = 4
-                        type_scale = adjusted & 0xFFFF;
-                        PGX_LOG(RUNTIME, DEBUG, "Extracted type scale %d from typmod %d", type_scale, typmod);
-                    } else {
-                        // No typmod means unconstrained NUMERIC, use default
-                        type_scale = 6; // Default scale
-                        PGX_LOG(RUNTIME, DEBUG, "No typmod, using default scale %d", type_scale);
-                    }
-
-                    // Convert numeric to string and parse directly to int128
-                    Datum numeric_datum = NumericGetDatum(numeric_value);
-                    char* numeric_str = DatumGetCString(DirectFunctionCall1(numeric_out, numeric_datum));
-
-                    // Parse the string to int128, scaling as we go
-                    __int128 scaled_value = 0;
-                    const char* p = numeric_str;
-                    bool negative = (*p == '-');
-                    if (negative) p++;
-
-                    int digits_after_decimal = 0;
-                    bool seen_decimal = false;
-
-                    // Parse the numeric string
-                    while (*p) {
-                        if (*p == '.') {
-                            seen_decimal = true;
-                        } else if (*p >= '0' && *p <= '9') {
-                            scaled_value = scaled_value * 10 + (*p - '0');
-                            if (seen_decimal) {
-                                digits_after_decimal++;
-                            }
-                        }
-                        p++;
-                    }
-
-                    // Apply additional scaling if needed
-                    // If we had 2 digits after decimal but need scale 6, multiply by 10^4
-                    int scale_diff = type_scale - digits_after_decimal;
-                    while (scale_diff > 0) {
-                        scaled_value *= 10;
-                        scale_diff--;
-                    }
-
-                    if (negative) {
-                        scaled_value = -scaled_value;
-                    }
-
-                    pfree(numeric_str);
-
-                    // Store directly as __int128
-                    iter->decimal_values[i] = scaled_value;
-                    iter->decimal_nulls[i] = false;
-
-                    PGX_LOG(RUNTIME, DEBUG, "Column %zu (%s) decimal scaled to %lld with type_scale=%d", i,
-                            col_spec.name.c_str(), (long long)scaled_value, type_scale);
-                }
-                break;
-            case FLOAT4OID:
-                col_spec.type = ::ColumnType::FLOAT;
-                {
-                    bool is_null = false;
-                    extern float get_float32_field(void* tuple_handle, int32_t field_index, bool* is_null);
-                    iter->real_values[i] = get_float32_field(iter->table_handle, pg_column_index, &is_null);
-                    iter->real_nulls[i] = is_null;
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %f (null=%s)", i,
-                            col_spec.name.c_str(), pg_column_index, iter->real_values[i], is_null ? "true" : "false");
-                }
-                break;
-            case FLOAT8OID:
-                col_spec.type = ::ColumnType::DOUBLE;
-                {
-                    bool is_null = false;
-                    extern double get_float64_field(void* tuple_handle, int32_t field_index, bool* is_null);
-                    iter->double_values[i] = get_float64_field(iter->table_handle, pg_column_index, &is_null);
-                    iter->double_nulls[i] = is_null;
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %f (null=%s)", i,
-                            col_spec.name.c_str(), pg_column_index, iter->double_values[i], is_null ? "true" : "false");
-                }
-                break;
-            case DATEOID:
-                col_spec.type = ::ColumnType::DATE;
-                {
-                    bool is_null = false;
-                    iter->date_values[i] = get_int32_field(iter->table_handle, pg_column_index, &is_null);
-                    iter->date_nulls[i] = is_null;
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %d (null=%s)", i,
-                            col_spec.name.c_str(), pg_column_index, iter->date_values[i], is_null ? "true" : "false");
-                }
-                break;
-            case TIMESTAMPOID:
-            case TIMESTAMPTZOID:
-                col_spec.type = ::ColumnType::TIMESTAMP;
-                {
-                    bool is_null = false;
-                    iter->timestamp_values[i] = get_int64_field(iter->table_handle, pg_column_index, &is_null);
-                    iter->timestamp_nulls[i] = is_null;
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)", i,
-                            col_spec.name.c_str(), pg_column_index, (long long)iter->timestamp_values[i],
-                            is_null ? "true" : "false");
-                }
-                break;
-            case INTERVALOID:
-                col_spec.type = ::ColumnType::INTERVAL;
-                {
-                    bool is_null = false;
-                    iter->interval_values[i] = get_int64_field(iter->table_handle, pg_column_index, &is_null);
-                    iter->interval_nulls[i] = is_null;
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_isvalid: column %zu (%s) from PG column %d = %lld (null=%s)", i,
-                            col_spec.name.c_str(), pg_column_index, (long long)iter->interval_values[i],
-                            is_null ? "true" : "false");
-                }
-                break;
-            default:
-                PGX_ERROR("Unsupported PostgreSQL type OID %d for column '%s' in table '%s'", type_oid,
-                          col_spec.name.c_str(), iter->table_name.c_str());
-                throw std::runtime_error("Unsupported PostgreSQL type OID encountered");
-            }
-        }
-
-        for (size_t i = 0; i < iter->columns.size(); ++i) {
-            if ((iter->columns[i].type == ::ColumnType::STRING || iter->columns[i].type == ::ColumnType::TEXT
-                 || iter->columns[i].type == ::ColumnType::VARCHAR))
-            {
-                if (!iter->string_data[i].empty()) {
-                    size_t str_len = iter->string_data[i].size();
-                    uint8_t* stable_ptr = static_cast<uint8_t*>(
-                        MemoryContextAlloc(CurrentMemoryContext, str_len)
-                    );
-                    memcpy(stable_ptr, iter->string_data[i].data(), str_len);
-                    iter->string_data_pointers_per_column[i].push_back(stable_ptr);
-                    iter->string_lengths_per_column[i].push_back(static_cast<int32_t>(str_len));
-
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "Column %zu (%s) row %d: allocated %zu bytes at %p",
-                            i, iter->columns[i].name.c_str(), iter->current_row_index,
-                            str_len, stable_ptr);
-                } else {
-                    // Empty string
-                    iter->string_data_pointers_per_column[i].push_back(nullptr);
-                    iter->string_lengths_per_column[i].push_back(0);
-                }
-            }
-        }
-
-        iter->current_row_index++;
-
-        // Maintain legacy fields for backward compatibility
-        if (iter->columns.size() >= 1 && iter->columns[0].type == ::ColumnType::INTEGER) {
-            iter->current_id = iter->int_values[0];
-            iter->current_id_is_null = iter->int_nulls[0];
-            iter->current_value = iter->current_id;
-            iter->current_is_null = iter->current_id_is_null;
-        }
-        if (iter->columns.size() >= 2 && iter->columns[1].type == ::ColumnType::INTEGER) {
-            iter->current_col2 = iter->int_values[1];
-            iter->current_col2_is_null = iter->int_nulls[1];
-        }
-
-        iter->has_current_tuple = true;
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_isvalid finished running with: %p branch 2", this);
+    if (iter->batch && iter->batch->num_rows > 0 && !iter->batch_exhausted) {
+        PGX_LOG(RUNTIME, DEBUG, "Returning true - batch has %zu rows", iter->batch->num_rows);
         return true;
     }
+    if (iter->batch) {
+        PGX_LOG(RUNTIME, DEBUG, "Destroying exhausted batch");
+        destroy_batch_storage(iter->batch);
+        iter->batch = nullptr;
+    }
+
+    struct PostgreSQLTableHandle {
+        void* rel;
+        void* scanDesc;
+        void* tupleDesc; // Actually TupleDesc
+        bool isOpen;
+    };
+    const auto* table_handle = static_cast<PostgreSQLTableHandle*>(iter->table_handle);
+    const auto tupleDesc = static_cast<TupleDesc>(table_handle->tupleDesc);
+    const size_t capacity = calculate_batch_capacity(tupleDesc);
+
+    iter->batch = create_batch_storage(tupleDesc, capacity);
+    PGX_LOG(RUNTIME, DEBUG, "Created new batch with capacity %zu", capacity);
+
+    Datum temp_values[MaxTupleAttributeNumber];
+    bool temp_nulls[MaxTupleAttributeNumber];
+    while (iter->batch->num_rows < capacity) {
+        PGX_LOG(RUNTIME, TRACE, "Reading tuple %zu", iter->batch->num_rows);
+        const int64_t read_result = read_next_tuple_from_table(iter->table_handle);
+
+        if (read_result != 1) {
+            // End of table
+            PGX_LOG(RUNTIME, DEBUG, "End of table after %zu rows", iter->batch->num_rows);
+            break;
+        }
+
+        // Extract ALL columns from current tuple using heap_deform_tuple
+        // NOTE: This requires access to g_current_tuple_passthrough
+        struct PostgreSQLTuplePassthrough {
+            void* originalTuple; // HeapTuple
+            void* tupleDesc; // TupleDesc
+        };
+        extern PostgreSQLTuplePassthrough g_current_tuple_passthrough;
+
+        const auto tuple = static_cast<HeapTuple>(g_current_tuple_passthrough.originalTuple);
+        if (!tuple) {
+            PGX_ERROR("rt_datasourceiteration_isvalid: g_current_tuple_passthrough.originalTuple is NULL");
+            break;
+        }
+
+        heap_deform_tuple(tuple, tupleDesc, temp_values, temp_nulls);
+        const size_t row_idx = iter->batch->num_rows;
+        for (int col = 0; col < tupleDesc->natts; col++) {
+            const Form_pg_attribute attr = TupleDescAttr(tupleDesc, col);
+
+            iter->batch->column_values[col][row_idx] = datumCopy(temp_values[col], attr->attbyval, attr->attlen);
+            iter->batch->column_nulls[col][row_idx] = temp_nulls[col];
+
+            PGX_LOG(RUNTIME, TRACE, "Row %zu col %d: Datum=%lu null=%s", row_idx, col,
+                    static_cast<unsigned long>(iter->batch->column_values[col][row_idx]),
+                    temp_nulls[col] ? "true" : "false");
+        }
+
+        iter->batch->num_rows++;
+    }
+
+    if (iter->batch->num_rows == 0) {
+        PGX_LOG(RUNTIME, DEBUG, "Batch is empty, end of table");
+        iter->batch_exhausted = true;
+        return false;
+    }
+
+    iter->batch_exhausted = false;
+    PGX_LOG(RUNTIME, DEBUG, "Batch filled with %zu rows", iter->batch->num_rows);
+    return true;
 }
 
 void DataSourceIteration::access(RecordBatchInfo* info) {
     PGX_IO(RUNTIME);
     auto* row_data = info;
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access called with iterator: %p, row_data: %p", this, row_data);
-    if (row_data) {
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: row_data is valid, proceeding");
-
-        auto* iter = (DataSourceIterator*)this;
-        if (!iter || !iter->has_current_tuple) {
-            PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: invalid iterator or no current tuple");
-            return;
-        }
-
-        size_t num_columns = iter->columns.size();
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: handling %zu columns", num_columns);
-
-        // The row_data is expected to be a dynamic structure:
-        // [numRows: size_t][columnInfo[0]: COLUMN_INFO_SIZE*size_t][columnInfo[1]:
-        // COLUMN_INFO_SIZE*size_t]...[columnInfo[n]: COLUMN_INFO_SIZE*size_t]
-        size_t* row_data_ptr = (size_t*)row_data;
-        row_data_ptr[0] = 1; // numRows = 1
-
-        // Create validity bitmaps for each column based on actual null flags
-        static std::vector<uint8_t> valid_bitmaps;
-        valid_bitmaps.resize(num_columns);
-
-        for (size_t i = 0; i < num_columns; ++i) {
-            constexpr size_t COLUMN_OFFSET_IDX = 0;
-            constexpr size_t VALID_MULTIPLIER_IDX = 1;
-            constexpr size_t VALID_BUFFER_IDX = 2;
-            constexpr size_t DATA_BUFFER_IDX = 3;
-            constexpr size_t VARLEN_BUFFER_IDX = 4;
-            constexpr size_t COLUMN_INFO_SIZE = 5;
-
-            const auto& col_spec = iter->columns[i];
-            size_t* column_info_ptr = &row_data_ptr[1 + i * COLUMN_INFO_SIZE]; // Each ColumnInfo has COLUMN_INFO_SIZE
-                                                                               // fields
-
-            // Set validity bitmap based on whether the value is NULL
-            // Note: In LingoDB, 1 means valid (not null), 0 means null
-            bool is_null;
-            switch (col_spec.type) {
-            case ::ColumnType::BOOLEAN: is_null = iter->bool_nulls[i]; break;
-            case ::ColumnType::SMALLINT: is_null = iter->smallint_nulls[i]; break;
-            case ::ColumnType::INTEGER: is_null = iter->int_nulls[i]; break;
-            case ::ColumnType::BIGINT: is_null = iter->bigint_nulls[i]; break;
-            case ::ColumnType::STRING:
-            case ::ColumnType::TEXT:
-            case ::ColumnType::VARCHAR: is_null = iter->string_nulls[i]; break;
-            case ::ColumnType::DECIMAL: is_null = iter->decimal_nulls[i]; break;
-            case ::ColumnType::FLOAT: is_null = iter->real_nulls[i]; break;
-            case ::ColumnType::DOUBLE: is_null = iter->double_nulls[i]; break;
-            case ::ColumnType::DATE: is_null = iter->date_nulls[i]; break;
-            case ::ColumnType::TIMESTAMP: is_null = iter->timestamp_nulls[i]; break;
-            case ::ColumnType::INTERVAL: is_null = iter->interval_nulls[i]; break;
-            default: is_null = iter->int_nulls[i]; break;
-            }
-            valid_bitmaps[i] = is_null ? 0x00 : 0xFF; // 0x00 for null, 0xFF for valid
-
-            PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu is_null=%s, valid_bitmap=0x%02X", i,
-                    is_null ? "true" : "false", valid_bitmaps[i]);
-
-            column_info_ptr[COLUMN_OFFSET_IDX] = 0; // offset
-            column_info_ptr[VALID_MULTIPLIER_IDX] = 0; // validMultiplier
-            column_info_ptr[VALID_BUFFER_IDX] = (size_t)&valid_bitmaps[i]; // validBuffer - unique per column
-
-            if (col_spec.type == ::ColumnType::BOOLEAN) {
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->bool_values[i]; // dataBuffer
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) boolean = %s at %p", i,
-                        col_spec.name.c_str(), iter->bool_values[i] ? "true" : "false", &iter->bool_values[i]);
-            } else if (col_spec.type == ::ColumnType::SMALLINT) {
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->smallint_values[i]; // dataBuffer
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) smallint = %d at %p", i,
-                        col_spec.name.c_str(), iter->smallint_values[i], &iter->smallint_values[i]);
-            } else if (col_spec.type == ::ColumnType::BIGINT) {
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->bigint_values[i]; // dataBuffer
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) bigint = %lld at %p", i,
-                        col_spec.name.c_str(), (long long)iter->bigint_values[i], &iter->bigint_values[i]);
-            } else if (col_spec.type == ::ColumnType::STRING || col_spec.type == ::ColumnType::TEXT
-                       || col_spec.type == ::ColumnType::VARCHAR)
-            {
-                // For string columns, provide a pointer to the CURRENT ROW's offset in the array
-                size_t row_index = iter->current_row_index - 1; // -1 because we already incremented
-
-                if (row_index < iter->string_data_pointers_per_column[i].size()) {
-                    column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->string_lengths_per_column[i][row_index];
-                    column_info_ptr[VARLEN_BUFFER_IDX] = (size_t)&iter->string_data_pointers_per_column[i][row_index];
-
-                    PGX_LOG(RUNTIME, DEBUG,
-                            "rt_datasourceiteration_access: column %zu (%s) row %zu: len=%d ptr=%p",
-                            i, col_spec.name.c_str(), row_index,
-                            iter->string_lengths_per_column[i][row_index],
-                            iter->string_data_pointers_per_column[i][row_index]);
-                } else {
-                    PGX_LOG(RUNTIME, DEBUG, "WARNING: Invalid row index %zu for string column %s",
-                            row_index, col_spec.name.c_str());
-                    column_info_ptr[DATA_BUFFER_IDX] = 0;
-                    column_info_ptr[VARLEN_BUFFER_IDX] = 0;
-                }
-            } else if (col_spec.type == ::ColumnType::DECIMAL) {
-                // Decimal values are just __int128 now
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0;
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->decimal_values[i];
-                PGX_LOG(RUNTIME, DEBUG,
-                        "rt_datasourceiteration_access: column %zu (%s) decimal at %p",
-                        i, col_spec.name.c_str(), &iter->decimal_values[i]);
-            } else if (col_spec.type == ::ColumnType::FLOAT) {
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->real_values[i]; // dataBuffer
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) real = %f at %p", i,
-                        col_spec.name.c_str(), iter->real_values[i], &iter->real_values[i]);
-            } else if (col_spec.type == ::ColumnType::DOUBLE) {
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->double_values[i]; // dataBuffer
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) double = %f at %p", i,
-                        col_spec.name.c_str(), iter->double_values[i], &iter->double_values[i]);
-            } else if (col_spec.type == ::ColumnType::DATE) {
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->date_values[i]; // dataBuffer
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) date = %d at %p", i,
-                        col_spec.name.c_str(), iter->date_values[i], &iter->date_values[i]);
-            } else if (col_spec.type == ::ColumnType::TIMESTAMP) {
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->timestamp_values[i]; // dataBuffer
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) timestamp = %lld at %p", i,
-                        col_spec.name.c_str(), (long long)iter->timestamp_values[i], &iter->timestamp_values[i]);
-            } else if (col_spec.type == ::ColumnType::INTERVAL) {
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->interval_values[i]; // dataBuffer
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) interval = %lld at %p", i,
-                        col_spec.name.c_str(), (long long)iter->interval_values[i], &iter->interval_values[i]);
-            } else {
-                column_info_ptr[VARLEN_BUFFER_IDX] = 0; // varLenBuffer = nullptr for non-string types
-                column_info_ptr[DATA_BUFFER_IDX] = (size_t)&iter->int_values[i]; // dataBuffer
-                PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu (%s) integer = %d at %p", i,
-                        col_spec.name.c_str(), iter->int_values[i], &iter->int_values[i]);
-            }
-        }
-
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: configured %zu columns successfully", num_columns);
-    } else {
+    if (!row_data) {
         PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: row_data is NULL");
+        return;
+    }
+
+    const auto* iter = reinterpret_cast<DataSourceIterator*>(this);
+    if (!iter || !iter->batch || iter->batch->num_rows == 0) {
+        PGX_LOG(RUNTIME, DEBUG, "Invalid iterator or empty batch");
+        return;
+    }
+
+    PGX_LOG(RUNTIME, DEBUG, "Batch has %zu rows, %d columns", iter->batch->num_rows, iter->batch->tupleDesc->natts);
+
+    // RecordBatchInfo structure (from lingodb):
+    // [numRows: size_t][columnInfo[0]...][columnInfo[1]...]...
+    // Each columnInfo has 5 fields: offset, validMultiplier, validBuffer, dataBuffer, varLenBuffer
+    const auto row_data_ptr = reinterpret_cast<size_t*>(row_data);
+    row_data_ptr[0] = iter->batch->num_rows; // Set number of rows in batch
+
+    const size_t num_columns = iter->batch->tupleDesc->natts;
+    PGX_LOG(RUNTIME, DEBUG, "Handling %zu columns", num_columns);
+
+    for (size_t col = 0; col < num_columns; ++col) {
+        constexpr size_t COLUMN_OFFSET_IDX = 0;
+        constexpr size_t VALID_MULTIPLIER_IDX = 1;
+        constexpr size_t VALID_BUFFER_IDX = 2;
+        constexpr size_t DATA_BUFFER_IDX = 3;
+        constexpr size_t VARLEN_BUFFER_IDX = 4;
+        constexpr size_t COLUMN_INFO_SIZE = 5;
+
+        size_t* column_info_ptr = &row_data_ptr[1 + col * COLUMN_INFO_SIZE];
+
+        column_info_ptr[COLUMN_OFFSET_IDX] = 0; // offset (unused for columnar)
+        column_info_ptr[VALID_MULTIPLIER_IDX] = 0; // validMultiplier (unused)
+
+        column_info_ptr[VALID_BUFFER_IDX] = reinterpret_cast<size_t>(iter->batch->column_nulls[col]);
+        column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(iter->batch->column_values[col]);
+
+        // TODO: For varlena types (strings), we may need special handling here
+        // For now, Datum IS the pointer for varlena types
+        column_info_ptr[VARLEN_BUFFER_IDX] = 0;
+
+        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu: values=%p nulls=%p", col,
+                iter->batch->column_values[col], iter->batch->column_nulls[col]);
     }
 
     PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access completed successfully");
@@ -1137,27 +798,26 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
 
 void DataSourceIteration::next() {
     PGX_IO(RUNTIME);
-    auto* iter = (DataSourceIterator*)this;
-    iter->has_current_tuple = false;
+    auto* iter = reinterpret_cast<DataSourceIterator*>(this);
+    iter->batch_exhausted = true;
+    PGX_LOG(RUNTIME, DEBUG, "Marked batch as exhausted");
 }
 
 void DataSourceIteration::end(DataSourceIteration* iterator) {
     PGX_IO(RUNTIME);
     if (iterator) {
-        auto* iter = (DataSourceIterator*)iterator;
+        auto* iter = reinterpret_cast<DataSourceIterator*>(iterator);
 
         if (iter->table_handle) {
             extern void close_postgres_table(void* tableHandle);
             close_postgres_table(iter->table_handle);
             iter->table_handle = nullptr;
         }
-        if (g_current_iterator == (DataSourceIterator*)iterator) {
+        if (g_current_iterator == reinterpret_cast<DataSourceIterator*>(iterator)) {
             g_current_iterator = nullptr;
         }
 
-        // Note: We don't call destructor or pfree here because the MemoryContextCallback
-        // will handle cleanup when the memory context is reset/deleted.
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_end: cleanup will be handled by MemoryContextCallback");
+        PGX_LOG(RUNTIME, DEBUG, "Cleanup will be handled by MemoryContextCallback");
     }
 }
 
@@ -1166,12 +826,12 @@ void DataSourceIteration::end(DataSourceIteration* iterator) {
 // Global context functions
 void* getExecutionContext() {
     PGX_IO(RUNTIME);
-    return ::rt_get_execution_context(); // Call the global C function
+    return ::rt_get_execution_context();
 }
 
 void setExecutionContext(void* context) {
     PGX_IO(RUNTIME);
-    ::rt_set_execution_context(context); // Call the global C function
+    ::rt_set_execution_context(context);
 }
 
 } // namespace runtime
