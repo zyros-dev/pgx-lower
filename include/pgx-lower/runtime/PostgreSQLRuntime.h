@@ -24,22 +24,22 @@ struct TableBuilder {
    ~TableBuilder() = default;
    
    // Table building functions
-   static TableBuilder* create(VarLen32 schema);  // Static factory method
+   static TableBuilder* create(VarLen32 schema_param);  // Static factory method
    static void destroy(void* builder);            // Static cleanup method
    TableBuilder* build();                         // Member function returning this
    void nextRow();                                // Member function
    
    // Add data functions - non-static member functions
-   void addBool(bool isValid, bool value);
-   void addInt8(bool isValid, int8_t value);
-   void addInt16(bool isValid, int16_t value);
-   void addInt32(bool isValid, int32_t value);
-   void addInt64(bool isValid, int64_t value);
-   void addFloat32(bool isValid, float value);
-   void addFloat64(bool isValid, double value);
-   void addDecimal(bool isValid, __int128 value);
-   void addFixedSized(bool isValid, int64_t value);
-   void addBinary(bool isValid, VarLen32 value);
+   void addBool(bool is_valid, bool value);
+   void addInt8(bool is_valid, int8_t value);
+   void addInt16(bool is_valid, int16_t value);
+   void addInt32(bool is_valid, int32_t value);
+   void addInt64(bool is_valid, int64_t value);
+   void addFloat32(bool is_valid, float value);
+   void addFloat64(bool is_valid, double value);
+   void addDecimal(bool is_valid, __int128 value);
+   void addFixedSized(bool is_valid, int64_t value);
+   void addBinary(bool is_valid, VarLen32 value);
    void setNextDecimalScale(int32_t scale);
 };
 

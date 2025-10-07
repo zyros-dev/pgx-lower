@@ -29,7 +29,7 @@ class DataSourceIteration {
       size_t numRows;
       ColumnInfo columnInfo[];
    };
-   static DataSourceIteration* start(ExecutionContext* executionContext, runtime::VarLen32 description);
+   static DataSourceIteration* start(ExecutionContext* executionContext, runtime::VarLen32 varlen32_param);
    bool isValid();
    void next();
    void access(RecordBatchInfo* info);

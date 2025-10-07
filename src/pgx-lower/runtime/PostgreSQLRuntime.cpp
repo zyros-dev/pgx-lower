@@ -1,6 +1,5 @@
 #include "pgx-lower/runtime/PostgreSQLRuntime.h"
 #include "lingodb/runtime/DataSourceIteration.h"
-#include "pgx-lower/runtime/StringRuntime.h"
 #include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <cstdint>
 #include <cstring>
@@ -41,15 +40,10 @@ extern void* open_postgres_table(const char* tableName);
 extern int64_t read_next_tuple_from_table(void* tableHandle);
 }
 
-// ============================================================================
-// Internal C implementation functions
-// ============================================================================
-
 static void* g_execution_context = nullptr;
 
 extern "C" {
 
-// Keep the original names that JIT expects
 void rt_set_execution_context(void* context_ptr) {
     g_execution_context = context_ptr;
 }
@@ -99,6 +93,11 @@ struct BatchStorage {
 
     Datum** column_values;
     bool** column_nulls;
+
+    // Lingodb designed its string lookups to do this... so either we can make our storage work like this,
+    // or we can edit the LLVM commands. Unfortunately, I opted to be lazy.
+    int32_t** string_lengths;
+    uint8_t*** string_data_ptrs;
 };
 
 struct DataSourceIterator {
@@ -121,7 +120,6 @@ struct DataSourceIterator {
 
 static DataSourceIterator* g_current_iterator = nullptr;
 
-// Table specification structure
 struct TableSpec {
     std::string table_name;
     std::vector<std::string> column_names;
@@ -136,7 +134,8 @@ static int get_column_position(const std::string& table_name, const std::string&
         return attnum - 1;
     }
 
-    return -1; // Column not found
+    PGX_ERROR("Failed to find column! %s %s", table_name.c_str(), column_name.c_str());
+    throw std::runtime_error("Failed to find column!");
 }
 
 static TableSpec parse_table_spec(const char* json_str) {
@@ -171,34 +170,33 @@ static TableSpec parse_table_spec(const char* json_str) {
     return spec;
 }
 
-// Memory context callback for TableBuilder cleanup
 static void cleanup_tablebuilder_callback(void* arg) {
     PGX_IO(RUNTIME);
+    // ReSharper disable once CppDeclaratorNeverUsed
     auto tb = static_cast<runtime::TableBuilder*>(arg);
 }
 
 namespace runtime {
 
-// Constructor
 TableBuilder::TableBuilder()
 : data(nullptr)
 , row_count(0)
 , current_column_index(0)
 , total_columns(0) {}
 
-// Static factory method
+// ReSharper disable once CppParameterNeverUsed
 TableBuilder* TableBuilder::create(VarLen32 schema_param) {
     PGX_IO(RUNTIME);
 
     const MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
-    void* builder_memory = palloc(sizeof(runtime::TableBuilder));
-    const auto builder = new (builder_memory) runtime::TableBuilder();
+    void* builder_memory = palloc(sizeof(TableBuilder));
+    const auto builder = new (builder_memory) TableBuilder();
 
     builder->total_columns = 0;
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_create: initialized with dynamic column tracking");
+    PGX_LOG(RUNTIME, DEBUG, "Initialized with dynamic column tracking");
 
-    const auto callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
+    const auto callback = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
     callback->func = cleanup_tablebuilder_callback;
     callback->arg = builder;
     MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
@@ -207,38 +205,16 @@ TableBuilder* TableBuilder::create(VarLen32 schema_param) {
     return builder;
 }
 
-void TableBuilder::nextRow() {
+void TableBuilder::destroy(void* builder) {
     PGX_IO(RUNTIME);
-
-    // 'this' is the TableBuilder instance
-
-    // LingoDB currColumn assertion pattern: verify all columns were filled
-    if (current_column_index != total_columns) {
-        PGX_LOG(RUNTIME, DEBUG,
-                "TableBuilder::nextRow: column count info - expected %d columns, got %d (this may be normal during "
-                "MLIR pipeline development)",
-                total_columns, current_column_index);
-    } else {
-        PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: LingoDB column validation passed - %d columns filled",
-                current_column_index);
-    }
-
-    row_count++;
-
-    if (total_columns > 0) {
-        PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: submitting row with %d columns", total_columns);
-        add_tuple_to_result(total_columns);
-    }
-
-    current_column_index = 0;
-    PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: reset column index to 0 for row %ld", row_count);
+    // Note: We don't need to do anything here because the MemoryContextCallback
+    // will handle cleanup when the memory context is reset/deleted.
 }
 
 TableBuilder* TableBuilder::build() {
     PGX_IO(RUNTIME);
 
     mark_results_ready_for_streaming();
-
     PGX_LOG(RUNTIME, DEBUG, "TableBuilder state before return:");
     PGX_LOG(RUNTIME, DEBUG, "\t- builder address: %p", this);
     PGX_LOG(RUNTIME, DEBUG, "\t- row_count: %ld", row_count);
@@ -255,55 +231,66 @@ TableBuilder* TableBuilder::build() {
     return this;
 }
 
-void TableBuilder::addInt64(bool is_valid, int64_t value) {
+void TableBuilder::nextRow() {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
+
+    if (current_column_index != total_columns) {
+        PGX_LOG(RUNTIME, DEBUG,
+                "TableBuilder::nextRow: column count info - expected %d columns, got %d (this may be normal during "
+                "MLIR pipeline development)",
+                total_columns, current_column_index);
+    } else {
+        PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: LingoDB column validation passed - %d columns filled",
+                current_column_index);
+    }
+
+    row_count++;
+    if (total_columns > 0) {
+        PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: submitting row with %d columns", total_columns);
+        add_tuple_to_result(total_columns);
+    }
+
+    current_column_index = 0;
+    PGX_LOG(RUNTIME, DEBUG, "TableBuilder::nextRow: reset column index to 0 for row %ld", row_count);
 }
 
-void TableBuilder::addInt32(bool is_valid, int32_t value) {
-    PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<int32_t>(this, is_valid, value);
-}
-
-void TableBuilder::addBool(bool is_valid, bool value) {
+void TableBuilder::addBool(const bool is_valid, const bool value) {
     PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<bool>(this, is_valid, value);
 }
 
-void TableBuilder::addInt8(bool is_valid, int8_t value) {
+void TableBuilder::addInt8(const bool is_valid, const int8_t value) {
     PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<int8_t>(this, is_valid, value);
 }
 
-void TableBuilder::addInt16(bool is_valid, int16_t value) {
+void TableBuilder::addInt16(const bool is_valid, const int16_t value) {
     PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<int16_t>(this, is_valid, value);
 }
 
-void TableBuilder::addFloat32(bool is_valid, float value) {
+void TableBuilder::addInt32(const bool is_valid, const int32_t value) {
+    PGX_IO(RUNTIME);
+    pgx_lower::runtime::table_builder_add<int32_t>(this, is_valid, value);
+}
+
+void TableBuilder::addInt64(const bool is_valid, const int64_t value) {
+    PGX_IO(RUNTIME);
+    pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
+}
+
+void TableBuilder::addFloat32(const bool is_valid, const float value) {
     PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<float>(this, is_valid, value);
 }
 
-void TableBuilder::addFloat64(bool is_valid, double value) {
+void TableBuilder::addFloat64(const bool is_valid, const double value) {
     PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<double>(this, is_valid, value);
 }
 
-void TableBuilder::addBinary(bool is_valid, VarLen32 value) {
+void TableBuilder::addDecimal(const bool is_valid, const __int128 value) {
     PGX_IO(RUNTIME);
-    pgx_lower::runtime::table_builder_add<runtime::VarLen32>(this, is_valid, value);
-}
-
-void TableBuilder::setNextDecimalScale(int32_t scale) {
-    PGX_IO(RUNTIME);
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_setnextdecimalscale: scale=%d", scale);
-    this->next_decimal_scale = scale;
-}
-
-void TableBuilder::addDecimal(bool is_valid, __int128 value) {
-    PGX_IO(RUNTIME);
-    PGX_LOG(RUNTIME, IO, "rt_tablebuilder_adddecimal IN: is_valid=%s", is_valid ? "true" : "false");
 
     if (!is_valid) {
         pgx_lower::runtime::table_builder_add_numeric(this, true, nullptr);
@@ -385,32 +372,31 @@ void TableBuilder::addDecimal(bool is_valid, __int128 value) {
     }
 }
 
-// Fixed-size binary type
-void TableBuilder::addFixedSized(bool is_valid, int64_t value) {
+void TableBuilder::addFixedSized(const bool is_valid, const int64_t value) {
     PGX_IO(RUNTIME);
     pgx_lower::runtime::table_builder_add<int64_t>(this, is_valid, value);
 }
 
-void TableBuilder::destroy(void* builder) {
+void TableBuilder::addBinary(const bool is_valid, const VarLen32 value) {
     PGX_IO(RUNTIME);
-    // Note: We don't need to do anything here because the MemoryContextCallback
-    // will handle cleanup when the memory context is reset/deleted.
-    // Calling destructor or pfree here would cause double-free issues.
-    PGX_LOG(RUNTIME, DEBUG, "rt_tablebuilder_destroy called - cleanup handled by MemoryContextCallback");
+    pgx_lower::runtime::table_builder_add<VarLen32>(this, is_valid, value);
 }
 
-// Memory context callback for DataSourceIterator cleanup
+void TableBuilder::setNextDecimalScale(int32_t scale) {
+    PGX_IO(RUNTIME);
+    this->next_decimal_scale = scale;
+}
+
 static void cleanup_datasourceiterator_callback(void* arg) {
     PGX_IO(RUNTIME);
-    const auto iter = static_cast<DataSourceIterator*>(arg);
-    if (iter) {
-        iter->~DataSourceIterator(); // Explicit destructor call for PostgreSQL longjmp safety
+    if (const auto iter = static_cast<DataSourceIterator*>(arg)) {
+        iter->~DataSourceIterator();
     }
 }
 
-// TODO: This function is uhhh... pretty gross. It should be returning iter, not a boolean. I also cannot be bothered
+// TODO: This function is uh... pretty gross. It should be returning iter, not a boolean. I also cannot be bothered
 // fixing it now since it does its job and its just an abstracted away black box
-static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSourceIterator* iter) {
+static bool decode_table_specification(VarLen32 varlen32_param, DataSourceIterator* iter) {
     PGX_IO(RUNTIME);
     uint32_t actual_len = varlen32_param.getLen();
     const char* json_spec = varlen32_param.data();
@@ -429,6 +415,7 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
 
         if (json_string[0] == '{') {
             PGX_LOG(RUNTIME, DEBUG, "decode_table_specification: valid JSON detected, parsing...");
+            // ReSharper disable once CppUseStructuredBinding
             TableSpec spec = parse_table_spec(json_string.c_str());
 
             if (!spec.table_name.empty()) {
@@ -436,7 +423,7 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
                 if (pipe_pos != std::string::npos) {
                     std::string oid_str = spec.table_name.substr(pipe_pos + 5); // Skip "|oid:"
                     Oid table_oid = static_cast<Oid>(std::stoul(oid_str));
-                    ::g_jit_table_oid = table_oid;
+                    g_jit_table_oid = table_oid;
                     PGX_LOG(RUNTIME, DEBUG, "Extracted table OID %u from spec", table_oid);
 
                     spec.table_name = spec.table_name.substr(0, pipe_pos);
@@ -534,7 +521,7 @@ static bool decode_table_specification(runtime::VarLen32 varlen32_param, DataSou
 // BatchStorage Helper Functions
 // ============================================================================
 
-static size_t calculate_batch_capacity(TupleDesc tupleDesc) {
+static size_t calculate_batch_capacity(const TupleDesc tupleDesc) {
     PGX_IO(RUNTIME);
     extern int work_mem;
     const size_t work_mem_bytes = static_cast<size_t>(work_mem) * 1024L;
@@ -570,7 +557,7 @@ static size_t calculate_batch_capacity(TupleDesc tupleDesc) {
     return max_rows;
 }
 
-static BatchStorage* create_batch_storage(TupleDesc tupleDesc, size_t num_cols, size_t capacity) {
+static BatchStorage* create_batch_storage(const TupleDesc tupleDesc, const size_t num_cols, const size_t capacity) {
     PGX_IO(RUNTIME);
 
     // ReSharper disable once CppStaticAssertFailure
@@ -588,17 +575,23 @@ static BatchStorage* create_batch_storage(TupleDesc tupleDesc, size_t num_cols, 
 
     batch->column_values = static_cast<Datum**>(palloc(num_cols * sizeof(Datum*)));
     batch->column_nulls = static_cast<bool**>(palloc(num_cols * sizeof(bool*)));
+    batch->string_lengths = static_cast<int32_t**>(palloc(num_cols * sizeof(int32_t*)));
+    batch->string_data_ptrs = static_cast<uint8_t***>(palloc(num_cols * sizeof(uint8_t**)));
 
     for (size_t col = 0; col < num_cols; col++) {
-        batch->column_values[col] = (Datum*)palloc(capacity * sizeof(Datum));
-        batch->column_nulls[col] = (bool*)palloc(capacity * sizeof(bool));
+        batch->column_values[col] = static_cast<Datum*>(palloc(capacity * sizeof(Datum)));
+        batch->column_nulls[col] = static_cast<bool*>(palloc(capacity * sizeof(bool)));
         memset(batch->column_nulls[col], true, capacity * sizeof(bool));
+
+        batch->string_lengths[col] = static_cast<int32_t*>(palloc(capacity * sizeof(int32_t)));
+        batch->string_data_ptrs[col] = static_cast<uint8_t**>(palloc(capacity * sizeof(uint8_t*)));
+        memset(batch->string_lengths[col], 0, capacity * sizeof(int32_t));
+        memset(batch->string_data_ptrs[col], 0, capacity * sizeof(uint8_t*));
     }
 
     MemoryContextSwitchTo(oldContext);
 
-    PGX_LOG(RUNTIME, DEBUG, "create_batch_storage: created batch with capacity=%zu, columns=%zu, context=%p", capacity,
-            num_cols, batchContext);
+    PGX_LOG(RUNTIME, DEBUG, "Created batch with capacity=%zu, columns=%zu, context=%p", capacity, num_cols, batchContext);
 
     return batch;
 }
@@ -608,8 +601,7 @@ static void destroy_batch_storage(const BatchStorage* batch) {
     if (!batch) {
         return;
     }
-    PGX_LOG(RUNTIME, DEBUG, "destroy_batch_storage: deleting context %p with %zu rows", batch->batchContext,
-            batch->num_rows);
+    PGX_LOG(RUNTIME, DEBUG, "Deleting context %p with %zu rows", batch->batchContext, batch->num_rows);
     MemoryContextDelete(batch->batchContext);
 }
 
@@ -624,15 +616,14 @@ static void* open_table_connection(const std::string& table_name) {
     return table_handle;
 }
 
-DataSourceIteration*
-DataSourceIteration::start(ExecutionContext* executionContext, const runtime::VarLen32 varlen32_param) {
+DataSourceIteration* DataSourceIteration::start(ExecutionContext* executionContext, const VarLen32 varlen32_param) {
     PGX_IO(RUNTIME);
     const MemoryContext oldcontext = MemoryContextSwitchTo(CurrentMemoryContext);
 
     void* iter_memory = palloc(sizeof(DataSourceIterator));
     const auto iter = new (iter_memory) DataSourceIterator();
 
-    const auto callback = (MemoryContextCallback*)palloc(sizeof(MemoryContextCallback));
+    const auto callback = static_cast<MemoryContextCallback*>(palloc(sizeof(MemoryContextCallback)));
     callback->func = cleanup_datasourceiterator_callback;
     callback->arg = iter;
     MemoryContextRegisterResetCallback(CurrentMemoryContext, callback);
@@ -668,8 +659,8 @@ bool DataSourceIteration::isValid() {
     }
 
     if (iter->batch && iter->current_row_in_batch < iter->batch->num_rows) {
-        PGX_LOG(RUNTIME, DEBUG, "Returning true - current_row=%zu in batch with %zu rows",
-                iter->current_row_in_batch, iter->batch->num_rows);
+        PGX_LOG(RUNTIME, DEBUG, "Returning true - current_row=%zu in batch with %zu rows", iter->current_row_in_batch,
+                iter->batch->num_rows);
         return true;
     }
     if (iter->batch) {
@@ -691,8 +682,7 @@ bool DataSourceIteration::isValid() {
 
     const size_t num_cols = iter->columns.size(); // Use JSON column count
     iter->batch = create_batch_storage(tupleDesc, num_cols, capacity);
-    PGX_LOG(RUNTIME, DEBUG, "Created new batch with capacity %zu, JSON columns %zu",
-            capacity, num_cols);
+    PGX_LOG(RUNTIME, DEBUG, "Created new batch with capacity %zu, JSON columns %zu", capacity, num_cols);
 
     Datum temp_values[MaxTupleAttributeNumber];
     bool temp_nulls[MaxTupleAttributeNumber];
@@ -701,23 +691,21 @@ bool DataSourceIteration::isValid() {
         const int64_t read_result = read_next_tuple_from_table(iter->table_handle);
 
         if (read_result != 1) {
-            // End of table
             PGX_LOG(RUNTIME, DEBUG, "End of table after %zu rows", iter->batch->num_rows);
             break;
         }
 
-        // Extract ALL columns from current tuple using heap_deform_tuple
-        const auto tuple = static_cast<HeapTuple>(g_current_tuple_passthrough.originalTuple);
+        const auto tuple = g_current_tuple_passthrough.originalTuple;
         if (!tuple) {
-            PGX_ERROR("rt_datasourceiteration_isvalid: g_current_tuple_passthrough.originalTuple is NULL");
+            PGX_ERROR("g_current_tuple_passthrough.originalTuple is NULL");
             break;
         }
 
         heap_deform_tuple(tuple, tupleDesc, temp_values, temp_nulls);
         const size_t row_idx = iter->batch->num_rows;
 
-        // Store columns in JSON order (from scan_source), mapping to PostgreSQL physical columns
         for (size_t json_col_idx = 0; json_col_idx < iter->columns.size(); json_col_idx++) {
+            // ReSharper disable once CppUseStructuredBinding
             const auto& col_spec = iter->columns[json_col_idx];
             const int pg_col_idx = get_column_position(iter->table_name, col_spec.name);
 
@@ -729,14 +717,36 @@ bool DataSourceIteration::isValid() {
 
             const Form_pg_attribute attr = TupleDescAttr(tupleDesc, pg_col_idx);
 
-            iter->batch->column_values[json_col_idx][row_idx] = datumCopy(temp_values[pg_col_idx], attr->attbyval, attr->attlen);
-            // Bit goofy - requires inverting because lingodb stores the opposite null flags...
-            iter->batch->column_nulls[json_col_idx][row_idx] = !temp_nulls[pg_col_idx];
+            if (col_spec.type == ::ColumnType::STRING) {
+                if (temp_nulls[pg_col_idx]) {
+                    iter->batch->string_lengths[json_col_idx][row_idx] = 0;
+                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = nullptr;
+                } else {
+                    const auto pg_text = DatumGetTextPP(temp_values[pg_col_idx]);
+                    const char* str_data = VARDATA_ANY(pg_text);
+                    const int str_len = VARSIZE_ANY_EXHDR(pg_text);
 
-            PGX_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] Datum=%lu null=%s",
-                    row_idx, json_col_idx, col_spec.name.c_str(), pg_col_idx,
-                    static_cast<unsigned long>(iter->batch->column_values[json_col_idx][row_idx]),
-                    temp_nulls[pg_col_idx] ? "true" : "false");
+                    const auto copied_data = static_cast<uint8_t*>(MemoryContextAlloc(iter->batch->batchContext, str_len));
+                    memcpy(copied_data, str_data, str_len);
+
+                    iter->batch->string_lengths[json_col_idx][row_idx] = str_len;
+                    iter->batch->string_data_ptrs[json_col_idx][row_idx] = copied_data;
+
+                    PGX_LOG(RUNTIME, TRACE, "Row %zu: col[%zu]='%s' STRING: len=%d, data=%p", row_idx, json_col_idx,
+                            col_spec.name.c_str(), str_len, copied_data);
+                }
+            } else {
+                iter->batch->column_values[json_col_idx][row_idx] = datumCopy(temp_values[pg_col_idx], attr->attbyval,
+                                                                              attr->attlen);
+
+                PGX_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] Datum=%lu null=%s", row_idx,
+                        json_col_idx, col_spec.name.c_str(), pg_col_idx,
+                        static_cast<unsigned long>(iter->batch->column_values[json_col_idx][row_idx]),
+                        temp_nulls[pg_col_idx] ? "true" : "false");
+            }
+
+            // A bit goofy - requires inverting because lingodb stores the opposite null flags...
+            iter->batch->column_nulls[json_col_idx][row_idx] = !temp_nulls[pg_col_idx];
         }
 
         iter->batch->num_rows++;
@@ -756,7 +766,7 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
     PGX_IO(RUNTIME);
     auto* row_data = info;
     if (!row_data) {
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: row_data is NULL");
+        PGX_LOG(RUNTIME, DEBUG, "row_data is NULL");
         return;
     }
 
@@ -767,10 +777,10 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
     }
 
     const size_t row_idx = iter->current_row_in_batch;
-    const size_t num_columns = iter->columns.size(); // Use JSON column count
+    const size_t num_columns = iter->columns.size();
 
-    PGX_LOG(RUNTIME, DEBUG, "Accessing row %zu/%zu from batch (batch has %zu JSON columns)",
-            row_idx, iter->batch->num_rows, num_columns);
+    PGX_LOG(RUNTIME, DEBUG, "Accessing row %zu/%zu from batch (batch has %zu JSON columns)", row_idx,
+            iter->batch->num_rows, num_columns);
 
     // RecordBatchInfo structure (from lingodb):
     // [numRows: size_t][columnInfo[0]...][columnInfo[1]...]...
@@ -788,14 +798,31 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
 
         size_t* column_info_ptr = &row_data_ptr[1 + col * COLUMN_INFO_SIZE];
 
-        column_info_ptr[COLUMN_OFFSET_IDX] = 0; // offset (unused for columnar)
+        column_info_ptr[COLUMN_OFFSET_IDX] = 0;
         column_info_ptr[VALID_MULTIPLIER_IDX] = 0; // validMultiplier (unused)
 
         column_info_ptr[VALID_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_nulls[col][row_idx]);
-        column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_values[col][row_idx]);
 
-        column_info_ptr[VARLEN_BUFFER_IDX] = 0;
+        // For string columns, pass Arrow format pointers (length and data pointer)
+        // For simple types, Datum contains the value directly
+        if (iter->columns[col].type == ::ColumnType::STRING) {
+            // Arrow format: DATA_BUFFER points to int32_t length, VARLEN_BUFFER points to uint8_t* data pointer
+            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->string_lengths[col][row_idx]);
+            column_info_ptr[VARLEN_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->string_data_ptrs[col][row_idx]);
 
+            PGX_LOG(RUNTIME, TRACE, "access() col=%zu STRING (Arrow format):", col);
+            PGX_LOG(RUNTIME, TRACE, "  Length: %d (at %p)", iter->batch->string_lengths[col][row_idx],
+                    &iter->batch->string_lengths[col][row_idx]);
+            PGX_LOG(RUNTIME, TRACE, "  Data pointer: %p (at %p)", iter->batch->string_data_ptrs[col][row_idx],
+                    &iter->batch->string_data_ptrs[col][row_idx]);
+            PGX_LOG(RUNTIME, TRACE, "  DATA_BUFFER_IDX → %p", reinterpret_cast<void*>(column_info_ptr[DATA_BUFFER_IDX]));
+            PGX_LOG(RUNTIME, TRACE, "  VARLEN_BUFFER_IDX → %p",
+                    reinterpret_cast<void*>(column_info_ptr[VARLEN_BUFFER_IDX]));
+        } else {
+            // Pass address of Datum itself (contains value)
+            column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_values[col][row_idx]);
+            column_info_ptr[VARLEN_BUFFER_IDX] = 0;
+        }
     }
 
     __sync_synchronize();
@@ -809,11 +836,10 @@ void DataSourceIteration::next() {
         return;
     }
 
-    PGX_LOG(RUNTIME, DEBUG, "next(): advancing from row %zu to %zu (batch has %zu rows)",
-            iter->current_row_in_batch, iter->current_row_in_batch + 1, iter->batch->num_rows);
+    PGX_LOG(RUNTIME, DEBUG, "next(): advancing from row %zu to %zu (batch has %zu rows)", iter->current_row_in_batch,
+            iter->current_row_in_batch + 1, iter->batch->num_rows);
 
     iter->current_row_in_batch++;
-    // Note: isValid() will check if current_row_in_batch >= num_rows and fetch next batch if needed
 }
 
 void DataSourceIteration::end(DataSourceIteration* iterator) {
@@ -839,12 +865,12 @@ void DataSourceIteration::end(DataSourceIteration* iterator) {
 // Global context functions
 void* getExecutionContext() {
     PGX_IO(RUNTIME);
-    return ::rt_get_execution_context();
+    return rt_get_execution_context();
 }
 
 void setExecutionContext(void* context) {
     PGX_IO(RUNTIME);
-    ::rt_set_execution_context(context);
+    rt_set_execution_context(context);
 }
 
 } // namespace runtime

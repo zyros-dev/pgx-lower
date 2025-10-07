@@ -43,16 +43,16 @@ class TableBuilder {
    static void destroy(TableBuilder* tb);
    void* build(); // was: std::shared_ptr<arrow::Table>* build();
 
-   void addBool(bool isValid, bool value);
-   void addInt8(bool isValid, int8_t);
-   void addInt16(bool isValid, int16_t);
-   void addInt32(bool isValid, int32_t);
-   void addInt64(bool isValid, int64_t);
-   void addFloat32(bool isValid, float);
-   void addFloat64(bool isValid, double);
-   void addDecimal(bool isValid, __int128);
-   void addFixedSized(bool isValid, int64_t);
-   void addBinary(bool isValid, runtime::VarLen32);
+   void addBool(bool is_valid, bool value);
+   void addInt8(bool is_valid, int8_t);
+   void addInt16(bool is_valid, int16_t);
+   void addInt32(bool is_valid, int32_t);
+   void addInt64(bool is_valid, int64_t);
+   void addFloat32(bool is_valid, float);
+   void addFloat64(bool is_valid, double);
+   void addDecimal(bool is_valid, __int128);
+   void addFixedSized(bool is_valid, int64_t);
+   void addBinary(bool is_valid, runtime::VarLen32);
    void setNextDecimalScale(int32_t scale);
    void nextRow();
 };
