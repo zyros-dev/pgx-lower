@@ -109,7 +109,7 @@ struct DataSourceIterator {
     std::vector<ColumnSpec> columns;
 
     BatchStorage* batch;
-    bool batch_exhausted;
+    size_t current_row_in_batch;
 
     int32_t current_id;
     bool current_id_is_null;
@@ -570,7 +570,7 @@ static size_t calculate_batch_capacity(TupleDesc tupleDesc) {
     return max_rows;
 }
 
-static BatchStorage* create_batch_storage(TupleDesc tupleDesc, size_t capacity) {
+static BatchStorage* create_batch_storage(TupleDesc tupleDesc, size_t num_cols, size_t capacity) {
     PGX_IO(RUNTIME);
 
     // ReSharper disable once CppStaticAssertFailure
@@ -586,11 +586,10 @@ static BatchStorage* create_batch_storage(TupleDesc tupleDesc, size_t capacity) 
     batch->capacity = capacity;
     batch->num_rows = 0;
 
-    const int num_cols = tupleDesc->natts;
     batch->column_values = static_cast<Datum**>(palloc(num_cols * sizeof(Datum*)));
     batch->column_nulls = static_cast<bool**>(palloc(num_cols * sizeof(bool*)));
 
-    for (int col = 0; col < num_cols; col++) {
+    for (size_t col = 0; col < num_cols; col++) {
         batch->column_values[col] = (Datum*)palloc(capacity * sizeof(Datum));
         batch->column_nulls[col] = (bool*)palloc(capacity * sizeof(bool));
         memset(batch->column_nulls[col], true, capacity * sizeof(bool));
@@ -598,7 +597,7 @@ static BatchStorage* create_batch_storage(TupleDesc tupleDesc, size_t capacity) 
 
     MemoryContextSwitchTo(oldContext);
 
-    PGX_LOG(RUNTIME, DEBUG, "create_batch_storage: created batch with capacity=%zu, columns=%d, context=%p", capacity,
+    PGX_LOG(RUNTIME, DEBUG, "create_batch_storage: created batch with capacity=%zu, columns=%zu, context=%p", capacity,
             num_cols, batchContext);
 
     return batch;
@@ -642,7 +641,7 @@ DataSourceIteration::start(ExecutionContext* executionContext, const runtime::Va
 
     iter->context = executionContext;
     iter->batch = nullptr;
-    iter->batch_exhausted = false;
+    iter->current_row_in_batch = 0;
 
     iter->current_value = 0;
     iter->current_is_null = true;
@@ -668,14 +667,16 @@ bool DataSourceIteration::isValid() {
         return false;
     }
 
-    if (iter->batch && iter->batch->num_rows > 0 && !iter->batch_exhausted) {
-        PGX_LOG(RUNTIME, DEBUG, "Returning true - batch has %zu rows", iter->batch->num_rows);
+    if (iter->batch && iter->current_row_in_batch < iter->batch->num_rows) {
+        PGX_LOG(RUNTIME, DEBUG, "Returning true - current_row=%zu in batch with %zu rows",
+                iter->current_row_in_batch, iter->batch->num_rows);
         return true;
     }
     if (iter->batch) {
-        PGX_LOG(RUNTIME, DEBUG, "Destroying exhausted batch");
+        PGX_LOG(RUNTIME, DEBUG, "Destroying exhausted batch (had %zu rows)", iter->batch->num_rows);
         destroy_batch_storage(iter->batch);
         iter->batch = nullptr;
+        iter->current_row_in_batch = 0;
     }
 
     struct PostgreSQLTableHandle {
@@ -688,8 +689,10 @@ bool DataSourceIteration::isValid() {
     const auto tupleDesc = static_cast<TupleDesc>(table_handle->tupleDesc);
     const size_t capacity = calculate_batch_capacity(tupleDesc);
 
-    iter->batch = create_batch_storage(tupleDesc, capacity);
-    PGX_LOG(RUNTIME, DEBUG, "Created new batch with capacity %zu", capacity);
+    const size_t num_cols = iter->columns.size(); // Use JSON column count
+    iter->batch = create_batch_storage(tupleDesc, num_cols, capacity);
+    PGX_LOG(RUNTIME, DEBUG, "Created new batch with capacity %zu, JSON columns %zu",
+            capacity, num_cols);
 
     Datum temp_values[MaxTupleAttributeNumber];
     bool temp_nulls[MaxTupleAttributeNumber];
@@ -712,15 +715,28 @@ bool DataSourceIteration::isValid() {
 
         heap_deform_tuple(tuple, tupleDesc, temp_values, temp_nulls);
         const size_t row_idx = iter->batch->num_rows;
-        for (int col = 0; col < tupleDesc->natts; col++) {
-            const Form_pg_attribute attr = TupleDescAttr(tupleDesc, col);
 
-            iter->batch->column_values[col][row_idx] = datumCopy(temp_values[col], attr->attbyval, attr->attlen);
-            iter->batch->column_nulls[col][row_idx] = temp_nulls[col];
+        // Store columns in JSON order (from scan_source), mapping to PostgreSQL physical columns
+        for (size_t json_col_idx = 0; json_col_idx < iter->columns.size(); json_col_idx++) {
+            const auto& col_spec = iter->columns[json_col_idx];
+            const int pg_col_idx = get_column_position(iter->table_name, col_spec.name);
 
-            PGX_LOG(RUNTIME, TRACE, "Row %zu col %d: Datum=%lu null=%s", row_idx, col,
-                    static_cast<unsigned long>(iter->batch->column_values[col][row_idx]),
-                    temp_nulls[col] ? "true" : "false");
+            if (pg_col_idx < 0 || pg_col_idx >= tupleDesc->natts) {
+                PGX_ERROR("Column %s not found in table %s", col_spec.name.c_str(), iter->table_name.c_str());
+                iter->batch->column_nulls[json_col_idx][row_idx] = true;
+                continue;
+            }
+
+            const Form_pg_attribute attr = TupleDescAttr(tupleDesc, pg_col_idx);
+
+            iter->batch->column_values[json_col_idx][row_idx] = datumCopy(temp_values[pg_col_idx], attr->attbyval, attr->attlen);
+            // Bit goofy - requires inverting because lingodb stores the opposite null flags...
+            iter->batch->column_nulls[json_col_idx][row_idx] = !temp_nulls[pg_col_idx];
+
+            PGX_LOG(RUNTIME, TRACE, "Row %zu: JSON_col[%zu]='%s' from PG_col[%d] Datum=%lu null=%s",
+                    row_idx, json_col_idx, col_spec.name.c_str(), pg_col_idx,
+                    static_cast<unsigned long>(iter->batch->column_values[json_col_idx][row_idx]),
+                    temp_nulls[pg_col_idx] ? "true" : "false");
         }
 
         iter->batch->num_rows++;
@@ -728,12 +744,11 @@ bool DataSourceIteration::isValid() {
 
     if (iter->batch->num_rows == 0) {
         PGX_LOG(RUNTIME, DEBUG, "Batch is empty, end of table");
-        iter->batch_exhausted = true;
         return false;
     }
 
-    iter->batch_exhausted = false;
-    PGX_LOG(RUNTIME, DEBUG, "Batch filled with %zu rows", iter->batch->num_rows);
+    iter->current_row_in_batch = 0;
+    PGX_LOG(RUNTIME, DEBUG, "Batch filled with %zu rows, current_row reset to 0", iter->batch->num_rows);
     return true;
 }
 
@@ -746,21 +761,22 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
     }
 
     const auto* iter = reinterpret_cast<DataSourceIterator*>(this);
-    if (!iter || !iter->batch || iter->batch->num_rows == 0) {
-        PGX_LOG(RUNTIME, DEBUG, "Invalid iterator or empty batch");
+    if (!iter->batch || iter->current_row_in_batch >= iter->batch->num_rows) {
+        PGX_LOG(RUNTIME, DEBUG, "Invalid iterator, empty batch, or current_row out of range");
         return;
     }
 
-    PGX_LOG(RUNTIME, DEBUG, "Batch has %zu rows, %d columns", iter->batch->num_rows, iter->batch->tupleDesc->natts);
+    const size_t row_idx = iter->current_row_in_batch;
+    const size_t num_columns = iter->columns.size(); // Use JSON column count
+
+    PGX_LOG(RUNTIME, DEBUG, "Accessing row %zu/%zu from batch (batch has %zu JSON columns)",
+            row_idx, iter->batch->num_rows, num_columns);
 
     // RecordBatchInfo structure (from lingodb):
     // [numRows: size_t][columnInfo[0]...][columnInfo[1]...]...
     // Each columnInfo has 5 fields: offset, validMultiplier, validBuffer, dataBuffer, varLenBuffer
     const auto row_data_ptr = reinterpret_cast<size_t*>(row_data);
-    row_data_ptr[0] = iter->batch->num_rows; // Set number of rows in batch
-
-    const size_t num_columns = iter->batch->tupleDesc->natts;
-    PGX_LOG(RUNTIME, DEBUG, "Handling %zu columns", num_columns);
+    row_data_ptr[0] = 1;
 
     for (size_t col = 0; col < num_columns; ++col) {
         constexpr size_t COLUMN_OFFSET_IDX = 0;
@@ -775,26 +791,29 @@ void DataSourceIteration::access(RecordBatchInfo* info) {
         column_info_ptr[COLUMN_OFFSET_IDX] = 0; // offset (unused for columnar)
         column_info_ptr[VALID_MULTIPLIER_IDX] = 0; // validMultiplier (unused)
 
-        column_info_ptr[VALID_BUFFER_IDX] = reinterpret_cast<size_t>(iter->batch->column_nulls[col]);
-        column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(iter->batch->column_values[col]);
+        column_info_ptr[VALID_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_nulls[col][row_idx]);
+        column_info_ptr[DATA_BUFFER_IDX] = reinterpret_cast<size_t>(&iter->batch->column_values[col][row_idx]);
 
-        // TODO: For varlena types (strings), we may need special handling here
-        // For now, Datum IS the pointer for varlena types
         column_info_ptr[VARLEN_BUFFER_IDX] = 0;
 
-        PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access: column %zu: values=%p nulls=%p", col,
-                iter->batch->column_values[col], iter->batch->column_nulls[col]);
     }
 
-    PGX_LOG(RUNTIME, DEBUG, "rt_datasourceiteration_access completed successfully");
     __sync_synchronize();
 }
 
 void DataSourceIteration::next() {
     PGX_IO(RUNTIME);
     auto* iter = reinterpret_cast<DataSourceIterator*>(this);
-    iter->batch_exhausted = true;
-    PGX_LOG(RUNTIME, DEBUG, "Marked batch as exhausted");
+    if (!iter->batch) {
+        PGX_LOG(RUNTIME, DEBUG, "next() called with no batch");
+        return;
+    }
+
+    PGX_LOG(RUNTIME, DEBUG, "next(): advancing from row %zu to %zu (batch has %zu rows)",
+            iter->current_row_in_batch, iter->current_row_in_batch + 1, iter->batch->num_rows);
+
+    iter->current_row_in_batch++;
+    // Note: isValid() will check if current_row_in_batch >= num_rows and fetch next batch if needed
 }
 
 void DataSourceIteration::end(DataSourceIteration* iterator) {
