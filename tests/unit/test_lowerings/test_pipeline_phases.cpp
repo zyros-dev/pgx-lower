@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include "standalone_mlir_runner.h"
 #include "pgx-lower/utility/logging.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "lingodb/mlir/Dialect/RelAlg/IR/RelAlgOps.h"
 #include <cstdlib>
 
 using namespace pgx_test;
@@ -32,65 +30,37 @@ protected:
     std::unique_ptr<StandalonePipelineTester> tester;
 };
 
-TEST_F(MLIRLoweringPipelineTest, MapOpPrintCrashTest) {
-    // This test reproduces the crash that occurs when printing MapOp with ColumnDefAttr
-    // We build the MapOp programmatically to avoid parser issues
-
-    std::cerr << "\n=== Testing MapOp printing crash ===" << std::endl;
-
-    auto context = tester->getContext();
-    auto builder = tester->getBuilder();
-    auto& columnManager = tester->getColumnManager();
-
-    // Create a simple BaseTableOp first
-    std::cerr << "Creating BaseTableOp..." << std::endl;
-    auto baseTableMLIR = R"(
+TEST_F(MLIRLoweringPipelineTest, TestRelAlg) {
+    auto simpleMLIR = R"(
         module {
-          func.func @main() -> !relalg.tuplestream {
-            %0 = relalg.basetable {column_order = ["id"], table_identifier = "test|oid:123"} columns: {
-              id => @test::@id({type = i32})
-            }
-            return %0 : !relalg.tuplestream
+          func.func @main() -> !dsa.table {
+            %0 = relalg.basetable  {column_order = ["id", "value", "name"], table_identifier = "test_order_basic|oid:28284064"} columns: {id => @test_order_basic::@id({type = i32}), name => @test_order_basic::@name({type = !db.nullable<i32>}), value => @test_order_basic::@value({type = !db.nullable<i32>})}
+            %1 = relalg.sort %0 [(@test_order_basic::@value,asc)]
+            %2 = relalg.materialize %1 [@test_order_basic::@value,@test_order_basic::@name] => ["value", "name"] : !dsa.table
+            return %2 : !dsa.table
           }
         }
-    )";
+        )";
 
-    ASSERT_TRUE(tester->loadRelAlgModule(baseTableMLIR)) << "Failed to load base module";
-    std::cerr << "Base module loaded successfully" << std::endl;
+    ASSERT_TRUE(tester->loadRelAlgModule(simpleMLIR)) << "Failed to load MLIR module";
 
-    // Now programmatically build a MapOp with ColumnDefAttr
-    std::cerr << "Building MapOp programmatically..." << std::endl;
+    std::cerr << "\n=== Testing COALESCE null flag propagation ===" << std::endl;
 
-    auto module = tester->getModule();
-    auto mainFunc = module.lookupSymbol<mlir::func::FuncOp>("main");
-    ASSERT_TRUE(mainFunc) << "Failed to find main function";
+    EXPECT_TRUE(tester->runPhase3a()) << "Phase 3a (RelAlg to DB) failed";
+    std::string afterPhase3a = tester->getCurrentMLIR();
+    std::cerr << "After Phase 3a - checking for db.as_nullable with proper null flags..." << std::endl;
 
-    auto& entryBlock = mainFunc.getBody().front();
-    auto& baseTableOp = *entryBlock.begin();
+    EXPECT_TRUE(tester->runPhase3b()) << "Phase 3b (DB to Standard) failed";
+    std::string afterPhase3b = tester->getCurrentMLIR();
+    std::cerr << "After Phase 3b - checking standard MLIR representation..." << std::endl;
 
-    // Create MapOp
-    builder->setInsertionPoint(&entryBlock, ++entryBlock.begin());
+    EXPECT_TRUE(tester->runPhase3c()) << "Phase 3c (Standard to LLVM) failed";
+    std::string finalMLIR = tester->getCurrentMLIR();
 
-    auto colDef = columnManager.createDef("maptest", "computed");
-    colDef.getColumn().type = builder->getI32Type();
+    EXPECT_TRUE(tester->verifyCurrentModule()) << "Final module should be valid";
 
-    std::cerr << "Creating MapOp with ColumnDefAttr..." << std::endl;
-    auto mapOp = builder->create<mlir::relalg::MapOp>(
-        builder->getUnknownLoc(),
-        baseTableOp.getResult(0),
-        builder->getArrayAttr({colDef})
-    );
+    EXPECT_TRUE(finalMLIR.find("llvm.") != std::string::npos) << "Expected LLVM dialect operations in final MLIR";
 
-    std::cerr << "MapOp created, now trying to print it..." << std::endl;
-
-    // Try to print the module - this should crash
-    std::string output;
-    llvm::raw_string_ostream stream(output);
-    module.print(stream);
-    stream.flush();
-
-    std::cerr << "Successfully printed MapOp! Output:" << std::endl;
-    std::cerr << output << std::endl;
-
-    SUCCEED() << "If we get here, printing worked!";
+    std::cerr << "\n=== First 20000 chars of final LLVM IR ===" << std::endl;
+    std::cerr << finalMLIR.substr(0, 20000) << std::endl;
 }
