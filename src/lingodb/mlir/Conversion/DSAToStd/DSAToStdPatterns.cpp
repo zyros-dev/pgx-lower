@@ -1,6 +1,8 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "lingodb/mlir/Dialect/DSA/IR/DSAOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -9,6 +11,7 @@
 
 #include "runtime-defs/Hashtable.h"
 #include "runtime-defs/LazyJoinHashtable.h"
+#include "runtime-defs/PgSortRuntime.h"
 #include "runtime-defs/TableBuilder.h"
 #include "runtime-defs/Vector.h"
 using namespace mlir;
@@ -72,6 +75,61 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
             rewriter.replaceOp(createOp, casted);
             return success();
          }
+      } else if (auto sortStateType = createOp.getDs().getType().dyn_cast<mlir::dsa::SortStateType>()) {
+         auto typeOids = sortStateType.getTypeOids();
+         auto typmods = sortStateType.getTypmods();
+         auto sortOpOids = sortStateType.getSortOpOids();
+         auto directions = sortStateType.getSortDirections();
+         int32_t numCols = typeOids.size();
+
+         auto i32Ty = rewriter.getI32Type();
+         auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
+         auto numColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty,
+                                                                 rewriter.getI32IntegerAttr(numCols));
+
+         auto typeOidsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i32Ty, numColsConst);
+         auto typmodsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i32Ty, numColsConst);
+         auto sortOpOidsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i32Ty, numColsConst);
+         auto directionsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i32Ty, numColsConst);
+         for (int i = 0; i < numCols; i++) {
+            auto idx = rewriter.create<arith::ConstantOp>(loc, i32Ty,
+                                                           rewriter.getI32IntegerAttr(i));
+
+            // typeOids[i]
+            auto typeOidPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i32Ty,
+                                                           typeOidsArray, ValueRange{idx});
+            auto typeOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty,
+                                                                  typeOids[i].cast<IntegerAttr>());
+            rewriter.create<LLVM::StoreOp>(loc, typeOidVal, typeOidPtr);
+
+            // typmods[i]
+            auto typmodPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i32Ty,
+                                                          typmodsArray, ValueRange{idx});
+            auto typmodVal = rewriter.create<arith::ConstantOp>(loc, i32Ty,
+                                                                 typmods[i].cast<IntegerAttr>());
+            rewriter.create<LLVM::StoreOp>(loc, typmodVal, typmodPtr);
+
+            // sortOpOids[i]
+            auto sortOpOidPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i32Ty,
+                                                             sortOpOidsArray, ValueRange{idx});
+            auto sortOpOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty,
+                                                                    sortOpOids[i].cast<IntegerAttr>());
+            rewriter.create<LLVM::StoreOp>(loc, sortOpOidVal, sortOpOidPtr);
+
+            // directions[i]
+            auto dirPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i32Ty,
+                                                       directionsArray, ValueRange{idx});
+            auto dirVal = rewriter.create<arith::ConstantOp>(loc, i32Ty,
+                                                              directions[i].cast<IntegerAttr>());
+            rewriter.create<LLVM::StoreOp>(loc, dirVal, dirPtr);
+         }
+
+         Value sortstate = rt::PgSortRuntime::beginHeapSort(rewriter, loc)(
+            {typeOidsArray, typmodsArray, sortOpOidsArray, directionsArray, numColsConst}
+         )[0];
+
+         rewriter.replaceOp(createOp, sortstate);
+         return success();
       }
       return failure();
    }
@@ -363,6 +421,78 @@ class FinalizeTBLowering : public OpConversionPattern<mlir::dsa::Finalize> {
       return success();
    }
 };
+class SortStateAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
+   public:
+   using OpConversionPattern<mlir::dsa::Append>::OpConversionPattern;
+   LogicalResult matchAndRewrite(mlir::dsa::Append appendOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+      if (!appendOp.getDs().getType().isa<mlir::dsa::SortStateType>()) {
+         return failure();
+      }
+
+      auto loc = appendOp->getLoc();
+      Value sortstate = adaptor.getDs();
+      Value tuple = adaptor.getVal();
+
+      // Get tuple type info
+      auto tupleType = tuple.getType().cast<TupleType>();
+      int32_t numCols = tupleType.size();
+
+      auto i32Ty = rewriter.getI32Type();
+      auto i64Ty = rewriter.getI64Type();
+      auto i1Ty = rewriter.getI1Type();
+      auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
+
+      auto numColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty,
+                                                              rewriter.getI32IntegerAttr(numCols));
+
+      // Allocate Datum and null arrays
+      auto datumsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i64Ty, numColsConst);
+      auto nullsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i1Ty, numColsConst);
+
+      // Extract each field and store in arrays
+      for (int i = 0; i < numCols; i++) {
+         auto idx = rewriter.create<arith::ConstantOp>(loc, i32Ty,
+                                                        rewriter.getI32IntegerAttr(i));
+
+         // Extract field value using util.get_tuple
+         auto fieldType = tupleType.getType(i);
+         auto field = rewriter.create<util::GetTupleOp>(loc, fieldType, tuple, i);
+
+         // Get datum value (handle nullable types)
+         Value datumVal;
+         Value isNull;
+         if (mlir::isa<mlir::db::NullableType>(field.getType())) {
+            isNull = rewriter.create<mlir::db::IsNullOp>(loc, i1Ty, field);
+            auto baseVal = rewriter.create<mlir::db::NullableGetVal>(loc, field);
+            // Cast to i64 for Datum
+            datumVal = rewriter.create<arith::ExtUIOp>(loc, i64Ty, baseVal);
+         } else {
+            isNull = rewriter.create<arith::ConstantOp>(loc, i1Ty,
+                                                         rewriter.getIntegerAttr(i1Ty, 0));
+            // Cast to i64
+            datumVal = rewriter.create<arith::ExtUIOp>(loc, i64Ty, field);
+         }
+
+         // Store in arrays
+         auto datumPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i64Ty,
+                                                       datumsArray, ValueRange{idx});
+         rewriter.create<LLVM::StoreOp>(loc, datumVal, datumPtr);
+
+         auto nullPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i1Ty,
+                                                      nullsArray, ValueRange{idx});
+         rewriter.create<LLVM::StoreOp>(loc, isNull, nullPtr);
+      }
+
+      // Call putHeapTuple
+      rt::PgSortRuntime::putHeapTuple(rewriter, loc)(
+         {sortstate, datumsArray, nullsArray, numColsConst}
+      );
+
+      rewriter.eraseOp(appendOp);
+      return success();
+   }
+};
+
 class DSAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
    public:
    using OpConversionPattern<mlir::dsa::Append>::OpConversionPattern;
@@ -502,7 +632,7 @@ class SetDecimalScaleLowering : public OpConversionPattern<mlir::dsa::SetDecimal
 } // end namespace
 namespace mlir::dsa {
 void populateDSAToStdPatterns(mlir::TypeConverter& typeConverter, mlir::RewritePatternSet& patterns) {
-   patterns.insert<CreateDsLowering, HtInsertLowering, FinalizeLowering, DSAppendLowering, LazyJHtInsertLowering, FreeLowering>(typeConverter, patterns.getContext());
+   patterns.insert<CreateDsLowering, HtInsertLowering, FinalizeLowering, SortStateAppendLowering, DSAppendLowering, LazyJHtInsertLowering, FreeLowering>(typeConverter, patterns.getContext());
    patterns.insert<CreateTableBuilderLowering, TBAppendLowering, FinalizeTBLowering, NextRowLowering, SetDecimalScaleLowering>(typeConverter, patterns.getContext());
    typeConverter.addConversion([&typeConverter](mlir::dsa::VectorType vectorType) {
       return getLoweredVectorType(vectorType.getContext(), typeConverter.convertType(vectorType.getElementType()));

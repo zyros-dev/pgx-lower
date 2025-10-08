@@ -24,6 +24,9 @@ mlir::Type mlir::dsa::CollectionType::getElementType() const {
       .Case<mlir::dsa::RecordBatchType>([&](mlir::dsa::RecordBatchType t) {
          return mlir::dsa::RecordType::get(t.getContext(), t.getRowType());
       })
+      .Case<mlir::dsa::SortStateType>([&](mlir::dsa::SortStateType t) {
+         return t.getElementType();
+      })
       .Default([](::mlir::Type) { return Type(); });
 }
 bool mlir::dsa::CollectionType::classof(Type t) {
@@ -39,6 +42,9 @@ bool mlir::dsa::CollectionType::classof(Type t) {
          return true;
       })
       .Case<::mlir::dsa::RecordBatchType>([&](::mlir::dsa::RecordBatchType t) {
+         return true;
+      })
+      .Case<::mlir::dsa::SortStateType>([&](::mlir::dsa::SortStateType t) {
          return true;
       })
       .Default([](::mlir::Type) { return false; });

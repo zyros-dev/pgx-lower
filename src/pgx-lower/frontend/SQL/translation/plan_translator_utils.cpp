@@ -138,8 +138,18 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
 
                 if (var->varattno > 0 && var->varattno <= childResult.columns.size()) {
                     const auto& column = childResult.columns[var->varattno - 1];
+
+                    const Oid typeOid = exprType((Node*)var);
+                    const int32_t typmod = exprTypmod((Node*)var);
+                    const Oid sortOpOid = sort->sortOperators ? sort->sortOperators[i] : InvalidOid;
+
                     sortSpecs.push_back(mlir::relalg::SortSpecificationAttr::get(
-                        ctx.builder.getContext(), columnManager.createRef(column.table_name, column.column_name), spec));
+                        ctx.builder.getContext(),
+                        columnManager.createRef(column.table_name, column.column_name),
+                        spec,
+                        typeOid,
+                        typmod,
+                        sortOpOid));
                 }
             }
             break;

@@ -131,7 +131,15 @@ static ParseResult parseSortSpecs(OpAsmParser& parser, mlir::ArrayAttr& result) 
       if (parseSortSpec(parser, spec) || parser.parseRParen()) {
          return failure();
       }
-      mapping.push_back(mlir::relalg::SortSpecificationAttr::get(parser.getBuilder().getContext(), attrRefAttr, spec));
+       // This is a test code path, so just use dummy values
+      mapping.push_back(mlir::relalg::SortSpecificationAttr::get(
+          parser.getBuilder().getContext(),
+          attrRefAttr,
+          spec,
+          0,
+          -1,
+          0
+      ));
       if (!parser.parseOptionalComma()) { continue; }
       if (parser.parseRSquare()) { return failure(); }
       break;

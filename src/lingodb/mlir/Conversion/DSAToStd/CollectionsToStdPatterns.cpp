@@ -19,6 +19,14 @@ class SortOpLowering : public OpConversionPattern<mlir::dsa::SortOp> {
    public:
    using OpConversionPattern<mlir::dsa::SortOp>::OpConversionPattern;
    LogicalResult matchAndRewrite(mlir::dsa::SortOp sortOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+       // Redirect over to new sort function
+      if (sortOp.getToSort().getType().isa<mlir::dsa::SortStateType>()) {
+         rt::PgSortRuntime::performSort(rewriter, sortOp->getLoc())({adaptor.getToSort()});
+         rewriter.eraseOp(sortOp);
+         return success();
+      }
+     // TODO: Remove the below
+
       static size_t id = 0;
 
       auto ptrType = mlir::util::RefType::get(getContext(), IntegerType::get(getContext(), 8));

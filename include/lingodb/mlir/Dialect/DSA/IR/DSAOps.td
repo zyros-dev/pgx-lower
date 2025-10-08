@@ -99,6 +99,10 @@ def DSA_JoinHashtable : DSA_Collection<"JoinHashtable","join_ht"> {
     let parameters = (ins "TupleType":$keyType,"TupleType":$valType);
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
+def DSA_SortState : DSA_Collection<"SortState","sortstate"> {
+    let parameters = (ins "Type":$elementType,"ArrayAttr":$typeOids,"ArrayAttr":$typmods,"ArrayAttr":$sortOpOids,"ArrayAttr":$sortDirections);
+    let assemblyFormat = "`<` $elementType `,` $typeOids `,` $typmods `,` $sortOpOids `,` $sortDirections `>`";
+}
 
 def DSA_CreateFlag : DSA_Op<"createflag"> {
     let summary = "Create flag";
@@ -199,13 +203,8 @@ def DSA_Lookup : DSA_Op<"lookup", [Pure]> {
 
 
 def DSA_SortOp : DSA_Op<"sort", [IsolatedFromAbove]> {
-    let summary = "sort vector";
-    let description = [{
-        Sort a records in a vector. The region yields the order of two arguments as in C++ `std::sort`.
-    }];
-
-    let arguments = (ins DSA_Vector:$toSort);
-    let regions = (region SizedRegion<1>:$region);
+    let arguments = (ins AnyTypeOf<[DSA_Vector, DSA_SortState]>:$toSort);
+    let regions = (region AnyRegion:$region);
 }
 
 def ForOp : DSA_Op<"for", [SingleBlockImplicitTerminator<"dsa::YieldOp">,

@@ -87,9 +87,14 @@ def ColumnRefAttr : RelAlg_Attr<"ColumnRef"> {
 
 def SortSpecificationAttr : RelAlg_Attr<"SortSpecification"> {
     let mnemonic = "sortspec";
-    let parameters = (ins "ColumnRefAttr":$attr,"SortSpec":$sortSpec);
-        let hasCustomAssemblyFormat=1;
-
+    let parameters = (ins
+        "ColumnRefAttr":$attr,
+        "SortSpec":$sortSpec,
+        "uint32_t":$typeOid,
+        "int32_t":$typmod,
+        "uint32_t":$sortOpOid
+    );
+    let hasCustomAssemblyFormat=1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -134,18 +134,21 @@ ParseResult mlir::dsa::SortOp::parse(::mlir::OpAsmParser& parser, ::mlir::Operat
 void dsa::SortOp::print(OpAsmPrinter& p) {
    dsa::SortOp& op = *this;
    p << " " << op.getToSort() << ":" << op.getToSort().getType() << " ";
-   p << "(";
-   bool first = true;
-   for (auto arg : op.getRegion().front().getArguments()) {
-      if (first) {
-         first = false;
-      } else {
-         p << ",";
+
+   if (!op.getRegion().empty()) {
+      p << "(";
+      bool first = true;
+      for (auto arg : op.getRegion().front().getArguments()) {
+         if (first) {
+            first = false;
+         } else {
+            p << ",";
+         }
+         p << arg;
       }
-      p << arg;
+      p << ")";
+      p.printRegion(op.getRegion(), false, true);
    }
-   p << ")";
-   p.printRegion(op.getRegion(), false, true);
 }
 
 ParseResult mlir::dsa::HashtableInsert::parse(OpAsmParser& parser, OperationState& result) {

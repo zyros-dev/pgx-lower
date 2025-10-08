@@ -2,8 +2,10 @@
 #include "lingodb/mlir/Dialect/DSA/IR/DSATypes.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
+#include "lingodb/mlir/Dialect/DB/IR/DBOps.h"
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
 
 #include "lingodb/mlir/Conversion/DSAToStd/CollectionIteration.h"
@@ -12,6 +14,7 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 #include "runtime-defs/DataSourceIteration.h"
+#include "runtime-defs/PgSortRuntime.h"
 using namespace mlir;
 
 class WhileIterator {
@@ -221,6 +224,73 @@ class VectorIterator : public ForIterator {
       return builder.create<util::LoadOp>(loc, values, index);
    }
 };
+
+class SortStateIterator : public WhileIterator {
+   Value sortState;
+   Type elementType;
+   Value datumsStorage;
+   Value nullsStorage;
+   int32_t numCols;
+
+   public:
+   SortStateIterator(Value sortState, Type elementType)
+      : WhileIterator(sortState.getContext()), sortState(sortState),
+        elementType(elementType.cast<TupleType>()) {
+      numCols = this->elementType.cast<TupleType>().size();
+   }
+
+   void init(OpBuilder& builder) override {
+      OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointToStart(&sortState.getParentRegion()
+         ->getParentOfType<mlir::func::FuncOp>().getBody().front());
+
+      // Allocate storage for Datum and null arrays
+      auto i64Ty = builder.getI64Type();
+      auto i1Ty = builder.getI1Type();
+      auto ptrTy = mlir::LLVM::LLVMPointerType::get(builder.getContext());
+      auto i32Ty = builder.getI32Type();
+
+      auto numColsConst = builder.create<arith::ConstantOp>(loc, i32Ty,
+         builder.getI32IntegerAttr(numCols));
+
+      datumsStorage = builder.create<LLVM::AllocaOp>(loc, ptrTy, i64Ty, numColsConst);
+      nullsStorage = builder.create<LLVM::AllocaOp>(loc, ptrTy, i1Ty, numColsConst);
+   }
+
+   Type iteratorType(OpBuilder& builder) override {
+      return mlir::LLVM::LLVMPointerType::get(builder.getContext());
+   }
+
+   Value iterator(OpBuilder& builder) override {
+      return sortState;
+   }
+
+   Value iteratorNext(OpBuilder& builder, Value iterator) override {
+      return sortState;  // Stateful iterator
+   }
+
+   Value iteratorGetCurrentElement(OpBuilder& builder, Value iterator) override {
+       return nullptr; // TODO!
+   }
+
+   Value iteratorValid(OpBuilder& builder, Value iterator) override {
+      auto i32Ty = builder.getI32Type();
+      auto numColsConst = builder.create<arith::ConstantOp>(loc, i32Ty,
+         builder.getI32IntegerAttr(numCols));
+
+      // Call getHeapTuple
+      Value hasMore = rt::PgSortRuntime::getHeapTuple(builder, loc)(
+         {sortState, datumsStorage, nullsStorage, numColsConst}
+      )[0];
+
+      return hasMore;
+   }
+
+   void iteratorFree(OpBuilder& builder, Value iterator) override {
+      // Tuplesort state freed by dsa::FreeOp
+   }
+};
+
 class ValueOnlyAggrHTIterator : public ForIterator {
    Value ht;
    Type valType;
@@ -422,6 +492,8 @@ std::unique_ptr<mlir::dsa::CollectionIterationImpl> mlir::dsa::CollectionIterati
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<JoinHtIterator>(loweredCollection));
    } else if (auto recordBatch = collectionType.dyn_cast_or_null<mlir::dsa::RecordBatchType>()) {
       return std::make_unique<ForIteratorIterationImpl>(std::make_unique<RecordBatchIterator>(loweredCollection, recordBatch));
+   } else if (const auto sortState = collectionType.dyn_cast_or_null<mlir::dsa::SortStateType>()) {
+      return std::make_unique<WhileIteratorIterationImpl>(std::make_unique<SortStateIterator>(loweredCollection, sortState.getElementType()));
    }
    return std::unique_ptr<mlir::dsa::CollectionIterationImpl>();
 }
