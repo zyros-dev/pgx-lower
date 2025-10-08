@@ -141,6 +141,9 @@ void DSAToStdLoweringPass::runOnOperation() {
    typeConverter.addConversion([&](mlir::dsa::TableBuilderType tableType) {
       return mlir::util::RefType::get(&getContext(), IntegerType::get(&getContext(), 8));
    });
+   typeConverter.addConversion([&](mlir::dsa::SortStateType sortStateType) {
+       return mlir::util::RefType::get(&getContext(), IntegerType::get(&getContext(), 8));
+   });
 
    RewritePatternSet patterns(&getContext());
 

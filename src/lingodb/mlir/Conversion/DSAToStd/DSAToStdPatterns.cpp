@@ -39,100 +39,95 @@ static Type getHashtableType(MLIRContext* context, Type keyType, Type aggrType) 
 
 class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
    public:
-   using OpConversionPattern<mlir::dsa::CreateDS>::OpConversionPattern;
-   LogicalResult matchAndRewrite(mlir::dsa::CreateDS createOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      auto loc = createOp->getLoc();
-      if (auto joinHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::JoinHashtableType>()) {
-         auto entryType = mlir::TupleType::get(rewriter.getContext(), {joinHtType.getKeyType(), joinHtType.getValType()});
-         auto tupleType = mlir::TupleType::get(rewriter.getContext(), {rewriter.getIndexType(), entryType});
-         Value typesize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), typeConverter->convertType(tupleType));
-         Value ptr = rt::LazyJoinHashtable::create(rewriter, loc)(typesize)[0];
-         rewriter.replaceOpWithNewOp<util::GenericMemrefCastOp>(createOp, typeConverter->convertType(joinHtType), ptr);
-         return success();
-      } else if (auto vecType = createOp.getDs().getType().dyn_cast<mlir::dsa::VectorType>()) {
-         Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 1024);
-         auto elementType = typeConverter->convertType(vecType.getElementType());
-         auto typeSize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
-         auto ptr = rt::Vector::create(rewriter, loc)({typeSize, initialCapacity})[0];
-         mlir::Value createdVector = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, getLoweredVectorType(rewriter.getContext(), elementType), ptr);
-         rewriter.replaceOp(createOp, createdVector);
-         return success();
-      } else if (auto aggrHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::AggregationHashtableType>()) {
-         TupleType keyType = aggrHtType.getKeyType();
-         TupleType aggrType = aggrHtType.getValType();
-         if (keyType.getTypes().empty()) {
-            ::mlir::Value ref = rewriter.create<mlir::util::AllocOp>(loc, typeConverter->convertType(createOp.getDs().getType()), mlir::Value());
-            rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), ref, ::mlir::Value());
-            rewriter.replaceOp(createOp, ref);
+    using OpConversionPattern<mlir::dsa::CreateDS>::OpConversionPattern;
+    LogicalResult matchAndRewrite(mlir::dsa::CreateDS createOp, OpAdaptor adaptor,
+                                  ConversionPatternRewriter& rewriter) const override {
+        auto loc = createOp->getLoc();
+        if (auto joinHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::JoinHashtableType>()) {
+            auto entryType = mlir::TupleType::get(rewriter.getContext(),
+                                                  {joinHtType.getKeyType(), joinHtType.getValType()});
+            auto tupleType = mlir::TupleType::get(rewriter.getContext(), {rewriter.getIndexType(), entryType});
+            Value typesize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(),
+                                                                   typeConverter->convertType(tupleType));
+            Value ptr = rt::LazyJoinHashtable::create(rewriter, loc)(typesize)[0];
+            rewriter.replaceOpWithNewOp<util::GenericMemrefCastOp>(createOp, typeConverter->convertType(joinHtType), ptr);
             return success();
-         } else {
-            auto typeSize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), getHashtableEntryType(rewriter.getContext(), keyType, aggrType));
-            Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 4);
-            auto ptr = rt::Hashtable::create(rewriter, loc)({typeSize, initialCapacity})[0];
-            mlir::Value casted = rewriter.create<mlir::util::GenericMemrefCastOp>(loc, getHashtableType(rewriter.getContext(), keyType, aggrType), ptr);
-            Value initValAddress = rewriter.create<util::TupleElementPtrOp>(loc, mlir::util::RefType::get(rewriter.getContext(), adaptor.getInitVal().getType()), casted, 5);
-            rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), initValAddress, Value());
-            rewriter.replaceOp(createOp, casted);
+        } else if (auto vecType = createOp.getDs().getType().dyn_cast<mlir::dsa::VectorType>()) {
+            Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 1024);
+            auto elementType = typeConverter->convertType(vecType.getElementType());
+            auto typeSize = rewriter.create<mlir::util::SizeOfOp>(loc, rewriter.getIndexType(), elementType);
+            auto ptr = rt::Vector::create(rewriter, loc)({typeSize, initialCapacity})[0];
+            mlir::Value createdVector = rewriter.create<mlir::util::GenericMemrefCastOp>(
+                loc, getLoweredVectorType(rewriter.getContext(), elementType), ptr);
+            rewriter.replaceOp(createOp, createdVector);
             return success();
-         }
-      } else if (auto sortStateType = createOp.getDs().getType().dyn_cast<mlir::dsa::SortStateType>()) {
-         auto typeOids = sortStateType.getTypeOids();
-         auto typmods = sortStateType.getTypmods();
-         auto sortOpOids = sortStateType.getSortOpOids();
-         auto directions = sortStateType.getSortDirections();
-         int32_t numCols = typeOids.size();
+        } else if (auto aggrHtType = createOp.getDs().getType().dyn_cast<mlir::dsa::AggregationHashtableType>()) {
+            TupleType keyType = aggrHtType.getKeyType();
+            TupleType aggrType = aggrHtType.getValType();
+            if (keyType.getTypes().empty()) {
+                ::mlir::Value ref = rewriter.create<mlir::util::AllocOp>(
+                    loc, typeConverter->convertType(createOp.getDs().getType()), mlir::Value());
+                rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), ref, ::mlir::Value());
+                rewriter.replaceOp(createOp, ref);
+                return success();
+            } else {
+                auto typeSize = rewriter.create<mlir::util::SizeOfOp>(
+                    loc, rewriter.getIndexType(), getHashtableEntryType(rewriter.getContext(), keyType, aggrType));
+                Value initialCapacity = rewriter.create<arith::ConstantIndexOp>(loc, 4);
+                auto ptr = rt::Hashtable::create(rewriter, loc)({typeSize, initialCapacity})[0];
+                mlir::Value casted = rewriter.create<mlir::util::GenericMemrefCastOp>(
+                    loc, getHashtableType(rewriter.getContext(), keyType, aggrType), ptr);
+                Value initValAddress = rewriter.create<util::TupleElementPtrOp>(
+                    loc, mlir::util::RefType::get(rewriter.getContext(), adaptor.getInitVal().getType()), casted, 5);
+                rewriter.create<mlir::util::StoreOp>(loc, adaptor.getInitVal(), initValAddress, Value());
+                rewriter.replaceOp(createOp, casted);
+                return success();
+            }
+        } else if (auto sortStateType = createOp.getDs().getType().dyn_cast<mlir::dsa::SortStateType>()) {
+            auto typeOids = sortStateType.getTypeOids();
+            auto typmods = sortStateType.getTypmods();
+            auto sortOpOids = sortStateType.getSortOpOids();
+            auto directions = sortStateType.getSortDirections();
+            int32_t numCols = typeOids.size();
 
-         auto i32Ty = rewriter.getI32Type();
-         auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
-         auto numColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty,
-                                                                 rewriter.getI32IntegerAttr(numCols));
+            auto i32Ty = rewriter.getI32Type();
+            auto i8Ty = rewriter.getI8Type();
+            auto numColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(numCols));
 
-         auto typeOidsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i32Ty, numColsConst);
-         auto typmodsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i32Ty, numColsConst);
-         auto sortOpOidsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i32Ty, numColsConst);
-         auto directionsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i32Ty, numColsConst);
-         for (int i = 0; i < numCols; i++) {
-            auto idx = rewriter.create<arith::ConstantOp>(loc, i32Ty,
-                                                           rewriter.getI32IntegerAttr(i));
+            auto arraySize = rewriter.create<arith::ConstantIndexOp>(loc, numCols * 4);
+            auto refTy = mlir::util::RefType::get(rewriter.getContext(), i8Ty);
+            auto typeOidsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, arraySize);
+            auto typmodsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, arraySize);
+            auto sortOpOidsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, arraySize);
+            auto directionsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, arraySize);
+            for (int i = 0; i < numCols; i++) {
+                auto idx = rewriter.create<arith::ConstantIndexOp>(loc, i * 4);
 
-            // typeOids[i]
-            auto typeOidPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i32Ty,
-                                                           typeOidsArray, ValueRange{idx});
-            auto typeOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty,
-                                                                  typeOids[i].cast<IntegerAttr>());
-            rewriter.create<LLVM::StoreOp>(loc, typeOidVal, typeOidPtr);
+                // typeOids[i]
+                auto typeOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, typeOids[i].cast<IntegerAttr>());
+                rewriter.create<mlir::util::StoreOp>(loc, typeOidVal, typeOidsArray, idx);
 
-            // typmods[i]
-            auto typmodPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i32Ty,
-                                                          typmodsArray, ValueRange{idx});
-            auto typmodVal = rewriter.create<arith::ConstantOp>(loc, i32Ty,
-                                                                 typmods[i].cast<IntegerAttr>());
-            rewriter.create<LLVM::StoreOp>(loc, typmodVal, typmodPtr);
+                // typmods[i]
+                auto typmodVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, typmods[i].cast<IntegerAttr>());
+                rewriter.create<mlir::util::StoreOp>(loc, typmodVal, typmodsArray, idx);
 
-            // sortOpOids[i]
-            auto sortOpOidPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i32Ty,
-                                                             sortOpOidsArray, ValueRange{idx});
-            auto sortOpOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty,
-                                                                    sortOpOids[i].cast<IntegerAttr>());
-            rewriter.create<LLVM::StoreOp>(loc, sortOpOidVal, sortOpOidPtr);
+                // sortOpOids[i]
+                auto sortOpOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, sortOpOids[i].cast<IntegerAttr>());
+                rewriter.create<mlir::util::StoreOp>(loc, sortOpOidVal, sortOpOidsArray, idx);
 
-            // directions[i]
-            auto dirPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i32Ty,
-                                                       directionsArray, ValueRange{idx});
-            auto dirVal = rewriter.create<arith::ConstantOp>(loc, i32Ty,
-                                                              directions[i].cast<IntegerAttr>());
-            rewriter.create<LLVM::StoreOp>(loc, dirVal, dirPtr);
-         }
+                // directions[i]
+                auto dirVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, directions[i].cast<IntegerAttr>());
+                rewriter.create<mlir::util::StoreOp>(loc, dirVal, directionsArray, idx);
+            }
 
-         Value sortstate = rt::PgSortRuntime::beginHeapSort(rewriter, loc)(
-            {typeOidsArray, typmodsArray, sortOpOidsArray, directionsArray, numColsConst}
-         )[0];
+            Value sortstate = rt::PgSortRuntime::beginHeapSort(
+                rewriter, loc)({typeOidsArray, typmodsArray, sortOpOidsArray, directionsArray, numColsConst})[0];
 
-         rewriter.replaceOp(createOp, sortstate);
-         return success();
-      }
-      return failure();
-   }
+            rewriter.replaceOp(createOp, sortstate);
+            return success();
+        }
+        return failure();
+    }
 };
 class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> {
    public:
@@ -278,7 +273,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                                  b.create<util::StoreOp>(loc, newAggr, entryAggrAddress, Value());
                               }
                               b.create<scf::YieldOp>(loc, ValueRange{falseValue,ptr});
-                              
+
                               // Else branch of ifOp2
                               b.setInsertionPointToStart(&ifOp2.getElseRegion().emplaceBlock());
                               //          ptr = &entry.next
@@ -288,7 +283,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                         }
                         b.setInsertionPointAfter(ifOp2);
                         b.create<scf::YieldOp>(loc, ifOp2.getResults());
-                        
+
                         // Else branch of ifOpH
                         b.setInsertionPointToStart(&ifOpH.getElseRegion().emplaceBlock());
                         //          ptr = &entry.next
@@ -297,8 +292,8 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                         b.create<scf::YieldOp>(loc, ValueRange{trueValue, newPtr });
                   }
                   b.setInsertionPointAfter(ifOpH);
-                  b.create<scf::YieldOp>(loc, ifOpH.getResults()); 
-               
+                  b.create<scf::YieldOp>(loc, ifOpH.getResults());
+
                // Else branch of outer ifOp
                rewriter.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
                b = rewriter;  // Keep alias for minimal changes
@@ -321,7 +316,7 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                   //       yield 0,0,done=true
                   b.create<mlir::util::StoreOp>(loc, newLen, lenAddress, Value());
 
-                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr}); 
+                  b.create<scf::YieldOp>(loc, ValueRange{falseValue, ptr});
             }
 
             Value done = ifOp.getResult(0);
@@ -423,74 +418,62 @@ class FinalizeTBLowering : public OpConversionPattern<mlir::dsa::Finalize> {
 };
 class SortStateAppendLowering : public OpConversionPattern<mlir::dsa::Append> {
    public:
-   using OpConversionPattern<mlir::dsa::Append>::OpConversionPattern;
-   LogicalResult matchAndRewrite(mlir::dsa::Append appendOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
-      if (!appendOp.getDs().getType().isa<mlir::dsa::SortStateType>()) {
-         return failure();
-      }
+    using OpConversionPattern<mlir::dsa::Append>::OpConversionPattern;
+    LogicalResult
+    matchAndRewrite(mlir::dsa::Append appendOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override {
+        if (!appendOp.getDs().getType().isa<mlir::dsa::SortStateType>()) {
+            return failure();
+        }
 
-      auto loc = appendOp->getLoc();
-      Value sortstate = adaptor.getDs();
-      Value tuple = adaptor.getVal();
+        auto loc = appendOp->getLoc();
+        Value sortstate = adaptor.getDs();
+        Value tuple = adaptor.getVal();
 
-      // Get tuple type info
-      auto tupleType = tuple.getType().cast<TupleType>();
-      int32_t numCols = tupleType.size();
+        auto tupleType = tuple.getType().cast<TupleType>();
+        int32_t numCols = tupleType.size();
 
-      auto i32Ty = rewriter.getI32Type();
-      auto i64Ty = rewriter.getI64Type();
-      auto i1Ty = rewriter.getI1Type();
-      auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
+        auto i32Ty = rewriter.getI32Type();
+        auto i64Ty = rewriter.getI64Type();
+        auto i1Ty = rewriter.getI1Type();
+        const auto i8Ty = rewriter.getI8Type();
 
-      auto numColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty,
-                                                              rewriter.getI32IntegerAttr(numCols));
+        auto numColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(numCols));
 
-      // Allocate Datum and null arrays
-      auto datumsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i64Ty, numColsConst);
-      auto nullsArray = rewriter.create<LLVM::AllocaOp>(loc, ptrTy, i1Ty, numColsConst);
+        auto datumsSize = rewriter.create<arith::ConstantIndexOp>(loc, numCols * 8);
+        auto nullsSize = rewriter.create<arith::ConstantIndexOp>(loc, numCols);
+        auto refTy = mlir::util::RefType::get(rewriter.getContext(), i8Ty);
+        auto datumsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, datumsSize);
+        auto nullsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, nullsSize);
 
-      // Extract each field and store in arrays
-      for (int i = 0; i < numCols; i++) {
-         auto idx = rewriter.create<arith::ConstantOp>(loc, i32Ty,
-                                                        rewriter.getI32IntegerAttr(i));
+        for (int i = 0; i < numCols; i++) {
+            auto datumIdx = rewriter.create<arith::ConstantIndexOp>(loc, i * 8);
+            auto nullIdx = rewriter.create<arith::ConstantIndexOp>(loc, i);
 
-         // Extract field value using util.get_tuple
-         auto fieldType = tupleType.getType(i);
-         auto field = rewriter.create<util::GetTupleOp>(loc, fieldType, tuple, i);
+            auto fieldType = tupleType.getType(i);
+            auto field = rewriter.create<util::GetTupleOp>(loc, fieldType, tuple, i);
 
-         // Get datum value (handle nullable types)
-         Value datumVal;
-         Value isNull;
-         if (mlir::isa<mlir::db::NullableType>(field.getType())) {
-            isNull = rewriter.create<mlir::db::IsNullOp>(loc, i1Ty, field);
-            auto baseVal = rewriter.create<mlir::db::NullableGetVal>(loc, field);
-            // Cast to i64 for Datum
-            datumVal = rewriter.create<arith::ExtUIOp>(loc, i64Ty, baseVal);
-         } else {
-            isNull = rewriter.create<arith::ConstantOp>(loc, i1Ty,
-                                                         rewriter.getIntegerAttr(i1Ty, 0));
-            // Cast to i64
-            datumVal = rewriter.create<arith::ExtUIOp>(loc, i64Ty, field);
-         }
+            Value datumVal;
+            Value isNull;
+            if (auto tupleTy = field.getType().dyn_cast<TupleType>()) {
+                auto unpacked = rewriter.create<util::UnPackOp>(
+                    loc, mlir::TypeRange{tupleTy.getType(0), tupleTy.getType(1)}, field);
+                isNull = unpacked.getResult(0);
+                auto baseVal = unpacked.getResult(1);
+                datumVal = rewriter.create<arith::ExtUIOp>(loc, i64Ty, baseVal);
+            } else {
+                isNull = rewriter.create<arith::ConstantOp>(loc, i1Ty, rewriter.getIntegerAttr(i1Ty, 0));
+                datumVal = rewriter.create<arith::ExtUIOp>(loc, i64Ty, field);
+            }
 
-         // Store in arrays
-         auto datumPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i64Ty,
-                                                       datumsArray, ValueRange{idx});
-         rewriter.create<LLVM::StoreOp>(loc, datumVal, datumPtr);
+            rewriter.create<mlir::util::StoreOp>(loc, datumVal, datumsArray, datumIdx);
+            rewriter.create<mlir::util::StoreOp>(loc, isNull, nullsArray, nullIdx);
+        }
 
-         auto nullPtr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, i1Ty,
-                                                      nullsArray, ValueRange{idx});
-         rewriter.create<LLVM::StoreOp>(loc, isNull, nullPtr);
-      }
+        rt::PgSortRuntime::putHeapTuple(rewriter, loc)({sortstate, datumsArray, nullsArray, numColsConst});
 
-      // Call putHeapTuple
-      rt::PgSortRuntime::putHeapTuple(rewriter, loc)(
-         {sortstate, datumsArray, nullsArray, numColsConst}
-      );
-
-      rewriter.eraseOp(appendOp);
-      return success();
-   }
+        rewriter.eraseOp(appendOp);
+        return success();
+    }
 };
 
 class DSAppendLowering : public OpConversionPattern<mlir::dsa::Append> {

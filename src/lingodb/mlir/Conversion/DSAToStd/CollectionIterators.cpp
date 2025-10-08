@@ -9,6 +9,8 @@
 #include "lingodb/mlir/Dialect/util/UtilOps.h"
 
 #include "lingodb/mlir/Conversion/DSAToStd/CollectionIteration.h"
+#include "pgx-lower/utility/logging.h"
+
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -230,6 +232,7 @@ class SortStateIterator : public WhileIterator {
    Type elementType;
    Value datumsStorage;
    Value nullsStorage;
+   Value tupleStorage;
    int32_t numCols;
 
    public:
@@ -244,21 +247,25 @@ class SortStateIterator : public WhileIterator {
       builder.setInsertionPointToStart(&sortState.getParentRegion()
          ->getParentOfType<mlir::func::FuncOp>().getBody().front());
 
-      // Allocate storage for Datum and null arrays
-      auto i64Ty = builder.getI64Type();
-      auto i1Ty = builder.getI1Type();
-      auto ptrTy = mlir::LLVM::LLVMPointerType::get(builder.getContext());
+      const auto i8Ty = builder.getI8Type();
       auto i32Ty = builder.getI32Type();
 
       auto numColsConst = builder.create<arith::ConstantOp>(loc, i32Ty,
          builder.getI32IntegerAttr(numCols));
 
-      datumsStorage = builder.create<LLVM::AllocaOp>(loc, ptrTy, i64Ty, numColsConst);
-      nullsStorage = builder.create<LLVM::AllocaOp>(loc, ptrTy, i1Ty, numColsConst);
+      auto datumsSize = builder.create<arith::ConstantIndexOp>(loc, numCols * 8); // 8 bytes per i64
+      auto nullsSize = builder.create<arith::ConstantIndexOp>(loc, numCols); // 1 byte per bool
+      auto refTy = util::RefType::get(builder.getContext(), i8Ty);
+      datumsStorage = builder.create<util::AllocaOp>(loc, refTy, datumsSize);
+      nullsStorage = builder.create<util::AllocaOp>(loc, refTy, nullsSize);
+
+      const auto convertedElementType = typeConverter->convertType(elementType);
+      auto tupleRefType = util::RefType::get(builder.getContext(), convertedElementType);
+      tupleStorage = builder.create<util::AllocOp>(loc, tupleRefType, Value());
    }
 
    Type iteratorType(OpBuilder& builder) override {
-      return mlir::LLVM::LLVMPointerType::get(builder.getContext());
+      return mlir::util::RefType::get(builder.getContext(), builder.getI8Type());
    }
 
    Value iterator(OpBuilder& builder) override {
@@ -270,7 +277,8 @@ class SortStateIterator : public WhileIterator {
    }
 
    Value iteratorGetCurrentElement(OpBuilder& builder, Value iterator) override {
-       return nullptr; // TODO!
+      auto loaded = builder.create<util::LoadOp>(loc, tupleStorage);
+      return loaded;
    }
 
    Value iteratorValid(OpBuilder& builder, Value iterator) override {
@@ -278,10 +286,48 @@ class SortStateIterator : public WhileIterator {
       auto numColsConst = builder.create<arith::ConstantOp>(loc, i32Ty,
          builder.getI32IntegerAttr(numCols));
 
-      // Call getHeapTuple
       Value hasMore = rt::PgSortRuntime::getHeapTuple(builder, loc)(
          {sortState, datumsStorage, nullsStorage, numColsConst}
       )[0];
+
+      // If we got a tuple, reconstruct it from Datums and store in memory
+      auto ifOp = builder.create<scf::IfOp>(loc, hasMore, false);
+
+      // Then branch - tuple exists
+      builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+
+      std::vector<Value> fields;
+      auto tupleType = elementType.cast<TupleType>();
+      auto convertedElementType = typeConverter->convertType(elementType).cast<TupleType>();
+
+      for (int i = 0; i < numCols; i++) {
+         auto datumIdx = builder.create<arith::ConstantIndexOp>(loc, i * 8); // i64 offset in bytes
+         auto nullIdx = builder.create<arith::ConstantIndexOp>(loc, i); // bool offset in bytes
+
+         auto i64Ty = builder.getI64Type();
+         auto i1Ty = builder.getI1Type();
+         auto datumVal = builder.create<util::LoadOp>(loc, i64Ty, datumsStorage, datumIdx);
+
+         auto isNull = builder.create<util::LoadOp>(loc, i1Ty, nullsStorage, nullIdx);
+
+         auto convertedFieldType = convertedElementType.getType(i);
+         Value field;
+         if (auto tupleTy = convertedFieldType.dyn_cast<TupleType>()) {
+            auto baseType = tupleTy.getType(1); // Get T from tuple<i1, T>
+            auto baseVal = builder.create<arith::TruncIOp>(loc, baseType, datumVal);
+            field = builder.create<util::PackOp>(loc, convertedFieldType,
+                                                 ValueRange{isNull, baseVal});
+         } else {
+            field = builder.create<arith::TruncIOp>(loc, convertedFieldType, datumVal);
+         }
+
+         fields.push_back(field);
+      }
+
+      auto tuple = builder.create<util::PackOp>(loc, convertedElementType, fields);
+      builder.create<util::StoreOp>(loc, tuple, tupleStorage, Value());
+
+      builder.setInsertionPointAfter(ifOp);
 
       return hasMore;
    }

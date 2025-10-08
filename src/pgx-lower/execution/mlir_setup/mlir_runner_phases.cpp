@@ -89,6 +89,7 @@ bool runPhase3b(::mlir::ModuleOp module) {
         pm1.enableVerifier(true);
         mlir::pgx_lower::createDBToStandardPipeline(pm1, false);
         if (mlir::failed(pm1.run(module))) {
+            dumpModuleWithStats(module, "Failed to lower 3b", pgx_lower::log::Category::DB_LOWER);
             throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
         }
         if (!validateModuleState(module, "Phase 3b output")) {
@@ -102,6 +103,7 @@ bool runPhase3b(::mlir::ModuleOp module) {
         pm2.enableVerifier(true);
         mlir::pgx_lower::createDSAToStandardPipeline(pm2, false);
         if (mlir::failed(pm2.run(module))) {
+            dumpModuleWithStats(module, "Failed to lower 3b Pm2", pgx_lower::log::Category::DB_LOWER);
             throw std::runtime_error("Phase 3b failed: DB+DSA+Util → Standard lowering error");
         }
         if (!validateModuleState(module, "Phase 3b output")) {
