@@ -24,8 +24,9 @@ class PgSortRuntime {
 
     static void end(void* sort_state);
 
-    static void* beginHeapSort(const uint32_t* type_oids, const int32_t* typmods, const uint32_t* sort_op_oids,
-                               const int32_t* directions, int32_t num_cols);
+    static void* beginHeapSort(const uint32_t* all_type_oids, const int32_t* all_typmods, int32_t num_total_cols,
+                               const int32_t* sort_key_indices, const uint32_t* sort_op_oids,
+                               const int32_t* sort_directions, int32_t num_sort_keys);
 
     static void putHeapTuple(void* sort_state,
                              const uintptr_t* datums, // Array of Datum values

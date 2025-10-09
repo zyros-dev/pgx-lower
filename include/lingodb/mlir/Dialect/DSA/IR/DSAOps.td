@@ -100,8 +100,8 @@ def DSA_JoinHashtable : DSA_Collection<"JoinHashtable","join_ht"> {
     let assemblyFormat = "`<` $keyType `,` $valType `>`";
 }
 def DSA_SortState : DSA_Collection<"SortState","sortstate"> {
-    let parameters = (ins "Type":$elementType,"ArrayAttr":$typeOids,"ArrayAttr":$typmods,"ArrayAttr":$sortOpOids,"ArrayAttr":$sortDirections);
-    let assemblyFormat = "`<` $elementType `,` $typeOids `,` $typmods `,` $sortOpOids `,` $sortDirections `>`";
+    let parameters = (ins "Type":$elementType,"ArrayAttr":$allTypeOids,"ArrayAttr":$allTypmods,"ArrayAttr":$sortKeyIndices,"ArrayAttr":$sortOpOids,"ArrayAttr":$sortDirections);
+    let assemblyFormat = "`<` $elementType `,` $allTypeOids `,` $allTypmods `,` $sortKeyIndices `,` $sortOpOids `,` $sortDirections `>`";
 }
 
 def DSA_CreateFlag : DSA_Op<"createflag"> {

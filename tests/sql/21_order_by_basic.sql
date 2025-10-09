@@ -17,6 +17,15 @@ VALUES (30, 3),
        (40, 4),
        (15, 5);
 
+SET client_min_messages TO DEBUG1;
+SET pgx_lower.log_enable = true;
+SET pgx_lower.log_debug = true;
+SET pgx_lower.log_io = true;
+SET pgx_lower.log_ir = true;
+SET pgx_lower.log_trace = true;
+SET pgx_lower.log_verbose = true;
+SET pgx_lower.enabled_categories = 'AST_TRANSLATE,RELALG_LOWER,DB_LOWER,DSA_LOWER,UTIL_LOWER,RUNTIME,JIT,GENERAL';
+
 SELECT value, name
 FROM test_order_basic
 ORDER BY value;

@@ -13,35 +13,29 @@ class TableBuilder {
    size_t currentBatchSize = 0;
    size_t currColumn = 0;
 
-   // All Arrow functions stubbed out
    TableBuilder(void* schema) : schema(schema) {
-      // arrow::RecordBatchBuilder::Make stubbed out
    }
    
    void* convertBatch(void* recordBatch) {
-      // Arrow RecordBatch conversion stubbed out
       return nullptr;
    }
    
    void flushBatch() {
-      // Arrow batch flushing stubbed out
       currentBatchSize = 0;
    }
    
    template <typename T>
    T* getBuilder() {
-      // Arrow builder access stubbed out
       return nullptr;
    }
    
    void handleStatus(int status) {
-      // Arrow status handling stubbed out
    }
 
    public:
    static TableBuilder* create(VarLen32 schemaDescription);
    static void destroy(TableBuilder* tb);
-   void* build(); // was: std::shared_ptr<arrow::Table>* build();
+   void* build();
 
    void addBool(bool is_valid, bool value);
    void addInt8(bool is_valid, int8_t);

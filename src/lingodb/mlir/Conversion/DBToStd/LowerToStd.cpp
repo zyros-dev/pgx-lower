@@ -1202,7 +1202,8 @@ void DBToStdLoweringPass::runOnOperation() {
    typeConverter.addConversion([&](mlir::dsa::TableBuilderType r) { return mlir::dsa::TableBuilderType::get(r.getContext(), typeConverter.convertType(r.getRowType()).cast<mlir::TupleType>()); });
    typeConverter.addConversion([&](mlir::dsa::SortStateType r) {
        return mlir::dsa::SortStateType::get(r.getContext(), typeConverter.convertType(r.getElementType()),
-                                            r.getTypeOids(), r.getTypmods(), r.getSortOpOids(), r.getSortDirections());
+                                            r.getAllTypeOids(), r.getAllTypmods(), r.getSortKeyIndices(),
+                                            r.getSortOpOids(), r.getSortDirections());
    });
 
    RewritePatternSet patterns(&getContext());

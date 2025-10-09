@@ -16,7 +16,7 @@ class Location;
 namespace func {
 class FuncOp;
 }
-}
+} // namespace mlir
 
 extern "C" {
 struct PlannedStmt;
@@ -45,21 +45,19 @@ typedef uintptr_t Datum;
 
 namespace postgresql_ast {
 class PostgreSQLASTTranslator {
-public:
+   public:
     explicit PostgreSQLASTTranslator(::mlir::MLIRContext& context);
     ~PostgreSQLASTTranslator();
 
     auto translate_query(PlannedStmt* planned_stmt) const -> std::unique_ptr<::mlir::ModuleOp>;
-    
-private:
 
+   private:
     class Impl;
     std::unique_ptr<Impl> p_impl_;
 };
 
-auto create_postgresql_ast_translator(::mlir::MLIRContext& context)
-    -> std::unique_ptr<PostgreSQLASTTranslator>;
+auto create_postgresql_ast_translator(::mlir::MLIRContext& context) -> std::unique_ptr<PostgreSQLASTTranslator>;
 
-}
+} // namespace postgresql_ast
 
 #endif

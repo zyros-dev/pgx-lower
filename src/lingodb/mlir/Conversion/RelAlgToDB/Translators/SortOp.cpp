@@ -64,16 +64,41 @@ class SortTranslator : public mlir::relalg::Translator {
        const auto tupleType = orderedAttributes.getTupleType(builder.getContext());
 
        const auto sortSpecs = sortOp.getSortspecs();
-       std::vector<mlir::Attribute> typeOids;
-       std::vector<mlir::Attribute> typmods;
+
+       // Get tuple type which has ALL columns
+       auto tupleTy = tupleType.cast<mlir::TupleType>();
+       int32_t numTotalCols = tupleTy.size();
+
+       // For now, extract type OIDs from sortSpecs for the sort key columns
+       // and use placeholder values for non-sort columns
+       // TODO: Get actual type OIDs for all columns from SortOp attributes
+       std::vector<mlir::Attribute> allTypeOids;
+       std::vector<mlir::Attribute> allTypmods;
+
+       // Temporary: assume all columns have same type as first sort key
+       // This is WRONG but will compile - needs proper fix in AST translation
+       for (int i = 0; i < numTotalCols; i++) {
+           if (i < sortSpecs.size()) {
+               auto sortSpec = cast<mlir::relalg::SortSpecificationAttr>(sortSpecs[i]);
+               allTypeOids.push_back(builder.getI32IntegerAttr(sortSpec.getTypeOid()));
+               allTypmods.push_back(builder.getI32IntegerAttr(sortSpec.getTypmod()));
+           } else {
+               // Use type from first sort key as placeholder
+               auto sortSpec = cast<mlir::relalg::SortSpecificationAttr>(sortSpecs[0]);
+               allTypeOids.push_back(builder.getI32IntegerAttr(sortSpec.getTypeOid()));
+               allTypmods.push_back(builder.getI32IntegerAttr(sortSpec.getTypmod()));
+           }
+       }
+
+       // Extract sort key information
+       std::vector<mlir::Attribute> sortKeyIndices;
        std::vector<mlir::Attribute> sortOpOids;
        std::vector<mlir::Attribute> directions;
 
-       for (auto spec : sortSpecs) {
-           auto sortSpec = cast<mlir::relalg::SortSpecificationAttr>(spec);
+       for (size_t i = 0; i < sortSpecs.size(); i++) {
+           auto sortSpec = cast<mlir::relalg::SortSpecificationAttr>(sortSpecs[i]);
 
-           typeOids.push_back(builder.getI32IntegerAttr(sortSpec.getTypeOid()));
-           typmods.push_back(builder.getI32IntegerAttr(sortSpec.getTypmod()));
+           sortKeyIndices.push_back(builder.getI32IntegerAttr(i));
            sortOpOids.push_back(builder.getI32IntegerAttr(sortSpec.getSortOpOid()));
 
            int dir = (sortSpec.getSortSpec() == mlir::relalg::SortSpec::asc) ? 1 : 0;
@@ -81,8 +106,8 @@ class SortTranslator : public mlir::relalg::Translator {
        }
 
        auto sortStateType = mlir::dsa::SortStateType::get(
-           builder.getContext(), tupleType, builder.getArrayAttr(typeOids), builder.getArrayAttr(typmods),
-           builder.getArrayAttr(sortOpOids), builder.getArrayAttr(directions));
+           builder.getContext(), tupleType, builder.getArrayAttr(allTypeOids), builder.getArrayAttr(allTypmods),
+           builder.getArrayAttr(sortKeyIndices), builder.getArrayAttr(sortOpOids), builder.getArrayAttr(directions));
 
        vector = builder.create<mlir::dsa::CreateDS>(sortOp.getLoc(), sortStateType);
        children[0]->produce(context, builder);

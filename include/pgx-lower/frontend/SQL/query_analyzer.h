@@ -12,20 +12,19 @@ extern "C" {
 }
 #endif
 
-
 namespace pgx_lower {
 
 struct QueryCapabilities {
-    bool requiresSeqScan = false; // Sequential table scan
-    bool requiresFilter = false; // WHERE clause filtering
-    bool requiresProjection = false; // Column selection
-    bool requiresAggregation = false; // SUM, COUNT, etc.
-    bool requiresJoin = false; // Table joins
-    bool requiresSort = false; // ORDER BY
-    bool requiresLimit = false; // LIMIT clause
-    bool isSelectStatement = false; // Only SELECT statements supported
-    bool hasCompatibleTypes = false; // All column types are MLIR-compatible
-    bool hasExpressions = false; // Contains computed expressions (arithmetic, functions, etc.)
+    bool requiresSeqScan = false;
+    bool requiresFilter = false;
+    bool requiresProjection = false;
+    bool requiresAggregation = false;
+    bool requiresJoin = false;
+    bool requiresSort = false;
+    bool requiresLimit = false;
+    bool isSelectStatement = false;
+    bool hasCompatibleTypes = false;
+    bool hasExpressions = false;
 
     [[nodiscard]] auto isMLIRCompatible() const -> bool;
 
@@ -37,12 +36,11 @@ class QueryAnalyzer {
 #ifdef POSTGRESQL_EXTENSION
     static QueryCapabilities analyzePlan(const PlannedStmt* stmt);
     static QueryCapabilities analyzeNode(const Plan* plan);
-    
+
     static void logExecutionTree(Plan* rootPlan);
     static bool validateAndLogPlanStructure(const PlannedStmt* stmt);
 #endif
 
-    // Mock analysis for unit tests
     static auto analyzeForTesting(const char* queryText) -> QueryCapabilities;
 
    private:

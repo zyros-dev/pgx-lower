@@ -15,7 +15,6 @@ class PostgreSQLColumn {
    PostgreSQLColumn(std::shared_ptr<runtime::postgresql::PostgreSQLColumn> col) : column(col) {}
    std::shared_ptr<runtime::postgresql::PostgreSQLColumn> getColumn() const { return column; }
    
-   // PostgreSQL SPI integration methods
    void* getPostgreSQLData() const { return column ? column->getPostgreSQLDatum(0) : nullptr; }
 };
 
@@ -23,7 +22,7 @@ class PostgreSQLColumnBuilder {
    size_t numValues = 0;
    std::shared_ptr<runtime::postgresql::PostgreSQLColumn> column;
    PostgreSQLColumnBuilder* childBuilder;
-   std::string pgType; // PostgreSQL type name
+   std::string pgType;
    std::vector<void*> additionalArrays;
    PostgreSQLColumnBuilder(const std::string& type) : pgType(type), childBuilder(nullptr) {
        column = std::make_shared<runtime::postgresql::PostgreSQLColumn>("column", type);
@@ -42,7 +41,6 @@ class PostgreSQLColumnBuilder {
    PostgreSQLColumn* finish();
    ~PostgreSQLColumnBuilder();
    
-   // PostgreSQL-specific methods
    void addInt32(bool isValid, int32_t value);
    void addInt64(bool isValid, int64_t value);
    void addFloat64(bool isValid, double value);

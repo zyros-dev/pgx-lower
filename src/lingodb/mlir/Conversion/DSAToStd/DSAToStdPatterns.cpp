@@ -84,44 +84,57 @@ class CreateDsLowering : public OpConversionPattern<mlir::dsa::CreateDS> {
                 return success();
             }
         } else if (auto sortStateType = createOp.getDs().getType().dyn_cast<mlir::dsa::SortStateType>()) {
-            auto typeOids = sortStateType.getTypeOids();
-            auto typmods = sortStateType.getTypmods();
+            auto allTypeOids = sortStateType.getAllTypeOids();
+            auto allTypmods = sortStateType.getAllTypmods();
+            auto sortKeyIndices = sortStateType.getSortKeyIndices();
             auto sortOpOids = sortStateType.getSortOpOids();
             auto directions = sortStateType.getSortDirections();
-            int32_t numCols = typeOids.size();
+
+            int32_t numTotalCols = allTypeOids.size();
+            int32_t numSortKeys = sortKeyIndices.size();
 
             auto i32Ty = rewriter.getI32Type();
             auto i8Ty = rewriter.getI8Type();
-            auto numColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(numCols));
 
-            auto arraySize = rewriter.create<arith::ConstantIndexOp>(loc, numCols * 4);
+            // Arrays for ALL columns
+            auto allColsSize = rewriter.create<arith::ConstantIndexOp>(loc, numTotalCols * 4);
             auto refTy = mlir::util::RefType::get(rewriter.getContext(), i8Ty);
-            auto typeOidsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, arraySize);
-            auto typmodsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, arraySize);
-            auto sortOpOidsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, arraySize);
-            auto directionsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, arraySize);
-            for (int i = 0; i < numCols; i++) {
+            auto allTypeOidsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, allColsSize);
+            auto allTypmodsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, allColsSize);
+
+            // Arrays for sort keys only
+            auto sortKeysSize = rewriter.create<arith::ConstantIndexOp>(loc, numSortKeys * 4);
+            auto sortKeyIndicesArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, sortKeysSize);
+            auto sortOpOidsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, sortKeysSize);
+            auto sortDirectionsArray = rewriter.create<mlir::util::AllocaOp>(loc, refTy, sortKeysSize);
+
+            // Fill arrays for all columns
+            for (int i = 0; i < numTotalCols; i++) {
                 auto idx = rewriter.create<arith::ConstantIndexOp>(loc, i * 4);
-
-                // typeOids[i]
-                auto typeOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, typeOids[i].cast<IntegerAttr>());
-                rewriter.create<mlir::util::StoreOp>(loc, typeOidVal, typeOidsArray, idx);
-
-                // typmods[i]
-                auto typmodVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, typmods[i].cast<IntegerAttr>());
-                rewriter.create<mlir::util::StoreOp>(loc, typmodVal, typmodsArray, idx);
-
-                // sortOpOids[i]
-                auto sortOpOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, sortOpOids[i].cast<IntegerAttr>());
-                rewriter.create<mlir::util::StoreOp>(loc, sortOpOidVal, sortOpOidsArray, idx);
-
-                // directions[i]
-                auto dirVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, directions[i].cast<IntegerAttr>());
-                rewriter.create<mlir::util::StoreOp>(loc, dirVal, directionsArray, idx);
+                auto typeOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, allTypeOids[i].cast<IntegerAttr>());
+                auto typmodVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, allTypmods[i].cast<IntegerAttr>());
+                rewriter.create<mlir::util::StoreOp>(loc, typeOidVal, allTypeOidsArray, idx);
+                rewriter.create<mlir::util::StoreOp>(loc, typmodVal, allTypmodsArray, idx);
             }
 
-            Value sortstate = rt::PgSortRuntime::beginHeapSort(
-                rewriter, loc)({typeOidsArray, typmodsArray, sortOpOidsArray, directionsArray, numColsConst})[0];
+            // Fill arrays for sort keys
+            for (int i = 0; i < numSortKeys; i++) {
+                auto idx = rewriter.create<arith::ConstantIndexOp>(loc, i * 4);
+                auto sortKeyIdxVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, sortKeyIndices[i].cast<IntegerAttr>());
+                auto sortOpOidVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, sortOpOids[i].cast<IntegerAttr>());
+                auto dirVal = rewriter.create<arith::ConstantOp>(loc, i32Ty, directions[i].cast<IntegerAttr>());
+                rewriter.create<mlir::util::StoreOp>(loc, sortKeyIdxVal, sortKeyIndicesArray, idx);
+                rewriter.create<mlir::util::StoreOp>(loc, sortOpOidVal, sortOpOidsArray, idx);
+                rewriter.create<mlir::util::StoreOp>(loc, dirVal, sortDirectionsArray, idx);
+            }
+
+            auto numTotalColsConst = rewriter.create<arith::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(numTotalCols));
+            auto numSortKeysConst = rewriter.create<arith::ConstantOp>(loc, i32Ty, rewriter.getI32IntegerAttr(numSortKeys));
+
+            Value sortstate = rt::PgSortRuntime::beginHeapSort(rewriter, loc)({
+                allTypeOidsArray, allTypmodsArray, numTotalColsConst,
+                sortKeyIndicesArray, sortOpOidsArray, sortDirectionsArray, numSortKeysConst
+            })[0];
 
             rewriter.replaceOp(createOp, sortstate);
             return success();

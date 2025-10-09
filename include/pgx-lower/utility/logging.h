@@ -17,7 +17,7 @@
 // Push/pop PostgreSQL macros to avoid conflicts
 #pragma push_macro("_")
 #pragma push_macro("gettext")
-#pragma push_macro("dgettext") 
+#pragma push_macro("dgettext")
 #pragma push_macro("ngettext")
 #pragma push_macro("dngettext")
 #pragma push_macro("dcgettext")
@@ -46,20 +46,9 @@ extern "C" {
 #pragma pop_macro("_")
 #endif
 
-namespace pgx_lower {
-namespace log {
+namespace pgx_lower::log {
 
-enum class Category {
-    AST_TRANSLATE,
-    RELALG_LOWER,
-    DB_LOWER,
-    DSA_LOWER,
-    UTIL_LOWER,
-    RUNTIME,
-    JIT,
-    GENERAL,
-    PROBLEM
-};
+enum class Category { AST_TRANSLATE, RELALG_LOWER, DB_LOWER, DSA_LOWER, UTIL_LOWER, RUNTIME, JIT, GENERAL, PROBLEM };
 
 enum class Level {
     IO,
@@ -91,10 +80,7 @@ inline auto capture_stacktrace(int skip_frames = 1, int max_frames = 20) -> std:
     if (n_frames <= skip_frames)
         return "failed to get stacktrace";
 
-    std::unique_ptr<char*, decltype(&free)> symbols(
-        backtrace_symbols(buffer, n_frames),
-        &free
-    );
+    std::unique_ptr<char*, decltype(&free)> symbols(backtrace_symbols(buffer, n_frames), &free);
 
     if (!symbols) {
         return "failed to get stacktrace";
@@ -113,15 +99,12 @@ inline auto capture_stacktrace(int skip_frames = 1, int max_frames = 20) -> std:
 
             int status = 0;
             std::unique_ptr<char, decltype(&free)> demangled(
-                abi::__cxa_demangle(mangled_name.c_str(), nullptr, nullptr, &status),
-                &free
-            );
+                abi::__cxa_demangle(mangled_name.c_str(), nullptr, nullptr, &status), &free);
 
             if (status == 0 && demangled) {
                 // Replace mangled name with demangled one
-                symbol_str = symbol_str.substr(0, start_paren + 1) +
-                            std::string(demangled.get()) +
-                            symbol_str.substr(plus_sign);
+                symbol_str = symbol_str.substr(0, start_paren + 1) + std::string(demangled.get())
+                             + symbol_str.substr(plus_sign);
             }
         }
 
@@ -132,7 +115,7 @@ inline auto capture_stacktrace(int skip_frames = 1, int max_frames = 20) -> std:
 }
 
 class ScopeLogger {
-public:
+   public:
     ScopeLogger(Category cat, const char* file, int line, const char* function_name);
     ~ScopeLogger();
 
@@ -141,63 +124,48 @@ public:
     ScopeLogger(ScopeLogger&&) = delete;
     ScopeLogger& operator=(ScopeLogger&&) = delete;
 
-private:
+   private:
     Category category_;
     const char* file_;
     int line_;
     std::string function_name_;
 };
 
-} // namespace log
-} // namespace pgx_lower
+} // namespace pgx_lower::log
 
-// Single macro with printf-style formatting and file/line info
 #ifdef POSTGRESQL_EXTENSION
-#define PGX_LOG(category, level, fmt, ...) \
-    ::pgx_lower::log::log(::pgx_lower::log::Category::category, \
-                          ::pgx_lower::log::Level::level, \
-                          __FILE__, __LINE__, \
+#define PGX_LOG(category, level, fmt, ...)                                                                             \
+    ::pgx_lower::log::log(::pgx_lower::log::Category::category, ::pgx_lower::log::Level::level, __FILE__, __LINE__,    \
                           fmt, ##__VA_ARGS__)
 #else
-// For unit tests, just print to stdout/stderr with file:line
-#define PGX_LOG(category, level, fmt, ...) \
-    do { \
-        const char* _basename = strrchr(__FILE__, '/'); \
-        _basename = _basename ? _basename + 1 : __FILE__; \
-        fprintf(stderr, "[%s:%s] %s:%d: " fmt "\n", \
-                #category, #level, _basename, __LINE__, ##__VA_ARGS__); \
-    } while(0)
+
+#define PGX_LOG(category, level, fmt, ...)                                                                             \
+    do {                                                                                                               \
+        const char* _basename = strrchr(__FILE__, '/');                                                                \
+        _basename = _basename ? _basename + 1 : __FILE__;                                                              \
+        fprintf(stderr, "[%s:%s] %s:%d: " fmt "\n", #category, #level, _basename, __LINE__, ##__VA_ARGS__);            \
+    } while (0)
 #endif
 
-// WARNING and ERROR always log - these are critical user-facing messages
 #ifdef POSTGRESQL_EXTENSION
-#define PGX_WARNING(fmt, ...) \
-    ::pgx_lower::log::log(::pgx_lower::log::Category::PROBLEM, \
-                          ::pgx_lower::log::Level::WARNING_LEVEL, \
-                          __FILE__, __LINE__, \
-                          fmt, ##__VA_ARGS__)
-#define PGX_ERROR(fmt, ...) \
-    do { \
-        auto _pgx_stacktrace = ::pgx_lower::log::capture_stacktrace(2); \
-        ::pgx_lower::log::log(::pgx_lower::log::Category::PROBLEM, \
-                              ::pgx_lower::log::Level::ERROR_LEVEL, \
-                              __FILE__, __LINE__, \
-                              fmt "%s", ##__VA_ARGS__, _pgx_stacktrace.c_str()); \
-    } while(0)
+#define PGX_WARNING(fmt, ...)                                                                                          \
+    ::pgx_lower::log::log(::pgx_lower::log::Category::PROBLEM, ::pgx_lower::log::Level::WARNING_LEVEL, __FILE__,       \
+                          __LINE__, fmt, ##__VA_ARGS__)
+#define PGX_ERROR(fmt, ...)                                                                                            \
+    do {                                                                                                               \
+        auto _pgx_stacktrace = ::pgx_lower::log::capture_stacktrace(2);                                                \
+        ::pgx_lower::log::log(::pgx_lower::log::Category::PROBLEM, ::pgx_lower::log::Level::ERROR_LEVEL, __FILE__,     \
+                              __LINE__, fmt "%s", ##__VA_ARGS__, _pgx_stacktrace.c_str());                             \
+    } while (0)
 #else
-#define PGX_WARNING(fmt, ...) \
-    fprintf(stderr, "[WARNING] " fmt "\n", ##__VA_ARGS__)
+#define PGX_WARNING(fmt, ...) fprintf(stderr, "[WARNING] " fmt "\n", ##__VA_ARGS__)
 
-#define PGX_ERROR(fmt, ...) \
-    do { \
-        auto _pgx_stacktrace = ::pgx_lower::log::capture_stacktrace(2); \
-        fprintf(stderr, "[ERROR] " fmt "%s\n", ##__VA_ARGS__, _pgx_stacktrace.c_str()); \
-    } while(0)
+#define PGX_ERROR(fmt, ...)                                                                                            \
+    do {                                                                                                               \
+        auto _pgx_stacktrace = ::pgx_lower::log::capture_stacktrace(2);                                                \
+        fprintf(stderr, "[ERROR] " fmt "%s\n", ##__VA_ARGS__, _pgx_stacktrace.c_str());                                \
+    } while (0)
 #endif
 
-#define PGX_IO(category) \
-    ::pgx_lower::log::ScopeLogger _pgx_io_logger( \
-        ::pgx_lower::log::Category::category, \
-        __FILE__, __LINE__, \
-        __func__)
-
+#define PGX_IO(category)                                                                                               \
+    ::pgx_lower::log::ScopeLogger _pgx_io_logger(::pgx_lower::log::Category::category, __FILE__, __LINE__, __func__)

@@ -18,7 +18,6 @@ extern "C" {
 #include "pgx-lower/frontend/SQL/postgresql_ast_translator.h"
 #include "pgx-lower/frontend/SQL/pgx_lower_constants.h"
 #include "pgx-lower/utility/logging.h"
-#include "pgx-lower/utility/util_functions.h"
 
 #include <algorithm>
 #include <vector>

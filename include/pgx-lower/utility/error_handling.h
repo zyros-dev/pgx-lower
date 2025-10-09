@@ -6,14 +6,12 @@
 #include <stdexcept>
 #include <utility>
 
+// I like the idea of this class, but I just started using std::runtime_error instead...
+// In the future I should probably refactor those to use this class, or something like this...
+// You can tell it looks very similiar to our logging system.
 namespace pgx_lower {
 
-enum class ErrorSeverity : std::uint8_t {
-    INFO_LEVEL,
-    WARNING_LEVEL,
-    ERROR_LEVEL,
-    FATAL_LEVEL
-};
+enum class ErrorSeverity : std::uint8_t { INFO_LEVEL, WARNING_LEVEL, ERROR_LEVEL, FATAL_LEVEL };
 
 enum class ErrorCategory : std::uint8_t {
     INITIALIZATION,
@@ -34,12 +32,12 @@ struct ErrorInfo {
     int errorCode = 0;
     std::string suggestion;
 
-    ErrorInfo(const ErrorSeverity sev, const ErrorCategory cat, std::string  msg)
+    ErrorInfo(const ErrorSeverity sev, const ErrorCategory cat, std::string msg)
     : severity(sev)
     , category(cat)
     , message(std::move(msg)) {}
 
-    ErrorInfo(const ErrorSeverity sev, const ErrorCategory cat, std::string msg, std::string  ctx)
+    ErrorInfo(const ErrorSeverity sev, const ErrorCategory cat, std::string msg, std::string ctx)
     : severity(sev)
     , category(cat)
     , message(std::move(msg))
@@ -81,7 +79,6 @@ class Result {
     [[nodiscard]] auto isSuccess() const -> bool { return success_; }
     [[nodiscard]] auto isError() const -> bool { return !success_; }
 
-    // Get value (only valid if isSuccess())
     auto getValue() const -> const T& {
         if (!success_) {
             throw std::runtime_error("Attempted to get value from failed Result");
@@ -96,7 +93,6 @@ class Result {
         return value_;
     }
 
-    // Get error (only valid if isError())
     [[nodiscard]] auto getError() const -> const ErrorInfo& {
         if (success_) {
             throw std::runtime_error("Attempted to get error from successful Result");
@@ -104,7 +100,6 @@ class Result {
         return error_;
     }
 
-    // Convenience methods
     auto valueOr(const T& defaultValue) const -> T { return success_ ? value_ : defaultValue; }
 };
 
@@ -114,10 +109,8 @@ class ErrorHandler {
    public:
     virtual ~ErrorHandler() = default;
 
-    // Handle an error
     virtual void handleError(const ErrorInfo& error) = 0;
 
-    // Check if errors should be treated as fatal
     [[nodiscard]] virtual auto shouldAbortOnError(const ErrorInfo& error) const -> bool = 0;
 };
 
@@ -127,9 +120,6 @@ class PostgreSQLErrorHandler : public ErrorHandler {
     [[nodiscard]] auto shouldAbortOnError(const ErrorInfo& error) const -> bool override;
 };
 
-/**
- * Console-based error handler for unit tests
- */
 class ConsoleErrorHandler : public ErrorHandler {
    public:
     void handleError(const ErrorInfo& error) override;
@@ -149,10 +139,9 @@ class ErrorManager {
 
     static auto makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message) -> ErrorInfo;
 
-    static auto
-    makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message, const std::string& context) -> ErrorInfo;
+    static auto makeError(ErrorSeverity severity, ErrorCategory category, const std::string& message,
+                          const std::string& context) -> ErrorInfo;
 
-    // Create specific error types
     static auto queryAnalysisError(const std::string& message, const std::string& queryText = "") -> ErrorInfo;
     static auto mlirGenerationError(const std::string& message, const std::string& context = "") -> ErrorInfo;
     static auto compilationError(const std::string& message, const std::string& context = "") -> ErrorInfo;
@@ -164,10 +153,8 @@ class ErrorManager {
     pgx_lower::ErrorManager::makeError(pgx_lower::ErrorSeverity::severity, pgx_lower::ErrorCategory::category, message)
 
 #define MAKE_ERROR_CTX(severity, category, message, context)                                                           \
-    pgx_lower::ErrorManager::makeError(pgx_lower::ErrorSeverity::severity,                                             \
-                                       pgx_lower::ErrorCategory::category,                                             \
-                                       message,                                                                        \
-                                       context)
+    pgx_lower::ErrorManager::makeError(pgx_lower::ErrorSeverity::severity, pgx_lower::ErrorCategory::category,         \
+                                       message, context)
 
 #define REPORT_ERROR(severity, category, message)                                                                      \
     pgx_lower::ErrorManager::reportError(MAKE_ERROR(severity, category, message))
