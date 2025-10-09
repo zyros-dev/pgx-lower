@@ -136,9 +136,11 @@ static ParseResult parseSortSpecs(OpAsmParser& parser, mlir::ArrayAttr& result) 
           parser.getBuilder().getContext(),
           attrRefAttr,
           spec,
-          0,
-          -1,
-          0
+          0,      // typeOid
+          -1,     // typmod
+          0,      // sortOpOid
+          0,      // collation
+          false   // nullsFirst
       ));
       if (!parser.parseOptionalComma()) { continue; }
       if (parser.parseRSquare()) { return failure(); }

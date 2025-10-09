@@ -92,7 +92,9 @@ def SortSpecificationAttr : RelAlg_Attr<"SortSpecification"> {
         "SortSpec":$sortSpec,
         "uint32_t":$typeOid,
         "int32_t":$typmod,
-        "uint32_t":$sortOpOid
+        "uint32_t":$sortOpOid,
+        "uint32_t":$collation,
+        "bool":$nullsFirst
     );
     let hasCustomAssemblyFormat=1;
 }

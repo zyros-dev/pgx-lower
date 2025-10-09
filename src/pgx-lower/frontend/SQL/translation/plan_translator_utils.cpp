@@ -142,6 +142,8 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
                     const Oid typeOid = exprType((Node*)var);
                     const int32_t typmod = exprTypmod((Node*)var);
                     const Oid sortOpOid = sort->sortOperators ? sort->sortOperators[i] : InvalidOid;
+                    const Oid collation = sort->collations ? sort->collations[i] : InvalidOid;
+                    const bool nullsFirst = sort->nullsFirst ? sort->nullsFirst[i] : false;
 
                     sortSpecs.push_back(mlir::relalg::SortSpecificationAttr::get(
                         ctx.builder.getContext(),
@@ -149,7 +151,9 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
                         spec,
                         typeOid,
                         typmod,
-                        sortOpOid));
+                        sortOpOid,
+                        collation,
+                        nullsFirst));
                 }
             }
             break;

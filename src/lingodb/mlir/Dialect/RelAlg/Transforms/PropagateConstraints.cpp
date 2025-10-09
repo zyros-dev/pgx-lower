@@ -26,7 +26,7 @@ mlir::Attribute updateAttribute(::mlir::Attribute attr, ReplaceFnT replaceFn) {
       return mlir::relalg::ColumnDefAttr::get(attr.getContext(), colDefAttr.getName(), colDefAttr.getColumnPtr(), updateAttribute(colDefAttr.getFromExisting(), replaceFn));
    }
    if (auto sortSpec = attr.dyn_cast_or_null<mlir::relalg::SortSpecificationAttr>()) {
-      return mlir::relalg::SortSpecificationAttr::get(attr.getContext(), replaceFn(sortSpec.getAttr()), sortSpec.getSortSpec(), sortSpec.getTypeOid(), sortSpec.getTypmod(), sortSpec.getSortOpOid());
+      return mlir::relalg::SortSpecificationAttr::get(attr.getContext(), replaceFn(sortSpec.getAttr()), sortSpec.getSortSpec(), sortSpec.getTypeOid(), sortSpec.getTypmod(), sortSpec.getSortOpOid(), sortSpec.getCollation(), sortSpec.getNullsFirst());
    }
    if (auto arrayAttr = attr.dyn_cast_or_null<::mlir::ArrayAttr>()) {
       std::vector<::mlir::Attribute> attributes;

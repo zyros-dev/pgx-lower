@@ -179,7 +179,8 @@ void mlir::relalg::ColumnRefAttr::print(::mlir::AsmPrinter& printer) const {
 }
 void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) const {
     printer << "<" << getAttr().getName() << "," << stringifyEnum(getSortSpec()) << "," << getTypeOid() << ","
-            << getTypmod() << "," << getSortOpOid() << ">";
+            << getTypmod() << "," << getSortOpOid() << "," << getCollation() << ","
+            << (getNullsFirst() ? "nulls_first" : "nulls_last") << ">";
 }
 ::mlir::Attribute mlir::relalg::SortSpecificationAttr::parse(::mlir::AsmParser& parser, ::mlir::Type odsType) {
     mlir::SymbolRefAttr sym;
@@ -187,10 +188,14 @@ void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) con
     uint32_t typeOid;
     int32_t typmod;
     uint32_t sortOpOid;
+    uint32_t collation;
+    std::string nullsFirstDescr;
 
     if (parser.parseLess() || parser.parseAttribute(sym) || parser.parseComma()
         || parser.parseKeywordOrString(&sortSpecDescr) || parser.parseComma() || parser.parseInteger(typeOid)
         || parser.parseComma() || parser.parseInteger(typmod) || parser.parseComma() || parser.parseInteger(sortOpOid)
+        || parser.parseComma() || parser.parseInteger(collation) || parser.parseComma()
+        || parser.parseKeywordOrString(&nullsFirstDescr)
         || parser.parseGreater())
     {
         return ::mlir::Attribute();
@@ -200,9 +205,10 @@ void mlir::relalg::SortSpecificationAttr::print(::mlir::AsmPrinter& printer) con
    if (!sortSpec.has_value()) {
       return {};
    }
+   bool nullsFirst = (nullsFirstDescr == "nulls_first");
    auto columnRefAttr = parser.getContext()->getLoadedDialect<mlir::relalg::RelAlgDialect>()->getColumnManager().createRef(sym);
    return mlir::relalg::SortSpecificationAttr::get(parser.getContext(), columnRefAttr, sortSpec.value(),
-                                                    typeOid, typmod, sortOpOid);
+                                                    typeOid, typmod, sortOpOid, collation, nullsFirst);
 }
 void RelAlgDialect::printAttribute(Attribute attr, DialectAsmPrinter& printer) const {
    if (auto columnDefAttr = attr.dyn_cast<mlir::relalg::ColumnDefAttr>()) {
