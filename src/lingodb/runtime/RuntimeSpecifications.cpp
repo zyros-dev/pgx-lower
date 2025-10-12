@@ -8,6 +8,10 @@ extern "C" {
 namespace runtime {
 
 size_t get_physical_size(uint32_t type_oid) {
+    if (type_oid == DATEOID || type_oid == TIMESTAMPOID || type_oid == INTERVALOID) {
+        type_oid = INT8OID;
+    }
+
     switch (type_oid) {
     case BOOLOID: return 1;
     case INT2OID: return 2;
@@ -20,14 +24,15 @@ size_t get_physical_size(uint32_t type_oid) {
     case BPCHAROID:
     case BYTEAOID: return 16;
     case NUMERICOID: return 16;
-    case DATEOID: return 8;
-    case TIMESTAMPOID: return 8;
-    case INTERVALOID: return 8;
     default: throw std::runtime_error("Unsupported PostgreSQL type OID");
     }
 }
 
 PhysicalType get_physical_type(uint32_t type_oid) {
+    if (type_oid == DATEOID || type_oid == TIMESTAMPOID || type_oid == INTERVALOID) {
+        type_oid = INT8OID;
+    }
+
     switch (type_oid) {
     case BOOLOID: return PhysicalType::BOOL;
     case INT2OID: return PhysicalType::INT16;
@@ -40,9 +45,6 @@ PhysicalType get_physical_type(uint32_t type_oid) {
     case BPCHAROID:
     case BYTEAOID: return PhysicalType::VARLEN32;
     case NUMERICOID: return PhysicalType::DECIMAL128;
-    case DATEOID: return PhysicalType::INT64;
-    case TIMESTAMPOID: return PhysicalType::INT64;
-    case INTERVALOID: return PhysicalType::INT64;
     default: throw std::runtime_error("Unsupported PostgreSQL type OID");
     }
 }

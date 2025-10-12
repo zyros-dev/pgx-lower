@@ -26,7 +26,11 @@ void runtime::LazyJoinHashtable::compute_column_layouts() {
     size_t offset = sizeof(Entry);
     for (int32_t i = 0; i < spec->num_key_columns; i++) {
         ColumnLayout layout;
-        layout.pg_type_oid = spec->key_columns[i].type_oid;
+        uint32_t type_oid = spec->key_columns[i].type_oid;
+        if (type_oid == DATEOID || type_oid == TIMESTAMPOID || type_oid == INTERVALOID) {
+            type_oid = INT8OID;
+        }
+        layout.pg_type_oid = type_oid;
         layout.phys_type = runtime::get_physical_type(layout.pg_type_oid);
         layout.is_nullable = true;
 
@@ -43,7 +47,11 @@ void runtime::LazyJoinHashtable::compute_column_layouts() {
 
     for (int32_t i = 0; i < spec->num_value_columns; i++) {
         ColumnLayout layout;
-        layout.pg_type_oid = spec->value_columns[i].type_oid;
+        uint32_t type_oid = spec->value_columns[i].type_oid;
+        if (type_oid == DATEOID || type_oid == TIMESTAMPOID || type_oid == INTERVALOID) {
+            type_oid = INT8OID;
+        }
+        layout.pg_type_oid = type_oid;
         layout.phys_type = runtime::get_physical_type(layout.pg_type_oid);
         layout.is_nullable = true;
 

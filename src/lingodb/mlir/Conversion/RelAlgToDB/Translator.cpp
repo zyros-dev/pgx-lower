@@ -26,6 +26,55 @@ std::vector<::mlir::Value> mlir::relalg::Translator::mergeRelationalBlock(::mlir
       op->dropAllUses();
       op->erase();
    }
+
+   // PGX-LOWER: Enforce nullability in joins earlier, which causes this operaiton
+   // to require adjusting the logical joins to adjust for nullability.
+   std::vector<std::pair<::mlir::Operation*, ::mlir::Operation*>> toReplace;
+   for (auto& operation : dest->getOperations()) {
+      if (auto inferOp = mlir::dyn_cast<mlir::InferTypeOpInterface>(&operation)) {
+         llvm::SmallVector<mlir::Type, 4> inferredTypes;
+         if (mlir::succeeded(inferOp.inferReturnTypes(
+               operation.getContext(), operation.getLoc(), operation.getOperands(),
+               operation.getAttrDictionary(), operation.getPropertiesStorage(),
+               operation.getRegions(), inferredTypes))) {
+
+            bool needsRecreate = false;
+            auto results = operation.getResults();
+            if (inferredTypes.size() == results.size()) {
+               for (size_t i = 0; i < inferredTypes.size(); ++i) {
+                  if (inferredTypes[i] != results[i].getType()) {
+                     needsRecreate = true;
+                     break;
+                  }
+               }
+            }
+
+            if (needsRecreate) {
+               mlir::OpBuilder builder(dest, mlir::Block::iterator(&operation));
+               mlir::OperationState state(operation.getLoc(), operation.getName());
+               state.addOperands(operation.getOperands());
+               state.addTypes(inferredTypes);
+               // Convert DictionaryAttr to ArrayRef<NamedAttribute>
+               llvm::SmallVector<mlir::NamedAttribute, 4> attrs;
+               for (auto attr : operation.getAttrDictionary())
+                  attrs.push_back(attr);
+               state.addAttributes(attrs);
+               for (auto& region : operation.getRegions()) {
+                  auto* newRegion = state.addRegion();
+                  newRegion->takeBody(region);
+               }
+               auto* newOp = builder.create(state);
+               toReplace.push_back({&operation, newOp});
+            }
+         }
+      }
+   }
+
+   for (auto [oldOp, newOp] : toReplace) {
+      oldOp->replaceAllUsesWith(newOp);
+      oldOp->erase();
+   }
+
    auto returnOp = mlir::cast<mlir::relalg::ReturnOp>(terminator);
    std::vector<Value> res(returnOp.getResults().begin(), returnOp.getResults().end());
    terminator->erase();

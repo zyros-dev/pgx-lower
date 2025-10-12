@@ -649,8 +649,23 @@ PostgreSQLASTTranslator::Impl::create_join_operation(QueryCtxT& ctx, const JoinT
                                                                           right_value);
         addPredicateRegion(joinOp, true, ctx);
         result.op = joinOp;
-        result.columns = left_translation.columns;
-        result.columns.insert(result.columns.end(), right_translation.columns.begin(), right_translation.columns.end());
+        result.columns.reserve(left_translation.columns.size() + right_translation.columns.size());
+        for (const auto& col : left_translation.columns) {
+            auto nullableCol = col;
+            nullableCol.nullable = true;
+            if (!mlir::isa<mlir::db::NullableType>(col.mlir_type)) {
+                nullableCol.mlir_type = mlir::db::NullableType::get(col.mlir_type);
+            }
+            result.columns.push_back(nullableCol);
+        }
+        for (const auto& col : right_translation.columns) {
+            auto nullableCol = col;
+            nullableCol.nullable = true;
+            if (!mlir::isa<mlir::db::NullableType>(col.mlir_type)) {
+                nullableCol.mlir_type = mlir::db::NullableType::get(col.mlir_type);
+            }
+            result.columns.push_back(nullableCol);
+        }
         break;
     }
 
