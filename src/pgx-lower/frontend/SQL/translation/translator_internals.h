@@ -354,6 +354,7 @@ class PostgreSQLTypeMapper {
     : context_(context) {}
 
     [[nodiscard]] auto map_postgre_sqltype(Oid type_oid, int32_t typmod, bool nullable = false) const -> mlir::Type;
+    [[nodiscard]] static auto map_mlir_type_to_oid(mlir::Type mlir_type) -> Oid;
 
     // Type modifier extraction functions
     static auto extract_numeric_info(int32_t typmod) -> std::pair<int32_t, int32_t>;

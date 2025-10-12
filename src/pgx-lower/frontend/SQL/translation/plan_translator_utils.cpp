@@ -822,10 +822,14 @@ auto PostgreSQLASTTranslator::Impl::apply_projection_from_target_list(const Quer
                         entry->resno, entry->resname ? entry->resname : "<null>");
 
                 if (mlir::Value exprValue = translate_expression(tmp_ctx, entry->expr)) {
-                    expressionTypes.push_back(exprValue.getType());
+                    mlir::Type exprMlirType = exprValue.getType();
+                    expressionTypes.push_back(exprMlirType);
                     columnNames.push_back(colName);
-                    Oid typeOid = exprType(reinterpret_cast<Node*>(entry->expr));
+                    Oid typeOid = PostgreSQLTypeMapper::map_mlir_type_to_oid(exprMlirType);
                     expressionOids.push_back(typeOid);
+                    PGX_LOG(AST_TRANSLATE, DEBUG,
+                            "MapOp column '%s': MLIR type mapped to OID=%u",
+                            colName.c_str(), typeOid);
                 } else {
                     PGX_WARNING("Failed to get expression!!");
                 }

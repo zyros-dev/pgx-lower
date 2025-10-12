@@ -494,9 +494,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                     const mlir::Type actual_type = column_ref.getColumn().type;
                     const bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
 
+                    Oid actual_oid = PostgreSQLTypeMapper::map_mlir_type_to_oid(actual_type);
                     childResult.columns.push_back({.table_name = table_name,
                                                    .column_name = column_name,
-                                                   .type_oid = exprType(reinterpret_cast<Node*>(argTE->expr)),
+                                                   .type_oid = actual_oid,
                                                    .typmod = exprTypmod(reinterpret_cast<Node*>(argTE->expr)),
                                                    .mlir_type = actual_type,
                                                    .nullable = is_nullable});
@@ -541,9 +542,10 @@ auto PostgreSQLASTTranslator::Impl::translate_agg(QueryCtxT& ctx, const Agg* agg
                 const mlir::Type actual_type = column_ref.getColumn().type;
                 const bool is_nullable = mlir::isa<mlir::db::NullableType>(actual_type);
 
+                Oid actual_oid = PostgreSQLTypeMapper::map_mlir_type_to_oid(actual_type);
                 childResult.columns.push_back({.table_name = table_name,
                                                .column_name = column_name,
-                                               .type_oid = exprType(reinterpret_cast<Node*>(argTE->expr)),
+                                               .type_oid = actual_oid,
                                                .typmod = exprTypmod(reinterpret_cast<Node*>(argTE->expr)),
                                                .mlir_type = actual_type,
                                                .nullable = is_nullable});

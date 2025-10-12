@@ -100,6 +100,50 @@ std::pair<int32_t, int32_t> PostgreSQLTypeMapper::extract_numeric_info(const int
     return {std::min(precision, MAX_NUMERIC_PRECISION), std::min(scale, MAX_NUMERIC_UNCONSTRAINED_SCALE)};
 }
 
+Oid PostgreSQLTypeMapper::map_mlir_type_to_oid(mlir::Type mlir_type) {
+    if (const auto nullable_type = mlir::dyn_cast<mlir::db::NullableType>(mlir_type)) {
+        mlir_type = nullable_type.getType();
+    }
+
+    if (const auto int_type = mlir::dyn_cast<mlir::IntegerType>(mlir_type)) {
+        switch (int_type.getWidth()) {
+        case 1: return BOOLOID;
+        case 16: return INT2OID;
+        case 32: return INT4OID;
+        case 64: return INT8OID;
+        default: PGX_WARNING("Unknown integer width %u, using INT4OID", int_type.getWidth()); return INT4OID;
+        }
+    }
+
+    if (mlir::isa<mlir::Float32Type>(mlir_type)) {
+        return FLOAT4OID;
+    }
+    if (mlir::isa<mlir::Float64Type>(mlir_type)) {
+        return FLOAT8OID;
+    }
+
+    if (mlir::isa<mlir::db::StringType>(mlir_type)) {
+        return TEXTOID;
+    }
+
+    if (mlir::isa<mlir::db::DecimalType>(mlir_type)) {
+        return NUMERICOID;
+    }
+
+    if (mlir::isa<mlir::db::DateType>(mlir_type)) {
+        return DATEOID;
+    }
+    if (mlir::isa<mlir::db::TimestampType>(mlir_type)) {
+        return TIMESTAMPOID;
+    }
+    if (mlir::isa<mlir::db::IntervalType>(mlir_type)) {
+        return INTERVALOID;
+    }
+
+    PGX_WARNING("Unable to map MLIR type to PostgreSQL OID, returning UNKNOWNOID");
+    return UNKNOWNOID;
+}
+
 mlir::db::TimeUnitAttr PostgreSQLTypeMapper::extract_timestamp_precision(const int32_t typmod) {
     PGX_IO(AST_TRANSLATE);
     if (typmod < 0) {
