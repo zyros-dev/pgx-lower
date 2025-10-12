@@ -122,12 +122,19 @@ void PgSortState::build_tuple_desc() {
     const TupleDesc td = CreateTemplateTupleDesc(spec->num_columns);
 
     for (int32_t i = 0; i < spec->num_columns; i++) {
-        TupleDescInitEntry(td,
-                           static_cast<AttrNumber>(i + 1), // 1-indexed!
-                           spec->columns[i].column_name, spec->columns[i].type_oid, spec->columns[i].typmod, 0);
+        uint32_t tuple_desc_oid = spec->columns[i].type_oid;
+        if (tuple_desc_oid == DATEOID || tuple_desc_oid == TIMESTAMPOID || tuple_desc_oid == INTERVALOID) {
+            tuple_desc_oid = INT8OID;
+            PGX_LOG(RUNTIME, DEBUG, "build_tuple_desc: Mapping datetime type_oid=%u to INT8OID for column '%s'",
+                    spec->columns[i].type_oid, spec->columns[i].column_name);
+        }
 
-        PGX_LOG(RUNTIME, DEBUG, "build_tuple_desc: TupleDesc[%d]: name=%s, type_oid=%u, typmod=%d", i,
-                spec->columns[i].column_name, spec->columns[i].type_oid, spec->columns[i].typmod);
+        TupleDescInitEntry(td,
+                           static_cast<AttrNumber>(i + 1),
+                           spec->columns[i].column_name, tuple_desc_oid, spec->columns[i].typmod, 0);
+
+        PGX_LOG(RUNTIME, DEBUG, "build_tuple_desc: TupleDesc[%d]: name=%s, type_oid=%u (original=%u), typmod=%d", i,
+                spec->columns[i].column_name, tuple_desc_oid, spec->columns[i].type_oid, spec->columns[i].typmod);
     }
 
     tupdesc = td;
