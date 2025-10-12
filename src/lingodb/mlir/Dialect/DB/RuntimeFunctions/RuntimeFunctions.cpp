@@ -222,8 +222,6 @@ std::shared_ptr<mlir::db::RuntimeFunctionRegistry> mlir::db::RuntimeFunctionRegi
    builtinRegistry->add("Print").implementedAs(rt::PrintRuntime::print).matchesTypes({RuntimeFunction::stringLike}, RuntimeFunction::noReturnType);
    builtinRegistry->add("PrintVal").implementedAs(rt::PrintRuntime::printVal).matchesTypes({RuntimeFunction::anyType, RuntimeFunction::intLike}, RuntimeFunction::noReturnType);
    builtinRegistry->add("PrintPtr").implementedAs(rt::PrintRuntime::printPtr).matchesTypes({RuntimeFunction::anyType, RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::noReturnType);
-   builtinRegistry->add("PrintI32").implementedAs(rt::PrintRuntime::printI32).matchesTypes({RuntimeFunction::anyType, RuntimeFunction::intLike}, RuntimeFunction::noReturnType);
-   builtinRegistry->add("PrintNullable").implementedAs(rt::PrintRuntime::printNullable).matchesTypes({RuntimeFunction::intLike, RuntimeFunction::intLike}, RuntimeFunction::noReturnType);
 
    return builtinRegistry;
 }

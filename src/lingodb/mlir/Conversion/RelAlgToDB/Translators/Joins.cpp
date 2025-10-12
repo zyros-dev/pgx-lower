@@ -135,34 +135,7 @@ class SemiJoinImpl : public mlir::relalg::JoinImpl {
       doAnti = true;
    }
    virtual void handleLookup(::mlir::Value matched, ::mlir::Value /*marker*/, mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
-      // dsa.SetFlag requires i1, but predicates may return !db.nullable<i1>
-      // Apply derive_truth to convert nullable boolean to plain boolean
-      ::mlir::Value matchedBool = matched;
-      if (auto nullableType = matched.getType().dyn_cast<mlir::db::NullableType>()) {
-         matchedBool = builder.create<mlir::db::DeriveTruth>(loc, builder.getI1Type(), matched);
-      }
-
-      // Debug: print matched value (just pass null pointer, we'll identify by order)
-      auto ptrType = mlir::util::RefType::get(builder.getContext(), builder.getI8Type());
-      auto nullPtr = builder.create<mlir::util::UndefOp>(loc, ptrType);
-      auto extMatched = builder.create<mlir::arith::ExtUIOp>(loc, builder.getI32Type(), matchedBool);
-      builder.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr, extMatched});
-
-      // SetFlag overwrites, but we need OR semantics for "any match found"
-      // Read current flag value and OR with new match
-      ::mlir::Value currentFlag = builder.create<mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
-
-      // Debug: print current flag before OR
-      auto extCurrent = builder.create<mlir::arith::ExtUIOp>(loc, builder.getI32Type(), currentFlag);
-      builder.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr, extCurrent});
-
-      ::mlir::Value newFlag = builder.create<mlir::arith::OrIOp>(loc, currentFlag, matchedBool);
-
-      // Debug: print new flag after OR
-      auto extNew = builder.create<mlir::arith::ExtUIOp>(loc, builder.getI32Type(), newFlag);
-      builder.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr, extNew});
-
-      builder.create<mlir::dsa::SetFlag>(loc, matchFoundFlag, newFlag);
+      builder.create<mlir::dsa::SetFlag>(loc, matchFoundFlag, matched);
    }
 
    void beforeLookup(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
@@ -170,20 +143,9 @@ class SemiJoinImpl : public mlir::relalg::JoinImpl {
    }
    void afterLookup(mlir::relalg::TranslatorContext& context, ::mlir::OpBuilder& builder) override {
       ::mlir::Value matchFound = builder.create<mlir::dsa::GetFlag>(loc, builder.getI1Type(), matchFoundFlag);
-
-      // Debug: print final flag value
-      auto ptrType = mlir::util::RefType::get(builder.getContext(), builder.getI8Type());
-      auto nullPtr = builder.create<mlir::util::UndefOp>(loc, ptrType);
-      auto extFinal = builder.create<mlir::arith::ExtUIOp>(loc, builder.getI32Type(), matchFound);
-      builder.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr, extFinal});
-
       ::mlir::Value emit = matchFound;
       if (doAnti) {
          emit = builder.create<mlir::db::NotOp>(loc, builder.getI1Type(), matchFound);
-
-         // Debug: print after NOT
-         auto extEmit = builder.create<mlir::arith::ExtUIOp>(loc, builder.getI32Type(), emit);
-         builder.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr, extEmit});
       }
       translator->handlePotentialMatch(builder, context, emit);
    }

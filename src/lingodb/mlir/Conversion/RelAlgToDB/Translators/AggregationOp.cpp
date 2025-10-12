@@ -82,24 +82,8 @@ class AggregationTranslator : public mlir::relalg::Translator {
          if (currLeftNullableType || currRightNullableType) {
             ::mlir::Value isNull1 = rewriter.create<mlir::db::IsNullOp>(loc, rewriter.getI1Type(), leftUnpacked->getResult(i));
             ::mlir::Value isNull2 = rewriter.create<mlir::db::IsNullOp>(loc, rewriter.getI1Type(), rightUnpacked->getResult(i));
-
-            // Print: null flags
-            auto extIsNull1 = rewriter.create<mlir::arith::ExtUIOp>(loc, rewriter.getI32Type(), isNull1);
-            auto extIsNull2 = rewriter.create<mlir::arith::ExtUIOp>(loc, rewriter.getI32Type(), isNull2);
-            auto ptrType = mlir::util::RefType::get(rewriter.getContext(), rewriter.getI8Type());
-            auto nullPtr = rewriter.create<mlir::util::UndefOp>(loc, ptrType);
-            rewriter.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr, extIsNull1});
-            rewriter.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr, extIsNull2});
-
             ::mlir::Value anyNull = rewriter.create<mlir::arith::OrIOp>(loc, isNull1, isNull2);
             ::mlir::Value bothNull = rewriter.create<mlir::arith::AndIOp>(loc, isNull1, isNull2);
-
-            // Print: anyNull and bothNull
-            auto extAnyNull = rewriter.create<mlir::arith::ExtUIOp>(loc, rewriter.getI32Type(), anyNull);
-            auto extBothNull = rewriter.create<mlir::arith::ExtUIOp>(loc, rewriter.getI32Type(), bothNull);
-            rewriter.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr, extAnyNull});
-            rewriter.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr, extBothNull});
-
             auto ifOp = rewriter.create<mlir::scf::IfOp>(loc, mlir::TypeRange{rewriter.getI1Type()}, anyNull);
             ifOp.getThenRegion().emplaceBlock();
             ifOp.getElseRegion().emplaceBlock();
@@ -115,40 +99,14 @@ class AggregationTranslator : public mlir::relalg::Translator {
                // Else branch
                ::mlir::Value left = rewriter.create<mlir::db::NullableGetVal>(loc, leftUnpacked->getResult(i));
                ::mlir::Value right = rewriter.create<mlir::db::NullableGetVal>(loc, rightUnpacked->getResult(i));
-
-               // Print: extracted values (only for i32)
-               auto ptrType2 = mlir::util::RefType::get(rewriter.getContext(), rewriter.getI8Type());
-               auto nullPtr2 = rewriter.create<mlir::util::UndefOp>(loc, ptrType2);
-               if (left.getType().isInteger(32) && right.getType().isInteger(32)) {
-                  rewriter.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr2, left});
-                  rewriter.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr2, right});
-               }
-
                ::mlir::Value cmpRes = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, left, right);
-
-               // Print: comparison result
-               auto extCmpRes = rewriter.create<mlir::arith::ExtUIOp>(loc, rewriter.getI32Type(), cmpRes);
-               rewriter.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr2, extCmpRes});
-
                rewriter.create<mlir::scf::YieldOp>(loc, mlir::ValueRange{cmpRes});
             }
             compared = ifOp.getResult(0);
          } else {
             compared = rewriter.create<mlir::db::CmpOp>(loc, mlir::db::DBCmpPredicate::eq, leftUnpacked->getResult(i), rightUnpacked.getResult(i));
          }
-
-         // Print: compared result
-         auto extCompared = rewriter.create<mlir::arith::ExtUIOp>(loc, rewriter.getI32Type(), compared);
-         auto ptrType3 = mlir::util::RefType::get(rewriter.getContext(), rewriter.getI8Type());
-         auto nullPtr3 = rewriter.create<mlir::util::UndefOp>(loc, ptrType3);
-         rewriter.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr3, extCompared});
-
          mlir::Value localEqual = rewriter.create<mlir::arith::AndIOp>(loc, rewriter.getI1Type(), mlir::ValueRange({equal, compared}));
-
-         // Print: localEqual (accumulated equality)
-         auto extLocalEqual = rewriter.create<mlir::arith::ExtUIOp>(loc, rewriter.getI32Type(), localEqual);
-         rewriter.create<mlir::db::RuntimeCall>(loc, mlir::TypeRange{}, "PrintI32", mlir::ValueRange{nullPtr3, extLocalEqual});
-
          equal = localEqual;
       }
       return equal;

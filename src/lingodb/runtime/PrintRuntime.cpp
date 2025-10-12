@@ -39,19 +39,3 @@ void runtime::PrintRuntime::printPtr(void* ptr, int32_t offset, int32_t len) {
 
    PGX_LOG(RUNTIME, DEBUG, "printPtr[%p+%d, len=%d]: %s", ptr, offset, len, hexbuf);
 }
-
-static int print_call_count = 0;
-
-void runtime::PrintRuntime::printI32(void* label_ptr, int32_t val) {
-   // Label is null, just use call count for identification
-   PGX_LOG(RUNTIME, DEBUG, "[%d] = %d", ++print_call_count, val);
-}
-
-void runtime::PrintRuntime::printNullable(int32_t value, int32_t is_null) {
-    PGX_IO(RUNTIME);
-   if (is_null) {
-      PGX_LOG(RUNTIME, DEBUG, "[%d] = NULL", ++print_call_count);
-   } else {
-      PGX_LOG(RUNTIME, DEBUG, "[%d] = %d (not null)", ++print_call_count, value);
-   }
-}
