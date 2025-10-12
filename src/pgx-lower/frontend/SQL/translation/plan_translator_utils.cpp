@@ -13,6 +13,7 @@ extern "C" {
 #include "utils/syscache.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"  // CurTransactionContext
+#include "catalog/pg_operator.h"
 #include "fmgr.h"
 }
 
@@ -188,6 +189,48 @@ auto PostgreSQLASTTranslator::Impl::translate_sort(QueryCtxT& ctx, const Sort* s
         sortOps[validSortKeys] = sort->sortOperators ? sort->sortOperators[i] : InvalidOid;
         collations[validSortKeys] = sort->collations ? sort->collations[i] : InvalidOid;
         nullsFirst[validSortKeys] = sort->nullsFirst ? sort->nullsFirst[i] : false;
+
+        // Fix operator if column type differs from what PostgreSQL expected
+        // This happens when MLIR generates i64 but PostgreSQL planned for NUMERIC
+        const int colIndex = sortKeyIdxs[validSortKeys];
+        if (colIndex >= 0 && colIndex < numColumns) {
+            const Oid columnTypeOid = colInfos[colIndex].type_oid;
+            const Oid operatorOid = sortOps[validSortKeys];
+
+            // Check if operator type mismatches column type
+            if (operatorOid != InvalidOid) {
+                // Get the operator's expected input type
+                Oid opLeftType = InvalidOid;
+                HeapTuple opTuple = SearchSysCache1(OPEROID, ObjectIdGetDatum(operatorOid));
+                if (HeapTupleIsValid(opTuple)) {
+                    Form_pg_operator opForm = (Form_pg_operator)GETSTRUCT(opTuple);
+                    opLeftType = opForm->oprleft;
+                    ReleaseSysCache(opTuple);
+
+                    // If operator expects NUMERIC but column is INT8, find INT8's equivalent operator
+                    if (opLeftType == NUMERICOID && columnTypeOid == INT8OID) {
+                        // Map NUMERIC operators to INT8 equivalents
+                        // NUMERIC <  (1754) → INT8 <  (412)
+                        // NUMERIC <= (1755) → INT8 <= (414)
+                        // NUMERIC >  (1756) → INT8 >  (413)
+                        // NUMERIC >= (1757) → INT8 >= (415)
+                        Oid correctedOp = InvalidOid;
+                        if (operatorOid == 1754) correctedOp = 412;       // <
+                        else if (operatorOid == 1755) correctedOp = 414;  // <=
+                        else if (operatorOid == 1756) correctedOp = 413;  // >
+                        else if (operatorOid == 1757) correctedOp = 415;  // >=
+
+                        if (correctedOp != InvalidOid) {
+                            PGX_LOG(AST_TRANSLATE, DEBUG,
+                                    "Sort: Correcting operator for column %d from NUMERIC op %u to INT8 op %u",
+                                    colIndex, operatorOid, correctedOp);
+                            sortOps[validSortKeys] = correctedOp;
+                        }
+                    }
+                }
+            }
+        }
+
         validSortKeys++;
     }
 
