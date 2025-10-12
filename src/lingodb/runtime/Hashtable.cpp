@@ -92,15 +92,15 @@ runtime::Hashtable* runtime::Hashtable::create(size_t typeSize, size_t initialCa
     return ht;
 }
 
-void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t currentLen, void* keyPtr, void* valuePtr) {
+void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t currentLen, void* keyPtr, void* valuePtr, size_t key_size, size_t value_size) {
     PGX_IO(RUNTIME);
 
     const auto& meta = g_hashtable_metadata[this];
 
     uint8_t* entry = values.ptrAt<uint8_t>(currentLen);
 
-    PGX_LOG(RUNTIME, DEBUG, "appendEntryWithDeepCopy: entry=%p, hashValue=%zu, currentLen=%zu, entry_size=%zu",
-            static_cast<void*>(entry), hashValue, currentLen, meta.entry_size);
+    PGX_LOG(RUNTIME, DEBUG, "appendEntryWithDeepCopy: entry=%p, hashValue=%zu, currentLen=%zu, entry_size=%zu, key_size=%zu, value_size=%zu",
+            static_cast<void*>(entry), hashValue, currentLen, meta.entry_size, key_size, value_size);
 
     // Write Entry header: [0-7]=next, [8-15]=hash
     *reinterpret_cast<Entry**>(entry) = nullptr;
@@ -109,34 +109,10 @@ void* runtime::Hashtable::appendEntryWithDeepCopy(size_t hashValue, size_t curre
     const size_t header_size = sizeof(Entry);  // 16 bytes
     uint8_t* kv_region = entry + header_size;
 
-    // Calculate key and value sizes from spec
-    // Layout depends on is_nullable flag:
-    // - Nullable: [nullable_flag:1][data:N bytes]
-    // - Non-nullable: [data:N bytes]
-    size_t key_size = 0;
-    size_t value_size = 0;
-
-    if (meta.spec) {
-        for (int32_t i = 0; i < meta.spec->num_key_columns; i++) {
-            const auto& col = meta.spec->key_columns[i];
-            const size_t data_size = get_physical_size(col.type_oid);
-            key_size += col.is_nullable ? (1 + data_size) : data_size;
-        }
-        for (int32_t i = 0; i < meta.spec->num_value_columns; i++) {
-            const auto& col = meta.spec->value_columns[i];
-            const size_t data_size = get_physical_size(col.type_oid);
-            value_size += col.is_nullable ? (1 + data_size) : data_size;
-        }
-    } else {
-        PGX_ERROR("There isn't a spec!");
-        throw std::runtime_error("There isn't a spec!");
-    }
-
-    PGX_LOG(RUNTIME, DEBUG, "Size calculation: key=%zu, value=%zu, total=%zu", key_size, value_size, key_size + value_size);
-
-    // Simple memcpy for non-string columns
     memcpy(kv_region, keyPtr, key_size);
     memcpy(kv_region + key_size, valuePtr, value_size);
+
+    PGX_LOG(RUNTIME, DEBUG, "Copied key+value: key_size=%zu, value_size=%zu, total=%zu", key_size, value_size, key_size + value_size);
 
     // Deep copy strings if present
     if (meta.spec && meta.hashtable_context) {

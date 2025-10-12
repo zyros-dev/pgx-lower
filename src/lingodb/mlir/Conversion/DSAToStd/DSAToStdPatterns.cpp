@@ -410,8 +410,13 @@ class HtInsertLowering : public OpConversionPattern<mlir::dsa::HashtableInsert> 
                   b.create<mlir::util::StoreOp>(loc, newAggr, valueRef, mlir::Value());
                   Value valuePtr = b.create<mlir::util::GenericMemrefCastOp>(loc, i8RefType, valueRef);
 
+                  Value keySize = b.create<mlir::util::SizeOfOp>(loc, b.getIndexType(), adaptor.getKey().getType());
+                  Value keySizeI64 = b.create<arith::IndexCastOp>(loc, b.getI64Type(), keySize);
+                  Value valueSize = b.create<mlir::util::SizeOfOp>(loc, b.getIndexType(), newAggr.getType());
+                  Value valueSizeI64 = b.create<arith::IndexCastOp>(loc, b.getI64Type(), valueSize);
+
                   Value newValueLocPtr = rt::Hashtable::appendEntryWithDeepCopy(b, loc)(
-                     {adaptor.getHt(), hashedI64, lenI64, keyPtr, valuePtr}
+                     {adaptor.getHt(), hashedI64, lenI64, keyPtr, valuePtr, keySizeI64, valueSizeI64}
                   )[0];
 
                   newValueLocPtr = b.create<util::GenericMemrefCastOp>(loc, bucketPtrType, newValueLocPtr);

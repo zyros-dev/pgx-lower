@@ -33,7 +33,7 @@ class Hashtable {
 
    public:
     void resize();
-    void* appendEntryWithDeepCopy(size_t hashValue, size_t currentLen, void* keyPtr, void* valuePtr);
+    void* appendEntryWithDeepCopy(size_t hashValue, size_t currentLen, void* keyPtr, void* valuePtr, size_t key_size, size_t value_size);
     static Hashtable* create(size_t typeSize, size_t initialCapacity, uint64_t specPtr);
     static void destroy(Hashtable*);
     void hex_dump_all() const;
